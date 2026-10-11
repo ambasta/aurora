@@ -58,9 +58,11 @@ before the host reads a returned range. Direct API inputs must fit the existing
 signed line/column representation; file I/O remains limited to 1 MiB.
 Owner-runtime descriptors are never fabricated. Generated helper symbols and
 reflection entries stay local; only the host shim is externally linked.
-`hosted_lexer_abi.hpp` names every private event wire value, matching the Aurora
-`Event` declaration order. A generated-code fixture exercises all eight cases
-through independent raw records and compares them with that host enum, including
+The Aurora `Event` declaration is the sole private event list. Meson and Make
+generate the host entries included by `hosted_lexer_abi.hpp` from its declaration
+order; the narrow bootstrap generator rejects unsupported enum syntax. The
+current numeric wire values remain 0 through 7. A generated-code fixture exercises
+all eight cases through independent raw records and compares them with that host enum, including
 invalid cursors. It does not infer parity from matching source text.
 
 The bootstrap invokes `aurorac --local-symbols`, which emits local binding for

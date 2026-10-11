@@ -69,8 +69,9 @@ make run
 make run-uefi
 ```
 
-The package supplies pinned UEFI firmware; comparable local runs explicitly select
-compatible firmware as described in the developer guide. Both commands run
+The supported pinned development container supplies the required UEFI firmware.
+Advanced native runs must match its exact pinned tools and firmware, as described
+in the developer guide. Both commands run
 headless, validate serial output and exit. Images are disposable emulator inputs; do not
 write them to a physical disk or replace your bootloader.
 

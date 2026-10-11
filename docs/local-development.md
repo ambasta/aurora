@@ -196,7 +196,14 @@ only `program-console --console` opens an interactive protected session.
 
 The shared launcher uses the existing profile builders and semantic oracles.
 Lower-level serial smoke adapters retain fault modes, clock plans and isolated
-run-only contracts. Event, BAR/IVRS and graphical/capture adapters remain separate.
+run-only contracts. Specialized workflows share the public entrypoint:
+`iommu-event` and `graphical-console` run their existing smoke/restoration gates,
+with `--build-only` retaining their separate build-only behavior. `framebuffer`
+defaults to one unqualified PNG preview; `--smoke` or `--full-smoke` runs all four
+cases and normal restoration. `bar`/`ivrs` run their coverage-reusing families;
+individual `bar-*`/`ivrs-*` profiles retain required `--output DIR` and optional
+`--run-only IMAGE` arguments after `--smoke`. These routes reject `--console`.
+Their existing admission, pixel, trace and behavioral oracle adapters remain separate.
 Images use `<build>/kernel-images/<bios|uefi>/<profile>` from the native builder.
 Normal and specialized outputs coexist; there is no shared-image restoration
 build. Each profile exports exact object, `.su`, `.ci` and `.source.json` inputs

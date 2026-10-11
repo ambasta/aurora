@@ -10,28 +10,64 @@ usage() {
         'Normal boots are bounded self-tests, not an interactive OS shell (BIOS 15s/UEFI 30s).' \
         'Console --smoke uses the existing PTY oracle; protected fault profiles are smoke-only.' \
         'Overrides: CXX, UEFI_LD, QEMU, QEMU_DATA, OVMF, OVMF_CODE/OVMF_VARS, OVMF_DIR.' \
-        'Specialized Event, BAR/IVRS and graphical/capture runners retain their own contracts.'
+        'Specialized profiles: iommu-event, graphical-console, framebuffer, bar, ivrs, bar-*, ivrs-*.' \
+        'Event/graphical: --smoke (default) or --build-only; their existing oracles own restoration.' \
+        'Framebuffer defaults to one PNG preview: Not qualified evidence. --smoke/--full-smoke runs all cases.' \
+        'BAR/IVRS profiles require --output DIR, optionally --run-only IMAGE; families use existing receipt selectors.'
 }
-program_console_fail() { echo "FAIL: protected console: $*" >&2; exit 1; }
-program_console_blocked() { echo "BLOCKED: protected console: $*" >&2; exit 2; }
+profile_fail() { echo "FAIL: $label: $*" >&2; exit 1; }
+profile_blocked() { echo "BLOCKED: $label: $*" >&2; exit 2; }
 if [[ $# == 1 && ( "$1" == --help || "$1" == -h ) ]]; then usage; exit 0; fi
+profile="${1:-bios}"; label='protected console'
+# These adapters own their prerequisites, clocks, traces and success policy.
+case "$profile" in
+    bar|ivrs)
+        [[ $# == 1 || ( $# == 2 && "$2" == --smoke ) ]] || { usage >&2; exit 2; }
+        exec "$(dirname "$0")/kernel-uefi-$profile-all.sh" ;;
+    bar-state|bar-capture|bar-inherited|bar-read|bar-prepare|bar-write|bar-revoked|bar-alias|ivrs-default|ivrs-read|ivrs-write|ivrs-revoked|ivrs-pair|ivrs-alias|ivrs-reserved|ivrs-scope|ivrs-capability|ivrs-range|ivrs-missing)
+        shift
+        if [[ ${1-} == --smoke ]]; then shift; fi
+        [[ ${1-} != --console ]] || { usage >&2; exit 2; }
+        cd "$(dirname "$0")/.."
+        exec python3 "scripts/kernel-uefi-${profile%%-*}-run.py" "$profile" "$@" ;;
+esac
 if (( $# > 2 )) || [[ $# == 2 && -z "$2" ]]; then usage >&2; exit 2; fi
-profile="${1:-bios}"; action="${2:-}"; protected=false
+action="${2:-}"; protected=false; strict=false
 case "$profile" in
     bios|uefi) platform="$profile"; mode=normal; action="${action:---smoke}" ;;
     bios-console|uefi-console) platform="${profile%-console}"; mode=console; action="${action:---console}" ;;
-    program-*) platform=uefi; mode="$profile"; protected=true; action="${action:---smoke}" ;;
+    program-*) platform=uefi; mode="$profile"; protected=true; strict=true; action="${action:---smoke}" ;;
+    graphical-console|iommu-event) platform=uefi; mode="$profile"; action="${action:---smoke}" ;;
+    framebuffer) platform=uefi; mode="$profile"; strict=true; label='framebuffer preview'; action="${action:-preview}" ;;
     *) usage >&2; exit 2 ;;
 esac
-case "$action" in --console|--smoke) ;; *) usage >&2; exit 2 ;; esac
+case "$action:$profile" in
+    --console:bios|--console:uefi|--console:bios-console|--console:uefi-console|--console:program-*|--smoke:*) ;;
+    --build-only:iommu-event|--build-only:graphical-console) ;;
+    preview:framebuffer) [[ $# == 1 ]] || { usage >&2; exit 2; } ;;
+    --full-smoke:framebuffer) action=--smoke ;;
+    *) usage >&2; exit 2 ;;
+esac
 if [[ "$mode" == normal && "$action" == --console ]]; then mode=console; fi
 cd "$(dirname "$0")/.."
+if [[ "$mode" == iommu-event ]]; then
+    firmware=(); options=()
+    if [[ "$action" == --build-only ]]; then options=(--build-only)
+    else
+        source scripts/uefi-firmware.sh
+        uefi_firmware_select || { echo 'BLOCKED: Event developer smoke requires ordinary OVMF for normal restoration.' >&2; exit 2; }
+        firmware=(--normal-firmware "$UEFI_FIRMWARE_COMBINED" --normal-code "$UEFI_FIRMWARE_CODE" --normal-vars "$UEFI_FIRMWARE_VARS")
+    fi
+    exec python3 -B scripts/kernel_iommu_event_smoke.py "${options[@]}" "${firmware[@]}"
+fi
 if [[ "$protected" == true ]]; then
     case "$mode" in
         program-console|program-request-fault|program-service-fault|program-completion-fault|program-request-budget|program-service-budget|program-completion-budget|program-pending|program-owner|program-ordinal|program-unknown|program-transaction) ;;
-        *) program_console_fail "unknown profile: $mode" ;;
+        *) profile_fail "unknown profile: $mode" ;;
     esac
-    if [[ "$action" == --console && "$mode" != program-console ]]; then program_console_fail 'fault profiles are smoke-only'; fi
+    if [[ "$action" == --console && "$mode" != program-console ]]; then profile_fail 'fault profiles are smoke-only'; fi
+fi
+if [[ "$strict" == true || "$mode" == graphical-console ]]; then
     controls=("${!KERNEL_TEST_@}" AURORA_TEST_CONTEXT KERNEL_USER_PROBE_MODE KERNEL_CONSOLE UEFI_MODE UEFI_CONSOLE_HANDOFF)
 else
     if [[ -n "${AURORA_TEST_CONTEXT:-}" ]]; then
@@ -43,13 +79,13 @@ else
 fi
 for name in "${controls[@]}"; do
     [[ -n "$name" && -n "${!name:-}" ]] || continue
-    if [[ "$protected" == true ]]; then program_console_fail "unset $name before launch or smoke"; fi
+    if [[ "$strict" == true ]]; then profile_fail "unset $name before launch or smoke"; fi
     echo "Unset $name before a normal boot or console; use the smoke scripts for fault modes." >&2
     exit 2
 done
 qemu="${QEMU:-qemu-system-x86_64}"
 # Keep each route's original prerequisite order and timeout ownership.
-if [[ "$protected" == true ]]; then
+if [[ "$strict" == true || "$mode" == graphical-console ]]; then
     required=("$qemu" "${CXX:-g++}" make as ld objcopy objdump nm readelf python3)
 elif [[ "$mode" == console && "$action" == --smoke ]]; then
     required=("$qemu" "${CXX:-g++}" make as ld objcopy nm python3)
@@ -58,48 +94,49 @@ else
     required=("$qemu" timeout)
     if [[ "$mode" == console ]]; then required+=(python3); fi
 fi
-if [[ "$action" == --smoke && "$mode" != normal || "$protected" == true ]]; then export QEMU="$qemu"; fi
+if [[ "$mode" == console && "$action" == --smoke || "$protected" == true ]]; then export QEMU="$qemu"; fi
 for tool in "${required[@]}"; do
     if ! command -v "$tool" >/dev/null; then
-        if [[ "$protected" == true ]]; then program_console_blocked "missing dependency: $tool"; fi
+        if [[ "$strict" == true ]]; then profile_blocked "missing dependency: $tool"; fi
+        if [[ "$mode" == graphical-console ]]; then echo "BLOCKED: missing dependency: $tool" >&2; exit 2; fi
         echo "Missing dependency: $tool" >&2; exit 2
     fi
 done
-if [[ "$action" == --smoke && "$mode" != normal || "$protected" == true ]] && [[ -n "${AURORAC:-}" ]]; then
+if [[ "$mode" == console && "$action" == --smoke || "$strict" == true ]] && [[ -n "${AURORAC:-}" ]]; then
     if ! command -v "$AURORAC" >/dev/null; then
-        if [[ "$protected" == true ]]; then program_console_blocked "missing AURORAC: $AURORAC"; fi
+        if [[ "$strict" == true ]]; then profile_blocked "missing AURORAC: $AURORAC"; fi
         echo "Missing dependency: $AURORAC" >&2; exit 2
     fi
 fi
 if [[ "$platform" == uefi ]]; then source scripts/uefi-firmware.sh; fi
 # Ordinary interactive UEFI historically selects firmware before checking data.
 if [[ "$mode" == console && "$platform" == uefi && "$action" == --console ]]; then uefi_firmware_select; fi
-if [[ -n "${QEMU_DATA:-}" && ! -d "$QEMU_DATA" ]]; then
-    if [[ "$protected" == true ]]; then program_console_blocked 'QEMU_DATA directory is unavailable'; fi
+if [[ "$mode" != graphical-console && -n "${QEMU_DATA:-}" && ! -d "$QEMU_DATA" ]]; then
+    if [[ "$strict" == true ]]; then profile_blocked 'QEMU_DATA directory is unavailable'; fi
     echo 'QEMU_DATA must name an existing directory.' >&2; exit 2
 fi
-if [[ "$protected" == true ]]; then
+if [[ "$strict" == true ]]; then
     # Malformed selectors FAIL; unavailable prerequisites BLOCK. Build/admission
     # status is never reclassified by this preflight.
     if [[ -n "${OVMF:-}" && ( -n "${OVMF_CODE:-}" || -n "${OVMF_VARS:-}" || -n "${OVMF_DIR:-}" ) ]] ||
        [[ -n "${OVMF_DIR:-}" && ( -n "${OVMF_CODE:-}" || -n "${OVMF_VARS:-}" ) ]]; then
-        program_console_fail 'choose only one firmware selector'
+        profile_fail 'choose only one firmware selector'
     fi
     if [[ -n "${OVMF_CODE:-}" && -z "${OVMF_VARS:-}" || -z "${OVMF_CODE:-}" && -n "${OVMF_VARS:-}" ]]; then
-        program_console_fail 'OVMF_CODE and OVMF_VARS must be supplied together'
+        profile_fail 'OVMF_CODE and OVMF_VARS must be supplied together'
     fi
     if [[ -n "${OVMF_CODE:-}" && ( "$OVMF_CODE" == "$OVMF_VARS" || "$OVMF_CODE" -ef "$OVMF_VARS" ) ]]; then
-        program_console_fail 'OVMF_CODE and OVMF_VARS must be separate files'
+        profile_fail 'OVMF_CODE and OVMF_VARS must be separate files'
     fi
-    uefi_firmware_select || program_console_blocked 'UEFI firmware unavailable'
+    uefi_firmware_select || profile_blocked 'UEFI firmware unavailable'
     source scripts/uefi-linker.sh
-    uefi_linker_select || program_console_blocked 'UEFI PE linker unavailable'
+    uefi_linker_select || profile_blocked 'UEFI PE linker unavailable'
     if [[ "$action" == --console ]]; then
-        command -v timeout >/dev/null || program_console_blocked 'missing dependency: timeout'
+        command -v timeout >/dev/null || profile_blocked 'missing dependency: timeout'
     fi
-elif [[ "$platform" == uefi && ( "$mode" == normal || "$action" == --smoke ) ]]; then
+elif [[ "$platform" == uefi && ( "$mode" == normal || "$action" == --smoke || "$mode" == graphical-console ) ]]; then
     uefi_firmware_select
-    if [[ "$mode" == console ]]; then source scripts/uefi-linker.sh; uefi_linker_select; fi
+    if [[ "$mode" == console || "$mode" == graphical-console ]]; then source scripts/uefi-linker.sh; uefi_linker_select; fi
 fi
 if [[ "$mode" == normal ]]; then
     if [[ "$platform" == uefi ]]; then
@@ -109,12 +146,59 @@ if [[ "$mode" == normal ]]; then
     echo 'Running normal BIOS boot self-tests in QEMU (15-second limit).'
     exec ./scripts/kernel-smoke.sh normal
 fi
-if [[ "$action" == --smoke ]]; then trap 'exit 130' INT; trap 'exit 143' TERM; fi
-build_console() {
+build_profile() {
     if [[ "$platform" == bios ]]; then KERNEL_CONSOLE=1 ./scripts/kernel-build.sh --print-image-dir
-    else UEFI_MODE="$mode" ./scripts/kernel-uefi-build.sh --print-image-dir; fi
+    else UEFI_MODE="${1:-$mode}" ./scripts/kernel-uefi-build.sh --print-image-dir; fi
 }
-if image_dir="$(build_console)"; then :; else
+if [[ "$mode" == graphical-console ]]; then
+    [[ ! -L build && ! -L build/uefi && ! -L build/graphical-smoke ]] || { echo 'FAIL: symlink in shared graphical build paths' >&2; exit 2; }
+    mkdir -p build/graphical-smoke
+    window=$(mktemp -d "$PWD/build/graphical-smoke/run-XXXXXX")
+    echo "Graphical smoke files: $window"
+    python3 -B scripts/kernel_graphical_smoke.py --start-run "$window"
+    finish_run() {
+        local status=$?
+        trap - EXIT INT TERM
+        set +e
+        python3 -B scripts/kernel_graphical_smoke.py --finish-run "$window" --status "$status" || {
+            echo "FAIL: graphical smoke retention; evidence remains in $window" >&2
+            if (( status == 0 )); then status=1; fi
+        }
+        exit "$status"
+    }
+    trap finish_run EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    for selected_mode in normal graphical-console graphical-console-capture; do
+        if image_dir="$(build_profile "$selected_mode" 2>"$window/build-$selected_mode.log")"; then :; else
+            status=$?; echo "FAIL: $selected_mode build/admission exited $status; see $window/build-$selected_mode.log" >&2; exit "$status"
+        fi
+        python3 -B scripts/kernel_graphical_smoke.py --stage "$selected_mode" --build-dir "$image_dir" --images "$window/images"
+    done
+    [[ "$action" != --build-only ]] || exit 0
+    python3 -B scripts/kernel_graphical_smoke.py --images "$window/images" --evidence "$window/guests" \
+        "$qemu" "$UEFI_FIRMWARE_COMBINED" "$UEFI_FIRMWARE_CODE" "$UEFI_FIRMWARE_VARS" "${QEMU_DATA:-}"
+    exit 0
+elif [[ "$mode" == framebuffer ]]; then
+    python3 -B scripts/kernel_framebuffer_preview.py --preflight
+    modes=(framebuffer); options=(); image_dir=; profile_root=
+    if [[ "$action" == --smoke ]]; then modes+=(framebuffer-record framebuffer-permissions framebuffer-stale); options=(--full-smoke); fi
+    for selected_mode in "${modes[@]}"; do
+        if selected="$(build_profile "$selected_mode")"; then :; else
+            status=$?; echo "FAIL: framebuffer $selected_mode image build/admission exited $status" >&2; exit "$status"
+        fi
+        if [[ ${#options[@]} != 0 ]]; then
+            [[ ${selected##*/} == "$selected_mode" ]] || profile_fail 'unexpected native framebuffer profile'
+            [[ -z "$profile_root" || ${selected%/*} == "$profile_root" ]] || profile_fail 'profiles selected different native builds'
+            profile_root=${selected%/*}
+        fi
+        if [[ "$selected_mode" == framebuffer ]]; then image_dir=$selected; fi
+    done
+    exec python3 -B scripts/kernel_framebuffer_preview.py "${options[@]}" --build-dir "$image_dir" "$qemu" "$UEFI_FIRMWARE_COMBINED" \
+        "$UEFI_FIRMWARE_CODE" "$UEFI_FIRMWARE_VARS" "${QEMU_DATA:-}"
+fi
+if [[ "$action" == --smoke ]]; then trap 'exit 130' INT; trap 'exit 143' TERM; fi
+if image_dir="$(build_profile)"; then :; else
     status=$?
     if [[ "$protected" == true ]]; then echo "FAIL: protected-console image build/admission exited $status" >&2; fi
     exit "$status"
@@ -141,7 +225,7 @@ fi
 mapfile -d '' -t qemu_argv < <(python3 -B scripts/qemu_transport.py argv --platform "$platform" \
     --mode "$mode" "${options[@]}" --qemu "$qemu" --data "${QEMU_DATA:-}")
 if (( ${#qemu_argv[@]} == 0 )); then
-    if [[ "$protected" == true ]]; then program_console_fail 'empty QEMU command'; fi
+    if [[ "$protected" == true ]]; then profile_fail 'empty QEMU command'; fi
     echo 'FAIL: empty QEMU command' >&2; exit 2
 fi
 if [[ "$platform" == uefi ]]; then

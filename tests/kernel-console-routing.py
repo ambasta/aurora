@@ -196,7 +196,7 @@ class ConsoleRouting(unittest.TestCase):
             self.assert_route(mode)
             self.clear_calls()
 
-    def test_shared_entrypoint_rejects_unknown_or_specialized_routes_without_work(self):
+    def test_shared_entrypoint_rejects_unknown_or_unsupported_routes_without_work(self):
         for args in (
             ("bios", "--other"),
             ("uefi", "--smoke", "extra"),
@@ -207,9 +207,10 @@ class ConsoleRouting(unittest.TestCase):
             ("uefi-console", ""),
             ("program-console", ""),
             ("iommu-event-success", "--smoke"),
-            ("bar-read", "--smoke"),
-            ("ivrs-read", "--smoke"),
-            ("graphical-console", "--smoke"),
+            ("iommu-event", "--console"),
+            ("bar-read", "--console"),
+            ("ivrs-read", "--console"),
+            ("graphical-console", "--console"),
             ("framebuffer", "--console"),
         ):
             self.run_command([BASH, str(self.scripts / "kernel-run.sh"), *args], expected=2)

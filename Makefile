@@ -202,13 +202,13 @@ smoke-program-console-uefi:
 	./scripts/kernel-program-console-smoke.sh
 
 smoke-iommu-event:
-	./scripts/kernel-iommu-event-smoke.sh
+	./scripts/kernel-run.sh iommu-event --smoke
 
 smoke-graphical-console:
-	./scripts/kernel-graphical-smoke.sh
+	./scripts/kernel-run.sh graphical-console --smoke
 
 capture-framebuffer:
-	./scripts/kernel-framebuffer-preview.sh
+	./scripts/kernel-run.sh framebuffer
 
 test-program-stream:
 	./scripts/kernel-program-tests.sh
@@ -361,10 +361,10 @@ smoke-uefi-user-phases:
 
 smoke-all:
 	./scripts/kernel-uefi-tables-all.sh
-	./scripts/kernel-uefi-ivrs-all.sh
+	./scripts/kernel-run.sh ivrs --smoke
 	./scripts/kernel-uefi-pin-all.sh
 	./scripts/kernel-uefi-span-all.sh
-	./scripts/kernel-uefi-bar-all.sh
+	./scripts/kernel-run.sh bar --smoke
 	./scripts/kernel-protection-smoke.sh
 	./scripts/kernel-scheduling-smoke.sh
 	./scripts/kernel-uefi-all.sh
@@ -397,7 +397,7 @@ test-nvme-queues:
 smoke-nvme-prepare:
 	@if [ -z "$${AURORA_NVME_RECEIPTS:-}" ]; then \
 	    printf '%s\n' 'BLOCKED: Set AURORA_NVME_RECEIPTS to a fresh preparation receipt directory' >&2; exit 2; fi
-	python3 scripts/kernel-uefi-bar-run.py bar-prepare \
+	./scripts/kernel-run.sh bar-prepare --smoke \
 	    --output "$${AURORA_NVME_RECEIPTS}"
 
 test-uefi-bar:
@@ -407,7 +407,7 @@ test-uefi-span:
 	./scripts/kernel-uefi-span-tests.sh
 
 smoke-uefi-bar:
-	./scripts/kernel-uefi-bar-all.sh
+	./scripts/kernel-run.sh bar --smoke
 
 smoke-uefi-span:
 	./scripts/kernel-uefi-span-all.sh
@@ -417,7 +417,7 @@ test-uefi-ivrs:
 	./scripts/kernel-uefi-ivrs-tests.sh
 
 smoke-uefi-ivrs:
-	./scripts/kernel-uefi-ivrs-all.sh
+	./scripts/kernel-run.sh ivrs --smoke
 
 .PHONY: test-pin-ledger test-uefi-pins smoke-uefi-pins
 test-pin-ledger:

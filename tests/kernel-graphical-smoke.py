@@ -172,7 +172,8 @@ if action == 'guest':
                     (root / "build/uefi/esp/EFI/BOOT").mkdir(parents=True)
                     (root / "build/uefi/esp/EFI/BOOT/BOOTX64.EFI").write_bytes(b"previous")
                     (root / "build/uefi/legacy.o").write_bytes(b"evidence")
-                shutil.copy(ROOT / "scripts/kernel-graphical-smoke.sh", root / "scripts")
+                for name in ("kernel-graphical-smoke.sh", "kernel-run.sh"):
+                    shutil.copy(ROOT / "scripts" / name, root / "scripts")
                 (root / "scripts/kernel-uefi-build.sh").write_text(builder)
                 (root / "scripts/kernel-uefi-build.sh").chmod(0o755)
                 (root / "scripts/kernel_graphical_smoke.py").write_text(runner)

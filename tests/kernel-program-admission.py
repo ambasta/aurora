@@ -70,39 +70,23 @@ def main():
         changed[index] = replacement
         reject(lambda: admission.check_note_bridge(changed, "private"), "copied note bridge binding")
 
-    # The shared helper owns the exact REP idiom; this layer retains the
-    # private note/file layouts, hidden pointers and number of result paths.
-    copied = admission.load("program_copied_abi", ROOT / "scripts/kernel_snapshot_abi.py").copied_payload
-    parameters = ((0, -272, 272), (272, -336, 64), (336, -344, 8))
-    inputs = [("mov", "%r11,-0xd38(%rbp)"), ("mov", "%r10,-0xd40(%rbp)"), ("mov", "-0xd38(%rbp),%r11")]
-    inputs += copied("r11", 0, "rbp", -272, 272)
-    inputs += [("mov", "-0xd38(%rbp),%r11")] + copied("r11", 272, "rbp", -336, 64)
-    inputs += [("mov", "-0xd38(%rbp),%r11"), ("mov", "0x150(%r11),%rax"), ("mov", "%rax,-0x158(%rbp)")]
-    result_a = [("mov", "-0xd40(%rbp),%r10")] + copied("rbp", -2064, "r10", 0, 520)
-    result_b = [("mov", "-0xd40(%rbp),%r10")] + copied("rbp", -3376, "r10", 0, 520)
-    rows = [("nop", "")] + inputs + [("nop", "")] + result_a + [("nop", "")] + result_b
-
-    def check_copies(candidate, params=parameters, starts=(-2064, -3376), count=520):
-        admission.check_note_copies(candidate, 1, -3384, -3392, params, starts, count, copied)
-
-    check_copies(rows)
-    for index, replacement in (
-        (1, ("mov", "%r11,-0xd30(%rbp)")),
-        (2, ("mov", "%r10,-0xd38(%rbp)")),
-        (3, ("mov", "-0xd30(%rbp),%r11")),
-        (len(inputs), ("mov", "%rax,-0x150(%rbp)")),
+    # Native widths and their order are independent of trusted compiler facts.
+    copied = dict(parameter_bytes=[272, 64, 8], result_bytes=520)
+    admission.check_copied_record(copied, [272, 64, 8], 520)
+    for changed in (
+        None,  # V1 or unsupported V2 ABI must not admit a native boundary.
+        dict(parameter_bytes=[64, 272, 8], result_bytes=520),
+        dict(parameter_bytes=[272, 64], result_bytes=520),
+        dict(parameter_bytes=[272, 64, 8, 8], result_bytes=520),
+        dict(parameter_bytes=[264, 64, 8], result_bytes=520),
+        dict(parameter_bytes=[272, 64, 8], result_bytes=512),
+        dict(parameter_bytes=[272, 64, 8]),
+        dict(copied, extra=True),
     ):
-        changed = list(rows)
-        changed[index] = replacement
-        reject(lambda changed=changed: check_copies(changed), "hidden save/input scalar binding")
-    reject(lambda: check_copies(rows, params=((8, -272, 272),) + parameters[1:]), "copied source offset")
-    reject(lambda: check_copies(rows, params=((0, -264, 272),) + parameters[1:]), "copied destination offset")
-    reject(lambda: check_copies(rows, params=((0, -272, 264),) + parameters[1:]), "copied input extent")
-    reject(lambda: check_copies(rows, count=512), "copied result extent")
-    reject(lambda: check_copies(rows, starts=(-2056, -3376)), "copied result source")
-    reject(lambda: check_copies(rows, starts=(-2064,)), "missing result path")
-    reject(lambda: check_copies(rows + result_a), "extra result path")
-    reject(lambda: check_copies(rows[: -len(result_b)]), "removed result path")
+        reject(
+            lambda changed=changed: admission.check_copied_record(changed, [272, 64, 8], 520),
+            "exact compiler ABI/native boundary mismatch",
+        )
 
     # Scalar AND semantics and hostile destinations are covered by the shared
     # decoder's self-test, not a program-only compiler-layout normalization.

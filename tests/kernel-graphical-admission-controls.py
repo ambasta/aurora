@@ -121,6 +121,59 @@ class NativeArtifacts(unittest.TestCase):
             with self.assertRaises(ValueError):
                 graphical.verify_stack_budgets(14849, 0, 0, 512)
 
+    def test_copied_record_facts_are_versioned_and_closed(self):
+        with tempfile.TemporaryDirectory(prefix="aurora-abi-facts-") as directory:
+            path = Path(directory) / "language.stack.json"
+            _, symbols, code, starts = fixture({"entry": [("ret", "")]}, analyze=False)
+            copied = dict(parameter_bytes=[72, 64, 8], result_bytes=80)
+            fact = dict(local_bytes=512, calls={}, copied_record=copied)
+            document = dict(version=2, functions={"entry": fact})
+
+            def check(value=document):
+                path.write_text(json.dumps(value))
+                return decoder.aurora_stack_functions(path, symbols, code, starts, symbols)["entry"]["copied_record"]
+
+            self.assertEqual(check(), copied)
+            for mutate in (
+                lambda d: d.update(version=1),
+                lambda d: d.update(version=3),
+                lambda d: d.update(version=True),
+                lambda d: d["functions"]["entry"].pop("copied_record"),
+                lambda d: d["functions"]["entry"].update(copied_record=[]),
+                lambda d: d["functions"]["entry"]["copied_record"].update(extra=8),
+                lambda d: d["functions"]["entry"]["copied_record"].pop("result_bytes"),
+                lambda d: d["functions"]["entry"]["copied_record"].update(parameter_bytes={}),
+                lambda d: d["functions"]["entry"]["copied_record"].update(parameter_bytes=[8] * 7),
+            ):
+                changed = deepcopy(document)
+                mutate(changed)
+                with self.assertRaises(ValueError):
+                    check(changed)
+            for size in (True, False, 0, -8, 1, 9, 65544, "8", 8.0, None):
+                for field in ("parameter_bytes", "result_bytes"):
+                    changed = deepcopy(document)
+                    changed["functions"]["entry"]["copied_record"][field] = (
+                        [size] if field == "parameter_bytes" else size
+                    )
+                    with self.assertRaises(ValueError):
+                        check(changed)
+            # Unsupported V2 signatures and historical V1 stack-only facts
+            # carry no copied ABI. Required native boundaries reject null.
+            null = deepcopy(document)
+            null["functions"]["entry"]["copied_record"] = None
+            self.assertIsNone(check(null))
+            null["version"] = 1
+            del null["functions"]["entry"]["copied_record"]
+            self.assertIsNone(check(null))
+            zero = deepcopy(document)
+            zero["functions"]["entry"]["copied_record"]["parameter_bytes"] = []
+            self.assertEqual(check(zero), dict(parameter_bytes=[], result_bytes=80))
+            path.write_text(
+                json.dumps(document).replace('"result_bytes": 80', '"result_bytes": 80, "result_bytes": 80')
+            )
+            with self.assertRaises(ValueError):
+                decoder.aurora_stack_functions(path, symbols, code, starts, symbols)
+
     def test_native_source_object_and_same_compilation_sidecars(self):
         with tempfile.TemporaryDirectory(prefix="native-admission-") as temporary:
             root = Path(temporary)
