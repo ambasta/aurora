@@ -209,6 +209,15 @@ control-transfer forms reject. Compiler metadata and trusted inline assembly are
 part of the assurance boundary; these checks do not independently prove compiler
 correctness, memory authority or termination.
 
+Version 2 Aurora facts also describe the R11 packed-input/R10 copied-result ABI
+for receiver-free dense non-owning values and qword scalar parameters. The four
+note/file boundaries require those facts and retain independent private symbol
+names and ordered native record sizes. Compiler-local frames, spills and return
+paths are not duplicated in their admission checks. Padded, owning, capability
+and receiver signatures have no such fact. Version 1 remains supported only for
+stack accounting; it cannot supply a copied-record boundary contract. These facts
+trust compiler lowering; executable copy/canary and guest tests remain necessary.
+
 Ordinary commands build and check the selected native profile before running the
 same original-clock PTY and hostile transcript oracles:
 

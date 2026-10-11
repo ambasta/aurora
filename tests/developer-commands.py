@@ -196,6 +196,34 @@ class DeveloperCommands(unittest.TestCase):
         self.run_script("compiler-test.sh", "test", expected=2)
         self.assert_no_work()
 
+    def test_specialized_routes_preserve_adapter_arguments_and_failures(self):
+        self.tool("python3", 'printf "python|%s\\n" "$*" >> "$CALLS"\nexit "${FAKE_STATUS:-0}"\n')
+        for mode in ("bar-read", "ivrs-read"):
+            self.run_script(
+                "kernel-run.sh",
+                mode,
+                "--smoke",
+                "--output",
+                "/fresh output",
+                "--run-only",
+                "/native image",
+                env={"FAKE_STATUS": "17"},
+                expected=17,
+            )
+            self.assertEqual(
+                self.calls()[-1],
+                f"python|scripts/kernel-uefi-{mode.split('-')[0]}-run.py "
+                f"{mode} --output /fresh output --run-only /native image",
+            )
+        firmware = self.firmware()
+        self.run_script("kernel-run.sh", "iommu-event", env={"OVMF": firmware})
+        self.assertEqual(
+            self.calls()[-1],
+            f"python|-B scripts/kernel_iommu_event_smoke.py --normal-firmware {firmware} --normal-code  --normal-vars ",
+        )
+        self.run_script("kernel-run.sh", "iommu-event", "--build-only", env={"OVMF": "/missing.fd"})
+        self.assertEqual(self.calls()[-1], "python|-B scripts/kernel_iommu_event_smoke.py --build-only")
+
     def test_bios_default_and_explicit_route_from_other_directory(self):
         self.run_script("kernel-run.sh")
         self.run_script("kernel-run.sh", "bios")

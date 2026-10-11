@@ -638,8 +638,8 @@ test('hosted-lexer-format-cli', python, args: ['-B', '-O', files('compiler/forma
      workdir: meson.current_build_dir(), timeout: 180)
 
 hosted_lexer_invalid = executable(
-    'hosted-lexer-invalid', ['compiler/hosted_lexer_invalid.cpp', '../compiler/hosted_lexer.cpp'],
-    cpp_args: ['-DAURORA_HOSTED_LEXER'], include_directories: include_directories('../compiler'),
+    'hosted-lexer-invalid', ['compiler/hosted_lexer_invalid.cpp', '../compiler/hosted_lexer.cpp', lexer_events],
+    cpp_args: ['-DAURORA_HOSTED_LEXER'], include_directories: include_directories('../compiler', '..'),
     native: true, install: false,
 )
 test('hosted-lexer-invalid', hosted_lexer_invalid, suite: ['full', 'dev', 'core', 'compiler'], timeout: 30)

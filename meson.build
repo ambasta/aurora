@@ -8,6 +8,10 @@ project(
 # The compiler runs on the build machine, even when a future target is cross-built.
 native_cpp = meson.get_compiler('cpp', native: true)
 python = find_program('python3', native: true)
+lexer_events = custom_target(
+  'hosted-lexer-events', input: 'compiler/lexer.au', output: 'hosted_lexer_events.inc',
+  command: [python, '-B', files('scripts/bootstrap_lexer.py'), '--events', '@INPUT@', '@OUTPUT@'],
+)
 # Stage 0 retains the C++ scanner solely as the bootstrap seed/reference.
 aurorac_stage0 = executable('aurorac-stage0', 'compiler/main.cpp', native: true, install: false)
 lexer_assembly = custom_target(
@@ -21,10 +25,12 @@ lexer_object = custom_target(
   command: native_cpp.cmd_array() + ['-c', '-x', 'assembler', '@INPUT@', '-o', '@OUTPUT@'],
 )
 lexer_library = static_library(
-  'hosted-lexer', ['compiler/hosted_lexer.cpp', lexer_object],
+  'hosted-lexer', ['compiler/hosted_lexer.cpp', lexer_object, lexer_events],
   cpp_args: ['-DAURORA_HOSTED_LEXER'], native: true, install: false,
 )
-hosted_lexer = declare_dependency(link_with: lexer_library, compile_args: ['-DAURORA_HOSTED_LEXER'])
+hosted_lexer = declare_dependency(link_with: lexer_library, sources: lexer_events,
+                                include_directories: include_directories('.'),
+                                compile_args: ['-DAURORA_HOSTED_LEXER'])
 aurorac = executable('aurorac', 'compiler/main.cpp', dependencies: hosted_lexer, native: true, install: false)
 aurora_fmt = executable('aurora-fmt', 'compiler/format_main.cpp', dependencies: hosted_lexer,
                         native: true, install: false)
@@ -58,8 +64,8 @@ if get_option('kernel_images')
   toolchain_args += ['--pe-linker', pe_linker.full_path()]
 endif
 
-# The image fixes distributed tools; explicit PATH/CXX also supports comparable
-# local tools. Check versions once at setup; Ninja tracks build inputs thereafter.
+# The supported container fixes exact tool versions; advanced native runs must
+# match those pinned tools via PATH/CXX. Check once at setup; Ninja tracks inputs.
 toolchain_check = run_command(python, '-B', files('scripts/meson_toolchain.py'),
                               '--cxx', oracle_cxx, toolchain_args, check: false)
 if toolchain_check.returncode() != 0

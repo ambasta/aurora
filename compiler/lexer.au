@@ -3,7 +3,7 @@ module aurora.compiler.lexer;
 // This module only observes a synchronous readonly span and returns copied
 // coordinates. The hosted bootstrap adapter is the sole foreign input boundary.
 namespace compiler_lexer {
-    // Private bootstrap wire order: keep hosted_lexer_abi.hpp in sync.
+    // Authoritative private wire order; the build generates the host enum entries.
     // The generated-code fixture checks every case against that host mapping.
     enum class Event {
         token,

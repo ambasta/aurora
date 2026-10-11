@@ -108,6 +108,11 @@ void frameTests() {
             const auto &facts = emitter.stackFacts().at("probe_scalar");
             require(facts.localBytes == bytes + hidden + 16 && facts.calls.empty(),
                     "frame facts omit return slot, saved RBP or private ABI slots");
+            require(facts.copiedRecord.has_value() == (mode == "aggregate"), "copied ABI excludes receiver modes");
+            if (facts.copiedRecord)
+                require(facts.copiedRecord->parameterBytes == std::vector<int>{8} &&
+                            facts.copiedRecord->resultBytes == 8,
+                        "copied ABI uses canonical input/result sizes");
             auto at = reservation(lines, 2, bytes + hidden);
             const auto save = [&](const std::string &reg, int offset) {
                 require(at < lines.size() &&
@@ -298,11 +303,59 @@ void stackFactTests() {
     require(emitter.stackFacts().size() == 3 && !emitter.stackFacts().contains("branches"),
             "reused emitter retained stale metadata");
     require(emitter.stackFactsJson() ==
-                "{\"version\":1,\"functions\":{\"aurora_reflect_field_count\":{\"local_bytes\":8,\"calls\":{}},"
-                "\"aurora_reflect_size\":{\"local_bytes\":8,\"calls\":{}},"
-                "\"probe_scalar\":{\"local_bytes\":16,\"calls\":{}}}}\n",
+                "{\"version\":2,\"functions\":{\"aurora_reflect_field_count\":{\"local_bytes\":8,\"calls\":{},"
+                "\"copied_record\":null},"
+                "\"aurora_reflect_size\":{\"local_bytes\":8,\"calls\":{},\"copied_record\":null},"
+                "\"probe_scalar\":{\"local_bytes\":16,\"calls\":{},\"copied_record\":null}}}\n",
             "compact deterministic metadata format");
     ++passed;
+}
+void copiedRecordFacts() {
+    for (const auto &leaves : std::vector<std::vector<Type>>{
+             {}, {Type::U8}, {Type::U8, Type::I64}, {Type::I64, Type::U8}, std::vector<Type>(8, Type::U8)}) {
+        auto module = fixture(32, "aggregate");
+        module.classLayouts["Box"] = leaves;
+        auto &function = module.functions[0];
+        function.slots.clear();
+        int offset = 0;
+        for (const auto &type : leaves) {
+            if (type != Type::U8)
+                offset = (offset + 7) / 8 * 8;
+            function.slots[32 - offset] = type;
+            offset += type == Type::U8 ? 1 : 8;
+        }
+        function.objectSlots = {{32, {"Box", false}}};
+        function.code = {BindObjectParameter{0, 32, "Box"}, ReturnObject{32}};
+        X86Emitter emitter;
+        (void)emitter.emit(validate(std::move(module)));
+        const auto &facts = emitter.stackFacts().at("probe_scalar").copiedRecord;
+        require(facts.has_value() == (leaves.size() == 8), "copied ABI rejects empty and padded classes");
+        if (facts)
+            require(facts->parameterBytes == std::vector<int>{8} && facts->resultBytes == 8,
+                    "dense byte leaves retain physical ABI size");
+        ++passed;
+    }
+    for (const auto &type : {Type::I64, Type::U64, Type::Bool, Type::U8}) {
+        auto module = fixture(32, "aggregate");
+        module.classLayouts["Box"] = {Type::I64, Type::I64};
+        auto &function = module.functions[0];
+        function.parameters.push_back(type);
+        function.slots = {{16, Type::I64}, {8, Type::I64}, {24, type}};
+        function.objectSlots = {{16, {"Box", false}}};
+        function.code = {BindObjectParameter{0, 16, "Box"}, BindParameter{1, 24, type}, ReturnObject{16}};
+        X86Emitter emitter;
+        (void)emitter.emit(validate(std::move(module)));
+        const auto &facts = emitter.stackFacts().at("probe_scalar").copiedRecord;
+        require(facts.has_value() == (type != Type::U8), "copied ABI admits only qword scalar parameters");
+        if (facts) {
+            require(facts->parameterBytes == std::vector<int>({16, 8}) && facts->resultBytes == 16,
+                    "copied ABI preserves parameter order and packed scalar extent");
+            require(emitter.stackFactsJson().find(
+                        "\"copied_record\":{\"parameter_bytes\":[16,8],\"result_bytes\":16}") != std::string::npos,
+                    "copied ABI JSON retains the emitted sizes and order");
+        }
+        ++passed;
+    }
 }
 void serviceStackFacts() {
     for (const bool odd : {false, true}) {
@@ -343,6 +396,8 @@ void serviceStackFacts() {
         X86Emitter emitter;
         const auto assembly = emitter.emit(validate(std::move(module)));
         const auto &facts = emitter.stackFacts();
+        require(!facts.at("pixel").copiedRecord && !facts.at("pixel_caller").copiedRecord,
+                "service entries do not advertise copied-record ABI");
         require(facts.at("pixel").localBytes == (odd ? 128 : 120) &&
                     facts.at("pixel").calls == std::map<std::string, int>{{"__au_runtime_display_pixel", 96}},
                 "pixel facts omit operand pushes or seventh host argument/alignment");
@@ -379,6 +434,8 @@ void resourceStackFacts() {
     X86Emitter emitter;
     (void)emitter.emit(validate(std::move(module)));
     const auto &facts = emitter.stackFacts();
+    require(!facts.at("resource_caller").copiedRecord && !facts.at("resource_callee").copiedRecord,
+            "resource entries do not advertise copied-record ABI");
     require(facts.at("resource_caller").localBytes == 128 &&
                 facts.at("resource_caller").calls == std::map<std::string, int>{{"resource_callee", 128},
                                                                                 {"__au_runtime_bytes_allocate", 80},
@@ -414,6 +471,7 @@ int main(int argc, char **argv) {
         callTests();
         malformedFrames();
         stackFactTests();
+        copiedRecordFacts();
         serviceStackFacts();
         resourceStackFacts();
         std::cout << passed << " stack-probe IR/assembly cases passed\n";
