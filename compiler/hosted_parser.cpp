@@ -7,6 +7,7 @@
 #include <array>
 #include <cstddef>
 #include <limits>
+#include <utility>
 
 #ifndef AURORA_HOSTED_PARSER
 #error The hosted parser adapter requires AURORA_HOSTED_PARSER
@@ -164,13 +165,18 @@ ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens, std::size_
         invalid();
     std::vector<ExpressionPtr> nodes;
     std::vector<bool> used;
+    std::vector<bool> tokenUsed(static_cast<std::size_t>(result.tokens), false);
+    std::vector<std::pair<std::int64_t, std::int64_t>> bounds;
     nodes.reserve(static_cast<std::size_t>(result.count));
+    bounds.reserve(static_cast<std::size_t>(result.count));
     used.resize(static_cast<std::size_t>(result.count), false);
     for (std::int64_t index = 0; index < result.count; ++index) {
         Node node;
         aurora_hosted_parser_read(arena.data(), index, &node);
-        if (node.token < 0 || node.token >= result.tokens || node.depth < 1 || node.depth > 128)
+        if (node.token < 0 || node.token >= result.tokens || node.depth < 1 || node.depth > 128 ||
+            tokenUsed[static_cast<std::size_t>(node.token)])
             invalid();
+        tokenUsed[static_cast<std::size_t>(node.token)] = true;
         const auto &token = tokens[position + static_cast<std::size_t>(node.token)];
         std::string op;
         if (node.kind == NodeKind::Name && identifier(token.text) && token.text != "true" && token.text != "false")
@@ -188,9 +194,17 @@ ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens, std::size_
         else
             invalid();
         auto expression = std::make_shared<Expression>(op, token);
-        const auto attach = [&](std::int64_t child) {
+        auto firstToken = node.token, lastToken = node.token;
+        const auto attach = [&](std::int64_t child, bool beforeOperator) {
             if (child < 0 || child >= index || used[static_cast<std::size_t>(child)])
                 invalid();
+            const auto [childFirst, childLast] = bounds[static_cast<std::size_t>(child)];
+            if (beforeOperator ? childLast >= node.token : childFirst <= node.token)
+                invalid();
+            if (beforeOperator)
+                firstToken = childFirst;
+            else
+                lastToken = childLast;
             used[static_cast<std::size_t>(child)] = true;
             const auto &value = nodes[static_cast<std::size_t>(child)];
             expression->depth = std::max(expression->depth, value->depth + 1);
@@ -199,19 +213,25 @@ ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens, std::size_
             expression->args.push_back(value);
         };
         if (node.kind == NodeKind::Unary || node.kind == NodeKind::Binary)
-            attach(node.first);
+            attach(node.first, node.kind == NodeKind::Binary);
         else if (node.first != -1)
             invalid();
         if (node.kind == NodeKind::Binary)
-            attach(node.second);
+            attach(node.second, false);
         else if (node.second != -1)
             invalid();
         if (node.depth != expression->depth)
             invalid();
+        bounds.emplace_back(firstToken, lastToken);
         nodes.push_back(std::move(expression));
     }
     if (std::count(used.begin(), used.end(), false) != 1 || used.back())
         invalid();
+    // Grouping is the only consumed syntax without an AST node. Bind every
+    // other token exactly once without reimplementing Aurora's precedence rules.
+    for (std::size_t index = 0; index < tokenUsed.size(); ++index)
+        if (!tokenUsed[index] && tokens[position + index].text != "(" && tokens[position + index].text != ")")
+            invalid();
     position = end;
     return nodes.back();
 }

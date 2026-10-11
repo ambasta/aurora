@@ -153,6 +153,46 @@ int main() {
         invalid("binary references literal", [] {
             records[2][1] = 0;
         });
+        invalid("two literals reuse one source token", [] {
+            records[1][1] = 0;
+        });
+        invalid("binary operands reverse source order", [] {
+            records[2][2] = 1;
+            records[2][3] = 0;
+        });
+        for (const auto token : {0, 2})
+            invalid("consumed expression reduced to one leaf", [=] {
+                result[1] = 0;
+                result[2] = count = 1;
+                records = {{wire(NodeKind::Literal), token, -1, -1, 1}};
+            });
+        invalid(
+            "consumed interior tokens omitted",
+            [] {
+                result[3] = result[4] = 5;
+                records[1][1] = 4;
+            },
+            "1+2*3;");
+        invalid(
+            "unary operand precedes operator",
+            [] {
+                result = {wire(Status::Success), 1, 2, 2, 2};
+                count = 2;
+                records = {{wire(NodeKind::Literal), 0, -1, -1, 1}, {wire(NodeKind::Unary), 1, 0, -1, 2}};
+            },
+            "1-;");
+        invalid(
+            "subtree source ranges cross",
+            [] {
+                result = {wire(Status::Success), 4, 5, 5, 5};
+                count = 5;
+                records = {{wire(NodeKind::Literal), 0, -1, -1, 1},
+                           {wire(NodeKind::Literal), 4, -1, -1, 1},
+                           {wire(NodeKind::Binary), 1, 0, 1, 2},
+                           {wire(NodeKind::Literal), 2, -1, -1, 1},
+                           {wire(NodeKind::Binary), 3, 2, 3, 3}};
+            },
+            "1+2+3;");
         for (const auto token : {-1, 3, 4})
             invalid("invalid node token", [=] {
                 records[0][1] = token;

@@ -39,8 +39,9 @@ inside unsupported constructs remain on the C++ reference path.
 creates and consumes the arena; C++ only reserves opaque storage and imports the
 same immutable source snapshot used by the lexer. Copied results contain named
 status values, indices and source offsets. The adapter checks token/spelling/span
-bounds, exact stopping delimiter, child-before-parent order, arity, independently
-recomputed depth and one connected non-sharing tree before committing position.
+bounds, exact stopping delimiter, unique complete non-parenthesis token coverage,
+subtree source order, child-before-parent order, arity, independently recomputed
+depth and one connected non-sharing tree before committing position.
 It constructs the existing `Expression` objects iteratively. All exits, including
 fallback, syntax errors and host allocation exceptions, consume the Aurora owner
 before the host Region closes. Semantic checking, typed IR and backend emission
