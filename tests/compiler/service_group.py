@@ -22,9 +22,15 @@ def run(command):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("compiler", type=Path)
-    compiler = parser.parse_args().compiler.resolve()
-    (ROOT / "build").mkdir(exist_ok=True)
-    work = Path(tempfile.mkdtemp(prefix="service-group-", dir=ROOT / "build"))
+    parser.add_argument("--artifacts", type=Path)
+    args = parser.parse_args()
+    compiler = args.compiler.resolve()
+    if args.artifacts:
+        work = args.artifacts.resolve()
+        work.mkdir(parents=True)
+    else:
+        (ROOT / "build").mkdir(exist_ok=True)
+        work = Path(tempfile.mkdtemp(prefix="service-group-", dir=ROOT / "build"))
     assembly = work / "group.s"
     result = run([compiler, ROOT / "tests/compiler/service_group.au", "-o", assembly])
     require(result.returncode == 0, result.stderr.decode())

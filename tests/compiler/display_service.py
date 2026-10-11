@@ -23,9 +23,15 @@ def run(command, **kwargs):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("compiler", type=Path)
-    compiler = parser.parse_args().compiler.resolve()
-    (ROOT / "build").mkdir(exist_ok=True)
-    work = Path(tempfile.mkdtemp(prefix="display-service-", dir=ROOT / "build"))
+    parser.add_argument("--artifacts", type=Path)
+    args = parser.parse_args()
+    compiler = args.compiler.resolve()
+    if args.artifacts:
+        work = args.artifacts.resolve()
+        work.mkdir(parents=True)
+    else:
+        (ROOT / "build").mkdir(exist_ok=True)
+        work = Path(tempfile.mkdtemp(prefix="display-service-", dir=ROOT / "build"))
     modules = work / "modules"
     (modules / "display").mkdir(parents=True)
     (modules / "display/helpers.au").write_text("""export module display.helpers;
@@ -178,7 +184,17 @@ __au_runtime_display_entry:
         source.write_text("module rejected; " + body)
         result = run([compiler, source, "-o", work / "rejected.s"])
         require(result.returncode != 0 and result.stderr, "invalid Display source accepted: " + name)
-    grouped = run([sys.executable, "-B", "-O", ROOT / "tests/compiler/service_group.py", compiler])
+    grouped = run(
+        [
+            sys.executable,
+            "-B",
+            "-O",
+            ROOT / "tests/compiler/service_group.py",
+            compiler,
+            "--artifacts",
+            work / "service-group",
+        ]
+    )
     require(grouped.returncode == 0, grouped.stdout.decode() + grouped.stderr.decode())
     print(grouped.stdout.decode(), end="")
     print(

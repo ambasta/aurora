@@ -801,15 +801,22 @@ class BarRunner(unittest.TestCase):
                 self.provenance.validate.reset_mock()
                 shutil.rmtree(self.out)
 
+    def prepare_public_make(self):
+        shutil.copy2(ROOT / "Makefile", self.repo / "Makefile")
+        shutil.copy2(ROOT / "scripts/kernel-run.sh", self.repo / "scripts/kernel-run.sh")
+        bin_path = self.home / "bin"
+        bin_path.mkdir()
+        for name in ("bash", "dirname"):
+            (bin_path / name).symlink_to(shutil.which(name, path=os.defpath))
+        return bin_path
+
     def prepare_public_runner(self):
         """Run real Make/main/lifecycle with synthetic validators, images and QEMU."""
-        shutil.copy2(ROOT / "Makefile", self.repo / "Makefile")
+        self.public_bin = self.prepare_public_make()
         for name in ("kernel-uefi-bar-run.py", "qemu_transport.py", "kernel_profiles.py", "kernel_trace_controls.py"):
             shutil.copy2(ROOT / "scripts" / name, self.repo / "scripts" / name)
         self.python_calls = self.home / "python-calls"
         self.main_status = self.home / "main-status"
-        self.public_bin = self.home / "bin"
-        self.public_bin.mkdir()
         python = self.public_bin / "python3"
         python.write_text(
             "#!"
@@ -981,9 +988,7 @@ if __name__ == "__main__":
                 self.calls.unlink()
 
     def test_public_make_exports_receipt_and_fixture_selectors(self):
-        shutil.copy2(ROOT / "Makefile", self.repo / "Makefile")
-        bin_path = self.home / "bin"
-        bin_path.mkdir()
+        bin_path = self.prepare_public_make()
         python = bin_path / "python3"
         python.write_text(
             '#!/bin/sh\nprintf "%s|%s|%s|%s\\n" "$*" "$AURORA_BAR_FIRMWARE" '

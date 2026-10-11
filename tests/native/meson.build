@@ -6,14 +6,22 @@ native_adapter = files('../../scripts/meson-native-run.py')
 native_fixture = files('../../scripts/meson-native-fixture.py')
 native_adapter_args = ['-B', native_adapter, '--repo', native_root,
                        '--build-root', native_output, '--cxx', oracle_cxx]
-native_test_env = environment()
-native_test_env.set('PYTHONDONTWRITEBYTECODE', '1')
-native_test_env.set('TMPDIR', native_output)
-native_test_env.set('TMP', native_output)
-native_test_env.set('TEMP', native_output)
-native_test_env.set('CXX', oracle_cxx)
-native_test_env.set('ASAN_OPTIONS', 'detect_leaks=0:halt_on_error=1:abort_on_error=1')
-native_test_env.set('UBSAN_OPTIONS', 'halt_on_error=1:print_stacktrace=1')
+native_test_variables = {
+  'PYTHONDONTWRITEBYTECODE': '1',
+  'TMPDIR': native_output,
+  'TMP': native_output,
+  'TEMP': native_output,
+  'CXX': oracle_cxx,
+  'ASAN_OPTIONS': 'detect_leaks=0:halt_on_error=1:abort_on_error=1',
+  'UBSAN_OPTIONS': 'halt_on_error=1:print_stacktrace=1',
+}
+native_test_env = environment(native_test_variables)
+# Some legacy runners require source-contained output even for out-of-tree builds.
+native_artifact_env = environment(native_test_variables)
+native_artifact_env.set('TMPDIR', native_root)
+native_artifact_env.set('TMP', native_root)
+native_artifact_env.set('TEMP', native_root)
+native_artifact_args = ['-B', artifact_adapter, python] + native_adapter_args
 
 # Shared generated Aurora fixtures have Ninja dependencies and private outputs.
 native_bios_object = custom_target('native-bios-policy',
@@ -336,8 +344,9 @@ test('native-kernel-boot-image', python, args: ['-B', files('../../tests/kernel-
 test('native-kernel-boot-capacity', python, args: ['-B', files('../../tests/kernel-boot-capacity.py')],
      suite: ['full', 'slow', 'boot'], env: native_test_env,
      workdir: native_root, timeout: 300)
-test('native-native-cap-contracts', python, args: ['-B', files('../../tests/native-cap-contracts.py')],
-     suite: ['full', 'slow', 'integration'], env: native_test_env,
+test('native-native-cap-contracts', python,
+     args: ['-B', artifact_adapter, python, '-B', files('../../tests/native-cap-contracts.py'), '--artifacts', '@ARTIFACTS@'],
+     suite: ['full', 'slow', 'integration'], env: native_artifact_env,
      workdir: native_root, timeout: 300)
 # These controls observe the whole source/build tree; unrelated writers must stop.
 test('native-test-compiler-contract', python, args: ['-B', files('../../tests/test_compiler_contract.py')],
@@ -379,8 +388,9 @@ test('native-kernel-boot-image-optimized', python, args: ['-B', '-O', files('../
 test('native-kernel-boot-capacity-optimized', python, args: ['-B', '-O', files('../../tests/kernel-boot-capacity.py')],
      suite: ['full', 'slow', 'boot'], env: native_test_env,
      workdir: native_root, timeout: 300)
-test('native-native-cap-contracts-optimized', python, args: ['-B', '-O', files('../../tests/native-cap-contracts.py')],
-     suite: ['full', 'slow', 'integration'], env: native_test_env,
+test('native-native-cap-contracts-optimized', python,
+     args: ['-B', artifact_adapter, python, '-B', '-O', files('../../tests/native-cap-contracts.py'), '--artifacts', '@ARTIFACTS@'],
+     suite: ['full', 'slow', 'integration'], env: native_artifact_env,
      workdir: native_root, timeout: 300)
 test('native-test-compiler-contract-optimized', python, args: ['-B', '-O', files('../../tests/test_compiler_contract.py')],
      suite: ['full', 'slow', 'integration'], env: native_test_env,
@@ -410,33 +420,33 @@ test('native-semantics', python, args: native_adapter_args + ['--compiler', auro
      suite: ['full', 'slow', 'semantics'], env: native_test_env,
      workdir: native_root, timeout: 1200, depends: aurorac)
 test('native-protected-note', python,
-     args: native_adapter_args + ['--compiler', aurorac, '--', find_program('bash', native: true),
-                                 files('../../scripts/kernel-program-note-tests.sh'), native_output / 'program-note'],
-     depends: aurorac, suite: ['full', 'slow', 'integration'], env: native_test_env,
+     args: native_artifact_args + ['--compiler', aurorac, '--', find_program('bash', native: true),
+                                  files('../../scripts/kernel-program-note-tests.sh'), '@ARTIFACTS@'],
+     depends: aurorac, suite: ['full', 'slow', 'integration'], env: native_artifact_env,
      workdir: native_root, timeout: 900)
 test('native-protected-snapshot', python,
-     args: native_adapter_args + ['--compiler', aurorac, '--', find_program('bash', native: true),
-                                 files('../../scripts/kernel-snapshot-tests.sh'), native_output / 'snapshot'],
-     depends: aurorac, suite: ['full', 'slow', 'integration'], env: native_test_env,
+     args: native_artifact_args + ['--compiler', aurorac, '--', find_program('bash', native: true),
+                                  files('../../scripts/kernel-snapshot-tests.sh'), '@ARTIFACTS@'],
+     depends: aurorac, suite: ['full', 'slow', 'integration'], env: native_artifact_env,
      workdir: native_root, timeout: 900)
 test('native-snapshot-smoke-controls', python,
      args: ['-B', '-O', files('../../tests/kernel-snapshot-smoke.py'), '--self-test'],
      suite: ['full', 'slow', 'integration'], env: native_test_env,
      workdir: native_root, timeout: 180)
-test('native-policy-budget', python, args: native_adapter_args + ['--compiler', aurorac, '--', python, '-B', '-O', native_root / 'tests/kernel-budget-native.py', '--compiler', aurorac, '--meson-selected-compiler', '--candidate-cap-mib', '1024'],
-     depends: aurorac, suite: ['full', 'slow', 'integration'], env: native_test_env,
+test('native-policy-budget', python, args: native_artifact_args + ['--compiler', aurorac, '--', python, '-B', '-O', native_root / 'tests/kernel-budget-native.py', '--compiler', aurorac, '--meson-selected-compiler', '--candidate-cap-mib', '1024', '--output', '@ARTIFACTS@'],
+     depends: aurorac, suite: ['full', 'slow', 'integration'], env: native_artifact_env,
      workdir: native_root, timeout: 900)
-test('native-policy-round-robin', python, args: native_adapter_args + ['--compiler', aurorac, '--', python, '-B', '-O', files('../../tests/kernel-round-robin-native.py'), '--compiler', aurorac, '--meson-selected-compiler', '--candidate-cap-mib', '1024'],
-     depends: aurorac, suite: ['full', 'slow', 'integration'], env: native_test_env,
+test('native-policy-round-robin', python, args: native_artifact_args + ['--compiler', aurorac, '--', python, '-B', '-O', files('../../tests/kernel-round-robin-native.py'), '--compiler', aurorac, '--meson-selected-compiler', '--candidate-cap-mib', '1024', '--output', '@ARTIFACTS@'],
+     depends: aurorac, suite: ['full', 'slow', 'integration'], env: native_artifact_env,
      workdir: native_root, timeout: 900)
-test('native-policy-ipc-transition', python, args: native_adapter_args + ['--compiler', aurorac, '--', python, '-B', '-O', files('../../tests/kernel-ipc-transition-native.py'), '--compiler', aurorac, '--meson-selected-compiler', '--candidate-cap-mib', '1024'],
-     depends: aurorac, suite: ['full', 'slow', 'integration'], env: native_test_env,
+test('native-policy-ipc-transition', python, args: native_artifact_args + ['--compiler', aurorac, '--', python, '-B', '-O', files('../../tests/kernel-ipc-transition-native.py'), '--compiler', aurorac, '--meson-selected-compiler', '--candidate-cap-mib', '1024', '--output', '@ARTIFACTS@'],
+     depends: aurorac, suite: ['full', 'slow', 'integration'], env: native_artifact_env,
      workdir: native_root, timeout: 900)
-test('native-policy-client-disposal', python, args: native_adapter_args + ['--compiler', aurorac, '--', python, '-B', '-O', files('../../tests/kernel-client-disposal-native.py'), '--compiler', aurorac, '--meson-selected-compiler'],
-     depends: aurorac, suite: ['full', 'slow', 'integration'], env: native_test_env,
+test('native-policy-client-disposal', python, args: native_artifact_args + ['--compiler', aurorac, '--', python, '-B', '-O', files('../../tests/kernel-client-disposal-native.py'), '--compiler', aurorac, '--meson-selected-compiler', '--output', '@ARTIFACTS@'],
+     depends: aurorac, suite: ['full', 'slow', 'integration'], env: native_artifact_env,
      workdir: native_root, timeout: 900)
-test('native-policy-terminal-event', python, args: native_adapter_args + ['--compiler', aurorac, '--', python, '-B', '-O', native_root / 'tests/kernel-terminal-event-native.py', '--compiler', aurorac, '--meson-selected-compiler'],
-     depends: aurorac, suite: ['full', 'slow', 'integration'], env: native_test_env,
+test('native-policy-terminal-event', python, args: native_artifact_args + ['--compiler', aurorac, '--', python, '-B', '-O', native_root / 'tests/kernel-terminal-event-native.py', '--compiler', aurorac, '--meson-selected-compiler', '--output', '@ARTIFACTS@'],
+     depends: aurorac, suite: ['full', 'slow', 'integration'], env: native_artifact_env,
      workdir: native_root, timeout: 900)
 test('native-pin-integration', python, args: native_adapter_args + ['--shared-output'] + ['--', find_program('bash', native: true), files('../../scripts/kernel-pin-tests.sh')],
      suite: ['full', 'slow', 'integration'], env: native_test_env, workdir: native_root,
@@ -444,7 +454,7 @@ test('native-pin-integration', python, args: native_adapter_args + ['--shared-ou
 test('native-nvme-queue-integration', python, args: native_adapter_args + ['--shared-output'] + ['--', find_program('bash', native: true), files('../../scripts/kernel-nvme-queue-tests.sh')],
      suite: ['full', 'slow', 'integration'], env: native_test_env, workdir: native_root,
      timeout: 1800)
-test('native-dormant-integration', python, args: native_adapter_args + ['--', find_program('bash', native: true), files('../../scripts/kernel-dormant-tests.sh')],
+test('native-dormant-integration', python, args: native_artifact_args + ['--', find_program('bash', native: true), files('../../scripts/kernel-dormant-tests.sh'), '@ARTIFACTS@'],
      suite: ['full', 'slow', 'integration'], env: native_test_env, workdir: native_root,
      timeout: 1800)
 if get_option('kernel_images')

@@ -1,6 +1,7 @@
 #pragma once
 #include "ir_layout.hpp"
 #include <algorithm>
+#include <optional>
 #include <span>
 #include <sstream>
 #include <type_traits>
@@ -19,6 +20,13 @@ enum class ReflectionEmission {
     All,
     Referenced
 };
+// This narrow ABI uses R11 for dense copied input and R10 for copied output.
+// It describes trusted lowering, never permission to call an emitted symbol.
+class CopiedRecordFacts {
+public:
+    std::vector<int> parameterBytes;
+    int resultBytes;
+};
 // Stack use follows the instructions emitted below, not a second ABI calculator.
 // Like GCC .su, localBytes includes the incoming return address. Call-site bytes
 // stop immediately before CALL; the callee's own incoming slot is counted there.
@@ -26,6 +34,7 @@ class FunctionStackFacts {
 public:
     int localBytes = 8;
     std::map<std::string, int> calls;
+    std::optional<CopiedRecordFacts> copiedRecord;
 };
 // This backend accepts validated typed IR only. It has no AST, scope, borrow or move state.
 class X86Emitter {
@@ -265,6 +274,35 @@ class X86Emitter {
         for (std::size_t index = 0; index < parameter; ++index)
             offset += argumentBytes(function.parameters[index]);
         return offset;
+    }
+    std::optional<CopiedRecordFacts> copiedRecordFacts(const ir::Function &function) const {
+        if (function.receiver || !function.result.isClass())
+            return std::nullopt;
+        const auto bytes = [&](const Type &type) {
+            if (!type.isClass())
+                return scalarValue(type) && ir::storageWidth(type) == 8 ? argumentBytes(type) : 0;
+            if (ir::owningClass(*classFields, type.className))
+                return 0;
+            const auto &physical = classStorage->at(type.className);
+            const auto &leaves = classLayouts->at(type.className);
+            int cursor = 0;
+            for (std::size_t leaf = 0; leaf < leaves.size(); ++leaf) {
+                if (physical.leafOffsets[leaf] != cursor)
+                    return 0;
+                cursor += ir::storageWidth(leaves[leaf]);
+            }
+            return cursor == physical.reservedBytes ? argumentBytes(type) : 0;
+        };
+        CopiedRecordFacts facts{{}, bytes(function.result)};
+        if (!facts.resultBytes)
+            return std::nullopt;
+        for (const auto &type : function.parameters) {
+            const int extent = bytes(type);
+            if (!extent)
+                return std::nullopt;
+            facts.parameterBytes.push_back(extent);
+        }
+        return facts;
     }
     const ir::ClassField &receiverField(int fieldIndex) const {
         return classFields->at(currentFunction->receiver->className)[fieldIndex];
@@ -1315,7 +1353,7 @@ public:
     }
     std::string stackFactsJson() const {
         std::ostringstream facts;
-        facts << "{\"version\":1,\"functions\":{";
+        facts << "{\"version\":2,\"functions\":{";
         bool firstFunction = true;
         for (const auto &[symbol, usage] : emittedStackFacts) {
             if (!std::exchange(firstFunction, false))
@@ -1329,7 +1367,19 @@ public:
                 writeJsonString(facts, callee);
                 facts << ':' << live;
             }
-            facts << "}}";
+            facts << "},\"copied_record\":";
+            if (usage.copiedRecord) {
+                facts << "{\"parameter_bytes\":[";
+                bool firstParameter = true;
+                for (const int bytes : usage.copiedRecord->parameterBytes) {
+                    if (!std::exchange(firstParameter, false))
+                        facts << ',';
+                    facts << bytes;
+                }
+                facts << "],\"result_bytes\":" << usage.copiedRecord->resultBytes << '}';
+            } else
+                facts << "null";
+            facts << '}';
         }
         facts << "}}\n";
         return facts.str();
@@ -1424,6 +1474,8 @@ public:
             const bool resourceParameters = !function.parameters.empty() && function.parameters.front().isRegion();
             const bool packedArguments =
                 function.receiver ? classParameters(function) || resourceParameters : aggregate;
+            if (packedArguments)
+                currentStackFacts->copiedRecord = copiedRecordFacts(function);
             const bool combinedMethod =
                 function.receiver && packedArguments && (function.result.isClass() || function.result.isSpan());
             callRecordSaveOffset = packedArguments ? function.frameBytes + (function.receiver ? 16 : 8) : 0;

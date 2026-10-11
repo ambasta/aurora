@@ -249,11 +249,11 @@ with tempfile.TemporaryDirectory(prefix="aurora-diagnostics-") as directory:
     require(
         facts
         == {
-            "version": 1,
+            "version": 2,
             "functions": {
-                "demo": {"local_bytes": 16, "calls": {}},
-                "aurora_reflect_size": {"local_bytes": 8, "calls": {}},
-                "aurora_reflect_field_count": {"local_bytes": 8, "calls": {}},
+                "demo": {"local_bytes": 16, "calls": {}, "copied_record": None},
+                "aurora_reflect_size": {"local_bytes": 8, "calls": {}, "copied_record": None},
+                "aurora_reflect_field_count": {"local_bytes": 8, "calls": {}, "copied_record": None},
             },
         },
         "simple emitted stack facts",

@@ -1,10 +1,29 @@
 # Local development
 
-Use the selected pinned GNU/Linux x86-64 toolchain. Final qualification runs
-locally: GCC 16 `full`, independent review, normal BIOS/UEFI boots and affected
-image/fault/recovery/restoration gates. Container packaging does not replace them.
+The digest-pinned container is the supported reproducible development route.
+Native GNU/Linux x86-64 setup is an advanced route requiring the exact pinned
+tools below; other native tool versions are unsupported. Final qualification
+still requires GCC 16 `full`, independent review, normal BIOS/UEFI boots and
+affected image/fault/recovery/restoration gates. The GitHub Actions workflow only
+packages the dependency image; it does not run product validation.
 
 ## Quick start
+
+With Docker or Podman installed, run from the repository root:
+
+```sh
+./scripts/container.sh make
+./scripts/container.sh make test
+./scripts/container.sh make run-uefi
+```
+
+The wrapper uses Docker when available, otherwise Podman. It recognizes Podman's
+`docker` compatibility command by its version output and uses `--userns=keep-id`
+for Podman, preserving the invoking user's ownership on the checkout mount.
+Docker keeps its explicit `--user UID:GID` selection. Run as the checkout owner;
+the wrapper does not change host ownership or permissions.
+
+## Advanced native setup
 
 Select matching real `gcc` and `g++` on PATH, plus the reviewed binutils, Python,
 Meson and Ninja. Check their actual versions; the name `g++` is not a version pin.
@@ -34,8 +53,10 @@ changing a normal boot. Explicit supervised/pinned workflows remain separate.
 
 ## Tools and explicit selections
 
-Required tools include GCC 16/C++23, GNU Make/binutils, Python 3, Bash, coreutils,
-ripgrep, Meson 1.12.1 and Ninja. Image-enabled configurations require a GNU PE
+The setup gate requires GCC and G++ 16.2.0, binutils 2.47, Meson 1.12.1 and
+Ninja 1.13.2 exactly. Other GCC 16 patch versions are rejected too; major-version
+compatibility is not a substitute for these pins. Required tools also include
+GNU Make, Python 3, Bash, coreutils and ripgrep. Image-enabled configurations require a GNU PE
 linker with `i386pep`, including for BIOS-only selection. Select the reviewed
 linker explicitly with `UEFI_LD` or Meson's `-Duefi_ld`; do not rely on an implicit
 host fallback. Hosted-only configurations use `-Dkernel_images=false` and cannot
@@ -140,9 +161,10 @@ The public image is published and selected by its exact digest in `ci/image`.
 Packaging performs no product validation; final product checks run locally.
 
 `scripts/container.sh` supports anonymous pulls of that public digest. It uses
-a nonprivileged container with a readonly root filesystem, a writable checkout
-mount for build outputs, and no runtime network. Local validation uses explicitly selected comparable
-tools; it does not claim byte-identical container execution. The container removes
+a container with dropped capabilities, a readonly root filesystem, a writable
+checkout mount for build outputs, and no runtime network. Advanced native
+validation uses explicitly selected exact tool versions; it does not claim
+byte-identical container execution. The container removes
 its `/etc/mtools.conf` for the deterministic ESP contract; it never edits the host's
 configuration. The image includes the Event runtime and clean BAR/IVRS firmware.
 Their source archives, reviewed patches and build recipes remain under
@@ -164,8 +186,25 @@ selectors. A stock-only image remains incomplete for Event.
 
 ## Native images and guest transport
 
-Thin build/smoke/console launchers select a named native Meson profile and use its
-returned image directory under `<build>/kernel-images/<bios|uefi>/<profile>`.
+`scripts/kernel-run.sh PROFILE [--console|--smoke]` owns normal and console
+launch routing; existing Make and console-script commands remain aliases.
+`bios`/`uefi` default to normal smoke; `--console` selects the ordinary interactive
+console. `bios-console`/`uefi-console` default to interactive sessions, or select
+`--smoke` for their existing PTY acceptance checks. Protected `program-console`
+and existing `program-*` fault profiles default to their protected PTY smoke;
+only `program-console --console` opens an interactive protected session.
+
+The shared launcher uses the existing profile builders and semantic oracles.
+Lower-level serial smoke adapters retain fault modes, clock plans and isolated
+run-only contracts. Specialized workflows share the public entrypoint:
+`iommu-event` and `graphical-console` run their existing smoke/restoration gates,
+with `--build-only` retaining their separate build-only behavior. `framebuffer`
+defaults to one unqualified PNG preview; `--smoke` or `--full-smoke` runs all four
+cases and normal restoration. `bar`/`ivrs` run their coverage-reusing families;
+individual `bar-*`/`ivrs-*` profiles retain required `--output DIR` and optional
+`--run-only IMAGE` arguments after `--smoke`. These routes reject `--console`.
+Their existing admission, pixel, trace and behavioral oracle adapters remain separate.
+Images use `<build>/kernel-images/<bios|uefi>/<profile>` from the native builder.
 Normal and specialized outputs coexist; there is no shared-image restoration
 build. Each profile exports exact object, `.su`, `.ci` and `.source.json` inputs
 from one compilation for current source/object/link admission.

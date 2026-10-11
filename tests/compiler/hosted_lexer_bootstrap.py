@@ -34,6 +34,45 @@ def run(command):
     return subprocess.run(command, capture_output=True, timeout=30, check=True).stdout
 
 
+def event_generation(root, work):
+    source, output = work / "events.au", work / "events.inc"
+    command = [sys.executable, "-B", str(root / "scripts/bootstrap_lexer.py"), "--events", str(source), str(output)]
+    original = (root / "compiler/lexer.au").read_text()
+    original = original.replace("export module aurora.compiler.lexer;", "module aurora.compiler.lexer;", 1).replace(
+        "export namespace compiler_lexer {", "namespace compiler_lexer {", 1
+    )
+    source.write_text(original)
+    run(command)
+    expected = output.read_bytes()
+    require(b"Token = 0," in expected and b"InvalidCursor = 7," in expected, "event wire endpoints changed")
+    source.write_text(
+        original.replace("module aurora.compiler.lexer;", "export module aurora.compiler.lexer;", 1).replace(
+            "namespace compiler_lexer {", "export namespace compiler_lexer {", 1
+        )
+    )
+    run(command)
+    require(output.read_bytes() == expected, "module visibility changed generated event entries")
+    source.write_text("enum class Event { second_case, first_case, };")
+    run(command)
+    require(output.read_text().endswith("    SecondCase = 0,\n    FirstCase = 1,\n"), "event order was not preserved")
+    for declaration in (
+        "",
+        "enum class Event {};",
+        "enum class Event { token = 0 };",
+        "enum class Event { token, token };",
+        "enum class Event { token,, };",
+        "enum class Event { Token };",
+        "enum class Event { case1, case_1 };",
+        "enum class Event { token };\nenum class Event { whitespace };",
+    ):
+        source.write_text(declaration)
+        output.write_bytes(b"preserve on rejection\n")
+        result = subprocess.run(command, capture_output=True, timeout=30, check=False)
+        require(result.returncode == 1 and b"bootstrap lexer:" in result.stderr, "unsupported Event syntax accepted")
+        require(output.read_bytes() == b"preserve on rejection\n", "rejected Event syntax changed output")
+    print("PASS generated event ordering, exported module parity and unsupported-syntax rejection")
+
+
 def symbols(path, globals_only=False):
     command = ["nm", "--defined-only", "--format=posix", "--print-size"]
     if globals_only:
@@ -182,6 +221,7 @@ def main():
     stage0, stage1, root = (Path(value).resolve() for value in sys.argv[1:])
     with tempfile.TemporaryDirectory(prefix="hosted-lexer-bootstrap-") as temporary:
         work = Path(temporary)
+        event_generation(root, work)
         outputs = [work / "stage0.s", work / "stage1.s"]
         module_root = work / "compiler-modules"
         stage_modules(root, module_root)

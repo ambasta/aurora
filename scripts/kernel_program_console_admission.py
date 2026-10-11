@@ -378,8 +378,8 @@ def stack_evidence(directory, *, snapshot=False):
     )
 
 
-def note_evidence(directory, mode="program-console"):
-    """Exact private note composition; reuses the existing ELF/CFG decoder."""
+def note_evidence(directory, functions, mode="program-console"):
+    """Bind native boundaries to the already validated stack graph and ABI facts."""
     decoder = load("note_bridge_decoder", ROOT / "scripts/kernel_stack.py")
     abi = load("note_record_abi", ROOT / "scripts/kernel_snapshot_abi.py")
     linked = decoder.Elf(directory / "payload.elf")
@@ -454,59 +454,13 @@ def note_evidence(directory, mode="program-console"):
         {name for name in public if not is_reflection_helper(name)} == policies | bridges,
         "Exact note native exports",
     )
-    assembly = (directory / "language.s").read_text()
     evidence = []
-
-    for (
-        action,
-        frame,
-        argument_save,
-        result_save,
-        parameters,
-        result_starts,
-        result_bytes,
-        entry,
-    ) in (
-        (
-            "note_update",
-            464,
-            -456,
-            -464,
-            ((0, -72, 72), (72, -136, 64), (136, -144, 8)),
-            (-448,),
-            80,
-            "11update_note",
-        ),
-        (
-            "note_project",
-            176,
-            -168,
-            -176,
-            ((0, -72, 72),),
-            (-144,),
-            72,
-            "12project_note",
-        ),
-        (
-            "files_update",
-            3392,
-            -3384,
-            -3392,
-            ((0, -272, 272), (272, -336, 64), (336, -344, 8)),
-            (-2064, -3376),
-            520,
-            "12update_files",
-        ),
-        (
-            "files_replace",
-            1664,
-            -1656,
-            -1664,
-            ((0, -272, 272), (272, -360, 88), (360, -424, 64), (424, -432, 8)),
-            (-1640,),
-            352,
-            "13replace_files",
-        ),
+    # Native boundary contracts stay independent of compiler-emitted facts.
+    for action, entry, parameters, result_bytes in (
+        ("note_update", "11update_note", [72, 64, 8], 80),
+        ("note_project", "12project_note", [72], 72),
+        ("files_update", "12update_files", [272, 64, 8], 520),
+        ("files_replace", "13replace_files", [272, 88, 64, 8], 352),
     ):
         private = "__au_v_m1_22kernel_program_console_n0__d" + entry
         bridge = "__au_runtime_" + action
@@ -527,31 +481,13 @@ def note_evidence(directory, mode="program-console"):
         check_note_bridge(wrapper, private)
         # The linked bridge must be the same complete object function.
         decoder.associate_object(linked, generated, generated.functions[bridge])
-        function = linked.functions[private]
-        body = [
-            row
-            for address, row in sorted(code.items())
-            if function.address <= address < function.address + function.size
-        ]
-        source = assembly.split(private + ":\n", 1)[1].split(".size " + private, 1)[0]
-        actual_frame, prefix = decoder.private_frame_layout([line.strip() for line in source.splitlines()], body)
-        need(actual_frame == frame, "Exact copied note helper frame")
-        check_note_copies(
-            [(row.op, row.args) for row in body],
-            prefix,
-            argument_save,
-            result_save,
-            parameters,
-            result_starts,
-            result_bytes,
-            abi.copied_payload,
-        )
+        check_copied_record(functions[private]["copied_record"], parameters, result_bytes)
         evidence.append(
             dict(
                 bridge=bridge,
                 private_entry=private,
-                frame=frame,
-                input_bytes=sum(p[2] for p in parameters),
+                local_peak=functions[private]["local_peak"],
+                input_bytes=sum(parameters),
                 result_bytes=result_bytes,
             )
         )
@@ -563,47 +499,11 @@ def note_evidence(directory, mode="program-console"):
     return dict(bridges=evidence, record=json.loads((directory / "note-abi.json").read_text()))
 
 
-def check_note_copies(
-    rows,
-    prefix,
-    argument_save,
-    result_save,
-    parameters,
-    result_starts,
-    result_bytes,
-    copied_payload,
-):
-    def memory(offset, register):
-        return (f"-0x{-offset:x}" if offset < 0 else f"0x{offset:x}" if offset else "") + f"(%{register})"
-
-    expected = [
-        ("mov", "%r11," + memory(argument_save, "rbp")),
-        ("mov", "%r10," + memory(result_save, "rbp")),
-    ]
-    for offset, local, extent in parameters:
-        expected.append(("mov", memory(argument_save, "rbp") + ",%r11"))
-        if extent >= 64:
-            expected += copied_payload("r11", offset, "rbp", local, extent)
-        else:
-            # The only scalar parameter is an exact qword; no padding is copied.
-            need(extent == 8, "Exact scalar copied parameter extent")
-            expected += [
-                ("mov", memory(offset, "r11") + ",%rax"),
-                ("mov", "%rax," + memory(local, "rbp")),
-            ]
+def check_copied_record(actual, parameters, result_bytes):
     need(
-        rows[prefix : prefix + len(expected)] == expected,
-        "Exact note/file copied input binding",
+        actual == dict(parameter_bytes=parameters, result_bytes=result_bytes),
+        "Expected compiler v2 copied-record ABI with exact native parameter/result sizes",
     )
-    first = ("mov", memory(result_save, "rbp") + ",%r10")
-    starts = [i for i, row in enumerate(rows) if row == first]
-    need(len(starts) == len(result_starts), "Exact copied result path count")
-    for start, result_start in zip(starts, result_starts, strict=True):
-        result = [first] + copied_payload("rbp", result_start, "r10", 0, result_bytes)
-        need(
-            rows[start : start + len(result)] == result,
-            "Exact note/file copied result binding",
-        )
 
 
 def check_note_bridge(actual, private):
@@ -723,6 +623,7 @@ def emit(mode):
             payload[names[begin] : names[end]] == bytes.fromhex(opcode),
             "Changed exact poll/drain window",
         )
+    stack = stack_evidence(BUILD)
     result = dict(
         schema="aurora-program-console-admission-v1",
         status="requires-independent-review",
@@ -731,8 +632,8 @@ def emit(mode):
         user_images=metadata,
         poll=json.loads((BUILD / "program-poll-metadata.json").read_text()),
         timer=json.loads((BUILD / "service-timer-metadata.json").read_text()),
-        stack=stack_evidence(BUILD),
-        note=note_evidence(BUILD, mode),
+        stack=stack,
+        note=note_evidence(BUILD, stack["linked_functions"], mode),
     )
     write_admission(RECEIPT, result, build_files(), before)
     print(

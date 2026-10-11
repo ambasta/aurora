@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import os
 import signal
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -120,19 +121,87 @@ class MesonIdentityTests(unittest.TestCase):
             parser.parse_args(["--meson-selected-compiler", "--compiler-sha256", "0" * 64])
 
 
+class MesonToolchainDiagnosticTests(unittest.TestCase):
+    def test_setup_reports_exact_version_and_recovery_without_a_compiler(self):
+        meson = shutil.which("meson")
+        if meson is None:
+            self.skipTest("Meson is required for the language-free setup diagnostic fixture")
+        repo = Path(__file__).resolve().parents[1]
+        source = (repo / "meson.build").read_text()
+        # Exercise the actual setup stanza, with no languages or compilation.
+        preflight = source[source.index("toolchain_check = run_command(") : source.index("# The JSON dependency")]
+        for mode in ("version", "empty-stderr", "supported"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                scripts = root / "scripts"
+                scripts.mkdir()
+                if mode == "empty-stderr":
+                    (scripts / "meson_toolchain.py").write_text("raise SystemExit(7)\n")
+                else:
+                    shutil.copy2(repo / "scripts/meson_toolchain.py", scripts / "meson_toolchain.py")
+                tools = root / "tools"
+                tools.mkdir()
+                versions = {
+                    "g++": "16.1.0" if mode == "version" else "16.2.0",
+                    "gcc": "16.2.0",
+                    "meson": "1.12.1",
+                    "ninja": "1.13.2",
+                    **{name: "GNU synthetic " + "2.47" for name in ("as", "ld", "nm", "objcopy", "objdump", "readelf")},
+                }
+                for name, version in versions.items():
+                    tool = tools / name
+                    tool.write_text('#!/bin/sh\nprintf "%s\\n" "' + version + '"\n')
+                    tool.chmod(0o755)
+                # Meson itself is real; only version-inspection tools are synthetic.
+                (root / "meson.build").write_text(
+                    "project('toolchain-diagnostic')\n"
+                    + "python = find_program('"
+                    + sys.executable
+                    + "')\n"
+                    + "oracle_cxx = 'g++'\ntoolchain_args = []\n"
+                    + preflight
+                )
+                env = {
+                    key: value for key, value in os.environ.items() if key not in meson_toolchain.IMPLICIT_SEARCH_ENV
+                }
+                env["PATH"] = (
+                    str(tools) + os.pathsep + str(Path(sys.executable).parent) + os.pathsep + env.get("PATH", "")
+                )
+                result = subprocess.run(
+                    [meson, "setup", str(root / "build"), str(root)],
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+                terminal = result.stdout + result.stderr
+                if mode == "supported":
+                    self.assertEqual(result.returncode, 0, terminal)
+                    self.assertNotIn("BLOCKED:", terminal)
+                else:
+                    self.assertNotEqual(result.returncode, 0, terminal)
+                    self.assertIn("BLOCKED:", terminal)
+                    self.assertIn("./scripts/container.sh make test", terminal)
+                    self.assertIn("docs/local-development.md", terminal)
+                    self.assertIn(
+                        "require 16.2.0, got 16.1.0" if mode == "version" else "check failed (exit 7)", terminal
+                    )
+                    self.assertFalse((root / "build/build.ninja").exists())
+
+
 class MesonEntrypointTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.calls = []
+        self.queries = []
         self.failure = None
         self.flags = []
         self.configured_compiler = "/synthetic/g++"
         self.kernel_images = True
         self.kernel_compiler = ""
         self.missing_options = set()
-        self.reconfigured_missing_options = set()
         for patcher in (
             patch.dict(os.environ, {}, clear=True),
             patch.object(contract, "parse_cxx", return_value="/synthetic/g++"),
@@ -154,10 +223,7 @@ class MesonEntrypointTests(unittest.TestCase):
         self.assertEqual(kwargs["env"]["CXX"], "/synthetic/g++")
         if command[1] == self.failure:
             raise subprocess.CalledProcessError(23, command)
-        if command[1:3] == ["setup", "--reconfigure"]:
-            self.assertEqual(command[3:], [str(self.root / "build/meson"), str(self.root)])
-            self.missing_options = self.reconfigured_missing_options.copy()
-        elif command[1] == "setup":
+        if command[1] == "setup":
             build = Path(command[2])
             self.assertEqual(command[3:6], [str(self.root), "--backend=ninja", "-Dlsp=false"])
             self.assertIn(command[6], ("-Dkernel_images=true", "-Dkernel_images=false"))
@@ -167,6 +233,7 @@ class MesonEntrypointTests(unittest.TestCase):
         return subprocess.CompletedProcess(command, 0)
 
     def introspect(self, command, **kwargs):
+        self.queries.append(command)
         if command[-1] == "--compilers":
             return json.dumps({"build": {"cpp": {"exelist": [self.configured_compiler]}}}).encode()
         self.assertEqual(command[-1], "--buildoptions")
@@ -178,55 +245,29 @@ class MesonEntrypointTests(unittest.TestCase):
         ]
         return json.dumps([item for item in options if item["name"] not in self.missing_options]).encode()
 
-    def test_old_build_missing_options_reconfigures_once_before_build(self):
+    def test_stale_build_missing_options_rejects_without_reconfigure_or_work(self):
         meson_test.execute(self.root, "full")
         for missing in (
             {"kernel_compiler"},
             {"kernel_images"},
             {"uefi_ld"},
-            {"kernel_compiler", "kernel_images", "uefi_ld"},
+            {"cpp_args"},
+            {"kernel_compiler", "kernel_images", "uefi_ld", "cpp_args"},
         ):
             with self.subTest(missing=missing):
                 self.calls.clear()
+                self.queries.clear()
                 self.missing_options = missing
-                meson_test.execute(self.root, "full")
-                self.assertEqual([command[1] for command in self.calls], ["setup", "compile", "test"])
-                self.assertIn("--reconfigure", self.calls[0])
-                self.assertEqual(self.calls[1][4:6], ["-j", "3"])
-                self.calls.clear()
-                meson_test.execute(self.root, "full")
-                self.assertEqual([command[1] for command in self.calls], ["compile", "test"])
-
-    def test_old_build_reconfigure_failure_stops_before_build(self):
-        meson_test.execute(self.root, "full")
-        self.calls.clear()
-        self.missing_options = {"kernel_compiler"}
-        self.failure = "setup"
-        with self.assertRaises(subprocess.CalledProcessError):
-            meson_test.execute(self.root, "full")
-        self.assertEqual([command[1] for command in self.calls], ["setup"])
-
-    def test_old_build_reconfiguration_does_not_hide_missing_or_mismatched_options(self):
-        meson_test.execute(self.root, "full")
-        cases = [
-            ("missing", "Missing Meson build options after reconfigure"),
-            ("compiler", "Configured compiler differs"),
-            ("flags", "Configured cpp_args differ"),
-            ("external", "AURORAC/native selection"),
-            ("disabled", "Kernel images disabled"),
-        ]
-        for case, message in cases:
-            with self.subTest(case=case):
-                self.calls.clear()
-                self.missing_options = {"kernel_compiler"}
-                self.reconfigured_missing_options = {"kernel_compiler"} if case == "missing" else set()
-                self.configured_compiler = "/different/g++" if case == "compiler" else "/synthetic/g++"
-                self.flags = ["-O1"] if case == "flags" else []
-                self.kernel_compiler = "/configured/external" if case == "external" else ""
-                self.kernel_images = case != "disabled"
-                with self.assertRaisesRegex(contract.ContractError, message):
-                    meson_test.execute(self.root, None, ["kernel-uefi-normal"])
-                self.assertEqual([command[1] for command in self.calls], ["setup"])
+                with self.assertRaises(contract.ContractError) as caught:
+                    meson_test.execute(self.root, "full")
+                self.assertEqual(
+                    str(caught.exception),
+                    "Missing Meson build options: "
+                    + ", ".join(sorted(missing))
+                    + "; select a fresh matching MESON_BUILD_DIR",
+                )
+                self.assertEqual(self.calls, [])
+                self.assertEqual([command[-1] for command in self.queries], ["--buildoptions"])
 
     def test_fresh_default_and_explicit_builds_setup_then_compile_then_full(self):
         for supplied in (None, "build/chosen-gcc", str(self.root / "absolute-gcc")):
@@ -245,6 +286,7 @@ class MesonEntrypointTests(unittest.TestCase):
                 self.assertIn("--no-rebuild", self.calls[2])
                 self.assertIn("--ninja-args=meson-test-prereq", self.calls[1])
                 self.assertEqual(self.calls[1][4:6], ["-j", "3"])
+                self.assertEqual(self.calls[2][7:9], ["--num-processes", "4"])
                 if supplied:
                     self.assertEqual(build, (self.root / supplied).resolve())
                 else:
@@ -450,6 +492,7 @@ class NativeCompilerWrapperTests(unittest.TestCase):
             for selection in ("g++", str(compiler), "launcher g++"):
                 with self.subTest(selection=selection):
                     env = {**os.environ, "PATH": str(tools)}
+                    env.pop("AURORA_MESON_KEEP_ARTIFACTS", None)
                     command = [
                         sys.executable,
                         "-B",
@@ -618,6 +661,60 @@ class MesonArtifactTests(unittest.TestCase):
                 self.assertEqual(parent.exists(), value == "1")
                 outcome = "Retained" if value == "1" else "Removed"
                 self.assertIn(outcome + " artifacts: " + str(parent), result.stdout)
+
+    def test_native_wrapper_retains_output_and_spill_until_complete_success(self):
+        native_adapter = Path(__file__).resolve().parents[1] / "scripts/meson-native-run.py"
+        compiler = self.root / "compiler"
+        build = self.root / "native-build"
+        for keep, ending, expected in (
+            ("", "sys.exit(0)", 0),
+            ("1", "sys.exit(0)", 0),
+            ("", "sys.exit(23)", 23),
+            ("", "Path(os.environ['AURORAC']).write_text('changed')", 1),
+        ):
+            with self.subTest(keep=keep, ending=ending):
+                compiler.write_text("selected compiler")
+                self.env["AURORA_MESON_KEEP_ARTIFACTS"] = keep
+                code = (
+                    "import json, os, sys, tempfile; from pathlib import Path; "
+                    "output = Path(sys.argv[1]); output.relative_to(Path.cwd()); output.mkdir(); "
+                    "(output / 'evidence').write_text('native output'); "
+                    "spill = Path(tempfile.mkdtemp()); (spill / 'evidence').write_text('native spill'); "
+                    "print(json.dumps([str(output), str(spill)]), flush=True); " + ending
+                )
+                result, parent = self.run_adapter(
+                    command=[
+                        sys.executable,
+                        "-B",
+                        str(native_adapter),
+                        "--repo",
+                        str(self.scratch),
+                        "--build-root",
+                        str(build),
+                        "--cxx",
+                        sys.executable,
+                        "--compiler",
+                        str(compiler),
+                        "--",
+                        sys.executable,
+                        "-B",
+                        "-c",
+                        code,
+                        "@ARTIFACTS@",
+                    ]
+                )
+                self.assertEqual(result.returncode, expected, result.stderr)
+                output, spill = map(Path, json.loads(result.stdout.splitlines()[1]))
+                self.assertEqual(output, parent / "output")
+                self.assertEqual(spill.parent.parent, build)
+                retained = expected != 0 or keep == "1"
+                self.assertEqual(parent.exists(), retained)
+                self.assertEqual(spill.parent.exists(), retained)
+                if retained:
+                    self.assertEqual((output / "evidence").read_text(), "native output")
+                    self.assertEqual((spill / "evidence").read_text(), "native spill")
+                if expected == 1:
+                    self.assertIn("Meson-selected compiler changed during native gate", result.stderr)
 
     def test_failure_signal_and_interruption_retain_evidence(self):
         for end, expected in (

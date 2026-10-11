@@ -802,13 +802,32 @@ def aurora_stack_functions(path, symbols, code, starts, generated_names):
 
     document = json.loads(path.read_text(), object_pairs_hook=unique)
     require(type(document) is dict and set(document) == {"version", "functions"}, "Invalid Aurora stack facts")
-    require(type(document["version"]) is int and document["version"] == 1, "Unknown Aurora stack-fact version")
+    version = document["version"]
+    require(type(version) is int and version in (1, 2), "Unknown Aurora stack-fact version")
     facts = document["functions"]
     require(type(facts) is dict and set(facts) == set(generated_names), "Aurora stack-fact/function inventory mismatch")
     require(set(facts) <= symbols.keys(), "Missing linked Aurora function")
     functions = {}
     for name, fact in facts.items():
-        require(type(fact) is dict and set(fact) == {"local_bytes", "calls"}, "Invalid Aurora function fact")
+        fields = {"local_bytes", "calls"} | ({"copied_record"} if version == 2 else set())
+        require(type(fact) is dict and set(fact) == fields, "Invalid Aurora function fact")
+        copied = fact.get("copied_record")
+        # V1 describes stack use only. V2 may additionally describe this exact
+        # R11-input/R10-result ABI; callers still supply their allowed symbols
+        # and independently expected native record sizes. This is compiler trust,
+        # not a proof of correct copies, nominal type identity or authority.
+        if copied is not None:
+            require(
+                type(copied) is dict
+                and set(copied) == {"parameter_bytes", "result_bytes"}
+                and type(copied["parameter_bytes"]) is list
+                and len(copied["parameter_bytes"]) <= 6
+                and all(
+                    type(size) is int and 8 <= size <= 65536 and size % 8 == 0
+                    for size in [*copied["parameter_bytes"], copied["result_bytes"]]
+                ),
+                "Invalid Aurora copied-record ABI fact",
+            )
         local, edges = fact["local_bytes"], fact["calls"]
         require(type(local) is int and 8 <= local <= STACK_CAP, "Invalid Aurora local stack bound")
         require(
@@ -850,6 +869,7 @@ def aurora_stack_functions(path, symbols, code, starts, generated_names):
             local_peak=local,
             calls=calls,
             returns=sum(row.op == "ret" for row in rows),
+            copied_record=copied,
             basis="Aurora emitted stack/call facts; exact object/function and linked-edge agreement",
         )
     return functions

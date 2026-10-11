@@ -22,9 +22,15 @@ def run(command):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("ir_binary", type=Path)
-    binary = parser.parse_args().ir_binary.resolve()
-    (ROOT / "build").mkdir(exist_ok=True)
-    work = Path(tempfile.mkdtemp(prefix="service-group-ir-abi-", dir=ROOT / "build"))
+    parser.add_argument("--artifacts", type=Path)
+    args = parser.parse_args()
+    binary = args.ir_binary.resolve()
+    if args.artifacts:
+        work = args.artifacts.resolve()
+        work.mkdir(parents=True)
+    else:
+        (ROOT / "build").mkdir(exist_ok=True)
+        work = Path(tempfile.mkdtemp(prefix="service-group-ir-abi-", dir=ROOT / "build"))
     assembly = work / "nonlexical.s"
     result = run([binary, assembly])
     print(result.stdout.decode(), end="")

@@ -814,8 +814,14 @@ def prerequisites(args):
         )
         if args.normal_data:
             safe_path(args.normal_data, directory=True) if prefix else data_files(args.normal_data)
-    parent = safe_path(args.output_parent, directory=True)
-    need(parent != ROOT and ROOT not in parent.parents, "Event output must be outside the source tree")
+    parent = Path(args.output_parent).absolute()
+    if parent == ROOT / "build":
+        parent.mkdir(exist_ok=True)
+    parent = safe_path(parent, directory=True)
+    need(
+        not parent.is_relative_to(ROOT) or parent.is_relative_to(ROOT / "build"),
+        "Event output must be in build/ or outside the source tree",
+    )
     if shutil.disk_usage(parent).free < FREE_FLOOR + EVIDENCE_LIMIT:
         raise PrerequisiteBlocked("Event run requires 1 GiB reservation plus 1 GiB free floor")
     try:
@@ -835,7 +841,7 @@ def main():
     parser.add_argument("--data", default=os.environ.get("EVENT_DATA"))
     parser.add_argument("--esp-dir", default=os.environ.get("EVENT_ESP_DIR"))
     parser.add_argument("--mtools-dir", default=os.environ.get("MTOOLS_DIR"))
-    parser.add_argument("--output-parent", default=os.environ.get("EVENT_OUTPUT_PARENT") or tempfile.gettempdir())
+    parser.add_argument("--output-parent", default=os.environ.get("EVENT_OUTPUT_PARENT") or str(ROOT / "build"))
     parser.add_argument("--normal-qemu", default=os.environ.get("QEMU") or "qemu-system-x86_64")
     parser.add_argument("--normal-firmware", default="")
     parser.add_argument("--normal-code", default="")

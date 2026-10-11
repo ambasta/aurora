@@ -26,18 +26,22 @@ hardware and general terminal/window services remain unqualified.
 
 ## Try it
 
-The public dependency image pinned in `ci/image` provides the supported tools
-and firmware. With Docker installed, run from the repository root:
+The public dependency image pinned in `ci/image` is the supported reproducible
+development environment, with the exact tools and firmware. With Docker or
+Podman installed, run from the repository root:
 
 ```sh
 ./scripts/container.sh make
+./scripts/container.sh make test
 ./scripts/container.sh make run-uefi
 ```
 
-For a comparable local x86-64 Linux environment, select the exact supported tool
-versions and firmware described in [local development](docs/local-development.md).
-Local validation does not claim execution inside the container. Keep builds and
-guests in separate output directories when running independent work in parallel.
+Native x86-64 Linux setup is an advanced route requiring the exact pinned tool
+versions and firmware in [local development](docs/local-development.md). Other
+native tool versions are unsupported; a different GCC 16 patch version is not the
+pinned GCC 16.2.0. The wrapper handles Podman user namespaces so an owned checkout
+stays writable. Keep builds and guests in separate output directories when running
+independent work in parallel.
 
 Default `make` builds one Meson compiler and the normal image graph, atomically
 preserving the compatible `build/aurorac` path. Compile a library example with it:
@@ -65,8 +69,9 @@ make run
 make run-uefi
 ```
 
-The package supplies pinned UEFI firmware; comparable local runs explicitly select
-compatible firmware as described in the developer guide. Both commands run
+The supported pinned development container supplies the required UEFI firmware.
+Advanced native runs must match its exact pinned tools and firmware, as described
+in the developer guide. Both commands run
 headless, validate serial output and exit. Images are disposable emulator inputs; do not
 write them to a physical disk or replace your bootloader.
 

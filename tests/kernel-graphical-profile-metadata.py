@@ -161,7 +161,14 @@ class ProfileMetadata(unittest.TestCase):
             {"make": True, "root_make": True, "meson": True},
         )
         display = (ROOT / "tests/compiler/display_service.py").read_text()
-        self.assertIn('ROOT / "tests/compiler/service_group.py", compiler', display)
+        grouped = ast.parse(
+            'grouped = run([sys.executable, "-B", "-O", ROOT / "tests/compiler/service_group.py", '
+            'compiler, "--artifacts", work / "service-group"])'
+        ).body[0]
+        self.assertIn(
+            ast.dump(grouped),
+            [ast.dump(node) for node in ast.walk(ast.parse(display)) if isinstance(node, ast.Assign)],
+        )
         self.assertIn("require(grouped.returncode == 0,", display)
         self.assertIn("../tests/compiler/service_group_ir_abi.py", (ROOT / "compiler/Makefile").read_text())
         self.assertIn("files('compiler/service_group_ir_abi.py')", (ROOT / "tests/meson.build").read_text())
@@ -328,7 +335,8 @@ class ProfileMetadata(unittest.TestCase):
             argv = ["python3", "-B", *(["-O"] if optimized else []), str(ROOT / "tests" / script)]
             depends = []
             if name == "graphical-console-native":
-                argv += ["--run", "./aurorac", "--developer-selected-compiler"]
+                argv = ["python3", "-B", str(ROOT / "tests/meson_artifacts.py")] + argv
+                argv += ["--run", "./aurorac", "--developer-selected-compiler", "--artifacts", "@ARTIFACTS@"]
                 depends = ["aurorac@exe"]
             entries.append(
                 dict(
@@ -353,6 +361,7 @@ class ProfileMetadata(unittest.TestCase):
             lambda rows: rows[0].update(suite=["full", "dev"]),
             lambda rows: rows[0].update(depends=[]),
             lambda rows: rows[0]["cmd"].pop(),
+            lambda rows: rows[0]["cmd"].pop(2),
             lambda rows: rows[-1].update(depends=[]),
             lambda rows: rows[1]["cmd"].append("--skip"),
         ):
@@ -362,11 +371,15 @@ class ProfileMetadata(unittest.TestCase):
                 inventory.check_graphical_meson(changed)
         meson = (ROOT / "tests/meson.build").read_text()
         self.assertRegex(meson, r"(?s)graphical_paging = executable\('graphical-paging'.*?link_args: \['-no-pie'\]\)")
-        self.assertIn("'--developer-selected-compiler'], depends: aurorac", meson)
         for name, (_, feedback, _) in inventory.GRAPHICAL_PYTHON_TESTS.items():
             declarations = re.findall(r"(?s)test\('" + re.escape(name) + r"',.*?\)\n", meson)
             self.assertEqual(len(declarations), 1, name)
             self.assertIn("suite: ['full', '" + feedback + "']", declarations[0])
+            if name == "graphical-console-native":
+                self.assertRegex(
+                    declarations[0], r"'--developer-selected-compiler'\s*,\s*'--artifacts'\s*,\s*'@ARTIFACTS@'"
+                )
+                self.assertRegex(declarations[0], r"\bdepends\s*:\s*aurorac\b")
 
 
 if __name__ == "__main__":

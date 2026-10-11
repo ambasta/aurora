@@ -35,7 +35,7 @@ class Entrypoints(unittest.TestCase):
         for name in (
             "kernel-program-console.sh",
             "kernel-program-console-smoke.sh",
-            "kernel-program-console-common.sh",
+            "kernel-run.sh",
             "uefi-firmware.sh",
             "uefi-linker.sh",
             "qemu_transport.py",
@@ -106,7 +106,20 @@ exit "${BUILD_STATUS:-0}"
         self.assertNotIn("make -C compiler", script)
 
     def test_public_smoke_builds_isolated_profile(self):
-        for mode in ("program-console", "program-pending", "program-owner"):
+        for mode in (
+            "program-console",
+            "program-request-fault",
+            "program-service-fault",
+            "program-completion-fault",
+            "program-request-budget",
+            "program-service-budget",
+            "program-completion-budget",
+            "program-pending",
+            "program-owner",
+            "program-ordinal",
+            "program-unknown",
+            "program-transaction",
+        ):
             self.run_script(args=(mode,))
             self.assertEqual(
                 self.calls(),
@@ -124,6 +137,35 @@ exit "${BUILD_STATUS:-0}"
         self.clear()
         self.run_script(name="kernel-program-console.sh", env={"GUEST_STATUS": "0"}, expected=1)
         self.assertEqual(self.calls()[-1], "guest")
+
+    def test_shared_entrypoint_preserves_protected_launch_statuses(self):
+        for status, expected in ((33, 0), (0, 1), (35, 35), (124, 124), (137, 137)):
+            self.run_script(
+                name="kernel-run.sh",
+                args=("program-console", "--console"),
+                env={"GUEST_STATUS": str(status)},
+                expected=expected,
+            )
+            self.assertEqual(self.calls(), ["build|program-console", "checked", "clock", "guest"])
+            self.clear()
+
+    def test_shared_entrypoint_defaults_to_protected_smoke_and_rejects_interactive_faults(self):
+        self.run_script(name="kernel-run.sh", args=("program-owner",))
+        self.assertEqual(self.calls()[0], "build|program-owner")
+        self.assertIn("tests/kernel-program-console-pty.py --mode program-owner", self.calls()[1])
+        self.clear()
+        for args in (("program-owner", "--console"), ("program-invalid", "--smoke")):
+            self.assertIn("FAIL:", self.run_script(name="kernel-run.sh", args=args, expected=1))
+            self.assertEqual(self.calls(), [])
+
+    def test_alias_argument_errors_remain_failures(self):
+        for name, args in (
+            ("kernel-program-console.sh", ("--help",)),
+            ("kernel-program-console-smoke.sh", ("--help",)),
+            ("kernel-program-console-smoke.sh", ("program-console", "extra")),
+        ):
+            self.assertIn("FAIL:", self.run_script(name=name, args=args, expected=1))
+            self.assertEqual(self.calls(), [])
 
     def test_build_admission_and_guest_failures_never_become_blocked(self):
         for build, pty, expected in ((2, 0, 2), (19, 0, 19), (0, 2, 2), (0, 17, 17)):

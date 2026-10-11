@@ -8,6 +8,10 @@ project(
 # The compiler runs on the build machine, even when a future target is cross-built.
 native_cpp = meson.get_compiler('cpp', native: true)
 python = find_program('python3', native: true)
+lexer_events = custom_target(
+  'hosted-lexer-events', input: 'compiler/lexer.au', output: 'hosted_lexer_events.inc',
+  command: [python, '-B', files('scripts/bootstrap_lexer.py'), '--events', '@INPUT@', '@OUTPUT@'],
+)
 # Stage 0 retains the C++ scanner/parser solely as the bootstrap seed/reference.
 aurorac_stage0 = executable('aurorac-stage0', 'compiler/main.cpp', native: true, install: false)
 frontend_assembly = custom_target(
@@ -25,10 +29,12 @@ frontend_object = custom_target(
 frontend_args = ['-DAURORA_HOSTED_LEXER', '-DAURORA_HOSTED_PARSER']
 frontend_library = static_library(
   'hosted-frontend', ['compiler/hosted_lexer.cpp', 'compiler/hosted_parser.cpp',
-                      'runtime/hosted_bytes.cpp', frontend_object],
+                      'runtime/hosted_bytes.cpp', frontend_object, lexer_events],
   cpp_args: frontend_args, native: true, install: false,
 )
-hosted_frontend = declare_dependency(link_with: frontend_library, compile_args: frontend_args)
+hosted_frontend = declare_dependency(link_with: frontend_library, sources: lexer_events,
+                                   include_directories: include_directories('.'),
+                                   compile_args: frontend_args)
 aurorac = executable('aurorac', 'compiler/main.cpp', dependencies: hosted_frontend, native: true, install: false)
 aurora_fmt = executable('aurora-fmt', 'compiler/format_main.cpp', dependencies: hosted_frontend,
                         native: true, install: false)
@@ -62,10 +68,17 @@ if get_option('kernel_images')
   toolchain_args += ['--pe-linker', pe_linker.full_path()]
 endif
 
-# The image fixes distributed tools; explicit PATH/CXX also supports comparable
-# local tools. Check versions once at setup; Ninja tracks build inputs thereafter.
-run_command(python, '-B', files('scripts/meson_toolchain.py'),
-            '--cxx', oracle_cxx, toolchain_args, check: true)
+# The supported container fixes exact tool versions; advanced native runs must
+# match those pinned tools via PATH/CXX. Check once at setup; Ninja tracks inputs.
+toolchain_check = run_command(python, '-B', files('scripts/meson_toolchain.py'),
+                              '--cxx', oracle_cxx, toolchain_args, check: false)
+if toolchain_check.returncode() != 0
+  diagnostic = toolchain_check.stderr().strip()
+  if diagnostic == ''
+    diagnostic = 'BLOCKED: Development toolchain check failed (exit @0@).'.format(toolchain_check.returncode())
+  endif
+  error(diagnostic + '\nUse ./scripts/container.sh make test for the supported pinned environment; see docs/local-development.md.')
+endif
 
 # The JSON dependency belongs only to the explicitly enabled language server.
 if get_option('lsp')

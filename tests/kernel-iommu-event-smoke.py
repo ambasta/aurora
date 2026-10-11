@@ -645,32 +645,71 @@ class Controls(unittest.TestCase):
         real_which = smoke.shutil.which
         self.assertEqual(environment["QEMU"], "")
         self.assertEqual(environment["EVENT_OUTPUT_PARENT"], "")
-        source, run = self.root / "source", self.root / "run"
+        source = self.root / "source"
         source.mkdir()
         (source / "scripts").mkdir()
         (source / "scripts/uefi-linker.sh").write_bytes((smoke.ROOT / "scripts/uefi-linker.sh").read_bytes())
         for mode in smoke.MODES:
             (self.root / (mode + ".raw")).write_bytes(b"fake ESP")
-        run.mkdir()
-        with (
-            patch.dict(os.environ, environment, clear=True),
-            patch.object(
-                smoke.shutil,
-                "which",
-                side_effect=lambda tool: sys.executable if tool in ("meson", "ninja") else real_which(tool),
-            ),
-            patch.object(sys, "argv", ["event-smoke", "--build-only", "--esp-dir", str(self.root)]),
-            patch.object(smoke, "ROOT", source),
-            patch.object(smoke.tempfile, "gettempdir", return_value=str(self.root)),
-            patch.object(smoke.tempfile, "mkdtemp", return_value=str(run)),
-            patch.object(smoke.shutil, "disk_usage", return_value=SimpleNamespace(free=4 * 1024**3)),
-            patch.object(smoke.signal, "signal"),
-            patch.object(smoke, "window") as window,
-        ):
-            smoke.main()
-        args = window.call_args.args[0]
-        self.assertEqual(args.normal_qemu, "qemu-system-x86_64")
-        self.assertEqual(args.output_parent, str(self.root))
+        runs = []
+        for failed in (False, True):
+
+            def window(args, directory, runtime):
+                runs.append(directory)
+                (directory / "evidence").write_text("retained Event output")
+                self.assertEqual(args.normal_qemu, "qemu-system-x86_64")
+                self.assertEqual(args.output_parent, str(source / "build"))
+                if failed:
+                    raise ValueError("guest fixture failed")
+
+            with (
+                self.subTest(failed=failed),
+                patch.dict(os.environ, environment, clear=True),
+                patch.object(
+                    smoke.shutil,
+                    "which",
+                    side_effect=lambda tool: sys.executable if tool in ("meson", "ninja") else real_which(tool),
+                ),
+                patch.object(sys, "argv", ["event-smoke", "--build-only", "--esp-dir", str(self.root)]),
+                patch.object(smoke, "ROOT", source),
+                patch.object(smoke.shutil, "disk_usage", return_value=SimpleNamespace(free=4 * 1024**3)),
+                patch.object(smoke.signal, "signal"),
+                patch.object(smoke, "window", side_effect=window),
+                patch.object(sys, "stdout", new_callable=io.StringIO) as stdout,
+                patch.object(sys, "stderr", new_callable=io.StringIO),
+            ):
+                self.assertEqual(smoke.cli(), int(failed))
+                self.assertIn("Event smoke evidence: " + str(runs[-1]), stdout.getvalue())
+            self.assertEqual(runs[-1].parent, source / "build")
+            self.assertEqual((runs[-1] / "evidence").read_text(), "retained Event output")
+        self.assertNotEqual(runs[0], runs[1])
+        self.assertTrue(all((directory / "evidence").exists() for directory in runs))
+
+    def test_tracked_source_output_is_rejected_before_allocation(self):
+        source = self.root / "source"
+        (source / "tests").mkdir(parents=True)
+        for mode in smoke.MODES:
+            (self.root / (mode + ".raw")).write_bytes(b"fake ESP")
+        for parent in (source, source / "tests"):
+            with (
+                self.subTest(parent=parent),
+                patch.dict(os.environ, {}, clear=True),
+                patch.object(smoke, "ROOT", source),
+                patch.object(
+                    sys,
+                    "argv",
+                    ["event-smoke", "--build-only", "--esp-dir", str(self.root), "--output-parent", str(parent)],
+                ),
+                patch.object(smoke.shutil, "which", return_value=sys.executable),
+                patch.object(smoke.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "", "")),
+                patch.object(smoke.tempfile, "mkdtemp") as allocate,
+                patch.object(smoke, "window") as window,
+                patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
+            ):
+                self.assertEqual(smoke.cli(), 1)
+                self.assertIn("Event output must be in build/ or outside the source tree", stderr.getvalue())
+                allocate.assert_not_called()
+                window.assert_not_called()
 
     def test_missing_prerequisites_are_blocked_before_build_or_evidence(self):
         for mode in smoke.MODES:

@@ -94,7 +94,7 @@ class ConsoleRouting(unittest.TestCase):
         self.bin.mkdir()
         self.record = self.home / "calls"
         self.env = {"PATH": str(self.bin), "HOME": str(self.home), "CALLS": str(self.record), "LC_ALL": "C"}
-        for name in ("kernel-console-smoke.sh", "uefi-firmware.sh", "uefi-linker.sh"):
+        for name in ("kernel-run.sh", "kernel-console-smoke.sh", "uefi-firmware.sh", "uefi-linker.sh"):
             shutil.copy2(ROOT / "scripts" / name, self.scripts / name)
         shutil.copy2(ROOT / "Makefile", self.repo / "Makefile")
         (self.repo / "tests").mkdir()
@@ -189,6 +189,32 @@ class ConsoleRouting(unittest.TestCase):
                 self.run_script(*args)
                 self.assert_route(mode)
                 self.clear_calls()
+
+    def test_shared_entrypoint_uses_the_same_console_pty_routes(self):
+        for mode in ("bios", "uefi"):
+            self.run_command([BASH, str(self.scripts / "kernel-run.sh"), mode + "-console", "--smoke"])
+            self.assert_route(mode)
+            self.clear_calls()
+
+    def test_shared_entrypoint_rejects_unknown_or_unsupported_routes_without_work(self):
+        for args in (
+            ("bios", "--other"),
+            ("uefi", "--smoke", "extra"),
+            ("console",),
+            ("bios", ""),
+            ("uefi", ""),
+            ("bios-console", ""),
+            ("uefi-console", ""),
+            ("program-console", ""),
+            ("iommu-event-success", "--smoke"),
+            ("iommu-event", "--console"),
+            ("bar-read", "--console"),
+            ("ivrs-read", "--console"),
+            ("graphical-console", "--console"),
+            ("framebuffer", "--console"),
+        ):
+            self.run_command([BASH, str(self.scripts / "kernel-run.sh"), *args], expected=2)
+        self.assert_no_work()
 
     def test_public_make_targets_dispatch_to_isolated_pty(self):
         for target, mode in (("smoke-console", "bios"), ("smoke-console-uefi", "uefi")):

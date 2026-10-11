@@ -280,9 +280,14 @@
       "console-service-source-native": {
         "arguments": [
           "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
           "-O",
           "@SOURCE@/tests/compiler/console_service.py",
-          "@BUILD@/aurorac"
+          "@BUILD@/aurorac",
+          "--artifacts",
+          "@ARTIFACTS@"
         ],
         "suites": [
           "compiler",
@@ -348,9 +353,14 @@
       "display-service-source-native": {
         "arguments": [
           "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
           "-O",
           "@SOURCE@/tests/compiler/display_service.py",
-          "@BUILD@/aurorac"
+          "@BUILD@/aurorac",
+          "--artifacts",
+          "@ARTIFACTS@"
         ],
         "suites": [
           "compiler",
@@ -586,10 +596,15 @@
       "iommu-event-source-native": {
         "arguments": [
           "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
           "-O",
           "@SOURCE@/tests/compiler/iommu_event_service.py",
           "@BUILD@/aurorac",
-          "@BUILD@/tests/iommu-event-service-ir"
+          "@BUILD@/tests/iommu-event-service-ir",
+          "--artifacts",
+          "@ARTIFACTS@"
         ],
         "suites": [
           "compiler",
@@ -746,9 +761,14 @@
       "json-owned": {
         "arguments": [
           "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
           "-O",
           "@SOURCE@/tests/compiler/json_owned.py",
-          "@BUILD@/aurorac"
+          "@BUILD@/aurorac",
+          "--artifacts",
+          "@ARTIFACTS@"
         ],
         "suites": [
           "bytes",
@@ -1108,9 +1128,14 @@
       "owned-spans-kernel-receiver": {
         "arguments": [
           "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
           "-O",
           "@SOURCE@/tests/compiler/owned_spans_kernel.py",
           "@BUILD@/aurorac",
+          "--artifacts",
+          "@ARTIFACTS@",
           "--receiver-bound"
         ],
         "suites": [
@@ -1123,9 +1148,14 @@
       "owned-spans-kernel-standalone": {
         "arguments": [
           "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
           "-O",
           "@SOURCE@/tests/compiler/owned_spans_kernel.py",
-          "@BUILD@/aurorac"
+          "@BUILD@/aurorac",
+          "--artifacts",
+          "@ARTIFACTS@"
         ],
         "suites": [
           "bytes",
@@ -1146,9 +1176,14 @@
       "owned-spans-source": {
         "arguments": [
           "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
           "-O",
           "@SOURCE@/tests/compiler/owned_spans_source.py",
-          "@BUILD@/aurorac"
+          "@BUILD@/aurorac",
+          "--artifacts",
+          "@ARTIFACTS@"
         ],
         "suites": [
           "bytes",
@@ -1216,12 +1251,17 @@
       "package-graph": {
         "arguments": [
           "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
           "-O",
           "@SOURCE@/tests/compiler/package_graph.py",
           "@BUILD@/aurorac",
           "--profile",
           "dev",
-          "--developer-selected-compiler"
+          "--developer-selected-compiler",
+          "--artifact-root",
+          "@ARTIFACTS@"
         ],
         "suites": [
           "dev",
@@ -1265,12 +1305,17 @@
       "package-identity": {
         "arguments": [
           "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
           "-O",
           "@SOURCE@/tests/compiler/package_identity.py",
           "@BUILD@/aurorac",
           "--profile",
           "dev",
-          "--developer-selected-compiler"
+          "--developer-selected-compiler",
+          "--artifact-root",
+          "@ARTIFACTS@"
         ],
         "suites": [
           "dev",
@@ -1314,12 +1359,17 @@
       "package-manifest": {
         "arguments": [
           "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
           "-O",
           "@SOURCE@/tests/compiler/package_manifest.py",
           "@BUILD@/aurorac",
           "--profile",
           "dev",
-          "--developer-selected-compiler"
+          "--developer-selected-compiler",
+          "--artifact-root",
+          "@ARTIFACTS@"
         ],
         "suites": [
           "dev",
@@ -1600,9 +1650,14 @@
       "display-service-ir": {
         "arguments": [
           "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
           "-O",
           "@SOURCE@/tests/compiler/service_group_ir_abi.py",
-          "@BUILD@/tests/display-service-ir"
+          "@BUILD@/tests/display-service-ir",
+          "--artifacts",
+          "@ARTIFACTS@"
         ],
         "suites": [
           "compiler",
@@ -1840,9 +1895,14 @@
       "utf8": {
         "arguments": [
           "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
           "-O",
           "@SOURCE@/tests/compiler/utf8.py",
-          "@BUILD@/aurorac"
+          "@BUILD@/aurorac",
+          "--artifacts",
+          "@ARTIFACTS@"
         ],
         "suites": [
           "compiler",
@@ -1862,9 +1922,14 @@
       "utf8-encoding": {
         "arguments": [
           "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
           "-O",
           "@SOURCE@/tests/compiler/utf8_encoding.py",
-          "@BUILD@/aurorac"
+          "@BUILD@/aurorac",
+          "--artifacts",
+          "@ARTIFACTS@"
         ],
         "suites": [
           "compiler",

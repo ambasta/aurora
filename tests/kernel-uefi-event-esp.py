@@ -433,6 +433,26 @@ class DeveloperTools(unittest.TestCase):
                 )
             self.assertFalse(self.output.exists())
 
+    def test_only_developer_output_may_use_source_build_directory(self):
+        source = self.directory / "source"
+        (source / "build").mkdir(parents=True)
+        (source / "tests").mkdir()
+        with patch.object(ESP, "ROOT", source), patch.object(ESP, "verify_tools", return_value=self.tools):
+            for developer, destination in (
+                (False, "build/pinned"),
+                (False, "tests/pinned"),
+                (True, "tests/developer"),
+            ):
+                with self.subTest(developer=developer, destination=destination):
+                    self.output = source / destination
+                    with self.assertRaisesRegex(ValueError, "outside author source"):
+                        self.build(developer=developer)
+                    self.assertFalse(self.output.exists())
+                    self.assertEqual(self.calls, [])
+            self.output = source / "build/developer"
+            self.build()
+            self.assertTrue((self.output / "esp-admission.json").is_file())
+
     def test_pinned_default_preserves_verification_and_receipt(self):
         with self.assertRaises((ValueError, OSError)):
             ESP.build(self.loader, LOADER_SHA256, self.tools, self.output)

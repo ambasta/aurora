@@ -15,8 +15,9 @@ optional compatibility evidence. Native `boot` checks do not run QEMU. A focused
 pass, compiler-free control, plan, registration or prior-source result cannot
 qualify the current candidate. Preserve the actual compiler distribution/version.
 
-Run final validation locally in a comparable environment with the selected pinned
-tools. Container work packages the development environment; it is not a required
+Run final validation locally in the supported pinned development container.
+Advanced native validation must match its exact pinned tools. Container work
+packages the development environment; it is not a required
 CI validation gate and does not establish a passing image or guest result.
 No CI mechanism replaces the current AGENTS merge/release gates.
 
