@@ -15,12 +15,20 @@ mkdir -p "$out"
 cat > "$out/initial.au" <<'SOURCE'
 module program_note_initial;
 import console.session_note;
+import console.session_files;
+import console.protected_files;
 import std.binary_buffer;
 import std.binary;
 auto initial_note() -> console::SessionNote {
     const std::BinaryBuffer64 empty = std::BinaryBuffer64();
     const console::SessionNote note = console::SessionNote(empty);
     return note;
+}
+auto initial_files() -> console::ProtectedFiles {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::SessionFiles records = console::SessionFiles(empty);
+    const console::ProtectedFiles files = console::ProtectedFiles(records);
+    return files;
 }
 SOURCE
 "$AURORAC" --module-root library "$out/initial.au" -o "$out/initial.s"

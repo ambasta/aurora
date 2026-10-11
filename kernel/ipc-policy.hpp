@@ -283,6 +283,9 @@ public:
         state_ = State::idle;
         return true;
     }
+    [[nodiscard]] auto revoked() const -> bool {
+        return !bound_ && state_ == State::idle && scrubbed();
+    }
     [[nodiscard]] auto state() const -> State {
         return state_;
     }

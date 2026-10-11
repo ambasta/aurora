@@ -87,6 +87,58 @@ supervisor-plus-fault cap within the 16 KiB stack. Fresh exact-image accounting
 must establish the current peaks; historical measurements cannot admit a rebuild.
 Legacy scalar/snapshot wrapper checks are separate from actual snapshot guests.
 
+## Protected named RAM files
+
+The source-native named-file mechanism adds `write <name> <text>`, `cat <name>`,
+`upper <name>`, `ls` and `rm <name>`. The existing `console::SessionFiles`
+continues to own its exact grammar and four-slot, eight-character-name,
+49-printable-byte content limits; `note` remains reserved for the separate note.
+An existing file can be replaced when all four slots are occupied. Names are
+case-sensitive, an empty existing file is distinct from missing, and all state
+is volatile and cleared at console exit.
+
+`console::ProtectedFiles` adds a copied private selection and a session mutation
+revision around that unchanged store. Every successful write/removal/replacement,
+including an identical write, invalidates all old selections. This conservative
+rule also invalidates a selection after an unrelated-file mutation. Deletion and
+slot reuse cannot resurrect it. Revision exhaustion refuses mutation without
+changing any saved byte and still permits reads/listing. Failed validation and
+full-store refusal preserve the complete store and revision.
+
+A selected file is projected by Aurora, bound to actual fresh Mailbox owners and
+grants, and copied only into the authenticated service's verified stack record.
+The protected client requests offsets and receives actual service bytes through
+the same 12/11 read phases as the note. `upper <name>` uses completion phase 14:
+its Aurora client returns the original encoded service byte in bits 0–15 and its
+uppercase output in bits 16–23. Native code requires exact original-byte
+acknowledgment, closed encoding and a printable output byte; it never computes
+the transformation. EOF/missing retain their exact terminal encoding. Both
+empty and nonempty files require a final authenticated EOF round; a missing
+selection is read through IPC and cannot create a file.
+
+Replacement authority is private, one-shot and bound to the actual client
+incarnation, endpoint generation, selected file and exact stream run. A read-only
+grant cannot mint it. The bounded stream run generation does not reset on
+cancellation, so restarting the same ledger cannot reuse a live or retired
+receipt; exhaustion refuses a new run without wrapping. Completion is recorded
+only after the entire stream is acknowledged with an idle, scrubbed Mailbox.
+After grants are revoked and both original domain incarnations are retired,
+that receipt alone permits one extraction. Aurora rechecks the selected revision
+and name, validates the complete output and atomically updates only that record.
+The console reports `File saved.` after publication; `cat <name>` gives separate
+protected exact readback. Faults, budgets and cancellation discard staged output
+and authority while preserving every old file, then a healthy command starts
+with fresh grants. This is a bounded command service, not a general file API,
+filesystem, persistent store or proof of production security.
+
+Existing native generated-code and PTY fixtures cover this path alongside the
+note/scalar regressions. Named-file guest qualification remains pending; current
+aggregate-copy code size requires a compact-lowering dependency before proceeding
+with the unchanged mapped-image cap. Hosted checks and transcript controls do
+not establish an admitted or booted named-file image. The shared image/ABI/stack gates cover both copied-value
+bridges; no separate admission workflow is introduced. Changed source still
+requires final linked-image, guest, full-native and independent-review gates.
+
 ## Authority and data
 
 Exactly two real domains use `ipc::Mailbox`, not the three-domain dispatcher.

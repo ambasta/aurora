@@ -68,6 +68,170 @@ auto check_output(const aurora::program::Output &output, const StreamBytes &expe
     need(output.length() == length && output.bytes() == expected, "whole copied output/tail");
 }
 
+constexpr auto read_reply(std::uint64_t source) -> std::uint64_t {
+    return 1 | (source << 8);
+}
+constexpr auto read_ack(std::uint64_t source, std::uint64_t output, bool transforming) -> std::uint64_t {
+    return read_reply(source) | (transforming ? output << 16 : 0);
+}
+auto read_byte_round(Stream &stream, std::uint64_t ordinal, std::uint8_t source, std::uint8_t output, bool transforming)
+    -> void {
+    const auto reply = read_reply(source);
+    const auto acknowledgment = read_ack(source, output, transforming);
+    next(stream, ordinal, 1);
+    need(!stream.ready_to_finish() && !stream.finish(), "read cannot finish without acknowledged terminal");
+    need(!stream.accept_reply(reply, ordinal) && !stream.acknowledge(acknowledgment, ordinal),
+         "read rejects early reply or acknowledgment");
+    for (const auto invalid : {std::uint64_t{0}, std::uint64_t{2}, std::uint64_t{257}, maximum})
+        need(!stream.accept_request(invalid, ordinal), "read requires exact offset request marker");
+    need(!stream.accept_request(1, ordinal + 1) && !stream.accept_request(1, maximum), "read request ordinal");
+    need(stream.accept_request(1, ordinal), "read request");
+    need(!stream.next_input() && !stream.accept_request(1, ordinal) && !stream.acknowledge(acknowledgment, ordinal) &&
+             !stream.finish(),
+         "read request is one shot and hides partial output");
+    for (const auto invalid :
+         {std::uint64_t{0}, std::uint64_t{4}, reply | 2, reply | (std::uint64_t{1} << 16), maximum})
+        need(!stream.accept_reply(invalid, ordinal), "read reply closed encoding");
+    need(!stream.accept_reply(reply, ordinal + 1) && !stream.accept_reply(reply, maximum), "read reply ordinal");
+    need(stream.accept_reply(reply, ordinal), "read retains actual service reply");
+    need(!stream.accept_reply(reply, ordinal) && !stream.accept_request(1, ordinal) && !stream.next_input() &&
+             !stream.finish(),
+         "read reply is one shot and hides partial output");
+    const auto changed_source = source == 'x' ? 'y' : 'x';
+    need(!stream.acknowledge(read_ack(changed_source, output, transforming), ordinal) &&
+             !stream.acknowledge(acknowledgment ^ 1, ordinal) && !stream.acknowledge(2, ordinal) &&
+             !stream.acknowledge(3, ordinal),
+         "read acknowledgment must preserve exact service byte and marker");
+    need(!stream.acknowledge(acknowledgment, ordinal + 1) && !stream.acknowledge(acknowledgment, maximum),
+         "read acknowledgment ordinal");
+    for (const auto excess : {std::uint64_t{1} << 24, std::uint64_t{1} << 32, std::uint64_t{1} << 63})
+        need(!stream.acknowledge(acknowledgment | excess, ordinal), "read acknowledgment rejects excess bits");
+    if (transforming) {
+        for (std::uint64_t invalid = 0; invalid <= 256; ++invalid) {
+            if (invalid < 32 || invalid > 126)
+                need(!stream.acknowledge(read_ack(source, invalid, true), ordinal),
+                     "transforming read requires bounded printable output");
+        }
+        need(!stream.acknowledge(reply, ordinal), "transforming read cannot omit transformed byte");
+    } else {
+        need(!stream.acknowledge(read_ack(source, output, true), ordinal),
+             "ordinary read rejects a transforming acknowledgment");
+    }
+    need(stream.acknowledge(acknowledgment, ordinal), "read accepts actual client acknowledgment");
+    need(!stream.acknowledge(acknowledgment, ordinal) && !stream.accept_reply(reply, ordinal) &&
+             !stream.accept_request(1, ordinal),
+         "read completed ordinal cannot be replayed");
+}
+auto read_terminal_round(Stream &stream, std::uint64_t ordinal, bool missing = false) -> void {
+    const std::uint64_t reply = missing ? 3 : 2;
+    next(stream, ordinal, 1);
+    need(!stream.finish() && stream.accept_request(1, ordinal) && stream.accept_reply(reply, ordinal),
+         "read terminal request and reply require acknowledgment");
+    need(!stream.acknowledge(missing ? 2 : 3, ordinal) && !stream.acknowledge(read_reply('a'), ordinal) &&
+             !stream.acknowledge(reply | (std::uint64_t{'A'} << 16), ordinal) &&
+             !stream.acknowledge(reply | (std::uint64_t{1} << 8), ordinal) &&
+             !stream.acknowledge(reply | (std::uint64_t{1} << 63), ordinal) &&
+             !stream.acknowledge(reply, ordinal + 1) && !stream.finish(),
+         "terminal acknowledgment requires exact marker without transformed byte");
+    need(stream.acknowledge(reply, ordinal) && stream.ready_to_finish() && !stream.next_input(),
+         "acknowledged terminal enables whole read output");
+    need(!stream.accept_request(1, ordinal) && !stream.accept_reply(reply, ordinal) &&
+             !stream.acknowledge(reply, ordinal),
+         "read terminal cannot be repeated");
+}
+auto read_streams() -> void {
+    Stream stream;
+    for (const auto transforming : {false, true}) {
+        need(stream.begin_read(transforming), "begin read mode");
+        need(!stream.begin_read(!transforming) && !stream.begin(input("x"), 1), "active read cannot be replaced");
+        // Deliberately not uppercase: native code authenticates the original
+        // reply and bounds output, without computing the client transformation.
+        read_byte_round(stream, 0, 'a', transforming ? 'q' : 'a', transforming);
+        read_byte_round(stream, 1, 'z', transforming ? '!' : 'z', transforming);
+        read_terminal_round(stream, 2);
+        const auto output = stream.finish();
+        need(output && !output->missing(), "whole read finish");
+        check_output(*output, input(transforming ? "q!" : "az"), 2);
+        terminal(stream);
+
+        for (const auto missing : {false, true}) {
+            need(stream.begin_read(transforming) && !stream.ready_to_finish(), "empty/missing requires terminal round");
+            read_terminal_round(stream, 0, missing);
+            const auto empty = stream.finish();
+            need(empty && empty->missing() == missing, "empty and missing remain distinct");
+            check_output(*empty, StreamBytes{}, 0);
+            terminal(stream);
+        }
+
+        for (std::uint8_t source = 32; source <= 126; ++source) {
+            const auto transformed = transforming ? static_cast<std::uint8_t>(158 - source) : source;
+            need(stream.begin_read(transforming), "printable read byte coverage");
+            read_byte_round(stream, 0, source, transformed, transforming);
+            read_terminal_round(stream, 1);
+            const auto output = stream.finish();
+            StreamBytes expected{};
+            expected[0] = transformed;
+            need(output && !output->missing(), "printable read finish");
+            check_output(*output, expected, 1);
+            terminal(stream);
+        }
+
+        StreamBytes expected{};
+        need(stream.begin_read(transforming), "maximum read begin");
+        for (std::size_t index = 0; index < 53; ++index) {
+            const auto source = static_cast<std::uint8_t>(' ' + index);
+            const auto output = transforming ? static_cast<std::uint8_t>('~' - index) : source;
+            read_byte_round(stream, index, source, output, transforming);
+            expected[index] = output;
+        }
+        read_terminal_round(stream, 53);
+        const auto maximum_output = stream.finish();
+        need(maximum_output && !maximum_output->missing(), "maximum read finish");
+        check_output(*maximum_output, expected, 53);
+        terminal(stream);
+
+        need(stream.begin_read(transforming), "overlong read begin");
+        for (std::size_t index = 0; index < 53; ++index)
+            read_byte_round(stream, index, 'x', 'x', transforming);
+        need(stream.accept_request(1, 53) && stream.accept_reply(read_reply('x'), 53) &&
+                 !stream.acknowledge(read_ack('x', 'x', transforming), 53) && !stream.finish() && stream.cancel(),
+             "fifty-fourth byte cannot be staged or released");
+        terminal(stream);
+
+        for (unsigned stage = 0; stage < 7; ++stage) {
+            need(stream.begin_read(transforming), "read cancellation fixture");
+            read_byte_round(stream, 0, 'x', transforming ? 'X' : 'x', transforming);
+            if (stage >= 1)
+                need(stream.accept_request(1, 1), "cancel pending read request");
+            if (stage >= 2)
+                need(stream.accept_reply(read_reply('y'), 1), "cancel pending read reply");
+            if (stage >= 3)
+                need(stream.acknowledge(read_ack('y', 'y', transforming), 1), "cancel staged read prefix");
+            if (stage >= 4)
+                need(stream.accept_request(1, 2), "cancel pending terminal request");
+            if (stage >= 5)
+                need(stream.accept_reply(2, 2), "cancel pending terminal reply");
+            if (stage >= 6)
+                need(stream.acknowledge(2, 2), "cancel fully acknowledged read");
+            need(stream.cancel(), "cancel live read discards every staged byte");
+            terminal(stream);
+            need(stream.begin_read(), "read cancellation recovery resets transforming mode");
+            read_byte_round(stream, 0, 'n', 'n', false);
+            read_terminal_round(stream, 1);
+            const auto recovered = stream.finish();
+            need(recovered && !recovered->missing(), "read recovery finish");
+            check_output(*recovered, input("n"), 1);
+            terminal(stream);
+        }
+    }
+    need(stream.begin(input("a"), 1), "scalar stream after transforming read");
+    byte_round(stream, 0, 'a', 'A');
+    const auto scalar = stream.finish();
+    need(scalar && !scalar->missing(), "scalar mode reset after read");
+    check_output(*scalar, input("A"), 1);
+    terminal(stream);
+}
+
 // Independent state model: no implementation helpers or private storage.
 class Model final {
 public:
@@ -196,6 +360,11 @@ auto generated_model() -> void {
 } // namespace
 
 auto main() -> int {
+    Stream bounded{1};
+    need(bounded.run() == 0 && bounded.begin({}, 0) && bounded.run() == 1, "first ledger identity minted");
+    need(bounded.finish().has_value() && !bounded.begin({}, 0) && bounded.run() == 1 && bounded.scrubbed(),
+         "ledger generation exhaustion cannot wrap or mutate state");
+
     Stream stream;
     terminal(stream);
     auto bytes = input("az");
@@ -260,7 +429,8 @@ auto main() -> int {
         check_output(*recovered, input("N"), 1);
         terminal(stream);
     }
+    read_streams();
     generated_model();
-    std::cout << "PASS: copied-byte stream, ordered one-shot request/reply/ack, output staging and scrub; 40000 model "
-                 "steps\n";
+    std::cout << "PASS: copied-byte and authenticated read/transform streams, ordered one-shot request/reply/ack, "
+                 "output staging and scrub; 40000 scalar model steps\n";
 }

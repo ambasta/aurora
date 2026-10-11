@@ -244,7 +244,12 @@ def stack_evidence(directory, *, snapshot=False):
             "aurora_kernel_terminal_event",
         )
         if snapshot
-        else ("__au_runtime_note_update", "__au_runtime_note_project")
+        else (
+            "__au_runtime_note_update",
+            "__au_runtime_note_project",
+            "__au_runtime_files_update",
+            "__au_runtime_files_replace",
+        )
     )
     graph = decoder.image_stack_graph(
         directory, units, ROOT, protected=True, bridges=bridges, noreturn=decoder.OWNED_NORETURN if snapshot else ()
@@ -332,7 +337,12 @@ def note_evidence(directory, mode="program-console"):
     generated = decoder.Elf(directory / "objects" / "language.o")
     code, _ = decoder.disassemble(directory / "payload.elf")
     names = {row.name: row for row in linked.symbols if row.section}
-    bridges = {"__au_runtime_note_update", "__au_runtime_note_project"}
+    bridges = {
+        "__au_runtime_note_update",
+        "__au_runtime_note_project",
+        "__au_runtime_files_update",
+        "__au_runtime_files_replace",
+    }
     need({name for name in names if name.startswith("__au_runtime_")} == bridges, "Closed note runtime inventory")
     need(
         not any(name.startswith(("__cxa_", "_GLOBAL__sub_I", "_Zn", "_Zd")) for name in names),
@@ -394,14 +404,32 @@ def note_evidence(directory, mode="program-console"):
     def memory(offset, register):
         return (f"-0x{-offset:x}" if offset < 0 else f"0x{offset:x}" if offset else "") + f"(%{register})"
 
-    for action, frame, argument_save, result_save, parameters, result_start, result_bytes in (
-        ("update", 464, -456, -464, ((0, -72, 72), (72, -136, 64), (136, -144, 8)), -448, 80),
-        ("project", 176, -168, -176, ((0, -72, 72),), -144, 72),
+    for action, frame, argument_save, result_save, parameters, result_starts, result_bytes, entry in (
+        ("note_update", 464, -456, -464, ((0, -72, 72), (72, -136, 64), (136, -144, 8)), (-448,), 80, "11update_note"),
+        ("note_project", 176, -168, -176, ((0, -72, 72),), (-144,), 72, "12project_note"),
+        (
+            "files_update",
+            3392,
+            -3384,
+            -3392,
+            ((0, -272, 272), (272, -336, 64), (336, -344, 8)),
+            (-2064, -3376),
+            520,
+            "12update_files",
+        ),
+        (
+            "files_replace",
+            1664,
+            -1656,
+            -1664,
+            ((0, -272, 272), (272, -360, 88), (360, -424, 64), (424, -432, 8)),
+            (-1640,),
+            352,
+            "13replace_files",
+        ),
     ):
-        private = "__au_v_m1_22kernel_program_console_n0__d" + (
-            "11update_note" if action == "update" else "12project_note"
-        )
-        bridge = "__au_runtime_note_" + action
+        private = "__au_v_m1_22kernel_program_console_n0__d" + entry
+        bridge = "__au_runtime_" + action
         need(private not in public and private in generated.functions, "Private note source entry")
         symbol = linked.functions[bridge]
         wrapper = []
@@ -437,14 +465,18 @@ def note_evidence(directory, mode="program-console"):
             [(row.op, row.args) for row in body[prefix : prefix + len(expected)]] == expected,
             "Exact note copied input binding",
         )
-        result = [("mov", memory(result_save, "rbp") + ",%r10")]
-        for byte in range(0, result_bytes, 8):
-            result += [("mov", memory(result_start + byte, "rbp") + ",%rax"), ("mov", "%rax," + memory(byte, "r10"))]
+        first = ("mov", memory(result_save, "rbp") + ",%r10")
         rows = [(row.op, row.args) for row in body]
-        starts = [i for i, row in enumerate(rows) if row == result[0]]
-        need(
-            len(starts) == 1 and rows[starts[0] : starts[0] + len(result)] == result, "Exact note copied result binding"
-        )
+        starts = [i for i, row in enumerate(rows) if row == first]
+        need(len(starts) == len(result_starts), "Exact copied result path count")
+        for start, result_start in zip(starts, result_starts, strict=True):
+            result = [first]
+            for byte in range(0, result_bytes, 8):
+                result += [
+                    ("mov", memory(result_start + byte, "rbp") + ",%rax"),
+                    ("mov", "%rax," + memory(byte, "r10")),
+                ]
+            need(rows[start : start + len(result)] == result, "Exact note/file copied result binding")
         evidence.append(
             dict(
                 bridge=bridge,

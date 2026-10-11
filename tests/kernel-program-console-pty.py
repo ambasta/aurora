@@ -29,15 +29,19 @@ def need(okay, message):
         raise ValueError(message)
 
 
-def validate(text, mode, expected_outputs, commands, images, timer, expected_reads=None, expected_saves=None):
+def validate(
+    text, mode, expected_outputs, commands, images, timer, expected_reads=None, expected_saves=None, expected_files=None
+):
     expected_reads = {} if expected_reads is None else expected_reads
     expected_saves = {} if expected_saves is None else expected_saves
+    expected_files = {} if expected_files is None else expected_files
     need("AURORA_UEFI_RUNTIME_FAIL" not in text and "AURORA_UEFI_FAIL" not in text, "Runtime or payload failed closed")
     need(text.count("AURORA_PROGRAM_CONSOLE_READY:") == 1, "Console restart or missing readiness")
     begins = [
         (int(grant), int(length))
         for grant, length in re.findall(
-            r"AURORA_PROGRAM_COMMAND_BEGIN: grant=(\d+) length=(\d+) domains=2 kind=(?:upper-note|upper|note)\r?\n",
+            r"AURORA_PROGRAM_COMMAND_BEGIN: grant=(\d+) length=(\d+) domains=2 "
+            r"kind=(?:upper-file|file|upper-note|upper|note)\r?\n",
             text,
         )
     ]
@@ -46,6 +50,10 @@ def validate(text, mode, expected_outputs, commands, images, timer, expected_rea
         for success, epoch in re.findall(r"AURORA_PROGRAM_COMMAND_END: success=([01]) used=0 epoch=(\d+)", text)
     ]
     need(len(begins) == len(endings) == commands, "Missing command lifecycle evidence")
+    need(
+        text.count("AURORA_PROGRAM_COMMAND_BEGIN:") == text.count("AURORA_PROGRAM_COMMAND_END:") == commands,
+        "Unexpected or malformed command ownership interval",
+    )
     need(all(a[0] < b[0] for a, b in zip(begins, begins[1:])), "Endpoint generation reused")
     need(all(0 <= length <= 64 for _, length in begins), "Unbounded admitted input")
     need(all(a[1] <= b[1] for a, b in zip(endings, endings[1:])), "Timer epoch reset")
@@ -53,7 +61,8 @@ def validate(text, mode, expected_outputs, commands, images, timer, expected_rea
     need(epochs and all(a < b for a, b in zip(epochs, epochs[1:])), "Run epoch missing or reused")
     command_matches = list(
         re.finditer(
-            r"AURORA_PROGRAM_COMMAND_BEGIN: grant=\d+ length=(\d+) domains=2 kind=(upper-note|upper|note)\r?\n(.*?)"
+            r"AURORA_PROGRAM_COMMAND_BEGIN: grant=\d+ length=(\d+) domains=2 "
+            r"kind=(upper-file|file|upper-note|upper|note)\r?\n(.*?)"
             r"AURORA_PROGRAM_COMMAND_END: success=([01]) used=0 epoch=(\d+)\r?\n([^\r\n]*)",
             text,
             re.S,
@@ -63,26 +72,34 @@ def validate(text, mode, expected_outputs, commands, images, timer, expected_rea
     need(len(command_parts) == commands, "Unmatched command ownership interval")
     need(set(expected_reads) <= set(range(commands)), "Unexpected note command index")
     need(set(expected_saves) <= set(range(commands)), "Unexpected saved-output command index")
+    need(set(expected_files) <= set(range(commands)), "Unexpected named-file command index")
     saved_count = 0
     missing_count = 0
+    file_saved_count = 0
+    file_missing_count = 0
     for command_index, (length, kind, part, success, ending_epoch, result) in enumerate(command_parts):
         need((kind == "note") == (command_index in expected_reads), "Unexpected note/upper command")
         need((kind == "upper-note") == (command_index in expected_saves), "Unexpected saved-output command")
-        if kind == "upper-note":
-            need(int(length) == len(expected_saves[command_index]) <= 53, "Bounded exact saved-output length")
-            saved_count += int(success == "1")
-            need("Note saved." not in part, "Note was saved before retirement")
+        need((kind in ("file", "upper-file")) == (command_index in expected_files), "Unexpected named-file command")
+        if kind in ("upper-note", "upper-file"):
+            marker = "File saved." if kind == "upper-file" else "Note saved."
+            if kind == "upper-note":
+                need(int(length) == len(expected_saves[command_index]) <= 53, "Bounded exact saved-output length")
+                saved_count += int(success == "1")
+            else:
+                file_saved_count += int(success == "1")
+            need(marker not in part, "Value was saved before retirement")
             match = command_matches[command_index]
             response_end = command_matches[command_index + 1].start() if command_index + 1 < commands else len(text)
             prompt = text.find("aurora> ", match.end())
             if prompt >= 0:
                 response_end = min(response_end, prompt)
             response = text[match.start(6) : response_end]
-            need(response.count("Note saved.") == int(success == "1"), "Duplicate or unexpected save acknowledgment")
+            need(response.count(marker) == int(success == "1"), "Duplicate or unexpected save acknowledgment")
             need(
                 result
                 == (
-                    "Note saved."
+                    marker
                     if success == "1"
                     else "Program stopped: checked fault or budget exhausted; output discarded."
                 ),
@@ -100,6 +117,31 @@ def validate(text, mode, expected_outputs, commands, images, timer, expected_rea
             rounds = len(expected or "") + 1
             sources = {"request": 12, "service": 11, "completion": 13}
             missing_count += int(expected is None and success == "1")
+        if kind in ("file", "upper-file"):
+            planned = expected_files[command_index]
+            command = planned["command"]
+            expected = planned["value"]
+            parsed = re.fullmatch(r"(cat|upper) ([A-Za-z0-9_.-]{1,8})", command)
+            need(parsed and parsed[2] not in ("note", ".", ".."), "Invalid expected file command")
+            need(int(length) == len(command), "Named-file trace must retain original command length")
+            need(
+                expected is None or (len(expected) <= 49 and all(32 <= ord(byte) <= 126 for byte in expected)),
+                "Unbounded or nonprintable expected file value",
+            )
+            saving = parsed[1] == "upper" and expected is not None
+            need(kind == ("upper-file" if saving else "file"), "Wrong named-file command kind")
+            rounds = len(expected or "") + 1
+            sources = {"request": 12, "service": 11, "completion": 14 if saving else 13}
+            file_missing_count += int(expected is None and success == "1")
+            need(
+                result
+                == (
+                    ("File saved." if saving else "File is missing." if expected is None else "output> " + expected)
+                    if success == "1"
+                    else "Program stopped: checked fault or budget exhausted; output discarded."
+                ),
+                "Named-file terminal response mismatch",
+            )
         runs = re.findall(
             r"AURORA_UEFI_USER_RUN: epoch=(\d+) role=(client|service) "
             r"phase=(request|service|completion) client=0 transaction=(\d+) source=(\d+) root=\d+",
@@ -125,7 +167,7 @@ def validate(text, mode, expected_outputs, commands, images, timer, expected_rea
                 need(transaction == runs[offset - 1][3], "Completion changed transaction")
         if runs:
             need(int(ending_epoch) == int(runs[-1][0]), "Retirement epoch does not match last run")
-    actual_outputs = re.findall(r"(?:^|\n)output> ([^\r\n]*)\r?\n", text)
+    actual_outputs = re.findall(r"^output> ([^\r\n]*)\r?\n", text, re.M)
     need(actual_outputs == expected_outputs, "Partial, duplicate, missing or wrong completed output")
     # Every full output must immediately follow a successful zero-resource end.
     need(
@@ -138,12 +180,22 @@ def validate(text, mode, expected_outputs, commands, images, timer, expected_rea
         == saved_count,
         "Saved output lacks complete authenticated retirement",
     )
-    need(text.count("Note is missing.") == missing_count, "Missing-note outcome mismatch")
+    need(len(re.findall(r"^Note is missing\.\r?$", text, re.M)) == missing_count, "Missing-note outcome mismatch")
     need(
         len(re.findall(r"AURORA_PROGRAM_COMMAND_END: success=1 used=0 epoch=\d+\r?\nNote is missing\.", text))
         == missing_count,
         "Missing-note output preceded authenticated retirement",
     )
+    for marker, count in (("File saved.", file_saved_count), ("File is missing.", file_missing_count)):
+        need(
+            len(re.findall(r"^" + re.escape(marker) + r"\r?$", text, re.M)) == count,
+            "Duplicate or unexpected named-file terminal response",
+        )
+        need(
+            len(re.findall(r"AURORA_PROGRAM_COMMAND_END: success=1 used=0 epoch=\d+\r?\n" + re.escape(marker), text))
+            == count,
+            "Named-file terminal response preceded authenticated retirement",
+        )
     arenas = re.findall(r"AURORA_UEFI_OWNERSHIP_OK: arena=(\d+)", text)
     need(len(arenas) == 1, "Missing unique kernel arena")
     arena = int(arenas[0])
@@ -261,6 +313,15 @@ def validate(text, mode, expected_outputs, commands, images, timer, expected_rea
             "AURORA_UEFI_TIMER_PENDING:" in text and "AURORA_UEFI_TIMER_DRAIN:" in text,
             "Pending IRQ did not drain under the old runtime owner",
         )
+        transforming_parts = [part for _, kind, part, _, _, _ in command_parts if kind == "upper-file"]
+        if transforming_parts:
+            need(
+                any(
+                    "AURORA_UEFI_TIMER_PENDING:" in part and "AURORA_UEFI_TIMER_DRAIN:" in part
+                    for part in transforming_parts
+                ),
+                "Named-file transformation lacks its own pending IRQ ownership/drain evidence",
+            )
     need(text.count("AURORA_PROGRAM_CONSOLE_QUIET: timer=masked isr=0 irr=0 domains=0") == 1, "Missing quiescent exit")
     need(text.count("AURORA_CONSOLE_EXIT") == 1, "Missing single exit")
     return dict(
@@ -270,6 +331,8 @@ def validate(text, mode, expected_outputs, commands, images, timer, expected_rea
         last_epoch=endings[-1][1],
         completed_outputs=len(actual_outputs),
         saved_outputs=saved_count,
+        saved_files=file_saved_count,
+        missing_files=file_missing_count,
         recovered=int(failed),
     )
 
@@ -359,6 +422,7 @@ def main():
     expected_outputs = []
     expected_reads = {}
     expected_saves = {}
+    expected_files = {}
     commands = 0
     metrics = {
         "status": "incomplete",
@@ -463,6 +527,57 @@ def main():
                 else:
                     need(part.count("Note saved.\r\n") == 1, "Complete protected output was not saved exactly once")
 
+            def file_local(command, expected):
+                begin = len(transcript)
+                send(command.encode("ascii") + b"\n")
+                receive(b"aurora> ", begin)
+                part = bytes(transcript[begin:]).decode("ascii")
+                need(
+                    part.count("\r\n" + expected + "\r\n") == 1
+                    and "AURORA_PROGRAM_COMMAND_BEGIN:" not in part
+                    and "AURORA_UEFI_USER_RUN:" not in part
+                    and "output> " not in part
+                    and "File saved." not in part,
+                    "File update/list/remove must return the exact quiescent SessionFiles reply without domains",
+                )
+
+            def file_write(name, content):
+                size = len(content)
+                file_local("write " + name + " " + content, f"wrote {name}: {size} byte" + ("" if size == 1 else "s"))
+
+            def file_command(verb, name, expected, failure=False):
+                nonlocal commands
+                command = verb + " " + name
+                begin = len(transcript)
+                send(command.encode("ascii") + b"\n")
+                receive(b"aurora> ", begin)
+                part = bytes(transcript[begin:]).decode("ascii")
+                expected_files[commands] = {"command": command, "value": expected}
+                commands += 1
+                if failure:
+                    need(
+                        "output> " not in part
+                        and "File saved." not in part
+                        and "File is missing." not in part
+                        and "output discarded." in part,
+                        "Failed named-file command exposed or replaced partial output",
+                    )
+                elif expected is None:
+                    need(
+                        part.count("File is missing.\r\n") == 1
+                        and "File saved." not in part
+                        and "output> " not in part,
+                        "Missing named file was created or exposed as an empty file",
+                    )
+                elif verb == "upper":
+                    need(
+                        part.count("File saved.\r\n") == 1 and "output> " not in part,
+                        "Protected file replacement was not acknowledged exactly once",
+                    )
+                else:
+                    need("output> " + expected + "\r\n" in part, "Actual protected file contents differ")
+                    expected_outputs.append(expected)
+
             receive(b"aurora> ", 0)
             tty.setraw(master)
             if args.mode in FAILSTOP_REASONS:
@@ -486,6 +601,46 @@ def main():
                 return
 
             if args.mode == "program-console":
+                file_local("ls", "files: empty (RAM-only).")
+                file_command("upper", "missing", None)
+                file_command("cat", "missing", None)
+                file_local("ls", "files: empty (RAM-only).")
+                file_write("alpha", "Hello, Aurora")
+                file_write("beta", "Keep Lower")
+                file_command("cat", "alpha", "Hello, Aurora")
+                file_command("upper", "alpha", "HELLO, AURORA")
+                file_command("cat", "alpha", "HELLO, AURORA")
+                file_command("cat", "beta", "Keep Lower")
+                file_command("upper", "alpha", "HELLO, AURORA")
+                file_command("cat", "alpha", "HELLO, AURORA")
+                file_write("alpha", "x")
+                file_command("cat", "alpha", "x")
+                file_write("alpha", "")
+                file_command("upper", "alpha", "")
+                file_command("cat", "alpha", "")
+                file_write("abcdefgh", "z" * 49)
+                file_command("cat", "abcdefgh", "z" * 49)
+                file_command("upper", "abcdefgh", "Z" * 49)
+                file_command("cat", "abcdefgh", "Z" * 49)
+                file_write("delta", "Last untouched")
+                file_local("ls", "files: alpha beta abcdefgh delta")
+                file_local("write fifth rejected", "files: full (4 files).")
+                file_command("upper", "fifth", None)
+                file_command("cat", "fifth", None)
+                # Existing selections remain writable even when all slots are full.
+                file_write("alpha", "full store")
+                file_command("upper", "alpha", "FULL STORE")
+                file_command("cat", "alpha", "FULL STORE")
+                file_command("cat", "beta", "Keep Lower")
+                file_command("cat", "delta", "Last untouched")
+                file_local("write alpha " + "q" * 50, "files: invalid name or content.")
+                file_command("cat", "alpha", "FULL STORE")
+                file_local("rm beta", "files: removed (RAM-only).")
+                file_command("cat", "beta", None)
+                file_write("newfile", "Reused slot")
+                file_local("ls", "files: alpha newfile abcdefgh delta")
+                file_command("cat", "newfile", "Reused slot")
+                file_command("cat", "abcdefgh", "Z" * 49)
                 note_upper(None)
                 note_read(None)
                 note_write(b"Hello, Aurora")
@@ -513,12 +668,24 @@ def main():
                 note_upper("Z" * 53)
                 note_read("Z" * 53)
             elif args.mode == "program-pending":
+                file_write("pending", "pending file")
+                file_write("other", "Remain lower")
+                file_command("upper", "pending", "PENDING FILE")
+                file_command("cat", "pending", "PENDING FILE")
+                file_command("cat", "other", "Remain lower")
                 note_write(b"pending note")
                 note_upper("PENDING NOTE")
                 note_read("PENDING NOTE")
             else:
+                file_write("recover", "recover this file")
+                file_write("other", "Remain lower")
+                file_command("upper", "recover", "RECOVER THIS FILE", failure=True)
+                file_command("cat", "recover", "recover this file")
+                file_command("cat", "other", "Remain lower")
+                file_command("upper", "recover", "RECOVER THIS FILE")
+                file_command("cat", "recover", "RECOVER THIS FILE")
+                file_command("cat", "other", "Remain lower")
                 note_write(b"recover this note")
-                note_upper("RECOVER THIS NOTE", failure=True)
                 note_read("recover this note")
                 note_upper("RECOVER THIS NOTE")
                 note_read("RECOVER THIS NOTE")
@@ -578,6 +745,7 @@ def main():
                     admitted["timer"],
                     expected_reads,
                     expected_saves,
+                    expected_files,
                 ),
                 status="passed",
                 exit_status=process.returncode,

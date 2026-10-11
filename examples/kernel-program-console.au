@@ -8,6 +8,8 @@ import kernel.client_disposal;
 import std.binary_buffer;
 import std.binary;
 import console.session_note;
+import console.session_files;
+import console.protected_files;
 import kernel.note_read;
 
 auto aurora_kernel_value() -> i64 {
@@ -210,4 +212,65 @@ auto project_note(console::SessionNote current) -> kernel::NoteRead64 {
         offset = offset + 1;
     }
     return projection;
+}
+
+// Named-file state and selection are copied only at the quiescent supervisor
+// boundary. Protected programs receive the read projection, never this store.
+class FileUpdate {
+    console::ProtectedFiles files;
+    console::FileReply reply;
+    u64 action;
+    console::FileSelection selection;
+    kernel::NoteRead64 projection;
+public:
+    FileUpdate(console::ProtectedFiles next, console::FileReply result, u64 operation,
+        console::FileSelection selected, kernel::NoteRead64 read)
+        : files(next), reply(result), action(operation), selection(selected), projection(read) {
+    }
+};
+class FileMutation {
+    console::ProtectedFiles files;
+    console::FileReply reply;
+public:
+    FileMutation(console::ProtectedFiles next, console::FileReply result) : files(next), reply(result) {
+    }
+};
+auto update_files(console::ProtectedFiles current, std::BinaryBuffer64 command, i64 count) -> FileUpdate {
+    console::ProtectedFiles next = current;
+    const console::FileSelection selection = current.select(command, count);
+    if (selection.version() != 0u64) {
+        const console::FileReply reply = current.project(selection);
+        u64 action = 2u64;
+        if (selection.writable()) {
+            action = 3u64;
+        }
+        i64 length = -1;
+        if (reply.status() == console::FileEvent::read) {
+            length = reply.size();
+        }
+        kernel::NoteRead64 projection = kernel::NoteRead64(length);
+        i64 index = 0;
+        while (index < length) {
+            projection.set(index, reply.at(index));
+            index = index + 1;
+        }
+        return FileUpdate(next, reply, action, selection, projection);
+    }
+    console::FileReply reply = next.submit(command, count);
+    u64 action = 0u64;
+    if (reply.status() != console::FileEvent::unknown) {
+        action = 1u64;
+    }
+    if (command.starts_with(count, "upper ")) {
+        reply.select(console::FileEvent::invalid);
+        action = 1u64;
+    }
+    const kernel::NoteRead64 absent = kernel::NoteRead64(-1);
+    return FileUpdate(next, reply, action, selection, absent);
+}
+auto replace_files(console::ProtectedFiles current, console::FileSelection selected,
+    std::BinaryBuffer64 output, i64 count) -> FileMutation {
+    console::ProtectedFiles next = current;
+    const console::FileReply reply = next.replace(selected, output, count);
+    return FileMutation(next, reply);
 }
