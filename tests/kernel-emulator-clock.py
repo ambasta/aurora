@@ -669,11 +669,11 @@ class ClockContractTests(unittest.TestCase):
         for validator in ("budget", "dispatch", "user-phases", "ipc", "tables", "pin", "runtime"):
             self.assertIn(
                 f"python3 tests/kernel-uefi-{validator}-smoke.py "
-                '"$status" "$log" "$mode" "$image_dir/$mode.metadata.json"',
+                '"$status" "$log" "$mode" "$output_dir/$mode.metadata.json"',
                 source,
             )
         self.assertIn(
-            'python3 tests/kernel-snapshot-smoke.py "$status" "$log" "$mode" "$image_dir/$mode.metadata.json"', source
+            'python3 tests/kernel-snapshot-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.metadata.json"', source
         )
         self.assertNotIn("build/uefi/user-images.json", source)
 
