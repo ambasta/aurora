@@ -4,7 +4,7 @@
 
 namespace aurora {
 // Parser first screens template/call ambiguity with its non-consuming lookahead.
-// This lower adapter receives that scalar-grammar candidate, not a general dispatcher.
+// This lower adapter receives that ordinary-expression candidate, not a general dispatcher.
 // Only Unsupported yields an empty pointer. The caller commits position after
 // complete checked conversion; all rejected results leave its state untouched.
 ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens, std::size_t &position, hosted_parser::Stop stop);

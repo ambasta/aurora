@@ -188,6 +188,8 @@ def frontend_bootstrap(stage0, stage1, root, work):
         "aurora_hosted_parser_parse",
         "aurora_hosted_parser_count",
         "aurora_hosted_parser_read",
+        "aurora_hosted_parser_edges",
+        "aurora_hosted_parser_edge",
         "aurora_hosted_parser_release",
     }
     units = []

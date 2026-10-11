@@ -18,16 +18,20 @@ The implementation uses internal header units and one translation unit so existi
 ## Hosted Aurora expression parser
 
 `expression_parser.au` parses complete statement expressions containing integer,
-byte and bool literals, unqualified names, grouping, unary `-`/`!`/`~`, and all
-existing binary precedence tiers. Initializers, return/static-assert expressions,
+byte and bool literals, qualified names, ordinary function/constructor-shaped
+calls, member/method/index chains, grouping, unary `-`/`!`/`~`, and all existing
+binary precedence tiers. Initializers, return/static-assert expressions,
 if/while conditions, expression statements and assignment operands enter this
 path. An iterative Pratt state machine stores copied frames and AST nodes in
 `expression_arena.au`; parser nesting and AST depth retain their separate bounds
-of 128. Grouping retains the inner node's original token span.
+of 128. A third copied-owner store holds reverse-linked argument edges with
+checked child indices, count and depth summaries. Argument arity grows within
+source/resource bounds; parsing adds no fixed argument-count limit. Grouping
+retains the inner node's original token span; index nodes retain their base token.
 
 The parser calls `lexer.au::next_lexeme` for every token and trivia boundary.
-A local eligibility pass returns Unsupported for calls, qualified names,
-member/index access, construction, strings and arrays. Existing non-consuming
+A local eligibility pass returns Unsupported for type-taking reflection calls,
+brace construction, strings and array literals. Existing non-consuming
 host template lookahead protects template/call ambiguity, including exact `>>`
 closer behavior. No supported prefix is committed: Unsupported falls back for
 the whole expression with tokens and position unchanged. Empty/truncated or
@@ -39,9 +43,11 @@ inside unsupported constructs remain on the C++ reference path.
 creates and consumes the arena; C++ only reserves opaque storage and imports the
 same immutable source snapshot used by the lexer. Copied results contain named
 status values, indices and source offsets. The adapter checks token/spelling/span
-bounds, exact stopping delimiter, unique complete non-parenthesis token coverage,
-subtree source order, child-before-parent order, arity, independently recomputed
-depth and one connected non-sharing tree before committing position.
+bounds, qualified spellings, matched delimiters, exact stopping delimiter and
+complete unique token coverage, including call commas and grouping. It checks
+subtree source order, child-before-parent order, unique argument edges, arity,
+independently recomputed depth and one connected non-sharing tree before committing
+position.
 It constructs the existing `Expression` objects iteratively. All exits, including
 fallback, syntax errors and host allocation exceptions, consume the Aurora owner
 before the host Region closes. Semantic checking, typed IR and backend emission
