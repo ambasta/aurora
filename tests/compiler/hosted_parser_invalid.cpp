@@ -21,6 +21,7 @@ using EdgeWords = std::array<std::int64_t, 5>;
 using TypeWords = std::array<std::int64_t, 8>;
 using InputWords = std::array<std::uint64_t, 18>;
 static_assert(sizeof(TypeWords) == 64 && sizeof(InputWords) == 144);
+using aurora::DiagnosticCode;
 using aurora::hosted_parser::NodeKind;
 using aurora::hosted_parser::Status;
 using aurora::hosted_parser::Stop;
@@ -180,6 +181,57 @@ void nestedTemplateFixture(int levels, bool reflected) {
     }
     typedFixture(source, std::move(syntax));
 }
+// Expected trees are authored separately from the forged ABI records. These
+// helpers only assemble explicitly supplied AST fields and original token spans.
+using Tokens = std::vector<aurora::Token>;
+using ExpectedExpression = std::function<aurora::ExpressionPtr(const Tokens &)>;
+aurora::ExpressionPtr expectedNode(const Tokens &tokens,
+                                   std::size_t ordinal,
+                                   const std::string &operation,
+                                   std::vector<aurora::ExpressionPtr> children = {}) {
+    auto expression = std::make_shared<aurora::Expression>(operation, tokens.at(ordinal));
+    for (const auto &child : children)
+        expression->depth = std::max(expression->depth, child->depth + 1);
+    expression->args = std::move(children);
+    return expression;
+}
+aurora::ExpressionPtr
+qualifiedNode(aurora::ExpressionPtr expression, const Tokens &tokens, std::size_t last, const std::string &spelling) {
+    expression->token.text = spelling;
+    expression->token.span.end = tokens.at(last).span.end;
+    return expression;
+}
+aurora::ExpressionPtr typedNode(aurora::ExpressionPtr expression,
+                                std::vector<aurora::TemplateArgument> arguments,
+                                aurora::Type reflected = {}) {
+    expression->templateArguments = std::move(arguments);
+    expression->reflectedType = std::move(reflected);
+    return expression;
+}
+aurora::ExpressionPtr designatedNode(aurora::ExpressionPtr expression, std::vector<std::string> fields) {
+    expression->fieldNames = std::move(fields);
+    return expression;
+}
+aurora::TemplateArgument namedArgument(const std::string &name, std::vector<aurora::TemplateArgument> arguments) {
+    aurora::TemplateArgument argument(name);
+    argument.templateArguments = std::move(arguments);
+    return argument;
+}
+aurora::Type namedType(const std::string &name, std::vector<aurora::TemplateArgument> arguments = {}) {
+    aurora::Type type(name);
+    type.templateArguments = std::move(arguments);
+    return type;
+}
+aurora::Type builtinClass(const std::string &identity, const std::string &spelling) {
+    aurora::Type type(identity);
+    type.displayName = spelling;
+    return type;
+}
+aurora::Type builtinEnum(const std::string &identity, const std::string &spelling) {
+    auto type = aurora::Type::enumeration(identity);
+    type.displayName = spelling;
+    return type;
+}
 void sameExpression(const aurora::ExpressionPtr &actual, const aurora::ExpressionPtr &expected) {
     require(actual && expected && actual->op == expected->op && actual->token.text == expected->token.text &&
                 actual->token.line == expected->token.line && actual->depth == expected->depth &&
@@ -197,13 +249,13 @@ void sameExpression(const aurora::ExpressionPtr &actual, const aurora::Expressio
     for (std::size_t index = 0; index < actual->args.size(); ++index)
         sameExpression(actual->args[index], expected->args[index]);
 }
-void valid(const std::string &source, const std::function<void()> &configure) {
+void valid(const std::string &source, const std::function<void()> &configure, const ExpectedExpression &expected) {
     reset();
     configure();
     const auto tokens = aurora::lex(source, "forged.au");
     std::size_t position = 0;
     const auto actual = aurora::parseHostedExpression(tokens, position, Stop::Semicolon);
-    sameExpression(actual, aurora::Parser(tokens, false).expr());
+    sameExpression(actual, expected(tokens));
     require(position == static_cast<std::size_t>(result[3]) && created == 1 && parsed == 1 && released == 1 &&
                 read == count && edgeRead == edgeCount && typeRead == typeCount,
             "valid forged control lost cursor, record reads or exact cleanup");
@@ -215,29 +267,20 @@ void valid(const std::string &source, const std::function<void()> &configure) {
             "ordinary expression did not copy an empty TypeContext");
     ++cases;
 }
-void validConstructor(const std::string &source, const std::function<void()> &configure) {
+void validConstructor(const std::string &source,
+                      const std::function<void()> &configure,
+                      const ExpectedExpression &expected,
+                      std::size_t consumed) {
     reset();
     configure();
     const auto tokens = aurora::lex(source, "forged.au");
     std::size_t position = 0;
     const auto actual = aurora::parseHostedExpression(tokens, position, Stop::ConstructorBraces);
-    aurora::Parser reference(tokens, false);
-    const auto field = reference.ident();
-    reference.need("{");
-    auto expected = std::make_shared<aurora::Expression>("array_zero", field);
-    if (!reference.eat("}")) {
-        expected->op = "array_literal";
-        do {
-            const auto child = reference.expr();
-            expected->depth = std::max(expected->depth, child->depth + 1);
-            expected->args.push_back(child);
-        } while (reference.eat(","));
-        reference.need("}");
-    }
-    sameExpression(actual, expected);
-    require(position == static_cast<std::size_t>(result[3]) && created == 1 && parsed == 1 && released == 1 &&
-                read == count && edgeRead == edgeCount && typeRead == typeCount &&
-                reference.peek().span.begin.offset == tokens[position].span.begin.offset,
+    sameExpression(actual, expected(tokens));
+    require(position == consumed && position == static_cast<std::size_t>(result[3]) && created == 1 && parsed == 1 &&
+                released == 1 && read == count && edgeRead == edgeCount && typeRead == typeCount &&
+                tokens[consumed - 1].text == "}" &&
+                result[4] == static_cast<std::int64_t>(tokens[consumed].span.begin.offset),
             "constructor control lost its cursor, original field token or exact cleanup");
     ++cases;
 }
@@ -336,6 +379,8 @@ void contextControl(
 void diagnostic(const std::string &source,
                 Status status,
                 std::size_t ordinal,
+                aurora::DiagnosticCode code,
+                const std::string &message,
                 Stop stop = Stop::Semicolon,
                 bool secondHalf = false) {
     reset();
@@ -347,34 +392,13 @@ void diagnostic(const std::string &source,
               static_cast<std::int64_t>(tokens[ordinal].span.begin.offset) + (secondHalf ? 1 : 0)};
     count = 0;
     std::size_t position = 0;
-    std::string message;
-    aurora::SourceSpan referenceSpan;
-    aurora::DiagnosticCode referenceCode = aurora::DiagnosticCode::Unclassified;
-    try {
-        aurora::Parser reference(tokens, false);
-        if (stop == Stop::ConstructorBraces) {
-            reference.ident();
-            reference.need("{");
-        }
-        static_cast<void>(reference.expr());
-    } catch (const aurora::Error &error) {
-        message = error.diagnostic.message;
-        referenceSpan = error.diagnostic.span;
-        referenceCode = error.diagnostic.code;
-    }
-    require(!message.empty(), "diagnostic control did not reject in reference parser");
     bool rejected = false;
     try {
         static_cast<void>(aurora::parseHostedExpression(tokens, position, stop));
     } catch (const aurora::Error &error) {
         const auto &span = error.diagnostic.span, &expected = tokens[ordinal].span;
-        const auto code = status == Status::TypeNestingLimit || status == Status::TemplateNestingLimit ||
-                                  status == Status::CallTemplateNestingLimit
-                              ? aurora::DiagnosticCode::NestingLimit
-                              : aurora::DiagnosticCode::UnexpectedToken;
-        rejected = error.diagnostic.code == code && code == referenceCode && error.diagnostic.message == message &&
-                   span.source == expected.source && span.source == referenceSpan.source &&
-                   span.begin.offset == referenceSpan.begin.offset && span.end.offset == referenceSpan.end.offset &&
+        rejected = error.diagnostic.code == code && error.diagnostic.message == message &&
+                   span.source == expected.source &&
                    span.begin.offset == expected.begin.offset + (secondHalf ? 1 : 0) &&
                    span.begin.line == expected.begin.line &&
                    span.begin.column == expected.begin.column + (secondHalf ? 1 : 0) &&
@@ -382,7 +406,7 @@ void diagnostic(const std::string &source,
                    span.end.column == expected.end.column;
     }
     require(rejected && position == 0 && created == 1 && parsed == 1 && released == 1,
-            "diagnostic conversion lost reference message, location, cursor or cleanup");
+            "diagnostic conversion lost its specified message, location, cursor or cleanup");
     ++cases;
 }
 void contextControls() {
@@ -615,26 +639,103 @@ void contextControls() {
         false);
 }
 void typedDiagnosticControls() {
-    diagnostic("size_of(own i64>);", Status::ExpectedAngleOpen, 3);
-    diagnostic("size_of(own<i64);", Status::ExpectedAngleClose, 5);
-    diagnostic("size_of(builtin ByteRegion);", Status::ExpectedScope, 3);
-    diagnostic("size_of(array<i64 1>);", Status::ExpectedComma, 5);
-    diagnostic("size_of(builtin::span<u8>);", Status::ExpectedConst, 6);
-    diagnostic("size_of(builtin::span<const i64>);", Status::ExpectedU8, 7);
-    diagnostic("size_of(own<u64>);", Status::ExpectedI64, 4);
-    diagnostic("size_of(builtin::Unknown);", Status::ExpectedArray, 4);
-    diagnostic("size_of(int);", Status::ReservedType, 2);
-    diagnostic("size_of(1);", Status::ExpectedType, 3);
-    diagnostic("f<i64,u8,bool>();", Status::TemplateArity, 6);
-    diagnostic("f<own<i64>>();", Status::TemplateArgument, 2);
-    diagnostic("f<65>();", Status::CapacityArgument, 3);
-    diagnostic("size_of(builtin::OwnedValues<i64>);", Status::OwnedElement, 7);
-    diagnostic("size_of(array<own<i64>,1>);", Status::ArrayElement, 8);
-    diagnostic("size_of(array<u8,0>);", Status::ArrayLength, 7);
-    diagnostic("size_of(array<Box,65>);", Status::ClassArrayLength, 8);
-    diagnostic("size_of(Box<i64>>);", Status::ExpectedClose, 5, Stop::Semicolon, true);
-    diagnostic(nestedTemplateSource(5, true), Status::TemplateNestingLimit, 11);
-    diagnostic(nestedTemplateSource(6, false), Status::CallTemplateNestingLimit, 11);
+    diagnostic("size_of(own i64>);",
+               Status::ExpectedAngleOpen,
+               3,
+               DiagnosticCode::UnexpectedToken,
+               "expected '<' (found 'i64')");
+    diagnostic("size_of(own<i64);",
+               Status::ExpectedAngleClose,
+               5,
+               DiagnosticCode::UnexpectedToken,
+               "expected '>' (found ')')");
+    diagnostic("size_of(builtin ByteRegion);",
+               Status::ExpectedScope,
+               3,
+               DiagnosticCode::UnexpectedToken,
+               "expected '::' (found 'ByteRegion')");
+    diagnostic("size_of(array<i64 1>);",
+               Status::ExpectedComma,
+               5,
+               DiagnosticCode::UnexpectedToken,
+               "expected ',' (found '1')");
+    diagnostic("size_of(builtin::span<u8>);",
+               Status::ExpectedConst,
+               6,
+               DiagnosticCode::UnexpectedToken,
+               "expected 'const' (found 'u8')");
+    diagnostic("size_of(builtin::span<const i64>);",
+               Status::ExpectedU8,
+               7,
+               DiagnosticCode::UnexpectedToken,
+               "expected 'u8' (found 'i64')");
+    diagnostic(
+        "size_of(own<u64>);", Status::ExpectedI64, 4, DiagnosticCode::UnexpectedToken, "expected 'i64' (found 'u64')");
+    diagnostic("size_of(builtin::Unknown);",
+               Status::ExpectedArray,
+               4,
+               DiagnosticCode::UnexpectedToken,
+               "expected 'array' (found 'Unknown')");
+    diagnostic("size_of(int);",
+               Status::ReservedType,
+               2,
+               DiagnosticCode::UnexpectedToken,
+               "unsupported or reserved type spelling (found 'int')");
+    diagnostic(
+        "size_of(1);", Status::ExpectedType, 3, DiagnosticCode::UnexpectedToken, "expected type name (found ')')");
+    diagnostic("f<i64,u8,bool>();",
+               Status::TemplateArity,
+               6,
+               DiagnosticCode::UnexpectedToken,
+               "template arguments are limited to one or two types or capacity literals (found 'bool')");
+    diagnostic("f<own<i64>>();",
+               Status::TemplateArgument,
+               2,
+               DiagnosticCode::UnexpectedToken,
+               "template arguments require scalar, named class or enum types, or capacities "
+               "from 1 to 64 (found 'own')");
+    diagnostic("f<65>();",
+               Status::CapacityArgument,
+               3,
+               DiagnosticCode::UnexpectedToken,
+               "capacity template arguments must be decimal literals from 1 to 64 (found '>')");
+    diagnostic("size_of(builtin::OwnedValues<i64>);",
+               Status::OwnedElement,
+               7,
+               DiagnosticCode::UnexpectedToken,
+               "owned values require a named concrete copied class (found '>')");
+    diagnostic("size_of(array<own<i64>,1>);",
+               Status::ArrayElement,
+               8,
+               DiagnosticCode::UnexpectedToken,
+               "array elements require i64, u64, u8, bool or a concrete copied class (found ',')");
+    diagnostic("size_of(array<u8,0>);",
+               Status::ArrayLength,
+               7,
+               DiagnosticCode::UnexpectedToken,
+               "array length requires a decimal integer literal between 1 and 4096 (found '>')");
+    diagnostic("size_of(array<Box,65>);",
+               Status::ClassArrayLength,
+               8,
+               DiagnosticCode::UnexpectedToken,
+               "class-element array capacity must be between 1 and 64 (found ')')");
+    diagnostic("size_of(Box<i64>>);",
+               Status::ExpectedClose,
+               5,
+               DiagnosticCode::UnexpectedToken,
+               "expected ')' (found '>')",
+               Stop::Semicolon,
+               true);
+    diagnostic(nestedTemplateSource(5, true),
+               Status::TemplateNestingLimit,
+               11,
+               DiagnosticCode::NestingLimit,
+               "template-id nesting exceeds 4");
+    diagnostic(nestedTemplateSource(6, false),
+               Status::CallTemplateNestingLimit,
+               11,
+               DiagnosticCode::NestingLimit,
+               "template-id nesting exceeds 5");
     std::string deep = "size_of(";
     for (int depth = 0; depth < 64; ++depth)
         deep += "array<";
@@ -642,7 +743,7 @@ void typedDiagnosticControls() {
     for (int depth = 0; depth < 64; ++depth)
         deep += ",1>";
     deep += ");";
-    diagnostic(deep, Status::TypeNestingLimit, 130);
+    diagnostic(deep, Status::TypeNestingLimit, 130, DiagnosticCode::NestingLimit, "type nesting exceeds 64");
     for (const auto adjustment : {-1, 2, 3})
         invalid(
             "split-token diagnostic requires exactly the second byte",
@@ -697,7 +798,7 @@ void contextDispatchControls() {
     reset();
     hookControl = true;
     const auto functionTokens = aurora::lex(functionSource, "context-hooks.au");
-    const auto function = aurora::Parser(functionTokens, true).parse();
+    const auto function = aurora::Parser(functionTokens).parse();
     hookControl = false;
     const auto typeToken = std::find_if(functionTokens.begin(), functionTokens.end(), [](const auto &token) {
         return token.text == "T";
@@ -717,7 +818,7 @@ void contextDispatchControls() {
         "export module hooks;template<Scalar T,i64 N>class Hook{array<T,N> value;array<T,N> zero;i64 scalar;"
         "public:Hook():value{1},zero{},scalar(1){}auto get()->i64{return 1;}};",
         "context-hooks.au");
-    const auto definition = aurora::Parser(classTokens, true).parse();
+    const auto definition = aurora::Parser(classTokens).parse();
     hookControl = false;
     const auto capturedType = std::find_if(classTokens.begin(), classTokens.end(), [](const auto &token) {
         return token.text == "T";
@@ -749,15 +850,11 @@ void contextDispatchControls() {
                              : "export module hooks;template<Scalar T>class Hook{public:auto f()->i64{return ";
         const std::string expression = functionTemplate ? "g<Box<T>>();" : "g<i64>();";
         const auto tokens = aurora::lex(prefix + expression + (functionTemplate ? "}" : "}};"), "context-hooks.au");
-        std::string message;
-        aurora::SourceSpan expected;
-        try {
-            static_cast<void>(aurora::Parser(tokens, false).parse());
-        } catch (const aurora::Error &error) {
-            message = error.diagnostic.message;
-            expected = error.diagnostic.span;
-        }
-        require(!message.empty(), "context diagnostic reference unexpectedly accepted malformed template syntax");
+        const std::string message = functionTemplate
+                                        ? "nested dependent template arguments are not supported (found '>>')"
+                                        : "template-id references inside template definitions are not supported "
+                                          "(found '<')";
+        const auto &expected = tokens[functionTemplate ? 22 : 23].span;
         const auto expressionTokens = aurora::lex(expression);
         const std::int64_t ordinal = functionTemplate ? 5 : 1;
         result = {wire(functionTemplate ? Status::NestedDependent : Status::TemplateContext),
@@ -769,16 +866,19 @@ void contextDispatchControls() {
         hookControl = hookPrepared = true;
         bool rejected = false;
         try {
-            static_cast<void>(aurora::Parser(tokens, true).parse());
+            static_cast<void>(aurora::Parser(tokens).parse());
         } catch (const aurora::Error &error) {
-            rejected = error.diagnostic.message == message && error.diagnostic.span.source == expected.source &&
-                       error.diagnostic.span.begin.offset == expected.begin.offset &&
-                       error.diagnostic.span.end.offset == expected.end.offset;
+            const auto &span = error.diagnostic.span;
+            rejected = error.diagnostic.code == DiagnosticCode::UnexpectedToken &&
+                       error.diagnostic.message == message && span.source == expected.source &&
+                       span.begin.offset == expected.begin.offset && span.begin.line == expected.begin.line &&
+                       span.begin.column == expected.begin.column && span.end.offset == expected.end.offset &&
+                       span.end.line == expected.end.line && span.end.column == expected.end.column;
         }
         hookControl = false;
         require(rejected && created == 1 && parsed == 1 && released == 1 &&
                     capturedInput[17] == (functionTemplate ? 2U : 1U),
-                "context diagnostic changed the reference message/provenance or escaped direct dispatch");
+                "context diagnostic changed its specified message/provenance or escaped direct dispatch");
         ++cases;
     }
 }
@@ -788,104 +888,192 @@ void typedControls() {
                                  : kind == TypeKind::U64 ? "u64"
                                  : kind == TypeKind::U8  ? "u8"
                                                          : "bool";
+        const auto expectedKind = word == "i64"   ? aurora::TypeKind::I64
+                                  : word == "u64" ? aurora::TypeKind::U64
+                                  : word == "u8"  ? aurora::TypeKind::U8
+                                                  : aurora::TypeKind::Bool;
         const auto source = "f<" + word + ">();";
-        valid(source, [&] {
-            templateFixture(source);
-            types[0][0] = wire(kind);
-        });
+        valid(
+            source,
+            [&] {
+                templateFixture(source);
+                types[0][0] = wire(kind);
+            },
+            [&](const auto &t) {
+                return typedNode(expectedNode(t, 0, "call"), {expectedKind});
+            });
         const auto query = "size_of(" + word + ");";
-        valid(query, [&] {
-            reflectedFixture(query);
-            types[0][0] = wire(kind);
-        });
+        valid(
+            query,
+            [&] {
+                reflectedFixture(query);
+                types[0][0] = wire(kind);
+            },
+            [&](const auto &t) {
+                return typedNode(expectedNode(t, 0, "call"), {}, aurora::Type(expectedKind));
+            });
     }
     for (const std::string query : {"size_of", "type_id", "field_count"}) {
         const auto source = query + "(pkg::Box);";
-        valid(source, [&] {
-            typedFixture(source, {{wire(TypeKind::Named), 2, 4, 8, -1, -1, 0, 2}});
-        });
+        valid(
+            source,
+            [&] {
+                typedFixture(source, {{wire(TypeKind::Named), 2, 4, 8, -1, -1, 0, 2}});
+            },
+            [&](const auto &t) {
+                return typedNode(expectedNode(t, 0, "call"), {}, namedType("pkg::Box"));
+            });
     }
-    valid("ns::f<i64>();", [] {
-        typedFixture("ns::f<i64>();",
-                     {{wire(TypeKind::I64), 4, 4, 8, -1, -1, -1, 0}, {wire(TypeKind::Named), 0, 2, 10, 0, -1, 0, 1}},
-                     {{wire(NodeKind::Call), 0, -1, 0, 1, 2, 7}});
-    });
-    valid("Box<i64>{};", [] {
-        templateFixture("Box<i64>{};");
-        records[0][0] = wire(NodeKind::Construct);
-    });
+    valid(
+        "ns::f<i64>();",
+        [] {
+            typedFixture(
+                "ns::f<i64>();",
+                {{wire(TypeKind::I64), 4, 4, 8, -1, -1, -1, 0}, {wire(TypeKind::Named), 0, 2, 10, 0, -1, 0, 1}},
+                {{wire(NodeKind::Call), 0, -1, 0, 1, 2, 7}});
+        },
+        [&](const auto &t) {
+            return typedNode(qualifiedNode(expectedNode(t, 0, "call"), t, 2, "ns::f"), {aurora::TypeKind::I64});
+        });
+    valid(
+        "Box<i64>{};",
+        [] {
+            templateFixture("Box<i64>{};");
+            records[0][0] = wire(NodeKind::Construct);
+        },
+        [&](const auto &t) {
+            return typedNode(expectedNode(t, 0, "construct"), {aurora::TypeKind::I64});
+        });
     for (const std::string capacity : {"1", "64", "00064"}) {
         const auto source = "f<i64," + capacity + ">();";
-        valid(source, [&] {
-            typedFixture(source,
-                         {{wire(TypeKind::I64), 2, 2, 4, -1, -1, -1, 0},
-                          {wire(TypeKind::Capacity), 4, 4, 8, -1, -1, -1, 0},
-                          {wire(TypeKind::Named), 0, 0, 10, 0, 1, 0, 1}});
-        });
+        valid(
+            source,
+            [&] {
+                typedFixture(source,
+                             {{wire(TypeKind::I64), 2, 2, 4, -1, -1, -1, 0},
+                              {wire(TypeKind::Capacity), 4, 4, 8, -1, -1, -1, 0},
+                              {wire(TypeKind::Named), 0, 0, 10, 0, 1, 0, 1}});
+            },
+            [&](const auto &t) {
+                return typedNode(expectedNode(t, 0, "call"),
+                                 {aurora::TypeKind::I64, aurora::TemplateArgument::capacity(capacity == "1" ? 1 : 64)});
+            });
     }
-    valid("f<Box<i64>>();", [] {
-        splitFixture();
-    });
-    valid("f<Box<i64> >();", [] {
-        splitFixture("f<Box<i64> >();");
-        types.back()[3] = 12;
-    });
-    valid("size_of<Box<i64>>(Box<u8>);", [] {
-        typedFixture("size_of<Box<i64>>(Box<u8>);",
-                     {{wire(TypeKind::I64), 4, 4, 8, -1, -1, -1, 0},
-                      {wire(TypeKind::Named), 2, 2, 10, 0, -1, -1, 0},
-                      {wire(TypeKind::Named), 0, 0, 11, 1, -1, 0, 1},
-                      {wire(TypeKind::U8), 9, 9, 18, -1, -1, -1, 0},
-                      {wire(TypeKind::Named), 7, 7, 20, 3, -1, 0, 2}});
-    });
-    for (const std::string source : {"pkg::size_of(\"Box<i64>\");", "pkg::type_id(\"x\");", "pkg::field_count(\"x\");"})
-        valid(source, [&] {
-            fixture(source,
-                    {{wire(NodeKind::Literal), 4, -1, -1, 1, 4, 4}, {wire(NodeKind::Call), 0, 0, 1, 2, 2, 5}},
-                    {{0, -1, 1, 2, -1}});
+    valid(
+        "f<Box<i64>>();",
+        [] {
+            splitFixture();
+        },
+        [&](const auto &t) {
+            return typedNode(expectedNode(t, 0, "call"), {namedArgument("Box", {aurora::TypeKind::I64})});
         });
-    valid("\"size_of(Box<i64>)\";", [] {
-        fixture("\"size_of(Box<i64>)\";", {{wire(NodeKind::Literal), 0, -1, -1, 1, 0, 0}});
-    });
-    valid("a>>b;", [] {
-        fixture("a>>b;",
-                {{wire(NodeKind::Name), 0, -1, -1, 1, 0, 0},
-                 {wire(NodeKind::Name), 2, -1, -1, 1, 2, 2},
-                 {wire(NodeKind::Binary), 1, 0, 1, 2, 1, 1}});
-    });
+    valid(
+        "f<Box<i64> >();",
+        [] {
+            splitFixture("f<Box<i64> >();");
+            types.back()[3] = 12;
+        },
+        [&](const auto &t) {
+            return typedNode(expectedNode(t, 0, "call"), {namedArgument("Box", {aurora::TypeKind::I64})});
+        });
+    valid(
+        "size_of<Box<i64>>(Box<u8>);",
+        [] {
+            typedFixture("size_of<Box<i64>>(Box<u8>);",
+                         {{wire(TypeKind::I64), 4, 4, 8, -1, -1, -1, 0},
+                          {wire(TypeKind::Named), 2, 2, 10, 0, -1, -1, 0},
+                          {wire(TypeKind::Named), 0, 0, 11, 1, -1, 0, 1},
+                          {wire(TypeKind::U8), 9, 9, 18, -1, -1, -1, 0},
+                          {wire(TypeKind::Named), 7, 7, 20, 3, -1, 0, 2}});
+        },
+        [&](const auto &t) {
+            return typedNode(expectedNode(t, 0, "call"),
+                             {namedArgument("Box", {aurora::TypeKind::I64})},
+                             namedType("Box", {aurora::TypeKind::U8}));
+        });
+    for (const std::string source : {"pkg::size_of(\"Box<i64>\");", "pkg::type_id(\"x\");", "pkg::field_count(\"x\");"})
+        valid(
+            source,
+            [&] {
+                fixture(source,
+                        {{wire(NodeKind::Literal), 4, -1, -1, 1, 4, 4}, {wire(NodeKind::Call), 0, 0, 1, 2, 2, 5}},
+                        {{0, -1, 1, 2, -1}});
+            },
+            [&](const auto &t) {
+                return qualifiedNode(
+                    expectedNode(t, 0, "call", {expectedNode(t, 4, "byte_string")}), t, 2, "pkg::" + t[2].text);
+            });
+    valid(
+        "\"size_of(Box<i64>)\";",
+        [] {
+            fixture("\"size_of(Box<i64>)\";", {{wire(NodeKind::Literal), 0, -1, -1, 1, 0, 0}});
+        },
+        [&](const auto &t) {
+            return expectedNode(t, 0, "byte_string");
+        });
+    valid(
+        "a>>b;",
+        [] {
+            fixture("a>>b;",
+                    {{wire(NodeKind::Name), 0, -1, -1, 1, 0, 0},
+                     {wire(NodeKind::Name), 2, -1, -1, 1, 2, 2},
+                     {wire(NodeKind::Binary), 1, 0, 1, 2, 1, 1}});
+        },
+        [&](const auto &t) {
+            return expectedNode(t, 1, "binary", {expectedNode(t, 0, "name"), expectedNode(t, 2, "name")});
+        });
     for (const auto kind : {TypeKind::Own, TypeKind::Ref, TypeKind::MutRef}) {
+        const auto expectedType = kind == TypeKind::Own   ? aurora::Type::Own
+                                  : kind == TypeKind::Ref ? aurora::Type::Ref
+                                                          : aurora::Type::MutRef;
         const auto source = std::string("size_of(") +
                             (kind == TypeKind::Own   ? "own"
                              : kind == TypeKind::Ref ? "ref"
                                                      : "mutref") +
                             "<i64>);";
-        valid(source, [&] {
-            typedFixture(source, {{wire(kind), 2, 2, 10, -1, -1, 0, 2}});
-        });
+        valid(
+            source,
+            [&] {
+                typedFixture(source, {{wire(kind), 2, 2, 10, -1, -1, 0, 2}});
+            },
+            [&](const auto &t) {
+                return typedNode(expectedNode(t, 0, "call"), {}, expectedType);
+            });
     }
-    valid("size_of(builtin::span<const u8>);", [] {
-        typedFixture("size_of(builtin::span<const u8>);", {{wire(TypeKind::ByteSpan), 2, 4, 16, -1, -1, 0, 2}});
-    });
-    for (const std::string name : {"ByteRegion",
-                                   "OwnedBytes",
-                                   "ConsoleSession",
-                                   "DisplaySession",
-                                   "IommuEventSession",
-                                   "ConsolePutResult",
-                                   "ConsoleCompletion",
-                                   "DisplayPutResult",
-                                   "DisplayCompletion",
-                                   "EventPollResult",
-                                   "EventAckResult",
-                                   "EventIntakeCompletion",
-                                   "ConsoleSample",
-                                   "IommuEventSample"}) {
+    valid(
+        "size_of(builtin::span<const u8>);",
+        [] {
+            typedFixture("size_of(builtin::span<const u8>);", {{wire(TypeKind::ByteSpan), 2, 4, 16, -1, -1, 0, 2}});
+        },
+        [&](const auto &t) {
+            return typedNode(expectedNode(t, 0, "call"), {}, aurora::Type::ByteSpan);
+        });
+    for (const auto &[name, expectedType] : std::vector<std::pair<std::string, aurora::Type>>{
+             {"ByteRegion", aurora::Type::ByteRegion},
+             {"OwnedBytes", aurora::Type::OwnedBytes},
+             {"ConsoleSession", aurora::Type::ConsoleSession},
+             {"DisplaySession", aurora::Type::DisplaySession},
+             {"IommuEventSession", aurora::Type::IommuEventSession},
+             {"ConsolePutResult", builtinEnum("__au_console_put_result", "builtin::ConsolePutResult")},
+             {"ConsoleCompletion", builtinEnum("__au_console_completion", "builtin::ConsoleCompletion")},
+             {"DisplayPutResult", builtinEnum("__au_display_put_result", "builtin::DisplayPutResult")},
+             {"DisplayCompletion", builtinEnum("__au_display_completion", "builtin::DisplayCompletion")},
+             {"EventPollResult", builtinEnum("__au_event_poll_result", "builtin::EventPollResult")},
+             {"EventAckResult", builtinEnum("__au_event_ack_result", "builtin::EventAckResult")},
+             {"EventIntakeCompletion", builtinEnum("__au_event_intake_completion", "builtin::EventIntakeCompletion")},
+             {"ConsoleSample", builtinClass("__au_console_sample", "builtin::ConsoleSample")},
+             {"IommuEventSample", builtinClass("__au_iommu_event_sample", "builtin::IommuEventSample")}}) {
         const auto source = "size_of(builtin::" + name + ");";
         const bool copiedClass = name == "ConsoleSample" || name == "IommuEventSample";
-        valid(source, [&] {
-            typedFixture(source,
-                         {{wire(copiedClass ? TypeKind::BuiltinClass : TypeKind::Builtin), 2, 4, 8, -1, -1, 0, 2}});
-        });
+        valid(
+            source,
+            [&] {
+                typedFixture(source,
+                             {{wire(copiedClass ? TypeKind::BuiltinClass : TypeKind::Builtin), 2, 4, 8, -1, -1, 0, 2}});
+            },
+            [&](const auto &t) {
+                return typedNode(expectedNode(t, 0, "call"), {}, expectedType);
+            });
         invalid(
             "closed builtin alias has the wrong nominal category",
             [&] {
@@ -896,38 +1084,66 @@ void typedControls() {
     }
     for (const std::string length : {"1", "4096"}) {
         const auto source = "size_of(array<u8," + length + ">);";
-        valid(source, [&] {
-            typedFixture(source,
-                         {{wire(TypeKind::U8), 4, 4, 8, -1, -1, -1, 0},
-                          {wire(TypeKind::Capacity), 6, 6, 12, -1, -1, -1, 0},
-                          {wire(TypeKind::Array), 2, 2, 14, 0, 1, 0, 2}});
-        });
+        valid(
+            source,
+            [&] {
+                typedFixture(source,
+                             {{wire(TypeKind::U8), 4, 4, 8, -1, -1, -1, 0},
+                              {wire(TypeKind::Capacity), 6, 6, 12, -1, -1, -1, 0},
+                              {wire(TypeKind::Array), 2, 2, 14, 0, 1, 0, 2}});
+            },
+            [&](const auto &t) {
+                return typedNode(
+                    expectedNode(t, 0, "call"), {}, aurora::Type::array(aurora::Type::U8, length == "1" ? 1 : 4096));
+            });
     }
-    valid("size_of(builtin::array<Box,64>);", [] {
-        typedFixture("size_of(builtin::array<Box,64>);",
-                     {{wire(TypeKind::Named), 6, 6, 12, -1, -1, -1, 0},
-                      {wire(TypeKind::Capacity), 8, 8, 16, -1, -1, -1, 0},
-                      {wire(TypeKind::Array), 2, 4, 18, 0, 1, 0, 2}});
-    });
-    valid("size_of(builtin::OwnedValues<Box>);", [] {
-        typedFixture(
-            "size_of(builtin::OwnedValues<Box>);",
-            {{wire(TypeKind::Named), 6, 6, 12, -1, -1, -1, 0}, {wire(TypeKind::OwnedValues), 2, 4, 14, 0, -1, 0, 2}});
-    });
-    for (const std::string name : {"ConsoleSample", "IommuEventSample"}) {
-        const auto array = "size_of(array<builtin::" + name + ",64>);";
-        valid(array, [&] {
-            typedFixture(array,
-                         {{wire(TypeKind::BuiltinClass), 4, 6, 12, -1, -1, -1, 0},
+    valid(
+        "size_of(builtin::array<Box,64>);",
+        [] {
+            typedFixture("size_of(builtin::array<Box,64>);",
+                         {{wire(TypeKind::Named), 6, 6, 12, -1, -1, -1, 0},
                           {wire(TypeKind::Capacity), 8, 8, 16, -1, -1, -1, 0},
-                          {wire(TypeKind::Array), 2, 2, 18, 0, 1, 0, 2}});
+                          {wire(TypeKind::Array), 2, 4, 18, 0, 1, 0, 2}});
+        },
+        [&](const auto &t) {
+            return typedNode(expectedNode(t, 0, "call"), {}, aurora::Type::array(namedType("Box"), 64));
         });
+    valid(
+        "size_of(builtin::OwnedValues<Box>);",
+        [] {
+            typedFixture("size_of(builtin::OwnedValues<Box>);",
+                         {{wire(TypeKind::Named), 6, 6, 12, -1, -1, -1, 0},
+                          {wire(TypeKind::OwnedValues), 2, 4, 14, 0, -1, 0, 2}});
+        },
+        [&](const auto &t) {
+            return typedNode(expectedNode(t, 0, "call"), {}, aurora::Type::ownedValues(namedType("Box")));
+        });
+    for (const auto &[name, expectedType] : std::vector<std::pair<std::string, aurora::Type>>{
+             {"ConsoleSample", builtinClass("__au_console_sample", "builtin::ConsoleSample")},
+             {"IommuEventSample", builtinClass("__au_iommu_event_sample", "builtin::IommuEventSample")}}) {
+        const auto array = "size_of(array<builtin::" + name + ",64>);";
+        valid(
+            array,
+            [&] {
+                typedFixture(array,
+                             {{wire(TypeKind::BuiltinClass), 4, 6, 12, -1, -1, -1, 0},
+                              {wire(TypeKind::Capacity), 8, 8, 16, -1, -1, -1, 0},
+                              {wire(TypeKind::Array), 2, 2, 18, 0, 1, 0, 2}});
+            },
+            [&](const auto &t) {
+                return typedNode(expectedNode(t, 0, "call"), {}, aurora::Type::array(expectedType, 64));
+            });
         const auto source = "size_of(builtin::OwnedValues<builtin::" + name + ">);";
-        valid(source, [&] {
-            typedFixture(source,
-                         {{wire(TypeKind::BuiltinClass), 6, 8, 16, -1, -1, -1, 0},
-                          {wire(TypeKind::OwnedValues), 2, 4, 18, 0, -1, 0, 2}});
-        });
+        valid(
+            source,
+            [&] {
+                typedFixture(source,
+                             {{wire(TypeKind::BuiltinClass), 6, 8, 16, -1, -1, -1, 0},
+                              {wire(TypeKind::OwnedValues), 2, 4, 18, 0, -1, 0, 2}});
+            },
+            [&](const auto &t) {
+                return typedNode(expectedNode(t, 0, "call"), {}, aurora::Type::ownedValues(expectedType));
+            });
     }
 
     const auto independentRoots = [] {
@@ -940,7 +1156,13 @@ void typedControls() {
                       {wire(NodeKind::Call), 7, -1, 0, 1, 7, 12},
                       {wire(NodeKind::Binary), 6, 0, 1, 2, 6, 6}});
     };
-    valid("f<i64>()+g<u8>();", independentRoots);
+    valid("f<i64>()+g<u8>();", independentRoots, [&](const auto &t) {
+        return expectedNode(t,
+                            6,
+                            "binary",
+                            {typedNode(expectedNode(t, 0, "call"), {aurora::TypeKind::I64}),
+                             typedNode(expectedNode(t, 7, "call"), {aurora::TypeKind::U8})});
+    });
     invalid(
         "distinct callee roots cannot share a type child",
         [&] {
@@ -1284,9 +1506,18 @@ void typedControls() {
         "size_of(array<builtin::ConsolePutResult,1>);");
     for (const bool reflected : {false, true}) {
         const auto limit = reflected ? 4 : 5;
-        valid(nestedTemplateSource(limit, reflected), [&] {
-            nestedTemplateFixture(limit, reflected);
-        });
+        valid(
+            nestedTemplateSource(limit, reflected),
+            [&] {
+                nestedTemplateFixture(limit, reflected);
+            },
+            [&](const auto &t) {
+                aurora::TemplateArgument argument(aurora::TypeKind::I64);
+                for (int level = 1; level < limit; ++level)
+                    argument = namedArgument("Box", {argument});
+                return reflected ? typedNode(expectedNode(t, 0, "call"), {}, namedType("Box", {argument}))
+                                 : typedNode(expectedNode(t, 0, "call"), {argument});
+            });
         invalid(
             "template depth exceeds its independent call/reflection allowance",
             [&] {
@@ -1546,20 +1777,35 @@ int main() {
                 word + "+2;");
 
         for (const std::string source : {R"("";)", R"("\0\xff";)", R"("é😀";)"})
-            valid(source, [&] {
-                fixture(source, {{wire(NodeKind::Literal), 0, -1, -1, 1, 0, 0}});
+            valid(
+                source,
+                [&] {
+                    fixture(source, {{wire(NodeKind::Literal), 0, -1, -1, 1, 0, 0}});
+                },
+                [&](const auto &t) {
+                    return expectedNode(t, 0, "byte_string");
+                });
+        valid(
+            R"(f("text");)",
+            [] {
+                fixture(R"(f("text");)",
+                        {{wire(NodeKind::Literal), 2, -1, -1, 1, 2, 2}, {wire(NodeKind::Call), 0, 0, 1, 2, 0, 3}},
+                        {{0, -1, 1, 2, -1}});
+            },
+            [&](const auto &t) {
+                return expectedNode(t, 0, "call", {expectedNode(t, 2, "byte_string")});
             });
-        valid(R"(f("text");)", [] {
-            fixture(R"(f("text");)",
-                    {{wire(NodeKind::Literal), 2, -1, -1, 1, 2, 2}, {wire(NodeKind::Call), 0, 0, 1, 2, 0, 3}},
-                    {{0, -1, 1, 2, -1}});
-        });
-        valid(R"(("x")[0];)", [] {
-            fixture(R"(("x")[0];)",
-                    {{wire(NodeKind::Literal), 1, -1, -1, 1, 1, 1},
-                     {wire(NodeKind::Literal), 4, -1, -1, 1, 4, 4},
-                     {wire(NodeKind::Index), 3, 0, 1, 2, 3, 5}});
-        });
+        valid(
+            R"(("x")[0];)",
+            [] {
+                fixture(R"(("x")[0];)",
+                        {{wire(NodeKind::Literal), 1, -1, -1, 1, 1, 1},
+                         {wire(NodeKind::Literal), 4, -1, -1, 1, 4, 4},
+                         {wire(NodeKind::Index), 3, 0, 1, 2, 3, 5}});
+            },
+            [&](const auto &t) {
+                return expectedNode(t, 1, "index", {expectedNode(t, 1, "byte_string"), expectedNode(t, 4, "number")});
+            });
         invalid(
             "byte string forged as name",
             [] {
@@ -1584,135 +1830,287 @@ int main() {
             },
             R"("x"[0];)");
 
-        valid("f(1,2);", [] {
-            callFixture();
-        });
-        valid("a.m(1);", [] {
-            methodFixture();
-        });
-        valid("a[i];", [] {
-            indexFixture();
-        });
+        valid(
+            "f(1,2);",
+            [] {
+                callFixture();
+            },
+            [&](const auto &t) {
+                return expectedNode(t, 0, "call", {expectedNode(t, 2, "number"), expectedNode(t, 4, "number")});
+            });
+        valid(
+            "a.m(1);",
+            [] {
+                methodFixture();
+            },
+            [&](const auto &t) {
+                return expectedNode(t, 2, "method_call", {expectedNode(t, 0, "name"), expectedNode(t, 4, "number")});
+            });
+        valid(
+            "a[i];",
+            [] {
+                indexFixture();
+            },
+            [&](const auto &t) {
+                return expectedNode(t, 0, "index", {expectedNode(t, 0, "name"), expectedNode(t, 2, "name")});
+            });
         for (const std::string source : {"foo();", "Widget();", "array();", "if();"})
-            valid(source, [&] {
-                fixture(source, {{wire(NodeKind::Call), 0, -1, 0, 1, 0, 2}});
-            });
+            valid(
+                source,
+                [&] {
+                    fixture(source, {{wire(NodeKind::Call), 0, -1, 0, 1, 0, 2}});
+                },
+                [&](const auto &t) {
+                    return expectedNode(t, 0, "call");
+                });
         for (const std::string source : {"a::b;", "std::array;", "a // qualification\n :: b;"})
-            valid(source, [&] {
-                fixture(source, {{wire(NodeKind::Name), 0, -1, -1, 1, 2, 2}});
+            valid(
+                source,
+                [&] {
+                    fixture(source, {{wire(NodeKind::Name), 0, -1, -1, 1, 2, 2}});
+                },
+                [&](const auto &t) {
+                    return qualifiedNode(expectedNode(t, 0, "name"), t, 2, t[0].text + "::" + t[2].text);
+                });
+        valid(
+            "std::array();",
+            [] {
+                fixture("std::array();", {{wire(NodeKind::Call), 0, -1, 0, 1, 2, 4}});
+            },
+            [&](const auto &t) {
+                return qualifiedNode(expectedNode(t, 0, "call"), t, 2, "std::array");
             });
-        valid("std::array();", [] {
-            fixture("std::array();", {{wire(NodeKind::Call), 0, -1, 0, 1, 2, 4}});
-        });
-        valid("a.b;", [] {
-            fixture("a.b;", {{wire(NodeKind::Name), 0, -1, -1, 1, 0, 0}, {wire(NodeKind::Member), 2, 0, -1, 2, 2, 2}});
-        });
-        valid("a.m();", [] {
-            fixture("a.m();",
-                    {{wire(NodeKind::Name), 0, -1, -1, 1, 0, 0}, {wire(NodeKind::MethodCall), 2, 0, 1, 2, 2, 4}},
-                    {{0, -1, 1, 2, -1}});
-        });
-        valid("(1).m();", [] {
-            fixture("(1).m();",
-                    {{wire(NodeKind::Literal), 1, -1, -1, 1, 1, 1}, {wire(NodeKind::MethodCall), 4, 0, 1, 2, 4, 6}},
-                    {{0, -1, 1, 2, -1}});
-        });
-        valid("f((1),(2));", [] {
-            fixture("f((1),(2));",
-                    {{wire(NodeKind::Literal), 3, -1, -1, 1, 3, 3},
-                     {wire(NodeKind::Literal), 7, -1, -1, 1, 7, 7},
-                     {wire(NodeKind::Call), 0, 1, 2, 2, 0, 9}},
-                    {{0, -1, 1, 2, -1}, {1, 0, 2, 2, -1}});
-        });
-        valid("f(g(1),2);", [] {
-            fixture("f(g(1),2);",
-                    {{wire(NodeKind::Literal), 4, -1, -1, 1, 4, 4},
-                     {wire(NodeKind::Call), 2, 0, 1, 2, 2, 5},
-                     {wire(NodeKind::Literal), 7, -1, -1, 1, 7, 7},
-                     {wire(NodeKind::Call), 0, 2, 2, 3, 0, 8}},
-                    {{0, -1, 1, 2, -1}, {1, -1, 1, 3, -1}, {2, 1, 2, 3, -1}});
-        });
-        valid("std::f().m()[i].x;", [] {
-            fixture("std::f().m()[i].x;",
-                    {{wire(NodeKind::Call), 0, -1, 0, 1, 2, 4},
-                     {wire(NodeKind::MethodCall), 6, 0, 1, 2, 6, 8},
-                     {wire(NodeKind::Name), 10, -1, -1, 1, 10, 10},
-                     {wire(NodeKind::Index), 9, 1, 2, 3, 9, 11},
-                     {wire(NodeKind::Member), 13, 3, -1, 4, 13, 13}},
-                    {{0, -1, 1, 2, -1}});
-        });
-        valid("(a+b)[i];", [] {
-            fixture("(a+b)[i];",
-                    {{wire(NodeKind::Name), 1, -1, -1, 1, 1, 1},
-                     {wire(NodeKind::Name), 3, -1, -1, 1, 3, 3},
-                     {wire(NodeKind::Binary), 2, 0, 1, 2, 2, 2},
-                     {wire(NodeKind::Name), 6, -1, -1, 1, 6, 6},
-                     {wire(NodeKind::Index), 5, 2, 3, 3, 5, 7}});
-        });
-        valid("{};", [] {
-            fixture("{};", {{wire(NodeKind::ArrayLiteral), 0, -1, 0, 1, 0, 1}});
-        });
-        valid("{1,2};", [] {
-            arrayFixture();
-        });
-        valid("T{.a=1,.b=2};", [] {
-            constructFixture();
-        });
+        valid(
+            "a.b;",
+            [] {
+                fixture("a.b;",
+                        {{wire(NodeKind::Name), 0, -1, -1, 1, 0, 0}, {wire(NodeKind::Member), 2, 0, -1, 2, 2, 2}});
+            },
+            [&](const auto &t) {
+                return expectedNode(t, 2, "member", {expectedNode(t, 0, "name")});
+            });
+        valid(
+            "a.m();",
+            [] {
+                fixture("a.m();",
+                        {{wire(NodeKind::Name), 0, -1, -1, 1, 0, 0}, {wire(NodeKind::MethodCall), 2, 0, 1, 2, 2, 4}},
+                        {{0, -1, 1, 2, -1}});
+            },
+            [&](const auto &t) {
+                return expectedNode(t, 2, "method_call", {expectedNode(t, 0, "name")});
+            });
+        valid(
+            "(1).m();",
+            [] {
+                fixture("(1).m();",
+                        {{wire(NodeKind::Literal), 1, -1, -1, 1, 1, 1}, {wire(NodeKind::MethodCall), 4, 0, 1, 2, 4, 6}},
+                        {{0, -1, 1, 2, -1}});
+            },
+            [&](const auto &t) {
+                return expectedNode(t, 4, "method_call", {expectedNode(t, 1, "number")});
+            });
+        valid(
+            "f((1),(2));",
+            [] {
+                fixture("f((1),(2));",
+                        {{wire(NodeKind::Literal), 3, -1, -1, 1, 3, 3},
+                         {wire(NodeKind::Literal), 7, -1, -1, 1, 7, 7},
+                         {wire(NodeKind::Call), 0, 1, 2, 2, 0, 9}},
+                        {{0, -1, 1, 2, -1}, {1, 0, 2, 2, -1}});
+            },
+            [&](const auto &t) {
+                return expectedNode(t, 0, "call", {expectedNode(t, 3, "number"), expectedNode(t, 7, "number")});
+            });
+        valid(
+            "f(g(1),2);",
+            [] {
+                fixture("f(g(1),2);",
+                        {{wire(NodeKind::Literal), 4, -1, -1, 1, 4, 4},
+                         {wire(NodeKind::Call), 2, 0, 1, 2, 2, 5},
+                         {wire(NodeKind::Literal), 7, -1, -1, 1, 7, 7},
+                         {wire(NodeKind::Call), 0, 2, 2, 3, 0, 8}},
+                        {{0, -1, 1, 2, -1}, {1, -1, 1, 3, -1}, {2, 1, 2, 3, -1}});
+            },
+            [&](const auto &t) {
+                return expectedNode(
+                    t,
+                    0,
+                    "call",
+                    {expectedNode(t, 2, "call", {expectedNode(t, 4, "number")}), expectedNode(t, 7, "number")});
+            });
+        valid(
+            "std::f().m()[i].x;",
+            [] {
+                fixture("std::f().m()[i].x;",
+                        {{wire(NodeKind::Call), 0, -1, 0, 1, 2, 4},
+                         {wire(NodeKind::MethodCall), 6, 0, 1, 2, 6, 8},
+                         {wire(NodeKind::Name), 10, -1, -1, 1, 10, 10},
+                         {wire(NodeKind::Index), 9, 1, 2, 3, 9, 11},
+                         {wire(NodeKind::Member), 13, 3, -1, 4, 13, 13}},
+                        {{0, -1, 1, 2, -1}});
+            },
+            [&](const auto &t) {
+                const auto call = qualifiedNode(expectedNode(t, 0, "call"), t, 2, "std::f");
+                const auto method = expectedNode(t, 6, "method_call", {call});
+                const auto index = expectedNode(t, 6, "index", {method, expectedNode(t, 10, "name")});
+                return expectedNode(t, 13, "member", {index});
+            });
+        valid(
+            "(a+b)[i];",
+            [] {
+                fixture("(a+b)[i];",
+                        {{wire(NodeKind::Name), 1, -1, -1, 1, 1, 1},
+                         {wire(NodeKind::Name), 3, -1, -1, 1, 3, 3},
+                         {wire(NodeKind::Binary), 2, 0, 1, 2, 2, 2},
+                         {wire(NodeKind::Name), 6, -1, -1, 1, 6, 6},
+                         {wire(NodeKind::Index), 5, 2, 3, 3, 5, 7}});
+            },
+            [&](const auto &t) {
+                const auto sum = expectedNode(t, 2, "binary", {expectedNode(t, 1, "name"), expectedNode(t, 3, "name")});
+                return expectedNode(t, 2, "index", {sum, expectedNode(t, 6, "name")});
+            });
+        valid(
+            "{};",
+            [] {
+                fixture("{};", {{wire(NodeKind::ArrayLiteral), 0, -1, 0, 1, 0, 1}});
+            },
+            [&](const auto &t) {
+                return expectedNode(t, 0, "array_literal");
+            });
+        valid(
+            "{1,2};",
+            [] {
+                arrayFixture();
+            },
+            [&](const auto &t) {
+                return expectedNode(
+                    t, 0, "array_literal", {expectedNode(t, 1, "number"), expectedNode(t, 3, "number")});
+            });
+        valid(
+            "T{.a=1,.b=2};",
+            [] {
+                constructFixture();
+            },
+            [&](const auto &t) {
+                return designatedNode(
+                    expectedNode(t, 0, "construct", {expectedNode(t, 5, "number"), expectedNode(t, 10, "number")}),
+                    {"a", "b"});
+            });
         for (const std::string source : {"T{};", "if{};", "array{};", "size_of{};"})
-            valid(source, [&] {
-                fixture(source, {{wire(NodeKind::Construct), 0, -1, 0, 1, 0, 2}});
+            valid(
+                source,
+                [&] {
+                    fixture(source, {{wire(NodeKind::Construct), 0, -1, 0, 1, 0, 2}});
+                },
+                [&](const auto &t) {
+                    return expectedNode(t, 0, "construct");
+                });
+        valid(
+            "pkg // type\n :: T{.x = 1};",
+            [] {
+                fixture("pkg // type\n :: T{.x = 1};",
+                        {{wire(NodeKind::Literal), 7, -1, -1, 1, 7, 7}, {wire(NodeKind::Construct), 0, 0, 1, 2, 2, 8}},
+                        {{0, -1, 1, 2, 5}});
+            },
+            [&](const auto &t) {
+                const auto construct = expectedNode(t, 0, "construct", {expectedNode(t, 7, "number")});
+                return designatedNode(qualifiedNode(construct, t, 2, "pkg::T"), {"x"});
             });
-        valid("pkg // type\n :: T{.x = 1};", [] {
-            fixture("pkg // type\n :: T{.x = 1};",
-                    {{wire(NodeKind::Literal), 7, -1, -1, 1, 7, 7}, {wire(NodeKind::Construct), 0, 0, 1, 2, 2, 8}},
-                    {{0, -1, 1, 2, 5}});
-        });
-        valid("T{.a=1,.a=2};", [] {
-            constructFixture("T{.a=1,.a=2};");
-        });
-        valid("f({1},T{.x=2});", [] {
-            fixture("f({1},T{.x=2});",
-                    {{wire(NodeKind::Literal), 3, -1, -1, 1, 3, 3},
-                     {wire(NodeKind::ArrayLiteral), 2, 0, 1, 2, 2, 4},
-                     {wire(NodeKind::Literal), 11, -1, -1, 1, 11, 11},
-                     {wire(NodeKind::Construct), 6, 2, 1, 2, 6, 12},
-                     {wire(NodeKind::Call), 0, 3, 2, 3, 0, 13}},
-                    {{0, -1, 1, 2, -1}, {1, -1, 1, 3, -1}, {2, -1, 1, 2, 9}, {3, 1, 2, 3, -1}});
-        });
-        valid("{1}[0].x;", [] {
-            fixture("{1}[0].x;",
-                    {{wire(NodeKind::Literal), 1, -1, -1, 1, 1, 1},
-                     {wire(NodeKind::ArrayLiteral), 0, 0, 1, 2, 0, 2},
-                     {wire(NodeKind::Literal), 4, -1, -1, 1, 4, 4},
-                     {wire(NodeKind::Index), 3, 1, 2, 3, 3, 5},
-                     {wire(NodeKind::Member), 7, 3, -1, 4, 7, 7}},
-                    {{0, -1, 1, 2, -1}});
-        });
-        valid("T{}.m();", [] {
-            fixture("T{}.m();",
+        valid(
+            "T{.a=1,.a=2};",
+            [] {
+                constructFixture("T{.a=1,.a=2};");
+            },
+            [&](const auto &t) {
+                return designatedNode(
+                    expectedNode(t, 0, "construct", {expectedNode(t, 5, "number"), expectedNode(t, 10, "number")}),
+                    {"a", "a"});
+            });
+        valid(
+            "f({1},T{.x=2});",
+            [] {
+                fixture("f({1},T{.x=2});",
+                        {{wire(NodeKind::Literal), 3, -1, -1, 1, 3, 3},
+                         {wire(NodeKind::ArrayLiteral), 2, 0, 1, 2, 2, 4},
+                         {wire(NodeKind::Literal), 11, -1, -1, 1, 11, 11},
+                         {wire(NodeKind::Construct), 6, 2, 1, 2, 6, 12},
+                         {wire(NodeKind::Call), 0, 3, 2, 3, 0, 13}},
+                        {{0, -1, 1, 2, -1}, {1, -1, 1, 3, -1}, {2, -1, 1, 2, 9}, {3, 1, 2, 3, -1}});
+            },
+            [&](const auto &t) {
+                const auto array = expectedNode(t, 2, "array_literal", {expectedNode(t, 3, "number")});
+                const auto construct =
+                    designatedNode(expectedNode(t, 6, "construct", {expectedNode(t, 11, "number")}), {"x"});
+                return expectedNode(t, 0, "call", {array, construct});
+            });
+        valid(
+            "{1}[0].x;",
+            [] {
+                fixture("{1}[0].x;",
+                        {{wire(NodeKind::Literal), 1, -1, -1, 1, 1, 1},
+                         {wire(NodeKind::ArrayLiteral), 0, 0, 1, 2, 0, 2},
+                         {wire(NodeKind::Literal), 4, -1, -1, 1, 4, 4},
+                         {wire(NodeKind::Index), 3, 1, 2, 3, 3, 5},
+                         {wire(NodeKind::Member), 7, 3, -1, 4, 7, 7}},
+                        {{0, -1, 1, 2, -1}});
+            },
+            [&](const auto &t) {
+                const auto array = expectedNode(t, 0, "array_literal", {expectedNode(t, 1, "number")});
+                const auto index = expectedNode(t, 0, "index", {array, expectedNode(t, 4, "number")});
+                return expectedNode(t, 7, "member", {index});
+            });
+        valid(
+            "T{}.m();",
+            [] {
+                fixture(
+                    "T{}.m();",
                     {{wire(NodeKind::Construct), 0, -1, 0, 1, 0, 2}, {wire(NodeKind::MethodCall), 4, 0, 1, 2, 4, 6}},
                     {{0, -1, 1, 2, -1}});
-        });
+            },
+            [&](const auto &t) {
+                return expectedNode(t, 4, "method_call", {expectedNode(t, 0, "construct")});
+            });
         for (const std::string suffix : {";", ",next{}", "{}", "", ".member", "+1"}) {
             const auto empty = "field{}" + suffix;
-            validConstructor(empty, [&] {
-                constructorFixture(empty, true);
-            });
+            validConstructor(
+                empty,
+                [&] {
+                    constructorFixture(empty, true);
+                },
+                [&](const auto &t) {
+                    return expectedNode(t, 0, "array_zero");
+                },
+                3);
             const auto nonempty = "field{1}" + suffix;
-            validConstructor(nonempty, [&] {
-                constructorFixture(nonempty);
-            });
+            validConstructor(
+                nonempty,
+                [&] {
+                    constructorFixture(nonempty);
+                },
+                [&](const auto &t) {
+                    return expectedNode(t, 0, "array_literal", {expectedNode(t, 2, "number")});
+                },
+                4);
         }
-        validConstructor("field // brace\n {{1},T{.x=2}}{}", [] {
-            fixture("field // brace\n {{1},T{.x=2}}{}",
-                    {{wire(NodeKind::Literal), 3, -1, -1, 1, 3, 3},
-                     {wire(NodeKind::ArrayLiteral), 2, 0, 1, 2, 2, 4},
-                     {wire(NodeKind::Literal), 11, -1, -1, 1, 11, 11},
-                     {wire(NodeKind::Construct), 6, 2, 1, 2, 6, 12},
-                     {wire(NodeKind::ArrayLiteral), 0, 3, 2, 3, 0, 13}},
-                    {{0, -1, 1, 2, -1}, {1, -1, 1, 3, -1}, {2, -1, 1, 2, 9}, {3, 1, 2, 3, -1}},
-                    14);
-        });
+        validConstructor(
+            "field // brace\n {{1},T{.x=2}}{}",
+            [] {
+                fixture("field // brace\n {{1},T{.x=2}}{}",
+                        {{wire(NodeKind::Literal), 3, -1, -1, 1, 3, 3},
+                         {wire(NodeKind::ArrayLiteral), 2, 0, 1, 2, 2, 4},
+                         {wire(NodeKind::Literal), 11, -1, -1, 1, 11, 11},
+                         {wire(NodeKind::Construct), 6, 2, 1, 2, 6, 12},
+                         {wire(NodeKind::ArrayLiteral), 0, 3, 2, 3, 0, 13}},
+                        {{0, -1, 1, 2, -1}, {1, -1, 1, 3, -1}, {2, -1, 1, 2, 9}, {3, 1, 2, 3, -1}},
+                        14);
+            },
+            [&](const auto &t) {
+                const auto array = expectedNode(t, 2, "array_literal", {expectedNode(t, 3, "number")});
+                const auto construct =
+                    designatedNode(expectedNode(t, 6, "construct", {expectedNode(t, 11, "number")}), {"x"});
+                return expectedNode(t, 0, "array_literal", {array, construct});
+            },
+            14);
         for (const auto field : {-2LL, 0LL, 2LL, 4LL, 12LL, std::numeric_limits<long long>::max()})
             invalid(
                 "invalid designated field ordinal",
@@ -2152,19 +2550,53 @@ int main() {
                     fixture(source, {{wire(NodeKind::Literal), ordinal, -1, -1, 1, ordinal, ordinal}});
                 },
                 source);
-        diagnostic("a[1;", Status::ExpectedIndexClose, 3);
-        diagnostic("a.;", Status::ExpectedIdentifier, 2);
-        diagnostic("a.if;", Status::ReservedIdentifier, 2);
-        diagnostic("a.array;", Status::ReservedBuiltin, 2);
-        diagnostic("a.__au_x;", Status::ReservedPrefix, 2);
-        diagnostic("a::true;", Status::ReservedIdentifier, 2);
-        diagnostic("{1;", Status::ExpectedBraceClose, 2);
-        diagnostic("T{1};", Status::ExpectedDot, 2);
-        diagnostic("T{.x 1};", Status::ExpectedEqual, 4);
-        diagnostic("T{.true=1};", Status::ReservedIdentifier, 3);
-        diagnostic("T{.array=1};", Status::ReservedBuiltin, 3);
-        diagnostic("T{.__au_x=1};", Status::ReservedPrefix, 3);
-        diagnostic("field(1);", Status::ExpectedBraceOpen, 1, Stop::ConstructorBraces);
+        diagnostic("a[1;", Status::ExpectedIndexClose, 3, DiagnosticCode::UnexpectedToken, "expected ']' (found ';')");
+        diagnostic(
+            "a.;", Status::ExpectedIdentifier, 2, DiagnosticCode::UnexpectedToken, "expected identifier (found ';')");
+        diagnostic("a.if;",
+                   Status::ReservedIdentifier,
+                   2,
+                   DiagnosticCode::UnexpectedToken,
+                   "reserved identifier (found 'if')");
+        diagnostic("a.array;",
+                   Status::ReservedBuiltin,
+                   2,
+                   DiagnosticCode::UnexpectedToken,
+                   "reserved builtin storage name (found 'array')");
+        diagnostic("a.__au_x;",
+                   Status::ReservedPrefix,
+                   2,
+                   DiagnosticCode::UnexpectedToken,
+                   "reserved compiler identifier prefix: __au_ (found '__au_x')");
+        diagnostic("a::true;",
+                   Status::ReservedIdentifier,
+                   2,
+                   DiagnosticCode::UnexpectedToken,
+                   "reserved identifier (found 'true')");
+        diagnostic("{1;", Status::ExpectedBraceClose, 2, DiagnosticCode::UnexpectedToken, "expected '}' (found ';')");
+        diagnostic("T{1};", Status::ExpectedDot, 2, DiagnosticCode::UnexpectedToken, "expected '.' (found '1')");
+        diagnostic("T{.x 1};", Status::ExpectedEqual, 4, DiagnosticCode::UnexpectedToken, "expected '=' (found '1')");
+        diagnostic("T{.true=1};",
+                   Status::ReservedIdentifier,
+                   3,
+                   DiagnosticCode::UnexpectedToken,
+                   "reserved identifier (found 'true')");
+        diagnostic("T{.array=1};",
+                   Status::ReservedBuiltin,
+                   3,
+                   DiagnosticCode::UnexpectedToken,
+                   "reserved builtin storage name (found 'array')");
+        diagnostic("T{.__au_x=1};",
+                   Status::ReservedPrefix,
+                   3,
+                   DiagnosticCode::UnexpectedToken,
+                   "reserved compiler identifier prefix: __au_ (found '__au_x')");
+        diagnostic("field(1);",
+                   Status::ExpectedBraceOpen,
+                   1,
+                   DiagnosticCode::UnexpectedToken,
+                   "expected '{' (found '(')",
+                   Stop::ConstructorBraces);
 
         invalid("unexpected unsupported result is fail-closed", [] {
             result = {wire(Status::Unsupported), -1, 0, 0, 0};
@@ -2232,8 +2664,7 @@ int main() {
         hookControl = true;
         const auto hooks =
             aurora::Parser(
-                aurora::lex("module hooks;auto f()->i64{i64 x=1;x=1;1;static_assert(1);if(1){}while(1){}return 1;}"),
-                true)
+                aurora::lex("module hooks;auto f()->i64{i64 x=1;x=1;1;static_assert(1);if(1){}while(1){}return 1;}"))
                 .parse();
         hookControl = false;
         require(hooks.functions.size() == 1 && parsed == 8 && created == 8 && released == 8,
@@ -2242,8 +2673,7 @@ int main() {
         hookControl = true;
         const auto constructors =
             aurora::Parser(aurora::lex("export module hooks;class Hook{i64 first;i64 second;array<u8,2> bytes;public:"
-                                       "Hook(i64 x):first(x),second(1),bytes(\"ok\"){}auto get()->i64{return 1;}};"),
-                           true)
+                                       "Hook(i64 x):first(x),second(1),bytes(\"ok\"){}auto get()->i64{return 1;}};"))
                 .parse();
         hookControl = false;
         require(constructors.classes.size() == 1 && constructors.classes[0].methods.size() == 2 &&
@@ -2257,18 +2687,18 @@ int main() {
         hookControl = true;
         const auto braceTokens = aurora::lex(
             "export module hooks;class Hook{array<i64,1> value;array<i64,1> zero;public:Hook():value{1},zero{}{}};");
-        const auto braceConstructors = aurora::Parser(braceTokens, true).parse();
+        const auto braceConstructors = aurora::Parser(braceTokens).parse();
         hookControl = false;
-        const auto braceReference = aurora::Parser(braceTokens, false).parse();
         require(created == 2 && parsed == 2 && released == 2 &&
                     hookStops == std::vector<Stop>{Stop::ConstructorBraces, Stop::ConstructorBraces},
                 "brace initializer bypassed its hosted profile or consumed the next initializer/body");
-        for (std::size_t index = 0; index < 2; ++index)
-            sameExpression(braceConstructors.classes[0].methods[0].initializers[index].second,
-                           braceReference.classes[0].methods[0].initializers[index].second);
+        sameExpression(braceConstructors.classes[0].methods[0].initializers[0].second,
+                       expectedNode(braceTokens, 29, "array_literal", {expectedNode(braceTokens, 31, "number")}));
+        sameExpression(braceConstructors.classes[0].methods[0].initializers[1].second,
+                       expectedNode(braceTokens, 34, "array_zero"));
         reset();
         hookControl = hookUnsupported = true;
-        aurora::Parser unsupportedConstructor(braceTokens, true);
+        aurora::Parser unsupportedConstructor(braceTokens);
         bool unsupportedRejected = false;
         try {
             static_cast<void>(unsupportedConstructor.parse());
@@ -2282,7 +2712,7 @@ int main() {
                 "unexpected Unsupported escaped direct brace dispatch or changed cursor/cleanup");
         reset();
         hookControl = hookCorrupt = true;
-        aurora::Parser corruptConstructor(braceTokens, true);
+        aurora::Parser corruptConstructor(braceTokens);
         bool corruptHookRejected = false;
         try {
             static_cast<void>(corruptConstructor.parse());
@@ -2307,45 +2737,45 @@ int main() {
         typeCount = 3;
         const auto templateBraceTokens = aurora::lex(
             "export module hooks;class Hook{array<i64,1> value;public:Hook():value{Box<Box<i64>>{.x=1}}{}};");
-        const auto templateBrace = aurora::Parser(templateBraceTokens, true).parse();
+        const auto templateBrace = aurora::Parser(templateBraceTokens).parse();
         hookControl = false;
         require(created == 1 && parsed == 1 && released == 1 && typeRead == 3 &&
                     hookStops == std::vector<Stop>{Stop::ConstructorBraces},
                 "nested template constructor value bypassed the direct hosted route");
+        const auto expectedConstruct = typedNode(
+            designatedNode(
+                expectedNode(templateBraceTokens, 23, "construct", {expectedNode(templateBraceTokens, 33, "number")}),
+                {"x"}),
+            {namedArgument("Box", {aurora::TypeKind::I64})});
         sameExpression(templateBrace.classes[0].methods[0].initializers[0].second,
-                       aurora::Parser(templateBraceTokens, false).parse().classes[0].methods[0].initializers[0].second);
-        for (const std::string source :
-             {"field{Box<i64,>{}}{}", "field{{Box<i64,>{}}}{}", "field{T{.x=Box<i64,>{}}}{}"}) {
+                       expectedNode(templateBraceTokens, 21, "array_literal", {expectedConstruct}));
+        for (const auto &[source, failureOrdinal] : std::vector<std::pair<std::string, std::size_t>>{
+                 {"field{Box<i64,>{}}{}", 6}, {"field{{Box<i64,>{}}}{}", 7}, {"field{T{.x=Box<i64,>{}}}{}", 11}}) {
             reset();
             const auto malformedTokens =
                 aurora::lex("export module hooks;class Hook{array<i64,1> field;public:Hook():" + source + "};");
-            std::string expectedMessage;
-            std::size_t expectedOffset = 0;
-            try {
-                static_cast<void>(aurora::Parser(malformedTokens, false).parse());
-            } catch (const aurora::Error &error) {
-                expectedMessage = error.diagnostic.message;
-                expectedOffset = error.diagnostic.span.begin.offset;
-            }
+            const auto &expected = malformedTokens[21 + failureOrdinal].span;
             const auto expressionTokens = aurora::lex(source);
-            const auto failure = std::find_if(expressionTokens.begin(), expressionTokens.end(), [](const auto &token) {
-                return token.text == ">";
-            });
-            require(failure != expressionTokens.end(), "malformed template hook lost its failure token");
+            require(expressionTokens[failureOrdinal].text == ">", "malformed template hook lost its failure token");
             count = 0;
             records.clear();
             result = {wire(Status::ExpectedIdentifier),
                       -1,
                       0,
-                      static_cast<std::int64_t>(failure - expressionTokens.begin()),
-                      static_cast<std::int64_t>(failure->span.begin.offset)};
+                      static_cast<std::int64_t>(failureOrdinal),
+                      static_cast<std::int64_t>(expressionTokens[failureOrdinal].span.begin.offset)};
             hookControl = hookPrepared = true;
             bool rejected = false;
             try {
-                static_cast<void>(aurora::Parser(malformedTokens, true).parse());
+                static_cast<void>(aurora::Parser(malformedTokens).parse());
             } catch (const aurora::Error &error) {
-                rejected = !expectedMessage.empty() && error.diagnostic.message == expectedMessage &&
-                           error.diagnostic.span.begin.offset == expectedOffset;
+                const auto &span = error.diagnostic.span;
+                rejected = error.diagnostic.code == DiagnosticCode::UnexpectedToken &&
+                           error.diagnostic.message == "expected identifier (found '>')" &&
+                           span.source == expected.source && span.begin.offset == expected.begin.offset &&
+                           span.begin.line == expected.begin.line && span.begin.column == expected.begin.column &&
+                           span.end.offset == expected.end.offset && span.end.line == expected.end.line &&
+                           span.end.column == expected.end.column;
             }
             hookControl = false;
             require(rejected && created == 1 && parsed == 1 && released == 1,
@@ -2353,14 +2783,45 @@ int main() {
             ++cases;
         }
         for (const std::string source : {"field{1}Box<i64>{}", "field{1},next{Box<i64>{}}", "field{a<b}c>d()"}) {
-            const auto boundaryTokens = aurora::lex(source);
-            require(!aurora::Parser(boundaryTokens, false).templateStatementExpressionAhead(0, true),
-                    "constructor template screen crossed its root closing brace");
+            reset();
+            const bool comparison = source == "field{a<b}c>d()";
+            const std::size_t consumed = comparison ? 6 : 4;
+            const auto next = comparison ? "c" : source == "field{1}Box<i64>{}" ? "Box" : ",";
+            if (comparison)
+                fixture(source,
+                        {{wire(NodeKind::Name), 2, -1, -1, 1, 2, 2},
+                         {wire(NodeKind::Name), 4, -1, -1, 1, 4, 4},
+                         {wire(NodeKind::Binary), 3, 0, 1, 2, 3, 3},
+                         {wire(NodeKind::ArrayLiteral), 0, 0, 1, 3, 0, 5}},
+                        {{2, -1, 1, 3, -1}},
+                        6);
+            else
+                constructorFixture(source);
+            const auto boundaryTokens = aurora::lex(source, "boundary.au");
+            std::size_t boundaryPosition = 0;
+            const auto actual =
+                aurora::parseHostedExpression(boundaryTokens, boundaryPosition, Stop::ConstructorBraces);
+            const auto child =
+                comparison
+                    ? expectedNode(boundaryTokens,
+                                   3,
+                                   "binary",
+                                   {expectedNode(boundaryTokens, 2, "name"), expectedNode(boundaryTokens, 4, "name")})
+                    : expectedNode(boundaryTokens, 2, "number");
+            sameExpression(actual, expectedNode(boundaryTokens, 0, "array_literal", {child}));
+            require(boundaryPosition == consumed && boundaryTokens[consumed - 1].text == "}" &&
+                        boundaryTokens[consumed].text == next && created == 1 && parsed == 1 && released == 1 &&
+                        read == count && edgeRead == edgeCount && typeRead == typeCount,
+                    "constructor hosted cursor crossed its root closing brace or lost AST/read/cleanup");
             ++cases;
         }
         reset();
-        static_cast<void>(aurora::Parser(aurora::lex("module reference;auto f()->i64{return 1;}"), false).parse());
-        require(created == 0 && parsed == 0 && released == 0, "explicit reference parser used a hosted hook");
+        hookControl = true;
+        static_cast<void>(aurora::Parser(aurora::lex("module reference;auto f()->i64{return 1;}")).parse());
+        hookControl = false;
+        require(created == 1 && parsed == 1 && released == 1 && read == 1 &&
+                    hookStops == std::vector<Stop>{Stop::Semicolon},
+                "default parser bypassed mandatory hosted expression dispatch or lost cleanup");
         require(cases >= 273, "an existing forged-result/provenance control was lost");
         typedControls();
         contextControls();

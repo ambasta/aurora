@@ -32,66 +32,38 @@ Maintain one living component document and update the status table in place.
 Historical results belong in Git/PR history and retained run or CI artifacts when
 available, rather than new tracked per-feature result files.
 
-## Hosted lexer and seed routes
+## Predecessor-backed frontend and historical receipts
 
-Canonical Meson/compiler targets build the C++ seed, emit the Aurora lexer and
-link hosted stage 1. Source-consuming fixtures use that phase; bootstrap and
-differential checks compare it with the C++ reference. The [lexer guide](../compiler/LEXER.md)
-defines the exact routes and trust boundary.
+Current compiler source has no C++ expression seed. Complete the explicit
+[source-bootstrap recipe](../compiler/README.md#source-bootstrap) before using
+Meson or ordinary Make shortcuts. The paired predecessor executable and digest
+are checked before generation; all current source-consuming targets link the
+Aurora frontend. Current C1/C2 regeneration and corpus checks use the existing
+bootstrap gate. A digest proves artifact identity, not independent review or
+source-build provenance by itself.
 
-The supervised `gnu-cxx-main-v1` fresh build, including legacy focused Make
-aliases, remains the C++ seed/reference compatibility route. Its old one-command
-receipt does not qualify hosted stage 1. Ordinary development needs no historical
-binary pin. An observed digest proves artifact identity, not independent review
-or fresh-source provenance.
+The legacy `compiler_contract.py run` executor and its new raw-seed builds are
+retired. Legacy focused Make/acceptance entrypoints give precise migration
+instructions before creating run artifacts; they do not silently substitute a
+different compiler or claim a new receipt. Configure the predecessor-backed
+Meson graph and use `make test` for full native coverage, or its named focused
+tests for development. Normal compiler, formatter and lint shortcuts use that
+same graph. Full suites still reject coverage-reducing overrides.
 
-## Explicit externally pinned acceptance
-
-`make test-acceptance ACCEPTANCE_COMPILER_SHA256=REVIEWED_DIGEST` is a separate
-legacy compatibility/provenance workflow, not a second mandatory native graph.
-The expected pin is exactly 64 lowercase hex characters, supplied independently
-of the binary under test. With no path, the supervisor builds current source and
-requires that digest before tests. With
-`ACCEPTANCE_COMPILER=/absolute/path/to/aurorac`, it validates and copies the
-reviewed prebuilt; its provenance is `externally-pinned-prebuilt`, with no claim
-that those bytes were freshly built from current source.
-
-`OUT`, `AURORAC` or per-family compiler paths cannot silently substitute for the
-controlled fresh compiler. Conflicting selectors and explicitly empty prebuilt
-selectors reject before work. An explicit compatible per-family pin remains
-available for focused legacy targets. A direct pin-aware runner requires exactly
-one `--compiler-sha256 DIGEST` or `--developer-build-receipt FILE`, unless its
-separately documented Meson selected-artifact mode applies.
-
-Full aggregates and acceptance reject `*_TEST_FLAGS` and coverage-reducing
-controls. Quick, representative, cap-only and self-test selections remain focused
-or diagnostic even when every selected case passes. A passing Make exit or a
-printed dry-run command is not completed execution.
-
-## Supervised host controls and receipts
-
-The legacy supervisor records source/test contents, recipe/argv, GNU tool
-identities, relevant environment and the fresh bootstrap compilation’s discovered
-header closure. The run-owned compiler copy is read-only as an accidental-change
-guard, not a hostile-host security boundary. Inputs and identities are rechecked
-before a successful terminal record.
+Historical `gnu-cxx-main-v1` and externally pinned prebuilt receipts remain
+readable under their original schema, source/header/tool/argv and tamper checks.
+They retain their original scope and do not qualify changed current source.
+Direct pin-aware runners retain their existing explicit identity requirements;
+no new receipt format is introduced. Current qualification uses the selected
+source/tool/compiler identities, standard Meson logs and independent review.
 
 `CXX` selects one supported GNU executable. `CXXFLAGS` and `IR_TEST_CXXFLAGS`
-accept the explicit `parse_flags` allowlist. User header/search/forced-header
-options, response files, specs, plugins, PCH controls, LTO, profile/module and
-alternate-subtool controls are unsupported. Flags are data, forwarded as exact
-argv without eval. Recipe-owned includes remain fixed. Recorded host-test argv
-is not a complete header/PCH inventory; prebuilt mode discovers no bootstrap
-header closure. Ordinary builds and standalone host-only targets do not establish
-this supervised receipt contract.
-
-For this legacy workflow only, root native success requires a newly completed,
-matching `run.json` with `status: passed`, `scope: native-aggregate`,
-`native_complete: true`, successful native stage and matching source/compiler/
-context/pin. Compiler-only records use `scope: compiler-suite` and
-`native_complete: false`. Meson uses its own standard logs and current-source
-review rather than pretending to produce this legacy receipt. Neither route
-implies sanitizers, guests, physical hardware or a general safety proof.
+retain their explicit allowlist: user header/search/forced-header options,
+response files, specs, plugins, PCH, LTO, profile/module and alternate-subtool
+controls reject. Parsed flags are data, never evaluated as commands. Focused,
+cap-only, representative and self-test selections remain partial regardless of
+exit status. Native tests do not imply guests, physical hardware or a general
+safety proof.
 
 ## Per-invocation output budgets
 

@@ -47,6 +47,8 @@ class DeveloperCommands(unittest.TestCase):
         ):
             shutil.copy2(ROOT / "scripts" / name, self.scripts / name)
         shutil.copy2(ROOT / "Makefile", self.repo / "Makefile")
+        (self.repo / "compiler").mkdir()
+        shutil.copy2(ROOT / "compiler/Makefile", self.repo / "compiler/Makefile")
         shutil.copy2(ROOT / "scripts/kernel-console.sh", self.scripts / "kernel-console.sh")
         for name in ("kernel-uefi-console.sh", "kernel_uefi_console_clock.py", "kernel_emulator_clock.py"):
             shutil.copy2(ROOT / "scripts" / name, self.scripts / name)
@@ -439,6 +441,78 @@ class DeveloperCommands(unittest.TestCase):
     def test_compiler_missing_tool_has_no_work(self):
         self.run_script("compiler-test.sh", env={"CXX": "no-such-compiler"}, expected=2)
         self.assert_no_work()
+
+    def test_compiler_make_build_suite_and_focused_routes_use_only_meson(self):
+        self.tool(
+            "python3",
+            'printf "meson|%s|%s|%s|%s\\n" "$*" "${CXX-}" "${CXXFLAGS-}" "${MESON_BUILD_DIR-}" >> "$CALLS"\n'
+            'exit "${FAKE_STATUS:-0}"\n',
+        )
+        routes = (
+            ([], "--build-only aurorac --publish-compiler"),
+            (["all"], "--build-only aurorac --publish-compiler"),
+            (["formatter"], "--build-only aurora-fmt --publish-formatter"),
+            (["test"], "--suite compiler"),
+            (["test-formatter"], "--tests hosted-lexer-format hosted-lexer-format-cli"),
+            (["test-lint"], "--tests semantic-lint"),
+            (["test-modules"], "--tests modules source-depth host-sources-tests host-output-tests"),
+            (["test-short-circuit"], "--tests short-circuit short-circuit-ir short-circuit-ir-native"),
+            (["test-console-service"], "--tests console-service-source-native console-service-ir console-session"),
+            (["test-iommu-event-service"], "--tests iommu-event-source-native iommu-event-session"),
+        )
+        controls = {"CXX": "g++-16", "CXXFLAGS": "-std=c++23 -O2 -DCOUNT=7", "MESON_BUILD_DIR": "build/chosen"}
+        for goals, selection in routes:
+            for status in (0, 19):
+                with self.subTest(goals=goals, status=status):
+                    result = subprocess.run(
+                        [MAKE, *goals],
+                        cwd=self.repo / "compiler",
+                        env=self.env | controls | {"FAKE_STATUS": str(status)},
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    self.assertEqual(result.returncode == 0, status == 0, result.stdout + result.stderr)
+                    self.assertEqual(
+                        self.calls(),
+                        [
+                            f"meson|-B ../scripts/meson_test.py --repo-root {self.repo} {selection}|"
+                            "g++-16|-std=c++23 -O2 -DCOUNT=7|build/chosen"
+                        ],
+                    )
+                    self.assertFalse((self.repo / "build").exists())
+                    self.record.unlink()
+
+    def test_compiler_make_controls_reject_before_forwarding(self):
+        for goal in ("all", "formatter", "test", "test-formatter", "test-lint"):
+            for arguments in (
+                ["OUT="],
+                ["OUT=/old/output"],
+                ["FORMAT_OUT=/old/formatter"],
+                ["AURORA_TEST_CONTEXT=/old/receipt"],
+                ["CXXFLAGS=$UNEXPANDED"],
+                ["IR_TEST_CXXFLAGS=`inert`"],
+                ["AURORA_BUILD_JOBS=two"],
+                ["MAKEFLAGS="],
+                ["SHELL=/bin/true"],
+                [".SHELLFLAGS=-c true"],
+                ["-i"],
+                ["-q"],
+                ["-t"],
+                ["-e"],
+            ):
+                with self.subTest(goal=goal, arguments=arguments):
+                    result = subprocess.run(
+                        [MAKE, goal, *arguments],
+                        cwd=self.repo / "compiler",
+                        env=self.env,
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    self.assertIn("***", result.stderr)
+                    self.assert_no_work()
 
     def test_make_uefi_routes_to_native_image_without_legacy_build(self):
         self.tool("python3", 'printf "native|%s\\n" "$*" >> "$CALLS"\nexit 79\n')

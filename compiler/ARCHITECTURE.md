@@ -6,14 +6,14 @@ The typed-IR milestone established behavior-preserving compiler phase boundaries
 
 1. `host_sources.hpp` owns the trusted Linux descriptor-relative source reader and atomic artifact writer. `modules.hpp` loads explicit-root module graphs and resolves names/exports in defining-module contexts; MODULES.md specifies that boundary.
 2. `types.hpp` defines source types and common tokens/errors.
-3. `lexer.hpp` turns bytes into tokens; `syntax.hpp` defines the untyped source AST; `parser.hpp` accepts the restricted safe C++ grammar.
+3. The hosted Aurora lexer turns bytes into tokens; `syntax.hpp` defines the untyped source AST. `parser.hpp` handles declarations/statements and dispatches expressions to the hosted Aurora parser.
 4. `semantics.hpp` performs source-level name resolution, scalar/aggregate type checking, initialization rules, const/private access checking, ownership moves, lexical borrow checks and conservative branch/loop joins. It emits typed instructions, not assembly strings.
 5. `ir.hpp` defines a target-independent accumulator/value-stack instruction model. Its operations include checked integer arithmetic, typed loads/stores, explicit control flow, metadata queries and array guard/access operations.
 6. `ir_verify.hpp` validates a complete module and creates an immutable `ValidatedModule`. Only this validated wrapper can be passed to the emitter. It checks lower-level type, initialization, control-flow, operand-stack, frame and bounds-token invariants.
 7. `x86.hpp` lowers validated operations to GNU x86-64 assembly. It has no source AST, scope lookup, const policy, owner-liveness state or borrow-state checker. Target registers, ABI argument placement, stack alignment and machine trap sequences exist only here.
 8. `main.cpp` coordinates file I/O and those stages. GNU assembler/linker remain the bootstrap native toolchain.
 
-The implementation uses internal header units and one translation unit so existing bootstrap commands that compile `main.cpp` continue to work. These are actual phase boundaries rather than separately named files wrapping the old assembly-text emitter. This packaging is not a stable external compiler-library API.
+The C++ implementation uses internal header units and one main translation unit, linked with the generated Aurora frontend through Meson. Raw `main.cpp` compilation no longer builds a compiler. These are actual phase boundaries, not a stable external compiler-library API.
 
 ## Hosted Aurora expression parser
 
@@ -72,15 +72,15 @@ consume this returned AST unchanged.
 
 The hosted build stages exact exported lexer/arena files under their module paths,
 then emits one parser/arena/lexer graph with `--local-symbols`; no overlapping
-lexer object, second scanner or source concatenation is used. By default the C++
-stage-0 seed emits frontend A. Explicit paired predecessor path/digest options
-instead select a checked external compiler and omit the current seed target.
+lexer object, second scanner or source concatenation is used. Required paired
+predecessor path/digest options select the compiler that emits frontend A. The
+current source contains no C++ expression seed target.
 Current C1 links A, emits a distinct frontend B, and current C2 links B with the
 same host C++ objects. The existing bootstrap test regenerates B through C1 and C
 through C2, requires exact assembly/raw/object equality, and checks regenerated B
 against the build-produced B consumed by C2. It compares current C1/C2 corpus
 behavior; predecessor compatibility is limited to emitting the current frontend.
-See the [source-build route](README.md#explicit-predecessor-bootstrap).
+See the [source-build route](README.md#source-bootstrap).
 Compiler, source fixtures, formatter and optional LSP link frontend A and the
 hosted owner runtime. Standalone lexer bootstrap regression remains separate.
 Focused parser/ABI and multi-stage corpus checks do not replace final integrated
@@ -88,25 +88,22 @@ GCC 16 full/image/guest qualification.
 
 ### C++ expression parser retirement
 
-Retire the C++ expression parser and `templateStatementExpressionAhead` together
-once Aurora handles the complete existing expression grammar in every entry
-context, including constructor initializers and nested expressions. Coverage must
-include calls, qualified/member/index expressions, strings and arrays, construction,
-type-taking reflection calls and template arguments with exact `>`/`>>` ambiguity
-and diagnostic behavior. The hosted expression path now has this grammar;
-the C++ parser remains the default seed/reference until the explicit predecessor
-route is qualified and its reference fixtures migrate. This adds no language
-features.
+Current source has removed `expr`, `primary`, `postfix`, precedence parsing,
+`templateExpressionAhead`, `templateStatementExpressionAhead`, and the reference
+selection switch. Statement and constructor entrypoints always call Aurora.
+Declaration `type`, `templateArguments`, `templateArgumentEnd` and split-closer
+handling remain because declaration parsing still uses them.
 
-Removal requires direct no-fallback Aurora tests for each grammar family, exact
-AST/span and rejection parity, depth/allocation/ABI failure coverage, and the
-existing whole-corpus and multi-stage frontend reproducibility gates. First verify
-reproducible clean builds through the pinned, reviewed predecessor route above,
-including C1/C2 convergence with no current-seed dependency. Then delete the C++
-`expr`/`primary`/`postfix`/precedence implementation, expression-only template
-lookahead and fallback routing rather than retaining another production parser.
-Update the seed/reference tests to the new bootstrap boundary and rerun final
-integrated qualification. Declaration/type parsing remains a separate migration.
+Targeted fixtures state expected ASTs, token spans, child/designator order and
+exact diagnostics directly. The independent raw ABI, forged-result, depth and
+allocation-failure controls remain. Actual-source whole-vs-direct expression
+checks establish dispatch consistency, not an independent parser oracle.
+Retirement qualification additionally compares the current compiler with a
+freshly source-built historical C++ seed on valid and malformed source. Historical
+source/binaries stay outside the current tree; there is no copied parser snapshot.
+The predecessor-backed C1/C2 frontend and whole-corpus reproducibility gates
+remain required, followed by final integrated qualification. Migrating statement
+and declaration grammar is the next separate frontend responsibility.
 
 ## Typed instruction model
 

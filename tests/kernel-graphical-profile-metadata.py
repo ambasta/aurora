@@ -134,7 +134,10 @@ class ProfileMetadata(unittest.TestCase):
         inventory = load("graphical_metadata_inventory", "tests/test-inventory.py")
         root = (ROOT / "Makefile").read_text()
         root_all, root_runners, reached, recipes = inventory.make_inventory(root)
-        compiler_all, compiler_runners, _, _ = inventory.make_inventory((ROOT / "compiler/Makefile").read_text())
+        manifest = json.loads((ROOT / "tests/compiler-test-inventory.json").read_text())
+        compiler_all, compiler_runners = inventory.compiler_meson_inventory(
+            (ROOT / "compiler/Makefile").read_text(), manifest
+        )
         self.assertIn("test-developer-commands", reached)
         self.assertTrue(inventory.compiler_dispatch(recipes))
         commands = [
@@ -170,7 +173,9 @@ class ProfileMetadata(unittest.TestCase):
             [ast.dump(node) for node in ast.walk(ast.parse(display)) if isinstance(node, ast.Assign)],
         )
         self.assertIn("require(grouped.returncode == 0,", display)
-        self.assertIn("../tests/compiler/service_group_ir_abi.py", (ROOT / "compiler/Makefile").read_text())
+        self.assertIn(
+            "--tests display-service-source-native display-service-ir", (ROOT / "compiler/Makefile").read_text()
+        )
         self.assertIn("files('compiler/service_group_ir_abi.py')", (ROOT / "tests/meson.build").read_text())
         inventory.check(
             manifest,

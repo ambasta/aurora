@@ -1,5 +1,6 @@
-// Exercise the real Aurora phase and compare complete ASTs/diagnostics with the
-// retained C++ parser. Raw records are deliberately independent of the adapter.
+// Exercise the real Aurora phase against explicit AST and diagnostic contracts.
+// Whole-program/direct-source comparisons check dispatch consistency only.
+// Raw ABI records remain deliberately independent of the host adapter.
 #include "lexer.hpp"
 #include "parser.hpp"
 #include "hosted_parser.hpp"
@@ -14,6 +15,7 @@
 #include <iostream>
 #include <iterator>
 #include <limits>
+#include <map>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -92,7 +94,8 @@ void sameExpression(const aurora::ExpressionPtr &a, const aurora::ExpressionPtr 
     require(a->op == b->op && a->depth == b->depth && a->token.text == b->token.text &&
                 a->token.line == b->token.line && a->args.size() == b->args.size() && a->fieldNames == b->fieldNames &&
                 a->templateArguments == b->templateArguments && a->reflectedType == b->reflectedType,
-            "expression shape/spelling/depth differs");
+            "expression shape/spelling/depth differs at " + a->op + ":" + a->token.text + " versus " + b->op + ":" +
+                b->token.text);
     sameSpan(a->token.span, b->token.span);
     for (std::size_t i = 0; i < a->args.size(); ++i)
         sameExpression(a->args[i], b->args[i]);
@@ -103,87 +106,198 @@ std::size_t nodes(const aurora::ExpressionPtr &expression) {
         count += nodes(child);
     return count;
 }
-void sameStatements(const std::vector<aurora::StatementPtr> &a, const std::vector<aurora::StatementPtr> &b) {
-    require(a.size() == b.size(), "statement count differs");
-    for (std::size_t i = 0; i < a.size(); ++i) {
-        require(a[i]->kind == b[i]->kind && a[i]->name == b[i]->name && a[i]->fieldName == b[i]->fieldName &&
-                    a[i]->mutableValue == b[i]->mutableValue && a[i]->type == b[i]->type,
-                "statement shape differs");
-        sameSpan(a[i]->token.span, b[i]->token.span);
-        sameSpan(a[i]->bindingSpan, b[i]->bindingSpan);
-        sameExpression(a[i]->expr, b[i]->expr);
-        sameExpression(a[i]->target, b[i]->target);
-        sameStatements(a[i]->body, b[i]->body);
-        sameStatements(a[i]->other, b[i]->other);
-    }
+// These builders describe expected trees, never parse source. Token ordinals and
+// qualified-token ranges are supplied by each fixture; depth follows that stated
+// tree. All other Expression fields retain their independent default values.
+struct Ast {
+    std::string op;
+    std::size_t first, last;
+    std::vector<Ast> args;
+    std::vector<std::string> fields;
+    std::vector<aurora::TemplateArgument> types;
+    aurora::Type reflected;
+};
+Ast tree(std::string op, std::size_t token, std::vector<Ast> args = {}) {
+    return {std::move(op), token, token, std::move(args), {}, {}, {}};
 }
-void sameFunctions(const std::vector<aurora::Function> &a, const std::vector<aurora::Function> &b) {
-    require(a.size() == b.size(), "function/method count differs");
-    for (std::size_t i = 0; i < a.size(); ++i) {
-        require(a[i].name == b[i].name && a[i].scope == b[i].scope && a[i].exported == b[i].exported &&
-                    a[i].constructor == b[i].constructor && a[i].receiverConst == b[i].receiverConst &&
-                    a[i].publicAccess == b[i].publicAccess && a[i].result == b[i].result &&
-                    a[i].params.size() == b[i].params.size() && a[i].initializers.size() == b[i].initializers.size(),
-                "function/method shape differs");
-        sameToken(a[i].token, b[i].token);
-        for (std::size_t j = 0; j < a[i].params.size(); ++j) {
-            const auto &left = a[i].params[j], &right = b[i].params[j];
-            require(left.name == right.name && left.type == right.type && left.borrowed == right.borrowed &&
-                        left.borrowConst == right.borrowConst,
-                    "parameter shape/order differs");
-            sameSpan(left.borrowSpan, right.borrowSpan);
-        }
-        for (std::size_t j = 0; j < a[i].initializers.size(); ++j) {
-            sameToken(a[i].initializers[j].first, b[i].initializers[j].first);
-            sameExpression(a[i].initializers[j].second, b[i].initializers[j].second);
-        }
-        sameStatements(a[i].body, b[i].body);
-    }
+Ast number(std::size_t token) {
+    return tree("number", token);
 }
-void sameClasses(const std::vector<aurora::ClassDefinition> &a, const std::vector<aurora::ClassDefinition> &b) {
-    require(a.size() == b.size(), "class count differs");
-    for (std::size_t i = 0; i < a.size(); ++i) {
-        require(a[i].name == b[i].name && a[i].scope == b[i].scope && a[i].exported == b[i].exported &&
-                    a[i].fields.size() == b[i].fields.size(),
-                "class shape differs");
-        sameToken(a[i].token, b[i].token);
-        for (std::size_t j = 0; j < a[i].fields.size(); ++j) {
-            sameToken(a[i].fields[j].token, b[i].fields[j].token);
-            require(a[i].fields[j].type == b[i].fields[j].type &&
-                        a[i].fields[j].publicAccess == b[i].fields[j].publicAccess,
-                    "field shape/order differs");
-        }
-        sameFunctions(a[i].methods, b[i].methods);
-    }
+Ast name(std::size_t token, std::size_t last) {
+    auto result = tree("name", token);
+    result.last = last;
+    return result;
 }
-aurora::Program compareProgram(const std::vector<aurora::Token> &tokens, bool valid = true) {
-    std::array<std::optional<aurora::Program>, 2> programs;
-    std::array<std::optional<aurora::Diagnostic>, 2> errors;
-    for (std::size_t i = 0; i < 2; ++i) {
-        try {
-            programs[i] = aurora::Parser(tokens, i == 0).parse();
-        } catch (const aurora::Error &error) {
-            errors[i] = error.diagnostic;
-        }
+Ast name(std::size_t token) {
+    return name(token, token);
+}
+Ast binary(std::size_t token, Ast left, Ast right) {
+    return tree("binary", token, {std::move(left), std::move(right)});
+}
+Ast call(std::size_t token, std::vector<Ast> args = {}, std::size_t last = std::string::npos) {
+    auto result = tree("call", token, std::move(args));
+    result.last = last == std::string::npos ? token : last;
+    return result;
+}
+Ast index(Ast base, Ast subscript) {
+    auto result = tree("index", base.first, {base, std::move(subscript)});
+    result.last = base.last;
+    return result;
+}
+Ast typed(Ast expression, std::vector<aurora::TemplateArgument> types) {
+    expression.types = std::move(types);
+    return expression;
+}
+Ast reflected(std::size_t token, aurora::Type type) {
+    auto result = call(token);
+    result.reflected = std::move(type);
+    return result;
+}
+Ast construct(std::size_t first, std::size_t last, std::vector<std::string> fields = {}, std::vector<Ast> args = {}) {
+    auto result = tree("construct", first, std::move(args));
+    result.last = last;
+    result.fields = std::move(fields);
+    return result;
+}
+aurora::TemplateArgument namedArgument(std::string name, std::vector<aurora::TemplateArgument> args = {}) {
+    aurora::TemplateArgument result(std::move(name));
+    result.templateArguments = std::move(args);
+    return result;
+}
+aurora::Type namedType(std::string name, std::vector<aurora::TemplateArgument> args = {}) {
+    aurora::Type result(std::move(name));
+    result.templateArguments = std::move(args);
+    return result;
+}
+aurora::ExpressionPtr expectedTree(const std::vector<aurora::Token> &tokens, const Ast &spec) {
+    auto token = tokens.at(spec.first);
+    for (auto ordinal = spec.first + 1; ordinal <= spec.last; ++ordinal)
+        token.text += tokens.at(ordinal).text;
+    token.span.end = tokens.at(spec.last).span.end;
+    auto result = std::make_shared<aurora::Expression>(spec.op, token);
+    result->fieldNames = spec.fields;
+    result->templateArguments = spec.types;
+    result->reflectedType = spec.reflected;
+    for (const auto &child : spec.args) {
+        result->args.push_back(expectedTree(tokens, child));
+        result->depth = std::max(result->depth, result->args.back()->depth + 1);
     }
-    require(bool(programs[0]) == valid && bool(programs[1]) == valid, "acceptance differs from reference/expectation");
-    if (!valid) {
-        require(errors[0] && errors[1], "missing exact rejection");
-        require(errors[0]->code == errors[1]->code && errors[0]->message == errors[1]->message,
-                "diagnostic code/message differs: " + errors[0]->message + " versus " + errors[1]->message);
-        sameSpan(errors[0]->span, errors[1]->span);
-    } else {
-        sameFunctions(programs[0]->functions, programs[1]->functions);
-        sameFunctions(programs[0]->functionTemplates, programs[1]->functionTemplates);
-        sameClasses(programs[0]->classes, programs[1]->classes);
-        sameClasses(programs[0]->templates, programs[1]->templates);
+    return result;
+}
+std::string fixtureKey(const std::vector<aurora::Token> &tokens) {
+    std::string result;
+    for (const auto &token : tokens)
+        result += std::to_string(token.text.size()) + ":" + token.text;
+    return result;
+}
+struct ExpectedExpression {
+    Ast tree;
+    std::size_t next;
+};
+std::map<std::string, ExpectedExpression> expressionExpectations;
+void pinExact(const std::string &source, Ast expected, std::size_t next) {
+    expressionExpectations.insert_or_assign(fixtureKey(aurora::lex(source, "expectation.au")),
+                                            ExpectedExpression{std::move(expected), next});
+}
+void pin(const std::string &source, const Ast &expected) {
+    const auto next = aurora::lex(source, "expectation.au").size() - 1;
+    pinExact(source + ";", expected, next);
+    pinExact(source + ")", expected, next);
+}
+struct ExpectedError {
+    std::string message;
+    std::size_t token;
+    int half = 0;
+    aurora::DiagnosticCode code = aurora::DiagnosticCode::UnexpectedToken;
+};
+std::map<std::string, ExpectedError> errorExpectations;
+void pinError(const std::string &source,
+              std::string message,
+              std::size_t token,
+              int half = 0,
+              aurora::DiagnosticCode code = aurora::DiagnosticCode::UnexpectedToken) {
+    errorExpectations.insert_or_assign(fixtureKey(aurora::lex(source, "expectation.au")),
+                                       ExpectedError{std::move(message), token, half, code});
+}
+void sameError(const aurora::Diagnostic &actual,
+               const std::vector<aurora::Token> &tokens,
+               const ExpectedError &expected,
+               std::size_t base = 0) {
+    auto token = tokens.at(base + expected.token);
+    if (expected.half) {
+        require(token.text == ">>", "half-token expectation requires an original >> token");
+        token.text = ">";
+        ++token.span.begin.offset;
+        ++token.span.begin.column;
     }
+    const auto message =
+        expected.message +
+        (expected.code == aurora::DiagnosticCode::UnexpectedToken ? " (found '" + token.text + "')" : "");
+    require(actual.code == expected.code && actual.message == message,
+            "diagnostic differs: " + actual.message + " versus " + message);
+    sameSpan(actual.span, token.span);
+}
+// Program-only declaration contracts require separate pinned predecessor/current
+// source qualification. This check claims acceptance, not an AST
+// oracle; expression dispatch inventories below carry their stated assertions.
+aurora::Program checkedProgram(const std::vector<aurora::Token> &tokens) {
+    auto program = aurora::Parser(tokens).parse();
+    require(!program.moduleName.empty(), "accepted program lost its module");
     ++cases;
-    return valid ? std::move(*programs[1]) : aurora::Program{};
+    return program;
 }
-void compareProgram(const std::string &source, bool valid = true) {
+void statementRoots(const std::vector<aurora::StatementPtr> &statements, std::vector<aurora::ExpressionPtr> &roots) {
+    for (const auto &statement : statements) {
+        if (statement->expr)
+            roots.push_back(statement->expr);
+        if (statement->target)
+            roots.push_back(statement->target);
+        statementRoots(statement->body, roots);
+        statementRoots(statement->other, roots);
+    }
+}
+void functionRoots(const std::vector<aurora::Function> &functions, std::vector<aurora::ExpressionPtr> &roots) {
+    for (const auto &function : functions) {
+        for (const auto &initializer : function.initializers)
+            roots.push_back(initializer.second);
+        statementRoots(function.body, roots);
+    }
+}
+void checkedProgram(const std::string &source, const std::vector<Ast> &expected) {
     context = source;
-    compareProgram(aurora::lex(source, "parser-differential.au"), valid);
+    const auto tokens = aurora::lex(source, "program-roots.au");
+    const auto program = checkedProgram(tokens);
+    std::vector<aurora::ExpressionPtr> roots;
+    functionRoots(program.functions, roots);
+    functionRoots(program.functionTemplates, roots);
+    for (const auto &definition : program.classes)
+        functionRoots(definition.methods, roots);
+    for (const auto &definition : program.templates)
+        functionRoots(definition.methods, roots);
+    require(roots.size() == expected.size(), "program expression-root count/order differs");
+    for (std::size_t index = 0; index < roots.size(); ++index)
+        sameExpression(roots[index], expectedTree(tokens, expected[index]));
+}
+void rejectedProgram(const std::string &prefix,
+                     const std::string &expression,
+                     const std::string &suffix,
+                     const ExpectedError &expected) {
+    context = prefix + expression + suffix;
+    const auto tokens = aurora::lex(context, "parser-program-error.au");
+    std::optional<aurora::Diagnostic> diagnostic;
+    try {
+        aurora::Parser(tokens).parse();
+    } catch (const aurora::Error &error) {
+        diagnostic = error.diagnostic;
+    }
+    require(bool(diagnostic), "malformed program was accepted");
+    sameError(*diagnostic, tokens, expected, aurora::lex(prefix, "prefix.au").size() - 1);
+    ++cases;
+}
+void rejectedProgram(const std::string &prefix, const std::string &expression, const std::string &suffix) {
+    const auto found = errorExpectations.find(fixtureKey(aurora::lex(expression, "expectation.au")));
+    require(found != errorExpectations.end(), "missing explicit program rejection for " + expression);
+    rejectedProgram(prefix, expression, suffix, found->second);
 }
 std::string chain(std::size_t count) {
     std::string result = "1";
@@ -191,48 +305,455 @@ std::string chain(std::size_t count) {
         result += "+1";
     return result;
 }
+Ast sum(std::size_t count, std::size_t first = 0) {
+    auto result = number(first);
+    for (std::size_t index = 1; index < count; ++index)
+        result = binary(first + 2 * index - 1, std::move(result), number(first + 2 * index));
+    return result;
+}
 void supported(const std::string &text, Stop stop = Stop::Semicolon) {
     context = text;
     const auto tokens = aurora::lex(text, "supported.au");
+    const auto found = expressionExpectations.find(fixtureKey(tokens));
+    require(found != expressionExpectations.end(), "missing explicit AST fixture");
     std::size_t position = 0;
-    const auto hosted = aurora::parseHostedExpression(tokens, position, stop);
-    require(bool(hosted), "supported expression silently fell back");
-    aurora::Parser reference(tokens, false);
-    const auto expected = reference.expr();
-    sameExpression(hosted, expected);
-    sameToken(tokens[position], reference.peek());
+    const auto expression = aurora::parseHostedExpression(tokens, position, stop);
+    require(bool(expression), "supported expression was not parsed");
+    sameExpression(expression, expectedTree(tokens, found->second.tree));
+    require(position == found->second.next, "expression committed the wrong token ordinal");
     if (text == chain(100) + ";")
-        require(nodes(hosted) == 199 && hosted->depth == 100, "100 terms did not yield 199 real Aurora nodes");
+        require(nodes(expression) == 199 && expression->depth == 100, "100 terms did not yield 199 Aurora nodes");
     ++cases;
 }
-// Both implementations must reject with the exact diagnostic. Calling the
-// adapter itself prevents a whole-expression C++ fallback from passing this.
 void rejected(const std::string &text, Stop stop = Stop::Semicolon) {
     context = text;
-    const auto tokens = aurora::lex(text, "typed-rejection.au");
-    const auto before = tokens;
-    std::array<std::optional<aurora::Diagnostic>, 2> errors;
+    const auto tokens = aurora::lex(text, "typed-rejection.au"), before = tokens;
+    const auto found = errorExpectations.find(fixtureKey(tokens));
+    require(found != errorExpectations.end(), "missing explicit rejection fixture");
+    std::optional<aurora::Diagnostic> diagnostic;
     std::size_t position = 0;
     try {
-        const auto expression = aurora::parseHostedExpression(tokens, position, stop);
-        require(bool(expression), "malformed typed expression silently fell back");
+        aurora::parseHostedExpression(tokens, position, stop);
     } catch (const aurora::Error &error) {
-        errors[0] = error.diagnostic;
+        diagnostic = error.diagnostic;
     }
-    try {
-        aurora::Parser reference(tokens, false);
-        reference.expr();
-    } catch (const aurora::Error &error) {
-        errors[1] = error.diagnostic;
-    }
-    require(errors[0] && errors[1], "typed expression did not reject in both parsers");
-    require(errors[0]->code == errors[1]->code && errors[0]->message == errors[1]->message,
-            "typed diagnostic code/message differs: " + errors[0]->message + " versus " + errors[1]->message);
-    sameSpan(errors[0]->span, errors[1]->span);
-    require(position == 0 && tokens.size() == before.size(), "typed rejection changed its caller cursor/tokens");
-    for (std::size_t i = 0; i < tokens.size(); ++i)
-        sameToken(tokens[i], before[i]);
+    require(bool(diagnostic), "malformed expression was accepted");
+    sameError(*diagnostic, tokens, found->second);
+    require(position == 0 && tokens.size() == before.size(), "rejection changed its caller cursor/tokens");
+    for (std::size_t index = 0; index < tokens.size(); ++index)
+        sameToken(tokens[index], before[index]);
     ++cases;
+}
+
+void diagnosticExpectations() {
+    struct Rejection {
+        const char *source;
+        const char *message;
+        std::size_t token;
+        int half = 0;
+    };
+    for (const auto &test : std::vector<Rejection>{
+             {"f<T)>(0);", "expected '>'", 3},
+             {"f<T]>(0);", "expected '>'", 3},
+             {"f<T:>(0);", "expected '>'", 3},
+             {"f<>(0);", "expected identifier", 2},
+             {"f<i64,>(0);", "expected identifier", 4},
+             {"(f<T)>(0);", "expected '>'", 4},
+             {"{f<T)>(0)};", "expected '>'", 4},
+             {"Box{.value=f<T)>(0)};", "expected '>'", 8},
+             {"f< T // malformed trivia\n ) >(0);", "expected '>'", 3},
+             {"f<i64,u8,bool>(0);", "template arguments are limited to one or two types or capacity literals", 6},
+             {"f<0>(0);", "capacity template arguments must be decimal literals from 1 to 64", 3},
+             {"f<65>(0);", "capacity template arguments must be decimal literals from 1 to 64", 3},
+             {"f<1u64>(0);", "capacity template arguments must be decimal literals from 1 to 64", 3},
+             {"f<18446744073709551616>(0);", "capacity template arguments must be decimal literals from 1 to 64", 3},
+             {"f<true>(0);",
+              "template arguments require scalar, named class or enum types, or capacities from 1 to 64",
+              2},
+             {"f<false>(0);",
+              "template arguments require scalar, named class or enum types, or capacities from 1 to 64",
+              2},
+             {"f<own>(0);",
+              "template arguments require scalar, named class or enum types, or capacities from 1 to 64",
+              2},
+             {"f<ref>(0);",
+              "template arguments require scalar, named class or enum types, or capacities from 1 to 64",
+              2},
+             {"f<mutref>(0);",
+              "template arguments require scalar, named class or enum types, or capacities from 1 to 64",
+              2},
+             {"f<array>(0);",
+              "template arguments require scalar, named class or enum types, or capacities from 1 to 64",
+              2},
+             {"f<builtin>(0);",
+              "template arguments require scalar, named class or enum types, or capacities from 1 to 64",
+              2},
+             {"f<fn>(0);", "reserved identifier", 2},
+             {"f<ns::true>(0);", "reserved identifier", 4},
+             {"f<__au_private>(0);", "reserved compiler identifier prefix: __au_", 2},
+             {"size_of();", "expected type name", 3},
+             {"size_of(fn);", "unsupported or reserved type spelling", 2},
+             {"size_of(123);", "expected type name", 3},
+             {"size_of(i64,u8);", "expected ')'", 3},
+             {"size_of(own);", "expected '<'", 3},
+             {"size_of(own<u8>);", "expected 'i64'", 4},
+             {"size_of(ref<i64>>);", "expected '>'", 5},
+             {"size_of(mutref<i64);", "expected '>'", 5},
+             {"size_of(builtin);", "expected '::'", 3},
+             {"size_of(builtin::unknown);", "expected 'array'", 4},
+             {"size_of(builtin::span<u8>);", "expected 'const'", 6},
+             {"size_of(builtin::span<const i64>);", "expected 'u8'", 7},
+             {"size_of(builtin::span<const u8>>);", "expected '>'", 8},
+             {"size_of(array<i64>);", "expected ','", 5},
+             {"size_of(array<own<i64>,1>);", "array elements require i64, u64, u8, bool or a concrete copied class", 8},
+             {"size_of(array<array<i64,1>,1>);",
+              "array elements require i64, u64, u8, bool or a concrete copied class",
+              10},
+             {"size_of(array<i64,0>);", "array length requires a decimal integer literal between 1 and 4096", 7},
+             {"size_of(array<i64,4097>);", "array length requires a decimal integer literal between 1 and 4096", 7},
+             {"size_of(array<i64,1u64>);", "array length requires a decimal integer literal between 1 and 4096", 7},
+             {"size_of(array<i64,N>);", "array length requires a decimal integer literal between 1 and 4096", 7},
+             {"size_of(array<Class,65>);", "class-element array capacity must be between 1 and 64", 8},
+             {"size_of(builtin::OwnedValues<i64>);", "owned values require a named concrete copied class", 7},
+             {"size_of(builtin::OwnedValues<Box<i64>>);", "owned values require a named concrete copied class", 9, 1},
+             {"size_of(Box<i64,u8,bool>);",
+              "template arguments are limited to one or two types or capacity literals",
+              8},
+             {"size_of(Box<i64,>);", "expected identifier", 6},
+             {"size_of(Box<0>);", "capacity template arguments must be decimal literals from 1 to 64", 5},
+             {"size_of(array<builtin::ConsolePutResult,2>);",
+              "array elements require i64, u64, u8, bool or a concrete copied class",
+              7},
+             {"size_of(array<builtin::DisplayCompletion,2>);",
+              "array elements require i64, u64, u8, bool or a concrete copied class",
+              7},
+             {"size_of(builtin::OwnedValues<builtin::EventPollResult>);",
+              "owned values require a named concrete copied class",
+              9},
+             {"size_of(Box<i64>>);", "expected ')'", 5, 1},
+             {"size_of(array<i64,2>>);", "expected ')'", 7, 1},
+             {"size_of(builtin::OwnedValues<Value>>);", "expected ')'", 7, 1},
+             {";", "expected expression", 1},
+             {"1 + ;", "expected expression", 3},
+             {"(1 + 2;", "expected ')'", 4},
+             {"1 2;", "expected ';'", 1},
+             {"1 +", "expected expression", 3},
+             {"(1) + ;", "expected expression", 5},
+             {":;", "expected expression", 1},
+             {"];", "expected expression", 1},
+             {",;", "expected expression", 1},
+             {"1:2;", "expected ';'", 1},
+             {"1]2;", "expected ';'", 1},
+             {"1,2;", "expected ';'", 1},
+             {"1(2);", "expected ';'", 1},
+             {"true(2);", "expected ';'", 1},
+             {"(1)(2);", "expected ';'", 3},
+             {"f(;", "expected expression", 3},
+             {"f(1;", "expected ')'", 3},
+             {"f(1,);", "expected expression", 5},
+             {"f(,);", "expected expression", 3},
+             {"f(1 2);", "expected ')'", 3},
+             {"a.;", "expected identifier", 2},
+             {"a..b;", "expected identifier", 2},
+             {"a.true;", "reserved identifier", 2},
+             {"a.array;", "reserved builtin storage name", 2},
+             {"a.builtin;", "reserved builtin storage name", 2},
+             {"a.__au_private;", "reserved compiler identifier prefix: __au_", 2},
+             {"name::;", "expected identifier", 2},
+             {"name::true;", "reserved identifier", 2},
+             {"name::builtin;", "reserved builtin storage name", 2},
+             {"name::__au_x;", "reserved compiler identifier prefix: __au_", 2},
+             {"a[;", "expected expression", 3},
+             {"a[];", "expected expression", 3},
+             {"a[1;", "expected ']'", 3},
+             {"a[1);", "expected ']'", 3},
+             {"a[1,2];", "expected ']'", 3},
+             {"f(1)(2);", "expected ';'", 4},
+             {"{,};", "expected expression", 2},
+             {"{1,};", "expected expression", 4},
+             {"{1 2};", "expected '}'", 2},
+             {"{1;", "expected '}'", 2},
+             {"{1,2", "expected ';'", 5},
+             {"{1];", "expected '}'", 2},
+             {"{1)};", "expected '}'", 2},
+             {"Box{value=1};", "expected '.'", 2},
+             {"Box{..value=1};", "expected identifier", 3},
+             {"Box{.1=1};", "expected identifier", 3},
+             {"Box{.true=1};", "reserved identifier", 3},
+             {"Box{.array=1};", "reserved builtin storage name", 3},
+             {"Box{.builtin=1};", "reserved builtin storage name", 3},
+             {"Box{.__au_private=1};", "reserved compiler identifier prefix: __au_", 3},
+             {"Box{.value 1};", "expected '='", 4},
+             {"Box{.value==1};", "expected '='", 4},
+             {"Box{.value=};", "expected expression", 6},
+             {"Box{.value=1,};", "expected '.'", 7},
+             {"Box{.value=1;", "expected '}'", 6},
+             {"Box{.value=1 .other=2};", "expected '}'", 6},
+             {"Box{.value={1,}};", "expected expression", 9},
+             {"{}(1);", "expected ';'", 2},
+             {"Box{}(1);", "expected ';'", 3},
+             {"{f<T]>(0)}", "expected '>'", 4},
+             {"{f<T:>(0)}", "expected '>'", 4},
+             {"f({f<T]>(0)})", "expected '>'", 6},
+             {"", "expected expression", 1},
+             {"(1 + 2", "expected ')'", 5},
+             {"1 2", "expected ')'", 1},
+             {"a[1", "expected ']'", 3},
+             {R"("text"(1))", "expected ')'", 1},
+             {R"("text"[0])", "expected ')'", 1},
+             {"{1", "expected '}'", 2},
+             {"{1]}", "expected '}'", 2},
+             {"{Box{.value=1,}}", "expected '.'", 8}}) {
+        pinError(test.source, test.message, test.token, test.half);
+        const std::string source = test.source;
+        if (source.ends_with(';'))
+            pinError(source.substr(0, source.size() - 1), test.message, test.token, test.half);
+    }
+    // In an initializer, a consumed ')' leaves its outer ')' as the exact error
+    // token. Unlike return statements, its terminator is not a semicolon.
+    pinError("1 +", "expected expression", 3);
+    pinError("(f<T)>(0)", "expected '>'", 4);
+    pinError("f<A<B<C<D<E<i64>>>>>>();", "template-id nesting exceeds 5", 11, 0, aurora::DiagnosticCode::NestingLimit);
+    pinError(
+        "size_of(A<B<C<D<E<i64>>>>>);", "template-id nesting exceeds 4", 11, 0, aurora::DiagnosticCode::NestingLimit);
+}
+
+Ast shifted(Ast value, std::size_t offset) {
+    value.first += offset;
+    value.last += offset;
+    for (auto &child : value.args)
+        child = shifted(std::move(child), offset);
+    return value;
+}
+Ast pinned(const std::string &source) {
+    return expressionExpectations.at(fixtureKey(aurora::lex(source + ";", "expectation.au"))).tree;
+}
+void checkedRootProgram(const std::string &prefix,
+                        const std::string &expression,
+                        const std::string &suffix,
+                        bool constructor = false) {
+    context = prefix + expression + suffix;
+    const auto tokens = aurora::lex(context, "program-root.au");
+    const auto program = checkedProgram(tokens);
+    auto source = expression;
+    if (source.ends_with(';'))
+        source.pop_back();
+    const auto expected = shifted(pinned(source), aurora::lex(prefix, "prefix.au").size() - 1);
+    if (constructor) {
+        require(program.classes.size() == 1 && program.classes[0].methods.size() == 2 &&
+                    program.classes[0].methods[0].initializers.size() == 1 &&
+                    program.classes[0].methods[0].initializers[0].first.text == "value",
+                "constructor initializer declaration/order differs");
+        sameExpression(program.classes[0].methods[0].initializers[0].second, expectedTree(tokens, expected));
+        sameExpression(program.classes[0].methods[1].body.at(0)->expr, expectedTree(tokens, name(tokens.size() - 6)));
+    } else {
+        require(program.functions.size() == 1 && program.functions[0].body.size() == 1 &&
+                    program.functions[0].body[0]->kind == "return",
+                "return fixture statement inventory differs");
+        sameExpression(program.functions[0].body[0]->expr, expectedTree(tokens, expected));
+    }
+}
+void checkedBracedProgram(const std::string &prefix, const std::string &contents, const std::string &suffix) {
+    const auto field = aurora::lex(prefix, "prefix.au").size() - 2;
+    auto expected = shifted(pinned(contents), 1);
+    expected.first = expected.last = 0;
+    if (expected.args.empty())
+        expected.op = "array_zero";
+    checkedProgram(prefix + contents + suffix, {shifted(expected, field)});
+}
+void grammarExpectations() {
+    using K = aurora::TypeKind;
+    using T = aurora::Type;
+    const auto capacity = aurora::TemplateArgument::capacity;
+    const auto array = [](std::size_t token, std::vector<Ast> children = {}) {
+        return tree("array_literal", token, std::move(children));
+    };
+    const auto unary = [](std::size_t token, Ast child) {
+        return tree("unary", token, {std::move(child)});
+    };
+    const auto member = [](std::size_t token, Ast child) {
+        return tree("member", token, {std::move(child)});
+    };
+    const auto method = [](std::size_t token, std::vector<Ast> children) {
+        return tree("method_call", token, std::move(children));
+    };
+    for (const auto &text : {"1", "123u64", "255u8"})
+        pin(text, number(0));
+    for (const auto &text : {"false", "true"})
+        pin(text, tree("bool", 0));
+    for (const auto &text : {"name", "_value", "fn", "__au_name", "x"})
+        pin(text, name(0));
+    for (const auto &text : {"'x'", "'\\n'"})
+        pin(text, tree("byte", 0));
+    pin("-1 + ~2 * !false", binary(2, unary(0, number(1)), binary(5, unary(3, number(4)), unary(6, tree("bool", 7)))));
+    auto precedence = binary(35, binary(33, binary(31, name(30), name(32)), name(34)), name(36));
+    precedence = binary(29, binary(27, name(26), name(28)), precedence);
+    precedence = binary(25, binary(23, name(22), name(24)), precedence);
+    precedence = binary(21, binary(19, binary(17, binary(15, name(14), name(16)), name(18)), name(20)), precedence);
+    precedence = binary(13, binary(11, name(10), name(12)), precedence);
+    for (const std::size_t op : {9, 7, 5, 3, 1})
+        precedence = binary(op, name(op - 1), precedence);
+    pin("a || b && c | d ^ e & f == g != h < i <= j > k >= l << m >> n + o - p * q / r % s", precedence);
+    pin("(a + b) * (c - d)", binary(5, binary(2, name(1), name(3)), binary(8, name(7), name(9))));
+    pin("(a)", name(1));
+    pin("1 + 2", binary(1, number(0), number(2)));
+    pin("a < b >> (c)", binary(1, name(0), binary(3, name(2), name(5))));
+    pin("true < x > (y)", binary(3, binary(1, tree("bool", 0), name(2)), name(5)));
+    pin("(a) < b > (c)", binary(5, binary(3, name(1), name(4)), name(7)));
+    for (const auto count : {100, 128})
+        pin(chain(count), sum(count));
+    pin(std::string(127, '(') + "1" + std::string(127, ')'), number(127));
+    auto negatives = number(127);
+    for (std::size_t token = 127; token-- > 0;)
+        negatives = unary(token, negatives);
+    pin(std::string(127, '-') + "1", negatives);
+    pinExact("target = 2;", name(0), 1);
+    pin("f()", call(0));
+    pin("f(1, 2)", call(0, {number(2), number(4)}));
+    pin("name.member", member(2, name(0)));
+    pin("name.at(1)", method(2, {name(0), number(4)}));
+    pin("one::two", name(0, 2));
+    pin("a[1]", index(name(0), number(2)));
+    pinExact("a[1] = 2;", index(name(0), number(2)), 4);
+    pin("f(g(1), h(2, 3)) + object.at(index + 1)",
+        binary(14,
+               call(0, {call(2, {number(4)}), call(7, {number(9), number(11)})}),
+               method(17, {name(15), binary(20, name(19), number(21))})));
+    pin("Box(42)", call(0, {number(2)}));
+    pin("move(value)", call(0, {name(2)}));
+    pin("one :: two(1, other.run()).field[2].at(3)",
+        method(18, {index(member(13, call(0, {number(4), method(8, {name(6)})}, 2)), number(15)), number(20)}));
+    pin("((a)).field", member(6, name(2)));
+    pin("(a + b)[(i)]", index(binary(2, name(1), name(3)), name(7)));
+    pin("a[one::index(f(1))].method().field",
+        member(17, method(13, {index(name(0), call(2, {call(6, {number(8)})}, 4))})));
+    pin("builtin::borrow_bytes(value)", call(0, {name(4)}, 2));
+    pin("one::array(1)", call(0, {number(4)}, 2));
+    pin("object.size_of()", method(2, {name(0)}));
+    pin("ns::size_of(i64)", call(0, {name(4)}, 2));
+    pin("-object.at(1) + f(2)", binary(7, unary(0, method(3, {name(1), number(5)})), call(8, {number(10)})));
+    pin("f(a[1], b.member)", call(0, {index(name(2), number(4)), member(9, name(7))}));
+    pin("size_of(i64)", reflected(0, T::I64));
+    pin("type_id(array<u8,2>)", reflected(0, T::array(K::U8, 2)));
+    pin("field_count(Box)", reflected(0, T("Box")));
+    pin("f(size_of(i64))", call(0, {reflected(2, T::I64)}));
+    pin(R"(f("text"))", call(0, {tree("byte_string", 2)}));
+    pin(R"(ns::f("", "é😀", "\0\xff"))",
+        call(0, {tree("byte_string", 4), tree("byte_string", 6), tree("byte_string", 8)}, 2));
+    pin(R"(object.write("\"\\\n"))", method(2, {name(0), tree("byte_string", 4)}));
+    pin(R"("left" == "right")", binary(1, tree("byte_string", 0), tree("byte_string", 2)));
+    pin(R"(("text")[0])", index(tree("byte_string", 1), number(4)));
+    pin("(x + 1) * 2", binary(5, binary(2, name(1), number(3)), number(6)));
+    pin("-x + ns::value", binary(2, unary(0, name(1)), name(3, 5)));
+    pin("ns::Mode::ready", name(0, 4));
+    pin("ns::make(x, a[2]).field", member(12, call(0, {name(4), index(name(6), number(8))}, 2)));
+    pin("object.at(index + 1)", method(2, {name(0), binary(5, name(4), number(6))}));
+    pin(R"(f("a\0\xff", a[one::index(f(1))]))",
+        call(0, {tree("byte_string", 2), index(name(4), call(6, {call(10, {number(12)})}, 8))}));
+    pin("{}", array(0));
+    pin("{1}", array(0, {number(1)}));
+    pin("{1,2,3}", array(0, {number(1), number(3), number(5)}));
+    pin("{1,2}", array(0, {number(1), number(3)}));
+    pin("{{1,2},{3,4}}", array(0, {array(1, {number(2), number(4)}), array(7, {number(8), number(10)})}));
+    pin("{f(), object.at(2), a[0]}", array(0, {call(1), method(7, {name(5), number(9)}), index(name(12), number(14))}));
+    pin("{Box{.value=1}, ns::Box{}, {}}",
+        array(0, {construct(1, 1, {"value"}, {number(6)}), construct(9, 11), array(15)}));
+    pin("{Box{.value=type_id(array<u8,2>)}}",
+        array(0, {construct(1, 1, {"value"}, {reflected(6, T::array(K::U8, 2))})}));
+    pin("{{}, {1, {2}}, f(3, {4,5})}",
+        array(0,
+              {array(1),
+               array(4, {number(5), array(7, {number(8)})}),
+               call(12, {number(14), array(16, {number(17), number(19)})})}));
+    pin("{1,2}[0]", index(array(0, {number(1), number(3)}), number(6)));
+    pinExact("{1,2}[0] = 3;", pinned("{1,2}[0]"), 8);
+    pin("({1,2}).field", member(8, array(1, {number(2), number(4)})));
+    pin("{}.size()", method(3, {array(0)}));
+    pin("ns::Box{}", construct(0, 2));
+    pin("one :: two::Box{.last=3,.first=1,.middle=2}",
+        construct(0, 4, {"last", "first", "middle"}, {number(9), number(14), number(19)}));
+    pin("Box{.first=f(1,{2}),.last=Other{.items={3,4}}}",
+        construct(0,
+                  0,
+                  {"first", "last"},
+                  {call(5, {number(7), array(9, {number(10)})}),
+                   construct(17, 17, {"items"}, {array(22, {number(23), number(25)})})}));
+    pin("Box{.value=1}.value", member(8, construct(0, 0, {"value"}, {number(5)})));
+    pin("Box{.items={1,2}}.items[0]",
+        index(member(12, construct(0, 0, {"items"}, {array(5, {number(6), number(8)})})), number(14)));
+    pin("Box{.items={1,2}}.at({3,4}[0])",
+        method(12,
+               {construct(0, 0, {"items"}, {array(5, {number(6), number(8)})}),
+                index(array(14, {number(15), number(17)}), number(20))}));
+    pin("f({}, Box{.value=1}, {f(2),object.at(3)})",
+        call(0,
+             {array(2),
+              construct(5, 5, {"value"}, {number(10)}),
+              array(13, {call(14, {number(16)}), method(21, {name(19), number(23)})})}));
+    pin(R"(f("text", Box{.value=1}))", call(0, {tree("byte_string", 2), construct(4, 4, {"value"}, {number(9)})}));
+    pin("{true < x > (y), a < b >> (c)}",
+        array(0, {shifted(pinned("true < x > (y)"), 1), shifted(pinned("a < b >> (c)"), 9)}));
+    // No candidate closes before '}', so these are comparison/shift trees.
+    pin("{1,f<T}>(0)", binary(7, array(0, {number(1), binary(4, name(3), name(5))}), number(9)));
+    pin("Box{.first=true < x > (y),.last=a < b >> (c)}",
+        construct(
+            0, 0, {"first", "last"}, {shifted(pinned("true < x > (y)"), 5), shifted(pinned("a < b >> (c)"), 16)}));
+    pin("{Box{}, ns::array{}, object.size_of()}", array(0, {construct(1, 1), construct(5, 7), method(13, {name(11)})}));
+    pin("Box{.value={1,2}[0]}", construct(0, 0, {"value"}, {shifted(pinned("{1,2}[0]"), 5)}));
+    pin("{1,size_of(i64)}", array(0, {number(1), reflected(3, T::I64)}));
+    pin("Box{.first=1,.second=type_id(array<u8,2>)}",
+        construct(0, 0, {"first", "second"}, {number(5), reflected(10, T::array(K::U8, 2))}));
+    pin("f({1,field_count(Box)})", call(0, {array(2, {number(3), reflected(5, T("Box"))})}));
+    pin("{Box{.value=f(size_of(i64))}}", array(0, {construct(1, 1, {"value"}, {call(6, {reflected(8, T::I64)})})}));
+    pin("f<i64>()", typed(call(0), {K::I64}));
+    pin("f<i64>(1)", typed(call(0, {number(5)}), {K::I64}));
+    pin("x<y<z>>(a)", typed(call(0, {name(7)}), {namedArgument("y", {namedArgument("z")})}));
+    pin("f<a<b<c>>>(0)",
+        typed(call(0, {number(10)}), {namedArgument("a", {namedArgument("b", {namedArgument("c")})})}));
+    pin("f<u64,u8>(1,2)", typed(call(0, {number(7), number(9)}), {K::U64, K::U8}));
+    pin("ns::make<bool,64>(true)", typed(call(0, {tree("bool", 9)}, 2), {K::Bool, capacity(64)}));
+    pin("f<Box<i64>>()", typed(call(0), {namedArgument("Box", {K::I64})}));
+    pin("f<Pair<i64,u8>,Box<64>>(1)",
+        typed(call(0, {number(14)}), {namedArgument("Pair", {K::I64, K::U8}), namedArgument("Box", {capacity(64)})}));
+    pin("ns :: make<Pair<i64, u8>>(1)", typed(call(0, {number(11)}, 2), {namedArgument("Pair", {K::I64, K::U8})}));
+    pin("f<ns::array<u8,16>>(value)", typed(call(0, {name(11)}), {namedArgument("ns::array", {K::U8, capacity(16)})}));
+    pin("one::two::Box<Pair<u8,16>,Other>{.last=2,.first=1}",
+        typed(construct(0, 4, {"last", "first"}, {number(19), number(24)}),
+              {namedArgument("Pair", {K::U8, capacity(16)}), namedArgument("Other")}));
+    pin("f<i64>(type_id(Pair<Box<u8>,i64>)).member[0]",
+        index(member(
+                  19,
+                  typed(call(0, {reflected(5, namedType("Pair", {namedArgument("Box", {K::U8}), K::I64}))}), {K::I64})),
+              number(21)));
+    pin("{f<i64>(1),size_of(array<u8,4096>),Box<u64>{.value=2}}",
+        array(0,
+              {typed(call(1, {number(6)}), {K::I64}),
+               reflected(9, T::array(K::U8, 4096)),
+               typed(construct(19, 19, {"value"}, {number(27)}), {K::U64})}));
+    pin("Box<i64>{.value=field_count(Other)}.value",
+        member(14, typed(construct(0, 0, {"value"}, {reflected(8, T("Other"))}), {K::I64})));
+    pin("size_of<i64>(u8)", typed(reflected(0, T::U8), {K::I64}));
+    pin("type_id<8>(Box)", typed(reflected(0, T("Box")), {capacity(8)}));
+    pin("f<a<b<c>>(0)", binary(1, name(0), typed(call(2, {number(9)}), {namedArgument("b", {namedArgument("c")})})));
+    pin("{f<i64>(1),2}", array(0, {typed(call(1, {number(6)}), {K::I64}), number(9)}));
+    pin("Box{.first=f<a<b<c>>>(0),.second={x<y<z>>(a)}}",
+        construct(0,
+                  0,
+                  {"first", "second"},
+                  {typed(call(5, {number(15)}), {namedArgument("a", {namedArgument("b", {namedArgument("c")})})}),
+                   array(21, {typed(call(22, {name(29)}), {namedArgument("y", {namedArgument("z")})})})}));
+    pin("f({Box<i64>{.value=1},2})",
+        call(0, {array(2, {typed(construct(3, 3, {"value"}, {number(11)}), {K::I64}), number(14)})}));
+    pin("{1,f<a<b<c>>(0)}",
+        array(
+            0,
+            {number(1), binary(4, name(3), typed(call(5, {number(12)}), {namedArgument("b", {namedArgument("c")})}))}));
+    const auto deep = namedArgument("A", {namedArgument("B", {namedArgument("C", {namedArgument("D", {K::I64})})})});
+    pin("f<A<B<C<D<i64>>>>>()", typed(call(0), {deep}));
+    pin("size_of(A<B<C<D<i64>>>>)", reflected(0, namedType("A", deep.templateArguments)));
+    pin("A<B<C<D<E<i64>>>>>{}",
+        typed(construct(0, 0),
+              {namedArgument("B", {namedArgument("C", {namedArgument("D", {namedArgument("E", {K::I64})})})})}));
 }
 
 std::size_t tokenAt(const std::vector<aurora::Token> &tokens, const aurora::Token &token) {
@@ -250,7 +771,7 @@ void hostedRoot(const std::vector<aurora::Token> &tokens,
                 const aurora::ExpressionPtr &expected,
                 const Context &typeContext = {}) {
     const auto expression = aurora::parseHostedExpression(tokens, position, stop, typeContext);
-    require(bool(expression), "bootstrap expression silently fell back");
+    require(bool(expression), "bootstrap dispatch omitted an expression");
     sameExpression(expression, expected);
     require(tokens.at(position).text == (stop == Stop::CloseParenthesis ? ")" : ";"),
             "bootstrap expression committed the wrong delimiter");
@@ -319,7 +840,7 @@ void bootstrapSources(char **paths) {
         const std::string source((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
         require(!input.bad(), "cannot finish reading actual bootstrap source");
         const auto tokens = aurora::lex(source, paths[i]);
-        const auto program = compareProgram(tokens);
+        const auto program = checkedProgram(tokens);
         require(program.moduleName == modules[i], "unexpected bootstrap source module/order");
         expectedBootstrapRoots(program.functions, expectedInitializers, expectedStrings);
         expectedBootstrapRoots(program.functionTemplates, expectedInitializers, expectedStrings);
@@ -463,7 +984,7 @@ void consumerSources(char **paths) {
         const std::string source((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
         require(!input.bad(), "cannot finish reading actual aggregate consumer source");
         const auto tokens = aurora::lex(source, paths[index]);
-        const auto program = compareProgram(tokens);
+        const auto program = checkedProgram(tokens);
         require(program.moduleName == modules[index], "unexpected aggregate consumer module/order");
         AggregateRoots aggregates, braces;
         consumerFunctions(tokens, program.functions, aggregates, braces);
@@ -486,8 +1007,8 @@ void consumerSources(char **paths) {
 }
 
 // Fixture-only declaration capture. Production Parser captures the same Tokens
-// as ident() consumes the header; compareProgram above independently checks that
-// route. Never replace these Tokens with spellings synthesized in another source.
+// as ident() consumes the header; whole/direct comparisons check dispatch
+// consistency only. Never replace these Tokens with spellings synthesized in another source.
 Context fixtureContext(const std::vector<aurora::Token> &tokens,
                        const aurora::Token &declaration,
                        const std::vector<aurora::TemplateParameter> &parameters,
@@ -616,7 +1137,7 @@ void typedFunctions(const std::vector<aurora::Token> &tokens,
     }
 }
 std::vector<std::string> typedProgram(const std::vector<aurora::Token> &tokens) {
-    const auto program = compareProgram(tokens);
+    const auto program = checkedProgram(tokens);
     std::vector<std::string> names;
     typedFunctions(tokens, program.functions, {}, names);
     typedFunctions(tokens, program.functionTemplates, {}, names);
@@ -651,8 +1172,8 @@ void typedConsumerSources(char **paths) {
         const std::string source((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
         require(!input.bad(), "cannot finish reading actual typed consumer source");
         const auto tokens = aurora::lex(source, paths[index]);
-        aurora::Parser reference(tokens, false);
-        require(reference.parse().moduleName == modules[index], "unexpected typed consumer source/module order");
+        aurora::Parser parser(tokens);
+        require(parser.parse().moduleName == modules[index], "unexpected typed consumer source/module order");
         require(typedProgram(tokens) == expected[index], "typed consumer roots changed order or were omitted");
     }
 }
@@ -820,12 +1341,23 @@ void byteStrings() {
         arena.finish();
         require(allocations.released == allocations.successful, "byte-string cleanup mismatch");
         ++cases;
+        pin(spelling, tree("byte_string", 0));
         supported("// preceding trivia\r\n\t" + spelling + ";");
         supported(spelling + ")", Stop::CloseParenthesis);
-        compareProgram("module strings; class Text { array<u8,512> bytes; public: Text():bytes(" + spelling +
-                       "){} auto first() const->u8 {return bytes[0];} }; "
-                       "auto f()->i64 {const array<u8,4096> bytes=" +
-                       spelling + ";return 0;}");
+        const auto source = "module strings; class Text { array<u8,512> bytes; public: Text():bytes(" + spelling +
+                            "){} auto first() const->u8 {return bytes[0];} }; "
+                            "auto f()->i64 {const array<u8,4096> bytes=" +
+                            spelling + ";return 0;}";
+        const auto tokens = aurora::lex(source, "string-program.au");
+        const auto program = checkedProgram(tokens);
+        require(program.classes.size() == 1 && program.classes[0].methods.size() == 2 && program.functions.size() == 1,
+                "byte-string declaration inventory differs");
+        sameExpression(program.classes[0].methods[0].initializers.at(0).second,
+                       expectedTree(tokens, tree("byte_string", 22)));
+        sameExpression(program.classes[0].methods[1].body.at(0)->expr,
+                       expectedTree(tokens, index(name(35), number(37))));
+        sameExpression(program.functions[0].body.at(0)->expr, expectedTree(tokens, tree("byte_string", 59)));
+        sameExpression(program.functions[0].body.at(1)->expr, expectedTree(tokens, number(62)));
     }
     for (const auto &expression : {R"(f("text");)",
                                    R"(ns::f("", "é😀", "\0\xff");)",
@@ -848,24 +1380,30 @@ void constructors() {
                                    R"(f("a\0\xff", a[one::index(f(1))]))",
                                    "true < x > (y)"}) {
         supported(std::string(expression) + ")", Stop::CloseParenthesis);
-        compareProgram(prefix + expression + suffix);
+        checkedRootProgram(prefix, expression, suffix, true);
     }
-    compareProgram("export module constructors; namespace ns { class Pair { i64 first; i64 second; public: "
+    checkedProgram("export module constructors; namespace ns { class Pair { i64 first; i64 second; public: "
                    "Pair(i64 x):second // initializer order and field-token trivia\n (ns::value),\n"
-                   "first(f(\"text\", a[x + 1])){} auto get() const->i64 {return first + second;} }; }");
-    compareProgram("export module constructors; template<Scalar T> class Box { T value; public: "
-                   "Box(T x):value(x){} auto read() const->T {return value;} };");
+                   "first(f(\"text\", a[x + 1])){} auto get() const->i64 {return first + second;} }; }",
+                   {name(26, 28),
+                    call(33, {tree("byte_string", 35), index(name(37), binary(40, name(39), number(41)))}),
+                    binary(57, name(56), name(58))});
+    checkedProgram("export module constructors; template<Scalar T> class Box { T value; public: "
+                   "Box(T x):value(x){} auto read() const->T {return value;} };",
+                   {name(25), name(38)});
     // Reflection and template roots must reach Aurora, including within an
     // otherwise ordinary call or parenthesized constructor initializer.
     for (const auto &expression : {"size_of(i64)", "type_id(array<u8,2>)", "field_count(Box)", "f(size_of(i64))"}) {
         supported(std::string(expression) + ")", Stop::CloseParenthesis);
         rawCase(std::string(expression) + ")", Status::Success, Stop::CloseParenthesis);
-        compareProgram(prefix + expression + suffix);
+        checkedRootProgram(prefix, expression, suffix, true);
     }
     for (const auto &expression : {"f<i64>(1)", "x<y<z>>(a)", "f<a<b<c>>>(0)"})
-        compareProgram(prefix + expression + suffix);
-    compareProgram("export module constructors; class Box { array<i64,2> values; public: Box():values{1,2}{} };");
-    compareProgram("export module constructors; class Box { array<i64,2> values; public: Box():values{}{} };");
+        checkedRootProgram(prefix, expression, suffix, true);
+    checkedBracedProgram(
+        "export module constructors; class Box { array<i64,2> values; public: Box():values", "{1,2}", "{} };");
+    checkedBracedProgram(
+        "export module constructors; class Box { array<i64,2> values; public: Box():values", "{}", "{} };");
     for (const auto &expression : {"",
                                    "1 +",
                                    "(1 + 2",
@@ -879,9 +1417,13 @@ void constructors() {
                                    R"("text"(1))",
                                    R"("text"[0])",
                                    "f<T)>(0)"})
-        compareProgram(prefix + expression + suffix, false);
-    compareProgram("export module constructors; class Box { i64 value; public: Box():value(1 {} };", false);
-    compareProgram("export module constructors; class Box { i64 value; public: Box():value(1),{} };", false);
+        rejectedProgram(prefix, expression, suffix);
+    rejectedProgram(
+        "export module constructors; class Box { i64 value; public: Box():value(", "1", " {} };", {"expected ')'", 1});
+    rejectedProgram("export module constructors; class Box { i64 value; public: Box():value(1),",
+                    "",
+                    "{} };",
+                    {"expected identifier", 0});
 }
 void constructorBraces(const std::string &contents) {
     const std::string source = "export module braces; class Box { array<i64,4> value; array<i64,4> other; public: "
@@ -889,12 +1431,20 @@ void constructorBraces(const std::string &contents) {
                                contents + ",other{}{} };";
     context = source;
     const auto tokens = aurora::lex(source, "constructor-braces.au");
-    const auto program = compareProgram(tokens);
+    const auto program = checkedProgram(tokens);
     require(program.classes.size() == 1 && program.classes[0].methods.size() == 1,
             "constructor-brace fixture lost its class/method");
     const auto &initializers = program.classes[0].methods[0].initializers;
     require(initializers.size() == 2 && initializers[0].first.text == "value" && initializers[1].first.text == "other",
             "constructor-brace field order differs");
+    auto expected = shifted(pinned(contents), 1);
+    expected.first = expected.last = 0;
+    if (expected.args.empty())
+        expected.op = "array_zero";
+    sameExpression(initializers[0].second,
+                   expectedTree(tokens, shifted(expected, tokenAt(tokens, initializers[0].first))));
+    sameExpression(initializers[1].second,
+                   expectedTree(tokens, tree("array_zero", tokenAt(tokens, initializers[1].first))));
     for (const auto &[field, expression] : initializers)
         hostedBraces(tokens, field, expression);
 }
@@ -919,7 +1469,7 @@ void aggregateSyntax() {
                                    "Box{.first=true < x > (y),.last=a < b >> (c)};",
                                    "{Box{}, ns::array{}, object.size_of()};"}) {
         supported(expression);
-        compareProgram("module aggregates; auto f()->i64{return " + std::string(expression) + "}");
+        checkedRootProgram("module aggregates; auto f()->i64{return ", expression, "}");
     }
     supported("{1,2}[0] = 3;", Stop::Assignment);
     supported("Box{.value={1,2}[0]})", Stop::CloseParenthesis);
@@ -932,14 +1482,28 @@ void aggregateSyntax() {
         constructorBraces(contents);
     const auto grouped = std::string(127, '(') + "1" + std::string(127, ')');
     // The constructor list adds AST depth but does not consume a primary level.
+    pin("{" + grouped + "}", tree("array_literal", 0, {number(128)}));
     constructorBraces("{" + grouped + "}");
-    compareProgram("module depth; auto f()->i64{return {" + grouped + "};}", false);
+    rejectedProgram("module depth; auto f()->i64{return ",
+                    "{" + grouped + "};",
+                    "}",
+                    {"expression parser nesting exceeds 128", 128, 0, aurora::DiagnosticCode::NestingLimit});
     const auto nested = std::string(127, '{') + "1" + std::string(127, '}');
+    auto nestedTree = number(127);
+    for (std::size_t token = 127; token-- > 0;)
+        nestedTree = tree("array_literal", token, {nestedTree});
+    pin(nested, nestedTree);
     supported(nested + ";");
-    compareProgram("module depth; auto f()->i64{return {" + nested + "};}", false);
+    rejectedProgram("module depth; auto f()->i64{return ",
+                    "{" + nested + "};",
+                    "}",
+                    {"expression parser nesting exceeds 128", 128, 0, aurora::DiagnosticCode::NestingLimit});
+    pin("{" + chain(127) + "}", tree("array_literal", 0, {sum(127, 1)}));
     constructorBraces("{" + chain(127) + "}");
-    compareProgram("export module depth; class Box { array<i64,1> value; public: Box():value{" + chain(128) + "}{} };",
-                   false);
+    rejectedProgram("export module depth; class Box { array<i64,1> value; public: Box():value{",
+                    chain(128),
+                    "}{} };",
+                    {"expression AST depth exceeds 128", 255});
     // Reflected types must survive arrays, designators and constructor lists.
     for (const auto &expression : {"{1,size_of(i64)};",
                                    "Box{.first=1,.second=type_id(array<u8,2>)};",
@@ -960,15 +1524,16 @@ void aggregateSyntax() {
                                    "Box{.first=f<a<b<c>>>(0),.second={x<y<z>>(a)}}",
                                    "f({Box<i64>{.value=1},2})",
                                    "{1,f<a<b<c>>(0)}"}) {
-        compareProgram("module templates; auto f()->i64{return " + std::string(expression) + ";}");
-        compareProgram("export module templates; class Box { array<i64,2> value; public: Box():value{" +
-                       std::string(expression) + "}{} };");
+        checkedRootProgram("module templates; auto f()->i64{return ", expression, ";}");
+        pin("{" + std::string(expression) + "}", tree("array_literal", 0, {shifted(pinned(expression), 1)}));
+        checkedBracedProgram("export module templates; class Box { array<i64,2> value; public: Box():value",
+                             "{" + std::string(expression) + "}",
+                             "{} };");
     }
     for (const auto &expression : {"{f<T)>(0)}", "{f<T]>(0)}", "{f<T:>(0)}", "Box{.value=f<T)>(0)}", "f({f<T]>(0)})"}) {
-        compareProgram("module templates; auto f()->i64{return " + std::string(expression) + ";}", false);
-        compareProgram("export module templates; class Box { array<i64,2> value; public: Box():value{" +
-                           std::string(expression) + "}{} };",
-                       false);
+        rejectedProgram("module templates; auto f()->i64{return ", expression, ";}");
+        rejectedProgram(
+            "export module templates; class Box { array<i64,2> value; public: Box():value{", expression, "}{} };");
     }
     for (const auto &expression : {"{,};",
                                    "{1,};",
@@ -993,11 +1558,9 @@ void aggregateSyntax() {
                                    "Box{.value={1,}};",
                                    "{}(1);",
                                    "Box{}(1);"})
-        compareProgram("module errors; auto f()->i64{return " + std::string(expression) + "}", false);
+        rejectedProgram("module errors; auto f()->i64{return ", expression, "}");
     for (const auto &contents : {"{,}", "{1,}", "{1 2}", "{1", "{1]}", "{Box{.value=1,}}"})
-        compareProgram("export module errors; class Box { array<i64,2> value; public: Box():value" +
-                           std::string(contents) + "{} };",
-                       false);
+        rejectedProgram("export module errors; class Box { array<i64,2> value; public: Box():value", contents, "{} };");
 }
 void typedSyntax() {
     for (const auto &expression : {"f<i64>();",
@@ -1019,46 +1582,54 @@ void typedSyntax() {
                                    "f<a<b<c>>(0);",
                                    "{1,f<T}>(0);"}) {
         supported(expression);
-        compareProgram("module typed; auto f()->i64{return " + std::string(expression) + "}");
+        checkedRootProgram("module typed; auto f()->i64{return ", expression, "}");
     }
-    for (const auto &type : {"i64",
-                             "u64",
-                             "u8",
-                             "bool",
-                             "own<i64>",
-                             "ref<i64>",
-                             "mutref<i64>",
-                             "Name",
-                             "ns::Name",
-                             "Pair<i64,u8>",
-                             "Box<Pair<u8,64>>",
-                             "array<u8,1>",
-                             "array<i64,4096>",
-                             "array<ns::Value,64>",
-                             "array<Box<i64>,2>",
-                             "builtin::array<bool,3>",
-                             "builtin::span<const u8>",
-                             "builtin::OwnedValues<ns::Value>",
-                             "array<builtin::ConsoleSample,2>",
-                             "array<builtin::IommuEventSample,64>",
-                             "builtin::OwnedValues<builtin::IommuEventSample>",
-                             "builtin::OwnedValues<builtin::ConsoleSample>",
-                             "builtin::ByteRegion",
-                             "builtin::OwnedBytes",
-                             "builtin::ConsoleSession",
-                             "builtin::ConsoleSample",
-                             "builtin::ConsolePutResult",
-                             "builtin::ConsoleCompletion",
-                             "builtin::DisplaySession",
-                             "builtin::DisplayPutResult",
-                             "builtin::DisplayCompletion",
-                             "builtin::IommuEventSession",
-                             "builtin::IommuEventSample",
-                             "builtin::EventPollResult",
-                             "builtin::EventAckResult",
-                             "builtin::EventIntakeCompletion"})
-        for (const auto &query : {"size_of", "type_id", "field_count"})
-            supported(std::string(query) + "(" + type + ");");
+    using K = aurora::TypeKind;
+    using T = aurora::Type;
+    const auto sample = T("__au_console_sample"), event = T("__au_iommu_event_sample");
+    const auto capacity = aurora::TemplateArgument::capacity;
+    for (const auto &[type, expected] : std::vector<std::pair<std::string, T>>{
+             {"i64", T::I64},
+             {"u64", T::U64},
+             {"u8", T::U8},
+             {"bool", T::Bool},
+             {"own<i64>", T::Own},
+             {"ref<i64>", T::Ref},
+             {"mutref<i64>", T::MutRef},
+             {"Name", T("Name")},
+             {"ns::Name", T("ns::Name")},
+             {"Pair<i64,u8>", namedType("Pair", {K::I64, K::U8})},
+             {"Box<Pair<u8,64>>", namedType("Box", {namedArgument("Pair", {K::U8, capacity(64)})})},
+             {"array<u8,1>", T::array(K::U8, 1)},
+             {"array<i64,4096>", T::array(K::I64, 4096)},
+             {"array<ns::Value,64>", T::array(T("ns::Value"), 64)},
+             {"array<Box<i64>,2>", T::array(namedType("Box", {K::I64}), 2)},
+             {"builtin::array<bool,3>", T::array(K::Bool, 3)},
+             {"builtin::span<const u8>", T::ByteSpan},
+             {"builtin::OwnedValues<ns::Value>", T::ownedValues(T("ns::Value"))},
+             {"array<builtin::ConsoleSample,2>", T::array(sample, 2)},
+             {"array<builtin::IommuEventSample,64>", T::array(event, 64)},
+             {"builtin::OwnedValues<builtin::IommuEventSample>", T::ownedValues(event)},
+             {"builtin::OwnedValues<builtin::ConsoleSample>", T::ownedValues(sample)},
+             {"builtin::ByteRegion", T::ByteRegion},
+             {"builtin::OwnedBytes", T::OwnedBytes},
+             {"builtin::ConsoleSession", T::ConsoleSession},
+             {"builtin::ConsoleSample", sample},
+             {"builtin::ConsolePutResult", T::enumeration("__au_console_put_result")},
+             {"builtin::ConsoleCompletion", T::enumeration("__au_console_completion")},
+             {"builtin::DisplaySession", T::DisplaySession},
+             {"builtin::DisplayPutResult", T::enumeration("__au_display_put_result")},
+             {"builtin::DisplayCompletion", T::enumeration("__au_display_completion")},
+             {"builtin::IommuEventSession", T::IommuEventSession},
+             {"builtin::IommuEventSample", event},
+             {"builtin::EventPollResult", T::enumeration("__au_event_poll_result")},
+             {"builtin::EventAckResult", T::enumeration("__au_event_ack_result")},
+             {"builtin::EventIntakeCompletion", T::enumeration("__au_event_intake_completion")}})
+        for (const auto &query : {"size_of", "type_id", "field_count"}) {
+            const auto source = std::string(query) + "(" + type + ")";
+            pin(source, reflected(0, expected));
+            supported(source + ";");
+        }
     for (const auto &expression : {"f<T)>(0);",
                                    "f<T]>(0);",
                                    "f<T:>(0);",
@@ -1113,7 +1684,7 @@ void typedSyntax() {
                                    "size_of(array<builtin::DisplayCompletion,2>);",
                                    "size_of(builtin::OwnedValues<builtin::EventPollResult>);"}) {
         rejected(expression);
-        compareProgram("module typed_errors; auto f()->i64{return " + std::string(expression) + "}", false);
+        rejectedProgram("module typed_errors; auto f()->i64{return ", expression, "}");
     }
     // The second byte of >> is the diagnostic token after a literal > consumer
     // or after a completed reflected type. Source snapshots remain unsplit.
@@ -1132,9 +1703,35 @@ void typedSyntax() {
         for (std::size_t index = 0; index < depth; ++index)
             type = "array<" + type + ",1>";
         const auto source = "size_of(" + type + ");";
+        pinError(source,
+                 depth == 63 ? "array elements require i64, u64, u8, bool or a concrete copied class"
+                             : "type nesting exceeds 64",
+                 depth == 63 ? 132 : 130,
+                 0,
+                 depth == 63 ? aurora::DiagnosticCode::UnexpectedToken : aurora::DiagnosticCode::NestingLimit);
         rejected(source);
         rawCase(source, depth == 63 ? Status::ArrayElement : Status::TypeNestingLimit);
     }
+    auto parameter = T(K::Parameter);
+    parameter.className = "T";
+    auto otherParameter = T(K::Parameter);
+    otherParameter.className = "U";
+    auto typeArgument = namedArgument("T"), otherTypeArgument = namedArgument("U");
+    typeArgument.type = otherTypeArgument.type = K::Parameter;
+    auto dependentArray = T::array(parameter, 0);
+    dependentArray.lengthParameter = "N";
+    const std::array<std::vector<Ast>, 4> contextRoots{
+        {{typed(call(33, {name(40), name(42)}), {typeArgument, otherTypeArgument}),
+          binary(50, reflected(46, parameter), reflected(51, otherParameter))},
+         {tree("array_literal", 29, {reflected(31, parameter)}), reflected(46, dependentArray)},
+         {reflected(23, parameter), reflected(38, parameter)},
+         {reflected(20, parameter),
+          typed(call(27, {name(32)}), {typeArgument}),
+          reflected(38, parameter),
+          typed(call(46, {name(51)}), {typeArgument}),
+          binary(61, reflected(57, parameter), number(62)),
+          number(66)}}};
+    std::size_t acceptedContext = 0;
     for (const auto &source :
          {"export module context; template<Value T,Value U> auto f(T x,U y)->i64 {"
           "const Pair<T,U> p=Pair<T,U>(x,y); return size_of(T)+type_id(U);}",
@@ -1145,15 +1742,23 @@ void typedSyntax() {
           "export module context; template<Value T> auto f(T x)->i64 { if(type_id(T)){return g<T>(x);} "
           "while(size_of(T)){x=g<T>(x);} static_assert(size_of(T)>0); return 0;}"}) {
         context = source;
+        checkedProgram(source, contextRoots.at(acceptedContext++));
         require(!typedProgram(aurora::lex(source, "typed-context.au")).empty(), "typed context roots were omitted");
     }
+    const std::array<ExpectedError, 5> contextErrors{
+        {{"template-id references inside template definitions are not supported", 23},
+         {"template-id references inside template definitions are not supported", 25},
+         {"nested dependent template arguments are not supported", 24},
+         {"nested dependent template arguments are not supported", 22},
+         {"owned values require a named concrete copied class", 26}}};
+    std::size_t rejection = 0;
     for (const auto &source :
          {"export module context; template<Value T> class C { public: auto f()->i64{return g<T>();} };",
           "export module context; template<Value T> class C { public: auto f()->i64{return size_of(Box<i64>);} };",
           "export module context; template<Value T> auto f(T x)->i64{return g<Box<T>>(x);}",
           "export module context; template<Value T> auto f(T x)->i64{return g<T<i64>>(x);}",
           "export module context; template<Value T> auto f(T x)->i64{return size_of(builtin::OwnedValues<T>);}"})
-        compareProgram(source, false);
+        rejectedProgram("", source, "", contextErrors.at(rejection++));
 }
 void rawTypeRecords() {
     struct Fixture {
@@ -1236,51 +1841,44 @@ void rawTypeRecords() {
     }
 }
 void rawTypeDiagnostics() {
-    const std::vector<std::pair<std::string, Status>> tests{
-        {"size_of(array);", Status::ExpectedAngleOpen},
-        {"size_of(own<i64);", Status::ExpectedAngleClose},
-        {"size_of(builtin);", Status::ExpectedScope},
-        {"size_of(array<i64>);", Status::ExpectedComma},
-        {"size_of(builtin::span<u8>);", Status::ExpectedConst},
-        {"size_of(builtin::span<const i64>);", Status::ExpectedU8},
-        {"size_of(own<u8>);", Status::ExpectedI64},
-        {"size_of(builtin::unknown);", Status::ExpectedArray},
-        {"size_of(fn);", Status::ReservedType},
-        {"size_of(123);", Status::ExpectedType},
-        {"size_of(A<B<C<D<E<i64>>>>>);", Status::TemplateNestingLimit},
-        {"f<A<B<C<D<E<i64>>>>>>();", Status::CallTemplateNestingLimit},
-        {"f<i64, u8, bool>();", Status::TemplateArity},
-        {"f<own>();", Status::TemplateArgument},
-        {"f<65>();", Status::CapacityArgument},
-        {"size_of(builtin::OwnedValues<i64>);", Status::OwnedElement},
-        {"size_of(array<own<i64>, 1>);", Status::ArrayElement},
-        {"size_of(array<i64, 4097>);", Status::ArrayLength},
-        {"size_of(array<Class, 65>);", Status::ClassArrayLength},
-        {"size_of(Box<i64>>);", Status::ExpectedClose},
-        {"size_of(array<i64, 2>>);", Status::ExpectedClose}};
-    for (const auto &[source, expected] : tests) {
+    struct Rejection {
+        std::string source;
+        Status status;
+        std::size_t token;
+        int half = 0;
+    };
+    const std::vector<Rejection> tests{{"size_of(array);", Status::ExpectedAngleOpen, 3},
+                                       {"size_of(own<i64);", Status::ExpectedAngleClose, 5},
+                                       {"size_of(builtin);", Status::ExpectedScope, 3},
+                                       {"size_of(array<i64>);", Status::ExpectedComma, 5},
+                                       {"size_of(builtin::span<u8>);", Status::ExpectedConst, 6},
+                                       {"size_of(builtin::span<const i64>);", Status::ExpectedU8, 7},
+                                       {"size_of(own<u8>);", Status::ExpectedI64, 4},
+                                       {"size_of(builtin::unknown);", Status::ExpectedArray, 4},
+                                       {"size_of(fn);", Status::ReservedType, 2},
+                                       {"size_of(123);", Status::ExpectedType, 3},
+                                       {"size_of(A<B<C<D<E<i64>>>>>);", Status::TemplateNestingLimit, 11},
+                                       {"f<A<B<C<D<E<i64>>>>>>();", Status::CallTemplateNestingLimit, 11},
+                                       {"f<i64, u8, bool>();", Status::TemplateArity, 6},
+                                       {"f<own>();", Status::TemplateArgument, 2},
+                                       {"f<65>();", Status::CapacityArgument, 3},
+                                       {"size_of(builtin::OwnedValues<i64>);", Status::OwnedElement, 7},
+                                       {"size_of(array<own<i64>, 1>);", Status::ArrayElement, 8},
+                                       {"size_of(array<i64, 4097>);", Status::ArrayLength, 7},
+                                       {"size_of(array<Class, 65>);", Status::ClassArrayLength, 8},
+                                       {"size_of(Box<i64>>);", Status::ExpectedClose, 5, 1},
+                                       {"size_of(array<i64, 2>>);", Status::ExpectedClose, 7, 1}};
+    for (const auto &[source, expected, token, half] : tests) {
         context = "raw typed status/token/offset " + source;
         const auto tokens = aurora::lex(source, "raw-type-diagnostic.au");
-        std::optional<aurora::Diagnostic> diagnostic;
-        try {
-            aurora::Parser reference(tokens, false);
-            reference.expr();
-        } catch (const aurora::Error &error) {
-            diagnostic = error.diagnostic;
-        }
-        require(bool(diagnostic), "raw typed diagnostic fixture was accepted by the reference");
-        const auto offset = diagnostic->span.begin.offset;
-        const auto token = std::find_if(tokens.begin(), tokens.end(), [&](const auto &value) {
-            return value.span.begin.offset == offset || (value.text == ">>" && value.span.begin.offset + 1 == offset);
-        });
-        require(token != tokens.end(), "typed diagnostic escaped its original whole-token or half-token");
+        const auto offset = tokens.at(token).span.begin.offset + half;
+        require(!half || tokens.at(token).text == ">>", "raw half-token expectation has no shared closer");
         Allocations allocations;
         RawArena arena(allocations);
         const auto result = arena.parse(source);
-        require(result[0] == wire(expected) && result[1] == -1 &&
-                    result[3] == static_cast<std::int64_t>(token - tokens.begin()) &&
+        require(result[0] == wire(expected) && result[1] == -1 && result[3] == static_cast<std::int64_t>(token) &&
                     result[4] == static_cast<std::int64_t>(offset),
-                "typed raw rejection status/token/half differs from the reference");
+                "typed raw rejection status/token/half differs");
         arena.finish();
         require(allocations.successful == allocations.released, "typed diagnostic leaked an owner");
         ++cases;
@@ -1299,7 +1897,7 @@ void rawTypeDiagnostics() {
         RawArena arena(allocations);
         const auto result = arena.parse(test.source, Stop::Semicolon, 2, test.context);
         require(result[0] == wire(test.status) && result[1] == -1,
-                "copied dependent context did not enforce the reference restriction");
+                "copied dependent context did not enforce its stated restriction");
         arena.finish();
         require(allocations.successful == allocations.released, "dependent diagnostic leaked an owner");
         ++cases;
@@ -1359,6 +1957,13 @@ void rawTypeGrowth() {
         arena.finish();
         require(allocations.successful == allocations.released, "partial type/candidate graph leaked an owner");
     }
+    std::vector<Ast> children;
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto token = 1 + 16 * index;
+        children.push_back(typed(call(token, {reflected(token + 5, aurora::Type::array(aurora::TypeKind::U8, 4))}),
+                                 {aurora::TypeKind::I64}));
+    }
+    pin(source.substr(0, source.size() - 1), tree("array_literal", 0, std::move(children)));
     supported(source);
     ++cases;
 }
@@ -1603,6 +2208,10 @@ void rawArguments() {
                 "postfix generated-code node ABI differs");
         arena.finish();
     }
+    std::vector<Ast> children;
+    for (std::size_t index = 0; index < count; ++index)
+        children.push_back(number(2 + 2 * index));
+    pin(source.substr(0, source.size() - 1), call(0, std::move(children)));
     supported(source);
     ++cases;
 }
@@ -1769,10 +2378,22 @@ void rawAggregates() {
             arena.finish();
             require(allocations.successful == allocations.released, "partial aggregate graph leaked an owner");
         }
-        if (constructor)
-            constructorBraces(source.substr(6, source.size() - 7));
-        else
+        std::vector<Ast> children;
+        std::vector<std::string> fields;
+        for (std::size_t index = 0; index < count; ++index) {
+            children.push_back(number((constructor ? 1 : first) + step * index));
+            if (designated)
+                fields.push_back("f" + std::to_string(index));
+        }
+        if (constructor) {
+            const auto contents = source.substr(6, source.size() - 7);
+            pin(contents, tree("array_literal", 0, std::move(children)));
+            constructorBraces(contents);
+        } else {
+            pin(source.substr(0, source.size() - 1),
+                designated ? construct(0, 2, fields, children) : tree("array_literal", 0, children));
             supported(source);
+        }
         ++cases;
     }
 }
@@ -1783,6 +2404,8 @@ int main(int argc, char **argv) {
     try {
         context = "fixture arguments";
         require(argc == 16, "expected three bootstrap, five aggregate and seven typed consumer source paths");
+        grammarExpectations();
+        diagnosticExpectations();
         for (const auto &expression :
              {"1;",
               "false;",
@@ -1835,18 +2458,37 @@ int main(int argc, char **argv) {
         for (const auto &expression :
              {"size_of(i64);", "type_id(array<u8,2>);", "field_count(Box);", "f(size_of(i64));"})
             supported(expression);
-        compareProgram("module templates; auto f()->i64{return f<i64>(1);}");
-        compareProgram("module templates; auto f()->i64{return x<y<z>>(a);}");
-        compareProgram("module templates; auto f()->i64{return f<T)>(0);}", false);
-        compareProgram("module templates; auto f()->i64{if(f<T)>(0)){return 1;}return 0;}", false);
-        compareProgram("module templates; auto f()->i64{return f<a<b<c>>>(0);}");
-        compareProgram("module templates; auto f()->i64{return f<a<b<c>>(0);}");
+        checkedRootProgram("module templates; auto f()->i64{return ", "f<i64>(1)", ";}");
+        checkedRootProgram("module templates; auto f()->i64{return ", "x<y<z>>(a)", ";}");
+        rejectedProgram("module templates; auto f()->i64{return ", "f<T)>(0);", "}");
+        rejectedProgram("module templates; auto f()->i64{if(", "f<T)>(0)", "){return 1;}return 0;}");
+        checkedRootProgram("module templates; auto f()->i64{return ", "f<a<b<c>>>(0)", ";}");
+        checkedRootProgram("module templates; auto f()->i64{return ", "f<a<b<c>>(0)", ";}");
         for (const auto &expression : {"(f<T)>(0)", "f<T]>(0)", "f<T:>(0)"})
-            compareProgram("module errors; auto f()->i64{return " + std::string(expression) + ";}", false);
-        compareProgram("module hooks; auto f()->i64 { i64 x = 1+2; const i64 y = 3; x = x+y; x+1; "
-                       "static_assert(true && !false); if(x>0){x=x-1;}else{x=0;} while(x<4){x=x+1;} return x*2; }");
-        compareProgram("module fallback; auto f()->i64 { i64 x=f(1); x=f(2); if(f(1)){return f(2);} "
-                       "while(f(0)){x=f(3);} static_assert(f(1)); return x<y<z>>(a); }");
+            rejectedProgram("module errors; auto f()->i64{return ", expression, ";}");
+        checkedProgram("module hooks; auto f()->i64 { i64 x = 1+2; const i64 y = 3; x = x+y; x+1; "
+                       "static_assert(true && !false); if(x>0){x=x-1;}else{x=0;} while(x<4){x=x+1;} return x*2; }",
+                       {binary(14, number(13), number(15)),
+                        number(21),
+                        binary(26, name(25), name(27)),
+                        binary(30, name(29), number(31)),
+                        binary(36, tree("bool", 35), tree("unary", 37, {tree("bool", 38)})),
+                        binary(44, name(43), number(45)),
+                        binary(51, name(50), number(52)),
+                        number(59),
+                        binary(65, name(64), number(66)),
+                        binary(72, name(71), number(73)),
+                        binary(78, name(77), number(79))});
+        checkedProgram("module fallback; auto f()->i64 { i64 x=f(1); x=f(2); if(f(1)){return f(2);} "
+                       "while(f(0)){x=f(3);} static_assert(f(1)); return x<y<z>>(a); }",
+                       {call(13, {number(15)}),
+                        call(20, {number(22)}),
+                        call(27, {number(29)}),
+                        call(34, {number(36)}),
+                        call(42, {number(44)}),
+                        call(50, {number(52)}),
+                        call(58, {number(60)}),
+                        typed(call(65, {name(72)}), {namedArgument("y", {namedArgument("z")})})});
         for (const auto &expression : {";",
                                        "1 + ;",
                                        "(1 + 2;",
@@ -1862,11 +2504,17 @@ int main(int argc, char **argv) {
                                        "1(2);",
                                        "true(2);",
                                        "(1)(2);"})
-            compareProgram("module errors; auto f()->i64{return " + std::string(expression) + "}", false);
-        compareProgram("module depth; auto f()->i64{return " + chain(129) + ";}", false);
-        compareProgram(
-            "module depth; auto f()->i64{return " + std::string(128, '(') + "1" + std::string(128, ')') + ";}", false);
-        compareProgram("module depth; auto f()->i64{return " + std::string(128, '-') + "1;}", false);
+            rejectedProgram("module errors; auto f()->i64{return ", expression, "}");
+        rejectedProgram(
+            "module depth; auto f()->i64{return ", chain(129), ";}", {"expression AST depth exceeds 128", 256});
+        rejectedProgram("module depth; auto f()->i64{return ",
+                        std::string(128, '(') + "1" + std::string(128, ')'),
+                        ";}",
+                        {"expression parser nesting exceeds 128", 128, 0, aurora::DiagnosticCode::NestingLimit});
+        rejectedProgram("module depth; auto f()->i64{return ",
+                        std::string(128, '-') + "1",
+                        ";}",
+                        {"expression parser nesting exceeds 128", 128, 0, aurora::DiagnosticCode::NestingLimit});
         for (const auto &expression : {"f(;",
                                        "f(1;",
                                        "f(1,);",
@@ -1888,19 +2536,33 @@ int main(int argc, char **argv) {
                                        "a[1);",
                                        "a[1,2];",
                                        "f(1)(2);"})
-            compareProgram("module errors; auto f()->i64{return " + std::string(expression) + "}", false);
+            rejectedProgram("module errors; auto f()->i64{return ", expression, "}");
         std::string members = "a", indices = "a", calls = "1";
         for (int i = 0; i < 127; ++i) {
             members += ".field";
             indices += "[0]";
             calls = "f(" + calls + ")";
         }
+        auto memberTree = name(0), indexTree = name(0), callTree = number(254);
+        for (std::size_t ordinal = 0; ordinal < 127; ++ordinal) {
+            memberTree = tree("member", 2 + 2 * ordinal, {memberTree});
+            indexTree = index(indexTree, number(2 + 3 * ordinal));
+            callTree = call(252 - 2 * ordinal, {callTree});
+        }
+        pin(members, memberTree);
+        pin(indices, indexTree);
+        pin(calls, callTree);
         supported(members + ";");
         supported(indices + ";");
         supported(calls + ";");
-        compareProgram("module depth; auto f()->i64{return " + members + ".field;}", false);
-        compareProgram("module depth; auto f()->i64{return " + indices + "[0];}", false);
-        compareProgram("module depth; auto f()->i64{return f(" + calls + ");}", false);
+        rejectedProgram(
+            "module depth; auto f()->i64{return ", members + ".field", ";}", {"expression AST depth exceeds 128", 257});
+        rejectedProgram(
+            "module depth; auto f()->i64{return ", indices + "[0]", ";}", {"expression AST depth exceeds 128", 383});
+        rejectedProgram("module depth; auto f()->i64{return ",
+                        "f(" + calls + ")",
+                        ";}",
+                        {"expression parser nesting exceeds 128", 256, 0, aurora::DiagnosticCode::NestingLimit});
         rawCase("1;", Status::Success);
         rawCase("{1};", Status::Success);
         rawCase("f(1);", Status::Success);
@@ -1936,12 +2598,12 @@ int main(int argc, char **argv) {
         bootstrapSources(argv + 1);
         consumerSources(argv + 4);
         typedConsumerSources(argv + 9);
-        std::cout
-            << "PASS hosted parser " << cases
-            << " differential/ABI cases, 199-node/frame and 257-argument/aggregate growth with allocation cleanup; "
-               "source-derived constructor/string roots from all three actual bootstrap sources; "
-               "14 aggregate roots including 512 XFS elements, 16 direct typed product roots, "
-               "and 1,285-record type growth\n";
+        std::cout << "PASS hosted parser " << cases
+                  << " explicit AST/diagnostic, dispatch-consistency and ABI cases, 199-node/frame and "
+                     "257-argument/aggregate growth with allocation cleanup; "
+                     "dispatch-consistent constructor/string roots from all three actual bootstrap sources; "
+                     "14 aggregate roots including 512 XFS elements, 16 direct typed product roots, "
+                     "and 1,285-record type growth\n";
     } catch (const std::exception &error) {
         std::cerr << "FAIL " << error.what() << '\n';
         return 1;

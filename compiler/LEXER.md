@@ -73,10 +73,10 @@ option is rejected with `--check`, and it adds no source-language foreign ABI.
 
 Build and test routes are intentionally distinct:
 
-- Ordinary `make compiler` and `make -C compiler` build the C++ seed, use it to
-  emit one imported lexer/arena/parser graph, and link that Aurora object into
-  hosted stage 1. The formatter uses the same object. Meson performs the same
-  dependency-tracked chain. Standalone lexer bootstrap regression is retained.
+- Ordinary compiler and formatter shortcuts use the predecessor-backed Meson
+  graph configured by the [source-bootstrap recipe](README.md#source-bootstrap).
+  One imported lexer/arena/parser object is shared by the hosted compiler and
+  formatter. Standalone lexer bootstrap regression is retained.
 - Canonical Meson `full`/`dev`/`core`, source-consuming native fixtures, the
   formatter and optional LSP use stage 1. IR-only fixtures do not lex source.
   `hosted-lexer` links the Aurora phase and compares it against the preserved
@@ -90,16 +90,13 @@ Build and test routes are intentionally distinct:
   stage outputs, checks that the shim is the sole global definition, compares
   symbol locations/sizes/types and statically linked code/data bytes against
   ordinary output, and rejects invalid `--local-symbols` option combinations.
-- The historical `compiler_contract.py` `gnu-cxx-main-v1` fresh-build recipe and
-  the legacy focused Make aliases entering it remain explicitly labeled C++
-  seed/reference compatibility routes. Their one-command receipts are unchanged
-  and do not establish Aurora-phase qualification. Externally pinned prebuilt
-  acceptance uses exactly its selected binary; no lexer implementation is
-  inferred merely from that mode. `std.token_scan` retains its test-only C++
-  reference oracle for independent comparison.
+- Historical `compiler_contract.py` receipts retain their original meaning and
+  validation. New raw-seed/legacy executor runs reject with Meson migration
+  instructions. `std.token_scan` retains its test-only C++ reference oracle for
+  independent comparison.
 
 This is an Aurora-written lexer participating in its own hosted rebuild. The
-remaining grammar, semantic analysis and code generator remain C++. The
+statement/declaration grammar, semantic analysis and code generator remain C++. The
 [bounded statement-expression parser](ARCHITECTURE.md#hosted-aurora-expression-parser)
 also runs in Aurora; this is not a self-hosted compiler or native toolchain.
 Focused validation and independent source review are separate from final integrated

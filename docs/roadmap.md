@@ -78,15 +78,16 @@ remain open. See the [compiler reference](../compiler/README.md) and
 
 The hosted compiler has an [Aurora lexical phase](../compiler/LEXER.md) and a
 [bounded statement-expression parser](../compiler/ARCHITECTURE.md#hosted-aurora-expression-parser).
-A C++ seed emits one imported lexer/arena/parser graph; hosted stage 1 uses its
-returned AST in the existing resolver, semantic checker and backend. The Aurora
-arena owns both copied nodes and explicit parser frames. Unsupported complete
-expressions retain a non-consuming C++ fallback; malformed supported grammar and
-allocation/adapter failures reject. The remaining grammar, semantic analysis and
-native emission remain C++. The next dependency is broader grammar migration
-with the same diagnostic/ownership and multi-stage reproducibility gates.
-Full self-hosting additionally needs a native assembler, linker, runtime and
-file/process services; these hosted compiler slices do not supply them.
+An explicitly pinned, source-built predecessor emits the imported
+lexer/arena/parser graph; current C1/C2 stages verify frontend convergence.
+Aurora owns all existing expression grammar, including templates, reflected
+types and constructor initializers. Current source no longer contains the C++
+expression parser or its expression router. Copied node/frame/argument/type-syntax
+owners and the host adapter reject malformed results and resource failures.
+The next frontend migration is statement/declaration grammar, followed by the
+remaining C++ semantic/ownership, IR and backend responsibilities. Building the
+whole compiler from Aurora source is distinct from replacing the native assembler,
+linker and host runtime/file/process services; these remain separate dependencies.
 
 Gate: positive, rejection, adversarial, resource and ABI tests with independent
 review; no unchecked assertion, visibility bypass or resource duplication. Then

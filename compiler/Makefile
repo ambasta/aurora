@@ -1,15 +1,14 @@
-# Aggregate tests enter the canonical incremental Meson graph. Explicit pinned
-# acceptance and focused legacy goals retain their separate routes.
+# Convenience routes use only the configured, predecessor-backed Meson graph.
+# There is no C++ seed build or legacy sealed inner graph.
 override .DEFAULT_GOAL := all
 ifneq ($(strip $(foreach name,MAKECMDGOALS CURDIR MAKEFILE_LIST,$(if $(filter command,$(origin $(name))),$(name)))),)
 $(error Make goal, directory, and makefile-list overrides are unsupported)
 endif
-override _AURORA_TEST_GOALS := $(filter test test-modules test-storage test-utf8 test-utf8-encoding test-xfs-geometry test-xfs-root test-utf8-range test-utf8-lines test-function-overloads test-readonly-windows test-short-circuit test-token-scan test-json test-json-codecs test-json-integers test-json-lookup test-borrowed-objects test-json-string-write test-console-service test-display-service test-iommu-event-service,$(MAKECMDGOALS))
-override _AURORA_DISPATCH :=
+override _AURORA_TEST_GOALS := $(if $(MAKECMDGOALS),$(MAKECMDGOALS),all)
 
-# Export supplied controls before defaults are introduced in the inner graph.
-# In particular, default path aliases must not select a different compiler.
-override _AURORA_USER_CONTROLS := MESON_BUILD_DIR AURORA_BUILD_JOBS AURORA_TEST_JOBS CXX CXXFLAGS IR_TEST_CXXFLAGS IR_TEST_BUILD_PREFIX OUT AURORAC \
+# Export only supplied controls; configured Meson options remain authoritative.
+# Historical output aliases cannot select a different compiler.
+override _AURORA_USER_CONTROLS := MESON_BUILD_DIR AURORA_BUILD_JOBS AURORA_TEST_JOBS CXX CXXFLAGS IR_TEST_CXXFLAGS IR_TEST_BUILD_PREFIX OUT FORMAT_OUT AURORAC CPPFLAGS LDFLAGS UEFI_LD \
     ACCEPTANCE_COMPILER ACCEPTANCE_COMPILER_SHA256 PACKAGE_IDENTITY_COMPILER \
     PACKAGE_IDENTITY_COMPILER_SHA256 PACKAGE_IDENTITY_TEST_FLAGS PACKAGE_IDENTITY_CAP_MIB \
     PACKAGE_MANIFEST_COMPILER PACKAGE_MANIFEST_COMPILER_SHA256 PACKAGE_MANIFEST_TEST_FLAGS \
@@ -42,9 +41,16 @@ ifneq ($(strip $(_AURORA_BAD_CAPS)),)
 $(error cap overrides must be unsigned decimal integers; invalid controls: $(_AURORA_BAD_CAPS))
 endif
 
+# Output selectors belonged to the removed hand-written build graph. Reject even
+# empty supplied values, before Make can expand them during export.
+override _AURORA_UNSUPPORTED_CONTROLS := OUT FORMAT_OUT AURORAC LEXER_EVENTS AURORA_TEST_CONTEXT AURORA_TEST_MODE AURORA_TEST_COMPILER AURORA_TEST_IDENTITY_ARGS
+override _AURORA_BAD_CONTROLS := $(foreach name,$(_AURORA_UNSUPPORTED_CONTROLS),$(if $(filter undefined default,$(origin $(name))),,$(name)))
+ifneq ($(strip $(_AURORA_BAD_CONTROLS)),)
+$(error unsupported legacy compiler controls: $(strip $(_AURORA_BAD_CONTROLS)); use a configured MESON_BUILD_DIR; outputs are build/aurorac and build/aurora-fmt)
+endif
+
 $(foreach name,$(_AURORA_USER_CONTROLS),$(if $(filter undefined default,$(origin $(name))),,$(eval export $(name))))
 
-ifneq ($(strip $(_AURORA_TEST_GOALS) $(AURORA_TEST_CONTEXT)),)
 # These modes can skip a rejecting wrapper or turn a failure into success.
 override _AURORA_SHORT_MAKE_FLAGS := $(foreach name,MAKEFLAGS MFLAGS,$(if $(filter --%,$(firstword $($(name)))),,$(firstword $($(name)))))
 ifneq ($(strip $(foreach flag,i q t e,$(findstring $(flag),$(_AURORA_SHORT_MAKE_FLAGS)))),)
@@ -77,377 +83,111 @@ endif
 ifeq ($(filter $(MAKE_COMMAND) make /usr/bin/make /bin/make,$(MAKE)),)
 $(error supervised tests do not support a custom MAKE command)
 endif
-ifeq ($(strip $(AURORA_TEST_CONTEXT)),)
-ifneq ($(words $(MAKECMDGOALS)),1)
-$(error invoke one compiler-consuming test goal at a time; mixed goals are unsupported)
-endif
-override _AURORA_DISPATCH := yes
-endif
+ifneq ($(words $(_AURORA_TEST_GOALS)),1)
+$(error invoke one compiler build or test goal at a time; mixed goals are unsupported)
 endif
 
-ifeq ($(_AURORA_DISPATCH),yes)
-.PHONY: $(_AURORA_TEST_GOALS)
-ifeq ($(MAKECMDGOALS),test)
+
+.PHONY: all formatter test
+all:
+	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --build-only aurorac --publish-compiler
+formatter:
+	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --build-only aurora-fmt --publish-formatter
 test:
 	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --suite compiler
-else
-$(_AURORA_TEST_GOALS):
-	python3 -B ../scripts/compiler_contract.py run --repo-root "$(abspath ..)" --entry compiler --goal "$@"
-endif
-else
-# The validated receipt, not a boolean flag, authorizes the sealed inner graph.
-# Declare this prerequisite first, including on host-only aggregate prerequisites,
-# so context rejection happens before any workload creates artifacts.
-ifneq ($(strip $(AURORA_TEST_CONTEXT)),)
-.NOTPARALLEL:
-export AURORA_TEST_CONTEXT AURORA_TEST_MODE AURORA_TEST_COMPILER AURORA_TEST_IDENTITY_ARGS
-export AURORAC OUT PACKAGE_IDENTITY_COMPILER PACKAGE_MANIFEST_COMPILER PACKAGE_GRAPH_COMPILER KERNEL_BUDGET_COMPILER
-.PHONY: aurora-test-context
-all test test-modules test-storage test-initialization-facts test-utf8 test-utf8-encoding \
-    test-xfs-geometry test-xfs-root test-utf8-range test-utf8-lines test-function-overloads \
-    test-readonly-windows test-short-circuit test-token-scan test-json test-json-codecs test-json-integers test-json-lookup test-borrowed-objects test-json-string-write test-console-service test-display-service test-iommu-event-service: aurora-test-context
-aurora-test-context:
-	python3 -B ../scripts/compiler_contract.py check --repo-root "$(abspath ..)" --context "$$AURORA_TEST_CONTEXT"
-endif
-
-CXX ?= g++
-CXXFLAGS ?= -std=c++23 -O2 -Wall -Wextra -Wpedantic -Werror
-IR_TEST_CXXFLAGS ?= $(CXXFLAGS)
-IR_TEST_BUILD_PREFIX ?=
-UTF8_TEST_FLAGS ?=
-UTF8_LINES_TEST_FLAGS ?=
-UTF8_LINES_COMPILER_SHA256 ?=
-UTF8_LINES_ARTIFACT_PARENT ?= $(dir $(abspath $(OUT)))
-UTF8_RANGE_TEST_FLAGS ?=
-UTF8_RANGE_COMPILER_SHA256 ?=
-UTF8_RANGE_ARTIFACT_PARENT ?= $(dir $(abspath $(OUT)))
-XFS_GEOMETRY_TEST_FLAGS ?=
-XFS_ROOT_TEST_FLAGS ?=
-XFS_ROOT_API_TEST_FLAGS ?=
-XFS_ROOT_REPO ?= ..
-XFS_ROOT_FIXTURES ?=
-XFS_ROOT_ARTIFACT_PARENT ?=
-XFS_ROOT_COMPILER_SHA256 ?=
-OUT ?= ../build/aurorac
-LEXER_EVENTS = $(dir $(OUT))hosted_lexer_events.inc
-.PHONY: all test
-all: $(OUT)
-$(LEXER_EVENTS): lexer.au ../scripts/bootstrap_frontend.py
-	mkdir -p $(dir $@)
-	python3 -B ../scripts/bootstrap_frontend.py --events $< $@
-ifneq ($(strip $(AURORA_TEST_CONTEXT)),)
-# A sealed compiler is validated even when source timestamps are in the future.
-# No source dependency or compile recipe may replace it in the inner graph.
-$(OUT): aurora-test-context
-else
-# The C++ seed builds first, then one Aurora parser/arena/lexer stage-1 graph.
-$(OUT).stage0: main.cpp $(wildcard *.hpp)
-	mkdir -p $(dir $(OUT))
-	$(CXX) $(CXXFLAGS) $< -o $@
-$(OUT).frontend.s: $(OUT).stage0 lexer.au expression_arena.au expression_parser.au hosted_lexer.S hosted_parser.S ../scripts/bootstrap_frontend.py
-	python3 -B ../scripts/bootstrap_frontend.py $(abspath $(OUT).stage0) lexer.au expression_arena.au expression_parser.au hosted_lexer.S hosted_parser.S $@
-$(OUT).frontend.o: $(OUT).frontend.s
-	$(CXX) -c -x assembler $< -o $@
-$(OUT): main.cpp hosted_lexer.cpp hosted_parser.cpp ../runtime/hosted_bytes.cpp $(wildcard *.hpp ../runtime/*.hpp) $(OUT).frontend.o $(LEXER_EVENTS)
-	$(CXX) $(CXXFLAGS) -I$(dir $(OUT)) -DAURORA_HOSTED_LEXER -DAURORA_HOSTED_PARSER main.cpp hosted_lexer.cpp hosted_parser.cpp ../runtime/hosted_bytes.cpp $(OUT).frontend.o -o $@
-endif
-test: $(OUT) test-xfs-root test-utf8-range test-utf8-lines
-	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/diagnostics.cpp -o $(dir $(OUT))diagnostics-tests
-	python3 -B -O ../tests/compiler/diagnostics.py $(abspath $(OUT)) $(abspath $(dir $(OUT))diagnostics-tests)
-	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/lexer_trivia.cpp -o $(dir $(OUT))lexer-trivia-tests
-	$(dir $(OUT))lexer-trivia-tests $(wildcard ../examples/*.au ../library/examples/*.au ../library/std/*.au)
-	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/source_overlays.cpp -o $(dir $(OUT))source-overlay-tests
-	python3 -B -O ../tests/compiler/source_overlays.py $(abspath $(dir $(OUT))source-overlay-tests)
-	python3 ../tests/compiler/run.py $(abspath $(OUT))
-	python3 ../tests/compiler/classes.py $(abspath $(OUT))
-	python3 ../tests/compiler/value_calls.py $(abspath $(OUT))
-	python3 ../tests/compiler/templates.py $(abspath $(OUT))
-	python3 -O ../tests/compiler/function_templates.py $(abspath $(OUT))
-	python3 -B -O ../tests/compiler/function_overloads.py $(abspath $(OUT))
-	python3 ../tests/compiler/fixed_containers.py $(abspath $(OUT))
-	python3 ../tests/compiler/composed_values.py $(abspath $(OUT))
-	python3 -O ../tests/compiler/nested_values.py $(abspath $(OUT))
-	python3 ../tests/compiler/decimal_values.py $(abspath $(OUT))
-	python3 ../tests/compiler/enum_composition.py $(abspath $(OUT))
-	python3 -O ../tests/compiler/method_values.py $(abspath $(OUT))
-	python3 -B -O ../tests/compiler/owned_mutation.py $(abspath $(OUT))
-	python3 -B -O ../tests/compiler/class_arrays.py $(abspath $(OUT))
-	python3 -B -O ../tests/compiler/owned_bytes.py $(abspath $(OUT))
-	python3 -B -O ../tests/compiler/owning_classes.py $(abspath $(OUT))
-	python3 ../tests/compiler/integers.py $(abspath $(OUT))
-	python3 ../tests/compiler/unsigned.py $(abspath $(OUT))
-	python3 -B -O ../tests/compiler/binary_literals.py $(abspath $(OUT))
-	python3 ../tests/compiler/u8_numeric.py $(abspath $(OUT))
-	python3 -B -O ../tests/compiler/byte_literals.py $(abspath $(OUT))
-	python3 ../tests/compiler/byte_codec.py $(abspath $(OUT))
-	python3 -B ../tests/compiler/binary_buffer.py $(abspath $(OUT))
-	python3 -B -O ../tests/compiler/byte_buffer.py $(abspath $(OUT))
-	python3 -B -O ../tests/compiler/method_spans.py $(abspath $(OUT))
-	python3 -B -O ../tests/compiler/owned_spans.py $(abspath $(OUT))
-	python3 -B -O ../tests/compiler/owned_spans_source.py $(abspath $(OUT))
-	python3 -B -O ../tests/compiler/owned_spans_kernel.py $(abspath $(OUT))
-	python3 -B -O ../tests/compiler/owned_spans_kernel.py $(abspath $(OUT)) --receiver-bound
-	python3 -B ../tests/compiler/sector.py $(abspath $(OUT))
-	python3 -B ../tests/compiler/block_io.py $(abspath $(OUT))
-	python3 -B ../tests/compiler/sector_window.py $(abspath $(OUT))
-	python3 -B ../tests/compiler/xfs_sector.py $(abspath $(OUT))
-	python3 -B ../tests/compiler/xfs_file.py $(abspath $(OUT))
-	python3 ../tests/compiler/packed_values.py $(abspath $(OUT))
-	python3 -B -O ../tests/compiler/sector_values.py $(abspath $(OUT))
-	python3 ../tests/compiler/readonly_spans.py $(abspath $(OUT))
-	python3 -O ../tests/compiler/storage_binary.py $(abspath $(OUT))
-	@set -eu; work="$$(mktemp -d "$(dir $(abspath $(OUT)))xfs-geometry.XXXXXXXX")"; \
-	python3 -O ../tests/compiler/xfs_geometry.py $(abspath $(OUT)) $(AURORA_TEST_IDENTITY_ARGS) --mutation-controls $(XFS_GEOMETRY_TEST_FLAGS) --artifacts "$$work/native"
-	@set -eu; work="$$(mktemp -d "$(dir $(abspath $(OUT)))utf8.XXXXXXXX")"; \
-	python3 -O ../tests/compiler/utf8.py $(abspath $(OUT)) $(UTF8_TEST_FLAGS) --artifacts "$$work/native"
-	@set -eu; work="$$(mktemp -d "$(dir $(abspath $(OUT)))utf8-encoding.XXXXXXXX")"; \
-	python3 -O ../tests/compiler/utf8_encoding.py $(abspath $(OUT)) $(UTF8_TEST_FLAGS) --artifacts "$$work/native"
-	python3 -O ../fixtures/xfs-offline/verify_native.py --compiler $(abspath $(OUT)) $(AURORA_TEST_IDENTITY_ARGS)
-	CXX="$(CXX)" python3 ../tests/compiler/unsigned_oracle.py $(abspath $(OUT))
-	CXX="$(CXX)" python3 ../tests/compiler/integer_oracle.py $(abspath $(OUT))
-	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/initialization_facts.cpp -o $(dir $(OUT))initialization-facts-tests
-	$(dir $(OUT))initialization-facts-tests
-	$(IR_TEST_BUILD_PREFIX) $(CXX) $(IR_TEST_CXXFLAGS) -I. ../tests/compiler/ir_tests.cpp -o $(dir $(OUT))ir-tests
-	$(dir $(OUT))ir-tests
-	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/stack_probes.cpp -o $(dir $(OUT))stack-probe-tests
-	$(dir $(OUT))stack-probe-tests
-	python3 -B -O ../tests/compiler/sector_values_abi.py $(abspath $(dir $(OUT))stack-probe-tests) --stack-guards
-	CXX="$(CXX)" python3 ../tests/compiler/ir_exhaustive.py $(abspath $(dir $(OUT))ir-tests)
-	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/method_values_ir.cpp -o $(dir $(OUT))method-values-ir-tests
-	$(dir $(OUT))method-values-ir-tests
-	@set -eu; work="$$(mktemp -d "$(dir $(abspath $(OUT)))method-values-abi.XXXXXXXX")"; \
-	python3 -O ../tests/compiler/method_values_abi.py $(abspath $(dir $(OUT))method-values-ir-tests) --work-dir "$$work/native"
-	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/owned_mutation_ir.cpp -o $(dir $(OUT))owned-mutation-ir-tests
-	$(dir $(OUT))owned-mutation-ir-tests
-	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/class_arrays_ir.cpp -o $(dir $(OUT))class-arrays-ir-tests
-	$(dir $(OUT))class-arrays-ir-tests
-	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/owned_bytes_ir.cpp -o $(dir $(OUT))owned-bytes-ir-tests
-	$(dir $(OUT))owned-bytes-ir-tests
-	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/owned_spans_ir.cpp -o $(dir $(OUT))owned-spans-ir-tests
-	$(dir $(OUT))owned-spans-ir-tests
-	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/method_spans_ir.cpp -o $(dir $(OUT))method-spans-ir-tests
-	$(dir $(OUT))method-spans-ir-tests
-	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/method_spans_abi.cpp -o $(dir $(OUT))method-spans-abi-tests
-	@set -eu; work="$$(mktemp -d "$(dir $(abspath $(OUT)))method-spans-abi.XXXXXXXX")"; \
-	python3 -B -O ../tests/compiler/method_spans_abi.py $(abspath $(dir $(OUT))method-spans-abi-tests) --artifacts "$$work/native"
-	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/logical_spans_abi.cpp -o $(dir $(OUT))logical-spans-abi-tests
-	@set -eu; work="$$(mktemp -d "$(dir $(abspath $(OUT)))logical-spans-abi.XXXXXXXX")"; \
-	python3 -B -O ../tests/compiler/logical_spans_abi.py $(abspath $(dir $(OUT))logical-spans-abi-tests) --artifacts "$$work/native"
-	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/owning_classes_ir.cpp -o $(dir $(OUT))owning-classes-ir-tests
-	$(dir $(OUT))owning-classes-ir-tests
-	python3 -B -O ../tests/compiler/owning_classes_abi.py $(abspath $(dir $(OUT))owning-classes-ir-tests)
-	$(CXX) $(CXXFLAGS) -DAURORA_HOSTED_BYTES_TESTING ../runtime/hosted_bytes.cpp \
-	    ../tests/compiler/owned_bytes_host.cpp -o $(dir $(OUT))owned-bytes-host-tests
-	$(dir $(OUT))owned-bytes-host-tests
-	python3 -B -O ../tests/compiler/owned_mutation_abi.py $(abspath $(dir $(OUT))owned-mutation-ir-tests)
-	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/sector_values_ir.cpp -o $(dir $(OUT))sector-values-ir-tests
-	$(dir $(OUT))sector-values-ir-tests
-	python3 -B -O ../tests/compiler/sector_values_abi.py $(abspath $(dir $(OUT))sector-values-ir-tests)
-	python3 ../tests/modules/run.py $(abspath $(OUT))
-	python3 ../tests/modules/robustness.py $(abspath $(OUT))
-	$(CXX) $(CXXFLAGS) -pthread -I. ../tests/modules/host_sources_tests.cpp -o $(dir $(OUT))host-source-tests
-	python3 ../tests/modules/host_sources.py $(abspath $(dir $(OUT))host-source-tests)
-	$(CXX) $(CXXFLAGS) -I. ../tests/modules/host_output_tests.cpp -o $(dir $(OUT))host-output-tests
-	python3 ../tests/modules/host_sources.py $(abspath $(dir $(OUT))host-output-tests)
 
 .PHONY: test-modules
-test-modules: $(OUT)
-	python3 ../tests/modules/run.py $(abspath $(OUT))
-	python3 ../tests/modules/robustness.py $(abspath $(OUT))
-	$(CXX) $(CXXFLAGS) -pthread -I. ../tests/modules/host_sources_tests.cpp -o $(dir $(OUT))host-source-tests
-	python3 ../tests/modules/host_sources.py $(abspath $(dir $(OUT))host-source-tests)
-	$(CXX) $(CXXFLAGS) -I. ../tests/modules/host_output_tests.cpp -o $(dir $(OUT))host-output-tests
-	python3 ../tests/modules/host_sources.py $(abspath $(dir $(OUT))host-output-tests)
+test-modules:
+	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --tests modules source-depth host-sources-tests host-output-tests
 
 .PHONY: test-storage
-test-storage: $(OUT)
-	python3 -O ../tests/compiler/storage_binary.py $(abspath $(OUT))
-	python3 -O ../fixtures/xfs-offline/verify_native.py --compiler $(abspath $(OUT)) $(AURORA_TEST_IDENTITY_ARGS)
+test-storage:
+	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --tests storage-binary xfs-offline-native
 
 .PHONY: test-initialization-facts
 test-initialization-facts:
-	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/initialization_facts.cpp -o $(dir $(OUT))initialization-facts-tests
-	$(dir $(OUT))initialization-facts-tests
+	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --tests initialization-facts
 
 .PHONY: test-utf8
-test-utf8: $(OUT)
-	@set -eu; work="$$(mktemp -d "$(dir $(abspath $(OUT)))utf8.XXXXXXXX")"; \
-	python3 -O ../tests/compiler/utf8.py $(abspath $(OUT)) $(UTF8_TEST_FLAGS) --artifacts "$$work/native"
+test-utf8:
+	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --tests utf8
 
 .PHONY: test-utf8-encoding
-test-utf8-encoding: $(OUT)
-	@set -eu; work="$$(mktemp -d "$(dir $(abspath $(OUT)))utf8-encoding.XXXXXXXX")"; \
-	python3 -O ../tests/compiler/utf8_encoding.py $(abspath $(OUT)) $(UTF8_TEST_FLAGS) --artifacts "$$work/native"
+test-utf8-encoding:
+	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --tests utf8-encoding
 
 .PHONY: test-xfs-geometry
-test-xfs-geometry: $(OUT)
-	@set -eu; work="$$(mktemp -d "$(dir $(abspath $(OUT)))xfs-geometry.XXXXXXXX")"; \
-	python3 -O ../tests/compiler/xfs_geometry.py $(abspath $(OUT)) $(AURORA_TEST_IDENTITY_ARGS) --mutation-controls $(XFS_GEOMETRY_TEST_FLAGS) --artifacts "$$work/native"
+test-xfs-geometry:
+	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --tests xfs-geometry
 
 .PHONY: test-xfs-root
-test-xfs-root: $(OUT)
-	@set -eu; \
-	compiler="$$(realpath -- "$(OUT)")"; \
-	repo="$(XFS_ROOT_REPO)"; \
-	fixtures="$(XFS_ROOT_FIXTURES)"; \
-	if [ -z "$$fixtures" ]; then fixtures="$$repo/fixtures/xfs-root"; fi; \
-	parent="$(XFS_ROOT_ARTIFACT_PARENT)"; \
-	if [ -z "$$parent" ]; then parent="$$(dirname -- "$$compiler")"; fi; \
-	python3 -B -c 'import pathlib,sys; roots=[pathlib.Path(s).absolute() for s in sys.argv[1:]]; bad=[p for p in roots if not p.is_dir() or any(x.is_symlink() for x in [p,*p.parents])]; sys.exit("invalid XFS root(s): "+", ".join(map(str,bad)) if bad else 0)' "$$repo" "$$fixtures" "$$parent"; \
-	observed="$$(sha256sum -- "$$compiler" | cut -d ' ' -f 1)"; \
-	work="$$(mktemp -d "$$parent/xfs-root.XXXXXXXX")"; \
-	printf '%s\n' "$$observed" > "$$work/compiler.observed.sha256"; \
-	python3 -B -O "$$repo/tests/compiler/xfs_root.py" --repo-root "$$repo" --fixture-root "$$fixtures" --artifact-root "$$work/lookup" --compiler "$$compiler" $(AURORA_TEST_IDENTITY_ARGS) $(XFS_ROOT_TEST_FLAGS); \
-	python3 -B -O "$$repo/tests/compiler/xfs_root_api.py" --repo-root "$$repo" --fixture-root "$$fixtures" --artifact-root "$$work/api" --compiler "$$compiler" $(AURORA_TEST_IDENTITY_ARGS) $(XFS_ROOT_API_TEST_FLAGS); \
-	python3 -B -O "$$repo/tests/compiler/xfs_root_entry.py" --repo-root "$$repo" --fixture-root "$$fixtures" --artifact-root "$$work/entries" --compiler "$$compiler" $(AURORA_TEST_IDENTITY_ARGS); \
-	test "$$(sha256sum -- "$$compiler" | cut -d ' ' -f 1)" = "$$observed"; \
-	printf 'PASS XFS root Make recipe: %s\n' "$$work"
+test-xfs-root:
+	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --tests xfs-root xfs-root-api xfs-root-entry
 
 .PHONY: test-utf8-range
-test-utf8-range: $(OUT)
-	@set -eu; \
-	parent="$(UTF8_RANGE_ARTIFACT_PARENT)"; \
-	test -d "$$parent"; \
-	work="$$(mktemp -d "$$parent/utf8-range.XXXXXXXX")"; \
-	python3 -B -O ../tests/compiler/utf8_range.py --compiler "$(abspath $(OUT))" $(AURORA_TEST_IDENTITY_ARGS) --artifacts "$$work/native" $(UTF8_RANGE_TEST_FLAGS); \
-	printf 'PASS UTF-8 range Make recipe: %s\n' "$$work"
+test-utf8-range:
+	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --tests utf8-range
 
 .PHONY: test-utf8-lines
-test-utf8-lines: $(OUT)
-	@set -eu; \
-	parent="$(UTF8_LINES_ARTIFACT_PARENT)"; \
-	test -d "$$parent"; \
-	work="$$(mktemp -d "$$parent/utf8-lines.XXXXXXXX")"; \
-	python3 -B -O ../tests/compiler/utf8_lines.py --compiler "$(abspath $(OUT))" $(AURORA_TEST_IDENTITY_ARGS) --artifacts "$$work/native" $(UTF8_LINES_TEST_FLAGS); \
-	printf 'PASS UTF-8 lines Make recipe: %s\n' "$$work"
+test-utf8-lines:
+	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --tests utf8-lines
 
 .PHONY: test-function-overloads
-test-function-overloads: $(OUT)
-	python3 -B -O ../tests/compiler/function_overloads.py $(abspath $(OUT))
+test-function-overloads:
+	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --tests function-overloads
 
 .PHONY: test-readonly-windows
-test: test-readonly-windows
-test-readonly-windows: $(OUT)
-	@set -eu; \
-	work="$$(mktemp -d "$(dir $(abspath $(OUT)))readonly-windows.XXXXXXXX")"; \
-	python3 -B -O ../tests/compiler/readonly_windows.py "$(abspath $(OUT))" --artifacts "$$work/source"; \
-	$(CXX) $(IR_TEST_CXXFLAGS) -I. ../tests/compiler/readonly_windows_ir.cpp -o "$$work/ir-tests"; \
-	"$$work/ir-tests"; \
-	python3 -B -O ../tests/compiler/readonly_windows_ir_native.py "$$work/ir-tests" --artifacts "$$work/native"; \
-	printf 'PASS readonly window Make recipe: %s\n' "$$work"
+test-readonly-windows:
+	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --tests readonly-windows readonly-windows-ir readonly-windows-ir-native
 
 .PHONY: test-short-circuit
-test: test-short-circuit
-test-short-circuit: $(OUT)
-	@set -eu; \
-	work="$$(mktemp -d "$(dir $(abspath $(OUT)))short-circuit.XXXXXXXX")"; \
-	python3 -B -O ../tests/compiler/short_circuit.py "$(abspath $(OUT))" --artifacts "$$work/source"; \
-	$(CXX) $(IR_TEST_CXXFLAGS) -I. ../tests/compiler/short_circuit_ir.cpp -o "$$work/ir-tests"; \
-	"$$work/ir-tests"; \
-	python3 -B -O ../tests/compiler/short_circuit_ir_native.py "$$work/ir-tests" --artifacts "$$work/native"; \
-	printf 'PASS short-circuit Make recipe: %s\n' "$$work"
+test-short-circuit:
+	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --tests short-circuit short-circuit-ir short-circuit-ir-native
 
 .PHONY: test-token-scan
-test: test-token-scan
-test-token-scan: $(OUT)
-	@set -eu; \
-	work="$$(mktemp -d "$(dir $(abspath $(OUT)))token-scan.XXXXXXXX")"; \
-	CXX="$(CXX)" CXXFLAGS="$(CXXFLAGS)" python3 -B -O ../tests/compiler/token_scan.py --compiler "$(abspath $(OUT))" $(AURORA_TEST_IDENTITY_ARGS) --artifacts "$$work/native"; \
-	printf 'PASS token scanner Make recipe: %s\n' "$$work"
-
-# Focused compiler-owned source tooling, separate from native acceptance.
-FORMAT_OUT ?= ../build/aurora-fmt
-.PHONY: formatter test-formatter
-formatter: $(FORMAT_OUT)
-$(FORMAT_OUT): format_main.cpp hosted_lexer.cpp hosted_parser.cpp ../runtime/hosted_bytes.cpp $(wildcard *.hpp ../runtime/*.hpp) $(OUT).frontend.o $(LEXER_EVENTS)
-	mkdir -p $(dir $(FORMAT_OUT))
-	$(CXX) $(CXXFLAGS) -I$(dir $(OUT)) -DAURORA_HOSTED_LEXER -DAURORA_HOSTED_PARSER $< hosted_lexer.cpp hosted_parser.cpp ../runtime/hosted_bytes.cpp $(OUT).frontend.o -o $@
-test-formatter: $(FORMAT_OUT)
-	$(CXX) $(CXXFLAGS) -I$(dir $(OUT)) -DAURORA_HOSTED_LEXER -DAURORA_HOSTED_PARSER -I. ../tests/compiler/format.cpp hosted_lexer.cpp hosted_parser.cpp ../runtime/hosted_bytes.cpp $(OUT).frontend.o -o $(dir $(FORMAT_OUT))format-tests
-	$(dir $(FORMAT_OUT))format-tests $$(find ../examples ../library ../kernel/policies ../tests/kernel-programs -name '*.au' -type f | LC_ALL=C sort)
-	python3 -B -O ../tests/compiler/format.py $(abspath $(FORMAT_OUT))
-
-.PHONY: test-lint
-test-lint: $(FORMAT_OUT) $(OUT)
-	$(CXX) $(CXXFLAGS) -I$(dir $(OUT)) -DAURORA_HOSTED_LEXER -DAURORA_HOSTED_PARSER -I. ../tests/compiler/lint.cpp hosted_lexer.cpp hosted_parser.cpp ../runtime/hosted_bytes.cpp $(OUT).frontend.o -o $(dir $(FORMAT_OUT))lint-tests
-	python3 -B -O ../tests/compiler/lint.py $(abspath $(FORMAT_OUT)) $(abspath $(OUT)) \
-	    $(abspath $(dir $(FORMAT_OUT))lint-tests)
+test-token-scan:
+	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --tests token-scan
 
 .PHONY: test-json
-test: test-json
-test-json: $(OUT)
-	@set -eu; work="$$(mktemp -d "$(dir $(abspath $(OUT)))json-profile.XXXXXXXX")"; \
-	python3 -B -O ../tests/compiler/json_profile.py "$(abspath $(OUT))" $(AURORA_TEST_IDENTITY_ARGS) --artifacts "$$work/native"
-	python3 -B -O ../tests/compiler/json_owned.py "$(abspath $(OUT))"
+test-json:
+	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --tests json-profile json-owned
 
 .PHONY: test-json-codecs
-test: test-json-codecs
-test-json-codecs: $(OUT)
-	@set -eu; work="$$(mktemp -d "$(dir $(abspath $(OUT)))json-codecs.XXXXXXXX")"; \
-	python3 -B -O ../tests/compiler/json_codecs.py "$(abspath $(OUT))" $(AURORA_TEST_IDENTITY_ARGS) --artifacts "$$work/native"
+test-json-codecs:
+	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --tests json-codecs
 
 .PHONY: test-json-integers
-test: test-json-integers
-test-json-integers: $(OUT)
-	@set -eu; work="$$(mktemp -d "$(dir $(abspath $(OUT)))json-integers.XXXXXXXX")"; \
-	python3 -B -O ../tests/compiler/json_integers.py "$(abspath $(OUT))" $(AURORA_TEST_IDENTITY_ARGS) --artifacts "$$work/native"
+test-json-integers:
+	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --tests json-integers
 
 .PHONY: test-json-lookup
-test: test-json-lookup
-test-json-lookup: $(OUT)
-	@set -eu; work="$$(mktemp -d "$(dir $(abspath $(OUT)))json-lookup.XXXXXXXX")"; \
-	python3 -B -O ../tests/compiler/json_lookup.py "$(abspath $(OUT))" $(AURORA_TEST_IDENTITY_ARGS) --artifacts "$$work/native"
+test-json-lookup:
+	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --tests json-lookup
 
 .PHONY: test-borrowed-objects
-test: test-borrowed-objects
-test-borrowed-objects: $(OUT)
-	@set -eu; \
-	work="$$(mktemp -d "$(dir $(abspath $(OUT)))borrowed-objects.XXXXXXXX")"; \
-	python3 -B -O ../tests/compiler/borrowed_objects.py "$(abspath $(OUT))" --artifacts "$$work/source"; \
-	$(CXX) $(IR_TEST_CXXFLAGS) -I. ../tests/compiler/borrowed_objects_ir.cpp -o "$$work/ir-tests"; \
-	"$$work/ir-tests"; \
-	$(CXX) $(IR_TEST_CXXFLAGS) -I. ../tests/compiler/borrowed_objects_abi.cpp -o "$$work/abi-tests"; \
-	python3 -B -O ../tests/compiler/borrowed_objects_abi.py "$$work/abi-tests" --artifacts "$$work/abi"; \
-	printf 'PASS borrowed objects Make recipe: %s\n' "$$work"
+test-borrowed-objects:
+	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --tests borrowed-objects borrowed-objects-ir borrowed-objects-abi
 
 .PHONY: test-json-string-write
-test: test-json-string-write
-test-json-string-write: $(OUT)
-	@set -eu; \
-	work="$$(mktemp -d "$(dir $(abspath $(OUT)))json-string-write.XXXXXXXX")"; \
-	python3 -B -O ../tests/compiler/json_string_write.py "$(abspath $(OUT))" --artifacts "$$work/source"; \
-	printf 'PASS JSON string write Make recipe: %s\n' "$$work"
+test-json-string-write:
+	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --tests json-string-write
 
 .PHONY: test-console-service
-test: test-console-service
-test-console-service: $(OUT)
-	@set -eu; \
-	work="$$(mktemp -d "$(dir $(abspath $(OUT)))console-service.XXXXXXXX")"; \
-	python3 -B -O ../tests/compiler/console_service.py "$(abspath $(OUT))"; \
-	$(CXX) $(IR_TEST_CXXFLAGS) -I. ../tests/compiler/console_service_ir.cpp -o "$$work/ir-tests"; \
-	"$$work/ir-tests"; \
-	$(CXX) $(CXXFLAGS) ../tests/kernel-console-session.cpp -o "$$work/grant-tests"; \
-	"$$work/grant-tests"; \
-	printf 'PASS console service Make recipe: %s\n' "$$work"
+test-console-service:
+	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --tests console-service-source-native console-service-ir console-session
 
 .PHONY: test-display-service
-test: test-display-service
-test-display-service: $(OUT)
-	@set -eu; \
-	work="$$(mktemp -d "$(dir $(abspath $(OUT)))display-service.XXXXXXXX")"; \
-	python3 -B -O ../tests/compiler/display_service.py "$(abspath $(OUT))"; \
-	$(CXX) $(IR_TEST_CXXFLAGS) -I. ../tests/compiler/service_group_ir.cpp -o "$$work/ir-tests"; \
-	python3 -B -O ../tests/compiler/service_group_ir_abi.py "$$work/ir-tests"; \
-	printf 'PASS display service Make recipe: %s\n' "$$work"
+test-display-service:
+	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --tests display-service-source-native display-service-ir
 
 .PHONY: test-iommu-event-service
-test: test-iommu-event-service
-test-iommu-event-service: $(OUT)
-	@set -eu; \
-	work="$$(mktemp -d "$(dir $(abspath $(OUT)))iommu-event-service.XXXXXXXX")"; \
-	$(CXX) $(IR_TEST_CXXFLAGS) -I. ../tests/compiler/iommu_event_service_ir.cpp -o "$$work/ir-tests"; \
-	python3 -B -O ../tests/compiler/iommu_event_service.py "$(abspath $(OUT))" "$$work/ir-tests"; \
-	$(CXX) $(CXXFLAGS) ../tests/kernel-iommu-event-session.cpp -o "$$work/session-tests"; \
-	"$$work/session-tests"
+test-iommu-event-service:
+	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --tests iommu-event-source-native iommu-event-session
 
-endif # controlled outer dispatcher / original inner graph
+.PHONY: test-formatter
+test-formatter:
+	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --tests hosted-lexer-format hosted-lexer-format-cli
+
+.PHONY: test-lint
+test-lint:
+	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --tests semantic-lint

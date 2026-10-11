@@ -7,6 +7,6 @@ option('kernel_images', type: 'boolean', value: true,
 option('kernel_compiler', type: 'string', value: '',
        description: 'Optional absolute prebuilt aurorac for kernel images; empty builds the native compiler')
 option('bootstrap_compiler', type: 'string', value: '',
-       description: 'Absolute predecessor aurorac path; requires bootstrap_compiler_sha256, otherwise use current C++ seed')
+       description: 'Required absolute predecessor aurorac path; see compiler/README.md source-bootstrap recipe')
 option('bootstrap_compiler_sha256', type: 'string', value: '',
-       description: 'SHA-256 of selected predecessor executable; requires bootstrap_compiler')
+       description: 'Required SHA-256 of the selected predecessor executable')

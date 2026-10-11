@@ -445,7 +445,7 @@
       }
     },
     "reason": "Complete formatter CLI runner; canonical Meson coverage uses the hosted Aurora lexer.",
-    "root_make": false
+    "root_make": true
   },
   "function_overloads.py": {
     "kind": "runner",
@@ -471,7 +471,7 @@
   },
   "function_overloads_independent.py": {
     "kind": "runner",
-    "make": false,
+    "make": true,
     "meson": true,
     "meson_commands": {
       "function-overloads-independent": {
@@ -494,7 +494,7 @@
       }
     },
     "reason": "Complete behavioral runner in the Meson full graph.",
-    "root_make": false
+    "root_make": true
   },
   "function_templates.py": {
     "kind": "runner",
@@ -520,7 +520,7 @@
   },
   "hosted_lexer_bootstrap.py": {
     "kind": "runner",
-    "make": false,
+    "make": true,
     "meson": true,
     "meson_commands": {
       "hosted-lexer-bootstrap": {
@@ -543,7 +543,7 @@
       }
     },
     "reason": "Canonical hosted bootstrap runner compares current C1/C2 diagnostics and frontend convergence, including the frontend actually linked into C2.",
-    "root_make": false
+    "root_make": true
   },
   "integer_oracle.py": {
     "kind": "runner",
@@ -671,7 +671,7 @@
   },
   "json_codecs_owned.py": {
     "kind": "runner",
-    "make": false,
+    "make": true,
     "meson": true,
     "meson_commands": {
       "json-codecs-owned": {
@@ -695,7 +695,7 @@
       }
     },
     "reason": "Complete behavioral runner in the Meson full graph.",
-    "root_make": false
+    "root_make": true
   },
   "json_integers.py": {
     "kind": "runner",
@@ -876,7 +876,7 @@
       }
     },
     "reason": "Complete behavioral runner in the Meson full graph.",
-    "root_make": false
+    "root_make": true
   },
   "logical_spans_abi.py": {
     "kind": "runner",

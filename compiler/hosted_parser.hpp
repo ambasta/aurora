@@ -15,7 +15,7 @@ public:
 namespace aurora {
 // The immutable source and captured context are checked before the private ABI.
 // Position commits only after complete graph and exact token/half validation.
-// Unsupported is an invalid production result; C++ remains a separate seed path.
+// Unsupported is an invalid result; expressions always use the Aurora frontend.
 ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens,
                                     std::size_t &position,
                                     hosted_parser::Stop stop,

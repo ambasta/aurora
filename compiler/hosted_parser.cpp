@@ -110,7 +110,7 @@ bool identifier(const std::string &text) {
 }
 bool tailIdentifier(const std::string &text, bool allowArray) {
     // primary() accepts an identifier-shaped first name. Only qualified tails
-    // and member names pass through the reference parser's stricter ident().
+    // and member names obey the declaration parser's stricter identifier rules.
     static const std::array<std::string, 29> reserved{
         "fn",        "module",        "let",       "mut",    "if",     "else",     "return", "true",
         "false",     "static_assert", "class",     "while",  "break",  "continue", "auto",   "const",

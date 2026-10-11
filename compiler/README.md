@@ -3,12 +3,16 @@
 Aurora is an intentionally incompatible safe C++-inspired language. It has no
 C header/macro layer, raw-pointer escape, unsafe block or C ABI. The hosted build
 uses an Aurora-written [lexer](LEXER.md) and a bounded
-[statement-expression parser](ARCHITECTURE.md#hosted-aurora-expression-parser), bootstrapped from a C++ seed.
+[statement-expression parser](ARCHITECTURE.md#hosted-aurora-expression-parser),
+bootstrapped with an explicitly pinned predecessor compiler.
 Declaration/type parsing outside expressions, semantic/lifetime analysis,
 typed-IR verification and x86-64 emission remain C++23.
 GNU assembler/linker and Linux host I/O remain bootstrap dependencies.
 
 ## Build and check
+
+For a fresh checkout, complete [source bootstrap](#source-bootstrap) once in the
+selected pinned tool environment. Then the ordinary shortcuts reuse Meson:
 
 ```sh
 make -C compiler
@@ -22,20 +26,20 @@ Compiler-only testing uses the canonical Meson graph and is not root `full`.
 routes, selected-artifact identity, explicit pinned compatibility and merge gates.
 The optional [language server](lsp/README.md) has its own dependency and suite.
 
-### Explicit predecessor bootstrap
+### Source bootstrap
 
-Meson defaults to the current C++ seed. To select an external predecessor, set
-both `bootstrap_compiler` (an absolute executable path) and
-`bootstrap_compiler_sha256` (its lowercase SHA-256). Missing pairs, invalid paths
-or mismatched bytes reject; there is no fallback to the current seed. The driver
-checks the pin at setup and before each predecessor invocation, and Ninja tracks
-the selected executable as an input. The digest identifies executable bytes; it
-is not evidence of how those bytes were built.
+The current source no longer contains a C++ expression parser or raw compiler
+seed. Meson requires both `bootstrap_compiler` (an absolute executable path) and
+`bootstrap_compiler_sha256` (its lowercase SHA-256). Invalid or missing selections
+reject before frontend generation. The driver checks the pin at setup and before
+each invocation, and Ninja tracks the executable. A digest identifies bytes; the
+source build below establishes where those bytes came from.
 
-A source-build starting point is reviewed predecessor commit
-`bdf646f09d5e14c88124c4bc9e4f998beda16183`. In the same
-[pinned development environment](../docs/local-development.md), from the current
-checkout, use separate source/build directories:
+Start from a normal Git checkout containing reviewed predecessor commit
+`bdf646f09d5e14c88124c4bc9e4f998beda16183`. Open the
+[pinned development environment](../docs/local-development.md) first, for example
+`./scripts/container.sh bash`, and run all these commands there from the current
+checkout. Keep the historical worktree and compiler separate from current source:
 
 ```sh
 git worktree add --detach build/predecessor-source bdf646f09d5e14c88124c4bc9e4f998beda16183
@@ -43,20 +47,27 @@ meson setup build/predecessor-seed build/predecessor-source -Dkernel_images=fals
 meson compile -C build/predecessor-seed -j 2 aurorac
 P=$(realpath build/predecessor-seed/aurorac)
 PIN=$(sha256sum "$P" | cut -d ' ' -f 1)
-meson setup build/predecessor . -Dkernel_images=false \
+meson setup build/meson . \
   "-Dbootstrap_compiler=$P" "-Dbootstrap_compiler_sha256=$PIN"
-meson compile -C build/predecessor -j 2 aurorac aurorac-stage2
-meson test -C build/predecessor --no-rebuild --num-processes 1 \
+meson setup build/meson-compiler . -Dkernel_images=false \
+  "-Dbootstrap_compiler=$P" "-Dbootstrap_compiler_sha256=$PIN"
+meson compile -C build/meson-compiler -j 2 aurorac aurorac-stage2
+meson test -C build/meson-compiler --no-rebuild --num-processes 1 \
   hosted-lexer-bootstrap compiler-test-inventory
 ```
 
+Both ordinary default directories are now configured: `make`/`make test` use the
+image-enabled graph, while `make -C compiler test` uses the hosted-only graph.
+For other configurations, repeat setup with the same pair and select the result
+through `MESON_BUILD_DIR`. Existing builds with an empty pair need explicit
+`meson setup --reconfigure` with both options. Keep using the same host/container
+path layout so configured absolute executable paths remain valid.
+
 The predecessor emits frontend A for current compiler C1; C1 emits B for current
-compiler C2. The existing bootstrap test checks C1/C2 frontend assembly and object
-convergence, binds B to the object actually linked into C2, and compares current
-C1/C2 source-corpus diagnostics/output. It does not require an older predecessor
-to accept newer unrelated language features. No generated frontend or compiler
-binary is committed. This route leaves C++ declaration parsing, semantics, IR and
-backend responsibilities in both current compilers.
+compiler C2. The existing bootstrap test checks current C1/C2 assembly and object
+convergence, binds B to the frontend actually linked into C2, and compares current
+C1/C2 corpus diagnostics/output. No compiler binary or generated frontend is
+committed. Declaration parsing, semantics, IR and backend remain C++.
 
 ## Supported source
 
@@ -149,8 +160,9 @@ support the `expression_arena.au` AST, explicit parser-frame and variable-arity
 argument-edge and unresolved type-syntax storage. Complete existing scalar,
 byte-string, qualified-name, unary, binary, call, postfix, aggregate, explicit
 template and type-taking reflection expressions are parsed in Aurora, including
-both forms of constructor
-field initializer, and converted to the existing source AST through the private hosted adapter.
-The hosted path does not fall back to C++ for expressions. The separate C++
-seed/reference remains until predecessor qualification and reference-fixture
-migration permit retirement; this does not establish compiler self-hosting.
+both forms of constructor field initializer, and converted to the existing source
+AST through the private hosted adapter.
+The hosted path does not fall back to C++ for expressions. The C++
+expression parser and expression router are removed from current source. The
+historical predecessor remains the source-bootstrap starting point; this does not
+establish whole-compiler self-hosting.
