@@ -220,7 +220,7 @@ export namespace compiler_parser {
         }
     };
 
-    enum class StatementKind {
+    enum class SyntaxKind {
         invalid,
         block,
         local,
@@ -231,28 +231,42 @@ export namespace compiler_parser {
         expression,
         assign,
         field_assign,
-        index_assign
+        index_assign,
+        parameter,
+        initializer,
+        function,
+        method,
+        constructor,
+        field
     };
-    // Complete body syntax, with child-before-parent block/control ownership.
-    // Siblings are reverse-linked; expression and type indices share this arena.
-    class StatementSyntax {
-        StatementKind tag;
+    // One tagged syntax forest owns statements and complete declarations.
+    // Every child/list link points backward. Statement variants use expression,
+    // target, type, binding and block children as before. Parameter nodes use
+    // type/binding, borrow and const qualifier; end locates admission
+    // after the binding. Initializers use token/expression. Callable nodes use
+    // token=name, type=result, other=parameters, body=block (or constructor
+    // initializer list), and receiver-const qualifier. Field nodes use token=type
+    // start, type/binding, and end after the semicolon. Unused fields stay -1.
+    // The qualifier is mutable for locals and const for parameters/methods.
+    class SyntaxNode {
+        SyntaxKind tag;
         i64 token_index;
         i64 end_token;
-        i64 previous_statement;
+        i64 previous_node;
         i64 expression_root;
         i64 target_root;
         i64 declared_type;
         i64 binding_token;
-        i64 body_statement;
-        i64 other_statement;
-        i64 mutable_value;
+        i64 body_node;
+        i64 other_node;
+        i64 qualifier;
+        i64 borrow_token;
     public:
-        StatementSyntax(StatementKind kind, i64 token, i64 end, i64 previous) : tag(kind), token_index(token),
-            end_token(end), previous_statement(previous), expression_root(-1), target_root(-1), declared_type(-1),
-            binding_token(-1), body_statement(-1), other_statement(-1), mutable_value(0) {
+        SyntaxNode(SyntaxKind kind, i64 token, i64 end, i64 previous) : tag(kind), token_index(token), end_token(end),
+            previous_node(previous), expression_root(-1), target_root(-1), declared_type(-1), binding_token(-1),
+            body_node(-1), other_node(-1), qualifier(0), borrow_token(-1) {
         }
-        auto kind() const -> StatementKind {
+        auto kind() const -> SyntaxKind {
             return tag;
         }
         auto token() const -> i64 {
@@ -262,7 +276,7 @@ export namespace compiler_parser {
             return end_token;
         }
         auto previous() const -> i64 {
-            return previous_statement;
+            return previous_node;
         }
         auto expression() const -> i64 {
             return expression_root;
@@ -277,28 +291,35 @@ export namespace compiler_parser {
             return binding_token;
         }
         auto body() const -> i64 {
-            return body_statement;
+            return body_node;
         }
         auto other() const -> i64 {
-            return other_statement;
+            return other_node;
+        }
+        auto borrow_site() const -> i64 {
+            return borrow_token;
+        }
+        auto bind_borrow(i64 token) -> i64 {
+            borrow_token = token;
+            return 0;
         }
         auto mutable_binding() const -> i64 {
-            return mutable_value;
+            return qualifier;
         }
         auto bind_expression(i64 expression, i64 target) -> i64 {
             expression_root = expression;
             target_root = target;
             return 0;
         }
-        auto bind_local(i64 type, i64 binding, i64 mutable_binding) -> i64 {
+        auto bind_declaration(i64 type, i64 binding, i64 mutable_binding) -> i64 {
             declared_type = type;
             binding_token = binding;
-            mutable_value = mutable_binding;
+            qualifier = mutable_binding;
             return 0;
         }
         auto bind_body(i64 body, i64 other) -> i64 {
-            body_statement = body;
-            other_statement = other;
+            body_node = body;
+            other_node = other;
             return 0;
         }
     };
@@ -313,8 +334,8 @@ export namespace compiler_parser {
         i64 edge_count;
         builtin::OwnedValues<TypeSyntax> type_nodes;
         i64 type_count;
-        builtin::OwnedValues<StatementSyntax> statement_nodes;
-        i64 statement_count;
+        builtin::OwnedValues<SyntaxNode> syntax_nodes;
+        i64 syntax_count;
         auto store(AstNode node) -> i64 {
             if (node.depth() > 128) {
                 error = ArenaFailure::depth;
@@ -351,13 +372,12 @@ export namespace compiler_parser {
     public:
         AstArena(builtin::ByteRegion region, builtin::OwnedValues<AstNode> initial,
             builtin::OwnedValues<ParseFrame> scratch, builtin::OwnedValues<ChildEdge> arguments,
-            builtin::OwnedValues<TypeSyntax> types,
-            builtin::OwnedValues<StatementSyntax> statements) : nodes(move(initial)), used(0), frames(move(scratch)),
-            frame_count(0), error(ArenaFailure::none), edges(move(arguments)), edge_count(0), type_nodes(move(types)),
-            type_count(0), statement_nodes(move(statements)), statement_count(0) {
+            builtin::OwnedValues<TypeSyntax> types, builtin::OwnedValues<SyntaxNode> statements) : nodes(move(initial)),
+            used(0), frames(move(scratch)), frame_count(0), error(ArenaFailure::none), edges(move(arguments)),
+            edge_count(0), type_nodes(move(types)), type_count(0), syntax_nodes(move(statements)), syntax_count(0) {
         }
         auto ok() const -> bool {
-            return nodes.ok() && frames.ok() && edges.ok() && type_nodes.ok() && statement_nodes.ok();
+            return nodes.ok() && frames.ok() && edges.ok() && type_nodes.ok() && syntax_nodes.ok();
         }
         auto size() const -> i64 {
             return used;
@@ -460,46 +480,46 @@ export namespace compiler_parser {
             error = ArenaFailure::none;
             return true;
         }
-        auto statements() const -> i64 {
-            return statement_count;
+        auto syntax_size() const -> i64 {
+            return syntax_count;
         }
-        auto statement_at(i64 index) const -> StatementSyntax {
+        auto syntax_at(i64 index) const -> SyntaxNode {
             i64 checked = index;
-            if (index < 0 || index >= statement_count) {
+            if (index < 0 || index >= syntax_count) {
                 checked = -1;
             }
-            return statement_nodes.at(checked);
+            return syntax_nodes.at(checked);
         }
-        auto append_statement(StatementSyntax value) -> i64 {
+        auto append_syntax(SyntaxNode value) -> i64 {
             error = ArenaFailure::invalid;
-            if (!statement_nodes.ok() || value.kind() == StatementKind::invalid || value.token() < 0 || value.end()
-                <= value.token() || value.previous() < -1 || value.previous() >= statement_count || value.expression()
-                < -1 || value.expression() >= used || value.target() < -1 || value.target() >= used || value.type() < -1
+            if (!syntax_nodes.ok() || value.kind() == SyntaxKind::invalid || value.token() < 0 || value.end()
+                <= value.token() || value.previous() < -1 || value.previous() >= syntax_count || value.expression() < -1
+                || value.expression() >= used || value.target() < -1 || value.target() >= used || value.type() < -1
                 || value.type() >= type_count || value.binding() < -1 || value.body() < -1 || value.body()
-                >= statement_count || value.other() < -1 || value.other() >= statement_count || value.mutable_binding()
-                < 0 || value.mutable_binding() > 1 || statement_count == 9223372036854775807) {
+                >= syntax_count || value.other() < -1 || value.other() >= syntax_count || value.borrow_site() < -1
+                || value.mutable_binding() < 0 || value.mutable_binding() > 1 || syntax_count == 9223372036854775807) {
                 return -1;
             }
-            if (statement_count == statement_nodes.size()) {
+            if (syntax_count == syntax_nodes.size()) {
                 i64 next = 8;
-                if (statement_count > 0) {
-                    if (statement_count > 4611686018427387903) {
-                        next = statement_count + 1;
+                if (syntax_count > 0) {
+                    if (syntax_count > 4611686018427387903) {
+                        next = syntax_count + 1;
                     } else {
-                        next = statement_count * 2;
+                        next = syntax_count * 2;
                     }
                 }
-                StatementSyntax empty = StatementSyntax(StatementKind::invalid, -1, -1, -1);
-                if (!statement_nodes.try_resize(next, empty)) {
+                SyntaxNode empty = SyntaxNode(SyntaxKind::invalid, -1, -1, -1);
+                if (!syntax_nodes.try_resize(next, empty)) {
                     error = ArenaFailure::allocation;
                     return -1;
                 }
             }
-            if (!statement_nodes.set(statement_count, value)) {
+            if (!syntax_nodes.set(syntax_count, value)) {
                 return -1;
             }
-            const i64 index = statement_count;
-            statement_count = statement_count + 1;
+            const i64 index = syntax_count;
+            syntax_count = syntax_count + 1;
             error = ArenaFailure::none;
             return index;
         }
@@ -689,8 +709,8 @@ export namespace compiler_parser {
         builtin::OwnedValues<ChildEdge> edges = region.try_allocate(0, argument);
         TypeSyntax type_node = TypeSyntax(TypeKind::invalid, -1, -1, -1, -1, -1);
         builtin::OwnedValues<TypeSyntax> types = region.try_allocate(0, type_node);
-        StatementSyntax statement = StatementSyntax(StatementKind::invalid, -1, -1, -1);
-        builtin::OwnedValues<StatementSyntax> statements = region.try_allocate(0, statement);
+        SyntaxNode statement = SyntaxNode(SyntaxKind::invalid, -1, -1, -1);
+        builtin::OwnedValues<SyntaxNode> statements = region.try_allocate(0, statement);
         AstArena arena = AstArena(region, move(storage), move(scratch), move(edges), move(types), move(statements));
         return move(arena);
     }

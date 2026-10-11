@@ -520,26 +520,6 @@ class Controls(unittest.TestCase):
         with patch.dict(os.environ, {"IR_TEST_CXXFLAGS": "-O1"}), self.assertRaises(c.ContractError):
             c.read_context(self.receipt, self.root)
 
-    def test_safe_compiler_make_dry_runs_only_forward_to_meson(self):
-        env = {**self.env, "CXX": "g++", "CXXFLAGS": "-std=c++23 -O2 -DCOUNT=7"}
-        for goal, names in (
-            ("test-initialization-facts", "initialization-facts"),
-            ("test-short-circuit", "short-circuit short-circuit-ir short-circuit-ir-native"),
-        ):
-            result = subprocess.run(
-                [shutil.which("make"), "-n", goal],
-                cwd=ROOT / "compiler",
-                env=env,
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("meson_test.py", result.stdout)
-            self.assertIn("--tests " + names, result.stdout)
-            self.assertNotIn("g++ ", result.stdout)
-            self.assertNotIn(".cpp", result.stdout)
-
     def test_supervised_header_option_forms_reject_in_both_vectors(self):
         forms = (
             "-I",

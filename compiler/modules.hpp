@@ -2,6 +2,7 @@
 #include "host_sources.hpp"
 #include "lexer.hpp"
 #include "parser.hpp"
+#include "services.hpp"
 #include "templates.hpp"
 #include <filesystem>
 #include <fstream>

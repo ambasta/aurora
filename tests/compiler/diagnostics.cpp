@@ -36,20 +36,26 @@ void checkPositions() {
 }
 void checkParserRanges() {
     const auto original = aurora::lex("Box<i64>>", "closers.au");
-    aurora::Parser parser(original);
-    const auto type = parser.type();
-    require(type.isClass() && type.className == "Box" && type.templateArguments.size() == 1 &&
-                type.templateArguments[0].type == aurora::TypeKind::I64,
+    const aurora::hosted_parser::Cursor cursor{0, 0};
+    const auto parsed = aurora::parseHostedType(original, cursor);
+    require(parsed.type.isClass() && parsed.type.className == "Box" && parsed.type.templateArguments.size() == 1 &&
+                parsed.type.templateArguments[0].type == aurora::TypeKind::I64 && parsed.next.ordinal == 3 &&
+                parsed.next.half == 1 && cursor.ordinal == 0 && cursor.half == 0,
             "complete declaration type before residual closer");
-    require(parser.peek().text == ">" && parser.peek().span.begin.offset == 8 && parser.peek().span.end.offset == 9 &&
-                parser.peek().span.begin.column == 9 && parser.peek().line == 1 && parser.peek().span.begin.line == 1 &&
-                parser.peek().span.end.line == 1 && parser.peek().span.end.column == 10,
-            "virtual second template closer range");
+    try {
+        static_cast<void>(aurora::parseHostedField(original, cursor));
+        require(false, "expected residual closer rejection");
+    } catch (const aurora::Error &error) {
+        const auto &span = error.diagnostic.span;
+        require(error.diagnostic.code == aurora::DiagnosticCode::UnexpectedToken &&
+                    error.diagnostic.message == "expected identifier (found '>')" &&
+                    span.source == original[3].span.source && span.begin.offset == 8 && span.end.offset == 9 &&
+                    span.begin.column == 9 && span.begin.line == 1 && span.end.line == 1 && span.end.column == 10,
+                "virtual second template closer range");
+    }
     require(original[3].text == ">>" && original[3].span.begin.offset == 7 && original[3].span.end.offset == 9 &&
                 original[3].span.source->text == "Box<i64>>",
             "parser must not mutate retained lexical stream");
-    parser.need(">");
-    require(parser.peek().text == "<eof>", "second closer consumption");
     aurora::Parser qualified(aurora::lex("one :: two"));
     const auto name = qualified.qualifiedIdent();
     require(name.text == "one::two" && name.span.begin.offset == 0 && name.span.end.offset == 10,
