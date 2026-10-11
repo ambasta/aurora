@@ -72,11 +72,19 @@ consume this returned AST unchanged.
 
 The hosted build stages exact exported lexer/arena files under their module paths,
 then emits one parser/arena/lexer graph with `--local-symbols`; no overlapping
-lexer object, second scanner or source concatenation is used. The existing C++
-stage-0 seed remains able to build the graph. Compiler, source fixtures, formatter
-and optional LSP link the same graph and hosted owner runtime. Standalone lexer
-bootstrap regression remains separate. Focused parser/ABI and multi-stage corpus
-checks do not replace final integrated GCC 16 full/image/guest qualification.
+lexer object, second scanner or source concatenation is used. By default the C++
+stage-0 seed emits frontend A. Explicit paired predecessor path/digest options
+instead select a checked external compiler and omit the current seed target.
+Current C1 links A, emits a distinct frontend B, and current C2 links B with the
+same host C++ objects. The existing bootstrap test regenerates B through C1 and C
+through C2, requires exact assembly/raw/object equality, and checks regenerated B
+against the build-produced B consumed by C2. It compares current C1/C2 corpus
+behavior; predecessor compatibility is limited to emitting the current frontend.
+See the [source-build route](README.md#explicit-predecessor-bootstrap).
+Compiler, source fixtures, formatter and optional LSP link frontend A and the
+hosted owner runtime. Standalone lexer bootstrap regression remains separate.
+Focused parser/ABI and multi-stage corpus checks do not replace final integrated
+GCC 16 full/image/guest qualification.
 
 ### C++ expression parser retirement
 
@@ -86,14 +94,15 @@ context, including constructor initializers and nested expressions. Coverage mus
 include calls, qualified/member/index expressions, strings and arrays, construction,
 type-taking reflection calls and template arguments with exact `>`/`>>` ambiguity
 and diagnostic behavior. The hosted expression path now has this grammar;
-the C++ parser remains the separately selected seed/reference while the
-predecessor-bootstrap requirement below is open. This adds no language features.
+the C++ parser remains the default seed/reference until the explicit predecessor
+route is qualified and its reference fixtures migrate. This adds no language
+features.
 
 Removal requires direct no-fallback Aurora tests for each grammar family, exact
 AST/span and rejection parity, depth/allocation/ABI failure coverage, and the
 existing whole-corpus and multi-stage frontend reproducibility gates. First verify
-reproducible clean builds from a pinned, reviewed predecessor compiler or
-bootstrapped frontend; today's C++ stage 0 still emits the Aurora graph. Then delete the C++
+reproducible clean builds through the pinned, reviewed predecessor route above,
+including C1/C2 convergence with no current-seed dependency. Then delete the C++
 `expr`/`primary`/`postfix`/precedence implementation, expression-only template
 lookahead and fallback routing rather than retaining another production parser.
 Update the seed/reference tests to the new bootstrap boundary and rerun final

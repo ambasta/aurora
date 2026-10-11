@@ -623,9 +623,9 @@ test('hosted-lexer', python,
      args: ['-B', files('meson_lexer_inputs.py'), hosted_lexer_test, meson.project_source_root(), '--all'],
      depends: hosted_lexer_test, suite: ['full', 'dev', 'core', 'compiler'], env: oracle_env, timeout: 180)
 test('hosted-lexer-bootstrap', python,
-     args: ['-B', '-O', files('compiler/hosted_lexer_bootstrap.py'), aurorac_stage0, aurorac,
-            meson.project_source_root()],
-     depends: [aurorac_stage0, aurorac], suite: ['full', 'dev', 'core', 'compiler'],
+     args: ['-B', '-O', files('compiler/hosted_lexer_bootstrap.py'), aurorac, aurorac_stage2,
+            meson.project_source_root(), frontend_assembly[0], frontend_stage2_assembly[0]],
+     depends: [aurorac, aurorac_stage2], suite: ['full', 'dev', 'core', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 
 format_fixture = executable('format-fixture', 'compiler/format.cpp', dependencies: hosted_frontend,

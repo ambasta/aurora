@@ -22,6 +22,42 @@ Compiler-only testing uses the canonical Meson graph and is not root `full`.
 routes, selected-artifact identity, explicit pinned compatibility and merge gates.
 The optional [language server](lsp/README.md) has its own dependency and suite.
 
+### Explicit predecessor bootstrap
+
+Meson defaults to the current C++ seed. To select an external predecessor, set
+both `bootstrap_compiler` (an absolute executable path) and
+`bootstrap_compiler_sha256` (its lowercase SHA-256). Missing pairs, invalid paths
+or mismatched bytes reject; there is no fallback to the current seed. The driver
+checks the pin at setup and before each predecessor invocation, and Ninja tracks
+the selected executable as an input. The digest identifies executable bytes; it
+is not evidence of how those bytes were built.
+
+A source-build starting point is reviewed predecessor commit
+`bdf646f09d5e14c88124c4bc9e4f998beda16183`. In the same
+[pinned development environment](../docs/local-development.md), from the current
+checkout, use separate source/build directories:
+
+```sh
+git worktree add --detach build/predecessor-source bdf646f09d5e14c88124c4bc9e4f998beda16183
+meson setup build/predecessor-seed build/predecessor-source -Dkernel_images=false
+meson compile -C build/predecessor-seed -j 2 aurorac
+P=$(realpath build/predecessor-seed/aurorac)
+PIN=$(sha256sum "$P" | cut -d ' ' -f 1)
+meson setup build/predecessor . -Dkernel_images=false \
+  "-Dbootstrap_compiler=$P" "-Dbootstrap_compiler_sha256=$PIN"
+meson compile -C build/predecessor -j 2 aurorac aurorac-stage2
+meson test -C build/predecessor --no-rebuild --num-processes 1 \
+  hosted-lexer-bootstrap compiler-test-inventory
+```
+
+The predecessor emits frontend A for current compiler C1; C1 emits B for current
+compiler C2. The existing bootstrap test checks C1/C2 frontend assembly and object
+convergence, binds B to the object actually linked into C2, and compares current
+C1/C2 source-corpus diagnostics/output. It does not require an older predecessor
+to accept newer unrelated language features. No generated frontend or compiler
+binary is committed. This route leaves C++ declaration parsing, semantics, IR and
+backend responsibilities in both current compilers.
+
 ## Supported source
 
 - A file starts with `module name;` or `export module name;`; direct named imports
@@ -116,5 +152,5 @@ template and type-taking reflection expressions are parsed in Aurora, including
 both forms of constructor
 field initializer, and converted to the existing source AST through the private hosted adapter.
 The hosted path does not fall back to C++ for expressions. The separate C++
-seed/reference remains until a verified predecessor-bootstrap route permits
-retirement; this does not establish compiler self-hosting.
+seed/reference remains until predecessor qualification and reference-fixture
+migration permit retirement; this does not establish compiler self-hosting.

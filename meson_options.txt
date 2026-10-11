@@ -6,3 +6,7 @@ option('kernel_images', type: 'boolean', value: true,
        description: 'Build fixed freestanding kernel profiles; disable for hosted-only compiler/sanitizer work')
 option('kernel_compiler', type: 'string', value: '',
        description: 'Optional absolute prebuilt aurorac for kernel images; empty builds the native compiler')
+option('bootstrap_compiler', type: 'string', value: '',
+       description: 'Absolute predecessor aurorac path; requires bootstrap_compiler_sha256, otherwise use current C++ seed')
+option('bootstrap_compiler_sha256', type: 'string', value: '',
+       description: 'SHA-256 of selected predecessor executable; requires bootstrap_compiler')
