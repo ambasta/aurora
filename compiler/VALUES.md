@@ -191,8 +191,11 @@ new IR operation or copy-elision guarantee is introduced.
 
 `return make();` and `return object.copy();` use the same checked call lowering
 as a typed local initializer, with an unnamed, unbound destination whose explicit
-local identity is passed to `ReturnObject`. Method receivers remain complete
-named locals or the implicit receiver. Each result slot is fresh, pristine and
+local identity is passed to `ReturnObject`. Method receivers may be complete
+named locals, the implicit receiver, or one direct copied-class field of either.
+Private fields stay accessible only inside their declaring class; constness and
+parent/field liveness checks are unchanged. Owning-class field receivers remain
+outside this direct-return convenience. Each result slot is fresh, pristine and
 disjoint from receiver/argument storage. Argument snapshots and synchronous span
 loans finish before the usual return cleanup; the result is then copied through
 the existing private ABI. This is source convenience, not copy elision.
@@ -390,11 +393,12 @@ Constructors still return the internal i64 status and have empty bodies; their
 explicit class arguments remain supported.
 
 A result call acquires receiver identity and evaluates explicit arguments before
-making the new result binding visible. Direct copied function/method calls and constructors can be returned as described above; direct receiver-field returns still require a complete named local. The separate
-[direct owned-field extension](VALUES.md) supports one child receiver
-and complete direct field replacement. Deeper chained mutation, source references
-to subobjects and implicit class-valued temporaries
-remain outside this subset.
+making the new result binding visible. Direct copied calls, including ordinary
+methods on one copied-class field, and constructors can be returned as described
+above. Direct field-value returns such as `return item;` still require a complete
+named local. The [direct owned-field extension](VALUES.md) also supports complete
+direct field replacement. Deeper chained mutation, source references to subobjects
+and implicit class-valued temporaries remain outside this subset.
 
 ### Internal calling convention
 

@@ -63,9 +63,7 @@ export namespace fs {
                 const XfsGeometryFacts zero = empty.facts();
                 return zero;
             }
-            const XfsGeometryReport geometry = _geometry;
-            const XfsGeometryFacts result = geometry.facts();
-            return result;
+            return _geometry.facts();
         }
     };
 

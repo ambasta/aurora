@@ -838,8 +838,11 @@ class SemanticAnalyzer {
                 receiverFieldIndex = member->index;
             }
         }
+        // A direct copied result uses the same pristine destination as a typed
+        // initializer. Admit one ordinary copied field receiver, not an owner or service.
         if (!bindResult && resultBinding && resultBinding->type.isClass() &&
-            (type.isService() || (receiverFieldIndex >= 0 && !type.isOwnedValues())))
+            (type.isService() ||
+             (receiverFieldIndex >= 0 && !type.isOwnedValues() && (!type.isClass() || owningClass(type)))))
             fail(value->token, "direct copied return requires an ordinary method on a complete receiver");
         auto requireLiveReceiver = [&] {
             if (receiver >= 0 && !locals[receiver].live)
