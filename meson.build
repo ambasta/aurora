@@ -17,7 +17,7 @@ if not fs.is_absolute(bootstrap_compiler_path) or not fs.is_file(bootstrap_compi
 endif
 bootstrap_compiler = find_program(bootstrap_compiler_path, native: true)
 bootstrap_depend_files = files(bootstrap_compiler_path)
-frontend_inputs = files('compiler/lexer.au', 'compiler/expression_arena.au', 'compiler/expression_parser.au',
+frontend_inputs = files('compiler/lexer.au', 'compiler/syntax_arena.au', 'compiler/parser.au',
                         'compiler/hosted_lexer.S', 'compiler/hosted_parser.S')
 frontend_assembly = custom_target(
   'hosted-frontend-assembly', input: frontend_inputs,

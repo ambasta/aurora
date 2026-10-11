@@ -1,6 +1,6 @@
-export module aurora.compiler.expression_parser;
+export module aurora.compiler.parser;
 import aurora.compiler.lexer;
-import aurora.compiler.expression_arena;
+import aurora.compiler.syntax_arena;
 
 export namespace compiler_parser {
     // Copied bootstrap results contain indices and status, never owner storage.

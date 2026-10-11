@@ -55,7 +55,7 @@ void checkParserRanges() {
     require(name.text == "one::two" && name.span.begin.offset == 0 && name.span.end.offset == 10,
             "qualified name range");
     aurora::Parser expression(aurora::lex("one :: two(1);"));
-    const auto call = expression.statementExpression(aurora::hosted_parser::Stop::Semicolon);
+    const auto call = expression.statementExpression(aurora::hosted_parser::Stop::semicolon);
     require(call->token.text == "one::two" && call->token.span.begin.offset == 0 && call->token.span.end.offset == 10,
             "qualified expression name range");
     aurora::Parser module(aurora::lex("std . bytes"));

@@ -1,145 +1,33 @@
-# Aggregate tests enter the canonical incremental Meson graph. Explicit pinned
-# acceptance and focused legacy goals retain their separate routes.
-override .DEFAULT_GOAL := all
-ifneq ($(strip $(foreach name,MAKECMDGOALS CURDIR MAKEFILE_LIST,$(if $(filter command,$(origin $(name))),$(name)))),)
-$(error Make goal, directory, and makefile-list overrides are unsupported)
-endif
-override _AURORA_TEST_GOALS := $(filter test test-acceptance test-compiler test-image test-kernel test-division test-uefi-runtime test-terminal-event test-semantics test-semantics-stress test-unsigned test-uefi-span test-package-identity test-package-manifest test-package-graph test-kernel-budget-native test-round-robin test-console test-graphical-console test-ipc-transaction test-client-disposal test-uefi-ipc test-uefi-budget test-uefi-dispatch test-uefi-user-phases,$(MAKECMDGOALS))
-override _AURORA_DISPATCH :=
+# Convenience entrypoints. Meson owns the compiler and complete native test graph.
+.DEFAULT_GOAL := all
 
-# Export supplied controls before defaults are introduced in the inner graph.
-# In particular, default path aliases must not select a different compiler.
-override _AURORA_USER_CONTROLS := MESON_BUILD_DIR AURORA_BUILD_JOBS AURORA_TEST_JOBS CXX CXXFLAGS IR_TEST_CXXFLAGS IR_TEST_BUILD_PREFIX OUT AURORAC \
-    ACCEPTANCE_COMPILER ACCEPTANCE_COMPILER_SHA256 PACKAGE_IDENTITY_COMPILER \
-    PACKAGE_IDENTITY_COMPILER_SHA256 PACKAGE_IDENTITY_TEST_FLAGS PACKAGE_IDENTITY_CAP_MIB \
-    PACKAGE_MANIFEST_COMPILER PACKAGE_MANIFEST_COMPILER_SHA256 PACKAGE_MANIFEST_TEST_FLAGS \
-    PACKAGE_MANIFEST_CAP_MIB PACKAGE_GRAPH_COMPILER PACKAGE_GRAPH_COMPILER_SHA256 PACKAGE_GRAPH_TEST_FLAGS \
-    PACKAGE_GRAPH_CAP_MIB KERNEL_BUDGET_COMPILER KERNEL_BUDGET_COMPILER_SHA256 KERNEL_BUDGET_CAP_MIB ROUND_ROBIN_TEST_CAP_MIB \
-    IPC_TRANSACTION_COMPILER IPC_TRANSACTION_COMPILER_SHA256 IPC_TRANSACTION_CAP_MIB \
-    UTF8_TEST_FLAGS UTF8_LINES_TEST_FLAGS UTF8_LINES_COMPILER_SHA256 UTF8_LINES_ARTIFACT_PARENT \
-    UTF8_RANGE_TEST_FLAGS UTF8_RANGE_COMPILER_SHA256 UTF8_RANGE_ARTIFACT_PARENT XFS_GEOMETRY_TEST_FLAGS \
-    XFS_ROOT_TEST_FLAGS XFS_ROOT_API_TEST_FLAGS XFS_ROOT_REPO XFS_ROOT_FIXTURES XFS_ROOT_ARTIFACT_PARENT \
-    XFS_ROOT_COMPILER_SHA256 SANITIZE ASAN_OPTIONS UBSAN_OPTIONS
-# Raw user flags are data: reject Make expansion before export can evaluate them.
-# Diagnostics contain control names only. The Python policy validates full grammar.
-override define _AURORA_RAW_FLAG_NEWLINE
-
-
-endef
-override _AURORA_RAW_FLAG_CONTROLS := CXX CXXFLAGS IR_TEST_CXXFLAGS
-override _AURORA_BAD_RAW_FLAGS := $(foreach name,$(_AURORA_RAW_FLAG_CONTROLS),$(if $(filter undefined default,$(origin $(name))),,$(if $(findstring $$,$(value $(name))),$(name),$(if $(findstring `,$(value $(name))),$(name),$(if $(findstring %,$(subst $(_AURORA_RAW_FLAG_NEWLINE),%,$(value $(name)))),$(name))))))
-ifneq ($(strip $(_AURORA_BAD_RAW_FLAGS)),)
-$(error unsupported raw flag syntax in controls: $(_AURORA_BAD_RAW_FLAGS))
-endif
-
-# Inspect raw cap data before export can expand a Make expression. Never echo it.
-override _AURORA_CAP_CONTROLS := AURORA_BUILD_JOBS AURORA_TEST_JOBS PACKAGE_IDENTITY_CAP_MIB PACKAGE_MANIFEST_CAP_MIB PACKAGE_GRAPH_CAP_MIB KERNEL_BUDGET_CAP_MIB ROUND_ROBIN_TEST_CAP_MIB IPC_TRANSACTION_CAP_MIB
-override _AURORA_CAP_EMPTY :=
-override _AURORA_CAP_SPACE := $(_AURORA_CAP_EMPTY) $(_AURORA_CAP_EMPTY)
-override _AURORA_CAP_TAB := $(_AURORA_CAP_EMPTY)	$(_AURORA_CAP_EMPTY)
-override _AURORA_BAD_CAPS := $(foreach name,$(_AURORA_CAP_CONTROLS),$(if $(filter undefined default,$(origin $(name))),,$(if $(value $(name)),$(if $(subst 9,,$(subst 8,,$(subst 7,,$(subst 6,,$(subst 5,,$(subst 4,,$(subst 3,,$(subst 2,,$(subst 1,,$(subst 0,,$(subst $(_AURORA_CAP_TAB),x,$(subst $(_AURORA_CAP_SPACE),x,$(value $(name)))))))))))))),$(name)),$(name))))
-ifneq ($(strip $(_AURORA_BAD_CAPS)),)
-$(error cap overrides must be unsigned decimal integers; invalid controls: $(_AURORA_BAD_CAPS))
-endif
-
-$(foreach name,$(_AURORA_USER_CONTROLS),$(if $(filter undefined default,$(origin $(name))),,$(eval export $(name))))
-
-ifneq ($(strip $(_AURORA_TEST_GOALS) $(AURORA_TEST_CONTEXT)),)
-# These modes can skip a rejecting wrapper or turn a failure into success.
-override _AURORA_SHORT_MAKE_FLAGS := $(foreach name,MAKEFLAGS MFLAGS,$(if $(filter --%,$(firstword $($(name)))),,$(firstword $($(name)))))
-ifneq ($(strip $(foreach flag,i q t e,$(findstring $(flag),$(_AURORA_SHORT_MAKE_FLAGS)))),)
-$(error supervised tests do not support Make -i, -q, -t, or -e)
-endif
-ifneq ($(filter --eval% --file% --makefile% --old-file% --assume-old% --what-if% --new-file% --assume-new%,$(MAKEFLAGS) $(MFLAGS) $(GNUMAKEFLAGS)),)
-$(error supervised tests do not support Make recipe or dependency overrides)
-endif
-ifneq ($(strip $(MAKEFILES)),)
-$(error supervised tests do not support MAKEFILES)
-endif
-ifneq ($(words $(MAKEFILE_LIST)),1)
-$(error supervised tests require this Makefile without additional makefiles)
-endif
-ifneq ($(strip $(foreach name,MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEOVERRIDES MAKEFILES MAKE_COMMAND,$(if $(filter command,$(origin $(name))),$(name)))),)
-$(error supervised tests do not support command-line Make control overrides)
-endif
-ifneq ($(words $(SHELL)),1)
-$(error supervised tests require one standard SHELL executable)
-endif
-ifeq ($(filter /bin/sh /bin/bash /usr/bin/sh /usr/bin/bash,$(SHELL)),)
-$(error supervised tests require a standard sh or bash SHELL)
-endif
-ifneq ($(.SHELLFLAGS),-c)
-$(error supervised tests do not support custom .SHELLFLAGS)
-endif
-ifneq ($(words $(MAKE)),1)
-$(error supervised tests require one MAKE executable)
-endif
-ifeq ($(filter $(MAKE_COMMAND) make /usr/bin/make /bin/make,$(MAKE)),)
-$(error supervised tests do not support a custom MAKE command)
-endif
-ifeq ($(strip $(AURORA_TEST_CONTEXT)),)
-ifneq ($(words $(MAKECMDGOALS)),1)
-$(error invoke one compiler-consuming test goal at a time; mixed goals are unsupported)
-endif
-override _AURORA_DISPATCH := yes
-endif
-endif
-
-ifeq ($(_AURORA_DISPATCH),yes)
-.PHONY: $(_AURORA_TEST_GOALS)
-ifneq ($(filter test test-compiler,$(MAKECMDGOALS)),)
-$(MAKECMDGOALS):
-	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite $(if $(filter test-compiler,$@),compiler,full)
-else
-$(_AURORA_TEST_GOALS):
-	python3 -B scripts/compiler_contract.py run --repo-root "$(CURDIR)" --entry root --goal "$@"
-endif
-else
-# The validated receipt, not a boolean flag, authorizes the sealed inner graph.
-# Declare this prerequisite first, including on host-only aggregate prerequisites,
-# so context rejection happens before any workload creates artifacts.
-ifneq ($(strip $(AURORA_TEST_CONTEXT)),)
+# Image and standalone script outputs are shared; serialize shortcut execution.
 .NOTPARALLEL:
-export AURORA_TEST_CONTEXT AURORA_TEST_MODE AURORA_TEST_COMPILER AURORA_TEST_IDENTITY_ARGS
-export AURORAC OUT PACKAGE_IDENTITY_COMPILER PACKAGE_MANIFEST_COMPILER PACKAGE_GRAPH_COMPILER KERNEL_BUDGET_COMPILER IPC_TRANSACTION_COMPILER
-.PHONY: aurora-test-context
-all compiler kernel test-compiler test-image test-kernel test-semantics test-semantics-stress test-uefi \
-    test-acpi test-division test-pci test-unsigned test-uefi-runtime test-uefi-ipc test-uefi-budget \
-    test-uefi-dispatch test-uefi-user-phases test smoke smoke-fault smoke-page-fault smoke-scheduling \
-    smoke-uefi smoke-acpi smoke-division smoke-pci smoke-unsigned smoke-uefi-runtime smoke-uefi-ipc \
-    smoke-uefi-budget smoke-uefi-dispatch smoke-uefi-user-phases smoke-all test-storage-model \
-    test-nvme-queues smoke-nvme-prepare \
-    test-uefi-bar test-uefi-span smoke-uefi-bar smoke-uefi-span test-uefi-ivrs smoke-uefi-ivrs \
-    test-pin-ledger test-uefi-pins smoke-uefi-pins test-dormant-tables test-uefi-tables smoke-uefi-tables \
-    test-package-identity test-package-manifest test-package-graph test-kernel-budget-native test-boot \
-    test-boot-capacity smoke-boot-capacity test-emulator-clock test-compiler-contract test-round-robin test-ipc-transaction test-client-disposal test-terminal-event test-native-cap-contracts \
-    run run-uefi console console-uefi smoke-console smoke-console-uefi kernel-uefi test-console \
-    program-console-uefi smoke-program-console-uefi test-program-stream capture-framebuffer \
-    test-developer-commands test-inventory test-graphical-console test-graphical-paging \
-    smoke-graphical-console test-graphical-controls test-iommu-diagnostics test-artifact-budget: aurora-test-context
-aurora-test-context:
-	python3 -B scripts/compiler_contract.py check --repo-root "$(CURDIR)" --context "$$AURORA_TEST_CONTEXT"
-endif
-
-AURORAC ?= build/aurorac
-
-# Bootstrap commands share the image/output directory; serialize their execution.
-.NOTPARALLEL:
-.PHONY: all compiler kernel test test-compiler test-image test-kernel test-semantics test-semantics-stress smoke smoke-fault smoke-page-fault smoke-scheduling smoke-uefi test-uefi test-acpi test-division smoke-acpi smoke-division test-pci test-unsigned smoke-pci smoke-unsigned test-uefi-runtime smoke-uefi-runtime test-uefi-ipc smoke-uefi-ipc test-uefi-budget smoke-uefi-budget test-uefi-dispatch smoke-uefi-dispatch test-uefi-user-phases smoke-uefi-user-phases smoke-all
-
-ifeq ($(strip $(AURORA_TEST_CONTEXT)),)
-all:
-	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --kernel bios --publish-compiler
-else
-all: compiler kernel
-endif
-
-# Developer shortcuts reuse the existing build and validated smoke mechanisms.
-# Export these selectors so both environment and make NAME=value syntax work.
 export QEMU QEMU_DATA OVMF OVMF_CODE OVMF_VARS OVMF_DIR UEFI_LD
 export EVENT_TOOL_PREFIX EVENT_BUILD_RECEIPT EVENT_CODE EVENT_VARS EVENT_DATA EVENT_ESP_DIR EVENT_OUTPUT_PARENT MTOOLS_DIR
 export AURORA_BAR_FIRMWARE AURORA_BAR_COVERAGE AURORA_BAR_RECEIPTS AURORA_NVME_RECEIPTS
-.PHONY: smoke-iommu-event smoke-graphical-console capture-framebuffer help run run-uefi console console-uefi smoke-console smoke-console-uefi kernel-uefi test-developer-commands program-console-uefi smoke-program-console-uefi test-program-stream
+export CLEAN_PATHS
+
+.PHONY: all compiler kernel kernel-uefi test test-compiler
+all:
+	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --kernel bios --publish-compiler
+
+compiler:
+	$(MAKE) -C compiler
+
+kernel:
+	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --kernel bios
+
+kernel-uefi:
+	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --kernel uefi
+
+test:
+	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite full
+
+test-compiler:
+	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite compiler
+
+.PHONY: help
 help:
 	@printf '%s\n' \
 	  'make                  Build the compiler and BIOS kernel image' \
@@ -168,67 +56,67 @@ help:
 	  'Overrides: CXX, UEFI_LD, QEMU, QEMU_DATA, OVMF or OVMF_CODE/OVMF_VARS, OVMF_DIR.' \
 	  'See docs/local-development.md for dependencies, scripts and test scope.'
 
-# Cleanup does not select a compiler, configure a build, or run test gates.
-# Stop other work first. Default selections are build/meson and build/meson-compiler; scratch requires explicit paths.
-export CLEAN_PATHS
-.PHONY: clean clean-dry-run clean-scratch clean-scratch-dry-run test-clean
+.PHONY: clean clean-dry-run
 clean clean-dry-run:
 	python3 -B scripts/clean.py $(if $(filter clean-dry-run,$@),--dry-run,)
 
+.PHONY: clean-scratch clean-scratch-dry-run
 clean-scratch clean-scratch-dry-run:
 	python3 -B scripts/clean.py --scratch $(if $(filter clean-scratch-dry-run,$@),--dry-run,)
 
-test: test-clean
-
+.PHONY: test-clean
 test-clean:
 	python3 -B tests/test_clean.py
 
+.PHONY: run
 run:
 	./scripts/kernel-run.sh bios
 
+.PHONY: run-uefi
 run-uefi:
 	./scripts/kernel-run.sh uefi
 
+.PHONY: console
 console:
 	./scripts/kernel-console.sh
 
+.PHONY: console-uefi
 console-uefi:
 	./scripts/kernel-uefi-console.sh
 
+.PHONY: program-console-uefi
 program-console-uefi:
 	./scripts/kernel-program-console.sh
 
+.PHONY: smoke-program-console-uefi
 smoke-program-console-uefi:
 	./scripts/kernel-program-console-smoke.sh
 
+.PHONY: smoke-iommu-event
 smoke-iommu-event:
 	./scripts/kernel-run.sh iommu-event --smoke
 
+.PHONY: smoke-graphical-console
 smoke-graphical-console:
 	./scripts/kernel-run.sh graphical-console --smoke
 
+.PHONY: capture-framebuffer
 capture-framebuffer:
 	./scripts/kernel-run.sh framebuffer
 
+.PHONY: test-program-stream
 test-program-stream:
 	./scripts/kernel-program-tests.sh
 
-test: test-program-stream
-
+.PHONY: smoke-console
 smoke-console:
 	./scripts/kernel-console-smoke.sh bios
 
+.PHONY: smoke-console-uefi
 smoke-console-uefi:
 	./scripts/kernel-console-smoke.sh uefi
 
-kernel-uefi:
-ifeq ($(strip $(AURORA_TEST_CONTEXT)),)
-	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --kernel uefi
-else
-	./scripts/kernel-uefi-build.sh
-endif
-
-# Synthetic shortcut checks also run in the native aggregate.
+.PHONY: test-developer-commands
 test-developer-commands:
 	python3 -B tests/kernel-graphical-image-policy.py
 	python3 -B -O tests/kernel-graphical-image-policy.py
@@ -245,120 +133,75 @@ test-developer-commands:
 	python3 -B tests/kernel-uefi-bar-runner.py
 	python3 -B -O tests/kernel-uefi-bar-runner.py
 
-ifneq ($(strip $(AURORA_TEST_CONTEXT)),)
-# The supervisor owns the selected compiler; never rebuild it here.
-compiler: aurora-test-context
-else
-compiler:
-	$(MAKE) -C compiler
-endif
-
-ifeq ($(strip $(AURORA_TEST_CONTEXT)),)
-kernel:
-	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --kernel bios
-else
-kernel: compiler
-	./scripts/kernel-build.sh
-endif
-
-test-compiler: compiler
-	$(MAKE) -C compiler test
-
-test-image: kernel
-	python3 tests/kernel-image.py
-
-test-kernel:
-	./scripts/kernel-tests.sh
-
-test-semantics: compiler
-	python3 tests/semantics/test_runner.py
-	python3 tests/semantics/run.py "$(AURORAC)"
-
-test-semantics-stress: compiler
-	python3 tests/semantics/run.py "$(AURORAC)" --seed 404 --cases 1024
-
+.PHONY: test-uefi
 test-uefi:
 	./scripts/kernel-uefi-tests.sh
 
+.PHONY: test-acpi
 test-acpi:
 	./scripts/kernel-acpi-tests.sh
 
-test-division:
-	./scripts/kernel-division-tests.sh
-
+.PHONY: test-pci
 test-pci:
 	./scripts/kernel-pci-tests.sh
 
-test-unsigned:
-	./scripts/kernel-unsigned-tests.sh
-
-test-uefi-runtime:
-	./scripts/kernel-uefi-runtime-tests.sh
-
-test-uefi-ipc:
-	./scripts/kernel-uefi-ipc-tests.sh
-
-test-uefi-budget:
-	./scripts/kernel-uefi-budget-tests.sh
-
-test-uefi-dispatch:
-	./scripts/kernel-uefi-dispatch-tests.sh
-
-test-uefi-user-phases:
-	./scripts/kernel-uefi-user-phases-tests.sh
-
-test: test-console test-round-robin test-dormant-tables test-uefi-tables test-pin-ledger test-uefi-pins \
-    test-storage-model test-compiler test-image test-kernel test-uefi test-acpi test-division test-pci \
-    test-unsigned test-uefi-runtime test-uefi-ipc test-uefi-budget test-uefi-dispatch test-uefi-user-phases \
-    test-nvme-queues test-uefi-bar test-uefi-span test-uefi-ivrs test-semantics
-
-.PHONY: test-console
-test-console: compiler
-	AURORAC="$(AURORAC)" ./scripts/kernel-console-tests.sh
-
-# QEMU is intentionally a separate acceptance gate, never silently skipped.
+.PHONY: smoke
 smoke:
 	./scripts/kernel-smoke.sh
 
+.PHONY: smoke-fault
 smoke-fault:
 	./scripts/kernel-smoke.sh --fault
 
+.PHONY: smoke-page-fault
 smoke-page-fault:
 	./scripts/kernel-smoke.sh --page-fault
 
+.PHONY: smoke-scheduling
 smoke-scheduling:
 	./scripts/kernel-scheduling-smoke.sh
 
+.PHONY: smoke-uefi
 smoke-uefi:
 	./scripts/kernel-uefi-all.sh
 
+.PHONY: smoke-acpi
 smoke-acpi:
 	./scripts/kernel-acpi-all.sh
 
+.PHONY: smoke-division
 smoke-division:
 	./scripts/kernel-division-smoke.sh
 
+.PHONY: smoke-pci
 smoke-pci:
 	./scripts/kernel-pci-all.sh
 
+.PHONY: smoke-unsigned
 smoke-unsigned:
 	./scripts/kernel-unsigned-smoke.sh
 
+.PHONY: smoke-uefi-runtime
 smoke-uefi-runtime:
 	./scripts/kernel-uefi-runtime-all.sh
 
+.PHONY: smoke-uefi-ipc
 smoke-uefi-ipc:
 	./scripts/kernel-uefi-ipc-all.sh
 
+.PHONY: smoke-uefi-budget
 smoke-uefi-budget:
 	./scripts/kernel-uefi-budget-all.sh
 
+.PHONY: smoke-uefi-dispatch
 smoke-uefi-dispatch:
 	./scripts/kernel-uefi-dispatch-all.sh
 
+.PHONY: smoke-uefi-user-phases
 smoke-uefi-user-phases:
 	./scripts/kernel-uefi-user-phases-all.sh
 
+.PHONY: smoke-all
 smoke-all:
 	./scripts/kernel-uefi-tables-all.sh
 	./scripts/kernel-run.sh ivrs --smoke
@@ -380,7 +223,6 @@ smoke-all:
 	./scripts/kernel-console-smoke.sh bios
 	./scripts/kernel-console-smoke.sh uefi
 
-
 .PHONY: test-storage-model
 test-storage-model:
 	python3 storage/design/model/test_durability.py
@@ -390,226 +232,121 @@ test-storage-model:
 	python3 storage/design/model/test_traceability.py
 	python3 -O storage/design/model/test_traceability.py
 
-.PHONY: test-uefi-bar test-uefi-span smoke-uefi-bar smoke-uefi-span test-nvme-queues smoke-nvme-prepare
+.PHONY: test-nvme-queues
 test-nvme-queues:
 	./scripts/kernel-nvme-queue-tests.sh
 
+.PHONY: smoke-nvme-prepare
 smoke-nvme-prepare:
 	@if [ -z "$${AURORA_NVME_RECEIPTS:-}" ]; then \
 	    printf '%s\n' 'BLOCKED: Set AURORA_NVME_RECEIPTS to a fresh preparation receipt directory' >&2; exit 2; fi
 	./scripts/kernel-run.sh bar-prepare --smoke \
 	    --output "$${AURORA_NVME_RECEIPTS}"
 
+.PHONY: test-uefi-bar
 test-uefi-bar:
 	./scripts/kernel-uefi-bar-tests.sh
 
-test-uefi-span:
-	./scripts/kernel-uefi-span-tests.sh
-
+.PHONY: smoke-uefi-bar
 smoke-uefi-bar:
 	./scripts/kernel-run.sh bar --smoke
 
+.PHONY: smoke-uefi-span
 smoke-uefi-span:
 	./scripts/kernel-uefi-span-all.sh
 
-.PHONY: test-uefi-ivrs smoke-uefi-ivrs
+.PHONY: test-uefi-ivrs
 test-uefi-ivrs:
 	./scripts/kernel-uefi-ivrs-tests.sh
 
+.PHONY: smoke-uefi-ivrs
 smoke-uefi-ivrs:
 	./scripts/kernel-run.sh ivrs --smoke
 
-.PHONY: test-pin-ledger test-uefi-pins smoke-uefi-pins
+.PHONY: test-pin-ledger
 test-pin-ledger:
 	./scripts/kernel-pin-tests.sh
 
+.PHONY: test-uefi-pins
 test-uefi-pins:
 	./scripts/kernel-uefi-pin-tests.sh
 
+.PHONY: smoke-uefi-pins
 smoke-uefi-pins:
 	./scripts/kernel-uefi-pin-all.sh
 
-.PHONY: test-dormant-tables test-uefi-tables smoke-uefi-tables
+.PHONY: test-dormant-tables
 test-dormant-tables:
 	./scripts/kernel-dormant-tests.sh
 
+.PHONY: test-uefi-tables
 test-uefi-tables:
 	./scripts/kernel-uefi-tables-tests.sh
 
+.PHONY: smoke-uefi-tables
 smoke-uefi-tables:
 	./scripts/kernel-uefi-tables-all.sh
 
-# Bounded native metadata: use fresh-build provenance or an explicit external pin.
-PACKAGE_IDENTITY_COMPILER ?= build/aurorac
-PACKAGE_IDENTITY_COMPILER_SHA256 ?=
-PACKAGE_IDENTITY_TEST_FLAGS ?=
-PACKAGE_IDENTITY_CAP_MIB ?= 128
-# The inherited full regression build retains more than 128 MiB. Keep the
-# focused gate small while giving the aggregate an explicit bounded ceiling.
-test: PACKAGE_IDENTITY_CAP_MIB = 1024
-.PHONY: test-package-identity
-test-package-identity:
-	python3 -B -O tests/compiler/package_identity.py $(abspath $(PACKAGE_IDENTITY_COMPILER)) $(AURORA_TEST_IDENTITY_ARGS) --candidate-cap-mib "$(PACKAGE_IDENTITY_CAP_MIB)" $(PACKAGE_IDENTITY_TEST_FLAGS)
-
-test: test-package-identity
-
-# Versioned declarative metadata only; no resolver, installer or execution authority.
-PACKAGE_MANIFEST_COMPILER ?= build/aurorac
-PACKAGE_MANIFEST_COMPILER_SHA256 ?=
-PACKAGE_MANIFEST_TEST_FLAGS ?=
-PACKAGE_MANIFEST_CAP_MIB ?= 256
-test: PACKAGE_MANIFEST_CAP_MIB = 1024
-.PHONY: test-package-manifest
-test-package-manifest:
-	python3 -B -O tests/compiler/package_manifest.py $(abspath $(PACKAGE_MANIFEST_COMPILER)) $(AURORA_TEST_IDENTITY_ARGS) --candidate-cap-mib "$(PACKAGE_MANIFEST_CAP_MIB)" $(PACKAGE_MANIFEST_TEST_FLAGS)
-
-test: test-package-manifest
-
-# Bounded exact-manifest consistency and dependency-first ordering; metadata only.
-PACKAGE_GRAPH_COMPILER ?= build/aurorac
-PACKAGE_GRAPH_COMPILER_SHA256 ?=
-PACKAGE_GRAPH_TEST_FLAGS ?=
-PACKAGE_GRAPH_CAP_MIB ?= 256
-test: PACKAGE_GRAPH_CAP_MIB = 1024
-.PHONY: test-package-graph
-test-package-graph:
-	python3 -B -O tests/compiler/package_graph.py $(abspath $(PACKAGE_GRAPH_COMPILER)) $(AURORA_TEST_IDENTITY_ARGS) --candidate-cap-mib "$(PACKAGE_GRAPH_CAP_MIB)" $(PACKAGE_GRAPH_TEST_FLAGS)
-
-test: test-package-graph
-
-# Real UEFI interrupt-count next-state policy, compiled with the accepted language.
-KERNEL_BUDGET_COMPILER ?= build/aurorac
-KERNEL_BUDGET_COMPILER_SHA256 ?=
-KERNEL_BUDGET_CAP_MIB ?= 128
-test: KERNEL_BUDGET_CAP_MIB = 1024
-.PHONY: test-kernel-budget-native
-test-kernel-budget-native:
-	python3 -B -O tests/kernel-budget-native.py --compiler $(abspath $(KERNEL_BUDGET_COMPILER)) $(AURORA_TEST_IDENTITY_ARGS) --candidate-cap-mib "$(KERNEL_BUDGET_CAP_MIB)"
-
-test: test-kernel-budget-native
-
-ROUND_ROBIN_TEST_CAP_MIB ?= 128
-test: ROUND_ROBIN_TEST_CAP_MIB = 1024
-.PHONY: test-round-robin
-test-round-robin: compiler
-	ROUND_ROBIN_TEST_CAP_MIB="$(ROUND_ROBIN_TEST_CAP_MIB)" ./scripts/kernel-round-robin-tests.sh $(AURORA_TEST_IDENTITY_ARGS)
-
-# Host-toolchain boot-layout checks need no compiler build or emulator.
 .PHONY: test-boot
 test-boot:
 	python3 -B tests/kernel-boot-image.py
 	python3 -B -O tests/kernel-boot-image.py
 
-test: test-boot
-
-# Fixed BIOS single-read capacity and exact ELF/raw layout, including boundaries.
-.PHONY: test-boot-capacity smoke-boot-capacity
+.PHONY: test-boot-capacity
 test-boot-capacity:
 	python3 -B tests/kernel-boot-capacity.py
 	python3 -B -O tests/kernel-boot-capacity.py
 
-test: test-boot-capacity
-
+.PHONY: smoke-boot-capacity
 smoke-boot-capacity:
 	python3 -B tests/kernel-boot-capacity.py --qemu
 
-smoke-all: smoke-boot-capacity
-
-# Resource configuration only; this never substitutes for native behavioral gates.
 .PHONY: test-native-cap-contracts
 test-native-cap-contracts:
 	python3 -B tests/native-cap-contracts.py
 	python3 -B -O tests/native-cap-contracts.py
 
-test: test-native-cap-contracts
-
-# Synthetic provenance/dispatch controls; no Aurora/native qualification credit.
 .PHONY: test-compiler-contract
 test-compiler-contract:
 	python3 -B tests/test_compiler_contract.py
 	python3 -B -O tests/test_compiler_contract.py
 
-test: test-compiler-contract
-
-# Bounded operational IPC policy shares the immutable run-owned compiler.
-IPC_TRANSACTION_COMPILER ?= $(AURORAC)
-IPC_TRANSACTION_COMPILER_SHA256 ?=
-IPC_TRANSACTION_CAP_MIB ?= 128
-test: IPC_TRANSACTION_CAP_MIB = 1024
-.PHONY: test-ipc-transaction
-test-ipc-transaction: compiler
-	AURORAC="$(IPC_TRANSACTION_COMPILER)" IPC_TRANSACTION_CAP_MIB="$(IPC_TRANSACTION_CAP_MIB)" ./scripts/kernel-ipc-transaction-tests.sh $(AURORA_TEST_IDENTITY_ARGS)
-
-test: test-ipc-transaction
-
-# Bounded recovery-plan policy shares the immutable selected compiler. Its
-# 128 MiB focused artifact cap is fixed and has no coverage-reducing override.
-.PHONY: test-client-disposal
-test-client-disposal: compiler
-	python3 -B -O tests/kernel-client-disposal-native.py --compiler "$(AURORAC)" $(AURORA_TEST_IDENTITY_ARGS)
-
-test: test-client-disposal
-
-# Compiler-free clock argv contracts; never boot QEMU or select a compiler here.
 .PHONY: test-emulator-clock
 test-emulator-clock:
 	PYTHONDONTWRITEBYTECODE=1 python3 tests/kernel-emulator-clock.py
 	PYTHONDONTWRITEBYTECODE=1 python3 -O tests/kernel-emulator-clock.py
 
-test: test-emulator-clock
-
-# Static identities and authored byte/register mocks only; never launches QEMU.
 .PHONY: test-iommu-diagnostics
 test-iommu-diagnostics:
 	PYTHONDONTWRITEBYTECODE=1 python3 tests/iommu-diagnostics.py
 	PYTHONDONTWRITEBYTECODE=1 python3 -O tests/iommu-diagnostics.py
 
-test: test-iommu-diagnostics
-
-# Compiler-owned Aurora source formatter; focused checks, not native acceptance.
-.PHONY: formatter test-formatter test-lint
+.PHONY: formatter
 formatter:
 	$(MAKE) -C compiler formatter
+
+.PHONY: test-formatter
 test-formatter:
 	$(MAKE) -C compiler test-formatter
+
+.PHONY: test-lint
 test-lint:
 	$(MAKE) -C compiler test-lint
 
-.PHONY: test-terminal-event
-test-terminal-event: compiler
-	python3 -B -O tests/kernel-terminal-event-native.py --compiler "$(AURORAC)" $(AURORA_TEST_IDENTITY_ARGS)
-test: test-terminal-event
-
-# Hosted graphical coverage is distinct from linked-image and guest qualification.
-# The actual consumer shares the supervisor's immutable build-once compiler.
-.PHONY: test-graphical-console test-graphical-paging test-graphical-controls
-test-graphical-console: compiler test-graphical-paging test-graphical-controls
-	python3 -B -O tests/kernel-graphical-console.py --run "$(AURORAC)" $(AURORA_TEST_IDENTITY_ARGS)
-
-test-graphical-paging:
-	mkdir -p build
-	$(CXX) -std=c++23 -O1 -Wall -Wextra -Wpedantic -Werror -no-pie tests/kernel-graphical-paging.cpp -o build/kernel-graphical-paging-test
-	build/kernel-graphical-paging-test
-
+.PHONY: test-graphical-controls
 test-graphical-controls:
 	python3 -B tests/kernel-graphical-admission-controls.py
 	python3 -B -O tests/kernel-graphical-admission-controls.py
 	python3 -B tests/kernel-graphical-smoke.py
 	python3 -B -O tests/kernel-graphical-smoke.py
 
-test: test-graphical-console
-
 .PHONY: test-inventory
-test: test-inventory test-developer-commands
 test-inventory:
 	python3 -B tests/test-inventory.py
 
-# Compiler-free controls; retain complete scans before and after native commands.
 .PHONY: test-artifact-budget
 test-artifact-budget:
 	python3 -B tests/test_artifact_budget.py
 	python3 -B -O tests/test_artifact_budget.py
 
-test: test-artifact-budget
-
-endif # controlled outer dispatcher / original inner graph
+smoke-all: smoke-boot-capacity

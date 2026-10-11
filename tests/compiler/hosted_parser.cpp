@@ -177,20 +177,24 @@ aurora::Type namedType(std::string name, std::vector<aurora::TemplateArgument> a
     result.templateArguments = std::move(args);
     return result;
 }
-aurora::ExpressionPtr expectedTree(const std::vector<aurora::Token> &tokens, const Ast &spec) {
-    auto token = tokens.at(spec.first);
-    for (auto ordinal = spec.first + 1; ordinal <= spec.last; ++ordinal)
+// Compare the declarative expectation directly; never construct it with the
+// parser or the production AST constructors. Depth follows only the stated tree.
+int sameTree(const aurora::ExpressionPtr &actual, const std::vector<aurora::Token> &tokens, const Ast &expected) {
+    require(bool(actual), "expected expression is missing");
+    auto token = tokens.at(expected.first);
+    for (auto ordinal = expected.first + 1; ordinal <= expected.last; ++ordinal)
         token.text += tokens.at(ordinal).text;
-    token.span.end = tokens.at(spec.last).span.end;
-    auto result = std::make_shared<aurora::Expression>(spec.op, token);
-    result->fieldNames = spec.fields;
-    result->templateArguments = spec.types;
-    result->reflectedType = spec.reflected;
-    for (const auto &child : spec.args) {
-        result->args.push_back(expectedTree(tokens, child));
-        result->depth = std::max(result->depth, result->args.back()->depth + 1);
-    }
-    return result;
+    token.span.end = tokens.at(expected.last).span.end;
+    require(actual->op == expected.op && actual->args.size() == expected.args.size() &&
+                actual->fieldNames == expected.fields && actual->templateArguments == expected.types &&
+                actual->reflectedType == expected.reflected,
+            "expression shape/spelling differs at " + actual->op + ":" + actual->token.text);
+    sameToken(actual->token, token);
+    int depth = 1;
+    for (std::size_t index = 0; index < expected.args.size(); ++index)
+        depth = std::max(depth, sameTree(actual->args[index], tokens, expected.args[index]) + 1);
+    require(actual->depth == depth, "expression depth differs");
+    return depth;
 }
 // Body AST contracts compare every ordered statement field, including the
 // declaration binding span rather than inferring it from the initializer.
@@ -211,28 +215,47 @@ void sameStatements(const std::vector<aurora::StatementPtr> &actual,
         sameStatements(a->other, b->other);
     }
 }
-aurora::StatementPtr statement(const std::vector<aurora::Token> &tokens,
-                               std::size_t token,
-                               const std::string &kind,
-                               std::optional<Ast> expression = {}) {
-    auto value = std::make_shared<aurora::Statement>(tokens.at(token));
-    value->kind = kind;
-    if (expression)
-        value->expr = expectedTree(tokens, *expression);
-    return value;
+struct StatementAst {
+    std::size_t token;
+    std::string kind;
+    std::optional<Ast> expr = {};
+    std::vector<StatementAst> body = {}, other = {};
+    std::string name = {}, fieldName = {};
+    std::optional<Ast> target = {};
+    aurora::Type type = aurora::Type::I64;
+    bool mutableValue = false;
+    std::size_t binding = std::string::npos;
+};
+StatementAst local(std::size_t token, std::size_t binding, aurora::Type type, bool mutableValue, Ast expression) {
+    return {.token = token,
+            .kind = "let",
+            .expr = std::move(expression),
+            .type = std::move(type),
+            .mutableValue = mutableValue,
+            .binding = binding};
 }
-aurora::StatementPtr local(const std::vector<aurora::Token> &tokens,
-                           std::size_t token,
-                           std::size_t binding,
-                           aurora::Type type,
-                           bool mutableValue,
-                           Ast expression) {
-    auto value = statement(tokens, token, "let", std::move(expression));
-    value->name = tokens.at(binding).text;
-    value->bindingSpan = tokens.at(binding).span;
-    value->type = std::move(type);
-    value->mutableValue = mutableValue;
-    return value;
+void sameBody(const std::vector<aurora::StatementPtr> &actual,
+              const std::vector<aurora::Token> &tokens,
+              const std::vector<StatementAst> &expected) {
+    require(actual.size() == expected.size(), "statement list size/order differs");
+    for (std::size_t index = 0; index < expected.size(); ++index) {
+        const auto &a = actual[index];
+        const auto &b = expected[index];
+        const bool binding = b.binding != std::string::npos;
+        require(a && a->kind == b.kind && a->name == (binding ? tokens.at(b.binding).text : b.name) &&
+                    a->fieldName == b.fieldName && a->type == b.type && a->mutableValue == b.mutableValue,
+                "statement kind/binding/type/field/mutability differs");
+        sameToken(a->token, tokens.at(b.token));
+        sameSpan(a->bindingSpan, binding ? tokens.at(b.binding).span : aurora::SourceSpan{});
+        require(bool(a->expr) == bool(b.expr) && bool(a->target) == bool(b.target),
+                "statement expression presence differs");
+        if (b.expr)
+            sameTree(a->expr, tokens, *b.expr);
+        if (b.target)
+            sameTree(a->target, tokens, *b.target);
+        sameBody(a->body, tokens, b.body);
+        sameBody(a->other, tokens, b.other);
+    }
 }
 std::string fixtureKey(const std::vector<aurora::Token> &tokens) {
     std::string result;
@@ -326,7 +349,7 @@ void checkedProgram(const std::string &source, const std::vector<Ast> &expected)
         functionRoots(definition.methods, roots);
     require(roots.size() == expected.size(), "program expression-root count/order differs");
     for (std::size_t index = 0; index < roots.size(); ++index)
-        sameExpression(roots[index], expectedTree(tokens, expected[index]));
+        sameTree(roots[index], tokens, expected[index]);
 }
 void rejectedProgram(const std::string &prefix,
                      const std::string &expression,
@@ -361,7 +384,7 @@ Ast sum(std::size_t count, std::size_t first = 0) {
         result = binary(first + 2 * index - 1, std::move(result), number(first + 2 * index));
     return result;
 }
-void supported(const std::string &text, Stop stop = Stop::Semicolon) {
+void supported(const std::string &text, Stop stop = Stop::semicolon) {
     context = text;
     const auto tokens = aurora::lex(text, "supported.au");
     const auto found = expressionExpectations.find(fixtureKey(tokens));
@@ -369,13 +392,13 @@ void supported(const std::string &text, Stop stop = Stop::Semicolon) {
     std::size_t position = 0;
     const auto expression = aurora::parseHostedExpression(tokens, position, stop);
     require(bool(expression), "supported expression was not parsed");
-    sameExpression(expression, expectedTree(tokens, found->second.tree));
+    sameTree(expression, tokens, found->second.tree);
     require(position == found->second.next, "expression committed the wrong token ordinal");
     if (text == chain(100) + ";")
         require(nodes(expression) == 199 && expression->depth == 100, "100 terms did not yield 199 Aurora nodes");
     ++cases;
 }
-void rejected(const std::string &text, Stop stop = Stop::Semicolon) {
+void rejected(const std::string &text, Stop stop = Stop::semicolon) {
     context = text;
     const auto tokens = aurora::lex(text, "typed-rejection.au"), before = tokens;
     const auto found = errorExpectations.find(fixtureKey(tokens));
@@ -395,99 +418,71 @@ void rejected(const std::string &text, Stop stop = Stop::Semicolon) {
     ++cases;
 }
 
-template <typename Expected> void bodyFixture(const std::string &source, Expected expected) {
-    context = "explicit body AST " + source;
-    const auto tokens = aurora::lex(source, "body-contract.au"), before = tokens;
-    std::size_t position = 0;
-    const auto body = aurora::parseHostedBody(tokens, position);
-    sameStatements(body, expected(tokens));
-    require(position == tokens.size() - 1, "body did not consume its exact closing brace");
-    for (std::size_t index = 0; index < tokens.size(); ++index)
-        sameToken(tokens[index], before[index]);
-    ++cases;
-}
 void bodySyntax() {
-    using Body = std::vector<aurora::StatementPtr>;
-    bodyFixture("{}", [](const auto &) {
-        return Body{};
-    });
-    bodyFixture("{{}}", [](const auto &tokens) {
-        return Body{statement(tokens, 1, "block")};
-    });
-    bodyFixture("{i64 x=1;const u8 y=2u8;return x;}", [](const auto &tokens) {
-        return Body{local(tokens, 1, 2, aurora::Type::I64, true, number(4)),
-                    local(tokens, 6, 8, aurora::Type::U8, false, number(10)),
-                    statement(tokens, 12, "return", name(13))};
-    });
-    bodyFixture("{x=1;obj.field=2;a[0]=3;f();}", [](const auto &tokens) {
-        auto assign = statement(tokens, 1, "assign", number(3));
-        assign->name = "x";
-        auto field = statement(tokens, 5, "field_assign", number(9));
-        field->name = "obj";
-        field->fieldName = "field";
-        auto element = statement(tokens, 11, "index_assign", number(16));
-        element->target = expectedTree(tokens, index(name(11), number(13)));
-        return Body{assign, field, element, statement(tokens, 18, "expression", call(18))};
-    });
-    bodyFixture("{if(true){return 1;}else{while(false){return 2;}}}", [](const auto &tokens) {
-        auto branch = statement(tokens, 1, "if", tree("bool", 3));
-        branch->body = {statement(tokens, 6, "return", number(7))};
-        auto loop = statement(tokens, 12, "while", tree("bool", 14));
-        loop->body = {statement(tokens, 17, "return", number(18))};
-        branch->other = {loop};
-        return Body{branch};
-    });
-    bodyFixture("{static_assert(1);{return (2);}}", [](const auto &tokens) {
-        auto block = statement(tokens, 6, "block");
-        block->body = {statement(tokens, 7, "return", number(9))};
-        return Body{statement(tokens, 1, "static_assert", number(3)), block};
-    });
-    bodyFixture("{array<u8,2> bytes={1u8,2u8};return bytes[0];}", [](const auto &tokens) {
-        return Body{local(tokens,
-                          1,
-                          7,
-                          aurora::Type::array(aurora::TypeKind::U8, 2),
-                          true,
-                          tree("array_literal", 9, {number(10), number(12)})),
-                    statement(tokens, 15, "return", index(name(16), number(18)))};
-    });
-    bodyFixture("{Box<Box<i64>> value=Box<Box<i64>>{};return size_of(Box<Box<i64>>);}", [](const auto &tokens) {
-        const auto inner = namedArgument("Box", {aurora::TypeKind::I64});
-        const auto type = namedType("Box", {inner});
-        return Body{local(tokens, 1, 7, type, true, typed(construct(9, 9), {inner})),
-                    statement(tokens, 18, "return", reflected(19, type))};
-    });
-    bodyFixture("{1;if(true){2;}else{}3;while(false){}4;}", [](const auto &tokens) {
-        auto branch = statement(tokens, 3, "if", tree("bool", 5));
-        branch->body = {statement(tokens, 8, "expression", number(8))};
-        auto loop = statement(tokens, 16, "while", tree("bool", 18));
-        return Body{statement(tokens, 1, "expression", number(1)),
-                    branch,
-                    statement(tokens, 14, "expression", number(14)),
-                    loop,
-                    statement(tokens, 22, "expression", number(22))};
-    });
-    bodyFixture("{return values[indices[0]];}", [](const auto &tokens) {
-        return Body{statement(tokens, 1, "return", index(name(2), index(name(4), number(6))))};
-    });
-    bodyFixture("{\n const i64 binding = 1;\n return binding;\n}", [](const auto &tokens) {
-        return Body{local(tokens, 1, 3, aurora::Type::I64, false, number(5)), statement(tokens, 7, "return", name(8))};
-    });
-    // These spellings remain unresolved named types after const. In contrast,
-    // the same first-token control words cannot be reclassified as locals.
-    bodyFixture("{const return x=1;const if y=2;const while z=3;static_assert a=4;}", [](const auto &tokens) {
-        return Body{local(tokens, 1, 3, aurora::Type("return"), false, number(5)),
-                    local(tokens, 7, 9, aurora::Type("if"), false, number(11)),
-                    local(tokens, 13, 15, aurora::Type("while"), false, number(17)),
-                    local(tokens, 19, 20, aurora::Type("static_assert"), true, number(22))};
-    });
+    const auto inner = namedArgument("Box", {aurora::TypeKind::I64});
+    const auto box = namedType("Box", {inner});
+    const std::vector<std::pair<std::string, std::vector<StatementAst>>> fixtures{
+        {"{}", {}},
+        {"{{}}", {{1, "block"}}},
+        {"{i64 x=1;const u8 y=2u8;return x;}",
+         {local(1, 2, aurora::Type::I64, true, number(4)),
+          local(6, 8, aurora::Type::U8, false, number(10)),
+          {12, "return", name(13)}}},
+        {"{x=1;obj.field=2;a[0]=3;f();}",
+         {{.token = 1, .kind = "assign", .expr = number(3), .name = "x"},
+          {.token = 5, .kind = "field_assign", .expr = number(9), .name = "obj", .fieldName = "field"},
+          {.token = 11, .kind = "index_assign", .expr = number(16), .target = index(name(11), number(13))},
+          {18, "expression", call(18)}}},
+        {"{if(true){return 1;}else{while(false){return 2;}}}",
+         {{1,
+           "if",
+           tree("bool", 3),
+           {{6, "return", number(7)}},
+           {{12, "while", tree("bool", 14), {{17, "return", number(18)}}}}}}},
+        {"{static_assert(1);{return (2);}}",
+         {{1, "static_assert", number(3)}, {6, "block", {}, {{7, "return", number(9)}}}}},
+        {"{array<u8,2> bytes={1u8,2u8};return bytes[0];}",
+         {local(1,
+                7,
+                aurora::Type::array(aurora::TypeKind::U8, 2),
+                true,
+                tree("array_literal", 9, {number(10), number(12)})),
+          {15, "return", index(name(16), number(18))}}},
+        {"{Box<Box<i64>> value=Box<Box<i64>>{};return size_of(Box<Box<i64>>);}",
+         {local(1, 7, box, true, typed(construct(9, 9), {inner})), {18, "return", reflected(19, box)}}},
+        {"{1;if(true){2;}else{}3;while(false){}4;}",
+         {{1, "expression", number(1)},
+          {3, "if", tree("bool", 5), {{8, "expression", number(8)}}},
+          {14, "expression", number(14)},
+          {16, "while", tree("bool", 18)},
+          {22, "expression", number(22)}}},
+        {"{return values[indices[0]];}", {{1, "return", index(name(2), index(name(4), number(6)))}}},
+        {"{\n const i64 binding = 1;\n return binding;\n}",
+         {local(1, 3, aurora::Type::I64, false, number(5)), {7, "return", name(8)}}},
+        // These spellings remain unresolved named types after const. The same
+        // first-token control words cannot be reclassified as locals.
+        {"{const return x=1;const if y=2;const while z=3;static_assert a=4;}",
+         {local(1, 3, aurora::Type("return"), false, number(5)),
+          local(7, 9, aurora::Type("if"), false, number(11)),
+          local(13, 15, aurora::Type("while"), false, number(17)),
+          local(19, 20, aurora::Type("static_assert"), true, number(22))}}};
+    for (const auto &[source, expected] : fixtures) {
+        context = "explicit body AST " + source;
+        const auto tokens = aurora::lex(source, "body-contract.au"), before = tokens;
+        std::size_t position = 0;
+        sameBody(aurora::parseHostedBody(tokens, position), tokens, expected);
+        require(position == tokens.size() - 1, "body did not consume its exact closing brace");
+        for (std::size_t index = 0; index < tokens.size(); ++index)
+            sameToken(tokens[index], before[index]);
+        ++cases;
+    }
     // The root consumes exactly its own brace even when a second body follows.
     const auto tokens = aurora::lex("{} {return 1;}", "body-boundary.au");
     std::size_t position = 0;
     require(aurora::parseHostedBody(tokens, position).empty() && position == 2,
             "empty body consumed the following body");
     const auto second = aurora::parseHostedBody(tokens, position);
-    sameStatements(second, {statement(tokens, 3, "return", number(4))});
+    sameBody(second, tokens, {{3, "return", number(4)}});
     require(position == 7, "second body did not stop at EOF");
     ++cases;
     // Root block counts once. If/while wrappers must not halve the block limit.
@@ -539,34 +534,32 @@ void bodyContexts() {
         else
             captured.capacityParameters.push_back(tokens.at(10));
         captured.functionTemplate = function;
-        std::vector<aurora::StatementPtr> expected;
+        std::vector<StatementAst> expected;
         if (function) {
             expected = {
-                local(tokens,
-                      begin + 1,
+                local(begin + 1,
                       begin + 8,
                       namedType("Pair", {typeArgument, otherArgument}),
                       false,
                       typed(call(begin + 10, {name(begin + 17), name(begin + 19)}), {typeArgument, otherArgument})),
-                statement(tokens,
-                          begin + 22,
-                          "return",
-                          binary(begin + 27, reflected(begin + 23, parameter), reflected(begin + 28, otherParameter)))};
+                {begin + 22,
+                 "return",
+                 binary(begin + 27, reflected(begin + 23, parameter), reflected(begin + 28, otherParameter))}};
         } else {
-            expected = {local(tokens, begin + 1, begin + 7, dependentArray, true, tree("array_literal", begin + 9)),
-                        statement(tokens, begin + 12, "return", reflected(begin + 13, parameter))};
+            expected = {local(begin + 1, begin + 7, dependentArray, true, tree("array_literal", begin + 9)),
+                        {begin + 12, "return", reflected(begin + 13, parameter)}};
         }
         auto position = begin;
-        sameStatements(aurora::parseHostedBody(tokens, position, captured), expected);
+        sameBody(aurora::parseHostedBody(tokens, position, captured), tokens, expected);
         require(position == begin + aurora::lex(body).size() - 1, "context body consumed a declaration delimiter");
         const auto program = checkedProgram(tokens);
         if (function) {
             require(program.functionTemplates.size() == 1, "function-template body fixture was omitted");
-            sameStatements(program.functionTemplates.front().body, expected);
+            sameBody(program.functionTemplates.front().body, tokens, expected);
         } else {
             require(program.templates.size() == 1 && program.templates.front().methods.size() == 1,
                     "class-template body fixture was omitted");
-            sameStatements(program.templates.front().methods.front().body, expected);
+            sameBody(program.templates.front().methods.front().body, tokens, expected);
         }
         ++cases;
     }
@@ -840,13 +833,13 @@ void checkedRootProgram(const std::string &prefix,
                     program.classes[0].methods[0].initializers.size() == 1 &&
                     program.classes[0].methods[0].initializers[0].first.text == "value",
                 "constructor initializer declaration/order differs");
-        sameExpression(program.classes[0].methods[0].initializers[0].second, expectedTree(tokens, expected));
-        sameExpression(program.classes[0].methods[1].body.at(0)->expr, expectedTree(tokens, name(tokens.size() - 6)));
+        sameTree(program.classes[0].methods[0].initializers[0].second, tokens, expected);
+        sameTree(program.classes[0].methods[1].body.at(0)->expr, tokens, name(tokens.size() - 6));
     } else {
         require(program.functions.size() == 1 && program.functions[0].body.size() == 1 &&
                     program.functions[0].body[0]->kind == "return",
                 "return fixture statement inventory differs");
-        sameExpression(program.functions[0].body[0]->expr, expectedTree(tokens, expected));
+        sameTree(program.functions[0].body[0]->expr, tokens, expected);
     }
 }
 void checkedBracedProgram(const std::string &prefix, const std::string &contents, const std::string &suffix) {
@@ -873,15 +866,6 @@ void grammarExpectations() {
     const auto method = [](std::size_t token, std::vector<Ast> children) {
         return tree("method_call", token, std::move(children));
     };
-    for (const auto &text : {"1", "123u64", "255u8"})
-        pin(text, number(0));
-    for (const auto &text : {"false", "true"})
-        pin(text, tree("bool", 0));
-    for (const auto &text : {"name", "_value", "fn", "__au_name", "x"})
-        pin(text, name(0));
-    for (const auto &text : {"'x'", "'\\n'"})
-        pin(text, tree("byte", 0));
-    pin("-1 + ~2 * !false", binary(2, unary(0, number(1)), binary(5, unary(3, number(4)), unary(6, tree("bool", 7)))));
     auto precedence = binary(35, binary(33, binary(31, name(30), name(32)), name(34)), name(36));
     precedence = binary(29, binary(27, name(26), name(28)), precedence);
     precedence = binary(25, binary(23, name(22), name(24)), precedence);
@@ -889,167 +873,193 @@ void grammarExpectations() {
     precedence = binary(13, binary(11, name(10), name(12)), precedence);
     for (const std::size_t op : {9, 7, 5, 3, 1})
         precedence = binary(op, name(op - 1), precedence);
-    pin("a || b && c | d ^ e & f == g != h < i <= j > k >= l << m >> n + o - p * q / r % s", precedence);
-    pin("(a + b) * (c - d)", binary(5, binary(2, name(1), name(3)), binary(8, name(7), name(9))));
-    pin("(a)", name(1));
-    pin("1 + 2", binary(1, number(0), number(2)));
-    pin("a < b >> (c)", binary(1, name(0), binary(3, name(2), name(5))));
-    pin("true < x > (y)", binary(3, binary(1, tree("bool", 0), name(2)), name(5)));
-    pin("(a) < b > (c)", binary(5, binary(3, name(1), name(4)), name(7)));
-    for (const auto count : {100, 128})
-        pin(chain(count), sum(count));
-    pin(std::string(127, '(') + "1" + std::string(127, ')'), number(127));
     auto negatives = number(127);
     for (std::size_t token = 127; token-- > 0;)
         negatives = unary(token, negatives);
+
+    const auto deep = namedArgument("A", {namedArgument("B", {namedArgument("C", {namedArgument("D", {K::I64})})})});
+    const auto comparison = binary(3, binary(1, tree("bool", 0), name(2)), name(5));
+    const auto shiftComparison = binary(1, name(0), binary(3, name(2), name(5)));
+    const auto indexedArray = index(array(0, {number(1), number(3)}), number(6));
+    // Each independent source/tree pair is exercised directly and retained for
+    // the separate program-dispatch contracts below. Token ordinals and source spans stay explicit.
+    const std::vector<std::pair<std::string, Ast>> fixtures{
+        {"1", number(0)},
+        {"123u64", number(0)},
+        {"255u8", number(0)},
+        {"false", tree("bool", 0)},
+        {"true", tree("bool", 0)},
+        {"name", name(0)},
+        {"_value", name(0)},
+        {"fn", name(0)},
+        {"__au_name", name(0)},
+        {"x", name(0)},
+        {"'x'", tree("byte", 0)},
+        {"'\\n'", tree("byte", 0)},
+        {"-1 + ~2 * !false", binary(2, unary(0, number(1)), binary(5, unary(3, number(4)), unary(6, tree("bool", 7))))},
+        {"a || b && c | d ^ e & f == g != h < i <= j > k >= l << m >> n + o - p * q / r % s", precedence},
+        {"(a + b) * (c - d)", binary(5, binary(2, name(1), name(3)), binary(8, name(7), name(9)))},
+        {"(a)", name(1)},
+        {"1 + 2", binary(1, number(0), number(2))},
+        {"a < b >> (c)", shiftComparison},
+        {"true < x > (y)", comparison},
+        {"(a) < b > (c)", binary(5, binary(3, name(1), name(4)), name(7))},
+        {"f()", call(0)},
+        {"f(1, 2)", call(0, {number(2), number(4)})},
+        {"name.member", member(2, name(0))},
+        {"name.at(1)", method(2, {name(0), number(4)})},
+        {"one::two", name(0, 2)},
+        {"a[1]", index(name(0), number(2))},
+        {"f(g(1), h(2, 3)) + object.at(index + 1)",
+         binary(14,
+                call(0, {call(2, {number(4)}), call(7, {number(9), number(11)})}),
+                method(17, {name(15), binary(20, name(19), number(21))}))},
+        {"Box(42)", call(0, {number(2)})},
+        {"move(value)", call(0, {name(2)})},
+        {"one :: two(1, other.run()).field[2].at(3)",
+         method(18, {index(member(13, call(0, {number(4), method(8, {name(6)})}, 2)), number(15)), number(20)})},
+        {"((a)).field", member(6, name(2))},
+        {"(a + b)[(i)]", index(binary(2, name(1), name(3)), name(7))},
+        {"a[one::index(f(1))].method().field",
+         member(17, method(13, {index(name(0), call(2, {call(6, {number(8)})}, 4))}))},
+        {"builtin::borrow_bytes(value)", call(0, {name(4)}, 2)},
+        {"one::array(1)", call(0, {number(4)}, 2)},
+        {"object.size_of()", method(2, {name(0)})},
+        {"ns::size_of(i64)", call(0, {name(4)}, 2)},
+        {"-object.at(1) + f(2)", binary(7, unary(0, method(3, {name(1), number(5)})), call(8, {number(10)}))},
+        {"f(a[1], b.member)", call(0, {index(name(2), number(4)), member(9, name(7))})},
+        {"size_of(i64)", reflected(0, T::I64)},
+        {"type_id(array<u8,2>)", reflected(0, T::array(K::U8, 2))},
+        {"field_count(Box)", reflected(0, T("Box"))},
+        {"f(size_of(i64))", call(0, {reflected(2, T::I64)})},
+        {R"(f("text"))", call(0, {tree("byte_string", 2)})},
+        {R"(ns::f("", "é😀", "\0\xff"))",
+         call(0, {tree("byte_string", 4), tree("byte_string", 6), tree("byte_string", 8)}, 2)},
+        {R"(object.write("\"\\\n"))", method(2, {name(0), tree("byte_string", 4)})},
+        {R"("left" == "right")", binary(1, tree("byte_string", 0), tree("byte_string", 2))},
+        {R"(("text")[0])", index(tree("byte_string", 1), number(4))},
+        {"(x + 1) * 2", binary(5, binary(2, name(1), number(3)), number(6))},
+        {"-x + ns::value", binary(2, unary(0, name(1)), name(3, 5))},
+        {"ns::Mode::ready", name(0, 4)},
+        {"ns::make(x, a[2]).field", member(12, call(0, {name(4), index(name(6), number(8))}, 2))},
+        {"object.at(index + 1)", method(2, {name(0), binary(5, name(4), number(6))})},
+        {R"(f("a\0\xff", a[one::index(f(1))]))",
+         call(0, {tree("byte_string", 2), index(name(4), call(6, {call(10, {number(12)})}, 8))})},
+        {"{}", array(0)},
+        {"{1}", array(0, {number(1)})},
+        {"{1,2,3}", array(0, {number(1), number(3), number(5)})},
+        {"{1,2}", array(0, {number(1), number(3)})},
+        {"{{1,2},{3,4}}", array(0, {array(1, {number(2), number(4)}), array(7, {number(8), number(10)})})},
+        {"{f(), object.at(2), a[0]}",
+         array(0, {call(1), method(7, {name(5), number(9)}), index(name(12), number(14))})},
+        {"{Box{.value=1}, ns::Box{}, {}}",
+         array(0, {construct(1, 1, {"value"}, {number(6)}), construct(9, 11), array(15)})},
+        {"{Box{.value=type_id(array<u8,2>)}}",
+         array(0, {construct(1, 1, {"value"}, {reflected(6, T::array(K::U8, 2))})})},
+        {"{{}, {1, {2}}, f(3, {4,5})}",
+         array(0,
+               {array(1),
+                array(4, {number(5), array(7, {number(8)})}),
+                call(12, {number(14), array(16, {number(17), number(19)})})})},
+        {"{1,2}[0]", indexedArray},
+        {"({1,2}).field", member(8, array(1, {number(2), number(4)}))},
+        {"{}.size()", method(3, {array(0)})},
+        {"ns::Box{}", construct(0, 2)},
+        {"one :: two::Box{.last=3,.first=1,.middle=2}",
+         construct(0, 4, {"last", "first", "middle"}, {number(9), number(14), number(19)})},
+        {"Box{.first=f(1,{2}),.last=Other{.items={3,4}}}",
+         construct(
+             0,
+             0,
+             {"first", "last"},
+             {call(5, {number(7), array(9, {number(10)})}),
+              construct(17, 17, {"items"}, {array(22, {number(23), number(25)})})})},
+        {"Box{.value=1}.value", member(8, construct(0, 0, {"value"}, {number(5)}))},
+        {"Box{.items={1,2}}.items[0]",
+         index(member(12, construct(0, 0, {"items"}, {array(5, {number(6), number(8)})})), number(14))},
+        {"Box{.items={1,2}}.at({3,4}[0])",
+         method(12,
+                {construct(0, 0, {"items"}, {array(5, {number(6), number(8)})}),
+                 index(array(14, {number(15), number(17)}), number(20))})},
+        {"f({}, Box{.value=1}, {f(2),object.at(3)})",
+         call(0,
+              {array(2),
+               construct(5, 5, {"value"}, {number(10)}),
+               array(13, {call(14, {number(16)}), method(21, {name(19), number(23)})})})},
+        {R"(f("text", Box{.value=1}))", call(0, {tree("byte_string", 2), construct(4, 4, {"value"}, {number(9)})})},
+        {"{true < x > (y), a < b >> (c)}", array(0, {shifted(comparison, 1), shifted(shiftComparison, 9)})},
+        // No candidate closes before '}', so this remains a comparison/shift tree.
+        {"{1,f<T}>(0)", binary(7, array(0, {number(1), binary(4, name(3), name(5))}), number(9))},
+        {"Box{.first=true < x > (y),.last=a < b >> (c)}",
+         construct(0, 0, {"first", "last"}, {shifted(comparison, 5), shifted(shiftComparison, 16)})},
+        {"{Box{}, ns::array{}, object.size_of()}",
+         array(0, {construct(1, 1), construct(5, 7), method(13, {name(11)})})},
+        {"Box{.value={1,2}[0]}", construct(0, 0, {"value"}, {shifted(indexedArray, 5)})},
+        {"{1,size_of(i64)}", array(0, {number(1), reflected(3, T::I64)})},
+        {"Box{.first=1,.second=type_id(array<u8,2>)}",
+         construct(0, 0, {"first", "second"}, {number(5), reflected(10, T::array(K::U8, 2))})},
+        {"f({1,field_count(Box)})", call(0, {array(2, {number(3), reflected(5, T("Box"))})})},
+        {"{Box{.value=f(size_of(i64))}}", array(0, {construct(1, 1, {"value"}, {call(6, {reflected(8, T::I64)})})})},
+        {"f<i64>()", typed(call(0), {K::I64})},
+        {"f<i64>(1)", typed(call(0, {number(5)}), {K::I64})},
+        {"x<y<z>>(a)", typed(call(0, {name(7)}), {namedArgument("y", {namedArgument("z")})})},
+        {"f<a<b<c>>>(0)",
+         typed(call(0, {number(10)}), {namedArgument("a", {namedArgument("b", {namedArgument("c")})})})},
+        {"f<u64,u8>(1,2)", typed(call(0, {number(7), number(9)}), {K::U64, K::U8})},
+        {"ns::make<bool,64>(true)", typed(call(0, {tree("bool", 9)}, 2), {K::Bool, capacity(64)})},
+        {"f<Box<i64>>()", typed(call(0), {namedArgument("Box", {K::I64})})},
+        {"f<Pair<i64,u8>,Box<64>>(1)",
+         typed(call(0, {number(14)}), {namedArgument("Pair", {K::I64, K::U8}), namedArgument("Box", {capacity(64)})})},
+        {"ns :: make<Pair<i64, u8>>(1)", typed(call(0, {number(11)}, 2), {namedArgument("Pair", {K::I64, K::U8})})},
+        {"f<ns::array<u8,16>>(value)", typed(call(0, {name(11)}), {namedArgument("ns::array", {K::U8, capacity(16)})})},
+        {"one::two::Box<Pair<u8,16>,Other>{.last=2,.first=1}",
+         typed(construct(0, 4, {"last", "first"}, {number(19), number(24)}),
+               {namedArgument("Pair", {K::U8, capacity(16)}), namedArgument("Other")})},
+        {"f<i64>(type_id(Pair<Box<u8>,i64>)).member[0]",
+         index(member(19,
+                      typed(call(0, {reflected(5, namedType("Pair", {namedArgument("Box", {K::U8}), K::I64}))}),
+                            {K::I64})),
+               number(21))},
+        {"{f<i64>(1),size_of(array<u8,4096>),Box<u64>{.value=2}}",
+         array(0,
+               {typed(call(1, {number(6)}), {K::I64}),
+                reflected(9, T::array(K::U8, 4096)),
+                typed(construct(19, 19, {"value"}, {number(27)}), {K::U64})})},
+        {"Box<i64>{.value=field_count(Other)}.value",
+         member(14, typed(construct(0, 0, {"value"}, {reflected(8, T("Other"))}), {K::I64}))},
+        {"size_of<i64>(u8)", typed(reflected(0, T::U8), {K::I64})},
+        {"type_id<8>(Box)", typed(reflected(0, T("Box")), {capacity(8)})},
+        {"f<a<b<c>>(0)", binary(1, name(0), typed(call(2, {number(9)}), {namedArgument("b", {namedArgument("c")})}))},
+        {"{f<i64>(1),2}", array(0, {typed(call(1, {number(6)}), {K::I64}), number(9)})},
+        {"Box{.first=f<a<b<c>>>(0),.second={x<y<z>>(a)}}",
+         construct(
+             0,
+             0,
+             {"first", "second"},
+             {typed(call(5, {number(15)}), {namedArgument("a", {namedArgument("b", {namedArgument("c")})})}),
+              array(21, {typed(call(22, {name(29)}), {namedArgument("y", {namedArgument("z")})})})})},
+        {"f({Box<i64>{.value=1},2})",
+         call(0, {array(2, {typed(construct(3, 3, {"value"}, {number(11)}), {K::I64}), number(14)})})},
+        {"{1,f<a<b<c>>(0)}",
+         array(0,
+               {number(1),
+                binary(4, name(3), typed(call(5, {number(12)}), {namedArgument("b", {namedArgument("c")})}))})},
+        {"f<A<B<C<D<i64>>>>>()", typed(call(0), {deep})},
+        {"size_of(A<B<C<D<i64>>>>)", reflected(0, namedType("A", deep.templateArguments))},
+        {"A<B<C<D<E<i64>>>>>{}",
+         typed(construct(0, 0),
+               {namedArgument("B", {namedArgument("C", {namedArgument("D", {namedArgument("E", {K::I64})})})})})}};
+    for (const auto &[source, expected] : fixtures) {
+        pin(source, expected);
+        supported(source + ";");
+    }
+    for (const auto count : {100, 128})
+        pin(chain(count), sum(count));
+    pin(std::string(127, '(') + "1" + std::string(127, ')'), number(127));
     pin(std::string(127, '-') + "1", negatives);
     pinExact("target = 2;", name(0), 1);
-    pin("f()", call(0));
-    pin("f(1, 2)", call(0, {number(2), number(4)}));
-    pin("name.member", member(2, name(0)));
-    pin("name.at(1)", method(2, {name(0), number(4)}));
-    pin("one::two", name(0, 2));
-    pin("a[1]", index(name(0), number(2)));
     pinExact("a[1] = 2;", index(name(0), number(2)), 4);
-    pin("f(g(1), h(2, 3)) + object.at(index + 1)",
-        binary(14,
-               call(0, {call(2, {number(4)}), call(7, {number(9), number(11)})}),
-               method(17, {name(15), binary(20, name(19), number(21))})));
-    pin("Box(42)", call(0, {number(2)}));
-    pin("move(value)", call(0, {name(2)}));
-    pin("one :: two(1, other.run()).field[2].at(3)",
-        method(18, {index(member(13, call(0, {number(4), method(8, {name(6)})}, 2)), number(15)), number(20)}));
-    pin("((a)).field", member(6, name(2)));
-    pin("(a + b)[(i)]", index(binary(2, name(1), name(3)), name(7)));
-    pin("a[one::index(f(1))].method().field",
-        member(17, method(13, {index(name(0), call(2, {call(6, {number(8)})}, 4))})));
-    pin("builtin::borrow_bytes(value)", call(0, {name(4)}, 2));
-    pin("one::array(1)", call(0, {number(4)}, 2));
-    pin("object.size_of()", method(2, {name(0)}));
-    pin("ns::size_of(i64)", call(0, {name(4)}, 2));
-    pin("-object.at(1) + f(2)", binary(7, unary(0, method(3, {name(1), number(5)})), call(8, {number(10)})));
-    pin("f(a[1], b.member)", call(0, {index(name(2), number(4)), member(9, name(7))}));
-    pin("size_of(i64)", reflected(0, T::I64));
-    pin("type_id(array<u8,2>)", reflected(0, T::array(K::U8, 2)));
-    pin("field_count(Box)", reflected(0, T("Box")));
-    pin("f(size_of(i64))", call(0, {reflected(2, T::I64)}));
-    pin(R"(f("text"))", call(0, {tree("byte_string", 2)}));
-    pin(R"(ns::f("", "é😀", "\0\xff"))",
-        call(0, {tree("byte_string", 4), tree("byte_string", 6), tree("byte_string", 8)}, 2));
-    pin(R"(object.write("\"\\\n"))", method(2, {name(0), tree("byte_string", 4)}));
-    pin(R"("left" == "right")", binary(1, tree("byte_string", 0), tree("byte_string", 2)));
-    pin(R"(("text")[0])", index(tree("byte_string", 1), number(4)));
-    pin("(x + 1) * 2", binary(5, binary(2, name(1), number(3)), number(6)));
-    pin("-x + ns::value", binary(2, unary(0, name(1)), name(3, 5)));
-    pin("ns::Mode::ready", name(0, 4));
-    pin("ns::make(x, a[2]).field", member(12, call(0, {name(4), index(name(6), number(8))}, 2)));
-    pin("object.at(index + 1)", method(2, {name(0), binary(5, name(4), number(6))}));
-    pin(R"(f("a\0\xff", a[one::index(f(1))]))",
-        call(0, {tree("byte_string", 2), index(name(4), call(6, {call(10, {number(12)})}, 8))}));
-    pin("{}", array(0));
-    pin("{1}", array(0, {number(1)}));
-    pin("{1,2,3}", array(0, {number(1), number(3), number(5)}));
-    pin("{1,2}", array(0, {number(1), number(3)}));
-    pin("{{1,2},{3,4}}", array(0, {array(1, {number(2), number(4)}), array(7, {number(8), number(10)})}));
-    pin("{f(), object.at(2), a[0]}", array(0, {call(1), method(7, {name(5), number(9)}), index(name(12), number(14))}));
-    pin("{Box{.value=1}, ns::Box{}, {}}",
-        array(0, {construct(1, 1, {"value"}, {number(6)}), construct(9, 11), array(15)}));
-    pin("{Box{.value=type_id(array<u8,2>)}}",
-        array(0, {construct(1, 1, {"value"}, {reflected(6, T::array(K::U8, 2))})}));
-    pin("{{}, {1, {2}}, f(3, {4,5})}",
-        array(0,
-              {array(1),
-               array(4, {number(5), array(7, {number(8)})}),
-               call(12, {number(14), array(16, {number(17), number(19)})})}));
-    pin("{1,2}[0]", index(array(0, {number(1), number(3)}), number(6)));
-    pinExact("{1,2}[0] = 3;", pinned("{1,2}[0]"), 8);
-    pin("({1,2}).field", member(8, array(1, {number(2), number(4)})));
-    pin("{}.size()", method(3, {array(0)}));
-    pin("ns::Box{}", construct(0, 2));
-    pin("one :: two::Box{.last=3,.first=1,.middle=2}",
-        construct(0, 4, {"last", "first", "middle"}, {number(9), number(14), number(19)}));
-    pin("Box{.first=f(1,{2}),.last=Other{.items={3,4}}}",
-        construct(0,
-                  0,
-                  {"first", "last"},
-                  {call(5, {number(7), array(9, {number(10)})}),
-                   construct(17, 17, {"items"}, {array(22, {number(23), number(25)})})}));
-    pin("Box{.value=1}.value", member(8, construct(0, 0, {"value"}, {number(5)})));
-    pin("Box{.items={1,2}}.items[0]",
-        index(member(12, construct(0, 0, {"items"}, {array(5, {number(6), number(8)})})), number(14)));
-    pin("Box{.items={1,2}}.at({3,4}[0])",
-        method(12,
-               {construct(0, 0, {"items"}, {array(5, {number(6), number(8)})}),
-                index(array(14, {number(15), number(17)}), number(20))}));
-    pin("f({}, Box{.value=1}, {f(2),object.at(3)})",
-        call(0,
-             {array(2),
-              construct(5, 5, {"value"}, {number(10)}),
-              array(13, {call(14, {number(16)}), method(21, {name(19), number(23)})})}));
-    pin(R"(f("text", Box{.value=1}))", call(0, {tree("byte_string", 2), construct(4, 4, {"value"}, {number(9)})}));
-    pin("{true < x > (y), a < b >> (c)}",
-        array(0, {shifted(pinned("true < x > (y)"), 1), shifted(pinned("a < b >> (c)"), 9)}));
-    // No candidate closes before '}', so these are comparison/shift trees.
-    pin("{1,f<T}>(0)", binary(7, array(0, {number(1), binary(4, name(3), name(5))}), number(9)));
-    pin("Box{.first=true < x > (y),.last=a < b >> (c)}",
-        construct(
-            0, 0, {"first", "last"}, {shifted(pinned("true < x > (y)"), 5), shifted(pinned("a < b >> (c)"), 16)}));
-    pin("{Box{}, ns::array{}, object.size_of()}", array(0, {construct(1, 1), construct(5, 7), method(13, {name(11)})}));
-    pin("Box{.value={1,2}[0]}", construct(0, 0, {"value"}, {shifted(pinned("{1,2}[0]"), 5)}));
-    pin("{1,size_of(i64)}", array(0, {number(1), reflected(3, T::I64)}));
-    pin("Box{.first=1,.second=type_id(array<u8,2>)}",
-        construct(0, 0, {"first", "second"}, {number(5), reflected(10, T::array(K::U8, 2))}));
-    pin("f({1,field_count(Box)})", call(0, {array(2, {number(3), reflected(5, T("Box"))})}));
-    pin("{Box{.value=f(size_of(i64))}}", array(0, {construct(1, 1, {"value"}, {call(6, {reflected(8, T::I64)})})}));
-    pin("f<i64>()", typed(call(0), {K::I64}));
-    pin("f<i64>(1)", typed(call(0, {number(5)}), {K::I64}));
-    pin("x<y<z>>(a)", typed(call(0, {name(7)}), {namedArgument("y", {namedArgument("z")})}));
-    pin("f<a<b<c>>>(0)",
-        typed(call(0, {number(10)}), {namedArgument("a", {namedArgument("b", {namedArgument("c")})})}));
-    pin("f<u64,u8>(1,2)", typed(call(0, {number(7), number(9)}), {K::U64, K::U8}));
-    pin("ns::make<bool,64>(true)", typed(call(0, {tree("bool", 9)}, 2), {K::Bool, capacity(64)}));
-    pin("f<Box<i64>>()", typed(call(0), {namedArgument("Box", {K::I64})}));
-    pin("f<Pair<i64,u8>,Box<64>>(1)",
-        typed(call(0, {number(14)}), {namedArgument("Pair", {K::I64, K::U8}), namedArgument("Box", {capacity(64)})}));
-    pin("ns :: make<Pair<i64, u8>>(1)", typed(call(0, {number(11)}, 2), {namedArgument("Pair", {K::I64, K::U8})}));
-    pin("f<ns::array<u8,16>>(value)", typed(call(0, {name(11)}), {namedArgument("ns::array", {K::U8, capacity(16)})}));
-    pin("one::two::Box<Pair<u8,16>,Other>{.last=2,.first=1}",
-        typed(construct(0, 4, {"last", "first"}, {number(19), number(24)}),
-              {namedArgument("Pair", {K::U8, capacity(16)}), namedArgument("Other")}));
-    pin("f<i64>(type_id(Pair<Box<u8>,i64>)).member[0]",
-        index(member(
-                  19,
-                  typed(call(0, {reflected(5, namedType("Pair", {namedArgument("Box", {K::U8}), K::I64}))}), {K::I64})),
-              number(21)));
-    pin("{f<i64>(1),size_of(array<u8,4096>),Box<u64>{.value=2}}",
-        array(0,
-              {typed(call(1, {number(6)}), {K::I64}),
-               reflected(9, T::array(K::U8, 4096)),
-               typed(construct(19, 19, {"value"}, {number(27)}), {K::U64})}));
-    pin("Box<i64>{.value=field_count(Other)}.value",
-        member(14, typed(construct(0, 0, {"value"}, {reflected(8, T("Other"))}), {K::I64})));
-    pin("size_of<i64>(u8)", typed(reflected(0, T::U8), {K::I64}));
-    pin("type_id<8>(Box)", typed(reflected(0, T("Box")), {capacity(8)}));
-    pin("f<a<b<c>>(0)", binary(1, name(0), typed(call(2, {number(9)}), {namedArgument("b", {namedArgument("c")})})));
-    pin("{f<i64>(1),2}", array(0, {typed(call(1, {number(6)}), {K::I64}), number(9)}));
-    pin("Box{.first=f<a<b<c>>>(0),.second={x<y<z>>(a)}}",
-        construct(0,
-                  0,
-                  {"first", "second"},
-                  {typed(call(5, {number(15)}), {namedArgument("a", {namedArgument("b", {namedArgument("c")})})}),
-                   array(21, {typed(call(22, {name(29)}), {namedArgument("y", {namedArgument("z")})})})}));
-    pin("f({Box<i64>{.value=1},2})",
-        call(0, {array(2, {typed(construct(3, 3, {"value"}, {number(11)}), {K::I64}), number(14)})}));
-    pin("{1,f<a<b<c>>(0)}",
-        array(
-            0,
-            {number(1), binary(4, name(3), typed(call(5, {number(12)}), {namedArgument("b", {namedArgument("c")})}))}));
-    const auto deep = namedArgument("A", {namedArgument("B", {namedArgument("C", {namedArgument("D", {K::I64})})})});
-    pin("f<A<B<C<D<i64>>>>>()", typed(call(0), {deep}));
-    pin("size_of(A<B<C<D<i64>>>>)", reflected(0, namedType("A", deep.templateArguments)));
-    pin("A<B<C<D<E<i64>>>>>{}",
-        typed(construct(0, 0),
-              {namedArgument("B", {namedArgument("C", {namedArgument("D", {namedArgument("E", {K::I64})})})})}));
+    pinExact("{1,2}[0] = 3;", indexedArray, 8);
 }
 
 std::size_t tokenAt(const std::vector<aurora::Token> &tokens, const aurora::Token &token) {
@@ -1069,7 +1079,7 @@ void hostedRoot(const std::vector<aurora::Token> &tokens,
     const auto expression = aurora::parseHostedExpression(tokens, position, stop, typeContext);
     require(bool(expression), "bootstrap dispatch omitted an expression");
     sameExpression(expression, expected);
-    require(tokens.at(position).text == (stop == Stop::CloseParenthesis ? ")" : ";"),
+    require(tokens.at(position).text == (stop == Stop::close_parenthesis ? ")" : ";"),
             "bootstrap expression committed the wrong delimiter");
     ++cases;
 }
@@ -1078,7 +1088,7 @@ void bootstrapStatements(const std::vector<aurora::Token> &tokens,
                          std::size_t &strings) {
     for (const auto &statement : statements) {
         if (statement->expr && statement->expr->op == "byte_string") {
-            hostedRoot(tokens, tokenAt(tokens, statement->expr->token), Stop::Semicolon, statement->expr);
+            hostedRoot(tokens, tokenAt(tokens, statement->expr->token), Stop::semicolon, statement->expr);
             ++strings;
         }
         bootstrapStatements(tokens, statement->body, strings);
@@ -1098,7 +1108,7 @@ void bootstrapFunctions(const std::vector<aurora::Token> &tokens,
                 continue;
             require(function.constructor && tokens.at(position).text == "(",
                     "constructor initializer has no parenthesized source root");
-            hostedRoot(tokens, position + 1, Stop::CloseParenthesis, expression);
+            hostedRoot(tokens, position + 1, Stop::close_parenthesis, expression);
             if (field.text == "field_token" &&
                 (function.token.text == "ParseFrame" || function.token.text == "ChildEdge"))
                 ++newInitializers;
@@ -1130,7 +1140,7 @@ void bootstrapSources(char **paths) {
     std::size_t initializers = 0, strings = 0, newInitializers = 0;
     std::size_t expectedInitializers = 0, expectedStrings = 0;
     const std::array<std::string, 3> modules{
-        "aurora.compiler.lexer", "aurora.compiler.expression_arena", "aurora.compiler.expression_parser"};
+        "aurora.compiler.lexer", "aurora.compiler.syntax_arena", "aurora.compiler.parser"};
     for (std::size_t i = 0; i < modules.size(); ++i) {
         context = paths[i];
         std::ifstream input(paths[i], std::ios::binary);
@@ -1181,7 +1191,7 @@ void hostedBraces(const std::vector<aurora::Token> &tokens,
     const auto start = tokenAt(tokens, field);
     const auto close = closingBrace(tokens, start + 1);
     auto position = start;
-    const auto expression = aurora::parseHostedExpression(tokens, position, Stop::ConstructorBraces);
+    const auto expression = aurora::parseHostedExpression(tokens, position, Stop::constructor_braces);
     require(bool(expression), "constructor-brace root silently fell back");
     sameExpression(expression, expected);
     sameToken(expression->token, field);
@@ -1201,7 +1211,7 @@ void consumerStatements(const std::vector<aurora::Token> &tokens,
             const bool construct = expression->op == "construct";
             const auto close = closingBrace(tokens, start + (construct ? 1 : 0));
             auto position = start;
-            const auto hosted = aurora::parseHostedExpression(tokens, position, Stop::Semicolon);
+            const auto hosted = aurora::parseHostedExpression(tokens, position, Stop::semicolon);
             require(bool(hosted), "actual consumer aggregate silently fell back");
             sameExpression(hosted, expression);
             require(position == close + 1 && tokens.at(position).text == ";",
@@ -1254,7 +1264,7 @@ void consumerReflection(const std::vector<aurora::Token> &tokens,
             const bool assertion = statement->token.text == "static_assert";
             require(assertion || statement->token.text == "return", "unexpected reflection consumer statement");
             const auto start = tokenAt(tokens, statement->token) + (assertion ? 2 : 1);
-            hostedRoot(tokens, start, assertion ? Stop::CloseParenthesis : Stop::Semicolon, statement->expr);
+            hostedRoot(tokens, start, assertion ? Stop::close_parenthesis : Stop::semicolon, statement->expr);
             ++roots;
             ++cases;
         }
@@ -1535,7 +1545,7 @@ void typedStatements(const std::vector<aurora::Token> &tokens,
     for (const auto &statement : statements) {
         if (containsTypedSyntax(statement->expr)) {
             auto start = tokenAt(tokens, statement->token);
-            Stop stop = Stop::Semicolon;
+            Stop stop = Stop::semicolon;
             if (statement->kind == "let") {
                 const auto binding = std::lower_bound(tokens.begin(),
                                                       tokens.end(),
@@ -1555,10 +1565,10 @@ void typedStatements(const std::vector<aurora::Token> &tokens,
                        statement->token.text == "while") {
                 require(tokens.at(start + 1).text == "(", "typed condition lost its opening delimiter");
                 start += 2;
-                stop = Stop::CloseParenthesis;
+                stop = Stop::close_parenthesis;
             } else if (statement->kind == "assign" || statement->kind == "field_assign" ||
                        statement->kind == "index_assign") {
-                const auto target = aurora::parseHostedExpression(tokens, start, Stop::Assignment, typeContext);
+                const auto target = aurora::parseHostedExpression(tokens, start, Stop::assignment, typeContext);
                 require(bool(target) && tokens.at(start).text == "=", "typed assignment target fell back");
                 if (statement->target)
                     sameExpression(target, statement->target);
@@ -1597,7 +1607,7 @@ void typedFunctions(const std::vector<aurora::Token> &tokens,
             const bool braces = tokens.at(start + 1).text == "{";
             auto position = braces ? start : start + 2;
             const auto hosted = aurora::parseHostedExpression(
-                tokens, position, braces ? Stop::ConstructorBraces : Stop::CloseParenthesis, typeContext);
+                tokens, position, braces ? Stop::constructor_braces : Stop::close_parenthesis, typeContext);
             require(bool(hosted), "typed constructor initializer silently fell back");
             sameExpression(hosted, expression);
             require(braces ? position == closingBrace(tokens, start + 1) + 1 : tokens.at(position).text == ")",
@@ -2198,14 +2208,14 @@ static_assert(sizeof(Words) == 40 && sizeof(GuardedWords<5>) == 56 && sizeof(Gua
               sizeof(EdgeWords) == 40 && sizeof(TypeWords) == 64 && sizeof(GuardedWords<8>) == 80 &&
               sizeof(ContextWords) == 56 && sizeof(GuardedWords<18>) == 160 && sizeof(StatementWords) == 88 &&
               sizeof(GuardedWords<11>) == 104);
-static_assert(sizeof(Words) == sizeof(aurora::hosted_abi::ParseResult) &&
-              sizeof(NodeWords) == sizeof(aurora::hosted_abi::Node) &&
-              sizeof(EdgeWords) == sizeof(aurora::hosted_abi::Edge) &&
-              sizeof(TypeWords) == sizeof(aurora::hosted_abi::TypeSyntax) &&
-              sizeof(StatementWords) == sizeof(aurora::hosted_abi::StatementSyntax) &&
+static_assert(sizeof(Words) == sizeof(aurora::hosted_abi::compiler_parser::ParseResult) &&
+              sizeof(NodeWords) == sizeof(aurora::hosted_abi::compiler_parser::AstNode) &&
+              sizeof(EdgeWords) == sizeof(aurora::hosted_abi::compiler_parser::ChildEdge) &&
+              sizeof(TypeWords) == sizeof(aurora::hosted_abi::compiler_parser::TypeSyntax) &&
+              sizeof(StatementWords) == sizeof(aurora::hosted_abi::compiler_parser::StatementSyntax) &&
               sizeof(std::array<std::int64_t, 18>) == sizeof(aurora::hosted_abi::ParserInput));
 static_assert(sizeof(ContextWords) ==
-              sizeof(aurora::hosted_abi::ParserInput) - offsetof(aurora::hosted_abi::ParserInput, type1Begin));
+              sizeof(aurora::hosted_abi::ParserInput) - offsetof(aurora::hosted_abi::ParserInput, context));
 class RawArena {
     aurora::hosted::bytes::Region region;
     // This storage is never copied or inspected as an owner descriptor. Aurora
@@ -2232,13 +2242,13 @@ public:
     RawArena(const RawArena &) = delete;
     RawArena &operator=(const RawArena &) = delete;
     void *data() {
-        return record.arena.data();
+        return record.arena.storage.data();
     }
     void guards() const {
         require(before == canary && after == canary, "arena write escaped its ABI extent");
     }
     Words parse(const std::string &source,
-                Stop stop = Stop::Semicolon,
+                Stop stop = Stop::semicolon,
                 std::int64_t offset = 0,
                 ContextWords typeContext = {}) {
         GuardedWords<18> input;
@@ -2265,9 +2275,9 @@ public:
         guards();
         require(output.value[2] == checked_hosted_parser_count(data()),
                 "reported arena count differs from real storage");
-        if (stop != Stop::Body)
+        if (stop != Stop::body)
             require(statements() == 0, "non-body profile acquired statement records");
-        if (stop == Stop::Type)
+        if (stop == Stop::type)
             require(output.value[2] == 0 && edges() == 0, "type-only profile acquired expression/edge records");
         return output.value;
     }
@@ -2326,21 +2336,21 @@ public:
     }
 };
 void rawBodies() {
-    static_assert(sizeof(StatementWords) == 88 && static_cast<std::int64_t>(Stop::Body) == 4);
-    static_assert(wire(StatementKind::Block) == 1 && wire(StatementKind::Local) == 2 &&
-                  wire(StatementKind::ReturnValue) == 3 && wire(StatementKind::StaticAssertion) == 4 &&
-                  wire(StatementKind::Conditional) == 5 && wire(StatementKind::Loop) == 6 &&
-                  wire(StatementKind::Expression) == 7 && wire(StatementKind::Assign) == 8 &&
-                  wire(StatementKind::FieldAssign) == 9 && wire(StatementKind::IndexAssign) == 10);
+    static_assert(sizeof(StatementWords) == 88 && static_cast<std::int64_t>(Stop::body) == 4);
+    static_assert(wire(StatementKind::block) == 1 && wire(StatementKind::local) == 2 &&
+                  wire(StatementKind::return_value) == 3 && wire(StatementKind::static_assertion) == 4 &&
+                  wire(StatementKind::conditional) == 5 && wire(StatementKind::loop) == 6 &&
+                  wire(StatementKind::expression) == 7 && wire(StatementKind::assign) == 8 &&
+                  wire(StatementKind::field_assign) == 9 && wire(StatementKind::index_assign) == 10);
     for (const bool empty : {false, true}) {
         const std::string source = empty ? "{} next" : "{i64 x=1;return x;} next";
         context = "raw complete body " + source;
         const auto tokens = aurora::lex(source);
         Allocations allocations;
         RawArena arena(allocations);
-        const auto result = arena.parse(source, Stop::Body);
+        const auto result = arena.parse(source, Stop::body);
         const std::int64_t end = empty ? 2 : 10;
-        require(result == Words{wire(Status::Success),
+        require(result == Words{wire(Status::success),
                                 empty ? 0 : 2,
                                 empty ? 0 : 2,
                                 end,
@@ -2381,8 +2391,8 @@ void rawBodies() {
         {
             Allocations allocations;
             RawArena arena(allocations);
-            const auto result = arena.parse(text, Stop::Body);
-            require(result == Words{wire(Status::Success),
+            const auto result = arena.parse(text, Stop::body);
+            require(result == Words{wire(Status::success),
                                     nested ? 127 : width,
                                     nested ? 0 : width,
                                     nested ? 256 : 2 * width + 2,
@@ -2417,8 +2427,8 @@ void rawBodies() {
             Allocations allocations;
             allocations.allowed = allowed;
             RawArena arena(allocations);
-            const auto result = arena.parse(text, Stop::Body);
-            require(result[0] == wire(Status::AllocationFailure) && result[1] == -1,
+            const auto result = arena.parse(text, Stop::body);
+            require(result[0] == wire(Status::allocation_failure) && result[1] == -1,
                     "body initial/growth failure did not fail closed");
             if (arena.statements() > 0)
                 require(arena.statement(0) == (nested ? StatementWords{1, 127, 129, -1, -1, -1, -1, -1, -1, -1, 0}
@@ -2431,7 +2441,7 @@ void rawBodies() {
         ++cases;
     }
 }
-void rawCase(const std::string &source, Status expected, Stop stop = Stop::Semicolon) {
+void rawCase(const std::string &source, Status expected, Stop stop = Stop::semicolon) {
     context = "raw ABI " + source;
     Allocations allocations;
     RawArena arena(allocations);
@@ -2454,15 +2464,15 @@ void byteStrings() {
         Allocations allocations;
         RawArena arena(allocations);
         const auto result = arena.parse(spelling + ";");
-        require(result == Words{wire(Status::Success), 0, 1, 1, static_cast<std::int64_t>(spelling.size())} &&
-                    arena.read(0) == NodeWords{wire(NodeKind::Literal), 0, -1, -1, 1, 0, 0} && arena.edges() == 0,
+        require(result == Words{wire(Status::success), 0, 1, 1, static_cast<std::int64_t>(spelling.size())} &&
+                    arena.read(0) == NodeWords{wire(NodeKind::literal), 0, -1, -1, 1, 0, 0} && arena.edges() == 0,
                 "byte string did not retain the exact single Literal node ABI/cursor");
         arena.finish();
         require(allocations.released == allocations.successful, "byte-string cleanup mismatch");
         ++cases;
         pin(spelling, tree("byte_string", 0));
         supported("// preceding trivia\r\n\t" + spelling + ";");
-        supported(spelling + ")", Stop::CloseParenthesis);
+        supported(spelling + ")", Stop::close_parenthesis);
         const auto source = "module strings; class Text { array<u8,512> bytes; public: Text():bytes(" + spelling +
                             "){} auto first() const->u8 {return bytes[0];} }; "
                             "auto f()->i64 {const array<u8,4096> bytes=" +
@@ -2471,12 +2481,10 @@ void byteStrings() {
         const auto program = checkedProgram(tokens);
         require(program.classes.size() == 1 && program.classes[0].methods.size() == 2 && program.functions.size() == 1,
                 "byte-string declaration inventory differs");
-        sameExpression(program.classes[0].methods[0].initializers.at(0).second,
-                       expectedTree(tokens, tree("byte_string", 22)));
-        sameExpression(program.classes[0].methods[1].body.at(0)->expr,
-                       expectedTree(tokens, index(name(35), number(37))));
-        sameExpression(program.functions[0].body.at(0)->expr, expectedTree(tokens, tree("byte_string", 59)));
-        sameExpression(program.functions[0].body.at(1)->expr, expectedTree(tokens, number(62)));
+        sameTree(program.classes[0].methods[0].initializers.at(0).second, tokens, tree("byte_string", 22));
+        sameTree(program.classes[0].methods[1].body.at(0)->expr, tokens, index(name(35), number(37)));
+        sameTree(program.functions[0].body.at(0)->expr, tokens, tree("byte_string", 59));
+        sameTree(program.functions[0].body.at(1)->expr, tokens, number(62));
     }
     for (const auto &expression : {R"(f("text");)",
                                    R"(ns::f("", "é😀", "\0\xff");)",
@@ -2498,7 +2506,7 @@ void constructors() {
                                    "object.at(index + 1)",
                                    R"(f("a\0\xff", a[one::index(f(1))]))",
                                    "true < x > (y)"}) {
-        supported(std::string(expression) + ")", Stop::CloseParenthesis);
+        supported(std::string(expression) + ")", Stop::close_parenthesis);
         checkedRootProgram(prefix, expression, suffix, true);
     }
     checkedProgram("export module constructors; namespace ns { class Pair { i64 first; i64 second; public: "
@@ -2513,8 +2521,8 @@ void constructors() {
     // Reflection and template roots must reach Aurora, including within an
     // otherwise ordinary call or parenthesized constructor initializer.
     for (const auto &expression : {"size_of(i64)", "type_id(array<u8,2>)", "field_count(Box)", "f(size_of(i64))"}) {
-        supported(std::string(expression) + ")", Stop::CloseParenthesis);
-        rawCase(std::string(expression) + ")", Status::Success, Stop::CloseParenthesis);
+        supported(std::string(expression) + ")", Stop::close_parenthesis);
+        rawCase(std::string(expression) + ")", Status::success, Stop::close_parenthesis);
         checkedRootProgram(prefix, expression, suffix, true);
     }
     for (const auto &expression : {"f<i64>(1)", "x<y<z>>(a)", "f<a<b<c>>>(0)"})
@@ -2560,10 +2568,8 @@ void constructorBraces(const std::string &contents) {
     expected.first = expected.last = 0;
     if (expected.args.empty())
         expected.op = "array_zero";
-    sameExpression(initializers[0].second,
-                   expectedTree(tokens, shifted(expected, tokenAt(tokens, initializers[0].first))));
-    sameExpression(initializers[1].second,
-                   expectedTree(tokens, tree("array_zero", tokenAt(tokens, initializers[1].first))));
+    sameTree(initializers[0].second, tokens, shifted(expected, tokenAt(tokens, initializers[0].first)));
+    sameTree(initializers[1].second, tokens, tree("array_zero", tokenAt(tokens, initializers[1].first)));
     for (const auto &[field, expression] : initializers)
         hostedBraces(tokens, field, expression);
 }
@@ -2590,8 +2596,8 @@ void aggregateSyntax() {
         supported(expression);
         checkedRootProgram("module aggregates; auto f()->i64{return ", expression, "}");
     }
-    supported("{1,2}[0] = 3;", Stop::Assignment);
-    supported("Box{.value={1,2}[0]})", Stop::CloseParenthesis);
+    supported("{1,2}[0] = 3;", Stop::assignment);
+    supported("Box{.value={1,2}[0]})", Stop::close_parenthesis);
     for (const auto &contents : {"{}",
                                  "{1,2}",
                                  "{{1,2},{3,4}}",
@@ -2629,11 +2635,11 @@ void aggregateSyntax() {
                                    "f({1,field_count(Box)});",
                                    "{Box{.value=f(size_of(i64))}};"}) {
         supported(expression);
-        rawCase(expression, Status::Success);
+        rawCase(expression, Status::success);
     }
     for (const auto &contents : {"{1,size_of(i64)}", "{Box{.value=type_id(array<u8,2>)}}"}) {
         const std::string text = std::string("value") + contents;
-        rawCase(text, Status::Success, Stop::ConstructorBraces);
+        rawCase(text, Status::success, Stop::constructor_braces);
         constructorBraces(contents);
     }
 
@@ -2829,7 +2835,7 @@ void typedSyntax() {
                  0,
                  depth == 63 ? aurora::DiagnosticCode::UnexpectedToken : aurora::DiagnosticCode::NestingLimit);
         rejected(source);
-        rawCase(source, depth == 63 ? Status::ArrayElement : Status::TypeNestingLimit);
+        rawCase(source, depth == 63 ? Status::array_element : Status::type_nesting_limit);
     }
     auto parameter = T(K::Parameter);
     parameter.className = "T";
@@ -2920,7 +2926,7 @@ void rawTypeRecords() {
         RawArena arena(allocations);
         const auto tokens = aurora::lex(fixture.source, "type-abi.au");
         const auto result = arena.parse(fixture.source);
-        require(result[0] == wire(Status::Success) && result[1] >= 0 &&
+        require(result[0] == wire(Status::success) && result[1] >= 0 &&
                     result[3] == static_cast<std::int64_t>(tokens.size() - 2) &&
                     result[4] == static_cast<std::int64_t>(fixture.source.size() - 1) &&
                     arena.types() == static_cast<std::int64_t>(fixture.types.size()),
@@ -2942,8 +2948,8 @@ void rawTypeRecords() {
             function ? ContextWords{0, 1, 2, 3, 0, 0, 2} : ContextWords{0, 1, 0, 0, 2, 3, 1};
         Allocations allocations;
         RawArena arena(allocations);
-        const auto result = arena.parse(source, Stop::Semicolon, 4, typeContext);
-        require(result[0] == wire(Status::Success), "raw copied context was not consumed");
+        const auto result = arena.parse(source, Stop::semicolon, 4, typeContext);
+        require(result[0] == wire(Status::success), "raw copied context was not consumed");
         if (function) {
             require(arena.types() == 2 && arena.type(0) == TypeWords{6, 2, 2, 4, -1, -1, 0, 2} &&
                         arena.type(1) == TypeWords{6, 7, 7, 14, -1, -1, 5, 2},
@@ -2966,27 +2972,27 @@ void rawTypeDiagnostics() {
         std::size_t token;
         int half = 0;
     };
-    const std::vector<Rejection> tests{{"size_of(array);", Status::ExpectedAngleOpen, 3},
-                                       {"size_of(own<i64);", Status::ExpectedAngleClose, 5},
-                                       {"size_of(builtin);", Status::ExpectedScope, 3},
-                                       {"size_of(array<i64>);", Status::ExpectedComma, 5},
-                                       {"size_of(builtin::span<u8>);", Status::ExpectedConst, 6},
-                                       {"size_of(builtin::span<const i64>);", Status::ExpectedU8, 7},
-                                       {"size_of(own<u8>);", Status::ExpectedI64, 4},
-                                       {"size_of(builtin::unknown);", Status::ExpectedArray, 4},
-                                       {"size_of(fn);", Status::ReservedType, 2},
-                                       {"size_of(123);", Status::ExpectedType, 3},
-                                       {"size_of(A<B<C<D<E<i64>>>>>);", Status::TemplateNestingLimit, 11},
-                                       {"f<A<B<C<D<E<i64>>>>>>();", Status::CallTemplateNestingLimit, 11},
-                                       {"f<i64, u8, bool>();", Status::TemplateArity, 6},
-                                       {"f<own>();", Status::TemplateArgument, 2},
-                                       {"f<65>();", Status::CapacityArgument, 3},
-                                       {"size_of(builtin::OwnedValues<i64>);", Status::OwnedElement, 7},
-                                       {"size_of(array<own<i64>, 1>);", Status::ArrayElement, 8},
-                                       {"size_of(array<i64, 4097>);", Status::ArrayLength, 7},
-                                       {"size_of(array<Class, 65>);", Status::ClassArrayLength, 8},
-                                       {"size_of(Box<i64>>);", Status::ExpectedClose, 5, 1},
-                                       {"size_of(array<i64, 2>>);", Status::ExpectedClose, 7, 1}};
+    const std::vector<Rejection> tests{{"size_of(array);", Status::expected_angle_open, 3},
+                                       {"size_of(own<i64);", Status::expected_angle_close, 5},
+                                       {"size_of(builtin);", Status::expected_scope, 3},
+                                       {"size_of(array<i64>);", Status::expected_comma, 5},
+                                       {"size_of(builtin::span<u8>);", Status::expected_const, 6},
+                                       {"size_of(builtin::span<const i64>);", Status::expected_u8, 7},
+                                       {"size_of(own<u8>);", Status::expected_i64, 4},
+                                       {"size_of(builtin::unknown);", Status::expected_array, 4},
+                                       {"size_of(fn);", Status::reserved_type, 2},
+                                       {"size_of(123);", Status::expected_type, 3},
+                                       {"size_of(A<B<C<D<E<i64>>>>>);", Status::template_nesting_limit, 11},
+                                       {"f<A<B<C<D<E<i64>>>>>>();", Status::call_template_nesting_limit, 11},
+                                       {"f<i64, u8, bool>();", Status::template_arity, 6},
+                                       {"f<own>();", Status::template_argument, 2},
+                                       {"f<65>();", Status::capacity_argument, 3},
+                                       {"size_of(builtin::OwnedValues<i64>);", Status::owned_element, 7},
+                                       {"size_of(array<own<i64>, 1>);", Status::array_element, 8},
+                                       {"size_of(array<i64, 4097>);", Status::array_length, 7},
+                                       {"size_of(array<Class, 65>);", Status::class_array_length, 8},
+                                       {"size_of(Box<i64>>);", Status::expected_close, 5, 1},
+                                       {"size_of(array<i64, 2>>);", Status::expected_close, 7, 1}};
     for (const auto &[source, expected, token, half] : tests) {
         context = "raw typed status/token/offset " + source;
         const auto tokens = aurora::lex(source, "raw-type-diagnostic.au");
@@ -3008,13 +3014,13 @@ void rawTypeDiagnostics() {
         Status status;
     };
     for (const auto &test :
-         std::vector<Dependent>{{"T f<T>();", {0, 1, 0, 0, 0, 0, 1}, Status::TemplateContext},
-                                {"T f<Box<T>>();", {0, 1, 0, 0, 0, 0, 2}, Status::NestedDependent},
-                                {"T f<T<i64>>();", {0, 1, 0, 0, 0, 0, 2}, Status::NestedDependent}}) {
+         std::vector<Dependent>{{"T f<T>();", {0, 1, 0, 0, 0, 0, 1}, Status::template_context},
+                                {"T f<Box<T>>();", {0, 1, 0, 0, 0, 0, 2}, Status::nested_dependent},
+                                {"T f<T<i64>>();", {0, 1, 0, 0, 0, 0, 2}, Status::nested_dependent}}) {
         context = "raw dependent context rejection " + test.source;
         Allocations allocations;
         RawArena arena(allocations);
-        const auto result = arena.parse(test.source, Stop::Semicolon, 2, test.context);
+        const auto result = arena.parse(test.source, Stop::semicolon, 2, test.context);
         require(result[0] == wire(test.status) && result[1] == -1,
                 "copied dependent context did not enforce its stated restriction");
         arena.finish();
@@ -3047,7 +3053,7 @@ void rawTypeGrowth() {
         Allocations allocations;
         RawArena arena(allocations);
         const auto result = arena.parse(source);
-        require(result[0] == wire(Status::Success) && result[2] == 2 * count + 1 && arena.types() == 5 * count &&
+        require(result[0] == wire(Status::success) && result[2] == 2 * count + 1 && arena.types() == 5 * count &&
                     arena.edges() == 2 * count,
                 "wide typed root omitted expression/type records");
         for (std::int64_t index = 0; index < arena.types(); ++index)
@@ -3066,7 +3072,7 @@ void rawTypeGrowth() {
         allocations.allowed = allowed;
         RawArena arena(allocations);
         const auto result = arena.parse(source);
-        require(result[0] == wire(Status::AllocationFailure) && result[1] == -1,
+        require(result[0] == wire(Status::allocation_failure) && result[1] == -1,
                 "type/prepass allocation failure did not fail closed");
         require(arena.types() >= 0 && arena.types() <= static_cast<std::int64_t>(expected.size()),
                 "type failure exposed an impossible prefix count");
@@ -3088,7 +3094,7 @@ void rawTypeGrowth() {
 }
 
 void rawDeclarationTypes() {
-    static_assert(static_cast<std::int64_t>(Stop::Type) == 5);
+    static_assert(static_cast<std::int64_t>(Stop::type) == 5);
     struct Fixture {
         std::string source;
         std::int64_t next;
@@ -3125,8 +3131,8 @@ void rawDeclarationTypes() {
         const auto offset = tokens.at(fixture.next).span.begin.offset + fixture.half;
         Allocations allocations;
         RawArena arena(allocations);
-        const auto result = arena.parse(fixture.source, Stop::Type);
-        require(result == Words{wire(Status::Success),
+        const auto result = arena.parse(fixture.source, Stop::type);
+        require(result == Words{wire(Status::success),
                                 static_cast<std::int64_t>(fixture.types.size() - 1),
                                 0,
                                 fixture.next,
@@ -3142,8 +3148,8 @@ void rawDeclarationTypes() {
                 "standalone type introduced an owner beyond the existing five");
         // The arena is invocation-scoped. Re-entry must reject without changing
         // the committed type graph, allocating a sixth owner, or leaking it.
-        const auto again = arena.parse("u8 next", Stop::Type);
-        require(again == Words{wire(Status::Invalid), -1, 0, 0, 0} &&
+        const auto again = arena.parse("u8 next", Stop::type);
+        require(again == Words{wire(Status::invalid), -1, 0, 0, 0} &&
                     arena.types() == static_cast<std::int64_t>(fixture.types.size()) &&
                     arena.metrics().successful_allocations == metrics.successful_allocations,
                 "nonempty type-arena reuse did not reject without mutation");
@@ -3160,8 +3166,8 @@ void rawDeclarationTypes() {
         context = "raw standalone declaration context " + source;
         Allocations allocations;
         RawArena arena(allocations);
-        const auto result = arena.parse(source, Stop::Type, 4, captured);
-        require(result == Words{wire(Status::Success), 2, 0, 6, function ? 14 : 15} && arena.types() == 3 &&
+        const auto result = arena.parse(source, Stop::type, 4, captured);
+        require(result == Words{wire(Status::success), 2, 0, 6, function ? 14 : 15} && arena.types() == 3 &&
                     arena.type(0) == TypeWords{6, 2, 2, 4, -1, -1, -1, 0} &&
                     arena.type(1) == TypeWords{function ? 6 : 8, 4, 4, 8, -1, -1, -1, 0} &&
                     arena.type(2) == TypeWords{function ? 5 : 9, 0, 0, 10, 0, 1, 0, 3},
@@ -3176,20 +3182,20 @@ void rawDeclarationTypes() {
         std::size_t token;
         int half = 0;
     };
-    for (const auto &test : std::vector<Rejection>{{"fn next", Status::ReservedType, 0},
-                                                   {"123 next", Status::ExpectedType, 1},
-                                                   {"array;", Status::ExpectedAngleOpen, 1},
-                                                   {"own<i64>>;", Status::ExpectedAngleClose, 3},
-                                                   {"builtin::span<u8>;", Status::ExpectedConst, 4},
-                                                   {"Box<i64,u8,bool>;", Status::TemplateArity, 6},
-                                                   {"array<Class,65>>;", Status::ClassArrayLength, 5, 1},
-                                                   {"builtin::OwnedValues<Box<i64>>;", Status::OwnedElement, 7, 1},
-                                                   {"A<B<C<D<E<i64>>>>>;", Status::TemplateNestingLimit, 9}}) {
+    for (const auto &test : std::vector<Rejection>{{"fn next", Status::reserved_type, 0},
+                                                   {"123 next", Status::expected_type, 1},
+                                                   {"array;", Status::expected_angle_open, 1},
+                                                   {"own<i64>>;", Status::expected_angle_close, 3},
+                                                   {"builtin::span<u8>;", Status::expected_const, 4},
+                                                   {"Box<i64,u8,bool>;", Status::template_arity, 6},
+                                                   {"array<Class,65>>;", Status::class_array_length, 5, 1},
+                                                   {"builtin::OwnedValues<Box<i64>>;", Status::owned_element, 7, 1},
+                                                   {"A<B<C<D<E<i64>>>>>;", Status::template_nesting_limit, 9}}) {
         context = "raw declaration type diagnostic " + test.source;
         const auto tokens = aurora::lex(test.source);
         Allocations allocations;
         RawArena arena(allocations);
-        const auto result = arena.parse(test.source, Stop::Type);
+        const auto result = arena.parse(test.source, Stop::type);
         require(result == Words{wire(test.status),
                                 -1,
                                 0,
@@ -3236,8 +3242,8 @@ void rawDeclarationTypeGrowth() {
     for (int cycle = 0; cycle < 3; ++cycle) {
         Allocations allocations;
         RawArena arena(allocations);
-        require(arena.parse(source, Stop::Type) ==
-                        Words{wire(Status::Success), 30, 0, 76, static_cast<std::int64_t>(type.size() + 1)} &&
+        require(arena.parse(source, Stop::type) ==
+                        Words{wire(Status::success), 30, 0, 76, static_cast<std::int64_t>(type.size() + 1)} &&
                     arena.types() == 31,
                 "31-record standalone type growth lost its root/cursor");
         for (std::size_t index = 0; index < expected.size(); ++index)
@@ -3258,8 +3264,8 @@ void rawDeclarationTypeGrowth() {
         Allocations allocations;
         allocations.allowed = allowed;
         RawArena arena(allocations);
-        const auto result = arena.parse(source, Stop::Type);
-        require(result[0] == wire(Status::AllocationFailure) && result[1] == -1 && result[2] == 0 &&
+        const auto result = arena.parse(source, Stop::type);
+        require(result[0] == wire(Status::allocation_failure) && result[1] == -1 && result[2] == 0 &&
                     arena.types() >= 0 && arena.types() < static_cast<std::int64_t>(expected.size()),
                 "standalone type allocation failure did not fail closed");
         for (std::int64_t index = 0; index < arena.types(); ++index)
@@ -3272,7 +3278,7 @@ void rawDeclarationTypeGrowth() {
     {
         Allocations allocations;
         RawArena arena(allocations, 0);
-        require(arena.parse("i64 next", Stop::Type)[0] == wire(Status::AllocationFailure),
+        require(arena.parse("i64 next", Stop::type)[0] == wire(Status::allocation_failure),
                 "zero-quota standalone type parse was accepted");
         arena.finish();
         require(allocations.successful == allocations.released, "zero-quota standalone type leaked storage");
@@ -3285,29 +3291,29 @@ void rawAggregateDiagnostics() {
         std::string source;
         Status status;
         std::int64_t token;
-        Stop stop = Stop::Semicolon;
+        Stop stop = Stop::semicolon;
     };
     for (const auto &test :
-         std::vector<Rejection>{{"{1;", Status::ExpectedBraceClose, 2},
-                                {"{1,};", Status::ExpectedExpression, 4},
-                                {"{,};", Status::ExpectedExpression, 2},
-                                {"{1 2};", Status::ExpectedBraceClose, 2},
-                                {"{1,2", Status::ExpectedBraceClose, 4},
-                                {"Box{value=1};", Status::ExpectedDot, 2},
-                                {"Box{.1=1};", Status::ExpectedIdentifier, 3},
-                                {"Box{.true=1};", Status::ReservedIdentifier, 3},
-                                {"Box{.array=1};", Status::ReservedBuiltin, 3},
-                                {"Box{.__au_private=1};", Status::ReservedPrefix, 3},
-                                {"Box{.value 1};", Status::ExpectedEqual, 4},
-                                {"Box{.value=};", Status::ExpectedExpression, 6},
-                                {"Box{.value=1,};", Status::ExpectedDot, 7},
-                                {"Box{.value=1;", Status::ExpectedBraceClose, 6},
-                                {"value(1)", Status::ExpectedBraceOpen, 1, Stop::ConstructorBraces},
-                                {"value{1,}", Status::ExpectedExpression, 5, Stop::ConstructorBraces},
-                                {"value{1", Status::ExpectedBraceClose, 3, Stop::ConstructorBraces},
-                                {"true{}", Status::ReservedIdentifier, 0, Stop::ConstructorBraces},
-                                {"array{}", Status::ReservedBuiltin, 0, Stop::ConstructorBraces},
-                                {"__au_field{}", Status::ReservedPrefix, 0, Stop::ConstructorBraces}}) {
+         std::vector<Rejection>{{"{1;", Status::expected_brace_close, 2},
+                                {"{1,};", Status::expected_expression, 4},
+                                {"{,};", Status::expected_expression, 2},
+                                {"{1 2};", Status::expected_brace_close, 2},
+                                {"{1,2", Status::expected_brace_close, 4},
+                                {"Box{value=1};", Status::expected_dot, 2},
+                                {"Box{.1=1};", Status::expected_identifier, 3},
+                                {"Box{.true=1};", Status::reserved_identifier, 3},
+                                {"Box{.array=1};", Status::reserved_builtin, 3},
+                                {"Box{.__au_private=1};", Status::reserved_prefix, 3},
+                                {"Box{.value 1};", Status::expected_equal, 4},
+                                {"Box{.value=};", Status::expected_expression, 6},
+                                {"Box{.value=1,};", Status::expected_dot, 7},
+                                {"Box{.value=1;", Status::expected_brace_close, 6},
+                                {"value(1)", Status::expected_brace_open, 1, Stop::constructor_braces},
+                                {"value{1,}", Status::expected_expression, 5, Stop::constructor_braces},
+                                {"value{1", Status::expected_brace_close, 3, Stop::constructor_braces},
+                                {"true{}", Status::reserved_identifier, 0, Stop::constructor_braces},
+                                {"array{}", Status::reserved_builtin, 0, Stop::constructor_braces},
+                                {"__au_field{}", Status::reserved_prefix, 0, Stop::constructor_braces}}) {
         context = "raw aggregate diagnostic " + test.source;
         const auto tokens = aurora::lex(test.source, "raw-aggregate-diagnostic.au");
         Allocations allocations;
@@ -3320,8 +3326,8 @@ void rawAggregateDiagnostics() {
         require(allocations.successful == allocations.released, "aggregate diagnostic leaked an owner");
         ++cases;
     }
-    rawCase("{};", Status::Invalid, static_cast<Stop>(-1));
-    rawCase("{};", Status::Invalid, static_cast<Stop>(6));
+    rawCase("{};", Status::invalid, static_cast<Stop>(-1));
+    rawCase("{};", Status::invalid, static_cast<Stop>(6));
 }
 
 void abiControls() {
@@ -3363,17 +3369,17 @@ void rawGrowth() {
         Allocations allocations;
         RawArena arena(allocations);
         const auto result = arena.parse(source);
-        require(result == Words{wire(Status::Success), 198, 199, 199, 199},
+        require(result == Words{wire(Status::success), 198, 199, 199, 199},
                 "100-term raw parse did not return exact graph/cursor");
         for (std::int64_t i = 0; i < 199; ++i) {
             const auto node = arena.read(i);
             if (i == 0)
-                require(node == NodeWords{wire(NodeKind::Literal), 0, -1, -1, 1, 0, 0}, "first literal ABI differs");
+                require(node == NodeWords{wire(NodeKind::literal), 0, -1, -1, 1, 0, 0}, "first literal ABI differs");
             else if (i % 2 == 1)
-                require(node == NodeWords{wire(NodeKind::Literal), i + 1, -1, -1, 1, i + 1, i + 1},
+                require(node == NodeWords{wire(NodeKind::literal), i + 1, -1, -1, 1, i + 1, i + 1},
                         "literal ABI differs");
             else
-                require(node == NodeWords{wire(NodeKind::Binary), i - 1, i - 2, i - 1, i / 2 + 1, i - 1, i - 1},
+                require(node == NodeWords{wire(NodeKind::binary), i - 1, i - 2, i - 1, i / 2 + 1, i - 1, i - 1},
                         "binary ABI/topology/depth differs");
         }
         const auto used = arena.metrics();
@@ -3387,7 +3393,7 @@ void rawGrowth() {
         Allocations allocations;
         allocations.allowed = allowed;
         RawArena arena(allocations);
-        require(arena.parse("size_of(i64);")[0] == wire(Status::AllocationFailure),
+        require(arena.parse("size_of(i64);")[0] == wire(Status::allocation_failure),
                 "failed arena allocation did not reject before typed parsing");
         arena.finish();
     }
@@ -3398,10 +3404,10 @@ void rawGrowth() {
         allocations.allowed = allowed;
         RawArena arena(allocations);
         const auto result = arena.parse(source);
-        require(result[0] == static_cast<std::int64_t>(Status::AllocationFailure) && result[1] == -1,
+        require(result[0] == static_cast<std::int64_t>(Status::allocation_failure) && result[1] == -1,
                 "injected allocation/growth failure did not fail closed");
         if (result[2] > 0)
-            require(arena.read(0) == NodeWords{wire(NodeKind::Literal), 0, -1, -1, 1, 0, 0},
+            require(arena.read(0) == NodeWords{wire(NodeKind::literal), 0, -1, -1, 1, 0, 0},
                     "failed growth changed an already committed node");
         arena.finish();
         require(allocations.successful == allocations.released, "failure cleanup mismatch");
@@ -3409,25 +3415,26 @@ void rawGrowth() {
     {
         Allocations allocations;
         RawArena arena(allocations, 0);
-        require(arena.parse("1;")[0] == static_cast<std::int64_t>(Status::AllocationFailure), "quota failure accepted");
+        require(arena.parse("1;")[0] == static_cast<std::int64_t>(Status::allocation_failure),
+                "quota failure accepted");
         arena.finish();
     }
     for (const auto &[sourceText, expected] :
-         std::array<std::pair<std::string, NodeWords>, 4>{{{"name;", {wire(NodeKind::Name), 0, -1, -1, 1, 0, 0}},
-                                                           {"true;", {wire(NodeKind::Literal), 0, -1, -1, 1, 0, 0}},
-                                                           {"'x';", {wire(NodeKind::Literal), 0, -1, -1, 1, 0, 0}},
-                                                           {"-1;", {wire(NodeKind::Unary), 0, 0, -1, 2, 0, 0}}}}) {
+         std::array<std::pair<std::string, NodeWords>, 4>{{{"name;", {wire(NodeKind::name), 0, -1, -1, 1, 0, 0}},
+                                                           {"true;", {wire(NodeKind::literal), 0, -1, -1, 1, 0, 0}},
+                                                           {"'x';", {wire(NodeKind::literal), 0, -1, -1, 1, 0, 0}},
+                                                           {"-1;", {wire(NodeKind::unary), 0, 0, -1, 2, 0, 0}}}}) {
         Allocations allocations;
         RawArena arena(allocations);
         const auto result = arena.parse(sourceText);
-        require(result[0] == wire(Status::Success) && arena.read(result[1]) == expected,
+        require(result[0] == wire(Status::success) && arena.read(result[1]) == expected,
                 "real generated node kind ABI differs");
         arena.finish();
     }
     {
         Allocations allocations;
         RawArena arena(allocations);
-        require(arena.parse("1;", Stop::Semicolon, 3)[0] == wire(Status::Invalid),
+        require(arena.parse("1;", Stop::semicolon, 3)[0] == wire(Status::invalid),
                 "invalid lexer cursor did not return the named Invalid status");
         arena.finish();
     }
@@ -3436,13 +3443,13 @@ void rawGrowth() {
 void rawFrameGrowth() {
     context = "real Aurora explicit-frame growth and failure cleanup";
     const auto source = std::string(127, '(') + "1" + std::string(127, ')') + ";";
-    const NodeWords literal{wire(NodeKind::Literal), 127, -1, -1, 1, 127, 127};
+    const NodeWords literal{wire(NodeKind::literal), 127, -1, -1, 1, 127, 127};
     std::size_t successful = 0;
     {
         Allocations allocations;
         RawArena arena(allocations);
         const auto result = arena.parse(source);
-        require(result == Words{wire(Status::Success), 0, 1, 255, 255} && arena.read(0) == literal,
+        require(result == Words{wire(Status::success), 0, 1, 255, 255} && arena.read(0) == literal,
                 "127 nested groups did not return the exact leaf graph/cursor");
         const auto used = arena.metrics();
         // One leaf needs only the first eight-node capacity. Payload above the
@@ -3460,7 +3467,7 @@ void rawFrameGrowth() {
         allocations.allowed = allowed;
         RawArena arena(allocations);
         const auto result = arena.parse(source);
-        require(result[0] == wire(Status::AllocationFailure) && result[1] == -1,
+        require(result[0] == wire(Status::allocation_failure) && result[1] == -1,
                 "injected frame-growth failure did not fail closed");
         if (result[2] > 0)
             require(arena.read(0) == literal, "failed frame growth changed an already committed node");
@@ -3484,10 +3491,10 @@ void rawArguments() {
         Allocations allocations;
         RawArena arena(allocations);
         const auto result = arena.parse(source);
-        require(result == Words{wire(Status::Success), count, count + 1, 2 * count + 2, 2 * count + 2},
+        require(result == Words{wire(Status::success), count, count + 1, 2 * count + 2, 2 * count + 2},
                 "wide call did not return the complete graph/cursor");
         require(arena.edges() == count &&
-                    arena.read(count) == NodeWords{wire(NodeKind::Call), 0, count - 1, count, 2, 0, 2 * count + 1},
+                    arena.read(count) == NodeWords{wire(NodeKind::call), 0, count - 1, count, 2, 0, 2 * count + 1},
                 "call ABI, arity or closing-token provenance differs");
         for (std::int64_t index = 0; index < count; ++index)
             require(arena.edge(index) == EdgeWords{index, index - 1, index + 1, 2, -1},
@@ -3504,20 +3511,20 @@ void rawArguments() {
         allocations.allowed = allowed;
         RawArena arena(allocations);
         const auto result = arena.parse(source);
-        require(result[0] == wire(Status::AllocationFailure) && result[1] == -1,
+        require(result[0] == wire(Status::allocation_failure) && result[1] == -1,
                 "injected argument allocation failure did not reject");
         arena.finish();
         require(allocations.successful == allocations.released, "partial argument graph leaked an owner");
     }
-    for (const auto &[text, expected] :
-         std::array<std::pair<std::string, NodeWords>, 4>{{{"ns::f(1,2);", {wire(NodeKind::Call), 0, 1, 2, 2, 2, 7}},
-                                                           {"obj.m();", {wire(NodeKind::MethodCall), 2, 0, 1, 2, 2, 4}},
-                                                           {"a.b;", {wire(NodeKind::Member), 2, 0, -1, 2, 2, 2}},
-                                                           {"a[0];", {wire(NodeKind::Index), 1, 0, 1, 2, 1, 3}}}}) {
+    for (const auto &[text, expected] : std::array<std::pair<std::string, NodeWords>, 4>{
+             {{"ns::f(1,2);", {wire(NodeKind::call), 0, 1, 2, 2, 2, 7}},
+              {"obj.m();", {wire(NodeKind::method_call), 2, 0, 1, 2, 2, 4}},
+              {"a.b;", {wire(NodeKind::member), 2, 0, -1, 2, 2, 2}},
+              {"a[0];", {wire(NodeKind::index), 1, 0, 1, 2, 1, 3}}}}) {
         Allocations allocations;
         RawArena arena(allocations);
         const auto result = arena.parse(text);
-        require(result[0] == wire(Status::Success) && arena.read(result[1]) == expected,
+        require(result[0] == wire(Status::success) && arena.read(result[1]) == expected,
                 "postfix generated-code node ABI differs");
         arena.finish();
     }
@@ -3536,16 +3543,16 @@ void rawAggregates() {
         std::int64_t last, close, tokens, offset;
     };
     for (const auto &test : std::vector<Empty>{
-             {"{};", Stop::Semicolon, NodeKind::ArrayLiteral, 0, 1, 2, 2},
-             {"{};size_of(i64)", Stop::Semicolon, NodeKind::ArrayLiteral, 0, 1, 2, 2},
-             {"ns::Box{};", Stop::Semicolon, NodeKind::Construct, 2, 4, 5, 9},
-             {"field{}", Stop::ConstructorBraces, NodeKind::ArrayZero, 0, 2, 3, 7},
-             {"field{},other{}", Stop::ConstructorBraces, NodeKind::ArrayZero, 0, 2, 3, 7},
-             {"field{}{size_of(i64)", Stop::ConstructorBraces, NodeKind::ArrayZero, 0, 2, 3, 7},
-             {"field{};size_of(i64)", Stop::ConstructorBraces, NodeKind::ArrayZero, 0, 2, 3, 7},
-             {"field{} // following trivia\n {", Stop::ConstructorBraces, NodeKind::ArrayZero, 0, 2, 3, 29}}) {
+             {"{};", Stop::semicolon, NodeKind::array_literal, 0, 1, 2, 2},
+             {"{};size_of(i64)", Stop::semicolon, NodeKind::array_literal, 0, 1, 2, 2},
+             {"ns::Box{};", Stop::semicolon, NodeKind::construct, 2, 4, 5, 9},
+             {"field{}", Stop::constructor_braces, NodeKind::array_zero, 0, 2, 3, 7},
+             {"field{},other{}", Stop::constructor_braces, NodeKind::array_zero, 0, 2, 3, 7},
+             {"field{}{size_of(i64)", Stop::constructor_braces, NodeKind::array_zero, 0, 2, 3, 7},
+             {"field{};size_of(i64)", Stop::constructor_braces, NodeKind::array_zero, 0, 2, 3, 7},
+             {"field{} // following trivia\n {", Stop::constructor_braces, NodeKind::array_zero, 0, 2, 3, 29}}) {
         context = "empty aggregate ABI " + test.source;
-        if (test.stop == Stop::ConstructorBraces) {
+        if (test.stop == Stop::constructor_braces) {
             const auto tokens = aurora::lex(test.source, "empty-brace-boundary.au");
             std::size_t position = 0;
             const auto expression = aurora::parseHostedExpression(tokens, position, test.stop);
@@ -3558,7 +3565,7 @@ void rawAggregates() {
         Allocations allocations;
         RawArena arena(allocations);
         const auto result = arena.parse(test.source, test.stop);
-        require(result == Words{wire(Status::Success), 0, 1, test.tokens, test.offset} && arena.edges() == 0 &&
+        require(result == Words{wire(Status::success), 0, 1, test.tokens, test.offset} && arena.edges() == 0 &&
                     arena.read(0) == NodeWords{wire(test.kind), 0, -1, 0, 1, test.last, test.close},
                 "empty aggregate kind/token/close/cursor ABI differs");
         arena.finish();
@@ -3569,7 +3576,7 @@ void rawAggregates() {
         context = "nonempty constructor aggregate boundary " + std::string(suffix);
         const auto tokens = aurora::lex(std::string("field{1}") + suffix, "brace-boundary.au");
         std::size_t position = 0;
-        const auto expression = aurora::parseHostedExpression(tokens, position, Stop::ConstructorBraces);
+        const auto expression = aurora::parseHostedExpression(tokens, position, Stop::constructor_braces);
         require(expression && expression->op == "array_literal" && expression->args.size() == 1 &&
                     expression->depth == 2 && expression->args[0]->op == "number" && expression->args[0]->depth == 1 &&
                     position == 4 && tokens.at(position).span.begin.offset == 8,
@@ -3578,10 +3585,10 @@ void rawAggregates() {
         sameToken(expression->args[0]->token, tokens[2]);
         Allocations allocations;
         RawArena arena(allocations);
-        require(arena.parse(std::string("field{1}") + suffix, Stop::ConstructorBraces) ==
-                        Words{wire(Status::Success), 1, 2, 4, 8} &&
-                    arena.read(0) == NodeWords{wire(NodeKind::Literal), 2, -1, -1, 1, 2, 2} &&
-                    arena.read(1) == NodeWords{wire(NodeKind::ArrayLiteral), 0, 0, 1, 2, 0, 3} && arena.edges() == 1 &&
+        require(arena.parse(std::string("field{1}") + suffix, Stop::constructor_braces) ==
+                        Words{wire(Status::success), 1, 2, 4, 8} &&
+                    arena.read(0) == NodeWords{wire(NodeKind::literal), 2, -1, -1, 1, 2, 2} &&
+                    arena.read(1) == NodeWords{wire(NodeKind::array_literal), 0, 0, 1, 2, 0, 3} && arena.edges() == 1 &&
                     arena.edge(0) == EdgeWords{0, -1, 1, 2, -1},
                 "nonempty constructor braces changed their field token or consumed following syntax");
         arena.finish();
@@ -3592,13 +3599,13 @@ void rawAggregates() {
         context = "nested array exact graph and edge provenance";
         Allocations allocations;
         RawArena arena(allocations);
-        require(arena.parse("{1,{2,3}};") == Words{wire(Status::Success), 4, 5, 9, 9},
+        require(arena.parse("{1,{2,3}};") == Words{wire(Status::success), 4, 5, 9, 9},
                 "nested array graph/cursor differs");
-        const std::array<NodeWords, 5> expected{{{wire(NodeKind::Literal), 1, -1, -1, 1, 1, 1},
-                                                 {wire(NodeKind::Literal), 4, -1, -1, 1, 4, 4},
-                                                 {wire(NodeKind::Literal), 6, -1, -1, 1, 6, 6},
-                                                 {wire(NodeKind::ArrayLiteral), 3, 2, 2, 2, 3, 7},
-                                                 {wire(NodeKind::ArrayLiteral), 0, 3, 2, 3, 0, 8}}};
+        const std::array<NodeWords, 5> expected{{{wire(NodeKind::literal), 1, -1, -1, 1, 1, 1},
+                                                 {wire(NodeKind::literal), 4, -1, -1, 1, 4, 4},
+                                                 {wire(NodeKind::literal), 6, -1, -1, 1, 6, 6},
+                                                 {wire(NodeKind::array_literal), 3, 2, 2, 2, 3, 7},
+                                                 {wire(NodeKind::array_literal), 0, 3, 2, 3, 0, 8}}};
         const std::array<EdgeWords, 4> edges{
             {{0, -1, 1, 2, -1}, {1, -1, 1, 2, -1}, {2, 1, 2, 2, -1}, {3, 0, 2, 3, -1}}};
         require(arena.edges() == static_cast<std::int64_t>(edges.size()), "nested array edge count differs");
@@ -3616,10 +3623,10 @@ void rawAggregates() {
         Allocations allocations;
         RawArena arena(allocations);
         require(arena.parse(source) ==
-                        Words{wire(Status::Success), 2, 3, 14, static_cast<std::int64_t>(source.size() - 1)} &&
-                    arena.read(0) == NodeWords{wire(NodeKind::Literal), 7, -1, -1, 1, 7, 7} &&
-                    arena.read(1) == NodeWords{wire(NodeKind::Literal), 12, -1, -1, 1, 12, 12} &&
-                    arena.read(2) == NodeWords{wire(NodeKind::Construct), 0, 1, 2, 2, 2, 13} && arena.edges() == 2 &&
+                        Words{wire(Status::success), 2, 3, 14, static_cast<std::int64_t>(source.size() - 1)} &&
+                    arena.read(0) == NodeWords{wire(NodeKind::literal), 7, -1, -1, 1, 7, 7} &&
+                    arena.read(1) == NodeWords{wire(NodeKind::literal), 12, -1, -1, 1, 12, 12} &&
+                    arena.read(2) == NodeWords{wire(NodeKind::construct), 0, 1, 2, 2, 2, 13} && arena.edges() == 2 &&
                     arena.edge(0) == EdgeWords{0, -1, 1, 2, 5} && arena.edge(1) == EdgeWords{1, 0, 2, 2, 10},
                 "designated construction lost qualified name/field-label provenance");
         arena.finish();
@@ -3627,11 +3634,11 @@ void rawAggregates() {
         ++cases;
     }
     constexpr std::int64_t count = 257;
-    for (const auto kind : {NodeKind::ArrayLiteral, NodeKind::Construct, NodeKind::ArrayZero}) {
+    for (const auto kind : {NodeKind::array_literal, NodeKind::construct, NodeKind::array_zero}) {
         // ArrayZero selects the constructor profile; its nonempty result must
         // be ArrayLiteral. No input profile imposes a fixed arity ceiling.
-        const bool designated = kind == NodeKind::Construct, constructor = kind == NodeKind::ArrayZero;
-        const auto stop = constructor ? Stop::ConstructorBraces : Stop::Semicolon;
+        const bool designated = kind == NodeKind::construct, constructor = kind == NodeKind::array_zero;
+        const auto stop = constructor ? Stop::constructor_braces : Stop::semicolon;
         std::string source = designated ? "ns::Box{" : constructor ? "values{" : "{";
         for (std::int64_t index = 0; index < count; ++index) {
             if (index)
@@ -3649,12 +3656,12 @@ void rawAggregates() {
         {
             Allocations allocations;
             RawArena arena(allocations);
-            require(arena.parse(source, stop) == Words{wire(Status::Success),
+            require(arena.parse(source, stop) == Words{wire(Status::success),
                                                        count,
                                                        count + 1,
                                                        close + 1,
                                                        static_cast<std::int64_t>(source.size() - 1)} &&
-                        arena.read(count) == NodeWords{wire(designated ? NodeKind::Construct : NodeKind::ArrayLiteral),
+                        arena.read(count) == NodeWords{wire(designated ? NodeKind::construct : NodeKind::array_literal),
                                                        0,
                                                        count - 1,
                                                        count,
@@ -3665,7 +3672,7 @@ void rawAggregates() {
                     "wide aggregate did not return the exact complete graph/cursor");
             for (std::int64_t index = 0; index < count; ++index) {
                 const auto token = first + step * index;
-                require(arena.read(index) == NodeWords{wire(NodeKind::Literal), token, -1, -1, 1, token, token},
+                require(arena.read(index) == NodeWords{wire(NodeKind::literal), token, -1, -1, 1, token, token},
                         "wide aggregate child order/token differs");
                 require(arena.edge(index) == EdgeWords{index, index - 1, index + 1, 2, designated ? 5 + 5 * index : -1},
                         "wide aggregate edge/field-label ABI differs");
@@ -3683,10 +3690,10 @@ void rawAggregates() {
             allocations.allowed = allowed;
             RawArena arena(allocations);
             const auto result = arena.parse(source, stop);
-            require(result[0] == wire(Status::AllocationFailure) && result[1] == -1,
+            require(result[0] == wire(Status::allocation_failure) && result[1] == -1,
                     "aggregate allocation/growth failure did not fail closed");
             if (result[2] > 0)
-                require(arena.read(0) == NodeWords{wire(NodeKind::Literal), first, -1, -1, 1, first, first},
+                require(arena.read(0) == NodeWords{wire(NodeKind::literal), first, -1, -1, 1, first, first},
                         "failed aggregate growth changed a committed node");
             arena.finish();
             require(allocations.successful == allocations.released, "partial aggregate graph leaked an owner");
@@ -3719,58 +3726,19 @@ int main(int argc, char **argv) {
         require(argc == 16, "expected three bootstrap, five aggregate and seven typed consumer source paths");
         grammarExpectations();
         diagnosticExpectations();
-        for (const auto &expression :
-             {"1;",
-              "false;",
-              "true;",
-              "name;",
-              "_value;",
-              "'x';",
-              "'\\n';",
-              "123u64;",
-              "255u8;",
-              "-1 + ~2 * !false;",
-              "a || b && c | d ^ e & f == g != h < i <= j > k >= l << m >> n + o - p * q / r % s;",
-              "(a + b) * (c - d);",
-              "(a);",
-              "1 // comment\n + 2;",
-              "a < b >> (c);"})
-            supported(expression);
-        supported("true < x > (y);");
-        supported("(a) < b > (c);");
+        // Table rows cover ordinary semicolon inputs. Keep distinct trivia,
+        // boundary/depth and alternate stop-mode contracts explicit here.
+        supported("1 // comment\n + 2;");
+        supported("one // name trivia\n :: two(1, other.run()).field[2].at(3);");
         supported(chain(100) + ";");
         supported(chain(128) + ";");
         supported(std::string(127, '(') + "1" + std::string(127, ')') + ";");
         supported(std::string(127, '-') + "1;");
-        supported("1 + 2)", Stop::CloseParenthesis);
-        supported("target = 2;", Stop::Assignment);
-        supported("1 + 2;", Stop::Assignment);
-        for (const auto &expression : {"f();",
-                                       "f(1, 2);",
-                                       "name.member;",
-                                       "name.at(1);",
-                                       "one::two;",
-                                       "a[1];",
-                                       "f(g(1), h(2, 3)) + object.at(index + 1);",
-                                       "Box(42);",
-                                       "move(value);",
-                                       "one // name trivia\n :: two(1, other.run()).field[2].at(3);",
-                                       "((a)).field;",
-                                       "(a + b)[(i)];",
-                                       "a[one::index(f(1))].method().field;",
-                                       "builtin::borrow_bytes(value);",
-                                       "one::array(1);",
-                                       "object.size_of();",
-                                       "ns::size_of(i64);",
-                                       "-object.at(1) + f(2);",
-                                       "fn;",
-                                       "__au_name;"})
-            supported(expression);
-        supported("a[1] = 2;", Stop::Assignment);
-        supported("f(a[1], b.member))", Stop::CloseParenthesis);
-        for (const auto &expression :
-             {"size_of(i64);", "type_id(array<u8,2>);", "field_count(Box);", "f(size_of(i64));"})
-            supported(expression);
+        supported("1 + 2)", Stop::close_parenthesis);
+        supported("target = 2;", Stop::assignment);
+        supported("1 + 2;", Stop::assignment);
+        supported("a[1] = 2;", Stop::assignment);
+        supported("f(a[1], b.member))", Stop::close_parenthesis);
         checkedRootProgram("module templates; auto f()->i64{return ", "f<i64>(1)", ";}");
         checkedRootProgram("module templates; auto f()->i64{return ", "x<y<z>>(a)", ";}");
         rejectedProgram("module templates; auto f()->i64{return ", "f<T)>(0);", "}");
@@ -3876,25 +3844,25 @@ int main(int argc, char **argv) {
                         "f(" + calls + ")",
                         ";}",
                         {"expression parser nesting exceeds 128", 256, 0, aurora::DiagnosticCode::NestingLimit});
-        rawCase("1;", Status::Success);
-        rawCase("{1};", Status::Success);
-        rawCase("f(1);", Status::Success);
-        rawCase("a[1;", Status::ExpectedIndexClose);
-        rawCase("a.;", Status::ExpectedIdentifier);
-        rawCase("a.true;", Status::ReservedIdentifier);
-        rawCase("a.array;", Status::ReservedBuiltin);
-        rawCase("a.__au_private;", Status::ReservedPrefix);
-        rawCase("1+;", Status::ExpectedExpression);
-        rawCase("(1;", Status::ExpectedClose);
-        rawCase("1 2;", Status::ExpectedEnd);
+        rawCase("1;", Status::success);
+        rawCase("{1};", Status::success);
+        rawCase("f(1);", Status::success);
+        rawCase("a[1;", Status::expected_index_close);
+        rawCase("a.;", Status::expected_identifier);
+        rawCase("a.true;", Status::reserved_identifier);
+        rawCase("a.array;", Status::reserved_builtin);
+        rawCase("a.__au_private;", Status::reserved_prefix);
+        rawCase("1+;", Status::expected_expression);
+        rawCase("(1;", Status::expected_close);
+        rawCase("1 2;", Status::expected_end);
         for (const auto &source : {":;", "];", ",;"})
-            rawCase(source, Status::ExpectedExpression);
+            rawCase(source, Status::expected_expression);
         for (const auto &source : {"1:2;", "1]2;", "1,2;", "1(2);", "true(2);", "(1)(2);"})
-            rawCase(source, Status::ExpectedEnd);
-        rawCase(std::string(128, '(') + "1" + std::string(128, ')') + ";", Status::NestingLimit);
-        rawCase(chain(129) + ";", Status::DepthLimit);
-        rawCase("1)", Status::Success, Stop::CloseParenthesis);
-        rawCase("name=", Status::Success, Stop::Assignment);
+            rawCase(source, Status::expected_end);
+        rawCase(std::string(128, '(') + "1" + std::string(128, ')') + ";", Status::nesting_limit);
+        rawCase(chain(129) + ";", Status::depth_limit);
+        rawCase("1)", Status::success, Stop::close_parenthesis);
+        rawCase("name=", Status::success, Stop::assignment);
         byteStrings();
         constructors();
         aggregateSyntax();

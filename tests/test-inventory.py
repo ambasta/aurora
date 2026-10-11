@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def make_inventory(source):
-    """Literal dependency/recipe graph for the two authoritative Makefiles."""
+    """Literal Make recipes and prerequisites for shortcut checks."""
     dependencies, recipes, current = {}, {}, []
     for line in re.sub(r"\\\r?\n", " ", source).splitlines():
         if line.startswith("\t"):
@@ -109,11 +109,20 @@ def compiler_meson_inventory(source, manifest, records=None):
     return aggregate | focused, aggregate
 
 
-def compiler_dispatch(recipes):
-    return any(
-        re.fullmatch(r"\s*[@+]*\s*\$\(MAKE\)\s+-C\s+compiler\s+test\s*", recipe)
-        for recipe in recipes.get("test-compiler", [])
-    )
+def root_meson_inventory(source, manifest):
+    """The root aggregate is one full-suite forwarding command, without prerequisites."""
+    _, _, reached, recipes = make_inventory(source)
+    prefix = 'python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite '
+    for target, suite in (("test", "full"), ("test-compiler", "compiler")):
+        if [line.strip() for line in recipes.get(target, [])] != [prefix + suite]:
+            raise ValueError("root Meson forwarding drift: " + target)
+    if reached != {"test"}:
+        raise ValueError("root Make test must only forward to Meson")
+    return {
+        runner
+        for runner, entry in manifest.items()
+        if any("full" in command["suites"] for command in entry.get("meson_commands", {}).values())
+    }
 
 
 def check(manifest, files, make_runners, registered=None, root_runners=None):
@@ -149,48 +158,6 @@ GRAPHICAL_PYTHON_TESTS = {
     "graphical-smoke-controls": ("kernel-graphical-smoke.py", "dev", False),
     "graphical-smoke-controls-optimized": ("kernel-graphical-smoke.py", "dev", True),
 }
-
-
-def check_graphical_make(source):
-    """Narrow exact graphical routes, in addition to the compiler-only inventory."""
-    _, _, reached, recipes = make_inventory(source)
-    needed = {"test-graphical-console", "test-graphical-paging", "test-graphical-controls"}
-    if not needed <= reached:
-        raise ValueError("graphical root Make coverage drift")
-    dispatch = re.search(r"^override _AURORA_TEST_GOALS := (.*)$", source, re.MULTILINE)
-    if dispatch is None or "test-graphical-console" not in dispatch[1].split():
-        raise ValueError("graphical goal lost shared compiler dispatch")
-    context_targets = set()
-    for line in re.sub(r"\\\r?\n", " ", source).splitlines():
-        targets, separator, prerequisite = line.partition(":")
-        if separator and prerequisite.strip() == "aurora-test-context":
-            context_targets.update(targets.split())
-    if not needed <= context_targets:
-        raise ValueError("graphical goal lost active-context validation")
-    expected = {
-        "test-graphical-console": [
-            'python3 -B -O tests/kernel-graphical-console.py --run "$(AURORAC)" $(AURORA_TEST_IDENTITY_ARGS)',
-        ],
-        "test-graphical-paging": [
-            "mkdir -p build",
-            "$(CXX) -std=c++23 -O1 -Wall -Wextra -Wpedantic -Werror -no-pie "
-            "tests/kernel-graphical-paging.cpp -o build/kernel-graphical-paging-test",
-            "build/kernel-graphical-paging-test",
-        ],
-        "test-graphical-controls": [
-            "python3 -B tests/kernel-graphical-admission-controls.py",
-            "python3 -B -O tests/kernel-graphical-admission-controls.py",
-            "python3 -B tests/kernel-graphical-smoke.py",
-            "python3 -B -O tests/kernel-graphical-smoke.py",
-        ],
-    }
-    for target, wanted in expected.items():
-        if [line.strip() for line in recipes.get(target, [])] != wanted:
-            raise ValueError("graphical Make recipe drift: " + target)
-    if not re.search(
-        r"^test-graphical-console: compiler test-graphical-paging test-graphical-controls$", source, re.MULTILINE
-    ):
-        raise ValueError("graphical focused dependency drift")
 
 
 def check_graphical_meson(entries):
@@ -347,18 +314,6 @@ def self_test():
     )
     if all_runners != {"a.py", "b.py"} or aggregate != {"a.py"}:
         raise ValueError("Make reachability self-test failed")
-    for bad in ("test-formatter", "test-json", "test --ignore-errors"):
-        if compiler_dispatch({"test-compiler": ["\t$(MAKE) -C compiler " + bad]}):
-            raise ValueError("nonaggregate compiler dispatch accepted")
-    if compiler_dispatch({"test-compiler": ["\t-$(MAKE) -C compiler test"]}):
-        raise ValueError("failure-suppressing compiler aggregate dispatch accepted")
-    if not compiler_dispatch({"test-compiler": ["\t$(MAKE) -C compiler test"]}):
-        raise ValueError("literal compiler aggregate dispatch not recognized")
-    commented, _, _, recipes = make_inventory(
-        "test: test-compiler\ntest-compiler:\n\t# $(MAKE) -C compiler test\n\t@# python3 tests/compiler/a.py\n"
-    )
-    if commented or compiler_dispatch(recipes):
-        raise ValueError("commented recipe counted as runnable")
     check(sample, {"a.py"}, {"a.py"}, {"a.py"})
     try:
         check(sample, {"a.py"}, {"a.py"}, {"a.py"}, set())
@@ -401,6 +356,24 @@ def self_test():
         else:
             raise ValueError("compiler Meson forwarding mutation was accepted")
 
+    root = (
+        'test:\n\tpython3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite full\n'
+        'test-compiler:\n\tpython3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite compiler\n'
+    )
+    if root_meson_inventory(root, compiler_manifest) != {"a.py", "b.py"}:
+        raise ValueError("root Meson full selection control failed")
+    for changed in (
+        root.replace("--suite full", "--suite compiler"),
+        root.replace("test:", "test: test-clean"),
+        root.replace("\tpython3", "\t-python3", 1),
+    ):
+        try:
+            root_meson_inventory(changed, compiler_manifest)
+        except ValueError:
+            pass
+        else:
+            raise ValueError("root Meson forwarding mutation was accepted")
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -409,14 +382,10 @@ def main():
     self_test()
     manifest = json.loads((ROOT / "tests/compiler-test-inventory.json").read_text())
     files = {p.name for p in (ROOT / "tests/compiler").glob("*.py")}
-    root_all, root_runners, reached, recipes = make_inventory((ROOT / "Makefile").read_text())
+    root_runners = root_meson_inventory((ROOT / "Makefile").read_text(), manifest)
     compiler_source = (ROOT / "compiler/Makefile").read_text()
-    compiler_all, compiler_runners = compiler_meson_inventory(compiler_source, manifest)
-    if "test-compiler" not in reached or not compiler_dispatch(recipes):
-        raise ValueError("root Make no longer dispatches the complete compiler aggregate")
-    make_runners = root_all | compiler_all
-    root_runners |= compiler_runners
-    check_graphical_make((ROOT / "Makefile").read_text())
+    compiler_all, _ = compiler_meson_inventory(compiler_source, manifest)
+    make_runners = root_runners | compiler_all
     registered = None
     records = None
     if args.meson_info:
@@ -437,7 +406,7 @@ def main():
     native_spec = importlib.util.spec_from_file_location("aurora_native_inventory", ROOT / "tests/native/inventory.py")
     native = importlib.util.module_from_spec(native_spec)
     native_spec.loader.exec_module(native)
-    native_summary = native.check(ROOT, records, reached)
+    native_summary = native.check(ROOT, records)
     gaps = sorted(name for name, entry in manifest.items() if not entry["meson"] and entry["kind"] != "composed-runner")
     composed = sum(entry["kind"] == "composed-runner" for entry in manifest.values())
     print(
@@ -447,7 +416,7 @@ def main():
         f"({'verified' if registered is not None else 'declared, not checked in this invocation'}); "
         f"{len(gaps)} separate baseline-dependent gates"
     )
-    print("PASS exact compiler Meson forwarding and graphical focused Make routes")
+    print("PASS exact compiler/root Meson forwarding")
     print("Native inventory: " + json.dumps(native_summary, sort_keys=True))
     print("Registration is not execution; final-source full Meson and affected emulator gates remain required.")
 

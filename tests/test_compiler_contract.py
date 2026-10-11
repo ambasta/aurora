@@ -13,8 +13,6 @@ import os
 from pathlib import Path
 import shutil
 import shlex
-import signal
-import time
 import subprocess
 import sys
 import tempfile
@@ -92,16 +90,13 @@ class Controls(unittest.TestCase):
         self.addCleanup(mocked.stop)
 
     def write(self):
-        c.write_json(self.receipt, self.context)
+        self.receipt.write_text(json.dumps(self.context, indent=2, sort_keys=True) + "\n")
 
     def checked(self):
         return c.read_context(self.receipt, self.root, self.compiler, developer=True)
 
     def args(self, **kwargs):
         return argparse.Namespace(compiler_sha256=kwargs.get("pin"), developer_build_receipt=kwargs.get("receipt"))
-
-    def launch(self, goal="test", **kwargs):
-        return argparse.Namespace(entry=kwargs.get("entry", "root"), goal=goal, repo_root=self.root)
 
     def test_valid_synthetic_receipt(self):
         self.assertEqual(self.checked()["origin"], "fresh-source-build")
@@ -256,128 +251,6 @@ class Controls(unittest.TestCase):
         with self.assertRaises(c.ContractError):
             self.checked()
 
-    def test_acceptance_pin_preflight_creates_nothing(self):
-        before = set(self.root.rglob("*"))
-        for env in (
-            {},
-            {"ACCEPTANCE_COMPILER_SHA256": ""},
-            {"ACCEPTANCE_COMPILER_SHA256": "invalid"},
-            {"ACCEPTANCE_COMPILER_SHA256": "0" * 64, "ACCEPTANCE_COMPILER": str(self.compiler)},
-        ):
-            with self.subTest(env=env), self.assertRaises(c.ContractError):
-                c.prepare_controls(self.launch("test-acceptance"), env)
-        self.assertEqual(before, set(self.root.rglob("*")))
-
-    def test_empty_prebuilt_selector_rejects_before_queries_and_artifacts(self):
-        def artifacts():
-            rows = {}
-            for path in (self.root, *sorted(self.root.rglob("*"))):
-                relative = str(path.relative_to(self.root))
-                mode = path.lstat().st_mode & 0o7777
-                if path.is_symlink():
-                    rows[relative] = ("symlink", mode, os.readlink(path))
-                elif path.is_file():
-                    rows[relative] = ("file", mode, path.stat().st_size, c.digest(path))
-                else:
-                    rows[relative] = ("directory", mode)
-            return rows
-
-        before = artifacts()
-        pin = {"ACCEPTANCE_COMPILER_SHA256": c.digest(self.compiler)}
-        routes = (
-            ("root", "test", "developer", {}),
-            ("root", "test-acceptance", "acceptance", pin),
-            ("compiler", "test", "developer", {}),
-            ("compiler", "test-short-circuit", "acceptance", pin),
-        )
-        for entry, goal, mode, controls in routes:
-            args = self.launch(goal, entry=entry)
-            # Omission still selects the documented fresh-build route.
-            selected = c.prepare_controls(args, controls)
-            self.assertEqual(selected[0], mode)
-            self.assertIsNone(selected[2])
-            # Valid nonempty paths retain the existing acceptance-only semantics.
-            nonempty = {**controls, "ACCEPTANCE_COMPILER": str(self.compiler)}
-            if mode == "acceptance":
-                chosen = c.prepare_controls(args, nonempty)
-                self.assertEqual(chosen[0], "acceptance")
-                self.assertEqual(chosen[2], self.compiler)
-            else:
-                with self.assertRaisesRegex(c.ContractError, "prebuilt compiler is only valid in acceptance mode"):
-                    c.prepare_controls(args, nonempty)
-            self.assertEqual(before, artifacts())
-            with (
-                self.subTest(entry=entry, goal=goal, mode=mode),
-                patch.dict(os.environ, {**controls, "ACCEPTANCE_COMPILER": ""}),
-                patch.object(c, "tool_record", side_effect=AssertionError("no tool query")) as tool,
-                patch.object(c, "query", side_effect=AssertionError("no query")) as query,
-                patch.object(c, "capture", side_effect=AssertionError("no command capture")) as capture,
-                patch.object(c, "execute", side_effect=AssertionError("no command execution")) as execute,
-                patch.object(c, "write_json", side_effect=AssertionError("no artifact write")) as write,
-                self.assertRaisesRegex(c.ContractError, "ACCEPTANCE_COMPILER must not be empty"),
-            ):
-                c.prepare_controls(args, os.environ)
-            for forbidden in (tool, query, capture, execute, write):
-                forbidden.assert_not_called()
-            self.assertEqual(before, artifacts())
-        self.assertEqual(before, artifacts())
-
-    def test_prebuilt_alias_must_agree(self):
-        env = {
-            "ACCEPTANCE_COMPILER_SHA256": c.digest(self.compiler),
-            "ACCEPTANCE_COMPILER": str(self.compiler),
-            "OUT": str(self.compiler),
-            "AURORAC": str(self.compiler),
-        }
-        mode, expected, chosen, full = c.prepare_controls(self.launch("test-acceptance"), env)
-        self.assertEqual((mode, expected, chosen, full), ("acceptance", c.digest(self.compiler), self.compiler, True))
-        env["AURORAC"] = str(self.root / "wrong")
-        with self.assertRaises(c.ContractError):
-            c.prepare_controls(self.launch("test-acceptance"), env)
-
-    def test_developer_path_override_rejected(self):
-        for selector in c.SELECTORS:
-            with self.subTest(selector=selector), self.assertRaises(c.ContractError):
-                c.prepare_controls(self.launch(), {selector: str(self.compiler)})
-
-    def test_full_and_acceptance_reject_reduced_flags(self):
-        for flag in (
-            "--quick",
-            "--smoke",
-            "--self-test-only",
-            "--freeze-reference /tmp/x",
-            "--mutations-only",
-            "--case-filter x",
-            "--random-count 1",
-            "--limit 1",
-            "--compatibility",
-        ):
-            for goal, env in (
-                ("test", {}),
-                ("test-acceptance", {"ACCEPTANCE_COMPILER_SHA256": "0" * 64}),
-                ("test-package-identity", {"PACKAGE_IDENTITY_COMPILER_SHA256": "0" * 64}),
-            ):
-                with self.subTest(flag=flag, goal=goal), self.assertRaises(c.ContractError):
-                    c.prepare_controls(self.launch(goal), {**env, "PACKAGE_IDENTITY_TEST_FLAGS": flag})
-        self.assertFalse(
-            c.prepare_controls(self.launch("test-package-identity"), {"PACKAGE_IDENTITY_TEST_FLAGS": "--quick"})[3]
-        )
-
-    def test_skip_and_ignore_make_controls_rejected(self):
-        for name in ("MAKEFLAGS", "GNUMAKEFLAGS", "MFLAGS"):
-            for flags in ("-n", "-q", "-t", "-i", "--dry-run", "--ignore-errors", "--eval=x", "-f other.mk"):
-                with self.subTest(name=name, flags=flags), self.assertRaises(c.ContractError):
-                    c.reject_make_controls({name: flags})
-        for env in (
-            {"MAKEFILES": "other.mk"},
-            {"SHELL": "/bin/true"},
-            {"MAKE": "/bin/true"},
-            {".SHELLFLAGS": "-c true"},
-        ):
-            with self.subTest(env=env), self.assertRaises(c.ContractError):
-                c.reject_make_controls(env)
-        c.reject_make_controls({"MAKEFLAGS": "w -j1 -- CXXFLAGS=-std=c++23\\ -O2"})
-
     def test_opaque_build_inputs_rejected(self):
         for value in (
             "@flags",
@@ -400,9 +273,6 @@ class Controls(unittest.TestCase):
                 c.parse_flags(value)
         with self.assertRaises(c.ContractError):
             c.parse_flags("-std=c++23 -include forced.hpp")
-        for name in c.OPAQUE_ENV:
-            with self.subTest(name=name), self.assertRaises(c.ContractError):
-                c.prepare_controls(self.launch(), {name: "opaque"})
 
     def test_live_oracle_is_in_inventory(self):
         relative = "evidence/package-graph/oracle/reference-v1/reference.py"
@@ -411,159 +281,14 @@ class Controls(unittest.TestCase):
         path.write_text("synthetic inventory input")
         self.assertIn(relative, c.source_inventory(self.root))
 
-    def test_historical_dependency_parser_and_pch_rejection(self):
+    def test_historical_header_pch_rejection(self):
         header = self.root / "system header.hpp"
         header.write_text("// synthetic system header")
-        escaped = str(header).replace(" ", "\\ ")
-        self.depfile.write_text("aurora-contract: main.cpp " + escaped + "\n")
-        paths = c.actual_dependency_paths(self.depfile, self.root / "compiler")
-        self.assertEqual(paths, {str(header), str(self.root / "compiler/main.cpp")})
-        inputs = {name: c.file_record(name) for name in paths}
+        inputs = {str(header): c.file_record(header)}
         c.reject_pch(inputs)
         Path(str(header) + ".gch").write_text("opaque PCH")
         with self.assertRaises(c.ContractError):
             c.reject_pch(inputs)
-
-    def test_retired_executor_rejects_every_mode_before_tools_and_artifacts(self):
-        before_paths = set(self.root.rglob("*"))
-        before = {str(path): c.digest(path) for path in self.root.rglob("*") if path.is_file()}
-        for entry in ("root", "compiler"):
-            for goal in ("test", "test-acceptance", "test-short-circuit", "test-package-identity"):
-                for controls in (
-                    {},
-                    {"ACCEPTANCE_COMPILER": str(self.compiler), "ACCEPTANCE_COMPILER_SHA256": c.digest(self.compiler)},
-                ):
-                    with (
-                        self.subTest(entry=entry, goal=goal, pinned=bool(controls)),
-                        patch.dict(os.environ, controls),
-                        patch.object(c, "tool_record") as tools,
-                        patch.object(c, "execute") as execute,
-                        patch.object(c, "write_json") as write,
-                        self.assertRaisesRegex(c.ContractError, "Legacy compiler_contract run is retired") as caught,
-                    ):
-                        c.run(self.launch(goal, entry=entry))
-                    message = str(caught.exception)
-                    self.assertIn("bootstrap_compiler", message)
-                    self.assertNotIn("bootstrap_compiler_sha256", message)
-                    self.assertIn("compiler/README.md#source-bootstrap", message)
-                    self.assertIn("make -C" if goal in ("test", "test-acceptance") else "--list", message)
-                    for forbidden in (tools, execute, write):
-                        forbidden.assert_not_called()
-        after = {str(path): c.digest(path) for path in self.root.rglob("*") if path.is_file()}
-        self.assertEqual(before, after)
-        self.assertEqual(before_paths, set(self.root.rglob("*")))
-
-    def test_retirement_migration_preserves_explicit_build_directory(self):
-        build = self.root / "configured directory"
-        with patch.dict(os.environ, {"MESON_BUILD_DIR": str(build)}):
-            with self.assertRaises(c.ContractError) as caught:
-                c.run(self.launch("test-acceptance"))
-        self.assertIn(shlex.quote("MESON_BUILD_DIR=" + str(build)), str(caught.exception))
-        self.assertFalse(build.exists())
-
-    def test_retired_inner_make_context_rejects_even_with_future_source(self):
-        copied = self.root / "compiler/Makefile"
-        shutil.copyfile(ROOT / "compiler/Makefile", copied)
-        os.utime(self.root / "compiler/main.cpp", ns=(2_000_000_000_000_000_000,) * 2)
-        result = subprocess.run(
-            [shutil.which("make"), "-n", "all"],
-            cwd=copied.parent,
-            env={**self.env, "AURORA_TEST_CONTEXT": str(self.receipt)},
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("unsupported legacy compiler controls: AURORA_TEST_CONTEXT", result.stderr)
-        self.assertNotIn("main.cpp", result.stdout)
-        self.assertNotIn("meson_test.py", result.stdout)
-
-    def test_sigterm_cleans_owned_child_and_grandchild(self):
-        ready = self.root / "build/ready.json"
-        sleeper = self.root / "build/sleeper.py"
-        sleeper.write_text(
-            "import json,os,subprocess,sys,time\n"
-            "p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(120)'],"
-            "stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)\n"
-            "open(sys.argv[1],'w').write(json.dumps([os.getpid(),p.pid]))\ntime.sleep(120)\n"
-        )
-        supervisor = self.root / "build/supervisor.py"
-        supervisor.write_text(
-            "import importlib.util,sys,json\n"
-            "s=importlib.util.spec_from_file_location('contract',sys.argv[1]);c=importlib.util.module_from_spec(s);"
-            "sys.modules[s.name]=c;s.loader.exec_module(c)\n"
-            "try:\n with c.interrupt_handlers(): c.execute([sys.executable,sys.argv[2],sys.argv[3]],"
-            "sys.argv[4],dict(__import__('os').environ),sys.argv[5])\n"
-            "except c.RunInterrupted as e:\n open(sys.argv[6],'w').write("
-            "json.dumps({'status':'failed','signal':e.number}));"
-            "sys.exit(128+e.number)\n"
-        )
-        terminal = self.root / "build/terminal.json"
-        process = subprocess.Popen(
-            [
-                sys.executable,
-                "-B",
-                str(supervisor),
-                str(ROOT / "scripts/compiler_contract.py"),
-                str(sleeper),
-                str(ready),
-                str(self.root),
-                str(self.root / "build/process.log"),
-                str(terminal),
-            ],
-            env=self.env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        pids = []
-        try:
-            deadline = time.monotonic() + 5
-            while not ready.exists() and process.poll() is None and time.monotonic() < deadline:
-                time.sleep(0.02)
-            self.assertTrue(ready.exists())
-            pids = json.loads(ready.read_text())
-            process.send_signal(signal.SIGTERM)
-            out, err = process.communicate(timeout=7)
-            self.assertEqual(process.returncode, 128 + signal.SIGTERM, err.decode())
-            self.assertEqual(json.loads(terminal.read_text())["status"], "failed")
-            deadline = time.monotonic() + 2
-            while time.monotonic() < deadline:
-                live = [
-                    pid
-                    for pid in pids
-                    if Path("/proc/" + str(pid) + "/stat").exists()
-                    and Path("/proc/" + str(pid) + "/stat").read_text().split(") ", 1)[1].split()[0] != "Z"
-                ]
-                if not live:
-                    break
-                time.sleep(0.02)
-            self.assertFalse(live, "owned child/grandchild remained running")
-        finally:
-            if process.poll() is None:
-                process.kill()
-                process.wait()
-            for pid in pids:
-                try:
-                    os.kill(pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-
-    def test_remaining_pin_aware_make_calls_receive_identity(self):
-        # Root legacy recipes remain readable behind the retired run dispatcher.
-        # Compiler aliases now use Meson's selected-artifact identity directly.
-        runners = {"package_identity.py", "package_manifest.py", "package_graph.py", "kernel-budget-native.py"}
-        found = set()
-        for line in (ROOT / "Makefile").read_text().splitlines():
-            for runner in runners:
-                if line.startswith("\t") and runner in line and "python3" in line:
-                    found.add(runner)
-                    self.assertIn("$(AURORA_TEST_IDENTITY_ARGS)", line, line)
-        self.assertEqual(found, runners)
-        compiler_make = (ROOT / "compiler/Makefile").read_text()
-        self.assertNotIn("compiler_contract.py run", compiler_make)
-        self.assertNotIn("main.cpp", compiler_make)
-        for family in ("utf8-range", "utf8-lines", "xfs-root", "xfs-geometry"):
-            self.assertIn("--tests " + family, compiler_make)
 
     def test_native_runner_identity_rejections_precede_artifacts(self):
         output = self.root / "build/forbidden-artifacts"
@@ -627,11 +352,8 @@ class Controls(unittest.TestCase):
             ("tests/kernel-ipc-transition-native.py", "IPC_TRANSACTION", 128),
         )
         before = {str(p) for p in (ROOT / "build").rglob("*")} if (ROOT / "build").exists() else set()
-        makefile = (ROOT / "Makefile").read_text()
         for name, family, focused in consumers:
             self.assertTrue((ROOT / name).is_file(), "missing required integrated cap consumer")
-            self.assertIn("test: " + family + "_CAP_MIB = 1024", makefile)
-            self.assertIn(family + "_CAP_MIB ?= " + str(focused), makefile)
             selected = (
                 ["--compiler", "/nonexistent/compiler"]
                 if family in ("KERNEL_BUDGET", "ROUND_ROBIN_TEST", "IPC_TRANSACTION")
@@ -659,147 +381,6 @@ class Controls(unittest.TestCase):
                     self.assertEqual(receipt["maximum_cap_mib"], 1024)
         after = {str(p) for p in (ROOT / "build").rglob("*")} if (ROOT / "build").exists() else set()
         self.assertEqual(before, after)
-
-    def test_cap_controls_match_all_six_integrated_bounds(self):
-        self.assertEqual(
-            c.CAP_CONTROLS,
-            {
-                "PACKAGE_IDENTITY_CAP_MIB": (128, 1024),
-                "PACKAGE_MANIFEST_CAP_MIB": (256, 1024),
-                "PACKAGE_GRAPH_CAP_MIB": (256, 1024),
-                "KERNEL_BUDGET_CAP_MIB": (128, 1024),
-                "ROUND_ROBIN_TEST_CAP_MIB": (128, 1024),
-                "IPC_TRANSACTION_CAP_MIB": (128, 1024),
-            },
-        )
-        c.validate_cap_controls({})
-        for name, (minimum, maximum) in c.CAP_CONTROLS.items():
-            for value in (str(minimum), "513", str(maximum)):
-                c.validate_cap_controls({name: value})
-            for value in (
-                "",
-                " ",
-                "\t",
-                "\n",
-                str(minimum - 1),
-                "1025",
-                "-1",
-                "+128",
-                "128.0",
-                "128 --check-cap-only",
-                "1024 --self-test-only",
-                "128 invalid",
-                "128 unexpected",
-                "128\n--check-cap-only",
-                "128\t--check-cap-only",
-                " 128",
-                "128 ",
-                "$UNEXPANDED",
-                "${UNEXPANDED}",
-                "1" * 5000,
-                None,
-                True,
-                128,
-            ):
-                for goal in ("test", "test-round-robin", "test-ipc-transaction", "test-acceptance"):
-                    env = {name: value}
-                    if goal == "test-acceptance":
-                        env["ACCEPTANCE_COMPILER_SHA256"] = "0" * 64
-                    with self.subTest(name=name, value=str(value)[:50], goal=goal), self.assertRaises(c.ContractError):
-                        c.prepare_controls(self.launch(goal), env)
-
-    def test_cap_controls_reject_before_artifacts_or_execution(self):
-        # Pure Python pre-dispatch coverage. This does not run Make or reproduce
-        # the retired end-to-end executable-expression observation.
-        def artifacts():
-            rows = {}
-            for path in (self.root, *sorted(self.root.rglob("*"))):
-                relative = str(path.relative_to(self.root))
-                mode = path.lstat().st_mode & 0o7777
-                if path.is_symlink():
-                    rows[relative] = ("symlink", mode, os.readlink(path))
-                elif path.is_file():
-                    rows[relative] = ("file", mode, path.stat().st_size, c.digest(path))
-                else:
-                    rows[relative] = ("directory", mode)
-            return rows
-
-        before = artifacts()
-        pinned = {"ACCEPTANCE_COMPILER_SHA256": c.digest(self.compiler), "ACCEPTANCE_COMPILER": str(self.compiler)}
-        routes = (
-            ("root", "test", "developer", {}),
-            ("root", "test-acceptance", "acceptance", pinned),
-            ("compiler", "test", "developer", {}),
-            ("compiler", "test-short-circuit", "acceptance", pinned),
-        )
-        for entry, goal, mode, controls in routes:
-            self.assertEqual(c.prepare_controls(self.launch(goal, entry=entry), controls)[0], mode)
-            for name, (minimum, maximum) in c.CAP_CONTROLS.items():
-                values = (
-                    "",
-                    str(minimum - 1),
-                    str(maximum + 1),
-                    "128 --check-cap-only",
-                    "1024 --self-test-only",
-                    "128 trailing",
-                    "128,256",
-                    " 128",
-                    "128\n--check-cap-only",
-                    "$UNEXPANDED",
-                    "$(UNEXPANDED)",
-                )
-                for value in values:
-                    with (
-                        self.subTest(entry=entry, goal=goal, mode=mode, name=name, value=value),
-                        patch.dict(os.environ, {**controls, name: value}),
-                        patch.object(c, "tool_record", side_effect=AssertionError("no tool query")) as tool,
-                        patch.object(c, "query", side_effect=AssertionError("no query")) as query,
-                        patch.object(c, "capture", side_effect=AssertionError("no command capture")) as capture,
-                        patch.object(c, "execute", side_effect=AssertionError("no command execution")) as execute,
-                        patch.object(c, "write_json", side_effect=AssertionError("no artifact write")) as write,
-                        self.assertRaises(c.ContractError),
-                    ):
-                        c.prepare_controls(self.launch(goal, entry=entry), os.environ)
-                    for forbidden in (tool, query, capture, execute, write):
-                        forbidden.assert_not_called()
-                    self.assertEqual(before, artifacts())
-        self.assertEqual(before, artifacts())
-
-    def test_make_cap_ranges_reject_before_build_dispatch(self):
-        before = set((ROOT / "build").rglob("*")) if (ROOT / "build").exists() else set()
-        for directory, goal in (("", "test"), ("compiler", "test")):
-            for name, (minimum, maximum) in c.CAP_CONTROLS.items():
-                for value in (str(minimum - 1), str(maximum + 1)):
-                    for location in ("environment", "command-line"):
-                        env = dict(self.env)
-                        argv = [shutil.which("make"), goal]
-                        if location == "environment":
-                            env[name] = value
-                        else:
-                            argv.append(name + "=" + value)
-                        result = subprocess.run(
-                            argv, cwd=ROOT / directory, env=env, capture_output=True, text=True, timeout=10
-                        )
-                        self.assertNotEqual(result.returncode, 0, result.stdout)
-                        self.assertIn(name + " must be between", result.stderr)
-        after = set((ROOT / "build").rglob("*")) if (ROOT / "build").exists() else set()
-        self.assertEqual(before, after)
-
-    def test_make_cap_operands_are_quoted_and_defaults_preserved(self):
-        text = (ROOT / "Makefile").read_text()
-        for name, (minimum, maximum) in c.CAP_CONTROLS.items():
-            self.assertIn(name + " ?= " + str(minimum), text)
-            self.assertIn("test: " + name + " = " + str(maximum), text)
-            if name in ("ROUND_ROBIN_TEST_CAP_MIB", "IPC_TRANSACTION_CAP_MIB"):
-                script = (
-                    "kernel-round-robin-tests.sh"
-                    if name == "ROUND_ROBIN_TEST_CAP_MIB"
-                    else "kernel-ipc-transaction-tests.sh"
-                )
-                self.assertIn(name + '="$(' + name + ')"', text)
-                self.assertIn('--candidate-cap-mib "${' + name + ':-128}"', (ROOT / "scripts" / script).read_text())
-            else:
-                self.assertIn('--candidate-cap-mib "$(' + name + ')"', text)
 
     def test_pr26_xfs_temp_root_control_preserved(self):
         spec = importlib.util.spec_from_file_location(
@@ -890,22 +471,6 @@ class Controls(unittest.TestCase):
             with self.subTest(name=name), self.assertRaises(c.ContractError):
                 c.selected_flag_vectors({name: ""})
 
-    def test_flag_rejections_precede_artifacts_and_tool_queries(self):
-        before = set(self.root.rglob("*"))
-        for name in ("CXXFLAGS", "IR_TEST_CXXFLAGS"):
-            for value in ("", "-DVALUE=$UNEXPANDED", "-O2\n-g", "-include -O2", "-DVALUE=`inert`"):
-                with (
-                    self.subTest(name=name, value=value),
-                    patch.dict(os.environ, {name: value}),
-                    patch.object(c, "tool_record", side_effect=AssertionError("no tool query")) as tool,
-                    patch.object(c, "execute", side_effect=AssertionError("no command")) as execute,
-                    self.assertRaises(c.ContractError),
-                ):
-                    c.prepare_controls(self.launch(), os.environ)
-                tool.assert_not_called()
-                execute.assert_not_called()
-        self.assertEqual(before, set(self.root.rglob("*")))
-
     def test_historical_receipt_retains_exact_both_flag_vectors(self):
         raw_build = '-std=c++23  -O2 "-DCOUNT=7" -D WORD=token'
         raw_ir = "-std=c++23 -O1 -g '-DTRACE=1' -U DROP"
@@ -954,28 +519,6 @@ class Controls(unittest.TestCase):
             self.assertEqual(context["host_test_flags"]["IR_TEST_CXXFLAGS"], ["-std=c++23", "-O0", "-g"])
         with patch.dict(os.environ, {"IR_TEST_CXXFLAGS": "-O1"}), self.assertRaises(c.ContractError):
             c.read_context(self.receipt, self.root)
-
-    def test_safe_public_make_dry_runs_reject_inert_raw_flag_syntax(self):
-        # Only inert variable references/malformed data; no executable Make
-        # expressions, commands, sentinel creation or old review replay.
-        for directory in ("", "compiler"):
-            for name in ("CXXFLAGS", "IR_TEST_CXXFLAGS", "CXX"):
-                for value in ("$UNEXPANDED", "$(UNEXPANDED)", "`inert`", "first\nsecond"):
-                    for location in ("environment", "command-line"):
-                        env = dict(self.env)
-                        argv = [shutil.which("make"), "-n", "test"]
-                        if location == "environment":
-                            env[name] = value
-                        else:
-                            argv.append(name + "=" + value)
-                        with self.subTest(directory=directory, name=name, location=location, value=value):
-                            result = subprocess.run(
-                                argv, cwd=ROOT / directory, env=env, capture_output=True, text=True, timeout=10
-                            )
-                            self.assertNotEqual(result.returncode, 0, result.stdout)
-                            self.assertIn("unsupported raw flag syntax in controls:", result.stderr)
-                            self.assertNotIn(value, result.stderr)
-                            self.assertNotIn("compiler_contract.py run", result.stdout)
 
     def test_safe_compiler_make_dry_runs_only_forward_to_meson(self):
         env = {**self.env, "CXX": "g++", "CXXFLAGS": "-std=c++23 -O2 -DCOUNT=7"}
@@ -1041,40 +584,6 @@ class Controls(unittest.TestCase):
                 with self.subTest(name=name, value=value), self.assertRaises(c.ContractError):
                     c.parse_flags("-std=c++23 " + value, name)
 
-    def test_header_option_rejection_precedes_tools_and_artifacts_in_all_modes(self):
-        before = set(self.root.rglob("*"))
-        cases = (
-            "-Iinclude",
-            "-I include",
-            "-isystem include",
-            "-iquote include",
-            "-idirafter include",
-            "-include forced.hpp",
-            "-imacros macros.hpp",
-        )
-        for goal, extra in (
-            ("test", {}),
-            (
-                "test-acceptance",
-                {"ACCEPTANCE_COMPILER_SHA256": c.digest(self.compiler), "ACCEPTANCE_COMPILER": str(self.compiler)},
-            ),
-        ):
-            for name in ("CXXFLAGS", "IR_TEST_CXXFLAGS"):
-                for value in cases:
-                    with (
-                        self.subTest(goal=goal, name=name, value=value),
-                        patch.dict(os.environ, {**extra, name: "-std=c++23 " + value}),
-                        patch.object(c, "tool_record", side_effect=AssertionError("no tool query")) as tool,
-                        patch.object(c, "query", side_effect=AssertionError("no subprocess query")) as query,
-                        patch.object(c, "execute", side_effect=AssertionError("no execution")) as execute,
-                        self.assertRaisesRegex(c.ContractError, "header/search/forced-header"),
-                    ):
-                        c.prepare_controls(self.launch(goal), os.environ)
-                    tool.assert_not_called()
-                    query.assert_not_called()
-                    execute.assert_not_called()
-        self.assertEqual(before, set(self.root.rglob("*")))
-
     def test_header_rejection_keeps_default_release_and_recorded_vectors(self):
         expected = shlex.split(c.DEFAULT_FLAGS)
         self.assertEqual(c.selected_flag_vectors({}), {"CXXFLAGS": expected, "IR_TEST_CXXFLAGS": expected})
@@ -1092,20 +601,6 @@ class Controls(unittest.TestCase):
         self.assertIn("'short_circuit_ir'", meson)
         self.assertIn("include_directories('../compiler')", meson)
 
-    def test_cxx_omission_and_empty_are_distinct_before_tools(self):
-        before = set(self.root.rglob("*"))
-        self.assertEqual(c.prepare_controls(self.launch(), {})[0], "developer")
-        for name in ("CXX", "CXXFLAGS", "IR_TEST_CXXFLAGS"):
-            with (
-                self.subTest(name=name),
-                patch.dict(os.environ, {name: ""}),
-                patch.object(c, "tool_record", side_effect=AssertionError("no tool query")) as tool,
-                self.assertRaises(c.ContractError),
-            ):
-                c.prepare_controls(self.launch(), os.environ)
-            tool.assert_not_called()
-        self.assertEqual(before, set(self.root.rglob("*")))
-
     def test_simple_cxx_policy_retains_distribution_symlink_identity(self):
         for name in (
             "g++",
@@ -1122,80 +617,6 @@ class Controls(unittest.TestCase):
         for value in ("", "g++ -O2", "tool path/g++", "$UNEXPANDED", "g++\nother", "`inert`", "wrapper@g++"):
             with self.subTest(value=value), self.assertRaises(c.ContractError):
                 c.parse_cxx(value)
-
-    def test_consuming_targets_use_meson_or_explicit_retirement_route(self):
-        for directory, targets in (
-            (
-                "",
-                (
-                    "test-round-robin",
-                    "test-ipc-transaction",
-                    "test-uefi-ipc",
-                    "test-uefi-budget",
-                    "test-uefi-dispatch",
-                    "test-uefi-user-phases",
-                    "test-client-disposal",
-                    "test-terminal-event",
-                    "test-graphical-console",
-                    "test-kernel",
-                    "test-division",
-                    "test-uefi-runtime",
-                ),
-            ),
-            ("compiler", ("test-short-circuit",)),
-        ):
-            for target in targets:
-                with self.subTest(target=target):
-                    result = subprocess.run(
-                        [shutil.which("make"), "-n", target],
-                        cwd=ROOT / directory,
-                        env=self.env,
-                        capture_output=True,
-                        text=True,
-                        timeout=10,
-                    )
-                    self.assertEqual(result.returncode, 0, result.stderr)
-                    if directory == "compiler":
-                        self.assertIn("meson_test.py", result.stdout)
-                        self.assertIn("--tests short-circuit short-circuit-ir short-circuit-ir-native", result.stdout)
-                    else:
-                        self.assertIn("compiler_contract.py run", result.stdout)
-                        self.assertIn('--goal "' + target + '"', result.stdout)
-                    self.assertNotIn("g++", result.stdout)
-                    self.assertNotIn("kernel-round-robin-native.py", result.stdout)
-        root_make = (ROOT / "Makefile").read_text()
-        compiler_make = (ROOT / "compiler/Makefile").read_text()
-        self.assertRegex(root_make, r"(?m)^test:[^\n]*\btest-round-robin(?:[ \t]|$)")
-        self.assertIn("test: test-native-cap-contracts", root_make)
-        self.assertIn("--tests short-circuit short-circuit-ir short-circuit-ir-native", compiler_make)
-        self.assertIn("ROUND_ROBIN_TEST_CAP_MIB", c.FORWARDED)
-        self.assertIn("IPC_TRANSACTION_CAP_MIB", c.FORWARDED)
-        self.assertIn("IPC_TRANSACTION_COMPILER", c.SELECTORS)
-        self.assertIn("IPC_TRANSACTION_COMPILER_SHA256", c.PINS)
-        self.assertIn("test: test-ipc-transaction", root_make)
-        self.assertIn("test: test-client-disposal", root_make)
-        self.assertIn("tests/kernel-client-disposal-native.py --compiler", root_make)
-        context_targets = set()
-        for line in root_make.replace("\\\n", " ").splitlines():
-            targets, separator, prerequisite = line.partition(":")
-            if separator and prerequisite.strip() == "aurora-test-context":
-                context_targets.update(targets.split())
-        self.assertTrue(
-            {
-                "test-ipc-transaction",
-                "test-client-disposal",
-                "test-graphical-console",
-                "test-graphical-paging",
-                "test-graphical-controls",
-                "test-native-cap-contracts",
-                "test-emulator-clock",
-                "run",
-                "run-uefi",
-                "kernel-uefi",
-                "test-developer-commands",
-            }
-            <= context_targets
-        )
 
     def test_six_consumer_driver_is_not_filtered(self):
         spec = importlib.util.spec_from_file_location("synthetic_cap_driver", ROOT / "tests/native-cap-contracts.py")
@@ -1302,45 +723,6 @@ class Controls(unittest.TestCase):
         for statement in expected_statements:
             expected = ast.dump(ast.parse(statement).body[0], include_attributes=False)
             self.assertIn(expected, statements)
-        for name in ("Makefile", "compiler/Makefile"):
-            text = (ROOT / name).read_text()
-            controls = text[text.index("override _AURORA_USER_CONTROLS :=") : text.index("# Raw user flags")]
-            for control in ("IPC_TRANSACTION_COMPILER", "IPC_TRANSACTION_COMPILER_SHA256", "IPC_TRANSACTION_CAP_MIB"):
-                self.assertIn(control, controls)
-            raw_caps = next(line for line in text.splitlines() if line.startswith("override _AURORA_CAP_CONTROLS :="))
-            self.assertIn("IPC_TRANSACTION_CAP_MIB", raw_caps)
-        root = (ROOT / "Makefile").read_text()
-        self.assertIn("KERNEL_BUDGET_COMPILER IPC_TRANSACTION_COMPILER", root)
-        self.assertIn("./scripts/kernel-ipc-transaction-tests.sh $(AURORA_TEST_IDENTITY_ARGS)", root)
-
-    def test_ipc_family_alias_and_pin_use_existing_selection_policy(self):
-        expected = c.digest(self.compiler)
-        for entry in ("root", "compiler"):
-            for goal in ("test", "test-ipc-transaction"):
-                # Existing family aliases treat an empty value as omission.
-                mode, _, selected, _ = c.prepare_controls(
-                    self.launch(goal, entry=entry), {"IPC_TRANSACTION_COMPILER": ""}
-                )
-                self.assertEqual(mode, "developer")
-                self.assertIsNone(selected)
-            pinned = {
-                "ACCEPTANCE_COMPILER": str(self.compiler),
-                "ACCEPTANCE_COMPILER_SHA256": expected,
-                "IPC_TRANSACTION_COMPILER": str(self.compiler),
-                "IPC_TRANSACTION_COMPILER_SHA256": expected,
-            }
-            mode, observed, selected, _ = c.prepare_controls(self.launch("test-ipc-transaction", entry=entry), pinned)
-            self.assertEqual((mode, observed, selected), ("acceptance", expected, self.compiler))
-            for changed in (
-                {"IPC_TRANSACTION_COMPILER": str(self.root / "wrong")},
-                {"IPC_TRANSACTION_COMPILER_SHA256": "0" * 64},
-            ):
-                with self.subTest(entry=entry, changed=changed), self.assertRaises(c.ContractError):
-                    c.prepare_controls(self.launch("test-ipc-transaction", entry=entry), {**pinned, **changed})
-        mode, observed, selected, full = c.prepare_controls(
-            self.launch("test-ipc-transaction"), {"IPC_TRANSACTION_COMPILER_SHA256": expected}
-        )
-        self.assertEqual((mode, observed, selected, full), ("acceptance", expected, None, False))
 
     def ipc_adapter(self, fail_final=False, fail_resolve=False):
         spec = importlib.util.spec_from_file_location(
@@ -1478,24 +860,6 @@ class Controls(unittest.TestCase):
 
     def test_round_robin_final_identity_failure_cannot_pass(self):
         self.round_robin_adapter(fail_final=True)
-
-    def test_make_pin_rejections_do_not_launch_builds(self):
-        # These routes must fail before any compiler/query/test workload. They run
-        # only after the Make dispatcher exists; there is no fallback to native test.
-        text = (ROOT / "Makefile").read_text()
-        self.assertIn("compiler_contract.py", text)
-        before = {str(p) for p in (ROOT / "build").glob("test-contract-*")} if (ROOT / "build").exists() else set()
-        for argv in (
-            [shutil.which("make"), "test-acceptance"],
-            [shutil.which("make"), "test-acceptance", "ACCEPTANCE_COMPILER_SHA256=bad"],
-            [shutil.which("make"), "test", "AURORAC=/nonexistent/compiler"],
-        ):
-            result = subprocess.run(
-                argv, cwd=ROOT, env=self.env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=15
-            )
-            self.assertNotEqual(result.returncode, 0, result.stdout.decode())
-        after = {str(p) for p in (ROOT / "build").glob("test-contract-*")} if (ROOT / "build").exists() else set()
-        self.assertEqual(before, after)
 
 
 if __name__ == "__main__":

@@ -484,36 +484,47 @@ class DeveloperCommands(unittest.TestCase):
                     self.assertFalse((self.repo / "build").exists())
                     self.record.unlink()
 
-    def test_compiler_make_controls_reject_before_forwarding(self):
-        for goal in ("all", "formatter", "test", "test-formatter", "test-lint"):
-            for arguments in (
-                ["OUT="],
-                ["OUT=/old/output"],
-                ["FORMAT_OUT=/old/formatter"],
-                ["AURORA_TEST_CONTEXT=/old/receipt"],
-                ["CXXFLAGS=$UNEXPANDED"],
-                ["IR_TEST_CXXFLAGS=`inert`"],
-                ["AURORA_BUILD_JOBS=two"],
-                ["MAKEFLAGS="],
-                ["SHELL=/bin/true"],
-                [".SHELLFLAGS=-c true"],
-                ["-i"],
-                ["-q"],
-                ["-t"],
-                ["-e"],
+    def test_make_host_checks_call_scripts_directly(self):
+        routes = {
+            "test-pin-ledger": "kernel-pin-tests.sh",
+            "test-uefi-pins": "kernel-uefi-pin-tests.sh",
+            "test-nvme-queues": "kernel-nvme-queue-tests.sh",
+            "test-uefi-bar": "kernel-uefi-bar-tests.sh",
+            "test-dormant-tables": "kernel-dormant-tests.sh",
+            "test-uefi-tables": "kernel-uefi-tables-tests.sh",
+            "test-program-stream": "kernel-program-tests.sh",
+        }
+        for target, script in routes.items():
+            self.script(self.scripts / script, 'printf "%s\\n" "' + script + '" >> "$CALLS"\n')
+        result = subprocess.run([MAKE, *routes], cwd=self.repo, env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.calls(), list(routes.values()))
+        self.assertFalse((self.repo / "build").exists())
+
+    def test_make_preserves_ordinary_options_and_custom_shell(self):
+        self.tool("python3", 'printf "forward|%s\\n" "$*" >> "$CALLS"\nexit "${FAKE_STATUS:-0}"\n')
+        extra = self.home / "extra.mk"
+        extra.write_text("HARMLESS_EXTRA := yes\n")
+        for directory in (self.repo, self.repo / "compiler"):
+            for arguments, status, expected, dispatched in (
+                (["-i"], 19, 0, True),
+                (["-q"], 0, 1, False),
+                (["-t"], 0, 0, False),
+                (["-e"], 0, 0, True),
+                (["SHELL=" + str(self.bin / "bash")], 0, 0, True),
             ):
-                with self.subTest(goal=goal, arguments=arguments):
+                with self.subTest(directory=directory.name, arguments=arguments):
                     result = subprocess.run(
-                        [MAKE, goal, *arguments],
-                        cwd=self.repo / "compiler",
-                        env=self.env,
+                        [MAKE, *arguments, "test"],
+                        cwd=directory,
+                        env=self.env | {"FAKE_STATUS": str(status), "MAKEFILES": str(extra)},
                         capture_output=True,
                         text=True,
-                        timeout=5,
                     )
-                    self.assertNotEqual(result.returncode, 0, result.stdout)
-                    self.assertIn("***", result.stderr)
-                    self.assert_no_work()
+                    self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+                    self.assertEqual(len(self.calls()), int(dispatched))
+                    self.assertFalse((self.repo / "build").exists())
+                    self.record.unlink(missing_ok=True)
 
     def test_make_uefi_routes_to_native_image_without_legacy_build(self):
         self.tool("python3", 'printf "native|%s\\n" "$*" >> "$CALLS"\nexit 79\n')
@@ -659,35 +670,6 @@ class DeveloperCommands(unittest.TestCase):
             output = self.run_script(name, *args, env=env, expected=2)
             self.assertIn("rejects inherited AURORA_TEST_CONTEXT", output)
         self.assert_no_work()
-
-    def test_make_invalid_context_is_checked_before_runner_or_builder(self):
-        # The checker is mocked to reject. Any runner/build call adds an extra
-        # record (or creates build/) and fails this test. No real receipt or
-        # compiler is synthesized and no native-acceptance credit is claimed.
-        self.tool(
-            "python3",
-            'printf "context-check|%s|%s|%s\\n" "$*" "${AURORA_TEST_CONTEXT-}" "${AURORAC-}" >> "$CALLS"\nexit 79\n',
-        )
-        env = self.env | {"AURORA_TEST_CONTEXT": "/invalid/context.json", "AURORAC": "/selected/aurorac"}
-        for goal in ("test-nvme-queues", "smoke-nvme-prepare", "run", "run-uefi", "kernel-uefi"):
-            result = subprocess.run(
-                [MAKE, goal],
-                cwd=self.repo,
-                env=env,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                timeout=5,
-            )
-            self.assertNotEqual(result.returncode, 0, result.stdout)
-            calls = self.calls()
-            self.assertEqual(len(calls), 1, calls)
-            self.assertTrue(
-                calls[0].startswith("context-check|-B scripts/compiler_contract.py check --repo-root "), calls
-            )
-            self.assertTrue(calls[0].endswith("|/invalid/context.json|/selected/aurorac"), calls)
-            self.assertFalse((self.repo / "build").exists())
-            self.record.unlink()
 
     def test_make_build_and_test_aliases_are_only_printed(self):
         for argv, expected in (

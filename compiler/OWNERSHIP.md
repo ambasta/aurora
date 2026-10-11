@@ -282,7 +282,7 @@ fresh exact destinations and establish complete logical initialization, includin
 empty descendants. Empty copied values require explicit complete-value evidence,
 not merely a begun storage reservation, even through copies and control-flow joins.
 
-`compiler/expression_arena.au` is the concrete bootstrap consumer. Its private
+`compiler/syntax_arena.au` is the concrete bootstrap consumer. Its private
 owners and logical counts store copied `AstNode`, `ParseFrame` and `ChildEdge`
 records beyond the fixed 64-element
 and 520-byte aggregate limits. Appends check local child-before-parent indices

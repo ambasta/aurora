@@ -34,11 +34,11 @@ using hosted_parser::StatementKind;
 using hosted_parser::Status;
 using hosted_parser::Stop;
 using Input = hosted_abi::ParserInput;
-using Result = hosted_abi::ParseResult;
-using Node = hosted_abi::Node;
-using Edge = hosted_abi::Edge;
-using TypeSyntax = hosted_abi::TypeSyntax;
-using StatementSyntax = hosted_abi::StatementSyntax;
+using Result = hosted_abi::compiler_parser::ParseResult;
+using Node = hosted_abi::compiler_parser::AstNode;
+using Edge = hosted_abi::compiler_parser::ChildEdge;
+using TypeSyntax = hosted_abi::compiler_parser::TypeSyntax;
+using StatementSyntax = hosted_abi::compiler_parser::StatementSyntax;
 class Arena {
     hosted::bytes::Region region;
     hosted_abi::ParserRelease record;
@@ -56,7 +56,7 @@ public:
     Arena(const Arena &) = delete;
     Arena &operator=(const Arena &) = delete;
     void *data() {
-        return record.arena.data();
+        return record.arena.storage.data();
     }
 };
 
@@ -75,8 +75,8 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
                                  std::size_t &position,
                                  Stop stop,
                                  const hosted_parser::Context &context) {
-    const bool body = stop == Stop::Body;
-    const bool declarationType = stop == Stop::Type;
+    const bool body = stop == Stop::body;
+    const bool declarationType = stop == Stop::type;
     if (position >= tokens.size())
         invalid();
     const auto &begin = tokens[position].span;
@@ -88,11 +88,11 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
         static_cast<std::size_t>(begin.begin.column - 1) > begin.begin.offset)
         invalid();
     Input input;
-    input.backing = source->text.data();
-    input.length = static_cast<std::int64_t>(source->text.size());
-    input.offset = static_cast<std::int64_t>(begin.begin.offset);
-    input.line = begin.begin.line;
-    input.lineStart = input.offset - begin.begin.column + 1;
+    input.source.backing = source->text.data();
+    input.source.length = static_cast<std::int64_t>(source->text.size());
+    input.cursor.offset = static_cast<std::int64_t>(begin.begin.offset);
+    input.cursor.line = begin.begin.line;
+    input.cursor.line_start = input.cursor.offset - begin.begin.column + 1;
     input.stop = stop;
     if (context.typeParameters.size() > 2 || context.capacityParameters.size() > 1)
         invalid();
@@ -104,13 +104,13 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
         last = static_cast<std::int64_t>(span.end.offset);
     };
     if (!context.typeParameters.empty()) {
-        parameter(context.typeParameters[0], input.type1Begin, input.type1End);
+        parameter(context.typeParameters[0], input.context.first_begin, input.context.first_end);
         if (context.typeParameters.size() == 2)
-            parameter(context.typeParameters[1], input.type2Begin, input.type2End);
-        input.mode = context.functionTemplate ? 2 : 1;
+            parameter(context.typeParameters[1], input.context.second_begin, input.context.second_end);
+        input.context.template_mode = context.functionTemplate ? 2 : 1;
     }
     if (!context.capacityParameters.empty())
-        parameter(context.capacityParameters[0], input.capacityBegin, input.capacityEnd);
+        parameter(context.capacityParameters[0], input.context.capacity_begin, input.context.capacity_end);
     // Each monotone store has at most N records; template candidates add at most
     // N frames. Capacity <= 2*used+8 includes every minimum allocation. Other
     // live frames are bounded by body256 + expression1549 + type70 = 1875.
@@ -127,15 +127,15 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
     const auto edgeCount = aurora_hosted_parser_edges(arena.data());
     const auto typeCount = aurora_hosted_parser_types(arena.data());
     const auto statementCount = aurora_hosted_parser_statements(arena.data());
-    if (result.status < Status::Success || result.status >= Status::Invalid || result.count < 0 ||
-        result.count != actualCount || edgeCount < 0 || typeCount < 0 || statementCount < 0 ||
-        (!body && statementCount != 0) || result.tokens < 0 ||
-        static_cast<std::uint64_t>(result.tokens) >= tokens.size() - position || result.offset < input.offset ||
-        result.offset > input.length)
+    if (result.result < Status::success || result.result >= Status::invalid || result.node_count < 0 ||
+        result.node_count != actualCount || edgeCount < 0 || typeCount < 0 || statementCount < 0 ||
+        (!body && statementCount != 0) || result.token_count < 0 ||
+        static_cast<std::uint64_t>(result.token_count) >= tokens.size() - position ||
+        result.source_offset < input.cursor.offset || result.source_offset > input.source.length)
         invalid();
-    if (result.status == Status::Unsupported)
+    if (result.result == Status::unsupported)
         invalid();
-    const auto end = position + static_cast<std::size_t>(result.tokens);
+    const auto end = position + static_cast<std::size_t>(result.token_count);
     for (auto index = position; index <= end; ++index) {
         const auto &token = tokens[index];
         const auto &span = token.span;
@@ -144,118 +144,119 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
             invalid();
     }
     auto at = tokens[end];
-    if (static_cast<std::size_t>(result.offset) != at.span.begin.offset) {
-        if ((result.status == Status::Success && !declarationType) || at.text != ">>" ||
+    if (static_cast<std::size_t>(result.source_offset) != at.span.begin.offset) {
+        if ((result.result == Status::success && !declarationType) || at.text != ">>" ||
             at.span.end.offset - at.span.begin.offset != 2 ||
-            static_cast<std::size_t>(result.offset) != at.span.begin.offset + 1 ||
+            static_cast<std::size_t>(result.source_offset) != at.span.begin.offset + 1 ||
             at.span.begin.column == std::numeric_limits<int>::max())
             invalid();
         at.text = ">";
         ++at.span.begin.offset;
         ++at.span.begin.column;
     }
-    if (result.status != Status::Success) {
-        if (result.root != -1)
+    if (result.result != Status::success) {
+        if (result.root_node != -1)
             invalid();
-        if (result.status == Status::AllocationFailure)
+        if (result.result == Status::allocation_failure)
             throw Error(DiagnosticCode::Internal, "hosted parser allocation failed", at.span);
-        if ((!body && result.status >= Status::ExpectedOpen) || (body && result.status == Status::ExpectedEnd))
+        if ((!body && result.result >= Status::expected_open) || (body && result.result == Status::expected_end))
             invalid();
-        if (result.status == Status::BlockNestingLimit)
+        if (result.result == Status::block_nesting_limit)
             throw Error(DiagnosticCode::NestingLimit, "block nesting exceeds 128", at.span);
-        if (result.status == Status::NestingLimit)
+        if (result.result == Status::nesting_limit)
             throw Error(DiagnosticCode::NestingLimit, "expression parser nesting exceeds 128", at.span);
-        if (result.status == Status::TypeNestingLimit || result.status == Status::TemplateNestingLimit ||
-            result.status == Status::CallTemplateNestingLimit)
+        if (result.result == Status::type_nesting_limit || result.result == Status::template_nesting_limit ||
+            result.result == Status::call_template_nesting_limit)
             throw Error(DiagnosticCode::NestingLimit,
-                        result.status == Status::TypeNestingLimit       ? "type nesting exceeds 64"
-                        : result.status == Status::TemplateNestingLimit ? "template-id nesting exceeds 4"
-                                                                        : "template-id nesting exceeds 5",
+                        result.result == Status::type_nesting_limit       ? "type nesting exceeds 64"
+                        : result.result == Status::template_nesting_limit ? "template-id nesting exceeds 4"
+                                                                          : "template-id nesting exceeds 5",
                         at.span);
         std::string message;
-        if (result.status == Status::ExpectedExpression)
+        if (result.result == Status::expected_expression)
             message = "expected expression";
-        else if (result.status == Status::ExpectedClose)
+        else if (result.result == Status::expected_close)
             message = "expected ')'";
-        else if (result.status == Status::ExpectedIndexClose)
+        else if (result.result == Status::expected_index_close)
             message = "expected ']'";
-        else if (result.status == Status::ExpectedBraceClose)
+        else if (result.result == Status::expected_brace_close)
             message = "expected '}'";
-        else if (result.status == Status::ExpectedDot)
+        else if (result.result == Status::expected_dot)
             message = "expected '.'";
-        else if (result.status == Status::ExpectedEqual)
+        else if (result.result == Status::expected_equal)
             message = "expected '='";
-        else if (result.status == Status::ExpectedBraceOpen)
+        else if (result.result == Status::expected_brace_open)
             message = "expected '{'";
-        else if (result.status == Status::ExpectedIdentifier)
+        else if (result.result == Status::expected_identifier)
             message = "expected identifier";
-        else if (result.status == Status::ReservedIdentifier)
+        else if (result.result == Status::reserved_identifier)
             message = "reserved identifier";
-        else if (result.status == Status::ReservedBuiltin)
+        else if (result.result == Status::reserved_builtin)
             message = "reserved builtin storage name";
-        else if (result.status == Status::ReservedPrefix)
+        else if (result.result == Status::reserved_prefix)
             message = "reserved compiler identifier prefix: __au_";
-        else if (result.status == Status::DepthLimit)
+        else if (result.result == Status::depth_limit)
             message = "expression AST depth exceeds 128";
-        else if (result.status == Status::ExpectedAngleOpen)
+        else if (result.result == Status::expected_angle_open)
             message = "expected '<'";
-        else if (result.status == Status::ExpectedAngleClose)
+        else if (result.result == Status::expected_angle_close)
             message = "expected '>'";
-        else if (result.status == Status::ExpectedScope)
+        else if (result.result == Status::expected_scope)
             message = "expected '::'";
-        else if (result.status == Status::ExpectedComma)
+        else if (result.result == Status::expected_comma)
             message = "expected ','";
-        else if (result.status == Status::ExpectedConst)
+        else if (result.result == Status::expected_const)
             message = "expected 'const'";
-        else if (result.status == Status::ExpectedU8)
+        else if (result.result == Status::expected_u8)
             message = "expected 'u8'";
-        else if (result.status == Status::ExpectedI64)
+        else if (result.result == Status::expected_i64)
             message = "expected 'i64'";
-        else if (result.status == Status::ExpectedArray)
+        else if (result.result == Status::expected_array)
             message = "expected 'array'";
-        else if (result.status == Status::ReservedType)
+        else if (result.result == Status::reserved_type)
             message = "unsupported or reserved type spelling";
-        else if (result.status == Status::ExpectedType)
+        else if (result.result == Status::expected_type)
             message = "expected type name";
-        else if (result.status == Status::TemplateContext)
+        else if (result.result == Status::template_context)
             message = "template-id references inside template definitions are not supported";
-        else if (result.status == Status::TemplateArity)
+        else if (result.result == Status::template_arity)
             message = "template arguments are limited to one or two types or capacity literals";
-        else if (result.status == Status::TemplateArgument)
+        else if (result.result == Status::template_argument)
             message = "template arguments require scalar, named class or enum types, or capacities from 1 to 64";
-        else if (result.status == Status::CapacityArgument)
+        else if (result.result == Status::capacity_argument)
             message = "capacity template arguments must be decimal literals from 1 to 64";
-        else if (result.status == Status::NestedDependent)
+        else if (result.result == Status::nested_dependent)
             message = "nested dependent template arguments are not supported";
-        else if (result.status == Status::OwnedElement)
+        else if (result.result == Status::owned_element)
             message = "owned values require a named concrete copied class";
-        else if (result.status == Status::ArrayElement)
+        else if (result.result == Status::array_element)
             message = "array elements require i64, u64, u8, bool or a concrete copied class";
-        else if (result.status == Status::ArrayLength)
+        else if (result.result == Status::array_length)
             message = "array length requires a decimal integer literal between 1 and 4096";
-        else if (result.status == Status::ClassArrayLength)
+        else if (result.result == Status::class_array_length)
             message = "class-element array capacity must be between 1 and 64";
-        else if (result.status == Status::ExpectedOpen)
+        else if (result.result == Status::expected_open)
             message = "expected '('";
-        else if (result.status == Status::ExpectedSemicolon)
+        else if (result.result == Status::expected_semicolon)
             message = "expected ';'";
-        else if (result.status == Status::UnterminatedBlock)
+        else if (result.result == Status::unterminated_block)
             message = "unterminated block";
-        else if (result.status == Status::AssignmentTarget)
+        else if (result.result == Status::assignment_target)
             message = "assignment requires a local or local field";
-        else if (result.status == Status::ExpectedEnd)
-            message = stop == Stop::CloseParenthesis ? "expected ')'" : "expected ';'";
+        else if (result.result == Status::expected_end)
+            message = stop == Stop::close_parenthesis ? "expected ')'" : "expected ';'";
         else
             invalid();
         throw Error(DiagnosticCode::UnexpectedToken, message + " (found '" + at.text + "')", at.span);
     }
-    const bool residual = static_cast<std::size_t>(result.offset) != tokens[end].span.begin.offset;
-    const auto tokenCount = result.tokens + (residual ? 1 : 0);
-    if (result.tokens == 0 || result.count > result.tokens || typeCount > tokenCount ||
-        statementCount > result.tokens || (result.count == 0 ? edgeCount != 0 : edgeCount >= result.count) ||
-        (declarationType ? result.count != 0 || typeCount == 0 || result.root != typeCount - 1
-         : body          ? statementCount == 0 || result.root != statementCount - 1
-                         : result.count == 0 || result.root != result.count - 1))
+    const bool residual = static_cast<std::size_t>(result.source_offset) != tokens[end].span.begin.offset;
+    const auto tokenCount = result.token_count + (residual ? 1 : 0);
+    if (result.token_count == 0 || result.node_count > result.token_count || typeCount > tokenCount ||
+        statementCount > result.token_count ||
+        (result.node_count == 0 ? edgeCount != 0 : edgeCount >= result.node_count) ||
+        (declarationType ? result.node_count != 0 || typeCount == 0 || result.root_node != typeCount - 1
+         : body          ? statementCount == 0 || result.root_node != statementCount - 1
+                         : result.node_count == 0 || result.root_node != result.node_count - 1))
         invalid();
     const auto text = [&](std::int64_t ordinal) -> const std::string & {
         if (ordinal < 0 || ordinal >= tokenCount)
@@ -279,26 +280,30 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
     for (std::int64_t index = 0; index < statementCount; ++index) {
         auto &statement = statements[static_cast<std::size_t>(index)];
         aurora_hosted_parser_statement(arena.data(), index, &statement);
-        if (statement.kind <= StatementKind::Invalid || statement.kind > StatementKind::IndexAssign ||
-            statement.token < 0 || statement.token >= statement.end || statement.end > result.tokens ||
-            statement.previous < -1 || statement.previous >= index || statement.expression < -1 ||
-            statement.expression >= result.count || statement.target < -1 || statement.target >= result.count ||
-            statement.declaredType < -1 || statement.declaredType >= typeCount || statement.binding < -1 ||
-            statement.binding >= result.tokens || statement.body < -1 || statement.body >= index ||
-            statement.other < -1 || statement.other >= index ||
-            (statement.mutableValue != 0 && statement.mutableValue != 1))
+        if (statement.tag <= StatementKind::invalid || statement.tag > StatementKind::index_assign ||
+            statement.token_index < 0 || statement.token_index >= statement.end_token ||
+            statement.end_token > result.token_count || statement.previous_statement < -1 ||
+            statement.previous_statement >= index || statement.expression_root < -1 ||
+            statement.expression_root >= result.node_count || statement.target_root < -1 ||
+            statement.target_root >= result.node_count || statement.declared_type < -1 ||
+            statement.declared_type >= typeCount || statement.binding_token < -1 ||
+            statement.binding_token >= result.token_count || statement.body_statement < -1 ||
+            statement.body_statement >= index || statement.other_statement < -1 || statement.other_statement >= index ||
+            (statement.mutable_value != 0 && statement.mutable_value != 1))
             invalid();
-        const bool local = statement.kind == StatementKind::Local;
-        const bool block = statement.kind == StatementKind::Block;
-        const bool conditional = statement.kind == StatementKind::Conditional;
-        const bool loop = statement.kind == StatementKind::Loop;
-        const bool assignment = statement.kind == StatementKind::Assign ||
-                                statement.kind == StatementKind::FieldAssign ||
-                                statement.kind == StatementKind::IndexAssign;
-        if ((statement.expression == -1) != block || (statement.target >= 0) != assignment ||
-            (statement.declaredType >= 0) != local || (statement.binding >= 0) != local ||
-            (!local && statement.mutableValue != 0) || (!block && !conditional && !loop && statement.body != -1) ||
-            ((conditional || loop) && statement.body == -1) || (!conditional && statement.other != -1))
+        const bool local = statement.tag == StatementKind::local;
+        const bool block = statement.tag == StatementKind::block;
+        const bool conditional = statement.tag == StatementKind::conditional;
+        const bool loop = statement.tag == StatementKind::loop;
+        const bool assignment = statement.tag == StatementKind::assign ||
+                                statement.tag == StatementKind::field_assign ||
+                                statement.tag == StatementKind::index_assign;
+        if ((statement.expression_root == -1) != block || (statement.target_root >= 0) != assignment ||
+            (statement.declared_type >= 0) != local || (statement.binding_token >= 0) != local ||
+            (!local && statement.mutable_value != 0) ||
+            (!block && !conditional && !loop && statement.body_statement != -1) ||
+            ((conditional || loop) && statement.body_statement == -1) ||
+            (!conditional && statement.other_statement != -1))
             invalid();
         const auto ownStatement = [&](std::int64_t child) -> const StatementSyntax & {
             if (child < 0 || child >= index || statementUsed[static_cast<std::size_t>(child)])
@@ -309,36 +314,36 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
         auto &depth = blockDepth[static_cast<std::size_t>(index)];
         if (block) {
             auto &children = statementLists[static_cast<std::size_t>(index)];
-            for (auto child = statement.body; child != -1;) {
+            for (auto child = statement.body_statement; child != -1;) {
                 const auto &value = ownStatement(child);
                 depth = std::max(depth, blockDepth[static_cast<std::size_t>(child)]);
                 children.push_back(child);
-                child = value.previous;
+                child = value.previous_statement;
             }
             std::reverse(children.begin(), children.end());
             if (++depth > 128)
                 invalid();
         } else if (conditional || loop) {
-            const auto &branch = ownStatement(statement.body);
-            if (branch.kind != StatementKind::Block || branch.previous != -1)
+            const auto &branch = ownStatement(statement.body_statement);
+            if (branch.tag != StatementKind::block || branch.previous_statement != -1)
                 invalid();
             // Control nodes unwrap their block records, so they add no extra
             // lexical nesting beyond those blocks.
-            depth = blockDepth[static_cast<std::size_t>(statement.body)];
-            if (statement.other >= 0) {
-                const auto &other = ownStatement(statement.other);
-                if (other.kind != StatementKind::Block || other.previous != -1)
+            depth = blockDepth[static_cast<std::size_t>(statement.body_statement)];
+            if (statement.other_statement >= 0) {
+                const auto &other = ownStatement(statement.other_statement);
+                if (other.tag != StatementKind::block || other.previous_statement != -1)
                     invalid();
-                depth = std::max(depth, blockDepth[static_cast<std::size_t>(statement.other)]);
+                depth = std::max(depth, blockDepth[static_cast<std::size_t>(statement.other_statement)]);
             }
         }
     }
     if (body) {
-        const auto &root = statements[static_cast<std::size_t>(result.root)];
-        if (root.kind != StatementKind::Block || root.previous != -1 ||
-            statementUsed[static_cast<std::size_t>(result.root)])
+        const auto &root = statements[static_cast<std::size_t>(result.root_node)];
+        if (root.tag != StatementKind::block || root.previous_statement != -1 ||
+            statementUsed[static_cast<std::size_t>(result.root_node)])
             invalid();
-        statementUsed[static_cast<std::size_t>(result.root)] = true;
+        statementUsed[static_cast<std::size_t>(result.root_node)] = true;
         if (std::find(statementUsed.begin(), statementUsed.end(), false) != statementUsed.end())
             invalid();
     }
@@ -357,31 +362,35 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
     for (std::int64_t index = 0; index < typeCount; ++index) {
         auto &type = types[static_cast<std::size_t>(index)];
         aurora_hosted_parser_type(arena.data(), index, &type);
-        if (type.kind <= SyntaxKind::Invalid || type.kind > SyntaxKind::BuiltinClass || type.token < 0 ||
-            type.token >= tokenCount || type.nameEnd < type.token || type.nameEnd >= tokenCount || type.close < 0 ||
-            type.close / 2 >= tokenCount || type.first < -1 || type.second < -1 || type.first >= index ||
-            type.second >= index || (type.first == -1 && type.second != -1))
+        if (type.tag <= SyntaxKind::invalid || type.tag > SyntaxKind::builtin_class || type.token_index < 0 ||
+            type.token_index >= tokenCount || type.name_end < type.token_index || type.name_end >= tokenCount ||
+            type.closing_token < 0 || type.closing_token / 2 >= tokenCount || type.first_child < -1 ||
+            type.second_child < -1 || type.first_child >= index || type.second_child >= index ||
+            (type.first_child == -1 && type.second_child != -1))
             invalid();
-        if (type.role == 0) {
-            if (type.owner != -1)
+        if (type.owner_role == 0) {
+            if (type.owner_token != -1)
                 invalid();
         } else {
-            if (type.owner < 0 || type.owner >= tokenCount ||
-                (type.role != 1 && type.role != 2 && !((body || declarationType) && type.role == 3)) ||
-                (type.role == 1 && (type.kind != SyntaxKind::Named || type.first < 0)) ||
-                type.kind == SyntaxKind::Capacity || type.kind == SyntaxKind::LengthParameter)
+            if (type.owner_token < 0 || type.owner_token >= tokenCount ||
+                (type.owner_role != 1 && type.owner_role != 2 &&
+                 !((body || declarationType) && type.owner_role == 3)) ||
+                (type.owner_role == 1 && (type.tag != SyntaxKind::named || type.first_child < 0)) ||
+                type.tag == SyntaxKind::capacity || type.tag == SyntaxKind::length_parameter)
                 invalid();
-            auto &roots = type.role == 1 ? templateRoots : type.role == 2 ? reflectedRoots : declarationRoots;
-            if (roots[static_cast<std::size_t>(type.owner)] != -1)
+            auto &roots = type.owner_role == 1   ? templateRoots
+                          : type.owner_role == 2 ? reflectedRoots
+                                                 : declarationRoots;
+            if (roots[static_cast<std::size_t>(type.owner_token)] != -1)
                 invalid();
-            roots[static_cast<std::size_t>(type.owner)] = index;
+            roots[static_cast<std::size_t>(type.owner_token)] = index;
         }
         auto &depth = typeDepth[static_cast<std::size_t>(index)];
-        for (const auto child : {type.first, type.second}) {
+        for (const auto child : {type.first_child, type.second_child}) {
             if (child < 0)
                 continue;
             const auto ordinal = static_cast<std::size_t>(child);
-            if (typeUsed[ordinal] || types[ordinal].role != 0)
+            if (typeUsed[ordinal] || types[ordinal].owner_role != 0)
                 invalid();
             typeUsed[ordinal] = true;
             depth = std::max(depth, typeDepth[ordinal] + 1);
@@ -391,14 +400,14 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
     }
     const auto argumentValue = [&](std::int64_t child) {
         const auto &type = types[static_cast<std::size_t>(child)];
-        if (type.kind == SyntaxKind::Capacity) {
+        if (type.tag == SyntaxKind::capacity) {
             const auto capacity = capacities[static_cast<std::size_t>(child)];
             if (capacity < 1 || capacity > 64)
                 invalid();
             return TemplateArgument::capacity(capacity);
         }
-        if (type.kind != SyntaxKind::I64 && type.kind != SyntaxKind::U64 && type.kind != SyntaxKind::U8 &&
-            type.kind != SyntaxKind::Bool && type.kind != SyntaxKind::Named && type.kind != SyntaxKind::Parameter)
+        if (type.tag != SyntaxKind::i64_type && type.tag != SyntaxKind::u64_type && type.tag != SyntaxKind::u8_type &&
+            type.tag != SyntaxKind::bool_type && type.tag != SyntaxKind::named && type.tag != SyntaxKind::parameter)
             invalid();
         auto &value = typeValues[static_cast<std::size_t>(child)];
         TemplateArgument argument(value.kind);
@@ -409,26 +418,26 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
     for (std::int64_t index = 0; index < typeCount; ++index) {
         const auto &type = types[static_cast<std::size_t>(index)];
         // Validate representation arity before indexing or constructing a Type.
-        if (type.kind == SyntaxKind::Array) {
-            if (type.first < 0 || type.second < 0)
+        if (type.tag == SyntaxKind::array_type) {
+            if (type.first_child < 0 || type.second_child < 0)
                 invalid();
-        } else if (type.kind == SyntaxKind::OwnedValues) {
-            if (type.first < 0 || type.second != -1)
+        } else if (type.tag == SyntaxKind::owned_values) {
+            if (type.first_child < 0 || type.second_child != -1)
                 invalid();
-        } else if (type.kind != SyntaxKind::Named && (type.first != -1 || type.second != -1))
+        } else if (type.tag != SyntaxKind::named && (type.first_child != -1 || type.second_child != -1))
             invalid();
         auto &value = typeValues[static_cast<std::size_t>(index)];
-        const auto &spelling = text(type.token);
-        if (type.kind == SyntaxKind::I64 || type.kind == SyntaxKind::U64 || type.kind == SyntaxKind::U8 ||
-            type.kind == SyntaxKind::Bool) {
-            value = type.kind == SyntaxKind::I64   ? Type::I64
-                    : type.kind == SyntaxKind::U64 ? Type::U64
-                    : type.kind == SyntaxKind::U8  ? Type::U8
-                                                   : Type::Bool;
-        } else if (type.kind == SyntaxKind::Parameter || type.kind == SyntaxKind::LengthParameter) {
+        const auto &spelling = text(type.token_index);
+        if (type.tag == SyntaxKind::i64_type || type.tag == SyntaxKind::u64_type || type.tag == SyntaxKind::u8_type ||
+            type.tag == SyntaxKind::bool_type) {
+            value = type.tag == SyntaxKind::i64_type   ? Type::I64
+                    : type.tag == SyntaxKind::u64_type ? Type::U64
+                    : type.tag == SyntaxKind::u8_type  ? Type::U8
+                                                       : Type::Bool;
+        } else if (type.tag == SyntaxKind::parameter || type.tag == SyntaxKind::length_parameter) {
             value = Type(TypeKind::Parameter);
             value.className = spelling;
-        } else if (type.kind == SyntaxKind::Capacity) {
+        } else if (type.tag == SyntaxKind::capacity) {
             std::int64_t capacity = 0;
             for (const auto byte : spelling) {
                 if (byte < '0' || byte > '9' || capacity > 4096)
@@ -438,16 +447,19 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
             if (capacity < 1 || capacity > 4096)
                 invalid();
             capacities[static_cast<std::size_t>(index)] = capacity;
-        } else if (type.kind == SyntaxKind::Named) {
-            value = Type(name(type.token, type.nameEnd));
-            if (type.first >= 0)
-                value.templateArguments.push_back(argumentValue(type.first));
-            if (type.second >= 0)
-                value.templateArguments.push_back(argumentValue(type.second));
-        } else if (type.kind == SyntaxKind::Own || type.kind == SyntaxKind::Ref || type.kind == SyntaxKind::MutRef) {
-            value = type.kind == SyntaxKind::Own ? Type::Own : type.kind == SyntaxKind::Ref ? Type::Ref : Type::MutRef;
-        } else if (type.kind == SyntaxKind::Builtin || type.kind == SyntaxKind::BuiltinClass) {
-            const auto &builtin = text(type.nameEnd);
+        } else if (type.tag == SyntaxKind::named) {
+            value = Type(name(type.token_index, type.name_end));
+            if (type.first_child >= 0)
+                value.templateArguments.push_back(argumentValue(type.first_child));
+            if (type.second_child >= 0)
+                value.templateArguments.push_back(argumentValue(type.second_child));
+        } else if (type.tag == SyntaxKind::own_type || type.tag == SyntaxKind::ref_type ||
+                   type.tag == SyntaxKind::mutref_type) {
+            value = type.tag == SyntaxKind::own_type   ? Type::Own
+                    : type.tag == SyntaxKind::ref_type ? Type::Ref
+                                                       : Type::MutRef;
+        } else if (type.tag == SyntaxKind::builtin_type || type.tag == SyntaxKind::builtin_class) {
+            const auto &builtin = text(type.name_end);
             if (builtin == "ByteRegion")
                 value = Type::ByteRegion;
             else if (builtin == "OwnedBytes")
@@ -478,24 +490,24 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
                 value = service::eventIntakeCompletionType();
             else
                 invalid();
-        } else if (type.kind == SyntaxKind::ByteSpan) {
+        } else if (type.tag == SyntaxKind::byte_span) {
             value = Type::ByteSpan;
-        } else if (type.kind == SyntaxKind::Array || type.kind == SyntaxKind::OwnedValues) {
-            const auto &elementSyntax = types[static_cast<std::size_t>(type.first)];
-            const auto &element = typeValues[static_cast<std::size_t>(type.first)];
-            if (type.kind == SyntaxKind::OwnedValues) {
+        } else if (type.tag == SyntaxKind::array_type || type.tag == SyntaxKind::owned_values) {
+            const auto &elementSyntax = types[static_cast<std::size_t>(type.first_child)];
+            const auto &element = typeValues[static_cast<std::size_t>(type.first_child)];
+            if (type.tag == SyntaxKind::owned_values) {
                 if (!element.isClass() || !element.templateArguments.empty())
                     invalid();
                 value = Type::ownedValues(element);
             } else {
-                const auto &length = types[static_cast<std::size_t>(type.second)];
-                if (elementSyntax.kind == SyntaxKind::Capacity || elementSyntax.kind == SyntaxKind::LengthParameter ||
+                const auto &length = types[static_cast<std::size_t>(type.second_child)];
+                if (elementSyntax.tag == SyntaxKind::capacity || elementSyntax.tag == SyntaxKind::length_parameter ||
                     (!scalar(element) && element.kind != TypeKind::Parameter && !element.isClass()) ||
-                    (length.kind != SyntaxKind::Capacity && length.kind != SyntaxKind::LengthParameter))
+                    (length.tag != SyntaxKind::capacity && length.tag != SyntaxKind::length_parameter))
                     invalid();
-                value = Type::array(element, static_cast<int>(capacities[static_cast<std::size_t>(type.second)]));
-                if (length.kind == SyntaxKind::LengthParameter)
-                    value.lengthParameter = text(length.token);
+                value = Type::array(element, static_cast<int>(capacities[static_cast<std::size_t>(type.second_child)]));
+                if (length.tag == SyntaxKind::length_parameter)
+                    value.lengthParameter = text(length.token_index);
                 else if (element.isClass() && value.length > maximumClassScalarArrayLength)
                     invalid();
             }
@@ -506,58 +518,59 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
     for (std::int64_t index = 0; index < edgeCount; ++index) {
         auto &edge = edges[static_cast<std::size_t>(index)];
         aurora_hosted_parser_edge(arena.data(), index, &edge);
-        if (edge.child < 0 || edge.child >= result.count || edge.previous < -1 || edge.previous >= index ||
-            edge.field < -1 || edge.field >= result.tokens || edge.count < 1 || edge.count > edgeCount ||
-            edge.depth < 1 || edge.depth > 128)
+        if (edge.child_node < 0 || edge.child_node >= result.node_count || edge.previous_edge < -1 ||
+            edge.previous_edge >= index || edge.field_token < -1 || edge.field_token >= result.token_count ||
+            edge.argument_count < 1 || edge.argument_count > edgeCount || edge.tree_depth < 1 || edge.tree_depth > 128)
             invalid();
     }
     std::vector<ExpressionPtr> nodes;
-    std::vector<bool> used(static_cast<std::size_t>(result.count), false);
+    std::vector<bool> used(static_cast<std::size_t>(result.node_count), false);
     std::vector<bool> edgeUsed(static_cast<std::size_t>(edgeCount), false);
-    nodes.reserve(static_cast<std::size_t>(result.count));
-    for (std::int64_t index = 0; index < result.count; ++index) {
+    nodes.reserve(static_cast<std::size_t>(result.node_count));
+    for (std::int64_t index = 0; index < result.node_count; ++index) {
         Node node;
         aurora_hosted_parser_read(arena.data(), index, &node);
-        if (node.kind <= NodeKind::Invalid || node.kind > NodeKind::ArrayZero || node.token < 0 ||
-            node.token >= result.tokens || node.nameEnd < node.token || node.nameEnd >= result.tokens ||
-            node.close < 0 || node.close >= result.tokens || node.depth < 1 || node.depth > 128)
+        if (node.tag <= NodeKind::invalid || node.tag > NodeKind::array_zero || node.token_index < 0 ||
+            node.token_index >= result.token_count || node.name_end < node.token_index ||
+            node.name_end >= result.token_count || node.closing_token < 0 || node.closing_token >= result.token_count ||
+            node.tree_depth < 1 || node.tree_depth > 128)
             invalid();
-        auto token = tokens[position + static_cast<std::size_t>(node.token)];
+        auto token = tokens[position + static_cast<std::size_t>(node.token_index)];
         std::string op;
-        if (node.kind == NodeKind::Name || node.kind == NodeKind::Call || node.kind == NodeKind::Construct) {
-            op = node.kind == NodeKind::Name ? "name" : node.kind == NodeKind::Call ? "call" : "construct";
-            token.text = name(node.token, node.nameEnd);
-            token.span.end = tokens[position + static_cast<std::size_t>(node.nameEnd)].span.end;
+        if (node.tag == NodeKind::name || node.tag == NodeKind::call || node.tag == NodeKind::construct) {
+            op = node.tag == NodeKind::name ? "name" : node.tag == NodeKind::call ? "call" : "construct";
+            token.text = name(node.token_index, node.name_end);
+            token.span.end = tokens[position + static_cast<std::size_t>(node.name_end)].span.end;
             if (token.span.end.offset < token.span.begin.offset ||
                 token.span.end.offset > token.span.source->text.size())
                 invalid();
-        } else if (node.kind == NodeKind::Literal && (token.text == "true" || token.text == "false"))
+        } else if (node.tag == NodeKind::literal && (token.text == "true" || token.text == "false"))
             op = "bool";
-        else if (node.kind == NodeKind::Literal && token.text.front() == '"')
+        else if (node.tag == NodeKind::literal && token.text.front() == '"')
             op = "byte_string";
-        else if (node.kind == NodeKind::Literal && token.text.front() == '\'')
+        else if (node.tag == NodeKind::literal && token.text.front() == '\'')
             op = "byte";
-        else if (node.kind == NodeKind::Literal && token.text.front() >= '0' && token.text.front() <= '9')
+        else if (node.tag == NodeKind::literal && token.text.front() >= '0' && token.text.front() <= '9')
             op = "number";
-        else if (node.kind == NodeKind::Unary)
+        else if (node.tag == NodeKind::unary)
             op = "unary";
-        else if (node.kind == NodeKind::Binary)
+        else if (node.tag == NodeKind::binary)
             op = "binary";
-        else if (node.kind == NodeKind::Member)
+        else if (node.tag == NodeKind::member)
             op = "member";
-        else if (node.kind == NodeKind::MethodCall)
+        else if (node.tag == NodeKind::method_call)
             op = "method_call";
-        else if (node.kind == NodeKind::Index)
+        else if (node.tag == NodeKind::index)
             op = "index";
-        else if (node.kind == NodeKind::ArrayLiteral)
+        else if (node.tag == NodeKind::array_literal)
             op = "array_literal";
-        else if (node.kind == NodeKind::ArrayZero)
+        else if (node.tag == NodeKind::array_zero)
             op = "array_zero";
         else
             invalid();
         auto expression = std::make_shared<Expression>(op, token);
-        const auto templateRoot = templateRoots[static_cast<std::size_t>(node.token)];
-        const auto reflectedRoot = reflectedRoots[static_cast<std::size_t>(node.token)];
+        const auto templateRoot = templateRoots[static_cast<std::size_t>(node.token_index)];
+        const auto reflectedRoot = reflectedRoots[static_cast<std::size_t>(node.token_index)];
         const auto takeType = [&](std::int64_t root) -> Type & {
             if (typeUsed[static_cast<std::size_t>(root)])
                 invalid();
@@ -565,12 +578,12 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
             return typeValues[static_cast<std::size_t>(root)];
         };
         if (templateRoot >= 0) {
-            if (node.kind != NodeKind::Call && node.kind != NodeKind::Construct)
+            if (node.tag != NodeKind::call && node.tag != NodeKind::construct)
                 invalid();
             expression->templateArguments = std::move(takeType(templateRoot).templateArguments);
         }
         if (reflectedRoot >= 0) {
-            if (node.kind != NodeKind::Call || node.first != -1 || node.second != 0)
+            if (node.tag != NodeKind::call || node.first_child != -1 || node.second_child != 0)
                 invalid();
             expression->reflectedType = std::move(takeType(reflectedRoot));
         }
@@ -584,51 +597,52 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
                 invalid();
             expression->args.push_back(value);
         };
-        if (node.kind == NodeKind::Call || node.kind == NodeKind::MethodCall || node.kind == NodeKind::ArrayLiteral ||
-            node.kind == NodeKind::Construct || node.kind == NodeKind::ArrayZero) {
-            if (node.second < 0 || node.second > edgeCount || (node.first == -1) != (node.second == 0) ||
-                (node.kind == NodeKind::MethodCall && node.second == 0) ||
-                (node.kind == NodeKind::ArrayZero && node.second != 0))
+        if (node.tag == NodeKind::call || node.tag == NodeKind::method_call || node.tag == NodeKind::array_literal ||
+            node.tag == NodeKind::construct || node.tag == NodeKind::array_zero) {
+            if (node.second_child < 0 || node.second_child > edgeCount ||
+                (node.first_child == -1) != (node.second_child == 0) ||
+                (node.tag == NodeKind::method_call && node.second_child == 0) ||
+                (node.tag == NodeKind::array_zero && node.second_child != 0))
                 invalid();
             std::vector<std::int64_t> children;
-            for (auto edge = node.first; edge != -1;) {
+            for (auto edge = node.first_child; edge != -1;) {
                 if (edge < 0 || edge >= edgeCount || edgeUsed[static_cast<std::size_t>(edge)])
                     invalid();
                 edgeUsed[static_cast<std::size_t>(edge)] = true;
                 const auto &record = edges[static_cast<std::size_t>(edge)];
-                if ((node.kind == NodeKind::Construct) != (record.field >= 0))
+                if ((node.tag == NodeKind::construct) != (record.field_token >= 0))
                     invalid();
                 children.push_back(edge);
-                edge = record.previous;
+                edge = record.previous_edge;
             }
-            if (children.size() != static_cast<std::size_t>(node.second))
+            if (children.size() != static_cast<std::size_t>(node.second_child))
                 invalid();
             for (auto child = children.rbegin(); child != children.rend(); ++child) {
                 const auto &edge = edges[static_cast<std::size_t>(*child)];
-                attach(edge.child);
-                if (edge.field >= 0)
-                    expression->fieldNames.push_back(text(edge.field));
+                attach(edge.child_node);
+                if (edge.field_token >= 0)
+                    expression->fieldNames.push_back(text(edge.field_token));
             }
-        } else if (node.kind == NodeKind::Unary || node.kind == NodeKind::Member) {
-            if (node.second != -1)
+        } else if (node.tag == NodeKind::unary || node.tag == NodeKind::member) {
+            if (node.second_child != -1)
                 invalid();
-            attach(node.first);
-        } else if (node.kind == NodeKind::Binary || node.kind == NodeKind::Index) {
-            attach(node.first);
-            attach(node.second);
+            attach(node.first_child);
+        } else if (node.tag == NodeKind::binary || node.tag == NodeKind::index) {
+            attach(node.first_child);
+            attach(node.second_child);
             // The host AST locates indexing at the base expression's token.
-            if (node.kind == NodeKind::Index)
+            if (node.tag == NodeKind::index)
                 expression->token = expression->args.front()->token;
-        } else if (node.first != -1 || node.second != -1)
+        } else if (node.first_child != -1 || node.second_child != -1)
             invalid();
-        if (node.depth != expression->depth)
+        if (node.tree_depth != expression->depth)
             invalid();
         nodes.push_back(std::move(expression));
     }
     // Every expression root belongs to exactly one statement field, or to the
     // public expression result. Unreferenced records and shared roots fail closed.
     const auto takeExpression = [&](std::int64_t root) {
-        if (root < 0 || root >= result.count || used[static_cast<std::size_t>(root)])
+        if (root < 0 || root >= result.node_count || used[static_cast<std::size_t>(root)])
             invalid();
         used[static_cast<std::size_t>(root)] = true;
         return nodes[static_cast<std::size_t>(root)];
@@ -637,46 +651,47 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
     statementValues.reserve(statements.size());
     for (std::int64_t index = 0; index < statementCount; ++index) {
         const auto &syntax = statements[static_cast<std::size_t>(index)];
-        auto statement = std::make_shared<Statement>(tokens[position + static_cast<std::size_t>(syntax.token)]);
-        if (syntax.kind == StatementKind::Block) {
+        auto statement = std::make_shared<Statement>(tokens[position + static_cast<std::size_t>(syntax.token_index)]);
+        if (syntax.tag == StatementKind::block) {
             statement->kind = "block";
             for (const auto child : statementLists[static_cast<std::size_t>(index)])
                 statement->body.push_back(statementValues[static_cast<std::size_t>(child)]);
         } else {
-            statement->expr = takeExpression(syntax.expression);
-            if (syntax.kind == StatementKind::Conditional || syntax.kind == StatementKind::Loop) {
-                statement->kind = syntax.kind == StatementKind::Conditional ? "if" : "while";
-                statement->body = std::move(statementValues[static_cast<std::size_t>(syntax.body)]->body);
-                if (syntax.other >= 0)
-                    statement->other = std::move(statementValues[static_cast<std::size_t>(syntax.other)]->body);
-            } else if (syntax.kind == StatementKind::Local) {
-                const auto typeIndex = static_cast<std::size_t>(syntax.declaredType);
+            statement->expr = takeExpression(syntax.expression_root);
+            if (syntax.tag == StatementKind::conditional || syntax.tag == StatementKind::loop) {
+                statement->kind = syntax.tag == StatementKind::conditional ? "if" : "while";
+                statement->body = std::move(statementValues[static_cast<std::size_t>(syntax.body_statement)]->body);
+                if (syntax.other_statement >= 0)
+                    statement->other =
+                        std::move(statementValues[static_cast<std::size_t>(syntax.other_statement)]->body);
+            } else if (syntax.tag == StatementKind::local) {
+                const auto typeIndex = static_cast<std::size_t>(syntax.declared_type);
                 const auto &type = types[typeIndex];
-                if (type.role != 3 || type.owner != syntax.token ||
-                    declarationRoots[static_cast<std::size_t>(syntax.token)] != syntax.declaredType ||
+                if (type.owner_role != 3 || type.owner_token != syntax.token_index ||
+                    declarationRoots[static_cast<std::size_t>(syntax.token_index)] != syntax.declared_type ||
                     typeUsed[typeIndex])
                     invalid();
                 typeUsed[typeIndex] = true;
-                const auto &binding = tokens[position + static_cast<std::size_t>(syntax.binding)];
+                const auto &binding = tokens[position + static_cast<std::size_t>(syntax.binding_token)];
                 statement->kind = "let";
                 statement->type = std::move(typeValues[typeIndex]);
                 statement->name = binding.text;
                 statement->bindingSpan = binding.span;
-                statement->mutableValue = syntax.mutableValue == 1;
-            } else if (syntax.kind == StatementKind::ReturnValue)
+                statement->mutableValue = syntax.mutable_value == 1;
+            } else if (syntax.tag == StatementKind::return_value)
                 statement->kind = "return";
-            else if (syntax.kind == StatementKind::StaticAssertion)
+            else if (syntax.tag == StatementKind::static_assertion)
                 statement->kind = "static_assert";
-            else if (syntax.kind == StatementKind::Expression)
+            else if (syntax.tag == StatementKind::expression)
                 statement->kind = "expression";
             else {
-                auto target = takeExpression(syntax.target);
-                if (syntax.kind == StatementKind::Assign) {
+                auto target = takeExpression(syntax.target_root);
+                if (syntax.tag == StatementKind::assign) {
                     if (target->op != "name" || !target->args.empty())
                         invalid();
                     statement->kind = "assign";
                     statement->name = target->token.text;
-                } else if (syntax.kind == StatementKind::FieldAssign) {
+                } else if (syntax.tag == StatementKind::field_assign) {
                     if (target->op != "member" || target->args.size() != 1 || target->args[0]->op != "name" ||
                         !target->args[0]->args.empty())
                         invalid();
@@ -684,7 +699,7 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
                     statement->name = target->args[0]->token.text;
                     statement->fieldName = target->token.text;
                 } else {
-                    if (syntax.kind != StatementKind::IndexAssign || target->op != "index" || target->args.size() != 2)
+                    if (syntax.tag != StatementKind::index_assign || target->op != "index" || target->args.size() != 2)
                         invalid();
                     statement->kind = "index_assign";
                     statement->target = std::move(target);
@@ -695,17 +710,17 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
     }
     ImportedSyntax imported;
     if (declarationType) {
-        const auto root = static_cast<std::size_t>(result.root);
-        if (types[root].role != 3 || types[root].owner != 0 || typeUsed[root])
+        const auto root = static_cast<std::size_t>(result.root_node);
+        if (types[root].owner_role != 3 || types[root].owner_token != 0 || typeUsed[root])
             invalid();
         typeUsed[root] = true;
         imported.type = std::move(typeValues[root]);
         if (residual)
             imported.residual = std::move(at);
     } else if (body)
-        imported.body = std::move(statementValues[static_cast<std::size_t>(result.root)]->body);
+        imported.body = std::move(statementValues[static_cast<std::size_t>(result.root_node)]->body);
     else
-        imported.expression = takeExpression(result.root);
+        imported.expression = takeExpression(result.root_node);
     if (std::find(used.begin(), used.end(), false) != used.end() ||
         std::find(edgeUsed.begin(), edgeUsed.end(), false) != edgeUsed.end() ||
         std::find(typeUsed.begin(), typeUsed.end(), false) != typeUsed.end())
@@ -719,20 +734,20 @@ ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens,
                                     std::size_t &position,
                                     Stop stop,
                                     const hosted_parser::Context &context) {
-    if (stop != Stop::Semicolon && stop != Stop::CloseParenthesis && stop != Stop::Assignment &&
-        stop != Stop::ConstructorBraces)
+    if (stop != Stop::semicolon && stop != Stop::close_parenthesis && stop != Stop::assignment &&
+        stop != Stop::constructor_braces)
         invalid();
     return parseHostedSyntax(tokens, position, stop, context).expression;
 }
 
 std::vector<StatementPtr>
 parseHostedBody(const std::vector<Token> &tokens, std::size_t &position, const hosted_parser::Context &context) {
-    return parseHostedSyntax(tokens, position, Stop::Body, context).body;
+    return parseHostedSyntax(tokens, position, Stop::body, context).body;
 }
 
 Type parseHostedType(std::vector<Token> &tokens, std::size_t &position, const hosted_parser::Context &context) {
     auto candidate = position;
-    auto imported = parseHostedSyntax(tokens, candidate, Stop::Type, context);
+    auto imported = parseHostedSyntax(tokens, candidate, Stop::type, context);
     // A type may consume only the first half of >>. Project the remaining
     // token in the caller-owned copy only after complete safe conversion.
     static_assert(noexcept(std::swap(tokens[candidate], *imported.residual)));

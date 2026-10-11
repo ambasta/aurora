@@ -6,9 +6,6 @@ import shlex
 from pathlib import Path
 
 
-COMPILER_GOALS = {"test-compiler", "test-package-identity", "test-package-manifest", "test-package-graph"}
-
-
 def discovered_files(root):
     return {
         path.relative_to(root).as_posix()
@@ -130,7 +127,7 @@ def check_exact(expected, actual, label):
             raise ValueError(label + " drift: " + name + ": " + ", ".join(changed))
 
 
-def check_manifest(manifest, actual_files, tests=None, root_targets=None, kernel_images=True):
+def check_manifest(manifest, actual_files, tests=None, kernel_images=True):
     listed = set(manifest["files"])
     if actual_files != listed:
         raise ValueError(
@@ -150,20 +147,10 @@ def check_manifest(manifest, actual_files, tests=None, root_targets=None, kernel
             "compiler-owned",
         }:
             raise ValueError("unclassified native source: " + path)
-    if root_targets is not None:
-        required = {name for name in root_targets if name.startswith("test-")} - COMPILER_GOALS
-        if required != set(manifest["goals"]):
-            raise ValueError(
-                "native root prerequisite inventory drift: added="
-                + repr(sorted(required - set(manifest["goals"])))
-                + ", removed="
-                + repr(sorted(set(manifest["goals"]) - required))
-            )
     if tests is None:
         return
     by_name = {entry["name"]: entry for entry in tests}
-    required = {name for names in manifest["goals"].values() for name in names}
-    required.update(manifest["registrations"])
+    required = set(manifest["registrations"])
     required.update(manifest.get("exact_tests", {}))
     missing = required - set(by_name)
     if missing:
@@ -197,23 +184,21 @@ def check_manifest(manifest, actual_files, tests=None, root_targets=None, kernel
 def self_test():
     manifest = dict(
         files={"tests/a.py": dict(kind="direct-registration", reason="fixture")},
-        goals={"test-a": ["a"]},
         registrations={"a": dict(source="tests/a.py", optimized=True, arguments=["--self-test"])},
     )
     valid = [dict(name="a", suite=["aurora:full"], cmd=["python3", "-O", "/repo/tests/a.py", "--self-test"])]
-    check_manifest(manifest, {"tests/a.py"}, valid, {"test", "test-a"})
+    check_manifest(manifest, {"tests/a.py"}, valid)
     aliased = [dict(valid[0], cmd=["python3", "-O", "/repo/tests/native/../a.py", "--self-test"])]
-    check_manifest(manifest, {"tests/a.py"}, aliased, {"test", "test-a"})
+    check_manifest(manifest, {"tests/a.py"}, aliased)
     bad = [
-        ({"tests/a.py", "tests/new.py"}, valid, {"test", "test-a"}),
-        ({"tests/a.py", "tests/compiler/new.cpp"}, valid, {"test", "test-a"}),
-        ({"tests/a.py", "tests/modules/new.cpp"}, valid, {"test", "test-a"}),
-        ({"tests/a.py"}, [], {"test", "test-a"}),
-        ({"tests/a.py"}, valid, {"test", "test-a", "test-uncovered"}),
+        ({"tests/a.py", "tests/new.py"}, valid),
+        ({"tests/a.py", "tests/compiler/new.cpp"}, valid),
+        ({"tests/a.py", "tests/modules/new.cpp"}, valid),
+        ({"tests/a.py"}, []),
     ]
-    for files, tests, targets in bad:
+    for files, tests in bad:
         try:
-            check_manifest(manifest, files, tests, targets)
+            check_manifest(manifest, files, tests)
         except ValueError:
             pass
         else:
@@ -226,7 +211,7 @@ def self_test():
     ]:
         altered = [dict(valid[0], **{field: value})]
         try:
-            check_manifest(manifest, {"tests/a.py"}, altered, {"test", "test-a"})
+            check_manifest(manifest, {"tests/a.py"}, altered)
         except ValueError:
             pass
         else:
@@ -284,7 +269,7 @@ def self_test():
         raise ValueError("fixture source mapping negative control accepted drift")
 
 
-def check(root, registered_tests=None, root_targets=None):
+def check(root, registered_tests=None):
     root = Path(root)
     self_test()
     manifest = json.loads((root / "tests/native/inventory.json").read_text())
@@ -318,14 +303,12 @@ def check(root, registered_tests=None, root_targets=None):
         manifest,
         discovered_files(root),
         registered_tests,
-        root_targets,
         kernel_images if registered_tests is not None else True,
     )
     for name, expected in manifest["wrapper_sha256"].items():
         if hashlib.sha256((root / name).read_bytes()).hexdigest() != expected:
             raise ValueError("native shell command inventory needs review after wrapper change: " + name)
     return {
-        "root_native_goals": len(manifest["goals"]),
         "native_registrations": len(manifest["registrations"]),
         "classified_native_files": len(manifest["files"]),
         "exact_test_contracts": len(manifest.get("exact_tests", {})),

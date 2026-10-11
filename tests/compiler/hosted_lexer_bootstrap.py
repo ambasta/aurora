@@ -2,6 +2,7 @@
 """Require current compiler frontend convergence and exact source diagnostics."""
 
 from pathlib import Path
+from copy import deepcopy
 import hashlib
 import json
 import os
@@ -16,7 +17,7 @@ def stage_modules(root, destination):
     sys.path.insert(0, str(root / "scripts"))
     from bootstrap_frontend import stage_modules as stage
 
-    stage(destination, root / "compiler/lexer.au", root / "compiler/expression_arena.au")
+    stage(destination, root / "compiler/lexer.au", root / "compiler/syntax_arena.au")
 
 
 def require(value, message):
@@ -39,8 +40,8 @@ def frontend_arguments(compiler, root, output):
     return [
         str(compiler),
         str(root / "compiler/lexer.au"),
-        str(root / "compiler/expression_arena.au"),
-        str(root / "compiler/expression_parser.au"),
+        str(root / "compiler/syntax_arena.au"),
+        str(root / "compiler/parser.au"),
         str(root / "compiler/hosted_lexer.S"),
         str(root / "compiler/hosted_parser.S"),
         str(output),
@@ -54,7 +55,45 @@ def symbols(path, globals_only=False):
     return {row.split()[0]: row.split()[1:] for row in run([*command, str(path)]).decode().splitlines()}
 
 
+def abi_generation(facts):
+    from bootstrap_frontend import abi_declaration, frontend_abi_header
+
+    # An additional copied record and a renamed field need no renderer schema.
+    changed = deepcopy(facts)
+    symbol, node = abi_declaration(changed, "records", "compiler_parser::AstNode")
+    extra = deepcopy(node)
+    extra["source_name"] = "fixture::AdditionalRecord"
+    extra["fields"][1]["name"] = "_replacement_index"
+    changed["records"][symbol + "_fixture"] = extra
+    generated = frontend_abi_header(changed)
+    require("namespace aurora::hosted_abi::fixture {" in generated, "new record namespace was omitted")
+    require("struct alignas(8) AdditionalRecord {" in generated, "new copied record was omitted")
+    require("std::int64_t _replacement_index{};" in generated, "Aurora field spelling was not preserved")
+    require("i64_type = 1," in generated, "Aurora enum case spelling was not preserved")
+    _, nested = abi_declaration(facts, "records", "compiler_parser::TypeResult")
+    require(
+        "aurora::hosted_abi::compiler_parser::ParseToken next_token{};" in generated
+        and nested["fields"][-1]["kind"] == "class",
+        "nested copied record was flattened or omitted",
+    )
+    for kind in ("result_extent", "field_extent", "unsupported_array"):
+        changed = deepcopy(facts)
+        if kind == "result_extent":
+            _, entry = abi_declaration(changed, "functions", "compiler_parser::read_node")
+            entry["result"]["bytes"] += 8
+        else:
+            _, entry = abi_declaration(changed, "records", "compiler_parser::AstNode")
+            entry["fields"][1]["bytes" if kind == "field_extent" else "array_length"] += 1
+        try:
+            frontend_abi_header(changed)
+        except ValueError:
+            continue
+        raise AssertionError(f"unsupported or unsafe ABI facts accepted: {kind}")
+    print("PASS generic source-spelled ABI records/enums, nested layout and bridge extent rejection")
+
+
 def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
+    abi_generation(json.loads(built_b.with_suffix(".abi.json").read_text()))
     entries = {
         "aurora_hosted_lexer_invoke",
         "aurora_hosted_parser_create",
@@ -99,7 +138,7 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
         obj = output.with_suffix(".o")
         run(["as", "--64", str(output), "-o", str(obj)])
         require(set(symbols(obj, globals_only=True)) == entries, "frontend leaked a generated symbol or lost a shim")
-        for name in ("lexer.au", "expression_arena.au"):
+        for name in ("lexer.au", "syntax_arena.au"):
             require(
                 (work / "compiler-modules/aurora/compiler" / name).read_bytes()
                 == (root / "compiler" / name).read_bytes(),
@@ -156,7 +195,7 @@ def main():
         records = []
         corpus = sources(root)
         require(root / "compiler/lexer.au" in corpus, "lexer self-rebuild input is missing")
-        require(root / "compiler/expression_parser.au" in corpus, "whole frontend self-rebuild input is missing")
+        require(root / "compiler/parser.au" in corpus, "whole frontend self-rebuild input is missing")
         for source in corpus:
             runs = []
             for compiler, output in zip((current1, current2), outputs, strict=True):
@@ -166,7 +205,7 @@ def main():
                         [
                             str(compiler),
                             "--module-root",
-                            str(module_root if source == root / "compiler/expression_parser.au" else root / "library"),
+                            str(module_root if source == root / "compiler/parser.au" else root / "library"),
                             str(source),
                             "-o",
                             str(output),
@@ -199,7 +238,7 @@ def main():
             if source == root / "compiler/lexer.au":
                 require(runs[0].returncode == 0, "lexer self-rebuild failed")
                 print("PASS current C2 lexer rebuild SHA256 " + hashlib.sha256(outputs[1].read_bytes()).hexdigest())
-            if source == root / "compiler/expression_parser.au":
+            if source == root / "compiler/parser.au":
                 require(runs[0].returncode == 0, "whole frontend self-rebuild failed")
                 frontend_bootstrap(current1, current2, root, work, built_a, built_b)
             records.append({"source": str(source.relative_to(root)), "status": runs[0].returncode})

@@ -42,13 +42,15 @@ Aurora frontend. Current C1/C2 regeneration and corpus checks use the existing
 bootstrap gate. A digest proves artifact identity, not independent review or
 source-build provenance by itself.
 
-The legacy `compiler_contract.py run` executor and its new raw-seed builds are
-retired. Legacy focused Make/acceptance entrypoints give precise migration
-instructions before creating run artifacts; they do not silently substitute a
-different compiler or claim a new receipt. Configure the predecessor-backed
-Meson graph and use `make test` for full native coverage, or its named focused
-tests for development. Normal compiler, formatter and lint shortcuts use that
-same graph. Full suites still reject coverage-reducing overrides.
+Make is a convenience layer over the predecessor-backed Meson graph. `make test`
+forwards to the complete `full` suite without a second prerequisite graph;
+compiler-only and named compiler shortcuts use the same wrapper. Compiler-free
+`make test-*` shortcuts call their scripts directly. Obsolete compiler-consuming
+root aliases and the receipt executor/check CLI have been removed; use
+`meson test -C BUILD --list` to select exact focused test names.
+Full suites still reject coverage-reducing overrides in their owning runner.
+Ordinary Make options and custom shells retain GNU Make's normal behavior;
+a dry run, skipped command or ignored failure is not qualification evidence.
 
 Historical `gnu-cxx-main-v1` and externally pinned prebuilt receipts remain
 readable under their original schema, source/header/tool/argv and tamper checks.

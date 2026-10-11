@@ -52,11 +52,6 @@ class MesonIdentityTests(unittest.TestCase):
         with self.assertRaises(contract.ContractError):
             contract.validate_identity_selection(self.args(developer_build_receipt=Path("/not-read")))
 
-    def test_no_legacy_context_bypass(self):
-        with patch.dict(os.environ, {"AURORA_TEST_CONTEXT": "/not-read"}):
-            with self.assertRaises(contract.ContractError):
-                contract.validate_identity_selection(self.args())
-
     def test_missing_identity_still_rejected(self):
         with self.assertRaises(contract.ContractError):
             contract.validate_identity_selection(self.args(meson_selected_compiler=False))
@@ -355,6 +350,23 @@ class MesonEntrypointTests(unittest.TestCase):
             meson_test.execute(self.root, "full")
         self.assertEqual(self.calls, [])
         self.assertEqual(sentinel.read_text(), "preserve")
+
+    def test_empty_default_predecessor_refreshes_before_path_validation(self):
+        build = self.configured()
+        selected = self.root / "new predecessor"
+        selected.write_text("#!/bin/sh\nexit 0\n")
+        selected.chmod(0o755)
+        os.environ["BOOTSTRAP_COMPILER"] = str(selected)
+        self.bootstrap_compiler = ""
+        meson_test.execute(self.root, "full")
+        self.assertEqual([c[1] for c in self.calls], ["setup", "compile", "test"])
+        self.assertEqual(self.bootstrap_compiler, str(selected))
+        self.calls.clear()
+        self.bootstrap_compiler = ""
+        os.environ["MESON_BUILD_DIR"] = str(build)
+        with self.assertRaisesRegex(contract.ContractError, "differs from BOOTSTRAP_COMPILER; run"):
+            meson_test.execute(self.root, "full")
+        self.assertEqual(self.calls, [])
 
     def test_failed_predecessor_refresh_does_not_compile(self):
         build = self.configured()
@@ -778,6 +790,25 @@ class MesonArtifactTests(unittest.TestCase):
             "CXX": "chosen-cxx --flag",
         }
         self.env.pop("AURORA_MESON_KEEP_ARTIFACTS", None)
+
+    def test_pin_runner_failure_retains_only_its_fresh_scratch(self):
+        compiler = self.root / "failing-cxx"
+        compiler.write_text("#!/bin/sh\nprintf 'compiler failed\\n' >&2\nexit 23\n")
+        compiler.chmod(0o755)
+        script = Path(__file__).resolve().parents[1] / "scripts/kernel-pin-tests.sh"
+        result = subprocess.run(
+            ["bash", str(script)],
+            env={**self.env, "CXX": str(compiler)},
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 23, result.stderr)
+        parent = Path(result.stdout.splitlines()[0].removeprefix("Artifacts: "))
+        self.assertEqual(parent.parent, self.scratch)
+        self.assertTrue(parent.is_dir())
+        self.assertIn("Retained artifacts: " + str(parent), result.stdout)
+        self.assertEqual((self.sibling / "evidence").read_text(), "older evidence")
 
     def run_adapter(self, code=None, *, command=None):
         if command is None:

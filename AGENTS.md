@@ -64,8 +64,8 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
    GCC 16 distribution/version; Debian GCC 16.2.0-3 is not Gentoo 16.2.1 evidence.
    New builds require the predecessor source-bootstrap route in compiler/README.md.
    Historical raw-seed/prebuilt receipts retain their original validation meaning;
-   retired legacy execution gives migration instructions rather than creating
-   another native graph or silently reinterpreting those records.
+   legacy execution entrypoints are removed; new execution uses only the native
+   Meson graph without reinterpreting those records.
 5. Review changes independently before considering a milestone verified. Record
    reproduced defects and fixes, commands, source revision, tool versions and limits.
 6. Update implementation docs and the completeness matrix in the same change.
