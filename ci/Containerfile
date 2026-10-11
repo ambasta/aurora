@@ -22,6 +22,9 @@ RUN rm -f /etc/apt/sources.list /etc/apt/sources.list.d/* \
        zlib1g-dev=1:1.3.dfsg+really1.3.1-1+b1 \
        patch=2.8-2 \
        make=4.4.1-2 \
+       nasm=2.16.03-1 \
+       acpica-tools=20250404-1 \
+       uuid-dev=2.41.5-0+deb13u1 \
        python3=3.13.5-1 \
        python3-venv=3.13.5-1 \
        python3-setuptools \
@@ -51,6 +54,7 @@ RUN rm -f /etc/apt/sources.list /etc/apt/sources.list.d/* \
        clangd-22=1:22.1.8-1+b2 \
     && ln -sf gcc-16 /usr/bin/gcc \
     && ln -sf gcc-16 /usr/bin/cc \
+    && ln -sf gcc-ar-16 /usr/bin/gcc-ar \
     && ln -sf g++-16 /usr/bin/g++ \
     && ln -sf g++-16 /usr/bin/c++ \
     && ln -sf clang-format-22 /usr/bin/clang-format \
@@ -99,6 +103,12 @@ COPY build-event.py /tmp/build-event.py
 COPY Containerfile /opt/aurora-event/share/source/Containerfile
 RUN python3 /tmp/build-event.py && rm -rf /tmp/build-event.py /tmp/event-patches
 ENV EVENT_TOOL_PREFIX=/opt/aurora-event
+
+# Clean-NVMe OVMF is a dependency build; its guest behavior is qualified locally.
+COPY build-clean-ovmf.py clean-nvme-policy.patch edk2-host-gcc16.patch edk2-display-gcc16.patch /tmp/
+COPY Containerfile /opt/aurora-fixtures/share/source/Containerfile
+RUN python3 /tmp/build-clean-ovmf.py && rm /tmp/build-clean-ovmf.py /tmp/clean-nvme-policy.patch /tmp/edk2-host-gcc16.patch /tmp/edk2-display-gcc16.patch
+ENV AURORA_BOOT_FIXTURE_PREFIX=/opt/aurora-fixtures
 
 # One image-owned package inventory, not a per-project-run identity receipt.
 RUN mkdir -p /usr/local/share/aurora \

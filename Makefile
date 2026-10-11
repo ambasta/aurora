@@ -169,7 +169,7 @@ help:
 	  'See docs/local-development.md for dependencies, scripts and test scope.'
 
 # Cleanup does not select a compiler, configure a build, or run test gates.
-# Stop other work first. Default selection is build/meson-<hash>; scratch requires explicit paths.
+# Stop other work first. Default selections are build/meson and build/meson-compiler; scratch requires explicit paths.
 export CLEAN_PATHS
 .PHONY: clean clean-dry-run clean-scratch clean-scratch-dry-run test-clean
 clean clean-dry-run:

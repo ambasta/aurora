@@ -51,11 +51,9 @@ AMD_BOOT = [
 LABELS = ("AMDVI_MMIO_CONTROL", "AMDVI_MMIO_EXT_FEATURES", "AMDVI_MMIO_STATUS")
 CONTROL_FILES = {
     "invocation.json",
-    "control.py",
     "protocol.jsonl",
     "qtest-native.log",
     "trace.log",
-    "result.json",
     "registers-before.json",
     "registers-after.json",
     "query-pci-before.json",
@@ -63,12 +61,10 @@ CONTROL_FILES = {
     "qtree.txt",
     "mtree.txt",
     "process-result.json",
-    "preflight-provenance.json",
     "stderr.log",
     "trace-enable-events.txt",
     "trace-help-stdout.txt",
     "trace-help-stderr.txt",
-    "trace-verification.json",
 }
 CONTROL_REGS = (
     ("control", 0x18, "CONTROL"),
@@ -96,9 +92,12 @@ def read_amdvi_control(directory):
     names = []
     for line in manifest.splitlines():
         match = re.fullmatch(r"[0-9a-f]{64}  ([A-Za-z0-9_.-]+)", line)
-        need(match is not None and match[1] not in names, "Malformed AMD-Vi control manifest")
+        need(
+            match is not None and match[1] not in names and match[1] not in (".", "..", "SHA256SUMS"),
+            "Malformed AMD-Vi control manifest",
+        )
         names.append(match[1])
-    need(CONTROL_FILES <= set(names) and "SHA256SUMS" not in names, "Incomplete AMD-Vi control manifest")
+    need(CONTROL_FILES <= set(names), "Incomplete AMD-Vi control manifest")
     return dict({name: (path / name).read_bytes().decode("utf-8") for name in names}, SHA256SUMS=manifest)
 
 
@@ -110,7 +109,10 @@ def verify_amdvi_control(artifacts):
     manifest = {}
     for line in artifacts["SHA256SUMS"].splitlines():
         match = re.fullmatch(r"([0-9a-f]{64})  ([A-Za-z0-9_.-]+)", line)
-        need(match is not None and match[2] not in manifest, "Malformed/duplicate AMD-Vi control digest")
+        need(
+            match is not None and match[2] not in manifest and match[2] not in (".", "..", "SHA256SUMS"),
+            "Malformed/duplicate AMD-Vi control digest",
+        )
         manifest[match[2]] = match[1]
     need(set(manifest) == set(artifacts) - {"SHA256SUMS"}, "Unbound AMD-Vi control artifact")
     for name, digest in manifest.items():
@@ -126,9 +128,8 @@ def verify_amdvi_control(artifacts):
         "Missing control invocation",
     )
     need(
-        invocation.get("qemu_sha256") == "d3c1a558ad220e77a4412048c8d96b44f8c2b41c7ad2a4ecfe522a4b122fe067"
-        and invocation.get("control_script_sha256") == hashlib.sha256(artifacts["control.py"].encode()).hexdigest(),
-        "Unpinned control binary/script",
+        invocation.get("qemu_sha256") == "d3c1a558ad220e77a4412048c8d96b44f8c2b41c7ad2a4ecfe522a4b122fe067",
+        "Unpinned control binary",
     )
     required = {
         "-machine": "q35",
@@ -193,11 +194,6 @@ def verify_amdvi_control(artifacts):
     need(
         {event for event in available if event.startswith("amdvi_")} == AMD_EVENTS,
         "Control binary AMD-Vi inventory differs",
-    )
-    provenance = read_json("preflight-provenance.json")
-    need(
-        provenance.get("source_commit") == "98f88efe8f07067667b8d9b1a5ce9551d34036c1",
-        "Unreviewed AMD-Vi source contract",
     )
     protocol = [json.loads(line) for line in artifacts["protocol.jsonl"].splitlines()]
     previous_time = 0
@@ -332,19 +328,8 @@ def verify_amdvi_control(artifacts):
         name: {"offset": hex(offset), "address": hex(ivrs.BASE + offset), "value": 0x29D3 if offset == 48 else 0}
         for name, offset, _ in CONTROL_REGS
     }
-    result = read_json("result.json")
     need(
-        result.get("status_before") == result.get("status_after") == statuses[0]
-        and result.get("single_write") == {"address": "0xfed80018", "relative_offset": "0x18", "width": 8, "value": 0},
-        "Control summary contradicts raw protocol",
-    )
-    need(
-        read_json("registers-before.json")
-        == read_json("registers-after.json")
-        == result.get("registers_before")
-        == result.get("registers_after")
-        == registers
-        and result.get("control_register_checks_passed") is True,
+        read_json("registers-before.json") == read_json("registers-after.json") == registers,
         "Control register state changed/unbound",
     )
     records, serial, _, debug, _ = parse_trace(artifacts["trace.log"])
@@ -374,13 +359,8 @@ def verify_amdvi_control(artifacts):
         + read_lines,
         "Control trace/handler sequence differs",
     )
-    report = read_json("trace-verification.json")
-    need(
-        report.get("control_write_witness_passed") is True
-        and report.get("protocol_and_state_checks_passed") is True
-        and report.get("strict_whole_run_absence_contract_passed") is False,
-        "Original whole-run control failure was lost or relabeled",
-    )
+    # The exact raw startup sequence above contains interrupt-remapping writes;
+    # this write witness cannot establish whole-run zero interrupt activity.
     return {
         "write": [ivrs.BASE + 24, 0, 8],
         "cpu_stopped": True,
@@ -763,7 +743,6 @@ def fixture_amdvi_control():
         "amdvi_command_error error: Executing commands with command buffer disabled 0x0",
         read_lines[0],
     ] + read_lines
-    script = "# synthetic stopped CPU control"
     argv = [
         "/tmp/synthetic-qemu",
         "-L",
@@ -806,24 +785,12 @@ def fixture_amdvi_control():
             {
                 "argv": argv,
                 "qemu_sha256": "d3c1a558ad220e77a4412048c8d96b44f8c2b41c7ad2a4ecfe522a4b122fe067",
-                "control_script_sha256": hashlib.sha256(script.encode()).hexdigest(),
                 "environment_override": {"LD_LIBRARY_PATH": "/tmp/libraries"},
             }
         ),
-        "control.py": script,
         "protocol.jsonl": "\n".join(map(json.dumps, protocol)) + "\n",
         "qtest-native.log": "\n".join(native) + "\n",
         "trace.log": "\n".join(trace) + "\n",
-        "result.json": json.dumps(
-            {
-                "registers_before": registers,
-                "registers_after": registers,
-                "control_register_checks_passed": True,
-                "status_before": status,
-                "status_after": status,
-                "single_write": {"address": "0xfed80018", "relative_offset": "0x18", "width": 8, "value": 0},
-            }
-        ),
         "registers-before.json": json.dumps(registers),
         "registers-after.json": json.dumps(registers),
         "query-pci-before.json": json.dumps(pci),
@@ -831,18 +798,10 @@ def fixture_amdvi_control():
         "qtree.txt": qtree,
         "mtree.txt": mtree,
         "process-result.json": json.dumps({"returncode": 0}),
-        "preflight-provenance.json": json.dumps({"source_commit": "98f88efe8f07067667b8d9b1a5ce9551d34036c1"}),
         "stderr.log": "",
         "trace-enable-events.txt": AMD_EVENT_TEXT + "pci_cfg_write\nmemory_region_ops_write\n",
         "trace-help-stdout.txt": EVENT_TEXT,
         "trace-help-stderr.txt": "",
-        "trace-verification.json": json.dumps(
-            {
-                "control_write_witness_passed": True,
-                "protocol_and_state_checks_passed": True,
-                "strict_whole_run_absence_contract_passed": False,
-            }
-        ),
     }
     return prior.resign_control(data)
 
@@ -925,8 +884,39 @@ def self_test():
         else:
             raise RuntimeError("Incomplete IVRS coverage accepted")
     control = fixture_amdvi_control()
-    verify_amdvi_control(control)
-    mutations = []
+    need(
+        verify_amdvi_control(control)["whole_run_zero_interrupt_activity"] is False,
+        "Raw startup interrupt activity lost its limitation",
+    )
+    archived = prior.resign_control(
+        dict(
+            control,
+            **{
+                name: "archived auxiliary artifact\n"
+                for name in ("control.py", "result.json", "preflight-provenance.json", "trace-verification.json")
+            },
+        )
+    )
+    verify_amdvi_control(archived)
+    mutations = [dict(control, **{"unbound.txt": "unlisted control evidence"})]
+    for extra in ("changed archival evidence", None):
+        changed = dict(archived)
+        if extra is None:
+            changed.pop("control.py")
+        else:
+            changed["control.py"] = extra
+        mutations.append(changed)
+    for name in CONTROL_FILES:
+        changed = dict(control)
+        changed.pop(name)
+        mutations.append(prior.resign_control(changed))
+    for name in ("../outside.txt", ".", "..", "SHA256SUMS"):
+        changed = dict(control)
+        changed["SHA256SUMS"] += "0" * 64 + "  " + name + "\n"
+        mutations.append(changed)
+    changed = dict(control)
+    changed["SHA256SUMS"] += control["SHA256SUMS"].splitlines(True)[0]
+    mutations.append(changed)
     for name in control:
         changed = dict(control)
         changed.pop(name)
@@ -947,11 +937,9 @@ def self_test():
         ("qtest-native.log", "writeq 0xfed80018 0x0", "writeq 0xfed80018 0x1"),
         ("invocation.json", '"-S"', '"-unsafe"'),
         ("registers-after.json", '"value": 0', '"value": 1'),
-        (
-            "trace-verification.json",
-            '"strict_whole_run_absence_contract_passed": false',
-            '"strict_whole_run_absence_contract_passed": true',
-        ),
+        ("trace.log", "amdvi_ir_remap_msi_req addr 0xfee00000", "amdvi_ir_remap_msi_req addr 0xfee00001"),
+        ("trace.log", "name 'amdvi-ir'", "name 'foreign'"),
+        ("invocation.json", "d3c1a558", "00000000"),
     ):
         changed = dict(control)
         changed[name] = changed[name].replace(old, new, 1)

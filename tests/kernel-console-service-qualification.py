@@ -137,28 +137,31 @@ def fault_guest(mode, work):
         need(not errors, "; ".join(errors))
 
 
-def restore_normal(work, env, result=None):
+def restore_normal(work, env, result=None, normal_build=None):
     """Boot the selected isolated normal image and require this attempt's logs."""
-    selected = run_bounded(
-        [
-            sys.executable,
-            "-B",
-            ROOT / "scripts/meson_test.py",
-            "--kernel",
-            "uefi",
-            "--profile",
-            "normal",
-            "--print-image-dir",
-        ],
-        env=env,
-        timeout=180,
-    )
-    (work / "restoration-build.stdout").write_bytes(selected.stdout)
-    (work / "restoration-build.stderr").write_bytes(selected.stderr)
-    need(selected.returncode == 0, "Could not select the native normal restoration image")
-    paths = selected.stdout.decode().splitlines()
-    need(len(paths) == 1, "Ambiguous native normal image directory")
-    directory = Path(paths[0])
+    if normal_build is None:
+        selected = run_bounded(
+            [
+                sys.executable,
+                "-B",
+                ROOT / "scripts/meson_test.py",
+                "--kernel",
+                "uefi",
+                "--profile",
+                "normal",
+                "--print-image-dir",
+            ],
+            env=env,
+            timeout=180,
+        )
+        (work / "restoration-build.stdout").write_bytes(selected.stdout)
+        (work / "restoration-build.stderr").write_bytes(selected.stderr)
+        need(selected.returncode == 0, "Could not select the native normal restoration image")
+        paths = selected.stdout.decode().splitlines()
+        need(len(paths) == 1, "Ambiguous native normal image directory")
+        directory = Path(paths[0])
+    else:
+        directory = normal_build
     need(
         directory.is_absolute()
         and directory.is_dir()
@@ -167,14 +170,18 @@ def restore_normal(work, env, result=None):
         "Unexpected native normal image directory",
     )
     names = ("normal.log", "normal.clock.json")
+    outputs = work / "normal-restoration" if normal_build is not None else directory
     before = {}
     for name in names:
-        path = directory / name
+        path = outputs / name
         need(not path.is_symlink(), "Symlinked normal restoration output")
         before[name] = path.stat() if path.exists() else None
     # Pin the same configured build when the smoke wrapper selects its image.
     env = dict(env, MESON_BUILD_DIR=str(directory.parents[2]))
-    restored = run_bounded(["bash", ROOT / "scripts/kernel-uefi-smoke.sh", "normal"], env=env, timeout=180)
+    command = ["bash", ROOT / "scripts/kernel-uefi-smoke.sh"]
+    if normal_build is not None:
+        command += ["--run-only", str(directory), "--output-dir", str(outputs)]
+    restored = run_bounded([*command, "normal"], env=env, timeout=180)
     (work / "restoration.stdout").write_bytes(restored.stdout)
     (work / "restoration.stderr").write_bytes(restored.stderr)
     restoration = dict(
@@ -186,7 +193,7 @@ def restore_normal(work, env, result=None):
         result["restoration"] = restoration
     need(restored.returncode == 0, "Actual normal-image restoration failed")
     for name in names:
-        path = directory / name
+        path = outputs / name
         need(path.is_file() and not path.is_symlink(), "Missing normal restoration output: " + name)
         current = path.stat()
         old = before[name]
@@ -204,6 +211,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=admission.MODES, default="console")
     parser.add_argument("--build-dir", type=Path, required=True)
+    parser.add_argument(
+        "--normal-build-dir", type=Path, help="prebuilt normal profile for private run-only restoration"
+    )
     args = parser.parse_args()
     admission.configure_paths(args.build_dir, ROOT)
     need(
@@ -234,8 +244,18 @@ def main():
     primary_error = None
     try:
         if args.mode == "console":
+            pty_output = work / "console-pty"
             replay = run_bounded(
-                [sys.executable, "-B", ROOT / "tests/kernel-console-pty.py", "--uefi", "--build-dir", admission.BUILD],
+                [
+                    sys.executable,
+                    "-B",
+                    ROOT / "tests/kernel-console-pty.py",
+                    "--uefi",
+                    "--build-dir",
+                    admission.BUILD,
+                    "--output-dir",
+                    pty_output,
+                ],
                 timeout=40,
             )
             (work / "driver.stdout").write_bytes(replay.stdout)
@@ -246,8 +266,8 @@ def main():
                 "kernel-console-pty.stderr",
                 "console-pty.clock.json",
             ):
-                if (admission.BUILD / name).exists():
-                    shutil.copy2(admission.BUILD / name, work / name)
+                if (pty_output / name).exists():
+                    shutil.copy2(pty_output / name, work / name)
             need(replay.returncode == 0, "Normal console PTY failed: " + replay.stderr.decode(errors="replace"))
             result["guest"] = json.loads((work / "kernel-console-pty.metrics.json").read_text())
         else:
@@ -268,7 +288,7 @@ def main():
         try:
             if isinstance(primary_error, transport.ChildNotReaped):
                 raise primary_error
-            restore_normal(work, env, result)
+            restore_normal(work, env, result, args.normal_build_dir)
             if primary_error is None:
                 result["status"] = "passed"
         except BaseException as error:

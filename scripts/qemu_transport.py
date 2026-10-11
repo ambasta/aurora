@@ -85,6 +85,7 @@ def command(
     boot=(),
     peripherals=(),
     serial="stdio",
+    debug_exit=True,
     diagnostics=(),
     extra=(),
 ):
@@ -100,7 +101,10 @@ def command(
     args += [*prefix, "-machine", machine, "-accel", "tcg", "-cpu", cpu, "-smp", str(cpus), "-m", memory]
     args += list(firmware) + list(boot) + list(peripherals)
     args += ["-nic", "none", "-display", "none", "-serial", serial, "-monitor", "none", "-no-reboot"]
-    args += [*diagnostics, "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", *extra]
+    args += list(diagnostics)
+    if debug_exit:
+        args += ["-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"]
+    args += list(extra)
     return args
 
 

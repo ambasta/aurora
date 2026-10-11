@@ -821,6 +821,64 @@ class Controls(unittest.TestCase):
                 self.assertIn("FAIL: Event developer smoke: " + str(error), stderr.getvalue())
                 self.assertNotIn("BLOCKED:", stderr.getvalue())
 
+    def test_staged_worker_binds_original_admission_and_never_builds(self):
+        mode = smoke.MODES[0]
+        build = self.root / "kernel-images/uefi" / mode
+        build.mkdir(parents=True)
+        image = self.root / "staged"
+        image.mkdir()
+        admitted = {"image": {"value": "current"}}
+        staged = {"mode": mode, "checked": {"image": {"value": "current", "payload_layout": {}}}}
+        smoke.write_json(image / "image.json", staged)
+        loader = image / "esp/EFI/BOOT/BOOTX64.EFI"
+        loader.parent.mkdir(parents=True)
+        loader.write_bytes(b"admitted staged loader")
+        for changed in (False, True):
+            with (
+                self.subTest(changed=changed),
+                patch.object(smoke.admission, "configure_paths") as configure,
+                patch.object(smoke.admission, "checked", side_effect=[admitted, {} if changed else admitted]),
+                patch.object(smoke, "verify_stage") as verify,
+                patch.object(smoke, "capture_guest") as capture,
+                patch.object(
+                    smoke.esp, "validate_image", return_value={"image_sha256": "bound digest"}
+                ) as validate_fat,
+                patch.object(smoke, "build") as compile_image,
+                patch.object(smoke.signal, "signal"),
+            ):
+                arguments = (mode, build, image, {}, self.root / "master", self.root / "guest")
+                if changed:
+                    with self.assertRaisesRegex(ValueError, "changed after launch"):
+                        smoke.capture_staged(*arguments, master_sha256="bound digest")
+                else:
+                    smoke.capture_staged(*arguments, master_sha256="bound digest")
+                    self.assertEqual(verify.call_count, 2)
+                configure.assert_called_once_with(build, smoke.ROOT)
+                capture.assert_called_once_with(
+                    mode, staged["checked"], {}, self.root / "master", self.root / "guest", master_sha256="bound digest"
+                )
+                validate_fat.assert_called_once_with(
+                    self.root / "master", smoke.esp.sha256(loader), loader.stat().st_size
+                )
+                compile_image.assert_not_called()
+
+        with (
+            patch.object(smoke.admission, "configure_paths"),
+            patch.object(smoke.admission, "checked", return_value=admitted),
+            patch.object(smoke, "verify_stage"),
+            patch.object(smoke.esp, "validate_image", return_value={"image_sha256": "different master"}),
+            patch.object(smoke, "capture_guest") as capture,
+        ):
+            with self.assertRaisesRegex(ValueError, "master differs"):
+                smoke.capture_staged(
+                    mode, build, image, {}, self.root / "master", self.root / "guest", master_sha256="bound digest"
+                )
+            with self.assertRaisesRegex(ValueError, "cannot modify"):
+                smoke.capture_staged(
+                    mode, build, image, {}, self.root / "master", image / "guest", master_sha256="bound digest"
+                )
+            capture.assert_not_called()
+
     def test_build_only_checks_isolated_profiles_and_never_launches(self):
         from types import SimpleNamespace
 

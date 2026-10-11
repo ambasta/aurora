@@ -31,9 +31,15 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--uefi", action="store_true")
     parser.add_argument("--build-dir", type=Path)
+    parser.add_argument("--output-dir", type=Path, help="fresh evidence directory; leave prebuilt image untouched")
     args = parser.parse_args()
     uefi = args.uefi
-    output = ROOT / (args.build_dir or ("build/uefi" if uefi else "build"))
+    build = ROOT / (args.build_dir or ("build/uefi" if uefi else "build"))
+    output = args.output_dir.resolve() if args.output_dir else build
+    if args.output_dir:
+        need(not output.is_relative_to(build.resolve()), "Evidence output cannot modify the prebuilt console profile")
+        need(not args.output_dir.is_symlink() and not output.exists(), "Evidence directory must be fresh and absent")
+        output.mkdir(parents=True, exist_ok=False)
     metrics = {"platform": "uefi" if uefi else "bios", "latencies_ms": [], "clock": "tcg-original-clock"}
     qemu = shutil.which(os.environ.get("QEMU", "qemu-system-x86_64"))
     need(qemu, "QEMU is unavailable; console boot is not verified")
@@ -53,7 +59,7 @@ def main():
             "uefi",
             "console",
             qemu,
-            output / "esp",
+            build / "esp",
             os.environ.get("QEMU_DATA", ""),
             firmware=firmware,
             code=code,
@@ -63,13 +69,13 @@ def main():
         import kernel_uefi_console_clock
 
         receipt = kernel_uefi_console_clock.receipt(
-            command, qemu, firmware, code, variables, os.environ.get("QEMU_DATA", ""), esp=str(output / "esp")
+            command, qemu, firmware, code, variables, os.environ.get("QEMU_DATA", ""), esp=str(build / "esp")
         )
         receipt.update(timeout_argv=None, test_supervision="private PTY, 30-second deadline")
         (output / "console-pty.clock.json").write_text(json.dumps(receipt, indent=2) + "\n")
     else:
         command = transport.profile_command(
-            "bios", "console", qemu, output / "aurora.img", os.environ.get("QEMU_DATA", ""), snapshot=True
+            "bios", "console", qemu, build / "aurora.img", os.environ.get("QEMU_DATA", ""), snapshot=True
         )
     master, slave = pty.openpty()
     tty.setraw(slave)
@@ -152,7 +158,7 @@ def main():
                 smoke.validate(
                     33,
                     startup.split("AURORA_CONSOLE_READY:")[0].replace("\r", ""),
-                    json.loads((ROOT / "build/user-metadata.json").read_text()),
+                    json.loads((build / "user-metadata.json").read_text()),
                 )
             if uefi:
                 # With the fourteen-byte trigger and UART IRQs disabled, even

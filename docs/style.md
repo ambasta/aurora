@@ -41,8 +41,9 @@ should use the same pinned tools and repository configuration.
 ## Review and exceptions
 
 Format each touched host file. Keep mechanical formatting separate from behavior
-changes where practical, and rerun affected tests after combining them. The
-initial rollout does not claim the entire historical tree already passes.
+changes where practical, and rerun affected tests after combining them. Run the
+pinned checks across maintained host sources; byte-pinned historical fixtures
+retain their documented exceptions.
 
 Ruff formatting is best-effort at 120 columns; its E501 check catches remaining
 long lines except documented cases such as an unbroken word or trailing URL.

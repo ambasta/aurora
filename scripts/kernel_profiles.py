@@ -667,6 +667,8 @@ def uefi_profile(mode, flags):
         if enabled:
             entry, bridge = "examples/kernel-" + source + ".au", "kernel/uefi/" + adapter + "-entry.S"
     image_options = ["--ipc-policy"] if ipc else []
+    if mode == "budget-noapic":
+        image_options += ["--budget-noapic"]
     if snapshot:
         image_options += ["--snapshot"]
     if mode == "owned-bytes":

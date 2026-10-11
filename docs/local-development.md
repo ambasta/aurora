@@ -35,7 +35,7 @@ changing a normal boot. Explicit supervised/pinned workflows remain separate.
 ## Tools and explicit selections
 
 Required tools include GCC 16/C++23, GNU Make/binutils, Python 3, Bash, coreutils,
-ripgrep, Meson 1.12.1+ and Ninja. Image-enabled configurations require a GNU PE
+ripgrep, Meson 1.12.1 and Ninja. Image-enabled configurations require a GNU PE
 linker with `i386pep`, including for BIOS-only selection. Select the reviewed
 linker explicitly with `UEFI_LD` or Meson's `-Duefi_ld`; do not rely on an implicit
 host fallback. Hosted-only configurations use `-Dkernel_images=false` and cannot
@@ -55,10 +55,80 @@ Split firmware uses readonly CODE and a disposable snapshot of VARS. Installed
 firmware is never modified; paths with spaces remain single arguments. No script
 downloads tools or firmware. Missing inputs are blocked, not silently skipped.
 
-Patched AMD-IOMMU Event QEMU and clean BAR firmware are separate tuples with
-separate device/trace oracles. Ordinary installed QEMU/OVMF cannot stand in for
-them. See [IOMMU conformance](iommu-dma-conformance.md) and
+Patched AMD-IOMMU Event QEMU and clean BAR/IVRS firmware have separate device
+and trace oracles. The clean firmware package lives under
+`/opt/aurora-fixtures/firmware`, with its fixed `VERSION` and reviewed policy patch.
+An explicit `AURORA_BOOT_FIXTURE_PREFIX` selects an equivalent local package
+prefix; receipts cannot choose that trust root.
+The dependency image pins its distributed bytes; every smoke still checks cold
+VARS, exact device/clock arguments, and the real serial and hardware traces.
+Explicit `AURORA_BAR_FIRMWARE`/`AURORA_IVRS_FIRMWARE` fixture overrides retain the
+existing external byte pins. Ordinary stock OVMF cannot replace clean firmware.
+
+Without an explicit coverage input, BAR/IVRS runs generate real local coverage
+inside their fresh output directory: one stock-firmware `bar-state` boot and a
+stopped-CPU MSI-X probe, plus a stopped-CPU AMD-Vi probe for IVRS. The stopped-CPU probes
+exercise only the existing reviewed same-value writes, with no namespace or BME.
+The separate stock-firmware boot deliberately initializes NVMe to demonstrate
+queue, doorbell and interrupt trace coverage.
+They validate exact trace inventories and raw protocol/register/topology evidence.
+No archived logs, copied control scripts or self-reported pass summary are needed.
+Family wrappers reuse this newly validated coverage through the existing explicit
+`AURORA_BAR_COVERAGE` or `AURORA_IVRS_COVERAGE` path for the rest of that invocation.
+There is no persistent control cache. Explicit external coverage is revalidated;
+a malformed or mismatching input fails rather than becoming a missing prerequisite.
+
+For a combined local qualification, start with one IVRS case, then explicitly
+reuse its generated BAR and IVRS coverage for the remaining family cases:
+
+```sh
+python3 scripts/kernel-uefi-ivrs-run.py ivrs-default --output "$run/setup-ivrs"
+export AURORA_IVRS_COVERAGE="$run/setup-ivrs/controls/ivrs-coverage.json"
+export AURORA_BAR_COVERAGE="$run/setup-ivrs/controls/bar-coverage.json"
+AURORA_BAR_RECEIPTS="$run/bar" scripts/kernel-uefi-bar-all.sh
+AURORA_IVRS_RECEIPTS="$run/ivrs" scripts/kernel-uefi-ivrs-all.sh
+python3 scripts/kernel-uefi-bar-run.py bar-prepare --output "$run/bar-prepare"
+```
+
+Choose a fresh absolute `$run` and the selected QEMU/data/stock OVMF first. This
+uses one setup stock boot, one MSI-X probe and one AMD-Vi probe total; family
+cases still perform all their own cold boots. A new clean-firmware build remains
+unqualified until the final-source local real guest gates pass. See
+[IOMMU conformance](iommu-dma-conformance.md) and
 [BAR admission](../kernel/uefi/BAR-RESOURCE-CONTRACT.md).
+
+## Parallel guest validation
+
+Build and admit the selected native profiles in one dependency-tracked build
+phase before starting parallel guests. Keep that source/tool selection and those image directories unchanged
+until all workers settle. Ordinary developer commands still build by default.
+Explicit `--run-only` skips compilation, like Meson's `--no-rebuild`; it is an
+orchestration contract, not permission to skip build dependencies or admission.
+
+```sh
+build="$(realpath build/meson)"
+run="$(mktemp -d "$PWD/build/guests.XXXXXX")"
+./scripts/kernel-uefi-smoke.sh --run-only "$build/kernel-images/uefi/dispatch" \
+    --output-dir "$run/dispatch" dispatch
+```
+
+The BIOS smoke wrapper has the same options. Each output directory must be new
+and outside the input profile. Serial logs, clock records and copied metadata
+are private; BIOS uses a snapshot and UEFI retains read-only ESP/private VARS.
+Existing independent validators, clocks and timeouts still run. Up to four
+separate guest processes can use different admitted profiles after staging;
+there is no concurrent Ninja writer or new scheduler.
+
+BAR/IVRS runners also accept `--run-only "$profile" --output "$fresh_output"`.
+That route requires explicit validated coverage from the setup phase and never
+regenerates setup controls. Protected-console PTY already takes `--build-dir`
+and allocates private evidence. Simple console PTY accepts `--output-dir` too.
+Console-service qualification accepts `--normal-build-dir "$normal_profile"`
+so each fault worker performs its actual normal restoration with private logs
+and no build. Event orchestration uses `capture_staged` in separate processes,
+then the existing normal boot after all owned children settle; admission state
+is process-local. A staged Event ESP master and its private guest copy consume
+64 MiB each, so select Event concurrency from disk headroom rather than CPU count.
 
 ## Packaged development environment
 
@@ -74,8 +144,10 @@ a nonprivileged container with a readonly root filesystem, a writable checkout
 mount for build outputs, and no runtime network. Local validation uses explicitly selected comparable
 tools; it does not claim byte-identical container execution. The container removes
 its `/etc/mtools.conf` for the deterministic ESP contract; it never edits the host's
-configuration. The image includes the Event runtime; BAR/IVRS launchers still validate their
-selected firmware and device configuration.
+configuration. The image includes the Event runtime and clean BAR/IVRS firmware.
+Their source archives, reviewed patches and build recipes remain under
+`/opt/aurora-event/share/source` and `/opt/aurora-fixtures/share/source`.
+BAR/IVRS launchers validate the selected firmware and device configuration.
 
 The Event-capable package exports `EVENT_TOOL_PREFIX=/opt/aurora-event`.
 An explicitly selected equivalent local prefix is also supported. Its fixed
@@ -171,7 +243,7 @@ builds. Setup, compile and test failures stop the command. Raw test logs stay in
 or external-pin claim. The [test contract](developer-test-contract.md) defines
 identity, bounds and the separate legacy pinned acceptance workflow.
 
-`make console`, `make console-uefi` and `make console-programs` provide bounded
+`make console`, `make console-uefi` and `make program-console-uefi` provide bounded
 interactive serial sessions. Read the [console guide](native-console-service.md)
 and [protected command guide](program-console-contract.md) for grammar, capacities,
 authority and limitations. These are emulator diagnostics, not a general terminal

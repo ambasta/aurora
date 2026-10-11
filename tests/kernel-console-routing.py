@@ -483,6 +483,53 @@ class ConsoleRouting(unittest.TestCase):
 
 
 class NormalRestoration(unittest.TestCase):
+    def test_console_output_cannot_be_inside_prebuilt_image(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        spec = importlib.util.spec_from_file_location("console_output_controls", ROOT / "tests/kernel-console-pty.py")
+        console = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(console)
+        with tempfile.TemporaryDirectory() as temporary:
+            build = Path(temporary) / "native/kernel-images/bios/console"
+            build.mkdir(parents=True)
+            output = build / "esp/guest-output"
+            with (
+                patch.object(sys, "argv", ["pty", "--build-dir", str(build), "--output-dir", str(output)]),
+                patch.object(console.transport, "start") as start,
+            ):
+                with self.assertRaisesRegex(RuntimeError, "cannot modify"):
+                    console.main()
+            start.assert_not_called()
+            self.assertFalse(output.exists())
+
+    def test_prebuilt_restoration_uses_one_private_run_only_call(self):
+        spec = importlib.util.spec_from_file_location(
+            "console_prebuilt_restoration", ROOT / "tests/kernel-console-service-qualification.py"
+        )
+        qualification = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(qualification)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            image = root / "native/kernel-images/uefi/normal"
+            image.mkdir(parents=True)
+            work = root / "evidence"
+            work.mkdir()
+            (image / "normal.log").write_text("untouched shared log")
+            output = work / "normal-restoration"
+
+            def run(argv, timeout, env=None):
+                self.assertNotIn("--print-image-dir", argv)
+                self.assertEqual(argv[2:], ["--run-only", str(image), "--output-dir", str(output), "normal"])
+                output.mkdir()
+                (output / "normal.log").write_text("fresh private log")
+                (output / "normal.clock.json").write_text("fresh private clock")
+                return subprocess.CompletedProcess(argv, 0, b"normal boot passed", b"")
+
+            with patch.object(qualification, "run_bounded", side_effect=run) as bounded:
+                qualification.restore_normal(work, {}, normal_build=image)
+            bounded.assert_called_once()
+            self.assertEqual((image / "normal.log").read_text(), "untouched shared log")
+            self.assertEqual((work / "restoration-normal.log").read_text(), "fresh private log")
+
     def test_native_restoration_requires_fresh_mandatory_outputs_and_preserves_compiler(self):
         spec = importlib.util.spec_from_file_location(
             "console_restoration_controls", ROOT / "tests/kernel-console-service-qualification.py"

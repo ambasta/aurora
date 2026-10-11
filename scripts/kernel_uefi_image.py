@@ -267,6 +267,7 @@ def image_options(arguments):
     allowed = (
         [],
         ["--ipc-policy"],
+        ["--ipc-policy", "--budget-noapic"],
         ["--ipc-policy", "--snapshot"],
         ["--owned-bytes"],
         ["--ipc-policy", "--disposal-policy"],
@@ -277,6 +278,7 @@ def image_options(arguments):
     need(arguments in allowed, "Expected one exact supported image-policy flag combination")
     return dict(
         require_ipc="--ipc-policy" in arguments,
+        require_budget_noapic="--budget-noapic" in arguments,
         require_snapshot="--snapshot" in arguments,
         require_owned_bytes="--owned-bytes" in arguments,
         require_disposal="--disposal-policy" in arguments,
@@ -303,6 +305,22 @@ def nm_entries(text):
         need(name not in result, "Duplicate code/import symbol: " + name)
         result[name] = kind
     return result
+
+
+def budget_noapic_policy(runtime_symbols, payload_symbols):
+    # This deliberate CPUID rejection is before domain entry or mailbox setup.
+    # Optimized code must not retain any of those runtime authority references.
+    runtime = nm_entries(runtime_symbols)
+    payload = nm_entries(payload_symbols)
+    need(payload.get("uefi_runtime_enter") == "T", "No-APIC fixture lacks protected runtime assembly")
+    need(
+        not {"uefi_runtime_enter", "aurora_kernel_ipc_transition", "aurora_kernel_budget_tick"} & runtime.keys(),
+        "No-APIC rejection retains runtime launch or policy authority",
+    )
+    need(
+        not {"uefi_service_drain_begin", "uefi_service_drain_end", "uefi_service_forged_pc"} & payload.keys(),
+        "No-APIC rejection retains timer drain/probe sites",
+    )
 
 
 def snapshot_image_policy(directory, symbols):
@@ -814,12 +832,27 @@ def main(
     require_iommu_observe=False,
     require_snapshot=False,
     *,
+    require_budget_noapic=False,
     build_dir=None,
     check_only=False,
     event_mode=None,
 ):
     build = Path(build_dir).resolve() if build_dir is not None else BUILD
     common.configure_paths(build, ROOT)
+    need(
+        not require_budget_noapic
+        or require_ipc
+        and not any(
+            (
+                require_snapshot,
+                require_owned_bytes,
+                require_disposal,
+                require_graphical_console,
+                require_iommu_event,
+            )
+        ),
+        "Exact no-APIC rejection image-policy composition",
+    )
     need(
         not require_snapshot
         or require_ipc
@@ -932,7 +965,15 @@ def main(
         policy_relocations = subprocess.check_output(
             ["objdump", "-drwC", str(build / "objects" / "runtime.o")], text=True
         )
-        need(ipc_call_present(policy_relocations), "Mailbox runtime does not call the actual Aurora transaction entry")
+        if require_budget_noapic:
+            runtime_symbols = subprocess.check_output(["nm", "-a", str(build / "objects/runtime.o")], text=True)
+            budget_noapic_policy(runtime_symbols, symbols)
+            need(not (build / "service-timer-metadata.json").exists(), "No-APIC rejection has timer metadata")
+        else:
+            need(
+                ipc_call_present(policy_relocations),
+                "Mailbox runtime does not call the actual Aurora transaction entry",
+            )
         policy_symbols = {
             row.split()[2]: int(row.split()[0], 16) for row in symbols.splitlines() if len(row.split()) == 3
         }
@@ -940,6 +981,11 @@ def main(
             0 < policy_symbols.get("aurora_kernel_ipc_transition", 0) < policy_symbols["__payload_text_end"],
             "Aurora transaction entry outside owned payload RX",
         )
+        if require_budget_noapic:
+            need(
+                0 < policy_symbols.get("aurora_kernel_budget_tick", 0) < policy_symbols["__payload_text_end"],
+                "Aurora budget entry outside owned payload RX",
+            )
     if require_disposal:
         need(require_ipc, "Disposal profile requires the IPC authority graph")
         # User-run recovery must contain a genuine copied-plan call. Other

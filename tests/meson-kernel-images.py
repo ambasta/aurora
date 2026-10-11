@@ -3,6 +3,10 @@
 
 import importlib.util
 import json
+import os
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -22,6 +26,7 @@ assembly = load("kernel_assembly", "scripts/meson_aurora_assembly.py")
 objects = load("kernel_object", "scripts/meson_kernel_object.py")
 profiles = load("kernel_profiles", "scripts/kernel_profiles.py")
 clock = load("kernel_clock", "scripts/kernel_emulator_clock.py")
+image = load("kernel_image", "scripts/kernel_uefi_image.py")
 
 
 class GeneratorBoundaries(unittest.TestCase):
@@ -150,6 +155,28 @@ class GeneratorBoundaries(unittest.TestCase):
         with self.assertRaises(ValueError):
             profiles.select("bios", {"KERNEL_CONSOLE": "1"}, "normal")
 
+    def test_noapic_rejection_is_exact_and_cannot_retain_runtime_authority(self):
+        recipes = profiles.profiles()
+        for name, recipe in recipes.items():
+            self.assertEqual("--budget-noapic" in recipe["image_options"], name == "uefi/budget-noapic")
+        self.assertEqual(recipes["uefi/budget-noapic"]["image_options"], ["--ipc-policy", "--budget-noapic"])
+        self.assertTrue(image.image_options(["--ipc-policy", "--budget-noapic"])["require_budget_noapic"])
+        for options in (["--budget-noapic"], ["--ipc-policy", "--budget-noapic", "--snapshot"]):
+            with self.assertRaises(ValueError):
+                image.image_options(options)
+        runtime = "                 U aurora_kernel_terminal_event\n"
+        payload = "0000000000001000 T uefi_runtime_enter\n"
+        image.budget_noapic_policy(runtime, payload)
+        for name in ("uefi_runtime_enter", "aurora_kernel_ipc_transition", "aurora_kernel_budget_tick"):
+            for kind in ("U", "T", "w"):
+                with self.subTest(symbol=name, kind=kind), self.assertRaises(ValueError):
+                    image.budget_noapic_policy(runtime + "0000000000000010 " + kind + " " + name + "\n", payload)
+        for name in ("uefi_service_drain_begin", "uefi_service_drain_end", "uefi_service_forged_pc"):
+            with self.subTest(symbol=name), self.assertRaises(ValueError):
+                image.budget_noapic_policy(runtime, payload + "0000000000002000 T " + name + "\n")
+        with self.assertRaises(ValueError):
+            image.budget_noapic_policy(runtime, "")
+
     def test_depfile_escaping(self):
         self.assertEqual(assembly.escaped("a b#c$d:e\\f"), "a\\ b\\#c$$d\\:e\\\\f")
         for path in ["line\nfeed", "carriage\rreturn"]:
@@ -208,6 +235,228 @@ class GeneratorBoundaries(unittest.TestCase):
             clock.uefi_clock_receipt(
                 "normal", "tcg-original-clock", expected, "/qemu", "/firmware", "", esp="/other/esp"
             )
+
+
+class SmokeRunOnlyRouting(unittest.TestCase):
+    """Real wrappers and clock checks; recording substitutes never boot a guest."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="aurora-smoke-routing-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.repo = self.root / "repo"
+        (self.repo / "scripts").mkdir(parents=True)
+        (self.repo / "tests").mkdir()
+        for name in (
+            "kernel-smoke.sh",
+            "kernel-uefi-smoke.sh",
+            "kernel_profiles.py",
+            "qemu_transport.py",
+            "kernel_emulator_clock.py",
+            "uefi-firmware.sh",
+        ):
+            shutil.copy2(ROOT / "scripts" / name, self.repo / "scripts" / name)
+        self.calls = self.root / "calls"
+        self.qemu = self.root / "qemu"
+        self.qemu.write_text(
+            f"#!{sys.executable}\n"
+            "import json, os, sys\nfrom pathlib import Path\n"
+            "with open(os.environ['CALLS'], 'a') as output:\n"
+            "    output.write(json.dumps(['qemu', *sys.argv[1:]]) + '\\n')\n"
+            "for arg in sys.argv[1:]:\n"
+            "    if 'file=fat:ro:' in arg: assert Path(arg.split('file=fat:ro:')[1].split(',')[0]).is_dir()\n"
+            "    elif arg.startswith('file='): assert Path(arg[5:].split(',')[0]).is_file()\n"
+            "print('synthetic serial')\nraise SystemExit(33)\n"
+        )
+        self.qemu.chmod(0o755)
+        firmware = self.root / "OVMF.fd"
+        firmware.write_bytes(b"recording firmware")
+        self.env = dict(
+            PATH=os.environ["PATH"],
+            HOME=str(self.root),
+            LC_ALL="C",
+            PYTHONDONTWRITEBYTECODE="1",
+            QEMU=str(self.qemu),
+            OVMF=str(firmware),
+            CALLS=str(self.calls),
+        )
+        for platform in ("bios", "uefi"):
+            script = "kernel-build.sh" if platform == "bios" else "kernel-uefi-build.sh"
+            build = self.repo / "scripts" / script
+            build.write_text('#!/usr/bin/env bash\necho \'["build"]\' >> "$CALLS"\nprintf "%s\\n" "$BUILT_IMAGE"\n')
+            build.chmod(0o755)
+        for name in (
+            "kernel-smoke",
+            "kernel-schedule-smoke",
+            "kernel-uefi-smoke",
+            "kernel-uefi-budget-smoke",
+            "kernel-uefi-dispatch-smoke",
+            "kernel-uefi-user-phases-smoke",
+            "kernel-snapshot-smoke",
+            "kernel-uefi-runtime-smoke",
+            "kernel-acpi-smoke",
+        ):
+            (self.repo / "tests" / (name + ".py")).write_text(
+                "import json, os, sys\nfrom pathlib import Path\n"
+                "assert sys.argv[1] == '33'\n"
+                "assert Path(sys.argv[2]).read_text() == 'synthetic serial\\n'\n"
+                "if len(sys.argv) == 5: json.loads(Path(sys.argv[4]).read_text())\n"
+                "with open(os.environ['CALLS'], 'a') as output:\n"
+                "    output.write(json.dumps(['oracle', *sys.argv]) + '\\n')\n"
+            )
+
+    def native(self, platform, mode):
+        image = (
+            self.root
+            / "native/kernel-images"
+            / platform
+            / profiles.canonical_profile(platform, mode.removeprefix("--"))
+        )
+        image.mkdir(parents=True, exist_ok=True)
+        (image / "esp").mkdir(exist_ok=True)
+        for name in ("aurora.img", "user-metadata.json", "user-images.json", "service-timer-metadata.json"):
+            (image / name).write_text('{"fixture":"' + name + '"}\n')
+        return image
+
+    def invoke(self, platform, *arguments, image=None, success=True):
+        script = "kernel-smoke.sh" if platform == "bios" else "kernel-uefi-smoke.sh"
+        result = subprocess.run(
+            ["bash", str(self.repo / "scripts" / script), *map(str, arguments)],
+            cwd=self.root,
+            env=self.env | {"BUILT_IMAGE": str(image)},
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=5,
+        )
+        self.assertEqual(result.returncode == 0, success, result.stdout)
+        return [json.loads(line) for line in self.calls.read_text().splitlines()] if self.calls.exists() else []
+
+    def test_run_only_uses_canonical_images_and_isolates_all_evidence(self):
+        for platform, mode in (
+            ("bios", "normal"),
+            ("bios", "--schedule-smp"),
+            ("uefi", "normal"),
+            ("uefi", "budget-smp"),
+            ("uefi", "dispatch"),
+            ("uefi", "user-phases"),
+            ("uefi", "snapshot"),
+            ("uefi", "runtime"),
+            ("uefi", "acpi-two"),
+        ):
+            with self.subTest(platform=platform, mode=mode):
+                image = self.native(platform, mode)
+                before = {
+                    p.relative_to(image): (p.read_bytes(), p.stat().st_mtime_ns)
+                    for p in image.rglob("*")
+                    if p.is_file()
+                }
+                output = self.root / (platform + mode)
+                calls = self.invoke(platform, "--run-only", image, "--output-dir", output, mode)
+                self.assertEqual([call[0] for call in calls], ["qemu", "oracle"])
+                boot = (
+                    "file=" + str(image / "aurora.img") + ",format=raw,if=ide,snapshot=on"
+                    if platform == "bios"
+                    else "format=raw,file=fat:ro:" + str(image / "esp") + ",snapshot=on"
+                )
+                self.assertIn(boot, calls[0])
+                self.assertEqual(Path(calls[1][3]).parent, output)
+                if platform == "uefi":
+                    self.assertTrue((output / (mode + ".clock.json")).is_file())
+                if len(calls[1]) == 6:
+                    self.assertEqual(Path(calls[1][5]).parent, output)
+                after = {
+                    p.relative_to(image): (p.read_bytes(), p.stat().st_mtime_ns)
+                    for p in image.rglob("*")
+                    if p.is_file()
+                }
+                self.assertEqual(after, before)
+                self.calls.unlink()
+
+    def test_default_still_builds_and_clock_plan_and_shared_normal_remain_supported(self):
+        for platform in ("bios", "uefi"):
+            image = self.native(platform, "normal")
+            calls = self.invoke(platform, "normal", image=image)
+            self.assertEqual([call[0] for call in calls], ["build", "qemu", "oracle"])
+            if platform == "bios":
+                self.assertIn("file=" + str(image / "aurora.img") + ",format=raw,if=ide", calls[1])
+            self.calls.unlink()
+        self.assertEqual(self.invoke("uefi", "--clock-plan", "--shared-normal", "normal"), [])
+        calls = self.invoke(
+            "uefi", "--shared-normal", "--run-only", image, "--output-dir", self.root / "shared", "normal"
+        )
+        self.assertEqual([call[0] for call in calls], ["qemu", "oracle"])
+
+    def test_invalid_run_only_inputs_reject_before_build_or_guest(self):
+        for platform in ("bios", "uefi"):
+            image = self.native(platform, "normal")
+            alias = self.root / (platform + "-linked")
+            alias.symlink_to(image, target_is_directory=True)
+            output = self.root / (platform + "-fresh")
+            cases = [
+                ("--run-only", image),
+                ("--output-dir", output, "normal"),
+                ("--run-only", image, "--output-dir", output, "normal", "extra"),
+                ("--run-only", image, "--output-dir", output, "unknown"),
+                ("--run-only", image, "--output-dir", output, "--schedule" if platform == "bios" else "budget"),
+                ("--run-only", alias, "--output-dir", output, "normal"),
+                ("--run-only", image.relative_to(self.root), "--output-dir", output, "normal"),
+                ("--run-only", image, "--output-dir", self.root, "normal"),
+                ("--run-only", image, "--output-dir", image / "evidence", "normal"),
+                ("--run-only", image, "--output-dir", "relative", "normal"),
+            ]
+            if platform == "uefi":
+                cases += [
+                    ("--clock-plan", "--run-only", image, "--output-dir", output, "normal"),
+                    ("--shared-normal", "--run-only", image, "--output-dir", output, "budget"),
+                ]
+            for arguments in cases:
+                with self.subTest(platform=platform, arguments=arguments):
+                    self.assertEqual(self.invoke(platform, *arguments, success=False), [])
+                    self.assertFalse(output.exists())
+
+    def test_missing_metadata_and_reused_output_cannot_report_success(self):
+        for platform, mode, metadata in (
+            ("bios", "normal", "user-metadata.json"),
+            ("uefi", "budget", "service-timer-metadata.json"),
+        ):
+            image = self.native(platform, mode)
+            (image / metadata).unlink()
+            output = self.root / (platform + "-output")
+            calls = self.invoke(platform, "--run-only", image, "--output-dir", output, mode, success=False)
+            self.assertNotIn("build", [call[0] for call in calls])
+            self.assertNotIn("oracle", [call[0] for call in calls])
+            if self.calls.exists():
+                self.calls.unlink()
+            self.assertEqual(
+                self.invoke(platform, "--run-only", image, "--output-dir", output, mode, success=False), []
+            )
+
+    def test_only_budget_noapic_requires_absent_timer_metadata(self):
+        image = self.native("uefi", "budget-noapic")
+        calls = self.invoke(
+            "uefi", "--run-only", image, "--output-dir", self.root / "bad-timer", "budget-noapic", success=False
+        )
+        self.assertEqual([call[0] for call in calls], ["qemu"])
+        self.calls.unlink()
+        (image / "service-timer-metadata.json").unlink()
+        output = self.root / "no-timer"
+        calls = self.invoke("uefi", "--run-only", image, "--output-dir", output, "budget-noapic")
+        self.assertEqual([call[0] for call in calls], ["qemu", "oracle"])
+        self.assertIsNone(json.loads((output / "budget-noapic.metadata.json").read_text())["kernel"])
+
+    def test_missing_boot_input_cannot_report_success(self):
+        for platform in ("bios", "uefi"):
+            image = self.native(platform, "normal")
+            if platform == "bios":
+                (image / "aurora.img").unlink()
+            else:
+                (image / "esp").rmdir()
+            calls = self.invoke(
+                platform, "--run-only", image, "--output-dir", self.root / platform, "normal", success=False
+            )
+            self.assertEqual([call[0] for call in calls], ["qemu"])
+            self.calls.unlink()
 
 
 if __name__ == "__main__":

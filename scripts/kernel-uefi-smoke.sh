@@ -6,6 +6,13 @@ if [[ "${1-}" == --clock-plan ]]; then clock_plan=true; shift; fi
 # Compatibility alias: normal restoration now boots the isolated native image.
 shared_normal=false
 if [[ "${1-}" == --shared-normal ]]; then shared_normal=true; shift; fi
+run_only= output_dir=
+if [[ "${1-}" == --run-only ]]; then
+    if (( $# < 4 )) || [[ -z "$2" || "$3" != --output-dir || -z "$4" || "$clock_plan" == true ]]; then
+        echo 'Expected --run-only <absolute native profile directory> --output-dir <fresh directory>, without --clock-plan' >&2; exit 2
+    fi
+    run_only="$2"; output_dir="$4"; shift 4
+fi
 if (( $# > 1 )); then echo 'Expected one exact UEFI mode' >&2; exit 2; fi
 mode="${1-normal}"
 if [[ "$shared_normal" == true && "$mode" != normal ]]; then
@@ -21,6 +28,21 @@ case "$mode" in
     exit 2 ;;
 esac
 clock_profile="$(python3 scripts/kernel_emulator_clock.py profile "$mode")"
+if [[ -n "$run_only" ]]; then
+    python3 -B - "$mode" "$run_only" "$output_dir" <<'PYPATH'
+from pathlib import Path
+import sys
+sys.path.insert(0, 'scripts')
+from kernel_profiles import canonical_profile
+image, output = map(Path, sys.argv[2:])
+if (not image.is_absolute() or image.resolve(strict=True) != image or not image.is_dir()
+        or image.parts[-3:] != ('kernel-images', 'uefi', canonical_profile('uefi', sys.argv[1]))):
+    sys.exit('Run-only requires the resolved native directory for the exact UEFI profile')
+if not output.is_absolute() or output.resolve() != output or image in output.parents:
+    sys.exit('Run-only output must be an absolute resolved fresh directory outside the image directory')
+output.mkdir()
+PYPATH
+fi
 source ./scripts/uefi-firmware.sh
 if [[ "$clock_plan" == true ]]; then
     uefi_firmware_select --plan
@@ -31,8 +53,10 @@ image_dir=build/uefi
 qemu="${QEMU:-qemu-system-x86_64}"
 if [[ "$clock_plan" == false ]]; then
     command -v "$qemu" >/dev/null || { echo 'BLOCKED: QEMU missing' >&2; exit 2; }
-    image_dir="$(UEFI_MODE="$mode" ./scripts/kernel-uefi-build.sh --print-image-dir)"
+    if [[ -n "$run_only" ]]; then image_dir="$run_only"
+    else image_dir="$(UEFI_MODE="$mode" ./scripts/kernel-uefi-build.sh --print-image-dir)"; fi
 fi
+output_dir="${output_dir:-$image_dir}"
 mapfile -d '' -t qemu_argv < <(python3 -B scripts/qemu_transport.py argv --platform uefi \
     --mode="$mode" --image "$image_dir/esp" --qemu "$qemu" --data "${QEMU_DATA:-}" \
     --firmware "$UEFI_FIRMWARE_COMBINED" --code "$UEFI_FIRMWARE_CODE" --vars "$UEFI_FIRMWARE_VARS" \
@@ -46,42 +70,48 @@ if [[ "$clock_plan" == true ]]; then
     exit 0
 fi
 # Fail closed before QEMU; this records a command, never a successful execution.
-"${clock_check[@]}" >"$image_dir/$mode.clock.json"
-log="$image_dir/$mode.log"
+"${clock_check[@]}" >"$output_dir/$mode.clock.json"
+log="$output_dir/$mode.log"
 set +e
 python3 -B scripts/qemu_transport.py run --timeout 30 --log "$log" -- "${qemu_argv[@]}"
 status=$?
 set -e
 cat "$log"
 if [[ "$mode" == budget* || "$mode" == dispatch* || "$mode" == user-* ]]; then
-    python3 - "$mode" "$image_dir" <<'PYMETA'
+    python3 - "$mode" "$image_dir" "$output_dir" <<'PYMETA'
 from pathlib import Path
 import json,sys
 root=Path(sys.argv[2])
-(root/(sys.argv[1]+'.metadata.json')).write_text(json.dumps(dict(images=json.loads((root/'user-images.json').read_text()),kernel=json.loads((root/'service-timer-metadata.json').read_text())),indent=2)+'\n')
+timer=root/'service-timer-metadata.json'
+if sys.argv[1]=='budget-noapic':
+    if timer.exists(): raise ValueError('Early budget rejection has timer metadata')
+    kernel=None
+else:
+    kernel=json.loads(timer.read_text())
+(Path(sys.argv[3])/(sys.argv[1]+'.metadata.json')).write_text(json.dumps(dict(images=json.loads((root/'user-images.json').read_text()),kernel=kernel),indent=2)+'\n')
 PYMETA
     if [[ "$mode" == user-* ]]; then
-        python3 tests/kernel-uefi-user-phases-smoke.py "$status" "$log" "$mode" "$image_dir/$mode.metadata.json"
+        python3 tests/kernel-uefi-user-phases-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.metadata.json"
     elif [[ "$mode" == dispatch* ]]; then
-        python3 tests/kernel-uefi-dispatch-smoke.py "$status" "$log" "$mode" "$image_dir/$mode.metadata.json"
+        python3 tests/kernel-uefi-dispatch-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.metadata.json"
     else
-        python3 tests/kernel-uefi-budget-smoke.py "$status" "$log" "$mode" "$image_dir/$mode.metadata.json"
+        python3 tests/kernel-uefi-budget-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.metadata.json"
     fi
 elif [[ "$mode" == snapshot* ]]; then
-    cp "$image_dir/user-images.json" "$image_dir/$mode.metadata.json"
-    python3 tests/kernel-snapshot-smoke.py "$status" "$log" "$mode" "$image_dir/$mode.metadata.json"
+    cp "$image_dir/user-images.json" "$output_dir/$mode.metadata.json"
+    python3 tests/kernel-snapshot-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.metadata.json"
 elif [[ "$mode" == ipc* ]]; then
-    cp "$image_dir/user-images.json" "$image_dir/$mode.metadata.json"
-    python3 tests/kernel-uefi-ipc-smoke.py "$status" "$log" "$mode" "$image_dir/$mode.metadata.json"
+    cp "$image_dir/user-images.json" "$output_dir/$mode.metadata.json"
+    python3 tests/kernel-uefi-ipc-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.metadata.json"
 elif [[ "$mode" == runtime-table-* ]]; then
-    cp "$image_dir/user-images.json" "$image_dir/$mode.metadata.json"
-    python3 tests/kernel-uefi-tables-smoke.py "$status" "$log" "$mode" "$image_dir/$mode.metadata.json"
+    cp "$image_dir/user-images.json" "$output_dir/$mode.metadata.json"
+    python3 tests/kernel-uefi-tables-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.metadata.json"
 elif [[ "$mode" == runtime-pin-* ]]; then
-    cp "$image_dir/user-images.json" "$image_dir/$mode.metadata.json"
-    python3 tests/kernel-uefi-pin-smoke.py "$status" "$log" "$mode" "$image_dir/$mode.metadata.json"
+    cp "$image_dir/user-images.json" "$output_dir/$mode.metadata.json"
+    python3 tests/kernel-uefi-pin-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.metadata.json"
 elif [[ "$mode" == runtime* ]]; then
-    cp "$image_dir/user-images.json" "$image_dir/$mode.metadata.json"
-    python3 tests/kernel-uefi-runtime-smoke.py "$status" "$log" "$mode" "$image_dir/$mode.metadata.json"
+    cp "$image_dir/user-images.json" "$output_dir/$mode.metadata.json"
+    python3 tests/kernel-uefi-runtime-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.metadata.json"
 elif [[ "$mode" == bar-state ]]; then
     python3 tests/kernel-uefi-bar-state.py "$status" "$log"
 elif [[ "$mode" == pci* ]]; then

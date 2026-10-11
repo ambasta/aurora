@@ -611,6 +611,38 @@ def normal_boot(args, directory, image):
             need(data_files(args.normal_data) == data_before, "Normal data changed")
 
 
+def capture_staged(mode, build, image, runtime, master, directory, *, master_sha256):
+    """Run one admitted staged image in its own worker process, without builds."""
+    need(mode in MODES and build.parts[-3:] == ("kernel-images", "uefi", mode), "Wrong staged Event profile")
+    need(build.is_absolute() and build.is_dir() and build.resolve(strict=True) == build, "Invalid prebuilt Event image")
+    need(
+        not directory.resolve().is_relative_to(build) and not directory.resolve().is_relative_to(image.resolve()),
+        "Guest output cannot modify the admitted Event image",
+    )
+    admission.configure_paths(build, ROOT)
+    staged = read_json(image / "image.json")
+    need(staged.get("mode") == mode, "Staged Event mode differs")
+    verify_stage(image, staged)
+    checked = copy.deepcopy(staged["checked"])
+    del checked["image"]["payload_layout"]
+    need(admission.checked(mode) == checked, "Current Event admission changed before launch")
+    loader = image / "esp/EFI/BOOT/BOOTX64.EFI"
+    fat = esp.validate_image(master, esp.sha256(loader), loader.stat().st_size)
+    need(fat["image_sha256"] == master_sha256, "Event master differs from admitted staged loader")
+
+    def interrupted(signum, _frame):
+        raise KeyboardInterrupt("Event worker interrupted by signal " + str(signum))
+
+    previous = {sig: signal.signal(sig, interrupted) for sig in (signal.SIGINT, signal.SIGTERM)}
+    try:
+        capture_guest(mode, staged["checked"], runtime, master, directory, master_sha256=master_sha256)
+        need(admission.checked(mode) == checked, "Current Event admission changed after launch")
+        verify_stage(image, staged)
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+
+
 def window(args, directory, runtime):
     results, normal_image, normal_record, errors = [], directory / "normal-image", None, []
     unreaped = False
@@ -649,18 +681,15 @@ def window(args, directory, runtime):
             verify_stage(image, staged)
             budget(directory)
             if not args.build_only:
-                checked = copy.deepcopy(staged["checked"])
-                del checked["image"]["payload_layout"]
-                need(admission.checked(mode) == checked, "Current Event admission changed before launch")
-                capture_guest(
+                capture_staged(
                     mode,
-                    staged["checked"],
+                    BUILD,
+                    image,
                     runtime,
                     master,
                     directory / (mode + "-guest"),
                     master_sha256=fat["image_sha256"],
                 )
-                need(admission.checked(mode) == checked, "Current Event admission changed after launch")
             verify_stage(image, staged)
             record["status"] = "build-checked" if args.build_only else "local-developer-evidence-passed"
             write_json(directory / "summary.json", dict(profiles=results, errors=errors))

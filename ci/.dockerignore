@@ -2,3 +2,7 @@
 !Containerfile
 !ruff-requirements.txt
 !build-event.py
+!build-clean-ovmf.py
+!clean-nvme-policy.patch
+!edk2-host-gcc16.patch
+!edk2-display-gcc16.patch

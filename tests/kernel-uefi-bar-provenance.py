@@ -10,6 +10,7 @@ from pathlib import Path
 import hashlib
 import importlib.util
 import json
+import os
 import re
 import sys
 
@@ -85,8 +86,7 @@ def validate_arguments(receipt, paths):
     need(
         isinstance(environment, dict)
         and set(environment) <= {"LD_LIBRARY_PATH", "LC_ALL", "TZ"}
-        and isinstance(environment.get("LD_LIBRARY_PATH"), str)
-        and environment["LD_LIBRARY_PATH"],
+        and isinstance(environment.get("LD_LIBRARY_PATH"), str),
         "Missing/unsafe environment overrides",
     )
     values, flags = {}, []
@@ -321,7 +321,38 @@ def validate_payload(loader, binary, elf, metadata, mode):
     return metadata
 
 
-def validate_receipt(receipt, contents):
+def validate_clean_firmware(receipt, files, contents, fixture_prefix=None):
+    need(
+        receipt.get("firmware_source_revision") == REVISION
+        and files["firmware_patch"]["sha256"] == PINS["clean_patch"],
+        "Unreviewed clean firmware source/patch",
+    )
+    if "firmware_package" in receipt:
+        version = "edk2-fbe0805b2091393406952e84724188f8c1941837-clean-nvme-v1"
+        root = (
+            Path(fixture_prefix or os.environ.get("AURORA_BOOT_FIXTURE_PREFIX") or "/opt/aurora-fixtures") / "firmware"
+        ).resolve()
+        need(
+            receipt["firmware_package"] == version and (root / "VERSION").read_text() == version + "\n",
+            "Unsupported clean firmware package",
+        )
+        for role, name, size in (
+            ("firmware_code", "OVMF_CODE.fd", 3653632),
+            ("vars_template", "OVMF_VARS.fd", 540672),
+            ("firmware_patch", "policy-three-file.patch", None),
+        ):
+            need(Path(files[role]["path"]) == root / name, "Packaged firmware path mismatch")
+            need(size is None or len(contents[role]) == size, "Malformed packaged firmware image")
+        need(contents["vars_initial"] == contents["vars_template"], "Reused/non-pristine initial VARS")
+    else:
+        need(files["firmware_code"]["sha256"] == PINS["clean_code"], "Unreviewed firmware CODE")
+        need(
+            files["vars_template"]["sha256"] == files["vars_initial"]["sha256"] == PINS["clean_vars"],
+            "Reused/non-pristine initial VARS",
+        )
+
+
+def validate_receipt(receipt, contents, fixture_prefix=None):
     """Pure receipt/hash checks; contents maps named roles to exact file bytes."""
     need(
         receipt.get("schema") == "aurora-bar-run-v1" and receipt.get("mode") in bar.MODES,
@@ -360,29 +391,24 @@ def validate_receipt(receipt, contents):
         files["qemu"]["sha256"] == PINS["qemu"] and files["events"]["sha256"] == PINS["events"],
         "Unreviewed QEMU binary/events",
     )
-    need(files["firmware_code"]["sha256"] == PINS["clean_code" if clean else "stock_code"], "Unreviewed firmware CODE")
     if clean:
-        need(
-            receipt.get("firmware_source_revision") == REVISION
-            and files["firmware_patch"]["sha256"] == PINS["clean_patch"],
-            "Unreviewed clean firmware source/patch",
-        )
-        need(
-            files["vars_template"]["sha256"] == files["vars_initial"]["sha256"] == PINS["clean_vars"],
-            "Reused/non-pristine initial VARS",
-        )
+        validate_clean_firmware(receipt, files, contents, fixture_prefix)
     else:
-        need("firmware_source_revision" not in receipt, "Stock firmware mislabeled with clean source identity")
+        need(files["firmware_code"]["sha256"] == PINS["stock_code"], "Unreviewed firmware CODE")
+        need(
+            "firmware_source_revision" not in receipt and "firmware_package" not in receipt,
+            "Stock firmware mislabeled with clean source identity",
+        )
     boot_root = validate_arguments(receipt, paths)
     return paths, boot_root
 
 
-def validate(path):
+def validate(path, fixture_prefix=None):
     path = Path(path)
     receipt = json.loads(path.read_text())
     need(isinstance(receipt, dict) and isinstance(receipt.get("files"), dict), "Malformed run JSON")
     contents = {role: Path(record["path"]).read_bytes() for role, record in receipt["files"].items()}
-    paths, boot_root = validate_receipt(receipt, contents)
+    paths, boot_root = validate_receipt(receipt, contents, fixture_prefix)
     metadata = json.loads(contents["payload_metadata"])
     validate_payload(contents["loader"], contents["payload"], contents["payload_elf"], metadata, receipt["mode"])
     # Check the only bootable file and reject unexpected writable guest content.

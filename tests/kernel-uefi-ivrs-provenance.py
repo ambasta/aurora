@@ -131,7 +131,7 @@ def validate_payload(loader, binary, elf, metadata, mode):
     return metadata
 
 
-def validate_receipt(receipt, contents):
+def validate_receipt(receipt, contents, fixture_prefix=None):
     trace = module("ivrs_trace_receipt", "kernel-uefi-ivrs-trace.py")
     need(
         isinstance(receipt, dict)
@@ -171,24 +171,16 @@ def validate_receipt(receipt, contents):
     need(len(set(paths.values())) == len(paths), "Artifact roles share a path")
     need(files["qemu"]["sha256"] == PINS["qemu"], "Unreviewed QEMU binary")
     need(contents["events"] == trace.EVENT_TEXT.encode(), "Unreviewed IVRS trace event inventory")
-    need(
-        files["firmware_code"]["sha256"] == PINS["clean_code"]
-        and files["firmware_patch"]["sha256"] == PINS["clean_patch"],
-        "Unreviewed clean firmware CODE/patch",
-    )
-    need(
-        files["vars_template"]["sha256"] == files["vars_initial"]["sha256"] == PINS["clean_vars"],
-        "Non-pristine initial VARS",
-    )
+    prior.validate_clean_firmware(receipt, files, contents, fixture_prefix)
     return paths, validate_arguments(receipt, paths)
 
 
-def validate(path):
+def validate(path, fixture_prefix=None):
     path = Path(path)
     receipt = json.loads(path.read_text())
     need(isinstance(receipt, dict) and isinstance(receipt.get("files"), dict), "Malformed IVRS receipt JSON")
     contents = {role: Path(record["path"]).read_bytes() for role, record in receipt["files"].items()}
-    paths, boot_root = validate_receipt(receipt, contents)
+    paths, boot_root = validate_receipt(receipt, contents, fixture_prefix)
     metadata = json.loads(contents["payload_metadata"])
     validate_payload(contents["loader"], contents["payload"], contents["payload_elf"], metadata, receipt["mode"])
     boot_files = {str(p.resolve()) for p in Path(boot_root).rglob("*") if p.is_file()}

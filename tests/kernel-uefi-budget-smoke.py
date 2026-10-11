@@ -63,6 +63,9 @@ def metadata_valid(meta, mode):
         base_images[name]["probe_pc"] = 0
     ipc.metadata_valid(base_images, "ipc-fault")
     kernel = meta["kernel"]
+    if mode == "budget-noapic":
+        need(kernel is None, "No-APIC rejection must not claim timer sites")
+        return base_images
     need(
         type(kernel) is dict
         and set(kernel) == {"drain_begin", "drain_end", "text_end", "forged_pc"}
@@ -464,7 +467,9 @@ def self_test():
             )
         meta = dict(
             images=images,
-            kernel=dict(drain_begin=100, drain_end=104, text_end=4096, forged_pc=200 if mode == "budget-forged" else 0),
+            kernel=None
+            if mode == "budget-noapic"
+            else dict(drain_begin=100, drain_end=104, text_end=4096, forged_pc=200 if mode == "budget-forged" else 0),
         )
         simple = {
             name: {
@@ -593,6 +598,16 @@ def self_test():
         text = prefix_case + "\n".join(rows) + "\n"
         status = 33 if mode in SUCCESS else 35
         validate(status, text, mode, meta)
+        wrong_sites = copy.deepcopy(meta)
+        wrong_sites["kernel"] = (
+            dict(drain_begin=100, drain_end=104, text_end=4096, forged_pc=0) if mode == "budget-noapic" else None
+        )
+        try:
+            validate(status, text, mode, wrong_sites)
+        except ValueError:
+            rejected += 1
+        else:
+            raise RuntimeError("Wrong timer-site presence accepted: " + mode)
         failures = [(0, text), (status, text + ipc.SUFFIX), (status, text + "AURORA_UEFI_SERVICE_BUDGET_OK\n")]
         for line in text.splitlines():
             failures.extend(

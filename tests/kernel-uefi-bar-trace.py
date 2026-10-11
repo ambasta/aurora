@@ -97,6 +97,15 @@ EVENT_TEXT = (
     "ings\npci_cfg_read\npci_cfg_write\nmsix_write_config\nmemory_region_ops_write\n"
 )
 EVENTS = frozenset(EVENT_TEXT.splitlines())
+CONTROL_FILES = {
+    "invocation.json",
+    "protocol.jsonl",
+    "trace.log",
+    "qtest-native.log",
+    "query-pci.json",
+    "qtree.txt",
+    "stderr.log",
+}
 
 
 def normalized(text):
@@ -204,21 +213,17 @@ def validate_stock_control(text, require_state=True):
 def read_control(directory):
     path = Path(directory)
     need(path.is_dir(), "MSI-X control directory unavailable")
-    names = (
-        "SHA256SUMS",
-        "invocation.json",
-        "protocol.jsonl",
-        "result.json",
-        "trace.log",
-        "trace-verification.json",
-        "qtest-native.log",
-        "query-pci.json",
-        "qtree.txt",
-        "stderr.log",
-        "control.py",
-        "verify-trace.py",
-    )
-    return {name: (path / name).read_bytes().decode("utf-8") for name in names}
+    manifest = (path / "SHA256SUMS").read_text()
+    names = []
+    for line in manifest.splitlines():
+        match = re.fullmatch(r"[0-9a-f]{64}  ([A-Za-z0-9_.-]+)", line)
+        need(
+            match is not None and match[1] not in names and match[1] not in (".", "..", "SHA256SUMS"),
+            "Malformed MSI-X control manifest",
+        )
+        names.append(match[1])
+    need(CONTROL_FILES <= set(names), "Incomplete MSI-X control manifest")
+    return dict({name: (path / name).read_bytes().decode("utf-8") for name in names}, SHA256SUMS=manifest)
 
 
 def verify_msix_control(artifacts):
@@ -226,25 +231,16 @@ def verify_msix_control(artifacts):
     manifest = {}
     for line in artifacts.get("SHA256SUMS", "").splitlines():
         match = re.fullmatch(r"([0-9a-f]{64})  ([A-Za-z0-9_.-]+)", line)
-        need(match and match[2] not in manifest, "Malformed/duplicate control digest")
-        manifest[match[2]] = match[1]
-    required = {
-        "invocation.json",
-        "protocol.jsonl",
-        "result.json",
-        "trace.log",
-        "trace-verification.json",
-        "qtest-native.log",
-        "query-pci.json",
-        "qtree.txt",
-        "stderr.log",
-        "control.py",
-        "verify-trace.py",
-    }
-    need(required == set(manifest) and required <= set(artifacts), "Incomplete MSI-X provenance")
-    for name in required:
         need(
-            hashlib.sha256(artifacts[name].encode()).hexdigest() == manifest[name],
+            match is not None and match[2] not in manifest and match[2] not in (".", "..", "SHA256SUMS"),
+            "Malformed/duplicate control digest",
+        )
+        manifest[match[2]] = match[1]
+    need(CONTROL_FILES <= set(manifest), "Incomplete MSI-X provenance")
+    need(set(manifest) == set(artifacts) - {"SHA256SUMS"}, "Unbound MSI-X control artifact")
+    for name, digest in manifest.items():
+        need(
+            hashlib.sha256(artifacts[name].encode()).hexdigest() == digest,
             "MSI-X artifact digest mismatch: " + name,
         )
     need(artifacts["stderr.log"] == "", "MSI-X control reported process errors")
@@ -407,15 +403,6 @@ def verify_msix_control(artifacts):
         [(r["address"], r["size"]) for r in records if r["name"] == "pci_nvme_mmio_read"]
         == [(a - 0xC0000000, 4) for a, _ in expected * 2],
         "Protocol/trace controller read counts differ",
-    )
-    result = json.loads(artifacts["result.json"])
-    need(
-        result.get("control_passed") is True
-        and result.get("cpu_running") is False
-        and result.get("namespace_backends") == []
-        and result.get("bdf") == "0000:00:02.0"
-        and result.get("vendor_device") == "1b36:0010",
-        "Control summary disagrees",
     )
     return {"table_write": [0xC000200C, 1, 4], "cpu_stopped": True}
 
@@ -679,22 +666,10 @@ def fixture_control():
         "invocation.json": json.dumps({"argv": ["qemu", "-S", "-nodefaults", "-device", "nvme,bus=pcie.0,addr=02.0"]}),
         "protocol.jsonl": "\n".join(map(json.dumps, protocol)) + "\n",
         "trace.log": "\n".join(trace) + "\n",
-        "result.json": json.dumps(
-            {
-                "control_passed": True,
-                "cpu_running": False,
-                "namespace_backends": [],
-                "bdf": "0000:00:02.0",
-                "vendor_device": "1b36:0010",
-            }
-        ),
         "qtest-native.log": "\n".join(native) + "\n",
         "query-pci.json": json.dumps(pci),
         "qtree.txt": "synthetic qtree",
         "stderr.log": "",
-        "trace-verification.json": "{}",
-        "control.py": "# Synthetic parser fixture",
-        "verify-trace.py": "# Synthetic parser fixture",
     }
     return resign_control(artifacts)
 
@@ -855,7 +830,36 @@ def self_test():
     validate_coverage = actual_coverage
     control = fixture_control()
     verify_msix_control(control)
-    mutations = []
+    # Older controls may retain extra files; every supplied byte stays digest-bound.
+    archived = resign_control(
+        dict(
+            control,
+            **{
+                name: "archived auxiliary artifact\n"
+                for name in ("control.py", "verify-trace.py", "result.json", "trace-verification.json")
+            },
+        )
+    )
+    verify_msix_control(archived)
+    mutations = [dict(control, **{"unbound.txt": "unlisted control evidence"})]
+    for extra in ("changed archival evidence", None):
+        changed = dict(archived)
+        if extra is None:
+            changed.pop("control.py")
+        else:
+            changed["control.py"] = extra
+        mutations.append(changed)
+    for name in CONTROL_FILES:
+        changed = dict(control)
+        changed.pop(name)
+        mutations.append(resign_control(changed))
+    for name in ("../outside.txt", ".", "..", "SHA256SUMS"):
+        changed = dict(control)
+        changed["SHA256SUMS"] += "0" * 64 + "  " + name + "\n"
+        mutations.append(changed)
+    changed = dict(control)
+    changed["SHA256SUMS"] += control["SHA256SUMS"].splitlines(True)[0]
+    mutations.append(changed)
     for name in control:
         changed = dict(control)
         changed.pop(name)
@@ -870,7 +874,6 @@ def self_test():
         ("trace.log", "value 0x1 size 4", "value 0x0 size 4"),
         ("trace.log", "pci_nvme_mmio_read addr 0x14 size 4", "pci_nvme_mmio_read addr 0x18 size 4"),
         ("qtest-native.log", "writel 0xc000200c 0x1", "writel 0xc000200c 0x0"),
-        ("result.json", '"cpu_running": false', '"cpu_running": true'),
     ):
         changed = dict(control)
         changed[name] = changed[name].replace(old, new, 1)

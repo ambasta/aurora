@@ -125,19 +125,220 @@ class BarRunner(unittest.TestCase):
         for other in {"PASS", "FAIL", "BLOCKED"} - {outcome}:
             self.assertFalse(any(line.startswith(other + ":") for line in transcript.splitlines()), transcript)
 
-    def test_main_missing_selectors_and_qemu_report_blocked_without_work(self):
-        for name in ("QEMU_DATA", "AURORA_BAR_COVERAGE", "AURORA_BAR_FIRMWARE", "LD_LIBRARY_PATH"):
-            for value in (None, ""):
-                with self.subTest(name=name, value=value), patch.dict(os.environ):
-                    if value is None:
-                        del os.environ[name]
-                    else:
-                        os.environ[name] = value
-                    self.assert_outcome(self.main_result(), "BLOCKED", "Set " + name)
-                    self.assert_no_work()
+    def test_missing_qemu_reports_blocked_without_work(self):
         os.environ["QEMU"] = "missing-qemu"
         self.assert_outcome(self.main_result(), "BLOCKED", "Missing dependency: missing-qemu")
         self.assert_no_work()
+
+    def test_ordinary_defaults_select_package_and_fresh_controls(self):
+        for name in ("AURORA_BAR_COVERAGE", "AURORA_BAR_FIRMWARE", "LD_LIBRARY_PATH"):
+            del os.environ[name]
+        with (
+            patch.object(
+                runner.controls, "supported_firmware", return_value=(self.code, self.variables, self.firmware_patch)
+            ),
+            patch.object(runner.controls, "stock_firmware", return_value=self.stock),
+        ):
+            config = runner.preflight("bar-prepare", self.out, dict(os.environ))
+        self.assertTrue(config["packaged"])
+        self.assertIsNone(config["coverage_path"])
+        self.assertEqual(config["stock"], self.stock)
+        self.trace.validate_coverage.assert_not_called()
+        self.assert_no_work()
+
+    def test_default_controls_generated_once_before_selected_guest(self):
+        del os.environ["AURORA_BAR_COVERAGE"]
+        with (
+            patch.object(runner.controls, "stock_firmware", return_value=self.stock),
+            patch.object(runner.controls, "generate", return_value=self.coverage_path) as generate,
+            patch.object(runner, "execute") as execute,
+            redirect_stdout(io.StringIO()),
+        ):
+            runner.run("bar-prepare", self.out)
+        generate.assert_called_once_with(
+            "bar", self.out / "controls", self.qemu, self.data, self.stock, dict(os.environ)
+        )
+        self.assertEqual(execute.call_args.args[1]["coverage_path"], self.coverage_path)
+        self.assertEqual(self.calls.read_text().splitlines(), ["bar-prepare"])
+
+    def test_stock_control_selects_inherited_measurement_not_early_refusal(self):
+        controls = runner.controls
+        build = self.home / "native-bar-read"
+        (build / "esp").mkdir(parents=True)
+        (build / "bar-metadata.json").write_text("{}")
+        stock_check = Mock(side_effect=RuntimeError("stock trace oracle reached"))
+        trace = SimpleNamespace(EVENT_TEXT=REAL_TRACE.EVENT_TEXT, validate_stock_control=stock_check)
+        for family, mode in ((family, mode) for family in ("bar", "ivrs") for mode in ("bar-inherited", "bar-state")):
+            with self.subTest(family=family, mode=mode):
+                _, serial, _ = REAL_TRACE.bar.fixture(mode)
+                root = self.home / ("controls-" + family + "-" + mode)
+
+                def fake_run(argv, output, **kwargs):
+                    Path(output).write_text(serial if Path(output).name == "serial.log" else "events\n")
+                    if Path(output).name == "serial.log":
+                        self.assertEqual(kwargs["expected"], 35)
+                        (root / "stock.trace").write_text("synthetic stock trace\n")
+
+                with (
+                    patch.object(controls, "digest", return_value=controls.QEMU_SHA256),
+                    patch.object(controls, "native_image", return_value=build) as native,
+                    patch.object(controls.transport, "run_logged", side_effect=fake_run),
+                    patch.object(
+                        controls, "module", side_effect=lambda name: trace if name == "bar-trace" else REAL_TRACE.bar
+                    ),
+                    patch.object(controls, "msix_control") as msix,
+                ):
+                    if mode == "bar-inherited":
+                        with self.assertRaisesRegex(RuntimeError, "stock trace oracle reached"):
+                            controls.generate(family, root, self.qemu, self.data, self.stock, self.env)
+                        stock_check.assert_called_once_with("synthetic stock trace\n")
+                        stock_check.reset_mock()
+                    else:
+                        with self.assertRaisesRegex(ValueError, "Missing/duplicate/malformed descriptor"):
+                            controls.generate(family, root, self.qemu, self.data, self.stock, self.env)
+                        stock_check.assert_not_called()
+                    native.assert_called_once_with("bar-read", root / "stock", self.env)
+                    msix.assert_not_called()
+
+    def test_supported_firmware_prefix_checks_marker_patch_and_image_shapes(self):
+        prefix = self.home / "package"
+        firmware = prefix / "firmware"
+        firmware.mkdir(parents=True)
+        code, variables, policy, version = [
+            firmware / name for name in ("OVMF_CODE.fd", "OVMF_VARS.fd", "policy-three-file.patch", "VERSION")
+        ]
+        for path, size in ((code, 3653632), (variables, 540672)):
+            with path.open("wb") as stream:
+                stream.truncate(size)
+        policy.write_bytes(b"synthetic reviewed policy")
+        version.write_text(runner.controls.FIRMWARE_VERSION + "\n")
+        env = {"AURORA_BOOT_FIXTURE_PREFIX": str(prefix)}
+        with patch.object(runner.controls, "PATCH_SHA256", runner.digest(policy)):
+            self.assertEqual(runner.controls.supported_firmware(env), (code, variables, policy))
+            for path, value in ((version, b"wrong version\n"), (policy, b"modified policy"), (variables, b"truncated")):
+                with self.subTest(path=path):
+                    original = path.read_bytes()
+                    path.write_bytes(value)
+                    try:
+                        with self.assertRaises(ValueError) as caught:
+                            runner.controls.supported_firmware(env)
+                        self.assertNotIsInstance(caught.exception, runner.MissingPrerequisite)
+                    finally:
+                        path.write_bytes(original)
+            variables.unlink()
+            with self.assertRaises(runner.MissingPrerequisite):
+                runner.controls.supported_firmware(env)
+
+    def test_packaged_receipt_cannot_choose_its_own_firmware_prefix(self):
+        oracle = runner.controls.module("bar-provenance")
+        prefix = self.home / "package"
+        firmware = prefix / "firmware"
+        firmware.mkdir(parents=True)
+        (firmware / "VERSION").write_text(runner.controls.FIRMWARE_VERSION + "\n")
+        files = {
+            role: {"path": str(firmware / name)}
+            for role, name in (
+                ("firmware_code", "OVMF_CODE.fd"),
+                ("vars_template", "OVMF_VARS.fd"),
+                ("firmware_patch", "policy-three-file.patch"),
+            )
+        }
+        files["firmware_patch"]["sha256"] = oracle.PINS["clean_patch"]
+        contents = dict(
+            firmware_code=b"x" * 3653632,
+            vars_template=b"v" * 540672,
+            vars_initial=b"v" * 540672,
+            firmware_patch=b"policy",
+        )
+        receipt = dict(firmware_package=runner.controls.FIRMWARE_VERSION, firmware_source_revision=oracle.REVISION)
+        oracle.validate_clean_firmware(receipt, files, contents, str(prefix))
+        files["firmware_code"]["path"] = str(self.home / "untrusted-code")
+        with self.assertRaisesRegex(ValueError, "path mismatch"):
+            oracle.validate_clean_firmware(receipt, files, contents, str(prefix))
+        files["firmware_code"]["path"] = str(firmware / "OVMF_CODE.fd")
+        contents["vars_initial"] = b"reused"
+        with self.assertRaisesRegex(ValueError, "non-pristine"):
+            oracle.validate_clean_firmware(receipt, files, contents, str(prefix))
+
+    def test_ivrs_external_coverage_missing_is_blocked_and_malformed_fails(self):
+        spec = importlib.util.spec_from_file_location(
+            "ivrs_runner_input_controls", ROOT / "scripts/kernel-uefi-ivrs-run.py"
+        )
+        ivrs = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ivrs)
+        msix, amdvi = self.home / "msix", self.home / "amdvi"
+        trace = SimpleNamespace(
+            load_coverage=Mock(return_value={"msix_control": str(msix), "amdvi_control": str(amdvi)}),
+            validate_coverage=Mock(),
+        )
+        env = dict(self.env, AURORA_IVRS_COVERAGE=str(self.coverage_path))
+        with (
+            patch.object(
+                ivrs, "module", side_effect=lambda name: self.provenance if name == "ivrs-provenance" else trace
+            ),
+            patch.object(
+                ivrs.controls, "supported_firmware", return_value=(self.code, self.variables, self.firmware_patch)
+            ),
+        ):
+            for missing in (msix, amdvi):
+                with self.subTest(missing=missing), self.assertRaises(runner.MissingPrerequisite):
+                    ivrs.prerequisites(env)
+                missing.mkdir()
+            trace.validate_coverage.side_effect = ValueError("contradictory raw control")
+            with self.assertRaisesRegex(ValueError, "Invalid AURORA_IVRS_COVERAGE") as caught:
+                ivrs.prerequisites(env)
+            self.assertNotIsInstance(caught.exception, runner.MissingPrerequisite)
+            trace.load_coverage.side_effect = TypeError("wrong coverage JSON shape")
+            with self.assertRaisesRegex(ValueError, "Invalid AURORA_IVRS_COVERAGE"):
+                ivrs.prerequisites(env)
+
+    def test_explicit_run_only_uses_selected_image_without_any_build(self):
+        self.build.mkdir(parents=True)
+        with (
+            patch.object(runner.transport, "run_logged", side_effect=AssertionError("unexpected build")),
+            patch.object(runner.controls, "generate", side_effect=AssertionError("unexpected setup controls")),
+            patch.object(runner, "execute") as execute,
+            redirect_stdout(io.StringIO()),
+        ):
+            runner.run("bar-prepare", self.out, self.build)
+        self.assertEqual(execute.call_args.args[3], self.build)
+        self.assertFalse(self.calls.exists())
+        self.assertFalse((self.out / "build.log").exists())
+
+    def test_run_only_rejects_unprepared_coverage_and_wrong_profile(self):
+        self.build.mkdir(parents=True)
+        with self.assertRaisesRegex(ValueError, "Wrong prebuilt BAR profile"):
+            runner.run("bar-read", self.out, self.build)
+        with self.assertRaisesRegex(ValueError, "cannot modify"):
+            runner.run("bar-prepare", self.build / "esp" / "run", self.build)
+        self.assertFalse((self.build / "esp").exists())
+        del os.environ["AURORA_BAR_COVERAGE"]
+        with patch.object(runner.controls, "stock_firmware", return_value=self.stock):
+            with self.assertRaisesRegex(ValueError, "requires explicit validated"):
+                runner.run("bar-prepare", self.out, self.build)
+        self.assertFalse(self.calls.exists())
+        self.assertFalse(self.out.exists())
+
+    def test_ivrs_run_only_extracts_execution_without_ninja(self):
+        spec = importlib.util.spec_from_file_location(
+            "ivrs_run_only_controls", ROOT / "scripts/kernel-uefi-ivrs-run.py"
+        )
+        ivrs = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ivrs)
+        build = self.build.parent / "ivrs-read"
+        build.mkdir(parents=True)
+        paths = dict(QEMU=self.qemu, QEMU_DATA=self.data, AURORA_IVRS_COVERAGE=self.coverage_path)
+        with (
+            patch.object(ivrs.transport, "run_logged", side_effect=AssertionError("unexpected build")),
+            patch.object(ivrs, "execute") as execute,
+        ):
+            ivrs.run("ivrs-read", self.out, paths, build)
+        self.assertEqual(execute.call_args.args[:4], ("ivrs-read", self.out, paths, build))
+        with self.assertRaisesRegex(ValueError, "cannot modify"):
+            ivrs.run("ivrs-read", build / "esp" / "run", paths, build)
+        self.assertFalse((build / "esp").exists())
+        self.assertFalse(self.calls.exists())
+        self.assertFalse((self.out / "build.log").exists())
 
     def test_main_missing_external_paths_and_selected_compiler_are_blocked(self):
         for name in ("QEMU_DATA", "AURORA_BAR_COVERAGE", "AURORA_BAR_FIRMWARE", "AURORAC"):
@@ -271,10 +472,15 @@ class BarRunner(unittest.TestCase):
                     execute.assert_not_called()
                 shutil.rmtree(self.out)
 
-    def test_each_missing_required_selector_rejects_without_artifacts_or_restore(self):
-        for name in ("QEMU_DATA", "AURORA_BAR_COVERAGE", "AURORA_BAR_FIRMWARE", "LD_LIBRARY_PATH"):
-            with self.subTest(name=name), patch.dict(os.environ, {name: ""}):
-                self.reject("Set " + name)
+    def test_missing_or_invalid_supported_firmware_fails_before_work(self):
+        del os.environ["AURORA_BAR_FIRMWARE"]
+        for error, label in (
+            (runner.MissingPrerequisite("missing package"), "BLOCKED"),
+            (ValueError("package mismatch"), "FAIL"),
+        ):
+            with self.subTest(label=label), patch.object(runner.controls, "supported_firmware", side_effect=error):
+                self.assert_outcome(self.main_result(), label, str(error))
+                self.assert_no_work()
 
     def test_qemu_default_name_is_discovered_without_executing_it(self):
         del os.environ["QEMU"]
@@ -326,7 +532,10 @@ class BarRunner(unittest.TestCase):
 
     def test_clean_profile_never_uses_stock_firmware(self):
         del os.environ["AURORA_BAR_FIRMWARE"]
-        self.reject("stock OVMF is unsuitable")
+        with patch.object(
+            runner.controls, "supported_firmware", side_effect=runner.MissingPrerequisite("clean package absent")
+        ):
+            self.reject("clean package absent")
 
     def test_mixed_controls_reject_before_build(self):
         for name in (
@@ -417,7 +626,7 @@ class BarRunner(unittest.TestCase):
             "s=importlib.util.spec_from_file_location('runner',sys.argv[1])\n"
             "m=importlib.util.module_from_spec(s); s.loader.exec_module(m)\n"
             "m.ROOT=pathlib.Path(sys.argv[2])\n"
-            "m.preflight=lambda mode, output, env: {'output': output}\n"
+            "m.preflight=lambda mode, output, env: {'output': output, 'coverage_path': 'already-checked'}\n"
             "m.execute=lambda *args: None\n"
             "sys.argv=['runner','bar-prepare','--output',sys.argv[3]]\n"
             "sys.exit(m.main())\n"
@@ -595,7 +804,7 @@ class BarRunner(unittest.TestCase):
     def prepare_public_runner(self):
         """Run real Make/main/lifecycle with synthetic validators, images and QEMU."""
         shutil.copy2(ROOT / "Makefile", self.repo / "Makefile")
-        for name in ("kernel-uefi-bar-run.py", "qemu_transport.py", "kernel_profiles.py"):
+        for name in ("kernel-uefi-bar-run.py", "qemu_transport.py", "kernel_profiles.py", "kernel_trace_controls.py"):
             shutil.copy2(ROOT / "scripts" / name, self.repo / "scripts" / name)
         self.python_calls = self.home / "python-calls"
         self.main_status = self.home / "main-status"
@@ -730,8 +939,6 @@ if __name__ == "__main__":
             ({"QEMU": "missing-qemu"}, "BLOCKED", "Missing dependency: missing-qemu"),
             ({"QEMU": str(self.data)}, "FAIL", "QEMU"),
             ({"QEMU": str(self.code)}, "FAIL", "QEMU"),
-            ({"QEMU_DATA": ""}, "BLOCKED", "Set QEMU_DATA"),
-            ({"AURORA_BAR_FIRMWARE": ""}, "BLOCKED", "Set AURORA_BAR_FIRMWARE"),
             ({"AURORA_BAR_COVERAGE": str(self.home / "missing")}, "BLOCKED", "AURORA_BAR_COVERAGE"),
             ({"QEMU_DATA": str(self.code)}, "FAIL", "QEMU_DATA"),
         )
