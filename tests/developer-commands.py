@@ -36,6 +36,7 @@ class DeveloperCommands(unittest.TestCase):
         for name in (
             "kernel-run.sh",
             "compiler-test.sh",
+            "container.sh",
             "kernel-build.sh",
             "kernel-uefi-build.sh",
             "uefi-firmware.sh",
@@ -113,6 +114,74 @@ class DeveloperCommands(unittest.TestCase):
         path = self.home / "firmware with spaces.fd"
         path.write_bytes(b"synthetic fixture, never executed")
         return str(path)
+
+    def container_engine(self, name, version):
+        image = "ghcr.io/ambasta/aurora-toolchain@sha256:" + "a" * 64
+        (self.repo / "ci").mkdir(exist_ok=True)
+        (self.repo / "ci/image").write_text(image + "\n")
+        self.tool("id", 'if [[ "$1" == -u ]]; then echo 1234; else echo 5678; fi\n')
+        self.tool(
+            name,
+            'if [[ "$1" == --version ]]; then printf "%s\\n" "'
+            + version
+            + '"; exit 0; fi\n'
+            + 'printf "%s\\n" "'
+            + name
+            + '" "$@" > "$CALLS"\nexit "${FAKE_STATUS:-0}"\n',
+        )
+        return image
+
+    def test_container_selects_runtime_identity_and_preserves_arguments(self):
+        for engine, version, identity in (
+            ("docker", "Docker version 28.0.0, build synthetic", ["--user", "1234:5678"]),
+            ("podman", "podman version 5.4.0", ["--userns=keep-id"]),
+            ("docker", "Emulate Docker CLI using podman. podman version 5.4.0", ["--userns=keep-id"]),
+        ):
+            with self.subTest(engine=engine, version=version):
+                for name in ("docker", "podman"):
+                    (self.bin / name).unlink(missing_ok=True)
+                image = self.container_engine(engine, version)
+                # Keep Docker selection stable when both engines are installed.
+                if engine == "docker":
+                    self.tool("podman", 'echo unexpected-podman >> "$CALLS"; exit 93\n')
+                self.run_script("container.sh", "make", "argument with spaces", "literal;not-a-command")
+                args = self.calls()
+                self.assertEqual(args[:2], [engine, "run"])
+                self.assertEqual(args[-4:], [image, "make", "argument with spaces", "literal;not-a-command"])
+                for flag in ("--rm", "--init", "--read-only", "--cap-drop", "ALL", "no-new-privileges", "-i"):
+                    self.assertIn(flag, args)
+                self.assertIn("type=bind,source=" + str(self.repo) + ",target=/workspace", args)
+                self.assertEqual(args[args.index("--network") + 1], "none")
+                self.assertEqual(args[args.index("--platform") + 1], "linux/amd64")
+                self.assertNotIn("-t", args)
+                for flag in identity:
+                    self.assertIn(flag, args)
+                self.assertEqual("--user" in args, identity[0] == "--user")
+                self.assertEqual("--userns=keep-id" in args, identity[0] == "--userns=keep-id")
+
+    def test_container_default_command_and_runtime_failure(self):
+        self.container_engine("podman", "podman version 5.4.0")
+        self.run_script("container.sh", env={"FAKE_STATUS": "19"}, expected=19)
+        self.assertEqual(self.calls()[-1], "bash")
+
+    def test_container_blocks_missing_unknown_or_failed_engine_without_run(self):
+        self.container_engine("docker", "unrecognized container engine")
+        self.assertIn("BLOCKED: Unrecognized docker", self.run_script("container.sh", expected=2))
+        self.assert_no_work()
+        self.tool("docker", "echo unavailable >&2; exit 17\n")
+        self.assertIn("BLOCKED: Cannot identify docker: unavailable", self.run_script("container.sh", expected=2))
+        self.assert_no_work()
+        (self.bin / "docker").unlink()
+        self.assertIn("BLOCKED: Docker or Podman is required", self.run_script("container.sh", expected=2))
+        self.assert_no_work()
+
+    def test_container_help_and_invalid_pin_do_not_query_engine(self):
+        self.assertIn("Docker or Podman", self.run_script("container.sh", "--help"))
+        self.container_engine("docker", "Docker version 28.0.0")
+        (self.repo / "ci/image").write_text("unreviewed:latest\n")
+        self.tool("docker", 'echo unexpected-engine >> "$CALLS"; exit 93\n')
+        self.assertIn("BLOCKED: ci/image", self.run_script("container.sh", expected=2))
+        self.assert_no_work()
 
     def test_help_does_not_need_build_or_emulator_tools(self):
         (self.bin / "qemu-system-x86_64").unlink()

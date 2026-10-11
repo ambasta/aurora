@@ -67,8 +67,11 @@ host configuration, `EVENT_ESP_DIR` may supply `<mode>.raw` for each fresh loade
 the same complete FAT/allocation/loader validator runs before a SHA-bound private
 copy. Historical pinned mtools behavior and receipts are unchanged.
 
-Evidence is retained in a new private external directory under
-`EVENT_OUTPUT_PARENT` (default system temporary directory). Each run reserves
+Evidence is retained on success or failure in a fresh `build/aurora-event-smoke-*`
+directory, whose path is printed before work starts. `EVENT_OUTPUT_PARENT` may
+select another existing directory within `build/` or outside the source tree.
+The default survives a container's temporary filesystem; no prior run is removed.
+Each run reserves
 1 GiB with a 1 GiB free floor; completed evidence is not automatically deleted.
 Closed q35/TCG argv uses owned regular ESP/VARS copies, private HOME/empty module
 directory, no network, host disks, mounts, VFIO or arbitrary options. Fixed limits

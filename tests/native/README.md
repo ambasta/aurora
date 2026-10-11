@@ -22,9 +22,11 @@ Complete policy-vector runners and complex pin/NVMe/dormant mutation and negativ
 compilation sweeps remain their existing runners. The adapter binds inherited
 bare `g++` calls and `CXX` to Meson's configured native command. It never builds
 Aurora or turns an observed digest into an acceptance pin. The selected-compiler
-mode records artifact stability only. Candidate-local policy receipts retain
-their unique existing source/build directories; temporary subprocess files are
-private to each invocation. Shared fixed-output pin/NVMe/BIOS wrappers take one
+mode records artifact stability only. Meson artifact-managed policy, dormant and
+protected note/snapshot runners remove only their own new output after success;
+failures and `AURORA_MESON_KEEP_ARTIFACTS=1` retain it. Temporary subprocess files
+are private to each invocation and follow the same success/keep policy.
+Shared fixed-output pin/NVMe/BIOS wrappers take one
 source-local kernel lock. Other tests remain parallel.
 
 The protected-console note runner executes actual Aurora update/project/client/

@@ -43,6 +43,16 @@ signalled, interrupted or unlaunched runs remain; cleanup errors are reported
 without changing the test result. The adapter prints the path before the child
 and the cleanup outcome afterward. Raw Meson logs, historical evidence, sibling
 directories and explicit artifact paths passed directly to a runner are untouched.
+UTF-8, encoding, owned JSON, console/display/grouped services, native policy,
+cap-control, dormant and protected note/snapshot gates use this adapter. Display's
+grouped-service child writes beneath the same owned output. Native runners that
+require source-contained paths get
+fresh scratch under the source root, including with out-of-tree builds. The outer
+adapter waits for the native runner's compiler-stability check; its separate
+host-tool scratch also survives failures and explicit keeps.
+Hosted graphical and Event services, owned-span source/kernel checks, and partial
+package profiles use the same lifecycle; direct runner output selections remain
+available for retained review artifacts.
 For disk reclamation, `meson compile -C build/gcc16 --clean` removes tracked
 build products while keeping configuration/logs. Retire whole directories only
 through the [explicit per-directory cleanup steps](local-development.md#reclaiming-old-local-output-explicitly);
@@ -53,7 +63,9 @@ test` and `scripts/compiler-test.sh` select `compiler`. Set `MESON_BUILD_DIR` to
 fresh or matching configured directory, or omit it for `build/meson` (normal
 image-enabled work) or `build/meson-compiler` (hosted-only compiler work).
 The shortcuts run Meson setup automatically when needed, stop on setup/build/test
-failure, and reject mismatched existing compiler/flag selections.
+failure, and reject mismatched existing compiler/flag selections. Existing builds
+missing current Meson options require a fresh matching directory; the shortcuts
+do not migrate old build metadata automatically.
 `AURORA_BUILD_JOBS=3` and `AURORA_TEST_JOBS=4` are independent.
 `SANITIZE` and nondefault `CPPFLAGS`/`LDFLAGS` are not silently accepted by the
 convenience route; use explicit configured sanitizer builds/separate focused gates.

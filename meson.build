@@ -60,8 +60,15 @@ endif
 
 # The image fixes distributed tools; explicit PATH/CXX also supports comparable
 # local tools. Check versions once at setup; Ninja tracks build inputs thereafter.
-run_command(python, '-B', files('scripts/meson_toolchain.py'),
-            '--cxx', oracle_cxx, toolchain_args, check: true)
+toolchain_check = run_command(python, '-B', files('scripts/meson_toolchain.py'),
+                              '--cxx', oracle_cxx, toolchain_args, check: false)
+if toolchain_check.returncode() != 0
+  diagnostic = toolchain_check.stderr().strip()
+  if diagnostic == ''
+    diagnostic = 'BLOCKED: Development toolchain check failed (exit @0@).'.format(toolchain_check.returncode())
+  endif
+  error(diagnostic + '\nUse ./scripts/container.sh make test for the supported pinned environment; see docs/local-development.md.')
+endif
 
 # The JSON dependency belongs only to the explicitly enabled language server.
 if get_option('lsp')

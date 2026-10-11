@@ -139,6 +139,15 @@ def check_graphical_meson(entries):
         entry = next(row for row in entries if row["name"] == name)
         expected = ["-B"] + (["-O"] if optimized else [])
         arguments = entry["cmd"][1:]
+        if name == "graphical-console-native":
+            if (
+                len(arguments) < 3
+                or arguments[0] != "-B"
+                or Path(arguments[1]).resolve() != ROOT / "tests/meson_artifacts.py"
+                or arguments[2] != entry["cmd"][0]
+            ):
+                raise ValueError("graphical Meson artifact adapter drift")
+            arguments = arguments[3:]
         size = len(expected)
         if (
             arguments[:size] != expected
@@ -149,10 +158,11 @@ def check_graphical_meson(entries):
         tail = arguments[size + 1 :]
         if name == "graphical-console-native":
             if (
-                len(tail) != 3
+                len(tail) != 5
                 or tail[0] != "--run"
                 or Path(tail[1]).name != "aurorac"
                 or tail[2] != "--developer-selected-compiler"
+                or tail[3:] != ["--artifacts", "@ARTIFACTS@"]
                 or "aurorac@exe" not in entry.get("depends", [])
             ):
                 raise ValueError("graphical Meson selected compiler/dependency drift")

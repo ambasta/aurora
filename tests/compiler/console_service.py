@@ -22,10 +22,15 @@ def run(command, **kwargs):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("compiler", type=Path)
+    parser.add_argument("--artifacts", type=Path)
     args = parser.parse_args()
     compiler = args.compiler.resolve()
-    (ROOT / "build").mkdir(exist_ok=True)
-    work = Path(tempfile.mkdtemp(prefix="console-service-", dir=ROOT / "build"))
+    if args.artifacts:
+        work = args.artifacts.resolve()
+        work.mkdir(parents=True)
+    else:
+        (ROOT / "build").mkdir(exist_ok=True)
+        work = Path(tempfile.mkdtemp(prefix="console-service-", dir=ROOT / "build"))
     assembly = work / "console.s"
     result = run(
         [compiler, "--module-root", ROOT / "library", ROOT / "examples/kernel-console-service.au", "-o", assembly]
