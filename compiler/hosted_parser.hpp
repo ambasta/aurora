@@ -15,12 +15,15 @@ public:
 namespace aurora {
 // The source lifetime and captured context offsets are bounded before the private ABI.
 // Position commits only after bounded, uniquely owned AST/type conversion.
-// Aurora owns expression/body grammar; the adapter checks representation safety.
-// Unsupported is an invalid result; neither entry has a host grammar fallback.
+// Aurora owns expression/body/type grammar; the adapter checks representation safety.
+// Unsupported is an invalid result; no entry has a host grammar fallback.
 ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens,
                                     std::size_t &position,
                                     hosted_parser::Stop stop,
                                     const hosted_parser::Context &context = {});
 std::vector<StatementPtr>
 parseHostedBody(const std::vector<Token> &tokens, std::size_t &position, const hosted_parser::Context &context = {});
+// A successful type can leave the second half of >> in this caller-owned copy.
+// Source bytes and caller state on failure remain unchanged.
+Type parseHostedType(std::vector<Token> &tokens, std::size_t &position, const hosted_parser::Context &context = {});
 } // namespace aurora

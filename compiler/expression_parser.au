@@ -56,7 +56,8 @@ export namespace compiler_parser {
         close_parenthesis,
         assignment,
         constructor_braces,
-        body
+        body,
+        type
     };
     // Source-backed syntactic parameters, captured by declaration parsing.
     // These names carry no resolved nominal identity or visibility authority.
@@ -521,7 +522,7 @@ namespace compiler_parser {
         const TypeResult result = TypeResult(status, -1, token);
         return result;
     }
-    // One iterative parser serves local types, reflected types and template-ids.
+    // One iterative parser serves declaration/local types, reflected types and template-ids.
     // The existing grammar's two-argument bound is independent of arena growth.
     auto parse_type_frames(AstArena& arena, builtin::span<const u8> source, ParseToken initial, TypeContext context,
         ParseFrame first) -> TypeResult {
@@ -2018,8 +2019,8 @@ export namespace compiler_parser {
         TypeContext context) -> ParseResult {
         const ParseToken token = read_token(source, cursor, 0);
         if ((stop != Stop::semicolon && stop != Stop::close_parenthesis && stop != Stop::assignment && stop
-            != Stop::constructor_braces && stop != Stop::body) || arena.size() != 0 || arena.stack_size() != 0
-            || arena.arguments() != 0 || arena.types() != 0 || arena.statements() != 0) {
+            != Stop::constructor_braces && stop != Stop::body && stop != Stop::type) || arena.size() != 0
+            || arena.stack_size() != 0 || arena.arguments() != 0 || arena.types() != 0 || arena.statements() != 0) {
             return ParseResult(ParseStatus::invalid, -1, arena.size(), 0, token.first());
         }
         if (!arena.ok()) {
@@ -2027,6 +2028,15 @@ export namespace compiler_parser {
         }
         if (!valid_context(source, context)) {
             return ParseResult(ParseStatus::invalid, -1, 0, 0, token.first());
+        }
+        if (stop == Stop::type) {
+            const ParseFrame first = ParseFrame(FrameState::type_start, 0, -1, -1);
+            const TypeResult result = parse_type(arena, source, token, context, first);
+            const ParseToken at = result.token();
+            if (result.status() == ParseStatus::success && !arena.own_type(result.root(), 0, 3)) {
+                return ParseResult(ParseStatus::invalid, -1, 0, at.index(), at.first());
+            }
+            return ParseResult(result.status(), result.root(), arena.size(), at.index(), at.first());
         }
         if (stop == Stop::body) {
             const TypeResult result = parse_body(arena, source, token, context);

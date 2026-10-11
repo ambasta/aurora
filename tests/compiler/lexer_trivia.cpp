@@ -261,11 +261,14 @@ void cases() {
             source += pieces[random() % pieces.size()];
         verify(source, "generated.au");
     }
-    auto lexed = aurora::lexSource("// leading\n >> // trailing");
+    auto lexed = aurora::lexSource("// leading\n Box<i64>> // trailing");
     aurora::Parser parser(lexed.tokens);
-    parser.templateClose();
-    parser.templateClose();
-    require(lexed.tokens[0].text == ">>" && lexed.tokens[0].span.end.offset - lexed.tokens[0].span.begin.offset == 2,
+    const auto type = parser.type();
+    require(type.isClass() && type.className == "Box" && type.templateArguments.size() == 1 &&
+                type.templateArguments[0].type == aurora::TypeKind::I64 && parser.peek().text == ">",
+            "declaration type did not preserve its residual closer");
+    parser.need(">");
+    require(lexed.tokens[3].text == ">>" && lexed.tokens[3].span.end.offset - lexed.tokens[3].span.begin.offset == 2,
             "parser changed canonical template closer token");
     require(lexed.trivia.size() == 4, "parser changed retained trivia");
     for (const auto retention : {aurora::TriviaRetention::Keep, aurora::TriviaRetention::Discard}) {

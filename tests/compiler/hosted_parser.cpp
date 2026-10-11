@@ -1125,6 +1125,7 @@ void expectedBootstrapRoots(const std::vector<aurora::Function> &functions,
     }
 }
 void bootstrapBodies(const std::vector<aurora::Token> &, const aurora::Program &, std::size_t);
+void bootstrapDeclarationTypes(const std::vector<aurora::Token> &, const aurora::Program &, std::size_t);
 void bootstrapSources(char **paths) {
     std::size_t initializers = 0, strings = 0, newInitializers = 0;
     std::size_t expectedInitializers = 0, expectedStrings = 0;
@@ -1140,6 +1141,7 @@ void bootstrapSources(char **paths) {
         const auto program = checkedProgram(tokens);
         require(program.moduleName == modules[i], "unexpected bootstrap source module/order");
         bootstrapBodies(tokens, program, i);
+        bootstrapDeclarationTypes(tokens, program, i);
         expectedBootstrapRoots(program.functions, expectedInitializers, expectedStrings);
         expectedBootstrapRoots(program.functionTemplates, expectedInitializers, expectedStrings);
         for (const auto &definition : program.classes)
@@ -1648,6 +1650,521 @@ void typedConsumerSources(char **paths) {
     }
 }
 
+// Type fixtures name their expected values independently of the grammar. Type's
+// operator== omits presentation/provenance metadata, so check those fields too.
+void sameType(const aurora::Type &actual, const aurora::Type &expected) {
+    require(actual == expected && actual.displayName == expected.displayName &&
+                actual.resolvedClass == expected.resolvedClass,
+            "declaration type structure/presentation/provenance differs");
+}
+aurora::Type displayedType(aurora::Type type, std::string display) {
+    type.displayName = std::move(display);
+    return type;
+}
+void unchangedTokens(const std::vector<aurora::Token> &actual, const std::vector<aurora::Token> &before) {
+    require(actual.size() == before.size(), "type parse changed token cardinality");
+    for (std::size_t index = 0; index < before.size(); ++index)
+        sameToken(actual[index], before[index]);
+}
+void typeFixture(const std::string &source,
+                 const aurora::Type &expected,
+                 std::size_t start,
+                 std::size_t next,
+                 bool half = false,
+                 const std::vector<std::size_t> &typeParameters = {},
+                 const std::vector<std::size_t> &capacityParameters = {},
+                 bool functionTemplate = false) {
+    context = "explicit declaration type " + source;
+    auto tokens = aurora::lex(source, "declaration-type.au");
+    const auto before = tokens;
+    Context captured;
+    for (const auto ordinal : typeParameters)
+        captured.typeParameters.push_back(tokens.at(ordinal));
+    for (const auto ordinal : capacityParameters)
+        captured.capacityParameters.push_back(tokens.at(ordinal));
+    captured.functionTemplate = functionTemplate;
+    auto position = start;
+    sameType(aurora::parseHostedType(tokens, position, captured), expected);
+    require(position == next, "type committed the wrong first unconsumed token");
+    auto committed = before;
+    if (half) {
+        require(committed.at(next).text == ">>", "residual fixture has no lexical shared closer");
+        committed[next].text = ">";
+        ++committed[next].span.begin.offset;
+        ++committed[next].span.begin.column;
+    }
+    unchangedTokens(tokens, committed);
+    require(before.front().span.source->text == source && tokens.front().span.source == before.front().span.source,
+            "declaration type changed its immutable source snapshot");
+    // Re-lexing that same snapshot must still expose the original unsplit tokens.
+    const auto retained = aurora::lex(before.front().span.source);
+    require(retained.size() == before.size(), "immutable type source tokenization changed");
+    for (std::size_t index = 0; index < retained.size(); ++index)
+        sameToken(retained[index], before[index]);
+    ++cases;
+}
+void typeRejection(const std::string &source,
+                   const ExpectedError &expected,
+                   std::size_t start = 0,
+                   const std::vector<std::size_t> &typeParameters = {},
+                   const std::vector<std::size_t> &capacityParameters = {},
+                   bool functionTemplate = false) {
+    context = "explicit declaration type rejection " + source;
+    auto tokens = aurora::lex(source, "declaration-type-error.au");
+    const auto before = tokens;
+    Context captured;
+    for (const auto ordinal : typeParameters)
+        captured.typeParameters.push_back(tokens.at(ordinal));
+    for (const auto ordinal : capacityParameters)
+        captured.capacityParameters.push_back(tokens.at(ordinal));
+    captured.functionTemplate = functionTemplate;
+    auto position = start;
+    std::optional<aurora::Diagnostic> diagnostic;
+    try {
+        aurora::parseHostedType(tokens, position, captured);
+    } catch (const aurora::Error &error) {
+        diagnostic = error.diagnostic;
+    }
+    require(bool(diagnostic), "malformed declaration type was accepted");
+    sameError(*diagnostic, before, expected, start);
+    require(position == start, "failed declaration type committed its cursor");
+    unchangedTokens(tokens, before);
+    require(before.front().span.source->text == source, "failed declaration type changed source snapshot");
+    ++cases;
+}
+void declarationTypeSyntax() {
+    using K = aurora::TypeKind;
+    using T = aurora::Type;
+    const auto capacity = aurora::TemplateArgument::capacity;
+    const auto sample = displayedType(T("__au_console_sample"), "builtin::ConsoleSample");
+    const auto event = displayedType(T("__au_iommu_event_sample"), "builtin::IommuEventSample");
+    for (const auto &[spelling, expected] : std::vector<std::pair<std::string, T>>{
+             {"i64", T::I64},
+             {"u64", T::U64},
+             {"u8", T::U8},
+             {"bool", T::Bool},
+             {"own<i64>", T::Own},
+             {"ref<i64>", T::Ref},
+             {"mutref<i64>", T::MutRef},
+             {"Name", T("Name")},
+             {"ns::Name", T("ns::Name")},
+             {"ns // retained trivia\n :: Name", T("ns::Name")},
+             {"Pair<i64,u8>", namedType("Pair", {K::I64, K::U8})},
+             {"Box<Pair<u8,64>>", namedType("Box", {namedArgument("Pair", {K::U8, capacity(64)})})},
+             {"ns::Box<other::array<bool,1>>",
+              namedType("ns::Box", {namedArgument("other::array", {K::Bool, capacity(1)})})},
+             {"array<u8,1>", T::array(K::U8, 1)},
+             {"array<i64,4096>", T::array(K::I64, 4096)},
+             {"array<ns::Value,64>", T::array(T("ns::Value"), 64)},
+             {"array<Box<i64>,2>", T::array(namedType("Box", {K::I64}), 2)},
+             {"builtin::array<bool,3>", T::array(K::Bool, 3)},
+             {"builtin::span<const u8>", T::ByteSpan},
+             {"builtin::OwnedValues<ns::Value>", T::ownedValues(T("ns::Value"))},
+             {"array<builtin::ConsoleSample,2>", T::array(sample, 2)},
+             {"array<builtin::IommuEventSample,64>", T::array(event, 64)},
+             {"builtin::OwnedValues<builtin::ConsoleSample>", T::ownedValues(sample)},
+             {"builtin::OwnedValues<builtin::IommuEventSample>", T::ownedValues(event)},
+             {"builtin::ByteRegion", T::ByteRegion},
+             {"builtin::OwnedBytes", T::OwnedBytes},
+             {"builtin::ConsoleSession", T::ConsoleSession},
+             {"builtin::ConsoleSample", sample},
+             {"builtin::ConsolePutResult",
+              displayedType(T::enumeration("__au_console_put_result"), "builtin::ConsolePutResult")},
+             {"builtin::ConsoleCompletion",
+              displayedType(T::enumeration("__au_console_completion"), "builtin::ConsoleCompletion")},
+             {"builtin::DisplaySession", T::DisplaySession},
+             {"builtin::DisplayPutResult",
+              displayedType(T::enumeration("__au_display_put_result"), "builtin::DisplayPutResult")},
+             {"builtin::DisplayCompletion",
+              displayedType(T::enumeration("__au_display_completion"), "builtin::DisplayCompletion")},
+             {"builtin::IommuEventSession", T::IommuEventSession},
+             {"builtin::IommuEventSample", event},
+             {"builtin::EventPollResult",
+              displayedType(T::enumeration("__au_event_poll_result"), "builtin::EventPollResult")},
+             {"builtin::EventAckResult",
+              displayedType(T::enumeration("__au_event_ack_result"), "builtin::EventAckResult")},
+             {"builtin::EventIntakeCompletion",
+              displayedType(T::enumeration("__au_event_intake_completion"), "builtin::EventIntakeCompletion")},
+             // First-component acceptance is intentionally the predecessor contract.
+             {"true", T("true")},
+             {"return", T("return")},
+             {"__au_private", T("__au_private")}}) {
+        const auto count = aurora::lex(spelling).size() - 1;
+        typeFixture(spelling, expected, 0, count);
+        typeFixture("prefix\n " + spelling + " value, suffix", expected, 1, count + 1);
+    }
+    // Parse exactly one type. An unrelated malformed template-looking suffix
+    // must not be scanned by the expression template-candidate prepass.
+    typeFixture("i64 f<T)> broken", T::I64, 0, 1);
+    typeFixture("Box<i64> f<T)> broken", namedType("Box", {K::I64}), 0, 4);
+    typeFixture("Box<i64>> rest", namedType("Box", {K::I64}), 0, 3, true);
+    typeFixture("Box<i64>>", namedType("Box", {K::I64}), 0, 3, true);
+    typeFixture("array<i64,2>> rest", T::array(K::I64, 2), 0, 5, true);
+    typeFixture("builtin::OwnedValues<Item>> rest", T::ownedValues(T("Item")), 0, 5, true);
+    typeFixture("Box<Pair<i64,u8>>> rest", namedType("Box", {namedArgument("Pair", {K::I64, K::U8})}), 0, 8);
+    typeFixture("prefix\n Box // first\n <i64 // close\n >> rest", namedType("Box", {K::I64}), 1, 4, true);
+    typeFixture("A<B<C<D<i64>>>> next",
+                namedType("A", {namedArgument("B", {namedArgument("C", {namedArgument("D", {K::I64})})})}),
+                0,
+                11);
+    context = "successive standalone type cursors";
+    auto tokens = aurora::lex("i64 u8 Box<i64> array<u8,2>", "type-sequence.au");
+    const auto before = tokens;
+    std::size_t at = 0;
+    for (const auto &[expected, next] : std::vector<std::pair<T, std::size_t>>{
+             {T::I64, 1}, {T::U8, 2}, {namedType("Box", {K::I64}), 6}, {T::array(K::U8, 2), 12}}) {
+        sameType(aurora::parseHostedType(tokens, at), expected);
+        require(at == next, "successive type parse lost its cursor");
+        unchangedTokens(tokens, before);
+    }
+    ++cases;
+}
+void repeatedResidualType() {
+    context = "repeated reads beginning at a committed residual closer";
+    auto tokens = aurora::lex("prefix Box<i64>> next", "residual-type.au");
+    const auto original = tokens;
+    std::size_t position = 1;
+    sameType(aurora::parseHostedType(tokens, position), namedType("Box", {aurora::TypeKind::I64}));
+    require(position == 4 && tokens.at(4).text == ">", "first type did not commit exactly one residual closer");
+    const auto residual = tokens;
+    for (int repetition = 0; repetition < 2; ++repetition) {
+        std::optional<aurora::Diagnostic> diagnostic;
+        try {
+            aurora::parseHostedType(tokens, position);
+        } catch (const aurora::Error &error) {
+            diagnostic = error.diagnostic;
+        }
+        require(bool(diagnostic), "a residual > was accepted as another type");
+        sameError(*diagnostic, residual, {"expected type name", 5});
+        require(position == 4, "repeated residual failure changed the caller cursor");
+        unchangedTokens(tokens, residual);
+    }
+    ++position;
+    sameType(aurora::parseHostedType(tokens, position), aurora::Type("next"));
+    require(position == 6 && original.at(4).text == ">>" &&
+                original.front().span.source->text == "prefix Box<i64>> next",
+            "reading beyond a residual closer changed retained source or final cursor");
+    unchangedTokens(tokens, residual);
+    ++cases;
+}
+void declarationTypeDiagnostics() {
+    for (const auto &[source, expected] : std::vector<std::pair<std::string, ExpectedError>>{
+             {"fn value", {"unsupported or reserved type spelling", 0}},
+             {"123 value", {"expected type name", 1}},
+             {"array;", {"expected '<'", 1}},
+             {"own<i64;", {"expected '>'", 3}},
+             {"own<u8>;", {"expected 'i64'", 2}},
+             {"ref<i64>>;", {"expected '>'", 3}},
+             {"builtin;", {"expected '::'", 1}},
+             {"builtin::unknown;", {"expected 'array'", 2}},
+             {"builtin::span<u8>;", {"expected 'const'", 4}},
+             {"builtin::span<const i64>;", {"expected 'u8'", 5}},
+             {"builtin::span<const u8>>;", {"expected '>'", 6}},
+             {"array<i64>;", {"expected ','", 3}},
+             {"array<own<i64>,1>;", {"array elements require i64, u64, u8, bool or a concrete copied class", 6}},
+             {"array<i64,0>;", {"array length requires a decimal integer literal between 1 and 4096", 5}},
+             {"array<i64,4097>;", {"array length requires a decimal integer literal between 1 and 4096", 5}},
+             {"array<i64,1u64>;", {"array length requires a decimal integer literal between 1 and 4096", 5}},
+             {"array<i64,N>;", {"array length requires a decimal integer literal between 1 and 4096", 5}},
+             {"array<Class,65>;", {"class-element array capacity must be between 1 and 64", 6}},
+             {"array<Class,65>>;", {"class-element array capacity must be between 1 and 64", 5, 1}},
+             {"builtin::OwnedValues<i64>;", {"owned values require a named concrete copied class", 5}},
+             {"builtin::OwnedValues<Box<i64>>;", {"owned values require a named concrete copied class", 7, 1}},
+             {"Box<i64,u8,bool>;", {"template arguments are limited to one or two types or capacity literals", 6}},
+             {"Box<own>;",
+              {"template arguments require scalar, named class or enum types, or capacities from 1 to 64", 2}},
+             {"Box<0>;", {"capacity template arguments must be decimal literals from 1 to 64", 3}},
+             {"Box<65>;", {"capacity template arguments must be decimal literals from 1 to 64", 3}},
+             {"Box<18446744073709551616>;", {"capacity template arguments must be decimal literals from 1 to 64", 3}},
+             {"Box<i64,>;", {"expected identifier", 4}},
+             {"ns::true;", {"reserved identifier", 2}},
+             {"ns::__au_private;", {"reserved compiler identifier prefix: __au_", 2}},
+             {"A<B<C<D<E<i64>>>>>;", {"template-id nesting exceeds 4", 9, 0, aurora::DiagnosticCode::NestingLimit}}}) {
+        typeRejection(source, expected);
+        typeRejection("prefix\n " + source, expected, 1);
+    }
+    for (const std::size_t depth : {63, 64}) {
+        std::string type = "i64";
+        for (std::size_t index = 0; index < depth; ++index)
+            type = "array<" + type + ",1>";
+        typeRejection(type + ";",
+                      {depth == 63 ? "array elements require i64, u64, u8, bool or a concrete copied class"
+                                   : "type nesting exceeds 64",
+                       depth == 63 ? 130U : 128U,
+                       0,
+                       depth == 63 ? aurora::DiagnosticCode::UnexpectedToken : aurora::DiagnosticCode::NestingLimit});
+    }
+    // These fail only after the grammar split >> internally. The caller must
+    // retain the complete original token and cursor when conversion rejects.
+    rejectedProgram("module type_errors; class C{", "Box<i64>> value;};", "", {"expected identifier", 3, 1});
+    rejectedProgram("module type_errors; auto f(", "Box<i64>> value)->i64{}", "", {"expected identifier", 3, 1});
+    rejectedProgram("module type_errors; auto f()->", "Box<i64>>{}", "", {"expected '{'", 3, 1});
+    rejectedProgram("module type_errors; class C{C(", "Box<i64>> value){} };", "", {"expected identifier", 3, 1});
+    rejectedProgram(
+        "module type_errors; class C{auto f(", "Box<i64>> value)->i64{} };", "", {"expected identifier", 3, 1});
+    rejectedProgram("module type_errors; class C{auto f()->", "Box<i64>>{} };", "", {"expected '{'", 3, 1});
+    for (const auto &spelling : {std::string("own<i64>"), std::string("builtin::ByteRegion")}) {
+        context = "full rejected field type span " + spelling;
+        const auto prefix = "module field_span;class C{";
+        const auto tokens = aurora::lex(prefix + spelling + " value;};", "field-type-span.au");
+        const auto first = aurora::lex(prefix).size() - 1;
+        const auto count = aurora::lex(spelling).size() - 1;
+        auto expectedSpan = tokens.at(first).span;
+        expectedSpan.end = tokens.at(first + count - 1).span.end;
+        std::optional<aurora::Diagnostic> diagnostic;
+        try {
+            aurora::Parser(tokens).parse();
+        } catch (const aurora::Error &error) {
+            diagnostic = error.diagnostic;
+        }
+        require(diagnostic && diagnostic->code == aurora::DiagnosticCode::UnsupportedFieldType &&
+                    diagnostic->message ==
+                        "unsupported class field type '" + spelling +
+                            "': class fields require scalar, class, private fixed-array or private owned-byte storage",
+                "rejected field lost its existing declaration diagnostic");
+        sameSpan(diagnostic->span, expectedSpan);
+        ++cases;
+    }
+}
+void declarationTypeContexts() {
+    using K = aurora::TypeKind;
+    using T = aurora::Type;
+    auto parameter = T(K::Parameter), other = T(K::Parameter);
+    parameter.className = "T";
+    other.className = "U";
+    auto argument = namedArgument("T"), otherArgument = namedArgument("U");
+    argument.type = otherArgument.type = K::Parameter;
+    auto dependent = T::array(parameter, 0);
+    dependent.lengthParameter = "N";
+    const std::string function = "template<Value T,Value U> ";
+    const std::string definition = "template<Scalar T,i64 N> ";
+    typeFixture(function + "T value", parameter, 8, 9, false, {3, 6}, {}, true);
+    typeFixture(function + "U value", other, 8, 9, false, {3, 6}, {}, true);
+    typeFixture(
+        function + "Pair<T,U> value", namedType("Pair", {argument, otherArgument}), 8, 14, false, {3, 6}, {}, true);
+    typeFixture(definition + "array<T,N> value", dependent, 8, 14, false, {3}, {6});
+    typeFixture(definition + "T<i64> value", parameter, 8, 9, false, {3}, {6});
+    typeFixture(function + "ns::T value", T("ns::T"), 8, 11, false, {3, 6}, {}, true);
+    typeRejection(definition + "Box<i64> value",
+                  {"template-id references inside template definitions are not supported", 1},
+                  8,
+                  {3},
+                  {6});
+    typeRejection(function + "Box<Box<T>> value",
+                  {"nested dependent template arguments are not supported", 5},
+                  8,
+                  {3, 6},
+                  {},
+                  true);
+    typeRejection(function + "Box<T<i64>> value",
+                  {"nested dependent template arguments are not supported", 3},
+                  8,
+                  {3, 6},
+                  {},
+                  true);
+    typeRejection(function + "builtin::OwnedValues<T> value",
+                  {"owned values require a named concrete copied class", 5},
+                  8,
+                  {3, 6},
+                  {},
+                  true);
+    context = "whole declaration parameter/result/field context expectations";
+    const auto source = "export module declarations;"
+                        "template<Value T,Value U> auto choose(T x,U y)->Pair<T,U>{return Pair<T,U>(x,y);}"
+                        "template<Scalar T,i64 N> class Buffer{array<T,N> data;public:"
+                        "Buffer(T value):data{value}{} auto read(T index)->T{return index;}};"
+                        "class Concrete{Box<Pair<i64,u8>> value;builtin::OwnedValues<Item> items;public:"
+                        "Concrete(Box<Pair<i64,u8>> input):value(input),items(make_items()){}"
+                        "auto read(u8 index) const ->Box<Pair<i64,u8>>{return value;}};";
+    const auto tokens = aurora::lex(source, "declaration-contexts.au");
+    const auto program = checkedProgram(tokens);
+    require(program.functionTemplates.size() == 1 && program.templates.size() == 1 && program.classes.size() == 1,
+            "declaration context fixture lost a declaration");
+    const auto &choose = program.functionTemplates.front();
+    require(choose.params.size() == 2, "function template lost a parameter");
+    sameType(choose.params[0].type, parameter);
+    sameType(choose.params[1].type, other);
+    sameType(choose.result, namedType("Pair", {argument, otherArgument}));
+    const auto &buffer = program.templates.front();
+    require(buffer.fields.size() == 1 && buffer.methods.size() == 2 && buffer.methods[0].constructor &&
+                buffer.methods[0].params.size() == 1 && buffer.methods[1].params.size() == 1,
+            "template class lost field/constructor/method declarations");
+    sameType(buffer.fields[0].type, dependent);
+    sameType(buffer.methods[0].params[0].type, parameter);
+    sameType(buffer.methods[1].params[0].type, parameter);
+    sameType(buffer.methods[1].result, parameter);
+    const auto nested = namedType("Box", {namedArgument("Pair", {K::I64, K::U8})});
+    const auto &concrete = program.classes.front();
+    require(concrete.fields.size() == 2 && concrete.methods.size() == 2 && concrete.methods[0].params.size() == 1 &&
+                concrete.methods[1].params.size() == 1 && concrete.methods[1].receiverConst,
+            "concrete class lost declaration types");
+    sameType(concrete.fields[0].type, nested);
+    sameType(concrete.fields[1].type, T::ownedValues(T("Item")));
+    sameType(concrete.methods[0].params[0].type, nested);
+    sameType(concrete.methods[1].params[0].type, T::U8);
+    sameType(concrete.methods[1].result, nested);
+    ++cases;
+}
+
+// The actual compiler sources use this closed vocabulary. This is a lookup of
+// manually stated Type values, not a second grammar implementation. A new source
+// spelling must acquire its own structural expectation rather than silently
+// using the product parser as its oracle.
+std::map<std::string, aurora::Type> compilerDeclarationTypes() {
+    using T = aurora::Type;
+    std::map<std::string, T> result{{"i64", T::I64},
+                                    {"u64", T::U64},
+                                    {"u8", T::U8},
+                                    {"bool", T::Bool},
+                                    {"builtin::span<constu8>", T::ByteSpan},
+                                    {"builtin::ByteRegion", T::ByteRegion},
+                                    {"builtin::OwnedBytes", T::OwnedBytes}};
+    for (const auto &name : {"Cursor",
+                             "Event",
+                             "Lexeme",
+                             "FrameState",
+                             "NodeKind",
+                             "ArenaFailure",
+                             "ParseFrame",
+                             "AstNode",
+                             "ChildEdge",
+                             "TypeKind",
+                             "TypeSyntax",
+                             "StatementKind",
+                             "StatementSyntax",
+                             "AstArena",
+                             "Stop",
+                             "TypeContext",
+                             "ParseResult",
+                             "ParseStatus",
+                             "ParseToken",
+                             "TypeResult",
+                             "TypeWord",
+                             "compiler_lexer::Cursor",
+                             "compiler_lexer::Event"})
+        result.emplace(name, T(name));
+    for (const auto &name : {"AstNode", "ParseFrame", "ChildEdge", "TypeSyntax", "StatementSyntax"})
+        result.emplace(std::string("builtin::OwnedValues<") + name + ">", T::ownedValues(T(name)));
+    return result;
+}
+void bootstrapDeclarationTypes(const std::vector<aurora::Token> &tokens,
+                               const aurora::Program &program,
+                               std::size_t module) {
+    const auto vocabulary = compilerDeclarationTypes();
+    std::size_t parameters = 0, results = 0, fields = 0;
+    std::set<std::size_t> lexicalFunctions, importedFunctions, lexicalConstructors, importedConstructors;
+    for (std::size_t index = 0; index + 1 < tokens.size(); ++index)
+        if (tokens[index].text == "auto")
+            lexicalFunctions.insert(index + 1);
+    const auto check = [&](std::size_t first, std::size_t end, const aurora::Type &whole) {
+        require(first < end && end < tokens.size(), "declaration inventory has an empty/escaped type range");
+        std::string spelling;
+        for (auto index = first; index < end; ++index)
+            spelling += tokens[index].text;
+        const auto expected = vocabulary.find(spelling);
+        require(expected != vocabulary.end(), "actual declaration type needs an independent expectation: " + spelling);
+        sameType(whole, expected->second);
+        auto directTokens = tokens;
+        auto position = first;
+        const auto direct = aurora::parseHostedType(directTokens, position);
+        sameType(direct, expected->second);
+        require(position == end, "actual declaration direct parse consumed the following name/delimiter");
+        unchangedTokens(directTokens, tokens);
+        ++cases;
+    };
+    const auto functions = [&](const std::vector<aurora::Function> &items) {
+        for (const auto &function : items) {
+            const auto name = tokenAt(tokens, function.token);
+            auto &imported = function.constructor ? importedConstructors : importedFunctions;
+            require(imported.insert(name).second, "actual declaration type inventory duplicated a function");
+            auto position = name + 1;
+            require(tokens.at(position++).text == "(", "actual function lost its parameter list");
+            for (std::size_t index = 0; index < function.params.size(); ++index) {
+                const auto &parameter = function.params[index];
+                const bool constant = tokens.at(position).text == "const";
+                require(constant == parameter.borrowConst, "actual parameter const qualification differs");
+                position += constant;
+                auto binding = position;
+                while (binding + 1 < tokens.size() &&
+                       !(tokens[binding].text == parameter.name &&
+                         (tokens[binding + 1].text == "," || tokens[binding + 1].text == ")")))
+                    ++binding;
+                require(binding > position && binding + 1 < tokens.size(), "actual parameter binding was omitted");
+                const bool borrowed = tokens.at(binding - 1).text == "&";
+                require(borrowed == parameter.borrowed, "actual parameter reference qualification differs");
+                if (borrowed)
+                    sameSpan(parameter.borrowSpan, tokens.at(binding - 1).span);
+                check(position, binding - borrowed, parameter.type);
+                position = binding + 1;
+                if (index + 1 < function.params.size())
+                    require(tokens.at(position++).text == ",", "actual parameter count/order differs");
+                ++parameters;
+            }
+            require(tokens.at(position++).text == ")", "actual parameter list was truncated");
+            if (!function.constructor) {
+                const bool constant = tokens.at(position).text == "const";
+                require(constant == function.receiverConst, "actual method const qualification differs");
+                position += constant;
+                require(tokens.at(position++).text == "->", "actual function lost its explicit result type");
+                auto opening = position;
+                while (opening < tokens.size() && tokens[opening].text != "{")
+                    ++opening;
+                check(position, opening, function.result);
+                ++results;
+            }
+        }
+    };
+    functions(program.functions);
+    functions(program.functionTemplates);
+    const auto classes = [&](const std::vector<aurora::ClassDefinition> &items) {
+        for (const auto &definition : items) {
+            const auto opening = tokenAt(tokens, definition.token) + 1;
+            const auto end = closingBrace(tokens, opening);
+            std::set<std::size_t> lexicalFields, importedFields;
+            // Count source class-level ';' and constructor headers independently
+            // of the parsed declaration lists; method/local statements are deeper.
+            std::size_t depth = 1;
+            for (auto index = opening + 1; index < end; ++index) {
+                if (depth == 1 && tokens[index].text == ";")
+                    lexicalFields.insert(index - 1);
+                if (depth == 1 && tokens[index].text == definition.name && tokens.at(index + 1).text == "(")
+                    lexicalConstructors.insert(index);
+                if (tokens[index].text == "{")
+                    ++depth;
+                else if (tokens[index].text == "}")
+                    --depth;
+            }
+            for (const auto &field : definition.fields) {
+                const auto binding = tokenAt(tokens, field.token);
+                require(importedFields.insert(binding).second, "actual field type was counted twice");
+                auto first = binding;
+                while (first > opening + 1 && tokens[first - 1].text != ";" && tokens[first - 1].text != "}" &&
+                       tokens[first - 1].text != "{") {
+                    if (tokens[first - 1].text == ":")
+                        break;
+                    --first;
+                }
+                check(first, binding, field.type);
+                ++fields;
+            }
+            require(importedFields == lexicalFields, "actual source field declaration type was omitted");
+            functions(definition.methods);
+        }
+    };
+    classes(program.classes);
+    classes(program.templates);
+    // PR149 source declarations: all 490 type occurrences (259 parameters,
+    // 155 results, 76 fields), plus any new declarations. The lexical inventories
+    // above prevent larger current sources from hiding omitted new entries.
+    const std::array<std::size_t, 3> historicalParameters{24, 91, 144};
+    const std::array<std::size_t, 3> historicalResults{18, 73, 64};
+    const std::array<std::size_t, 3> historicalFields{7, 47, 22};
+    require(importedFunctions == lexicalFunctions && importedConstructors == lexicalConstructors &&
+                parameters >= historicalParameters.at(module) && results >= historicalResults.at(module) &&
+                fields >= historicalFields.at(module),
+            "checked-in compiler declaration-type inventory lost historical or new source entries");
+}
+
 class Allocations {
 public:
     std::size_t allowed = std::numeric_limits<std::size_t>::max(), successful = 0, released = 0;
@@ -1749,7 +2266,9 @@ public:
         require(output.value[2] == checked_hosted_parser_count(data()),
                 "reported arena count differs from real storage");
         if (stop != Stop::Body)
-            require(statements() == 0, "expression profile acquired statement records");
+            require(statements() == 0, "non-body profile acquired statement records");
+        if (stop == Stop::Type)
+            require(output.value[2] == 0 && edges() == 0, "type-only profile acquired expression/edge records");
         return output.value;
     }
     NodeWords read(std::int64_t index) {
@@ -2568,6 +3087,199 @@ void rawTypeGrowth() {
     ++cases;
 }
 
+void rawDeclarationTypes() {
+    static_assert(static_cast<std::int64_t>(Stop::Type) == 5);
+    struct Fixture {
+        std::string source;
+        std::int64_t next;
+        int half;
+        std::vector<TypeWords> types;
+    };
+    // These literal 64-byte records pin Type profile ownership and topology
+    // independently of both the host enum and Type conversion implementation.
+    for (const auto &fixture : std::vector<Fixture>{
+             {"i64 next", 1, 0, {{1, 0, 0, 0, -1, -1, 0, 3}}},
+             {"ns::Name next", 3, 0, {{5, 0, 2, 4, -1, -1, 0, 3}}},
+             {"own<i64> next", 4, 0, {{10, 0, 0, 6, -1, -1, 0, 3}}},
+             {"builtin::span<const u8> next", 7, 0, {{13, 0, 2, 12, -1, -1, 0, 3}}},
+             {"builtin::ByteRegion next", 3, 0, {{14, 0, 2, 4, -1, -1, 0, 3}}},
+             {"Box<i64>> next", 3, 1, {{1, 2, 2, 4, -1, -1, -1, 0}, {5, 0, 0, 6, 0, -1, 0, 3}}},
+             {"Box<Pair<i64,u8>> next",
+              8,
+              0,
+              {{1, 4, 4, 8, -1, -1, -1, 0},
+               {3, 6, 6, 12, -1, -1, -1, 0},
+               {5, 2, 2, 14, 0, 1, -1, 0},
+               {5, 0, 0, 15, 2, -1, 0, 3}}},
+             {"array<u8,4>> next",
+              5,
+              1,
+              {{3, 2, 2, 4, -1, -1, -1, 0}, {7, 4, 4, 8, -1, -1, -1, 0}, {9, 0, 0, 10, 0, 1, 0, 3}}},
+             {"builtin::OwnedValues<Item>> next", 5, 1, {{5, 4, 4, 8, -1, -1, -1, 0}, {15, 0, 2, 10, 0, -1, 0, 3}}},
+             {"array<builtin::ConsoleSample,2> next",
+              8,
+              0,
+              {{16, 2, 4, 8, -1, -1, -1, 0}, {7, 6, 6, 12, -1, -1, -1, 0}, {9, 0, 0, 14, 0, 1, 0, 3}}}}) {
+        context = "raw standalone declaration TypeSyntax " + fixture.source;
+        const auto tokens = aurora::lex(fixture.source, "raw-declaration-type.au");
+        const auto offset = tokens.at(fixture.next).span.begin.offset + fixture.half;
+        Allocations allocations;
+        RawArena arena(allocations);
+        const auto result = arena.parse(fixture.source, Stop::Type);
+        require(result == Words{wire(Status::Success),
+                                static_cast<std::int64_t>(fixture.types.size() - 1),
+                                0,
+                                fixture.next,
+                                static_cast<std::int64_t>(offset)} &&
+                    arena.types() == static_cast<std::int64_t>(fixture.types.size()) && arena.edges() == 0 &&
+                    arena.statements() == 0,
+                "standalone type root/count/cursor/half differs");
+        for (std::size_t index = 0; index < fixture.types.size(); ++index)
+            require(arena.type(static_cast<std::int64_t>(index)) == fixture.types[index],
+                    "standalone type acquired the wrong layout/child/owner/role");
+        const auto metrics = arena.metrics();
+        require(metrics.live_allocations == 5 && metrics.peak_live_allocations == 5,
+                "standalone type introduced an owner beyond the existing five");
+        // The arena is invocation-scoped. Re-entry must reject without changing
+        // the committed type graph, allocating a sixth owner, or leaking it.
+        const auto again = arena.parse("u8 next", Stop::Type);
+        require(again == Words{wire(Status::Invalid), -1, 0, 0, 0} &&
+                    arena.types() == static_cast<std::int64_t>(fixture.types.size()) &&
+                    arena.metrics().successful_allocations == metrics.successful_allocations,
+                "nonempty type-arena reuse did not reject without mutation");
+        for (std::size_t index = 0; index < fixture.types.size(); ++index)
+            require(arena.type(static_cast<std::int64_t>(index)) == fixture.types[index],
+                    "rejected re-entry changed a committed type record");
+        arena.finish();
+        require(allocations.successful == allocations.released, "standalone type lifecycle leaked storage");
+        ++cases;
+    }
+    for (const bool function : {false, true}) {
+        const std::string source = function ? "T U Pair<T,U> next" : "T N array<T,N> next";
+        const ContextWords captured = function ? ContextWords{0, 1, 2, 3, 0, 0, 2} : ContextWords{0, 1, 0, 0, 2, 3, 1};
+        context = "raw standalone declaration context " + source;
+        Allocations allocations;
+        RawArena arena(allocations);
+        const auto result = arena.parse(source, Stop::Type, 4, captured);
+        require(result == Words{wire(Status::Success), 2, 0, 6, function ? 14 : 15} && arena.types() == 3 &&
+                    arena.type(0) == TypeWords{6, 2, 2, 4, -1, -1, -1, 0} &&
+                    arena.type(1) == TypeWords{function ? 6 : 8, 4, 4, 8, -1, -1, -1, 0} &&
+                    arena.type(2) == TypeWords{function ? 5 : 9, 0, 0, 10, 0, 1, 0, 3},
+                "standalone type context lost a captured parameter or declaration root role");
+        arena.finish();
+        require(allocations.successful == allocations.released, "standalone context leaked storage");
+        ++cases;
+    }
+    struct Rejection {
+        std::string source;
+        Status status;
+        std::size_t token;
+        int half = 0;
+    };
+    for (const auto &test : std::vector<Rejection>{{"fn next", Status::ReservedType, 0},
+                                                   {"123 next", Status::ExpectedType, 1},
+                                                   {"array;", Status::ExpectedAngleOpen, 1},
+                                                   {"own<i64>>;", Status::ExpectedAngleClose, 3},
+                                                   {"builtin::span<u8>;", Status::ExpectedConst, 4},
+                                                   {"Box<i64,u8,bool>;", Status::TemplateArity, 6},
+                                                   {"array<Class,65>>;", Status::ClassArrayLength, 5, 1},
+                                                   {"builtin::OwnedValues<Box<i64>>;", Status::OwnedElement, 7, 1},
+                                                   {"A<B<C<D<E<i64>>>>>;", Status::TemplateNestingLimit, 9}}) {
+        context = "raw declaration type diagnostic " + test.source;
+        const auto tokens = aurora::lex(test.source);
+        Allocations allocations;
+        RawArena arena(allocations);
+        const auto result = arena.parse(test.source, Stop::Type);
+        require(result == Words{wire(test.status),
+                                -1,
+                                0,
+                                static_cast<std::int64_t>(test.token),
+                                static_cast<std::int64_t>(tokens.at(test.token).span.begin.offset + test.half)},
+                "raw declaration type diagnostic status/cursor/half differs");
+        for (std::int64_t index = 0; index < arena.types(); ++index) {
+            const auto record = arena.type(index);
+            require(record[6] == -1 && record[7] == 0, "failed type bound a declaration owner before success");
+        }
+        arena.finish();
+        require(allocations.successful == allocations.released, "failed declaration type leaked partial records");
+        ++cases;
+    }
+}
+// Build a stated complete binary type tree and its independent wire layout.
+// Spaced closers deliberately keep this growth test orthogonal to >> tokenization.
+std::string rawDeclarationTree(int depth, std::int64_t &token, std::vector<TypeWords> &records) {
+    const auto first = token++;
+    if (!depth) {
+        records.push_back({1, first, first, 2 * first, -1, -1, -1, 0});
+        return "i64";
+    }
+    ++token; // '<'
+    const auto left = rawDeclarationTree(depth - 1, token, records);
+    const auto leftRoot = static_cast<std::int64_t>(records.size() - 1);
+    ++token; // ','
+    const auto right = rawDeclarationTree(depth - 1, token, records);
+    const auto rightRoot = static_cast<std::int64_t>(records.size() - 1);
+    const auto close = token++;
+    records.push_back({5, first, first, 2 * close, leftRoot, rightRoot, -1, 0});
+    return "Pair < " + left + " , " + right + " >";
+}
+void rawDeclarationTypeGrowth() {
+    context = "standalone type growth, exact prefix preservation and allocation cleanup";
+    std::int64_t next = 0;
+    std::vector<TypeWords> expected;
+    const auto type = rawDeclarationTree(4, next, expected);
+    const auto source = type + " next";
+    require(expected.size() == 31 && next == 76, "independent binary type fixture changed shape");
+    expected.back()[6] = 0;
+    expected.back()[7] = 3;
+    std::size_t successful = 0;
+    for (int cycle = 0; cycle < 3; ++cycle) {
+        Allocations allocations;
+        RawArena arena(allocations);
+        require(arena.parse(source, Stop::Type) ==
+                        Words{wire(Status::Success), 30, 0, 76, static_cast<std::int64_t>(type.size() + 1)} &&
+                    arena.types() == 31,
+                "31-record standalone type growth lost its root/cursor");
+        for (std::size_t index = 0; index < expected.size(); ++index)
+            require(arena.type(static_cast<std::int64_t>(index)) == expected[index],
+                    "standalone type growth changed child-before-parent records");
+        const auto metrics = arena.metrics();
+        require(metrics.live_allocations == 5 && metrics.peak_live_allocations == 5 &&
+                    metrics.successful_allocations >= 7 && metrics.peak_used >= 32 * 64,
+                "standalone type did not grow existing type storage while retaining five owners");
+        if (cycle)
+            require(successful == allocations.successful, "fresh type lifecycle acquired stale storage state");
+        successful = allocations.successful;
+        arena.finish();
+        require(allocations.released == successful, "fresh type lifecycle leaked storage");
+        ++cases;
+    }
+    for (std::size_t allowed = 0; allowed < successful; ++allowed) {
+        Allocations allocations;
+        allocations.allowed = allowed;
+        RawArena arena(allocations);
+        const auto result = arena.parse(source, Stop::Type);
+        require(result[0] == wire(Status::AllocationFailure) && result[1] == -1 && result[2] == 0 &&
+                    arena.types() >= 0 && arena.types() < static_cast<std::int64_t>(expected.size()),
+                "standalone type allocation failure did not fail closed");
+        for (std::int64_t index = 0; index < arena.types(); ++index)
+            require(arena.type(index) == expected[static_cast<std::size_t>(index)],
+                    "failed standalone type growth damaged a committed prefix");
+        arena.finish();
+        require(allocations.successful == allocations.released, "failed standalone type lifecycle leaked an owner");
+        ++cases;
+    }
+    {
+        Allocations allocations;
+        RawArena arena(allocations, 0);
+        require(arena.parse("i64 next", Stop::Type)[0] == wire(Status::AllocationFailure),
+                "zero-quota standalone type parse was accepted");
+        arena.finish();
+        require(allocations.successful == allocations.released, "zero-quota standalone type leaked storage");
+        ++cases;
+    }
+}
+
 void rawAggregateDiagnostics() {
     struct Rejection {
         std::string source;
@@ -2609,7 +3321,7 @@ void rawAggregateDiagnostics() {
         ++cases;
     }
     rawCase("{};", Status::Invalid, static_cast<Stop>(-1));
-    rawCase("{};", Status::Invalid, static_cast<Stop>(5));
+    rawCase("{};", Status::Invalid, static_cast<Stop>(6));
 }
 
 void abiControls() {
@@ -3187,6 +3899,12 @@ int main(int argc, char **argv) {
         constructors();
         aggregateSyntax();
         typedSyntax();
+        declarationTypeSyntax();
+        repeatedResidualType();
+        declarationTypeDiagnostics();
+        declarationTypeContexts();
+        rawDeclarationTypes();
+        rawDeclarationTypeGrowth();
         rawBodies();
         bodySyntax();
         bodyContexts();
@@ -3209,7 +3927,9 @@ int main(int argc, char **argv) {
                      "dispatch-consistent constructor/string roots from all three actual bootstrap sources; "
                      "14 aggregate roots including 512 XFS elements, 16 direct typed product roots, "
                      "1,285-record type growth, all 125 historical and all new bootstrap bodies, "
-                     "513-statement/128-block growth and fifth-owner cleanup\n";
+                     "513-statement/128-block growth and fifth-owner cleanup; "
+                     "independent declaration types and diagnostics, all 490 historical and new compiler declaration "
+                     "type occurrences, 31-record standalone type growth with existing-owner cleanup\n";
     } catch (const std::exception &error) {
         std::cerr << "FAIL " << error.what() << '\n';
         return 1;
