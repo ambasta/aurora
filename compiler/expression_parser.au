@@ -257,7 +257,7 @@ namespace compiler_parser {
                 return true;
             }
             const u8 first = source.at(token.first());
-            if (first == '"' || first == '{') {
+            if (first == '{') {
                 return false;
             }
             const ParseToken next_token = advance(source, token);
@@ -552,7 +552,8 @@ export namespace compiler_parser {
                             if (compiler_lexer::letter(first)) {
                                 kind = NodeKind::name;
                             }
-                            if (compiler_lexer::digit(first) || first == '\'' || boolean_literal(source, original)) {
+                            if (compiler_lexer::digit(first) || first == '\'' || first == '"' || boolean_literal(source,
+                                original)) {
                                 kind = NodeKind::literal;
                             }
                         }

@@ -323,6 +323,8 @@ ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens, std::size_
             token.span.end = tokens[position + static_cast<std::size_t>(node.nameEnd)].span.end;
         } else if (node.kind == NodeKind::Literal && (token.text == "true" || token.text == "false"))
             op = "bool";
+        else if (node.kind == NodeKind::Literal && token.text.front() == '"')
+            op = "byte_string";
         else if (node.kind == NodeKind::Literal && token.text.front() == '\'')
             op = "byte";
         else if (node.kind == NodeKind::Literal && token.text.front() >= '0' && token.text.front() <= '9')
