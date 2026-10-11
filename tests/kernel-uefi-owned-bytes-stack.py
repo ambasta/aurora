@@ -50,6 +50,10 @@ compiled_stack_functions = stack.compiled_stack_functions
 assembly_stack_functions = stack.assembly_stack_functions
 calculate = stack.calculate
 private_frame_layout = stack.private_frame_layout
+spec = importlib.util.spec_from_file_location("owned_copy_abi", ROOT / "scripts/kernel_snapshot_abi.py")
+copy_abi = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = copy_abi
+spec.loader.exec_module(copy_abi)
 
 
 def producer_source_contract(source):
@@ -89,6 +93,14 @@ def generated_producer(body, linked, local_bytes, prefix, constructor):
         require(body[position : position + len(pairs)] == source, "Changed copied boundary source moves")
         require(decoded[position : position + len(pairs)] == expected, "Changed copied boundary linked moves")
 
+    def copied(position, source_base, source_offset, destination_base, destination_offset, extent):
+        layout = (source_base, source_offset, destination_base, destination_offset, extent)
+        expected = copy_abi.copied_payload(*layout)
+        source = copy_abi.copied_payload(*layout, assembly=True)
+        require(body[position : position + len(source)] == source, "Changed copied boundary source payload")
+        require(decoded[position : position + len(expected)] == expected, "Changed copied boundary linked payload")
+        return position + len(expected)
+
     if constructor:
         require(local_bytes == 96, "Changed copied result constructor frame")
         pairs = [
@@ -99,13 +111,11 @@ def generated_producer(body, linked, local_bytes, prefix, constructor):
             ("%rax", "-8(%rbp)"),
             ("-96(%rbp)", "%r11"),
         ]
-        for offset in range(8, 72, 8):
-            pairs += [(f"{offset}(%r11)", "%rax"), ("%rax", f"{offset - 80}(%rbp)")]
-        pairs += [("-8(%rbp)", "%rax"), ("-88(%rbp)", "%r10"), ("%rax", "0(%r10)"), ("-88(%rbp)", "%r10")]
-        for offset in range(8, 72, 8):
-            pairs += [(f"{offset - 80}(%rbp)", "%rax"), ("%rax", f"{offset}(%r10)")]
         moves(prefix, pairs)
-        end = prefix + len(pairs)
+        end = copied(prefix + len(pairs), "r11", 8, "rbp", -72, 64)
+        pairs = [("-8(%rbp)", "%rax"), ("-88(%rbp)", "%r10"), ("%rax", "0(%r10)"), ("-88(%rbp)", "%r10")]
+        moves(end, pairs)
+        end = copied(end + len(pairs), "rbp", -72, "r10", 8, 64)
         require(
             len(body) == end + 4
             and body[end] == "movabsq $0, %rax"
@@ -190,11 +200,8 @@ def generated_producer(body, linked, local_bytes, prefix, constructor):
             ]
         require(body[call + 1 : returned] == cleanup, "Copied result published before complete owner cleanup")
         require(decoded[call + 1 : returned] == linked_cleanup, "Linked copied result cleanup changed")
-        pairs = [(output_save, "%r10")]
-        for offset in range(0, 72, 8):
-            pairs += [(f"{offset - slot}(%rbp)", "%rax"), ("%rax", f"{offset}(%r10)")]
-        moves(returned, pairs)
-        end = returned + len(pairs)
+        moves(returned, [(output_save, "%r10")])
+        end = copied(returned + 1, "rbp", -slot, "r10", 0, 72)
         require(
             body[end] == "xorq %rax, %rax"
             and decoded[end] == ("xor", "%rax,%rax")
@@ -207,7 +214,7 @@ def generated_producer(body, linked, local_bytes, prefix, constructor):
     require(all(left[1] <= right[0] for left, right in zip(sorted(slots), sorted(slots)[1:])), "Copied results overlap")
     require(
         {index for index, line in enumerate(body) if output_save in line} == result_accesses
-        and sum("(%r10)" in line for line in body) == 6 * 9
+        and sum("(%r10)" in line for line in body) == 6
         and sum(line.startswith("jmp .Lreturn") for line in body) == 6,
         "Copied output address escaped or gained an unaccounted access/return",
     )
@@ -492,6 +499,22 @@ def self_test():
             lambda old=old, new=new: producer_source_contract(source.replace(old, new)),
         )
 
+    def copy_fixture(source, destination, extent):
+        # Independent fixed source form; production checks use the shared helper.
+        return [
+            "pushq %rsi",
+            "pushq %rdi",
+            "pushq %rcx",
+            f"leaq {source}, %rsi",
+            f"leaq {destination}, %rdi",
+            f"movq ${extent}, %rcx",
+            "cld",
+            "rep movsb",
+            "popq %rcx",
+            "popq %rdi",
+            "popq %rsi",
+        ]
+
     # Small handwritten boundary fixture, independent of compiler execution.
     body = [
         "movq %r11, -632(%rbp)",
@@ -526,8 +549,7 @@ def self_test():
                 "popq %rax",
             ]
         body += ["movq -640(%rbp), %r10"]
-        for offset in range(0, 72, 8):
-            body += [f"movq {offset - slot}(%rbp), %rax", f"movq %rax, {offset}(%r10)"]
+        body += copy_fixture(f"-{slot}(%rbp)", "0(%r10)", 72)
         body += ["xorq %rax, %rax", "jmp .Lreturn0"]
     body += ["leave", "ret"]
 
@@ -549,8 +571,10 @@ def self_test():
                 "pushq": "push",
                 "popq": "pop",
                 "xorq": "xor",
-                "movq": "movq" if args.startswith("$") else "mov",
+                "movq": "movq" if args.startswith("$") and args.endswith(")") else "mov",
             }.get(op, op)
+            if op == "rep" and args == "movsb":
+                args = "movsb %ds:(%rsi),%es:(%rdi)"
             if op == "jmp":
                 args = f"{len(lines) - 2:x} <return>"
             rows.append(Instruction(index, 1, op, args))
@@ -566,8 +590,14 @@ def self_test():
         ("leaq -192(%rbp), %r10", "leaq -640(%rbp), %r10"),
         ("leaq -264(%rbp), %r10", "leaq -192(%rbp), %r10"),
         ("leaq -120(%rbp), %rdi", "leaq -48(%rbp), %rdi"),
-        ("movq %rax, 64(%r10)", "movq %rax, 72(%r10)"),
-        ("movq -192(%rbp), %rax", "movq -200(%rbp), %rax"),
+        ("leaq 0(%r10), %rdi", "leaq 8(%r10), %rdi"),
+        ("leaq -192(%rbp), %rsi", "leaq -200(%rbp), %rsi"),
+        ("movq $72, %rcx", "movq $71, %rcx"),
+        ("movq $72, %rcx", "movq $80, %rcx"),
+        ("cld", "std"),
+        ("rep movsb", "rep movsq"),
+        ("pushq %rsi", "pushq %rax"),
+        ("popq %rdi", "popq %rsi"),
     ):
         changed = list(body)
         changed[changed.index(old)] = new
@@ -587,26 +617,39 @@ def self_test():
         "movq %rax, -8(%rbp)",
         "movq -96(%rbp), %r11",
     ]
-    for offset in range(8, 72, 8):
-        ctor += [f"movq {offset}(%r11), %rax", f"movq %rax, {offset - 80}(%rbp)"]
+    ctor += copy_fixture("8(%r11)", "-72(%rbp)", 64)
     ctor += ["movq -8(%rbp), %rax", "movq -88(%rbp), %r10", "movq %rax, 0(%r10)", "movq -88(%rbp), %r10"]
-    for offset in range(8, 72, 8):
-        ctor += [f"movq {offset - 80}(%rbp), %rax", f"movq %rax, {offset}(%r10)"]
+    ctor += copy_fixture("-72(%rbp)", "8(%r10)", 64)
     ctor += ["movabsq $0, %rax", "jmp .Lreturn0", "leave", "ret"]
     ctor_linked = boundary_rows(ctor)
     generated_producer(ctor, ctor_linked, 96, 0, True)
     positives += 1
     for old, new in (
         ("movq %r11, -96(%rbp)", "movq %r11, -88(%rbp)"),
-        ("movq 8(%r11), %rax", "movq 16(%r11), %rax"),
+        ("leaq 8(%r11), %rsi", "leaq 16(%r11), %rsi"),
         ("movq %rax, 0(%r10)", "movq %rax, 8(%r10)"),
-        ("movq %rax, 64(%r10)", "movq %rax, 72(%r10)"),
+        ("leaq 8(%r10), %rdi", "leaq 16(%r10), %rdi"),
+        ("movq $64, %rcx", "movq $63, %rcx"),
+        ("popq %rcx", "popq %rax"),
     ):
         changed = [new if line == old else line for line in ctor]
         changed_linked = boundary_rows(changed)
         rejects("copied ctor source layout", lambda b=changed: generated_producer(b, ctor_linked, 96, 0, True))
         rejects("copied ctor linked layout", lambda c=changed_linked: generated_producer(ctor, c, 96, 0, True))
         rejects("matched copied ctor layout", lambda b=changed, c=changed_linked: generated_producer(b, c, 96, 0, True))
+
+    for original, frame, constructor in ((body, 640, False), (ctor, 96, True)):
+        for instruction in ("pushq %rsi", "cld", "rep movsb", "popq %rsi"):
+            index = original.index(instruction)
+            for changed in (
+                original[:index] + original[index + 1 :],
+                original[:index] + [instruction] + original[index:],
+            ):
+                rows = boundary_rows(changed)
+                rejects(
+                    "coherent copied sequence omission/duplication",
+                    lambda b=changed, c=rows, f=frame, k=constructor: generated_producer(b, c, f, 0, k),
+                )
 
     leaf = [("ret", "")]
     root = [

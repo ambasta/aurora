@@ -43,13 +43,15 @@ def check_wrapper(actual, mode="normal", service=SERVICE):
     stack.require(actual == expected, "Changed copied wrapper record/envelope/restoration")
 
 
-def copied_payload(source_base, source_offset, destination_base, destination_offset, extent):
+def copied_payload(source_base, source_offset, destination_base, destination_offset, extent, *, assembly=False):
     """Exact emitted idiom for a known contiguous initialized copied payload.
 
     Callers supply independently fixed layout extents, not decoded instructions.
     The existing disassembler validates REP opcode/spelling. This expectation
-    checks all address, count, direction and save/restore instructions verbatim;
-    it is not an instruction interpreter or proof of arbitrary copy semantics.
+    checks all address, count, direction and save/restore instructions verbatim.
+    The assembly option renders the same fixed form with emitter spelling; it
+    never parses or normalizes source instructions. This is not an instruction
+    interpreter or proof of arbitrary copy semantics.
     """
     stack.require(source_base in ("rbp", "r10", "r11"), "Copied source must have a stable base")
     stack.require(destination_base in ("rbp", "r10", "r11", "rsp"), "Unknown copied destination base")
@@ -58,22 +60,33 @@ def copied_payload(source_base, source_offset, destination_base, destination_off
     stack.require(type(source_offset) is int and type(destination_offset) is int, "Copied offsets must be integers")
 
     def memory(base, offset):
+        if assembly:
+            return f"{offset}(%{base})"
         displacement = ("-" if offset < 0 else "") + f"0x{abs(offset):x}" if offset else ""
         return displacement + f"(%{base})"
 
+    stack.require(type(assembly) is bool, "Copied payload format must be explicit")
+    separator = ", " if assembly else ","
     source = memory(source_base, source_offset)
     destination = memory(destination_base, destination_offset)
-    expected = [("lea", destination + ",%rax")] if destination_base == "rsp" else []
-    expected += [("push", "%rsi"), ("push", "%rdi"), ("push", "%rcx"), ("lea", source + ",%rsi")]
-    expected += [("mov", "%rax,%rdi")] if destination_base == "rsp" else [("lea", destination + ",%rdi")]
+    expected = [("lea", destination + separator + "%rax")] if destination_base == "rsp" else []
+    expected += [("push", "%rsi"), ("push", "%rdi"), ("push", "%rcx"), ("lea", source + separator + "%rsi")]
+    expected += (
+        [("mov", "%rax" + separator + "%rdi")]
+        if destination_base == "rsp"
+        else [("lea", destination + separator + "%rdi")]
+    )
     expected += [
-        ("mov", f"$0x{extent:x},%rcx"),
+        ("mov", (f"${extent}" if assembly else f"$0x{extent:x}") + separator + "%rcx"),
         ("cld", ""),
-        ("rep", "movsb %ds:(%rsi),%es:(%rdi)"),
+        ("rep", "movsb" if assembly else "movsb %ds:(%rsi),%es:(%rdi)"),
         ("pop", "%rcx"),
         ("pop", "%rdi"),
         ("pop", "%rsi"),
     ]
+    if assembly:
+        suffixes = {"lea": "leaq", "mov": "movq", "push": "pushq", "pop": "popq"}
+        return [suffixes.get(op, op) + (" " + args if args else "") for op, args in expected]
     return expected
 
 

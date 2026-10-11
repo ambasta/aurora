@@ -44,6 +44,41 @@ def copy_controls():
         ("pop", "%rdi"),
         ("pop", "%rsi"),
     ]
+    stable_source = [
+        "pushq %rsi",
+        "pushq %rdi",
+        "pushq %rcx",
+        "leaq 24(%r11), %rsi",
+        "leaq -88(%rbp), %rdi",
+        "movq $64, %rcx",
+        "cld",
+        "rep movsb",
+        "popq %rcx",
+        "popq %rdi",
+        "popq %rsi",
+    ]
+    packed_source = [
+        "leaq 32(%rsp), %rax",
+        "pushq %rsi",
+        "pushq %rdi",
+        "pushq %rcx",
+        "leaq -512(%rbp), %rsi",
+        "movq %rax, %rdi",
+        "movq $512, %rcx",
+        "cld",
+        "rep movsb",
+        "popq %rcx",
+        "popq %rdi",
+        "popq %rsi",
+    ]
+    stack.require(
+        abi.copied_payload("r11", 24, "rbp", -88, 64, assembly=True) == stable_source,
+        "Changed exact copied source form",
+    )
+    stack.require(
+        abi.copied_payload("rbp", -512, "rsp", 32, 512, assembly=True) == packed_source,
+        "Changed exact packed copied source form",
+    )
     rejected = 0
 
     def reject(operation):
