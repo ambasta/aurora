@@ -464,14 +464,13 @@ class Suite:
         """,
             entry_name="arena_entry",
         )
-        # The arena owns a separate empty frame allocation even before parsing.
-        # Zero payload still has real lifetime metadata and must be released.
-        self.run(arena, 8192, 200, 0, 42, 2, 2)
-        self.run(arena, 8192, 100, 0, 42, 3, 2)
-        self.run(arena, 80, 2, 1, 42, 2, 2)
-        self.run(arena, 8192, 200, 2, 42, 2, 2)
-        self.run(arena, 8192, -1, 0, -1, 1, 1)
-        self.trap(arena, 8192, 200, 3)
+        # Empty frame and argument stores each retain real owner metadata.
+        self.run(arena, 16384, 200, 0, 42, 3, 3)
+        self.run(arena, 16384, 100, 0, 42, 4, 3)
+        self.run(arena, 112, 2, 1, 42, 3, 3)
+        self.run(arena, 16384, 200, 2, 42, 3, 3)
+        self.run(arena, 16384, -1, 0, -1, 2, 2)
+        self.trap(arena, 16384, 200, 3)
 
         same_layout = "class Other {public:i64 a;i64 b;i64 c;};"
         for name, body in {

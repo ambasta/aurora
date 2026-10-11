@@ -26,6 +26,8 @@ void checked_hosted_parser_create(const void *, void *);
 void checked_hosted_parser_parse(void *, const void *, void *);
 std::int64_t checked_hosted_parser_count(const void *);
 void checked_hosted_parser_read(const void *, std::int64_t, void *);
+std::int64_t checked_hosted_parser_edges(const void *);
+void checked_hosted_parser_edge(const void *, std::int64_t, void *);
 void checked_hosted_parser_release(void *);
 }
 
@@ -48,6 +50,8 @@ using aurora::hosted_parser::NodeKind;
 using aurora::hosted_parser::Status;
 using aurora::hosted_parser::Stop;
 using Words = std::array<std::int64_t, 5>;
+using NodeWords = std::array<std::int64_t, 7>;
+using EdgeWords = std::array<std::int64_t, 4>;
 constexpr std::int64_t wire(NodeKind value) {
     return static_cast<std::int64_t>(value);
 }
@@ -181,22 +185,23 @@ public:
         return {this, allocate, deallocate};
     }
 };
-class GuardedWords {
+template <std::size_t N> class GuardedWords {
 public:
     std::uint64_t before = canary;
-    Words value{};
+    std::array<std::int64_t, N> value{};
     std::uint64_t after = canary;
     void check() const {
         require(before == canary && after == canary, "result write escaped its ABI extent");
     }
 };
-static_assert(sizeof(Words) == 40 && sizeof(GuardedWords) == 56);
+static_assert(sizeof(Words) == 40 && sizeof(GuardedWords<5>) == 56 && sizeof(GuardedWords<7>) == 72 &&
+              sizeof(GuardedWords<4>) == 48);
 class RawArena {
     aurora::hosted::bytes::Region region;
     // This storage is never copied or inspected as an owner descriptor. Aurora
     // constructs and consumes it; the host only supplies region identity.
     std::uint64_t before = canary;
-    std::array<std::uint64_t, 12> record{};
+    std::array<std::uint64_t, 17> record{};
     std::uint64_t after = canary;
     bool active = true;
 
@@ -232,7 +237,7 @@ public:
                                                   1,
                                                   0,
                                                   static_cast<std::uint64_t>(stop)};
-        GuardedWords output;
+        GuardedWords<5> output;
         checked_hosted_parser_parse(data(), input.data(), output.value.data());
         output.check();
         guards();
@@ -240,9 +245,19 @@ public:
                 "reported arena count differs from real storage");
         return output.value;
     }
-    Words read(std::int64_t index) {
-        GuardedWords output;
+    NodeWords read(std::int64_t index) {
+        GuardedWords<7> output;
         checked_hosted_parser_read(data(), index, output.value.data());
+        output.check();
+        guards();
+        return output.value;
+    }
+    std::int64_t edges() {
+        return checked_hosted_parser_edges(data());
+    }
+    EdgeWords edge(std::int64_t index) {
+        GuardedWords<4> output;
+        checked_hosted_parser_edge(data(), index, output.value.data());
         output.check();
         guards();
         return output.value;
@@ -316,30 +331,31 @@ void rawGrowth() {
         for (std::int64_t i = 0; i < 199; ++i) {
             const auto node = arena.read(i);
             if (i == 0)
-                require(node == Words{wire(NodeKind::Literal), 0, -1, -1, 1}, "first literal ABI differs");
+                require(node == NodeWords{wire(NodeKind::Literal), 0, -1, -1, 1, 0, 0}, "first literal ABI differs");
             else if (i % 2 == 1)
-                require(node == Words{wire(NodeKind::Literal), i + 1, -1, -1, 1}, "literal ABI differs");
+                require(node == NodeWords{wire(NodeKind::Literal), i + 1, -1, -1, 1, i + 1, i + 1},
+                        "literal ABI differs");
             else
-                require(node == Words{wire(NodeKind::Binary), i - 1, i - 2, i - 1, i / 2 + 1},
+                require(node == NodeWords{wire(NodeKind::Binary), i - 1, i - 2, i - 1, i / 2 + 1, i - 1, i - 1},
                         "binary ABI/topology/depth differs");
         }
         const auto used = arena.metrics();
-        require(used.successful_allocations > 4 && used.peak_live_allocations == 2 && used.live_allocations == 2,
-                "parser did not grow its two independent owned stores");
+        require(used.successful_allocations > 4 && used.peak_live_allocations == 3 && used.live_allocations == 3,
+                "parser did not grow its node/frame stores while retaining the empty edge owner");
         successful = allocations.successful;
         arena.finish();
         require(allocations.released == successful, "success cleanup mismatch");
     }
-    for (std::size_t allowed = 0; allowed < 2; ++allowed) {
+    for (std::size_t allowed = 0; allowed < 3; ++allowed) {
         Allocations allocations;
         allocations.allowed = allowed;
         RawArena arena(allocations);
-        require(arena.parse("f(1);")[0] == wire(Status::AllocationFailure),
+        require(arena.parse("\"text\";")[0] == wire(Status::AllocationFailure),
                 "failed arena allocation silently fell back on unsupported syntax");
         arena.finish();
     }
     // Refuse every allocation in sequence, including frame and node growth.
-    // All partial graphs still leave their two owners releasable exactly once.
+    // All partial graphs still leave all three owners releasable exactly once.
     for (std::size_t allowed = 0; allowed < successful; ++allowed) {
         Allocations allocations;
         allocations.allowed = allowed;
@@ -348,7 +364,7 @@ void rawGrowth() {
         require(result[0] == static_cast<std::int64_t>(Status::AllocationFailure) && result[1] == -1,
                 "injected allocation/growth failure did not fail closed");
         if (result[2] > 0)
-            require(arena.read(0) == Words{wire(NodeKind::Literal), 0, -1, -1, 1},
+            require(arena.read(0) == NodeWords{wire(NodeKind::Literal), 0, -1, -1, 1, 0, 0},
                     "failed growth changed an already committed node");
         arena.finish();
         require(allocations.successful == allocations.released, "failure cleanup mismatch");
@@ -360,10 +376,10 @@ void rawGrowth() {
         arena.finish();
     }
     for (const auto &[sourceText, expected] :
-         std::array<std::pair<std::string, Words>, 4>{{{"name;", {wire(NodeKind::Name), 0, -1, -1, 1}},
-                                                       {"true;", {wire(NodeKind::Literal), 0, -1, -1, 1}},
-                                                       {"'x';", {wire(NodeKind::Literal), 0, -1, -1, 1}},
-                                                       {"-1;", {wire(NodeKind::Unary), 0, 0, -1, 2}}}}) {
+         std::array<std::pair<std::string, NodeWords>, 4>{{{"name;", {wire(NodeKind::Name), 0, -1, -1, 1, 0, 0}},
+                                                           {"true;", {wire(NodeKind::Literal), 0, -1, -1, 1, 0, 0}},
+                                                           {"'x';", {wire(NodeKind::Literal), 0, -1, -1, 1, 0, 0}},
+                                                           {"-1;", {wire(NodeKind::Unary), 0, 0, -1, 2, 0, 0}}}}) {
         Allocations allocations;
         RawArena arena(allocations);
         const auto result = arena.parse(sourceText);
@@ -383,7 +399,7 @@ void rawGrowth() {
 void rawFrameGrowth() {
     context = "real Aurora explicit-frame growth and failure cleanup";
     const auto source = std::string(127, '(') + "1" + std::string(127, ')') + ";";
-    const Words literal{wire(NodeKind::Literal), 127, -1, -1, 1};
+    const NodeWords literal{wire(NodeKind::Literal), 127, -1, -1, 1, 127, 127};
     std::size_t successful = 0;
     {
         Allocations allocations;
@@ -395,8 +411,8 @@ void rawFrameGrowth() {
         // One leaf needs only the first eight-node capacity. Payload above the
         // first eight-frame plus eight-node capacities therefore proves actual
         // explicit-frame growth, independently of the allocation count.
-        require(used.peak_used > 8 * 32 + 8 * 40 && used.successful_allocations > 4 &&
-                    used.peak_live_allocations == 2 && used.live_allocations == 2,
+        require(used.peak_used > 8 * 32 + 8 * 56 && used.successful_allocations > 4 &&
+                    used.peak_live_allocations == 3 && used.live_allocations == 3,
                 "nested parser did not grow its explicit frame owner");
         successful = allocations.successful;
         arena.finish();
@@ -414,6 +430,61 @@ void rawFrameGrowth() {
         arena.finish();
         require(allocations.successful == allocations.released, "frame-growth failure cleanup mismatch");
     }
+    ++cases;
+}
+void rawArguments() {
+    context = "real argument-edge growth and failure cleanup";
+    constexpr std::int64_t count = 257;
+    std::string source = "f(";
+    for (std::int64_t index = 0; index < count; ++index) {
+        if (index)
+            source += ',';
+        source += '1';
+    }
+    source += ");";
+    std::size_t successful = 0;
+    {
+        Allocations allocations;
+        RawArena arena(allocations);
+        const auto result = arena.parse(source);
+        require(result == Words{wire(Status::Success), count, count + 1, 2 * count + 2, 2 * count + 2},
+                "wide call did not return the complete graph/cursor");
+        require(arena.edges() == count &&
+                    arena.read(count) == NodeWords{wire(NodeKind::Call), 0, count - 1, count, 2, 0, 2 * count + 1},
+                "call ABI, arity or closing-token provenance differs");
+        for (std::int64_t index = 0; index < count; ++index)
+            require(arena.edge(index) == EdgeWords{index, index - 1, index + 1, 2},
+                    "reverse-linked argument ABI differs");
+        const auto metrics = arena.metrics();
+        require(metrics.successful_allocations > 10 && metrics.live_allocations == 3 &&
+                    metrics.peak_live_allocations == 3,
+                "wide call did not grow independent node and argument owners");
+        successful = allocations.successful;
+        arena.finish();
+    }
+    for (std::size_t allowed = 0; allowed < successful; ++allowed) {
+        Allocations allocations;
+        allocations.allowed = allowed;
+        RawArena arena(allocations);
+        const auto result = arena.parse(source);
+        require(result[0] == wire(Status::AllocationFailure) && result[1] == -1,
+                "injected argument allocation failure did not reject");
+        arena.finish();
+        require(allocations.successful == allocations.released, "partial argument graph leaked an owner");
+    }
+    for (const auto &[text, expected] :
+         std::array<std::pair<std::string, NodeWords>, 4>{{{"ns::f(1,2);", {wire(NodeKind::Call), 0, 1, 2, 2, 2, 7}},
+                                                           {"obj.m();", {wire(NodeKind::MethodCall), 2, 0, 1, 2, 2, 4}},
+                                                           {"a.b;", {wire(NodeKind::Member), 2, 0, -1, 2, 2, 2}},
+                                                           {"a[0];", {wire(NodeKind::Index), 1, 0, 1, 2, 1, 3}}}}) {
+        Allocations allocations;
+        RawArena arena(allocations);
+        const auto result = arena.parse(text);
+        require(result[0] == wire(Status::Success) && arena.read(result[1]) == expected,
+                "postfix generated-code node ABI differs");
+        arena.finish();
+    }
+    supported(source);
     ++cases;
 }
 } // namespace
@@ -446,8 +517,38 @@ int main() {
         supported("1 + 2)", Stop::CloseParenthesis);
         supported("target = 2;", Stop::Assignment);
         supported("1 + 2;", Stop::Assignment);
-        for (const auto &expression :
-             {"f(1, 2);", "name.member;", "name.at(1);", "one::two;", "a[1];", "\"text\";", "Box{.value=1};", "{1,2};"})
+        for (const auto &expression : {"f();",
+                                       "f(1, 2);",
+                                       "name.member;",
+                                       "name.at(1);",
+                                       "one::two;",
+                                       "a[1];",
+                                       "f(g(1), h(2, 3)) + object.at(index + 1);",
+                                       "Box(42);",
+                                       "move(value);",
+                                       "one // name trivia\n :: two(1, other.run()).field[2].at(3);",
+                                       "((a)).field;",
+                                       "(a + b)[(i)];",
+                                       "a[one::index(f(1))].method().field;",
+                                       "builtin::borrow_bytes(value);",
+                                       "one::array(1);",
+                                       "object.size_of();",
+                                       "ns::size_of(i64);",
+                                       "-object.at(1) + f(2);",
+                                       "fn;",
+                                       "__au_name;"})
+            supported(expression);
+        supported("a[1] = 2;", Stop::Assignment);
+        supported("f(a[1], b.member))", Stop::CloseParenthesis);
+        for (const auto &expression : {"\"text\";",
+                                       "Box{.value=1};",
+                                       "{1,2};",
+                                       "f(\"text\");",
+                                       "f(Box{.value=1});",
+                                       "size_of(i64);",
+                                       "type_id(array<u8,2>);",
+                                       "field_count(Box);",
+                                       "f(size_of(i64));"})
             unsupported(expression);
         compareProgram("module templates; auto f()->i64{return f<i64>(1);}");
         compareProgram("module templates; auto f()->i64{return x<y<z>>(a);}");
@@ -481,8 +582,48 @@ int main() {
         compareProgram(
             "module depth; auto f()->i64{return " + std::string(128, '(') + "1" + std::string(128, ')') + ";}", false);
         compareProgram("module depth; auto f()->i64{return " + std::string(128, '-') + "1;}", false);
+        for (const auto &expression : {"f(;",
+                                       "f(1;",
+                                       "f(1,);",
+                                       "f(,);",
+                                       "f(1 2);",
+                                       "a.;",
+                                       "a..b;",
+                                       "a.true;",
+                                       "a.array;",
+                                       "a.builtin;",
+                                       "a.__au_private;",
+                                       "name::;",
+                                       "name::true;",
+                                       "name::builtin;",
+                                       "name::__au_x;",
+                                       "a[;",
+                                       "a[];",
+                                       "a[1;",
+                                       "a[1);",
+                                       "a[1,2];",
+                                       "f(1)(2);"})
+            compareProgram("module errors; auto f()->i64{return " + std::string(expression) + "}", false);
+        std::string members = "a", indices = "a", calls = "1";
+        for (int i = 0; i < 127; ++i) {
+            members += ".field";
+            indices += "[0]";
+            calls = "f(" + calls + ")";
+        }
+        supported(members + ";");
+        supported(indices + ";");
+        supported(calls + ";");
+        compareProgram("module depth; auto f()->i64{return " + members + ".field;}", false);
+        compareProgram("module depth; auto f()->i64{return " + indices + "[0];}", false);
+        compareProgram("module depth; auto f()->i64{return f(" + calls + ");}", false);
         rawCase("1;", Status::Success);
-        rawCase("f(1);", Status::Unsupported);
+        rawCase("\"text\";", Status::Unsupported);
+        rawCase("f(1);", Status::Success);
+        rawCase("a[1;", Status::ExpectedIndexClose);
+        rawCase("a.;", Status::ExpectedIdentifier);
+        rawCase("a.true;", Status::ReservedIdentifier);
+        rawCase("a.array;", Status::ReservedBuiltin);
+        rawCase("a.__au_private;", Status::ReservedPrefix);
         rawCase("1+;", Status::ExpectedExpression);
         rawCase("(1;", Status::ExpectedClose);
         rawCase("1 2;", Status::ExpectedEnd);
@@ -497,8 +638,9 @@ int main() {
         abiControls();
         rawGrowth();
         rawFrameGrowth();
+        rawArguments();
         std::cout << "PASS hosted parser " << cases
-                  << " differential/ABI cases, 199-node/frame growth and allocation cleanup\n";
+                  << " differential/ABI cases, 199-node/frame and 257-argument growth with allocation cleanup\n";
     } catch (const std::exception &error) {
         std::cerr << "FAIL " << error.what() << '\n';
         return 1;

@@ -8,7 +8,11 @@ enum class NodeKind : std::int64_t {
     Literal,
     Name,
     Unary,
-    Binary
+    Binary,
+    Call,
+    Member,
+    MethodCall,
+    Index
 };
 enum class Status : std::int64_t {
     Success,
@@ -19,6 +23,11 @@ enum class Status : std::int64_t {
     NestingLimit,
     DepthLimit,
     AllocationFailure,
+    ExpectedIndexClose,
+    ExpectedIdentifier,
+    ReservedIdentifier,
+    ReservedBuiltin,
+    ReservedPrefix,
     Invalid
 };
 enum class Stop : std::int64_t {

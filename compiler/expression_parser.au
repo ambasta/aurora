@@ -13,6 +13,11 @@ export namespace compiler_parser {
         nesting_limit,
         depth_limit,
         allocation_failure,
+        expected_index_close,
+        expected_identifier,
+        reserved_identifier,
+        reserved_builtin,
+        reserved_prefix,
         invalid
     };
     enum class Stop {
@@ -175,42 +180,103 @@ namespace compiler_parser {
         }
         return single(source, token, ';') || (stop == Stop::assignment && single(source, token, '='));
     }
-    // This pass only selects the migration boundary. It reuses the same lexer
-    // and never changes the parser's cursor or allocates an AST for a prefix.
+    auto pair(builtin::span<const u8> source, ParseToken token, u8 value) -> bool {
+        return token.last() - token.first() == 2 && source.at(token.first()) == value && source.at(token.first() + 1)
+            == value;
+    }
+    auto word_matches(builtin::span<const u8> source, ParseToken token, builtin::span<const u8> words, i64 begin,
+        i64 end) -> bool {
+        if (token.last() - token.first() != end - begin) {
+            return false;
+        }
+        i64 index = 0;
+        while (index < end - begin) {
+            if (source.at(token.first() + index) != words.at(begin + index)) {
+                return false;
+            }
+            index = index + 1;
+        }
+        return true;
+    }
+    auto word_list_matches(builtin::span<const u8> source, ParseToken token, builtin::span<const u8> words) -> bool {
+        i64 begin = 0;
+        while (begin < words.size()) {
+            i64 end = begin;
+            while (words.at(end) != ';') {
+                end = end + 1;
+            }
+            if (word_matches(source, token, words, begin, end)) {
+                return true;
+            }
+            begin = end + 1;
+        }
+        return false;
+    }
+    auto identifier_status(builtin::span<const u8> source, ParseToken token, bool allow_array) -> ParseStatus {
+        if (token.kind() != compiler_lexer::Event::token || !compiler_lexer::letter(source.at(token.first()))) {
+            return ParseStatus::expected_identifier;
+        }
+        const array<u8, 14> storage_names = "builtin;array;";
+        const builtin::span<const u8> storage = borrow_bytes(storage_names);
+        if (word_matches(source, token, storage, 0, 7) || (!allow_array && word_matches(source, token, storage, 8,
+            13))) {
+            return ParseStatus::reserved_builtin;
+        }
+        const i64 first = token.first();
+        if (token.last() - first >= 5 && source.at(first) == '_' && source.at(first + 1) == '_' && source.at(first + 2)
+            == 'a' && source.at(first + 3) == 'u' && source.at(first + 4) == '_') {
+            return ParseStatus::reserved_prefix;
+        }
+        const array<u8,
+            85> flow_names = "fn;module;let;mut;if;else;return;true;false;static_assert;class;while;break;continue;";
+        const builtin::span<const u8> flow_words = borrow_bytes(flow_names);
+        const array<u8,
+            71> declaration_names = "auto;const;public;private;protected;unsafe;extern;struct;export;import;";
+        const builtin::span<const u8> declaration_words = borrow_bytes(declaration_names);
+        const array<u8, 36> scope_names = "namespace;this;template;Scalar;enum;";
+        const builtin::span<const u8> scope_words = borrow_bytes(scope_names);
+        if (word_list_matches(source, token, flow_words) || word_list_matches(source, token, declaration_words)
+            || word_list_matches(source, token, scope_words)) {
+            return ParseStatus::reserved_identifier;
+        }
+        return ParseStatus::success;
+    }
+    auto type_query(builtin::span<const u8> source, ParseToken token) -> bool {
+        const array<u8, 28> names = "size_of;type_id;field_count;";
+        const builtin::span<const u8> words = borrow_bytes(names);
+        return word_list_matches(source, token, words);
+    }
+    // Select the whole migration boundary before allocating nodes or consuming
+    // the caller's cursor. Host template lookahead remains non-consuming.
     auto supported(builtin::span<const u8> source, ParseToken begin, Stop stop) -> bool {
         ParseToken token = begin;
         i64 groups = 0;
-        bool callable = false;
+        bool qualified = false;
         while (token.kind() == compiler_lexer::Event::token) {
             if (groups == 0 && stopped(source, token, stop)) {
                 return true;
             }
             const u8 first = source.at(token.first());
-            if (first == '"' || first == '[' || first == '{' || first == '.' || (first == ':' && token.last()
-                - token.first() == 2)) {
+            if (first == '"' || first == '{') {
                 return false;
             }
-            if (single(source, token, '(')) {
-                if (callable) {
-                    return false;
-                }
-                groups = groups + 1;
-                callable = false;
-            } else {
-                if (single(source, token, ')')) {
-                    if (groups == 0) {
-                        return true;
-                    }
-                    groups = groups - 1;
-                    callable = false;
-                } else {
-                    if (single(source, token, ';') || single(source, token, '}')) {
-                        return true;
-                    }
-                    callable = compiler_lexer::letter(first) && !boolean_literal(source, token);
-                }
-            }
             const ParseToken next_token = advance(source, token);
+            if (!qualified && type_query(source, token) && single(source, next_token, '(')) {
+                return false;
+            }
+            if (single(source, token, '(') || single(source, token, '[')) {
+                groups = groups + 1;
+            }
+            if (single(source, token, ')') || single(source, token, ']')) {
+                if (groups == 0) {
+                    return true;
+                }
+                groups = groups - 1;
+            }
+            if (single(source, token, ';') || single(source, token, '}')) {
+                return true;
+            }
+            qualified = single(source, token, '.') || pair(source, token, ':');
             token.update(next_token);
         }
         return true;
@@ -232,7 +298,7 @@ export namespace compiler_parser {
         Stop stop) -> ParseResult {
         ParseToken token = read_token(source, cursor, 0);
         if ((stop != Stop::semicolon && stop != Stop::close_parenthesis && stop != Stop::assignment) || arena.size()
-            != 0 || arena.stack_size() != 0) {
+            != 0 || arena.stack_size() != 0 || arena.arguments() != 0) {
             return ParseResult(ParseStatus::invalid, -1, arena.size(), 0, token.first());
         }
         if (!arena.ok()) {
@@ -253,14 +319,18 @@ export namespace compiler_parser {
                 return ParseResult(ParseStatus::invalid, -1, arena.size(), token.index(), token.first());
             }
             const ParseFrame frame = arena.frame();
+            bool handled = false;
             if (frame.state() == FrameState::expression_start) {
+                handled = true;
                 const ParseFrame next = ParseFrame(FrameState::expression_left, frame.min(), -1, -1);
                 const ParseFrame child = ParseFrame(FrameState::primary_start, 0, -1, -1);
                 if (!arena.replace(next) || !arena.push(child)) {
                     const ParseResult error = failure(arena, token);
                     return error;
                 }
-            } else {
+            }
+            if (frame.state() == FrameState::expression_left || frame.state() == FrameState::expression_right) {
+                handled = true;
                 if (frame.state() == FrameState::expression_right) {
                     value = arena.append(NodeKind::binary, frame.token(), frame.lhs(), value);
                     if (value < 0) {
@@ -268,39 +338,230 @@ export namespace compiler_parser {
                         return error;
                     }
                 }
-                if (frame.state() == FrameState::expression_left || frame.state() == FrameState::expression_right) {
-                    const i64 priority = precedence(source, token);
-                    if (priority >= frame.min()) {
-                        const ParseFrame next = ParseFrame(FrameState::expression_right, frame.min(), value,
-                            token.index());
-                        const ParseFrame child = ParseFrame(FrameState::expression_start, priority + 1, -1, -1);
+                const i64 priority = precedence(source, token);
+                if (priority >= frame.min()) {
+                    const ParseFrame next = ParseFrame(FrameState::expression_right, frame.min(), value, token.index());
+                    const ParseFrame child = ParseFrame(FrameState::expression_start, priority + 1, -1, -1);
+                    const ParseToken next_token = advance(source, token);
+                    token.update(next_token);
+                    const AstNode left = arena.at(value);
+                    if (left.depth() >= 128) {
+                        return ParseResult(ParseStatus::depth_limit, -1, arena.size(), token.index(), token.first());
+                    }
+                    if (!arena.replace(next) || !arena.push(child)) {
+                        const ParseResult error = failure(arena, token);
+                        return error;
+                    }
+                } else {
+                    arena.pop();
+                }
+            }
+            if (frame.state() == FrameState::primary_group) {
+                handled = true;
+                if (!single(source, token, ')')) {
+                    return ParseResult(ParseStatus::expected_close, -1, arena.size(), token.index(), token.first());
+                }
+                const ParseToken next_token = advance(source, token);
+                token.update(next_token);
+                const ParseFrame next = ParseFrame(FrameState::primary_postfix, 0, value, -1);
+                if (!arena.replace(next)) {
+                    const ParseResult error = failure(arena, token);
+                    return error;
+                }
+            }
+            if (frame.state() == FrameState::primary_unary) {
+                handled = true;
+                value = arena.append(NodeKind::unary, frame.token(), value, -1);
+                if (value < 0) {
+                    const ParseResult error = failure(arena, token);
+                    return error;
+                }
+                nesting = nesting - 1;
+                arena.pop();
+            }
+            if (frame.state() == FrameState::call_arguments || frame.state() == FrameState::method_arguments) {
+                handled = true;
+                const i64 head = arena.append_argument(frame.lhs(), value);
+                if (head < 0) {
+                    const ParseResult error = failure(arena, token);
+                    return error;
+                }
+                if (single(source, token, ',')) {
+                    const ParseToken next_token = advance(source, token);
+                    token.update(next_token);
+                    const ParseFrame next = ParseFrame(frame.state(), frame.min(), head, frame.token());
+                    const ParseFrame child = ParseFrame(FrameState::expression_start, 1, -1, -1);
+                    if (!arena.replace(next) || !arena.push(child)) {
+                        const ParseResult error = failure(arena, token);
+                        return error;
+                    }
+                } else {
+                    if (!single(source, token, ')')) {
+                        return ParseResult(ParseStatus::expected_close, -1, arena.size(), token.index(), token.first());
+                    }
+                    NodeKind kind = NodeKind::call;
+                    if (frame.state() == FrameState::method_arguments) {
+                        kind = NodeKind::method_call;
+                    }
+                    value = arena.append_call(kind, frame.token(), frame.min(), token.index(), head);
+                    if (value < 0) {
+                        const ParseResult error = failure(arena, token);
+                        return error;
+                    }
+                    const ParseToken next_token = advance(source, token);
+                    token.update(next_token);
+                    const ParseFrame next = ParseFrame(FrameState::primary_postfix, 0, value, -1);
+                    if (!arena.replace(next)) {
+                        const ParseResult error = failure(arena, token);
+                        return error;
+                    }
+                }
+            }
+            if (frame.state() == FrameState::index_expression) {
+                handled = true;
+                const AstNode index = arena.at(value);
+                if (index.depth() >= 128) {
+                    return ParseResult(ParseStatus::depth_limit, -1, arena.size(), token.index(), token.first());
+                }
+                if (!single(source, token, ']')) {
+                    return ParseResult(ParseStatus::expected_index_close, -1, arena.size(), token.index(),
+                        token.first());
+                }
+                value = arena.append_index(frame.token(), token.index(), frame.lhs(), value);
+                if (value < 0) {
+                    const ParseResult error = failure(arena, token);
+                    return error;
+                }
+                const ParseToken next_token = advance(source, token);
+                token.update(next_token);
+                const ParseFrame next = ParseFrame(FrameState::primary_postfix, 0, value, -1);
+                if (!arena.replace(next)) {
+                    const ParseResult error = failure(arena, token);
+                    return error;
+                }
+            }
+            if (frame.state() == FrameState::primary_postfix) {
+                handled = true;
+                value = frame.lhs();
+                if (single(source, token, '.')) {
+                    const ParseToken member_token = advance(source, token);
+                    token.update(member_token);
+                    const ParseStatus status = identifier_status(source, token, false);
+                    if (status != ParseStatus::success) {
+                        return ParseResult(status, -1, arena.size(), token.index(), token.first());
+                    }
+                    const i64 member = token.index();
+                    const ParseToken next_token = advance(source, token);
+                    token.update(next_token);
+                    const AstNode receiver = arena.at(value);
+                    if (receiver.depth() >= 128) {
+                        return ParseResult(ParseStatus::depth_limit, -1, arena.size(), token.index(), token.first());
+                    }
+                    if (single(source, token, '(')) {
+                        const i64 head = arena.append_argument(-1, value);
+                        if (head < 0) {
+                            const ParseResult error = failure(arena, token);
+                            return error;
+                        }
+                        const ParseToken argument_token = advance(source, token);
+                        token.update(argument_token);
+                        if (single(source, token, ')')) {
+                            value = arena.append_call(NodeKind::method_call, member, member, token.index(), head);
+                            if (value < 0) {
+                                const ParseResult error = failure(arena, token);
+                                return error;
+                            }
+                            const ParseToken after_call = advance(source, token);
+                            token.update(after_call);
+                            const ParseFrame next = ParseFrame(FrameState::primary_postfix, 0, value, -1);
+                            if (!arena.replace(next)) {
+                                const ParseResult error = failure(arena, token);
+                                return error;
+                            }
+                        } else {
+                            const ParseFrame next = ParseFrame(FrameState::method_arguments, member, head, member);
+                            const ParseFrame child = ParseFrame(FrameState::expression_start, 1, -1, -1);
+                            if (!arena.replace(next) || !arena.push(child)) {
+                                const ParseResult error = failure(arena, token);
+                                return error;
+                            }
+                        }
+                    } else {
+                        value = arena.append(NodeKind::member, member, value, -1);
+                        if (value < 0) {
+                            const ParseResult error = failure(arena, token);
+                            return error;
+                        }
+                        const ParseFrame next = ParseFrame(FrameState::primary_postfix, 0, value, -1);
+                        if (!arena.replace(next)) {
+                            const ParseResult error = failure(arena, token);
+                            return error;
+                        }
+                    }
+                } else {
+                    if (single(source, token, '[')) {
+                        const i64 opening = token.index();
                         const ParseToken next_token = advance(source, token);
                         token.update(next_token);
-                        const AstNode left = arena.at(value);
-                        if (left.depth() >= 128) {
+                        const AstNode base = arena.at(value);
+                        if (base.depth() >= 128) {
                             return ParseResult(ParseStatus::depth_limit, -1, arena.size(), token.index(),
                                 token.first());
                         }
+                        const ParseFrame next = ParseFrame(FrameState::index_expression, 0, value, opening);
+                        const ParseFrame child = ParseFrame(FrameState::expression_start, 1, -1, -1);
                         if (!arena.replace(next) || !arena.push(child)) {
                             const ParseResult error = failure(arena, token);
                             return error;
                         }
                     } else {
-                        arena.pop();
-                    }
-                } else {
-                    if (frame.state() == FrameState::primary_group) {
-                        if (!single(source, token, ')')) {
-                            return ParseResult(ParseStatus::expected_close, -1, arena.size(), token.index(),
-                                token.first());
-                        }
-                        const ParseToken next_token = advance(source, token);
-                        token.update(next_token);
                         nesting = nesting - 1;
                         arena.pop();
+                    }
+                }
+            }
+            if (frame.state() == FrameState::primary_start) {
+                handled = true;
+                if (nesting >= 128) {
+                    return ParseResult(ParseStatus::nesting_limit, -1, arena.size(), token.index(), token.first());
+                }
+                nesting = nesting + 1;
+                const ParseToken original = token;
+                const ParseToken next_token = advance(source, token);
+                token.update(next_token);
+                if (single(source, original, '(')) {
+                    const ParseFrame next = ParseFrame(FrameState::primary_group, 0, -1, -1);
+                    const ParseFrame child = ParseFrame(FrameState::expression_start, 1, -1, -1);
+                    if (!arena.replace(next) || !arena.push(child)) {
+                        const ParseResult error = failure(arena, token);
+                        return error;
+                    }
+                } else {
+                    if (single(source, original, '-') || single(source, original, '!') || single(source, original,
+                        '~')) {
+                        const ParseFrame next = ParseFrame(FrameState::primary_unary, 0, -1, original.index());
+                        const ParseFrame child = ParseFrame(FrameState::primary_start, 0, -1, -1);
+                        if (!arena.replace(next) || !arena.push(child)) {
+                            const ParseResult error = failure(arena, token);
+                            return error;
+                        }
                     } else {
-                        if (frame.state() == FrameState::primary_unary) {
-                            value = arena.append(NodeKind::unary, frame.token(), value, -1);
+                        NodeKind kind = NodeKind::invalid;
+                        if (original.kind() == compiler_lexer::Event::token) {
+                            const u8 first = source.at(original.first());
+                            if (compiler_lexer::letter(first)) {
+                                kind = NodeKind::name;
+                            }
+                            if (compiler_lexer::digit(first) || first == '\'' || boolean_literal(source, original)) {
+                                kind = NodeKind::literal;
+                            }
+                        }
+                        if (kind == NodeKind::invalid) {
+                            return ParseResult(ParseStatus::expected_expression, -1, arena.size(), token.index(),
+                                token.first());
+                        }
+                        if (kind == NodeKind::literal) {
+                            value = arena.append(kind, original.index(), -1, -1);
                             if (value < 0) {
                                 const ParseResult error = failure(arena, token);
                                 return error;
@@ -308,59 +569,62 @@ export namespace compiler_parser {
                             nesting = nesting - 1;
                             arena.pop();
                         } else {
-                            if (nesting >= 128) {
-                                return ParseResult(ParseStatus::nesting_limit, -1, arena.size(), token.index(),
-                                    token.first());
-                            }
-                            nesting = nesting + 1;
-                            const ParseToken original = token;
-                            const ParseToken next_token = advance(source, token);
-                            token.update(next_token);
-                            if (single(source, original, '(')) {
-                                const ParseFrame next = ParseFrame(FrameState::primary_group, 0, -1, -1);
-                                const ParseFrame child = ParseFrame(FrameState::expression_start, 1, -1, -1);
-                                if (!arena.replace(next) || !arena.push(child)) {
-                                    const ParseResult error = failure(arena, token);
-                                    return error;
+                            i64 last = original.index();
+                            while (pair(source, token, ':')) {
+                                const ParseToken component = advance(source, token);
+                                token.update(component);
+                                const ParseStatus status = identifier_status(source, token, true);
+                                if (status != ParseStatus::success) {
+                                    return ParseResult(status, -1, arena.size(), token.index(), token.first());
                                 }
-                            } else {
-                                if (single(source, original, '-') || single(source, original, '!') || single(source,
-                                    original, '~')) {
-                                    const ParseFrame next = ParseFrame(FrameState::primary_unary, 0, -1,
-                                        original.index());
-                                    const ParseFrame child = ParseFrame(FrameState::primary_start, 0, -1, -1);
-                                    if (!arena.replace(next) || !arena.push(child)) {
-                                        const ParseResult error = failure(arena, token);
-                                        return error;
-                                    }
-                                } else {
-                                    NodeKind kind = NodeKind::invalid;
-                                    if (original.kind() == compiler_lexer::Event::token) {
-                                        const u8 first = source.at(original.first());
-                                        if (compiler_lexer::letter(first)) {
-                                            kind = NodeKind::name;
-                                        }
-                                        if (compiler_lexer::digit(first) || first == '\'' || boolean_literal(source,
-                                            original)) {
-                                            kind = NodeKind::literal;
-                                        }
-                                    }
-                                    if (kind == NodeKind::invalid) {
-                                        return ParseResult(ParseStatus::expected_expression, -1, arena.size(),
-                                            token.index(), token.first());
-                                    }
-                                    value = arena.append(kind, original.index(), -1, -1);
+                                last = token.index();
+                                const ParseToken after_name = advance(source, token);
+                                token.update(after_name);
+                            }
+                            if (single(source, token, '(')) {
+                                const ParseToken argument_token = advance(source, token);
+                                token.update(argument_token);
+                                if (single(source, token, ')')) {
+                                    value = arena.append_call(NodeKind::call, original.index(), last, token.index(),
+                                        -1);
                                     if (value < 0) {
                                         const ParseResult error = failure(arena, token);
                                         return error;
                                     }
-                                    nesting = nesting - 1;
-                                    arena.pop();
+                                    const ParseToken after_call = advance(source, token);
+                                    token.update(after_call);
+                                    const ParseFrame next = ParseFrame(FrameState::primary_postfix, 0, value, -1);
+                                    if (!arena.replace(next)) {
+                                        const ParseResult error = failure(arena, token);
+                                        return error;
+                                    }
+                                } else {
+                                    const ParseFrame next = ParseFrame(FrameState::call_arguments, last, -1,
+                                        original.index());
+                                    const ParseFrame child = ParseFrame(FrameState::expression_start, 1, -1, -1);
+                                    if (!arena.replace(next) || !arena.push(child)) {
+                                        const ParseResult error = failure(arena, token);
+                                        return error;
+                                    }
+                                }
+                            } else {
+                                value = arena.append_name(original.index(), last);
+                                if (value < 0) {
+                                    const ParseResult error = failure(arena, token);
+                                    return error;
+                                }
+                                const ParseFrame next = ParseFrame(FrameState::primary_postfix, 0, value, -1);
+                                if (!arena.replace(next)) {
+                                    const ParseResult error = failure(arena, token);
+                                    return error;
                                 }
                             }
                         }
                     }
                 }
+            }
+            if (!handled) {
+                return ParseResult(ParseStatus::invalid, -1, arena.size(), token.index(), token.first());
             }
         }
         if (!stopped(source, token, stop)) {
@@ -378,6 +642,13 @@ export namespace compiler_parser {
     auto read_node(const AstArena& arena, i64 index) -> AstNode {
         const AstNode node = arena.at(index);
         return node;
+    }
+    auto edge_count(const AstArena& arena) -> i64 {
+        return arena.arguments();
+    }
+    auto read_edge(const AstArena& arena, i64 index) -> ChildEdge {
+        const ChildEdge edge = arena.edge(index);
+        return edge;
     }
     auto release(builtin::ByteRegion region, AstArena arena) -> i64 {
         return 0;

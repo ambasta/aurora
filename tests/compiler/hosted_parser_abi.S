@@ -116,5 +116,7 @@ checked_entry create
 checked_entry parse
 checked_entry count
 checked_entry read
+checked_entry edges
+checked_entry edge
 checked_entry release
 .section .note.GNU-stack,"",@progbits

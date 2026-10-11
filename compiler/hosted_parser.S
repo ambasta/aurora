@@ -38,6 +38,25 @@ aurora_hosted_parser_read:
     jmp __au_v_m3_6aurora8compiler17expression_parser_n1_15compiler_parser_d9read_node
 .size aurora_hosted_parser_read, .-aurora_hosted_parser_read
 
+# Reverse-linked argument edges are copied through the same private ABI.
+.globl aurora_hosted_parser_edges
+.hidden aurora_hosted_parser_edges
+.type aurora_hosted_parser_edges, @function
+aurora_hosted_parser_edges:
+    movq %rdi, %r10
+    jmp __au_v_m3_6aurora8compiler17expression_parser_n1_15compiler_parser_d10edge_count
+.size aurora_hosted_parser_edges, .-aurora_hosted_parser_edges
+
+.globl aurora_hosted_parser_edge
+.hidden aurora_hosted_parser_edge
+.type aurora_hosted_parser_edge, @function
+aurora_hosted_parser_edge:
+    movq %rdi, %r10
+    movq %rsi, %rdi
+    movq %rdx, %r11
+    jmp __au_v_m3_6aurora8compiler17expression_parser_n1_15compiler_parser_d9read_edge
+.size aurora_hosted_parser_edge, .-aurora_hosted_parser_edge
+
 .globl aurora_hosted_parser_release
 .hidden aurora_hosted_parser_release
 .type aurora_hosted_parser_release, @function
