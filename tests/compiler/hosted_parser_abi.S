@@ -118,5 +118,7 @@ checked_entry count
 checked_entry read
 checked_entry edges
 checked_entry edge
+checked_entry types
+checked_entry type
 checked_entry release
 .section .note.GNU-stack,"",@progbits

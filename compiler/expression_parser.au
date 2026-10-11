@@ -22,6 +22,28 @@ export namespace compiler_parser {
         expected_dot,
         expected_equal,
         expected_brace_open,
+        expected_angle_open,
+        expected_angle_close,
+        expected_scope,
+        expected_comma,
+        expected_const,
+        expected_u8,
+        expected_i64,
+        expected_array,
+        reserved_type,
+        expected_type,
+        type_nesting_limit,
+        template_nesting_limit,
+        call_template_nesting_limit,
+        template_context,
+        template_arity,
+        template_argument,
+        capacity_argument,
+        nested_dependent,
+        owned_element,
+        array_element,
+        array_length,
+        class_array_length,
         invalid
     };
     enum class Stop {
@@ -29,6 +51,42 @@ export namespace compiler_parser {
         close_parenthesis,
         assignment,
         constructor_braces
+    };
+    // Source-backed syntactic parameters, captured by declaration parsing.
+    // These names carry no resolved nominal identity or visibility authority.
+    class TypeContext {
+        i64 first_begin;
+        i64 first_end;
+        i64 second_begin;
+        i64 second_end;
+        i64 capacity_begin;
+        i64 capacity_end;
+        i64 template_mode;
+    public:
+        TypeContext() : first_begin(0), first_end(0), second_begin(0), second_end(0), capacity_begin(0),
+            capacity_end(0), template_mode(0) {
+        }
+        auto begin(i64 index) const -> i64 {
+            if (index == 0) {
+                return first_begin;
+            }
+            if (index == 1) {
+                return second_begin;
+            }
+            return capacity_begin;
+        }
+        auto end(i64 index) const -> i64 {
+            if (index == 0) {
+                return first_end;
+            }
+            if (index == 1) {
+                return second_end;
+            }
+            return capacity_end;
+        }
+        auto mode() const -> i64 {
+            return template_mode;
+        }
     };
     class ParseResult {
         ParseStatus result;
@@ -66,9 +124,10 @@ namespace compiler_parser {
         i64 line;
         i64 line_start;
         i64 ordinal;
+        i64 token_half;
     public:
         ParseToken(compiler_lexer::Event kind, i64 first, i64 last, i64 row, i64 start, i64 index) : event(kind),
-            begin(first), end(last), line(row), line_start(start), ordinal(index) {
+            begin(first), end(last), line(row), line_start(start), ordinal(index), token_half(0) {
         }
         auto update(ParseToken next) -> i64 {
             event = next.kind();
@@ -77,6 +136,7 @@ namespace compiler_parser {
             line = next.row();
             line_start = next.start();
             ordinal = next.index();
+            token_half = next.half();
             return 0;
         }
         auto kind() const -> compiler_lexer::Event {
@@ -96,6 +156,38 @@ namespace compiler_parser {
         }
         auto index() const -> i64 {
             return ordinal;
+        }
+        auto half() const -> i64 {
+            return token_half;
+        }
+        auto split() -> i64 {
+            begin = begin + 1;
+            token_half = 1;
+            return 0;
+        }
+    };
+    class TypeResult {
+        ParseStatus result;
+        i64 root_type;
+        ParseToken next_token;
+    public:
+        TypeResult(ParseStatus status, i64 root, ParseToken next) : result(status), root_type(root), next_token(next) {
+        }
+        auto status() const -> ParseStatus {
+            return result;
+        }
+        auto root() const -> i64 {
+            return root_type;
+        }
+        auto token() const -> ParseToken {
+            // Rebuild the copied field through its scalar accessors, retaining a split closer.
+            const i64 half = next_token.half();
+            ParseToken next = ParseToken(next_token.kind(), next_token.first() - half, next_token.last(),
+                next_token.row(), next_token.start(), next_token.index());
+            if (half == 1) {
+                next.split();
+            }
+            return next;
         }
     };
     auto read_token(builtin::span<const u8> source, compiler_lexer::Cursor cursor, i64 ordinal) -> ParseToken {
@@ -252,39 +344,656 @@ namespace compiler_parser {
         const builtin::span<const u8> words = borrow_bytes(names);
         return word_list_matches(source, token, words);
     }
-    // Select the whole migration boundary before allocating nodes or consuming
-    // the caller's cursor. Host template lookahead remains non-consuming.
-    auto supported(builtin::span<const u8> source, ParseToken begin, Stop stop) -> bool {
-        ParseToken token = begin;
-        i64 groups = 0;
-        bool qualified = false;
-        while (token.kind() == compiler_lexer::Event::token) {
-            if (groups == 0 && stopped(source, token, stop)) {
-                return true;
-            }
-            const ParseToken next_token = advance(source, token);
-            if (!qualified && type_query(source, token) && single(source, next_token, '(')) {
-                return false;
-            }
-            if (single(source, token, '(') || single(source, token, '[') || single(source, token, '{')) {
-                groups = groups + 1;
-            }
-            if (single(source, token, ')') || single(source, token, ']') || single(source, token, '}')) {
-                if (groups == 0) {
-                    return true;
-                }
-                groups = groups - 1;
-                if (groups == 0 && stop == Stop::constructor_braces && single(source, token, '}')) {
-                    return true;
-                }
-            }
-            if (single(source, token, ';')) {
-                return true;
-            }
-            qualified = single(source, token, '.') || pair(source, token, ':');
-            token.update(next_token);
+    auto reserved_type_name(builtin::span<const u8> source, ParseToken token) -> bool {
+        const array<u8, 49> names0 = "fn;let;mut;auto;const;class;unsafe;struct;extern;";
+        const builtin::span<const u8> words0 = borrow_bytes(names0);
+        const array<u8, 43> names1 = "int;void;char;float;double;new;delete;enum;";
+        const builtin::span<const u8> words1 = borrow_bytes(names1);
+        return word_list_matches(source, token, words0) || word_list_matches(source, token, words1);
+    }
+    auto builtin_type_name(builtin::span<const u8> source, ParseToken token) -> bool {
+        const array<u8, 66> names0 = "IommuEventSession;IommuEventSample;EventPollResult;EventAckResult;";
+        const builtin::span<const u8> words0 = borrow_bytes(names0);
+        const array<u8, 72> names1 = "EventIntakeCompletion;DisplaySession;DisplayPutResult;DisplayCompletion;";
+        const builtin::span<const u8> words1 = borrow_bytes(names1);
+        const array<u8, 64> names2 = "ConsoleSession;ConsoleSample;ConsolePutResult;ConsoleCompletion;";
+        const builtin::span<const u8> words2 = borrow_bytes(names2);
+        const array<u8, 22> names3 = "ByteRegion;OwnedBytes;";
+        const builtin::span<const u8> words3 = borrow_bytes(names3);
+        return word_list_matches(source, token, words0) || word_list_matches(source, token, words1)
+            || word_list_matches(source, token, words2) || word_list_matches(source, token, words3);
+    }
+    enum class TypeWord {
+        invalid,
+        i64_type,
+        u64_type,
+        u8_type,
+        bool_type,
+        array_type,
+        builtin_type,
+        span_type,
+        owned_values,
+        own_type,
+        ref_type,
+        mutref_type,
+        const_type
+    };
+    auto type_word(builtin::span<const u8> source, ParseToken token) -> TypeWord {
+        const array<u8, 68> names = "i64;u64;u8;bool;array;builtin;span;OwnedValues;own;ref;mutref;const;";
+        const builtin::span<const u8> words = borrow_bytes(names);
+        if (word_matches(source, token, words, 0, 3)) {
+            return TypeWord::i64_type;
         }
-        return true;
+        if (word_matches(source, token, words, 4, 7)) {
+            return TypeWord::u64_type;
+        }
+        if (word_matches(source, token, words, 8, 10)) {
+            return TypeWord::u8_type;
+        }
+        if (word_matches(source, token, words, 11, 15)) {
+            return TypeWord::bool_type;
+        }
+        if (word_matches(source, token, words, 16, 21)) {
+            return TypeWord::array_type;
+        }
+        if (word_matches(source, token, words, 22, 29)) {
+            return TypeWord::builtin_type;
+        }
+        if (word_matches(source, token, words, 30, 34)) {
+            return TypeWord::span_type;
+        }
+        if (word_matches(source, token, words, 35, 46)) {
+            return TypeWord::owned_values;
+        }
+        if (word_matches(source, token, words, 47, 50)) {
+            return TypeWord::own_type;
+        }
+        if (word_matches(source, token, words, 51, 54)) {
+            return TypeWord::ref_type;
+        }
+        if (word_matches(source, token, words, 55, 61)) {
+            return TypeWord::mutref_type;
+        }
+        if (word_matches(source, token, words, 62, 67)) {
+            return TypeWord::const_type;
+        }
+        return TypeWord::invalid;
+    }
+    auto parameter(builtin::span<const u8> source, ParseToken token, TypeContext context, bool capacity) -> bool {
+        i64 begin = 0;
+        i64 end = 2;
+        if (capacity) {
+            begin = 2;
+            end = 3;
+        }
+        while (begin < end) {
+            if (context.end(begin) > context.begin(begin) && word_matches(source, token, source, context.begin(begin),
+                context.end(begin))) {
+                return true;
+            }
+            begin = begin + 1;
+        }
+        return false;
+    }
+    auto valid_context(builtin::span<const u8> source, TypeContext context) -> bool {
+        if (context.mode() < 0 || context.mode() > 2) {
+            return false;
+        }
+        i64 index = 0;
+        while (index < 3) {
+            const i64 first = context.begin(index);
+            const i64 last = context.end(index);
+            if (first != 0 || last != 0) {
+                if (first < 0 || last <= first || last > source.size()) {
+                    return false;
+                }
+                const ParseToken token = ParseToken(compiler_lexer::Event::token, first, last, 1, 0, 0);
+                if (identifier_status(source, token, false) != ParseStatus::success) {
+                    return false;
+                }
+                const array<u8, 31> reserved = "i64;u64;u8;bool;own;ref;mutref;";
+                const builtin::span<const u8> reserved_words = borrow_bytes(reserved);
+                if (word_list_matches(source, token, reserved_words)) {
+                    return false;
+                }
+                i64 at = first + 1;
+                while (at < last) {
+                    if (!compiler_lexer::letter(source.at(at)) && !compiler_lexer::digit(source.at(at))) {
+                        return false;
+                    }
+                    at = at + 1;
+                }
+                i64 before = 0;
+                while (before < index) {
+                    if (context.end(before) > context.begin(before) && word_matches(source, token, source,
+                        context.begin(before), context.end(before))) {
+                        return false;
+                    }
+                    before = before + 1;
+                }
+            }
+            index = index + 1;
+        }
+        if (context.mode() == 0) {
+            return context.end(0) == 0 && context.end(1) == 0 && context.end(2) == 0;
+        }
+        if (context.end(0) == 0 || (context.end(1) != 0 && context.end(2) != 0)) {
+            return false;
+        }
+        return context.mode() != 2 || context.end(2) == 0;
+    }
+    auto decimal_capacity(builtin::span<const u8> source, ParseToken token, i64 limit) -> i64 {
+        i64 value = 0;
+        i64 index = token.first();
+        while (index < token.last()) {
+            const u8 digit = source.at(index);
+            if (!compiler_lexer::digit(digit) || value > limit) {
+                return -1;
+            }
+            value = value * 10 + i64(digit) - 48;
+            index = index + 1;
+        }
+        if (value < 1 || value > limit) {
+            return -1;
+        }
+        return value;
+    }
+    auto type_close(builtin::span<const u8> source, ParseToken token) -> ParseToken {
+        if (pair(source, token, '>')) {
+            ParseToken next = token;
+            next.split();
+            return next;
+        }
+        const ParseToken next = advance(source, token);
+        return next;
+    }
+    auto type_error(const AstArena& arena, ParseToken token) -> TypeResult {
+        ParseStatus status = ParseStatus::invalid;
+        if (arena.failure() == ArenaFailure::allocation) {
+            status = ParseStatus::allocation_failure;
+        }
+        const TypeResult result = TypeResult(status, -1, token);
+        return result;
+    }
+    // One iterative parser serves reflected types and explicit template-ids.
+    // The existing grammar's two-argument bound is independent of arena growth.
+    auto parse_type(AstArena& arena, builtin::span<const u8> source, ParseToken initial, TypeContext context,
+        ParseFrame first) -> TypeResult {
+        ParseToken token = initial;
+        const i64 base = arena.stack_size();
+        i64 type_depth = 0;
+        i64 template_depth = 0;
+        i64 value = -1;
+        i64 allowance = 0;
+        if (first.state() == FrameState::type_arguments) {
+            allowance = 1;
+        }
+        if (!arena.push(first)) {
+            const TypeResult error = type_error(arena, token);
+            return error;
+        }
+        while (arena.stack_size() > base) {
+            const ParseFrame frame = arena.frame();
+            if (frame.state() == FrameState::type_arguments) {
+                if (template_depth >= 4 + allowance) {
+                    ParseStatus status = ParseStatus::template_nesting_limit;
+                    if (allowance == 1) {
+                        status = ParseStatus::call_template_nesting_limit;
+                    }
+                    return TypeResult(status, -1, token);
+                }
+                template_depth = template_depth + 1;
+                if (context.mode() == 1) {
+                    return TypeResult(ParseStatus::template_context, -1, token);
+                }
+                if (!single(source, token, '<')) {
+                    return TypeResult(ParseStatus::expected_angle_open, -1, token);
+                }
+                const ParseToken next = advance(source, token);
+                token.update(next);
+                ParseFrame parent = ParseFrame(FrameState::type_argument_first, frame.min(), -1, frame.token());
+                parent.designate(frame.field());
+                const ParseFrame child = ParseFrame(FrameState::type_start, 1, -1, -1);
+                if (!arena.replace(parent) || !arena.push(child)) {
+                    const TypeResult error = type_error(arena, token);
+                    return error;
+                }
+            } else {
+                if (frame.state() == FrameState::type_argument_first || frame.state()
+                    == FrameState::type_argument_second) {
+                    if (single(source, token, ',')) {
+                        const ParseToken next = advance(source, token);
+                        token.update(next);
+                        if (frame.state() == FrameState::type_argument_second) {
+                            return TypeResult(ParseStatus::template_arity, -1, token);
+                        }
+                        ParseFrame parent = ParseFrame(FrameState::type_argument_second, frame.min(), value,
+                            frame.token());
+                        parent.designate(frame.field());
+                        const ParseFrame child = ParseFrame(FrameState::type_start, 1, -1, -1);
+                        if (!arena.replace(parent) || !arena.push(child)) {
+                            const TypeResult error = type_error(arena, token);
+                            return error;
+                        }
+                    } else {
+                        if (!single(source, token, '>') && !pair(source, token, '>')) {
+                            return TypeResult(ParseStatus::expected_angle_close, -1, token);
+                        }
+                        const i64 close = token.index() * 2 + token.half();
+                        const ParseToken next = type_close(source, token);
+                        token.update(next);
+                        i64 left = value;
+                        i64 right = -1;
+                        if (frame.state() == FrameState::type_argument_second) {
+                            left = frame.lhs();
+                            right = value;
+                        }
+                        value = arena.append_type(TypeKind::named, frame.token(), frame.field(), close, left, right);
+                        if (value < 0) {
+                            const TypeResult error = type_error(arena, token);
+                            return error;
+                        }
+                        template_depth = template_depth - 1;
+                        if (frame.min() == 1) {
+                            type_depth = type_depth - 1;
+                        }
+                        arena.pop();
+                    }
+                } else {
+                    if (frame.state() == FrameState::type_array_element || frame.state()
+                        == FrameState::type_owned_element) {
+                        const TypeSyntax element = arena.type_at(value);
+                        const i64 element_index = value;
+                        i64 length_index = -1;
+                        i64 length = 0;
+                        TypeKind kind = TypeKind::owned_values;
+                        if (frame.state() == FrameState::type_owned_element) {
+                            if ((element.kind() != TypeKind::named && element.kind() != TypeKind::builtin_class)
+                                || element.first() >= 0) {
+                                return TypeResult(ParseStatus::owned_element, -1, token);
+                            }
+                        } else {
+                            kind = TypeKind::array_type;
+                            if (element.kind() != TypeKind::i64_type && element.kind() != TypeKind::u64_type
+                                && element.kind() != TypeKind::u8_type && element.kind() != TypeKind::bool_type
+                                && element.kind() != TypeKind::parameter && element.kind() != TypeKind::named
+                                && element.kind() != TypeKind::builtin_class) {
+                                return TypeResult(ParseStatus::array_element, -1, token);
+                            }
+                            if (!single(source, token, ',')) {
+                                return TypeResult(ParseStatus::expected_comma, -1, token);
+                            }
+                            const ParseToken count = advance(source, token);
+                            const ParseToken next = advance(source, count);
+                            token.update(next);
+                            TypeKind count_kind = TypeKind::capacity;
+                            if (parameter(source, count, context, true)) {
+                                count_kind = TypeKind::length_parameter;
+                            } else {
+                                length = decimal_capacity(source, count, 4096);
+                                if (length < 0) {
+                                    return TypeResult(ParseStatus::array_length, -1, token);
+                                }
+                            }
+                            length_index = arena.append_type(count_kind, count.index(), count.index(), count.index()
+                                * 2, -1, -1);
+                            if (length_index < 0) {
+                                const TypeResult error = type_error(arena, token);
+                                return error;
+                            }
+                        }
+                        if (!single(source, token, '>') && !pair(source, token, '>')) {
+                            return TypeResult(ParseStatus::expected_angle_close, -1, token);
+                        }
+                        const i64 close = token.index() * 2 + token.half();
+                        const ParseToken next = type_close(source, token);
+                        token.update(next);
+                        if (kind == TypeKind::array_type && (element.kind() == TypeKind::named || element.kind()
+                            == TypeKind::builtin_class) && length > 64) {
+                            return TypeResult(ParseStatus::class_array_length, -1, token);
+                        }
+                        value = arena.append_type(kind, frame.token(), frame.field(), close, element_index,
+                            length_index);
+                        if (value < 0) {
+                            const TypeResult error = type_error(arena, token);
+                            return error;
+                        }
+                        type_depth = type_depth - 1;
+                        arena.pop();
+                    } else {
+                        if (frame.state() != FrameState::type_start) {
+                            return TypeResult(ParseStatus::invalid, -1, token);
+                        }
+                        const bool argument = frame.min() == 1;
+                        if (!argument) {
+                            if (type_depth >= 64) {
+                                return TypeResult(ParseStatus::type_nesting_limit, -1, token);
+                            }
+                            type_depth = type_depth + 1;
+                            if (reserved_type_name(source, token)) {
+                                return TypeResult(ParseStatus::reserved_type, -1, token);
+                            }
+                        }
+                        const ParseToken original = token;
+                        TypeKind kind = TypeKind::invalid;
+                        if ((type_word(source, token) == TypeWord::i64_type)) {
+                            kind = TypeKind::i64_type;
+                        }
+                        if ((type_word(source, token) == TypeWord::u64_type)) {
+                            kind = TypeKind::u64_type;
+                        }
+                        if ((type_word(source, token) == TypeWord::u8_type)) {
+                            kind = TypeKind::u8_type;
+                        }
+                        if ((type_word(source, token) == TypeWord::bool_type)) {
+                            kind = TypeKind::bool_type;
+                        }
+                        if (argument && token.kind() == compiler_lexer::Event::token
+                            && compiler_lexer::digit(source.at(token.first()))) {
+                            const ParseToken next = advance(source, token);
+                            token.update(next);
+                            if (decimal_capacity(source, original, 64) < 0) {
+                                return TypeResult(ParseStatus::capacity_argument, -1, token);
+                            }
+                            kind = TypeKind::capacity;
+                        } else {
+                            if (argument && kind == TypeKind::invalid) {
+                                const array<u8, 40> excluded = "own;ref;mutref;array;builtin;true;false;";
+                                const builtin::span<const u8> excluded_words = borrow_bytes(excluded);
+                                if (word_list_matches(source, token, excluded_words)) {
+                                    return TypeResult(ParseStatus::template_argument, -1, token);
+                                }
+                                const ParseStatus status = identifier_status(source, token, false);
+                                if (status != ParseStatus::success) {
+                                    return TypeResult(status, -1, token);
+                                }
+                            }
+                            const ParseToken next = advance(source, token);
+                            token.update(next);
+                        }
+                        if (kind != TypeKind::invalid) {
+                            value = arena.append_type(kind, original.index(), original.index(), original.index() * 2,
+                                -1, -1);
+                            if (value < 0) {
+                                const TypeResult error = type_error(arena, token);
+                                return error;
+                            }
+                            if (!argument) {
+                                type_depth = type_depth - 1;
+                            }
+                            arena.pop();
+                        } else {
+                            i64 name_last = original.index();
+                            bool is_array = !argument && (type_word(source, original) == TypeWord::array_type);
+                            bool owned = false;
+                            bool is_builtin = !argument && (type_word(source, original) == TypeWord::builtin_type);
+                            bool atomic = false;
+                            if (is_builtin) {
+                                if (!pair(source, token, ':')) {
+                                    return TypeResult(ParseStatus::expected_scope, -1, token);
+                                }
+                                const ParseToken member = advance(source, token);
+                                token.update(member);
+                                name_last = token.index();
+                                if ((type_word(source, token) == TypeWord::span_type)) {
+                                    kind = TypeKind::byte_span;
+                                } else {
+                                    if ((type_word(source, token) == TypeWord::owned_values)) {
+                                        owned = true;
+                                    } else {
+                                        if ((type_word(source, token) == TypeWord::array_type)) {
+                                            is_array = true;
+                                        } else {
+                                            if (!builtin_type_name(source, token)) {
+                                                return TypeResult(ParseStatus::expected_array, -1, token);
+                                            }
+                                            kind = TypeKind::builtin_type;
+                                            const array<u8, 31> samples = "ConsoleSample;IommuEventSample;";
+                                            const builtin::span<const u8> samples_words = borrow_bytes(samples);
+                                            if (word_list_matches(source, token, samples_words)) {
+                                                kind = TypeKind::builtin_class;
+                                            }
+                                            atomic = true;
+                                        }
+                                    }
+                                }
+                                const ParseToken next = advance(source, token);
+                                token.update(next);
+                            } else {
+                                if (!argument && parameter(source, original, context, false)) {
+                                    kind = TypeKind::parameter;
+                                    atomic = true;
+                                }
+                                if (!argument && (type_word(source, original) == TypeWord::own_type)) {
+                                    kind = TypeKind::own_type;
+                                }
+                                if (!argument && (type_word(source, original) == TypeWord::ref_type)) {
+                                    kind = TypeKind::ref_type;
+                                }
+                                if (!argument && (type_word(source, original) == TypeWord::mutref_type)) {
+                                    kind = TypeKind::mutref_type;
+                                }
+                            }
+                            if (is_array || owned) {
+                                if (!single(source, token, '<')) {
+                                    return TypeResult(ParseStatus::expected_angle_open, -1, token);
+                                }
+                                const ParseToken next = advance(source, token);
+                                token.update(next);
+                                FrameState state = FrameState::type_array_element;
+                                if (owned) {
+                                    state = FrameState::type_owned_element;
+                                }
+                                ParseFrame parent = ParseFrame(state, 0, -1, original.index());
+                                parent.designate(name_last);
+                                const ParseFrame child = ParseFrame(FrameState::type_start, 0, -1, -1);
+                                if (!arena.replace(parent) || !arena.push(child)) {
+                                    const TypeResult error = type_error(arena, token);
+                                    return error;
+                                }
+                            } else {
+                                if (kind == TypeKind::own_type || kind == TypeKind::ref_type || kind
+                                    == TypeKind::mutref_type || kind == TypeKind::byte_span) {
+                                    if (!single(source, token, '<')) {
+                                        return TypeResult(ParseStatus::expected_angle_open, -1, token);
+                                    }
+                                    const ParseToken next = advance(source, token);
+                                    token.update(next);
+                                    if (kind == TypeKind::byte_span) {
+                                        if (!(type_word(source, token) == TypeWord::const_type)) {
+                                            return TypeResult(ParseStatus::expected_const, -1, token);
+                                        }
+                                        const ParseToken after_const = advance(source, token);
+                                        token.update(after_const);
+                                        if (!(type_word(source, token) == TypeWord::u8_type)) {
+                                            return TypeResult(ParseStatus::expected_u8, -1, token);
+                                        }
+                                    } else {
+                                        if (!(type_word(source, token) == TypeWord::i64_type)) {
+                                            return TypeResult(ParseStatus::expected_i64, -1, token);
+                                        }
+                                    }
+                                    const ParseToken after_element = advance(source, token);
+                                    token.update(after_element);
+                                    if (!single(source, token, '>')) {
+                                        return TypeResult(ParseStatus::expected_angle_close, -1, token);
+                                    }
+                                    const i64 close = token.index() * 2 + token.half();
+                                    const ParseToken after_close = advance(source, token);
+                                    token.update(after_close);
+                                    value = arena.append_type(kind, original.index(), name_last, close, -1, -1);
+                                    if (value < 0) {
+                                        const TypeResult error = type_error(arena, token);
+                                        return error;
+                                    }
+                                    type_depth = type_depth - 1;
+                                    arena.pop();
+                                } else {
+                                    if (!atomic) {
+                                        if (original.kind() != compiler_lexer::Event::token
+                                            || !compiler_lexer::letter(source.at(original.first()))) {
+                                            return TypeResult(ParseStatus::expected_type, -1, token);
+                                        }
+                                        while (pair(source, token, ':')) {
+                                            const ParseToken component = advance(source, token);
+                                            token.update(component);
+                                            const ParseStatus status = identifier_status(source, token, true);
+                                            if (status != ParseStatus::success) {
+                                                return TypeResult(status, -1, token);
+                                            }
+                                            name_last = token.index();
+                                            const ParseToken next = advance(source, token);
+                                            token.update(next);
+                                        }
+                                        kind = TypeKind::named;
+                                        if (argument && name_last == original.index() && parameter(source, original,
+                                            context, false)) {
+                                            if (template_depth != 1 || single(source, token, '<')) {
+                                                return TypeResult(ParseStatus::nested_dependent, -1, token);
+                                            }
+                                            kind = TypeKind::parameter;
+                                        }
+                                    }
+                                    if (!atomic && single(source, token, '<')) {
+                                        i64 full = 0;
+                                        if (!argument) {
+                                            full = 1;
+                                        }
+                                        ParseFrame parent = ParseFrame(FrameState::type_arguments, full, -1,
+                                            original.index());
+                                        parent.designate(name_last);
+                                        if (!arena.replace(parent)) {
+                                            const TypeResult error = type_error(arena, token);
+                                            return error;
+                                        }
+                                    } else {
+                                        value = arena.append_type(kind, original.index(), name_last, name_last * 2, -1,
+                                            -1);
+                                        if (value < 0) {
+                                            const TypeResult error = type_error(arena, token);
+                                            return error;
+                                        }
+                                        if (!argument) {
+                                            type_depth = type_depth - 1;
+                                        }
+                                        arena.pop();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return TypeResult(ParseStatus::success, value, token);
+    }
+    // Replace the former eligibility walk with one linear candidate index.
+    // Prefix frames are scratch only; primary/type parsing owns the grammar.
+    auto prepare_templates(AstArena& arena, builtin::span<const u8> source, ParseToken begin, Stop stop) -> TypeResult {
+        ParseToken token = begin;
+        i64 head = -1;
+        i64 groups = 0;
+        i64 braces = 0;
+        i64 boundary = -1;
+        bool finished = false;
+        while (!finished && token.kind() == compiler_lexer::Event::token) {
+            const ParseToken next = advance(source, token);
+            if (single(source, token, ';') || (single(source, token, '=') && braces == 0)) {
+                finished = true;
+            } else {
+                if (single(source, token, '{')) {
+                    if (boundary >= 0) {
+                        finished = true;
+                    }
+                    braces = braces + 1;
+                    head = -1;
+                } else {
+                    if (single(source, token, '}')) {
+                        if (braces == 0) {
+                            finished = true;
+                        } else {
+                            braces = braces - 1;
+                            head = -1;
+                            if (braces == 0 && stop == Stop::constructor_braces) {
+                                finished = true;
+                            }
+                        }
+                    } else {
+                        if (single(source, token, '=')) {
+                            head = -1;
+                        } else {
+                            if (single(source, token, '(')) {
+                                if (boundary >= 0) {
+                                    finished = true;
+                                }
+                                groups = groups + 1;
+                                head = -1;
+                            } else {
+                                if (single(source, token, ')')) {
+                                    if (groups > 0) {
+                                        groups = groups - 1;
+                                    } else {
+                                        if (head < 0) {
+                                            finished = true;
+                                        } else {
+                                            if (boundary < 0) {
+                                                boundary = token.index();
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    if (single(source, token, '<')) {
+                                        const ParseFrame opening = ParseFrame(FrameState::template_opening, head, -1,
+                                            token.index());
+                                        const i64 index = arena.stack_size();
+                                        if (!arena.push(opening)) {
+                                            const TypeResult error = type_error(arena, token);
+                                            return error;
+                                        }
+                                        head = index;
+                                    } else {
+                                        if (single(source, token, '>') || pair(source, token, '>')) {
+                                            i64 match = head;
+                                            if (match >= 0) {
+                                                const ParseFrame inside = arena.scratch_at(match);
+                                                head = inside.min();
+                                                if (pair(source, token, '>')) {
+                                                    match = head;
+                                                    if (match >= 0) {
+                                                        const ParseFrame outer = arena.scratch_at(match);
+                                                        head = outer.min();
+                                                    }
+                                                }
+                                            }
+                                            if (match < 0) {
+                                                head = -1;
+                                            } else {
+                                                const ParseFrame opening = arena.scratch_at(match);
+                                                if ((single(source, next, '(') || single(source, next, '{'))
+                                                    && (boundary < 0 || opening.token() < boundary)) {
+                                                    const ParseFrame candidate = ParseFrame(
+                                                        FrameState::template_candidate, opening.min(), token.index(),
+                                                        opening.token());
+                                                    if (!arena.replace_scratch(match, candidate)) {
+                                                        const TypeResult error = type_error(arena, token);
+                                                        return error;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if (boundary >= 0 && head < 0) {
+                finished = true;
+            }
+            token.update(next);
+        }
+        return TypeResult(ParseStatus::success, arena.stack_size(), begin);
     }
     auto failure(const AstArena& arena, ParseToken token) -> ParseResult {
         ParseStatus status = ParseStatus::invalid;
@@ -299,19 +1008,27 @@ namespace compiler_parser {
 }
 
 export namespace compiler_parser {
-    auto parse(AstArena& arena, builtin::span<const u8> source, compiler_lexer::Cursor cursor,
-        Stop stop) -> ParseResult {
+    auto parse(AstArena& arena, builtin::span<const u8> source, compiler_lexer::Cursor cursor, Stop stop,
+        TypeContext context) -> ParseResult {
         ParseToken token = read_token(source, cursor, 0);
         if ((stop != Stop::semicolon && stop != Stop::close_parenthesis && stop != Stop::assignment && stop
-            != Stop::constructor_braces) || arena.size() != 0 || arena.stack_size() != 0 || arena.arguments() != 0) {
+            != Stop::constructor_braces) || arena.size() != 0 || arena.stack_size() != 0 || arena.arguments() != 0
+            || arena.types() != 0) {
             return ParseResult(ParseStatus::invalid, -1, arena.size(), 0, token.first());
         }
         if (!arena.ok()) {
             return ParseResult(ParseStatus::allocation_failure, -1, 0, 0, token.first());
         }
-        if (!supported(source, token, stop)) {
-            return ParseResult(ParseStatus::unsupported, -1, 0, 0, token.first());
+        if (!valid_context(source, context)) {
+            return ParseResult(ParseStatus::invalid, -1, 0, 0, token.first());
         }
+        const TypeResult candidates = prepare_templates(arena, source, token, stop);
+        if (candidates.status() != ParseStatus::success) {
+            const ParseToken at = candidates.token();
+            return ParseResult(candidates.status(), -1, arena.size(), at.index(), at.first());
+        }
+        const i64 scratch_count = candidates.root();
+        i64 candidate_index = 0;
         ParseFrame initial = ParseFrame(FrameState::expression_start, 1, -1, -1);
         if (stop == Stop::constructor_braces) {
             const ParseStatus status = identifier_status(source, token, false);
@@ -332,6 +1049,7 @@ export namespace compiler_parser {
                     return error;
                 }
                 const ParseToken after = advance(source, token);
+                arena.truncate_stack(0);
                 return ParseResult(ParseStatus::success, root, arena.size(), after.index(), after.first());
             }
             const ParseFrame aggregate = ParseFrame(FrameState::constructor_arguments, 0, -1, 0);
@@ -346,7 +1064,7 @@ export namespace compiler_parser {
         }
         i64 value = -1;
         i64 nesting = 0;
-        while (arena.stack_size() > 0) {
+        while (arena.stack_size() > scratch_count) {
             if (token.kind() != compiler_lexer::Event::token && token.kind() != compiler_lexer::Event::end_of_input) {
                 return ParseResult(ParseStatus::invalid, -1, arena.size(), token.index(), token.first());
             }
@@ -696,9 +1414,57 @@ export namespace compiler_parser {
                                     const ParseToken after_name = advance(source, token);
                                     token.update(after_name);
                                 }
+                                bool seeking = true;
+                                while (candidate_index < scratch_count && seeking) {
+                                    const ParseFrame candidate = arena.scratch_at(candidate_index);
+                                    if (candidate.token() >= token.index()) {
+                                        seeking = false;
+                                    } else {
+                                        candidate_index = candidate_index + 1;
+                                    }
+                                }
+                                if (single(source, token, '<') && candidate_index < scratch_count) {
+                                    const ParseFrame candidate = arena.scratch_at(candidate_index);
+                                    if (candidate.token() == token.index() && candidate.state()
+                                        == FrameState::template_candidate) {
+                                        ParseFrame type_start = ParseFrame(FrameState::type_arguments, 0, -1,
+                                            original.index());
+                                        type_start.designate(last);
+                                        const TypeResult typed = parse_type(arena, source, token, context, type_start);
+                                        const ParseToken after_type = typed.token();
+                                        token.update(after_type);
+                                        if (typed.status() != ParseStatus::success) {
+                                            return ParseResult(typed.status(), -1, arena.size(), token.index(),
+                                                token.first());
+                                        }
+                                        if (!arena.own_type(typed.root(), original.index(), 1)) {
+                                            const ParseResult error = failure(arena, token);
+                                            return error;
+                                        }
+                                    }
+                                }
                                 if (single(source, token, '(')) {
                                     const ParseToken argument_token = advance(source, token);
                                     token.update(argument_token);
+                                    if (last == original.index() && type_query(source, original)) {
+                                        const ParseFrame type_start = ParseFrame(FrameState::type_start, 0, -1, -1);
+                                        const TypeResult reflected = parse_type(arena, source, token, context,
+                                            type_start);
+                                        const ParseToken after_type = reflected.token();
+                                        token.update(after_type);
+                                        if (reflected.status() != ParseStatus::success) {
+                                            return ParseResult(reflected.status(), -1, arena.size(), token.index(),
+                                                token.first());
+                                        }
+                                        if (!single(source, token, ')')) {
+                                            return ParseResult(ParseStatus::expected_close, -1, arena.size(),
+                                                token.index(), token.first());
+                                        }
+                                        if (!arena.own_type(reflected.root(), original.index(), 2)) {
+                                            const ParseResult error = failure(arena, token);
+                                            return error;
+                                        }
+                                    }
                                     if (single(source, token, ')')) {
                                         value = arena.append_list(NodeKind::call, original.index(), last, token.index(),
                                             -1);
@@ -774,6 +1540,7 @@ export namespace compiler_parser {
         if (stop != Stop::constructor_braces && !stopped(source, token, stop)) {
             return ParseResult(ParseStatus::expected_end, -1, arena.size(), token.index(), token.first());
         }
+        arena.truncate_stack(0);
         return ParseResult(ParseStatus::success, value, arena.size(), token.index(), token.first());
     }
     auto create(builtin::ByteRegion region, i64 capacity) -> AstArena {
@@ -793,6 +1560,13 @@ export namespace compiler_parser {
     auto read_edge(const AstArena& arena, i64 index) -> ChildEdge {
         const ChildEdge edge = arena.edge(index);
         return edge;
+    }
+    auto type_count(const AstArena& arena) -> i64 {
+        return arena.types();
+    }
+    auto read_type(const AstArena& arena, i64 index) -> TypeSyntax {
+        const TypeSyntax type = arena.type_at(index);
+        return type;
     }
     auto release(builtin::ByteRegion region, AstArena arena) -> i64 {
         return 0;

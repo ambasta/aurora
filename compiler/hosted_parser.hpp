@@ -2,12 +2,22 @@
 #include "syntax.hpp"
 #include "hosted_parser_abi.hpp"
 
+namespace aurora::hosted_parser {
+// Original declaration tokens only, never resolved identities or visibility.
+class Context {
+public:
+    std::vector<Token> typeParameters;
+    std::vector<Token> capacityParameters;
+    bool functionTemplate = false;
+};
+} // namespace aurora::hosted_parser
+
 namespace aurora {
-// Parser first screens template/call ambiguity with its non-consuming lookahead.
-// This lower adapter receives an expression candidate, not a general dispatcher.
-// ConstructorBraces starts at the original field identifier and includes both
-// braces; its checked cursor ends immediately after the closing brace.
-// Only Unsupported yields an empty pointer. The caller commits position after
-// complete checked conversion; all rejected results leave its state untouched.
-ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens, std::size_t &position, hosted_parser::Stop stop);
+// The immutable source and captured context are checked before the private ABI.
+// Position commits only after complete graph and exact token/half validation.
+// Unsupported is an invalid production result; C++ remains a separate seed path.
+ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens,
+                                    std::size_t &position,
+                                    hosted_parser::Stop stop,
+                                    const hosted_parser::Context &context = {});
 } // namespace aurora

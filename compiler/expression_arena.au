@@ -38,7 +38,15 @@ export namespace compiler_parser {
         array_arguments,
         construct_field,
         construct_arguments,
-        constructor_arguments
+        constructor_arguments,
+        template_opening,
+        template_candidate,
+        type_start,
+        type_arguments,
+        type_argument_first,
+        type_argument_second,
+        type_array_element,
+        type_owned_element
     };
 
     class ParseFrame {
@@ -139,6 +147,75 @@ export namespace compiler_parser {
         }
     };
 
+    enum class TypeKind {
+        invalid,
+        i64_type,
+        u64_type,
+        u8_type,
+        bool_type,
+        named,
+        parameter,
+        capacity,
+        length_parameter,
+        array_type,
+        own_type,
+        ref_type,
+        mutref_type,
+        byte_span,
+        builtin_type,
+        owned_values,
+        builtin_class
+    };
+    // Unresolved syntax only. close encodes the original token and its half;
+    // a root names its containing expression by the original name-token index.
+    class TypeSyntax {
+        TypeKind tag;
+        i64 token_index;
+        i64 name_end;
+        i64 closing_token;
+        i64 first_child;
+        i64 second_child;
+        i64 owner_token;
+        i64 owner_role;
+    public:
+        TypeSyntax(TypeKind kind, i64 token, i64 last, i64 close, i64 first, i64 second) : tag(kind),
+            token_index(token), name_end(last), closing_token(close), first_child(first), second_child(second),
+            owner_token(-1), owner_role(0) {
+        }
+        auto kind() const -> TypeKind {
+            return tag;
+        }
+        auto token() const -> i64 {
+            return token_index;
+        }
+        auto last() const -> i64 {
+            return name_end;
+        }
+        auto close() const -> i64 {
+            return closing_token;
+        }
+        auto first() const -> i64 {
+            return first_child;
+        }
+        auto second() const -> i64 {
+            return second_child;
+        }
+        auto owner() const -> i64 {
+            return owner_token;
+        }
+        auto role() const -> i64 {
+            return owner_role;
+        }
+        auto bind_owner(i64 token, i64 role) -> bool {
+            if (owner_token != -1 || owner_role != 0 || token < 0 || (role != 1 && role != 2)) {
+                return false;
+            }
+            owner_token = token;
+            owner_role = role;
+            return true;
+        }
+    };
+
     class AstArena {
         builtin::OwnedValues<AstNode> nodes;
         i64 used;
@@ -147,6 +224,8 @@ export namespace compiler_parser {
         ArenaFailure error;
         builtin::OwnedValues<ChildEdge> edges;
         i64 edge_count;
+        builtin::OwnedValues<TypeSyntax> type_nodes;
+        i64 type_count;
         auto store(AstNode node) -> i64 {
             if (node.depth() > 128) {
                 error = ArenaFailure::depth;
@@ -182,12 +261,13 @@ export namespace compiler_parser {
         }
     public:
         AstArena(builtin::ByteRegion region, builtin::OwnedValues<AstNode> initial,
-            builtin::OwnedValues<ParseFrame> scratch, builtin::OwnedValues<ChildEdge> arguments) : nodes(move(initial)),
-            used(0), frames(move(scratch)), frame_count(0), error(ArenaFailure::none), edges(move(arguments)),
-            edge_count(0) {
+            builtin::OwnedValues<ParseFrame> scratch, builtin::OwnedValues<ChildEdge> arguments,
+            builtin::OwnedValues<TypeSyntax> types) : nodes(move(initial)), used(0), frames(move(scratch)),
+            frame_count(0), error(ArenaFailure::none), edges(move(arguments)), edge_count(0), type_nodes(move(types)),
+            type_count(0) {
         }
         auto ok() const -> bool {
-            return nodes.ok() && frames.ok() && edges.ok();
+            return nodes.ok() && frames.ok() && edges.ok() && type_nodes.ok();
         }
         auto size() const -> i64 {
             return used;
@@ -201,6 +281,94 @@ export namespace compiler_parser {
         }
         auto stack_size() const -> i64 {
             return frame_count;
+        }
+        auto scratch_at(i64 index) const -> ParseFrame {
+            i64 checked = index;
+            if (index < 0 || index >= frame_count) {
+                checked = -1;
+            }
+            return frames.at(checked);
+        }
+        auto replace_scratch(i64 index, ParseFrame value) -> bool {
+            if (index < 0 || index >= frame_count || !frames.set(index, value)) {
+                error = ArenaFailure::invalid;
+                return false;
+            }
+            return true;
+        }
+        auto truncate_stack(i64 count) -> bool {
+            if (count < 0 || count > frame_count) {
+                error = ArenaFailure::invalid;
+                return false;
+            }
+            frame_count = count;
+            return true;
+        }
+        auto types() const -> i64 {
+            return type_count;
+        }
+        auto type_at(i64 index) const -> TypeSyntax {
+            i64 checked = index;
+            if (index < 0 || index >= type_count) {
+                checked = -1;
+            }
+            return type_nodes.at(checked);
+        }
+        auto append_type(TypeKind kind, i64 token, i64 last, i64 close, i64 first, i64 second) -> i64 {
+            error = ArenaFailure::invalid;
+            if (!type_nodes.ok() || kind == TypeKind::invalid || token < 0 || last < token || last > 4611686018427387903
+                || close < last * 2 || first < -1 || second < -1 || first >= type_count || second >= type_count
+                || (first == -1 && second != -1) || (first >= 0 && first == second) || type_count
+                == 9223372036854775807) {
+                return -1;
+            }
+            if (first >= 0) {
+                TypeSyntax child = type_nodes.at(first);
+                if (child.owner() != -1 || child.role() != 0) {
+                    return -1;
+                }
+            }
+            if (second >= 0) {
+                TypeSyntax child = type_nodes.at(second);
+                if (child.owner() != -1 || child.role() != 0) {
+                    return -1;
+                }
+            }
+            if (type_count == type_nodes.size()) {
+                i64 next = 8;
+                if (type_count > 0) {
+                    if (type_count > 4611686018427387903) {
+                        next = type_count + 1;
+                    } else {
+                        next = type_count * 2;
+                    }
+                }
+                TypeSyntax empty = TypeSyntax(TypeKind::invalid, -1, -1, -1, -1, -1);
+                if (!type_nodes.try_resize(next, empty)) {
+                    error = ArenaFailure::allocation;
+                    return -1;
+                }
+            }
+            TypeSyntax value = TypeSyntax(kind, token, last, close, first, second);
+            if (!type_nodes.set(type_count, value)) {
+                return -1;
+            }
+            const i64 index = type_count;
+            type_count = type_count + 1;
+            error = ArenaFailure::none;
+            return index;
+        }
+        auto own_type(i64 index, i64 token, i64 role) -> bool {
+            error = ArenaFailure::invalid;
+            if (index < 0 || index >= type_count) {
+                return false;
+            }
+            TypeSyntax value = type_nodes.at(index);
+            if (!value.bind_owner(token, role) || !type_nodes.set(index, value)) {
+                return false;
+            }
+            error = ArenaFailure::none;
+            return true;
         }
         auto frame() const -> ParseFrame {
             return frames.at(frame_count - 1);
@@ -217,10 +385,18 @@ export namespace compiler_parser {
             return frames.set(frame_count - 1, value);
         }
         auto push(ParseFrame value) -> bool {
+            if (frame_count == 9223372036854775807) {
+                error = ArenaFailure::invalid;
+                return false;
+            }
             if (frame_count == frames.size()) {
                 i64 next = 8;
                 if (frame_count > 0) {
-                    next = frame_count * 2;
+                    if (frame_count > 4611686018427387903) {
+                        next = frame_count + 1;
+                    } else {
+                        next = frame_count * 2;
+                    }
                 }
                 ParseFrame empty = ParseFrame(FrameState::expression_start, 1, -1, -1);
                 if (!frames.try_resize(next, empty)) {
@@ -378,7 +554,9 @@ export namespace compiler_parser {
         builtin::OwnedValues<ParseFrame> scratch = region.try_allocate(0, frame);
         ChildEdge argument = ChildEdge(-1, -1, 0, 0, -1);
         builtin::OwnedValues<ChildEdge> edges = region.try_allocate(0, argument);
-        AstArena arena = AstArena(region, move(storage), move(scratch), move(edges));
+        TypeSyntax type_node = TypeSyntax(TypeKind::invalid, -1, -1, -1, -1, -1);
+        builtin::OwnedValues<TypeSyntax> types = region.try_allocate(0, type_node);
+        AstArena arena = AstArena(region, move(storage), move(scratch), move(edges), move(types));
         return move(arena);
     }
 }

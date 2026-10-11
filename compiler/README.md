@@ -4,7 +4,8 @@ Aurora is an intentionally incompatible safe C++-inspired language. It has no
 C header/macro layer, raw-pointer escape, unsafe block or C ABI. The hosted build
 uses an Aurora-written [lexer](LEXER.md) and a bounded
 [statement-expression parser](ARCHITECTURE.md#hosted-aurora-expression-parser), bootstrapped from a C++ seed.
-The remaining grammar, semantic/lifetime analysis, typed-IR verification and x86-64 emission remain C++23.
+Declaration/type parsing outside expressions, semantic/lifetime analysis,
+typed-IR verification and x86-64 emission remain C++23.
 GNU assembler/linker and Linux host I/O remain bootstrap dependencies.
 
 ## Build and check
@@ -109,7 +110,11 @@ These temporary register choices are implementation machinery, not a source-leve
 
 Runtime-sized [typed copied-class owners](OWNERSHIP.md#runtime-sized-copied-class-ownership)
 support the `expression_arena.au` AST, explicit parser-frame and variable-arity
-argument-edge storage. Complete scalar, byte-string, qualified-name, unary, binary, call, postfix and non-template
-aggregate expressions are parsed in Aurora, including both forms of constructor
+argument-edge and unresolved type-syntax storage. Complete existing scalar,
+byte-string, qualified-name, unary, binary, call, postfix, aggregate, explicit
+template and type-taking reflection expressions are parsed in Aurora, including
+both forms of constructor
 field initializer, and converted to the existing source AST through the private hosted adapter.
-Templates and type-taking queries still use the C++ parser as a whole; this bounded migration does not establish compiler self-hosting.
+The hosted path does not fall back to C++ for expressions. The separate C++
+seed/reference remains until a verified predecessor-bootstrap route permits
+retirement; this does not establish compiler self-hosting.

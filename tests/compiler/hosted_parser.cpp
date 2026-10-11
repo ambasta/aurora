@@ -31,6 +31,8 @@ std::int64_t checked_hosted_parser_count(const void *);
 void checked_hosted_parser_read(const void *, std::int64_t, void *);
 std::int64_t checked_hosted_parser_edges(const void *);
 void checked_hosted_parser_edge(const void *, std::int64_t, void *);
+std::int64_t checked_hosted_parser_types(const void *);
+void checked_hosted_parser_type(const void *, std::int64_t, void *);
 void checked_hosted_parser_release(void *);
 }
 
@@ -49,12 +51,15 @@ void hosted_parser_misaligned_call(const void *, const void *, void *, AbiEntry)
 }
 
 namespace {
+using aurora::hosted_parser::Context;
 using aurora::hosted_parser::NodeKind;
 using aurora::hosted_parser::Status;
 using aurora::hosted_parser::Stop;
 using Words = std::array<std::int64_t, 5>;
 using NodeWords = std::array<std::int64_t, 7>;
 using EdgeWords = std::array<std::int64_t, 5>;
+using TypeWords = std::array<std::int64_t, 8>;
+using ContextWords = std::array<std::int64_t, 7>;
 constexpr std::int64_t wire(NodeKind value) {
     return static_cast<std::int64_t>(value);
 }
@@ -200,19 +205,34 @@ void supported(const std::string &text, Stop stop = Stop::Semicolon) {
         require(nodes(hosted) == 199 && hosted->depth == 100, "100 terms did not yield 199 real Aurora nodes");
     ++cases;
 }
-void unsupported(const std::string &text) {
+// Both implementations must reject with the exact diagnostic. Calling the
+// adapter itself prevents a whole-expression C++ fallback from passing this.
+void rejected(const std::string &text, Stop stop = Stop::Semicolon) {
     context = text;
-    const auto tokens = aurora::lex(text, "unsupported.au");
+    const auto tokens = aurora::lex(text, "typed-rejection.au");
     const auto before = tokens;
+    std::array<std::optional<aurora::Diagnostic>, 2> errors;
     std::size_t position = 0;
-    require(!aurora::parseHostedExpression(tokens, position, Stop::Semicolon),
-            "unsupported expression was partially accepted");
-    require(position == 0 && tokens.size() == before.size(), "fallback was not atomic");
-    for (std::size_t i = 0; i < tokens.size(); ++i) {
-        require(tokens[i].text == before[i].text, "fallback changed a token");
-        sameSpan(tokens[i].span, before[i].span);
+    try {
+        const auto expression = aurora::parseHostedExpression(tokens, position, stop);
+        require(bool(expression), "malformed typed expression silently fell back");
+    } catch (const aurora::Error &error) {
+        errors[0] = error.diagnostic;
     }
-    compareProgram("module fallback; auto f()->i64{return " + text + "}");
+    try {
+        aurora::Parser reference(tokens, false);
+        reference.expr();
+    } catch (const aurora::Error &error) {
+        errors[1] = error.diagnostic;
+    }
+    require(errors[0] && errors[1], "typed expression did not reject in both parsers");
+    require(errors[0]->code == errors[1]->code && errors[0]->message == errors[1]->message,
+            "typed diagnostic code/message differs: " + errors[0]->message + " versus " + errors[1]->message);
+    sameSpan(errors[0]->span, errors[1]->span);
+    require(position == 0 && tokens.size() == before.size(), "typed rejection changed its caller cursor/tokens");
+    for (std::size_t i = 0; i < tokens.size(); ++i)
+        sameToken(tokens[i], before[i]);
+    ++cases;
 }
 
 std::size_t tokenAt(const std::vector<aurora::Token> &tokens, const aurora::Token &token) {
@@ -227,8 +247,9 @@ std::size_t tokenAt(const std::vector<aurora::Token> &tokens, const aurora::Toke
 void hostedRoot(const std::vector<aurora::Token> &tokens,
                 std::size_t position,
                 Stop stop,
-                const aurora::ExpressionPtr &expected) {
-    const auto expression = aurora::parseHostedExpression(tokens, position, stop);
+                const aurora::ExpressionPtr &expected,
+                const Context &typeContext = {}) {
+    const auto expression = aurora::parseHostedExpression(tokens, position, stop, typeContext);
     require(bool(expression), "bootstrap expression silently fell back");
     sameExpression(expression, expected);
     require(tokens.at(position).text == (stop == Stop::CloseParenthesis ? ")" : ";"),
@@ -270,8 +291,25 @@ void bootstrapFunctions(const std::vector<aurora::Token> &tokens,
         bootstrapStatements(tokens, function.body, strings);
     }
 }
+std::size_t expectedStringRoots(const std::vector<aurora::StatementPtr> &statements) {
+    std::size_t count = 0;
+    for (const auto &statement : statements) {
+        count += statement->expr && statement->expr->op == "byte_string";
+        count += expectedStringRoots(statement->body) + expectedStringRoots(statement->other);
+    }
+    return count;
+}
+void expectedBootstrapRoots(const std::vector<aurora::Function> &functions,
+                            std::size_t &initializers,
+                            std::size_t &strings) {
+    for (const auto &function : functions) {
+        initializers += function.initializers.size();
+        strings += expectedStringRoots(function.body);
+    }
+}
 void bootstrapSources(char **paths) {
     std::size_t initializers = 0, strings = 0, newInitializers = 0;
+    std::size_t expectedInitializers = 0, expectedStrings = 0;
     const std::array<std::string, 3> modules{
         "aurora.compiler.lexer", "aurora.compiler.expression_arena", "aurora.compiler.expression_parser"};
     for (std::size_t i = 0; i < modules.size(); ++i) {
@@ -283,6 +321,12 @@ void bootstrapSources(char **paths) {
         const auto tokens = aurora::lex(source, paths[i]);
         const auto program = compareProgram(tokens);
         require(program.moduleName == modules[i], "unexpected bootstrap source module/order");
+        expectedBootstrapRoots(program.functions, expectedInitializers, expectedStrings);
+        expectedBootstrapRoots(program.functionTemplates, expectedInitializers, expectedStrings);
+        for (const auto &definition : program.classes)
+            expectedBootstrapRoots(definition.methods, expectedInitializers, expectedStrings);
+        for (const auto &definition : program.templates)
+            expectedBootstrapRoots(definition.methods, expectedInitializers, expectedStrings);
         bootstrapFunctions(tokens, program.functions, initializers, strings, newInitializers);
         bootstrapFunctions(tokens, program.functionTemplates, initializers, strings, newInitializers);
         for (const auto &definition : program.classes)
@@ -291,10 +335,12 @@ void bootstrapSources(char **paths) {
             bootstrapFunctions(tokens, definition.methods, initializers, strings, newInitializers);
     }
     context = "actual bootstrap source roots";
-    require(initializers == 40 && strings == 5 && newInitializers == 2,
-            "expected the original 40 constructor and 5 string roots plus 2 field-token initializers, observed " +
-                std::to_string(initializers) + ", " + std::to_string(strings) + " and " +
-                std::to_string(newInitializers));
+    require(initializers + newInitializers == expectedInitializers && strings == expectedStrings &&
+                expectedInitializers >= 42 && expectedStrings >= 5 && newInitializers == 2,
+            "actual bootstrap roots were omitted or lost historical coverage: expected " +
+                std::to_string(expectedInitializers) + " constructors and " + std::to_string(expectedStrings) +
+                " strings, observed " + std::to_string(initializers + newInitializers) + " and " +
+                std::to_string(strings));
 }
 
 std::size_t closingBrace(const std::vector<aurora::Token> &tokens, std::size_t opening) {
@@ -387,15 +433,7 @@ void consumerReflection(const std::vector<aurora::Token> &tokens,
             const bool assertion = statement->token.text == "static_assert";
             require(assertion || statement->token.text == "return", "unexpected reflection consumer statement");
             const auto start = tokenAt(tokens, statement->token) + (assertion ? 2 : 1);
-            auto position = start;
-            const auto before = tokens;
-            require(!aurora::parseHostedExpression(
-                        tokens, position, assertion ? Stop::CloseParenthesis : Stop::Semicolon) &&
-                        position == start,
-                    "actual reflection consumer did not retain atomic whole-root fallback");
-            require(tokens.size() == before.size(), "reflection fallback changed token count");
-            for (std::size_t index = 0; index < tokens.size(); ++index)
-                sameToken(tokens[index], before[index]);
+            hostedRoot(tokens, start, assertion ? Stop::CloseParenthesis : Stop::Semicolon, statement->expr);
             ++roots;
             ++cases;
         }
@@ -447,6 +485,178 @@ void consumerSources(char **paths) {
     require(roots == 14, "expected all 14 actual product aggregate roots");
 }
 
+// Fixture-only declaration capture. Production Parser captures the same Tokens
+// as ident() consumes the header; compareProgram above independently checks that
+// route. Never replace these Tokens with spellings synthesized in another source.
+Context fixtureContext(const std::vector<aurora::Token> &tokens,
+                       const aurora::Token &declaration,
+                       const std::vector<aurora::TemplateParameter> &parameters,
+                       bool functionTemplate) {
+    Context result;
+    if (parameters.empty())
+        return result;
+    auto index = tokenAt(tokens, declaration);
+    while (index > 0 && tokens[index].text != "template")
+        --index;
+    require(tokens[index].text == "template" && tokens.at(index + 1).text == "<",
+            "typed fixture declaration lost its original template header");
+    index += 2;
+    for (std::size_t parameter = 0; parameter < parameters.size(); ++parameter) {
+        const auto &expected = parameters[parameter];
+        const std::string kind = expected.kind == aurora::TemplateParameterKind::Scalar  ? "Scalar"
+                                 : expected.kind == aurora::TemplateParameterKind::Value ? "Value"
+                                                                                         : "i64";
+        require(tokens.at(index).text == kind && tokens.at(index + 1).text == expected.name,
+                "captured template parameter spelling/order differs from declaration");
+        auto &names = expected.kind == aurora::TemplateParameterKind::Capacity ? result.capacityParameters
+                                                                               : result.typeParameters;
+        names.push_back(tokens.at(index + 1));
+        index += 2;
+        require(tokens.at(index).text == (parameter + 1 == parameters.size() ? ">" : ","),
+                "captured template header has an unexpected delimiter");
+        ++index;
+    }
+    result.functionTemplate = functionTemplate;
+    return result;
+}
+bool containsTypedSyntax(const aurora::ExpressionPtr &expression) {
+    if (!expression)
+        return false;
+    return !expression->templateArguments.empty() || containsTypeQuery(expression) ||
+           std::any_of(expression->args.begin(), expression->args.end(), containsTypedSyntax);
+}
+void typedNames(const aurora::ExpressionPtr &expression, std::vector<std::string> &names) {
+    if (!expression)
+        return;
+    if (!expression->templateArguments.empty() ||
+        (expression->op == "call" && (expression->token.text == "size_of" || expression->token.text == "type_id" ||
+                                      expression->token.text == "field_count")))
+        names.push_back(expression->token.text);
+    for (const auto &child : expression->args)
+        typedNames(child, names);
+}
+void typedStatements(const std::vector<aurora::Token> &tokens,
+                     const std::vector<aurora::StatementPtr> &statements,
+                     const Context &typeContext,
+                     std::vector<std::string> &names) {
+    for (const auto &statement : statements) {
+        if (containsTypedSyntax(statement->expr)) {
+            auto start = tokenAt(tokens, statement->token);
+            Stop stop = Stop::Semicolon;
+            if (statement->kind == "let") {
+                const auto binding = std::lower_bound(tokens.begin(),
+                                                      tokens.end(),
+                                                      statement->bindingSpan.begin.offset,
+                                                      [](const auto &token, std::size_t offset) {
+                                                          return token.span.begin.offset < offset;
+                                                      });
+                require(binding != tokens.end() && binding->text == statement->name,
+                        "typed declaration lost its binding token");
+                sameSpan(binding->span, statement->bindingSpan);
+                start = static_cast<std::size_t>(binding - tokens.begin()) + 1;
+                require(tokens.at(start).text == "=", "typed declaration lost its initializer delimiter");
+                ++start;
+            } else if (statement->token.text == "return") {
+                ++start;
+            } else if (statement->token.text == "static_assert" || statement->token.text == "if" ||
+                       statement->token.text == "while") {
+                require(tokens.at(start + 1).text == "(", "typed condition lost its opening delimiter");
+                start += 2;
+                stop = Stop::CloseParenthesis;
+            } else if (statement->kind == "assign" || statement->kind == "field_assign" ||
+                       statement->kind == "index_assign") {
+                const auto target = aurora::parseHostedExpression(tokens, start, Stop::Assignment, typeContext);
+                require(bool(target) && tokens.at(start).text == "=", "typed assignment target fell back");
+                if (statement->target)
+                    sameExpression(target, statement->target);
+                ++start;
+            } else {
+                require(statement->kind == "expression", "uncovered typed statement root");
+            }
+            hostedRoot(tokens, start, stop, statement->expr, typeContext);
+            typedNames(statement->expr, names);
+            if (statement->expr->token.text == "pair" && typeContext.functionTemplate) {
+                require(typeContext.typeParameters.size() == 2 && statement->expr->templateArguments.size() == 2,
+                        "dependent utility pair lost its captured two-parameter context");
+                for (std::size_t index = 0; index < 2; ++index)
+                    require(statement->expr->templateArguments[index].type == aurora::TypeKind::Parameter &&
+                                statement->expr->templateArguments[index].className ==
+                                    typeContext.typeParameters[index].text,
+                            "dependent pair argument became a concrete class spelling");
+            }
+        }
+        typedStatements(tokens, statement->body, typeContext, names);
+        typedStatements(tokens, statement->other, typeContext, names);
+    }
+}
+void typedFunctions(const std::vector<aurora::Token> &tokens,
+                    const std::vector<aurora::Function> &functions,
+                    const Context &classContext,
+                    std::vector<std::string> &names) {
+    for (const auto &function : functions) {
+        const auto typeContext = function.templateParameters.empty()
+                                     ? classContext
+                                     : fixtureContext(tokens, function.token, function.templateParameters, true);
+        for (const auto &[field, expression] : function.initializers) {
+            if (!containsTypedSyntax(expression))
+                continue;
+            auto start = tokenAt(tokens, field);
+            const bool braces = tokens.at(start + 1).text == "{";
+            auto position = braces ? start : start + 2;
+            const auto hosted = aurora::parseHostedExpression(
+                tokens, position, braces ? Stop::ConstructorBraces : Stop::CloseParenthesis, typeContext);
+            require(bool(hosted), "typed constructor initializer silently fell back");
+            sameExpression(hosted, expression);
+            require(braces ? position == closingBrace(tokens, start + 1) + 1 : tokens.at(position).text == ")",
+                    "typed constructor initializer lost its closing delimiter");
+            typedNames(expression, names);
+            ++cases;
+        }
+        typedStatements(tokens, function.body, typeContext, names);
+    }
+}
+std::vector<std::string> typedProgram(const std::vector<aurora::Token> &tokens) {
+    const auto program = compareProgram(tokens);
+    std::vector<std::string> names;
+    typedFunctions(tokens, program.functions, {}, names);
+    typedFunctions(tokens, program.functionTemplates, {}, names);
+    for (const auto &definition : program.classes)
+        typedFunctions(tokens, definition.methods, {}, names);
+    for (const auto &definition : program.templates)
+        typedFunctions(tokens,
+                       definition.methods,
+                       fixtureContext(tokens, definition.token, definition.templateParameters, false),
+                       names);
+    return names;
+}
+void typedConsumerSources(char **paths) {
+    const std::array<std::string, 7> modules{"std.utility",
+                                             "std.decimal",
+                                             "std.json",
+                                             "package.graph",
+                                             "function_token_values",
+                                             "examples.class_values",
+                                             "kernel"};
+    const std::array<std::vector<std::string>, 7> expected{std::vector<std::string>{"pair"},
+                                                           {"std::array"},
+                                                           {"std::array", "std::array"},
+                                                           {"std::array", "std::array", "std::array", "std::array"},
+                                                           {"std::array", "std::make_pair", "size_of", "field_count"},
+                                                           {"size_of", "field_count", "type_id"},
+                                                           {"size_of"}};
+    for (std::size_t index = 0; index < modules.size(); ++index) {
+        context = paths[index];
+        std::ifstream input(paths[index], std::ios::binary);
+        require(bool(input), "cannot read actual typed consumer source");
+        const std::string source((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+        require(!input.bad(), "cannot finish reading actual typed consumer source");
+        const auto tokens = aurora::lex(source, paths[index]);
+        aurora::Parser reference(tokens, false);
+        require(reference.parse().moduleName == modules[index], "unexpected typed consumer source/module order");
+        require(typedProgram(tokens) == expected[index], "typed consumer roots changed order or were omitted");
+    }
+}
+
 class Allocations {
 public:
     std::size_t allowed = std::numeric_limits<std::size_t>::max(), successful = 0, released = 0;
@@ -477,13 +687,15 @@ public:
     }
 };
 static_assert(sizeof(Words) == 40 && sizeof(GuardedWords<5>) == 56 && sizeof(GuardedWords<7>) == 72 &&
-              sizeof(EdgeWords) == 40);
+              sizeof(EdgeWords) == 40 && sizeof(TypeWords) == 64 && sizeof(GuardedWords<8>) == 80 &&
+              sizeof(ContextWords) == 56 && sizeof(GuardedWords<18>) == 160);
 class RawArena {
     aurora::hosted::bytes::Region region;
     // This storage is never copied or inspected as an owner descriptor. Aurora
     // constructs and consumes it; the host only supplies region identity.
     std::uint64_t before = canary;
-    std::array<std::uint64_t, 17> record{};
+    std::array<std::uint64_t, 22> record{};
+    static_assert(sizeof(record) == 176);
     std::uint64_t after = canary;
     bool active = true;
 
@@ -507,20 +719,30 @@ public:
     void guards() const {
         require(before == canary && after == canary, "arena write escaped its ABI extent");
     }
-    Words parse(const std::string &source, Stop stop = Stop::Semicolon, std::int64_t offset = 0) {
-        const std::array<std::uint64_t, 11> input{0,
-                                                  reinterpret_cast<std::uintptr_t>(source.data()),
-                                                  0,
-                                                  0,
-                                                  0,
-                                                  0,
-                                                  source.size(),
-                                                  static_cast<std::uint64_t>(offset),
-                                                  1,
-                                                  0,
-                                                  static_cast<std::uint64_t>(stop)};
+    Words parse(const std::string &source,
+                Stop stop = Stop::Semicolon,
+                std::int64_t offset = 0,
+                ContextWords typeContext = {}) {
+        GuardedWords<18> input;
+        input.value = {0,
+                       static_cast<std::int64_t>(reinterpret_cast<std::uintptr_t>(source.data())),
+                       0,
+                       0,
+                       0,
+                       0,
+                       static_cast<std::int64_t>(source.size()),
+                       offset,
+                       1,
+                       0,
+                       static_cast<std::int64_t>(stop)};
+        static_assert(sizeof(input.value) == 144);
+        for (std::size_t index = 0; index < typeContext.size(); ++index)
+            input.value[11 + index] = typeContext[index];
+        const auto beforeInput = input.value;
         GuardedWords<5> output;
-        checked_hosted_parser_parse(data(), input.data(), output.value.data());
+        checked_hosted_parser_parse(data(), input.value.data(), output.value.data());
+        input.check();
+        require(input.value == beforeInput, "parse changed its copied input/context record");
         output.check();
         guards();
         require(output.value[2] == checked_hosted_parser_count(data()),
@@ -544,6 +766,18 @@ public:
         guards();
         return output.value;
     }
+    std::int64_t types() {
+        const auto count = checked_hosted_parser_types(data());
+        guards();
+        return count;
+    }
+    TypeWords type(std::int64_t index) {
+        GuardedWords<8> output;
+        checked_hosted_parser_type(data(), index, output.value.data());
+        output.check();
+        guards();
+        return output.value;
+    }
     aurora::hosted::bytes::Metrics metrics() const {
         return region.metrics();
     }
@@ -563,8 +797,6 @@ void rawCase(const std::string &source, Status expected, Stop stop = Stop::Semic
     RawArena arena(allocations);
     const auto result = arena.parse(source, stop);
     require(result[0] == static_cast<std::int64_t>(expected), "raw status enum differs");
-    if (expected == Status::Unsupported)
-        require(result == Words{wire(Status::Unsupported), -1, 0, 0, 0}, "raw fallback was not empty and atomic");
     arena.finish();
     require(allocations.released == allocations.successful, "host allocator did not observe exact cleanup");
     ++cases;
@@ -623,10 +855,11 @@ void constructors() {
                    "first(f(\"text\", a[x + 1])){} auto get() const->i64 {return first + second;} }; }");
     compareProgram("export module constructors; template<Scalar T> class Box { T value; public: "
                    "Box(T x):value(x){} auto read() const->T {return value;} };");
-    // Excluded roots must continue to fall back as a whole, including after a
-    // supported string/call prefix and inside parenthesized initializers.
+    // Reflection and template roots must reach Aurora, including within an
+    // otherwise ordinary call or parenthesized constructor initializer.
     for (const auto &expression : {"size_of(i64)", "type_id(array<u8,2>)", "field_count(Box)", "f(size_of(i64))"}) {
-        rawCase(std::string(expression) + ")", Status::Unsupported, Stop::CloseParenthesis);
+        supported(std::string(expression) + ")", Stop::CloseParenthesis);
+        rawCase(std::string(expression) + ")", Status::Success, Stop::CloseParenthesis);
         compareProgram(prefix + expression + suffix);
     }
     for (const auto &expression : {"f<i64>(1)", "x<y<z>>(a)", "f<a<b<c>>>(0)"})
@@ -707,30 +940,22 @@ void aggregateSyntax() {
     constructorBraces("{" + chain(127) + "}");
     compareProgram("export module depth; class Box { array<i64,1> value; public: Box():value{" + chain(128) + "}{} };",
                    false);
-    // Reflection excludes the entire aggregate, including supported siblings.
+    // Reflected types must survive arrays, designators and constructor lists.
     for (const auto &expression : {"{1,size_of(i64)};",
                                    "Box{.first=1,.second=type_id(array<u8,2>)};",
                                    "f({1,field_count(Box)});",
                                    "{Box{.value=f(size_of(i64))}};"}) {
-        unsupported(expression);
-        rawCase(expression, Status::Unsupported);
+        supported(expression);
+        rawCase(expression, Status::Success);
     }
     for (const auto &contents : {"{1,size_of(i64)}", "{Box{.value=type_id(array<u8,2>)}}"}) {
         const std::string text = std::string("value") + contents;
-        context = text;
-        const auto tokens = aurora::lex(text, "constructor-fallback.au");
-        const auto before = tokens;
-        std::size_t position = 0;
-        require(!aurora::parseHostedExpression(tokens, position, Stop::ConstructorBraces) && position == 0,
-                "constructor aggregate fallback was not whole-root and atomic");
-        require(tokens.size() == before.size(), "constructor fallback changed token count");
-        for (std::size_t index = 0; index < tokens.size(); ++index)
-            sameToken(tokens[index], before[index]);
-        rawCase(text, Status::Unsupported, Stop::ConstructorBraces);
-        compareProgram("export module fallback; class Box { array<i64,2> value; public: Box():" + text + "{} };");
+        rawCase(text, Status::Success, Stop::ConstructorBraces);
+        constructorBraces(contents);
     }
-    // The actual dispatcher owns template selection; its retained C++ oracle
-    // must also agree at malformed boundaries and preserve arithmetic shifts.
+
+    // Aurora candidate selection must agree at malformed boundaries and
+    // preserve arithmetic shifts.
     for (const auto &expression : {"{f<i64>(1),2}",
                                    "Box{.first=f<a<b<c>>>(0),.second={x<y<z>>(a)}}",
                                    "f({Box<i64>{.value=1},2})",
@@ -774,6 +999,370 @@ void aggregateSyntax() {
                            std::string(contents) + "{} };",
                        false);
 }
+void typedSyntax() {
+    for (const auto &expression : {"f<i64>();",
+                                   "f<u64,u8>(1,2);",
+                                   "ns::make<bool,64>(true);",
+                                   "f<Box<i64>>();",
+                                   "f<Pair<i64,u8>,Box<64>>(1);",
+                                   "ns // callee trivia\n :: make<Pair<i64, // argument trivia\n u8>>(1);",
+                                   "f<ns::array<u8,16>>(value);",
+                                   "one::two::Box<Pair<u8,16>,Other>{.last=2,.first=1};",
+                                   "f<i64>(type_id(Pair<Box<u8>,i64>)).member[0];",
+                                   "{f<i64>(1),size_of(array<u8,4096>),Box<u64>{.value=2}};",
+                                   "Box<i64>{.value=field_count(Other)}.value;",
+                                   "size_of<i64>(u8);",
+                                   "type_id<8>(Box);",
+                                   "a < b >> (c);",
+                                   "(a) < b > (c);",
+                                   "true < x > (y);",
+                                   "f<a<b<c>>(0);",
+                                   "{1,f<T}>(0);"}) {
+        supported(expression);
+        compareProgram("module typed; auto f()->i64{return " + std::string(expression) + "}");
+    }
+    for (const auto &type : {"i64",
+                             "u64",
+                             "u8",
+                             "bool",
+                             "own<i64>",
+                             "ref<i64>",
+                             "mutref<i64>",
+                             "Name",
+                             "ns::Name",
+                             "Pair<i64,u8>",
+                             "Box<Pair<u8,64>>",
+                             "array<u8,1>",
+                             "array<i64,4096>",
+                             "array<ns::Value,64>",
+                             "array<Box<i64>,2>",
+                             "builtin::array<bool,3>",
+                             "builtin::span<const u8>",
+                             "builtin::OwnedValues<ns::Value>",
+                             "array<builtin::ConsoleSample,2>",
+                             "array<builtin::IommuEventSample,64>",
+                             "builtin::OwnedValues<builtin::IommuEventSample>",
+                             "builtin::OwnedValues<builtin::ConsoleSample>",
+                             "builtin::ByteRegion",
+                             "builtin::OwnedBytes",
+                             "builtin::ConsoleSession",
+                             "builtin::ConsoleSample",
+                             "builtin::ConsolePutResult",
+                             "builtin::ConsoleCompletion",
+                             "builtin::DisplaySession",
+                             "builtin::DisplayPutResult",
+                             "builtin::DisplayCompletion",
+                             "builtin::IommuEventSession",
+                             "builtin::IommuEventSample",
+                             "builtin::EventPollResult",
+                             "builtin::EventAckResult",
+                             "builtin::EventIntakeCompletion"})
+        for (const auto &query : {"size_of", "type_id", "field_count"})
+            supported(std::string(query) + "(" + type + ");");
+    for (const auto &expression : {"f<T)>(0);",
+                                   "f<T]>(0);",
+                                   "f<T:>(0);",
+                                   "f<>(0);",
+                                   "f<i64,>(0);",
+                                   "(f<T)>(0);",
+                                   "{f<T)>(0)};",
+                                   "Box{.value=f<T)>(0)};",
+                                   "f< T // malformed trivia\n ) >(0);",
+                                   "f<i64,u8,bool>(0);",
+                                   "f<0>(0);",
+                                   "f<65>(0);",
+                                   "f<1u64>(0);",
+                                   "f<18446744073709551616>(0);",
+                                   "f<true>(0);",
+                                   "f<false>(0);",
+                                   "f<own>(0);",
+                                   "f<ref>(0);",
+                                   "f<mutref>(0);",
+                                   "f<array>(0);",
+                                   "f<builtin>(0);",
+                                   "f<fn>(0);",
+                                   "f<ns::true>(0);",
+                                   "f<__au_private>(0);",
+                                   "size_of();",
+                                   "size_of(fn);",
+                                   "size_of(123);",
+                                   "size_of(i64,u8);",
+                                   "size_of(own);",
+                                   "size_of(own<u8>);",
+                                   "size_of(ref<i64>>);",
+                                   "size_of(mutref<i64);",
+                                   "size_of(builtin);",
+                                   "size_of(builtin::unknown);",
+                                   "size_of(builtin::span<u8>);",
+                                   "size_of(builtin::span<const i64>);",
+                                   "size_of(builtin::span<const u8>>);",
+                                   "size_of(array<i64>);",
+                                   "size_of(array<own<i64>,1>);",
+                                   "size_of(array<array<i64,1>,1>);",
+                                   "size_of(array<i64,0>);",
+                                   "size_of(array<i64,4097>);",
+                                   "size_of(array<i64,1u64>);",
+                                   "size_of(array<i64,N>);",
+                                   "size_of(array<Class,65>);",
+                                   "size_of(builtin::OwnedValues<i64>);",
+                                   "size_of(builtin::OwnedValues<Box<i64>>);",
+                                   "size_of(Box<i64,u8,bool>);",
+                                   "size_of(Box<i64,>);",
+                                   "size_of(Box<0>);",
+                                   "size_of(array<builtin::ConsolePutResult,2>);",
+                                   "size_of(array<builtin::DisplayCompletion,2>);",
+                                   "size_of(builtin::OwnedValues<builtin::EventPollResult>);"}) {
+        rejected(expression);
+        compareProgram("module typed_errors; auto f()->i64{return " + std::string(expression) + "}", false);
+    }
+    // The second byte of >> is the diagnostic token after a literal > consumer
+    // or after a completed reflected type. Source snapshots remain unsplit.
+    for (const auto &expression :
+         {"size_of(Box<i64>>);", "size_of(array<i64,2>>);", "size_of(builtin::OwnedValues<Value>>);"})
+        rejected(expression);
+    supported("f<A<B<C<D<i64>>>>>();");
+    supported("size_of(A<B<C<D<i64>>>>);");
+    supported("A<B<C<D<E<i64>>>>>{};");
+    rejected("f<A<B<C<D<E<i64>>>>>>();");
+    rejected("size_of(A<B<C<D<E<i64>>>>>);");
+    // Invalid recursive arrays still exercise entry to type level 64 before
+    // element validation; entering level 65 must win with the nesting diagnostic.
+    for (const std::size_t depth : {63, 64}) {
+        std::string type = "i64";
+        for (std::size_t index = 0; index < depth; ++index)
+            type = "array<" + type + ",1>";
+        const auto source = "size_of(" + type + ");";
+        rejected(source);
+        rawCase(source, depth == 63 ? Status::ArrayElement : Status::TypeNestingLimit);
+    }
+    for (const auto &source :
+         {"export module context; template<Value T,Value U> auto f(T x,U y)->i64 {"
+          "const Pair<T,U> p=Pair<T,U>(x,y); return size_of(T)+type_id(U);}",
+          "export module context; template<Scalar T,i64 N> class C { array<T,N> data; public: "
+          "C():data{size_of(T)}{} auto f()->i64{return size_of(array<T,N>);} };",
+          "export module context; template<Value T> class C { i64 value; public: "
+          "C():value(size_of(T)){} auto f()->i64{return field_count(T);} };",
+          "export module context; template<Value T> auto f(T x)->i64 { if(type_id(T)){return g<T>(x);} "
+          "while(size_of(T)){x=g<T>(x);} static_assert(size_of(T)>0); return 0;}"}) {
+        context = source;
+        require(!typedProgram(aurora::lex(source, "typed-context.au")).empty(), "typed context roots were omitted");
+    }
+    for (const auto &source :
+         {"export module context; template<Value T> class C { public: auto f()->i64{return g<T>();} };",
+          "export module context; template<Value T> class C { public: auto f()->i64{return size_of(Box<i64>);} };",
+          "export module context; template<Value T> auto f(T x)->i64{return g<Box<T>>(x);}",
+          "export module context; template<Value T> auto f(T x)->i64{return g<T<i64>>(x);}",
+          "export module context; template<Value T> auto f(T x)->i64{return size_of(builtin::OwnedValues<T>);}"})
+        compareProgram(source, false);
+}
+void rawTypeRecords() {
+    struct Fixture {
+        std::string source;
+        std::vector<TypeWords> types;
+    };
+    // Numeric kind words are independent wire expectations, not casts from the
+    // adapter enum. These exact records also pin both halves of a shared >>.
+    for (const auto &fixture : std::vector<Fixture>{
+             {"size_of(i64);", {{1, 2, 2, 4, -1, -1, 0, 2}}},
+             {"size_of(u64);", {{2, 2, 2, 4, -1, -1, 0, 2}}},
+             {"size_of(u8);", {{3, 2, 2, 4, -1, -1, 0, 2}}},
+             {"size_of(bool);", {{4, 2, 2, 4, -1, -1, 0, 2}}},
+             {"size_of(ns::Name);", {{5, 2, 4, 8, -1, -1, 0, 2}}},
+             {"size_of(own<i64>);", {{10, 2, 2, 10, -1, -1, 0, 2}}},
+             {"size_of(ref<i64>);", {{11, 2, 2, 10, -1, -1, 0, 2}}},
+             {"size_of(mutref<i64>);", {{12, 2, 2, 10, -1, -1, 0, 2}}},
+             {"size_of(builtin::span<const u8>);", {{13, 2, 4, 16, -1, -1, 0, 2}}},
+             {"size_of(builtin::ByteRegion);", {{14, 2, 4, 8, -1, -1, 0, 2}}},
+             {"size_of(builtin::ConsoleSample);", {{16, 2, 4, 8, -1, -1, 0, 2}}},
+             {"size_of(array<builtin::ConsoleSample,2>);",
+              {{16, 4, 6, 12, -1, -1, -1, 0}, {7, 8, 8, 16, -1, -1, -1, 0}, {9, 2, 2, 18, 0, 1, 0, 2}}},
+             {"size_of(builtin::OwnedValues<builtin::IommuEventSample>);",
+              {{16, 6, 8, 16, -1, -1, -1, 0}, {15, 2, 4, 18, 0, -1, 0, 2}}},
+             {"size_of(builtin::OwnedValues<Value>);", {{5, 6, 6, 12, -1, -1, -1, 0}, {15, 2, 4, 14, 0, -1, 0, 2}}},
+             {"size_of<i64>(u8);",
+              {{1, 2, 2, 4, -1, -1, -1, 0}, {5, 0, 0, 6, 0, -1, 0, 1}, {3, 5, 5, 10, -1, -1, 0, 2}}},
+             {"f<i64>();", {{1, 2, 2, 4, -1, -1, -1, 0}, {5, 0, 0, 6, 0, -1, 0, 1}}},
+             {"f<Box<i64>>();", {{1, 4, 4, 8, -1, -1, -1, 0}, {5, 2, 2, 10, 0, -1, -1, 0}, {5, 0, 0, 11, 1, -1, 0, 1}}},
+             {"size_of(array<u8, 4>);",
+              {{3, 4, 4, 8, -1, -1, -1, 0}, {7, 6, 6, 12, -1, -1, -1, 0}, {9, 2, 2, 14, 0, 1, 0, 2}}},
+             {"Box<i64>{.value=1};", {{1, 2, 2, 4, -1, -1, -1, 0}, {5, 0, 0, 6, 0, -1, 0, 1}}},
+             {"size_of(Box<Pair<i64, u8>>);",
+              {{1, 6, 6, 12, -1, -1, -1, 0},
+               {3, 8, 8, 16, -1, -1, -1, 0},
+               {5, 4, 4, 18, 0, 1, -1, 0},
+               {5, 2, 2, 19, 2, -1, 0, 2}}}}) {
+        context = "independent TypeSyntax ABI " + fixture.source;
+        Allocations allocations;
+        RawArena arena(allocations);
+        const auto tokens = aurora::lex(fixture.source, "type-abi.au");
+        const auto result = arena.parse(fixture.source);
+        require(result[0] == wire(Status::Success) && result[1] >= 0 &&
+                    result[3] == static_cast<std::int64_t>(tokens.size() - 2) &&
+                    result[4] == static_cast<std::int64_t>(fixture.source.size() - 1) &&
+                    arena.types() == static_cast<std::int64_t>(fixture.types.size()),
+                "typed raw result/count/cursor differs");
+        for (std::size_t index = 0; index < fixture.types.size(); ++index)
+            require(arena.type(static_cast<std::int64_t>(index)) == fixture.types[index],
+                    "TypeSyntax layout/topology/owner/half differs at " + std::to_string(index));
+        arena.finish();
+        require(allocations.successful == allocations.released, "typed ABI leaked an owner");
+        ++cases;
+    }
+    // Context words are absolute source ranges, while type records use token
+    // ordinals relative to the expression cursor. Capture both named slots and
+    // the capacity slot independently of the host Context serializer.
+    for (const bool function : {false, true}) {
+        const std::string source = function ? "T U size_of(T)+type_id(U);" : "T N size_of(array<T, N>);";
+        context = "independent copied TypeContext " + source;
+        const ContextWords typeContext =
+            function ? ContextWords{0, 1, 2, 3, 0, 0, 2} : ContextWords{0, 1, 0, 0, 2, 3, 1};
+        Allocations allocations;
+        RawArena arena(allocations);
+        const auto result = arena.parse(source, Stop::Semicolon, 4, typeContext);
+        require(result[0] == wire(Status::Success), "raw copied context was not consumed");
+        if (function) {
+            require(arena.types() == 2 && arena.type(0) == TypeWords{6, 2, 2, 4, -1, -1, 0, 2} &&
+                        arena.type(1) == TypeWords{6, 7, 7, 14, -1, -1, 5, 2},
+                    "two captured type slots lost parameter identity/owner");
+        } else {
+            require(arena.types() == 3 && arena.type(0) == TypeWords{6, 4, 4, 8, -1, -1, -1, 0} &&
+                        arena.type(1) == TypeWords{8, 6, 6, 12, -1, -1, -1, 0} &&
+                        arena.type(2) == TypeWords{9, 2, 2, 14, 0, 1, 0, 2},
+                    "class/capacity context lost independent parameter roles");
+        }
+        arena.finish();
+        require(allocations.successful == allocations.released, "context ABI leaked an owner");
+        ++cases;
+    }
+}
+void rawTypeDiagnostics() {
+    const std::vector<std::pair<std::string, Status>> tests{
+        {"size_of(array);", Status::ExpectedAngleOpen},
+        {"size_of(own<i64);", Status::ExpectedAngleClose},
+        {"size_of(builtin);", Status::ExpectedScope},
+        {"size_of(array<i64>);", Status::ExpectedComma},
+        {"size_of(builtin::span<u8>);", Status::ExpectedConst},
+        {"size_of(builtin::span<const i64>);", Status::ExpectedU8},
+        {"size_of(own<u8>);", Status::ExpectedI64},
+        {"size_of(builtin::unknown);", Status::ExpectedArray},
+        {"size_of(fn);", Status::ReservedType},
+        {"size_of(123);", Status::ExpectedType},
+        {"size_of(A<B<C<D<E<i64>>>>>);", Status::TemplateNestingLimit},
+        {"f<A<B<C<D<E<i64>>>>>>();", Status::CallTemplateNestingLimit},
+        {"f<i64, u8, bool>();", Status::TemplateArity},
+        {"f<own>();", Status::TemplateArgument},
+        {"f<65>();", Status::CapacityArgument},
+        {"size_of(builtin::OwnedValues<i64>);", Status::OwnedElement},
+        {"size_of(array<own<i64>, 1>);", Status::ArrayElement},
+        {"size_of(array<i64, 4097>);", Status::ArrayLength},
+        {"size_of(array<Class, 65>);", Status::ClassArrayLength},
+        {"size_of(Box<i64>>);", Status::ExpectedClose},
+        {"size_of(array<i64, 2>>);", Status::ExpectedClose}};
+    for (const auto &[source, expected] : tests) {
+        context = "raw typed status/token/offset " + source;
+        const auto tokens = aurora::lex(source, "raw-type-diagnostic.au");
+        std::optional<aurora::Diagnostic> diagnostic;
+        try {
+            aurora::Parser reference(tokens, false);
+            reference.expr();
+        } catch (const aurora::Error &error) {
+            diagnostic = error.diagnostic;
+        }
+        require(bool(diagnostic), "raw typed diagnostic fixture was accepted by the reference");
+        const auto offset = diagnostic->span.begin.offset;
+        const auto token = std::find_if(tokens.begin(), tokens.end(), [&](const auto &value) {
+            return value.span.begin.offset == offset || (value.text == ">>" && value.span.begin.offset + 1 == offset);
+        });
+        require(token != tokens.end(), "typed diagnostic escaped its original whole-token or half-token");
+        Allocations allocations;
+        RawArena arena(allocations);
+        const auto result = arena.parse(source);
+        require(result[0] == wire(expected) && result[1] == -1 &&
+                    result[3] == static_cast<std::int64_t>(token - tokens.begin()) &&
+                    result[4] == static_cast<std::int64_t>(offset),
+                "typed raw rejection status/token/half differs from the reference");
+        arena.finish();
+        require(allocations.successful == allocations.released, "typed diagnostic leaked an owner");
+        ++cases;
+    }
+    struct Dependent {
+        std::string source;
+        ContextWords context;
+        Status status;
+    };
+    for (const auto &test :
+         std::vector<Dependent>{{"T f<T>();", {0, 1, 0, 0, 0, 0, 1}, Status::TemplateContext},
+                                {"T f<Box<T>>();", {0, 1, 0, 0, 0, 0, 2}, Status::NestedDependent},
+                                {"T f<T<i64>>();", {0, 1, 0, 0, 0, 0, 2}, Status::NestedDependent}}) {
+        context = "raw dependent context rejection " + test.source;
+        Allocations allocations;
+        RawArena arena(allocations);
+        const auto result = arena.parse(test.source, Stop::Semicolon, 2, test.context);
+        require(result[0] == wire(test.status) && result[1] == -1,
+                "copied dependent context did not enforce the reference restriction");
+        arena.finish();
+        require(allocations.successful == allocations.released, "dependent diagnostic leaked an owner");
+        ++cases;
+    }
+}
+
+void rawTypeGrowth() {
+    context = "independent type/candidate growth and every allocation failure";
+    constexpr std::int64_t count = 257;
+    std::string source = "{";
+    for (std::int64_t index = 0; index < count; ++index) {
+        if (index)
+            source += ',';
+        source += "f<i64>(size_of(array<u8, 4>))";
+    }
+    source += "};";
+    std::vector<TypeWords> expected;
+    for (std::int64_t index = 0; index < count; ++index) {
+        const auto token = 1 + 16 * index, first = 5 * index;
+        expected.push_back({1, token + 2, token + 2, 2 * (token + 2), -1, -1, -1, 0});
+        expected.push_back({5, token, token, 2 * (token + 3), first, -1, token, 1});
+        expected.push_back({3, token + 9, token + 9, 2 * (token + 9), -1, -1, -1, 0});
+        expected.push_back({7, token + 11, token + 11, 2 * (token + 11), -1, -1, -1, 0});
+        expected.push_back({9, token + 7, token + 7, 2 * (token + 12), first + 2, first + 3, token + 5, 2});
+    }
+    std::size_t successful = 0;
+    {
+        Allocations allocations;
+        RawArena arena(allocations);
+        const auto result = arena.parse(source);
+        require(result[0] == wire(Status::Success) && result[2] == 2 * count + 1 && arena.types() == 5 * count &&
+                    arena.edges() == 2 * count,
+                "wide typed root omitted expression/type records");
+        for (std::int64_t index = 0; index < arena.types(); ++index)
+            require(arena.type(index) == expected[static_cast<std::size_t>(index)],
+                    "type growth changed committed topology/provenance/ownership");
+        const auto metrics = arena.metrics();
+        require(metrics.successful_allocations > 15 && metrics.live_allocations == 4 &&
+                    metrics.peak_live_allocations == 4 && metrics.peak_used > 5 * count * 64,
+                "typed parse did not grow all independent storage owners");
+        successful = allocations.successful;
+        arena.finish();
+        require(allocations.successful == allocations.released, "typed growth cleanup mismatch");
+    }
+    for (std::size_t allowed = 0; allowed < successful; ++allowed) {
+        Allocations allocations;
+        allocations.allowed = allowed;
+        RawArena arena(allocations);
+        const auto result = arena.parse(source);
+        require(result[0] == wire(Status::AllocationFailure) && result[1] == -1,
+                "type/prepass allocation failure did not fail closed");
+        require(arena.types() >= 0 && arena.types() <= static_cast<std::int64_t>(expected.size()),
+                "type failure exposed an impossible prefix count");
+        for (std::int64_t index = 0; index < arena.types(); ++index)
+            require(arena.type(index) == expected[static_cast<std::size_t>(index)],
+                    "type failure damaged a previously committed record");
+        arena.finish();
+        require(allocations.successful == allocations.released, "partial type/candidate graph leaked an owner");
+    }
+    supported(source);
+    ++cases;
+}
+
 void rawAggregateDiagnostics() {
     struct Rejection {
         std::string source;
@@ -870,22 +1459,22 @@ void rawGrowth() {
                         "binary ABI/topology/depth differs");
         }
         const auto used = arena.metrics();
-        require(used.successful_allocations > 4 && used.peak_live_allocations == 3 && used.live_allocations == 3,
-                "parser did not grow its node/frame stores while retaining the empty edge owner");
+        require(used.successful_allocations > 4 && used.peak_live_allocations == 4 && used.live_allocations == 4,
+                "parser did not grow its node/frame stores while retaining the empty edge/type owners");
         successful = allocations.successful;
         arena.finish();
         require(allocations.released == successful, "success cleanup mismatch");
     }
-    for (std::size_t allowed = 0; allowed < 3; ++allowed) {
+    for (std::size_t allowed = 0; allowed < 4; ++allowed) {
         Allocations allocations;
         allocations.allowed = allowed;
         RawArena arena(allocations);
         require(arena.parse("size_of(i64);")[0] == wire(Status::AllocationFailure),
-                "failed arena allocation silently fell back on unsupported syntax");
+                "failed arena allocation did not reject before typed parsing");
         arena.finish();
     }
     // Refuse every allocation in sequence, including frame and node growth.
-    // All partial graphs still leave all three owners releasable exactly once.
+    // All partial graphs still leave all four owners releasable exactly once.
     for (std::size_t allowed = 0; allowed < successful; ++allowed) {
         Allocations allocations;
         allocations.allowed = allowed;
@@ -942,7 +1531,7 @@ void rawFrameGrowth() {
         // first eight-frame plus eight-node capacities therefore proves actual
         // explicit-frame growth, independently of the allocation count.
         require(used.peak_used > 8 * 40 + 8 * 56 && used.successful_allocations > 4 &&
-                    used.peak_live_allocations == 3 && used.live_allocations == 3,
+                    used.peak_live_allocations == 4 && used.live_allocations == 4,
                 "nested parser did not grow its explicit frame owner");
         successful = allocations.successful;
         arena.finish();
@@ -986,8 +1575,8 @@ void rawArguments() {
             require(arena.edge(index) == EdgeWords{index, index - 1, index + 1, 2, -1},
                     "reverse-linked argument ABI differs");
         const auto metrics = arena.metrics();
-        require(metrics.successful_allocations > 10 && metrics.live_allocations == 3 &&
-                    metrics.peak_live_allocations == 3,
+        require(metrics.successful_allocations > 10 && metrics.live_allocations == 4 &&
+                    metrics.peak_live_allocations == 4,
                 "wide call did not grow independent node and argument owners");
         successful = allocations.successful;
         arena.finish();
@@ -1160,8 +1749,8 @@ void rawAggregates() {
                         "wide aggregate edge/field-label ABI differs");
             }
             const auto metrics = arena.metrics();
-            require(metrics.successful_allocations > 10 && metrics.live_allocations == 3 &&
-                        metrics.peak_live_allocations == 3,
+            require(metrics.successful_allocations > 10 && metrics.live_allocations == 4 &&
+                        metrics.peak_live_allocations == 4,
                     "wide aggregate did not grow independent node/edge owners");
             successful = allocations.successful;
             arena.finish();
@@ -1193,7 +1782,7 @@ void rawAggregates() {
 int main(int argc, char **argv) {
     try {
         context = "fixture arguments";
-        require(argc == 9, "expected three bootstrap and five aggregate consumer source paths");
+        require(argc == 16, "expected three bootstrap, five aggregate and seven typed consumer source paths");
         for (const auto &expression :
              {"1;",
               "false;",
@@ -1245,7 +1834,7 @@ int main(int argc, char **argv) {
         supported("f(a[1], b.member))", Stop::CloseParenthesis);
         for (const auto &expression :
              {"size_of(i64);", "type_id(array<u8,2>);", "field_count(Box);", "f(size_of(i64));"})
-            unsupported(expression);
+            supported(expression);
         compareProgram("module templates; auto f()->i64{return f<i64>(1);}");
         compareProgram("module templates; auto f()->i64{return x<y<z>>(a);}");
         compareProgram("module templates; auto f()->i64{return f<T)>(0);}", false);
@@ -1334,6 +1923,10 @@ int main(int argc, char **argv) {
         byteStrings();
         constructors();
         aggregateSyntax();
+        typedSyntax();
+        rawTypeRecords();
+        rawTypeDiagnostics();
+        rawTypeGrowth();
         rawAggregateDiagnostics();
         abiControls();
         rawGrowth();
@@ -1342,11 +1935,13 @@ int main(int argc, char **argv) {
         rawAggregates();
         bootstrapSources(argv + 1);
         consumerSources(argv + 4);
+        typedConsumerSources(argv + 9);
         std::cout
             << "PASS hosted parser " << cases
             << " differential/ABI cases, 199-node/frame and 257-argument/aggregate growth with allocation cleanup; "
-               "5 byte-string and 42 constructor roots from actual bootstrap sources; "
-               "14 aggregate roots from actual library/example consumers, including 512 XFS elements\n";
+               "source-derived constructor/string roots from all three actual bootstrap sources; "
+               "14 aggregate roots including 512 XFS elements, 16 direct typed product roots, "
+               "and 1,285-record type growth\n";
     } catch (const std::exception &error) {
         std::cerr << "FAIL " << error.what() << '\n';
         return 1;

@@ -19,7 +19,8 @@ The implementation uses internal header units and one translation unit so existi
 
 `expression_parser.au` parses complete expressions containing integer, byte,
 byte-string and bool literals, qualified names, ordinary function/constructor-shaped
-calls, member/method/index chains, array literals, designated named construction,
+calls, explicit template calls/construction, type-taking reflection,
+member/method/index chains, array literals, designated named construction,
 grouping, unary `-`/`!`/`~`, and all existing binary precedence tiers. Local and
 constructor field initializers, return/static-assert expressions, if/while
 conditions, expression statements and assignment operands enter this path. An
@@ -32,13 +33,18 @@ argument-count limit. Grouping
 retains the inner node's original token span; index nodes retain their base token.
 
 The parser calls `lexer.au::next_lexeme` for every token and trivia boundary.
-A local eligibility pass returns Unsupported for type-taking reflection calls.
-Existing non-consuming host template lookahead also traverses aggregates and
-protects template/call ambiguity, including exact `>>` closer behavior. No supported prefix is committed: Unsupported falls back for
-the whole expression with tokens and position unchanged. Empty/truncated or
-otherwise malformed supported grammar, allocation/depth failure and malformed
-private results reject. Recursive parsing inside unsupported constructs remains
-on the C++ reference path. Byte strings retain their complete original token,
+A single linear candidate pass uses the existing frame scratch to preserve the
+reference's template/call ambiguity, then one iterative type parser produces an
+unresolved `TypeSyntax` forest for both explicit template arguments and
+`size_of`/`type_id`/`field_count`. A fourth checked owner holds these copied records.
+Type nesting retains its limit of 64; template nesting retains four levels and
+the existing explicit-call allowance. Declaration parsing passes the original
+type/capacity parameter tokens and class/function-template mode. No resolved
+nominal identity or visibility authority crosses this syntax boundary.
+The hosted path accepts the complete existing expression grammar directly;
+Unsupported is an invalid production result. Malformed syntax, depth/allocation
+failure and invalid private results reject without falling back.
+Byte strings retain their complete original token,
 without a second decoder or new owned
 payload; existing lexer validation and semantic decoding remain unchanged.
 The constructor-brace entry starts at the original field token and ends after its
@@ -50,13 +56,17 @@ creates and consumes the arena; C++ only reserves opaque storage and imports the
 same immutable source snapshot used by the lexer. Copied results contain named
 status values, indices and source offsets. The adapter checks token/spelling/span
 bounds, qualified spellings, matched delimiters, exact stopping delimiter and
-complete unique token coverage, including aggregate designators, commas and
-grouping. It checks
+complete unique token coverage, including aggregate designators, commas,
+grouping and separately owned halves of `>>`. Type roots identify their owning
+expression and template/reflection role. The adapter validates a bounded,
+complete non-sharing type forest before constructing existing C++ `Type` and
+`TemplateArgument` values. Split-closer diagnostics preserve the original token
+index and exact second-byte span without mutating lexical tokens. It checks
 subtree source order, child-before-parent order, unique argument edges, arity,
 independently recomputed depth and one connected non-sharing tree before committing
 position.
 It constructs the existing `Expression` objects iteratively. All exits, including
-fallback, syntax errors and host allocation exceptions, consume the Aurora owner
+syntax errors and host allocation exceptions, consume the Aurora owners
 before the host Region closes. Semantic checking, typed IR and backend emission
 consume this returned AST unchanged.
 
@@ -75,8 +85,9 @@ once Aurora handles the complete existing expression grammar in every entry
 context, including constructor initializers and nested expressions. Coverage must
 include calls, qualified/member/index expressions, strings and arrays, construction,
 type-taking reflection calls and template arguments with exact `>`/`>>` ambiguity
-and diagnostic behavior. Until then the bounded whole-expression fallback remains
-an explicit bootstrap dependency; this milestone does not add language features.
+and diagnostic behavior. The hosted expression path now has this grammar;
+the C++ parser remains the separately selected seed/reference while the
+predecessor-bootstrap requirement below is open. This adds no language features.
 
 Removal requires direct no-fallback Aurora tests for each grammar family, exact
 AST/span and rejection parity, depth/allocation/ABI failure coverage, and the
