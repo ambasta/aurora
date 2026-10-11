@@ -195,13 +195,13 @@ class MesonEntrypointTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.calls = []
+        self.queries = []
         self.failure = None
         self.flags = []
         self.configured_compiler = "/synthetic/g++"
         self.kernel_images = True
         self.kernel_compiler = ""
         self.missing_options = set()
-        self.reconfigured_missing_options = set()
         for patcher in (
             patch.dict(os.environ, {}, clear=True),
             patch.object(contract, "parse_cxx", return_value="/synthetic/g++"),
@@ -223,10 +223,7 @@ class MesonEntrypointTests(unittest.TestCase):
         self.assertEqual(kwargs["env"]["CXX"], "/synthetic/g++")
         if command[1] == self.failure:
             raise subprocess.CalledProcessError(23, command)
-        if command[1:3] == ["setup", "--reconfigure"]:
-            self.assertEqual(command[3:], [str(self.root / "build/meson"), str(self.root)])
-            self.missing_options = self.reconfigured_missing_options.copy()
-        elif command[1] == "setup":
+        if command[1] == "setup":
             build = Path(command[2])
             self.assertEqual(command[3:6], [str(self.root), "--backend=ninja", "-Dlsp=false"])
             self.assertIn(command[6], ("-Dkernel_images=true", "-Dkernel_images=false"))
@@ -236,6 +233,7 @@ class MesonEntrypointTests(unittest.TestCase):
         return subprocess.CompletedProcess(command, 0)
 
     def introspect(self, command, **kwargs):
+        self.queries.append(command)
         if command[-1] == "--compilers":
             return json.dumps({"build": {"cpp": {"exelist": [self.configured_compiler]}}}).encode()
         self.assertEqual(command[-1], "--buildoptions")
@@ -247,55 +245,29 @@ class MesonEntrypointTests(unittest.TestCase):
         ]
         return json.dumps([item for item in options if item["name"] not in self.missing_options]).encode()
 
-    def test_old_build_missing_options_reconfigures_once_before_build(self):
+    def test_stale_build_missing_options_rejects_without_reconfigure_or_work(self):
         meson_test.execute(self.root, "full")
         for missing in (
             {"kernel_compiler"},
             {"kernel_images"},
             {"uefi_ld"},
-            {"kernel_compiler", "kernel_images", "uefi_ld"},
+            {"cpp_args"},
+            {"kernel_compiler", "kernel_images", "uefi_ld", "cpp_args"},
         ):
             with self.subTest(missing=missing):
                 self.calls.clear()
+                self.queries.clear()
                 self.missing_options = missing
-                meson_test.execute(self.root, "full")
-                self.assertEqual([command[1] for command in self.calls], ["setup", "compile", "test"])
-                self.assertIn("--reconfigure", self.calls[0])
-                self.assertEqual(self.calls[1][4:6], ["-j", "3"])
-                self.calls.clear()
-                meson_test.execute(self.root, "full")
-                self.assertEqual([command[1] for command in self.calls], ["compile", "test"])
-
-    def test_old_build_reconfigure_failure_stops_before_build(self):
-        meson_test.execute(self.root, "full")
-        self.calls.clear()
-        self.missing_options = {"kernel_compiler"}
-        self.failure = "setup"
-        with self.assertRaises(subprocess.CalledProcessError):
-            meson_test.execute(self.root, "full")
-        self.assertEqual([command[1] for command in self.calls], ["setup"])
-
-    def test_old_build_reconfiguration_does_not_hide_missing_or_mismatched_options(self):
-        meson_test.execute(self.root, "full")
-        cases = [
-            ("missing", "Missing Meson build options after reconfigure"),
-            ("compiler", "Configured compiler differs"),
-            ("flags", "Configured cpp_args differ"),
-            ("external", "AURORAC/native selection"),
-            ("disabled", "Kernel images disabled"),
-        ]
-        for case, message in cases:
-            with self.subTest(case=case):
-                self.calls.clear()
-                self.missing_options = {"kernel_compiler"}
-                self.reconfigured_missing_options = {"kernel_compiler"} if case == "missing" else set()
-                self.configured_compiler = "/different/g++" if case == "compiler" else "/synthetic/g++"
-                self.flags = ["-O1"] if case == "flags" else []
-                self.kernel_compiler = "/configured/external" if case == "external" else ""
-                self.kernel_images = case != "disabled"
-                with self.assertRaisesRegex(contract.ContractError, message):
-                    meson_test.execute(self.root, None, ["kernel-uefi-normal"])
-                self.assertEqual([command[1] for command in self.calls], ["setup"])
+                with self.assertRaises(contract.ContractError) as caught:
+                    meson_test.execute(self.root, "full")
+                self.assertEqual(
+                    str(caught.exception),
+                    "Missing Meson build options: "
+                    + ", ".join(sorted(missing))
+                    + "; select a fresh matching MESON_BUILD_DIR",
+                )
+                self.assertEqual(self.calls, [])
+                self.assertEqual([command[-1] for command in self.queries], ["--buildoptions"])
 
     def test_fresh_default_and_explicit_builds_setup_then_compile_then_full(self):
         for supplied in (None, "build/chosen-gcc", str(self.root / "absolute-gcc")):
@@ -314,6 +286,7 @@ class MesonEntrypointTests(unittest.TestCase):
                 self.assertIn("--no-rebuild", self.calls[2])
                 self.assertIn("--ninja-args=meson-test-prereq", self.calls[1])
                 self.assertEqual(self.calls[1][4:6], ["-j", "3"])
+                self.assertEqual(self.calls[2][7:9], ["--num-processes", "4"])
                 if supplied:
                     self.assertEqual(build, (self.root / supplied).resolve())
                 else:

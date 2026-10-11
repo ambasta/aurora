@@ -60,7 +60,9 @@ test` and `scripts/compiler-test.sh` select `compiler`. Set `MESON_BUILD_DIR` to
 fresh or matching configured directory, or omit it for `build/meson` (normal
 image-enabled work) or `build/meson-compiler` (hosted-only compiler work).
 The shortcuts run Meson setup automatically when needed, stop on setup/build/test
-failure, and reject mismatched existing compiler/flag selections.
+failure, and reject mismatched existing compiler/flag selections. Existing builds
+missing current Meson options require a fresh matching directory; the shortcuts
+do not migrate old build metadata automatically.
 `AURORA_BUILD_JOBS=3` and `AURORA_TEST_JOBS=4` are independent.
 `SANITIZE` and nondefault `CPPFLAGS`/`LDFLAGS` are not silently accepted by the
 convenience route; use explicit configured sanitizer builds/separate focused gates.
