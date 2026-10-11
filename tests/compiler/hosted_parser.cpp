@@ -338,11 +338,10 @@ void expectError(const std::vector<aurora::Token> &tokens,
     }
     require(false, "malformed input was accepted");
 }
-// Program-only declaration contracts require separate pinned predecessor/current
-// source qualification. This check claims acceptance, not an AST
-// oracle; expression dispatch inventories below carry their stated assertions.
+// Every program fixture enters the one whole-module Aurora call. Acceptance
+// alone is not an AST oracle; the explicit inventories below carry that claim.
 aurora::Program checkedProgram(const std::vector<aurora::Token> &tokens) {
-    auto program = aurora::Parser(tokens).parse();
+    auto program = aurora::parseHostedProgram(tokens);
     require(!program.moduleName.empty(), "accepted program lost its module");
     ++cases;
     return program;
@@ -389,7 +388,7 @@ void rejectedProgram(const std::string &prefix,
         tokens,
         expected,
         [&] {
-            aurora::Parser(tokens).parse();
+            aurora::parseHostedProgram(tokens);
         },
         aurora::lex(prefix, "prefix.au").size() - 1);
     ++cases;
@@ -1093,6 +1092,8 @@ void bootstrapBodies(const std::vector<aurora::Token> &, const aurora::Program &
 std::size_t wholeCallables = 0, wholeFields = 0;
 void bootstrapDeclarationTypes(const std::vector<aurora::Token> &, const aurora::Program &, std::size_t);
 void bootstrapPreambleEnums(const std::vector<aurora::Token> &, const aurora::Program &, std::size_t);
+void bootstrapContainers(const std::vector<aurora::Token> &, const aurora::Program &, std::size_t);
+void libraryContainers(const std::vector<aurora::Token> &, const aurora::Program &, bool);
 void bootstrapSources(char **paths) {
     std::size_t initializers = 0, strings = 0, newInitializers = 0;
     std::size_t expectedInitializers = 0, expectedStrings = 0;
@@ -1110,6 +1111,7 @@ void bootstrapSources(char **paths) {
         bootstrapBodies(tokens, program, i);
         bootstrapDeclarationTypes(tokens, program, i);
         bootstrapPreambleEnums(tokens, program, i);
+        bootstrapContainers(tokens, program, i);
         expectedBootstrapRoots(program.functions, expectedInitializers, expectedStrings);
         expectedBootstrapRoots(program.functionTemplates, expectedInitializers, expectedStrings);
         for (const auto &definition : program.classes)
@@ -1254,6 +1256,8 @@ void consumerSources(char **paths) {
         const auto tokens = aurora::lex(source, paths[index]);
         const auto program = checkedProgram(tokens);
         require(program.moduleName == modules[index], "unexpected aggregate consumer module/order");
+        if (index == 0)
+            libraryContainers(tokens, program, false);
         AggregateRoots aggregates, braces;
         consumerFunctions(tokens, program.functions, aggregates, braces);
         consumerFunctions(tokens, program.functionTemplates, aggregates, braces);
@@ -1576,8 +1580,7 @@ void typedFunctions(const std::vector<aurora::Token> &tokens,
         typedStatements(tokens, function.body, typeContext, names);
     }
 }
-std::vector<std::string> typedProgram(const std::vector<aurora::Token> &tokens) {
-    const auto program = checkedProgram(tokens);
+std::vector<std::string> typedProgram(const std::vector<aurora::Token> &tokens, const aurora::Program &program) {
     std::vector<std::string> names;
     typedFunctions(tokens, program.functions, {}, names);
     typedFunctions(tokens, program.functionTemplates, {}, names);
@@ -1589,6 +1592,9 @@ std::vector<std::string> typedProgram(const std::vector<aurora::Token> &tokens) 
                        fixtureContext(tokens, definition.token, definition.templateParameters, false),
                        names);
     return names;
+}
+std::vector<std::string> typedProgram(const std::vector<aurora::Token> &tokens) {
+    return typedProgram(tokens, checkedProgram(tokens));
 }
 void typedConsumerSources(char **paths) {
     const std::array<std::string, 7> modules{"std.utility",
@@ -1612,9 +1618,11 @@ void typedConsumerSources(char **paths) {
         const std::string source((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
         require(!input.bad(), "cannot finish reading actual typed consumer source");
         const auto tokens = aurora::lex(source, paths[index]);
-        aurora::Parser parser(tokens);
-        require(parser.parse().moduleName == modules[index], "unexpected typed consumer source/module order");
-        require(typedProgram(tokens) == expected[index], "typed consumer roots changed order or were omitted");
+        const auto program = checkedProgram(tokens);
+        require(program.moduleName == modules[index], "unexpected typed consumer source/module order");
+        if (index == 0)
+            libraryContainers(tokens, program, true);
+        require(typedProgram(tokens, program) == expected[index], "typed consumer roots changed order or were omitted");
     }
 }
 
@@ -2150,10 +2158,12 @@ void callableRejection(const std::string &source, Stop stop, const ExpectedError
     require(parsed == admission, "callable rejection crossed its grammar/admission boundary");
     unchangedTokens(tokens, before);
     ++cases;
-    // An unfinished class is intentional: the requested diagnostic must occur
-    // inside this callable, before an absent containing-class terminator.
-    rejectedProgram(
-        stop == Stop::function ? "module callable_errors;" : "module callable_errors;class Box{", source, "", expected);
+    // Admission fixtures need a complete class so unrelated EOF syntax cannot
+    // mask their policy error. Preserve intentionally truncated grammar inputs.
+    rejectedProgram(stop == Stop::function ? "module callable_errors;" : "module callable_errors;class Box{",
+                    source,
+                    admission && stop != Stop::function ? "};" : "",
+                    expected);
 }
 void callableDiagnostics() {
     struct Rejection {
@@ -2521,6 +2531,8 @@ std::map<std::string, aurora::Type> compilerDeclarationTypes() {
                              "ParseToken",
                              "TypeResult",
                              "TypeWord",
+                             "DeclarationWord",
+                             "HeaderResult",
                              "compiler_lexer::Cursor",
                              "compiler_lexer::Event"})
         result.emplace(name, T(name));
@@ -2686,6 +2698,281 @@ void bootstrapDeclarationTypes(const std::vector<aurora::Token> &tokens,
             "checked-in compiler declaration-type inventory lost historical or new source entries");
 }
 
+// Compact independent container/member inventories. Signs pin access rather
+// than deriving it from the parsed AST or replaying declaration grammar.
+std::vector<std::string> words(const std::string &text) {
+    std::istringstream input(text);
+    std::vector<std::string> result;
+    for (std::string word; input >> word;)
+        result.push_back(std::move(word));
+    return result;
+}
+struct ContainerAst {
+    const char *name;
+    bool exported;
+    const char *fields;
+    const char *methods;
+};
+void sameContainer(const aurora::ClassDefinition &actual,
+                   const std::vector<aurora::Token> &tokens,
+                   const std::string &scope,
+                   const ContainerAst &expected) {
+    require(actual.name == expected.name && actual.scope == scope && actual.exported == expected.exported &&
+                actual.id == 0 && actual.templateArguments.empty(),
+            "class name/scope/export or unresolved identity differs");
+    sameToken(actual.token, tokens.at(tokenAt(tokens, actual.token)));
+    const auto fields = words(expected.fields), methods = words(expected.methods);
+    require(actual.fields.size() == fields.size() && actual.methods.size() == methods.size(),
+            "class member count/order differs: " + actual.name);
+    for (std::size_t index = 0; index < fields.size(); ++index) {
+        const auto &field = actual.fields[index];
+        require(field.token.text == fields[index].substr(1) && field.publicAccess == (fields[index][0] == '+') &&
+                    field.offset == 0 && field.index == 0,
+                "class field name/access or unresolved layout differs: " + actual.name);
+        sameToken(field.token, tokens.at(tokenAt(tokens, field.token)));
+    }
+    for (std::size_t index = 0; index < methods.size(); ++index) {
+        const auto &method = actual.methods[index];
+        require(method.name == methods[index].substr(1) && method.scope == scope && !method.exported &&
+                    method.publicAccess == (methods[index][0] == '+') &&
+                    method.constructor == (method.name == actual.name) && method.receiverClass.empty() &&
+                    method.templateParameters.empty() && method.templateArguments.empty() && method.moduleScope == 0,
+                "class method name/access/scope or constructor marker differs: " + actual.name);
+        sameToken(method.token, tokens.at(tokenAt(tokens, method.token)));
+    }
+    ++cases;
+}
+void sameTemplateParameters(const std::vector<aurora::TemplateParameter> &actual,
+                            const std::vector<aurora::TemplateParameter> &expected) {
+    require(actual.size() == expected.size(), "template parameter count differs");
+    for (std::size_t index = 0; index < expected.size(); ++index)
+        require(actual[index].kind == expected[index].kind && actual[index].name == expected[index].name,
+                "template parameter kind/name/order differs");
+}
+void bootstrapContainers(const std::vector<aurora::Token> &tokens, const aurora::Program &program, std::size_t module) {
+    static const std::array<std::vector<ContainerAst>, 3> expected{{
+        {{"Cursor", true, "-offset -line -line_start", "+Cursor +at +row +start"},
+         {"Lexeme",
+          true,
+          "-event -offset -line -line_start",
+          "+Lexeme +kind +next_offset +next_line +next_line_start"}},
+        {{"ParseFrame",
+          true,
+          "-step -minimum -left -operator_token -field_token",
+          "+ParseFrame +state +min +lhs +token +designate +field"},
+         {"AstNode",
+          true,
+          "-tag -token_index -first_child -second_child -tree_depth -name_end -closing_token",
+          "+AstNode +kind +token +first +second +depth +locate +last +close"},
+         {"ChildEdge",
+          true,
+          "-child_node -previous_edge -argument_count -tree_depth -field_token",
+          "+ChildEdge +child +previous +count +depth +field"},
+         {"TypeSyntax",
+          true,
+          "-tag -token_index -name_end -closing_token -first_child -second_child -owner_token -owner_role",
+          "+TypeSyntax +kind +token +last +close +first +second +owner +role +bind_owner"},
+         {"SyntaxNode",
+          true,
+          "-tag -token_index -end_token -previous_node -expression_root -target_root -declared_type -binding_token "
+          "-body_node -other_node -qualifier -borrow_token",
+          "+SyntaxNode +kind +token +end +previous +expression +target +type +binding +body +other +borrow_site "
+          "+bind_borrow +mutable_binding +bind_expression +bind_declaration +bind_body"},
+         {"AstArena",
+          true,
+          "-nodes -used -frames -frame_count -error -edges -edge_count -type_nodes -type_count -syntax_nodes "
+          "-syntax_count",
+          "-store +AstArena +ok +size +capacity +failure +stack_size +scratch_at +replace_scratch +truncate_stack "
+          "+types +type_at +append_type +own_type +syntax_size +syntax_at +append_syntax +frame +pop +replace +push "
+          "+at +append_at +append +append_name +append_index +arguments +edge +append_field +append_argument "
+          "+append_list"}},
+        {{"TypeContext",
+          true,
+          "-first_begin -first_end -second_begin -second_end -capacity_begin -capacity_end -template_mode",
+          "+TypeContext +begin +end +mode +bind_parameter +set_mode"},
+         {"ParseResult",
+          true,
+          "-result -root_node -node_count -token_count -source_offset -token_half",
+          "+ParseResult +status +root +size +tokens +offset +half"},
+         {"ParseToken",
+          false,
+          "-event -begin -end -line -line_start -ordinal -token_half",
+          "+ParseToken +update +kind +first +last +row +start +index +half +split"},
+         {"TypeResult", false, "-result -root_type -next_token", "+TypeResult +status +root +token"},
+         {"HeaderResult", false, "-parsed_header -type_context", "+HeaderResult +parsed +context"}},
+    }};
+    const std::string scope = module == 0 ? "compiler_lexer" : "compiler_parser";
+    require(program.classes.size() == expected.at(module).size() && program.templates.empty() &&
+                program.functionTemplates.empty() && program.namespaces == std::set<std::string>{scope},
+            "compiler class/template/namespace inventory differs");
+    for (std::size_t index = 0; index < expected[module].size(); ++index) {
+        sameContainer(program.classes[index], tokens, scope, expected[module][index]);
+        sameTemplateParameters(program.classes[index].templateParameters, {});
+    }
+    const std::vector<bool> exports = module == 2 ? std::vector<bool>{true, false, true} : std::vector<bool>{true};
+    std::vector<std::size_t> starts;
+    for (std::size_t index = 0; index + 1 < tokens.size(); ++index)
+        if (tokens[index].text == "namespace") {
+            require(starts.size() < exports.size() && tokens[index + 1].text == scope &&
+                        (index > 0 && tokens[index - 1].text == "export") == exports[starts.size()],
+                    "compiler namespace block name/export/order differs");
+            starts.push_back(index);
+        }
+    require(starts.size() == exports.size(), "compiler omitted one of its five namespace blocks");
+    for (const auto &function : program.functions) {
+        const auto token = tokenAt(tokens, function.token);
+        const auto block = std::upper_bound(starts.begin(), starts.end(), token);
+        require(block != starts.begin() && function.scope == scope &&
+                    function.exported == exports[static_cast<std::size_t>(block - starts.begin() - 1)],
+                "compiler function lost its namespace export inheritance");
+    }
+    ++cases;
+}
+void libraryContainers(const std::vector<aurora::Token> &tokens, const aurora::Program &program, bool utility) {
+    using Kind = aurora::TemplateParameterKind;
+    const std::vector<aurora::TemplateParameter> parameters =
+        utility ? std::vector<aurora::TemplateParameter>{{Kind::Value, "T"}, {Kind::Value, "U"}}
+                : std::vector<aurora::TemplateParameter>{{Kind::Scalar, "T"}, {Kind::Capacity, "N"}};
+    require(program.interfaceUnit && program.namespaces == std::set<std::string>{"std"} && program.classes.empty() &&
+                program.templates.size() == 1 && program.functions.empty() &&
+                program.functionTemplates.size() == (utility ? 1U : 0U),
+            "library template declaration inventory differs");
+    sameContainer(program.templates.front(),
+                  tokens,
+                  "std",
+                  utility ? ContainerAst{"pair", true, "+first +second", "+pair"}
+                          : ContainerAst{"array", true, "-elements", "+array +size +at +set +exchange"});
+    sameTemplateParameters(program.templates.front().templateParameters, parameters);
+    if (utility) {
+        const auto &function = program.functionTemplates.front();
+        require(function.name == "make_pair" && function.scope == "std" && function.exported && !function.constructor &&
+                    !function.publicAccess && function.receiverClass.empty(),
+                "make_pair lost its namespace/template metadata");
+        sameToken(function.token, tokens.at(tokenAt(tokens, function.token)));
+        sameTemplateParameters(function.templateParameters, parameters);
+        ++cases;
+    }
+}
+void moduleSyntax() {
+    const std::string source =
+        "export module containers;import dependency;namespace outer::inner{class Box{i64 hidden;public:Box(){}"
+        "auto get()const->i64{return 1;}private:i64 secret;auto hide()->i64{return 2;}public:i64 visible;};"
+        "export namespace child{class Open{};auto visible()->i64{return 3;}}}"
+        "export namespace outer{class Shared{};}class Last{};";
+    const auto tokens = aurora::lex(source, "containers.au"), before = tokens;
+    const auto program = checkedProgram(tokens);
+    require(program.namespaces == std::set<std::string>{"outer", "outer::inner", "outer::inner::child"} &&
+                program.classes.size() == 4 && program.functions.size() == 1 && program.templates.empty(),
+            "qualified/reopened namespaces changed declaration order or prefix membership");
+    sameContainer(
+        program.classes[0], tokens, "outer::inner", {"Box", false, "-hidden -secret +visible", "+Box +get -hide"});
+    sameContainer(program.classes[1], tokens, "outer::inner::child", {"Open", true, "", ""});
+    sameContainer(program.classes[2], tokens, "outer", {"Shared", true, "", ""});
+    sameContainer(program.classes[3], tokens, "", {"Last", false, "", ""});
+    require(program.functions[0].name == "visible" && program.functions[0].scope == "outer::inner::child" &&
+                program.functions[0].exported && program.classes[0].methods[1].receiverConst &&
+                !program.classes[0].methods[2].receiverConst,
+            "namespace export or method const metadata differs");
+    unchangedTokens(tokens, before);
+    const auto restored =
+        checkedProgram(aurora::lex("export module scopes;namespace std{namespace nested{class Inner{};}class array{};}"
+                                   "namespace other{}namespace std{class array{};}",
+                                   "restored-scope.au"));
+    require(restored.classes.size() == 3 && restored.classes[0].scope == "std::nested" &&
+                restored.classes[1].name == "array" && restored.classes[1].scope == "std" &&
+                restored.classes[2].name == "array" && restored.classes[2].scope == "std",
+            "nested or sibling namespace exit lost exact-std restoration");
+    rejectedProgram("export module scopes;",
+                    "namespace std{}namespace other{class array{};}",
+                    "",
+                    {"reserved builtin storage name", 8});
+    rejectedProgram("export module scopes;",
+                    "namespace std{namespace nested{class array{};}}",
+                    "",
+                    {"reserved builtin storage name", 7});
+    const auto reset = checkedProgram(
+        aurora::lex("export module contexts;template<Scalar T,i64 N>class Box{builtin::array<T,N> values;};"
+                    "class T{i64 value;};class N{};template<Value U>auto make(U item)->U{return item;}"
+                    "auto U(T item)->T{return item;}auto N()->i64{return 1;}",
+                    "reset-context.au"));
+    require(reset.templates.size() == 1 && reset.classes.size() == 2 && reset.classes[0].name == "T" &&
+                reset.classes[1].name == "N" && reset.classes[0].templateParameters.empty() &&
+                reset.classes[1].templateParameters.empty() && reset.functionTemplates.size() == 1 &&
+                reset.functionTemplates[0].params[0].type.kind == aurora::TypeKind::Parameter &&
+                reset.functions.size() == 2 && reset.functions[0].name == "U" && reset.functions[1].name == "N" &&
+                reset.functions[0].params[0].type == namedType("T") && reset.functions[0].result == namedType("T") &&
+                reset.functions[0].templateParameters.empty() && reset.functions[1].templateParameters.empty(),
+            "class/function template names or capacity context leaked into a later declaration");
+    // The compatibility facade still forwards one complete program parse.
+    const auto facade = aurora::Parser(aurora::lex("export module facade;class Empty{};", "facade.au")).parse();
+    require(facade.moduleName == "facade" && facade.classes.size() == 1 && facade.classes[0].name == "Empty",
+            "Parser compatibility facade lost its whole-module result");
+    ++cases;
+    for (const bool nested : {false, true}) {
+        std::string declaration = "namespace n", scope = "n";
+        if (nested)
+            declaration += "{";
+        for (std::size_t depth = 1; depth < 32; ++depth) {
+            declaration += nested ? "namespace n{" : "::n";
+            scope += "::n";
+        }
+        if (!nested)
+            declaration += "{";
+        declaration += "class Leaf{};" + std::string(nested ? 32 : 1, '}');
+        const auto value = checkedProgram(aurora::lex("export module depth;" + declaration, "namespace-depth.au"));
+        require(value.namespaces.size() == 32 && value.classes.size() == 1 && value.classes[0].scope == scope,
+                "32 namespace components lost their prefixes or leaf scope");
+        declaration = nested ? std::string{} : "namespace n";
+        for (std::size_t depth = nested ? 0 : 1; depth < 33; ++depth)
+            declaration += nested ? "namespace n{" : "::n";
+        if (!nested)
+            declaration += "{";
+        declaration += std::string(nested ? 33 : 1, '}');
+        rejectedProgram(
+            "export module depth;", declaration, "", {"namespace nesting exceeds 32 components", nested ? 99U : 67U});
+    }
+}
+void moduleDiagnostics() {
+    for (const auto &test : std::vector<std::pair<std::string, ExpectedError>>{
+             {"namespace", {"expected identifier", 1}},
+             {"namespace true{}", {"reserved identifier", 1}},
+             {"namespace array{}", {"reserved builtin storage name", 1}},
+             {"namespace a::{}", {"expected identifier", 3}},
+             {"namespace a", {"expected '{'", 2}},
+             {"namespace a{", {"expected '}'", 3}},
+             {"namespace a{class C{};", {"expected '}'", 8}},
+             {"class", {"expected identifier", 1}},
+             {"class true{};", {"reserved identifier", 1}},
+             {"class array{};", {"reserved builtin storage name", 1}},
+             {"class C", {"expected '{'", 2}},
+             {"class C{", {"expected type name", 3}},
+             {"class C{}", {"expected ';'", 4}},
+             {"class C{public i64 x;};", {"expected ':'", 4}},
+             {"class C{private i64 x;};", {"expected ':'", 4}},
+             {"template", {"expected '<'", 1}},
+             {"template<>class C{};", {"template parameters require Scalar, Value or bounded i64 capacity", 2}},
+             {"template<class T>class C{};", {"template parameters require Scalar, Value or bounded i64 capacity", 2}},
+             {"template<Scalar>class C{};", {"expected identifier", 3}},
+             {"template<Scalar T", {"expected '>'", 4}},
+             {"template<Scalar T,Value U,Scalar V>class C{};",
+              {"templates require one or two Scalar or Value parameters", 8}},
+             {"template<Scalar T,Value T>class C{};", {"duplicate or reserved template parameter", 7}},
+             {"template<Scalar i64>class C{};", {"duplicate or reserved template parameter", 4}},
+             {"template<i64 N>class C{};", {"template capacity requires a preceding Scalar parameter", 5}},
+             {"template<Value T,i64 N>class C{};", {"template capacity requires a preceding Scalar parameter", 8}},
+             {"template<Scalar T>namespace n{};",
+              {"only class or namespace-level function templates are supported", 5}},
+             {"template<Scalar T,i64 N>auto f()->i64{}",
+              {"function templates require only Scalar or Value type parameters", 8}},
+             {"template<Scalar T>class T{};", {"class name cannot shadow a template parameter", 7}},
+             {"class C{};import dependency;", {"imports must precede declarations", 5}},
+             {"export import dependency;", {"module reexports are not supported", 1}}})
+        rejectedProgram("export module containers;", test.first, "", test.second);
+    rejectedProgram(
+        "module containers;", "export class C{};", "", {"export declarations require an export module interface", 1});
+    rejectedProgram("module containers;", "class C{};", "", {"module must contain a function", 5});
+}
+
 // Preamble and enum expectations are independent ordered names and token ranges.
 void sameEnum(const aurora::EnumDefinition &definition,
               const std::vector<aurora::Token> &tokens,
@@ -2707,8 +2994,8 @@ void bootstrapPreambleEnums(const std::vector<aurora::Token> &tokens,
         bool exported;
         const char *cases;
     };
-    // Explicit source inventory: all 154 predecessor cases plus the 16 new
-    // preamble/enum wire cases. No production AST supplies these expectations.
+    // Explicit source inventory includes the appended module/container wire cases.
+    // No production AST supplies these expectations.
     static const std::array<std::vector<ExpectedEnum>, 3> expected{{
         {
             {"Event",
@@ -2727,7 +3014,7 @@ void bootstrapPreambleEnums(const std::vector<aurora::Token> &tokens,
              "primary_postfix call_arguments method_arguments index_expression array_arguments construct_field "
              "construct_arguments constructor_arguments template_opening template_candidate type_start "
              "type_arguments type_argument_first type_argument_second type_array_element type_owned_element "
-             "body_block body_if_then body_if_else body_while enum_case"},
+             "body_block body_if_then body_if_else body_while enum_case namespace_parent namespace_header"},
             {"TypeKind",
              true,
              "invalid i64_type u64_type u8_type bool_type named parameter capacity length_parameter array_type "
@@ -2736,7 +3023,8 @@ void bootstrapPreambleEnums(const std::vector<aurora::Token> &tokens,
              true,
              "invalid block local return_value static_assertion conditional loop expression assign field_assign "
              "index_assign parameter initializer function method constructor field preamble import_name "
-             "enum_definition enum_case"},
+             "enum_definition enum_case module_definition namespace_definition class_definition declaration "
+             "template_scalar template_value template_capacity"},
         },
         {
             {"ParseStatus",
@@ -2750,15 +3038,24 @@ void bootstrapPreambleEnums(const std::vector<aurora::Token> &tokens,
              "nested_dependent owned_element array_element array_length class_array_length expected_open "
              "expected_semicolon unterminated_block block_nesting_limit assignment_target expected_auto "
              "expected_arrow expected_module expected_enum expected_class module_name_limit module_enum_limit "
-             "empty_enum enum_case_limit duplicate_enum_case explicit_enum_value invalid"},
+             "empty_enum enum_case_limit duplicate_enum_case explicit_enum_value expected_colon "
+             "namespace_nesting_limit "
+             "export_interface_required module_reexport imports_after_declarations template_parameter_limit "
+             "template_parameter_kind template_parameter_name template_capacity_order template_declaration_kind "
+             "function_template_capacity class_template_shadow invalid"},
             {"Stop",
              true,
              "semicolon close_parenthesis assignment constructor_braces body type function method constructor "
-             "field preamble enum_definition"},
+             "field preamble enum_definition module_definition"},
             {"TypeWord",
              false,
              "invalid i64_type u64_type u8_type bool_type array_type builtin_type span_type owned_values own_type "
              "ref_type mutref_type const_type"},
+            {"DeclarationWord",
+             false,
+             "invalid export_declaration import_declaration namespace_declaration enum_declaration "
+             "template_declaration class_declaration auto_declaration public_access private_access "
+             "scalar_parameter value_parameter capacity_parameter"},
         },
     }};
     const std::array<std::string, 3> modules{
@@ -2790,7 +3087,7 @@ void bootstrapPreambleEnums(const std::vector<aurora::Token> &tokens,
         std::vector<std::string> names;
         for (std::string name; words >> name;)
             names.push_back(std::move(name));
-        // These nine source declarations have no trailing comma.
+        // These source declarations have no trailing comma.
         const auto start = starts[index], end = start + 2 * names.size() + 5;
         const auto direct = aurora::parseHostedEnum(tokens, Cursor{start}, index);
         require(direct.definition.name == fixture.name && direct.definition.scope.empty() &&
@@ -2804,7 +3101,7 @@ void bootstrapPreambleEnums(const std::vector<aurora::Token> &tokens,
         caseCount += names.size();
         ++cases;
     }
-    const std::array<std::size_t, 3> counts{8, 81, 81};
+    const std::array<std::size_t, 3> counts{8, 90, 107};
     require(caseCount == counts.at(module), "actual compiler enum case inventory differs");
     unchangedTokens(tokens, before);
     ++cases;
@@ -3247,6 +3544,113 @@ void preambleEnumDiagnostics() {
     }
 }
 
+void rawModules() {
+    static_assert(static_cast<std::int64_t>(Stop::module_definition) == 12 &&
+                  wire(SyntaxKind::module_definition) == 21 && wire(SyntaxKind::namespace_definition) == 22 &&
+                  wire(SyntaxKind::class_definition) == 23 && wire(SyntaxKind::declaration) == 24 &&
+                  wire(SyntaxKind::template_scalar) == 25 && wire(SyntaxKind::template_value) == 26 &&
+                  wire(SyntaxKind::template_capacity) == 27);
+    context = "raw whole-module container/template records";
+    const std::string small = "export module m;namespace n{template<Scalar T,i64 N>class C{T value;};}";
+    const std::vector<SyntaxWords> expected{
+        {17, 2, 4, -1, -1, -1, -1, 2, -1, -1, 1, -1},
+        {25, 10, 11, -1, -1, -1, -1, -1, -1, -1, 0, -1},
+        {27, 13, 14, 1, -1, -1, -1, -1, -1, -1, 0, -1},
+        {16, 18, 21, -1, -1, -1, 0, 19, -1, -1, 0, -1},
+        {24, 18, 21, -1, -1, -1, -1, -1, 3, -1, 0, -1},
+        {23, 16, 23, -1, -1, -1, -1, -1, 4, -1, 0, -1},
+        {24, 16, 23, -1, -1, -1, -1, -1, 5, 2, 0, -1},
+        {22, 5, 24, -1, -1, -1, -1, 5, 6, -1, 0, -1},
+        {24, 5, 24, -1, -1, -1, -1, -1, 7, -1, 0, -1},
+        {21, 0, 24, -1, -1, -1, -1, -1, 0, 8, 0, -1},
+    };
+    {
+        Allocations allocations;
+        RawArena arena(allocations);
+        require(arena.parse(small, Stop::module_definition) ==
+                        Words{wire(Status::success), 9, 0, 24, static_cast<std::int64_t>(small.size()), 0} &&
+                    arena.syntaxCount() == 10 && arena.types() == 1 && arena.edges() == 0,
+                "whole-module root/count/EOF differs");
+        for (std::size_t index = 0; index < expected.size(); ++index)
+            require(arena.syntax(index) == expected[index], "container/template copied record differs");
+        require(arena.type(0) == TypeWords{6, 18, 18, 36, -1, -1, 18, 3},
+                "class template context lost its source-backed parameter type");
+        arena.finish();
+        require(allocations.successful == allocations.released, "whole-module records leaked an owner");
+        ++cases;
+    }
+    // Module-function presence remains host admission, after Aurora syntax.
+    {
+        const std::string source = "module declarations;class C{};";
+        Allocations allocations;
+        RawArena arena(allocations);
+        const auto result = arena.parse(source, Stop::module_definition);
+        require(result[0] == wire(Status::success) && result[3] == 8 &&
+                    arena.syntax(result[1])[0] == wire(SyntaxKind::module_definition),
+                "module syntax acquired the host function-presence admission policy");
+        arena.finish();
+        require(allocations.successful == allocations.released, "class-only module leaked an owner");
+        ++cases;
+    }
+    {
+        Allocations allocations;
+        RawArena arena(allocations);
+        require(arena.parse(small, Stop::module_definition, 0, {0, 6, 0, 0, 0, 0, 1})[0] == wire(Status::invalid),
+                "whole-module input accepted caller-supplied template context");
+        arena.finish();
+        require(allocations.successful == allocations.released, "invalid module context leaked an owner");
+        ++cases;
+    }
+    context = "whole-module independent-owner growth and failure cleanup";
+    constexpr std::int64_t width = 33, nesting = 9;
+    std::string source = "export module wide;";
+    for (std::int64_t index = 0; index < nesting; ++index)
+        source += "namespace n{";
+    for (std::int64_t index = 0; index < width; ++index)
+        source += "auto f_" + std::to_string(index) + "()->i64{return g(1,2);}";
+    source += std::string(nesting, '}');
+    const auto tokens = aurora::lex(source, "module-growth.au");
+    const auto end = static_cast<std::int64_t>(tokens.size() - 1), syntaxCount = 2 + 2 * nesting + 4 * width;
+    std::size_t successful = 0;
+    {
+        Allocations allocations;
+        RawArena arena(allocations);
+        require(arena.parse(source, Stop::module_definition) == Words{wire(Status::success),
+                                                                      syntaxCount - 1,
+                                                                      3 * width,
+                                                                      end,
+                                                                      static_cast<std::int64_t>(source.size()),
+                                                                      0} &&
+                    arena.syntaxCount() == syntaxCount && arena.edges() == 2 * width && arena.types() == width,
+                "module growth omitted a declaration forest or failed to consume EOF");
+        const auto root = arena.syntax(syntaxCount - 1);
+        require(root == SyntaxWords{21, 0, end, -1, -1, -1, -1, -1, 0, syntaxCount - 2, 0, -1},
+                "module growth root did not own its complete preamble/declaration forest");
+        const auto metrics = arena.metrics();
+        require(metrics.live_allocations == 5 && metrics.peak_live_allocations == 5 &&
+                    metrics.successful_allocations > 10,
+                "module growth changed the five independent owners");
+        successful = allocations.successful;
+        arena.finish();
+        require(allocations.successful == allocations.released, "module growth leaked an owner");
+        ++cases;
+    }
+    for (std::size_t allowed = 0; allowed < successful; ++allowed) {
+        Allocations allocations;
+        allocations.allowed = allowed;
+        RawArena arena(allocations);
+        const auto result = arena.parse(source, Stop::module_definition);
+        require(result[0] == wire(Status::allocation_failure) && result[1] == -1,
+                "module partial allocation exposed a complete root");
+        if (arena.syntaxCount() > 0)
+            require(arena.syntax(0) == SyntaxWords{17, 2, 4, -1, -1, -1, -1, 2, -1, -1, 1, -1},
+                    "module growth failure changed a committed preamble");
+        arena.finish();
+        require(allocations.successful == allocations.released, "failed module parse leaked an owner");
+        ++cases;
+    }
+}
+
 void rawBodies() {
     static_assert(sizeof(SyntaxWords) == 96 && static_cast<std::int64_t>(Stop::body) == 4);
     static_assert(wire(SyntaxKind::block) == 1 && wire(SyntaxKind::local) == 2 && wire(SyntaxKind::return_value) == 3 &&
@@ -3484,7 +3888,7 @@ void rawDeclarations() {
 }
 void rawPreambleEnums() {
     context = "explicit enum-count ABI isolation";
-    for (std::int64_t stop = 0; stop <= static_cast<std::int64_t>(Stop::enum_definition); ++stop)
+    for (std::int64_t stop = 0; stop <= static_cast<std::int64_t>(Stop::module_definition); ++stop)
         for (const std::int64_t count :
              std::array<std::int64_t, 4>{-1, 1, 65, std::numeric_limits<std::int64_t>::max()}) {
             if (stop == static_cast<std::int64_t>(Stop::enum_definition) && count == 1)
@@ -4461,7 +4865,7 @@ void rawAggregateDiagnostics() {
         ++cases;
     }
     rawCase("{};", Status::invalid, static_cast<Stop>(-1));
-    rawCase("{};", Status::invalid, static_cast<Stop>(static_cast<std::int64_t>(Stop::enum_definition) + 1));
+    rawCase("{};", Status::invalid, static_cast<Stop>(static_cast<std::int64_t>(Stop::module_definition) + 1));
 }
 
 void abiControls() {
@@ -4974,9 +5378,12 @@ int main(int argc, char **argv) {
         fieldDiagnostics();
         declarationContexts();
         preambleEnumSyntax();
+        moduleSyntax();
+        moduleDiagnostics();
         preambleEnumDiagnostics();
         rawDeclarations();
         rawPreambleEnums();
+        rawModules();
         rawCallableGrowth();
         rawFields();
         declarationTypeSyntax();
@@ -5014,7 +5421,9 @@ int main(int argc, char **argv) {
                "independent declaration types and diagnostics, all 490 historical and new compiler declaration "
                "type occurrences, 31-record standalone type growth with existing-owner cleanup; "
                "whole callable/field boundaries, 513-entry callable and 31-type field failure sweeps; "
-               "three compiler preambles, two imports, nine enums/170 cases, 513-import and 256-case failure sweeps\n";
+               "three compiler preambles, two imports, ten enums/205 cases, 513-import and 256-case failure sweeps; "
+               "13 compiler classes/five namespace blocks, std::array/pair/make_pair template inventories, "
+               "whole-module container/depth/header contracts\n";
     } catch (const std::exception &error) {
         std::cerr << "FAIL " << error.what() << '\n';
         return 1;

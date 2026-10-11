@@ -51,7 +51,9 @@ export namespace compiler_parser {
         body_if_then,
         body_if_else,
         body_while,
-        enum_case
+        enum_case,
+        namespace_parent,
+        namespace_header
     };
 
     class ParseFrame {
@@ -242,7 +244,14 @@ export namespace compiler_parser {
         preamble,
         import_name,
         enum_definition,
-        enum_case
+        enum_case,
+        module_definition,
+        namespace_definition,
+        class_definition,
+        declaration,
+        template_scalar,
+        template_value,
+        template_capacity
     };
     // One tagged syntax forest owns statements and complete declarations.
     // Every child/list link points backward. Statement variants use expression,
@@ -254,8 +263,15 @@ export namespace compiler_parser {
     // start, type/binding, and end after the semicolon. Preambles use token/binding
     // for the module name interval, body for imports and the interface qualifier.
     // Enums use token=name and body=cases. Import/case lists use token/end/previous.
-    // Unused fields stay -1. The qualifier is mutable for locals, const for
-    // parameters/methods and interface for preambles.
+    // Modules use body=preamble, other=declarations and end=EOF. Namespaces use
+    // token/binding for their relative name interval and body=declarations;
+    // classes use token=name and body=members. Declaration wrappers use body
+    // for their leaf/container, other for template parameters, and previous for
+    // the containing reverse list. Template records use token=name and previous.
+    // Leaf/container roots retain previous=-1. Unused fields stay -1; qualifiers
+    // default to zero. The qualifier is mutable for locals, const for parameters/
+    // methods, interface for preambles, explicit export for outer declarations,
+    // and public access for class-member declaration wrappers.
     class SyntaxNode {
         SyntaxKind tag;
         i64 token_index;

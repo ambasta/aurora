@@ -10,6 +10,7 @@
 #include <functional>
 #include <iostream>
 #include <limits>
+#include <set>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -1185,6 +1186,195 @@ void preambleEnumControls() {
     }
 }
 
+void moduleControls() {
+    const auto tokens =
+        aurora::lex("export module m;namespace n{template<Scalar T,i64 N>class C{T value;};}", "module-record.au");
+    const auto original = tokens;
+    const auto configure = [&] {
+        reset();
+        records.clear();
+        count = 0;
+        types = {{wire(TypeKind::parameter), 18, 18, 36, -1, -1, 18, 3}};
+        typeCount = 1;
+        statements = {{17, 2, 4, -1, -1, -1, -1, 2, -1, -1, 1, -1},
+                      {25, 10, 11, -1, -1, -1, -1, -1, -1, -1, 0, -1},
+                      {27, 13, 14, 1, -1, -1, -1, -1, -1, -1, 0, -1},
+                      {16, 18, 21, -1, -1, -1, 0, 19, -1, -1, 0, -1},
+                      {24, 18, 21, -1, -1, -1, -1, -1, 3, -1, 0, -1},
+                      {23, 16, 23, -1, -1, -1, -1, -1, 4, -1, 0, -1},
+                      {24, 16, 23, -1, -1, -1, -1, -1, 5, 2, 0, -1},
+                      {22, 5, 24, -1, -1, -1, -1, 5, 6, -1, 0, -1},
+                      {24, 5, 24, -1, -1, -1, -1, -1, 7, -1, 0, -1},
+                      {21, 0, 24, -1, -1, -1, -1, -1, 0, 8, 0, -1}};
+        statementCount = static_cast<std::int64_t>(statements.size());
+        result = {wire(Status::success), 9, 0, 24, static_cast<std::int64_t>(tokens.back().span.begin.offset), 0};
+    };
+    configure();
+    const auto program = aurora::parseHostedProgram(tokens);
+    require(program.moduleName == "m" && program.interfaceUnit && program.namespaces == std::set<std::string>{"n"} &&
+                program.classes.empty() && program.templates.size() == 1 && program.templates[0].name == "C" &&
+                program.templates[0].scope == "n" && !program.templates[0].exported &&
+                program.templates[0].fields.size() == 1 && program.templates[0].fields[0].token.text == "value" &&
+                program.templates[0].fields[0].type.kind == aurora::TypeKind::Parameter &&
+                program.templates[0].fields[0].type.className == "T" &&
+                program.templates[0].templateParameters.size() == 2 &&
+                program.templates[0].templateParameters[0].kind == aurora::TemplateParameterKind::Scalar &&
+                program.templates[0].templateParameters[0].name == "T" &&
+                program.templates[0].templateParameters[1].kind == aurora::TemplateParameterKind::Capacity &&
+                program.templates[0].templateParameters[1].name == "N" &&
+                program.templates[0].token.span.begin.offset == tokens[16].span.begin.offset &&
+                program.templates[0].fields[0].token.span.begin.offset == tokens[19].span.begin.offset,
+            "whole-module copied conversion lost container/template/member metadata");
+    require(unchanged(original, tokens) && created == 1 && parsed == 1 && released == 1 && read == 0 && edgeRead == 0 &&
+                typeRead == 1 && statementRead == 10 &&
+                capturedInput[10] == static_cast<std::uint64_t>(Stop::module_definition) &&
+                std::all_of(capturedInput.begin() + 11,
+                            capturedInput.end(),
+                            [](auto value) {
+                                return value == 0;
+                            }),
+            "whole-module conversion did not use one empty-context call and exact owner cleanup");
+    ++cases;
+    const auto reject = [&](const char *label, const std::function<void()> &mutate, bool readFailure = false) {
+        configure();
+        mutate();
+        bool rejected = false;
+        try {
+            static_cast<void>(aurora::parseHostedProgram(tokens));
+        } catch (const aurora::Error &error) {
+            rejected = !readFailure && error.diagnostic.code == DiagnosticCode::Internal;
+        } catch (const std::runtime_error &error) {
+            rejected = readFailure && std::string(error.what()) == "injected read failure";
+        }
+        require(rejected && unchanged(original, tokens) && created == 1 && parsed == 1 && released == 1,
+                std::string(label) + ": malformed module forest escaped or changed input/cleanup");
+        ++cases;
+    };
+    reject("unknown container tag", [] {
+        statements[5][0] = wire(SyntaxKind::template_capacity) + 1;
+    });
+    reject("wrong module root tag", [] {
+        statements[9][0] = wire(SyntaxKind::declaration);
+    });
+    reject("module root outside forest", [] {
+        result[1] = statementCount;
+    });
+    reject("module residual half", [] {
+        result[5] = 1;
+    });
+    reject("module missing preamble", [] {
+        statements[9][8] = -1;
+    });
+    reject("wrong preamble family", [] {
+        statements[9][8] = 7;
+    });
+    reject("orphan declaration list", [] {
+        statements[9][9] = -1;
+    });
+    reject("forward container ownership", [] {
+        statements[5][8] = 6;
+    });
+    reject("namespace binding outside tokens", [] {
+        statements[7][7] = result[3];
+    });
+    reject("namespace reversed name interval", [] {
+        statements[7][7] = 4;
+    });
+    reject("class token outside tokens", [] {
+        statements[5][1] = result[3];
+    });
+    reject("container end outside tokens", [] {
+        statements[5][2] = result[3] + 1;
+    });
+    reject("wrapper missing declaration", [] {
+        statements[6][8] = -1;
+    });
+    reject("wrapper owns wrong leaf family", [] {
+        statements[6][8] = 2;
+    });
+    reject("member list wrong family", [] {
+        statements[5][8] = 3;
+    });
+    reject("class orphan member", [] {
+        statements[5][8] = -1;
+    });
+    reject("duplicate declaration owner", [] {
+        statements[8][8] = 5;
+    });
+    reject("wrapper list self cycle", [] {
+        statements[4][3] = 4;
+    });
+    reject("template list self cycle", [] {
+        statements[1][3] = 1;
+    });
+    reject("template list wrong family", [] {
+        statements[6][9] = 4;
+    });
+    reject("shared template chain", [] {
+        statements[8][9] = 2;
+    });
+    reject("orphan template parameter", [] {
+        statements[6][9] = 1;
+    });
+    reject("invalid wrapper qualifier", [] {
+        statements[6][10] = 2;
+    });
+    reject("field type outside forest", [] {
+        statements[3][6] = typeCount;
+    });
+    reject(
+        "syntax read exception",
+        [] {
+            throwingRead = 4;
+        },
+        true);
+    // This copied forest checks the independent host construction bound, not
+    // namespace grammar acceptance. All links are backward and singly owned.
+    for (const int depth : {63, 64}) {
+        reset();
+        std::string source = "export module deep;";
+        for (int level = 0; level < depth; ++level)
+            source += "namespace n{";
+        source += "auto f()->i64{}" + std::string(depth, '}');
+        const auto input = aurora::lex(source, "module-construction-depth.au"), before = input;
+        const std::int64_t start = 4 + 3 * depth, end = 12 + 4 * depth;
+        records.clear();
+        count = 0;
+        types = {{wire(TypeKind::i64_type), start + 5, start + 5, 2 * (start + 5), -1, -1, start + 1, 3}};
+        typeCount = 1;
+        statements = {{17, 2, 4, -1, -1, -1, -1, 2, -1, -1, 1, -1},
+                      {1, start + 6, start + 8, -1, -1, -1, -1, -1, -1, -1, 0, -1},
+                      {13, start + 1, start + 8, -1, -1, -1, 0, -1, 1, -1, 0, -1},
+                      {24, start + 1, start + 8, -1, -1, -1, -1, -1, 2, -1, 0, -1}};
+        std::int64_t tail = 3;
+        for (int level = depth - 1; level >= 0; --level) {
+            const std::int64_t name = 5 + 3 * level, close = start + 8 + depth - level;
+            statements.push_back({22, name, close, -1, -1, -1, -1, name, tail, -1, 0, -1});
+            statements.push_back({24, name, close, -1, -1, -1, -1, -1, tail + 1, -1, 0, -1});
+            tail += 2;
+        }
+        statements.push_back({21, 0, end, -1, -1, -1, -1, -1, 0, tail, 0, -1});
+        statementCount = static_cast<std::int64_t>(statements.size());
+        result = {wire(Status::success),
+                  statementCount - 1,
+                  0,
+                  end,
+                  static_cast<std::int64_t>(input.back().span.begin.offset),
+                  0};
+        bool rejected = false;
+        try {
+            const auto value = aurora::parseHostedProgram(input);
+            require(value.functions.size() == 1 && value.namespaces.size() == static_cast<std::size_t>(depth),
+                    "bounded module construction lost a container or callable");
+        } catch (const aurora::Error &error) {
+            rejected = error.diagnostic.code == DiagnosticCode::Internal;
+        }
+        require(rejected == (depth == 64) && unchanged(before, input) && created == 1 && parsed == 1 && released == 1,
+                "independent module construction depth did not bound conversion and preserve cleanup");
+        ++cases;
+    }
+}
+
 void bodyControls() {
     reset();
     records.clear();
@@ -1627,6 +1817,7 @@ int main() {
         continuationControls();
         fieldControls();
         preambleEnumControls();
+        moduleControls();
         diagnostic("f(",
                    Status::expected_expression,
                    2,

@@ -60,6 +60,18 @@ export namespace compiler_parser {
         enum_case_limit,
         duplicate_enum_case,
         explicit_enum_value,
+        expected_colon,
+        namespace_nesting_limit,
+        export_interface_required,
+        module_reexport,
+        imports_after_declarations,
+        template_parameter_limit,
+        template_parameter_kind,
+        template_parameter_name,
+        template_capacity_order,
+        template_declaration_kind,
+        function_template_capacity,
+        class_template_shadow,
         invalid
     };
     enum class Stop {
@@ -74,7 +86,8 @@ export namespace compiler_parser {
         constructor,
         field,
         preamble,
-        enum_definition
+        enum_definition,
+        module_definition
     };
     // Source-backed syntactic parameters, captured by declaration parsing.
     // These names carry no resolved nominal identity or visibility authority.
@@ -110,6 +123,25 @@ export namespace compiler_parser {
         }
         auto mode() const -> i64 {
             return template_mode;
+        }
+        auto bind_parameter(i64 index, i64 begin, i64 end) -> i64 {
+            if (index == 0) {
+                first_begin = begin;
+                first_end = end;
+            }
+            if (index == 1) {
+                second_begin = begin;
+                second_end = end;
+            }
+            if (index == 2) {
+                capacity_begin = begin;
+                capacity_end = end;
+            }
+            return 0;
+        }
+        auto set_mode(i64 mode) -> i64 {
+            template_mode = mode;
+            return 0;
         }
     };
     class ParseResult {
@@ -2462,6 +2494,454 @@ namespace compiler_parser {
         }
         return TypeResult(ParseStatus::success, root, token);
     }
+    enum class DeclarationWord {
+        invalid,
+        export_declaration,
+        import_declaration,
+        namespace_declaration,
+        enum_declaration,
+        template_declaration,
+        class_declaration,
+        auto_declaration,
+        public_access,
+        private_access,
+        scalar_parameter,
+        value_parameter,
+        capacity_parameter
+    };
+    auto declaration_word(builtin::span<const u8> source, ParseToken token) -> DeclarationWord {
+        const array<u8, 81> names = "export;import;namespace;enum;template;class;auto;public;private;Scalar;Value;i64;";
+        const builtin::span<const u8> words = borrow_bytes(names);
+        if (word_matches(source, token, words, 0, 6)) {
+            return DeclarationWord::export_declaration;
+        }
+        if (word_matches(source, token, words, 7, 13)) {
+            return DeclarationWord::import_declaration;
+        }
+        if (word_matches(source, token, words, 14, 23)) {
+            return DeclarationWord::namespace_declaration;
+        }
+        if (word_matches(source, token, words, 24, 28)) {
+            return DeclarationWord::enum_declaration;
+        }
+        if (word_matches(source, token, words, 29, 37)) {
+            return DeclarationWord::template_declaration;
+        }
+        if (word_matches(source, token, words, 38, 43)) {
+            return DeclarationWord::class_declaration;
+        }
+        if (word_matches(source, token, words, 44, 48)) {
+            return DeclarationWord::auto_declaration;
+        }
+        if (word_matches(source, token, words, 49, 55)) {
+            return DeclarationWord::public_access;
+        }
+        if (word_matches(source, token, words, 56, 63)) {
+            return DeclarationWord::private_access;
+        }
+        if (word_matches(source, token, words, 64, 70)) {
+            return DeclarationWord::scalar_parameter;
+        }
+        if (word_matches(source, token, words, 71, 76)) {
+            return DeclarationWord::value_parameter;
+        }
+        if (word_matches(source, token, words, 77, 80)) {
+            return DeclarationWord::capacity_parameter;
+        }
+        return DeclarationWord::invalid;
+    }
+    // A declaration wrapper owns exactly one completed leaf/container root.
+    // Its token is descriptive, not a unique allocation charge: the separate
+    // declaration keyword (or constructor '(' / field ';') pays for this node.
+    auto wrap_declaration(AstArena& arena, i64 root, i64 previous, i64 parameters, i64 qualifier) -> i64 {
+        const SyntaxNode leaf = arena.syntax_at(root);
+        SyntaxNode declaration = SyntaxNode(SyntaxKind::declaration, leaf.token(), leaf.end(), previous);
+        declaration.bind_declaration(-1, -1, qualifier);
+        declaration.bind_body(root, parameters);
+        return arena.append_syntax(declaration);
+    }
+    // This ordinary copied value carries the optional header's names; it owns
+    // no storage and is not part of the host parser boundary.
+    class HeaderResult {
+        TypeResult parsed_header;
+        TypeContext type_context;
+    public:
+        HeaderResult(TypeResult parsed, TypeContext context) : parsed_header(parsed), type_context(context) {
+        }
+        auto parsed() const -> TypeResult {
+            const ParseToken next = parsed_header.token();
+            return TypeResult(parsed_header.status(), parsed_header.root(), next);
+        }
+        auto context() const -> TypeContext {
+            TypeContext value = TypeContext();
+            value.bind_parameter(0, type_context.begin(0), type_context.end(0));
+            value.bind_parameter(1, type_context.begin(1), type_context.end(1));
+            value.bind_parameter(2, type_context.begin(2), type_context.end(2));
+            value.set_mode(type_context.mode());
+            return value;
+        }
+    };
+    // Headers contribute source-backed names only. A fresh context is returned
+    // for each declaration, so no parameter leaks into its successor. An absent
+    // template header succeeds without consuming tokens and has an empty context.
+    auto parse_template(AstArena& arena, builtin::span<const u8> source, ParseToken begin) -> HeaderResult {
+        const i64 base = arena.stack_size();
+        TypeContext context = TypeContext();
+        if (declaration_word(source, begin) != DeclarationWord::template_declaration) {
+            const TypeResult parsed = TypeResult(ParseStatus::success, -1, begin);
+            return HeaderResult(parsed, context);
+        }
+        ParseToken token = advance(source, begin);
+        if (!single(source, token, '<')) {
+            const TypeResult parsed = TypeResult(ParseStatus::expected_angle_open, -1, token);
+            return HeaderResult(parsed, context);
+        }
+        const ParseToken first = advance(source, token);
+        token.update(first);
+        i64 count = 0;
+        i64 types = 0;
+        i64 tail = -1;
+        SyntaxKind first_kind = SyntaxKind::invalid;
+        SyntaxKind last_kind = SyntaxKind::invalid;
+        bool more = true;
+        while (more) {
+            if (count >= 2) {
+                const TypeResult parsed = TypeResult(ParseStatus::template_parameter_limit, -1, token);
+                return HeaderResult(parsed, context);
+            }
+            const DeclarationWord word = declaration_word(source, token);
+            SyntaxKind kind = SyntaxKind::invalid;
+            if (word == DeclarationWord::scalar_parameter) {
+                kind = SyntaxKind::template_scalar;
+            }
+            if (word == DeclarationWord::value_parameter) {
+                kind = SyntaxKind::template_value;
+            }
+            if (word == DeclarationWord::capacity_parameter) {
+                kind = SyntaxKind::template_capacity;
+            }
+            if (kind == SyntaxKind::invalid) {
+                const TypeResult parsed = TypeResult(ParseStatus::template_parameter_kind, -1, token);
+                return HeaderResult(parsed, context);
+            }
+            const ParseToken name = advance(source, token);
+            const ParseStatus identifier = identifier_status(source, name, false);
+            if (identifier != ParseStatus::success) {
+                const TypeResult parsed = TypeResult(identifier, -1, name);
+                return HeaderResult(parsed, context);
+            }
+            const ParseToken after_name = advance(source, name);
+            token.update(after_name);
+            const array<u8, 31> reserved = "i64;u64;u8;bool;own;ref;mutref;";
+            const builtin::span<const u8> reserved_words = borrow_bytes(reserved);
+            if (word_list_matches(source, name, reserved_words) || parameter(source, name, context, false)
+                || parameter(source, name, context, true)) {
+                const TypeResult parsed = TypeResult(ParseStatus::template_parameter_name, -1, token);
+                return HeaderResult(parsed, context);
+            }
+            if (kind == SyntaxKind::template_capacity) {
+                context.bind_parameter(2, name.first(), name.last());
+            } else {
+                context.bind_parameter(types, name.first(), name.last());
+                types = types + 1;
+            }
+            if (count == 0) {
+                first_kind = kind;
+            }
+            last_kind = kind;
+            count = count + 1;
+            const SyntaxNode parameter_node = SyntaxNode(kind, name.index(), name.index() + 1, tail);
+            tail = arena.append_syntax(parameter_node);
+            if (tail < 0) {
+                const TypeResult error = failure(arena, token, base);
+                return HeaderResult(error, context);
+            }
+            more = single(source, token, ',');
+            if (more) {
+                const ParseToken after = advance(source, token);
+                token.update(after);
+            }
+        }
+        if (!single(source, token, '>')) {
+            const TypeResult parsed = TypeResult(ParseStatus::expected_angle_close, -1, token);
+            return HeaderResult(parsed, context);
+        }
+        const ParseToken after_header = advance(source, token);
+        token.update(after_header);
+        if (context.end(2) != 0 && (count != 2 || first_kind != SyntaxKind::template_scalar || last_kind
+            != SyntaxKind::template_capacity)) {
+            const TypeResult parsed = TypeResult(ParseStatus::template_capacity_order, -1, token);
+            return HeaderResult(parsed, context);
+        }
+        const DeclarationWord declaration = declaration_word(source, token);
+        if (declaration != DeclarationWord::class_declaration && declaration != DeclarationWord::auto_declaration) {
+            const TypeResult parsed = TypeResult(ParseStatus::template_declaration_kind, -1, token);
+            return HeaderResult(parsed, context);
+        }
+        context.set_mode(1);
+        if (declaration == DeclarationWord::auto_declaration) {
+            if (context.end(2) != 0) {
+                const TypeResult parsed = TypeResult(ParseStatus::function_template_capacity, -1, token);
+                return HeaderResult(parsed, context);
+            }
+            context.set_mode(2);
+        }
+        const TypeResult parsed = TypeResult(ParseStatus::success, tail, token);
+        return HeaderResult(parsed, context);
+    }
+    auto parse_class(AstArena& arena, builtin::span<const u8> source, ParseToken begin, TypeContext context,
+        bool allow_array) -> TypeResult {
+        const i64 base = arena.stack_size();
+        const ParseToken name = advance(source, begin);
+        const ParseStatus identifier = identifier_status(source, name, allow_array);
+        if (identifier != ParseStatus::success) {
+            return TypeResult(identifier, -1, name);
+        }
+        ParseToken token = advance(source, name);
+        if (parameter(source, name, context, false) || parameter(source, name, context, true)) {
+            return TypeResult(ParseStatus::class_template_shadow, -1, token);
+        }
+        if (!single(source, token, '{')) {
+            return TypeResult(ParseStatus::expected_brace_open, -1, token);
+        }
+        const ParseToken first = advance(source, token);
+        token.update(first);
+        i64 public_access = 0;
+        i64 tail = -1;
+        while (!single(source, token, '}')) {
+            const DeclarationWord word = declaration_word(source, token);
+            if (word == DeclarationWord::public_access || word == DeclarationWord::private_access) {
+                const ParseToken colon = advance(source, token);
+                token.update(colon);
+                if (!single(source, token, ':')) {
+                    const TypeResult error = finish_parse(arena, ParseStatus::expected_colon, -1, token, base);
+                    return error;
+                }
+                public_access = 0;
+                if (word == DeclarationWord::public_access) {
+                    public_access = 1;
+                }
+                const ParseToken after = advance(source, token);
+                token.update(after);
+            } else {
+                // Constructor recognition is exactly the class spelling followed
+                // by '('. Other names retain the field parser's old diagnostics.
+                const ParseToken lookahead = advance(source, token);
+                const bool constructor = word_matches(source, token, source, name.first(), name.last())
+                    && single(source, lookahead, '(');
+                i64 root = -1;
+                if (constructor || word == DeclarationWord::auto_declaration) {
+                    Stop stop = Stop::constructor;
+                    if (word == DeclarationWord::auto_declaration) {
+                        stop = Stop::method;
+                    }
+                    const TypeResult parsed = parse_callable(arena, source, token, stop, context);
+                    const ParseToken after = parsed.token();
+                    token.update(after);
+                    if (parsed.status() != ParseStatus::success) {
+                        const TypeResult error = finish_parse(arena, parsed.status(), -1, token, base);
+                        return error;
+                    }
+                    root = parsed.root();
+                } else {
+                    const TypeResult parsed = parse_field(arena, source, token, context);
+                    const ParseToken after = parsed.token();
+                    token.update(after);
+                    if (parsed.status() != ParseStatus::success) {
+                        const TypeResult error = finish_parse(arena, parsed.status(), -1, token, base);
+                        return error;
+                    }
+                    root = parsed.root();
+                }
+                tail = wrap_declaration(arena, root, tail, -1, public_access);
+                if (tail < 0) {
+                    const TypeResult error = failure(arena, token, base);
+                    return error;
+                }
+            }
+        }
+        const ParseToken semicolon = advance(source, token);
+        token.update(semicolon);
+        if (!single(source, token, ';')) {
+            const TypeResult error = finish_parse(arena, ParseStatus::expected_semicolon, -1, token, base);
+            return error;
+        }
+        const ParseToken after = advance(source, token);
+        SyntaxNode definition = SyntaxNode(SyntaxKind::class_definition, name.index(), after.index(), -1);
+        definition.bind_body(tail, -1);
+        const TypeResult result = finish_statement(arena, definition, after, base);
+        return result;
+    }
+    // Whole-module syntax is parsed before host admission. Namespace traversal
+    // is iterative: each active block uses exactly two existing scratch frames.
+    // Qualified components, not braces, consume the 32-component nesting limit.
+    auto parse_module(AstArena& arena, builtin::span<const u8> source, ParseToken begin) -> TypeResult {
+        const i64 base = arena.stack_size();
+        const TypeResult parsed_preamble = parse_preamble(arena, source, begin);
+        ParseToken token = parsed_preamble.token();
+        if (parsed_preamble.status() != ParseStatus::success) {
+            const TypeResult error = finish_parse(arena, parsed_preamble.status(), -1, token, base);
+            return error;
+        }
+        const SyntaxNode preamble = arena.syntax_at(parsed_preamble.root());
+        i64 tail = -1;
+        i64 components = 0;
+        i64 exact_std = 0;
+        i64 enum_count = 0;
+        while (token.kind() != compiler_lexer::Event::end_of_input) {
+            if (arena.stack_size() > base && single(source, token, '}')) {
+                const ParseFrame header = arena.frame();
+                arena.pop();
+                const ParseFrame parent = arena.frame();
+                arena.pop();
+                const ParseToken after = advance(source, token);
+                token.update(after);
+                SyntaxNode definition = SyntaxNode(SyntaxKind::namespace_definition, header.lhs(), token.index(), -1);
+                definition.bind_declaration(-1, header.token(), 0);
+                definition.bind_body(tail, -1);
+                const i64 root = arena.append_syntax(definition);
+                if (root < 0) {
+                    const TypeResult error = failure(arena, token, base);
+                    return error;
+                }
+                tail = wrap_declaration(arena, root, parent.lhs(), -1, header.min());
+                if (tail < 0) {
+                    const TypeResult error = failure(arena, token, base);
+                    return error;
+                }
+                components = parent.min();
+                exact_std = parent.token();
+            } else {
+                i64 exported = 0;
+                if (declaration_word(source, token) == DeclarationWord::export_declaration) {
+                    exported = 1;
+                    const ParseToken after = advance(source, token);
+                    token.update(after);
+                    if (preamble.mutable_binding() == 0) {
+                        const TypeResult error = finish_parse(arena, ParseStatus::export_interface_required, -1, token,
+                            base);
+                        return error;
+                    }
+                }
+                const DeclarationWord word = declaration_word(source, token);
+                if (word == DeclarationWord::import_declaration) {
+                    ParseStatus status = ParseStatus::imports_after_declarations;
+                    if (exported == 1) {
+                        status = ParseStatus::module_reexport;
+                    }
+                    const TypeResult error = finish_parse(arena, status, -1, token, base);
+                    return error;
+                }
+                if (word == DeclarationWord::namespace_declaration) {
+                    const ParseToken first_name = advance(source, token);
+                    token.update(first_name);
+                    i64 last_name = token.index();
+                    i64 added = 0;
+                    bool more = true;
+                    while (more) {
+                        const ParseStatus identifier = identifier_status(source, token, false);
+                        if (identifier != ParseStatus::success) {
+                            const TypeResult error = finish_parse(arena, identifier, -1, token, base);
+                            return error;
+                        }
+                        last_name = token.index();
+                        added = added + 1;
+                        const ParseToken after_name = advance(source, token);
+                        token.update(after_name);
+                        more = pair(source, token, ':');
+                        if (more) {
+                            const ParseToken next_name = advance(source, token);
+                            token.update(next_name);
+                        }
+                    }
+                    if (!single(source, token, '{')) {
+                        const TypeResult error = finish_parse(arena, ParseStatus::expected_brace_open, -1, token, base);
+                        return error;
+                    }
+                    const ParseToken first = advance(source, token);
+                    token.update(first);
+                    // The old recursive entry checks the limit after '{'.
+                    if (components + added > 32) {
+                        const TypeResult error = finish_parse(arena, ParseStatus::namespace_nesting_limit, -1, token,
+                            base);
+                        return error;
+                    }
+                    const ParseFrame parent = ParseFrame(FrameState::namespace_parent, components, tail, exact_std);
+                    const ParseFrame header = ParseFrame(FrameState::namespace_header, exported, first_name.index(),
+                        last_name);
+                    if (!arena.push(parent) || !arena.push(header)) {
+                        const TypeResult error = failure(arena, token, base);
+                        return error;
+                    }
+                    exact_std = 0;
+                    const array<u8, 3> standard = "std";
+                    const builtin::span<const u8> standard_word = borrow_bytes(standard);
+                    if (components == 0 && added == 1 && word_matches(source, first_name, standard_word, 0, 3)) {
+                        exact_std = 1;
+                    }
+                    components = components + added;
+                    tail = -1;
+                } else {
+                    i64 root = -1;
+                    i64 templates = -1;
+                    if (word == DeclarationWord::enum_declaration) {
+                        const TypeResult parsed = parse_enum(arena, source, token, enum_count);
+                        const ParseToken after = parsed.token();
+                        token.update(after);
+                        if (parsed.status() != ParseStatus::success) {
+                            const TypeResult error = finish_parse(arena, parsed.status(), -1, token, base);
+                            return error;
+                        }
+                        enum_count = enum_count + 1;
+                        root = parsed.root();
+                    } else {
+                        const HeaderResult header = parse_template(arena, source, token);
+                        const TypeResult parameters = header.parsed();
+                        const ParseToken after_header = parameters.token();
+                        token.update(after_header);
+                        if (parameters.status() != ParseStatus::success) {
+                            const TypeResult error = finish_parse(arena, parameters.status(), -1, token, base);
+                            return error;
+                        }
+                        templates = parameters.root();
+                        const TypeContext context = header.context();
+                        if (declaration_word(source, token) == DeclarationWord::class_declaration) {
+                            const TypeResult parsed = parse_class(arena, source, token, context, exact_std == 1);
+                            const ParseToken after = parsed.token();
+                            token.update(after);
+                            if (parsed.status() != ParseStatus::success) {
+                                const TypeResult error = finish_parse(arena, parsed.status(), -1, token, base);
+                                return error;
+                            }
+                            root = parsed.root();
+                        } else {
+                            const TypeResult parsed = parse_callable(arena, source, token, Stop::function, context);
+                            const ParseToken after = parsed.token();
+                            token.update(after);
+                            if (parsed.status() != ParseStatus::success) {
+                                const TypeResult error = finish_parse(arena, parsed.status(), -1, token, base);
+                                return error;
+                            }
+                            root = parsed.root();
+                        }
+                    }
+                    tail = wrap_declaration(arena, root, tail, templates, exported);
+                    if (tail < 0) {
+                        const TypeResult error = failure(arena, token, base);
+                        return error;
+                    }
+                }
+            }
+        }
+        if (arena.stack_size() > base) {
+            const TypeResult error = finish_parse(arena, ParseStatus::expected_brace_close, -1, token, base);
+            return error;
+        }
+        SyntaxNode module_node = SyntaxNode(SyntaxKind::module_definition, begin.index(), token.index(), -1);
+        module_node.bind_body(parsed_preamble.root(), tail);
+        const TypeResult result = finish_statement(arena, module_node, token, base);
+        return result;
+    }
 }
 
 export namespace compiler_parser {
@@ -2471,16 +2951,21 @@ export namespace compiler_parser {
         if ((stop != Stop::semicolon && stop != Stop::close_parenthesis && stop != Stop::assignment && stop
             != Stop::constructor_braces && stop != Stop::body && stop != Stop::type && stop != Stop::function && stop
             != Stop::method && stop != Stop::constructor && stop != Stop::field && stop != Stop::preamble && stop
-            != Stop::enum_definition) || enum_count < 0 || enum_count > 64 || (stop != Stop::enum_definition
-            && enum_count != 0) || arena.size() != 0 || arena.stack_size() != 0 || arena.arguments() != 0
-            || arena.types() != 0 || arena.syntax_size() != 0) {
+            != Stop::enum_definition && stop != Stop::module_definition) || enum_count < 0 || enum_count > 64 || (stop
+            != Stop::enum_definition && enum_count != 0) || arena.size() != 0 || arena.stack_size() != 0
+            || arena.arguments() != 0 || arena.types() != 0 || arena.syntax_size() != 0) {
             return ParseResult(ParseStatus::invalid, -1, arena.size(), 0, token.first(), token.half());
         }
         if (!arena.ok()) {
             return ParseResult(ParseStatus::allocation_failure, -1, 0, 0, token.first(), token.half());
         }
-        if (!valid_context(source, context)) {
+        if (!valid_context(source, context) || (stop == Stop::module_definition && context.mode() != 0)) {
             return ParseResult(ParseStatus::invalid, -1, 0, 0, token.first(), token.half());
+        }
+        if (stop == Stop::module_definition) {
+            const TypeResult result = parse_module(arena, source, token);
+            const ParseToken at = result.token();
+            return ParseResult(result.status(), result.root(), arena.size(), at.index(), at.first(), at.half());
         }
         if (stop == Stop::preamble) {
             const TypeResult result = parse_preamble(arena, source, token);
