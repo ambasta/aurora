@@ -8,7 +8,7 @@ int main(int argc, char **argv) {
     // earlier option is invalid. Values of path-taking options are not flags.
     for (int index = 1; index < argc; ++index) {
         const std::string option = argv[index];
-        if (option == "--module-root" || option == "-o" || option == "--stack-facts")
+        if (option == "--module-root" || option == "-o" || option == "--stack-facts" || option == "--abi-facts")
             ++index;
         else if (option == "--diagnostics=json")
             jsonDiagnostics = true;
@@ -16,14 +16,14 @@ int main(int argc, char **argv) {
     try {
         std::filesystem::path inputPath;
         std::filesystem::path outputPath;
-        std::filesystem::path stackFactsPath;
+        std::filesystem::path stackFactsPath, abiFactsPath;
         std::vector<std::filesystem::path> roots;
         bool checkOnly = false;
         bool localSymbols = false;
         bool referencedReflectionOnly = false;
         bool inputSpecified = false;
         bool outputSpecified = false;
-        bool stackFactsSpecified = false;
+        bool stackFactsSpecified = false, abiFactsSpecified = false;
         bool formatSpecified = false;
         const auto argumentError = [](const std::string &message) {
             return aurora::Error(aurora::DiagnosticCode::CommandLine, message);
@@ -44,6 +44,11 @@ int main(int argc, char **argv) {
                     throw argumentError("--stack-facts requires exactly one output path");
                 stackFactsSpecified = true;
                 stackFactsPath = argv[index];
+            } else if (option == "--abi-facts") {
+                if (++index >= argc || abiFactsSpecified)
+                    throw argumentError("--abi-facts requires exactly one output path");
+                abiFactsSpecified = true;
+                abiFactsPath = argv[index];
             } else if (option == "--local-symbols") {
                 if (localSymbols)
                     throw argumentError("duplicate --local-symbols option");
@@ -70,7 +75,7 @@ int main(int argc, char **argv) {
         if (inputPath.empty() || (!checkOnly && outputPath.empty())) {
             const std::string usage = "usage: aurorac [--local-symbols] [--referenced-reflection-only] [--module-root "
                                       "DIR] INPUT.au -o OUTPUT.s "
-                                      "[--stack-facts OUTPUT.json]\n"
+                                      "[--stack-facts OUTPUT.json] [--abi-facts OUTPUT.json]\n"
                                       "       aurorac --check [--diagnostics=text|json] [--module-root DIR] INPUT.au";
             throw argumentError(usage);
         }
@@ -80,13 +85,17 @@ int main(int argc, char **argv) {
             throw argumentError("--check does not accept --stack-facts");
         if (stackFactsSpecified && stackFactsPath.empty())
             throw argumentError("--stack-facts requires a nonempty output path");
+        if (checkOnly && abiFactsSpecified)
+            throw argumentError("--check does not accept --abi-facts");
+        if (abiFactsSpecified && abiFactsPath.empty())
+            throw argumentError("--abi-facts requires a nonempty output path");
         if (checkOnly && localSymbols)
             throw argumentError("--check does not accept --local-symbols");
         if (checkOnly && referencedReflectionOnly)
             throw argumentError("--check does not accept --referenced-reflection-only");
         if (jsonDiagnostics && !checkOnly)
             throw argumentError("--diagnostics=json requires --check");
-        auto checked = aurora::checkSource(inputPath, roots);
+        auto checked = aurora::checkSource(inputPath, roots, {}, aurora::AnalysisMode::Check, abiFactsSpecified);
         if (checkOnly) {
             if (jsonDiagnostics)
                 aurora::writeDiagnosticsJson(std::cout, {});
@@ -100,12 +109,21 @@ int main(int argc, char **argv) {
         aurora::host::ArtifactWriter output(outputPath, checked.sourceIdentities);
         std::optional<aurora::host::ArtifactWriter> stackFacts;
         if (stackFactsSpecified) {
-            stackFacts.emplace(stackFactsPath, std::move(checked.sourceIdentities));
+            stackFacts.emplace(stackFactsPath, checked.sourceIdentities);
             if (output.sameDestination(*stackFacts))
                 throw argumentError("assembly and stack facts require different output paths");
             stackFacts->write(emitter.stackFactsJson());
         }
+        std::optional<aurora::host::ArtifactWriter> abiFacts;
+        if (abiFactsSpecified) {
+            abiFacts.emplace(abiFactsPath, checked.sourceIdentities);
+            if (output.sameDestination(*abiFacts) || (stackFacts && stackFacts->sameDestination(*abiFacts)))
+                throw argumentError("assembly, stack facts and ABI facts require different output paths");
+            abiFacts->write(emitter.abiFactsJson(checked.module, checked.abiDeclarations));
+        }
         output.write(result);
+        if (abiFacts)
+            abiFacts->commit();
         if (stackFacts)
             stackFacts->commit();
         output.commit();

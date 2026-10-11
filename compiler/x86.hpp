@@ -1437,6 +1437,125 @@ public:
         facts << "}}\n";
         return facts.str();
     }
+    // This sidecar describes the exact validated module emitted by this instance.
+    // It is data for private adapters, not a second storage/calling-convention calculator.
+    std::string abiFactsJson(const ir::ValidatedModule &validated, const auto &declarations) const {
+        const auto &module = validated.get();
+        if (classStorage != &module.classStorage)
+            throw Error("ABI facts require the same emitted module");
+        std::ostringstream facts;
+        const auto type = [&](const Type &value) {
+            std::string kind = value.isClass()          ? "class"
+                               : value.isEnum()         ? "enum"
+                               : value.isSpan()         ? "span"
+                               : value.isOwnerStorage() ? "owner"
+                               : value.isService()      ? "service"
+                               : value.isRegion()       ? "region"
+                               : value == Type::U8      ? "u8"
+                               : value == Type::U64     ? "u64"
+                               : value == Type::Bool    ? "bool"
+                               : value == Type::I64     ? "i64"
+                               : value == Type::Own     ? "own"
+                               : value == Type::Ref     ? "ref"
+                               : value == Type::MutRef  ? "mutref"
+                                                        : "";
+            if (kind.empty())
+                throw Error("unsupported type in ABI facts");
+            facts << "\"kind\":";
+            writeJsonString(facts, kind);
+            if (value.isClass() || value.isEnum()) {
+                facts << ",\"type_name\":";
+                writeJsonString(facts, value.className);
+            }
+        };
+        facts << "{\"version\":1,\"span_bytes\":" << ir::spanBytes << ",\"records\":{";
+        bool first = true;
+        for (const auto &[symbol, declaration] : declarations.records) {
+            const auto &layout = module.classStorage.at(symbol);
+            const auto &fields = module.classFields.at(symbol);
+            if (fields.size() != declaration.members.size())
+                throw Error("ABI field names do not match validated storage");
+            if (!std::exchange(first, false))
+                facts << ',';
+            writeJsonString(facts, symbol);
+            facts << ":{\"source_name\":";
+            writeJsonString(facts, declaration.sourceName);
+            facts << ",\"size\":" << layout.sizeBytes << ",\"alignment\":" << layout.alignment
+                  << ",\"reserved\":" << layout.reservedBytes << ",\"fields\":[";
+            for (std::size_t index = 0; index < fields.size(); ++index) {
+                const auto &field = fields[index];
+                if (index)
+                    facts << ',';
+                int width = ir::storageWidth(field.elementType);
+                int count = field.array ? field.length : 1;
+                if (field.elementType.isOwnerStorage())
+                    width = argumentBytes(field.elementType);
+                if (field.elementType.isClass()) {
+                    const auto &child = module.classStorage.at(field.elementType.className);
+                    width = child.leafOffsets.empty() ? 0 : child.sizeBytes;
+                    count = field.array ? field.elementCount : 1;
+                }
+                facts << "{\"name\":";
+                writeJsonString(facts, declaration.members[index]);
+                facts << ",\"offset\":" << layout.fieldOffsets.at(index) << ",\"bytes\":" << width * count
+                      << ",\"array_length\":" << (field.array ? count : 0) << ',';
+                type(field.elementType);
+                facts << '}';
+            }
+            facts << "]}";
+        }
+        facts << "},\"enums\":{";
+        first = true;
+        for (const auto &[symbol, declaration] : declarations.enums) {
+            if (module.enumCases.at(symbol) != static_cast<int>(declaration.members.size()))
+                throw Error("ABI enum names do not match validated cases");
+            if (!std::exchange(first, false))
+                facts << ',';
+            writeJsonString(facts, symbol);
+            facts << ":{\"source_name\":";
+            writeJsonString(facts, declaration.sourceName);
+            facts << ",\"cases\":{";
+            for (std::size_t index = 0; index < declaration.members.size(); ++index) {
+                if (index)
+                    facts << ',';
+                writeJsonString(facts, declaration.members[index]);
+                facts << ':' << index;
+            }
+            facts << "}}";
+        }
+        facts << "},\"functions\":{";
+        first = true;
+        for (const auto &function : module.functions) {
+            const auto declaration = declarations.functions.find(function.name);
+            if (declaration == declarations.functions.end())
+                continue;
+            if (!std::exchange(first, false))
+                facts << ',';
+            writeJsonString(facts, function.name);
+            facts << ":{\"source_name\":";
+            writeJsonString(facts, declaration->second.sourceName);
+            facts << ",\"receiver\":";
+            if (function.receiver)
+                writeJsonString(facts, function.receiver->className);
+            else
+                facts << "null";
+            facts << ",\"parameter_bytes\":" << recordOffset(function, function.parameters.size())
+                  << ",\"parameters\":[";
+            for (std::size_t index = 0; index < function.parameters.size(); ++index) {
+                if (index)
+                    facts << ',';
+                facts << "{\"offset\":" << recordOffset(function, index)
+                      << ",\"bytes\":" << argumentBytes(function.parameters[index]) << ',';
+                type(function.parameters[index]);
+                facts << '}';
+            }
+            facts << "],\"result\":{\"bytes\":" << argumentBytes(function.result) << ',';
+            type(function.result);
+            facts << "}}";
+        }
+        facts << "}}\n";
+        return facts.str();
+    }
     std::string emit(const ir::ValidatedModule &validated,
                      SymbolBinding binding = SymbolBinding::Default,
                      ReflectionEmission reflection = ReflectionEmission::All) {
