@@ -14,10 +14,10 @@ Select matching real `gcc` and `g++` on PATH: a stack-guard
 runner invokes bare `gcc`. Keep one stable build directory per toolchain/configuration:
 
 ```sh
-# Complete source bootstrap first; P and PIN select that built predecessor.
+# Complete source bootstrap first; P selects that built predecessor.
 # PATH must already select the matching GCC 16 pair.
 CXX=g++ meson setup build/gcc16 --backend=ninja -Dlsp=false \
-  "-Dbootstrap_compiler=$P" "-Dbootstrap_compiler_sha256=$PIN"
+  "-Dbootstrap_compiler=$P"
 meson compile -C build/gcc16 -j 3
 # Optional quick feedback while developing; full below includes these tests.
 meson test -C build/gcc16 --suite dev --no-rebuild --num-processes 4 --print-errorlogs
@@ -68,7 +68,7 @@ never sweep historical, failed, kept or user-owned review output automatically.
 test` and `scripts/compiler-test.sh` select `compiler`. Set `MESON_BUILD_DIR` to a
 matching predecessor-configured directory, or omit it for `build/meson` (normal
 image-enabled work) or `build/meson-compiler` (hosted-only compiler work).
-First configure these directories with the paired predecessor options using the
+First configure these directories with the predecessor path using the
 [source-bootstrap recipe](../compiler/README.md#source-bootstrap). Missing
 predecessor selections reject with that recipe rather than creating a raw seed.
 The shortcuts stop on build/test failure and reject mismatched compiler/flag
@@ -214,3 +214,9 @@ build. Full native execution still needs independent final-source review; normal
 BIOS/UEFI smoke, affected fault/recovery profiles, sanitizers and physical hardware
 remain separate gates. Retained receipts/logs remain readable; generated products
 can be losslessly archived with exact mapping after review.
+
+An optional `BOOTSTRAP_COMPILER` requests an absolute executable predecessor for
+Make shortcuts. A different selection refreshes only the implicit default build
+under its existing lock; explicit custom build directories require the printed
+reconfigure command. With no request, the configured predecessor is reused.
+`container.sh` forwards the path literally, so select a container-visible path.

@@ -726,7 +726,7 @@ class Controls(unittest.TestCase):
         (legacy / "esp.raw").write_bytes(b"historical input")
         active = self.root / "aurora-event-smoke-active"
         active.mkdir()
-        (active / smoke.RUN_MARKER).write_text(json.dumps(dict(schema=smoke.RUN_SCHEMA, status="running")))
+        (active / smoke.RUN_MARKER).write_text(json.dumps(dict(status="running")))
         runs = []
         outcomes = ("failed", "interrupted", "kept", "all", "passed", "passed", "passed")
         for outcome in outcomes:

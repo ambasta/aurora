@@ -13,8 +13,9 @@ public:
 } // namespace aurora::hosted_parser
 
 namespace aurora {
-// The immutable source and captured context are checked before the private ABI.
-// Position commits only after complete graph and exact token/half validation.
+// The source lifetime and captured context offsets are bounded before the private ABI.
+// Position commits only after bounded, uniquely owned AST/type conversion.
+// Aurora owns expression grammar; the adapter checks representation safety.
 // Unsupported is an invalid result; expressions always use the Aurora frontend.
 ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens,
                                     std::size_t &position,

@@ -16,7 +16,6 @@ stack = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = stack
 spec.loader.exec_module(stack)
 SERVICE = "__au_v_m1_16snapshot_service_n0__d16aurora_user_main"
-NOTE_SERVICE = "__au_v_m1_22program_stream_service_n0__d16aurora_user_main"
 
 
 def check_wrapper(actual, mode="normal", service=SERVICE):
@@ -120,9 +119,18 @@ def check_composition(directory):
 
 def main(directory, uefi_mode=None, note=False):
     check_composition(directory)
-    entry = NOTE_SERVICE if note else SERVICE
     service = directory / ("user-bounds" if uefi_mode else "service")
     client = directory / ("user-clean" if uefi_mode else "client")
+    entry = SERVICE
+    if note:
+        metadata = importlib.util.spec_from_file_location(
+            "snapshot_compiler_abi", ROOT / "scripts/bootstrap_frontend.py"
+        )
+        compiler_abi = importlib.util.module_from_spec(metadata)
+        metadata.loader.exec_module(compiler_abi)
+        entry = compiler_abi.abi_function_symbol(
+            json.loads(service.with_suffix(".abi.json").read_text()), "aurora_user_main"
+        )
     mode = uefi_mode or "normal"
     if note:
         stack.require(mode in ("normal", "owner", "ordinal", "unknown", "transaction"), "Exact note mode")

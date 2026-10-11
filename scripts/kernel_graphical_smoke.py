@@ -11,7 +11,6 @@ import resource
 import select
 import shutil
 import signal
-import stat
 import subprocess
 import sys
 import time
@@ -472,7 +471,6 @@ def verify_images(args, mode=None):
 
 
 RUN_MARKER = ".graphical-smoke-run.json"
-RUN_SCHEMA = "aurora-graphical-smoke-run-v1"
 
 
 def retained_runs():
@@ -480,11 +478,7 @@ def retained_runs():
 
 
 def output_policy():
-    return smoke_outputs.SmokeOutputs(ROOT / "build/graphical-smoke", "run-", RUN_MARKER, RUN_SCHEMA, retained_runs())
-
-
-def run_directory(directory):
-    return output_policy().run_directory(directory)
+    return smoke_outputs.SmokeOutputs(ROOT / "build/graphical-smoke", "run-", RUN_MARKER, retained_runs())
 
 
 def start_run(directory):
@@ -513,64 +507,6 @@ def finish_run(directory, status):
     output_policy().finish(directory, status, discard_captures)
 
 
-def pin_reused_images(images):
-    directory = images.parent
-    if images.name != "images":
-        return
-    if directory.parent != ROOT / "build/graphical-smoke":
-        # A foreign checkout owns its lock and retention policy. Do not mutate it.
-        marker = directory / RUN_MARKER
-        if (
-            directory.parent.name != "graphical-smoke"
-            or directory.parent.parent.name != "build"
-            or not directory.name.startswith("run-")
-            or not (marker.exists() or marker.is_symlink())
-        ):
-            return  # Unmanaged external images retain their read-only behavior.
-        need(not marker.is_symlink() and marker.is_file(), "invalid foreign smoke ownership marker")
-        record = admission.read_json(marker)
-        need(
-            record == dict(schema=RUN_SCHEMA, status="running")
-            or (
-                type(record) is dict
-                and set(record) == {"schema", "status", "finished_ns"}
-                and record["schema"] == RUN_SCHEMA
-                and record["status"] in ("passed", "failed")
-                and type(record["finished_ns"]) is int
-            ),
-            "invalid foreign smoke marker",
-        )
-        try:
-            pinned = stat.S_ISREG((directory / ".keep").lstat().st_mode)
-        except FileNotFoundError:
-            pinned = False
-        need(
-            pinned,
-            "Pin foreign managed images with a regular .keep file in the owning checkout before use: " + str(directory),
-        )
-        return
-    with smoke_outputs.retention_lock(directory.parent):
-        run_directory(directory)  # A pruner that won the lock may already have removed it.
-        marker = directory / RUN_MARKER
-        if not marker.exists():
-            return
-        need(not marker.is_symlink(), "symlink in smoke ownership marker")
-        record = admission.read_json(marker)
-        if record == dict(schema=RUN_SCHEMA, status="running"):
-            return  # The invoking shell owns this active window until the child exits.
-        need(
-            type(record) is dict
-            and record.get("schema") == RUN_SCHEMA
-            and record.get("status") in ("passed", "failed"),
-            "invalid completed smoke marker",
-        )
-        pin = directory / ".keep"
-        if not pin.exists() and not pin.is_symlink():
-            with pin.open("x"):
-                pass
-            print("Pinned reused graphical images until manual removal: " + str(directory), flush=True)
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stage", choices=("normal", *admission.MODES))
@@ -597,7 +533,6 @@ def main():
         need(args.build_dir is not None, "--stage requires --build-dir")
         stage(args.stage, args.images, args.build_dir)
         return
-    pin_reused_images(args.images)
     need(
         args.evidence and not args.evidence.exists() and len(args.inputs) == 5,
         "fresh evidence and QEMU OVMF CODE VARS DATA required",

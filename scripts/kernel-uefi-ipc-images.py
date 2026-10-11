@@ -21,7 +21,16 @@ _spec.loader.exec_module(_base)
 
 
 def verify(
-    data, blob, base, symbols, probe_opcode=b"\x0f\x0b", *, dispatcher=False, copied_snapshot=False, copied_note=False
+    data,
+    blob,
+    base,
+    symbols,
+    probe_opcode=b"\x0f\x0b",
+    *,
+    dispatcher=False,
+    copied_snapshot=False,
+    copied_note=False,
+    note_entry=None,
 ):
     result = _base.verify(
         data,
@@ -31,6 +40,7 @@ def verify(
         image_count=3 if dispatcher else 2,
         copied_snapshot=copied_snapshot,
         copied_note=copied_note,
+        note_entry=note_entry,
     )
     need(result["probe_offset"] == 0, "IPC has no address literal authority")
     probe = result["probe_pc"]
@@ -121,6 +131,11 @@ def emit_metadata(
         opcode = {"mmio": b"\x8b\x00", "softint": b"\xcd\x40", "fpu": b"\xd9\xd0", "peer-code": b"\x49\x8b\x02"}.get(
             mode, b"\x0f\x0b"
         )
+        compiled = "aurora_user_main"
+        if program_console and index == 1:
+            from bootstrap_frontend import abi_function_symbol
+
+            compiled = abi_function_symbol(json.loads(prefix.with_suffix(".abi.json").read_text()), "aurora_user_main")
         meta = verify(
             elf.read_bytes(),
             blob,
@@ -130,13 +145,9 @@ def emit_metadata(
             dispatcher=dispatcher,
             copied_snapshot=snapshot and index == 1,
             copied_note=program_console and index == 1,
+            note_entry=compiled if program_console and index == 1 else None,
         )
         if service_budget:
-            compiled = (
-                "__au_v_m1_22program_stream_service_n0__d16aurora_user_main"
-                if program_console and index == 1
-                else "aurora_user_main"
-            )
             functions = [
                 line.split()
                 for line in subprocess.check_output(["readelf", "-sW", elf], text=True).splitlines()

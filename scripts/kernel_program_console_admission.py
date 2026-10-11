@@ -97,6 +97,13 @@ def verify_object_exports(paths):
             decoder.object_source(BUILD, path.name.removesuffix(".source.json"), ROOT)
 
 
+compiler_abi = load("program_compiler_abi", ROOT / "scripts/bootstrap_frontend.py")
+
+
+def source_symbol(path, name):
+    return compiler_abi.abi_function_symbol(read_json(path), name)
+
+
 stack_facts = load("admission_stack_facts", ROOT / "scripts/kernel_stack.py")
 is_reflection_helper = stack_facts.is_reflection_helper
 
@@ -345,7 +352,7 @@ def stack_evidence(directory, *, snapshot=False):
             (
                 "__au_v_m1_16snapshot_service_n0__d16aurora_user_main"
                 if snapshot
-                else "__au_v_m1_22program_stream_service_n0__d16aurora_user_main"
+                else source_symbol(directory / "user-bounds.abi.json", "aurora_user_main")
             )
             if copied
             else "aurora_user_main"
@@ -446,9 +453,6 @@ def note_evidence(directory, functions, mode="program-console"):
         "aurora_kernel_terminal_event",
         "aurora_console_byte",
         "aurora_console_command",
-        "__au_v_m2_6kernel7console_n1_6kernel_d12console_byte",
-        "__au_v_m2_6kernel7console_n1_6kernel_d15console_command",
-        "__au_v_m2_6kernel14terminal_event_n1_6kernel_d14terminal_event",
     }
     need(
         {name for name in public if not is_reflection_helper(name)} == policies | bridges,
@@ -457,12 +461,12 @@ def note_evidence(directory, functions, mode="program-console"):
     evidence = []
     # Native boundary contracts stay independent of compiler-emitted facts.
     for action, entry, parameters, result_bytes in (
-        ("note_update", "11update_note", [72, 64, 8], 80),
-        ("note_project", "12project_note", [72], 72),
-        ("files_update", "12update_files", [272, 64, 8], 520),
-        ("files_replace", "13replace_files", [272, 88, 64, 8], 352),
+        ("note_update", "update_note", [72, 64, 8], 80),
+        ("note_project", "project_note", [72], 72),
+        ("files_update", "update_files", [272, 64, 8], 520),
+        ("files_replace", "replace_files", [272, 88, 64, 8], 352),
     ):
-        private = "__au_v_m1_22kernel_program_console_n0__d" + entry
+        private = source_symbol(directory / "language.abi.json", entry)
         bridge = "__au_runtime_" + action
         need(
             private not in public and private in generated.functions,
@@ -536,6 +540,7 @@ def build_files():
         "uefi-payload.hpp",
         "language.s",
         "language.stack.json",
+        "language.abi.json",
         "language.o",
         "runtime-entry.o",
         "runtime-exceptions.o",
@@ -559,7 +564,7 @@ def build_files():
     names += [
         "user-" + name + suffix
         for name in ("clean", "bounds")
-        for suffix in (".s", ".stack.json", ".o", ".elf", ".bin")
+        for suffix in (".s", ".stack.json", ".abi.json", ".o", ".elf", ".bin")
     ]
     names += ["user-clean-entry.o"]
     return build_artifacts(names)
@@ -610,6 +615,7 @@ def emit(mode):
             builder.BASE + index * 4096,
             names,
             copied_note=index == 1,
+            note_entry=source_symbol(BUILD / "user-bounds.abi.json", "aurora_user_main") if index == 1 else None,
         )
         for key, value in actual.items():
             need(metadata[name][key] == value, "Stale user metadata: " + key)

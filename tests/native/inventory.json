@@ -217,7 +217,7 @@
   },
   "files": {
     "tests/compiler/hosted_parser.cpp": {"kind": "native-fixture", "reason": "Real generated Aurora parser, explicit AST/diagnostic, private ABI and allocation cleanup fixture. Exact registration and target mappings are checked below.", "tests": ["hosted-parser"]},
-    "tests/compiler/hosted_parser_invalid.cpp": {"kind": "native-fixture", "reason": "Forged hosted parser result/provenance controls and all statement dispatch hooks, with isolated bootstrap stubs and exact owner cleanup.", "tests": ["hosted-parser-invalid"]},
+    "tests/compiler/hosted_parser_invalid.cpp": {"kind": "native-fixture", "reason": "Memory-safe hosted parser conversion controls with isolated bootstrap stubs, bounded indices/ownership and exact owner cleanup.", "tests": ["hosted-parser-invalid"]},
     "tests/test_clean.py": {"kind": "direct-registration", "reason": "Compiler-free Meson product cleanup and explicit scratch selection on tiny temporary fixtures only.", "tests": ["clean-controls"]},
     "tests/compiler/hosted_lexer_invalid.cpp": {"kind": "native-fixture", "reason": "Dependency-tracked hosted Aurora lexer C++ fixture; exact registration and target source/output mappings are checked below.", "tests": ["hosted-lexer-invalid"]},
     "tests/compiler/hosted_lexer.cpp": {"kind": "native-fixture", "reason": "Dependency-tracked hosted Aurora lexer C++ fixture; exact registration and target source/output mappings are checked below.", "tests": ["hosted-lexer"]},

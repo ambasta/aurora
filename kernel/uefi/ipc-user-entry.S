@@ -132,7 +132,7 @@ skip_context_probe:
 .ifdef COPIED_SERVICE
     lea 48(%rsp),%r11
 .ifdef PROGRAM_NOTE_SERVICE
-    call __au_v_m1_22program_stream_service_n0__d16aurora_user_main
+    call @aurora_user_main@
 .else
     call __au_v_m1_16snapshot_service_n0__d16aurora_user_main
 .endif

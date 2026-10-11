@@ -8,5 +8,4 @@ option('kernel_compiler', type: 'string', value: '',
        description: 'Optional absolute prebuilt aurorac for kernel images; empty builds the native compiler')
 option('bootstrap_compiler', type: 'string', value: '',
        description: 'Required absolute predecessor aurorac path; see compiler/README.md source-bootstrap recipe')
-option('bootstrap_compiler_sha256', type: 'string', value: '',
-       description: 'Required SHA-256 of the selected predecessor executable')
+option('bootstrap_compiler_sha256', type: 'string', value: '', deprecated: true, description: 'Ignored; retained only for existing build-directory compatibility')

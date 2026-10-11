@@ -774,8 +774,8 @@ def run(args):
         command = shlex.join(["meson", "test", "-C", str(build), "--list"])
     raise ContractError(
         "Legacy compiler_contract run is retired; it cannot build a C++ seed or execute a sealed Make graph. "
-        "Use a predecessor-backed Meson directory configured with bootstrap_compiler and "
-        "bootstrap_compiler_sha256 (compiler/README.md#source-bootstrap), then run: "
+        "Use a predecessor-backed Meson directory configured with bootstrap_compiler "
+        "(compiler/README.md#source-bootstrap), then run: "
         + command
         + ("; select the required named Meson tests from that list" if not aggregate else "")
     )

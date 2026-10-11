@@ -638,7 +638,7 @@ test('hosted-lexer-format-cli', python, args: ['-B', '-O', files('compiler/forma
      workdir: meson.current_build_dir(), timeout: 180)
 
 hosted_lexer_invalid = executable(
-    'hosted-lexer-invalid', ['compiler/hosted_lexer_invalid.cpp', '../compiler/hosted_lexer.cpp', lexer_events],
+    'hosted-lexer-invalid', ['compiler/hosted_lexer_invalid.cpp', '../compiler/hosted_lexer.cpp', frontend_assembly[3]],
     cpp_args: ['-DAURORA_HOSTED_LEXER'], include_directories: include_directories('../compiler', '..'),
     native: true, install: false,
 )
@@ -665,8 +665,8 @@ test('hosted-parser', hosted_parser_test,
      suite: ['full', 'dev', 'core', 'compiler'], timeout: 120)
 hosted_parser_invalid = executable(
     'hosted-parser-invalid', ['compiler/hosted_parser_invalid.cpp', '../compiler/hosted_parser.cpp',
-                              '../runtime/hosted_bytes.cpp'],
-    cpp_args: ['-DAURORA_HOSTED_PARSER'], include_directories: include_directories('../compiler'),
+                              '../runtime/hosted_bytes.cpp', frontend_assembly[3]],
+    cpp_args: ['-DAURORA_HOSTED_PARSER'], include_directories: include_directories('../compiler', '..'),
     native: true, install: false,
 )
 test('hosted-parser-invalid', hosted_parser_invalid,

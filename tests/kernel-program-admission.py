@@ -4,6 +4,7 @@
 from pathlib import Path
 import importlib.util
 import json
+import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,6 +32,36 @@ def body(frame, *calls):
 
 def main():
     from collections import namedtuple
+
+    # Renaming emitted symbols leaves source-selected bridges unchanged; absent
+    # or ambiguous declarations must never fall back to a mangling recipe.
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from meson_aurora_assembly import render_bridge
+
+    facts = {"version": 1, "functions": {"compiler_chosen_name": {"source_name": "update_note"}}}
+    template = "call @update_note@\n.type bridge,@function\n"
+    need(
+        render_bridge(template, facts) == "call compiler_chosen_name\n.type bridge,@function\n",
+        "Compiler symbol lookup",
+    )
+    for changed in (
+        {"version": 2, "functions": facts["functions"]},
+        {"version": 1, "functions": {}},
+        {"version": 1, "functions": {"wrong": {"source_name": "project_note"}}},
+        {
+            "version": 1,
+            "functions": {"first": {"source_name": "update_note"}, "second": {"source_name": "update_note"}},
+        },
+        {"version": 1, "functions": {"name\nret": {"source_name": "update_note"}}},
+    ):
+        reject(lambda changed=changed: render_bridge(template, changed), "Missing/ambiguous/invalid compiler symbol")
+    with tempfile.TemporaryDirectory() as temporary:
+        path = Path(temporary) / "language.abi.json"
+        path.write_text(json.dumps(facts))
+        need(admission.source_symbol(path, "update_note") == "compiler_chosen_name", "Admission source identity")
+        reject(lambda: admission.source_symbol(path, "missing"), "Missing native source declaration")
+        path.write_text('{"version":1,"functions":{},"functions":{}}')
+        reject(lambda: admission.source_symbol(path, "update_note"), "Duplicate ABI-fact JSON key")
 
     instruction = namedtuple("Instruction", "address size op args")
 

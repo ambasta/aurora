@@ -1,6 +1,6 @@
 // Exercise the real Aurora phase against explicit AST and diagnostic contracts.
 // Whole-program/direct-source comparisons check dispatch consistency only.
-// Raw ABI records remain deliberately independent of the host adapter.
+// Raw copied ABI records remain deliberately independent of the host adapter.
 #include "lexer.hpp"
 #include "parser.hpp"
 #include "hosted_parser.hpp"
@@ -1210,32 +1210,40 @@ public:
 static_assert(sizeof(Words) == 40 && sizeof(GuardedWords<5>) == 56 && sizeof(GuardedWords<7>) == 72 &&
               sizeof(EdgeWords) == 40 && sizeof(TypeWords) == 64 && sizeof(GuardedWords<8>) == 80 &&
               sizeof(ContextWords) == 56 && sizeof(GuardedWords<18>) == 160);
+static_assert(sizeof(Words) == sizeof(aurora::hosted_abi::ParseResult) &&
+              sizeof(NodeWords) == sizeof(aurora::hosted_abi::Node) &&
+              sizeof(EdgeWords) == sizeof(aurora::hosted_abi::Edge) &&
+              sizeof(TypeWords) == sizeof(aurora::hosted_abi::TypeSyntax) &&
+              sizeof(std::array<std::int64_t, 18>) == sizeof(aurora::hosted_abi::ParserInput));
+static_assert(sizeof(ContextWords) ==
+              sizeof(aurora::hosted_abi::ParserInput) - offsetof(aurora::hosted_abi::ParserInput, type1Begin));
 class RawArena {
     aurora::hosted::bytes::Region region;
     // This storage is never copied or inspected as an owner descriptor. Aurora
     // constructs and consumes it; the host only supplies region identity.
     std::uint64_t before = canary;
-    std::array<std::uint64_t, 22> record{};
-    static_assert(sizeof(record) == 176);
+    aurora::hosted_abi::ParserRelease record;
     std::uint64_t after = canary;
     bool active = true;
 
 public:
     explicit RawArena(Allocations &allocations, std::uint64_t quota = 1048576, std::int64_t initial = 0)
         : region(quota, allocations.allocator()) {
-        record[0] = region.id();
-        const std::array<std::uint64_t, 2> input{region.id(), static_cast<std::uint64_t>(initial)};
-        checked_hosted_parser_create(input.data(), data());
+        record.region = region.id();
+        aurora::hosted_abi::ParserCreate input;
+        input.region = region.id();
+        input.capacity = initial;
+        checked_hosted_parser_create(&input, data());
         guards();
     }
     ~RawArena() {
         if (active)
-            checked_hosted_parser_release(record.data());
+            checked_hosted_parser_release(&record);
     }
     RawArena(const RawArena &) = delete;
     RawArena &operator=(const RawArena &) = delete;
     void *data() {
-        return record.data() + 1;
+        return record.arena.data();
     }
     void guards() const {
         require(before == canary && after == canary, "arena write escaped its ABI extent");
@@ -1303,7 +1311,7 @@ public:
         return region.metrics();
     }
     void finish() {
-        checked_hosted_parser_release(record.data());
+        checked_hosted_parser_release(&record);
         active = false;
         guards();
         const auto final = region.metrics();
