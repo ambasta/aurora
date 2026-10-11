@@ -466,12 +466,12 @@ class MesonEntrypointTests(unittest.TestCase):
         self.assertEqual(self.kernel_compiler, str(external))
         self.calls.clear()
         os.environ.pop("AURORAC")
-        with self.assertRaisesRegex(contract.ContractError, "AURORAC/native selection"):
+        with self.assertRaisesRegex(contract.ContractError, "Configured kernel_compiler differs"):
             meson_test.execute(self.root, None, ["kernel-bios-normal"])
         self.assertEqual(self.calls, [])
         self.kernel_compiler = ""
         os.environ["AURORAC"] = str(external)
-        with self.assertRaisesRegex(contract.ContractError, "AURORAC/native selection"):
+        with self.assertRaisesRegex(contract.ContractError, "Configured kernel_compiler differs"):
             meson_test.execute(self.root, None, ["kernel-uefi-normal"])
         self.assertEqual(self.calls, [])
 
@@ -479,8 +479,55 @@ class MesonEntrypointTests(unittest.TestCase):
         os.environ["MESON_BUILD_DIR"] = str(self.root / "hosted-only")
         meson_test.execute(self.root, "compiler")
         self.calls.clear()
-        with self.assertRaisesRegex(contract.ContractError, "Kernel images disabled"):
+        with self.assertRaisesRegex(contract.ContractError, "Configured kernel_images differs"):
             meson_test.execute(self.root, None, ["kernel-bios-normal"])
+        self.assertEqual(self.calls, [])
+
+    def test_kernel_caller_owns_receipt_and_ir_flags_do_not_configure_images(self):
+        compiler = self.root / "supervised-compiler"
+        compiler.write_text("synthetic compiler; never executed")
+        compiler.chmod(0o755)
+        os.environ.update(
+            AURORAC=str(compiler), AURORA_TEST_CONTEXT="caller-owned-receipt", CXXFLAGS="-O0", IR_TEST_CXXFLAGS="-O1"
+        )
+
+        def fixed_kernel_flags(command, **kwargs):
+            self.assertNotIn("CXXFLAGS", kwargs["env"])
+            return self.run_command(command, **kwargs)
+
+        with (
+            patch.object(contract, "read_context") as receipt,
+            patch.object(meson_test.subprocess, "run", side_effect=fixed_kernel_flags),
+        ):
+            meson_test.execute(self.root, None, ["kernel-uefi-normal"])
+        receipt.assert_not_called()
+        self.assertEqual(self.kernel_compiler, str(compiler))
+        self.assertEqual(self.flags, [])
+        self.assertEqual([command[1] for command in self.calls], ["setup", "compile"])
+
+    def test_suites_still_reject_legacy_context_and_ir_flags(self):
+        for name, value in (("AURORA_TEST_CONTEXT", "caller-owned-receipt"), ("IR_TEST_CXXFLAGS", "-O0")):
+            with self.subTest(control=name), patch.dict(os.environ, {name: value}):
+                with self.assertRaises(contract.ContractError):
+                    meson_test.execute(self.root, "full")
+                self.assertEqual(self.calls, [])
+                self.assertFalse((self.root / "build").exists())
+
+    def test_caps_still_reject_for_kernels_and_suites(self):
+        for scope in (None, "full"):
+            for name in contract.CAP_CONTROLS:
+                with self.subTest(scope=scope, control=name), patch.dict(os.environ, {name: "1024"}):
+                    with self.assertRaisesRegex(contract.ContractError, "registered full caps"):
+                        meson_test.execute(self.root, scope)
+                    self.assertEqual(self.calls, [])
+                    self.assertFalse((self.root / "build").exists())
+
+    def test_explicit_linker_mismatch_still_rejects_before_compile(self):
+        meson_test.execute(self.root, "full")
+        self.calls.clear()
+        os.environ["UEFI_LD"] = "/different/linker"
+        with self.assertRaisesRegex(contract.ContractError, "Configured uefi_ld differs.*MESON_BUILD_DIR"):
+            meson_test.execute(self.root, "full")
         self.assertEqual(self.calls, [])
 
     def test_make_all_compiler_copy_is_regular_and_unchanged_copy_is_stable(self):
