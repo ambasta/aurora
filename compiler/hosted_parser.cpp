@@ -89,6 +89,7 @@ public:
     std::optional<ParsedCallable> callable;
     std::optional<Program> preamble;
     std::optional<EnumDefinition> enumeration;
+    std::optional<Program> program;
 };
 
 ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
@@ -97,6 +98,7 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
                                  const hosted_parser::Context &context,
                                  std::size_t enumCount = 0) {
     const auto position = cursor.ordinal;
+    const bool module = stop == Stop::module_definition;
     const bool preamble = stop == Stop::preamble;
     const bool enumeration = stop == Stop::enum_definition;
     const bool header = preamble || enumeration;
@@ -142,16 +144,19 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
     }
     if (!context.capacityParameters.empty())
         parameter(context.capacityParameters[0], input.context.capacity_begin, input.context.capacity_end);
-    // Each monotone store has at most N records; each callable/parameter/initializer
-    // has a distinct source token, as do body statements. Template candidates add at most
-    // N frames. Capacity <= 2*used+8 includes every minimum allocation. Other
-    // live frames are bounded by body256 + expression1549 + type70 = 1875.
-    // The standalone enum profile uses at most 256 duplicate-name scratch frames;
-    // it cannot overlap body/expression/type parsing and does not increase this bound.
+    // Each store has at most N records. Existing syntax nodes charge distinct
+    // declaration names, statement/type starts and block braces. New declaration
+    // wrappers charge their spare auto/enum/class/namespace keyword, constructor
+    // opening parenthesis or field semicolon; module/template rows charge their
+    // module keyword/parameter names. These are quota charges, not wire metadata.
+    // Template candidates add at most N frames. Capacity <= 2*used+8 includes
+    // minimum allocations. Live fixed frames are body256 + expression1549 +
+    // type70 + namespace64 = 1939. Namespace frames remain during leaf parsing.
+    // Enum duplicate scratch (256) replaces, rather than overlaps, body/type work.
     // The region charges replacement payload, not metadata or old+new resize bytes.
     constexpr std::uint64_t recordBytes = sizeof(Node) + sizeof(Edge) + sizeof(TypeSyntax) + sizeof(SyntaxNode);
     constexpr std::uint64_t perToken = 2 * (recordBytes + hosted_abi::frameBytes);
-    constexpr std::uint64_t fixedBytes = 8 * recordBytes + (2 * 1875 + 8) * hosted_abi::frameBytes;
+    constexpr std::uint64_t fixedBytes = 8 * recordBytes + (2 * 1939 + 8) * hosted_abi::frameBytes;
     if (source->text.size() > (std::numeric_limits<std::uint64_t>::max() - fixedBytes) / perToken)
         invalid();
     Arena arena(static_cast<std::uint64_t>(source->text.size()) * perToken + fixedBytes);
@@ -163,7 +168,7 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
     const auto statementCount = aurora_hosted_parser_syntax_count(arena.data());
     if (result.result < Status::success || result.result >= Status::invalid || result.node_count < 0 ||
         result.node_count != actualCount || edgeCount < 0 || typeCount < 0 || statementCount < 0 ||
-        (!body && !callable && !field && !header && statementCount != 0) || result.token_count < 0 ||
+        (!body && !callable && !field && !header && !module && statementCount != 0) || result.token_count < 0 ||
         static_cast<std::uint64_t>(result.token_count) >= tokens.size() - position ||
         result.source_offset < input.cursor.offset || result.source_offset > input.source.length ||
         result.token_half < 0 || result.token_half > 1)
@@ -190,9 +195,10 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
             invalid();
         if (result.result == Status::allocation_failure)
             throw Error(DiagnosticCode::Internal, "hosted parser allocation failed", at.span);
-        if ((!body && !callable && !field && !header && result.result >= Status::expected_open) ||
-            ((body || callable || field || header) && result.result == Status::expected_end) ||
-            (!callable && (result.result == Status::expected_auto || result.result == Status::expected_arrow)))
+        if ((!body && !callable && !field && !header && !module && result.result >= Status::expected_open) ||
+            ((body || callable || field || header || module) && result.result == Status::expected_end) ||
+            (!callable && !module &&
+             (result.result == Status::expected_auto || result.result == Status::expected_arrow)))
             invalid();
         if (result.result == Status::block_nesting_limit)
             throw Error(DiagnosticCode::NestingLimit, "block nesting exceeds 128", at.span);
@@ -300,6 +306,30 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
             message = "duplicate enum case: " + tokens[end - 1].text;
         } else if (result.result == Status::explicit_enum_value)
             message = "enum cases cannot have explicit values";
+        else if (result.result == Status::expected_colon)
+            message = "expected ':'";
+        else if (result.result == Status::namespace_nesting_limit)
+            message = "namespace nesting exceeds 32 components";
+        else if (result.result == Status::export_interface_required)
+            message = "export declarations require an export module interface";
+        else if (result.result == Status::module_reexport)
+            message = "module reexports are not supported";
+        else if (result.result == Status::imports_after_declarations)
+            message = "imports must precede declarations";
+        else if (result.result == Status::template_parameter_limit)
+            message = "templates require one or two Scalar or Value parameters";
+        else if (result.result == Status::template_parameter_kind)
+            message = "template parameters require Scalar, Value or bounded i64 capacity";
+        else if (result.result == Status::template_parameter_name)
+            message = "duplicate or reserved template parameter";
+        else if (result.result == Status::template_capacity_order)
+            message = "template capacity requires a preceding Scalar parameter";
+        else if (result.result == Status::template_declaration_kind)
+            message = "only class or namespace-level function templates are supported";
+        else if (result.result == Status::function_template_capacity)
+            message = "function templates require only Scalar or Value type parameters";
+        else if (result.result == Status::class_template_shadow)
+            message = "class name cannot shadow a template parameter";
         else if (result.result == Status::expected_end)
             message = stop == Stop::close_parenthesis ? "expected ')'" : "expected ';'";
         else
@@ -311,8 +341,9 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
         statementCount > result.token_count ||
         (result.node_count == 0 ? edgeCount != 0 : edgeCount >= result.node_count) ||
         (declarationType ? result.node_count != 0 || typeCount == 0 || result.root_node != typeCount - 1
-         : body || callable || field || header ? statementCount == 0 || result.root_node != statementCount - 1
-                                               : result.node_count == 0 || result.root_node != result.node_count - 1))
+         : body || callable || field || header || module
+             ? statementCount == 0 || result.root_node != statementCount - 1
+             : result.node_count == 0 || result.root_node != result.node_count - 1))
         invalid();
     const auto text = [&](std::int64_t ordinal) -> const std::string & {
         if (ordinal < 0 || ordinal >= tokenCount)
@@ -385,7 +416,8 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
     std::vector<SyntaxNode> statements(static_cast<std::size_t>(statementCount));
     std::vector<bool> statementUsed(static_cast<std::size_t>(statementCount), false);
     std::vector<std::vector<std::int64_t>> statementLists(static_cast<std::size_t>(statementCount));
-    std::vector<std::int64_t> parameters;
+    std::vector<std::vector<std::int64_t>> parameterLists(static_cast<std::size_t>(statementCount));
+    std::vector<int> containerDepth(static_cast<std::size_t>(statementCount), 0);
     std::vector<int> blockDepth(static_cast<std::size_t>(statementCount), 0);
     const auto executable = [](SyntaxKind kind) {
         return kind >= SyntaxKind::block && kind <= SyntaxKind::index_assign;
@@ -393,9 +425,10 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
     for (std::int64_t index = 0; index < statementCount; ++index) {
         auto &statement = statements[static_cast<std::size_t>(index)];
         aurora_hosted_parser_syntax(arena.data(), index, &statement);
-        if (statement.tag <= SyntaxKind::invalid || statement.tag > SyntaxKind::field || statement.token_index < 0 ||
-            statement.token_index >= statement.end_token || statement.end_token > result.token_count ||
-            statement.previous_node < -1 || statement.previous_node >= index || statement.expression_root < -1 ||
+        if (statement.tag <= SyntaxKind::invalid || statement.tag > SyntaxKind::template_capacity ||
+            statement.token_index < 0 || statement.token_index >= statement.end_token ||
+            statement.end_token > result.token_count || statement.previous_node < -1 ||
+            statement.previous_node >= index || statement.expression_root < -1 ||
             statement.expression_root >= result.node_count || statement.target_root < -1 ||
             statement.target_root >= result.node_count || statement.declared_type < -1 ||
             statement.declared_type >= typeCount || statement.binding_token < -1 ||
@@ -403,6 +436,7 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
             statement.other_node < -1 || statement.other_node >= index || statement.borrow_token < -1 ||
             statement.borrow_token >= result.token_count || (statement.qualifier != 0 && statement.qualifier != 1))
             invalid();
+        const bool container = statement.tag >= SyntaxKind::preamble;
         const bool local = statement.tag == SyntaxKind::local;
         const bool block = statement.tag == SyntaxKind::block;
         const bool conditional = statement.tag == SyntaxKind::conditional;
@@ -417,24 +451,43 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
                                 statement.tag == SyntaxKind::index_assign;
         if (!parameter && statement.borrow_token != -1)
             invalid();
-        if (fieldNode) {
-            if (!field || index != result.root_node || statement.previous_node != -1 ||
+        if (container) {
+            if (!module || statement.expression_root != -1 || statement.target_root != -1 ||
+                statement.declared_type != -1 || statement.borrow_token != -1)
+                invalid();
+            if (statement.tag == SyntaxKind::preamble || statement.tag == SyntaxKind::namespace_definition) {
+                if (statement.binding_token < statement.token_index || statement.other_node != -1)
+                    invalid();
+            } else if (statement.binding_token != -1)
+                invalid();
+            if (statement.tag == SyntaxKind::import_name || statement.tag == SyntaxKind::enum_case ||
+                statement.tag == SyntaxKind::template_scalar || statement.tag == SyntaxKind::template_value ||
+                statement.tag == SyntaxKind::template_capacity) {
+                if (statement.body_node != -1 || statement.other_node != -1 || statement.qualifier != 0)
+                    invalid();
+            } else if (statement.tag == SyntaxKind::module_definition || statement.tag == SyntaxKind::declaration) {
+                if (statement.body_node < 0)
+                    invalid();
+            } else if (statement.other_node != -1)
+                invalid();
+        } else if (fieldNode) {
+            if ((!field && !module) || (!module && index != result.root_node) || statement.previous_node != -1 ||
                 statement.expression_root != -1 || statement.target_root != -1 || statement.declared_type < 0 ||
                 statement.binding_token <= statement.token_index || statement.body_node != -1 ||
                 statement.other_node != -1 || statement.qualifier != 0)
                 invalid();
         } else if (parameter) {
-            if (!callable || statement.expression_root != -1 || statement.target_root != -1 ||
+            if ((!callable && !module) || statement.expression_root != -1 || statement.target_root != -1 ||
                 statement.declared_type < 0 || statement.binding_token < 0 || statement.body_node != -1 ||
                 statement.other_node != -1)
                 invalid();
         } else if (initializer) {
-            if (!callable || statement.expression_root < 0 || statement.target_root != -1 ||
+            if ((!callable && !module) || statement.expression_root < 0 || statement.target_root != -1 ||
                 statement.declared_type != -1 || statement.binding_token != -1 || statement.body_node != -1 ||
                 statement.other_node != -1 || statement.qualifier != 0)
                 invalid();
         } else if (callableNode) {
-            if (!callable || statement.previous_node != -1 || statement.expression_root != -1 ||
+            if ((!callable && !module) || statement.previous_node != -1 || statement.expression_root != -1 ||
                 statement.target_root != -1 || (statement.declared_type >= 0) == constructor ||
                 statement.binding_token != -1 || (!constructor && statement.body_node < 0) ||
                 (statement.tag != SyntaxKind::method && statement.qualifier != 0))
@@ -452,7 +505,73 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
             return statements[static_cast<std::size_t>(child)];
         };
         auto &depth = blockDepth[static_cast<std::size_t>(index)];
-        if (block || constructor) {
+        if (container) {
+            auto &depth = containerDepth[static_cast<std::size_t>(index)];
+            const auto own = [&](std::int64_t child) -> const SyntaxNode & {
+                const auto &value = ownStatement(child);
+                depth = std::max(depth, containerDepth[static_cast<std::size_t>(child)]);
+                return value;
+            };
+            const auto list = [&](std::int64_t tail, auto accepts, std::vector<std::int64_t> &out) {
+                for (auto child = tail; child != -1;) {
+                    const auto &value = own(child);
+                    if (!accepts(value.tag))
+                        invalid();
+                    out.push_back(child);
+                    child = value.previous_node;
+                }
+                std::reverse(out.begin(), out.end());
+            };
+            auto &children = statementLists[static_cast<std::size_t>(index)];
+            if (statement.tag == SyntaxKind::module_definition) {
+                const auto &preamble = own(statement.body_node);
+                if (preamble.tag != SyntaxKind::preamble || preamble.previous_node != -1)
+                    invalid();
+                list(
+                    statement.other_node,
+                    [](auto kind) {
+                        return kind == SyntaxKind::declaration;
+                    },
+                    children);
+            } else if (statement.tag == SyntaxKind::declaration) {
+                const auto &child = own(statement.body_node);
+                if (child.previous_node != -1 ||
+                    (child.tag != SyntaxKind::function && child.tag != SyntaxKind::method &&
+                     child.tag != SyntaxKind::constructor && child.tag != SyntaxKind::field &&
+                     child.tag != SyntaxKind::enum_definition && child.tag != SyntaxKind::namespace_definition &&
+                     child.tag != SyntaxKind::class_definition))
+                    invalid();
+                list(
+                    statement.other_node,
+                    [](auto kind) {
+                        return kind >= SyntaxKind::template_scalar && kind <= SyntaxKind::template_capacity;
+                    },
+                    parameterLists[static_cast<std::size_t>(index)]);
+            } else if (statement.tag == SyntaxKind::namespace_definition ||
+                       statement.tag == SyntaxKind::class_definition)
+                list(
+                    statement.body_node,
+                    [](auto kind) {
+                        return kind == SyntaxKind::declaration;
+                    },
+                    children);
+            else if (statement.tag == SyntaxKind::preamble)
+                list(
+                    statement.body_node,
+                    [](auto kind) {
+                        return kind == SyntaxKind::import_name;
+                    },
+                    children);
+            else if (statement.tag == SyntaxKind::enum_definition)
+                list(
+                    statement.body_node,
+                    [](auto kind) {
+                        return kind == SyntaxKind::enum_case;
+                    },
+                    children);
+            if (++depth > 128)
+                invalid();
+        } else if (block || constructor) {
             auto &children = statementLists[static_cast<std::size_t>(index)];
             for (auto child = statement.body_node; child != -1;) {
                 const auto &value = ownStatement(child);
@@ -479,10 +598,9 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
             }
         }
         if (callableNode) {
-            // A callable entry has exactly one root; nested callables cannot be
-            // owned by any body/list variant. Keep its parameter list once.
-            if (index != result.root_node)
+            if (!module && index != result.root_node)
                 invalid();
+            auto &parameters = parameterLists[static_cast<std::size_t>(index)];
             for (auto child = statement.other_node; child != -1;) {
                 const auto &value = ownStatement(child);
                 if (value.tag != SyntaxKind::parameter)
@@ -493,9 +611,10 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
             std::reverse(parameters.begin(), parameters.end());
         }
     }
-    if (body || callable || field) {
+    if (body || callable || field || module) {
         const auto &root = statements[static_cast<std::size_t>(result.root_node)];
-        const auto expected = field                    ? SyntaxKind::field
+        const auto expected = module                   ? SyntaxKind::module_definition
+                              : field                  ? SyntaxKind::field
                               : body                   ? SyntaxKind::block
                               : stop == Stop::function ? SyntaxKind::function
                               : stop == Stop::method   ? SyntaxKind::method
@@ -534,7 +653,7 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
         } else {
             if (type.owner_token < 0 || type.owner_token >= tokenCount ||
                 (type.owner_role != 1 && type.owner_role != 2 &&
-                 !((body || callable || field || declarationType) && type.owner_role == 3)) ||
+                 !((body || callable || field || declarationType || module) && type.owner_role == 3)) ||
                 (type.owner_role == 1 && (type.tag != TypeSyntaxKind::named || type.first_child < 0)) ||
                 type.tag == TypeSyntaxKind::capacity || type.tag == TypeSyntaxKind::length_parameter)
                 invalid();
@@ -875,31 +994,20 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
         }
         statementValues[static_cast<std::size_t>(index)] = std::move(statement);
     }
-    ImportedSyntax imported;
-    if (declarationType) {
-        const auto root = static_cast<std::size_t>(result.root_node);
-        if (types[root].owner_role != 3 || types[root].owner_token != 0 || typeUsed[root])
+    const auto tokenAt = [&](std::int64_t ordinal) -> const Token & {
+        if (ordinal < 0 || ordinal > result.token_count)
             invalid();
-        typeUsed[root] = true;
-        imported.type = std::move(typeValues[root]);
-    } else if (body)
-        imported.body = std::move(statementValues[static_cast<std::size_t>(result.root_node)]->body);
-    else if (callable) {
-        const auto tokenAt = [&](std::int64_t ordinal) -> const Token & {
-            if (ordinal < 0 || ordinal > result.token_count)
-                invalid();
-            return tokens[position + static_cast<std::size_t>(ordinal)];
-        };
-        const auto root = static_cast<std::size_t>(result.root_node);
+        return tokens[position + static_cast<std::size_t>(ordinal)];
+    };
+    const auto callableValue = [&](std::size_t root, Stop stop) {
         const auto &syntax = statements[root];
-        imported.callable.emplace(tokenAt(syntax.token_index));
-        auto &parsed = *imported.callable;
+        ParsedCallable parsed(tokenAt(syntax.token_index));
         auto &function = parsed.function;
         parsed.next = {end, half};
         parsed.nameAdmission = tokenAt(syntax.token_index + 1);
         function.constructor = stop == Stop::constructor;
         function.receiverConst = syntax.qualifier == 1;
-        for (const auto child : parameters) {
+        for (const auto child : parameterLists[root]) {
             const auto &parameterSyntax = statements[static_cast<std::size_t>(child)];
             Param parameter;
             parameter.type = takeDeclarationType(parameterSyntax);
@@ -924,15 +1032,146 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
             parsed.resultAdmission = tokenAt(statements[block].token_index);
             function.body = std::move(statementValues[block]->body);
         }
-    } else if (field) {
-        const auto &syntax = statements[static_cast<std::size_t>(result.root_node)];
+        return parsed;
+    };
+    const auto fieldValue = [&](std::size_t root) {
+        const auto &syntax = statements[root];
         const auto binding = position + static_cast<std::size_t>(syntax.binding_token);
-        imported.field.emplace(tokens[binding], takeDeclarationType(syntax));
-        auto &parsed = *imported.field;
+        ParsedField parsed(tokens[binding], takeDeclarationType(syntax));
         parsed.next = {end, half};
         parsed.admission = tokens[position + static_cast<std::size_t>(syntax.end_token) - 1];
         parsed.typeSpan = tokens[position + static_cast<std::size_t>(syntax.token_index)].span;
         parsed.typeSpan.end = tokens[binding - 1].span.end;
+        return parsed;
+    };
+    ImportedSyntax imported;
+    if (declarationType) {
+        const auto root = static_cast<std::size_t>(result.root_node);
+        if (types[root].owner_role != 3 || types[root].owner_token != 0 || typeUsed[root])
+            invalid();
+        typeUsed[root] = true;
+        imported.type = std::move(typeValues[root]);
+    } else if (body)
+        imported.body = std::move(statementValues[static_cast<std::size_t>(result.root_node)]->body);
+    else if (callable)
+        imported.callable.emplace(callableValue(static_cast<std::size_t>(result.root_node), stop));
+    else if (field)
+        imported.field.emplace(fieldValue(static_cast<std::size_t>(result.root_node)));
+    else if (module) {
+        imported.program.emplace();
+        auto &program = *imported.program;
+        const auto root = static_cast<std::size_t>(result.root_node);
+        const auto preambleIndex = static_cast<std::size_t>(statements[root].body_node);
+        const auto &preambleSyntax = statements[preambleIndex];
+        program.moduleName = name(preambleSyntax.token_index, preambleSyntax.binding_token);
+        program.interfaceUnit = preambleSyntax.qualifier != 0;
+        for (const auto child : statementLists[preambleIndex]) {
+            const auto &syntax = statements[static_cast<std::size_t>(child)];
+            if (syntax.end_token <= syntax.token_index)
+                invalid();
+            auto token = tokenAt(syntax.token_index);
+            token.text = name(syntax.token_index, syntax.end_token - 1);
+            token.span.end = tokenAt(syntax.end_token - 1).span.end;
+            program.imports.push_back(std::move(token));
+        }
+        const auto templateContext = [&](std::size_t wrapper, bool function) {
+            hosted_parser::Context context;
+            for (const auto child : parameterLists[wrapper]) {
+                const auto &parameter = statements[static_cast<std::size_t>(child)];
+                auto &names = parameter.tag == SyntaxKind::template_capacity ? context.capacityParameters
+                                                                             : context.typeParameters;
+                names.push_back(tokenAt(parameter.token_index));
+            }
+            context.functionTemplate = function && !context.typeParameters.empty();
+            return context;
+        };
+        const auto templateParameters = [&](std::size_t wrapper) {
+            std::vector<TemplateParameter> parameters;
+            for (const auto child : parameterLists[wrapper]) {
+                const auto &parameter = statements[static_cast<std::size_t>(child)];
+                const auto kind = parameter.tag == SyntaxKind::template_scalar  ? TemplateParameterKind::Scalar
+                                  : parameter.tag == SyntaxKind::template_value ? TemplateParameterKind::Value
+                                                                                : TemplateParameterKind::Capacity;
+                parameters.emplace_back(kind, tokenAt(parameter.token_index).text);
+            }
+            return parameters;
+        };
+        const auto declarations =
+            [&](auto &&self, std::size_t container, const std::string &scope, bool exportScope) -> void {
+            for (const auto entry : statementLists[container]) {
+                const auto wrapper = static_cast<std::size_t>(entry);
+                const auto &declaration = statements[wrapper];
+                const auto child = static_cast<std::size_t>(declaration.body_node);
+                const auto &syntax = statements[child];
+                const bool exported = exportScope || declaration.qualifier != 0;
+                if (syntax.tag == SyntaxKind::namespace_definition) {
+                    const auto local = name(syntax.token_index, syntax.binding_token);
+                    const auto fullScope = scope.empty() ? local : scope + "::" + local;
+                    for (std::size_t end = 0;;) {
+                        end = fullScope.find("::", end);
+                        program.namespaces.insert(fullScope.substr(0, end));
+                        if (end == std::string::npos)
+                            break;
+                        end += 2;
+                    }
+                    self(self, child, fullScope, exported);
+                } else if (syntax.tag == SyntaxKind::enum_definition) {
+                    EnumDefinition definition(tokenAt(syntax.token_index));
+                    definition.scope = scope;
+                    definition.exported = exported;
+                    for (const auto item : statementLists[child])
+                        definition.cases.push_back(tokenAt(statements[static_cast<std::size_t>(item)].token_index));
+                    program.enums.push_back(std::move(definition));
+                } else if (syntax.tag == SyntaxKind::class_definition) {
+                    ClassDefinition definition(tokenAt(syntax.token_index));
+                    definition.scope = scope;
+                    definition.exported = exported;
+                    definition.templateParameters = templateParameters(wrapper);
+                    const auto context = templateContext(wrapper, false);
+                    for (const auto memberEntry : statementLists[child]) {
+                        const auto &member = statements[static_cast<std::size_t>(memberEntry)];
+                        const auto memberRoot = static_cast<std::size_t>(member.body_node);
+                        const auto kind = statements[memberRoot].tag;
+                        const bool publicAccess = member.qualifier != 0;
+                        if (kind == SyntaxKind::field) {
+                            auto parsed = fieldValue(memberRoot);
+                            admitHostedField(parsed, publicAccess, !definition.templateParameters.empty());
+                            parsed.field.publicAccess = publicAccess;
+                            definition.fields.push_back(std::move(parsed.field));
+                        } else {
+                            if (kind != SyntaxKind::method && kind != SyntaxKind::constructor)
+                                invalid();
+                            const auto stop = kind == SyntaxKind::method ? Stop::method : Stop::constructor;
+                            auto parsed = callableValue(memberRoot, stop);
+                            admitHostedCallable(parsed, stop, context, definition.name);
+                            parsed.function.scope = scope;
+                            parsed.function.publicAccess = publicAccess;
+                            definition.methods.push_back(std::move(parsed.function));
+                        }
+                    }
+                    auto &definitions = definition.templateParameters.empty() ? program.classes : program.templates;
+                    definitions.push_back(std::move(definition));
+                } else {
+                    if (syntax.tag != SyntaxKind::function)
+                        invalid();
+                    auto parsed = callableValue(child, Stop::function);
+                    const auto context = templateContext(wrapper, true);
+                    admitHostedCallable(parsed, Stop::function, context);
+                    parsed.function.scope = scope;
+                    parsed.function.exported = exported;
+                    parsed.function.templateParameters = templateParameters(wrapper);
+                    auto &functions =
+                        parsed.function.templateParameters.empty() ? program.functions : program.functionTemplates;
+                    functions.push_back(std::move(parsed.function));
+                }
+            }
+        };
+        declarations(declarations, root, "", false);
+        if (program.functions.empty() && program.imports.empty() && !program.interfaceUnit) {
+            const auto &at = tokenAt(result.token_count);
+            throw Error(
+                DiagnosticCode::UnexpectedToken, "module must contain a function (found '" + at.text + "')", at.span);
+        }
     } else
         imported.expression = takeExpression(result.root_node);
     if (std::find(used.begin(), used.end(), false) != used.end() ||
@@ -993,6 +1232,12 @@ ParsedField parseHostedField(const std::vector<Token> &tokens,
 ParsedPreamble parseHostedPreamble(const std::vector<Token> &tokens, hosted_parser::Cursor cursor) {
     auto imported = parseHostedSyntax(tokens, cursor, Stop::preamble, {});
     return {std::move(*imported.preamble), imported.next};
+}
+Program parseHostedProgram(const std::vector<Token> &tokens) {
+    auto imported = parseHostedSyntax(tokens, {}, Stop::module_definition, {});
+    if (imported.next.ordinal + 1 != tokens.size() || imported.next.half != 0)
+        invalid();
+    return std::move(*imported.program);
 }
 ParsedEnum parseHostedEnum(const std::vector<Token> &tokens, hosted_parser::Cursor cursor, std::size_t enumCount) {
     auto imported = parseHostedSyntax(tokens, cursor, Stop::enum_definition, {}, enumCount);

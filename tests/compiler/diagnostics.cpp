@@ -56,12 +56,14 @@ void checkParserRanges() {
     require(original[3].text == ">>" && original[3].span.begin.offset == 7 && original[3].span.end.offset == 9 &&
                 original[3].span.source->text == "Box<i64>>",
             "parser must not mutate retained lexical stream");
-    aurora::Parser qualified(aurora::lex("one :: two"));
-    const auto name = qualified.qualifiedIdent();
-    require(name.text == "one::two" && name.span.begin.offset == 0 && name.span.end.offset == 10,
+    const auto qualified = aurora::lex("one :: two;");
+    std::size_t position = 0;
+    const auto name = aurora::parseHostedExpression(qualified, position, aurora::hosted_parser::Stop::semicolon);
+    require(name->token.text == "one::two" && name->token.span.begin.offset == 0 && name->token.span.end.offset == 10,
             "qualified name range");
-    aurora::Parser expression(aurora::lex("one :: two(1);"));
-    const auto call = expression.statementExpression(aurora::hosted_parser::Stop::semicolon);
+    const auto expression = aurora::lex("one :: two(1);");
+    position = 0;
+    const auto call = aurora::parseHostedExpression(expression, position, aurora::hosted_parser::Stop::semicolon);
     require(call->token.text == "one::two" && call->token.span.begin.offset == 0 && call->token.span.end.offset == 10,
             "qualified expression name range");
     const std::string modulePrefix = "module sample;import ";

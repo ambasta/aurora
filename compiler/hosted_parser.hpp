@@ -21,7 +21,8 @@ public:
 namespace aurora {
 // The source lifetime and captured context offsets are bounded before the private ABI.
 // Position commits only after bounded, uniquely owned AST/type conversion.
-// Aurora owns expression/body/type/declaration and preamble grammar; the adapter checks representation safety.
+// Aurora owns all module syntax; the adapter checks representation safety.
+Program parseHostedProgram(const std::vector<Token> &tokens);
 // Unsupported is an invalid result; no entry has a host grammar fallback.
 ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens,
                                     std::size_t &position,
