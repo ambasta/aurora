@@ -186,8 +186,18 @@ selectors. A stock-only image remains incomplete for Event.
 
 ## Native images and guest transport
 
-Thin build/smoke/console launchers select a named native Meson profile and use its
-returned image directory under `<build>/kernel-images/<bios|uefi>/<profile>`.
+`scripts/kernel-run.sh PROFILE [--console|--smoke]` owns normal and console
+launch routing; existing Make and console-script commands remain aliases.
+`bios`/`uefi` default to normal smoke; `--console` selects the ordinary interactive
+console. `bios-console`/`uefi-console` default to interactive sessions, or select
+`--smoke` for their existing PTY acceptance checks. Protected `program-console`
+and existing `program-*` fault profiles default to their protected PTY smoke;
+only `program-console --console` opens an interactive protected session.
+
+The shared launcher uses the existing profile builders and semantic oracles.
+Lower-level serial smoke adapters retain fault modes, clock plans and isolated
+run-only contracts. Event, BAR/IVRS and graphical/capture adapters remain separate.
+Images use `<build>/kernel-images/<bios|uefi>/<profile>` from the native builder.
 Normal and specialized outputs coexist; there is no shared-image restoration
 build. Each profile exports exact object, `.su`, `.ci` and `.source.json` inputs
 from one compilation for current source/object/link admission.
