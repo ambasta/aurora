@@ -164,6 +164,25 @@ class DeveloperCommands(unittest.TestCase):
         self.run_script("container.sh", env={"FAKE_STATUS": "19"}, expected=19)
         self.assertEqual(self.calls()[-1], "bash")
 
+    def test_container_forwards_only_set_build_controls_as_literal_arguments(self):
+        self.container_engine("docker", "Docker version 28.0.0")
+        controls = {
+            "MESON_BUILD_DIR": "build/path with spaces;$(do-not-execute)",
+            "AURORA_BUILD_JOBS": "2",
+            "AURORA_TEST_JOBS": "",
+        }
+        self.run_script("container.sh", "make", "test", env=controls | {"CXX": "/host/compiler", "UNRELATED": "secret"})
+        args = self.calls()
+        self.assertEqual(
+            [args[index + 1] for index, value in enumerate(args) if value == "--env"],
+            ["HOME=/tmp", *[name + "=" + value for name, value in controls.items()]],
+        )
+        self.assertNotIn("/host/compiler", args)
+        self.assertNotIn("secret", args)
+        self.run_script("container.sh", "make", "test")
+        args = self.calls()
+        self.assertEqual([args[index + 1] for index, value in enumerate(args) if value == "--env"], ["HOME=/tmp"])
+
     def test_container_blocks_missing_unknown_or_failed_engine_without_run(self):
         self.container_engine("docker", "unrecognized container engine")
         self.assertIn("BLOCKED: Unrecognized docker", self.run_script("container.sh", expected=2))

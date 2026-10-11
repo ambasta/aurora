@@ -121,6 +121,64 @@ class NativeArtifacts(unittest.TestCase):
             with self.assertRaises(ValueError):
                 graphical.verify_stack_budgets(14849, 0, 0, 512)
 
+    def test_service_facts_are_closed_and_match_concrete_edges(self):
+        with tempfile.TemporaryDirectory(prefix="aurora-service-facts-") as directory:
+            path = Path(directory) / "language.stack.json"
+            _, symbols, code, starts = fixture(
+                {
+                    "entry": [("call", "@__au_runtime_display_pixel"), ("ret", "")],
+                    "__au_runtime_display_pixel": [("ret", "")],
+                },
+                analyze=False,
+            )
+            abi = dict(
+                record=dict(parameters=[["builtin::DisplaySession", 16]], result_bytes=8),
+                calls={"__au_runtime_display_pixel": dict(sysv_arguments=7, result_max=1)},
+            )
+            fact = dict(local_bytes=64, calls={"__au_runtime_display_pixel": 32}, copied_record=None, service_abi=abi)
+            document = dict(version=2, functions={"entry": fact})
+
+            def check(value=document):
+                path.write_text(json.dumps(value))
+                return decoder.aurora_stack_functions(path, symbols, code, starts, {"entry"})["entry"]["service_abi"]
+
+            self.assertEqual(check(), abi)
+            for mutate in (
+                lambda a: a.update(extra=1),
+                lambda a: a.pop("record"),
+                lambda a: a.pop("calls"),
+                lambda a: a.update(record=[]),
+                lambda a: a.update(calls=[]),
+                lambda a: a["record"].update(parameters=[]),
+                lambda a: a["record"].update(parameters=[["scalar", 8]]),
+                lambda a: a["record"].update(parameters=[["builtin::DisplaySession", 16]] * 7),
+                lambda a: a["record"].update(extra=1),
+                lambda a: a["calls"].clear(),
+                lambda a: a["calls"].update(unknown=dict(sysv_arguments=7, result_max=1)),
+                lambda a: a["calls"]["__au_runtime_display_pixel"].update(extra=1),
+            ):
+                changed = deepcopy(document)
+                mutate(changed["functions"]["entry"]["service_abi"])
+                with self.assertRaises(ValueError):
+                    check(changed)
+            for row in (["unknown", 16], ["builtin::DisplaySession", 8], ["scalar", True], ["scalar"], None):
+                changed = deepcopy(document)
+                changed["functions"]["entry"]["service_abi"]["record"]["parameters"] = [row]
+                with self.assertRaises(ValueError):
+                    check(changed)
+            for field, values in (("sysv_arguments", (True, -1, 1, 8, "7")), ("result_max", (True, -1, 3, "1"))):
+                for value in values:
+                    changed = deepcopy(document)
+                    changed["functions"]["entry"]["service_abi"]["calls"]["__au_runtime_display_pixel"][field] = value
+                    with self.assertRaises(ValueError):
+                        check(changed)
+            historical = deepcopy(document)
+            del historical["functions"]["entry"]["service_abi"]
+            self.assertIsNone(check(historical))
+            historical["version"] = 1
+            del historical["functions"]["entry"]["copied_record"]
+            self.assertIsNone(check(historical))
+
     def test_copied_record_facts_are_versioned_and_closed(self):
         with tempfile.TemporaryDirectory(prefix="aurora-abi-facts-") as directory:
             path = Path(directory) / "language.stack.json"
@@ -447,14 +505,13 @@ class Admission(unittest.TestCase):
             with self.assertRaises(ValueError):
                 check(raw=bytes(changed))
 
-    def test_source_modules_and_actual_reflection_inventory(self):
+    def test_module_decoding_and_actual_reflection_inventory(self):
         for symbol, module in (
             ("__au_m_m2_3std13binary_buffer_n2_3std14BinaryBuffer64_d5equal", "std.binary_buffer"),
             ("__au_k_m2_3std5array_n2_3std5array_d5array_t2_u8_v20", "std.array"),
             ("__au_v_m2_3std7decimal_n1_3std_d18format_decimal_i64", "std.decimal"),
         ):
             self.assertEqual(decoder.aurora_module(symbol), module)
-            self.assertIn(module, graphical.LANGUAGE_MODULES)
         for malformed in ("__au_v_m2_3std99bytes_n0__d1x", "__au_v_m1_0_n0__d1x", "__au_v_m1_3stdx_n0__d1x"):
             self.assertIsNone(decoder.aurora_module(malformed))
         helpers = set(REFLECTION) | {"__au_reflect_s8_size", "__au_reflect_s8_field_count"}
@@ -463,7 +520,7 @@ class Admission(unittest.TestCase):
             with self.assertRaises(ValueError):
                 decoder.reflection_inventory(helpers - {removed})
 
-    def test_generated_imports_and_module_identity(self):
+    def test_generated_imports_and_private_reflection_bindings(self):
         names = set(graphical.LANGUAGE_ROOTS) | set(REFLECTION)  # Fixture construction only.
         imports = [
             decoder.Symbol(name, 0, 0, 0, 0) for name in ["__au_runtime_console_next", "__au_runtime_display_pixel"]
@@ -493,9 +550,12 @@ class Admission(unittest.TestCase):
         ]:
             with self.assertRaisesRegex(ValueError, "import inventory"):
                 verify(symbols=changed)
-        for extra in ["__au_v_m1_22kernel_display_service_n0__d15display_service", "unexpected_host"]:
-            with self.assertRaisesRegex(ValueError, "module/function"):
-                verify(functions=names | {extra})
+        # Additional generated locals are admitted by exact compiler-fact/object
+        # coverage, not a second handwritten source-module list.
+        extra = "__au_v_m1_22kernel_display_service_n0__d15display_service"
+        verify(functions=names | {extra}, table=bindings + f"\n1: 000000 1 FUNC LOCAL DEFAULT 1 {extra}")
+        with self.assertRaisesRegex(ValueError, "binding inventory"):
+            verify(functions=names | {extra})
         for missing in sorted(names):
             with self.subTest(missing=missing), self.assertRaises(ValueError):
                 verify(functions=names - {missing})
@@ -507,6 +567,19 @@ class Admission(unittest.TestCase):
         ]:
             with self.assertRaisesRegex(ValueError, reason):
                 verify(table=table)
+
+        for name in REFLECTION:
+            for changed in ("GLOBAL HIDDEN", "LOCAL DEFAULT", "WEAK DEFAULT"):
+                mutant = bindings.replace(f"GLOBAL DEFAULT 1 {name}", f"{changed} 1 {name}")
+                with self.assertRaises(ValueError):
+                    verify(table=mutant)
+            with self.assertRaises(ValueError):
+                verify(symbols=imports + [decoder.Symbol(name, 0, 0, 0, 0)])
+            with self.assertRaises(ValueError):
+                verify(functions=names - {name})
+        for extra in ("aurora_reflect_address", "__au_reflect_s7_size", "__au_reflect_s1_address"):
+            with self.assertRaises(ValueError):
+                verify(functions=names | {extra})
 
     @staticmethod
     def reflection_fixture(name="aurora_reflect_size"):
@@ -604,185 +677,57 @@ class Admission(unittest.TestCase):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 graphical.verify_reflection_body(decoder, foreign, baseline, payload)
 
-    def test_reflection_helper_exact_inventory_and_binding(self):
-        names = set(graphical.LANGUAGE_ROOTS) | set(REFLECTION)
-        imports = [
-            decoder.Symbol(name, 0, 0, 0, 0) for name in ("__au_runtime_console_next", "__au_runtime_display_pixel")
-        ]
-
-        def binding(name):
-            return (
-                "GLOBAL HIDDEN"
-                if name in (graphical.BRIDGE, graphical.VALUE_BRIDGE)
-                else ("GLOBAL DEFAULT" if name in REFLECTION else "LOCAL DEFAULT")
-            )
-
-        table = "\n".join(f"""1: 000000 1 FUNC {binding(name)} 1 {name}""" for name in sorted(names))
-
-        def verify(rows=table, functions=names, symbols=imports):
-            with patch.object(graphical.subprocess, "check_output", return_value=rows):
-                return graphical.verify_language_object(
-                    SimpleNamespace(functions=functions, symbols=symbols, path=Path("fixture.o"))
-                )
-
-        verify()
-        for name in REFLECTION:
-            for changed in ("GLOBAL HIDDEN", "LOCAL DEFAULT", "WEAK DEFAULT"):
-                mutant = table.replace(f"GLOBAL DEFAULT 1 {name}", f"{changed} 1 {name}")
-                with self.assertRaises(ValueError):
-                    verify(rows=mutant)
-            with self.assertRaises(ValueError):
-                verify(symbols=imports + [decoder.Symbol(name, 0, 0, 0, 0)])
-            with self.assertRaises(ValueError):
-                verify(functions=names - {name})
-        for extra in ("aurora_reflect_address", "__au_reflect_s7_size", "__au_reflect_s1_address"):
-            with self.assertRaises(ValueError):
-                verify(functions=names | {extra})
-
-    def test_provisional_six_qword_pixel_and_value_bridge_machine_contract(self):
-        # Entry stack touch follows retained consumer.s; linked disassembly and
-        # the remaining synthetic ABI fixture still require allocated execution.
-        entry = [
-            ("push", "%rbp"),
-            ("mov", "%rsp,%rbp"),
-            ("sub", "$0x80,%rsp"),
-            ("orq", "$0x0,(%rsp)"),
-            ("mov", "%r11,-0x8(%rbp)"),
-        ]
-        read_indexes, write_indexes = [], []
-        destinations = iter([0x18, 0x10, 0x28, 0x20, 0x30, 0x38])
-        for group in [(0, 8), (16, 24), (32,), (40,)]:
-            entry.append(("mov", "-0x8(%rbp),%r11"))
-            for offset in group:
-                read_indexes.append(len(entry))
-                write_indexes.append(len(entry) + 1)
-                entry += [
-                    ("mov", ("" if offset == 0 else hex(offset)) + "(%r11),%rax"),
-                    ("mov", f"%rax,-0x{next(destinations):x}(%rbp)"),
-                ]
-        pixel_name = "__au_v_m1_24kernel_graphical_console_pixel_fixture"
-        pixel_base = 3
-        pixel = [("push", "%rbp"), ("mov", "%rsp,%rbp"), ("sub", "$0x80,%rsp")]
-        pixel += [("mov", "-0x40(%rbp),%rdi"), ("mov", "-0x38(%rbp),%rsi")]
-        pixel += [("pop", r) for r in ["%r10", "%r9", "%r8", "%rcx", "%rdx"]]
-        pixel += [
-            ("sub", "$0x8,%rsp"),
-            ("mov", "%r10,(%rsp)"),
-            ("call", "@__au_runtime_display_pixel"),
-            ("add", "$0x8,%rsp"),
-            ("cmp", "$0x1,%rax"),
-            ("ja", "@" + pixel_name + "+18"),
-            ("leave", ""),
-            ("ret", ""),
-            ("ud2", ""),
-        ]
+    def test_native_service_contract_uses_bound_compiler_facts(self):
         graph = {
-            graphical.ENTRY: entry,
+            graphical.ENTRY: [("ret", "")],
             graphical.VALUE_BRIDGE: [("jmp", "@" + graphical.VALUE_ENTRY)],
             graphical.VALUE_ENTRY: [("ret", "")],
-            pixel_name: pixel,
+            "pixel": [("call", "@__au_runtime_display_pixel"), ("ret", "")],
             "__au_runtime_display_pixel": [("ret", "")],
         }
+        _, symbols, code, starts = fixture(graph, analyze=False)
+        record = dict(
+            parameters=[["builtin::ConsoleSession", 16], ["builtin::DisplaySession", 16], ["scalar", 8], ["scalar", 8]],
+            result_bytes=8,
+        )
+        functions = {name: dict(calls=[], service_abi=None) for name in symbols}
+        functions[graphical.ENTRY]["service_abi"] = dict(record=record, calls={})
+        functions["pixel"] = dict(
+            calls=[dict(target="__au_runtime_display_pixel", address=symbols["pixel"].address, live_bytes=32)],
+            service_abi=dict(record=None, calls={"__au_runtime_display_pixel": dict(sysv_arguments=7, result_max=1)}),
+        )
+        names = set(symbols) - {"__au_runtime_display_pixel"}
 
-        def verify(rows, live_bytes=16):
-            _, symbols, code, starts = fixture(rows, analyze=False)
-            functions = {
-                name: {
-                    "calls": [
-                        {"address": row.address, "live_bytes": live_bytes}
-                        for row in code.values()
-                        if symbol.address <= row.address < symbol.address + symbol.size and row.op == "call"
-                    ]
-                }
-                for name, symbol in symbols.items()
-            }
+        def verify(value=functions, instructions=code):
             return graphical.verify_private_abi(
-                decoder,
-                SimpleNamespace(functions=symbols),
-                code,
-                starts,
-                {graphical.ENTRY, graphical.VALUE_BRIDGE, graphical.VALUE_ENTRY, pixel_name},
-                functions,
+                decoder, SimpleNamespace(functions=symbols), instructions, starts, names, value
             )
 
-        verify(graph)
-        # Missing, altered-width/opcode/value/address and displaced touches
-        # must fail at the exact prologue boundary, not be skipped generically.
-        changed = deepcopy(graph)
-        del changed[graphical.ENTRY][3]
-        with self.assertRaisesRegex(ValueError, "paired entry stack touch"):
-            verify(changed)
-        for operation in [
-            ("nop", ""),
-            ("orl", "$0x0,(%rsp)"),
-            ("orq", "$0x1,(%rsp)"),
-            ("orq", "$0x0,0x8(%rsp)"),
-            ("orq", "$0x0,-0x8(%rsp)"),
-            ("orq", "$0x0,(%rbp)"),
-            ("orq", "$0x0,%rsp"),
-        ]:
-            changed = deepcopy(graph)
-            changed[graphical.ENTRY][3] = operation
-            with self.subTest(stack_touch=operation), self.assertRaisesRegex(ValueError, "paired entry stack touch"):
+        self.assertEqual(verify()["entry_record"], record)
+        for mutate in (
+            lambda f: f[graphical.ENTRY].update(service_abi=None),
+            lambda f: f[graphical.ENTRY]["service_abi"].update(record=None),
+            lambda f: f[graphical.ENTRY]["service_abi"]["record"].update(
+                parameters=list(reversed(record["parameters"]))
+            ),
+            lambda f: f[graphical.ENTRY]["service_abi"]["record"].update(result_bytes=1),
+            lambda f: f["pixel"].update(service_abi=None),
+            lambda f: f["pixel"]["service_abi"]["calls"].clear(),
+            lambda f: f["pixel"]["service_abi"]["calls"]["__au_runtime_display_pixel"].update(sysv_arguments=6),
+            lambda f: f["pixel"]["service_abi"]["calls"]["__au_runtime_display_pixel"].update(result_max=2),
+            lambda f: f["pixel"]["calls"][0].update(live_bytes=24),
+            lambda f: f["pixel"]["calls"].clear(),
+        ):
+            changed = deepcopy(functions)
+            mutate(changed)
+            with self.assertRaises(ValueError):
                 verify(changed)
-        changed = deepcopy(graph)
-        changed[graphical.ENTRY][3:5] = list(reversed(changed[graphical.ENTRY][3:5]))
-        with self.assertRaisesRegex(ValueError, "paired entry stack touch"):
-            verify(changed)
-        changed = deepcopy(graph)
-        changed[graphical.ENTRY].insert(4, ("orq", "$0x0,(%rsp)"))
-        with self.assertRaisesRegex(ValueError, "private record save"):
-            verify(changed)
-        for operation in [("call", "@" + graphical.VALUE_ENTRY), ("jmp", "@" + graphical.ENTRY), ("jmp", "*%rax")]:
-            changed = deepcopy(graph)
-            changed[graphical.VALUE_BRIDGE] = [operation]
-            with self.assertRaisesRegex(ValueError, "value-only private bridge|direct"):
-                verify(changed)
-        changed = deepcopy(graph)
-        changed[graphical.VALUE_BRIDGE].append(("ret", ""))
-        with self.assertRaisesRegex(ValueError, "value-only private bridge"):
-            verify(changed)
-        for index in read_indexes:
-            changed = deepcopy(graph)
-            changed[graphical.ENTRY][index] = ("mov", "(%r11),%eax")
-            with self.assertRaisesRegex(ValueError, "qword/width/order"):
-                verify(changed)
-        for index in write_indexes:
-            changed = deepcopy(graph)
-            changed[graphical.ENTRY][index] = ("mov", "%rax,-0x8(%rbp)")
-            with self.assertRaisesRegex(ValueError, "parameter slot"):
-                verify(changed)
-        for destination in ["-0x9", "-0x11", "-0x88", "-0x0"]:
-            changed = deepcopy(graph)
-            changed[graphical.ENTRY][write_indexes[0]] = ("mov", f"%rax,{destination}(%rbp)")
-            with self.assertRaisesRegex(ValueError, "Overlapping, unaligned or unallocated"):
-                verify(changed)
-        changed = deepcopy(graph)
-        changed[pixel_name][pixel_base + 7] = ("sub", "$0x10,%rsp")
-        changed[pixel_name][pixel_base + 10] = ("add", "$0x10,%rsp")
-        with self.assertRaisesRegex(ValueError, "Misaligned pixel SysV"):
-            verify(changed, live_bytes=24)
-        for grant, generation in [("-0x41", "-0x39"), ("-0x88", "-0x80")]:
-            changed = deepcopy(graph)
-            changed[pixel_name][pixel_base] = ("mov", grant + "(%rbp),%rdi")
-            changed[pixel_name][pixel_base + 1] = ("mov", generation + "(%rbp),%rsi")
-            with self.assertRaisesRegex(ValueError, "unaligned or outside helper frame"):
-                verify(changed)
-        for index, replacement in [(11, ("cmp", "$0x2,%rax")), (12, ("ja", "@" + pixel_name + "+17"))]:
-            changed = deepcopy(graph)
-            changed[pixel_name][pixel_base + index] = replacement
-            with self.assertRaisesRegex(ValueError, "completion validation"):
-                verify(changed)
-        for index, replacement, reason in [
-            (1, ("mov", "-0x40(%rbp),%rsi"), "grant/generation"),
-            (2, ("pop", "%rax"), "scalar ABI"),
-            (8, ("mov", "%rax,(%rsp)"), "seventh argument"),
-            (10, ("add", "$0x10,%rsp"), "seventh argument"),
-        ]:
-            changed = deepcopy(graph)
-            changed[pixel_name][pixel_base + index] = replacement
-            with self.assertRaisesRegex(ValueError, reason):
-                verify(changed)
+        for operation in [("call", "0"), ("jmp", "*%rax"), ("ret", "")]:
+            changed = dict(code)
+            at = symbols[graphical.VALUE_BRIDGE].address
+            changed[at] = decoder.Instruction(at, 1, *operation)
+            with self.assertRaises(ValueError):
+                verify(instructions=changed)
 
     def test_object_bytes_size_and_relocation_inventory(self):
         symbol = decoder.Symbol("leaf", 0, 5, 1, 2)

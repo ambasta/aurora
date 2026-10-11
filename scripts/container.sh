@@ -5,6 +5,7 @@ if [[ ${1:-} == --help ]]; then
     echo 'Usage: scripts/container.sh [command [arguments...]]'
     echo 'Run in the published linux/amd64 image pinned by ci/image; default: bash.'
     echo 'Requires Docker or Podman; the public dependency image supports anonymous pulls.'
+    echo 'Forwards MESON_BUILD_DIR, AURORA_BUILD_JOBS and AURORA_TEST_JOBS when set.'
     exit 0
 fi
 if [[ ! -f "$root/ci/image" ]]; then
@@ -37,10 +38,14 @@ case "$engine_version" in
 esac
 terminal=(-i)
 if [[ -t 0 && -t 1 ]]; then terminal+=(-t); fi
+controls=()
+for name in MESON_BUILD_DIR AURORA_BUILD_JOBS AURORA_TEST_JOBS; do
+    if [[ -v $name ]]; then controls+=(--env "$name=${!name}"); fi
+done
 if [[ $# == 0 ]]; then set -- bash; fi
 exec "$engine" run --rm --init --platform linux/amd64 \
     --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
-    "${identity[@]}" --env HOME=/tmp \
+    "${identity[@]}" --env HOME=/tmp "${controls[@]}" \
     --tmpfs /tmp:exec,mode=1777 \
     --mount "type=bind,source=$root,target=/workspace" --workdir /workspace \
     "${terminal[@]}" "$image" "$@"

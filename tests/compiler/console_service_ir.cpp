@@ -3,6 +3,7 @@
 #include "x86.hpp"
 #include <functional>
 #include <iostream>
+#include <tuple>
 using namespace aurora;
 using namespace aurora::ir;
 using F = aurora::ir::Function;
@@ -69,7 +70,17 @@ Module forwarded() {
     return m;
 }
 void good(Module m) {
-    const auto text = X86Emitter{}.emit(validate(std::move(m)));
+    X86Emitter emitter;
+    const auto text = emitter.emit(validate(std::move(m)));
+    for (const auto &[name, facts] : emitter.stackFacts())
+        for (const auto &[host, arguments, maximum] : {std::tuple{"__au_runtime_console_put", 3, 1},
+                                                       std::tuple{"__au_runtime_display_pixel", 7, 1},
+                                                       std::tuple{"__au_runtime_iommu_event_acknowledge", 2, 2}})
+            if (facts.calls.contains(host)) {
+                const auto &call = facts.serviceCalls.at(host);
+                need(call.arguments == arguments && call.resultMax == maximum,
+                     "scalar host ABI facts disagree with independently expected native contract");
+            }
     need(text.find("__au_runtime_bytes_") == std::string::npos, "service graph depends on byte-owner runtime");
     need(text.find(".globl caller") == std::string::npos, "ordinary public service entry");
     ++checks;

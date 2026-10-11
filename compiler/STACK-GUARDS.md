@@ -108,14 +108,14 @@ performance and arbitrary-program finite stack bounds require separate gates.
 ## Compiler-emitted stack/call facts
 
 `aurorac INPUT.au -o OUTPUT.s --stack-facts OUTPUT.stack.json` writes compact
-version-1 facts from the same emission that produces the assembly. The optional
+version-2 facts from the same emission that produces the assembly. The optional
 output uses the normal source-alias and no-symlink artifact protections; it must
 be distinct from the assembly destination and is rejected with `--check`.
 Each file is atomically replaced. The pair is valid only after a successful
 compiler invocation; this is not a multi-file atomic transaction or an attestation.
 The build graph declares both outputs on that one invocation.
 
-The JSON object contains `version: 1` and a `functions` object keyed by exact
+The JSON object contains `version: 2` and a `functions` object keyed by exact
 emitted symbol. Each entry contains `local_bytes` and `calls`, the latter mapping
 callee symbols to their maximum live caller bytes immediately before `call`.
 Repeated call sites to the same callee are combined by maximum. Like GCC `.su`,
@@ -146,3 +146,17 @@ body still rejects. The existing diagnostics CLI gate checks JSON shape, ordinar
 assembly equality, option rejection and output protection. These finite checks
 support compiler intent and implementation regression coverage; emitted metadata
 is not independent proof of the compiler or arbitrary-program stack safety.
+
+V2 also carries `copied_record` for the dense copied R11/R10 ABI. Service
+functions may additionally carry `service_abi`: an optional packed entry record
+with ordered sealed-kind/byte extents and scalar result width, plus scalar host
+call argument counts and completion maxima emitted at their lowering sites.
+The graphical admission requires its independently expected dual-grant entry
+and seven-argument pixel contract. It binds facts to exact generated object
+members and linked call edges instead of replaying generated copy instructions.
+Handwritten bridges, private bindings, closed imports, call alignment, image and
+stack caps, IRQ/wait closure and runtime authority checks remain independent.
+These ABI facts trust compiler lowering; they do not prove grant provenance or
+runtime authority. Existing native service and guest behavior gates remain required.
+Historical v1/v2 stack-only facts remain readable, but cannot satisfy a native
+boundary that requires the new service ABI facts.

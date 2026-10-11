@@ -379,7 +379,9 @@ if action == 'guest':
                     smoke.finish_run(folder, status)
                     self.assertTrue(folder.is_dir(), "the current run must survive")
                     windows.append(folder)
-                self.assertEqual([p.name for p in windows if p.exists()], ["run-4", "run-5", "run-6", "run-7"])
+                self.assertEqual(
+                    [p.name for p in windows if p.exists()], ["run-1", "run-3", "run-4", "run-5", "run-6", "run-7"]
+                )
                 for name in protected:
                     self.assertEqual((base / name / "evidence").read_text(), "unchanged")
                 self.assertEqual((outside / "evidence").read_text(), "unchanged")
@@ -421,7 +423,7 @@ if action == 'guest':
                 stdout, stderr = child.communicate(timeout=20)
                 self.assertEqual(child.returncode, 0, stdout + stderr)
             statuses = [json.loads(path.read_text())["status"] for path in base.glob("run-*/" + smoke.RUN_MARKER)]
-            self.assertCountEqual(statuses, ["running", "passed", "passed", "failed", "failed"])
+            self.assertCountEqual(statuses, ["running", "passed", "passed", "failed", "failed", "failed", "failed"])
             self.assertTrue((base / "run-active").exists())
 
     def test_standalone_reader_pins_before_checks_and_concurrent_prune(self):
@@ -574,8 +576,8 @@ if action == 'guest':
                     smoke.start_run(current)
                     smoke.finish_run(current, 31)
                 self.assertTrue(folder.exists())
-                self.assertFalse((base / "run-new0").exists())
-                self.assertFalse((base / "run-new1").exists())
+                self.assertTrue((base / "run-new0").exists())
+                self.assertTrue((base / "run-new1").exists())
                 self.assertTrue((base / "run-new2").exists())
             for value in ("0", "-1", "1.5", "1000", "", "ALL"):
                 with patch.dict(os.environ, {"AURORA_GRAPHICAL_KEEP_RUNS": value}), self.assertRaises(ValueError):

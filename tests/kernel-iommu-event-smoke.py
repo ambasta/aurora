@@ -711,6 +711,100 @@ class Controls(unittest.TestCase):
                 allocate.assert_not_called()
                 window.assert_not_called()
 
+    def test_owned_output_lifecycle_preserves_failures_keeps_and_unknown_runs(self):
+        mode = smoke.MODES[0]
+        disposable = (
+            mode + "-esp/esp-master.raw",
+            mode + "-esp/esp-rebuild.raw",
+            mode + "-guest/esp.raw",
+            mode + "-guest/vars.fd",
+            *(mode + "-guest/" + capture[0] for capture in smoke.oracle.CAPTURES),
+        )
+        preserved = ("summary.json", "normal-restoration.log", mode + "-guest/oracle.json", mode + "-image/payload.bin")
+        legacy = self.root / "aurora-event-smoke-legacy"
+        legacy.mkdir()
+        (legacy / "esp.raw").write_bytes(b"historical input")
+        active = self.root / "aurora-event-smoke-active"
+        active.mkdir()
+        (active / smoke.RUN_MARKER).write_text(json.dumps(dict(schema=smoke.RUN_SCHEMA, status="running")))
+        runs = []
+        outcomes = ("failed", "interrupted", "kept", "all", "passed", "passed", "passed")
+        for outcome in outcomes:
+
+            def window(args, directory, runtime):
+                runs.append(directory)
+                for name in (*disposable, *preserved):
+                    path = directory / name
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(b"owned output")
+                if outcome == "kept":
+                    (directory / ".keep").touch()
+                if outcome == "failed":
+                    raise ValueError("normal restoration failed")
+                if outcome == "interrupted":
+                    raise KeyboardInterrupt("interrupted restoration")
+
+            with (
+                self.subTest(outcome=outcome),
+                patch.dict(os.environ, {"AURORA_EVENT_KEEP_RUNS": "all" if outcome == "all" else "2"}),
+                patch.object(sys, "argv", ["event-smoke"]),
+                patch.object(smoke, "prerequisites", return_value=(self.root, None)),
+                patch.object(smoke.signal, "signal"),
+                patch.object(smoke, "window", side_effect=window),
+                patch("builtins.print"),
+            ):
+                self.assertEqual(smoke.cli(), int(outcome in ("failed", "interrupted")))
+            current = runs[-1]
+            for name in disposable:
+                self.assertEqual((current / name).exists(), outcome != "passed")
+            self.assertTrue(all((current / name).is_file() for name in preserved))
+            expected = "failed" if outcome in ("failed", "interrupted") else "passed"
+            self.assertEqual(json.loads((current / smoke.RUN_MARKER).read_text())["status"], expected)
+        self.assertEqual([path.exists() for path in runs], [True, True, True, True, False, True, True])
+        self.assertEqual((legacy / "esp.raw").read_bytes(), b"historical input")
+        self.assertTrue(active.is_dir())
+        self.assertEqual((self.root / "master").read_bytes(), b"small owned fixture")
+
+    def test_successful_event_cleanup_rejects_symlink_paths_before_unlink(self):
+        for component in ("guest", "esp", "raw"):
+            with self.subTest(component=component), tempfile.TemporaryDirectory() as tmp:
+                directory = Path(tmp)
+                esp = directory / (smoke.MODES[0] + "-esp")
+                esp.mkdir()
+                owned = esp / "esp-master.raw"
+                owned.write_bytes(b"owned")
+                target = self.root if component != "raw" else self.root / "master"
+                path = {
+                    "guest": directory / (smoke.MODES[0] + "-guest"),
+                    "esp": directory / (smoke.MODES[1] + "-esp"),
+                    "raw": esp / "esp-rebuild.raw",
+                }[component]
+                path.symlink_to(target)
+                with self.assertRaisesRegex(ValueError, "symlink"):
+                    smoke.discard_captures(directory)
+                self.assertEqual(owned.read_bytes(), b"owned")
+                self.assertEqual((self.root / "master").read_bytes(), b"small owned fixture")
+        directory = self.root / "owned"
+        directory.mkdir()
+        owned = directory / "esp.raw"
+        owned.write_bytes(b"owned")
+        with self.assertRaisesRegex(ValueError, "not a smoke output"):
+            smoke.smoke_outputs.discard_files(directory, [owned, directory / "../master"])
+        self.assertEqual(owned.read_bytes(), b"owned")
+        self.assertEqual((self.root / "master").read_bytes(), b"small owned fixture")
+
+    def test_invalid_retention_rejected_before_allocation(self):
+        with (
+            patch.dict(os.environ, {"AURORA_EVENT_KEEP_RUNS": "0"}),
+            patch.object(sys, "argv", ["event-smoke"]),
+            patch.object(smoke, "prerequisites") as prerequisites,
+            patch.object(smoke.tempfile, "mkdtemp") as allocate,
+            patch("builtins.print"),
+        ):
+            self.assertEqual(smoke.cli(), 1)
+        prerequisites.assert_not_called()
+        allocate.assert_not_called()
+
     def test_missing_prerequisites_are_blocked_before_build_or_evidence(self):
         for mode in smoke.MODES:
             (self.root / (mode + ".raw")).write_bytes(b"fake ESP")

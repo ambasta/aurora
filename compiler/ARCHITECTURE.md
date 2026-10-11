@@ -55,6 +55,26 @@ and optional LSP link the same graph and hosted owner runtime. Standalone lexer
 bootstrap regression remains separate. Focused parser/ABI and multi-stage corpus
 checks do not replace final integrated GCC 16 full/image/guest qualification.
 
+### C++ expression parser retirement
+
+Retire the C++ expression parser and `templateStatementExpressionAhead` together
+once Aurora handles the complete existing expression grammar in every entry
+context, including constructor initializers and nested expressions. Coverage must
+include calls, qualified/member/index expressions, strings and arrays, construction,
+type-taking reflection calls and template arguments with exact `>`/`>>` ambiguity
+and diagnostic behavior. Until then the bounded whole-expression fallback remains
+an explicit bootstrap dependency; this milestone does not add language features.
+
+Removal requires direct no-fallback Aurora tests for each grammar family, exact
+AST/span and rejection parity, depth/allocation/ABI failure coverage, and the
+existing whole-corpus and multi-stage frontend reproducibility gates. First verify
+reproducible clean builds from a pinned, reviewed predecessor compiler or
+bootstrapped frontend; today's C++ stage 0 still emits the Aurora graph. Then delete the C++
+`expr`/`primary`/`postfix`/precedence implementation, expression-only template
+lookahead and fallback routing rather than retaining another production parser.
+Update the seed/reference tests to the new bootstrap boundary and rerun final
+integrated qualification. Declaration/type parsing remains a separate migration.
+
 ## Typed instruction model
 
 The current value and temporary operand stack carry explicit scalar/reference payload types. Source owners lower to scalar payload slots after the source ownership checks succeed. Borrow bindings lower to typed compiler-internal stack handles. No instruction offers arbitrary address arithmetic, arbitrary indirect stores, source-level raw pointers or opaque assembly injection.

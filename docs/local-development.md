@@ -23,6 +23,18 @@ for Podman, preserving the invoking user's ownership on the checkout mount.
 Docker keeps its explicit `--user UID:GID` selection. Run as the checkout owner;
 the wrapper does not change host ownership or permissions.
 
+The wrapper forwards `MESON_BUILD_DIR`, `AURORA_BUILD_JOBS` and `AURORA_TEST_JOBS`
+when set. Build paths are relative to the checkout inside `/workspace`, for example:
+
+```sh
+MESON_BUILD_DIR=build/container AURORA_BUILD_JOBS=2 ./scripts/container.sh make test
+```
+
+The default build refreshes missing old kernel options automatically without
+wiping its files. Explicitly chosen builds keep their configuration; use a fresh
+matching directory or reconfigure them yourself. `make clean` removes products
+and preserves configuration.
+
 ## Advanced native setup
 
 Select matching real `gcc` and `g++` on PATH, plus the reviewed binutils, Python,

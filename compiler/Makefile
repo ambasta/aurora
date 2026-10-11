@@ -132,9 +132,9 @@ OUT ?= ../build/aurorac
 LEXER_EVENTS = $(dir $(OUT))hosted_lexer_events.inc
 .PHONY: all test
 all: $(OUT)
-$(LEXER_EVENTS): lexer.au ../scripts/bootstrap_lexer.py
+$(LEXER_EVENTS): lexer.au ../scripts/bootstrap_frontend.py
 	mkdir -p $(dir $@)
-	python3 -B ../scripts/bootstrap_lexer.py --events $< $@
+	python3 -B ../scripts/bootstrap_frontend.py --events $< $@
 ifneq ($(strip $(AURORA_TEST_CONTEXT)),)
 # A sealed compiler is validated even when source timestamps are in the future.
 # No source dependency or compile recipe may replace it in the inner graph.

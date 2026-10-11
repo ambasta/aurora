@@ -10,7 +10,7 @@ native_cpp = meson.get_compiler('cpp', native: true)
 python = find_program('python3', native: true)
 lexer_events = custom_target(
   'hosted-lexer-events', input: 'compiler/lexer.au', output: 'hosted_lexer_events.inc',
-  command: [python, '-B', files('scripts/bootstrap_lexer.py'), '--events', '@INPUT@', '@OUTPUT@'],
+  command: [python, '-B', files('scripts/bootstrap_frontend.py'), '--events', '@INPUT@', '@OUTPUT@'],
 )
 # Stage 0 retains the C++ scanner/parser solely as the bootstrap seed/reference.
 aurorac_stage0 = executable('aurorac-stage0', 'compiler/main.cpp', native: true, install: false)

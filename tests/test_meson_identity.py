@@ -91,7 +91,7 @@ class MesonIdentityTests(unittest.TestCase):
                     patch.object(meson_test.shutil, "which", return_value="/synthetic/meson"),
                     patch.object(meson_test.subprocess, "run") as launch,
                 ):
-                    with self.assertRaisesRegex(ValueError, "Unset " + name):
+                    with self.assertRaisesRegex(contract.ContractError, "Unset " + name):
                         meson_test.execute(root, "full")
                     launch.assert_not_called()
                     self.assertFalse((root / "build").exists())
@@ -108,9 +108,9 @@ class MesonIdentityTests(unittest.TestCase):
                 timeout=3,
             )
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("Meson was not found on PATH", result.stderr)
-            self.assertIn("install Meson 1.12.1+ and Ninja", result.stderr)
-            self.assertIn("docs/meson-bootstrap.md", result.stderr)
+            self.assertIn("BLOCKED: Missing development tool: meson", result.stderr)
+            self.assertIn("./scripts/container.sh make test", result.stderr)
+            self.assertIn("docs/local-development.md", result.stderr)
             self.assertNotIn("Traceback", result.stderr)
             self.assertEqual(list(root.iterdir()), [])
 
@@ -122,6 +122,85 @@ class MesonIdentityTests(unittest.TestCase):
 
 
 class MesonToolchainDiagnosticTests(unittest.TestCase):
+    def test_real_meson_refreshes_old_options_without_wiping_files_or_lock(self):
+        meson = shutil.which("meson")
+        if meson is None:
+            self.skipTest("Meson is required for the language-free reconfiguration fixture")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            build = root / "build"
+            (root / "meson.build").write_text("project('old-options-fixture')\n")
+            options_file = root / "meson_options.txt"
+            options_file.write_text("option('lsp', type: 'boolean', value: false)\n")
+
+            def run(*arguments):
+                result = subprocess.run([meson, *map(str, arguments)], capture_output=True, text=True, timeout=15)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                return result.stdout
+
+            run("setup", build, root, "--backend=ninja", "-Dlsp=false")
+            old = {item["name"] for item in json.loads(run("introspect", build, "--buildoptions"))}
+            self.assertTrue({"kernel_compiler", "kernel_images", "uefi_ld"}.isdisjoint(old))
+            sentinel = build / "user-notes"
+            sentinel.write_text("preserve this user file")
+            kept = build / "retained-failure/.keep"
+            kept.parent.mkdir()
+            kept.write_text("retained failure")
+            options_file.write_text((Path(__file__).resolve().parents[1] / "meson_options.txt").read_text())
+            with (build / ".aurora-test.lock").open("a") as lock:
+                meson_test.fcntl.flock(lock, meson_test.fcntl.LOCK_EX | meson_test.fcntl.LOCK_NB)
+                inode = os.fstat(lock.fileno()).st_ino
+                run("setup", build, root, "--reconfigure")
+                refreshed = {
+                    item["name"]: item["value"] for item in json.loads(run("introspect", build, "--buildoptions"))
+                }
+                self.assertEqual(
+                    {name: refreshed[name] for name in ("kernel_compiler", "kernel_images", "uefi_ld")},
+                    {"kernel_compiler": "", "kernel_images": True, "uefi_ld": ""},
+                )
+                run("setup", build, root, "--reconfigure", "-Dkernel_images=false")
+                self.assertEqual((build / ".aurora-test.lock").stat().st_ino, inode)
+                with (build / ".aurora-test.lock").open("a") as competing:
+                    with self.assertRaises(BlockingIOError):
+                        meson_test.fcntl.flock(competing, meson_test.fcntl.LOCK_EX | meson_test.fcntl.LOCK_NB)
+            options = {item["name"]: item["value"] for item in json.loads(run("introspect", build, "--buildoptions"))}
+            self.assertEqual(
+                {name: options[name] for name in ("kernel_compiler", "kernel_images", "uefi_ld")},
+                {"kernel_compiler": "", "kernel_images": False, "uefi_ld": ""},
+            )
+            self.assertEqual(sentinel.read_text(), "preserve this user file")
+            self.assertEqual(kept.read_text(), "retained failure")
+
+    def test_wrapper_reports_only_blocked_reason_and_route_before_setup(self):
+        repo = Path(__file__).resolve().parents[1]
+        for failure in ("version", "execution"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                tools = root / "tools"
+                tools.mkdir()
+                for name in ("g++", "gcc", "meson", "ninja", "as", "ld", "nm", "objcopy", "objdump", "readelf"):
+                    tool = tools / name
+                    tool.write_text(
+                        "#!/bin/sh\n"
+                        + ("echo unwanted-tool-stderr >&2; exit 7\n" if failure == "execution" else "echo 16.1.0\n")
+                    )
+                    tool.chmod(0o755)
+                result = subprocess.run(
+                    [sys.executable, "-B", str(repo / "scripts/meson_test.py"), "--repo-root", str(root)],
+                    env={"PATH": str(tools)},
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.stdout, "")
+                self.assertEqual(len(result.stderr.splitlines()), 2, result.stderr)
+                self.assertTrue(result.stderr.startswith("BLOCKED:"), result.stderr)
+                self.assertIn("./scripts/container.sh make test", result.stderr)
+                self.assertIn("require 16.2.0, got 16.1.0" if failure == "version" else "Cannot inspect", result.stderr)
+                self.assertNotIn("unwanted-tool-stderr", result.stderr)
+                self.assertEqual(list(root.iterdir()), [tools])
+
     def test_setup_reports_exact_version_and_recovery_without_a_compiler(self):
         meson = shutil.which("meson")
         if meson is None:
@@ -202,6 +281,7 @@ class MesonEntrypointTests(unittest.TestCase):
         self.kernel_images = True
         self.kernel_compiler = ""
         self.missing_options = set()
+        self.preflight = unittest.mock.Mock()
         for patcher in (
             patch.dict(os.environ, {}, clear=True),
             patch.object(contract, "parse_cxx", return_value="/synthetic/g++"),
@@ -212,6 +292,7 @@ class MesonEntrypointTests(unittest.TestCase):
             ),
             patch.object(meson_test.subprocess, "run", side_effect=self.run_command),
             patch.object(meson_test.subprocess, "check_output", side_effect=self.introspect),
+            patch.object(meson_toolchain, "check", self.preflight),
         ):
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -225,6 +306,14 @@ class MesonEntrypointTests(unittest.TestCase):
             raise subprocess.CalledProcessError(23, command)
         if command[1] == "setup":
             build = Path(command[2])
+            if "--reconfigure" in command:
+                self.assertEqual(command[3:5], [str(self.root), "--reconfigure"])
+                if "kernel_images" in self.missing_options:
+                    self.kernel_images = True
+                self.missing_options.clear()
+                if "-Dkernel_images=false" in command:
+                    self.kernel_images = False
+                return subprocess.CompletedProcess(command, 0)
             self.assertEqual(command[3:6], [str(self.root), "--backend=ninja", "-Dlsp=false"])
             self.assertIn(command[6], ("-Dkernel_images=true", "-Dkernel_images=false"))
             self.kernel_images = command[6] == "-Dkernel_images=true"
@@ -245,7 +334,8 @@ class MesonEntrypointTests(unittest.TestCase):
         ]
         return json.dumps([item for item in options if item["name"] not in self.missing_options]).encode()
 
-    def test_stale_build_missing_options_rejects_without_reconfigure_or_work(self):
+    def test_explicit_stale_build_missing_options_rejects_without_reconfigure_or_work(self):
+        os.environ["MESON_BUILD_DIR"] = "build/meson"
         meson_test.execute(self.root, "full")
         for missing in (
             {"kernel_compiler"},
@@ -268,6 +358,72 @@ class MesonEntrypointTests(unittest.TestCase):
                 )
                 self.assertEqual(self.calls, [])
                 self.assertEqual([command[-1] for command in self.queries], ["--buildoptions"])
+
+    def test_stale_default_refreshes_only_missing_project_options_under_lock(self):
+        for scope in ("full", "compiler"):
+            with self.subTest(scope=scope):
+                meson_test.execute(self.root, scope)
+                build = self.root / "build" / ("meson" if scope == "full" else "meson-compiler")
+                sentinel = build / "user-notes"
+                sentinel.write_text("keep this")
+                lock_inode = (build / ".aurora-test.lock").stat().st_ino
+                self.calls.clear()
+                self.preflight.reset_mock()
+                self.missing_options = {"kernel_compiler", "kernel_images", "uefi_ld"}
+                original = self.run_command
+
+                def inspect_lock(command, **kwargs):
+                    with (build / ".aurora-test.lock").open("a") as lock:
+                        with self.assertRaises(BlockingIOError):
+                            meson_test.fcntl.flock(lock, meson_test.fcntl.LOCK_EX | meson_test.fcntl.LOCK_NB)
+                    return original(command, **kwargs)
+
+                with patch.object(meson_test.subprocess, "run", side_effect=inspect_lock):
+                    meson_test.execute(self.root, scope)
+                self.assertEqual(
+                    [command[1] for command in self.calls],
+                    ["setup"] * (1 if scope == "full" else 2) + ["compile", "test"],
+                )
+                self.assertEqual(self.calls[0][4:], ["--reconfigure"])
+                if scope == "compiler":
+                    self.assertEqual(self.calls[1][4:], ["--reconfigure", "-Dkernel_images=false"])
+                self.preflight.assert_called_once_with(["/synthetic/g++"], None)
+                self.assertEqual(sentinel.read_text(), "keep this")
+                self.assertEqual((build / ".aurora-test.lock").stat().st_ino, lock_inode)
+
+    def test_stale_default_does_not_reconfigure_mismatched_compiler_or_flags(self):
+        meson_test.execute(self.root, "full")
+        self.missing_options = {"kernel_compiler", "kernel_images", "uefi_ld"}
+        for compiler, flags in [("/other/g++", []), ("/synthetic/g++", ["-O1"])]:
+            with self.subTest(compiler=compiler, flags=flags):
+                self.calls.clear()
+                self.configured_compiler, self.flags = compiler, flags
+                with self.assertRaises(contract.ContractError):
+                    meson_test.execute(self.root, "full")
+                self.assertEqual(self.calls, [])
+
+    def test_missing_builtin_option_is_not_an_old_project_configuration(self):
+        meson_test.execute(self.root, "full")
+        self.calls.clear()
+        self.missing_options = {"cpp_args"}
+        with self.assertRaisesRegex(contract.ContractError, "Missing Meson build options"):
+            meson_test.execute(self.root, "full")
+        self.assertEqual(self.calls, [])
+
+    def test_incorrect_reconfigured_options_stop_before_compile(self):
+        meson_test.execute(self.root, "full")
+        self.calls.clear()
+        self.missing_options = {"kernel_images"}
+
+        def wrong_configuration(command, **kwargs):
+            result = self.run_command(command, **kwargs)
+            self.kernel_images = False
+            return result
+
+        with patch.object(meson_test.subprocess, "run", side_effect=wrong_configuration):
+            with self.assertRaisesRegex(contract.ContractError, "did not restore requested build options"):
+                meson_test.execute(self.root, "full")
+        self.assertEqual([command[1] for command in self.calls], ["setup", "setup"])
 
     def test_fresh_default_and_explicit_builds_setup_then_compile_then_full(self):
         for supplied in (None, "build/chosen-gcc", str(self.root / "absolute-gcc")):
