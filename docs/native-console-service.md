@@ -1,155 +1,211 @@
-# Persistent Aurora console service
+# Console services
 
-The simple-UEFI console profile migrates the complete 64-byte editor,
-command parsing and human-facing presentation into one persistent Aurora entry
-frame. `examples/kernel-console-service.au` owns `Line64` for the entire session:
-private bytes, length, sticky rejection and CRLF state. It implements exact
-`help`, `status` and `exit`, one session-local RAM note, four named RAM files, echo, erase,
-empty/unknown/rejected lines and prompts.
-The [sealed language service contract](../compiler/SERVICES.md) supplies only
-copied input observations and checked single-byte output.
+The serial consoles are bounded, opt-in QEMU profiles. This is the living guide
+to their commands, transport and trust boundaries. Run-specific results belong
+in Git/PR history and retained evidence, not in the current behavior description.
+No console is a general process shell, persistent filesystem or physical-machine
+qualification. Do not write these images to a physical disk or change a bootloader.
+
+| Profile | Current behavior | Boundary |
+|---|---|---|
+| BIOS | `help`, `status`, `exit`; IRQ4-woken serial editor | Aurora byte/command policy, trusted C++ storage/presentation and PIC/UART adapter |
+| Simple UEFI | Aurora-owned editor, commands, RAM note and four named RAM files | Sealed ConsoleSession; trusted boot, UART, LAPIC and wake-frame checks |
+| [Graphical](framebuffer-console.md) | Same RAM commands, two text rows and dirty-cell drawing; serial input | Separate ConsoleSession/DisplaySession grants; bounded emulator fixture |
+| [Protected commands](program-console-contract.md) | `upper`, protected note read and uppercase replacement | Two CPL3 domains, authenticated copied IPC; retained legacy editor |
+
+## Developer commands
+
+Use the [local-development prerequisites and tool/firmware overrides](local-development.md).
+Commands run from the repository root; do not mutate a profile image while it is in use.
+Interactive sessions have a five-minute limit; `exit` closes QEMU sooner.
+
+```sh
+make console                 # BIOS interactive prompt
+make console-uefi            # simple UEFI interactive prompt
+make smoke-console          # BIOS PTY acceptance
+make smoke-console-uefi     # simple UEFI PTY acceptance
+./scripts/kernel-console-tests.sh
+SANITIZE=1 ./scripts/kernel-console-tests.sh
+```
+
+`make run` and `make run-uefi` remain automatic boot self-tests. Console smokes
+are included in `make smoke-all`; the native `make test` graph does not run QEMU.
+Hosted sanitizers instrument the C++ adapters, not generated Aurora assembly.
+Missing tools or firmware are blocked verification, never a pass.
+
+## Input behavior
+
+The 64-byte ASCII editor echoes printable bytes; backspace and DEL erase one
+byte, with empty-line erase a no-op. CR, LF and CRLF each finish one line. Empty
+input opens another prompt. Exact 64-byte lines are valid; a 65th printable byte,
+other control byte, non-ASCII byte or observed UART receive error rejects the
+whole line. Rejection stays latched through edits and suffixes until a delimiter.
+Unsupported bytes are never echoed as terminal escapes. Commands are exact and
+case-sensitive; BIOS supports only the three lowercase words in the table.
+
+The simple-UEFI entry in `examples/kernel-console-service.au` owns `Line64` for
+the entire invocation, including private bytes, length, rejection and CRLF state.
+It parses commands and produces human-facing prompts, echo, erase and responses.
+The [sealed language service](../compiler/SERVICES.md) supplies copied input
+observations and checked single-byte output. The linked simple-UEFI graph must
+contain no C++ `Line`, `Presentation`, old byte/command wrappers or C++ command
+response strings. Platform diagnostics remain trusted.
 
 ## Session-local RAM note
 
 Simple UEFI and the graphical console share `console.session_note` for
-`write note <text>` and `cat note`. The exact prefix
-`write note ` leaves at most 53 printable ASCII content bytes in a 64-byte line;
-its trailing space alone writes an empty note. `cat note` reports missing or
-prints the content and a newline. Accepted writes replace and clear the old
-suffix; malformed, overlong or UART-damaged input preserves the previous note.
+`write note <text>` and `cat note`. The exact `write note ` prefix leaves at most
+53 printable ASCII content bytes; its trailing space alone writes an empty note.
+`cat note` reports missing or prints the content and a newline. Accepted writes
+replace and clear the old suffix. Malformed, overlong or UART-damaged input
+preserves the previous note.
 
-One invocation-local `BinaryBuffer64` owns the RAM-only note across idle waits
-and other commands. Exit or output failure ends its lifetime; a new invocation
-starts missing. This adds no disk access, persistence, heap or runtime authority,
-and claims no secure RAM erasure. The graphical view renders the same content
-through its ordinary response row and dirty-cell painter. Fresh
-final-source qualification is required; historical results below do not cover it.
+One invocation-local `BinaryBuffer64` owns the note across idle waits and other
+commands. Exit or output failure loses it; a new invocation starts missing.
+The graphical consumer uses its ordinary response row and dirty-cell painter.
+There is no disk access, persistence, heap, extra runtime authority or secure
+RAM-erasure guarantee. Protected note commands have their own
+[authenticated read and commit boundary](program-console-contract.md#session-local-protected-note).
 
 ## Session-local named files
 
-The simple UEFI and graphical consumers also share `console.session_files`:
-`write NAME TEXT`, `cat NAME`, `rm NAME` and exact `ls`. The four named slots are
-separate from `note`; existing note commands run first and keep their 53-byte limit.
-The name `note` is reserved, `rm note` reports that reservation, and `ls` lists only
-named files. The profiles share policy, not live storage between sessions.
+The simple UEFI and graphical consumers share `console.session_files`:
+`write NAME TEXT`, `cat NAME`, `rm NAME` and exact `ls`. Four named slots are
+separate from `note`; note commands run first and keep their 53-byte limit.
+`note` is reserved, `rm note` reports that reservation, and `ls` lists only named
+files. Profiles share policy, never live storage between invocations.
 
-Names are case-sensitive, 1–8 ASCII letters, digits, dots, underscores or hyphens;
-`.` and `..`, paths and whitespace are rejected. Content is 0–49 printable ASCII
-bytes. The space after the name is required for `write`, even for empty content.
-Spaces in content are preserved. There is no truncation or name normalization.
-Malformed commands, missing reads/removals and full-directory creation preserve
-all files. Replacement succeeds when all four slots are occupied. Listing follows
-slot order; deletion clears the complete record and the first free slot is reused.
-Successful writes return `wrote NAME: N bytes`, at most 24 display bytes, including
-empty and maximum-length content. RAM-only lifetime is described by the existing
-help presentation instead of repeated on each successful file write. Literal keyword
-arguments and `BinaryBuffer64::starts_with` replace individual character comparisons;
-logical command-length checks remain separate from the 64-byte backing.
+Names are case-sensitive, 1–8 ASCII letters, digits, dots, underscores or hyphens.
+`.` and `..`, paths and whitespace reject. Content is 0–49 printable ASCII bytes.
+The space after the name is required for `write`, even with empty content; spaces
+in content are preserved. There is no truncation or normalization. Malformed
+commands, missing reads/removals and full-directory creation preserve all files.
+Replacement succeeds when all four slots are occupied. Listing follows slot
+order; deletion clears the complete record and the first free slot is reused.
+Successful writes return `wrote NAME: N bytes` (`1 byte` for one), at most
+24 display bytes.
 
 Each workspace owns four 64-byte records and an occupancy mask (264 bytes total).
-A record holds one-byte name/content lengths, eight name bytes, 49 content bytes,
-and zero padding. A complete zeroed replacement is staged before a direct record
-commit. The constructor reuses one supplied zero buffer; occupancy starts empty.
-A bounded 80-byte `FileReply` owns the closed outcome and display bytes. Neither
-consumer passes the workspace by value into presentation; graphical `show_files`
-receives only the reply. Method receivers remain synchronously borrowed.
+Each record contains one-byte name/content lengths, eight name bytes, 49 content
+bytes and zero padding. A zeroed replacement is staged before direct record
+commit; the constructor reuses one supplied zero buffer and starts unoccupied.
+An 80-byte `FileReply` carries the closed outcome and display bytes. Presentation
+receives the reply, not a workspace copy. Receivers are synchronously borrowed;
+logical command-length checks remain separate from the 64-byte backing.
 
-These are invocation-local values with no disk, allocator or additional service
-capability. Exit or output failure loses the workspace. A write committed before
-output failure is not rolled back. No secure erasure, concurrent transaction,
-persistent storage or general filesystem is claimed. The existing 16 KiB stack,
-15,360-byte mixed-stack cap and 4,096-byte IRQ/fault reserve are unchanged. Fresh
-final-source native, linked image/stack and guest qualification remains required.
+Exit or output failure loses the workspace; an already committed write is not
+rolled back on output failure. No secure erasure, concurrent transaction or
+general filesystem is promised. The 16 KiB stack, 15,360-byte mixed-stack cap and
+4,096-byte IRQ/fault reserve remain unchanged.
 
 ## Trusted boundary
 
 `kernel/console-session.hpp` authenticates the exact active host grant, closed
 kind, nonzero monotonic generation and non-reentrant operation before transport
-work. Pointer equality is checked before dereference. Opening rejects an existing
-active invocation and generation exhaustion. Polling revalidates the operation
-across each trusted wait. Closing checks the closed completion code and exact
-active invocation once. Output timeout terminates rather than retrying a partial
-response. Traps retain the existing fail-stop behavior; there is no invented
-unwinder or restarted editor.
+work. Pointer equality precedes dereference. Opening rejects an active invocation
+and generation exhaustion. Polling revalidates across each trusted wait; closing
+checks the closed completion code and exact active invocation once. Output timeout
+terminates rather than retrying a partial response. Traps fail stop; no unwinder
+or restarted editor is supplied. Source receives no pointer or device authority.
 
-The UEFI adapter still owns platform admission, UART registers, APIC one-shot
-arming, CR3, interrupt masking, exact wake PC/frame/stack checks, EOI and
-quiescence. IRQ code never calls Aurora or touches its editor. The bridge carries
-only the private grant/generation record; source never receives a pointer.
+Every console LSR read, including transmit polling, latches receive errors.
+RX-only flushing invalidates the old data-ready sample. Damage applies before
+byte processing; an error exposed after a popped CR/LF also poisons the next line.
+A lost pasted delimiter needs a later explicit newline for recovery. Ordinary
+non-console serial behavior is unchanged. Explicit legacy `poll(editor)`/`put`
+wrappers remain for BIOS and protected-command profiles.
 
-The UART transport no longer includes or requires a C++ `Line`. Its copied
-sample applies damage before byte processing. All LSR reads, including transmit
-polls, retain receive errors. An error exposed after a popped CR/LF damages both
-that line and the next sample. FIFO reset behavior is retained. Explicit legacy
-`poll(editor)`/`put` wrappers remain for BIOS and protected-program profiles.
+## BIOS transport
 
-The migrated simple-UEFI linked graph must contain no C++ `Line`, `Presentation`,
-old byte/command policy wrappers or C++ human-command response strings. Bootstrap
-platform diagnostics remain trusted. BIOS and protected-program console editor
-migration are outside this checkpoint.
+`kernel.console` decides byte actions and classifies copied command prefixes.
+The trusted C++ adapter owns the 64-byte array, validates each storage action and
+provides presentation plus UART/PIC I/O. Only COM1 received-data interrupts are
+enabled. A private IRQ4 gate acknowledges the remapped legacy PIC; foreground
+code drains bytes with interrupts masked. `sti; hlt; cli` waits atomically when
+idle. Sustained input still consumes CPU; storage, per-byte policy, writes and
+session duration are bounded. This single-CPU QEMU PC transport is not a general
+interrupt-controller or device driver. It has no note/file or process commands.
+
+For a build-only check, use `KERNEL_CONSOLE=1 ./scripts/kernel-build.sh`.
+BIOS admission retains the 65,024-byte transport payload limit; historical image
+sizes are not current measurements.
+
+## UEFI wake and authority
+
+The simple profile runs ordinary private-memory, protection, language and ACPI
+checks before its separate console-ready marker, without first running user
+service fixtures. It enables ACPI and console, with no user runtime or service
+budget fixture. There are no firmware calls after ExitBootServices.
+
+- Copied ACPI topology, CPUID, MSRs, the final memory map and LocalApicAdmission
+  must admit the fixed xAPIC aperture. Complete private mappings are checked
+  before and after mapping it.
+- UART interrupts stay disabled. Timer-woken polling uses a fourteen-byte FIFO
+  trigger; BIOS IRQ input retains one byte. Idle waits arm a LAPIC one-shot for
+  1,250,000 divided counts. This is not a physical-time calibration.
+- The launcher retains normal UEFI's original QEMU clock, without `-icount` or
+  `sleep=off`. Prompt latency and idle CPU require actual emulator measurement.
+- Only the exact three-byte `sti; hlt; cli` region enables interrupts. The shadow
+  permits the following CLI as the sole saved continuation. CR3, exact RSP/frame
+  geometry, CS/SS, vector/error, flags, waiting phase, counter and LAPIC ISR state
+  are independently checked before EOI. RF is permitted; TF, DF, IOPL and
+  unrelated flags are forbidden.
+- Timer mask/count, ISR and IRR quiescence are checked before waits, after receipts,
+  during receive processing and at exit. Assembly restores all 15 GPRs and IRETQ
+  on the same kernel stack. IRQ code never calls Aurora or touches the editor.
+
+The adapter retains boot/MMIO, interrupt masking, wake authentication and
+quiescence authority. The bridge carries only a private grant/generation record.
 
 ## Verification and acceptance gates
 
-Five exact original-clock images completed independently reviewed prebuilt PTY
-qualification: normal interaction, stale captured generation, operation reentry,
-17-byte output timeout and noncanonical copied-report trapping. Every attempt
-was followed by an actual normal-profile restoration boot. Normal interaction
-observed 78 authenticated wakes, response samples below 21 ms and 0.01 CPU seconds
-over a 0.6001-second idle sample; these are measurements on the qualified emulator,
-not timing guarantees or evidence of physical hardware support.
+Routine `kernel-uefi-build.sh` runs ELF/PIC/PE, legacy-C++ retirement, private bridge,
+complete mixed-stack and IRQ-closure checks. Ordinary build/console commands need
+no external review token. Qualification of changed code additionally requires:
 
-Whole linked stack accounting measured 6,912 bytes for the maximum normal path,
-1,136 for the Aurora session root and at most 1,534 for the retained wait frame
-plus IRQ and synchronous-fault reserve. The unchanged whole-stack cap is 15,360
-bytes within the 16 KiB stack; the separate IRQ-plus-fault reserve remains 4,096
-bytes. Admission checks both, including their boundary mutation tests.
-
-The final PR96 library/test/documentation join and stricter explicit IRQ-reserve
-check retain the original guest receipts only through fresh byte-identical
-execution-output and call-graph applicability checks; they are not relabeled as
-new guest executions. Exact hashes, commands and final developer/slow outcomes
-belong to the accompanying reviewed qualification evidence and pull request.
-
-Required before qualification or merge:
-
-1. Join the independently accepted protected-console and ASCII-byte-literal
-   checkpoints. Preserve their changes and receipts.
-2. Fresh source-positive/negative editor tests, hostile independently authored IR,
-   handwritten packed-ABI/callee-save tests, canonical host-report traps,
-   host-grant lifetime/reentry tests and UART/error-latch models.
-3. Exact generated and mixed-language linked-stack accounting, including the
-   interrupt reserve, under existing budgets; PIC/ELF/PE admission and evidence
-   that legacy editor/presentation policy references are absent.
-4. Actual simple-UEFI PTY editing, full/overlong/malformed input, CRLF, commands,
-   idle wake and output evidence. Injected authority/transport faults must fail
-   as intended, followed by a fresh normal-image restoration boot.
-5. The [complete final-source native gate](../AGENTS.md#workflow), then independent
-   source and evidence review. Any later source change invalidates dependent gates.
-
-No hardware qualification, full-native release, general OS service framework or
-self-hosted compiler claim follows from this bounded migration. The C++23
-bootstrap compiler remains permitted tooling; the migrated behavior is native
-Aurora code in the actual guest.
+1. Source-positive/negative editor tests, hostile IR, packed ABI/callee-save
+   controls, canonical copied-report traps, lifetime/reentry and UART models.
+2. Exact generated and linked C++/assembly/Aurora stack accounting, including
+   hidden/operand/return/alignment storage. Normal plus fault and wait plus
+   IRQ/fault must fit 15,360 bytes within 16 KiB; IRQ plus fault must fit 4,096.
+   Linked bounds are not runtime high-water measurements or arbitrary nested-fault
+   and early-bootstrap overflow guarantees.
+3. Actual original-clock PTY commands, editing, exact/overlong/malformed input,
+   CRLF, note/file state, UART/pasted-delimiter recovery and exit checks. The PTY
+   runner has a 30-second deadline, less than 250 ms paced/partial-response and
+   less than 1,000 ms burst-recovery limits. Its 0.6-second idle sample permits
+   at most 0.2 CPU seconds plus one scheduler tick. These are emulator acceptance
+   limits, not hardware timing guarantees. Authority/transport faults must fail
+   as intended.
+4. Fresh normal-profile restoration boots, the
+   [complete final-source GCC 16 gates](../AGENTS.md#workflow), and independent
+   source/evidence review. Changed source invalidates its dependent results.
 
 ## First-change qualification and routine use
 
-`kernel-uefi-build.sh` automatically runs exact ELF/PIC/PE, linked C++ retirement,
-private bridge, complete mixed-stack, IRQ closure and normal/IRQ-plus-fault budget
-checks for this profile. Ordinary public build/console commands remain usable
-without an assistant-issued token.
+The build and guest driver use one checked artifact-bound image. To run the
+existing qualification driver against an explicitly selected native profile:
 
-For this implementation's first changed-image qualification, an independent
-reviewer must inspect the exact admission JSON and supply its digest separately.
-`tests/kernel-console-service-qualification.py --mode MODE` verifies that external
-`CONSOLE_SERVICE_REVIEW_SHA256` pin before starting any guest, never rebuilds the
-reviewed console image, rechecks its bytes after the PTY run, and retains a separate
-qualification receipt only with the reviewed provenance. Each admitted attempt
-then builds and actually boots the normal profile for restoration, even when its
-PTY test fails. A routine unreviewed run cannot produce this qualification receipt.
+```sh
+image_dir="$(UEFI_MODE=console ./scripts/kernel-uefi-build.sh --print-image-dir)"
+python3 -B tests/kernel-console-service-qualification.py --mode console --build-dir "$image_dir"
+```
 
-The four explicit fault images exercise stale captured generation after
-close/reopen, operation reentry from the trusted wait hook, checked transmit
-failure after exactly 17 output bytes, and a noncanonical copied damage boolean.
-The timeout is a deliberate transport-result injection, not a claim of real
-UART hardware fault induction. Hostile source/IR and fake-port UART tests remain
-separate mandatory controls.
+The driver validates that image before the guest, leaves it unrebuilt, and checks
+its admitted artifacts afterward. It retains the transcript and result, and
+builds and actually boots normal UEFI for restoration even after a PTY failure.
+No externally supplied reviewer digest is required. Independent source/image
+review and the final-source gates above remain requirements for changed code;
+a generated report or successful guest does not replace them.
+
+The four fault images exercise stale generation after close/reopen, operation
+reentry from a wait hook, transmit failure after exactly 17 output bytes and a
+noncanonical copied damage boolean. The timeout is a transport-result injection,
+not actual UART hardware fault induction. Hostile source/IR and fake-port UART
+controls remain separate. Historical passes cover only their recorded source,
+toolchain and emulator; they do not qualify a later image or prove OS readiness.
+
+SessionFiles uses `BinaryBuffer64.equal` for reserved names and filename
+comparisons, and `std.decimal` for confirmation numbers. Comparisons borrow
+receiver storage rather than staging copied arrays; the buffer and span lifetime
+rules apply. This helper adoption does not change command grammar or authority.

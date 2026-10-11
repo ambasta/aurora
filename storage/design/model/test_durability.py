@@ -4,9 +4,24 @@
 import copy
 import unittest
 
-from durability import (Corruption, Conflict, OutcomeExpired, Pressure,
-                        OLD, NEW, FS, EPOCH, SEQUENCE, seal, decode, digest,
-                        transaction, recover, verify_protocol, OutcomeWindow)
+from durability import (
+    Corruption,
+    Conflict,
+    OutcomeExpired,
+    Pressure,
+    OLD,
+    NEW,
+    FS,
+    EPOCH,
+    SEQUENCE,
+    seal,
+    decode,
+    digest,
+    transaction,
+    recover,
+    verify_protocol,
+    OutcomeWindow,
+)
 
 
 def rewrite_manifest(records, body):
@@ -26,14 +41,18 @@ class DurabilityTests(unittest.TestCase):
     def test_single_final_flush_is_detected_as_broken(self):
         result = verify_protocol(dependency_fence=False)
         self.assertTrue(result["violations"])
-        self.assertTrue(any(v["cut"] == "submit-commit" and
-                            v["masks"]["commit"] == 3 and
-                            v["masks"]["manifest"] != 3 for v in result["violations"]))
+        self.assertTrue(
+            any(
+                v["cut"] == "submit-commit" and v["masks"]["commit"] == 3 and v["masks"]["manifest"] != 3
+                for v in result["violations"]
+            )
+        )
 
     def test_missing_commit_durability_fence_loses_acknowledgement(self):
         result = verify_protocol(commit_fence=False)
-        self.assertTrue(any(v["cut"] == "acknowledge" and
-                            v["reason"] == "acknowledged commit lost" for v in result["violations"]))
+        self.assertTrue(
+            any(v["cut"] == "acknowledge" and v["reason"] == "acknowledged commit lost" for v in result["violations"])
+        )
 
     def test_unacknowledged_valid_commit_is_recovered(self):
         state, receipt = recover(transaction())
@@ -58,14 +77,13 @@ class DurabilityTests(unittest.TestCase):
         for slot, raw in transaction().items():
             kind = 3 if slot == "commit" else 2 if slot == "manifest" else 1
             for index in range(len(raw)):
-                altered = raw[:index] + bytes((raw[index] ^ 1,)) + raw[index + 1:]
+                altered = raw[:index] + bytes((raw[index] ^ 1,)) + raw[index + 1 :]
                 self.assertIsNone(decode(altered, kind), (slot, index))
                 self.assertIsNone(decode(raw[:index], kind), (slot, index))
             self.assertIsNone(decode(raw + b"x", kind))
 
     def test_valid_checksums_do_not_override_identity(self):
-        for field, value in (("fs", "another-volume"), ("epoch", EPOCH + 1),
-                             ("object", "b"), ("generation", 7)):
+        for field, value in (("fs", "another-volume"), ("epoch", EPOCH + 1), ("object", "b"), ("generation", 7)):
             with self.subTest(field=field):
                 records = transaction()
                 data = decode(records["data-a"], 1)
@@ -78,9 +96,14 @@ class DurabilityTests(unittest.TestCase):
                     recover(records)
 
     def test_valid_checksums_do_not_override_manifest_or_commit_contract(self):
-        fields = (("previous", 8), ("sequence", SEQUENCE + 1),
-                  ("fs", "other"), ("epoch", 5), ("request", True),
-                  ("request_digest", "other"))
+        fields = (
+            ("previous", 8),
+            ("sequence", SEQUENCE + 1),
+            ("fs", "other"),
+            ("epoch", 5),
+            ("request", True),
+            ("request_digest", "other"),
+        )
         for field, value in fields:
             records = transaction()
             manifest = decode(records["manifest"], 2)
@@ -88,8 +111,7 @@ class DurabilityTests(unittest.TestCase):
             rewrite_manifest(records, manifest)
             with self.subTest(field=field), self.assertRaises(Corruption):
                 recover(records)
-        for field, value in (("fs", "other"), ("epoch", 7),
-                             ("sequence", SEQUENCE - 1), ("manifest", "elsewhere")):
+        for field, value in (("fs", "other"), ("epoch", 7), ("sequence", SEQUENCE - 1), ("manifest", "elsewhere")):
             records = transaction()
             body = decode(records["commit"], 3)
             body[field] = value
@@ -99,9 +121,16 @@ class DurabilityTests(unittest.TestCase):
 
     def test_malformed_and_duplicate_reference_shapes(self):
         base = decode(transaction()["manifest"], 2)
-        for refs in (None, {}, [], base["refs"][:1], base["refs"] * 4,
-                     [base["refs"][0], base["refs"][0]], [[], []],
-                     [{"slot": [], "object": [], "generation": 8, "digest": "x"}] * 2):
+        for refs in (
+            None,
+            {},
+            [],
+            base["refs"][:1],
+            base["refs"] * 4,
+            [base["refs"][0], base["refs"][0]],
+            [[], []],
+            [{"slot": [], "object": [], "generation": 8, "digest": "x"}] * 2,
+        ):
             records = transaction()
             body = copy.deepcopy(base)
             body["refs"] = refs
@@ -169,13 +198,18 @@ class DurabilityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     print("HOST-ONLY durability model; no disk/driver/target filesystem coverage", flush=True)
-    for label, options in (("safe two-fence", {}),
-                           ("broken single-final-flush", {"dependency_fence": False}),
-                           ("broken premature-ack", {"commit_fence": False})):
+    for label, options in (
+        ("safe two-fence", {}),
+        ("broken single-final-flush", {"dependency_fence": False}),
+        ("broken premature-ack", {"commit_fence": False}),
+    ):
         result = verify_protocol(**options)
-        print(f"{label}: {result['crash_images']} crash images; "
-              f"{len(result['violations'])} violations; "
-              f"{result['unacknowledged_new_states']} valid unacknowledged new states", flush=True)
+        print(
+            f"{label}: {result['crash_images']} crash images; "
+            f"{len(result['violations'])} violations; "
+            f"{result['unacknowledged_new_states']} valid unacknowledged new states",
+            flush=True,
+        )
         if result["violations"]:
             print("  first counterexample:", result["violations"][0], flush=True)
     unittest.main(verbosity=2)

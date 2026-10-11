@@ -1,2 +1,8 @@
 option('lsp', type: 'boolean', value: false,
        description: 'Build the optional compiler-owned language server (requires nlohmann_json)')
+option('uefi_ld', type: 'string', value: '',
+       description: 'GNU PE linker supporting i386pep; auto-detect ld or x86_64-w64-mingw32-ld')
+option('kernel_images', type: 'boolean', value: true,
+       description: 'Build fixed freestanding kernel profiles; disable for hosted-only compiler/sanitizer work')
+option('kernel_compiler', type: 'string', value: '',
+       description: 'Optional absolute prebuilt aurorac for kernel images; empty builds the native compiler')

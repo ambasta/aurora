@@ -1,6 +1,0 @@
-{
-  "status": "passed",
-  "result": 42,
-  "exact_native_bytes": "2a00000000000000",
-  "example_sha256": "f0c5cdf96fbe96959ecf86a4b97ad18aa39f73465e0a3dc43cb06bf24161a0e3"
-}

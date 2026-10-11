@@ -3,10 +3,14 @@ export module std.bytes;
 export namespace std {
     // Compare byte values only; empty spans are valid and no source view escapes.
     auto starts_with(builtin::span<const u8> bytes, builtin::span<const u8> prefix) -> bool {
-        if (prefix.size() > bytes.size()) { return false; }
+        if (prefix.size() > bytes.size()) {
+            return false;
+        }
         i64 index = 0;
         while (index < prefix.size()) {
-            if (bytes.at(index) != prefix.at(index)) { return false; }
+            if (bytes.at(index) != prefix.at(index)) {
+                return false;
+            }
             index = index + 1;
         }
         return true;
@@ -16,13 +20,19 @@ export namespace std {
         return left.size() == right.size() && starts_with(left, right);
     }
 
-    enum class ByteCodecStatus { success, out_of_range };
+    enum class ByteCodecStatus {
+        success,
+        out_of_range
+    };
 
     class Bytes2 {
         builtin::array<u8, 2> elements;
     public:
-        Bytes2() : elements{} {}
-        auto at(i64 index) const -> u8 { return elements[index]; }
+        Bytes2() : elements{} {
+        }
+        auto at(i64 index) const -> u8 {
+            return elements[index];
+        }
         auto set(i64 index, u8 value) -> u8 {
             elements[index] = value;
             return value;
@@ -32,8 +42,11 @@ export namespace std {
     class Bytes4 {
         builtin::array<u8, 4> elements;
     public:
-        Bytes4() : elements{} {}
-        auto at(i64 index) const -> u8 { return elements[index]; }
+        Bytes4() : elements{} {
+        }
+        auto at(i64 index) const -> u8 {
+            return elements[index];
+        }
         auto set(i64 index, u8 value) -> u8 {
             elements[index] = value;
             return value;
@@ -43,8 +56,11 @@ export namespace std {
     class Bytes8 {
         builtin::array<u8, 8> elements;
     public:
-        Bytes8() : elements{} {}
-        auto at(i64 index) const -> u8 { return elements[index]; }
+        Bytes8() : elements{} {
+        }
+        auto at(i64 index) const -> u8 {
+            return elements[index];
+        }
         auto set(i64 index, u8 value) -> u8 {
             elements[index] = value;
             return value;
@@ -55,9 +71,11 @@ export namespace std {
         ByteCodecStatus outcome;
         Bytes2 payload;
     public:
-        Encode16Result(ByteCodecStatus status, Bytes2 bytes)
-            : outcome(status), payload(bytes) {}
-        auto status() const -> ByteCodecStatus { return outcome; }
+        Encode16Result(ByteCodecStatus status, Bytes2 bytes) : outcome(status), payload(bytes) {
+        }
+        auto status() const -> ByteCodecStatus {
+            return outcome;
+        }
         auto bytes_or_zero() const -> Bytes2 {
             if (outcome == ByteCodecStatus::success) {
                 const Bytes2 result = payload;
@@ -72,9 +90,11 @@ export namespace std {
         ByteCodecStatus outcome;
         Bytes4 payload;
     public:
-        Encode32Result(ByteCodecStatus status, Bytes4 bytes)
-            : outcome(status), payload(bytes) {}
-        auto status() const -> ByteCodecStatus { return outcome; }
+        Encode32Result(ByteCodecStatus status, Bytes4 bytes) : outcome(status), payload(bytes) {
+        }
+        auto status() const -> ByteCodecStatus {
+            return outcome;
+        }
         auto bytes_or_zero() const -> Bytes4 {
             if (outcome == ByteCodecStatus::success) {
                 const Bytes4 result = payload;
@@ -114,13 +134,11 @@ export namespace std {
     }
 
     auto decode_le32(Bytes4 bytes) -> u64 {
-        return u64(bytes.at(0)) | (u64(bytes.at(1)) << 8) |
-               (u64(bytes.at(2)) << 16) | (u64(bytes.at(3)) << 24);
+        return u64(bytes.at(0)) | (u64(bytes.at(1)) << 8) | (u64(bytes.at(2)) << 16) | (u64(bytes.at(3)) << 24);
     }
 
     auto decode_be32(Bytes4 bytes) -> u64 {
-        return (u64(bytes.at(0)) << 24) | (u64(bytes.at(1)) << 16) |
-               (u64(bytes.at(2)) << 8) | u64(bytes.at(3));
+        return (u64(bytes.at(0)) << 24) | (u64(bytes.at(1)) << 16) | (u64(bytes.at(2)) << 8) | u64(bytes.at(3));
     }
 
     auto encode_le16(u64 value) -> Encode16Result {
@@ -148,13 +166,11 @@ export namespace std {
     }
 
     auto decode_le16(Bytes2 bytes) -> u64 {
-        return u64(bytes.at(0)) |
-               (u64(bytes.at(1)) << 8);
+        return u64(bytes.at(0)) | (u64(bytes.at(1)) << 8);
     }
 
     auto decode_be16(Bytes2 bytes) -> u64 {
-        return (u64(bytes.at(0)) << 8) |
-               u64(bytes.at(1));
+        return (u64(bytes.at(0)) << 8) | u64(bytes.at(1));
     }
 
     auto encode_le64(u64 value) -> Bytes8 {
@@ -184,24 +200,12 @@ export namespace std {
     }
 
     auto decode_le64(Bytes8 bytes) -> u64 {
-        return u64(bytes.at(0)) |
-               (u64(bytes.at(1)) << 8) |
-               (u64(bytes.at(2)) << 16) |
-               (u64(bytes.at(3)) << 24) |
-               (u64(bytes.at(4)) << 32) |
-               (u64(bytes.at(5)) << 40) |
-               (u64(bytes.at(6)) << 48) |
-               (u64(bytes.at(7)) << 56);
+        return u64(bytes.at(0)) | (u64(bytes.at(1)) << 8) | (u64(bytes.at(2)) << 16) | (u64(bytes.at(3)) << 24)
+            | (u64(bytes.at(4)) << 32) | (u64(bytes.at(5)) << 40) | (u64(bytes.at(6)) << 48) | (u64(bytes.at(7)) << 56);
     }
 
     auto decode_be64(Bytes8 bytes) -> u64 {
-        return (u64(bytes.at(0)) << 56) |
-               (u64(bytes.at(1)) << 48) |
-               (u64(bytes.at(2)) << 40) |
-               (u64(bytes.at(3)) << 32) |
-               (u64(bytes.at(4)) << 24) |
-               (u64(bytes.at(5)) << 16) |
-               (u64(bytes.at(6)) << 8) |
-               u64(bytes.at(7));
+        return (u64(bytes.at(0)) << 56) | (u64(bytes.at(1)) << 48) | (u64(bytes.at(2)) << 40) | (u64(bytes.at(3)) << 32)
+            | (u64(bytes.at(4)) << 24) | (u64(bytes.at(5)) << 16) | (u64(bytes.at(6)) << 8) | u64(bytes.at(7));
     }
 }

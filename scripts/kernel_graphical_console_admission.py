@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bounded graphical Console image, stack and capture-structure admission.
 
-Current build provenance binds measured artifacts, not a historical host binary.
+The native build graph supplies the measured artifacts and their dependencies.
 These checks do not prove arbitrary machine safety or capture behavior; hosted
 and guest behavior gates and independent review remain separate requirements.
 """
@@ -11,10 +11,8 @@ import argparse
 import hashlib
 import importlib.util
 import json
-import os
 import re
 import subprocess
-import struct
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,33 +20,15 @@ BUILD = ROOT / "build/uefi"
 RECEIPT = BUILD / "graphical-console-admission.json"
 MODES = ("graphical-console", "graphical-console-capture")
 ENTRY = "__au_v_m1_24kernel_graphical_console_n0__d17graphical_console"
-REFLECTION_HELPERS = frozenset(
-    ("aurora_reflect_size", "aurora_reflect_field_count")
-    + tuple(f"__au_reflect_s{module}_{field}" for module in range(1, 7) for field in ("size", "field_count"))
-)
+CPP_ENTRY = "_ZN6aurora4uefi21run_graphical_consoleEmRKNS0_5BytesE"
 BRIDGE = "__au_runtime_graphical_entry"
 VALUE_BRIDGE = "__au_runtime_graphical_value"
 VALUE_ENTRY = "aurora_kernel_value"
-TOOLS = ("as", "ld", "objcopy", "objdump", "nm", "readelf", "c++filt", "python3")
 HOST_IMPORTS = frozenset(("__au_runtime_console_next", "__au_runtime_console_put", "__au_runtime_display_pixel"))
 COMMON_CPP_OBJECTS = ("payload", "acpi", "pci", "runtime")
 CPP_OBJECTS = COMMON_CPP_OBJECTS + ("graphical-console",)
 COMMON_ASSEMBLY_OBJECTS = ("payload-entry", "language", "memory")
 ASSEMBLY_OBJECTS = ("payload-entry", "console-entry", "language", "memory")
-BASE_FLAGS = tuple(
-    (
-        "-std=c++23 -O2 -fstack-usage -fcallgraph-info=su -Wall -Wextra -Werror -ffreestanding "
-        "-fcf-protection=none -mstringop-strategy=libcall "
-        "-fno-exceptions -fno-rtti -fno-stack-protector -fno-asynchronous-unwind-tables "
-        "-fno-unwind-tables -mno-red-zone -mgeneral-regs-only -fno-tree-loop-distribute-patterns"
-    ).split()
-)
-PROFILE_FLAGS = ("-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_GRAPHICAL_CONSOLE", "-DAURORA_UEFI_GRAPHICAL_FIXTURE")
-TU_FLAGS = {
-    "payload/acpi/pci/graphical-console": ["-fpie", "-fvisibility=hidden"],
-    "runtime": ["-fpie", "-fvisibility=hidden", "-Ibuild/uefi"],
-    "loader": ["-fpie", "-maccumulate-outgoing-args", "-Ibuild/uefi"],
-}
 
 
 def need(value, reason):
@@ -73,50 +53,19 @@ verify_stack_budgets = console.verify_stack_budgets
 verify_reflection_body = common.verify_reflection_body
 
 
-BUILD_KEYS = {
-    "schema",
-    "mode",
-    "flags",
-    "source_sha256",
-    "compiler",
-    "cxx",
-    "tools",
-    "pe_linker",
-    "translation_unit_flags",
-    "objects",
-}
-
-
-def source_files():
-    return sorted(
-        set(common.source_files())
-        | {
-            ROOT / "compiler/Makefile",
-            ROOT / "meson.build",
-            ROOT / "tests/meson.build",
-            ROOT / "tests/compiler-test-inventory.json",
-        }
-    )
+def configure_paths(build_dir, source_root=None):
+    global ROOT, BUILD, RECEIPT
+    common.configure_paths(build_dir, source_root or ROOT)
+    ROOT, BUILD = common.ROOT, common.BUILD
+    RECEIPT = BUILD / "graphical-console-admission.json"
+    console.configure_paths(BUILD, ROOT)
 
 
 def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
-def read_json(path):
-    def unique(pairs):
-        result = {}
-        for key, value in pairs:
-            need(key not in result, "Duplicate JSON key: " + key)
-            result[key] = value
-        return result
-
-    return json.loads(
-        path.read_text(),
-        object_pairs_hook=unique,
-        parse_constant=lambda value: (_ for _ in ()).throw(ValueError("Non-finite JSON: " + value)),
-    )
-
+read_json = common.read_json
 
 CAPTURE_ONLY_TOKENS = tuple(
     text.encode()
@@ -268,7 +217,7 @@ def capture_structure_evidence(linked):
                 "Overlapping capture state: " + field,
             )
         states[field] = dict(symbol=row.name, address=row.address, bytes=size, section=row.section)
-    need(HOST_IMPORTS | {STACK_MEMORY_PUSH_OWNER} <= set(linked.functions), "Missing capture session/import owner")
+    need(HOST_IMPORTS | {CPP_ENTRY} <= set(linked.functions), "Missing capture session/import owner")
     return dict(
         schema=CAPTURE_STRUCTURE_SCHEMA,
         status="structure-only",
@@ -294,36 +243,6 @@ def require_capture_structure(mode, evidence=None):
     )
 
 
-def unreviewed_linked_function(symbol, original_code, payload, error):
-    """Retain unknown emission as a precise blocker, never a neutral opcode."""
-    reason = str(error)
-    rows = [
-        row
-        for address, row in sorted(original_code.items())
-        if symbol.address <= address < symbol.address + symbol.size
-    ]
-    if reason.startswith("Unknown instruction semantics: "):
-        rows = [row for row in rows if row.op == reason.removeprefix("Unknown instruction semantics: ")]
-    elif reason.startswith("Unbounded or unknown stack adjustment: "):
-        rows = [row for row in rows if row.args == reason.removeprefix("Unbounded or unknown stack adjustment: ")]
-    evidence = [
-        dict(
-            address=row.address,
-            bytes=payload[row.address : row.address + row.size].hex(),
-            operation=row.op,
-            operands=row.args,
-        )
-        for row in rows
-    ]
-    return (
-        symbol.name
-        + ": "
-        + reason
-        + "; call/stack effect remains unproved; original linked instructions="
-        + canonical(evidence)
-    )
-
-
 def verify_bridge_body(decoder, body, starts):
     need(
         len(body) == 6
@@ -342,75 +261,6 @@ def verify_value_bridge_body(decoder, body, starts):
     )
 
 
-def normalize_instruction(decoder, row, payload):
-    if row.op in ("sti", "mfence", "pause", "wrmsr"):
-        need(not row.args, "Unexpected privileged/fence operands")
-    if row.op == "push" and row.args.startswith("$"):
-        expected = {"$0x0": b"\x6a\x00", "$0x28": b"\x6a\x28"}.get(row.args)
-        raw = payload[row.address : row.address + row.size]
-        need(
-            expected is not None and row.size == 2 and raw == expected,
-            "Unreviewed immediate push width, bytes or value",
-        )
-        return decoder.Instruction(row.address, row.size, "push", "%rax"), dict(
-            address=row.address,
-            original=row.args,
-            bytes=raw.hex(),
-            equivalent="validated imm8 sign-extended qword push, +8 stack bytes",
-        )
-    # No memory-push, signed-wide stack immediate, or mnemonic normalization.
-    return row, None
-
-
-STACK_MEMORY_PUSH_OWNER = "_ZN6aurora4uefi21run_graphical_consoleEmRKNS0_5BytesE"
-
-
-def stack_memory_push_evidence(symbols, code, payload):
-    """Authorize the owner's bounded pair of direct RSP argument-copy pushes.
-
-    Linked ownership and actual encodings select sites, not unrelated function
-    size or instruction offsets. This proves no copied-value authority; the core
-    bounds every eight-byte read against the old live frame before each push.
-    """
-    memory_rows = [row for row in code.values() if row.op.startswith("push") and "(" in row.args]
-    if not memory_rows:
-        return {}, []
-    owner = symbols.get(STACK_MEMORY_PUSH_OWNER)
-    need(owner is not None and len(memory_rows) == 2, "Unreviewed memory-push owner or site inventory")
-    sites, receipts = {}, []
-    for row in sorted(memory_rows, key=lambda item: item.address):
-        address = row.address
-        operand = re.fullmatch(r"(0x[0-9a-f]+)\(%rsp\)", row.args)
-        need(row.op == "push" and row.size == 4 and operand, "Unsupported direct qword memory-push form")
-        displacement = int(operand[1], 16)
-        # This four-byte encoding has a signed disp8. Only aligned forward
-        # sources are admitted; prefixes, other bases and widths still reject.
-        need(0 < displacement < 128 and displacement % 8 == 0, "Unsupported memory-push displacement")
-        raw = bytes((0xFF, 0x74, 0x24, displacement))
-        need(
-            payload[address : row.next] == raw and row.next <= owner.address + owner.size,
-            "Changed memory-push opcode or owner extent",
-        )
-        need(
-            [name for name, symbol in symbols.items() if symbol.address <= address < symbol.address + symbol.size]
-            == [STACK_MEMORY_PUSH_OWNER],
-            "Ambiguous or foreign memory-push function ownership",
-        )
-        sites[address] = displacement
-        receipts.append(
-            dict(
-                owner=owner.name,
-                address=address,
-                offset=address - owner.address,
-                bytes=raw.hex(),
-                operand=row.args,
-                source_old_rsp=displacement,
-                source_bytes=8,
-            )
-        )
-    return {owner.name: dict(owner=owner.name, sites=sites)}, receipts
-
-
 def verify_inventory(linked_names, frames, language_names, memory_names):
     fixed = {
         "uefi_payload_entry",
@@ -424,11 +274,10 @@ def verify_inventory(linked_names, frames, language_names, memory_names):
         "Unaccounted combined linked function/frame inventory",
     )
     need({ENTRY, BRIDGE} <= set(language_names), "Missing exact paired language entry/bridge")
+    reflection = common.stack_facts.reflection_inventory(language_names)
     need(
-        REFLECTION_HELPERS <= set(language_names)
-        and {name for name in linked_names if name.startswith(("aurora_reflect_", "__au_reflect_"))}
-        == REFLECTION_HELPERS
-        and not REFLECTION_HELPERS.intersection(set(frames) | set(memory_names)),
+        {name for name in linked_names if name.startswith(("aurora_reflect_", "__au_reflect_"))} == reflection
+        and not reflection.intersection(set(frames) | set(memory_names)),
         "Reflection helpers must belong only to generated language",
     )
     runtime = {name for name in linked_names if name.startswith("__au_runtime_")}
@@ -465,95 +314,29 @@ def verify_wait_closure(code, named, functions, language_functions, payload, lin
     return owners[0], reachable
 
 
-def expected_language_functions():
-    # Exact current source declarations, using compiler/modules.hpp's reviewed
-    # private naming. Root scalar helpers retain leaf names in the sealed graph.
-    def mangle(kind, scope, name, module="kernel_graphical_console"):
-        def components(parts):
-            return str(len(parts)) + "_" + "".join(str(len(part)) + part for part in parts)
-
-        return (
-            "__au_"
-            + kind
-            + "_m"
-            + components(module.split("."))
-            + "_n"
-            + components(scope.split("::") if scope else [])
-            + "_d"
-            + str(len(name))
-            + name
-        )
-
-    names = {
+LANGUAGE_MODULES = frozenset(
+    (
+        "kernel_graphical_console",
+        "graphics.font5x7",
+        "console.session_note",
+        "console.session_files",
+        "std.binary",
+        "std.binary_buffer",
+        "std.bytes",
+        "std.array",
+        "std.decimal",
+    )
+)
+LANGUAGE_ROOTS = frozenset(
+    (
+        ENTRY,
         BRIDGE,
         VALUE_BRIDGE,
-        "aurora_kernel_value",
+        VALUE_ENTRY,
         "__au_f_m2_8graphics7font5x7_n1_8graphics_d10glyph_bits",
         "graphical_glyph_bits",
-    } | REFLECTION_HELPERS
-    names.update(mangle("v", "", name) for name in ("graphical_console", "draw_glyph", "draw_cell"))
-    methods = {
-        "Line64": ("finish", "clear_submission", "submission_size", "submission_byte", "reject", "consume"),
-        "TextCells": (
-            "initialize",
-            "append",
-            "erase",
-            "response",
-            "hide_cursor",
-            "at",
-            "cursor_at",
-            "dirty",
-            "commit",
-            "finish_paint",
-            "show_ready",
-            "show_help",
-            "show_status",
-            "show_unknown",
-            "show_rejected",
-            "show_note",
-            "show_files",
-            "show_exit",
-            "show_empty",
-            "show_bounded",
-        ),
-    }
-    for scope, items in methods.items():
-        names.add(mangle("k", scope, scope))
-        names.update(mangle("m", scope, name) for name in items)
-    # Complete declaration closure of the shared note and its fixed byte storage.
-    # This admits no additional runtime service, allocator or device authority.
-    classes = {
-        ("console.session_note", "console", "SessionNote"): ("size", "at", "submit"),
-        ("console.session_files", "console", "FileReply"): ("status", "size", "at", "append", "text", "select"),
-        ("console.session_files", "console", "SessionFiles"): ("commit", "submit"),
-        ("std.binary", "std", "ByteReadResult"): ("status", "value_or"),
-        ("std.binary_buffer", "std", "BinaryBuffer64"): (
-            "size",
-            "at",
-            "starts_with",
-            "read_u8",
-            "write_u8",
-            "write_le16",
-            "write_be16",
-            "write_le32",
-            "write_be32",
-            "write_le64",
-            "write_be64",
-        ),
-    }
-    classes.update({("std.bytes", "std", "Bytes" + str(n)): ("at", "set") for n in (2, 4, 8)})
-    classes.update({("std.bytes", "std", "Encode" + str(n) + "Result"): ("status", "bytes_or_zero") for n in (16, 32)})
-    for (module, namespace, name), items in classes.items():
-        scope = namespace + "::" + name
-        names.add(mangle("k", scope, name, module))
-        names.update(mangle("m", scope, item, module) for item in items)
-    names.update(mangle("v", "std", name, "std.bytes") for name in ("starts_with", "equal"))
-    for bits in (16, 32, 64):
-        for order in ("le", "be"):
-            names.add(mangle("v", "std", "read_" + order + str(bits), "std.binary"))
-            names.add(mangle("v", "std", "encode_" + order + str(bits), "std.bytes"))
-            names.add(mangle("v", "std", "decode_" + order + str(bits), "std.bytes"))
-    return names
+    )
+)
 
 
 def verify_language_object(language):
@@ -563,9 +346,16 @@ def verify_language_object(language):
         "Unexpected generated language import inventory",
     )
     need(
-        set(language.functions) == expected_language_functions(),
+        LANGUAGE_ROOTS <= set(language.functions)
+        and all(
+            name in LANGUAGE_ROOTS
+            or common.is_reflection_helper(name)
+            or common.stack_facts.aurora_module(name) in LANGUAGE_MODULES
+            for name in language.functions
+        ),
         "Unexpected generated language module/function inventory",
     )
+    reflection = common.stack_facts.reflection_inventory(language.functions)
     rows = subprocess.check_output(["readelf", "-sW", language.path], text=True).splitlines()
     bindings = {}
     for line in rows:
@@ -581,19 +371,12 @@ def verify_language_object(language):
                 ("GLOBAL", "HIDDEN")
                 if name in (BRIDGE, VALUE_BRIDGE)
                 else ("GLOBAL", "DEFAULT")
-                if name in REFLECTION_HELPERS
+                if name in reflection
                 else ("LOCAL", "DEFAULT")
             ),
             "Generated function escaped private ELF binding: " + name,
         )
     return sorted(imports)
-
-
-def verify_generated_divisions(decoder, functions, code, payload):
-    owners = console.SESSION_FILE_DIVISIONS | {
-        "__au_v_m1_24kernel_graphical_console_n0__d9draw_cell": 2,
-    }
-    return console.verify_generated_divisions(decoder, functions, code, payload, owners)
 
 
 def verify_private_abi(decoder, linked, code, starts, language_names, functions):
@@ -709,17 +492,12 @@ def verify_private_abi(decoder, linked, code, starts, language_names, functions)
     )
 
 
-def verify_retained_wait_paths(functions, owner, recursive):
+def verify_retained_wait_paths(functions, owner):
     required = (BRIDGE, ENTRY, "__au_runtime_console_next")
     paths = []
 
-    def visit(name, path, counts):
-        if name in recursive:
-            if counts.get(name, 0) == 4:
-                return
-            counts = dict(counts, **{name: counts.get(name, 0) + 1})
-        else:
-            need(name not in path, "Unknown wait graph cycle")
+    def visit(name, path):
+        need(name not in path, "Unexpected wait-path call cycle")
         path = path + [name]
         if name == owner:
             need(
@@ -731,7 +509,7 @@ def verify_retained_wait_paths(functions, owner, recursive):
             return
         for call in functions[name]["calls"]:
             if call["target"] is not None:
-                visit(call["target"], path, counts)
+                visit(call["target"], path)
 
     # Only traverse nodes that can reach the wait, avoiding unrelated scalar
     # call-chain multiplicity; every retained path remains covered.
@@ -748,7 +526,7 @@ def verify_retained_wait_paths(functions, owner, recursive):
         for name, body in functions.items()
     }
     functions = narrowed
-    visit("uefi_payload_entry", [], {})
+    visit("uefi_payload_entry", [])
     need(paths, "No retained wait path")
     return paths
 
@@ -781,9 +559,8 @@ def verify_session_frames(frames, associations):
 
 
 def stack_evidence(directory):
-    decoder = load("graphical_stack_decoder", ROOT / "tests/kernel-uefi-owned-bytes-stack.py")
+    decoder = load("graphical_stack_decoder", ROOT / "scripts/kernel_stack.py")
     decoder.CPP_OBJECTS = CPP_OBJECTS
-    decoder.configure_console("graphical")
     linked = decoder.Elf(directory / "payload.elf")
     need(linked.type == 2, "Expected linked executable payload")
     need(not subprocess.check_output(["nm", "-u", directory / "payload.elf"], text=True).strip(), "Unresolved payload")
@@ -804,7 +581,8 @@ def stack_evidence(directory):
         )
 
     decoder.stack_rows = stack_rows
-    frames, associations = decoder.cpp_frames(directory, linked)
+    compiler_edges = set()
+    frames, associations = decoder.cpp_frames(directory, linked, edges=compiler_edges, source_root=ROOT)
     verify_session_frames(frames, associations)
     named = {row.name: row for row in linked.symbols if row.section}
     irq = named["uefi_console_interrupt"]
@@ -817,27 +595,18 @@ def stack_evidence(directory):
     starts = {symbol.address: name for name, symbol in linked.functions.items()}
     need(len(starts) == len(linked.functions), "Ambiguous linked function starts")
     code, disassembly = decoder.disassemble(directory / "payload.elf")
-    original_code = dict(code)
     payload = (directory / "payload.bin").read_bytes()
-    divisions = verify_generated_divisions(decoder, linked.functions, code, payload)
     body = lambda symbol: [r for a, r in sorted(code.items()) if symbol.address <= a < symbol.address + symbol.size]
     verify_irq_body(decoder, body(linked.functions[irq.name]), starts)
-    normalized = []
-    for address, row in list(code.items()):
-        if irq.address <= address < irq.address + extent:
-            continue  # Entire exact IRQ has its separate save/restore proof above.
-        code[address], receipt = normalize_instruction(decoder, row, payload)
-        if receipt:
-            normalized.append(receipt)
     language, memory = (decoder.Elf(directory / "objects" / (name + ".o")) for name in ("language", "memory"))
     for obj in (language, memory):
         for symbol in obj.functions.values():
             decoder.associate_object(linked, obj, symbol)
-    assembly = [item for name in ASSEMBLY_OBJECTS for item in common.linked_assembly(decoder, linked, directory, name)]
+    assembly = [item for name in ASSEMBLY_OBJECTS for item in decoder.linked_assembly(linked, directory, name)]
     verify_inventory(linked.functions, frames, language.functions, memory.functions)
     language_imports = verify_language_object(language)
     reflection = []
-    for name in sorted(REFLECTION_HELPERS):
+    for name in sorted(common.stack_facts.reflection_inventory(language.functions)):
         original = language.functions[name]
         need(
             not any(
@@ -859,38 +628,43 @@ def stack_evidence(directory):
         or "21run_graphical_consoleE" in name
         or "23graphical_console_faultE" in name
     )
-    memory_pushes, memory_push_receipts = stack_memory_push_evidence(linked.functions, original_code, payload)
-    functions = {}
-    for name, symbol in linked.functions.items():
-        if name == irq.name:
-            continue
-        try:
-            functions[name] = decoder.analyze_function(
-                symbol, code, starts, fault=name == "fault_common", memory_pushes=memory_pushes.get(name)
-            )
-        except ValueError as error:
-            raise ValueError(unreviewed_linked_function(symbol, original_code, payload, error)) from error
+    functions = decoder.compiled_stack_functions(
+        directory, linked, language, code, starts, frames, compiler_edges, (BRIDGE, VALUE_BRIDGE)
+    )
+    functions.update(
+        decoder.assembly_stack_functions(
+            linked.functions,
+            code,
+            starts,
+            set(memory.functions)
+            | {
+                BRIDGE,
+                VALUE_BRIDGE,
+                "uefi_payload_entry",
+                "uefi_payload_fault",
+                "uefi_payload_page_fault",
+                "fault_common",
+            },
+        )
+    )
     console.verify_noreturn(functions, decoder.NORETURN)
     verify_bridge_body(decoder, body(linked.functions[BRIDGE]), starts)
     private_abi = verify_private_abi(decoder, linked, code, starts, language.functions, functions)
-    # Only the unchanged legacy verifier may recurse. The graphical traversal
-    # uses four fixed local slots; the existing graph walk rejects any new cycle.
-    levels, roots = decoder.recursion_proof(functions, linked.functions, code, starts, associations)
-    recursive = {decoder.WALK}
+    # Four local traversal slots replace the former recursive source contract.
+    # Metadata-based C++ bounds admit no call cycles.
     for name in functions:
-        common.graph_peak(functions, frames, name, recursive)
-    normal = common.graph_peak(functions, frames, "uefi_payload_entry", recursive)
-    session = common.graph_peak(functions, frames, ENTRY, recursive)
+        common.graph_peak(functions, name)
+    normal = common.graph_peak(functions, "uefi_payload_entry")
+    session = common.graph_peak(functions, ENTRY)
     fault = 48 + max(
-        common.graph_peak(functions, frames, name, recursive)["peak"]
-        for name in ("uefi_payload_fault", "uefi_payload_page_fault")
+        common.graph_peak(functions, name)["peak"] for name in ("uefi_payload_fault", "uefi_payload_page_fault")
     )
-    dispatch = common.graph_peak(functions, frames, "uefi_console_interrupt_dispatch", recursive)
+    dispatch = common.graph_peak(functions, "uefi_console_interrupt_dispatch")
     irq_peak = 176 + 15 + dispatch["peak"]
     owner, irq_reachable = verify_wait_closure(code, named, functions, language.functions, payload, linked.functions)
     need(owner not in irq_reachable, "IRQ reaches interruptible wait")
-    retained_paths = verify_retained_wait_paths(functions, owner, recursive)
-    waiting = common.graph_peak(functions, frames, "uefi_payload_entry", recursive, target=owner)
+    retained_paths = verify_retained_wait_paths(functions, owner)
+    waiting = common.graph_peak(functions, "uefi_payload_entry", target=owner)
     need(
         {ENTRY, BRIDGE, "__au_runtime_console_next"} <= set(waiting["path"]),
         "Wait does not retain paired Aurora service and Console host call",
@@ -918,16 +692,13 @@ def stack_evidence(directory):
         private_abi=private_abi,
         retained_wait_paths=retained_paths,
         reflection_helpers=reflection,
-        generated_divisions=divisions,
         compiler_frames=associations,
         linked_functions=functions,
         assembly_objects=assembly,
         original_dynamic_bounded_rows=bounded,
-        normalized_stack_immediates=normalized,
-        authorized_stack_memory_pushes=memory_push_receipts,
-        page_verifiers=dict(legacy=dict(symbol=decoder.WALK, levels=levels, roots=roots)),
+        page_verifiers=dict(traversal_slots=4, recursion="rejected"),
         graphical_traversal=dict(
-            stack="measured-acyclic-call-graph",
+            stack="compiler-metadata-acyclic-call-graph",
             semantics="reviewed-C++-source-and-trusted-compilation; hosted-and-guest-gates-required",
         ),
         disassembly_sha256=hashlib.sha256(disassembly.encode()).hexdigest(),
@@ -946,6 +717,7 @@ def build_files(mode="graphical-console"):
         "esp/EFI/BOOT/BOOTX64.EFI",
         "uefi-payload.hpp",
         "language.s",
+        "language.stack.json",
         "embed.S",
         "image-metadata.json",
     ]
@@ -954,85 +726,12 @@ def build_files(mode="graphical-console"):
     names += [name + ".o" for name in cpp + assembly + ("loader", "embed", "transition")]
     names += [name + suffix for name in cpp + ("loader",) for suffix in (".su", ".ci")]
     names += [name + "-pe.o" for name in ("loader", "memory", "embed", "transition")]
-    return [BUILD / ("objects/" + name if name.endswith((".o", ".su", ".ci")) else name) for name in names]
-
-
-def expected_flags(mode):
-    need(mode in MODES, "Unknown graphical profile")
-    return list(BASE_FLAGS + PROFILE_FLAGS + (("-DAURORA_UEFI_GRAPHICAL_CAPTURE",) if mode == MODES[1] else ()))
-
-
-def verify_inputs(record, mode):
-    need(type(record) is dict, "Build record must be an object")
-    need(set(record) in (BUILD_KEYS, BUILD_KEYS | {"output_sha256"}), "Unexpected build manifest keys")
-    need(
-        record["schema"] == "aurora-graphical-console-build-v1" and record["mode"] == mode,
-        "Graphical build profile mismatch",
-    )
-    need(record["flags"] == expected_flags(mode), "Exact graphical compiler flags/order mismatch")
-    need(
-        record["translation_unit_flags"] == TU_FLAGS
-        and record["objects"] == [str(path.relative_to(BUILD)) for path in build_files()],
-        "Changed graphical translation/object inventory",
-    )
-    need(record["source_sha256"] == common.hashes(source_files()), "Graphical source changed since begin")
-    need(type(record["tools"]) is dict and set(record["tools"]) == set(TOOLS), "Build tool inventory mismatch")
-    for name, item in list(record["tools"].items()) + [
-        (name, record[name]) for name in ("compiler", "cxx", "pe_linker")
-    ]:
-        need(
-            type(item) is dict
-            and set(item) == {"path", "sha256"}
-            and type(item["path"]) is str
-            and Path(item["path"]).is_absolute()
-            and re.fullmatch(r"[0-9a-f]{64}", item["sha256"]),
-            "Malformed executable identity",
-        )
-        need(digest(Path(item["path"])) == item["sha256"], "Build executable changed: " + name)
-        if name in TOOLS:
-            need(item == common.executable(name), "Tool resolution changed: " + name)
-
-
-def begin(mode, compiler, cxx, flags, linker=None):
-    # Invalidate before any fallible argument, source or executable validation.
-    RECEIPT.unlink(missing_ok=True)
-    (BUILD / "graphical-console-build.json").unlink(missing_ok=True)
-    (BUILD / "graphical-console-build-start.json").unlink(missing_ok=True)
-    need(compiler and cxx and flags == expected_flags(mode), "Missing exact graphical build controls")
-    record = dict(
-        schema="aurora-graphical-console-build-v1",
-        mode=mode,
-        flags=flags,
-        source_sha256=common.hashes(source_files()),
-        compiler=common.executable(compiler),
-        cxx=common.executable(cxx),
-        tools={name: common.executable(name) for name in TOOLS},
-        pe_linker=common.executable(linker or "ld"),
-        translation_unit_flags=TU_FLAGS,
-        objects=[str(path.relative_to(BUILD)) for path in build_files()],
-    )
-    verify_inputs(record, mode)
-    (BUILD / "graphical-console-build-start.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
-
-
-def end(mode):
-    record = read_json(BUILD / "graphical-console-build-start.json")
-    verify_inputs(record, mode)
-    record["output_sha256"] = common.hashes(build_files())
-    (BUILD / "graphical-console-build.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
-
-
-def provenance(mode):
-    record = read_json(BUILD / "graphical-console-build.json")
-    verify_inputs(record, mode)
-    need(set(record) == BUILD_KEYS | {"output_sha256"}, "Incomplete build manifest")
-    need(record["output_sha256"] == common.hashes(build_files()), "Combined build output changed")
-    return record
+    return common.build_artifacts(names)
 
 
 def image_evidence(directory, mode):
     need(mode in MODES, "Unknown graphical profile")
-    image = load("graphical_image_decoder", ROOT / "tests/kernel-uefi-image.py")
+    image = load("graphical_image_decoder", ROOT / "scripts/kernel_uefi_image.py")
     binary = (directory / "payload.bin").read_bytes()
     elf = (directory / "payload.elf").read_bytes()
     pe = (directory / "esp/EFI/BOOT/BOOTX64.EFI").read_bytes()
@@ -1085,43 +784,25 @@ def image_evidence(directory, mode):
 
 def emit(mode):
     RECEIPT.unlink(missing_ok=True)
-    record = provenance(mode)
+    need(mode in MODES, "Unsupported graphical console profile")
+    before = common.hashes(build_files())
     result = dict(
-        schema="aurora-graphical-console-admission-v5",
+        schema="aurora-graphical-console-admission-v6",
         status="requires-independent-review",
         mode=mode,
         clock="tcg-original-clock",
-        build=record,
         image=image_evidence(BUILD, mode),
         stack=stack_evidence(BUILD),
     )
     require_capture_structure(mode, result["stack"].get("capture_fixture"))
-    need(record == provenance(mode), "Build changed during admission")
-    result["sha256"] = common.hashes(source_files() + build_files() + [BUILD / "graphical-console-build.json"])
-    RECEIPT.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
+    common.write_admission(RECEIPT, result, build_files(), before)
     print("PASS: bounded image/stack/structure checks; independent review and hosted/guest behavior gates required")
     return result
 
 
 def checked(mode):
-    receipt = read_json(RECEIPT)
-    need(type(receipt) is dict, "Receipt must be an object")
-    need(
-        set(receipt) == {"schema", "status", "mode", "clock", "build", "image", "stack", "sha256"},
-        "Unexpected receipt keys",
-    )
-    need(
-        receipt["schema"] == "aurora-graphical-console-admission-v5"
-        and receipt["mode"] == mode
-        and receipt["status"] == "requires-independent-review"
-        and receipt["clock"] == "tcg-original-clock",
-        "Unexpected graphical receipt/profile/status",
-    )
-    need(receipt["build"] == provenance(mode), "Admitted graphical build changed")
-    need(
-        receipt["sha256"] == common.hashes(source_files() + build_files() + [BUILD / "graphical-console-build.json"]),
-        "Admission source/output inventory or bytes changed",
-    )
+    need(mode in MODES, "Unsupported graphical console profile")
+    receipt = common.check_admission(RECEIPT, "aurora-graphical-console-admission-v6", mode, build_files())
     current_image, current_stack = image_evidence(BUILD, mode), stack_evidence(BUILD)
     need(
         canonical(receipt["image"]) == canonical(current_image)
@@ -1132,58 +813,27 @@ def checked(mode):
     return receipt
 
 
-def reviewed(mode):
-    pin = os.environ.get("GRAPHICAL_CONSOLE_REVIEW_SHA256", "")
-    need(
-        re.fullmatch(r"[0-9a-f]{64}", pin) and RECEIPT.is_file() and digest(RECEIPT) == pin,
-        "Independent GRAPHICAL_CONSOLE_REVIEW_SHA256 receipt pin required",
-    )
-    return checked(mode)
-
-
-begin_build, end_build, verify = begin, end, checked
-
-
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "action",
-        choices=(
-            "begin",
-            "end",
-            "begin-build",
-            "end-build",
-            "emit",
-            "verify",
-            "checked",
-            "reviewed",
-            "diagnose",
-        ),
-    )
+    common.path_arguments(parser)
+    parser.add_argument("action", choices=("emit", "checked", "diagnose"))
     parser.add_argument("--mode", required=True, choices=MODES)
-    parser.add_argument("--compiler")
-    parser.add_argument("--cxx")
-    parser.add_argument("--linker")
-    parser.add_argument("--flag", action="append", default=[])
     args = parser.parse_args()
-    if args.action in ("begin", "begin-build"):
-        begin(args.mode, args.compiler, args.cxx, args.flag, args.linker)
-    elif args.action in ("end", "end-build"):
-        end(args.mode)
-    elif args.action == "emit":
+    configure_paths(args.build_dir or args.source_root / "build/uefi", args.source_root)
+    if args.action == "emit":
         emit(args.mode)
-    elif args.action == "reviewed":
-        reviewed(args.mode)
-        print("Verified externally pinned exact combined evidence.")
     elif args.action == "diagnose":
         print(json.dumps(stack_evidence(BUILD), indent=2, sort_keys=True))
     else:
         checked(args.mode)
-        print("Verified current combined receipt identity; independent qualification not claimed.")
+        print("PASS: current image admission; independent qualification not claimed.")
 
 
 if __name__ == "__main__":
     try:
         main()
+    except common.Blocked as error:
+        print("BLOCKED: " + str(error), file=sys.stderr)
+        raise SystemExit(2) from error
     except (ValueError, OSError, KeyError, TypeError, subprocess.CalledProcessError) as error:
         raise SystemExit("FAIL: graphical Console admission: " + str(error)) from error

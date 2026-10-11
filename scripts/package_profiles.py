@@ -39,7 +39,7 @@ def validate_identity_selection(args, preflight=False):
         require(not getattr(args, "freeze_reference", None), "reference freezing requires the full profile")
         require(not os.environ.get("AURORA_TEST_CONTEXT"), "partial dev profile cannot enter an aggregate context")
     if args.developer_selected_compiler:
-        require(not getattr(args, 'meson_selected_compiler', False), 'choose one observed compiler mode')
+        require(not getattr(args, "meson_selected_compiler", False), "choose one observed compiler mode")
         require(args.profile == "dev", "developer-selected compiler requires --profile dev")
         require(
             args.compiler_sha256 is None and args.developer_build_receipt is None,

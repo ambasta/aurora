@@ -1,7 +1,0 @@
-{
-  "status": "passed",
-  "timing": "before fresh second aggregate; first inventory was during first attempt",
-  "time": 1791114284.437066,
-  "inventory_sha256": "ec0a7135d13004ab2b24951f59cafb110b02878869f243ab129ae225a3d5babc",
-  "unchanged_files": 45
-}

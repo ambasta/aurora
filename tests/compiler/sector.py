@@ -400,7 +400,6 @@ def sequence_cases():
         yield Case(f"mixed overlapping writes sequence {sequence}", body, 42, imports=IMPORTS, prelude="\n")
 
 
-
 def record_report_cases():
     pattern = bytes((index * 29 + 7) % 256 for index in range(WINDOW))
     for status in ("success", "out_of_range"):
@@ -416,23 +415,36 @@ def record_report_cases():
             const std::BinaryBuffer64 saved = report.record_or_zero();
         """
         body += check_bytes(pattern if status == "success" else bytes(WINDOW), "saved")
-        yield Case(f"record report layout, copying and masking {status}", body, 42, imports=IMPORTS, prelude="""
+        yield Case(
+            f"record report layout, copying and masking {status}",
+            body,
+            42,
+            imports=IMPORTS,
+            prelude="""
             auto copy_record_report(storage::RecordReadResult input) -> storage::RecordReadResult {
                 return input;
             }
-        """)
+        """,
+        )
     body = "storage::Sector512 sector = storage::Sector512();"
     model = bytearray(CAPACITY)
     for position in (0, 64, 128, 192, 64, 0):
         record = bytes((position + index * 11 + 3) % 256 for index in range(WINDOW))
-        body += "{" + make_record("record", record) + f"""
+        body += (
+            "{"
+            + make_record("record", record)
+            + f"""
             if (sector.write_record({position}, record) != std::ByteWriteStatus::success) {{ return 0u64; }}
-        """ + "}"
-        model[position:position + WINDOW] = record
+        """
+            + "}"
+        )
+        model[position : position + WINDOW] = record
         body += continue_check(model)
     body += "return 42u64;"
-    yield Case("four records share one sector without changing other records or unused bytes",
-               body, 42, imports=IMPORTS)
+    yield Case(
+        "four records share one sector without changing other records or unused bytes", body, 42, imports=IMPORTS
+    )
+
 
 def rejections():
     prefix = "module test; import std.binary; import std.binary_buffer; import storage.sector; auto test() -> u64 {"

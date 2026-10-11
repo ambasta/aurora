@@ -1,6 +1,6 @@
 # AMD platform support: target and evidence
 
-Status: planning requirements, researched 2026-10-02. **No physical AMD platform or AMD GPU is currently supported or tested.** The existing BIOS/QEMU bootstrap reports 42; it does not enumerate a GPU, implement a UEFI loader, or establish a hardware support claim. Do not install its disk image on hardware.
+No physical AMD platform or GPU is supported or tested. BIOS/UEFI emulator boot and discovery do not establish a physical-hardware claim. Do not install these experimental images on hardware.
 
 The requested coverage is **all Zen CPU generations and Navi/RDNA onward GPUs, both integrated and discrete where applicable**. This defines the target family range, not a tested device list. Inventory actual product/PCI identities and IP versions within that range rather than assuming every family name is a complete hardware specification. Later generations enter the support matrix only when documentation and conformance evidence exist; no future device capabilities are assumed. Pre-Navi GPU support is not a requirement merely because an in-scope Zen CPU can be paired with one. CDNA-only accelerators are not automatically included by the Navi/RDNA requirement.
 

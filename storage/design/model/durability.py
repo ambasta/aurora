@@ -82,25 +82,36 @@ def transaction():
     refs = []
     for object_id in ("a", "b"):
         slot = "data-" + object_id
-        records[slot] = seal(1, {"fs": FS, "epoch": EPOCH, "object": object_id,
-                                 "generation": 8, "payload": NEW[object_id]})
-        refs.append({"slot": slot, "object": object_id, "generation": 8,
-                     "digest": digest(records[slot])})
-    records["manifest"] = seal(2, {"fs": FS, "epoch": EPOCH, "sequence": SEQUENCE,
-                                   "previous": SEQUENCE - 1, "request": 1,
-                                   "request_digest": digest(b"replace a and b"), "refs": refs})
-    records["commit"] = seal(3, {"fs": FS, "epoch": EPOCH, "sequence": SEQUENCE,
-                                 "manifest": "manifest", "digest": digest(records["manifest"])})
+        records[slot] = seal(
+            1, {"fs": FS, "epoch": EPOCH, "object": object_id, "generation": 8, "payload": NEW[object_id]}
+        )
+        refs.append({"slot": slot, "object": object_id, "generation": 8, "digest": digest(records[slot])})
+    records["manifest"] = seal(
+        2,
+        {
+            "fs": FS,
+            "epoch": EPOCH,
+            "sequence": SEQUENCE,
+            "previous": SEQUENCE - 1,
+            "request": 1,
+            "request_digest": digest(b"replace a and b"),
+            "refs": refs,
+        },
+    )
+    records["commit"] = seal(
+        3,
+        {"fs": FS, "epoch": EPOCH, "sequence": SEQUENCE, "manifest": "manifest", "digest": digest(records["manifest"])},
+    )
     return records
 
 
 def recover(image):
     """Model a known previous checkpoint plus one terminal transaction slot.
 
-An invalid terminal commit is ignored as uncommitted. This rule must NOT be
-generalized to corrupt interior records or a selected checkpoint/root chain.
-A valid commit with a bad dependency is Corruption, even if unacknowledged.
-"""
+    An invalid terminal commit is ignored as uncommitted. This rule must NOT be
+    generalized to corrupt interior records or a selected checkpoint/root chain.
+    A valid commit with a bad dependency is Corruption, even if unacknowledged.
+    """
     commit = decode(image.get("commit"), 3)
     if commit is None:
         return dict(OLD), None
@@ -111,9 +122,16 @@ A valid commit with a bad dependency is Corruption, even if unacknowledged.
     require(isinstance(raw_manifest, bytes) and digest(raw_manifest) == commit["digest"], "missing/corrupt manifest")
     manifest = decode(raw_manifest, 2)
     require(manifest is not None, "invalid manifest envelope")
-    require(set(manifest) == {"fs", "epoch", "sequence", "previous", "request", "request_digest", "refs"}, "manifest schema")
-    require(manifest["fs"] == FS and manifest["epoch"] == EPOCH and
-            manifest["sequence"] == SEQUENCE and manifest["previous"] == SEQUENCE - 1, "manifest identity/sequence")
+    require(
+        set(manifest) == {"fs", "epoch", "sequence", "previous", "request", "request_digest", "refs"}, "manifest schema"
+    )
+    require(
+        manifest["fs"] == FS
+        and manifest["epoch"] == EPOCH
+        and manifest["sequence"] == SEQUENCE
+        and manifest["previous"] == SEQUENCE - 1,
+        "manifest identity/sequence",
+    )
     require(type(manifest["request"]) is int and manifest["request"] == 1, "request identity")
     require(manifest["request_digest"] == digest(b"replace a and b"), "request digest")
     refs = manifest["refs"]
@@ -128,8 +146,13 @@ A valid commit with a bad dependency is Corruption, even if unacknowledged.
         require(isinstance(raw, bytes) and digest(raw) == ref["digest"], "missing/corrupt extent")
         body = decode(raw, 1)
         require(body is not None and set(body) == {"fs", "epoch", "object", "generation", "payload"}, "extent schema")
-        require(body["fs"] == FS and body["epoch"] == EPOCH and body["object"] == object_id and
-                body["generation"] == ref["generation"], "extent identity/generation")
+        require(
+            body["fs"] == FS
+            and body["epoch"] == EPOCH
+            and body["object"] == object_id
+            and body["generation"] == ref["generation"],
+            "extent identity/generation",
+        )
         require(isinstance(body["payload"], str) and len(body["payload"]) <= 32, "payload bound")
         staged[object_id] = body["payload"]
     # Atomic publication: never modify the old state while checking dependencies.
@@ -211,8 +234,7 @@ def verify_protocol(dependency_fence=True, commit_fence=True):
             except Corruption as exc:
                 reason = str(exc)
             violations.append({"cut": cut.name, "masks": choices, "reason": reason})
-    return {"crash_images": count, "violations": violations,
-            "unacknowledged_new_states": unacknowledged_new}
+    return {"crash_images": count, "violations": violations, "unacknowledged_new_states": unacknowledged_new}
 
 
 class OutcomeWindow:
@@ -223,7 +245,8 @@ class OutcomeWindow:
     query therefore unambiguously means no retained terminal outcome. This helper
     models the retry API only, not a persistent journal implementation. The real
     journal must preserve its floor and live results in checkpoints.
-"""
+    """
+
     def __init__(self, capacity):
         if type(capacity) is not int or not 1 <= capacity <= MAX_OUTCOME_CAPACITY:
             raise ValueError("capacity")

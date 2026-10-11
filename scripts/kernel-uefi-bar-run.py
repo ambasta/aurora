@@ -12,6 +12,12 @@ import signal
 import subprocess
 import sys
 
+import qemu_transport as transport
+import kernel_trace_controls as controls
+from meson_test import selected_kernel_compiler
+from kernel_profiles import canonical_profile
+from qemu_transport import MissingPrerequisite, input_path
+
 ROOT = Path(__file__).resolve().parent.parent
 MODES = (
     "bar-state",
@@ -24,10 +30,6 @@ MODES = (
     "bar-alias",
 )
 CLEAN = ("bar-read", "bar-prepare", "bar-write", "bar-revoked", "bar-alias")
-
-
-class MissingPrerequisite(ValueError):
-    """An unavailable external input, before any build or guest has started."""
 
 
 def module(name):
@@ -43,30 +45,6 @@ def digest(path):
 
 def record(path):
     return dict(path=str(Path(path).resolve()), sha256=digest(path))
-
-
-def required(env, name, explanation):
-    value = env.get(name, "")
-    if not value:
-        raise MissingPrerequisite(f"Set {name}: {explanation}. See docs/smoke-entrypoint-repair.md.")
-    return value
-
-
-def input_path(value, label, directory=False):
-    try:
-        path = Path(value).resolve()
-        if any(character in str(path) for character in (",", "\n", "\r")):
-            raise ValueError(f"{label} cannot contain commas or line breaks in QEMU option paths")
-        unavailable = f"{label} must name a readable {'directory' if directory else 'file'}: {path}"
-        if not path.exists():
-            raise MissingPrerequisite(unavailable)
-        if not (path.is_dir() if directory else path.is_file()):
-            raise ValueError(unavailable)
-        if not os.access(path, os.R_OK):
-            raise MissingPrerequisite(unavailable)
-    except (FileNotFoundError, PermissionError) as error:
-        raise MissingPrerequisite(f"Unavailable {label} prerequisite: {error}") from error
-    return path
 
 
 def preflight(mode, output, env):
@@ -105,55 +83,55 @@ def preflight(mode, output, env):
                 raise MissingPrerequisite(f"Unavailable QEMU prerequisite: {error}") from error
         raise MissingPrerequisite(f"Missing dependency: {command}; set QEMU to the qualified QEMU executable")
     qemu = input_path(executable, "QEMU")
-    data = input_path(required(env, "QEMU_DATA", "the matching qualified QEMU data directory"), "QEMU_DATA", True)
-    coverage_path = input_path(
-        required(env, "AURORA_BAR_COVERAGE", "the retained trace-coverage JSON and its control artifacts"),
-        "AURORA_BAR_COVERAGE",
-    )
+    data = input_path(env.get("QEMU_DATA") or "/usr/share/qemu", "QEMU_DATA", True)
     provenance = module("bar-provenance")
     trace = module("bar-trace")
-    try:
-        coverage = trace.load_coverage(coverage_path)
-        # read_control's semantic validator also rejects a wrong-kind directory.
-        # Preserve genuinely absent/unreadable external controls as prerequisites,
-        # without classifying malformed evidence or pin mismatches as a skip.
-        if isinstance(coverage, dict) and "msix_control" in coverage:
-            control = Path(coverage["msix_control"])
-            if not control.exists() or not os.access(control, os.R_OK):
-                raise MissingPrerequisite(f"Coverage MSI-X control directory unavailable: {control}")
-        trace.validate_coverage(coverage)
-        events = input_path(coverage_path.parent / json.loads(coverage_path.read_text())["events"], "coverage events")
-    except MissingPrerequisite:
-        raise
-    except (FileNotFoundError, PermissionError) as error:
-        raise MissingPrerequisite(f"Unavailable AURORA_BAR_COVERAGE prerequisite: {error}") from error
-    except (KeyError, TypeError, OSError, ValueError) as error:
-        raise ValueError(f"Invalid AURORA_BAR_COVERAGE: {error}") from error
-    pinned = [("QEMU", qemu, "qemu"), ("trace events", events, "events")]
+    coverage_path = coverage = events = None
+    if env.get("AURORA_BAR_COVERAGE"):
+        coverage_path = input_path(env["AURORA_BAR_COVERAGE"], "AURORA_BAR_COVERAGE")
+        try:
+            coverage = trace.load_coverage(coverage_path)
+            if isinstance(coverage, dict) and "msix_control" in coverage:
+                control = Path(coverage["msix_control"])
+                if not control.exists() or not os.access(control, os.R_OK):
+                    raise MissingPrerequisite(f"Coverage MSI-X control directory unavailable: {control}")
+            trace.validate_coverage(coverage)
+            events = input_path(
+                coverage_path.parent / json.loads(coverage_path.read_text())["events"], "coverage events"
+            )
+        except MissingPrerequisite:
+            raise
+        except (FileNotFoundError, PermissionError) as error:
+            raise MissingPrerequisite(f"Unavailable AURORA_BAR_COVERAGE prerequisite: {error}") from error
+        except (KeyError, TypeError, OSError, ValueError) as error:
+            raise ValueError(f"Invalid AURORA_BAR_COVERAGE: {error}") from error
+    pinned = [("QEMU", qemu, "qemu")]
+    if events is not None:
+        pinned.append(("trace events", events, "events"))
+    packaged = False
     clean = mode in CLEAN
     if clean:
-        fixture = input_path(
-            required(env, "AURORA_BAR_FIRMWARE", "the qualified clean firmware fixture root; stock OVMF is unsuitable"),
-            "AURORA_BAR_FIRMWARE",
-            True,
-        )
-        code = input_path(fixture / "output/OVMF_CODE.fd", "clean firmware CODE")
-        template = input_path(fixture / "output/OVMF_VARS.fd", "clean firmware VARS")
-        patch = input_path(fixture / "provenance/policy-three-file.patch", "clean firmware patch")
-        pinned += [
-            ("clean firmware CODE", code, "clean_code"),
-            ("clean firmware VARS", template, "clean_vars"),
-            ("clean firmware patch", patch, "clean_patch"),
-        ]
+        if env.get("AURORA_BAR_FIRMWARE"):
+            fixture = input_path(env["AURORA_BAR_FIRMWARE"], "AURORA_BAR_FIRMWARE", True)
+            code = input_path(fixture / "output/OVMF_CODE.fd", "clean firmware CODE")
+            template = input_path(fixture / "output/OVMF_VARS.fd", "clean firmware VARS")
+            patch = input_path(fixture / "provenance/policy-three-file.patch", "clean firmware patch")
+            pinned += [
+                ("clean firmware CODE", code, "clean_code"),
+                ("clean firmware VARS", template, "clean_vars"),
+                ("clean firmware patch", patch, "clean_patch"),
+            ]
+        else:
+            code, template, patch = controls.supported_firmware(env)
+            packaged = True
     else:
-        code = input_path(required(env, "OVMF", "the qualified stock combined OVMF ROM"), "OVMF")
+        code = input_path(env.get("OVMF") or "/usr/share/ovmf/OVMF.fd", "OVMF")
         template = patch = None
         pinned.append(("stock firmware CODE", code, "stock_code"))
+    stock = controls.stock_firmware(env) if coverage_path is None else None
     for label, path, pin in pinned:
         if digest(path) != provenance.PINS[pin]:
             raise ValueError(f"Unreviewed {label}: SHA-256 differs from the existing BAR provenance pin")
-    # The retained provenance contract binds this runtime override explicitly.
-    required(env, "LD_LIBRARY_PATH", "the qualified QEMU runtime library directory")
     compiler = Path(env.get("AURORAC") or ROOT / "build/aurorac").resolve()
     if env.get("AURORAC") and not compiler.exists():
         raise MissingPrerequisite(f"AURORAC must name an executable compiler: {compiler}")
@@ -171,15 +149,17 @@ def preflight(mode, output, env):
         patch=patch,
         compiler=compiler,
         clean=clean,
+        packaged=packaged,
+        stock=stock,
     )
 
 
-def execute(mode, config, env):
+def execute(mode, config, env, build):
     out = config["output"]
     qemu, data = config["qemu"], config["data"]
     code, clean = config["code"], config["clean"]
     events, coverage = config["events"], config["coverage"]
-    shutil.copytree(ROOT / "build/uefi/esp", out / "esp")
+    shutil.copytree(build / "esp", out / "esp")
     files = {
         name: record(path)
         for name, path in (
@@ -194,10 +174,9 @@ def execute(mode, config, env):
         ("payload_elf", "payload.elf"),
         ("payload_metadata", "bar-metadata.json"),
     ):
-        shutil.copy2(ROOT / "build/uefi" / name, out / name)
+        shutil.copy2(build / name, out / name)
         files[key] = record(out / name)
     files["loader"] = record(out / "esp/EFI/BOOT/BOOTX64.EFI")
-    argv = [str(qemu), "-L", str(data), "-machine", "q35", "-accel", "tcg", "-cpu", "qemu64", "-smp", "1", "-m", "128M"]
     files["firmware_code"] = record(code)
     if clean:
         template = config["template"]
@@ -208,37 +187,29 @@ def execute(mode, config, env):
             vars_initial=record(out / "vars-initial.fd"),
             firmware_patch=record(config["patch"]),
         )
-        argv += [
+        firmware = [
             "-drive",
             f"if=pflash,format=raw,unit=0,file={code},readonly=on",
             "-drive",
             f"if=pflash,format=raw,unit=1,file={out}/vars-runtime.fd",
         ]
     else:
-        argv += ["-bios", str(code)]
-    argv += [
-        "-drive",
-        f"format=raw,file=fat:ro:{out}/esp,snapshot=on",
-        "-device",
-        "nvme,serial=AURORA_READ_ONLY,bus=pcie.0,addr=02.0",
-        "-nic",
-        "none",
-        "-display",
-        "none",
-        "-serial",
-        "stdio",
-        "-monitor",
-        "none",
-        "-no-reboot",
-        "-trace",
-        f"events={events},file={out}/trace.log",
-        "-chardev",
-        f"file,id=firmware,path={out}/firmware.log",
-        "-device",
-        "isa-debugcon,iobase=0x402,chardev=firmware",
-        "-device",
-        "isa-debug-exit,iobase=0xf4,iosize=0x04",
-    ]
+        firmware = ["-bios", str(code)]
+    argv = transport.command(
+        qemu,
+        data,
+        firmware=firmware,
+        boot=transport.fat_boot(out / "esp"),
+        peripherals=["-device", "nvme,serial=AURORA_READ_ONLY,bus=pcie.0,addr=02.0"],
+        diagnostics=[
+            "-trace",
+            f"events={events},file={out}/trace.log",
+            "-chardev",
+            f"file,id=firmware,path={out}/firmware.log",
+            "-device",
+            "isa-debugcon,iobase=0x402,chardev=firmware",
+        ],
+    )
     invocation = dict(
         schema="aurora-bar-run-v1",
         mode=mode,
@@ -250,16 +221,12 @@ def execute(mode, config, env):
         stdio={"stdout": str(out / "serial.log"), "stderr": "stdout"},
         files=files,
     )
+    if config["packaged"]:
+        invocation["firmware_package"] = controls.FIRMWARE_VERSION
     if clean:
         invocation["firmware_source_revision"] = module("bar-provenance").REVISION
     (out / "invocation-start.json").write_text(json.dumps(invocation, indent=2) + "\n")
-    with (out / "serial.log").open("w") as log:
-        try:
-            status = subprocess.run(
-                argv, cwd=ROOT, env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, timeout=60
-            ).returncode
-        except subprocess.TimeoutExpired:
-            status = 124
+    status = transport.run_logged(argv, out / "serial.log", cwd=ROOT, env=env, timeout=60)
     (out / "status").write_text(str(status) + "\n")
     invocation["status"] = status
     for key, name in (("serial", "serial.log"), ("trace", "trace.log"), ("firmware_log", "firmware.log")):
@@ -275,64 +242,71 @@ def execute(mode, config, env):
         (out / "trace.log").read_text(), (out / "firmware.log").read_text(), serial, mode, coverage, metadata
     )
     (out / "trace-result.json").write_text(json.dumps(result, indent=2) + "\n")
-    module("bar-provenance").validate(out / "receipt.json")
+    if config["packaged"]:
+        module("bar-provenance").validate(
+            out / "receipt.json", fixture_prefix=env.get("AURORA_BOOT_FIXTURE_PREFIX") or controls.DEFAULT_PREFIX
+        )
+    else:
+        module("bar-provenance").validate(out / "receipt.json")
 
 
-def run(mode, output):
+def run(mode, output, build=None):
     env = os.environ.copy()
     config = preflight(mode, output, env)
+    if build is not None:
+        transport.need(
+            config["coverage_path"] is not None, "--run-only requires explicit validated AURORA_BAR_COVERAGE"
+        )
+        profile = canonical_profile("uefi", mode)
+        transport.need(
+            build.is_absolute()
+            and build.is_dir()
+            and build.resolve(strict=True) == build
+            and build.parts[-3:] == ("kernel-images", "uefi", profile),
+            "Wrong prebuilt BAR profile",
+        )
     out = config["output"]
+    transport.need(build is None or not out.is_relative_to(build), "Output cannot modify the prebuilt BAR profile")
     out.mkdir(parents=True, exist_ok=False)
-    build_started = False
-    failure = None
-    try:
-        with (out / "build.log").open("w") as log:
-            process = subprocess.Popen(
-                [ROOT / "scripts/kernel-uefi-build.sh"],
+    if config["coverage_path"] is None:
+        path = controls.generate("bar", out / "controls", config["qemu"], config["data"], config["stock"], env)
+        config.update(
+            coverage_path=path,
+            coverage=module("bar-trace").load_coverage(path),
+            events=path.parent / json.loads(path.read_text())["events"],
+        )
+    if build is None:
+        with (out / "build.log").open("xb") as log:
+            transport.run_logged(
+                [
+                    sys.executable,
+                    "-B",
+                    ROOT / "scripts/meson_test.py",
+                    "--kernel",
+                    "uefi",
+                    "--profile",
+                    mode,
+                    "--print-image-dir",
+                ],
+                out / "image-directory.log",
                 cwd=ROOT,
-                env=dict(env, UEFI_MODE=mode),
-                stdout=log,
-                stderr=subprocess.STDOUT,
-                start_new_session=True,
+                env=env,
+                stderr=log,
+                timeout=1800,
+                expected=0,
+                timeout_status=False,
             )
-            build_started = True
-            try:
-                status = process.wait()
-            except BaseException:
-                # An interrupted build must not race the normal-image restore.
-                # The builder and its descendants own this new process group.
-                if process.poll() is None:
-                    # An unreaped child retains its PID even if it exits before
-                    # killpg. Never signal a PID already released by wait().
-                    try:
-                        os.killpg(process.pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
-                process.wait()
-                raise
-            if status:
-                raise subprocess.CalledProcessError(status, process.args)
-        execute(mode, config, env)
-    except BaseException as error:
-        failure = error
-        raise
-    finally:
-        if build_started:
-            try:
-                with (out / "restore.log").open("w") as log:
-                    subprocess.run(
-                        [ROOT / "scripts/kernel-uefi-build.sh"],
-                        cwd=ROOT,
-                        env=dict(env, UEFI_MODE="normal"),
-                        stdout=log,
-                        stderr=subprocess.STDOUT,
-                        check=True,
-                    )
-            except (OSError, subprocess.SubprocessError) as error:
-                if failure is None:
-                    raise
-                print(f"FAIL: normal-image restoration also failed: {error}; see {out}/restore.log", file=sys.stderr)
-    print(f"PASS: actual cold BAR gate {mode}; receipt {out}/receipt.json; normal image restored")
+        selected = (out / "image-directory.log").read_text()
+        build = Path(selected.rstrip("\n"))
+        transport.need(
+            selected == str(build) + "\n" and selected.count("\n") == 1 and build.is_absolute(),
+            "Invalid native image directory handoff",
+        )
+        profile = canonical_profile("uefi", mode)
+        transport.need(build.parts[-3:] == ("kernel-images", "uefi", profile), "Wrong native image profile")
+    config["compiler"] = selected_kernel_compiler(build.parents[2])
+    execute(mode, config, env, build)
+    print(f"PASS: actual cold BAR gate {mode}; receipt {out}/receipt.json")
 
 
 def interrupted(signum, frame):
@@ -343,15 +317,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=MODES)
     parser.add_argument("--output", required=True, help="fresh, absent receipt directory")
+    parser.add_argument("--run-only", type=Path, help="explicit already-built native profile; never invokes Ninja")
     args = parser.parse_args()
     previous_term = signal.signal(signal.SIGTERM, interrupted)
     try:
-        run(args.mode, Path(args.output))
-    except MissingPrerequisite as error:
-        print(f"BLOCKED: BAR runner: {error}", file=sys.stderr)
-        return 2
-    except (OSError, ValueError, subprocess.SubprocessError) as error:
-        print(f"FAIL: BAR runner: {error}", file=sys.stderr)
+        run(args.mode, Path(args.output), args.run_only)
+    except (OSError, ValueError, subprocess.SubprocessError, transport.ChildNotReaped) as error:
+        print(f"{transport.failure_label(error)}: BAR runner: {error}", file=sys.stderr)
         return 2
     finally:
         signal.signal(signal.SIGTERM, previous_term)

@@ -5,7 +5,15 @@ import std.binary;
 import std.checksum;
 
 export namespace fs {
-    enum class XfsRootStatus { found, not_found, geometry_rejected, unsupported_profile, invalid_query, invalid_inode, invalid_directory };
+    enum class XfsRootStatus {
+        found,
+        not_found,
+        geometry_rejected,
+        unsupported_profile,
+        invalid_query,
+        invalid_inode,
+        invalid_directory
+    };
     enum class XfsRootIssue {
         none,
         geometry,
@@ -35,160 +43,310 @@ export namespace fs {
         entry_index
     };
     class XfsRootFacts {
-        u64 _root; u64 _offset; u64 _parent; u64 _count; u64 _bytes;
+        u64 _root;
+        u64 _offset;
+        u64 _parent;
+        u64 _count;
+        u64 _bytes;
     public:
-        XfsRootFacts(u64 root, u64 offset, u64 parent, u64 count, u64 bytes)
-            : _root(root), _offset(offset), _parent(parent), _count(count), _bytes(bytes) {}
-        auto root_inode() const -> u64 { return _root; }
-        auto inode_offset_bytes() const -> u64 { return _offset; }
-        auto parent_inode() const -> u64 { return _parent; }
-        auto entry_count() const -> u64 { return _count; }
-        auto payload_bytes() const -> u64 { return _bytes; }
+        XfsRootFacts(u64 root, u64 offset, u64 parent, u64 count, u64 bytes) : _root(root), _offset(offset),
+            _parent(parent), _count(count), _bytes(bytes) {
+        }
+        auto root_inode() const -> u64 {
+            return _root;
+        }
+        auto inode_offset_bytes() const -> u64 {
+            return _offset;
+        }
+        auto parent_inode() const -> u64 {
+            return _parent;
+        }
+        auto entry_count() const -> u64 {
+            return _count;
+        }
+        auto payload_bytes() const -> u64 {
+            return _bytes;
+        }
     };
     class XfsRootMatch {
-        u64 _inode; u64 _type;
+        u64 _inode;
+        u64 _type;
     public:
-        XfsRootMatch(u64 inode, u64 type) : _inode(inode), _type(type) {}
-        auto inode_number() const -> u64 { return _inode; }
-        auto file_type() const -> u64 { return _type; }
+        XfsRootMatch(u64 inode, u64 type) : _inode(inode), _type(type) {
+        }
+        auto inode_number() const -> u64 {
+            return _inode;
+        }
+        auto file_type() const -> u64 {
+            return _type;
+        }
     };
     class XfsRootReport {
-        XfsRootStatus _status; XfsRootIssue _issue; XfsRootFacts _facts; XfsRootMatch _match;
+        XfsRootStatus _status;
+        XfsRootIssue _issue;
+        XfsRootFacts _facts;
+        XfsRootMatch _match;
     public:
-        XfsRootReport(XfsRootStatus status, XfsRootIssue issue, XfsRootFacts facts, XfsRootMatch match)
-            : _status(status), _issue(issue), _facts(facts), _match(match) {}
-        auto status() const -> XfsRootStatus { return _status; }
-        auto issue() const -> XfsRootIssue { return _issue; }
-        auto found() const -> bool { return _status == XfsRootStatus::found; }
+        XfsRootReport(XfsRootStatus status, XfsRootIssue issue, XfsRootFacts facts,
+            XfsRootMatch match) : _status(status), _issue(issue), _facts(facts), _match(match) {
+        }
+        auto status() const -> XfsRootStatus {
+            return _status;
+        }
+        auto issue() const -> XfsRootIssue {
+            return _issue;
+        }
+        auto found() const -> bool {
+            return _status == XfsRootStatus::found;
+        }
         auto facts() const -> XfsRootFacts {
-            if (_status == XfsRootStatus::found) { const XfsRootFacts result = _facts; return result; }
-            if (_status == XfsRootStatus::not_found) { const XfsRootFacts result = _facts; return result; }
-            const XfsRootFacts zero = XfsRootFacts(0u64, 0u64, 0u64, 0u64, 0u64); return zero;
+            if (_status == XfsRootStatus::found) {
+                const XfsRootFacts result = _facts;
+                return result;
+            }
+            if (_status == XfsRootStatus::not_found) {
+                const XfsRootFacts result = _facts;
+                return result;
+            }
+            const XfsRootFacts zero = XfsRootFacts(0u64, 0u64, 0u64, 0u64, 0u64);
+            return zero;
         }
         auto match() const -> XfsRootMatch {
-            if (_status == XfsRootStatus::found) { const XfsRootMatch result = _match; return result; }
-            const XfsRootMatch zero = XfsRootMatch(0u64, 0u64); return zero;
+            if (_status == XfsRootStatus::found) {
+                const XfsRootMatch result = _match;
+                return result;
+            }
+            const XfsRootMatch zero = XfsRootMatch(0u64, 0u64);
+            return zero;
         }
     };
 }
 
 namespace fs {
     auto xr16(builtin::span<const u8> b, i64 p) -> u64 {
-        const std::ByteReadResult r = std::read_be16(b, p); return r.value_or(0u64);
+        const std::ByteReadResult r = std::read_be16(b, p);
+        return r.value_or(0u64);
     }
     auto xr32(builtin::span<const u8> b, i64 p) -> u64 {
-        const std::ByteReadResult r = std::read_be32(b, p); return r.value_or(0u64);
+        const std::ByteReadResult r = std::read_be32(b, p);
+        return r.value_or(0u64);
     }
     auto xr64(builtin::span<const u8> b, i64 p) -> u64 {
-        const std::ByteReadResult r = std::read_be64(b, p); return r.value_or(0u64);
+        const std::ByteReadResult r = std::read_be64(b, p);
+        return r.value_or(0u64);
     }
     auto xr_failure(XfsRootStatus status, XfsRootIssue issue) -> XfsRootReport {
         const XfsRootFacts facts = XfsRootFacts(0u64, 0u64, 0u64, 0u64, 0u64);
         const XfsRootMatch match = XfsRootMatch(0u64, 0u64);
-        const XfsRootReport result = XfsRootReport(status, issue, facts, match); return result;
+        const XfsRootReport result = XfsRootReport(status, issue, facts, match);
+        return result;
     }
     // Called only with the same immutable geometry-admitted 512-byte snapshot.
     // Zero is a sentinel: every admitted inode lies beyond its AG headers.
     auto xr_address(builtin::span<const u8> sb, u64 number) -> u64 {
-        if (number == 0u64) { return 0u64; }
-        if (number > 4294967295u64) { return 0u64; }
+        if (number == 0u64) {
+            return 0u64;
+        }
+        if (number > 4294967295u64) {
+            return 0u64;
+        }
         const i64 slot_log = i64(sb.at(123));
         const i64 ag_log = i64(sb.at(124));
         const u64 ag = number >> (slot_log + ag_log);
-        const u64 block = (number >> slot_log) & ((1u64 << ag_log) - 1u64);
+        const u64 block =(number >> slot_log) & ((1u64 << ag_log) - 1u64);
         const u64 slot = number & ((1u64 << slot_log) - 1u64);
         const u64 ag_count = xr32(sb, 88);
         const u64 ag_blocks = xr32(sb, 84);
         const u64 block_bytes = xr32(sb, 4);
         const u64 data_blocks = xr64(sb, 8);
-        if (ag >= ag_count) { return 0u64; }
+        if (ag >= ag_count) {
+            return 0u64;
+        }
         u64 actual = ag_blocks;
-        if (ag == ag_count - 1u64) { actual = data_blocks - (ag_count - 1u64) * ag_blocks; }
-        if (block >= actual) { return 0u64; }
-        if (block <= 1536u64 / block_bytes) { return 0u64; }
+        if (ag == ag_count - 1u64) {
+            actual = data_blocks - (ag_count - 1u64) * ag_blocks;
+        }
+        if (block >= actual) {
+            return 0u64;
+        }
+        if (block <= 1536u64 / block_bytes) {
+            return 0u64;
+        }
         const u64 linear = ag * ag_blocks + block;
         const u64 encoded_log = xr64(sb, 48);
         const u64 log_ag = encoded_log >> ag_log;
         const u64 log_block = encoded_log & ((1u64 << ag_log) - 1u64);
         const u64 log_start = log_ag * ag_blocks + log_block;
         if (linear >= log_start) {
-            if (linear - log_start < xr32(sb, 96)) { return 0u64; }
+            if (linear - log_start < xr32(sb, 96)) {
+                return 0u64;
+            }
         }
         // Geometry bounds prove linear < data_blocks and slot*512 < block_bytes.
         return linear * block_bytes + slot * 512u64;
     }
     auto xr_name(builtin::span<const u8> bytes, i64 start, i64 count) -> bool {
-        if (count < 1) { return false; }
-        if (count > 255) { return false; }
-        if (count == 1) { if (bytes.at(start) == 46u8) { return false; } }
+        if (count < 1) {
+            return false;
+        }
+        if (count > 255) {
+            return false;
+        }
+        if (count == 1) {
+            if (bytes.at(start) == 46u8) {
+                return false;
+            }
+        }
         if (count == 2) {
-            if (bytes.at(start) == 46u8) { if (bytes.at(start + 1) == 46u8) { return false; } }
+            if (bytes.at(start) == 46u8) {
+                if (bytes.at(start + 1) == 46u8) {
+                    return false;
+                }
+            }
         }
         i64 i = 0;
         while (i < count) {
-            if (bytes.at(start + i) == 0u8) { return false; }
-            if (bytes.at(start + i) == 47u8) { return false; }
+            if (bytes.at(start + i) == 0u8) {
+                return false;
+            }
+            if (bytes.at(start + i) == 47u8) {
+                return false;
+            }
             i = i + 1;
         }
         return true;
     }
     auto xr_core(builtin::span<const u8> sb, builtin::span<const u8> inode) -> XfsRootIssue {
-        if (xr16(inode, 0) != 18766u64) { return XfsRootIssue::magic; }
-        if (inode.at(4) != 3u8) { return XfsRootIssue::version; }
-        const array<u8, 4> zero = {0u8, 0u8, 0u8, 0u8};
+        if (xr16(inode, 0) != 18766u64) {
+            return XfsRootIssue::magic;
+        }
+        if (inode.at(4) != 3u8) {
+            return XfsRootIssue::version;
+        }
+        const array<u8, 4> zero = {
+            0u8,
+            0u8,
+            0u8,
+            0u8
+        };
         const std::ChecksumResult a = std::crc32c(inode, 0, 100);
         const std::ChecksumResult b = std::crc32c_extend(a.value_or(0u64), borrow_bytes(zero), 0, 4);
         const std::ChecksumResult c = std::crc32c_extend(b.value_or(0u64), inode, 104, 408);
         const std::ByteReadResult stored = std::read_le32(inode, 100);
-        if (c.value_or(0u64) != stored.value_or(0u64)) { return XfsRootIssue::checksum; }
-        if (xr64(inode, 152) != xr64(sb, 56)) { return XfsRootIssue::identity; }
+        if (c.value_or(0u64) != stored.value_or(0u64)) {
+            return XfsRootIssue::checksum;
+        }
+        if (xr64(inode, 152) != xr64(sb, 56)) {
+            return XfsRootIssue::identity;
+        }
         i64 i = 0;
         while (i < 16) {
-            if (inode.at(160 + i) != sb.at(32 + i)) { return XfsRootIssue::identity; }
+            if (inode.at(160 + i) != sb.at(32 + i)) {
+                return XfsRootIssue::identity;
+            }
             i = i + 1;
         }
         const u64 flags = xr64(inode, 120);
-        if ((flags & (18446744073709551615u64 ^ 24u64)) != 0u64) { return XfsRootIssue::flags2; }
+        if ((flags & (18446744073709551615u64 ^ 24u64)) != 0u64) {
+            return XfsRootIssue::flags2;
+        }
         const u64 features = xr32(sb, 216);
-        if ((flags & 8u64) != 0u64) { if ((features & 8u64) == 0u64) { return XfsRootIssue::flags2; } }
-        if ((flags & 16u64) != 0u64) { if ((features & 32u64) == 0u64) { return XfsRootIssue::flags2; } }
-        if ((xr16(inode, 2) & 61440u64) != 16384u64) { return XfsRootIssue::core; }
-        if (inode.at(5) != 1u8) { return XfsRootIssue::core; }
-        if (xr16(inode, 6) != 0u64) { return XfsRootIssue::core; }
-        if (xr32(inode, 16) == 0u64) { return XfsRootIssue::core; }
-        if (xr32(inode, 16) > 2147483647u64) { return XfsRootIssue::core; }
-        if ((xr64(inode, 24) | xr64(inode, 64) | xr32(inode, 72) | xr32(inode, 76) | xr16(inode, 80)) != 0u64) { return XfsRootIssue::core; }
-        if (inode.at(82) != 0u8) { return XfsRootIssue::core; }
-        if (inode.at(83) != 2u8) { return XfsRootIssue::core; }
-        if ((xr32(inode, 84) | xr16(inode, 88) | xr16(inode, 90) | xr32(inode, 128)) != 0u64) { return XfsRootIssue::core; }
-        if (xr32(inode, 96) != 4294967295u64) { return XfsRootIssue::core; }
+        if ((flags & 8u64) != 0u64) {
+            if ((features & 8u64) == 0u64) {
+                return XfsRootIssue::flags2;
+            }
+        }
+        if ((flags & 16u64) != 0u64) {
+            if ((features & 32u64) == 0u64) {
+                return XfsRootIssue::flags2;
+            }
+        }
+        if ((xr16(inode, 2) & 61440u64) != 16384u64) {
+            return XfsRootIssue::core;
+        }
+        if (inode.at(5) != 1u8) {
+            return XfsRootIssue::core;
+        }
+        if (xr16(inode, 6) != 0u64) {
+            return XfsRootIssue::core;
+        }
+        if (xr32(inode, 16) == 0u64) {
+            return XfsRootIssue::core;
+        }
+        if (xr32(inode, 16) > 2147483647u64) {
+            return XfsRootIssue::core;
+        }
+        if ((xr64(inode, 24) | xr64(inode, 64) | xr32(inode, 72) | xr32(inode, 76) | xr16(inode, 80)) != 0u64) {
+            return XfsRootIssue::core;
+        }
+        if (inode.at(82) != 0u8) {
+            return XfsRootIssue::core;
+        }
+        if (inode.at(83) != 2u8) {
+            return XfsRootIssue::core;
+        }
+        if ((xr32(inode, 84) | xr16(inode, 88) | xr16(inode, 90) | xr32(inode, 128)) != 0u64) {
+            return XfsRootIssue::core;
+        }
+        if (xr32(inode, 96) != 4294967295u64) {
+            return XfsRootIssue::core;
+        }
         i = 132;
-        while (i < 144) { if (inode.at(i) != 0u8) { return XfsRootIssue::core; } i = i + 1; }
+        while (i < 144) {
+            if (inode.at(i) != 0u8) {
+                return XfsRootIssue::core;
+            }
+            i = i + 1;
+        }
         return XfsRootIssue::none;
     }
     auto xr_directory(builtin::span<const u8> sb, builtin::span<const u8> inode) -> XfsRootIssue {
         const u64 payload = xr64(inode, 56);
-        if (payload < 6u64) { return XfsRootIssue::payload_size; }
-        if (payload > 336u64) { return XfsRootIssue::payload_size; }
+        if (payload < 6u64) {
+            return XfsRootIssue::payload_size;
+        }
+        if (payload > 336u64) {
+            return XfsRootIssue::payload_size;
+        }
         const i64 end = 176 + i64(payload);
-        if (inode.at(177) != 0u8) { return XfsRootIssue::inode_width; }
+        if (inode.at(177) != 0u8) {
+            return XfsRootIssue::inode_width;
+        }
         const i64 count = i64(inode.at(176));
-        if (count > 16) { return XfsRootIssue::entry_count; }
-        if (xr32(inode, 178) != xr64(sb, 56)) { return XfsRootIssue::parent; }
+        if (count > 16) {
+            return XfsRootIssue::entry_count;
+        }
+        if (xr32(inode, 178) != xr64(sb, 56)) {
+            return XfsRootIssue::parent;
+        }
         i64 cursor = 182;
         i64 index = 0;
         u64 minimum_offset = 96u64;
         while (index < count) {
-            if (end - cursor < 3) { return XfsRootIssue::entry_bounds; }
+            if (end - cursor < 3) {
+                return XfsRootIssue::entry_bounds;
+            }
             const i64 length = i64(inode.at(cursor));
-            if (length + 8 > end - cursor) { return XfsRootIssue::entry_bounds; }
-            if (!xr_name(inode, cursor + 3, length)) { return XfsRootIssue::entry_name; }
-            if (inode.at(cursor + 3 + length) > 8u8) { return XfsRootIssue::file_type; }
+            if (length + 8 > end - cursor) {
+                return XfsRootIssue::entry_bounds;
+            }
+            if (!xr_name(inode, cursor + 3, length)) {
+                return XfsRootIssue::entry_name;
+            }
+            if (inode.at(cursor + 3 + length) > 8u8) {
+                return XfsRootIssue::file_type;
+            }
             const u64 number = xr32(inode, cursor + 4 + length);
-            if (xr_address(sb, number) == 0u64) { return XfsRootIssue::entry_inode; }
+            if (xr_address(sb, number) == 0u64) {
+                return XfsRootIssue::entry_inode;
+            }
             const u64 offset = xr16(inode, cursor + 1);
-            if (offset % 8u64 != 0u64) { return XfsRootIssue::saved_offset; }
-            if (offset < minimum_offset) { return XfsRootIssue::saved_offset; }
+            if (offset % 8u64 != 0u64) {
+                return XfsRootIssue::saved_offset;
+            }
+            if (offset < minimum_offset) {
+                return XfsRootIssue::saved_offset;
+            }
             minimum_offset = offset + ((u64(length) + 19u64) / 8u64) * 8u64;
             i64 earlier = 182;
             i64 previous = 0;
@@ -198,10 +356,14 @@ namespace fs {
                     bool same = true;
                     i64 j = 0;
                     while (j < length) {
-                        if (inode.at(earlier + 3 + j) != inode.at(cursor + 3 + j)) { same = false; }
+                        if (inode.at(earlier + 3 + j) != inode.at(cursor + 3 + j)) {
+                            same = false;
+                        }
                         j = j + 1;
                     }
-                    if (same) { return XfsRootIssue::duplicate_name; }
+                    if (same) {
+                        return XfsRootIssue::duplicate_name;
+                    }
                 }
                 earlier = earlier + previous_length + 8;
                 previous = previous + 1;
@@ -209,8 +371,12 @@ namespace fs {
             cursor = cursor + length + 8;
             index = index + 1;
         }
-        if (cursor != end) { return XfsRootIssue::trailing_bytes; }
-        if (minimum_offset + (u64(count) + 2u64) * 8u64 + 8u64 > xr32(sb, 4)) { return XfsRootIssue::block_footprint; }
+        if (cursor != end) {
+            return XfsRootIssue::trailing_bytes;
+        }
+        if (minimum_offset + (u64(count) + 2u64) * 8u64 + 8u64 > xr32(sb, 4)) {
+            return XfsRootIssue::block_footprint;
+        }
         return XfsRootIssue::none;
     }
     // Re-scan only after complete validation of this same immutable snapshot.
@@ -223,94 +389,84 @@ namespace fs {
                 bool same = true;
                 i64 j = 0;
                 while (j < length) {
-                    if (inode.at(cursor + 3 + j) != query.at(j)) { same = false; }
+                    if (inode.at(cursor + 3 + j) != query.at(j)) {
+                        same = false;
+                    }
                     j = j + 1;
                 }
                 if (same) {
-                    const XfsRootMatch match = XfsRootMatch(xr32(inode, cursor + length + 4), u64(inode.at(cursor + length + 3)));
+                    const XfsRootMatch match = XfsRootMatch(xr32(inode, cursor + length + 4), u64(inode.at(cursor
+                        + length + 3)));
                     return match;
                 }
             }
             cursor = cursor + length + 8;
             index = index + 1;
         }
-        const XfsRootMatch absent = XfsRootMatch(0u64, 0u64); return absent;
+        const XfsRootMatch absent = XfsRootMatch(0u64, 0u64);
+        return absent;
     }
 }
 
 namespace fs {
     auto xr_validate_root(builtin::span<const u8> superblock, builtin::span<const u8> inode,
-                          bool query_valid) -> XfsRootReport {
+        bool query_valid) -> XfsRootReport {
         const XfsGeometryReport geometry = inspect_xfs_v5_512_geometry(superblock);
         if (geometry.status() != XfsGeometryStatus::header_geometry_consistent) {
-            const XfsRootReport result = xr_failure(
-                XfsRootStatus::geometry_rejected, XfsRootIssue::geometry);
+            const XfsRootReport result = xr_failure(XfsRootStatus::geometry_rejected, XfsRootIssue::geometry);
             return result;
         }
         if (xr16(superblock, 104) != 512u64) {
-            const XfsRootReport result = xr_failure(
-                XfsRootStatus::unsupported_profile, XfsRootIssue::inode_size);
+            const XfsRootReport result = xr_failure(XfsRootStatus::unsupported_profile, XfsRootIssue::inode_size);
             return result;
         }
         if (superblock.at(192) != 0u8) {
-            const XfsRootReport result = xr_failure(
-                XfsRootStatus::unsupported_profile, XfsRootIssue::directory_block);
+            const XfsRootReport result = xr_failure(XfsRootStatus::unsupported_profile, XfsRootIssue::directory_block);
             return result;
         }
         const u64 root = xr64(superblock, 56);
         const u64 address = xr_address(superblock, root);
         if (address == 0u64) {
-            const XfsRootReport result = xr_failure(
-                XfsRootStatus::invalid_inode, XfsRootIssue::root_address);
+            const XfsRootReport result = xr_failure(XfsRootStatus::invalid_inode, XfsRootIssue::root_address);
             return result;
         }
         if (inode.size() != 512) {
-            const XfsRootReport result = xr_failure(
-                XfsRootStatus::invalid_inode, XfsRootIssue::inode_length);
+            const XfsRootReport result = xr_failure(XfsRootStatus::invalid_inode, XfsRootIssue::inode_length);
             return result;
         }
         if (!query_valid) {
-            const XfsRootReport result = xr_failure(
-                XfsRootStatus::invalid_query, XfsRootIssue::query_name);
+            const XfsRootReport result = xr_failure(XfsRootStatus::invalid_query, XfsRootIssue::query_name);
             return result;
         }
         const XfsRootIssue core = xr_core(superblock, inode);
         if (core != XfsRootIssue::none) {
             if (core == XfsRootIssue::flags2) {
-                const XfsRootReport result = xr_failure(
-                    XfsRootStatus::unsupported_profile, core);
+                const XfsRootReport result = xr_failure(XfsRootStatus::unsupported_profile, core);
                 return result;
             }
             if (core == XfsRootIssue::version) {
-                const XfsRootReport result = xr_failure(
-                    XfsRootStatus::unsupported_profile, core);
+                const XfsRootReport result = xr_failure(XfsRootStatus::unsupported_profile, core);
                 return result;
             }
-            const XfsRootReport result = xr_failure(
-                XfsRootStatus::invalid_inode, core);
+            const XfsRootReport result = xr_failure(XfsRootStatus::invalid_inode, core);
             return result;
         }
         const XfsRootIssue directory = xr_directory(superblock, inode);
         if (directory != XfsRootIssue::none) {
             if (directory == XfsRootIssue::inode_width) {
-                const XfsRootReport result = xr_failure(
-                    XfsRootStatus::unsupported_profile, directory);
+                const XfsRootReport result = xr_failure(XfsRootStatus::unsupported_profile, directory);
                 return result;
             }
             if (directory == XfsRootIssue::entry_count) {
-                const XfsRootReport result = xr_failure(
-                    XfsRootStatus::unsupported_profile, directory);
+                const XfsRootReport result = xr_failure(XfsRootStatus::unsupported_profile, directory);
                 return result;
             }
-            const XfsRootReport result = xr_failure(
-                XfsRootStatus::invalid_directory, directory);
+            const XfsRootReport result = xr_failure(XfsRootStatus::invalid_directory, directory);
             return result;
         }
         const XfsRootMatch empty = XfsRootMatch(0u64, 0u64);
-        const XfsRootFacts facts = XfsRootFacts(
-            root, address, xr32(inode, 178), u64(inode.at(176)), xr64(inode, 56));
-        const XfsRootReport result = XfsRootReport(
-            XfsRootStatus::not_found, XfsRootIssue::none, facts, empty);
+        const XfsRootFacts facts = XfsRootFacts(root, address, xr32(inode, 178), u64(inode.at(176)), xr64(inode, 56));
+        const XfsRootReport result = XfsRootReport(XfsRootStatus::not_found, XfsRootIssue::none, facts, empty);
         return result;
     }
 }
@@ -332,8 +488,9 @@ export namespace fs {
         u64 _name_offset;
         u64 _name_length;
     public:
-        XfsRootEntry(u64 inode, u64 type, u64 name_offset, u64 name_length)
-            : _inode(inode), _type(type), _name_offset(name_offset), _name_length(name_length) {}
+        XfsRootEntry(u64 inode, u64 type, u64 name_offset, u64 name_length) : _inode(inode), _type(type),
+            _name_offset(name_offset), _name_length(name_length) {
+        }
 
         auto inode_number() const -> u64 {
             return _inode;
@@ -358,8 +515,9 @@ export namespace fs {
         XfsRootFacts _facts;
         XfsRootEntry _entry;
     public:
-        XfsRootEntryReport(XfsRootEntryStatus status, XfsRootIssue issue, XfsRootFacts facts, XfsRootEntry entry)
-            : _status(status), _issue(issue), _facts(facts), _entry(entry) {}
+        XfsRootEntryReport(XfsRootEntryStatus status, XfsRootIssue issue, XfsRootFacts facts,
+            XfsRootEntry entry) : _status(status), _issue(issue), _facts(facts), _entry(entry) {
+        }
 
         auto status() const -> XfsRootEntryStatus {
             return _status;
@@ -403,34 +561,32 @@ namespace fs {
 
     auto xr_entry_rejected(XfsRootReport validated) -> XfsRootEntryReport {
         if (validated.status() == XfsRootStatus::geometry_rejected) {
-            const XfsRootEntryReport result = xr_entry_failure(
-                XfsRootEntryStatus::geometry_rejected, validated.issue());
+            const XfsRootEntryReport result = xr_entry_failure(XfsRootEntryStatus::geometry_rejected,
+                validated.issue());
             return result;
         }
         if (validated.status() == XfsRootStatus::unsupported_profile) {
-            const XfsRootEntryReport result = xr_entry_failure(
-                XfsRootEntryStatus::unsupported_profile, validated.issue());
+            const XfsRootEntryReport result = xr_entry_failure(XfsRootEntryStatus::unsupported_profile,
+                validated.issue());
             return result;
         }
         if (validated.status() == XfsRootStatus::invalid_query) {
-            const XfsRootEntryReport result = xr_entry_failure(
-                XfsRootEntryStatus::invalid_index, XfsRootIssue::entry_index);
+            const XfsRootEntryReport result = xr_entry_failure(XfsRootEntryStatus::invalid_index,
+                XfsRootIssue::entry_index);
             return result;
         }
         if (validated.status() == XfsRootStatus::invalid_inode) {
-            const XfsRootEntryReport result = xr_entry_failure(
-                XfsRootEntryStatus::invalid_inode, validated.issue());
+            const XfsRootEntryReport result = xr_entry_failure(XfsRootEntryStatus::invalid_inode, validated.issue());
             return result;
         }
-        const XfsRootEntryReport result = xr_entry_failure(
-            XfsRootEntryStatus::invalid_directory, validated.issue());
+        const XfsRootEntryReport result = xr_entry_failure(XfsRootEntryStatus::invalid_directory, validated.issue());
         return result;
     }
 }
 
 export namespace fs {
     auto lookup_xfs_v5_512_root(builtin::span<const u8> superblock, builtin::span<const u8> inode,
-                               builtin::span<const u8> name) -> XfsRootReport {
+        builtin::span<const u8> name) -> XfsRootReport {
         const XfsRootReport validated = xr_validate_root(superblock, inode, xr_name(name, 0, name.size()));
         if (validated.status() != XfsRootStatus::not_found) {
             return validated;
@@ -438,8 +594,7 @@ export namespace fs {
         const XfsRootMatch match = xr_match(inode, name);
         const XfsRootFacts facts = validated.facts();
         if (match.inode_number() == 0u64) {
-            const XfsRootReport result = XfsRootReport(
-                XfsRootStatus::not_found, XfsRootIssue::none, facts, match);
+            const XfsRootReport result = XfsRootReport(XfsRootStatus::not_found, XfsRootIssue::none, facts, match);
             return result;
         }
         const XfsRootReport result = XfsRootReport(XfsRootStatus::found, XfsRootIssue::none, facts, match);
@@ -447,7 +602,7 @@ export namespace fs {
     }
 
     auto entry_at_xfs_v5_512_root(builtin::span<const u8> superblock, builtin::span<const u8> inode,
-                                 i64 index) -> XfsRootEntryReport {
+        i64 index) -> XfsRootEntryReport {
         const XfsRootReport validated = xr_validate_root(superblock, inode, index >= 0);
         if (validated.status() != XfsRootStatus::not_found) {
             const XfsRootEntryReport result = xr_entry_rejected(validated);
@@ -455,14 +610,14 @@ export namespace fs {
         }
         const XfsRootFacts facts = validated.facts();
         if (u64(index) > facts.entry_count()) {
-            const XfsRootEntryReport result = xr_entry_failure(
-                XfsRootEntryStatus::invalid_index, XfsRootIssue::entry_index);
+            const XfsRootEntryReport result = xr_entry_failure(XfsRootEntryStatus::invalid_index,
+                XfsRootIssue::entry_index);
             return result;
         }
         if (u64(index) == facts.entry_count()) {
             const XfsRootEntry empty = XfsRootEntry(0u64, 0u64, 0u64, 0u64);
-            const XfsRootEntryReport result = XfsRootEntryReport(
-                XfsRootEntryStatus::end, XfsRootIssue::none, facts, empty);
+            const XfsRootEntryReport result = XfsRootEntryReport(XfsRootEntryStatus::end, XfsRootIssue::none, facts,
+                empty);
             return result;
         }
         // The entire unchanged inode was admitted before selecting this entry.
@@ -473,11 +628,10 @@ export namespace fs {
             position = position + 1;
         }
         const i64 length = i64(inode.at(cursor));
-        const XfsRootEntry entry = XfsRootEntry(
-            xr32(inode, cursor + length + 4), u64(inode.at(cursor + length + 3)),
+        const XfsRootEntry entry = XfsRootEntry(xr32(inode, cursor + length + 4), u64(inode.at(cursor + length + 3)),
             u64(cursor + 3), u64(length));
-        const XfsRootEntryReport result = XfsRootEntryReport(
-            XfsRootEntryStatus::found, XfsRootIssue::none, facts, entry);
+        const XfsRootEntryReport result = XfsRootEntryReport(XfsRootEntryStatus::found, XfsRootIssue::none, facts,
+            entry);
         return result;
     }
 }

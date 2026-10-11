@@ -3,13 +3,36 @@ import package.identity;
 import std.array;
 
 auto test() -> i64 {
-    builtin::array<u8,12> bytes = {97u8,117u8,114u8,111u8,114u8,97u8,64u8,49u8,46u8,50u8,46u8,51u8};
-    const package::IdentityResult parsed = package::parse_identity(borrow_bytes(bytes),0,12);
+    builtin::array<u8, 12> bytes = {
+        97u8,
+        117u8,
+        114u8,
+        111u8,
+        114u8,
+        97u8,
+        64u8,
+        49u8,
+        46u8,
+        50u8,
+        46u8,
+        51u8
+    };
+    const package::IdentityResult parsed = package::parse_identity(borrow_bytes(bytes), 0, 12);
     bytes[0] = 120u8;
-    if (parsed.status() != package::IdentityStatus::success) { return 1; }
-    if (parsed.name_byte_or(0,0u8) != 97u8) { return 2; }
-    if (parsed.major_or(0u64) != 1u64) { return 3; }
-    if (parsed.minor_or(0u64) != 2u64) { return 4; }
-    if (parsed.patch_or(0u64) != 3u64) { return 5; }
+    if (parsed.status() != package::IdentityStatus::success) {
+        return 1;
+    }
+    if (parsed.name_byte_or(0, 0u8) != 97u8) {
+        return 2;
+    }
+    if (parsed.major_or(0u64) != 1u64) {
+        return 3;
+    }
+    if (parsed.minor_or(0u64) != 2u64) {
+        return 4;
+    }
+    if (parsed.patch_or(0u64) != 3u64) {
+        return 5;
+    }
     return 42;
 }

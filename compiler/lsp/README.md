@@ -99,7 +99,7 @@ precise compiler provenance.
 ## Opt-in semantic lint
 
 Initialize with `initializationOptions: {"lint": true}` to publish the shared
-compiler's [AU6001 unread-local warnings](../LINT.md). Omitted or null options,
+compiler's [AU6001 unread-local warnings](../TOOLING.md). Omitted or null options,
 an empty object, and `{"lint": false}` retain the default first-error-only
 checking behavior. The options object supports only the boolean `lint` key.
 Other keys, non-object values and non-boolean values receive `InvalidParams`
@@ -188,7 +188,7 @@ Changed text returns exactly one whole-document edit from `(0, 0)` to the
 original snapshot's UTF-16 EOF, with correct CRLF/CR/LF and non-BMP accounting.
 Unchanged text returns `[]`. Whitespace follows the standalone formatter:
 non-comment layout uses LF and a final newline; intentional structural blank-line
-groups retain one empty line under the [shared layout policy](../FORMAT.md#layout-and-preservation-contract).
+groups retain one empty line under the [shared layout policy](../TOOLING.md#layout-and-preservation-contract).
 Line-comment CR, tabs and trailing spaces remain verbatim. No style warning is printed into protocol
 stdout or silently used to rewrite a comment. The response neither applies the
 edit to the server snapshot nor writes a file; only a later accepted `didChange`
@@ -222,22 +222,7 @@ clearing across importers, no disk mutation and policy/storage limits. It is a
 protocol test client, not a build scheduler. Its formatting transcripts additionally
 cover canonical options, unsaved text, whole-document ranges, comments,
 idempotence, syntax-only operation, stale/closed state, source admission,
-readonly bytes and exact input/output bounds. The initial diagnostic-only
-source passed its original checks fresh in both normal and optimized Python;
-earlier workspace evidence was not reused. The new formatting transcripts now
-pass in both modes against the fresh binary, along with all 84 current formatter
-corpus sources. See the initial
-[diagnostic results](../../docs/lsp-results.md) and the focused
-[formatting results](../../docs/lsp-formatting-results.md).
-
-Opt-in lint transcripts additionally cover initialization validation, default
-off, exact warning metadata, graph-error precedence, mixed independent roots,
-versioned import changes, closing, underscore suppression and publication limits.
-The [focused lint results](../../docs/lsp-lint-results.md) record the complete
-163-case replay in each Python mode and preserve its corrected test fixture.
-
-No full native aggregate, new compiler semantic qualification, sanitizer,
-emulator, physical hardware or production-security pass is implied.
+readonly bytes and exact input/output bounds. These controls distinguish protocol/format/lint behavior from compiler semantic, sanitizer, emulator or hardware qualification. No execution is implied by their registration.
 
 References: [LSP 3.17](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/),
 [nlohmann JSON parsing](https://json.nlohmann.me/api/basic_json/parse/).

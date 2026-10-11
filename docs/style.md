@@ -41,8 +41,9 @@ should use the same pinned tools and repository configuration.
 ## Review and exceptions
 
 Format each touched host file. Keep mechanical formatting separate from behavior
-changes where practical, and rerun affected tests after combining them. The
-initial rollout does not claim the entire historical tree already passes.
+changes where practical, and rerun affected tests after combining them. Run the
+pinned checks across maintained host sources; byte-pinned historical fixtures
+retain their documented exceptions.
 
 Ruff formatting is best-effort at 120 columns; its E501 check catches remaining
 long lines except documented cases such as an unbroken word or trailing URL.
@@ -52,7 +53,13 @@ Rare required exceptions need a nearby reason and the narrowest suppression;
 do not exclude a whole file to hide ordinary long expressions. C++ formatting
 also needs review for unsplittable tokens and exact-layout fixtures.
 
-The [Aurora language-tooling plan](language-tooling.md) describes the compiler
+The three [historical IOMMU replay fixtures](../tools/qemu-amdvi/README.md#historical-fixtures-and-future-runtime-preparation)
+are exact-byte evidence inputs with pinned imports. Ruff excludes only those
+three files, including when selected explicitly; do not reformat them or refresh
+their hashes. Their static checks and portable mocks remain under ordinary style
+rules.
+
+The [Aurora language-tooling plan](../compiler/TOOLING.md) describes the compiler
 work needed for native `.au` support.
 
 Tool references: [Ruff configuration](https://docs.astral.sh/ruff/configuration/),

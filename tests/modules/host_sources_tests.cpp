@@ -39,28 +39,43 @@ int main(int argc, char **argv) {
         host::Directory root(original);
         require(root.open("good.au")->readAtMost(6) == "inside", "bounded exact read");
         std::cout << "PASS source adapter exact bounded read\n";
-        rejects("read byte cap", [&] { root.open("good.au")->readAtMost(5); });
-        rejects("excessive read request",
-                [&] { root.open("good.au")->readAtMost(static_cast<std::size_t>(-1)); });
-        rejects("relative parent escape", [&] { root.open("../outside/evil.au"); });
-        rejects("absolute escape", [&] { root.open(outside / "evil.au"); });
-        rejects("directory not a source file", [&] { root.open("."); });
+        rejects("read byte cap", [&] {
+            root.open("good.au")->readAtMost(5);
+        });
+        rejects("excessive read request", [&] {
+            root.open("good.au")->readAtMost(static_cast<std::size_t>(-1));
+        });
+        rejects("relative parent escape", [&] {
+            root.open("../outside/evil.au");
+        });
+        rejects("absolute escape", [&] {
+            root.open(outside / "evil.au");
+        });
+        rejects("directory not a source file", [&] {
+            root.open(".");
+        });
         fs::create_symlink("good.au", original / "inside-link.au");
         fs::create_symlink(outside / "evil.au", original / "escape.au");
-        rejects("contained symlink", [&] { root.open("inside-link.au"); });
-        rejects("external symlink", [&] { root.open("escape.au"); });
-        rejects("explicit root source symlink",
-                [&] { host::SourceFile::explicitPath(original / "inside-link.au"); });
+        rejects("contained symlink", [&] {
+            root.open("inside-link.au");
+        });
+        rejects("external symlink", [&] {
+            root.open("escape.au");
+        });
+        rejects("explicit root source symlink", [&] {
+            host::SourceFile::explicitPath(original / "inside-link.au");
+        });
         require(!root.open("missing.au"), "missing module should remain missing");
         std::cout << "PASS source adapter missing module\n";
 
         // The authority is the retained descriptor, not the directory name supplied earlier.
         fs::rename(original, pinned);
         fs::create_directory_symlink(outside, original);
-        require(root.open("good.au")->readAtMost(32) == "inside",
-                "root replacement changed authority");
+        require(root.open("good.au")->readAtMost(32) == "inside", "root replacement changed authority");
         std::cout << "PASS source adapter pinned root survives replacement\n";
-        rejects("new symlink root rejected", [&] { host::Directory replacement(original); });
+        rejects("new symlink root rejected", [&] {
+            host::Directory replacement(original);
+        });
 
         // Atomic directory-entry replacement races a safe hard link against an escaping
         // symlink. Every successful open/read must still return the inside inode.
@@ -96,8 +111,7 @@ int main(int argc, char **argv) {
         writer.join();
         require(!failed, "replacement race escaped or fixture mutation failed");
         require(safe > 0, "race failed to exercise a successful safe read");
-        std::cout << "PASS source adapter replacement race: safe=" << safe << ", denied=" << denied
-                  << '\n';
+        std::cout << "PASS source adapter replacement race: safe=" << safe << ", denied=" << denied << '\n';
         return 0;
     } catch (const std::exception &error) {
         std::cerr << error.what() << '\n';

@@ -5,7 +5,8 @@ cd "$(dirname "$0")/.."
 if [[ ${1:-} == --help ]]; then
     echo 'Usage: scripts/kernel-iommu-event-smoke.sh [--build-only]'
     echo 'Fresh four-profile Event image/FAT checks and bounded guests, then exact normal restoration.'
-    echo 'Set EVENT_BUILD_RECEIPT, EVENT_CODE, EVENT_VARS, EVENT_DATA; ordinary QEMU/OVMF controls restore normal.'
+    echo 'Set EVENT_TOOL_PREFIX for packaged Event tools, or EVENT_BUILD_RECEIPT/CODE/VARS/DATA for external inputs.'
+    echo 'Ordinary QEMU/OVMF controls boot normal afterward.'
     echo 'GNU mtools 4.0.48 required (MTOOLS_DIR optional); EVENT_ESP_DIR can supply validated current raw ESPs.'
     echo 'Evidence uses a new external directory under EVENT_OUTPUT_PARENT (default temporary directory).'
     exit 0

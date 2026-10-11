@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Native indexed-root checks with preserved fixtures and a Python byte model."""
+
 from pathlib import Path
 import hashlib
 import os
@@ -37,8 +38,8 @@ def expected(sb, inode, index):
     for _ in range(index):
         cursor += inode[cursor] + 8
     length = inode[cursor]
-    name = inode[cursor + 3:cursor + 3 + length]
-    number = int.from_bytes(inode[cursor + 4 + length:cursor + 8 + length], "big")
+    name = inode[cursor + 3 : cursor + 3 + length]
+    number = int.from_bytes(inode[cursor + 4 + length : cursor + 8 + length], "big")
     entry = (number, inode[cursor + 3 + length], cursor + 3, length)
     return "found", "none", facts, entry, name
 
@@ -125,15 +126,25 @@ def cases():
     late = root_model.sf(inode, [(b"alpha", 131, 1, 96), (b"a/b", 132, 2, 120)])
     trailing = root_model.setv(inode, 56, 8, 32)
     duplicate = root_model.sf(inode, [(b"alpha", 131, 1, 96), (b"alpha", 132, 2, 120)])
-    for label, damaged in (("late malformed entry", late), ("trailing payload", trailing),
-                           ("duplicate second name", duplicate)):
+    for label, damaged in (
+        ("late malformed entry", late),
+        ("trailing payload", trailing),
+        ("duplicate second name", duplicate),
+    ):
         for index in (0, 2, 3, (1 << 63) - 1):
             yield native_case(label, sb, damaged, index)
 
 
 def report_cases():
-    statuses = ("found", "end", "invalid_index", "geometry_rejected", "unsupported_profile",
-                "invalid_inode", "invalid_directory")
+    statuses = (
+        "found",
+        "end",
+        "invalid_index",
+        "geometry_rejected",
+        "unsupported_profile",
+        "invalid_inode",
+        "invalid_directory",
+    )
     for status in statuses:
         facts = (1, 2, 3, 4, 5) if status in ("found", "end") else (0,) * 5
         entry = (6, 7, 8, 9) if status == "found" else (0,) * 4
@@ -166,12 +177,18 @@ def rejections():
         ("private name coordinates", "return entry._name_offset;"),
         ("private result field mutation", "entry._name_length = 0u64; return 0u64;"),
         ("closed enum", "return u64(fs::XfsRootEntryStatus::found);"),
-        ("private common validator", "const array<u8, 1> data = {0u8};"
-         "const fs::XfsRootReport result = fs::xr_validate_root(borrow_bytes(data), borrow_bytes(data), true);"
-         "return 0u64;"),
-        ("index exact signed type", "const array<u8, 1> data = {0u8};"
-         "const fs::XfsRootEntryReport result = fs::entry_at_xfs_v5_512_root("
-         "borrow_bytes(data), borrow_bytes(data), 0u64); return 0u64;"),
+        (
+            "private common validator",
+            "const array<u8, 1> data = {0u8};"
+            "const fs::XfsRootReport result = fs::xr_validate_root(borrow_bytes(data), borrow_bytes(data), true);"
+            "return 0u64;",
+        ),
+        (
+            "index exact signed type",
+            "const array<u8, 1> data = {0u8};"
+            "const fs::XfsRootEntryReport result = fs::entry_at_xfs_v5_512_root("
+            "borrow_bytes(data), borrow_bytes(data), 0u64); return 0u64;",
+        ),
     ):
         yield Rejection(label, prefix + body + "}")
 
@@ -187,8 +204,14 @@ def main():
     paths = [compiler, observer, *root_model.input_paths(__file__)]
     pins = {str(path): root_model.sha(path) for path in paths}
     directory = root_model.ARTIFACTS
-    report = dict(status="running", compiler_identity=identity.record(), pins=pins,
-                  native_cases=len(corpus), rejections=len(rejected), scope="indexed root entry library")
+    report = dict(
+        status="running",
+        compiler_identity=identity.record(),
+        pins=pins,
+        native_cases=len(corpus),
+        rejections=len(rejected),
+        scope="indexed root entry library",
+    )
     environment = root_model.temporary_environment(directory)
     saved_environment = {name: os.environ.get(name) for name in ("TMPDIR", "TMP", "TEMP")}
     try:
@@ -198,7 +221,7 @@ def main():
             runner = NativeRunner(Path(temporary), compiler, 15)
             for start in range(0, len(corpus), 6):
                 root_model.budget(24 << 20)
-                runner.cases(corpus[start:start + 6])
+                runner.cases(corpus[start : start + 6])
                 root_model.budget()
             for case in rejected:
                 root_model.budget(24 << 20)
@@ -218,8 +241,11 @@ def main():
                 os.environ[name] = value
         report["allocated_bytes"] = root_model.allocated()
         root_model.write_checked_receipt(directory / "manifest.json", report, root_model.budget)
-    print(f"PASS XFS root entry: {len(corpus)} native cases, {len(rejected)} rejections; "
-          "full reference corpus, entry bytes, precedence, copies and masking", flush=True)
+    print(
+        f"PASS XFS root entry: {len(corpus)} native cases, {len(rejected)} rejections; "
+        "full reference corpus, entry bytes, precedence, copies and masking",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

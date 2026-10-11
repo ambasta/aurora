@@ -5,10 +5,15 @@ export namespace std {
         i64 quotient;
         i64 remainder;
     public:
-        DivResult(i64 numerator, i64 denominator)
-            : quotient(numerator / denominator), remainder(numerator % denominator) {}
-        auto quot() const -> i64 { return quotient; }
-        auto rem() const -> i64 { return remainder; }
+        DivResult(i64 numerator, i64 denominator) : quotient(numerator / denominator), remainder(numerator
+            % denominator) {
+        }
+        auto quot() const -> i64 {
+            return quotient;
+        }
+        auto rem() const -> i64 {
+            return remainder;
+        }
     };
 
     auto div(i64 numerator, i64 denominator) -> DivResult {
@@ -31,10 +36,14 @@ export namespace std {
     }
 
     auto lcm(i64 a, i64 b) -> i64 {
-        if (a == 0) { return 0; }
-        if (b == 0) { return 0; }
+        if (a == 0) {
+            return 0;
+        }
+        if (b == 0) {
+            return 0;
+        }
         const i64 factor = gcd(a, b);
-        const i64 product = (a / factor) * b;
+        const i64 product =(a / factor) * b;
         if (product < 0) {
             return -product;
         }

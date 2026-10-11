@@ -2,41 +2,68 @@ export module package.identity;
 import std.array;
 
 export namespace package {
-    enum class IdentityStatus { success, malformed, out_of_range };
-    enum class VersionOrder { less, equal, greater, invalid };
+    enum class IdentityStatus {
+        success,
+        malformed,
+        out_of_range
+    };
+    enum class VersionOrder {
+        less,
+        equal,
+        greater,
+        invalid
+    };
 }
 
 namespace package {
     auto lowercase(u8 byte) -> bool {
-        if (byte < 97u8) { return false; }
+        if (byte < 97u8) {
+            return false;
+        }
         return byte <= 122u8;
     }
     auto digit(u8 byte) -> bool {
-        if (byte < 48u8) { return false; }
+        if (byte < 48u8) {
+            return false;
+        }
         return byte <= 57u8;
     }
-    auto valid_name(std::array<u8,24> name, i64 length) -> bool {
-        if (length < 1) { return false; }
-        if (length > 24) { return false; }
-        if (!lowercase(name.at(0))) { return false; }
+    auto valid_name(std::array<u8, 24> name, i64 length) -> bool {
+        if (length < 1) {
+            return false;
+        }
+        if (length > 24) {
+            return false;
+        }
+        if (!lowercase(name.at(0))) {
+            return false;
+        }
         bool hyphen = false;
         i64 index = 1;
         while (index < length) {
             const u8 byte = name.at(index);
             if (byte == 45u8) {
-                if (hyphen) { return false; }
+                if (hyphen) {
+                    return false;
+                }
                 hyphen = true;
             } else {
                 if (!lowercase(byte)) {
-                    if (!digit(byte)) { return false; }
+                    if (!digit(byte)) {
+                        return false;
+                    }
                 }
                 hyphen = false;
             }
             index = index + 1;
         }
-        if (hyphen) { return false; }
+        if (hyphen) {
+            return false;
+        }
         while (index < 24) {
-            if (name.at(index) != 0u8) { return false; }
+            if (name.at(index) != 0u8) {
+                return false;
+            }
             index = index + 1;
         }
         return true;
@@ -46,55 +73,79 @@ namespace package {
 export namespace package {
     class IdentityResult {
         IdentityStatus outcome;
-        std::array<u8,24> stored_name;
+        std::array<u8, 24> stored_name;
         i64 name_length;
         u64 major_value;
         u64 minor_value;
         u64 patch_value;
     public:
-        IdentityResult(IdentityStatus status, std::array<u8,24> name, i64 length,
-                       u64 major, u64 minor, u64 patch)
-            : outcome(status), stored_name(name), name_length(length),
-              major_value(major), minor_value(minor), patch_value(patch) {}
+        IdentityResult(IdentityStatus status, std::array<u8, 24> name, i64 length, u64 major, u64 minor,
+            u64 patch) : outcome(status), stored_name(name), name_length(length), major_value(major),
+            minor_value(minor), patch_value(patch) {
+        }
 
         auto status() const -> IdentityStatus {
-            if (outcome != IdentityStatus::success) { return outcome; }
-            const std::array<u8,24> name = stored_name;
-            if (!valid_name(name, name_length)) { return IdentityStatus::malformed; }
-            if (major_value > 4294967295u64) { return IdentityStatus::malformed; }
-            if (minor_value > 4294967295u64) { return IdentityStatus::malformed; }
-            if (patch_value > 4294967295u64) { return IdentityStatus::malformed; }
+            if (outcome != IdentityStatus::success) {
+                return outcome;
+            }
+            const std::array<u8, 24> name = stored_name;
+            if (!valid_name(name, name_length)) {
+                return IdentityStatus::malformed;
+            }
+            if (major_value > 4294967295u64) {
+                return IdentityStatus::malformed;
+            }
+            if (minor_value > 4294967295u64) {
+                return IdentityStatus::malformed;
+            }
+            if (patch_value > 4294967295u64) {
+                return IdentityStatus::malformed;
+            }
             return IdentityStatus::success;
         }
         auto name_size() const -> i64 {
-            if (status() != IdentityStatus::success) { return 0; }
+            if (status() != IdentityStatus::success) {
+                return 0;
+            }
             return name_length;
         }
         auto name_byte_or(i64 index, u8 fallback) const -> u8 {
-            if (status() != IdentityStatus::success) { return fallback; }
-            if (index < 0) { return fallback; }
-            if (index >= name_length) { return fallback; }
-            const std::array<u8,24> name = stored_name;
+            if (status() != IdentityStatus::success) {
+                return fallback;
+            }
+            if (index < 0) {
+                return fallback;
+            }
+            if (index >= name_length) {
+                return fallback;
+            }
+            const std::array<u8, 24> name = stored_name;
             return name.at(index);
         }
-        auto name_bytes_or_zero() const -> std::array<u8,24> {
+        auto name_bytes_or_zero() const -> std::array<u8, 24> {
             if (status() != IdentityStatus::success) {
-                const std::array<u8,24> empty = std::array<u8,24>();
+                const std::array<u8, 24> empty = std::array<u8, 24>();
                 return empty;
             }
-            const std::array<u8,24> name = stored_name;
+            const std::array<u8, 24> name = stored_name;
             return name;
         }
         auto major_or(u64 fallback) const -> u64 {
-            if (status() != IdentityStatus::success) { return fallback; }
+            if (status() != IdentityStatus::success) {
+                return fallback;
+            }
             return major_value;
         }
         auto minor_or(u64 fallback) const -> u64 {
-            if (status() != IdentityStatus::success) { return fallback; }
+            if (status() != IdentityStatus::success) {
+                return fallback;
+            }
             return minor_value;
         }
         auto patch_or(u64 fallback) const -> u64 {
-            if (status() != IdentityStatus::success) { return fallback; }
+            if (status() != IdentityStatus::success) {
+                return fallback;
+            }
             return patch_value;
         }
     };
@@ -102,7 +153,7 @@ export namespace package {
 
 namespace package {
     auto failure(IdentityStatus status) -> IdentityResult {
-        const std::array<u8,24> empty = std::array<u8,24>();
+        const std::array<u8, 24> empty = std::array<u8, 24>();
         const IdentityResult result = IdentityResult(status, empty, 0, 0u64, 0u64, 0u64);
         return result;
     }
@@ -110,32 +161,61 @@ namespace package {
 
 export namespace package {
     auto parse_identity(builtin::span<const u8> bytes, i64 offset, i64 count) -> IdentityResult {
-        if (offset < 0) { const IdentityResult r = failure(IdentityStatus::out_of_range); return r; }
-        if (count < 0) { const IdentityResult r = failure(IdentityStatus::out_of_range); return r; }
-        if (offset > bytes.size()) { const IdentityResult r = failure(IdentityStatus::out_of_range); return r; }
-        if (count > bytes.size() - offset) {
-            const IdentityResult r = failure(IdentityStatus::out_of_range); return r;
+        if (offset < 0) {
+            const IdentityResult r = failure(IdentityStatus::out_of_range);
+            return r;
         }
-        if (count < 7) { const IdentityResult r = failure(IdentityStatus::malformed); return r; }
-        if (count > 57) { const IdentityResult r = failure(IdentityStatus::malformed); return r; }
-        std::array<u8,24> name = std::array<u8,24>();
+        if (count < 0) {
+            const IdentityResult r = failure(IdentityStatus::out_of_range);
+            return r;
+        }
+        if (offset > bytes.size()) {
+            const IdentityResult r = failure(IdentityStatus::out_of_range);
+            return r;
+        }
+        if (count > bytes.size() - offset) {
+            const IdentityResult r = failure(IdentityStatus::out_of_range);
+            return r;
+        }
+        if (count < 7) {
+            const IdentityResult r = failure(IdentityStatus::malformed);
+            return r;
+        }
+        if (count > 57) {
+            const IdentityResult r = failure(IdentityStatus::malformed);
+            return r;
+        }
+        std::array<u8, 24> name = std::array<u8, 24>();
         i64 length = 0;
         i64 position = 0;
         bool reading_name = true;
         while (reading_name) {
-            if (position >= count) { const IdentityResult r = failure(IdentityStatus::malformed); return r; }
+            if (position >= count) {
+                const IdentityResult r = failure(IdentityStatus::malformed);
+                return r;
+            }
             const u8 byte = bytes.at(offset + position);
             if (byte == 64u8) {
                 reading_name = false;
             } else {
-                if (length >= 24) { const IdentityResult r = failure(IdentityStatus::malformed); return r; }
+                if (length >= 24) {
+                    const IdentityResult r = failure(IdentityStatus::malformed);
+                    return r;
+                }
                 name.set(length, byte);
                 length = length + 1;
             }
             position = position + 1;
         }
-        if (!valid_name(name, length)) { const IdentityResult r = failure(IdentityStatus::malformed); return r; }
-        builtin::array<u64,3> parts = {0u64, 0u64, 0u64};
+        if (!valid_name(name, length)) {
+            const IdentityResult r = failure(IdentityStatus::malformed);
+            return r;
+        }
+        builtin::array<u64, 3> parts = {
+            0u64,
+            0u64,
+            0u64
+        };
         i64 component = 0;
         while (component < 3) {
             u64 value = 0u64;
@@ -150,12 +230,21 @@ export namespace package {
                     if (byte == 46u8) {
                         reading_number = false;
                     } else {
-                        if (!digit(byte)) { const IdentityResult r = failure(IdentityStatus::malformed); return r; }
-                        if (leading_zero) { const IdentityResult r = failure(IdentityStatus::malformed); return r; }
+                        if (!digit(byte)) {
+                            const IdentityResult r = failure(IdentityStatus::malformed);
+                            return r;
+                        }
+                        if (leading_zero) {
+                            const IdentityResult r = failure(IdentityStatus::malformed);
+                            return r;
+                        }
                         const u64 number = u64(byte) - 48u64;
-                        if (digits == 0) { leading_zero = number == 0u64; }
+                        if (digits == 0) {
+                            leading_zero = number == 0u64;
+                        }
                         if (value > (4294967295u64 - number) / 10u64) {
-                            const IdentityResult r = failure(IdentityStatus::malformed); return r;
+                            const IdentityResult r = failure(IdentityStatus::malformed);
+                            return r;
                         }
                         value = value * 10u64 + number;
                         digits = digits + 1;
@@ -163,39 +252,70 @@ export namespace package {
                     }
                 }
             }
-            if (digits == 0) { const IdentityResult r = failure(IdentityStatus::malformed); return r; }
+            if (digits == 0) {
+                const IdentityResult r = failure(IdentityStatus::malformed);
+                return r;
+            }
             parts[component] = value;
             if (component < 2) {
-                if (position >= count) { const IdentityResult r = failure(IdentityStatus::malformed); return r; }
+                if (position >= count) {
+                    const IdentityResult r = failure(IdentityStatus::malformed);
+                    return r;
+                }
                 position = position + 1;
             } else {
-                if (position != count) { const IdentityResult r = failure(IdentityStatus::malformed); return r; }
+                if (position != count) {
+                    const IdentityResult r = failure(IdentityStatus::malformed);
+                    return r;
+                }
             }
             component = component + 1;
         }
-        const IdentityResult result = IdentityResult(IdentityStatus::success, name, length,
-                                                     parts[0], parts[1], parts[2]);
+        const IdentityResult result = IdentityResult(IdentityStatus::success, name, length, parts[0], parts[1],
+            parts[2]);
         return result;
     }
 
     auto compare_versions(IdentityResult left, IdentityResult right) -> VersionOrder {
-        if (left.status() != IdentityStatus::success) { return VersionOrder::invalid; }
-        if (right.status() != IdentityStatus::success) { return VersionOrder::invalid; }
-        if (left.major_or(0u64) < right.major_or(0u64)) { return VersionOrder::less; }
-        if (left.major_or(0u64) > right.major_or(0u64)) { return VersionOrder::greater; }
-        if (left.minor_or(0u64) < right.minor_or(0u64)) { return VersionOrder::less; }
-        if (left.minor_or(0u64) > right.minor_or(0u64)) { return VersionOrder::greater; }
-        if (left.patch_or(0u64) < right.patch_or(0u64)) { return VersionOrder::less; }
-        if (left.patch_or(0u64) > right.patch_or(0u64)) { return VersionOrder::greater; }
+        if (left.status() != IdentityStatus::success) {
+            return VersionOrder::invalid;
+        }
+        if (right.status() != IdentityStatus::success) {
+            return VersionOrder::invalid;
+        }
+        if (left.major_or(0u64) < right.major_or(0u64)) {
+            return VersionOrder::less;
+        }
+        if (left.major_or(0u64) > right.major_or(0u64)) {
+            return VersionOrder::greater;
+        }
+        if (left.minor_or(0u64) < right.minor_or(0u64)) {
+            return VersionOrder::less;
+        }
+        if (left.minor_or(0u64) > right.minor_or(0u64)) {
+            return VersionOrder::greater;
+        }
+        if (left.patch_or(0u64) < right.patch_or(0u64)) {
+            return VersionOrder::less;
+        }
+        if (left.patch_or(0u64) > right.patch_or(0u64)) {
+            return VersionOrder::greater;
+        }
         return VersionOrder::equal;
     }
 
     auto same_identity(IdentityResult left, IdentityResult right) -> bool {
-        if (compare_versions(left, right) != VersionOrder::equal) { return false; }
-        if (left.name_size() != right.name_size()) { return false; }
+        if (compare_versions(left, right) != VersionOrder::equal) {
+            return false;
+        }
+        if (left.name_size() != right.name_size()) {
+            return false;
+        }
         i64 index = 0;
         while (index < left.name_size()) {
-            if (left.name_byte_or(index,0u8) != right.name_byte_or(index,0u8)) { return false; }
+            if (left.name_byte_or(index, 0u8) != right.name_byte_or(index, 0u8)) {
+                return false;
+            }
             index = index + 1;
         }
         return true;

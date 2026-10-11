@@ -14,7 +14,10 @@ auto class_demo() -> i64 {
     static_assert(size_of(Sample) == 16);
     static_assert(field_count(Sample) == 2);
 
-    Sample current = Sample{.value = 40, .ready = false};
+    Sample current = Sample{
+        .value = 40,
+        .ready = false
+    };
     const Sample snapshot = current;
     current.value = current.value + 2;
     current.ready = true;

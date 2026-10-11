@@ -26,7 +26,9 @@ void accept(const std::string &name, Module module) {
     std::cout << "PASS sector IR " << name << '\n';
 }
 
-void reject(const std::string &name, Module module, const std::function<void(Module &)> &change,
+void reject(const std::string &name,
+            Module module,
+            const std::function<void(Module &)> &change,
             const std::string &diagnostic) {
     change(module);
     try {
@@ -126,8 +128,7 @@ Module copyModule(const std::string &kind) {
         target.code = {BindObjectParameter{0, 512, "Block"}};
         if (kind == "constructor") {
             target.receiver = Receiver{"WrappedBlock", true, true};
-            target.code.insert(target.code.end(), {InitializeObjectField{0, 0, 512},
-                                                  Constant{0, Type::I64}, Return{}});
+            target.code.insert(target.code.end(), {InitializeObjectField{0, 0, 512}, Constant{0, Type::I64}, Return{}});
             entry.code.push_back(MethodCall{"target", 1024, {512}});
         } else {
             target.code.push_back(ReturnObject{512});
@@ -135,8 +136,8 @@ Module copyModule(const std::string &kind) {
                 target.receiver = Receiver{"Receiver", false, false};
                 entry.objectSlots[1032] = {"Receiver", false};
                 entry.slots[1032] = Type::U64;
-                entry.code.insert(entry.code.end(), {BeginObject{1032}, Constant{7, Type::U64},
-                                                     Store{1032, Type::U64}});
+                entry.code.insert(entry.code.end(),
+                                  {BeginObject{1032}, Constant{7, Type::U64}, Store{1032, Type::U64}});
                 entry.code.push_back(MethodCall{"target", 1032, {512}, 1024});
             } else {
                 entry.code.push_back(AggregateCall{"target", {512}, 1024});
@@ -386,8 +387,8 @@ Module boundsModule(bool split = false) {
     function.parameters = {Type::I64};
     function.frameBytes = 16;
     function.slots = {{8, Type::I64}};
-    function.code = {BindParameter{0, 8, Type::I64}, Load{8, Type::I64}, ReceiverBoundsGuard{0},
-                     ReceiverIndexLoad{0}, Return{}};
+    function.code = {
+        BindParameter{0, 8, Type::I64}, Load{8, Type::I64}, ReceiverBoundsGuard{0}, ReceiverIndexLoad{0}, Return{}};
     module.functions = {function};
     return module;
 }
@@ -401,8 +402,8 @@ int payload(int record, int byte) {
 }
 
 void compareCurrent(IRFunction &function, std::int64_t value, const Type &type) {
-    function.code.insert(function.code.end(), {Push{}, Constant{value, type},
-                                               Compare{Comparison::Equal, type}, BranchFalse{1}});
+    function.code.insert(function.code.end(),
+                         {Push{}, Constant{value, type}, Compare{Comparison::Equal, type}, BranchFalse{1}});
 }
 
 void checkReport(IRFunction &function, int base, int record) {
@@ -581,9 +582,14 @@ Module abiModule() {
             compareCurrent(incoming, 1000, Type::U64);
         }
         if (kind == "constructor") {
-            incoming.code.insert(incoming.code.end(), {InitializeObjectField{0, 0, 3120},
-                Constant{0, Type::I64}, Return{}, Label{1}, InitializeObjectField{0, 0, 520},
-                Constant{0, Type::I64}, Return{}});
+            incoming.code.insert(incoming.code.end(),
+                                 {InitializeObjectField{0, 0, 3120},
+                                  Constant{0, Type::I64},
+                                  Return{},
+                                  Label{1},
+                                  InitializeObjectField{0, 0, 520},
+                                  Constant{0, Type::I64},
+                                  Return{}});
         } else {
             incoming.code.insert(incoming.code.end(), {ReturnObject{3120}, Label{1}, ReturnObject{520}});
         }
@@ -594,8 +600,8 @@ Module abiModule() {
         target.name = "sector_target_" + kind;
         target.code.resize(6);
         if (kind == "constructor")
-            target.code.insert(target.code.end(), {InitializeObjectField{0, 0, 3120},
-                                                   Constant{0, Type::I64}, Return{}});
+            target.code.insert(target.code.end(),
+                               {InitializeObjectField{0, 0, 3120}, Constant{0, Type::I64}, Return{}});
         else
             target.code.push_back(ReturnObject{3120});
         module.functions.push_back(target);
@@ -607,17 +613,28 @@ Module abiModule() {
         reportSlot(outgoing, 3640, kind == "constructor" ? "WrappedReport" : "Report");
         outgoing.objectSlots[3648] = {"Receiver", false};
         outgoing.slots[3648] = Type::U64;
-        outgoing.code.insert(outgoing.code.end(), {BeginObject{3640}, BeginObject{3648},
-            Constant{1000, Type::U64}, Store{3648, Type::U64}, Constant{1, Type::I64}, Push{}});
+        outgoing.code.insert(outgoing.code.end(),
+                             {BeginObject{3640},
+                              BeginObject{3648},
+                              Constant{1000, Type::U64},
+                              Store{3648, Type::U64},
+                              Constant{1, Type::I64},
+                              Push{}});
         const std::vector<int> arguments = {520, 1040, 1560, 2080, 2600, 3120};
         if (kind == "function")
             outgoing.code.push_back(AggregateCall{target.name, arguments, 3640});
         else
-            outgoing.code.push_back(MethodCall{target.name, kind == "constructor" ? 3640 : 3648,
-                                              arguments, kind == "constructor" ? 0 : 3640});
+            outgoing.code.push_back(MethodCall{
+                target.name, kind == "constructor" ? 3640 : 3648, arguments, kind == "constructor" ? 0 : 3640});
         checkReport(outgoing, 3640, 5);
-        outgoing.code.insert(outgoing.code.end(), {Constant{42, Type::I64}, Jump{2}, Label{1},
-            Constant{-2, Type::I64}, Label{2}, BinaryValue{Binary::CheckedAdd}, Return{}});
+        outgoing.code.insert(outgoing.code.end(),
+                             {Constant{42, Type::I64},
+                              Jump{2},
+                              Label{1},
+                              Constant{-2, Type::I64},
+                              Label{2},
+                              BinaryValue{Binary::CheckedAdd},
+                              Return{}});
         module.functions.push_back(outgoing);
     }
     IRFunction block;
@@ -637,11 +654,20 @@ Module abiModule() {
     blockOut.frameBytes = 1024;
     blockSlot(blockOut, 512);
     blockSlot(blockOut, 1024);
-    blockOut.code = {BindObjectParameter{0, 512, "Block"}, BeginObject{1024},
-                    Constant{1, Type::I64}, Push{}, AggregateCall{"sector_target_block", {512}, 1024}};
+    blockOut.code = {BindObjectParameter{0, 512, "Block"},
+                     BeginObject{1024},
+                     Constant{1, Type::I64},
+                     Push{},
+                     AggregateCall{"sector_target_block", {512}, 1024}};
     checkBlock(blockOut, 1024);
-    blockOut.code.insert(blockOut.code.end(), {Constant{42, Type::I64}, Jump{2}, Label{1},
-        Constant{-2, Type::I64}, Label{2}, BinaryValue{Binary::CheckedAdd}, Return{}});
+    blockOut.code.insert(blockOut.code.end(),
+                         {Constant{42, Type::I64},
+                          Jump{2},
+                          Label{1},
+                          Constant{-2, Type::I64},
+                          Label{2},
+                          BinaryValue{Binary::CheckedAdd},
+                          Return{}});
     module.functions.push_back(blockOut);
     mixedCopyFixture(module);
     gapCopyFixture(module);
@@ -669,95 +695,181 @@ void directTests() {
     enumFunction.slots[520] = closedStatus;
     enumFunction.code = {BindObjectParameter{0, 520, "Report"}, ReturnObject{520}};
     accept("closed Status enum plus Block copied Report", enumReport);
-    reject("closed Report status slot cannot become u64", enumReport, [](Module &module) {
-        module.functions[0].slots[520] = Type::U64;
-    }, "object field slot type/layout mismatch");
+    reject(
+        "closed Report status slot cannot become u64",
+        enumReport,
+        [](Module &module) {
+            module.functions[0].slots[520] = Type::U64;
+        },
+        "object field slot type/layout mismatch");
     for (const std::string part : {"offset", "extent", "reservation", "alignment", "field"}) {
-        reject("forged canonical " + part, literal, [part](Module &module) {
-            auto &storage = module.classStorage.at("Report");
-            if (part == "offset")
-                storage.leafOffsets[512] = 518;
-            else if (part == "extent")
-                storage.sizeBytes = 519;
-            else if (part == "reservation")
-                storage.reservedBytes = 528;
-            else if (part == "alignment")
-                storage.alignment = 1;
-            else
-                storage.fieldOffsets[1] = 16;
-        }, "noncanonical class storage metadata");
+        reject(
+            "forged canonical " + part,
+            literal,
+            [part](Module &module) {
+                auto &storage = module.classStorage.at("Report");
+                if (part == "offset")
+                    storage.leafOffsets[512] = 518;
+                else if (part == "extent")
+                    storage.sizeBytes = 519;
+                else if (part == "reservation")
+                    storage.reservedBytes = 528;
+                else if (part == "alignment")
+                    storage.alignment = 1;
+                else
+                    storage.fieldOffsets[1] = 16;
+            },
+            "noncanonical class storage metadata");
     }
-    reject("513-byte private array", shapeOnly(), [](Module &module) {
-        module.classLayouts["Block"].push_back(Type::U8);
-        module.classFields["Block"][0].length = 513;
-    }, "invalid logical class field shape");
-    reject("zero private array", shapeOnly(), [](Module &module) {
-        module.classFields["Block"][0].length = 0;
-    }, "invalid logical class field shape");
-    reject("non-byte private array remains capped at 64", shapeOnly(), [](Module &module) {
-        module.classLayouts["Words"] = std::vector<Type>(65, Type::U64);
-        module.classFields["Words"] = {{Type::U64, 0, 65, true}};
-    }, "invalid logical class field shape");
-    reject("wrong final byte leaf type", shapeOnly(), [](Module &module) {
-        module.classLayouts["Block"].back() = Type::Bool;
-    }, "logical class field leaf type mismatch");
-    reject("missing final leaf", shapeOnly(), [](Module &module) {
-        module.classLayouts["Block"].pop_back();
-    }, "logical class field range exceeds layout");
-    reject("nested child truncated", shapeOnly(), [](Module &module) {
-        module.classFields["Report"][1].length = 511;
-    }, "nested class field length mismatch");
-    reject("nested byte range overlaps status", shapeOnly(), [](Module &module) {
-        module.classFields["Report"][1].firstLeaf = 0;
-    }, "invalid logical class field shape");
+    reject(
+        "513-byte private array",
+        shapeOnly(),
+        [](Module &module) {
+            module.classLayouts["Block"].push_back(Type::U8);
+            module.classFields["Block"][0].length = 513;
+        },
+        "invalid logical class field shape");
+    reject(
+        "zero private array",
+        shapeOnly(),
+        [](Module &module) {
+            module.classFields["Block"][0].length = 0;
+        },
+        "invalid logical class field shape");
+    reject(
+        "non-byte private array remains capped at 64",
+        shapeOnly(),
+        [](Module &module) {
+            module.classLayouts["Words"] = std::vector<Type>(65, Type::U64);
+            module.classFields["Words"] = {{Type::U64, 0, 65, true}};
+        },
+        "invalid logical class field shape");
+    reject(
+        "wrong final byte leaf type",
+        shapeOnly(),
+        [](Module &module) {
+            module.classLayouts["Block"].back() = Type::Bool;
+        },
+        "logical class field leaf type mismatch");
+    reject(
+        "missing final leaf",
+        shapeOnly(),
+        [](Module &module) {
+            module.classLayouts["Block"].pop_back();
+        },
+        "logical class field range exceeds layout");
+    reject(
+        "nested child truncated",
+        shapeOnly(),
+        [](Module &module) {
+            module.classFields["Report"][1].length = 511;
+        },
+        "nested class field length mismatch");
+    reject(
+        "nested byte range overlaps status",
+        shapeOnly(),
+        [](Module &module) {
+            module.classFields["Report"][1].firstLeaf = 0;
+        },
+        "invalid logical class field shape");
 
     accept("64 non-byte plus 8 byte leaves fit 520 reserved bytes", budgetModule(8, 64, true));
     accept("512 byte plus one word leaves fit 520 reserved bytes", budgetModule(512, 1, true));
     accept("flat local 8192 byte leaves retained", budgetModule(8192, 0, false));
     accept("flat local 8192 word leaves retained", budgetModule(0, 8192, false));
-    for (const auto &[bytes, words] : {std::pair{513, 0}, std::pair{0, 65}, std::pair{9, 64},
-                                    std::pair{511, 2}, std::pair{512, 2}}) {
+    for (const auto &[bytes, words] :
+         {std::pair{513, 0}, std::pair{0, 65}, std::pair{9, 64}, std::pair{511, 2}, std::pair{512, 2}}) {
         const auto label = std::to_string(bytes) + " bytes " + std::to_string(words) + " words";
-        reject("copied budget " + label, budgetModule(bytes, words, true), [](Module &) {}, "value boundary");
-        reject("composed budget " + label, budgetModule(bytes, words, false, true), [](Module &) {}, "composed");
+        reject(
+            "copied budget " + label,
+            budgetModule(bytes, words, true),
+            [](Module &) {
+            },
+            "value boundary");
+        reject(
+            "composed budget " + label,
+            budgetModule(bytes, words, false, true),
+            [](Module &) {
+            },
+            "composed");
     }
 
     for (const std::string kind : {"copy", "function", "constructor", "method"}) {
         const auto baseline = copyModule(kind);
         accept("complete sector " + kind, baseline);
-        reject("last byte incomplete " + kind, baseline, [](Module &module) {
-            auto &code = module.functions[0].code;
-            code.erase(code.begin() + 1024);
-        }, "not fully initialized");
-        reject("wrong nominal sector " + kind, baseline, [](Module &module) {
-            module.functions[0].objectSlots[512].className = "Other";
-        }, "nominal class mismatch");
-        reject("sector missing last scalar slot " + kind, baseline, [](Module &module) {
-            module.functions[0].slots.erase(1);
-        }, "object field slot type/layout mismatch");
-        reject("sector overlapping object reservations " + kind, baseline, [](Module &module) {
-            module.functions[0].objectSlots[1016] = {"Block", false};
-        }, "overlapping object layouts");
-        reject("sector extent underflows frame " + kind, baseline, [](Module &module) {
-            module.functions[0].objectSlots[504] = {"Block", false};
-        }, "invalid object layout offset");
+        reject(
+            "last byte incomplete " + kind,
+            baseline,
+            [](Module &module) {
+                auto &code = module.functions[0].code;
+                code.erase(code.begin() + 1024);
+            },
+            "not fully initialized");
+        reject(
+            "wrong nominal sector " + kind,
+            baseline,
+            [](Module &module) {
+                module.functions[0].objectSlots[512].className = "Other";
+            },
+            "nominal class mismatch");
+        reject(
+            "sector missing last scalar slot " + kind,
+            baseline,
+            [](Module &module) {
+                module.functions[0].slots.erase(1);
+            },
+            "object field slot type/layout mismatch");
+        reject(
+            "sector overlapping object reservations " + kind,
+            baseline,
+            [](Module &module) {
+                module.functions[0].objectSlots[1016] = {"Block", false};
+            },
+            "overlapping object layouts");
+        reject(
+            "sector extent underflows frame " + kind,
+            baseline,
+            [](Module &module) {
+                module.functions[0].objectSlots[504] = {"Block", false};
+            },
+            "invalid object layout offset");
     }
-    reject("copy aliases result", copyModule("copy"), [](Module &module) {
-        std::get<CopyObject>(module.functions[0].code[1026]).resultOffset = 512;
-    }, "copy source aliases result");
-    reject("function result aliases snapshot", copyModule("function"), [](Module &module) {
-        std::get<AggregateCall>(module.functions[0].code[1026]).resultOffset = 512;
-    }, "result aliases argument snapshot");
-    reject("method result aliases snapshot", copyModule("method"), [](Module &module) {
-        std::get<MethodCall>(module.functions[0].code[1029]).resultOffset = 512;
-    }, "result aliases argument snapshot");
-    reject("constructor receiver aliases snapshot", copyModule("constructor"), [](Module &module) {
-        std::get<MethodCall>(module.functions[0].code[1026]).receiverOffset = 512;
-    }, "receiver aliases argument snapshot");
-    reject("large result is not pristine", copyModule("function"), [](Module &module) {
-        auto &code = module.functions[0].code;
-        code.insert(code.begin() + 1026, {Constant{1, Type::U8}, Store{513, Type::U8}});
-    }, "result requires uninitialized object");
+    reject(
+        "copy aliases result",
+        copyModule("copy"),
+        [](Module &module) {
+            std::get<CopyObject>(module.functions[0].code[1026]).resultOffset = 512;
+        },
+        "copy source aliases result");
+    reject(
+        "function result aliases snapshot",
+        copyModule("function"),
+        [](Module &module) {
+            std::get<AggregateCall>(module.functions[0].code[1026]).resultOffset = 512;
+        },
+        "result aliases argument snapshot");
+    reject(
+        "method result aliases snapshot",
+        copyModule("method"),
+        [](Module &module) {
+            std::get<MethodCall>(module.functions[0].code[1029]).resultOffset = 512;
+        },
+        "result aliases argument snapshot");
+    reject(
+        "constructor receiver aliases snapshot",
+        copyModule("constructor"),
+        [](Module &module) {
+            std::get<MethodCall>(module.functions[0].code[1026]).receiverOffset = 512;
+        },
+        "receiver aliases argument snapshot");
+    reject(
+        "large result is not pristine",
+        copyModule("function"),
+        [](Module &module) {
+            auto &code = module.functions[0].code;
+            code.insert(code.begin() + 1026, {Constant{1, Type::U8}, Store{513, Type::U8}});
+        },
+        "result requires uninitialized object");
     auto reportConstructor = shapes();
     IRFunction constructor;
     constructor.name = "construct_report";
@@ -766,33 +878,56 @@ void directTests() {
     constructor.parameters = {Type("Block")};
     constructor.frameBytes = 512;
     blockSlot(constructor, 512);
-    constructor.code = {BindObjectParameter{0, 512, "Block"}, Constant{9, Type::U64},
-                        ReceiverStore{0, Type::U64}, InitializeObjectField{0, 1, 512},
-                        Constant{0, Type::I64}, Return{}};
+    constructor.code = {BindObjectParameter{0, 512, "Block"},
+                        Constant{9, Type::U64},
+                        ReceiverStore{0, Type::U64},
+                        InitializeObjectField{0, 1, 512},
+                        Constant{0, Type::I64},
+                        Return{}};
     reportConstructor.functions = {constructor};
     accept("status plus complete nested Block constructor", reportConstructor);
-    reject("Report constructor missing nested Block completion", reportConstructor, [](Module &module) {
-        module.functions[0].code.erase(module.functions[0].code.begin() + 3);
-    }, "constructor returns before all fields initialized");
-    reject("Report scalar store cannot forge nested completion", shapeOnly(), [](Module &module) {
-        auto &function = module.functions[0];
-        function.frameBytes = 528;
-        reportSlot(function, 520);
-        function.code = {BeginObject{520}, Constant{7, Type::U8}, Store{512, Type::U8},
-                         Constant{42, Type::I64}, Return{}};
-    }, "scalar store cannot write nested class field");
+    reject(
+        "Report constructor missing nested Block completion",
+        reportConstructor,
+        [](Module &module) {
+            module.functions[0].code.erase(module.functions[0].code.begin() + 3);
+        },
+        "constructor returns before all fields initialized");
+    reject(
+        "Report scalar store cannot forge nested completion",
+        shapeOnly(),
+        [](Module &module) {
+            auto &function = module.functions[0];
+            function.frameBytes = 528;
+            reportSlot(function, 520);
+            function.code = {
+                BeginObject{520}, Constant{7, Type::U8}, Store{512, Type::U8}, Constant{42, Type::I64}, Return{}};
+        },
+        "scalar store cannot write nested class field");
 
     accept("sector receiver dominating bounds token", boundsModule());
     accept("split sector receiver bounds token", boundsModule(true));
-    reject("sector index missing guard", boundsModule(), [](Module &module) {
-        module.functions[0].code.erase(module.functions[0].code.begin() + 2);
-    }, "lacks matching dominating bounds token");
-    reject("sector index token invalidated", boundsModule(), [](Module &module) {
-        module.functions[0].code.insert(module.functions[0].code.begin() + 3, Constant{511, Type::I64});
-    }, "lacks matching dominating bounds token");
-    reject("sector index wrong logical array token", boundsModule(true), [](Module &module) {
-        module.functions[0].code[3] = ReceiverIndexLoad{1};
-    }, "lacks matching dominating bounds token");
+    reject(
+        "sector index missing guard",
+        boundsModule(),
+        [](Module &module) {
+            module.functions[0].code.erase(module.functions[0].code.begin() + 2);
+        },
+        "lacks matching dominating bounds token");
+    reject(
+        "sector index token invalidated",
+        boundsModule(),
+        [](Module &module) {
+            module.functions[0].code.insert(module.functions[0].code.begin() + 3, Constant{511, Type::I64});
+        },
+        "lacks matching dominating bounds token");
+    reject(
+        "sector index wrong logical array token",
+        boundsModule(true),
+        [](Module &module) {
+            module.functions[0].code[3] = ReceiverIndexLoad{1};
+        },
+        "lacks matching dominating bounds token");
     accept("six maximum Reports across function constructor and method ABI", abiModule());
 }
 } // namespace
@@ -805,8 +940,8 @@ int main(int argc, char **argv) {
         }
         require(argc == 1, "usage: sector-values-ir [--emit-abi]");
         directTests();
-        std::cout << "PASS sector IR: " << accepted << " accepted, " << rejected << " rejected, "
-                  << accepted + rejected << " total\n";
+        std::cout << "PASS sector IR: " << accepted << " accepted, " << rejected << " rejected, " << accepted + rejected
+                  << " total\n";
         return 0;
     } catch (const std::exception &error) {
         std::cerr << "FAIL sector IR: " << error.what() << '\n';

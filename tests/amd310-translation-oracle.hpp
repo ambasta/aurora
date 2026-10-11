@@ -9,7 +9,7 @@
 
 // Test-only interpretation of stable copied bytes, never a hardware capability.
 // AMD 48882-PUB rev 3.10: sections 2.2.2-2.2.3, Tables 7/8/16/17/44/57, and
-// MMIO 0000h in 3.4.1. See docs/iommu-translation-oracle.md for the fixed profile.
+// MMIO 0000h in 3.4.1. See docs/iommu-models.md for the fixed profile.
 // No production table encoder, canonical validator, or physical dereference.
 namespace amd310_oracle {
 

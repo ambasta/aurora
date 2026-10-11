@@ -158,41 +158,4 @@ Console regression. The Display gates are in Meson dev/slow and the compiler
 native test graph. Native Display grant/transport and guest qualification remain
 separate from these compiler tests. See the
 [kernel migration contract](../docs/native-console-service.md) for required
-linked-stack, image, emulator, restoration and final developer gates. No gate is
-claimed passed until its exact final source and receipts are recorded there.
-
-## Distinct-group checkpoint status
-
-The new leading-group implementation and tests are an **unqualified source
-checkpoint** with focused checks only: the release compiler build, 146 cumulative
-Console/Display/group hostile-IR checks, the existing Console source/editor gate,
-and Display plus group source/private-ABI gates passed. These results are not
-final integrated dev/slow/full Make acceptance or a proof of soundness; see the
-[focused checkpoint record](../docs/distinct-service-groups.md). `service_group.au` is a small
-sample-to-pixel private-ABI consumer, not the finished graphical editor. Its
-reversed six-formal helper exercises copied samples, readonly spans, singleton
-subsets, independent suspension and distinct host generations. `service_group.py`
-adds source rejection controls to the existing Display source runner;
-`service_group_ir.cpp` includes the full previous Console/Display hostile-IR suites
-and group-specific controls, under the existing Make and Meson display gates.
-
-The compiler preserves and forwards opaque authority; it does not authenticate a
-combined native entry. Native code must independently authenticate both exact
-kinds/grants/generations before running a graphical consumer, including stale,
-crossed and partially valid no-write entry controls. No mixed timer/framebuffer
-mapping, atomic combined grant admission, native stack budget or guest behavior is
-qualified by this compiler-only increment.
-
-
-## Event capability checkpoint status
-
-The Event extension is an unqualified source checkpoint. Its independent
-`iommu_event_service_ir.cpp` cases, source fixture, common hosted consumer/ABI
-fixture and handwritten assembly envelope cover the new kind and copied report,
-both supported formal orders, six-formal forwarding, source/runtime rejection,
-full-width malformed channels and report-before-ack output failures. Existing
-Console/Display/distinct-group gates remain required. Focused results must be
-recorded against the final source; they do not establish final GCC 14/GCC 16 full
-qualification, actual-model event intake, concurrent transport coherence or
-physical hardware support. Runtime admission, boot-lifetime backing ownership,
-actual produced-event consumption and guest release remain separate gates.
+linked-stack, image, emulator, restoration and final developer gates. Qualification must match the exact final source and built images.

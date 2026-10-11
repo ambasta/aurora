@@ -4,24 +4,40 @@ import package.identity;
 import std.array;
 
 export namespace package {
-    enum class GraphStatus { success, invalid_count, out_of_range, malformed,
-                             duplicate_package, missing_package, version_mismatch,
-                             cycle, index_out_of_range };
+    enum class GraphStatus {
+        success,
+        invalid_count,
+        out_of_range,
+        malformed,
+        duplicate_package,
+        missing_package,
+        version_mismatch,
+        cycle,
+        index_out_of_range
+    };
 }
 
 namespace package {
     auto graph_identity_error() -> IdentityResult {
-        const std::array<u8,24> empty = std::array<u8,24>();
-        const IdentityResult result = IdentityResult(IdentityStatus::malformed,empty,0,0u64,0u64,0u64);
+        const std::array<u8, 24> empty = std::array<u8, 24>();
+        const IdentityResult result = IdentityResult(IdentityStatus::malformed, empty, 0, 0u64, 0u64, 0u64);
         return result;
     }
     auto graph_name_equal(IdentityResult left, IdentityResult right) -> bool {
-        if (left.status() != IdentityStatus::success) { return false; }
-        if (right.status() != IdentityStatus::success) { return false; }
-        if (left.name_size() != right.name_size()) { return false; }
+        if (left.status() != IdentityStatus::success) {
+            return false;
+        }
+        if (right.status() != IdentityStatus::success) {
+            return false;
+        }
+        if (left.name_size() != right.name_size()) {
+            return false;
+        }
         i64 index = 0;
         while (index < left.name_size()) {
-            if (left.name_byte_or(index,0u8) != right.name_byte_or(index,0u8)) { return false; }
+            if (left.name_byte_or(index, 0u8) != right.name_byte_or(index, 0u8)) {
+                return false;
+            }
             index = index + 1;
         }
         return true;
@@ -30,11 +46,17 @@ namespace package {
     auto graph_name_less(IdentityResult left, IdentityResult right) -> bool {
         i64 index = 0;
         while (index < left.name_size()) {
-            if (index >= right.name_size()) { return false; }
-            const u8 a = left.name_byte_or(index,0u8);
-            const u8 b = right.name_byte_or(index,0u8);
-            if (a < b) { return true; }
-            if (a > b) { return false; }
+            if (index >= right.name_size()) {
+                return false;
+            }
+            const u8 a = left.name_byte_or(index, 0u8);
+            const u8 b = right.name_byte_or(index, 0u8);
+            if (a < b) {
+                return true;
+            }
+            if (a > b) {
+                return false;
+            }
             index = index + 1;
         }
         return left.name_size() < right.name_size();
@@ -44,43 +66,66 @@ namespace package {
 export namespace package {
     class GraphOrderResult {
         GraphStatus outcome;
-        std::array<i64,8> stored_order;
+        std::array<i64, 8> stored_order;
         i64 packages;
     public:
-        GraphOrderResult(GraphStatus status, std::array<i64,8> order, i64 count)
-            : outcome(status), stored_order(order), packages(count) {}
+        GraphOrderResult(GraphStatus status, std::array<i64, 8> order, i64 count) : outcome(status),
+            stored_order(order), packages(count) {
+        }
         auto status() const -> GraphStatus {
-            if (outcome != GraphStatus::success) { return outcome; }
-            if (packages < 0) { return GraphStatus::malformed; }
-            if (packages > 8) { return GraphStatus::malformed; }
-            const std::array<i64,8> order = stored_order;
+            if (outcome != GraphStatus::success) {
+                return outcome;
+            }
+            if (packages < 0) {
+                return GraphStatus::malformed;
+            }
+            if (packages > 8) {
+                return GraphStatus::malformed;
+            }
+            const std::array<i64, 8> order = stored_order;
             i64 rank = 0;
             while (rank < packages) {
                 const i64 index = order.at(rank);
-                if (index < 0) { return GraphStatus::malformed; }
-                if (index >= packages) { return GraphStatus::malformed; }
+                if (index < 0) {
+                    return GraphStatus::malformed;
+                }
+                if (index >= packages) {
+                    return GraphStatus::malformed;
+                }
                 i64 earlier = 0;
                 while (earlier < rank) {
-                    if (order.at(earlier) == index) { return GraphStatus::malformed; }
+                    if (order.at(earlier) == index) {
+                        return GraphStatus::malformed;
+                    }
                     earlier = earlier + 1;
                 }
                 rank = rank + 1;
             }
             while (rank < 8) {
-                if (order.at(rank) != 0) { return GraphStatus::malformed; }
+                if (order.at(rank) != 0) {
+                    return GraphStatus::malformed;
+                }
                 rank = rank + 1;
             }
             return GraphStatus::success;
         }
         auto package_count_or(i64 fallback) const -> i64 {
-            if (status() != GraphStatus::success) { return fallback; }
+            if (status() != GraphStatus::success) {
+                return fallback;
+            }
             return packages;
         }
         auto catalog_index_or(i64 rank, i64 fallback) const -> i64 {
-            if (status() != GraphStatus::success) { return fallback; }
-            if (rank < 0) { return fallback; }
-            if (rank >= packages) { return fallback; }
-            const std::array<i64,8> order = stored_order;
+            if (status() != GraphStatus::success) {
+                return fallback;
+            }
+            if (rank < 0) {
+                return fallback;
+            }
+            if (rank >= packages) {
+                return fallback;
+            }
+            const std::array<i64, 8> order = stored_order;
             return order.at(rank);
         }
     };
@@ -92,38 +137,61 @@ export namespace package {
         i64 selected_rank;
         i64 selected_index;
     public:
-        GraphEntryResult(GraphStatus status, IdentityResult identity, i64 count,
-                         i64 rank, i64 index)
-            : outcome(status), stored_identity(identity), packages(count),
-              selected_rank(rank), selected_index(index) {}
+        GraphEntryResult(GraphStatus status, IdentityResult identity, i64 count, i64 rank, i64 index) : outcome(status),
+            stored_identity(identity), packages(count), selected_rank(rank), selected_index(index) {
+        }
         auto status() const -> GraphStatus {
-            if (outcome != GraphStatus::success) { return outcome; }
+            if (outcome != GraphStatus::success) {
+                return outcome;
+            }
             const IdentityResult identity = stored_identity;
-            if (identity.status() != IdentityStatus::success) { return GraphStatus::malformed; }
-            if (packages < 1) { return GraphStatus::malformed; }
-            if (packages > 8) { return GraphStatus::malformed; }
-            if (selected_rank < 0) { return GraphStatus::malformed; }
-            if (selected_rank >= packages) { return GraphStatus::malformed; }
-            if (selected_index < 0) { return GraphStatus::malformed; }
-            if (selected_index >= packages) { return GraphStatus::malformed; }
+            if (identity.status() != IdentityStatus::success) {
+                return GraphStatus::malformed;
+            }
+            if (packages < 1) {
+                return GraphStatus::malformed;
+            }
+            if (packages > 8) {
+                return GraphStatus::malformed;
+            }
+            if (selected_rank < 0) {
+                return GraphStatus::malformed;
+            }
+            if (selected_rank >= packages) {
+                return GraphStatus::malformed;
+            }
+            if (selected_index < 0) {
+                return GraphStatus::malformed;
+            }
+            if (selected_index >= packages) {
+                return GraphStatus::malformed;
+            }
             return GraphStatus::success;
         }
         auto identity_or_error() const -> IdentityResult {
             if (status() != GraphStatus::success) {
-                const IdentityResult result = graph_identity_error(); return result;
+                const IdentityResult result = graph_identity_error();
+                return result;
             }
-            const IdentityResult result = stored_identity; return result;
+            const IdentityResult result = stored_identity;
+            return result;
         }
         auto package_count_or(i64 fallback) const -> i64 {
-            if (status() != GraphStatus::success) { return fallback; }
+            if (status() != GraphStatus::success) {
+                return fallback;
+            }
             return packages;
         }
         auto rank_or(i64 fallback) const -> i64 {
-            if (status() != GraphStatus::success) { return fallback; }
+            if (status() != GraphStatus::success) {
+                return fallback;
+            }
             return selected_rank;
         }
         auto catalog_index_or(i64 fallback) const -> i64 {
-            if (status() != GraphStatus::success) { return fallback; }
+            if (status() != GraphStatus::success) {
+                return fallback;
+            }
             return selected_index;
         }
     };
@@ -131,77 +199,101 @@ export namespace package {
 
 namespace package {
     auto graph_failure(GraphStatus status) -> GraphOrderResult {
-        const std::array<i64,8> empty = std::array<i64,8>();
-        const GraphOrderResult result = GraphOrderResult(status,empty,0); return result;
+        const std::array<i64, 8> empty = std::array<i64, 8>();
+        const GraphOrderResult result = GraphOrderResult(status, empty, 0);
+        return result;
     }
     auto graph_entry_failure(GraphStatus status) -> GraphEntryResult {
         const IdentityResult identity = graph_identity_error();
-        const GraphEntryResult result = GraphEntryResult(status,identity,0,0,0); return result;
+        const GraphEntryResult result = GraphEntryResult(status, identity, 0, 0, 0);
+        return result;
     }
-    auto graph_root(builtin::span<const u8> bytes, std::array<i64,8> offsets,
-                    std::array<i64,8> lengths, i64 index) -> IdentityResult {
-        const ManifestResult summary = parse_manifest(bytes,offsets.at(index),lengths.at(index));
-        const IdentityResult result = summary.identity_or_error(); return result;
+    auto graph_root(builtin::span<const u8> bytes, std::array<i64, 8> offsets, std::array<i64, 8> lengths,
+        i64 index) -> IdentityResult {
+        const ManifestResult summary = parse_manifest(bytes, offsets.at(index), lengths.at(index));
+        const IdentityResult result = summary.identity_or_error();
+        return result;
     }
 }
 
 export namespace package {
-    auto order_manifests(builtin::span<const u8> bytes, std::array<i64,8> offsets,
-                         std::array<i64,8> lengths, i64 count) -> GraphOrderResult {
-        if (count < 0) { const GraphOrderResult r = graph_failure(GraphStatus::invalid_count); return r; }
-        if (count > 8) { const GraphOrderResult r = graph_failure(GraphStatus::invalid_count); return r; }
+    auto order_manifests(builtin::span<const u8> bytes, std::array<i64, 8> offsets, std::array<i64, 8> lengths,
+        i64 count) -> GraphOrderResult {
+        if (count < 0) {
+            const GraphOrderResult r = graph_failure(GraphStatus::invalid_count);
+            return r;
+        }
+        if (count > 8) {
+            const GraphOrderResult r = graph_failure(GraphStatus::invalid_count);
+            return r;
+        }
         // Complete each precedence pass before examining the next error category.
         i64 index = 0;
         while (index < count) {
             const i64 start = offsets.at(index);
             const i64 length = lengths.at(index);
-            if (start < 0) { const GraphOrderResult r = graph_failure(GraphStatus::out_of_range); return r; }
-            if (length < 0) { const GraphOrderResult r = graph_failure(GraphStatus::out_of_range); return r; }
-            if (start > bytes.size()) { const GraphOrderResult r = graph_failure(GraphStatus::out_of_range); return r; }
+            if (start < 0) {
+                const GraphOrderResult r = graph_failure(GraphStatus::out_of_range);
+                return r;
+            }
+            if (length < 0) {
+                const GraphOrderResult r = graph_failure(GraphStatus::out_of_range);
+                return r;
+            }
+            if (start > bytes.size()) {
+                const GraphOrderResult r = graph_failure(GraphStatus::out_of_range);
+                return r;
+            }
             if (length > bytes.size() - start) {
-                const GraphOrderResult r = graph_failure(GraphStatus::out_of_range); return r;
+                const GraphOrderResult r = graph_failure(GraphStatus::out_of_range);
+                return r;
             }
             index = index + 1;
         }
         index = 0;
         while (index < count) {
-            const ManifestResult summary = parse_manifest(bytes,offsets.at(index),lengths.at(index));
+            const ManifestResult summary = parse_manifest(bytes, offsets.at(index), lengths.at(index));
             if (summary.status() != ManifestStatus::success) {
-                const GraphOrderResult r = graph_failure(GraphStatus::malformed); return r;
+                const GraphOrderResult r = graph_failure(GraphStatus::malformed);
+                return r;
             }
             index = index + 1;
         }
         index = 0;
         while (index < count) {
-            const IdentityResult identity = graph_root(bytes,offsets,lengths,index);
+            const IdentityResult identity = graph_root(bytes, offsets, lengths, index);
             i64 earlier = 0;
             while (earlier < index) {
-                const IdentityResult other = graph_root(bytes,offsets,lengths,earlier);
-                if (graph_name_equal(identity,other)) {
-                    const GraphOrderResult r = graph_failure(GraphStatus::duplicate_package); return r;
+                const IdentityResult other = graph_root(bytes, offsets, lengths, earlier);
+                if (graph_name_equal(identity, other)) {
+                    const GraphOrderResult r = graph_failure(GraphStatus::duplicate_package);
+                    return r;
                 }
                 earlier = earlier + 1;
             }
             index = index + 1;
         }
-        std::array<u64,8> links = std::array<u64,8>();
+        std::array<u64, 8> links = std::array<u64, 8>();
         bool missing = false;
         bool mismatch = false;
         index = 0;
         while (index < count) {
-            const ManifestResult summary = parse_manifest(bytes,offsets.at(index),lengths.at(index));
+            const ManifestResult summary = parse_manifest(bytes, offsets.at(index), lengths.at(index));
             i64 dependency_index = 0;
             u64 mask = 0u64;
             while (dependency_index < summary.dependency_count_or(0)) {
-                const DependencyResult observation = manifest_dependency(bytes,offsets.at(index),lengths.at(index),dependency_index);
+                const DependencyResult observation = manifest_dependency(bytes, offsets.at(index), lengths.at(index),
+                    dependency_index);
                 const IdentityResult required = observation.dependency_or_error();
                 i64 target = -1;
                 i64 candidate = 0;
                 while (candidate < count) {
-                    const IdentityResult available = graph_root(bytes,offsets,lengths,candidate);
-                    if (graph_name_equal(required,available)) {
+                    const IdentityResult available = graph_root(bytes, offsets, lengths, candidate);
+                    if (graph_name_equal(required, available)) {
                         target = candidate;
-                        if (compare_versions(required,available) != VersionOrder::equal) { mismatch = true; }
+                        if (compare_versions(required, available) != VersionOrder::equal) {
+                            mismatch = true;
+                        }
                     }
                     candidate = candidate + 1;
                 }
@@ -212,12 +304,18 @@ export namespace package {
                 }
                 dependency_index = dependency_index + 1;
             }
-            links.set(index,mask);
+            links.set(index, mask);
             index = index + 1;
         }
-        if (missing) { const GraphOrderResult r = graph_failure(GraphStatus::missing_package); return r; }
-        if (mismatch) { const GraphOrderResult r = graph_failure(GraphStatus::version_mismatch); return r; }
-        std::array<i64,8> order = std::array<i64,8>();
+        if (missing) {
+            const GraphOrderResult r = graph_failure(GraphStatus::missing_package);
+            return r;
+        }
+        if (mismatch) {
+            const GraphOrderResult r = graph_failure(GraphStatus::version_mismatch);
+            return r;
+        }
+        std::array<i64, 8> order = std::array<i64, 8>();
         u64 emitted = 0u64;
         i64 rank = 0;
         while (rank < count) {
@@ -230,32 +328,46 @@ export namespace package {
                         if (best < 0) {
                             best = candidate;
                         } else {
-                            const IdentityResult identity = graph_root(bytes,offsets,lengths,candidate);
-                            const IdentityResult previous = graph_root(bytes,offsets,lengths,best);
-                            if (graph_name_less(identity,previous)) { best = candidate; }
+                            const IdentityResult identity = graph_root(bytes, offsets, lengths, candidate);
+                            const IdentityResult previous = graph_root(bytes, offsets, lengths, best);
+                            if (graph_name_less(identity, previous)) {
+                                best = candidate;
+                            }
                         }
                     }
                 }
                 candidate = candidate + 1;
             }
-            if (best < 0) { const GraphOrderResult r = graph_failure(GraphStatus::cycle); return r; }
-            order.set(rank,best);
+            if (best < 0) {
+                const GraphOrderResult r = graph_failure(GraphStatus::cycle);
+                return r;
+            }
+            order.set(rank, best);
             emitted = emitted | (1u64 << best);
             rank = rank + 1;
         }
-        const GraphOrderResult result = GraphOrderResult(GraphStatus::success,order,count); return result;
+        const GraphOrderResult result = GraphOrderResult(GraphStatus::success, order, count);
+        return result;
     }
 
-    auto ordered_manifest(builtin::span<const u8> bytes, std::array<i64,8> offsets,
-                          std::array<i64,8> lengths, i64 count, i64 rank) -> GraphEntryResult {
-        const GraphOrderResult order = order_manifests(bytes,offsets,lengths,count);
+    auto ordered_manifest(builtin::span<const u8> bytes, std::array<i64, 8> offsets, std::array<i64, 8> lengths,
+        i64 count, i64 rank) -> GraphEntryResult {
+        const GraphOrderResult order = order_manifests(bytes, offsets, lengths, count);
         if (order.status() != GraphStatus::success) {
-            const GraphEntryResult r = graph_entry_failure(order.status()); return r;
+            const GraphEntryResult r = graph_entry_failure(order.status());
+            return r;
         }
-        if (rank < 0) { const GraphEntryResult r = graph_entry_failure(GraphStatus::index_out_of_range); return r; }
-        if (rank >= count) { const GraphEntryResult r = graph_entry_failure(GraphStatus::index_out_of_range); return r; }
-        const i64 index = order.catalog_index_or(rank,0);
-        const IdentityResult identity = graph_root(bytes,offsets,lengths,index);
-        const GraphEntryResult result = GraphEntryResult(GraphStatus::success,identity,count,rank,index); return result;
+        if (rank < 0) {
+            const GraphEntryResult r = graph_entry_failure(GraphStatus::index_out_of_range);
+            return r;
+        }
+        if (rank >= count) {
+            const GraphEntryResult r = graph_entry_failure(GraphStatus::index_out_of_range);
+            return r;
+        }
+        const i64 index = order.catalog_index_or(rank, 0);
+        const IdentityResult identity = graph_root(bytes, offsets, lengths, index);
+        const GraphEntryResult result = GraphEntryResult(GraphStatus::success, identity, count, rank, index);
+        return result;
     }
 }

@@ -349,7 +349,7 @@ class DeveloperTools(unittest.TestCase):
             self.fake_output(command, stream)
         self.hook(command, environment)
 
-    def build(self, developer=True):
+    def build(self, developer=True, packaged=False):
         with (
             patch.object(ESP, "IMAGE_BYTES", 4096),
             patch.object(ESP, "validate_image", return_value={"fixture": "FAT admission"}) as validate,
@@ -361,6 +361,7 @@ class DeveloperTools(unittest.TestCase):
                 self.tools,
                 self.output,
                 developer=developer,
+                packaged=packaged,
                 run_command=self.command if developer else None,
             )
         self.assertEqual(
@@ -408,6 +409,21 @@ class DeveloperTools(unittest.TestCase):
             self.assertEqual(Path(environment["HOME"]).parent, self.output)
             self.assertEqual(Path(environment["HOME"]).stat().st_mode & 0o777, 0o700)
         self.assertEqual(json.loads((self.output / "esp-admission.json").read_text()), result)
+
+    def test_packaged_tools_keep_fat_checks_without_tool_hashes_or_records(self):
+        digest = ESP.sha256
+
+        def checked_digest(path):
+            self.assertFalse(Path(path).is_relative_to(self.tools), "Packaged executable was hashed")
+            return digest(path)
+
+        with patch.object(ESP, "sha256", side_effect=checked_digest):
+            result = self.build(packaged=True)
+        self.assertEqual(len(self.calls), 14)
+        self.assertFalse(any(command[1:] == ["--version"] for command, _, _ in self.calls))
+        for key in ("mtools", "mtools_sha256", "builder_sha256"):
+            self.assertNotIn(key, result)
+        self.assertTrue(result["independent_byte_identity"])
 
     def test_developer_requires_callback_and_pinned_rejects_it(self):
         for developer, callback in ((True, None), (False, self.command)):

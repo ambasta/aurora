@@ -19,16 +19,22 @@ static_assert(!std::is_move_constructible_v<PinLedger>);
 static_assert(!std::is_copy_assignable_v<PinLedger>);
 static_assert(!std::is_move_assignable_v<PinLedger>);
 static_assert(std::is_copy_constructible_v<PinHandle>);
-static_assert(!std::is_constructible_v<PinHandle, PinLedger&, std::uint64_t, std::uint64_t, std::size_t>);
-template <class T> concept HasPublish = requires(T& value, PinHandle pin) { value.publish(pin); };
-template <class T> concept HasComplete = requires(T& value, PinHandle pin) { value.complete(pin); };
-template <class T> concept HasLeaseImport = requires(T& value, PageLease& lease) { value.grant(std::move(lease)); };
+static_assert(!std::is_constructible_v<PinHandle, PinLedger &, std::uint64_t, std::uint64_t, std::size_t>);
+template <class T>
+concept HasPublish = requires(T &value, PinHandle pin) { value.publish(pin); };
+template <class T>
+concept HasComplete = requires(T &value, PinHandle pin) { value.complete(pin); };
+template <class T>
+concept HasLeaseImport = requires(T &value, PageLease &lease) { value.grant(std::move(lease)); };
 static_assert(!HasPublish<PinLedger> && !HasComplete<PinLedger> && !HasLeaseImport<PinLedger>);
 
 std::size_t checks{};
 auto check(bool condition, std::string_view message) -> void {
     ++checks;
-    if (!condition) { std::cerr << "FAIL: " << message << '\n'; std::exit(1); }
+    if (!condition) {
+        std::cerr << "FAIL: " << message << '\n';
+        std::exit(1);
+    }
 }
 
 class Arena final {
@@ -38,32 +44,38 @@ public:
     [[nodiscard]] auto base() const -> std::uint64_t {
         return static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(bytes.data()));
     }
-    auto fill(unsigned char value) -> void { bytes.fill(value); }
+    auto fill(unsigned char value) -> void {
+        bytes.fill(value);
+    }
     [[nodiscard]] auto page_is(std::size_t page, unsigned char value) const -> bool {
         return std::all_of(bytes.begin() + static_cast<std::ptrdiff_t>(page * 4096),
                            bytes.begin() + static_cast<std::ptrdiff_t>((page + 1) * 4096),
-                           [value](auto byte) { return byte == value; });
+                           [value](auto byte) {
+                               return byte == value;
+                           });
     }
 };
 
 class Scrubber final {
 public:
-    Arena& arena;
-    PhysicalPages& pool;
+    Arena &arena;
+    PhysicalPages &pool;
     std::size_t calls{};
     std::size_t fail_call{};
     std::size_t last_used{};
     std::array<std::uint64_t, 64> recent{};
-    PinLedger* reenter{};
+    PinLedger *reenter{};
     DomainHandle owner{};
     PinHandle handle{};
-    Scrubber(Arena& backing, PhysicalPages& pages) : arena(backing), pool(pages) {}
-    static auto run(void* context, std::uint64_t address, std::size_t bytes) -> bool {
-        auto& self = *static_cast<Scrubber*>(context);
+    Scrubber(Arena &backing, PhysicalPages &pages) : arena(backing), pool(pages) {
+    }
+    static auto run(void *context, std::uint64_t address, std::size_t bytes) -> bool {
+        auto &self = *static_cast<Scrubber *>(context);
         ++self.calls;
         check(bytes == PhysicalPages::page_size, "scrub exact whole-page extent");
-        check(address >= self.arena.base() && address - self.arena.base() <= self.arena.bytes.size() - bytes
-              && (address - self.arena.base()) % 4096 == 0, "scrub only actual bounded arena page");
+        check(address >= self.arena.base() && address - self.arena.base() <= self.arena.bytes.size() - bytes &&
+                  (address - self.arena.base()) % 4096 == 0,
+              "scrub only actual bounded arena page");
         self.recent[(self.calls - 1) % self.recent.size()] = address;
         self.last_used = self.pool.used();
         if (self.reenter) {
@@ -71,12 +83,16 @@ public:
             check(!self.reenter->cancel(self.handle, self.owner), "scrub cannot reenter cancel");
             check(self.reenter->borrower_dispose(self.owner) == 0 && self.reenter->reap_dead() == 0,
                   "scrub cannot reenter owner cleanup");
-            check(!self.reenter->inject_uncertainty(self.handle, self.owner), "scrub cannot inject uncertainty reentrantly");
+            check(!self.reenter->inject_uncertainty(self.handle, self.owner),
+                  "scrub cannot inject uncertainty reentrantly");
         }
-        if (self.calls == self.fail_call) return false;
-        auto* start = self.arena.bytes.data() + (address - self.arena.base());
+        if (self.calls == self.fail_call)
+            return false;
+        auto *start = self.arena.bytes.data() + (address - self.arena.base());
         std::fill(start, start + bytes, 0);
-        return std::all_of(start, start + bytes, [](auto byte) { return byte == 0; });
+        return std::all_of(start, start + bytes, [](auto byte) {
+            return byte == 0;
+        });
     }
 };
 
@@ -93,15 +109,17 @@ auto ownership_and_cancellation() -> void {
     check(pool.initialize(arena.base(), Arena::page_count), "initialize actual backing pages explicitly");
     auto stack = pool.acquire();
     check(stack && pool.address(*stack) == arena.base(), "shared pool external stack lease");
-    check(!ledger.grant(DomainHandle{}, 1) && !ledger.grant(*foreign, 1)
-          && !ledger.grant(*owner, 0) && !ledger.grant(*owner, 3), "invalid owners and page counts rejected");
+    check(!ledger.grant(DomainHandle{}, 1) && !ledger.grant(*foreign, 1) && !ledger.grant(*owner, 0) &&
+              !ledger.grant(*owner, 3),
+          "invalid owners and page counts rejected");
     const auto pin = ledger.grant(*owner, 2);
     check(pin && pin->epoch() != 0 && pin->generation() != 0 && pin->slot() < PinLedger::capacity,
           "opaque bound grant with diagnostics");
-    check(pool.used() == 3 && ledger.pinned_pages() == 2 && ledger.used_entries() == 1
-          && ledger.quarantined_pages() == 0, "grant owns actual two PageLeases");
-    check(!ledger.cancel(PinHandle{}, *owner) && !ledger.cancel(*pin, *peer)
-          && !ledger.cancel(*pin, *foreign), "default, foreign, and other-domain cancellation denied");
+    check(pool.used() == 3 && ledger.pinned_pages() == 2 && ledger.used_entries() == 1 &&
+              ledger.quarantined_pages() == 0,
+          "grant owns actual two PageLeases");
+    check(!ledger.cancel(PinHandle{}, *owner) && !ledger.cancel(*pin, *peer) && !ledger.cancel(*pin, *foreign),
+          "default, foreign, and other-domain cancellation denied");
     PinLedger other(pool, registry, Scrubber::run, &scrub);
     const auto other_pin = other.grant(*owner, 1);
     check(other_pin && other_pin->epoch() != pin->epoch() && pool.used() == 4,
@@ -114,10 +132,11 @@ auto ownership_and_cancellation() -> void {
     scrub.handle = *pin;
     const auto copied = *pin;
     check(ledger.cancel(*pin, *owner), "clean cancellation");
-    check(scrub.calls == 2 && scrub.last_used == 3 && scrub.recent[0] == arena.base() + 4096
-          && scrub.recent[1] == arena.base() + 8192, "all pages scrubbed while still pinned before first release");
-    check(arena.page_is(0, 0xa5) && arena.page_is(1, 0) && arena.page_is(2, 0)
-          && arena.page_is(4, 0xa5), "zero actual frame bytes without touching external or unowned frames");
+    check(scrub.calls == 2 && scrub.last_used == 3 && scrub.recent[0] == arena.base() + 4096 &&
+              scrub.recent[1] == arena.base() + 8192,
+          "all pages scrubbed while still pinned before first release");
+    check(arena.page_is(0, 0xa5) && arena.page_is(1, 0) && arena.page_is(2, 0) && arena.page_is(4, 0xa5),
+          "zero actual frame bytes without touching external or unowned frames");
     check(pool.used() == 1 && ledger.pinned_pages() == 0 && !ledger.cancel(copied, *owner),
           "copied token cannot double release");
     scrub.reenter = nullptr;
@@ -148,10 +167,11 @@ auto client_lifetimes() -> void {
     check(new_owner && !registry.index(*owner), "domain slot reused with new incarnation");
     check(!ledger.cancel(*old_pin, *owner) && !ledger.cancel(*old_pin, *new_owner),
           "dead and replacement domains cannot wield old pin");
-    check(ledger.reap_dead() == 1 && pool.used() == 1 && ledger.pinned_pages() == 1
-          && scrub.calls == 2 && arena.page_is(0, 0) && arena.page_is(1, 0),
+    check(ledger.reap_dead() == 1 && pool.used() == 1 && ledger.pinned_pages() == 1 && scrub.calls == 2 &&
+              arena.page_is(0, 0) && arena.page_is(1, 0),
           "dead never-published entry reaped only after complete real scrub");
-    check(ledger.reap_dead() == 0 && !ledger.cancel(*old_pin, *new_owner), "reaping and stale cancellation are idempotent");
+    check(ledger.reap_dead() == 0 && !ledger.cancel(*old_pin, *new_owner),
+          "reaping and stale cancellation are idempotent");
     check(ledger.cancel(*peer_pin, *peer), "peer lease survives another client's disposal");
     const auto first = ledger.grant(*new_owner, 1), second = ledger.grant(*new_owner, 2);
     check(first && second && ledger.borrower_dispose(*new_owner) == 2 && pool.used() == 0,
@@ -171,17 +191,18 @@ auto permanent_quarantine() -> void {
     {
         PinLedger ledger(pool, registry, Scrubber::run, &scrub);
         const auto pin = ledger.grant(*owner, 2);
-        check(pin && !ledger.inject_uncertainty(*pin, *peer)
-              && ledger.inject_uncertainty(*pin, *owner), "explicit test uncertainty needs exact live owner");
+        check(pin && !ledger.inject_uncertainty(*pin, *peer) && ledger.inject_uncertainty(*pin, *owner),
+              "explicit test uncertainty needs exact live owner");
         check(ledger.pinned_pages() == 2 && ledger.quarantined_pages() == 2 && pool.used() == 2,
               "uncertainty retains actual page leases");
-        check(!ledger.inject_uncertainty(*pin, *owner) && !ledger.cancel(*pin, *owner)
-              && ledger.borrower_dispose(*owner) == 0 && scrub.calls == 0,
+        check(!ledger.inject_uncertainty(*pin, *owner) && !ledger.cancel(*pin, *owner) &&
+                  ledger.borrower_dispose(*owner) == 0 && scrub.calls == 0,
               "quarantine absorbing for replay, cancel, and borrower disposal");
         check(registry.destroy(*owner), "quarantined client death");
         const auto replacement = registry.create();
-        check(replacement && ledger.reap_dead() == 0 && !ledger.cancel(*pin, *replacement)
-              && pool.used() == 2 && scrub.calls == 0, "death and replacement cannot retire uncertainty");
+        check(replacement && ledger.reap_dead() == 0 && !ledger.cancel(*pin, *replacement) && pool.used() == 2 &&
+                  scrub.calls == 0,
+              "death and replacement cannot retire uncertainty");
         const auto peer_pin = ledger.grant(*peer, 1);
         check(peer_pin && ledger.cancel(*peer_pin, *peer) && scrub.recent[0] == arena.base() + 8192,
               "peer uses only distinct nonquarantined frame");
@@ -211,8 +232,9 @@ auto scrub_failure() -> void {
           "second scrub failure retains even the first already-zeroed lease");
     check(arena.page_is(0, 0) && arena.page_is(1, 0x39), "scrub failure actual byte evidence");
     scrub.fail_call = 0;
-    check(!ledger.cancel(*pin, *owner) && scrub.calls == 2 && registry.destroy(*owner)
-          && ledger.reap_dead() == 0 && pool.used() == 2, "late scrub success cannot resurrect quarantine");
+    check(!ledger.cancel(*pin, *owner) && scrub.calls == 2 && registry.destroy(*owner) && ledger.reap_dead() == 0 &&
+              pool.used() == 2,
+          "late scrub success cannot resurrect quarantine");
 }
 
 auto disposal_failure_and_full_quarantine() -> void {
@@ -242,11 +264,11 @@ auto disposal_failure_and_full_quarantine() -> void {
         const auto pin = ledger.grant(*second, 2);
         check(pin && ledger.inject_uncertainty(*pin, *second), "fill remaining quarantine slots");
     }
-    check(ledger.used_entries() == 4 && ledger.quarantined_pages() == 8 && ledger.pinned_pages() == 8
-          && ledger.available_entries() == 0 && !ledger.grant(*second, 1) && pool.used() == 8,
+    check(ledger.used_entries() == 4 && ledger.quarantined_pages() == 8 && ledger.pinned_pages() == 8 &&
+              ledger.available_entries() == 0 && !ledger.grant(*second, 1) && pool.used() == 8,
           "all four quarantines exhaust ledger permanently with pool space remaining");
-    check(registry.destroy(*second) && ledger.reap_dead() == 0 && pool.used() == 8
-          && ledger.quarantined_pages() == 8 && scrub.calls == 2,
+    check(registry.destroy(*second) && ledger.reap_dead() == 0 && pool.used() == 8 && ledger.quarantined_pages() == 8 &&
+              scrub.calls == 2,
           "all-owner death cannot reclaim any quarantine or call its scrubber");
 }
 
@@ -261,15 +283,21 @@ auto exhaustion_and_rollback() -> void {
     Scrubber scrub(arena, pool);
     PinLedger ledger(pool, registry, Scrubber::run, &scrub);
     std::array<std::optional<PinHandle>, PinLedger::capacity> handles;
-    for (auto& handle : handles) handle = ledger.grant(*owner, 2);
-    check(std::all_of(handles.begin(), handles.end(), [](auto& handle) { return handle.has_value(); })
-          && pool.used() == 8 && ledger.used_entries() == 4 && ledger.available_entries() == 0,
+    for (auto &handle : handles)
+        handle = ledger.grant(*owner, 2);
+    check(std::all_of(handles.begin(),
+                      handles.end(),
+                      [](auto &handle) {
+                          return handle.has_value();
+                      }) &&
+              pool.used() == 8 && ledger.used_entries() == 4 && ledger.available_entries() == 0,
           "four actual entries consume eight distinct pages");
     check(!ledger.grant(*owner, 1) && pool.used() == 8, "ledger exhaustion does not acquire an extra page");
     auto spare = pool.acquire();
     check(spare && pool.address(*spare) == arena.base() + 8 * 4096, "pool still has capacity beyond ledger bound");
     check(pool.release(*spare), "external spare release");
-    for (auto& handle : handles) check(ledger.cancel(*handle, *owner), "capacity cleanup");
+    for (auto &handle : handles)
+        check(ledger.cancel(*handle, *owner), "capacity cleanup");
     check(pool.used() == 0, "capacity cleanup accounting");
 
     Arena small;
@@ -280,8 +308,8 @@ auto exhaustion_and_rollback() -> void {
     check(stack.has_value(), "partial external stack");
     Scrubber partial_scrub(small, small_pool);
     PinLedger partial(small_pool, registry, Scrubber::run, &partial_scrub);
-    check(!partial.grant(*owner, 2) && small_pool.used() == 1 && partial.pinned_pages() == 0
-          && partial.used_entries() == 0 && partial_scrub.calls == 1,
+    check(!partial.grant(*owner, 2) && small_pool.used() == 1 && partial.pinned_pages() == 0 &&
+              partial.used_entries() == 0 && partial_scrub.calls == 1,
           "partial acquisition failure scrubs and rolls back owned prefix");
     check(small.page_is(0, 0xdd) && small.page_is(1, 0), "partial rollback cannot touch shared stack lease");
     const auto complete = partial.grant(*owner, 1);
@@ -296,11 +324,11 @@ auto exhaustion_and_rollback() -> void {
     Scrubber fail_scrub(failed, failed_pool);
     fail_scrub.fail_call = 1;
     PinLedger fail_ledger(failed_pool, registry, Scrubber::run, &fail_scrub);
-    check(!fail_ledger.grant(*owner, 2) && failed_pool.used() == 1 && fail_ledger.pinned_pages() == 1
-          && fail_ledger.quarantined_pages() == 1 && fail_ledger.used_entries() == 1,
+    check(!fail_ledger.grant(*owner, 2) && failed_pool.used() == 1 && fail_ledger.pinned_pages() == 1 &&
+              fail_ledger.quarantined_pages() == 1 && fail_ledger.used_entries() == 1,
           "unreturned partial loan retained when rollback scrub fails");
-    check(!fail_ledger.grant(*owner, 1) && fail_ledger.borrower_dispose(*owner) == 0
-          && registry.destroy(*owner) && fail_ledger.reap_dead() == 0 && failed_pool.used() == 1,
+    check(!fail_ledger.grant(*owner, 1) && fail_ledger.borrower_dispose(*owner) == 0 && registry.destroy(*owner) &&
+              fail_ledger.reap_dead() == 0 && failed_pool.used() == 1,
           "partial quarantine survives retries and owner death");
 }
 
@@ -320,8 +348,8 @@ auto reconstruction_guards() -> void {
     ledger.reset();
     ledger.emplace(pool, registry, Scrubber::run, &scrub);
     const auto fresh = ledger->grant(*owner, 1);
-    check(fresh && fresh->epoch() != old->epoch() && fresh->slot() == old->slot()
-          && fresh->generation() == old->generation() && !ledger->cancel(*old, *owner),
+    check(fresh && fresh->epoch() != old->epoch() && fresh->slot() == old->slot() &&
+              fresh->generation() == old->generation() && !ledger->cancel(*old, *owner),
           "same-address ledger reconstruction rejects previous epoch");
     check(ledger->cancel(*fresh, *owner), "reborn clean ledger cleanup");
     const auto orphan = ledger->grant(*owner, 1);
@@ -330,8 +358,8 @@ auto reconstruction_guards() -> void {
     check(pool.used() == 1, "destroyed reserved owner also fails leaking");
     ledger.emplace(pool, registry, Scrubber::run, &scrub);
     const auto later = ledger->grant(*owner, 1);
-    check(later && !ledger->cancel(*orphan, *owner) && ledger->cancel(*later, *owner)
-          && pool.used() == 1 && scrub.recent[(scrub.calls - 1) % scrub.recent.size()] == arena.base() + 4096,
+    check(later && !ledger->cancel(*orphan, *owner) && ledger->cancel(*later, *owner) && pool.used() == 1 &&
+              scrub.recent[(scrub.calls - 1) % scrub.recent.size()] == arena.base() + 4096,
           "ledger rebirth cannot recover dropped lease or reuse its frame");
 
     // This deliberately violates the required pool lifetime. A replacement
@@ -349,9 +377,9 @@ auto reconstruction_guards() -> void {
     replaced_pool.emplace();
     check(replaced_pool->initialize(replaced_arena.base(), 2), "forbidden replacement pool");
     auto unrelated = replaced_pool->acquire();
-    check(unrelated && !stale_ledger.cancel(*stale, *owner) && replaced_pool->used() == 1
-          && stale_ledger.quarantined_pages() == 1 && stale_ledger.available_entries() == 0
-          && !stale_ledger.grant(*owner, 1) && replaced_scrub.calls == 0,
+    check(unrelated && !stale_ledger.cancel(*stale, *owner) && replaced_pool->used() == 1 &&
+              stale_ledger.quarantined_pages() == 1 && stale_ledger.available_entries() == 0 &&
+              !stale_ledger.grant(*owner, 1) && replaced_scrub.calls == 0,
           "pool replacement detected and cannot release replacement allocation");
     check(replaced_pool->release(*unrelated), "replacement still owns its independent generation");
 }
@@ -371,16 +399,19 @@ auto generation_exhaustion() -> void {
     for (std::size_t slot = 0; slot < PinLedger::capacity; ++slot) {
         for (std::uint64_t generation = 1; generation <= AURORA_PIN_LEDGER_TEST_GENERATION_LIMIT; ++generation) {
             const auto pin = ledger.grant(*owner, 1);
-            check(pin && pin->slot() == slot && pin->generation() == generation, "bounded generation increases without wrap");
+            check(pin && pin->slot() == slot && pin->generation() == generation,
+                  "bounded generation increases without wrap");
             for (std::size_t previous = 0; previous < index; ++previous)
                 check(!ledger.cancel(old[previous], *owner), "all historical handles rejected on every generation");
             old[index++] = *pin;
             check(ledger.cancel(*pin, *owner), "bounded generation release");
         }
     }
-    check(!ledger.grant(*owner, 1) && ledger.available_entries() == 0 && ledger.used_entries() == 0
-          && ledger.pinned_pages() == 0 && pool.used() == 0, "all generation-exhausted entries retired permanently");
-    for (const auto previous : old) check(!ledger.cancel(previous, *owner), "no stale resurrection after exhaustion");
+    check(!ledger.grant(*owner, 1) && ledger.available_entries() == 0 && ledger.used_entries() == 0 &&
+              ledger.pinned_pages() == 0 && pool.used() == 0,
+          "all generation-exhausted entries retired permanently");
+    for (const auto previous : old)
+        check(!ledger.cancel(previous, *owner), "no stale resurrection after exhaustion");
 #endif
 }
 
@@ -390,10 +421,10 @@ auto incarnation_observation() -> void {
     check(owner && foreign, "incarnation owners");
     const auto old = first.incarnation(*owner);
     check(old && *old != 0, "live incarnation observed");
-    check(!first.incarnation(DomainHandle{}) && !first.incarnation(*foreign)
-          && !second.incarnation(*owner), "invalid and foreign incarnations hidden");
-    check(first.activate(*owner) && first.incarnation(*owner) == old
-          && first.deactivate(*owner), "active identity stays stable");
+    check(!first.incarnation(DomainHandle{}) && !first.incarnation(*foreign) && !second.incarnation(*owner),
+          "invalid and foreign incarnations hidden");
+    check(first.activate(*owner) && first.incarnation(*owner) == old && first.deactivate(*owner),
+          "active identity stays stable");
     check(first.destroy(*owner) && !first.incarnation(*owner), "dead incarnation hidden");
     const auto replacement = first.create();
     check(replacement && first.index(*replacement) == 0, "same registry slot reused");
@@ -411,7 +442,8 @@ auto main() -> int {
     exhaustion_and_rollback();
     reconstruction_guards();
     generation_exhaustion();
-    std::cout << "PASS: actual PageLease pin ownership, whole-frame scrub, live/stale domains, shared pool, bounded exhaustion, partial rollback, permanent quarantine and reconstruction guards";
+    std::cout << "PASS: actual PageLease pin ownership, whole-frame scrub, live/stale domains, shared pool, bounded "
+                 "exhaustion, partial rollback, permanent quarantine and reconstruction guards";
 #if defined(AURORA_PIN_LEDGER_TEST_GENERATION_LIMIT)
     std::cout << ", generation bound " << AURORA_PIN_LEDGER_TEST_GENERATION_LIMIT;
 #endif

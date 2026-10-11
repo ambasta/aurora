@@ -1,0 +1,38 @@
+--- a/BaseTools/Source/C/Common/StringFuncs.c
++++ b/BaseTools/Source/C/Common/StringFuncs.c
+@@ -110,7 +110,6 @@
+   CHAR8       *EndOfSubString;
+   CHAR8       *EndOfString;
+   STRING_LIST *Output;
+-  UINTN       Item;
+ 
+   String = CloneString (String);
+   if (String == NULL) {
+@@ -120,7 +119,7 @@
+ 
+   Output = NewStringList ();
+ 
+-  for (Pos = String, Item = 0; Pos < EndOfString; Item++) {
++  for (Pos = String; Pos < EndOfString;) {
+     while (isspace ((int)*Pos)) {
+       Pos++;
+     }
+--- a/BaseTools/Source/C/EfiRom/EfiRom.c
++++ b/BaseTools/Source/C/EfiRom/EfiRom.c
+@@ -44,7 +44,6 @@ Routine Description:
+   FILE_LIST *FList;
+   UINT32    TotalSize;
+   UINT32    Size;
+-  CHAR8     *Ptr0;
+ 
+   SetUtilityName(UTILITY_NAME);
+ 
+@@ -75,7 +74,7 @@ Routine Description:
+   //
+   if (mOptions.DumpOption == 1) {
+     if (mOptions.FileList != NULL) {
+-      if ((Ptr0 = strstr ((CONST CHAR8 *) mOptions.FileList->FileName, DEFAULT_OUTPUT_EXTENSION)) != NULL) {
++      if (strstr ((CONST CHAR8 *) mOptions.FileList->FileName, DEFAULT_OUTPUT_EXTENSION) != NULL) {
+         DumpImage (mOptions.FileList);
+         goto BailOut;
+       } else {

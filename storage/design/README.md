@@ -1,6 +1,6 @@
 # Aurora native storage and XFS design package
 
-Date: 2026-10-03. This package adapts the user's 56-section NVMe-native filesystem
+This package adapts the user's 56-section NVMe-native filesystem
 proposal to Aurora and adds the separately requested XFS on-disk compatibility
 target. It is an engineering requirements package, not a working filesystem.
 
@@ -12,15 +12,6 @@ target. It is an engineering requirements package, not a working filesystem.
 - `sources.md`: primary specifications, research, limitations, and access date.
 - `model/`: executable, in-memory **host verification model** of a small durability
   protocol. It does not implement an Aurora driver, disk format, or filesystem.
-- `evidence/`: reproducible local validation receipts; never hardware qualification.
-
-Aurora context was read from `AGENTS.md`, `README.md`,
-`docs/completeness-matrix.md`, `docs/framework-13-7840u.md`,
-`docs/library-stack.md`, and `docs/roadmap.md` in the supplied source tree.
-The inspected baseline records milestone013 as verified. Milestone014 byte spans
-and read-only PCI BAR work are concurrent candidates, not dependencies assumed
-complete here. This package changes none of those source files or historical
-receipts. Parent integration into the project is a separately reviewed step.
 
 The native engine and XFS adapter will share the safe storage transport contract,
 not an on-disk format or Linux implementation. Native durable transactions,

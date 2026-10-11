@@ -4,15 +4,27 @@ import std.binary_buffer;
 import storage.sector;
 
 export namespace storage {
-    enum class SectorIoStatus { success, out_of_range, read_only, invalid_source };
-    enum class SectorFlushMode { visibility, durable };
-    enum class SectorFlushStatus { volatile_complete, unsupported };
+    enum class SectorIoStatus {
+        success,
+        out_of_range,
+        read_only,
+        invalid_source
+    };
+    enum class SectorFlushMode {
+        visibility,
+        durable
+    };
+    enum class SectorFlushStatus {
+        volatile_complete,
+        unsupported
+    };
 
     class SectorGeometry {
         u64 count;
         bool writable;
     public:
-        SectorGeometry(u64 sector_count, bool can_write) : count(sector_count), writable(can_write) {}
+        SectorGeometry(u64 sector_count, bool can_write) : count(sector_count), writable(can_write) {
+        }
 
         auto sector_size_bytes() const -> u64 {
             return 512u64;
@@ -31,7 +43,8 @@ export namespace storage {
         SectorIoStatus outcome;
         Sector512 payload;
     public:
-        SectorReadResult(SectorIoStatus status, Sector512 sector) : outcome(status), payload(sector) {}
+        SectorReadResult(SectorIoStatus status, Sector512 sector) : outcome(status), payload(sector) {
+        }
 
         auto status() const -> SectorIoStatus {
             return outcome;

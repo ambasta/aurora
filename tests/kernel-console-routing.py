@@ -9,9 +9,9 @@ guest acceptance is claimed.
 
 from pathlib import Path
 import json
+import importlib.util
 import os
 import re
-import shlex
 import signal
 import shutil
 import subprocess
@@ -19,6 +19,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 BASH = shutil.which("bash")
@@ -64,13 +65,17 @@ def target_prerequisites(source, target):
 
 class MakePrerequisiteParsing(unittest.TestCase):
     def test_collects_fragmented_continued_and_shared_target_rules(self):
-        source = ("test: test-program-stream\n"
-                  "other: smoke\n"
-                  "test other: test-compiler " + chr(92) + "\n  test-console # retained gate\n"
-                  "test: test-library | prepare\n"
-                  "\t@echo smoke\n")
-        self.assertEqual(target_prerequisites(source, "test"),
-                         ["test-program-stream", "test-compiler", "test-console", "test-library", "prepare"])
+        source = (
+            "test: test-program-stream\n"
+            "other: smoke\n"
+            "test other: test-compiler " + chr(92) + "\n  test-console # retained gate\n"
+            "test: test-library | prepare\n"
+            "\t@echo smoke\n"
+        )
+        self.assertEqual(
+            target_prerequisites(source, "test"),
+            ["test-program-stream", "test-compiler", "test-console", "test-library", "prepare"],
+        )
 
     def test_detects_smoke_in_later_clause_and_exact_target_names(self):
         source = "test: test-compiler\ntest-extra: smoke-extra\ntest: smoke-console\n"
@@ -104,7 +109,7 @@ class ConsoleRouting(unittest.TestCase):
         self.tool(
             "python3",
             'case "$*" in\n'
-            '  "-B tests/kernel-console-pty.py"|"-B tests/kernel-console-pty.py --uefi")\n'
+            '  "-B tests/kernel-console-pty.py --build-dir "*|"-B tests/kernel-console-pty.py --uefi --build-dir "*)\n'
             "    test -f tests/kernel-console-pty.py\n"
             '    printf "pty|%s|%s|%s|%s|%s|%s|%s\\n" "$PWD" "$*" "$QEMU" '
             '"${OVMF-}" "${OVMF_CODE-}" "${OVMF_VARS-}" "${QEMU_DATA-}" >> "$CALLS"\n'
@@ -124,10 +129,9 @@ class ConsoleRouting(unittest.TestCase):
             self.script(
                 self.scripts / name,
                 f'printf "build|{label}|%s\\n" "${{{selector}-}}" >> "$CALLS"\n'
-                "mkdir -p build\n"
-                f'printf "%s\\n" "${{{selector}-}}" > build/{label}-profile\n'
-                f'if [[ "${{{selector}-}}" == {console} ]]; then exit "${{BUILD_STATUS:-0}}"; fi\n'
-                'exit "${RESTORE_STATUS:-0}"\n',
+                f'mkdir -p "build/native profiles/{label}/console"\n'
+                f'printf "%s\\n" "$PWD/build/native profiles/{label}/console"\n'
+                'exit "${BUILD_STATUS:-0}"\n',
             )
         firmware = self.home / "firmware with spaces.fd"
         firmware.write_bytes(b"synthetic fixture, never executed")
@@ -173,11 +177,11 @@ class ConsoleRouting(unittest.TestCase):
 
     def assert_route(self, mode):
         calls = self.calls()
-        self.assertEqual(len(calls), 3, calls)
+        self.assertEqual(len(calls), 2, calls)
         self.assertEqual(calls[0], f"build|{mode}|" + ("console" if mode == "uefi" else "1"))
         argv = "-B tests/kernel-console-pty.py" + (" --uefi" if mode == "uefi" else "")
+        argv += " --build-dir " + str(self.repo / f"build/native profiles/{mode}/console")
         self.assertEqual(calls[1].split("|")[:3], ["pty", str(self.repo), argv])
-        self.assertEqual(calls[2], f"build|{mode}|" + ("normal" if mode == "uefi" else "0"))
 
     def test_direct_default_and_explicit_platform_dispatch(self):
         for args, mode in (((), "bios"), (("bios",), "bios"), (("uefi",), "uefi")):
@@ -186,37 +190,24 @@ class ConsoleRouting(unittest.TestCase):
                 self.assert_route(mode)
                 self.clear_calls()
 
-    def test_public_make_targets_dispatch_to_pty_and_restore(self):
+    def test_public_make_targets_dispatch_to_isolated_pty(self):
         for target, mode in (("smoke-console", "bios"), ("smoke-console-uefi", "uefi")):
             with self.subTest(target=target):
                 self.run_make(target)
                 self.assert_route(mode)
                 self.clear_calls()
 
-    def test_build_pty_and_restore_status_preservation(self):
+    def test_build_and_pty_status_preservation_without_restoration(self):
         for mode in ("bios", "uefi"):
-            for build, pty, restore, expected in (
-                (0, 0, 0, 0),
-                (0, 17, 0, 17),
-                (0, 0, 19, 19),
-                (0, 17, 19, 17),
-                (23, 0, 0, 23),
-                (23, 0, 19, 23),
-            ):
-                with self.subTest(mode=mode, build=build, pty=pty, restore=restore):
-                    self.run_script(
-                        mode,
-                        env={"BUILD_STATUS": str(build), "PTY_STATUS": str(pty), "RESTORE_STATUS": str(restore)},
-                        expected=expected,
-                    )
-                    calls = self.calls()
-                    self.assertEqual(len(calls), 2 if build else 3, calls)
-                    self.assertEqual(calls[-1], f"build|{mode}|" + ("normal" if mode == "uefi" else "0"))
+            for build, pty, expected in ((0, 0, 0), (0, 17, 17), (23, 0, 23)):
+                with self.subTest(mode=mode, build=build, pty=pty):
+                    self.run_script(mode, env={"BUILD_STATUS": str(build), "PTY_STATUS": str(pty)}, expected=expected)
+                    self.assertEqual(len(self.calls()), 1 if build else 2)
                     if not build:
                         self.assert_route(mode)
                     self.clear_calls()
 
-    def test_parent_only_signal_waits_for_foreground_build_before_restore(self):
+    def test_parent_only_signal_waits_for_profile_build(self):
         sleep = shutil.which("sleep")
         self.assertIsNotNone(sleep)
         for mode, name, selector, console in (
@@ -255,15 +246,13 @@ class ConsoleRouting(unittest.TestCase):
                             process.kill()
                             process.communicate(timeout=5)
                     self.assertEqual(process.returncode, 128 + signum, output)
-                    self.assertEqual(
-                        self.calls(), [f"build|{mode}|started", f"build|{mode}|finished", f"build|{mode}|restored"]
-                    )
+                    self.assertEqual(self.calls(), [f"build|{mode}|started", f"build|{mode}|finished"])
                     self.clear_calls()
 
     def test_public_make_failure_is_not_success(self):
         for target in ("smoke-console", "smoke-console-uefi"):
             self.run_make(target, env={"PTY_STATUS": "17"}, expected=2)
-            self.assertEqual(len(self.calls()), 3)
+            self.assertEqual(len(self.calls()), 2)
             self.clear_calls()
 
     def test_help_and_invalid_arguments_never_start_build_or_restore(self):
@@ -364,16 +353,15 @@ class ConsoleRouting(unittest.TestCase):
         calls = self.calls()
         self.assertEqual(calls.pop(0), "existing|kernel-boot-capacity.py --qemu")
         self.assertEqual(calls[: len(SMOKE_SCRIPTS)], ["existing|" + name for name in SMOKE_SCRIPTS])
-        self.assertEqual(len(calls), len(SMOKE_SCRIPTS) + 6)
+        self.assertEqual(len(calls), len(SMOKE_SCRIPTS) + 4)
         console_calls = calls[len(SMOKE_SCRIPTS) :]
         self.assertEqual(console_calls[0], "build|bios|1")
-        self.assertIn("|-B tests/kernel-console-pty.py|", console_calls[1])
-        self.assertEqual(console_calls[2:4], ["build|bios|0", "build|uefi|console"])
-        self.assertIn("|-B tests/kernel-console-pty.py --uefi|", console_calls[4])
-        self.assertEqual(console_calls[5], "build|uefi|normal")
+        self.assertIn("|-B tests/kernel-console-pty.py --build-dir ", console_calls[1])
+        self.assertEqual(console_calls[2], "build|uefi|console")
+        self.assertIn("|-B tests/kernel-console-pty.py --uefi --build-dir ", console_calls[3])
 
     def test_real_pty_entrypoint_failure_propagates_through_public_make_targets(self):
-        for name in ("kernel_uefi_console_clock.py", "kernel_emulator_clock.py"):
+        for name in ("kernel_uefi_console_clock.py", "kernel_emulator_clock.py", "qemu_transport.py"):
             shutil.copy2(ROOT / "scripts" / name, self.scripts / name)
         self.env["REAL_PYTHON"] = sys.executable
         self.tool("python3", 'exec "$REAL_PYTHON" -B "$@"\n')
@@ -387,13 +375,12 @@ class ConsoleRouting(unittest.TestCase):
                 self.assertIn("kernel-console-pty.py", output)
                 self.assertIn("QEMU closed its PTY before the expected console response", output)
                 calls = self.calls()
-                self.assertEqual(len(calls), 3, calls)
+                self.assertEqual(len(calls), 2, calls)
                 self.assertEqual(calls[0], f"build|{mode}|" + ("console" if mode == "uefi" else "1"))
                 self.assertTrue(calls[1].startswith("qemu|-machine " + ("q35" if mode == "uefi" else "pc")))
                 self.assertIn("-accel tcg -cpu qemu64", calls[1])
                 self.assertNotIn("-icount", calls[1])
-                self.assertEqual(calls[2], f"build|{mode}|" + ("normal" if mode == "uefi" else "0"))
-                directory = self.repo / ("build/uefi" if mode == "uefi" else "build")
+                directory = self.repo / f"build/native profiles/{mode}/console"
                 self.assertEqual((directory / "kernel-console-pty.log").read_bytes(), b"")
                 metrics = json.loads((directory / "kernel-console-pty.metrics.json").read_text())
                 self.assertEqual(metrics["platform"], mode)
@@ -403,8 +390,8 @@ class ConsoleRouting(unittest.TestCase):
                     self.assertNotIn("-icount", receipt["argv"])
                 self.clear_calls()
 
-    def test_process_group_term_joins_detached_emulator_before_restore(self):
-        for name in ("kernel_uefi_console_clock.py", "kernel_emulator_clock.py"):
+    def test_process_group_term_joins_detached_emulator(self):
+        for name in ("kernel_uefi_console_clock.py", "kernel_emulator_clock.py", "qemu_transport.py"):
             shutil.copy2(ROOT / "scripts" / name, self.scripts / name)
         self.env["REAL_PYTHON"] = sys.executable
         pid_file = self.home / "qemu.pid"
@@ -428,25 +415,7 @@ class ConsoleRouting(unittest.TestCase):
             "    signal.pause()\n"
         )
         qemu.chmod(0o755)
-        check_reaped = (
-            "import os, sys\nfrom pathlib import Path\n"
-            "pid = int(Path(os.environ['QEMU_PID_FILE']).read_text())\n"
-            "try:\n    os.kill(pid, 0)\n"
-            "except ProcessLookupError:\n    sys.exit(0)\n"
-            "sys.exit(97)\n"
-        )
-        (self.repo / "build/uefi").mkdir(parents=True)
-        for mode, name, selector, console in (
-            ("bios", "kernel-build.sh", "KERNEL_CONSOLE", "1"),
-            ("uefi", "kernel-uefi-build.sh", "UEFI_MODE", "console"),
-        ):
-            self.script(
-                self.scripts / name,
-                f'if [[ "${{{selector}-}}" != {console} ]]; then\n'
-                f'    "$REAL_PYTHON" -c {shlex.quote(check_reaped)}\n'
-                "fi\n"
-                f'printf "build|{mode}|%s\\n" "${{{selector}-}}" >> "$CALLS"\n',
-            )
+        for mode in ("bios", "uefi"):
             with self.subTest(mode=mode):
                 process = subprocess.Popen(
                     [BASH, str(self.scripts / "kernel-console-smoke.sh"), mode],
@@ -472,7 +441,6 @@ class ConsoleRouting(unittest.TestCase):
                             f"build|{mode}|" + ("console" if mode == "uefi" else "1"),
                             "qemu|started",
                             "qemu|stopped",
-                            f"build|{mode}|" + ("normal" if mode == "uefi" else "0"),
                         ],
                     )
                     with self.assertRaises(ProcessLookupError):
@@ -512,6 +480,159 @@ class ConsoleRouting(unittest.TestCase):
             self.assertIn("scripts/compiler_contract.py check", self.calls()[0])
             self.assertFalse((self.repo / "build").exists())
             self.clear_calls()
+
+
+class NormalRestoration(unittest.TestCase):
+    def test_console_output_cannot_be_inside_prebuilt_image(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        spec = importlib.util.spec_from_file_location("console_output_controls", ROOT / "tests/kernel-console-pty.py")
+        console = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(console)
+        with tempfile.TemporaryDirectory() as temporary:
+            build = Path(temporary) / "native/kernel-images/bios/console"
+            build.mkdir(parents=True)
+            output = build / "esp/guest-output"
+            with (
+                patch.object(sys, "argv", ["pty", "--build-dir", str(build), "--output-dir", str(output)]),
+                patch.object(console.transport, "start") as start,
+            ):
+                with self.assertRaisesRegex(RuntimeError, "cannot modify"):
+                    console.main()
+            start.assert_not_called()
+            self.assertFalse(output.exists())
+
+    def test_prebuilt_restoration_uses_one_private_run_only_call(self):
+        spec = importlib.util.spec_from_file_location(
+            "console_prebuilt_restoration", ROOT / "tests/kernel-console-service-qualification.py"
+        )
+        qualification = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(qualification)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            image = root / "native/kernel-images/uefi/normal"
+            image.mkdir(parents=True)
+            work = root / "evidence"
+            work.mkdir()
+            (image / "normal.log").write_text("untouched shared log")
+            output = work / "normal-restoration"
+
+            def run(argv, timeout, env=None):
+                self.assertNotIn("--print-image-dir", argv)
+                self.assertEqual(argv[2:], ["--run-only", str(image), "--output-dir", str(output), "normal"])
+                output.mkdir()
+                (output / "normal.log").write_text("fresh private log")
+                (output / "normal.clock.json").write_text("fresh private clock")
+                return subprocess.CompletedProcess(argv, 0, b"normal boot passed", b"")
+
+            with patch.object(qualification, "run_bounded", side_effect=run) as bounded:
+                qualification.restore_normal(work, {}, normal_build=image)
+            bounded.assert_called_once()
+            self.assertEqual((image / "normal.log").read_text(), "untouched shared log")
+            self.assertEqual((work / "restoration-normal.log").read_text(), "fresh private log")
+
+    def test_native_restoration_requires_fresh_mandatory_outputs_and_preserves_compiler(self):
+        spec = importlib.util.spec_from_file_location(
+            "console_restoration_controls", ROOT / "tests/kernel-console-service-qualification.py"
+        )
+        qualification = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(qualification)
+        for behavior in ("fresh", "stale", "missing", "failed"):
+            with self.subTest(behavior=behavior), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                image = root / "native/kernel-images/uefi/normal"
+                image.mkdir(parents=True)
+                work = root / "evidence"
+                work.mkdir()
+                for name in ("normal.log", "normal.clock.json"):
+                    path = image / name
+                    if behavior != "missing" or name != "normal.clock.json":
+                        path.write_bytes(b"same bytes are allowed after a fresh write")
+                        os.utime(path, ns=(1, 1))
+                calls = []
+
+                def run(argv, timeout, env=None):
+                    calls.append(argv)
+                    self.assertEqual(env["AURORAC"], "/reviewed/prebuilt-compiler")
+                    if "--print-image-dir" in argv:
+                        return subprocess.CompletedProcess(argv, 0, (str(image) + "\n").encode(), b"")
+                    self.assertEqual(argv[-1], "normal")
+                    self.assertNotIn("--shared-normal", argv)
+                    self.assertEqual(env["MESON_BUILD_DIR"], str(root / "native"))
+                    if behavior == "fresh":
+                        for name in ("normal.log", "normal.clock.json"):
+                            (image / name).write_bytes(b"same bytes are allowed after a fresh write")
+                    elif behavior == "missing":
+                        (image / "normal.log").write_bytes(b"fresh log")
+                    return subprocess.CompletedProcess(argv, 1 if behavior == "failed" else 0, b"boot", b"stderr")
+
+                with patch.object(qualification, "run_bounded", side_effect=run):
+                    if behavior == "fresh":
+                        receipt = qualification.restore_normal(work, {"AURORAC": "/reviewed/prebuilt-compiler"})
+                        self.assertEqual(receipt["image_directory"], str(image))
+                        for name in ("normal.log", "normal.clock.json"):
+                            self.assertEqual((work / ("restoration-" + name)).read_bytes(), (image / name).read_bytes())
+                    else:
+                        expected = {"stale": "Stale", "missing": "Missing", "failed": "restoration failed"}[behavior]
+                        with self.assertRaisesRegex(ValueError, expected):
+                            qualification.restore_normal(work, {"AURORAC": "/reviewed/prebuilt-compiler"})
+                self.assertEqual(len(calls), 2)
+
+
+class ConsoleFaultTransport(unittest.TestCase):
+    def load(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        spec = importlib.util.spec_from_file_location(
+            "fault_transport_control", ROOT / "tests/kernel-console-service-qualification.py"
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_shared_fault_transport_retains_four_independent_fault_oracles(self):
+        qualification = self.load()
+        start = qualification.transport.start
+        prefix = (
+            b"AURORA_UEFI_LANGUAGE_OK: value=42\nAURORA_UEFI_OK\n"
+            b"AURORA_UEFI_CONSOLE_TIMER_READY: polling_count=1250000 uart_irq=0\n"
+        )
+        ready = b"AURORA_CONSOLE_READY: UEFI, ASCII, 64-byte lines\naurora> "
+        rejected = b"AURORA_UEFI_CONSOLE_FAIL: console service authority\n"
+        tails = {"stale": rejected, "reentry": ready + rejected, "timeout": ready[:17], "report": ready}
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for mode, tail in tails.items():
+                work = root / mode
+                work.mkdir()
+                body = "import os; os.write(1, " + repr(prefix + tail) + ")\n"
+                if mode == "report":
+                    body += "if os.read(0, 1) != b'x': raise SystemExit(9)\n"
+                    report = b"AURORA_UEFI_EXCEPTION: vector=255 fault\nAURORA_UEFI_PAYLOAD_FAIL: exception\n"
+                    body += "os.write(1, " + repr(report) + ")\n"
+                body += "raise SystemExit(35)\n"
+
+                def launch(argv, **options):
+                    self.assertIn("file=fat:ro:" + str(root / "esp"), " ".join(argv))
+                    return start([sys.executable, "-B", "-c", body], **options)
+
+                with (
+                    self.subTest(mode=mode),
+                    patch.object(qualification.admission, "BUILD", root),
+                    patch.object(qualification.shutil, "which", return_value=sys.executable),
+                    patch.object(qualification.subprocess, "check_output", return_value=b"/firmware\0\0\0"),
+                    patch.object(qualification.transport, "start", side_effect=launch),
+                ):
+                    result = qualification.fault_guest("console-service-" + mode, work)
+                self.assertEqual(result["exit_status"], 35)
+                self.assertEqual(result["input_sent"], mode == "report")
+                self.assertTrue((work / "guest.log").read_bytes().startswith(prefix))
+                self.assertTrue((work / "clock.json").is_file())
+
+    def test_shared_helper_keeps_stdout_stderr_and_exit_status_separate(self):
+        qualification = self.load()
+        result = qualification.run_bounded(
+            [sys.executable, "-B", "-c", "import os; os.write(1,b'out'); os.write(2,b'err'); raise SystemExit(7)"], 5
+        )
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (7, b"out", b"err"))
 
 
 if __name__ == "__main__":

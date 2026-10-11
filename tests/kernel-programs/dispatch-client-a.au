@@ -1,7 +1,17 @@
 module dispatch_client_a;
 auto aurora_user_main(i64 phase, i64 value, i64 second) -> i64 {
-    if (phase == 0) { return 40; }
-    if (phase == 2) { if (value == 42) { return 42; } }
-    if (phase == 3) { if (value == 0) { return 7; } }
+    if (phase == 0) {
+        return 40;
+    }
+    if (phase == 2) {
+        if (value == 42) {
+            return 42;
+        }
+    }
+    if (phase == 3) {
+        if (value == 0) {
+            return 7;
+        }
+    }
     return 0;
 }

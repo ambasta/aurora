@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location("graphical_image_policy", ROOT / "tests/kernel-uefi-image.py")
+spec = importlib.util.spec_from_file_location("graphical_image_policy", ROOT / "scripts/kernel_uefi_image.py")
 policy = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(policy)
 capture_spec = importlib.util.spec_from_file_location(
@@ -276,7 +276,7 @@ class ImagePolicy(unittest.TestCase):
         self.reject(lambda f: f["object_symbols"].update(runtime=defined(ENTRY, "t")))
 
     def test_exact_language_only_reflection_helpers(self):
-        self.assertEqual(policy.REFLECTION_HELPERS, frozenset(REFLECTION))
+        self.assertEqual(policy.common.stack_facts.reflection_inventory(REFLECTION), set(REFLECTION))
         for name in REFLECTION:
             self.reject(lambda f, n=name: f.update(symbols=f["symbols"].replace(defined(n), "")))
             for kind in ("t", "D", "W", "U"):
@@ -427,18 +427,16 @@ class ImagePolicy(unittest.TestCase):
                         policy.console_service_policy(**broken)
 
     def test_exact_build_routing_and_mandatory_combined_admission(self):
-        source = (ROOT / "scripts/kernel-uefi-build.sh").read_text()
-        image_case = source[
-            source.index("image_policy=()") : source.index('python3 tests/kernel-uefi-image.py "${image_policy[@]}"')
-        ]
-        self.assertEqual(image_case.count("--graphical-console"), 1)
-        self.assertIn("graphical-console|graphical-console-capture) image_policy+=(--graphical-console) ;;", image_case)
-        for action in ("begin", "end", "emit"):
-            self.assertIn("scripts/kernel_graphical_console_admission.py " + action + ' --mode "$UEFI_MODE"', source)
-        self.assertLess(
-            source.index('python3 tests/kernel-uefi-image.py "${image_policy[@]}"'),
-            source.index("scripts/kernel_graphical_console_admission.py end --mode"),
-        )
+        spec = importlib.util.spec_from_file_location("kernel_profiles", ROOT / "scripts/kernel_profiles.py")
+        catalog = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(catalog)
+        selected = catalog.profiles()
+        combined = {name for name, recipe in selected.items() if recipe["admission"] == "graphical"}
+        self.assertEqual(combined, {"uefi/graphical-console", "uefi/graphical-console-capture"})
+        for name, recipe in selected.items():
+            self.assertEqual("--graphical-console" in recipe["image_options"], name in combined)
+        with self.assertRaises(ValueError):
+            catalog.select("uefi", {}, "graphical-console-future")
 
     def test_production_fixture_absence_covers_every_artifact_and_evidence_channel(self):
         baseline = fixture_artifacts()

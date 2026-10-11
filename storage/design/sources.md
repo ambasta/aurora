@@ -62,8 +62,7 @@ and checksum. No Linux implementation reuse or C ABI is implied.
 For the proposed narrow X0 header/checksum fixture, a coherent source set was
 subsequently retrieved through the read-only GitHub connector at exact commit
 `038d61fd642278bab63ee8ef722c50d10ab01e8f` (v6.16, tag object
-`8ec6d99a41e3d1dbdff2bdb3aa42951681e1e76c`). The five files and Git blob hashes
-are recorded in `evidence/xfs-v6.16-provenance.json`. Together the
+`8ec6d99a41e3d1dbdff2bdb3aa42951681e1e76c`). Together the
 [CRC helper](https://github.com/torvalds/linux/blob/038d61fd642278bab63ee8ef722c50d10ab01e8f/fs/xfs/libxfs/xfs_cksum.h),
 [buffer helper](https://github.com/torvalds/linux/blob/038d61fd642278bab63ee8ef722c50d10ab01e8f/fs/xfs/xfs_buf.h),
 [superblock read path](https://github.com/torvalds/linux/blob/038d61fd642278bab63ee8ef722c50d10ab01e8f/fs/xfs/xfs_mount.c),

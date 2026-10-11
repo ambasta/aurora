@@ -1,9 +1,9 @@
-# Protected command console implementation contract
+# Protected command console
 
-Status: scoped command, recovery and hostile-profile guest evidence independently accepted.
-Publication also requires the [canonical final-source native gate](../AGENTS.md#workflow).
-Started at b3551be8 and composed the accepted compiler/repair source through main
-1024f40e plus the qualified terminal-event and structural-formatter source joins.
+This living guide covers the bounded two-domain command profile. Current behavior
+and required checks are described below; run-specific results and failures remain
+in Git/PR history and retained evidence. Historical passes do not replace the
+[final-source qualification gates](../AGENTS.md#workflow).
 
 ## Observable gate
 
@@ -77,37 +77,15 @@ saves/readbacks. Each recovery profile first interrupts `upper note` after parti
 progress, verifies the original via `cat note`, then saves and reads the successful
 retry before the retained upper cases. Hosted cancellation controls retain the
 read-recovery cases. These additions require final-source linked/image, actual
-guest and full qualification; the historical results below do not cover them.
+guest and full qualification; historical results do not transfer to changed code.
 
-The preguest gates add exact aggregate/bridge/inventory checks and source-native
-Mailbox lifecycle tests to the existing admission and transcript controls. The
-ordinary and hosted ASan/UBSan fixture each passed 9,391 checks, including actual
-Aurora constructor equivalence; generated Aurora assembly is unsanitized. The
-existing snapshot native regression also passed 75,329 checks. These focused
-results do not replace the canonical final-source full gate.
-
-On 2026-10-10, independent source/ABI/stack and guest-outcome review accepted all
-12 existing protected-console profiles on GCC 16.2.0-3, Binutils 2.47 and the
-original-clock QEMU 10.0.13/OVMF runtime. The normal note/upper script completed
-13 commands and 735 CPL3 launches, including missing, repeated, shorter, empty
-and 53-byte readback plus rejected replacement preservation. Each of the six
-fault/budget profiles discarded a partially staged note read and then read the
-unchanged saved value on fresh grants before completing the retained upper cases.
-Pending ownership drain and all four authority fail-stops passed their existing
-exact gates. In total, the matrix recorded 3,674 launches, 68 retired commands,
-61 completed outputs, six recoveries and four fail-stops. Each launched EFI was
-captured and matched to its separately reviewed image. Fresh normal UEFI and BIOS
-restoration boots also passed with captured launch bytes.
-
-Every variant retained the 131,072-byte mapped-image limit: payload 118,944 bytes,
-mapped extent 126,976. The normal supervisor peak is 14,768 bytes plus the
-unchanged applicable measured 151-byte synchronous-fault path, totaling 14,919
-against the 15,360-byte admission cap. The stricter separate comparison using
-the snapshot profile's fixed 512-byte reserve is 15,280; no reserve was reduced.
-Legacy scalar/snapshot executable wrapper expansions remain identical, so the
-fresh snapshot native/ABI regression does not imply an unrelated new snapshot
-guest qualification. Root full, publication and physical-hardware scope remain
-separate from this bounded result.
+Pre-guest checks cover aggregate/bridge/inventory consistency, real Mailbox
+lifecycle and Aurora constructor equivalence, alongside source/ABI/stack and
+transcript controls. Hosted ASan/UBSan does not instrument generated Aurora.
+Every variant retains the 131,072-byte mapped-image limit and 15,360-byte
+supervisor-plus-fault cap within the 16 KiB stack. Fresh exact-image accounting
+must establish the current peaks; historical measurements cannot admit a rebuild.
+Legacy scalar/snapshot wrapper checks are separate from actual snapshot guests.
 
 ## Authority and data
 
@@ -159,84 +137,27 @@ Preserve raw failures and receipts. A focused gate is not full native or hardwar
 qualification. Terminal-event policy work must be composed without losing its
 Aurora classifier wrapper/import or weakening its trusted envelope checks.
 
-## Historical upper-only qualification
+## Checked images and local guest qualification
 
-The original-clock QEMU 10.0.13/OVMF normal profile completed six commands and
-363 authenticated CPL3 runs: `HELLO, AURORA 42!`, a repeated command, empty input,
-edited input, 64-byte output and a healthy command after rejected input. Grants
-were fresh and epochs monotonic; output followed zero-resource retirement. QEMU
-exited 33 after the quiescent console exit. The normal boot image was rebuilt.
+Meson builds each selected profile in its own `kernel-images/uefi/PROFILE`
+directory. Declared source, compiler, generated-header and sidecar dependencies
+invalidate the affected products. A profile build runs the shared image, private
+ABI and stack checks before producing one artifact-bound admission report; it
+does not launch a guest. There is no separate source/tool snapshot or reviewer
+checksum workflow.
 
-The original final oracle rejected startup CRCRLF produced by QEMU's PTY setup,
-although its kernel-root value was correct. The raw failed metrics and transcript
-are preserved. A narrowly corrected matcher accepts one or two CR bytes only at
-that startup record; an explicit hash-bound offline replay passed. Independent
-review accepted this original guest plus corrected-oracle replay as a composite.
-It is not represented as a second guest run or an all-profile pass.
+Stack accounting uses C++ `.su`/`.ci` and Aurora `.stack.json` emitted with the
+actual compiled objects. The shared graph checks object/link association,
+function and call membership, cycles and profile budgets. Handwritten bridge,
+protected-entry and interrupt contracts remain explicit. The page-table walks
+are iterative. Supported local PIC switches require a bounded read-only table,
+exact in-function targets and no entry that bypasses their guard. Unknown
+control-transfer forms reject. Compiler metadata and trusted inline assembly are
+part of the assurance boundary; these checks do not independently prove compiler
+correctness, memory authority or termination.
 
-Focused hosted tests passed, including 40,000 stream-model steps, 471 two-role
-run-authority checks, real Mailbox/Aurora-policy composition, copied editor/UART
-boundaries and existing IPC/run/disposal regressions. Fatal ASan/UBSan passed for
-the same trusted C++ scope. Generated Aurora assembly is unsanitized; leak checks
-are disabled. The revised UART suite has 574 observations for each FIFO profile.
-The current guest-oracle model has 148 positive/refusal controls.
-
-Independent exact-image admission verified two one-page RX images, actual
-compiled uppercase instructions, PE/PIC, owner/phase/IRQ mappings and linked
-stack bounds. Accepted normal-image peaks were 14,847 bytes including boot fault,
-2,839 for polling plus IRQ, 2,991 for pending drain plus IRQ, 1,559 for the separate
-IRQ path, and 128 for each user entry/compiled path. The cap is 15,360 bytes within
-the unchanged 16 KiB stack. The separately admitted pending variant uses 1,575
-bytes for its IRQ path, 2,855 for poll plus IRQ and 3,007 for drain plus IRQ.
-These numbers qualify only their exact admitted images.
-
-Eleven additional original-clock guests passed independent raw-evidence replay.
-Each request/service/completion fault or budget mode completed one byte before
-failing at ordinal 1, discarded all staged output, retired both domains and ran
-six healthy commands afterward. Their traces contain 367/368/369 runs and exit
-33. The pending-IRQ mode completed six commands/363 runs with authenticated
-old-owner drains. Owner, ordinal, transaction and unknown-site probes each failed
-stop at the exact admitted site/reason, exit 35, without output or prompt recovery.
-Every profile restored the normal image. A separate actual normal UEFI boot then
-passed exit 33 on exact bytes independently rebound to prior terminal admission.
-
-Final repository acceptance follows the [canonical final-source gates](../AGENTS.md#workflow),
-including documentation changes and independent review.
-The existing dev/slow receipts retain their original source and coverage; no new
-full-native, broad kernel or physical-hardware qualification is claimed.
-
-Bulk evidence, original failures and exact source/compiler/image/replay hashes
-are retained in the external checkpoint evidence package. The first build's
-unused-stack-accessor failure was corrected by checking the actual kernel stack;
-no failed command is reported as a passing build.
-
-## Routine local admission and separate first-change qualification
-
-`scripts/kernel-uefi-build.sh` records program-profile source inputs, Aurora/host
-compiler hashes and selected flags before compilation, verifies they did not
-change during compilation, and binds the resulting objects, stack records, user
-images and EFI image in `build/uefi/program-build.json`. Profile builds do not
-start a guest. Every program-profile build automatically emits admission evidence
-and rejects missing or stale provenance, unsupported decoder instructions, image
-violations and exhausted stack budgets before any public launch can proceed.
-
-`python3 -B scripts/kernel_program_console_admission.py emit --mode program-console`
-prepares `build/uefi/program-console-admission.json`. It rechecks PE/PIC and user
-image metadata, the exact poll/drain instructions, object-to-link associations,
-compiler frames, actual linked call-site stack depths, separately owned CPL3
-stacks and the full IRQ frame/alignment/dispatch reserve. Its RuntimeTables
-recursion bound relies on the pinned C++ four-level contract; exact emitted
-walker bodies are retained for independent review. The PageTables walker also
-retains its machine-level decreasing-level proof. Unknown indirect branches are
-rejected; the terminal classifier's one six-entry PIC switch has a checked bound,
-read-only table, in-function instruction targets and all target paths decoded.
-Independent full-width register moves and nonnegative RSP-relative loads may be
-scheduled between its ordered proof operations only when they preserve the index,
-table base, stack pointer and flags. Every such instruction remains in ordinary
-stack analysis; recognizing a load does not prove its memory authority. Direct
-and jump-table edges may not bypass the bound by entering the envelope afterward.
-
-Ordinary developer commands need no historical or assistant-issued digest:
+Ordinary commands build and check the selected native profile before running the
+same original-clock PTY and hostile transcript oracles:
 
 ```sh
 make program-console-uefi
@@ -244,93 +165,51 @@ make smoke-program-console-uefi
 ./scripts/kernel-program-console-smoke.sh program-pending
 ```
 
-They preflight tools, firmware and inherited controls, build the selected local
-profile and verify the complete current-source/output receipt before execution.
-The shared operand-aware stack decoder models qword `andq` as scalar AND without
-pinning a compiler-selected local offset. Stack-pointer writes still reject, and
-flag or recursion-carrier writes invalidate tracked facts. The separate carrier
-preservation proof still rejects unproved stores. This models stack effects; it
-does not establish copied-RFLAGS provenance or memory authority. The unchanged
-source-level pending-flag behavior and actual pending-IRQ guest remain separate
-requirements. Unknown instruction semantics still reject.
-Smoke uses the same original-clock PTY and hostile transcript oracles as before,
-rechecks image/source identity afterward and rebuilds the normal image on success,
-failure or handled interruption. That restoration is a build, not a normal boot.
-Prerequisite rejection occurs before image mutation or restoration. Unavailable
-tools/firmware are `BLOCKED` (exit 2); invalid controls, build/admission failures,
-wrong guest exits or failed oracles are `FAIL`, including a build/check exit 2.
-Neither outcome is a skipped or successful guest test.
-
-Evidence generation is not independent approval. First-change qualification is
-explicit, against an already built image that the reviewer inspected:
+For an independently reviewed, already built image, pass its explicit directory
+to the same guest oracle. It checks admission before and after execution without
+rebuilding that image or requiring a review token:
 
 ```sh
-UEFI_MODE=program-console ./scripts/kernel-uefi-build.sh
-# An independent reviewer inspects the resulting admission evidence and supplies its digest.
-PROGRAM_CONSOLE_REVIEW_SHA256=<independently-reviewed-digest> make qualify-program-console-uefi
-# For another separately built/reviewed profile:
-PROGRAM_CONSOLE_REVIEW_SHA256=<independently-reviewed-digest> \
-    ./scripts/kernel-program-console-smoke.sh --qualification program-pending
+image_dir="$(UEFI_MODE=program-console ./scripts/kernel-uefi-build.sh --print-image-dir)"
+# Review this image and its generated ABI/stack evidence before first-change qualification.
+python3 -B tests/kernel-program-console-pty.py --mode program-console --build-dir "$image_dir"
+./scripts/kernel-uefi-smoke.sh normal
 ```
 
-Only this explicit route uses `reviewed --mode PROFILE`; it never computes or
-fills its own approval and never rebuilds the reviewed image before the guest.
-Missing approval blocks qualification; a malformed/mismatched pin fails it.
-The review checks the exact receipt, selected profile, provenance and complete
-source/object/image inventory, again after execution. A supplied pin does not
-silently turn an ordinary developer run into qualification.
+Profile-local outputs leave the normal image untouched; the final normal command
+above verifies an actual restoration boot. Each PTY attempt retains the admitted
+report, clock command, raw transcript, stderr and metrics under
+`build/program-console-evidence`. Its result does not replace independent review,
+final-source `full` or affected guest gates. Missing tools/firmware are `BLOCKED`;
+invalid controls, build/admission errors, wrong exits and failed oracles are `FAIL`.
+Neither is a successful or skipped guest test.
 
-Each PTY attempt retains a fresh directory under `build/program-console-evidence`
-with the original admission bytes, clock command, raw transcript, stderr and
-metrics. Developer metrics have `purpose: developer` and
-`qualification_eligible: false`; only a passing explicitly pinned guest may have
-`qualification_eligible: true`. A successful guest metric does not override a
-failed wrapper/restoration result or replace independent review/final merge gates.
-The `diagnose` action produces stack diagnostics only, without an admission
-receipt, and can inspect an old image while implementation continues.
+Compiler-free controls in `tests/kernel-program-admission.py` and
+`tests/kernel-program-console-entrypoints.py` cover artifact changes, profile
+selection, stale-report rejection and public build/check/PTY routing. The
+`diagnose` action produces stack diagnostics without issuing an admission report.
+These controls do not establish compiler, guest or physical hardware qualification.
 
-Compiler-free regression controls are in `tests/kernel-program-admission.py`
-and `tests/kernel-program-console-entrypoints.py`. They reject changed source,
-image, compiler, profile, incomplete receipt coverage and fabricated approval;
-record public build/check/PTY routes, no-rebuild qualification and restoration;
-and distinguish unavailable prerequisites from actual failures. These synthetic
-controls do not establish a new guest, compiler/toolchain or hardware qualification.
+## Recovery and hostile-profile checks
 
-## Pre-guest review repairs
+Every program runtime/timer trace and input operation uses one sticky-latch UART
+specialization so diagnostic LSR reads cannot clear errors before the editor sees
+them. Other profiles retain their own routes. A source-routing guard covers the
+include chain; hosted UART controls inject receive errors during runtime-style TX
+before copied submission.
 
-Independent source review found that runtime diagnostics used raw serial LSR
-reads, which could clear receive-error bits before the console saw them. The new
-program profile now routes every runtime/timer trace and input operation through
-one sticky-latch UART specialization. Other profiles keep their original route.
-A source-routing guard covers the actual runtime/include chain; a hosted UART
-regression injects errors during runtime-style trace TX before copied submission.
-The final joined hosted and fatal sanitizer reruns passed these controls.
+The guest oracle authenticates supervisor pending-drain records against the owned
+arena/root, exact admitted drain PC interval, frame range, active epoch, terminal
+state and paired drain evidence. Owner, ordinal, transaction and unknown-site
+profiles must fail stop with no output or prompt recovery.
 
-The guest oracle also now authenticates supervisor pending-drain records against
-the owned arena/root, exact reviewed drain PC interval, frame range, active epoch,
-terminal state and immediately paired drain evidence. The guest-free positive
-and refusal controls also reject malformed supervisor drain records. Four additional opt-in hostile-envelope profiles
-(owner, ordinal, transaction and unknown site) require fail stop with no output
-or prompt recovery. Exact compiled images and actual guest traces passed these gates.
+Request/service/completion fault and budget probes inject only at ordinal 1,
+after one complete triplet stages a byte. The oracle requires that prefix and
+the failing-phase prefix, no released partial output, retirement and a healthy
+next command. Empty/one-byte inputs do not consume the probe; only actual injection
+sets its one-shot flag. The note/uppercase recovery cases must also verify that
+partial progress preserved the saved value and that retry uses fresh domains.
 
-The formatter/diagnostic repair and direct copied-constructor return source join
-is hash-verified against its frozen upstream manifest. A later pending-profile
-build was rejected by the stack decoder on one new memory `andq` instruction.
-Independent review approved normalization of exactly
-`andq $0xfffffffffffffdff,0x50(%rsp)` to the existing stack-neutral `and` model.
-Other masks, displacements and stack-pointer operands still reject. The original
-failure is preserved; corrected diagnostics and refusal controls passed. This
-verifier change invalidated the first unused variant receipts. All eleven were
-rebuilt, independently readmitted and only then executed; old receipts remain
-preserved as superseded evidence.
-
-Fault/budget probes now execute only at ordinal 1, after one complete request /
-service / completion triplet has staged a byte. The oracle requires that prefix
-and then the failing-phase prefix, no released output, retirement and a healthy
-next command. Empty/one-byte inputs do not consume the probe: only actual
-injection flips the one-shot flag. The six actual recovery guests passed this
-staged-prefix scope; empty/one-byte probe non-consumption is source evidence,
-not an additional claimed guest case.
-The newest structural formatter/AU2003 diagnostic repair is also composed from
-its frozen hash-checked delta. The accepted eleven-image matrix uses the fresh
-matching compiler, rather than rebinding stale pre-repair objects.
+Independent qualification covers all twelve profiles, their exact source/images
+and original-clock traces, plus actual normal BIOS/UEFI restoration and the final
+native/review gates. A wrapper's normal-image rebuild is not that restoration boot.

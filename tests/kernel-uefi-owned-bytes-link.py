@@ -85,7 +85,9 @@ def main():
         result["layout_sha256"] = hashlib.sha256(layout.read_bytes()).hexdigest()
         linker = ["ld", "-nostdlib", "-T", str(layout), "-z", "max-page-size=0x1000"]
         run(
-            linker + list(map(str, objects)) + [str(build / "objects/language.o"), "-o", str(out / "accepted-resize.elf")],
+            linker
+            + list(map(str, objects))
+            + [str(build / "objects/language.o"), "-o", str(out / "accepted-resize.elf")],
             out / "resize-link.log",
         )
         if run(["nm", "-u", str(out / "accepted-resize.elf")], out / "resize-undefined.txt").strip():

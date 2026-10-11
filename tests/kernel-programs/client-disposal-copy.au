@@ -16,9 +16,17 @@ auto echo_effect(kernel::DisposalEffect effect) -> kernel::DisposalEffect {
 auto inspect_copy(kernel::DisposalDecision decision) -> u64 {
     const kernel::DisposalDecision later = kernel::client_disposal(0u64, 5u64);
     const kernel::DisposalDecision refused = kernel::client_disposal(3u64, 1u64);
-    if (later.action() != kernel::DisposalAction::accepted || later.effect() != kernel::DisposalEffect::retained_receipt) { return 0u64; }
-    if (refused.action() != kernel::DisposalAction::refused || refused.effect() != kernel::DisposalEffect::none) { return 0u64; }
-    if (decision.action() != kernel::DisposalAction::accepted || decision.effect() != kernel::DisposalEffect::cancel_consume) { return 0u64; }
+    if (later.action() != kernel::DisposalAction::accepted || later.effect()
+        != kernel::DisposalEffect::retained_receipt) {
+        return 0u64;
+    }
+    if (refused.action() != kernel::DisposalAction::refused || refused.effect() != kernel::DisposalEffect::none) {
+        return 0u64;
+    }
+    if (decision.action() != kernel::DisposalAction::accepted || decision.effect()
+        != kernel::DisposalEffect::cancel_consume) {
+        return 0u64;
+    }
     return 42u64;
 }
 
@@ -39,18 +47,51 @@ auto client_disposal_copy_probe() -> u64 {
     const kernel::DisposalDecision empty = kernel::client_disposal(0u64, 0u64);
     const kernel::DisposalDecision terminal = kernel::client_disposal(0u64, 3u64);
     const kernel::DisposalDecision retained = kernel::client_disposal(0u64, 5u64);
-    if (phase != 18446744073709551615u64 || state != 9223372036854775808u64) { return 0u64; }
-    if (inspect_copy(first) != 42u64 || inspect_copy(saved) != 42u64 || inspect_copy(copied) != 42u64) { return 0u64; }
-    if (first.action() != kernel::DisposalAction::accepted || first.effect() != kernel::DisposalEffect::cancel_consume) { return 0u64; }
-    if (saved.action() != kernel::DisposalAction::accepted || saved.effect() != kernel::DisposalEffect::cancel_consume) { return 0u64; }
-    if (copied.action() != kernel::DisposalAction::accepted || copied.effect() != kernel::DisposalEffect::cancel_consume) { return 0u64; }
-    if (action != kernel::DisposalAction::accepted || effect != kernel::DisposalEffect::cancel_consume) { return 0u64; }
-    if (invalid.action() != kernel::DisposalAction::invalid || invalid.effect() != kernel::DisposalEffect::none) { return 0u64; }
-    if (invalid_copy.action() != kernel::DisposalAction::invalid || invalid_copy.effect() != kernel::DisposalEffect::none) { return 0u64; }
-    if (refused.action() != kernel::DisposalAction::refused || refused.effect() != kernel::DisposalEffect::none) { return 0u64; }
-    if (refused_copy.action() != kernel::DisposalAction::refused || refused_copy.effect() != kernel::DisposalEffect::none) { return 0u64; }
-    if (empty.action() != kernel::DisposalAction::accepted || empty.effect() != kernel::DisposalEffect::empty) { return 0u64; }
-    if (terminal.action() != kernel::DisposalAction::accepted || terminal.effect() != kernel::DisposalEffect::consume_terminal) { return 0u64; }
-    if (retained.action() != kernel::DisposalAction::accepted || retained.effect() != kernel::DisposalEffect::retained_receipt) { return 0u64; }
+    if (phase != 18446744073709551615u64 || state != 9223372036854775808u64) {
+        return 0u64;
+    }
+    if (inspect_copy(first) != 42u64 || inspect_copy(saved) != 42u64 || inspect_copy(copied) != 42u64) {
+        return 0u64;
+    }
+    if (first.action() != kernel::DisposalAction::accepted || first.effect()
+        != kernel::DisposalEffect::cancel_consume) {
+        return 0u64;
+    }
+    if (saved.action() != kernel::DisposalAction::accepted || saved.effect()
+        != kernel::DisposalEffect::cancel_consume) {
+        return 0u64;
+    }
+    if (copied.action() != kernel::DisposalAction::accepted || copied.effect()
+        != kernel::DisposalEffect::cancel_consume) {
+        return 0u64;
+    }
+    if (action != kernel::DisposalAction::accepted || effect != kernel::DisposalEffect::cancel_consume) {
+        return 0u64;
+    }
+    if (invalid.action() != kernel::DisposalAction::invalid || invalid.effect() != kernel::DisposalEffect::none) {
+        return 0u64;
+    }
+    if (invalid_copy.action() != kernel::DisposalAction::invalid || invalid_copy.effect()
+        != kernel::DisposalEffect::none) {
+        return 0u64;
+    }
+    if (refused.action() != kernel::DisposalAction::refused || refused.effect() != kernel::DisposalEffect::none) {
+        return 0u64;
+    }
+    if (refused_copy.action() != kernel::DisposalAction::refused || refused_copy.effect()
+        != kernel::DisposalEffect::none) {
+        return 0u64;
+    }
+    if (empty.action() != kernel::DisposalAction::accepted || empty.effect() != kernel::DisposalEffect::empty) {
+        return 0u64;
+    }
+    if (terminal.action() != kernel::DisposalAction::accepted || terminal.effect()
+        != kernel::DisposalEffect::consume_terminal) {
+        return 0u64;
+    }
+    if (retained.action() != kernel::DisposalAction::accepted || retained.effect()
+        != kernel::DisposalEffect::retained_receipt) {
+        return 0u64;
+    }
     return 42u64;
 }

@@ -166,7 +166,7 @@ def main():
         require(expected in result.stdout, "named-file capacity, slot reuse or exact readback")
     require(result.stdout.count(b"files: not found (RAM-only).\r\n") == 2, "missing cat/rm outcomes")
     for name in (b"x", b"abcdefgh", b"A._-09z", b"notes", b"Note"):
-        for content in (b"", b"x", b" " * 49, b"!" * 49, b"space and suffix "):
+        for content in (b"", b"x", b"x" * 9, b"x" * 10, b" " * 49, b"!" * 49, b"space and suffix "):
             result = execute(samples(b"write " + name + b" " + content + b"\ncat " + name + b"\nexit\n"))
             require(
                 result.returncode == 0
@@ -174,6 +174,13 @@ def main():
                 and file_written(name, len(content)) in result.stdout,
                 "name/content boundary and exact write confirmation",
             )
+    result = execute(samples(b"write a first\nwrite ab second\nwrite a x\ncat a\ncat ab\nrm a\ncat ab\nexit\n"))
+    require(
+        result.returncode == 0
+        and file_read(b"a", b"x") in result.stdout
+        and result.stdout.count(file_read(b"ab", b"second")) == 2,
+        "filename equality must distinguish a complete name from its prefix",
+    )
     bad_files = (
         b"w",
         b"wr",
@@ -334,6 +341,10 @@ auto span_compare_contract() -> i64 {
         array<u8, 1> left = {u8(value)};
         array<u8, 1> same = {u8(value)};
         array<u8, 1> other = {u8((value + 1) % 256)};
+        std::BinaryBuffer64 current = std::BinaryBuffer64();
+        current.write_u8(0, u8(value));
+        if (!current.equal(0, 1, borrow_bytes(same))
+            || current.equal(0, 1, borrow_bytes(other))) { return 10; }
         if (!std::equal(borrow_bytes(left), borrow_bytes(same))
             || !std::starts_with(borrow_bytes(left), borrow_bytes(same))
             || std::equal(borrow_bytes(left), borrow_bytes(other))
@@ -345,14 +356,26 @@ auto span_compare_contract() -> i64 {
     const builtin::span<const u8> all = borrow_bytes(full);
     i64 index = 0;
     while (index < 64) { buffer.write_u8(index, ' '); index = index + 1; }
-    if (!buffer.starts_with(all.subspan(0, 64)) || !buffer.starts_with(empty)
-        || buffer.starts_with(all) || buffer.starts_with(prefix)) { return 4; }
+    if (!buffer.starts_with(64, all.subspan(0, 64)) || !buffer.starts_with(64, empty)
+        || buffer.starts_with(64, all) || buffer.starts_with(64, prefix)) { return 4; }
+    if (!buffer.starts_with(0, empty) || buffer.starts_with(63, all.subspan(0, 64))
+        || buffer.starts_with(-1, empty) || buffer.starts_with(65, empty)
+        || buffer.starts_with(-9223372036854775808, empty)
+        || buffer.starts_with(9223372036854775807, empty)) { return 8; }
+    if (!buffer.equal(0, 64, all.subspan(0, 64)) || !buffer.equal(64, 0, empty)
+        || buffer.equal(0, 64, all) || buffer.equal(63, 2, all.subspan(0, 2))
+        || buffer.equal(-1, 0, empty) || buffer.equal(65, 0, empty)
+        || buffer.equal(0, -1, empty) || buffer.equal(0, 65, empty)
+        || buffer.equal(-9223372036854775808, 0, empty)
+        || buffer.equal(9223372036854775807, 0, empty)
+        || buffer.equal(0, -9223372036854775808, empty)
+        || buffer.equal(0, 9223372036854775807, empty)) { return 9; }
     buffer.write_u8(63, 'x');
-    if (buffer.starts_with(all.subspan(0, 64))) { return 5; }
+    if (buffer.starts_with(64, all.subspan(0, 64))) { return 5; }
     buffer.write_u8(63, ' ');
-    if (!buffer.starts_with(all.subspan(0, 64))) { return 6; }
+    if (!buffer.starts_with(64, all.subspan(0, 64))) { return 6; }
     buffer.write_u8(0, 'x');
-    if (buffer.starts_with(all.subspan(0, 64))) { return 7; }
+    if (buffer.starts_with(64, all.subspan(0, 64))) { return 7; }
     return 0;
 }
 auto files_contract() -> i64 {

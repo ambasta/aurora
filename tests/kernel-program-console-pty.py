@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Original-clock developer PTY gate with a separate review-pinned qualification mode."""
+"""Original-clock PTY gate for an explicitly selected, admitted native image."""
 
 from pathlib import Path
 import argparse
@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import kernel_program_console_admission as admission
 import kernel_uefi_console_clock as clock
+import qemu_transport as transport
 
 
 def need(okay, message):
@@ -304,24 +305,21 @@ def validate_failstop(part, mode, status, images):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=admission.MODES, default="program-console")
-    parser.add_argument(
-        "--qualification", action="store_true", help="Require external exact-image review; never rebuild the image"
-    )
+    parser.add_argument("--build-dir", type=Path, required=True)
     args = parser.parse_args()
-    verify = admission.reviewed if args.qualification else admission.checked
-    reviewed = verify(args.mode)
+    admission.configure_paths(args.build_dir, ROOT)
+    admitted = admission.checked(args.mode)
     admission_digest = admission.digest(admission.RECEIPT)
     evidence_root = ROOT / "build/program-console-evidence"
     evidence_root.mkdir(parents=True, exist_ok=True)
-    purpose = "qualified" if args.qualification else "developer"
-    output = Path(tempfile.mkdtemp(prefix=args.mode + "-" + purpose + "-", dir=evidence_root))
+    output = Path(tempfile.mkdtemp(prefix=args.mode + "-guest-", dir=evidence_root))
     shutil.copy2(admission.RECEIPT, output / "admission.json")
-    print("Protected-console " + purpose + " evidence: " + str(output))
+    print("Protected-console guest evidence: " + str(output))
 
     def unchanged():
         need(
-            verify(args.mode) == reviewed and admission.digest(admission.RECEIPT) == admission_digest,
-            "Admitted source, image or receipt changed during guest execution",
+            admission.checked(args.mode) == admitted and admission.digest(admission.RECEIPT) == admission_digest,
+            "Admitted image or report changed during guest execution",
         )
 
     qemu = shutil.which(os.environ.get("QEMU", "qemu-system-x86_64"))
@@ -338,36 +336,19 @@ def main():
         cwd=ROOT,
     )
     firmware, code, variables, *firmware_args = selected.decode().split("\0")[:-1]
-    command = [qemu]
-    if os.environ.get("QEMU_DATA"):
-        command += ["-L", os.environ["QEMU_DATA"]]
-    command += [
-        "-machine",
-        "q35",
-        "-accel",
-        "tcg",
-        "-cpu",
-        "qemu64",
-        "-smp",
-        "1",
-        "-m",
-        "128M",
-        *firmware_args,
-        "-drive",
-        "format=raw,file=fat:ro:build/uefi/esp,snapshot=on",
-        "-nic",
-        "none",
-        "-display",
-        "none",
-        "-serial",
-        "stdio",
-        "-monitor",
-        "none",
-        "-no-reboot",
-        "-device",
-        "isa-debug-exit,iobase=0xf4,iosize=0x04",
-    ]
-    receipt = clock.receipt(command, qemu, firmware, code, variables, os.environ.get("QEMU_DATA", ""))
+    command = transport.profile_command(
+        "uefi",
+        args.mode,
+        qemu,
+        admission.BUILD / "esp",
+        os.environ.get("QEMU_DATA", ""),
+        firmware=firmware,
+        code=code,
+        variables=variables,
+    )
+    receipt = clock.receipt(
+        command, qemu, firmware, code, variables, os.environ.get("QEMU_DATA", ""), esp=str(admission.BUILD / "esp")
+    )
     receipt.update(timeout_argv=None, test_supervision="private PTY, 180-second total deadline", mode=args.mode)
     (output / "clock.json").write_text(json.dumps(receipt, indent=2) + "\n")
     master, slave = pty.openpty()
@@ -383,15 +364,12 @@ def main():
         "status": "incomplete",
         "mode": args.mode,
         "clock": "tcg-original-clock",
-        "purpose": purpose,
-        "qualification_eligible": False,
+        "purpose": "guest",
         "admission_sha256": admission_digest,
     }
     try:
         with (output / "qemu.stderr").open("wb") as errors:
-            process = subprocess.Popen(
-                command, cwd=ROOT, stdin=slave, stdout=slave, stderr=errors, start_new_session=True
-            )
+            process = transport.start(command, cwd=ROOT, stdin=slave, stdout=slave, stderr=errors)
             os.close(slave)
             slave = -1
 
@@ -409,7 +387,7 @@ def main():
                         need(data, "QEMU closed before expected response")
                         transcript.extend(data)
                         need(len(transcript) <= 4 * 1024 * 1024, "PTY evidence exceeded bound")
-                    elif process.poll() is not None:
+                    elif transport.exited(process):
                         need(select.select([master], [], [], 0)[0], "QEMU exited early")
 
             def send(data, burst=False):
@@ -495,15 +473,14 @@ def main():
                 send(b"hostile envelope\n")
                 reason = "AURORA_UEFI_RUNTIME_FAIL: " + FAILSTOP_REASONS[args.mode]
                 receive((reason + "\r\n").encode(), begin)
-                status = process.wait(timeout=5)
+                status = transport.wait_exit(process, 5)
                 part = bytes(transcript[begin:]).decode("ascii")
-                validate_failstop(part, args.mode, status, reviewed["user_images"])
+                validate_failstop(part, args.mode, status, admitted["user_images"])
                 unchanged()
                 metrics.update(
                     status="passed",
                     exit_status=35,
                     failstop=FAILSTOP_REASONS[args.mode],
-                    qualification_eligible=args.qualification,
                 )
                 print("PASS: malformed protected command authority fails stop without output or recovery")
                 return
@@ -579,7 +556,7 @@ def main():
             begin = len(transcript)
             send(b"exit\n")
             receive(b"AURORA_PROGRAM_CONSOLE_QUIET: timer=masked isr=0 irr=0 domains=0\r\n", begin)
-            need(process.wait(timeout=5) == 33, "QEMU did not exit cleanly")
+            need(transport.wait_exit(process, 5) == 33, "QEMU did not exit cleanly")
             while select.select([master], [], [], 0)[0]:
                 try:
                     tail = os.read(master, 65536)
@@ -597,29 +574,22 @@ def main():
                     args.mode,
                     expected_outputs,
                     commands,
-                    reviewed["user_images"],
-                    reviewed["timer"],
+                    admitted["user_images"],
+                    admitted["timer"],
                     expected_reads,
                     expected_saves,
                 ),
                 status="passed",
                 exit_status=process.returncode,
-                qualification_eligible=args.qualification,
             )
-            print("PASS: protected Aurora command PTY, bounded input, copied stream, recovery and quiescent exit")
     finally:
-        if process is not None and process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=2)
-        os.close(master)
-        if slave != -1:
-            os.close(slave)
+        cleanup_errors, _, unsettled = transport.finish(process, fds=(master, slave if slave != -1 else None))
         (output / "transcript.log").write_bytes(transcript)
         (output / "metrics.json").write_text(json.dumps(metrics, indent=2) + "\n")
+        if unsettled:
+            raise transport.ChildNotReaped("; ".join(cleanup_errors))
+        need(not cleanup_errors, "; ".join(cleanup_errors))
+    print("PASS: protected Aurora command PTY, bounded input, copied stream, recovery and quiescent exit")
 
 
 def terminate(_signal, _frame):

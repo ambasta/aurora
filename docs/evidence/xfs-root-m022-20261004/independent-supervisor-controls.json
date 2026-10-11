@@ -1,9 +1,0 @@
-{
-  "status": "passed",
-  "controls": [
-    "file disappears between scan and lstat -> ignored",
-    "directory disappears between lstat and scandir -> ignored",
-    "permission error remains a failure",
-    "supervisor failure terminates and waits owned process group"
-  ]
-}

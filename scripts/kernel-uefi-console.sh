@@ -23,22 +23,20 @@ for tool in "$qemu" timeout python3; do
 done
 source ./scripts/uefi-firmware.sh
 uefi_firmware_select
-args=()
-if [[ -n "${QEMU_DATA:-}" ]]; then
-    [[ -d "$QEMU_DATA" ]] || { echo 'QEMU_DATA must name an existing directory.' >&2; exit 2; }
-    args+=(-L "$QEMU_DATA")
+if [[ -n "${QEMU_DATA:-}" && ! -d "$QEMU_DATA" ]]; then
+    echo 'QEMU_DATA must name an existing directory.' >&2; exit 2
 fi
-UEFI_MODE=console ./scripts/kernel-uefi-build.sh
-qemu_argv=("$qemu" "${args[@]}" -machine q35 -accel tcg -cpu qemu64 -smp 1 -m 128M
-    "${UEFI_FIRMWARE_ARGS[@]}" -drive format=raw,file=fat:ro:build/uefi/esp,snapshot=on
-    -nic none -display none -serial stdio -monitor none -no-reboot
-    -device isa-debug-exit,iobase=0xf4,iosize=0x04)
+image_dir="$(UEFI_MODE=console ./scripts/kernel-uefi-build.sh --print-image-dir)"
+mapfile -d '' -t qemu_argv < <(python3 -B scripts/qemu_transport.py argv --platform uefi \
+    --mode console --image "$image_dir/esp" --qemu "$qemu" --data "${QEMU_DATA:-}" \
+    --firmware "$UEFI_FIRMWARE_COMBINED" --code "$UEFI_FIRMWARE_CODE" --vars "$UEFI_FIRMWARE_VARS")
+(( ${#qemu_argv[@]} )) || { echo 'FAIL: empty QEMU command' >&2; exit 2; }
 python3 scripts/kernel_uefi_console_clock.py "$qemu" "$UEFI_FIRMWARE_COMBINED" \
-    "$UEFI_FIRMWARE_CODE" "$UEFI_FIRMWARE_VARS" "${QEMU_DATA:-}" -- "${qemu_argv[@]}" \
-    >build/uefi/console.clock.json
+    "$UEFI_FIRMWARE_CODE" "$UEFI_FIRMWARE_VARS" "${QEMU_DATA:-}" --esp "$image_dir/esp" -- "${qemu_argv[@]}" \
+    >"$image_dir/console.clock.json"
 echo 'UEFI serial console in QEMU: type help or exit. Timer-woken polling; five-minute session limit.'
 set +e
-timeout --foreground --kill-after=2 300 "${qemu_argv[@]}"
+python3 -B scripts/qemu_transport.py run --foreground --timeout 300 -- "${qemu_argv[@]}"
 status=$?
 set -e
 if [[ "$status" == 33 ]]; then exit 0; fi

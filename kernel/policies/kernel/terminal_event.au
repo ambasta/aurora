@@ -2,7 +2,14 @@ export module kernel.terminal_event;
 
 // Copied facts only: no address, frame, image, domain or execution authority.
 export namespace kernel {
-    enum class TerminalEvent { rejected, returned, bounds, overflow, division_zero, shift_count };
+    enum class TerminalEvent {
+        rejected,
+        returned,
+        bounds,
+        overflow,
+        division_zero,
+        shift_count
+    };
 
     auto terminal_event(u64 vector, u64 matched_sites, u64 stack_top) -> TerminalEvent {
         if (vector > 255u64 || matched_sites > 31u64 || stack_top > 1u64) {
@@ -15,11 +22,21 @@ export namespace kernel {
         if (vector == 129u64 && matched_sites == 1u64 && stack_top == 1u64) {
             return TerminalEvent::returned;
         }
-        if (vector != 6u64) { return TerminalEvent::rejected; }
-        if (matched_sites == 2u64) { return TerminalEvent::bounds; }
-        if (matched_sites == 4u64) { return TerminalEvent::overflow; }
-        if (matched_sites == 8u64) { return TerminalEvent::division_zero; }
-        if (matched_sites == 16u64) { return TerminalEvent::shift_count; }
+        if (vector != 6u64) {
+            return TerminalEvent::rejected;
+        }
+        if (matched_sites == 2u64) {
+            return TerminalEvent::bounds;
+        }
+        if (matched_sites == 4u64) {
+            return TerminalEvent::overflow;
+        }
+        if (matched_sites == 8u64) {
+            return TerminalEvent::division_zero;
+        }
+        if (matched_sites == 16u64) {
+            return TerminalEvent::shift_count;
+        }
         return TerminalEvent::rejected;
     }
 }

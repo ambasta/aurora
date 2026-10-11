@@ -8,8 +8,8 @@ auto receive(builtin::ConsoleSession& input) -> builtin::ConsoleSample {
     return sample;
 }
 // Reordered pair and all six formal positions, including a readonly root view.
-auto reversed(builtin::DisplaySession& display, builtin::ConsoleSession& input,
-              u8 red, builtin::span<const u8> text, i64 marker, bool okay) -> builtin::ConsoleSample {
+auto reversed(builtin::DisplaySession& display, builtin::ConsoleSession& input, u8 red, builtin::span<const u8> text,
+    i64 marker, bool okay) -> builtin::ConsoleSample {
     if (red != 11u8 || text.size() != 3 || text.at(1) != 'y' || marker != 41 || !okay) {
         input.put('!');
     }
@@ -18,14 +18,17 @@ auto reversed(builtin::DisplaySession& display, builtin::ConsoleSession& input,
         // A copied serial byte influences drawing; authority itself never becomes data.
         if (draw(display, sample.byte) != builtin::DisplayPutResult::success) {
             const builtin::ConsoleSample failed = builtin::ConsoleSample{
-                .byte_present = false, .byte = 0u8, .damaged = true};
+                .byte_present = false,
+                .byte = 0u8,
+                .damaged = true
+            };
             return failed;
         }
     }
     return sample;
 }
 auto paired(builtin::ConsoleSession& input, builtin::DisplaySession& display,
-            builtin::span<const u8> text) -> builtin::ConsoleSample {
+    builtin::span<const u8> text) -> builtin::ConsoleSample {
     const builtin::ConsoleSample sample = reversed(display, input, 11u8, text, 41, true);
     return sample;
 }
@@ -33,34 +36,54 @@ auto accept(builtin::ConsoleSession& input, builtin::DisplayPutResult result) ->
     return result == builtin::DisplayPutResult::success && input.put('Q') == builtin::ConsolePutResult::success;
 }
 auto finish(builtin::DisplaySession& display, builtin::ConsoleSession& input) -> bool {
-    return input.put('Q') == builtin::ConsolePutResult::success &&
-           draw(display, 11u8) == builtin::DisplayPutResult::success;
+    return input.put('Q') == builtin::ConsolePutResult::success && draw(display, 11u8)
+        == builtin::DisplayPutResult::success;
 }
 auto console_emit(builtin::ConsoleSession& input) -> builtin::ConsolePutResult {
     return input.put('Q');
 }
 auto accept_display(builtin::DisplaySession& display, builtin::ConsolePutResult result) -> bool {
-    return result == builtin::ConsolePutResult::success &&
-           draw(display, 11u8) == builtin::DisplayPutResult::success;
+    return result == builtin::ConsolePutResult::success && draw(display, 11u8) == builtin::DisplayPutResult::success;
 }
-auto group_service(builtin::ConsoleSession& input, builtin::DisplaySession& display,
-                   u64 width, u64 height) -> i64 {
-    if (width != 19u64 || height != 23u64) { return -1; }
-    array<u8, 3> text = {'x', 'y', 'z'};
+auto group_service(builtin::ConsoleSession& input, builtin::DisplaySession& display, u64 width, u64 height) -> i64 {
+    if (width != 19u64 || height != 23u64) {
+        return -1;
+    }
+    array<u8, 3> text = {
+        'x',
+        'y',
+        'z'
+    };
     // Copied report through both pair orders; each singleton subset is forwarded.
     const builtin::ConsoleSample sample = paired(input, display, borrow_bytes(text));
-    if (!sample.byte_present || sample.byte != 'Q' || sample.damaged) { return -2; }
+    if (!sample.byte_present || sample.byte != 'Q' || sample.damaged) {
+        return -2;
+    }
     // Unforwarded display remains usable while input is loaned to accept.
-    if (!accept(input, draw(display, 11u8))) { return -3; }
+    if (!accept(input, draw(display, 11u8))) {
+        return -3;
+    }
     // Repeat reversed forwarding after both roots resume.
     const builtin::ConsoleSample second = reversed(display, input, 11u8, borrow_bytes(text), 40 + 1, true);
-    if (!second.byte_present || second.byte != 'Q' || second.damaged) { return -4; }
-    if (!(true == accept(input, display.pixel(7u64, 9u64, 11u8, 13u8, 17u8)))) { return -5; }
+    if (!second.byte_present || second.byte != 'Q' || second.damaged) {
+        return -4;
+    }
+    if (!(true == accept(input, display.pixel(7u64, 9u64, 11u8, 13u8, 17u8)))) {
+        return -5;
+    }
     // Pair call itself runs at odd outstanding scalar evaluation depth.
-    if (!(true == finish(display, input))) { return -6; }
+    if (!(true == finish(display, input))) {
+        return -6;
+    }
     // Symmetric independence: input can operate and reborrow while display is suspended.
-    if (!accept_display(display, input.put('Q'))) { return -7; }
-    if (!accept_display(display, console_emit(input))) { return -8; }
+    if (!accept_display(display, input.put('Q'))) {
+        return -7;
+    }
+    if (!accept_display(display, console_emit(input))) {
+        return -8;
+    }
     return 42;
 }
-auto aurora_kernel_value() -> i64 { return 42; }
+auto aurora_kernel_value() -> i64 {
+    return 42;
+}

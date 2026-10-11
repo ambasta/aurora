@@ -18,30 +18,58 @@ auto aurora_kernel_value() -> i64 {
 // Private scalar bootstrap transport, not an Aurora ABI or external capability.
 auto aurora_console_byte(u64 byte, u64 length, u64 rejected, u64 after_cr) -> u64 {
     const kernel::ConsoleAction action = kernel::console_byte(byte, length, rejected, after_cr);
-    if (action == kernel::ConsoleAction::ignore) { return 1u64; }
-    if (action == kernel::ConsoleAction::append) { return 2u64; }
-    if (action == kernel::ConsoleAction::erase) { return 3u64; }
-    if (action == kernel::ConsoleAction::submit) { return 4u64; }
-    if (action == kernel::ConsoleAction::reject) { return 5u64; }
+    if (action == kernel::ConsoleAction::ignore) {
+        return 1u64;
+    }
+    if (action == kernel::ConsoleAction::append) {
+        return 2u64;
+    }
+    if (action == kernel::ConsoleAction::erase) {
+        return 3u64;
+    }
+    if (action == kernel::ConsoleAction::submit) {
+        return 4u64;
+    }
+    if (action == kernel::ConsoleAction::reject) {
+        return 5u64;
+    }
     return 0u64;
 }
 
 auto aurora_console_command(u64 prefix, u64 length) -> u64 {
     const kernel::ConsoleCommand command = kernel::console_command(prefix, length);
-    if (command == kernel::ConsoleCommand::empty) { return 1u64; }
-    if (command == kernel::ConsoleCommand::help) { return 2u64; }
-    if (command == kernel::ConsoleCommand::status) { return 3u64; }
-    if (command == kernel::ConsoleCommand::exit) { return 4u64; }
+    if (command == kernel::ConsoleCommand::empty) {
+        return 1u64;
+    }
+    if (command == kernel::ConsoleCommand::help) {
+        return 2u64;
+    }
+    if (command == kernel::ConsoleCommand::status) {
+        return 3u64;
+    }
+    if (command == kernel::ConsoleCommand::exit) {
+        return 4u64;
+    }
     return 0u64;
 }
 
 // Private bootstrap transport of copied facts; enum ordinals are not the wire.
 auto aurora_kernel_terminal_event(u64 vector, u64 matched_sites, u64 stack_top) -> u64 {
     const kernel::TerminalEvent event = kernel::terminal_event(vector, matched_sites, stack_top);
-    if (event == kernel::TerminalEvent::returned) { return 1u64; }
-    if (event == kernel::TerminalEvent::bounds) { return 2u64; }
-    if (event == kernel::TerminalEvent::overflow) { return 3u64; }
-    if (event == kernel::TerminalEvent::division_zero) { return 4u64; }
-    if (event == kernel::TerminalEvent::shift_count) { return 5u64; }
+    if (event == kernel::TerminalEvent::returned) {
+        return 1u64;
+    }
+    if (event == kernel::TerminalEvent::bounds) {
+        return 2u64;
+    }
+    if (event == kernel::TerminalEvent::overflow) {
+        return 3u64;
+    }
+    if (event == kernel::TerminalEvent::division_zero) {
+        return 4u64;
+    }
+    if (event == kernel::TerminalEvent::shift_count) {
+        return 5u64;
+    }
     return 0u64;
 }

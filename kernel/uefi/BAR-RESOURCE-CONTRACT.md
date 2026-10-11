@@ -3,7 +3,6 @@
 This development slice grants seven precise read operations on one namespace-free
 QEMU NVMe controller. It does not activate a controller, allocate queues, grant
 DMA, configure interrupts, reset inherited state, or qualify Framework hardware.
-The historical 139 emulator modes retain their original firmware.
 
 ## Authority and lifetime
 
@@ -59,10 +58,7 @@ initialization/queue/doorbell writes and the seven exact Aurora reads. Stock OVM
 provides a positive initialization-write trace control. A separately labeled
 stopped-CPU, no-firmware/no-drive/no-namespace MSI-X control verifies generic
 write trace coverage with exactly one same-value masked vector-control write.
-It is excluded from Aurora/clean-firmware acceptance runs. Its initial Unix
-socket attempts failed with EPERM; the later normal-tool pipe control and its
-actual timing are retained separately, without claiming the earlier failures
-succeeded or changing sandbox settings.
+It is excluded from Aurora/clean-firmware acceptance runs.
 
 The dependency closure excludes uninitialized GoogleTest/Subhook placeholders;
 this is not a fully recursive checkout. Official target dependencies, exact
@@ -84,20 +80,10 @@ trace-control description, alongside AURORAC/QEMU/QEMU_DATA/OVMF and library pat
 Every run preserves argv, tool/firmware hashes, cold VARS, serial/debug/trace,
 payload bytes/ELF/exact fault offsets and status. A normal image is restored.
 
-Independent review passed all seven BAR modes plus the separate protected span
-mode on compiler 2d86780c. The final integrated 147-mode worker run passed with 225
-executable/build/test inputs unchanged:37 BIOS gates,102 historical UEFI gates,
-one span gate, and seven BAR gates. Parent fresh aggregate, sanitizer and selected actual BIOS/span/BAR checks
-also passed; see the milestone014 verification record. Hosted checks alone are not hardware evidence.
-
-
-## Separate queue-page preparation candidate
+## Queue-page preparation
 
 The [CPU preparation increment](NVME-QUEUE-PREPARATION.md) adds the
 opt-in `bar-prepare` fixture over the existing owned payload pool. Preparation and
-scrubbed cancellation happen before this BAR window is revoked. Historical BAR
-read-only grants still confer no device/DMA authority, and the seven historical
-BAR modes retain their read-only semantics. Hosted qualification passed; the
-first linked preparation image was rejected for stack lifetime before any boot.
-The corrected call chain and actual preparation/refusal gates now have focused
-qualification; see the [exact results](../../docs/nvme-queue-preparation-results.md).
+scrubbed cancellation happen before this BAR window is revoked. BAR read-only grants confer no device/DMA authority; the seven BAR modes retain
+their read-only semantics. Preparation uses its own linked-stack and actual
+preparation/refusal gates before normal-image restoration.

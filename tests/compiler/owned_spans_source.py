@@ -245,13 +245,14 @@ def cases():
             + f"auto count() const -> i64 {{ const {SPAN} bytes = borrow_bytes(data); return bytes.size(); }} }};",
         ),
     }
+    accepted["array-field-origin"] = rejected.pop("array-field-origin")
     return accepted, rejected
 
 
 REJECTION_DIAGNOSTICS = {
     "ordinary-span-result": "only scalar function results",
     "mutable-method-result": "span results require a const",
-    "different-return-fields": "same receiver owned-byte field",
+    "different-return-fields": "same receiver byte-storage field",
     "local-array-return": "returned span must derive directly",
     "method-forwarding": "cannot forward another method's returned view",
     "method-indirect-forwarding": "cannot forward another method's returned view",
@@ -261,7 +262,6 @@ REJECTION_DIAGNOSTICS = {
     "private-field-access": "private class field is inaccessible",
     "temporary-receiver": "method receiver requires a class local",
     "receiver-consumed-in-argument": "method arguments consumed the receiver",
-    "array-field-origin": "borrow_bytes fields require direct private owned-byte storage",
     "array-temporary-borrow": "temporary subspan chains require an owned-byte origin",
     "array-temporary-chain": "temporary subspan chains require an owned-byte origin",
     "parameter-temporary-chain": "temporary subspan chains require an owned-byte origin",

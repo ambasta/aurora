@@ -184,7 +184,7 @@ def expected_firmware_argv(firmware, code, variables):
     raise ValueError("Expected one combined firmware path or two separate CODE/VARS paths")
 
 
-def expected_uefi_argv(mode, qemu, firmware, data, code="", variables=""):
+def expected_uefi_argv(mode, qemu, firmware, data, code="", variables="", esp="build/uefi/esp"):
     """Independent canonical copy of the closed common-launcher contract."""
     profile = clock_profile(uefi_family(mode), mode)
     argv = [qemu]
@@ -231,7 +231,7 @@ def expected_uefi_argv(mode, qemu, firmware, data, code="", variables=""):
         "128M",
         *expected_firmware_argv(firmware, code, variables),
         "-drive",
-        "format=raw,file=fat:ro:build/uefi/esp,snapshot=on",
+        f"format=raw,file=fat:ro:{esp},snapshot=on",
         "-nic",
         "none",
         "-display",
@@ -247,10 +247,10 @@ def expected_uefi_argv(mode, qemu, firmware, data, code="", variables=""):
     return argv
 
 
-def uefi_clock_receipt(mode, declared_profile, argv, qemu, firmware, data, code="", variables=""):
+def uefi_clock_receipt(mode, declared_profile, argv, qemu, firmware, data, code="", variables="", esp="build/uefi/esp"):
     family = uefi_family(mode)
     profile = validate_clock_options(family, mode, declared_profile, argv)
-    if argv != expected_uefi_argv(mode, qemu, firmware, data, code, variables):
+    if argv != expected_uefi_argv(mode, qemu, firmware, data, code, variables, esp):
         raise ValueError("Effective UEFI argv differs from closed command contract")
     return dict(
         schema="aurora-emulator-clock-command-v1",
@@ -269,15 +269,25 @@ def main(args):
     if len(args) == 2 and args[0] == "profile":
         print(clock_profile(uefi_family(args[1]), args[1]))
         return
+    esp = "build/uefi/esp"
+    if len(args) >= 12 and args[0] == "verify" and args[8] == "--esp":
+        esp = args[9]
+        if not esp or any(character in esp for character in (",", "\n", "\r")):
+            raise ValueError("Invalid explicit ESP directory")
+        args = args[:8] + args[10:]
     if len(args) >= 10 and args[0] == "verify" and args[8] == "--":
         _, mode, profile, qemu, firmware, code, variables, data, _, *argv = args
         print(
             json.dumps(
-                uefi_clock_receipt(mode, profile, argv, qemu, firmware, data, code, variables), sort_keys=True, indent=2
+                uefi_clock_receipt(mode, profile, argv, qemu, firmware, data, code, variables, esp),
+                sort_keys=True,
+                indent=2,
             )
         )
         return
-    raise ValueError("Expected profile MODE or verify MODE PROFILE QEMU OVMF CODE VARS DATA -- QEMU_ARGV")
+    raise ValueError(
+        "Expected profile MODE or verify MODE PROFILE QEMU OVMF CODE VARS DATA [--esp DIRECTORY] -- QEMU_ARGV"
+    )
 
 
 if __name__ == "__main__":

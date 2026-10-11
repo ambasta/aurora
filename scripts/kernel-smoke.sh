@@ -5,10 +5,16 @@ if [[ "${KERNEL_CONSOLE:-0}" != 0 ]]; then
     echo 'Self-test smoke rejects KERNEL_CONSOLE; use the separate console profile.' >&2
     exit 2
 fi
+run_only= output_dir=
+if [[ "${1-}" == --run-only ]]; then
+    if (( $# < 4 )) || [[ -z "$2" || "$3" != --output-dir || -z "$4" ]]; then
+        echo 'Expected --run-only <absolute native profile directory> --output-dir <fresh directory>' >&2; exit 2
+    fi
+    run_only="$2"; output_dir="$4"; shift 4
+fi
+if (( $# > 1 )); then echo 'Expected one exact BIOS mode' >&2; exit 2; fi
 mode="${1:-normal}"
 build_environment=()
-cpu=qemu64
-cpus=1
 case "$mode" in
   normal) ;;
   --division-zero) build_environment+=(KERNEL_TEST_DIVISION=zero) ;;
@@ -21,9 +27,9 @@ case "$mode" in
   --unsigned-conversion-overflow) build_environment+=(KERNEL_TEST_UNSIGNED=conversion-overflow) ;;
   --unsigned-kernel-trap) build_environment+=(KERNEL_TEST_UNSIGNED=kernel-trap) ;;
   --schedule) build_environment+=(KERNEL_TEST_SCHEDULE=1) ;;
-  --schedule-smp) build_environment+=(KERNEL_TEST_SCHEDULE=1); cpus=2 ;;
+  --schedule-smp) build_environment+=(KERNEL_TEST_SCHEDULE=1) ;;
   --schedule-mmio) build_environment+=(KERNEL_TEST_SCHEDULE=1 KERNEL_TEST_PROGRAM_APIC_READ=1) ;;
-  --schedule-no-apic) build_environment+=(KERNEL_TEST_SCHEDULE=1); cpu=qemu64,-apic ;;
+  --schedule-no-apic) build_environment+=(KERNEL_TEST_SCHEDULE=1) ;;
   --schedule-forged) build_environment+=(KERNEL_TEST_SCHEDULE=1 KERNEL_TEST_SCHEDULE_FORGED=1) ;;
   --schedule-context) build_environment+=(KERNEL_TEST_SCHEDULE=1 KERNEL_TEST_SCHEDULE_CONTEXT=1) ;;
   --schedule-root) build_environment+=(KERNEL_TEST_SCHEDULE=1 KERNEL_TEST_SCHEDULE_ROOT=1) ;;
@@ -48,28 +54,41 @@ case "$mode" in
   --domain-code) build_environment+=(KERNEL_TEST_PROGRAM_FOREIGN_CODE=1) ;;
   --domain-stack) build_environment+=(KERNEL_TEST_PROGRAM_FOREIGN_STACK=1) ;;
   --domain-root-mismatch) build_environment+=(KERNEL_TEST_DOMAIN_ROOT_MISMATCH=1) ;;
-  --no-nx) cpu=qemu64,-nx ;;
+  --no-nx) ;;
   *) echo 'Unknown kernel smoke mode' >&2; exit 2 ;;
 esac
-if [[ "$mode" == normal ]]; then log=build/kernel-serial.log
+snapshot=()
+if [[ -n "$run_only" ]]; then
+    python3 -B - "$mode" "$run_only" "$output_dir" <<'PYPATH'
+from pathlib import Path
+import sys
+sys.path.insert(0, 'scripts')
+from kernel_profiles import canonical_profile
+image, output = map(Path, sys.argv[2:])
+if (not image.is_absolute() or image.resolve(strict=True) != image or not image.is_dir()
+        or image.parts[-3:] != ('kernel-images', 'bios', canonical_profile('bios', sys.argv[1].removeprefix('--')))):
+    sys.exit('Run-only requires the resolved native directory for the exact BIOS profile')
+if not output.is_absolute() or output.resolve() != output or image in output.parents:
+    sys.exit('Run-only output must be an absolute resolved fresh directory outside the image directory')
+output.mkdir()
+PYPATH
+    image_dir="$run_only"
+    snapshot=(--snapshot)
 else
-  log="build/kernel-${mode#--}.log"
-  trap './scripts/kernel-build.sh >/dev/null' EXIT
+    image_dir="$(env "${build_environment[@]}" ./scripts/kernel-build.sh --print-image-dir)"
 fi
-env "${build_environment[@]}" ./scripts/kernel-build.sh
+output_dir="${output_dir:-$image_dir}"
+if [[ "$mode" == normal ]]; then log="$output_dir/kernel-serial.log"
+else log="$output_dir/kernel-${mode#--}.log"; fi
 metadata="${log%.log}.metadata.json"
-cp build/user-metadata.json "$metadata"
+cp "$image_dir/user-metadata.json" "$metadata"
 qemu="${QEMU:-qemu-system-x86_64}"
 command -v "$qemu" >/dev/null || { echo 'BLOCKED: QEMU missing; image is built but emulator boot is unverified.' >&2; exit 2; }
-args=()
-if [[ -n "${QEMU_DATA:-}" ]]; then args+=(-L "$QEMU_DATA"); fi
+mapfile -d '' -t qemu_argv < <(python3 -B scripts/qemu_transport.py argv --platform bios \
+    --mode="$mode" --image "$image_dir/aurora.img" --qemu "$qemu" --data "${QEMU_DATA:-}" "${snapshot[@]}")
+(( ${#qemu_argv[@]} )) || { echo 'FAIL: empty QEMU command' >&2; exit 2; }
 set +e
-# timeout runs QEMU in a background process group. A terminal on stdin would let
-# -serial stdio change its mode, and the kernel stops QEMU with SIGTTOU.
-timeout 15 "$qemu" "${args[@]}" -machine pc -accel tcg -cpu "$cpu" -smp "$cpus" -m 32M \
-    -drive file=build/aurora.img,format=raw,if=ide -boot c \
-    -nic none -display none -serial stdio -monitor none -no-reboot \
-    -device isa-debug-exit,iobase=0xf4,iosize=0x04 < /dev/null > "$log" 2>&1
+python3 -B scripts/qemu_transport.py run --timeout 15 --log "$log" -- "${qemu_argv[@]}"
 status=$?
 set -e
 cat "$log"

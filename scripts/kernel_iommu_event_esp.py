@@ -251,7 +251,7 @@ def same_bytes(first, second):
                 return True
 
 
-def developer_tool_identity(root, home=None):
+def developer_tool_identity(root, home=None, *, hash_tools=True):
     """Bind installed tools, without inheriting the historical executable pin.
 
     GNU mtools reads system configuration, then ~/.mtoolsrc, then MTOOLSRC;
@@ -273,13 +273,14 @@ def developer_tool_identity(root, home=None):
         identities[name] = dict(
             command_path=str(selected),
             resolved_path=str(executable),
-            bytes=executable.stat().st_size,
-            sha256=sha256(executable),
         )
+        if hash_tools:
+            identities[name].update(bytes=executable.stat().st_size, sha256=sha256(executable))
     return identities
 
 
-def build(loader, loader_sha256, mtools_root, output_dir, *, developer=False, run_command=None):
+def build(loader, loader_sha256, mtools_root, output_dir, *, developer=False, run_command=None, packaged=False):
+    need(not packaged or developer, "Packaged tools require developer ESP mode")
     need(run_command is None or developer, "Command callback requires developer ESP mode")
     need(not developer or callable(run_command), "Developer ESP mode requires a bounded command callback")
     check_hash(loader_sha256)
@@ -288,7 +289,7 @@ def build(loader, loader_sha256, mtools_root, output_dir, *, developer=False, ru
     need(sha256(loader) == loader_sha256, "Admitted loader SHA256 mismatch")
     if developer:
         tools = Path(mtools_root).absolute()
-        tool_identity = developer_tool_identity(tools)
+        tool_identity = developer_tool_identity(tools, hash_tools=not packaged)
     else:
         tools = verify_tools(mtools_root)
     output = Path(output_dir).absolute()
@@ -323,7 +324,10 @@ def build(loader, loader_sha256, mtools_root, output_dir, *, developer=False, ru
         )
 
         def verify_developer_identity():
-            need(developer_tool_identity(tools, home) == tool_identity, "Developer mtools identity changed")
+            need(
+                developer_tool_identity(tools, home, hash_tools=not packaged) == tool_identity,
+                "Developer mtools identity changed",
+            )
             need(shutil.disk_usage(output).free >= FREE_FLOOR_BYTES, "ESP free-space floor failed")
 
         def run(name, *args):
@@ -351,7 +355,7 @@ def build(loader, loader_sha256, mtools_root, output_dir, *, developer=False, ru
                 verify_developer_identity()
             return log
 
-        if developer and role == "master":
+        if developer and not packaged and role == "master":
             for name in MTOOLS_COMMANDS:
                 log = run(name, "--version")
                 with log.open("rb") as stream:
@@ -422,16 +426,21 @@ def build(loader, loader_sha256, mtools_root, output_dir, *, developer=False, ru
         rebuild=str(output / "esp-rebuild.raw"),
         fat32=results[0],
         commands=commands,
-        builder_sha256=sha256(Path(__file__)),
+        builder_sha256=None if packaged else sha256(Path(__file__)),
     )
     if developer:
         result.update(
             schema="aurora-iommu-event-developer-esp-build-v1",
             status="developer-byte-identity-checked",
             independent_review=False,
-            mtools={name: dict(**tool_identity[name], version_output=versions[name]) for name in MTOOLS_COMMANDS},
+            mtools={}
+            if packaged
+            else {name: dict(**tool_identity[name], version_output=versions[name]) for name in MTOOLS_COMMANDS},
         )
         del result["mtools_sha256"]
+        if packaged:
+            del result["mtools"]
+            del result["builder_sha256"]
     with (output / "esp-admission.json").open("x") as stream:
         json.dump(result, stream, indent=2, sort_keys=True)
         stream.write("\n")

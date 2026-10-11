@@ -20,5 +20,5 @@ Create a new snapshot from an existing archive:
     python3 tools/publication/snapshot_bytes.py snapshot --archive SOURCE.tar.gz --prefix aurora/ --output NEW-tree.json
 
 Both flags and supported archive modes are checked by the helper. The source tar
-and earlier snapshots remain unchanged. See docs/publication-integrity.md for the
+and earlier snapshots remain unchanged. See tools/publication/README.md for the
 historical newline correction and its scope.

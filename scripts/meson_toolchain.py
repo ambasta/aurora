@@ -1,68 +1,70 @@
 #!/usr/bin/env python3
-"""Bind an incremental build directory to its configured host-toolchain bytes."""
+"""Check the selected development tools once at Meson setup, without byte receipts."""
+
 import argparse
-import hashlib
-import json
 import os
-from pathlib import Path
 import shlex
 import shutil
 import subprocess
 
 
-IMPLICIT_SEARCH_ENV = ('CPATH', 'CPLUS_INCLUDE_PATH', 'C_INCLUDE_PATH', 'LIBRARY_PATH')
+IMPLICIT_SEARCH_ENV = ("CPATH", "CPLUS_INCLUDE_PATH", "C_INCLUDE_PATH", "LIBRARY_PATH")
 
 
-def snapshot(cxx):
+def explicit_search():
     for name in IMPLICIT_SEARCH_ENV:
         if name in os.environ:
-            raise ValueError('Unset ' + name + '; use explicit Meson include/link flags in a fresh build directory')
-    def query(*args):
-        return subprocess.check_output([*cxx, *args], text=True).strip()
+            raise ValueError(
+                "BLOCKED: Unset " + name + "; use explicit Meson include/link flags in a fresh build directory"
+            )
+
+
+def selected_tool(name):
+    selected = shutil.which(name)
+    if selected is None:
+        raise ValueError(
+            "BLOCKED: Missing development tool: " + name + "; select the pinned image or local tool prefix on PATH"
+        )
+    return os.path.realpath(selected)
+
+
+def check(cxx, pe_linker=None):
+    explicit_search()
     if not cxx:
-        raise ValueError('Missing configured C++ command')
-    gcc = shutil.which('gcc')
-    if not gcc or subprocess.check_output([gcc, '-dumpfullversion'], text=True).strip() != query('-dumpfullversion'):
-        raise ValueError('Select matching bare gcc on PATH and configured CXX')
-    tools = [*cxx, gcc, 'as', 'ld', 'nm', 'objdump', 'objcopy', 'readelf']
-    tools += [query('-print-prog-name=' + name) for name in ('cc1plus', 'collect2', 'as', 'ld')]
-    tools += [query('-print-file-name=' + name) for name in ('libstdc++.so', 'libgcc_s.so', 'libgcc_s.so.1', 'libgcc.a')]
-    files = {}
-    for tool in tools:
-        found = shutil.which(tool) if not Path(tool).is_absolute() else tool
-        if not found or not Path(found).is_file():
-            raise ValueError('Cannot identify configured host input: ' + tool)
-        path = Path(found).resolve(strict=True)
-        files[str(path)] = hashlib.sha256(path.read_bytes()).hexdigest()
-    return dict(search_policy='explicit-meson-flags-v1', cxx=cxx,
-                version=query('-dumpfullversion'), target=query('-dumpmachine'), files=files)
-
-
-def verify(expected, observed):
-    if expected != observed:
-        raise ValueError('Host toolchain changed; configure a fresh build directory, do not reuse old objects')
+        raise ValueError("BLOCKED: Missing configured C++ command")
+    commands = [
+        (cxx, "-dumpfullversion", "16.2.0"),
+        ([selected_tool("gcc")], "-dumpfullversion", "16.2.0"),
+    ]
+    commands += [
+        ([selected_tool(name)], "--version", "2.47") for name in ("as", "ld", "nm", "objcopy", "objdump", "readelf")
+    ]
+    commands += [
+        ([selected_tool("meson")], "--version", "1.12.1"),
+        ([selected_tool("ninja")], "--version", "1.13.2"),
+    ]
+    if pe_linker:
+        commands.append(([selected_tool(pe_linker)], "--version", "2.47"))
+    for command, flag, expected in commands:
+        lines = subprocess.check_output([*command, flag], text=True, timeout=10).splitlines()
+        version = lines[0] if lines else ""
+        if not version or version.split()[-1] != expected:
+            raise ValueError("BLOCKED: " + shlex.join(command) + ": require " + expected + ", got " + version)
+        print(shlex.join(command) + ": " + version)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--configure', action='store_true')
-    parser.add_argument('--cxx', required=True)
-    parser.add_argument('--record', type=Path, required=True)
-    parser.add_argument('--stamp', type=Path)
+    parser.add_argument("--cxx", required=True)
+    parser.add_argument("--pe-linker")
     args = parser.parse_args()
-    observed = snapshot(shlex.split(args.cxx))
-    if args.record.exists():
-        verify(json.loads(args.record.read_text()), observed)
-    elif args.configure:
-        if (args.record.parent / 'build.ninja').exists():
-            raise ValueError('Unbound existing build; configure a fresh directory to avoid stale toolchain objects')
-        args.record.write_text(json.dumps(observed, indent=2, sort_keys=True) + '\n')
-    else:
-        raise ValueError('Missing setup-time toolchain identity; configure a fresh build directory')
-    if args.stamp:
-        args.stamp.write_text('Host toolchain matches setup identity\n')
-    print('PASS configured host-toolchain identity')
+    check(shlex.split(args.cxx), args.pe_linker)
 
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    try:
+        main()
+    except ValueError as error:
+        raise SystemExit(str(error))
+    except (OSError, subprocess.SubprocessError) as error:
+        raise SystemExit("BLOCKED: Cannot inspect selected development tools: " + str(error))

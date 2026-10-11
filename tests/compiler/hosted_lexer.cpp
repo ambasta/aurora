@@ -1,6 +1,7 @@
 // Private migration fixture: the independent C++ reference is an oracle, never
 // a fallback. Raw ABI records below deliberately do not use production layouts.
 #include "lexer.hpp"
+#include "hosted_lexer_abi.hpp"
 #include "lexer_reference.hpp"
 #include <algorithm>
 #include <array>
@@ -545,6 +546,27 @@ void expectRaw(
     require(source == original, "raw scanner modified source backing");
 }
 
+void eventAbiCases() {
+    using Kind = aurora::hosted_lexer::Event;
+    // Observe the real Aurora result through the independent raw record/ABI
+    // envelope, not through lexSource or a source-text enum-order check.
+    const std::array<std::pair<std::string, Kind>, 8> cases{{
+        {"name", Kind::Token},
+        {" \t\r\n", Kind::Whitespace},
+        {"// comment", Kind::LineComment},
+        {"", Kind::EndOfInput},
+        {"@", Kind::UnsupportedCharacter},
+        {"'ab'", Kind::InvalidByte},
+        {"\"\\q\"", Kind::InvalidString},
+        {"name", Kind::InvalidCursor},
+    }};
+    for (const auto &[source, expected] : cases) {
+        context = "host/Aurora event ABI parity " + std::to_string(static_cast<std::int64_t>(expected));
+        const auto observed = raw(input(source.data(), source.size(), expected == Kind::InvalidCursor ? -1 : 0));
+        require(observed[0] == static_cast<std::int64_t>(expected), "generated event disagrees with host ABI enum");
+    }
+}
+
 class GuardPage {
 public:
     std::size_t page;
@@ -663,6 +685,7 @@ int main(int argc, char **argv) {
         require(setrlimit(RLIMIT_CORE, &noCore) == 0, "cannot disable negative-control core dumps");
         require(std::setlocale(LC_CTYPE, "C") != nullptr, "C locale unavailable");
         abiControls();
+        eventAbiCases();
         abiCases();
         languageCases();
         byteCases();

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One bounded local preview, reusing qualification's PTY/QMP and pixel checks."""
+"""Native framebuffer preview or four-case smoke using shared PTY/QMP capture."""
 
 import argparse
 import json
@@ -15,7 +15,8 @@ import zlib
 
 import kernel_framebuffer_admission as admission
 from framebuffer_capture_oracle import HEIGHT, WIDTH, need, parse_ppm
-from kernel_emulator_clock import expected_firmware_argv
+from qemu_transport import firmware_args as firmware_options
+import qemu_transport as transport
 
 ROOT = Path(__file__).resolve().parents[1]
 capture = admission.load("framebuffer_preview_capture", ROOT / "scripts/kernel-framebuffer-capture.py")
@@ -55,42 +56,90 @@ def png(ppm):
     )
 
 
-def run(qemu, firmware, code, variables, data):
+def run(qemu, firmware, code, variables, data, *, build_dir, full_smoke=False):
+    admission.configure_paths(build_dir, ROOT)
     preflight()
-    admitted = admission.checked("framebuffer")
-    firmware_args = expected_firmware_argv(firmware, code, variables)
+    if full_smoke:
+        need(
+            build_dir.is_absolute() and build_dir.parts[-3:] == ("kernel-images", "uefi", "framebuffer"),
+            "full smoke requires the native framebuffer profile directory",
+        )
+    modes = admission.MODES if full_smoke else ("framebuffer",)
+    profiles = {mode: build_dir.parent / mode for mode in modes} if full_smoke else {"framebuffer": build_dir}
+    admitted = {}
+    for mode in modes:
+        admission.configure_paths(profiles[mode], ROOT)
+        admitted[mode] = admission.checked(mode)
+    firmware_args = firmware_options(firmware, code, variables)
     parent = ROOT / "build/framebuffer-preview"
     parent.mkdir(exist_ok=True)
     directory = Path(tempfile.mkdtemp(prefix="run-", dir=parent))
-    # All capture artifacts are fresh, so a failed rerun cannot expose an old
-    # screenshot as its successful result. Ordinary preview never mints reviews.
     (directory / "admission.json").write_text(json.dumps(admitted, indent=2) + "\n")
-    manifest = {"cases": {"framebuffer": {"esp": str(ROOT / "build/uefi/esp")}}}
-    receipt = dict(schema="aurora-framebuffer-preview-v1", qualified=False, status="failed")
+    manifest = {"cases": {mode: {"esp": str(profiles[mode] / "esp")} for mode in modes}}
+    receipt = dict(schema="aurora-framebuffer-preview-v1", qualified=False, status="failed", cases=[])
+    primary, unsettled = None, False
     try:
-        result = capture.run_case(
-            "framebuffer",
-            manifest,
-            {"qemu": qemu},
-            {"data": data},
-            os.environ.copy(),
-            directory / "capture",
-            firmware_args=firmware_args,
-        )
-        receipt["capture"] = result
-        need(result["status"] == "passed", result.get("error", "capture cleanup failed"))
-        admission.checked("framebuffer")
-        image = directory / "framebuffer.png"
-        image.write_bytes(png((directory / "capture/after.ppm").read_bytes()))
-        receipt.update(status="passed", image=str(image), image_sha256=capture.digest(image))
+        for mode in modes:
+            admission.configure_paths(profiles[mode], ROOT)
+            if full_smoke:
+                need(admission.checked(mode) == admitted[mode], "admitted framebuffer image changed before capture")
+            destination = directory / (mode if full_smoke else "capture")
+            result = capture.run_case(
+                mode,
+                manifest,
+                {"qemu": qemu},
+                {"data": data},
+                os.environ.copy(),
+                destination,
+                firmware_args=firmware_args,
+            )
+            receipt["cases"].append(result)
+            unsettled = bool(result.get("unsettled"))
+            need(result["status"] == "passed", result.get("error", "capture cleanup failed"))
+            need(admission.checked(mode) == admitted[mode], "admitted framebuffer image changed after capture")
+            if mode == "framebuffer":
+                image = directory / "framebuffer.png"
+                image.write_bytes(png((destination / "after.ppm").read_bytes()))
+                receipt.update(image=str(image), image_sha256=capture.digest(image))
+        receipt["status"] = "passed"
     except (Exception, KeyboardInterrupt) as error:
+        primary = error
         receipt["error"] = type(error).__name__ + ": " + str(error)
-        raise
     finally:
+        if full_smoke:
+            restored = dict(status="failed")
+            receipt["normal_restoration"] = restored
+            try:
+                need(
+                    not unsettled and not isinstance(primary, transport.ChildNotReaped),
+                    "unreaped guest blocks normal restoration",
+                )
+                status = transport.run_logged(
+                    ["bash", ROOT / "scripts/kernel-uefi-smoke.sh", "normal"],
+                    directory / "normal-restoration.log",
+                    env=dict(os.environ, MESON_BUILD_DIR=str(build_dir.parents[2])),
+                    cwd=ROOT,
+                    timeout=180,
+                )
+                restored["exit_status"] = status
+                need(status == 0, "normal UEFI smoke failed: " + str(status))
+                restored.update(status="passed", exit_status=status)
+            except (Exception, KeyboardInterrupt) as error:
+                receipt["status"] = "failed"
+                restored["error"] = type(error).__name__ + ": " + str(error)
+                if primary is None:
+                    primary = error
         (directory / "preview.json").write_text(json.dumps(receipt, indent=2) + "\n")
         print("Framebuffer preview files: " + str(directory), flush=True)
-    print("PASS: developer preview: " + str(image))
-    print("Not independently qualified evidence; no negative guests or normal-restoration boot were run.")
+    if primary is not None:
+        raise primary
+    print(
+        "PASS: developer framebuffer "
+        + ("four-case smoke and normal boot: " if full_smoke else "preview: ")
+        + str(image)
+    )
+    if not full_smoke:
+        print("Not independently qualified evidence; no negative guests or normal-restoration boot were run.")
     return receipt
 
 
@@ -101,6 +150,8 @@ def interrupted(signum, frame):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--preflight", action="store_true")
+    parser.add_argument("--full-smoke", action="store_true", help="four native framebuffer cases and a normal boot")
+    parser.add_argument("--build-dir", type=Path, help="exact native framebuffer profile directory")
     parser.add_argument("inputs", nargs="*")
     args = parser.parse_args()
     if args.preflight:
@@ -109,7 +160,8 @@ def main():
     else:
         need(len(args.inputs) == 5, "Expected QEMU OVMF CODE VARS DATA from kernel-framebuffer-preview.sh")
         signal.signal(signal.SIGTERM, interrupted)
-        run(*args.inputs)
+        need(args.build_dir is not None, "capture requires --build-dir")
+        run(*args.inputs, build_dir=args.build_dir, full_smoke=args.full_smoke)
 
 
 if __name__ == "__main__":

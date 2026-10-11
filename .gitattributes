@@ -1,2 +1,4 @@
 # Unified-diff context represents an empty source line as one mandatory space.
 /tools/qemu-amdvi/patches/*.patch whitespace=-blank-at-eol
+# Preserve exact upstream EDK2 patch bytes, including CRLF context.
+/ci/*.patch -text whitespace=-blank-at-eol,cr-at-eol

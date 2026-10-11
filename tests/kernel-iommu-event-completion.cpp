@@ -21,16 +21,40 @@ void check(bool value, const char *description) {
 using Bytes = std::array<std::byte, 16>;
 auto golden_fault() -> Bytes {
     // Code 2, RID=1234h, Domain=abcdh, PR/PE/RW=1, RZ/I/TR/GN=0.
-    return {std::byte{0x34}, std::byte{0x12}, std::byte{0},    std::byte{0},
-            std::byte{0xcd}, std::byte{0xab}, std::byte{0x70}, std::byte{0x20},
-            std::byte{0xef}, std::byte{0xcd}, std::byte{0xab}, std::byte{0x89},
-            std::byte{0x67}, std::byte{0x45}, std::byte{0x23}, std::byte{0x01}};
+    return {std::byte{0x34},
+            std::byte{0x12},
+            std::byte{0},
+            std::byte{0},
+            std::byte{0xcd},
+            std::byte{0xab},
+            std::byte{0x70},
+            std::byte{0x20},
+            std::byte{0xef},
+            std::byte{0xcd},
+            std::byte{0xab},
+            std::byte{0x89},
+            std::byte{0x67},
+            std::byte{0x45},
+            std::byte{0x23},
+            std::byte{0x01}};
 }
 auto golden_command_error(bool hardware = false) -> Bytes {
-    return {std::byte{0},    std::byte{0},    std::byte{0},    std::byte{0},
-            std::byte{0},    std::byte{0},    std::byte{0},    hardware ? std::byte{0x64} : std::byte{0x50},
-            std::byte{0xf0}, std::byte{0xde}, std::byte{0xbc}, std::byte{0x9a},
-            std::byte{0x78}, std::byte{0x56}, std::byte{0x34}, std::byte{0x12}};
+    return {std::byte{0},
+            std::byte{0},
+            std::byte{0},
+            std::byte{0},
+            std::byte{0},
+            std::byte{0},
+            std::byte{0},
+            hardware ? std::byte{0x64} : std::byte{0x50},
+            std::byte{0xf0},
+            std::byte{0xde},
+            std::byte{0xbc},
+            std::byte{0x9a},
+            std::byte{0x78},
+            std::byte{0x56},
+            std::byte{0x34},
+            std::byte{0x12}};
 }
 void unsupported(const EventResult &result, UnsupportedCause cause, const char *description) {
     const auto *value = std::get_if<Unsupported>(&result);
@@ -40,9 +64,9 @@ void raw_events() {
     auto bytes = golden_fault();
     auto result = decode_event(bytes);
     const auto *fault = std::get_if<RawIoPageFault>(&result);
-    check(fault && fault->requester == 0x1234 && fault->domain == 0xabcd &&
-              fault->address == 0x0123456789abcdefULL && fault->present && fault->permission_denied && fault->write &&
-              !fault->reserved_bit && !fault->interrupt && !fault->translation_request && !fault->guest,
+    check(fault && fault->requester == 0x1234 && fault->domain == 0xabcd && fault->address == 0x0123456789abcdefULL &&
+              fault->present && fault->permission_denied && fault->write && !fault->reserved_bit && !fault->interrupt &&
+              !fault->translation_request && !fault->guest,
           "literal ordinary fault fields");
     FaultExpectation expected{0x1234, 0xabcd, 0x0123456789abcdefULL, true, true, true, {}};
     check(fault && matches_fault(*fault, expected), "defined fault fields match");
@@ -75,9 +99,8 @@ void raw_events() {
     for (unsigned bit = 16; bit != 32; ++bit) {
         bytes = golden_fault();
         bytes[bit / 8] |= std::byte{static_cast<unsigned char>(1U << (bit % 8))};
-        unsupported(decode_event(bytes),
-                    UnsupportedCause::event_profile,
-                    "PASID virtualized reserved profile unsupported");
+        unsupported(
+            decode_event(bytes), UnsupportedCause::event_profile, "PASID virtualized reserved profile unsupported");
     }
     for (unsigned code = 0; code != 16; ++code) {
         if (code == 2 || code == 5 || code == 6) {
@@ -133,20 +156,33 @@ void translation_cross_check() {
     const amd310_oracle::Input input{table, root, 0x5000, 1};
     const auto translated = amd310_oracle::translate(input, {16, 0x3123, amd310_oracle::Access::write});
     const auto *semantic = std::get_if<amd310_oracle::IoPageFault>(&translated);
-    const Bytes bytes{std::byte{0x10}, std::byte{0},    std::byte{0},    std::byte{0},
-                      std::byte{0x34}, std::byte{0x12}, std::byte{0xe0}, std::byte{0x20},
-                      std::byte{0x23}, std::byte{0x31}, std::byte{0},    std::byte{0},
-                      std::byte{0},    std::byte{0},    std::byte{0},    std::byte{0}};
+    const Bytes bytes{std::byte{0x10},
+                      std::byte{0},
+                      std::byte{0},
+                      std::byte{0},
+                      std::byte{0x34},
+                      std::byte{0x12},
+                      std::byte{0xe0},
+                      std::byte{0x20},
+                      std::byte{0x23},
+                      std::byte{0x31},
+                      std::byte{0},
+                      std::byte{0},
+                      std::byte{0},
+                      std::byte{0},
+                      std::byte{0},
+                      std::byte{0}};
     const auto decoded = decode_event(bytes);
     const auto *raw = std::get_if<RawIoPageFault>(&decoded);
-    check(semantic && raw && matches_fault(*raw,
-                                          {semantic->requester,
-                                           semantic->domain,
-                                           semantic->address,
-                                           semantic->present,
-                                           semantic->permission_denied,
-                                           semantic->write,
-                                           semantic->reserved_bit}),
+    check(semantic && raw &&
+              matches_fault(*raw,
+                            {semantic->requester,
+                             semantic->domain,
+                             semantic->address,
+                             semantic->present,
+                             semantic->permission_denied,
+                             semantic->write,
+                             semantic->reserved_bit}),
           "independent translation optional fields match copied event");
 }
 
@@ -196,8 +232,7 @@ void status_and_ring() {
             check(std::holds_alternative<Unsupported>(append_event(ring, {8})), "invalid ring offsets unsupported");
         }
     }
-    check(std::holds_alternative<Unsupported>(append_event({8, 0, 0}, {32})),
-          "unmodeled status profile unsupported");
+    check(std::holds_alternative<Unsupported>(append_event({8, 0, 0}, {32})), "unmodeled status profile unsupported");
     for (const auto length : {0, 7, 16, 255}) {
         check(std::holds_alternative<Unsupported>(append_event({static_cast<std::uint8_t>(length), 0, 0}, {8})),
               "invalid EventLen unsupported");
@@ -293,8 +328,8 @@ void faults_are_not_completion() {
               "ordinary fault and stale status never finish pending batch");
         cache_facts(batch);
         check(batch.assume(Fact::reads_drained) == Step::advanced &&
-                  batch.assume(Fact::writes_drained) == Step::advanced &&
-                  batch.finish_wait() == Step::advanced && batch.completed(),
+                  batch.assume(Fact::writes_drained) == Step::advanced && batch.finish_wait() == Step::advanced &&
+                  batch.completed(),
               "ordinary fault does not stop modeled commands");
     }
     for (const bool hardware : {false, true}) {
@@ -329,8 +364,7 @@ int main() {
     status_and_ring();
     batches();
     faults_are_not_completion();
-    std::printf("%s %zu independent AMD310 event/completion checks; no device operation\n",
-                failures ? "FAIL" : "PASS",
-                checks);
+    std::printf(
+        "%s %zu independent AMD310 event/completion checks; no device operation\n", failures ? "FAIL" : "PASS", checks);
     return failures ? 1 : 0;
 }

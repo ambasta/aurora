@@ -14,6 +14,8 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import kernel_iommu_event_smoke as smoke
 
+transport = smoke.transport
+
 fixtures = smoke.admission.load("event_smoke_test_fixtures", Path(__file__).with_name("kernel-iommu-event-oracle.py"))
 
 FAKE = """#!{python}
@@ -93,6 +95,131 @@ class Controls(unittest.TestCase):
                 self.root / name,
                 master_sha256=smoke.esp.sha256(self.root / "master"),
             )
+
+    def test_packaged_tools_use_fixed_prefix_without_runtime_hash_records(self):
+        prefix = self.root / "package"
+        for name in (
+            "bin/qemu-system-x86_64",
+            *("model/" + name for name in smoke.MODEL),
+            "model/configs/devices/x86_64-softmmu/aurora-dma.mak",
+        ):
+            path = prefix / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("packaged dependency")
+        (prefix / "bin/qemu-system-x86_64").chmod(0o700)
+        (prefix / "share/qemu").mkdir(parents=True)
+        (prefix / "firmware").mkdir()
+        for role, name in (("code", "OVMF_CODE_4M.fd"), ("vars", "OVMF_VARS_4M.fd")):
+            with (prefix / "firmware" / name).open("wb") as file:
+                file.truncate(smoke.FIRMWARE[role][0])
+        marker = prefix / "runtime.json"
+        smoke.write_json(marker, smoke.PACKAGE_MARKER)
+
+        def version(argv, output, **options):
+            self.assertEqual(argv, [str(prefix / "bin/qemu-system-x86_64"), "--version"])
+            output.write(b"QEMU emulator version 10.0.13\n")
+            return 0
+
+        with (
+            patch.object(smoke.transport, "run_logged", side_effect=version) as run,
+            patch.object(smoke, "identity", side_effect=AssertionError("packaged tools must not be rehashed")),
+        ):
+            runtime = smoke.packaged_runtime(prefix)
+            smoke.verify_runtime(runtime)
+            smoke.verify_dependencies(runtime, self.root)
+            run.assert_called_once()
+            self.assertTrue(runtime["packaged"])
+            self.assertNotIn("files", runtime)
+            self.assertNotIn("library_bindings", runtime)
+        smoke.write_json(marker, dict(smoke.PACKAGE_MARKER, model="stock"))
+        with self.assertRaisesRegex(ValueError, "model/version"):
+            smoke.packaged_runtime(prefix)
+        smoke.write_json(marker, smoke.PACKAGE_MARKER)
+        with patch.object(smoke.transport, "run_logged", side_effect=lambda argv, output, **kw: output.write(b"wrong")):
+            with self.assertRaisesRegex(ValueError, "QEMU version"):
+                smoke.packaged_runtime(prefix)
+
+    def test_original_clock_and_explicit_devices(self):
+        expected = [
+            "qemu",
+            "-L",
+            "/data",
+            "-machine",
+            "q35",
+            "-accel",
+            "tcg",
+            "-cpu",
+            "qemu64",
+            "-smp",
+            "1",
+            "-m",
+            "128M",
+            "-bios",
+            "/firmware",
+            "-drive",
+            "format=raw,file=fat:ro:/esp,snapshot=on",
+            "-nic",
+            "none",
+            "-display",
+            "none",
+            "-serial",
+            "stdio",
+            "-monitor",
+            "none",
+            "-no-reboot",
+            "-device",
+            "isa-debug-exit,iobase=0xf4,iosize=0x04",
+        ]
+        self.assertEqual(
+            transport.command("qemu", "/data", firmware=["-bios", "/firmware"], boot=transport.fat_boot("/esp")),
+            expected,
+        )
+        capture = transport.command("qemu", peripherals=["-vga", "std"], extra=["-qmp", "stdio", "-S"])
+        self.assertEqual(capture[-3:], ["-qmp", "stdio", "-S"])
+        self.assertIn("-vga", capture)
+        self.assertNotIn("-icount", capture)
+        self.assertNotIn("amd-iommu", capture)
+
+    def test_firmware_is_explicit_and_snapshot_is_preserved(self):
+        self.assertEqual(transport.firmware_args("/combined"), ["-bios", "/combined"])
+        self.assertEqual(
+            transport.firmware_args("", "/code,raw.fd", "/vars.qcow2"),
+            [
+                "-drive",
+                "if=pflash,unit=0,format=raw,readonly=on,file=/code,,raw.fd",
+                "-drive",
+                "if=pflash,unit=1,format=qcow2,snapshot=on,file=/vars.qcow2",
+            ],
+        )
+        for args in (("", "", ""), ("/combined", "/code", "/vars"), ("", "/same", "/same")):
+            with self.subTest(args=args), self.assertRaises(ValueError):
+                transport.firmware_args(*args)
+
+    def test_missing_is_blocked_but_present_invalid_is_failed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with self.assertRaises(transport.MissingPrerequisite) as absent:
+                transport.input_path(root / "absent", "QEMU")
+            self.assertEqual(transport.failure_label(absent.exception), "BLOCKED")
+            with self.assertRaises(ValueError) as invalid:
+                transport.input_path(root, "QEMU")
+            self.assertEqual(transport.failure_label(invalid.exception), "FAIL")
+            self.assertEqual(transport.failure_label(ValueError("tampered digest")), "FAIL")
+            # A missing file after a guest starts must not become a prerequisite skip.
+            self.assertEqual(transport.failure_label(FileNotFoundError("lost output")), "FAIL")
+
+    def test_shared_serial_timeout_preserves_output(self):
+        log = self.root / "serial-timeout.log"
+        status = transport.run_logged(
+            [sys.executable, "-c", "import time; print('started', flush=True); time.sleep(20)"],
+            log,
+            timeout=0.2,
+        )
+        self.assertEqual(status, 124)
+        self.assertEqual(log.read_bytes(), b"started\n")
+        self.assertFalse(transport.retain_artifacts(0))
+        self.assertTrue(transport.retain_artifacts(0, True))
+        self.assertTrue(transport.retain_artifacts(124))
 
     def test_complete_owned_pipe_capture_and_closed_argv(self):
         result = self.guest()
@@ -199,6 +326,7 @@ class Controls(unittest.TestCase):
         channel = smoke.Qmp.__new__(smoke.Qmp)
         channel.deadline = time.monotonic() + 0.05
         channel.log, channel.total, channel.sequence = io.BytesIO(), 0, 0
+        channel.timeout, channel.log_limit = 2, 65536
         channel.writer = os.fdopen(writer, "wb", buffering=0)
         try:
             with self.assertRaisesRegex(ValueError, "QMP request timeout"):
@@ -243,9 +371,9 @@ class Controls(unittest.TestCase):
             def poll(self):
                 return None
 
-        with patch.object(smoke.os, "getpgid", return_value=456), patch.object(smoke.os, "killpg") as kill:
+        with patch.object(transport.os, "getpgid", return_value=456), patch.object(transport.os, "killpg") as kill:
             with self.assertRaisesRegex(ValueError, "group changed"):
-                smoke.cleanup(Child())
+                transport.cleanup(Child())
             kill.assert_not_called()
 
     def test_strict_json_and_regular_paths(self):
@@ -263,30 +391,49 @@ class Controls(unittest.TestCase):
         with self.assertRaises(ValueError):
             smoke.copy_private(self.root / "code", self.root / "vars")
 
-    def test_exact_normal_restoration_preserves_unowned_files(self):
-        build, image = self.root / "build", self.root / "image"
-        (build / "objects").mkdir(parents=True)
-        (image / "objects").mkdir(parents=True)
-        (build / "objects/event.o").write_bytes(b"event")
-        (build / "objects/cache.keep").write_bytes(b"unowned")
-        (build / "other.log").write_bytes(b"retain")
-        (image / "objects/normal.o").write_bytes(b"normal")
-        (image / "payload.bin").write_bytes(b"normal payload")
-        record = dict(
-            mode="normal",
-            source={},
-            files={str(p.relative_to(image)): smoke.identity(p) for p in image.rglob("*") if p.is_file()},
-        )
-        smoke.write_json(image / "image.json", record)
-        with patch.object(smoke, "BUILD", build):
-            smoke.restore_normal(image, record)
-        self.assertEqual((build / "payload.bin").read_bytes(), b"normal payload")
-        self.assertFalse((build / "objects/event.o").exists())
-        self.assertEqual((build / "objects/cache.keep").read_bytes(), b"unowned")
-        self.assertEqual((build / "other.log").read_bytes(), b"retain")
-        (image / "payload.bin").write_bytes(b"changed")
-        with patch.object(smoke, "BUILD", build), self.assertRaisesRegex(ValueError, "Staged image changed"):
-            smoke.restore_normal(image, record)
+    def test_native_build_handoff_keeps_diagnostics_separate_and_binds_original(self):
+        mode = smoke.MODES[0]
+        native = self.root / "meson/kernel-images/uefi" / mode
+        native.mkdir(parents=True)
+        normal = native.parent / "normal"
+        normal.mkdir()
+        (normal / "payload.bin").write_bytes(b"keep normal")
+
+        def child(argv, selection, **kwargs):
+            self.assertEqual(argv[-5:], ["--kernel", "uefi", "--profile", mode, "--print-image-dir"])
+            selection.write_text(str(native) + "\n")
+            kwargs["stderr"].write(b"native build diagnostics\n")
+            return 0
+
+        with (
+            patch.object(transport, "run_logged", side_effect=child),
+            patch.object(smoke.admission, "configure_paths") as bind,
+        ):
+            smoke.build(mode, self.root)
+        bind.assert_called_once_with(native, smoke.ROOT)
+        self.assertEqual((self.root / ("build-" + mode + ".log")).read_bytes(), b"native build diagnostics\n")
+        self.assertEqual((normal / "payload.bin").read_bytes(), b"keep normal")
+
+    def test_separate_stdout_and_stderr_share_one_output_bound(self):
+        log, diagnostics = self.root / "stdout.log", self.root / "stderr.log"
+        with diagnostics.open("xb") as stderr:
+            status = transport.run_logged(
+                [sys.executable, "-c", "import sys; print('/profile'); print('diagnostic', file=sys.stderr)"],
+                log,
+                stderr=stderr,
+                expected=0,
+            )
+        self.assertEqual(status, 0)
+        self.assertEqual(log.read_bytes(), b"/profile\n")
+        self.assertEqual(diagnostics.read_bytes(), b"diagnostic\n")
+        with (self.root / "capped-stderr.log").open("xb") as stderr, self.assertRaisesRegex(ValueError, "output limit"):
+            transport.run_logged(
+                [sys.executable, "-c", "import sys; print('x'*4096, file=sys.stderr)"],
+                self.root / "capped-stdout.log",
+                stderr=stderr,
+                limit=128,
+            )
+        self.assertEqual((self.root / "capped-stderr.log").stat().st_size, 128)
 
     def test_supported_runtime_identity_and_rejection_before_launch(self):
         from types import SimpleNamespace
@@ -331,6 +478,7 @@ class Controls(unittest.TestCase):
             data=str(self.root / "data"),
         )
         firmware = {role: tuple(smoke.identity(getattr(args, role)).values()) for role in ("code", "vars")}
+        real_which = smoke.shutil.which
         esps = self.root / "esps"
         esps.mkdir()
         for mode in smoke.MODES:
@@ -440,7 +588,7 @@ class Controls(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "directory limit"):
             smoke.data_files(data)
 
-    def test_low_space_stale_source_and_master_copy_are_prelaunch_failures(self):
+    def test_low_space_staged_drift_and_master_copy_are_prelaunch_failures(self):
         from types import SimpleNamespace
 
         with (
@@ -469,11 +617,12 @@ class Controls(unittest.TestCase):
         image = self.root / "staged"
         image.mkdir()
         (image / "loader").write_bytes(b"loader")
-        record = dict(mode="normal", source={"current": "old"}, files={"loader": smoke.identity(image / "loader")})
+        record = dict(mode="normal", files={"loader": smoke.identity(image / "loader")})
         smoke.write_json(image / "image.json", record)
-        with patch.object(smoke, "source_identity", return_value={"current": "new"}):
-            with self.assertRaisesRegex(ValueError, "Source changed"):
-                smoke.verify_stage(image, record)
+        smoke.verify_stage(image, record)
+        (image / "loader").write_bytes(b"changed loader")
+        with self.assertRaisesRegex(ValueError, "Staged image changed"):
+            smoke.verify_stage(image, record)
 
     def test_make_empty_exports_keep_launcher_defaults(self):
         from types import SimpleNamespace
@@ -493,6 +642,7 @@ class Controls(unittest.TestCase):
             check=True,
         )
         environment = json.loads(probe.stdout)
+        real_which = smoke.shutil.which
         self.assertEqual(environment["QEMU"], "")
         self.assertEqual(environment["EVENT_OUTPUT_PARENT"], "")
         source, run = self.root / "source", self.root / "run"
@@ -504,6 +654,11 @@ class Controls(unittest.TestCase):
         run.mkdir()
         with (
             patch.dict(os.environ, environment, clear=True),
+            patch.object(
+                smoke.shutil,
+                "which",
+                side_effect=lambda tool: sys.executable if tool in ("meson", "ninja") else real_which(tool),
+            ),
             patch.object(sys, "argv", ["event-smoke", "--build-only", "--esp-dir", str(self.root)]),
             patch.object(smoke, "ROOT", source),
             patch.object(smoke.tempfile, "gettempdir", return_value=str(self.root)),
@@ -566,6 +721,7 @@ class Controls(unittest.TestCase):
     def test_missing_inputs_block_but_malformed_receipts_fail_before_allocation(self):
         from types import SimpleNamespace
 
+        real_which = smoke.shutil.which
         esps = self.root / "esps"
         esps.mkdir()
         for mode in smoke.MODES:
@@ -626,6 +782,11 @@ class Controls(unittest.TestCase):
                     patch.object(sys, "argv", args),
                     patch.object(
                         smoke.shutil,
+                        "which",
+                        side_effect=lambda tool: sys.executable if tool in ("meson", "ninja") else real_which(tool),
+                    ),
+                    patch.object(
+                        smoke.shutil,
                         "disk_usage",
                         return_value=SimpleNamespace(free=1 if kind == "space" else 4 * 1024**3),
                     ),
@@ -660,7 +821,65 @@ class Controls(unittest.TestCase):
                 self.assertIn("FAIL: Event developer smoke: " + str(error), stderr.getvalue())
                 self.assertNotIn("BLOCKED:", stderr.getvalue())
 
-    def test_build_only_checks_four_profiles_restores_once_and_never_launches(self):
+    def test_staged_worker_binds_original_admission_and_never_builds(self):
+        mode = smoke.MODES[0]
+        build = self.root / "kernel-images/uefi" / mode
+        build.mkdir(parents=True)
+        image = self.root / "staged"
+        image.mkdir()
+        admitted = {"image": {"value": "current"}}
+        staged = {"mode": mode, "checked": {"image": {"value": "current", "payload_layout": {}}}}
+        smoke.write_json(image / "image.json", staged)
+        loader = image / "esp/EFI/BOOT/BOOTX64.EFI"
+        loader.parent.mkdir(parents=True)
+        loader.write_bytes(b"admitted staged loader")
+        for changed in (False, True):
+            with (
+                self.subTest(changed=changed),
+                patch.object(smoke.admission, "configure_paths") as configure,
+                patch.object(smoke.admission, "checked", side_effect=[admitted, {} if changed else admitted]),
+                patch.object(smoke, "verify_stage") as verify,
+                patch.object(smoke, "capture_guest") as capture,
+                patch.object(
+                    smoke.esp, "validate_image", return_value={"image_sha256": "bound digest"}
+                ) as validate_fat,
+                patch.object(smoke, "build") as compile_image,
+                patch.object(smoke.signal, "signal"),
+            ):
+                arguments = (mode, build, image, {}, self.root / "master", self.root / "guest")
+                if changed:
+                    with self.assertRaisesRegex(ValueError, "changed after launch"):
+                        smoke.capture_staged(*arguments, master_sha256="bound digest")
+                else:
+                    smoke.capture_staged(*arguments, master_sha256="bound digest")
+                    self.assertEqual(verify.call_count, 2)
+                configure.assert_called_once_with(build, smoke.ROOT)
+                capture.assert_called_once_with(
+                    mode, staged["checked"], {}, self.root / "master", self.root / "guest", master_sha256="bound digest"
+                )
+                validate_fat.assert_called_once_with(
+                    self.root / "master", smoke.esp.sha256(loader), loader.stat().st_size
+                )
+                compile_image.assert_not_called()
+
+        with (
+            patch.object(smoke.admission, "configure_paths"),
+            patch.object(smoke.admission, "checked", return_value=admitted),
+            patch.object(smoke, "verify_stage"),
+            patch.object(smoke.esp, "validate_image", return_value={"image_sha256": "different master"}),
+            patch.object(smoke, "capture_guest") as capture,
+        ):
+            with self.assertRaisesRegex(ValueError, "master differs"):
+                smoke.capture_staged(
+                    mode, build, image, {}, self.root / "master", self.root / "guest", master_sha256="bound digest"
+                )
+            with self.assertRaisesRegex(ValueError, "cannot modify"):
+                smoke.capture_staged(
+                    mode, build, image, {}, self.root / "master", image / "guest", master_sha256="bound digest"
+                )
+            capture.assert_not_called()
+
+    def test_build_only_checks_isolated_profiles_and_never_launches(self):
         from types import SimpleNamespace
 
         run, esps = self.root / "build-only", self.root / "esps"
@@ -684,60 +903,14 @@ class Controls(unittest.TestCase):
             patch.object(
                 smoke.esp, "validate_image", side_effect=lambda path, *_: {"image_sha256": smoke.esp.sha256(path)}
             ),
-            patch.object(smoke, "restore_normal", side_effect=lambda *_: calls.append("restore")),
             patch.object(smoke, "normal_boot") as normal_boot,
             patch.object(smoke, "capture_guest") as guest,
         ):
             smoke.window(args, run, None)
-        self.assertEqual(calls, ["normal", *smoke.MODES, "restore"])
+        self.assertEqual(calls, ["normal", *smoke.MODES])
         normal_boot.assert_not_called()
         guest.assert_not_called()
         self.assertFalse(smoke.read_json(run / "summary.json")["errors"])
-
-    def test_restoration_ignores_second_signal_until_all_bytes_restored(self):
-        import signal
-        from types import SimpleNamespace
-
-        run = self.root / "restore-signal"
-        run.mkdir()
-        build = self.root / "shared"
-        (build / "objects").mkdir(parents=True)
-        image = run / "normal-image"
-        (image / "objects").mkdir(parents=True)
-        for name in ("objects/normal.o", "payload.bin"):
-            (image / name).write_bytes(b"normal")
-            (build / name).write_bytes(b"event")
-        record = dict(
-            mode="normal",
-            source={},
-            files={name: smoke.identity(image / name) for name in ("objects/normal.o", "payload.bin")},
-        )
-        smoke.write_json(image / "image.json", record)
-        copied = smoke.shutil.copyfileobj
-
-        def copy_and_interrupt(source, target):
-            copied(source, target)
-            os.kill(os.getpid(), signal.SIGTERM)
-
-        def interrupted(_sig, _frame):
-            raise KeyboardInterrupt("second interrupt")
-
-        previous = signal.signal(signal.SIGTERM, interrupted)
-        try:
-            with (
-                patch.object(smoke, "BUILD", build),
-                patch.object(smoke, "stage", return_value=record),
-                patch.object(smoke, "build", side_effect=[None, ValueError("initial failure")]),
-                patch.object(smoke.shutil, "copyfileobj", side_effect=copy_and_interrupt),
-            ):
-                with self.assertRaisesRegex(ValueError, "initial failure"):
-                    smoke.window(SimpleNamespace(build_only=True), run, None)
-        finally:
-            signal.signal(signal.SIGTERM, previous)
-        self.assertTrue(all((build / name).read_bytes() == b"normal" for name in record["files"]))
-        self.assertEqual(
-            smoke.read_json(run / "summary.json")["profiles"][-1], dict(mode="normal-restoration", status="passed")
-        )
 
     def test_normal_restoration_also_disables_ambient_qemu_config(self):
         from types import SimpleNamespace
@@ -760,7 +933,7 @@ class Controls(unittest.TestCase):
             patch.object(smoke, "bounded_child", side_effect=child),
             patch.object(smoke.normal, "validate") as validate,
         ):
-            smoke.normal_boot(args, self.root)
+            smoke.normal_boot(args, self.root, self.root / "normal-image")
         validate.assert_called_once_with(33, "normal fixture", "normal")
 
     def test_window_restores_once_after_failure_and_keeps_both_errors(self):
@@ -777,13 +950,13 @@ class Controls(unittest.TestCase):
         with (
             patch.object(smoke, "build", side_effect=build),
             patch.object(smoke, "stage", return_value={"files": {}}),
-            patch.object(smoke, "restore_normal", side_effect=lambda *_: calls.append("restore")),
             patch.object(smoke, "normal_boot", side_effect=ValueError("normal boot failed")),
+            patch.object(smoke, "verify_stage"),
             patch.object(smoke, "BUILD", self.root / "absent"),
         ):
             with self.assertRaises(ValueError):
                 smoke.window(args, run, None)
-        self.assertEqual(calls, ["normal", "iommu-event-denial", "restore"])
+        self.assertEqual(calls, ["normal", "iommu-event-denial"])
         errors = smoke.read_json(run / "summary.json")["errors"]
         self.assertEqual(len(errors), 2)
         self.assertIn("Event build failed", errors[0])
@@ -792,7 +965,7 @@ class Controls(unittest.TestCase):
         run.mkdir()
         with (
             patch.object(smoke, "build", side_effect=smoke.ChildNotReaped("unreaped")),
-            patch.object(smoke, "restore_normal") as restore,
+            patch.object(smoke, "normal_boot") as restore,
         ):
             with self.assertRaises(ValueError):
                 smoke.window(args, run, None)

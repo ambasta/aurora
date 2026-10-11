@@ -4,6 +4,7 @@
 This bounded differential test is not a semantics oracle or equivalence proof. It is
 separate from tests/semantics, which independently predicts program behavior.
 """
+
 from pathlib import Path
 import argparse
 import random
@@ -21,7 +22,9 @@ compilers = [args.baseline.resolve(), args.candidate.resolve()]
 
 def run(command):
     return subprocess.run(
-        [str(value) for value in command], capture_output=True, timeout=5,
+        [str(value) for value in command],
+        capture_output=True,
+        timeout=5,
         preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)),
     )
 
@@ -54,13 +57,19 @@ for _ in range(32):
 for length in range(1, 17):
     values = [random.randrange(-1000, 1000) for _ in range(length)]
     initializer = ",".join(map(str, values))
-    cases.append((
-        f"array<i64,{length}> a={{{initializer}}}; const array<i64,{length}> b=a; "
-        "i64 i=0; i64 sum=0; while(i<len(a)){a[i]=a[i]+1;sum=sum+b[i];i=i+1;}return sum;",
-        "return",
-    ))
-for expression in ["9223372036854775807+1", "-(-9223372036854775808)",
-                   "(-9223372036854775808)-1", "9223372036854775807*2"]:
+    cases.append(
+        (
+            f"array<i64,{length}> a={{{initializer}}}; const array<i64,{length}> b=a; "
+            "i64 i=0; i64 sum=0; while(i<len(a)){a[i]=a[i]+1;sum=sum+b[i];i=i+1;}return sum;",
+            "return",
+        )
+    )
+for expression in [
+    "9223372036854775807+1",
+    "-(-9223372036854775808)",
+    "(-9223372036854775808)-1",
+    "9223372036854775807*2",
+]:
     cases.append((f"return {expression};", "trap"))
 for index in ["-1", "3", "9223372036854775807", "-9223372036854775808"]:
     cases.append((f"array<i64,3> a={{1,2,3}}; return a[{index}];", "trap"))
@@ -99,11 +108,11 @@ with tempfile.TemporaryDirectory(prefix="aurora-equivalence-") as directory:
             require(result.returncode == 0, result.stderr.decode())
             result = run([root / "program"])
             if expected == "trap":
-                require(result.returncode == -signal.SIGILL and not result.stdout,
-                        f"case {number}: expected exact SIGILL")
+                require(
+                    result.returncode == -signal.SIGILL and not result.stdout, f"case {number}: expected exact SIGILL"
+                )
             else:
-                require(result.returncode == 0 and len(result.stdout) == 8,
-                        f"case {number}: invalid machine result")
+                require(result.returncode == 0 and len(result.stdout) == 8, f"case {number}: invalid machine result")
             observations.append((result.returncode, result.stdout, result.stderr))
         require(observations[0] == observations[1], f"case {number}: baseline/candidate mismatch")
 print(f"{len(cases)} baseline/candidate equivalence cases passed")

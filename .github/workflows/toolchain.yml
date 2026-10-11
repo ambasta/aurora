@@ -1,0 +1,67 @@
+name: GCC 16 environment image
+
+# Dependency packaging only. Aurora builds, tests and emulator validation run locally.
+# Standard GitHub-hosted Linux runners are free for this public repository.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aurora-toolchain-publication
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      IMAGE: ghcr.io/ambasta/aurora-toolchain
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Build dependency-only image
+        run: |
+          docker build --platform linux/amd64 --file ci/Containerfile \
+            --build-context event-patches=tools/qemu-amdvi/patches \
+            --tag "$IMAGE:$GITHUB_SHA" ci
+
+      - name: Publish package and verify digest
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOCKER_CONFIG: ${{ runner.temp }}/aurora-docker
+        run: |
+          set -euo pipefail
+          package_url=https://api.github.com/users/ambasta/packages/container/aurora-toolchain
+          package_status="$(curl --silent --show-error --output "$RUNNER_TEMP/package.json" \
+            --write-out '%{http_code}' --header "Authorization: Bearer $REGISTRY_TOKEN" \
+            --header 'Accept: application/vnd.github+json' "$package_url")"
+          case "$package_status" in
+            200) jq -e '.visibility == "public"' "$RUNNER_TEMP/package.json" ;;
+            *) echo "Cannot verify package visibility: HTTP $package_status" >&2; exit 1 ;;
+          esac
+          mkdir -p "$DOCKER_CONFIG"
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true; rm -rf "$DOCKER_CONFIG"' EXIT
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io \
+            --username "$GITHUB_ACTOR" --password-stdin
+          built_id="$(docker image inspect --format '{{.Id}}' "$IMAGE:$GITHUB_SHA")"
+          docker push "$IMAGE:$GITHUB_SHA"
+          published="$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE:$GITHUB_SHA")"
+          [[ "$published" =~ ^ghcr\.io/ambasta/aurora-toolchain@sha256:[0-9a-f]{64}$ ]]
+          docker pull --platform linux/amd64 "$published"
+          test "$(docker image inspect --format '{{.Id}}' "$published")" = "$built_id"
+          curl --fail --silent --show-error --header "Authorization: Bearer $REGISTRY_TOKEN" \
+            --header 'Accept: application/vnd.github+json' "$package_url" \
+            | jq -e '.visibility == "public"'
+          printf 'Verified published image: %s\n' "$published"
+          printf 'Published and pulled back: `%s`\n' "$published" >> "$GITHUB_STEP_SUMMARY"
+

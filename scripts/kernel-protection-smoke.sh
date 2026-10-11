@@ -7,4 +7,4 @@ for mode in normal --fault --page-fault --wp --nx --stack --no-nx \
     --domain-code --domain-stack --domain-root-mismatch; do
     ./scripts/kernel-smoke.sh "$mode"
 done
-echo 'PASS: all 19 actual CPU protection/exception/private-domain gates'
+echo 'PASS: all 21 actual CPU protection/exception/private-domain gates'

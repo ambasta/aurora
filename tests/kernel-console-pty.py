@@ -2,6 +2,7 @@
 """Real QEMU console acceptance through a fresh private PTY, within 30 seconds."""
 
 from pathlib import Path
+import argparse
 import importlib.util
 import errno
 import json
@@ -17,6 +18,8 @@ import re
 import tty
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+import qemu_transport as transport
 
 
 def need(condition, message):
@@ -25,15 +28,21 @@ def need(condition, message):
 
 
 def main():
-    need(sys.argv[1:] in ([], ["--uefi"]), "Expected no argument or --uefi")
-    uefi = sys.argv[1:] == ["--uefi"]
-    output = ROOT / ("build/uefi" if uefi else "build")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--uefi", action="store_true")
+    parser.add_argument("--build-dir", type=Path)
+    parser.add_argument("--output-dir", type=Path, help="fresh evidence directory; leave prebuilt image untouched")
+    args = parser.parse_args()
+    uefi = args.uefi
+    build = ROOT / (args.build_dir or ("build/uefi" if uefi else "build"))
+    output = args.output_dir.resolve() if args.output_dir else build
+    if args.output_dir:
+        need(not output.is_relative_to(build.resolve()), "Evidence output cannot modify the prebuilt console profile")
+        need(not args.output_dir.is_symlink() and not output.exists(), "Evidence directory must be fresh and absent")
+        output.mkdir(parents=True, exist_ok=False)
     metrics = {"platform": "uefi" if uefi else "bios", "latencies_ms": [], "clock": "tcg-original-clock"}
     qemu = shutil.which(os.environ.get("QEMU", "qemu-system-x86_64"))
     need(qemu, "QEMU is unavailable; console boot is not verified")
-    command = [qemu]
-    if os.environ.get("QEMU_DATA"):
-        command += ["-L", os.environ["QEMU_DATA"]]
     if uefi:
         selected = subprocess.check_output(
             [
@@ -46,68 +55,28 @@ def main():
             cwd=ROOT,
         )
         firmware, code, variables, *firmware_args = selected.decode().split("\0")[:-1]
-        command += [
-            "-machine",
-            "q35",
-            "-accel",
-            "tcg",
-            "-cpu",
-            "qemu64",
-            "-smp",
-            "1",
-            "-m",
-            "128M",
-            *firmware_args,
-            "-drive",
-            "format=raw,file=fat:ro:build/uefi/esp,snapshot=on",
-            "-nic",
-            "none",
-            "-display",
-            "none",
-            "-serial",
-            "stdio",
-            "-monitor",
-            "none",
-            "-no-reboot",
-            "-device",
-            "isa-debug-exit,iobase=0xf4,iosize=0x04",
-        ]
+        command = transport.profile_command(
+            "uefi",
+            "console",
+            qemu,
+            build / "esp",
+            os.environ.get("QEMU_DATA", ""),
+            firmware=firmware,
+            code=code,
+            variables=variables,
+        )
         sys.path.insert(0, str(ROOT / "scripts"))
         import kernel_uefi_console_clock
 
         receipt = kernel_uefi_console_clock.receipt(
-            command, qemu, firmware, code, variables, os.environ.get("QEMU_DATA", "")
+            command, qemu, firmware, code, variables, os.environ.get("QEMU_DATA", ""), esp=str(build / "esp")
         )
         receipt.update(timeout_argv=None, test_supervision="private PTY, 30-second deadline")
         (output / "console-pty.clock.json").write_text(json.dumps(receipt, indent=2) + "\n")
     else:
-        command += [
-            "-machine",
-            "pc",
-            "-accel",
-            "tcg",
-            "-cpu",
-            "qemu64",
-            "-smp",
-            "1",
-            "-m",
-            "32M",
-            "-drive",
-            "file=build/aurora.img,format=raw,if=ide,snapshot=on",
-            "-boot",
-            "c",
-            "-nic",
-            "none",
-            "-display",
-            "none",
-            "-serial",
-            "stdio",
-            "-monitor",
-            "none",
-            "-no-reboot",
-            "-device",
-            "isa-debug-exit,iobase=0xf4,iosize=0x04",
-        ]
+        command = transport.profile_command(
+            "bios", "console", qemu, build / "aurora.img", os.environ.get("QEMU_DATA", ""), snapshot=True
+        )
     master, slave = pty.openpty()
     tty.setraw(slave)
     deadline = time.monotonic() + 30
@@ -116,9 +85,7 @@ def main():
     errors = output / "kernel-console-pty.stderr"
     try:
         with errors.open("wb") as stderr:
-            process = subprocess.Popen(
-                command, cwd=ROOT, stdin=slave, stdout=slave, stderr=stderr, start_new_session=True
-            )
+            process = transport.start(command, cwd=ROOT, stdin=slave, stdout=slave, stderr=stderr)
             os.close(slave)
             slave = -1
 
@@ -138,7 +105,7 @@ def main():
                         transcript.extend(data)
                         need(len(transcript) < 65536, "console output exceeded its test bound")
                     else:
-                        if process.poll() is not None:
+                        if transport.exited(process):
                             pending, _, _ = select.select([master], [], [], 0)
                             need(pending, "QEMU exited before the expected console response")
 
@@ -191,7 +158,7 @@ def main():
                 smoke.validate(
                     33,
                     startup.split("AURORA_CONSOLE_READY:")[0].replace("\r", ""),
-                    json.loads((ROOT / "build/user-metadata.json").read_text()),
+                    json.loads((build / "user-metadata.json").read_text()),
                 )
             if uefi:
                 # With the fourteen-byte trigger and UART IRQs disabled, even
@@ -263,7 +230,7 @@ def main():
             receive_until(b"AURORA_CONSOLE_EXIT\r\n", begin)
             if uefi:
                 receive_until(b" timer=masked isr=0 irr=0 uart_irq=0\r\n", begin)
-            need(process.wait(timeout=3) == 33, "console exit command did not close QEMU cleanly")
+            need(transport.wait_exit(process, 3) == 33, "console exit command did not close QEMU cleanly")
             text = bytes(transcript).decode("ascii")
             need(text.count("AURORA_CONSOLE_READY:") == 1, "console restarted unexpectedly")
             need(text.count("AURORA_CONSOLE_EXIT") == 1, "console exit was missing or duplicated")
@@ -282,24 +249,18 @@ def main():
                 need("AURORA_UEFI_CONSOLE_FAIL" not in text, "Console failed closed")
                 metrics["wakes"] = int(matches[0])
             metrics["exit_status"] = process.returncode
-            print(
-                "PASS: "
-                + metrics["platform"].upper()
-                + " console PTY, editing, rejection, recovery, prompt latency, idle wait and exit"
-            )
     finally:
-        if process is not None and process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=2)
-        os.close(master)
-        if slave != -1:
-            os.close(slave)
+        cleanup_errors, _, unsettled = transport.finish(process, fds=(master, slave if slave != -1 else None))
         (output / "kernel-console-pty.log").write_bytes(transcript)
         (output / "kernel-console-pty.metrics.json").write_text(json.dumps(metrics, indent=2) + "\n")
+        if unsettled:
+            raise transport.ChildNotReaped("; ".join(cleanup_errors))
+        need(not cleanup_errors, "; ".join(cleanup_errors))
+    print(
+        "PASS: "
+        + metrics["platform"].upper()
+        + " console PTY, editing, rejection, recovery, prompt latency, idle wait and exit"
+    )
 
 
 def terminate(_signal_number, _frame):

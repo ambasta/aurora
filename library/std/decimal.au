@@ -14,8 +14,8 @@ export namespace std {
         u64 value;
         i64 offset;
     public:
-        DecimalResult(DecimalStatus status, u64 number, i64 position) : outcome(status), value(number), offset(position)
-            {
+        DecimalResult(DecimalStatus status, u64 number, i64 position) : outcome(status), value(number),
+            offset(position) {
         }
 
         auto status() const -> DecimalStatus {
@@ -54,7 +54,7 @@ export namespace std {
                 outcome = DecimalStatus::out_of_range;
                 return outcome;
             }
-            if (value >(18446744073709551615u64 - digit) / 10u64) {
+            if (value > (18446744073709551615u64 - digit) / 10u64) {
                 outcome = DecimalStatus::out_of_range;
                 return outcome;
             }

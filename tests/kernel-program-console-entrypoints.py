@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Synthetic local-admission/qualification routing; no compiler or guest executes."""
+"""Synthetic native-admission routing; no compiler or guest executes."""
 
 from pathlib import Path
 import os
 import shutil
 import subprocess
 import tempfile
+import sys
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,13 +25,20 @@ class Entrypoints(unittest.TestCase):
         self.bin = self.home / "bin"
         self.bin.mkdir()
         self.log = self.home / "calls"
-        self.env = {"PATH": str(self.bin), "HOME": str(self.home), "CALLS": str(self.log), "LC_ALL": "C"}
+        self.env = {
+            "PATH": str(self.bin),
+            "HOME": str(self.home),
+            "CALLS": str(self.log),
+            "LC_ALL": "C",
+            "REAL_PYTHON": sys.executable,
+        }
         for name in (
             "kernel-program-console.sh",
             "kernel-program-console-smoke.sh",
             "kernel-program-console-common.sh",
             "uefi-firmware.sh",
             "uefi-linker.sh",
+            "qemu_transport.py",
         ):
             shutil.copy2(ROOT / "scripts" / name, self.scripts / name)
         shutil.copy2(ROOT / "Makefile", self.repo / "Makefile")
@@ -44,10 +52,7 @@ class Entrypoints(unittest.TestCase):
             self.bin / "python3",
             """
 case "$*" in
-    "-B scripts/kernel_program_console_admission.py reviewed --mode "*)
-        echo reviewed >> "$CALLS"
-        if [[ -z "${PROGRAM_CONSOLE_REVIEW_SHA256:-}" ]]; then echo 'BLOCKED: external review missing'; exit 2; fi
-        exit "${REVIEW_STATUS:-0}" ;;
+    "-B scripts/qemu_transport.py "*) exec "$REAL_PYTHON" "$@" ;;
     "-B scripts/kernel_program_console_admission.py checked --mode "*)
         echo checked >> "$CALLS"; exit "${CHECK_STATUS:-0}" ;;
     "-B tests/kernel-program-console-pty.py "*)
@@ -62,8 +67,8 @@ esac
             self.scripts / "kernel-uefi-build.sh",
             """
 echo "build|$UEFI_MODE" >> "$CALLS"
-mkdir -p build/uefi
-if [[ "$UEFI_MODE" == normal ]]; then exit "${RESTORE_STATUS:-0}"; fi
+mkdir -p "build/native profiles/$UEFI_MODE"
+printf '%s\\n' "$PWD/build/native profiles/$UEFI_MODE"
 exit "${BUILD_STATUS:-0}"
 """,
         )
@@ -94,20 +99,22 @@ exit "${BUILD_STATUS:-0}"
     def clear(self):
         self.log.unlink(missing_ok=True)
 
-    def test_profile_builder_emits_automatic_admission(self):
+    def test_profile_builder_delegates_to_canonical_graph(self):
         script = (ROOT / "scripts/kernel-uefi-build.sh").read_text()
-        self.assertIn(
-            'python3 -B scripts/kernel_program_console_admission.py end-build --mode "$UEFI_MODE"\n'
-            '    python3 -B scripts/kernel_program_console_admission.py emit --mode "$UEFI_MODE"',
-            script,
-        )
+        self.assertIn("scripts/kernel_profiles.py --select uefi", script)
+        self.assertIn('scripts/meson_test.py --kernel uefi --profile "$profile"', script)
+        self.assertNotIn("make -C compiler", script)
 
-    def test_public_smoke_rebuilds_without_pin_and_restores(self):
+    def test_public_smoke_builds_isolated_profile(self):
         for mode in ("program-console", "program-pending", "program-owner"):
             self.run_script(args=(mode,))
             self.assertEqual(
                 self.calls(),
-                [f"build|{mode}", f"pty|-B tests/kernel-program-console-pty.py --mode {mode}", "build|normal"],
+                [
+                    f"build|{mode}",
+                    f"pty|-B tests/kernel-program-console-pty.py --mode {mode} "
+                    f"--build-dir {self.repo}/build/native profiles/{mode}",
+                ],
             )
             self.clear()
 
@@ -118,43 +125,13 @@ exit "${BUILD_STATUS:-0}"
         self.run_script(name="kernel-program-console.sh", env={"GUEST_STATUS": "0"}, expected=1)
         self.assertEqual(self.calls()[-1], "guest")
 
-    def test_qualification_never_rebuilds_before_reviewed_guest(self):
-        (self.repo / "build").mkdir()
-        self.run_script(args=("--qualification",), env={"PROGRAM_CONSOLE_REVIEW_SHA256": "a" * 64})
-        self.assertEqual(
-            self.calls(),
-            [
-                "reviewed",
-                "pty|-B tests/kernel-program-console-pty.py --mode program-console --qualification",
-                "build|normal",
-            ],
-        )
-        self.clear()
-        result = self.run_script(args=("--qualification",), expected=2)
-        self.assertIn("BLOCKED:", result)
-        self.assertEqual(self.calls(), ["reviewed"])
-        self.clear()
-        self.run_script(
-            args=("--qualification",), env={"PROGRAM_CONSOLE_REVIEW_SHA256": "a" * 64, "REVIEW_STATUS": "1"}, expected=1
-        )
-        self.assertEqual(self.calls(), ["reviewed"])
-
     def test_build_admission_and_guest_failures_never_become_blocked(self):
-        for build, pty, restore, expected in (
-            (2, 0, 0, 2),
-            (19, 0, 0, 19),
-            (0, 2, 0, 2),
-            (0, 17, 19, 17),
-            (0, 0, 19, 19),
-        ):
-            result = self.run_script(
-                env={"BUILD_STATUS": str(build), "PTY_STATUS": str(pty), "RESTORE_STATUS": str(restore)},
-                expected=expected,
-            )
+        for build, pty, expected in ((2, 0, 2), (19, 0, 19), (0, 2, 2), (0, 17, 17)):
+            result = self.run_script(env={"BUILD_STATUS": str(build), "PTY_STATUS": str(pty)}, expected=expected)
             self.assertIn("FAIL:", result)
             self.assertNotIn("BLOCKED:", result)
-            self.assertEqual(self.calls()[-1], "build|normal")
-            self.assertEqual(len(self.calls()), 2 if build else 3)
+            self.assertEqual(len(self.calls()), 1 if build else 2)
+            self.assertNotIn("build|normal", self.calls())
             self.clear()
         self.run_script(name="kernel-program-console.sh", env={"CHECK_STATUS": "1"}, expected=1)
         self.assertEqual(self.calls(), ["build|program-console", "checked"])
@@ -195,8 +172,8 @@ exit "${BUILD_STATUS:-0}"
                 "smoke-program-console-uefi",
                 [
                     "build|program-console",
-                    "pty|-B tests/kernel-program-console-pty.py --mode program-console",
-                    "build|normal",
+                    "pty|-B tests/kernel-program-console-pty.py --mode program-console "
+                    f"--build-dir {self.repo}/build/native profiles/program-console",
                 ],
             ),
         ):

@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Native-free hostile guard tests; no image execution or acceptance pin minting."""
+"""Native-free hostile semantic and artifact admission controls; no image execution."""
 
 from pathlib import Path
 import importlib.util
 from copy import deepcopy
 import json
-import os
 import sys
 import tempfile
 import unittest
@@ -17,7 +16,7 @@ spec = importlib.util.spec_from_file_location("service_admission", ROOT / "scrip
 service = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = service
 spec.loader.exec_module(service)
-decoder = service.load("service_guard_decoder", ROOT / "tests/kernel-uefi-owned-bytes-stack.py")
+decoder = service.load("service_guard_decoder", ROOT / "scripts/kernel_stack.py")
 
 
 def body(operations):
@@ -26,7 +25,12 @@ def body(operations):
 
 class Admission(unittest.TestCase):
     def test_reflection_image_ownership_and_body_wiring(self):
-        names = ("aurora_reflect_size", "aurora_reflect_field_count", "__au_reflect_s4_size")
+        names = (
+            "aurora_reflect_size",
+            "aurora_reflect_field_count",
+            "__au_reflect_s4_size",
+            "__au_reflect_s4_field_count",
+        )
         symbols = [decoder.Symbol(name, index, 1, 1, 2) for index, name in enumerate(names)]
         original = SimpleNamespace(functions={row.name: row for row in symbols}, symbols=symbols, relocations=[])
         code = {row.address: decoder.Instruction(row.address, 1, "ret", "") for row in symbols}
@@ -63,60 +67,6 @@ class Admission(unittest.TestCase):
                 body_check.side_effect = ValueError("Reflection operand is not an immediate scalar")
                 with self.assertRaisesRegex(ValueError, "Reflection operand"):
                     service.common.verify_reflection_image(root)
-
-    def test_exact_session_byte_count_divisions(self):
-        owner = "__au_m_m2_7console13session_files_n2_7console12SessionFiles_d6submit"
-        self.assertEqual(service.SESSION_FILE_DIVISIONS, {owner: 2})
-        symbol = decoder.Symbol(owner, 0, 11, 1, 2)
-        code = {
-            0: decoder.Instruction(0, 2, "cqto", ""),
-            2: decoder.Instruction(2, 3, "idiv", "%r11"),
-            5: decoder.Instruction(5, 2, "cqto", ""),
-            7: decoder.Instruction(7, 3, "idiv", "%r11"),
-            10: decoder.Instruction(10, 1, "ret", ""),
-        }
-        payload = bytes.fromhex("489949f7fb489949f7fbc3")
-
-        def verify(functions, instructions, raw):
-            return service.verify_generated_divisions(
-                decoder, functions, instructions, raw, service.SESSION_FILE_DIVISIONS
-            )
-
-        evidence = verify({owner: symbol}, code, payload)
-        self.assertEqual([row["owner"] for row in evidence], [owner, owner])
-        original = decoder.NEUTRAL, decoder.READ_ONLY, decoder.PRESERVE_FLAGS
-        try:
-            decoder.configure_console("service")
-            self.assertTrue({"cqto", "idiv"} <= decoder.NEUTRAL)
-            self.assertIn("cqto", decoder.PRESERVE_FLAGS)
-            self.assertNotIn("idiv", decoder.PRESERVE_FLAGS)
-            result = decoder.analyze_function(symbol, code, {0: owner})
-            self.assertEqual((result["local_peak"], result["returns"]), (8, 1))
-        finally:
-            decoder.NEUTRAL, decoder.READ_ONLY, decoder.PRESERVE_FLAGS = original
-        for index in range(10):
-            raw = bytearray(payload)
-            raw[index] ^= 1
-            with self.subTest(byte=index), self.assertRaises(ValueError):
-                verify({owner: symbol}, code, raw)
-        for mutation in ("missing-owner", "outside-owner", "missing-pair", "extra-pair", "operands", "no-payload"):
-            functions, instructions, raw = {owner: symbol}, dict(code), payload
-            if mutation == "missing-owner":
-                functions = {}
-            elif mutation == "outside-owner":
-                functions[owner] = decoder.Symbol(owner, 1, 10, 1, 2)
-            elif mutation == "missing-pair":
-                del instructions[0]
-                del instructions[2]
-            elif mutation == "extra-pair":
-                instructions[11] = decoder.Instruction(11, 2, "cqto", "")
-                instructions[13] = decoder.Instruction(13, 3, "idiv", "%r11")
-            elif mutation == "operands":
-                instructions[2] = decoder.Instruction(2, 3, "idiv", "(%r11)")
-            else:
-                raw = None
-            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
-                verify(functions, instructions, raw)
 
     def test_unchanged_whole_stack_and_separate_irq_reserve(self):
         service.verify_stack_budgets(6912, 720, 639, 159)
@@ -168,6 +118,10 @@ class Admission(unittest.TestCase):
             ("leave", ""),
             ("ret", ""),
         ]
+        decoder.verify_tail_bridge(body([("jmp", "100 <value>")]), {256: "aurora_kernel_value"}, "aurora_kernel_value")
+        for changed in ([("call", "100 <value>")], [("jmp", "101 <wrong>")]):
+            with self.assertRaises(ValueError):
+                decoder.verify_tail_bridge(body(changed), {256: "aurora_kernel_value"}, "aurora_kernel_value")
         service.verify_bridge_body(decoder, body(operations), {256: service.ENTRY})
         for index, replacement in ((2, ("mov", "%rsi,%r11")), (3, ("call", "101 <wrong>")), (5, ("ret", "$0x8"))):
             changed = list(operations)
@@ -240,65 +194,48 @@ class Admission(unittest.TestCase):
             with self.assertRaises(ValueError):
                 qualification.validate_fault(prefix + tail, 33, mode, kind == "report")
 
-    def test_source_output_and_review_identity(self):
+    def test_checked_admission_binds_exact_artifacts(self):
         with tempfile.TemporaryDirectory(prefix="service-admission-") as directory:
             root = Path(directory)
-            source = root / "source.cpp"
-            source.write_bytes(b"checked source")
             output = root / "image.bin"
             output.write_bytes(b"checked image")
-            compiler = root / "compiler"
-            compiler.write_bytes(b"compiler identity")
-            cxx = root / "cxx"
-            cxx.write_bytes(b"host identity")
 
             def hashes(paths):
                 return {str(path.relative_to(root)): service.digest(path) for path in paths}
 
-            manifest = dict(
-                schema="aurora-console-service-build-v1",
-                mode="console",
-                flags=["-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_CONSOLE"],
-                source_sha256=hashes([source]),
-                compiler=dict(path=str(compiler), sha256=service.digest(compiler)),
-                cxx=dict(path=str(cxx), sha256=service.digest(cxx)),
-            )
             receipt = root / "receipt.json"
             data = dict(
                 schema="aurora-console-service-admission-v1",
                 mode="console",
-                build=manifest,
-                sha256=hashes([source, output]),
+                status="requires-independent-review",
+                clock="tcg-original-clock",
+                sha256=hashes([output]),
             )
             receipt.write_text(json.dumps(data))
             with (
-                patch.object(service.common, "source_files", return_value=[source]),
                 patch.object(service.common, "hashes", side_effect=hashes),
-                patch.object(service, "ROOT", root),
+                patch.object(service, "build_files", return_value=[output]),
                 patch.object(service, "RECEIPT", receipt),
-                patch.object(service, "provenance", return_value=manifest),
-                patch.dict(os.environ, {"CONSOLE_SERVICE_REVIEW_SHA256": service.digest(receipt)}),
             ):
-                service.verify_inputs(manifest, "console")
-                service.reviewed("console")
+                self.assertEqual(service.checked("console"), data)
                 with self.assertRaises(ValueError):
-                    service.reviewed("console-service-stale")
+                    service.checked("console-service-stale")
                 output.write_bytes(b"changed image")
                 with self.assertRaises(ValueError):
-                    service.reviewed("console")
+                    service.checked("console")
                 output.write_bytes(b"checked image")
-                source.write_bytes(b"changed source")
-                with self.assertRaises(ValueError):
-                    service.verify_inputs(manifest, "console")
-                with self.assertRaises(ValueError):
-                    service.reviewed("console")
-                source.write_bytes(b"checked source")
-                compiler.write_bytes(b"changed compiler")
-                with self.assertRaises(ValueError):
-                    service.verify_inputs(manifest, "console")
-                with patch.dict(os.environ, {"CONSOLE_SERVICE_REVIEW_SHA256": "0" * 64}):
-                    with self.assertRaises(ValueError):
-                        service.reviewed("console")
+                for key, value in (
+                    ("schema", "changed"),
+                    ("status", "approved"),
+                    ("clock", "accelerated"),
+                    ("sha256", {}),
+                    ("sha256", {**data["sha256"], "foreign": "0" * 64}),
+                ):
+                    receipt.write_text(json.dumps(data | {key: value}))
+                    with self.subTest(key=key), self.assertRaises(ValueError):
+                        service.checked("console")
+                receipt.write_text(json.dumps(data))
+                self.assertEqual(service.checked("console"), data)
 
 
 if __name__ == "__main__":

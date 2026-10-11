@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build bounded Aurora images for UEFI's independent high virtual layout."""
+"""Validate linked high-VA user images and emit their bounded metadata/header."""
 
 from pathlib import Path
 import argparse, json, struct, subprocess
@@ -88,55 +88,14 @@ def verify(data, blob, base, symbols, *, image_count=2, copied_snapshot=False, c
     )
 
 
-def build(compiler, out, mode):
-    (out / "objects").mkdir(parents=True, exist_ok=True)
-    run = lambda args: subprocess.run([str(x) for x in args], cwd=ROOT, check=True)
+def emit_metadata(out, mode):
     records = {}
     header = ["#pragma once", "#include <array>", "#include <cstddef>", "namespace aurora::uefi::images {"]
     for index, name in enumerate(("clean", "bounds")):
         prefix = out / f"user-{name}"
-        obj = out / "objects" / f"user-{name}.o"
-        source = "span-clean" if name == "clean" and mode == "span" else name
-        run(
-            [
-                compiler,
-                ROOT / f"tests/kernel-programs/{source}.au",
-                "--module-root",
-                ROOT / "library",
-                "-o",
-                prefix.with_suffix(".s"),
-            ]
-        )
-        run(["as", "--64", "-L", prefix.with_suffix(".s"), "-o", obj])
-        adapter = out / "objects" / f"user-{name}-entry.o"
-        flags = (
-            ["--defsym", f"UEFI_USER_{mode.upper()}=1"]
-            if index == 0
-            and mode in ("code", "stack", "window", "kernel", "write", "nx", "return", "unknown", "syscall", "sysenter")
-            else []
-        )
-        run(["as", "--64", *flags, ROOT / "kernel/uefi/user-image-entry.S", "-o", adapter])
         elf = prefix.with_suffix(".elf")
         binary = prefix.with_suffix(".bin")
         base = BASE + index * 4096
-        run(
-            [
-                "ld",
-                "-nostdlib",
-                "--discard-none",
-                "-T",
-                ROOT / "kernel/program.ld",
-                "--defsym",
-                f"USER_BASE={base}",
-                "-z",
-                "max-page-size=0x1000",
-                adapter,
-                obj,
-                "-o",
-                elf,
-            ]
-        )
-        run(["objcopy", "-O", "binary", elf, binary])
         need(
             "There are no relocations" in subprocess.check_output(["readelf", "-rW", elf], text=True),
             "Unresolved image relocations",
@@ -164,7 +123,6 @@ def build(compiler, out, mode):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--compiler", required=True)
     parser.add_argument("--output", default="build/uefi")
     parser.add_argument(
         "--mode",
@@ -185,4 +143,4 @@ if __name__ == "__main__":
         ],
     )
     args = parser.parse_args()
-    build(Path(args.compiler).resolve(), Path(args.output).resolve(), args.mode)
+    emit_metadata(Path(args.output).resolve(), args.mode)

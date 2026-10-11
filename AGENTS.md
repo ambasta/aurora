@@ -52,7 +52,9 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
    Keep raw Meson logs, failed/interrupted scratch and explicitly kept artifacts.
    The Meson artifact adapter removes only its own new scratch after success;
    use `AURORA_MESON_KEEP_ARTIFACTS=1` when successful scratch is needed for review.
-   Never sweep historical evidence or explicitly supplied runner output paths.
+   Whole-directory cleanup uses explicit reviewed CLEAN_PATHS and may remove
+   their logs/evidence; stop builds/tests/guests first and use .keep to protect
+   retained directories. Never sweep unrelated output automatically.
    A selected-compiler digest is artifact stability, not a fresh-build receipt.
    With GCC 16, also build and smoke normal BIOS and UEFI images. Run
    existing image/admission and emulator gates for each affected kernel profile,
@@ -91,16 +93,19 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
 - make smoke-fault: real fail-stop exception injection (see scripts for modes)
 - SANITIZE=1 ./scripts/kernel-tests.sh: hosted allocator sanitizers/model tests
 
-Read [the developer-test contract](docs/developer-test-contract.md) before changing
-test routing or interpreting its receipts. The exact PR26-based revision-5 full
-public developer and prebuilt-acceptance native workflows have independent review;
-see docs/developer-test-workflow-results.md for their source and evidence scope.
-The original developer outer audit failure remains preserved with a separately
-accepted composite. Gentoo make-test, new sanitizer/emulator runs and broad-host
-qualification remain separate. Ordinary developer builds require no historical
-binary pin. Explicit independently supervised pins
-remain supported. Full aggregates/acceptance reject coverage-reducing overrides;
-focused and compiler-free diagnostic runs do not establish root native acceptance.
+Read [development and qualification](docs/developer-test-contract.md) before
+changing test routing. Normal development uses the incremental Meson graph;
+explicit independently supervised legacy pins remain available. Full aggregates
+and acceptance reject coverage-reducing overrides. Focused and compiler-free
+checks do not establish root native acceptance. There is no established pinned
+CI replacement for this policy; retain these gates until that mechanism is real.
+
+For ordinary feature changes, aim for roughly 2x verification/review effort
+relative to implementation effort, excluding compiler/IR safety work. This is a
+planning budget, never permission to skip safety or final merge gates. Explain a
+justified overrun before expanding scope. Reuse existing test and component docs;
+keep the completeness matrix a status table, with historical results in Git/PRs
+and retained run/CI evidence rather than new per-feature reports.
 
 Missing tools or blocked tests must be reported as such, never silently passed.
 Do not install this experimental kernel on physical hardware or modify a host
@@ -113,16 +118,3 @@ The user accepts a long-term project and wants tested milestone updates, materia
 decisions and blockers. Preserve work in the repository and leave a precise next
 step. Do not call the full language, distribution or AMD support complete until
 the relevant acceptance gates have actually passed.
-
-
-## Current bounded library checkpoint: ASCII token scanner
-
-`std.token_scan` now implements a bounded final-window readonly ASCII scanner with
-copied reports and no escaped source view. The fresh complete root release native
-graph and a separate focused fatal host compiler/lexer sanitizer gate passed
-independent review. Preserve the exact scope, original failed diagnostic fixture
-run, fresh corrected replay and dated sanitizer-scope amendment in
-[the results](docs/token-scan-results.md). Generated Aurora assembly is unsanitized;
-leak checks and complete compiler sanitizer regression are not claimed.
-Further parser/text consumers, owned strings and self-hosting need separate
-contracts; no new compiler semantics, kernel or hardware qualification is implied.

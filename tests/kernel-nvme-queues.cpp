@@ -38,8 +38,11 @@ auto config() -> Header {
     return header;
 }
 
-auto snapshot(const Header &header = config(), unsigned device = 2,
-              unsigned bus = 0, unsigned function = 0, unsigned segment = 0) -> PciBarSnapshot {
+auto snapshot(const Header &header = config(),
+              unsigned device = 2,
+              unsigned bus = 0,
+              unsigned function = 0,
+              unsigned segment = 0) -> PciBarSnapshot {
     const auto result = PciBarSnapshot::parse(segment, bus, device, function, header);
     check(result.has_value());
     return *result;
@@ -87,8 +90,8 @@ public:
         put(map, 0, 1, 4);
         put(map, 8, 0x400000);
         put(map, 24, 256);
-        const auto probe = NvmeBarProbe::authorize(identity, identity, bar, root, 0, map, 40,
-                                                  0x400000, 0xfee00000, authority, *ticket);
+        const auto probe = NvmeBarProbe::authorize(
+            identity, identity, bar, root, 0, map, 40, 0x400000, 0xfee00000, authority, *ticket);
         check(probe.has_value());
         const auto result = probe->finish(authority, identity, cap, 0x10400, 0, 0, 0, 0, 0);
         check(result.has_value());
@@ -97,7 +100,9 @@ public:
 };
 
 auto bytes_are(std::span<const std::byte> bytes, std::byte value) -> bool {
-    return std::all_of(bytes.begin(), bytes.end(), [value](auto byte) { return byte == value; });
+    return std::all_of(bytes.begin(), bytes.end(), [value](auto byte) {
+        return byte == value;
+    });
 }
 
 auto hold(PhysicalPages &pool, std::optional<PageLease> &destination) -> void {
@@ -120,8 +125,9 @@ auto basics() -> void {
     for (unsigned role = 0; role < 8; ++role)
         for (unsigned direction = 0; direction < 4; ++direction) {
             const bool expected = role < 5 && direction == ((role == 0 || role == 2) ? 0U : 1U);
-            check(bundle.ready(*handle, f.authority, f.current, static_cast<Role>(role),
-                               static_cast<Direction>(direction)) == expected);
+            check(bundle.ready(
+                      *handle, f.authority, f.current, static_cast<Role>(role), static_cast<Direction>(direction)) ==
+                  expected);
         }
     WindowAuthority foreign;
     check(foreign.acquire().has_value());
@@ -136,8 +142,7 @@ auto basics() -> void {
             const auto changed = snapshot(header);
             check(!bundle.ready(*handle, f.authority, changed, Role::data, Direction::device_writes));
         }
-    for (const auto &changed : {snapshot(config(), 2, 1), snapshot(config(), 2, 0, 1),
-                               snapshot(config(), 2, 0, 0, 1)})
+    for (const auto &changed : {snapshot(config(), 2, 1), snapshot(config(), 2, 0, 1), snapshot(config(), 2, 0, 0, 1)})
         check(!bundle.ready(*handle, f.authority, changed, Role::data, Direction::device_writes));
     check(!bundle.ready(*handle, f.authority, snapshot(config(), 3), Role::data, Direction::device_writes));
     std::fill_n(f.backing.begin(), 5 * 4096, std::byte{0x5a});
@@ -248,8 +253,7 @@ auto fragmented_pool() -> void {
     check(bundle.cancel(*handle) && f.pool.used() == 8);
     for (std::size_t index = 0; index < Bundle::pool_pages; ++index) {
         const bool owned = index % 2 == 1 && index <= 9;
-        check(bytes_are(std::span{f.backing}.subspan(index * 4096, 4096),
-                        owned ? std::byte{0} : std::byte{0xa5}));
+        check(bytes_are(std::span{f.backing}.subspan(index * 4096, 4096), owned ? std::byte{0} : std::byte{0xa5}));
         if (independent[index])
             check(f.pool.release(*independent[index]));
     }

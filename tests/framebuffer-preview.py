@@ -34,7 +34,8 @@ class Routing(unittest.TestCase):
         shutil.copy2(ROOT / "scripts/kernel-framebuffer-preview.sh", self.fixture.scripts)
         self.fixture.script(
             self.fixture.scripts / "kernel-uefi-build.sh",
-            'printf "build|%s\\n" "$UEFI_MODE" >> "$CALLS"\nexit "${BUILD_STATUS:-0}"\n',
+            'printf "build|%s\\n" "$UEFI_MODE" >> "$CALLS"\n'
+            'printf "%s\\n" "$PWD/build/native framebuffer"\nexit "${BUILD_STATUS:-0}"\n',
         )
         self.fixture.tool(
             "python3",
@@ -61,9 +62,28 @@ class Routing(unittest.TestCase):
         self.assertEqual(
             calls[:2], ["python|-B scripts/kernel_framebuffer_preview.py --preflight", "build|framebuffer"]
         )
-        self.assertTrue(calls[2].startswith("python|-B scripts/kernel_framebuffer_preview.py qemu-system-x86_64 "))
+        self.assertTrue(
+            calls[2].startswith(
+                "python|-B scripts/kernel_framebuffer_preview.py --build-dir "
+                + str(self.fixture.repo / "build/native framebuffer")
+                + " qemu-system-x86_64 "
+            )
+        )
         self.assertNotIn("receipt", calls[2])
         self.assertNotIn("manifest", calls[2])
+
+    def test_full_smoke_builds_four_native_profiles_on_existing_entrypoint(self):
+        self.fixture.script(
+            self.fixture.scripts / "kernel-uefi-build.sh",
+            'printf "build|%s\\n" "$UEFI_MODE" >> "$CALLS"\n'
+            'printf "%s/build/meson/kernel-images/uefi/%s\\n" "$PWD" "$UEFI_MODE"\n',
+        )
+        self.run_script("--full-smoke")
+        calls = self.fixture.calls()
+        self.assertEqual(calls[1:5], ["build|" + mode for mode in preview.admission.MODES])
+        self.assertIn("--full-smoke --build-dir ", calls[5])
+        self.assertIn("/kernel-images/uefi/framebuffer ", calls[5])
+        self.assertEqual(len(calls), 6)
 
     def test_help_needs_no_prerequisites(self):
         (self.fixture.bin / "qemu-system-x86_64").unlink()
@@ -123,6 +143,7 @@ class Routing(unittest.TestCase):
             self.fixture.calls()[-4:],
             ["python-arg|", "python-arg|" + str(code), "python-arg|" + str(variables), "python-arg|" + str(data)],
         )
+        self.assertIn("python-arg|" + str(self.fixture.repo / "build/native framebuffer"), self.fixture.calls())
         self.assertEqual(variables.read_bytes(), b"variables")
 
 
@@ -167,7 +188,7 @@ class PreviewControls(unittest.TestCase):
                 preview.preflight()
 
     def test_command_is_bounded_local_tcg_without_device_passthrough(self):
-        firmware = preview.expected_firmware_argv("", "/code.fd", "/vars.fd")
+        firmware = preview.firmware_options("", "/code.fd", "/vars.fd")
         argv = preview.capture.command({"qemu": "qemu"}, {}, "/esp", "/dev/pts/7", True, firmware)
         self.assertIn("tcg", argv)
         self.assertNotIn("-L", argv)
@@ -197,12 +218,13 @@ class PreviewControls(unittest.TestCase):
 
             with (
                 patch.object(preview, "ROOT", root),
+                patch.object(preview.admission, "configure_paths"),
                 patch.object(preview, "preflight"),
                 patch.object(preview.admission, "checked", return_value={}) as checked,
                 patch.object(preview.capture, "run_case", side_effect=synthetic),
             ):
-                first = preview.run("qemu", "firmware", "", "", "")
-                second = preview.run("qemu", "firmware", "", "", "")
+                first = preview.run("qemu", "firmware", "", "", "", build_dir=root / "native/framebuffer")
+                second = preview.run("qemu", "firmware", "", "", "", build_dir=root / "native/framebuffer")
                 self.assertFalse(first["qualified"])
                 self.assertNotEqual(first["image"], second["image"])
                 self.assertEqual(checked.call_count, 4)
@@ -210,11 +232,68 @@ class PreviewControls(unittest.TestCase):
                     preview.capture, "run_case", return_value={"status": "failed", "error": "guest failed"}
                 ):
                     with self.assertRaisesRegex(ValueError, "guest failed"):
-                        preview.run("qemu", "firmware", "", "", "")
+                        preview.run("qemu", "firmware", "", "", "", build_dir=root / "native/framebuffer")
                 records = [json.loads(p.read_text()) for p in root.glob("build/framebuffer-preview/*/preview.json")]
                 self.assertEqual(sorted(row["status"] for row in records), ["failed", "passed", "passed"])
                 self.assertEqual(len(list(root.glob("build/framebuffer-preview/*/framebuffer.png"))), 2)
                 self.assertNotIn("image", next(row for row in records if row["status"] == "failed"))
+
+    def test_full_smoke_preserves_failures_and_requires_real_normal_entrypoint(self):
+        for failure, restore_status, unsettled in (
+            (None, 0, False),
+            ("framebuffer-record", 0, False),
+            (None, 7, False),
+            ("framebuffer-record", 0, True),
+        ):
+            with (
+                self.subTest(failure=failure, restore_status=restore_status, unsettled=unsettled),
+                tempfile.TemporaryDirectory() as temporary,
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                root = Path(temporary)
+                (root / "build").mkdir()
+                build = root / "build/meson/kernel-images/uefi/framebuffer"
+                modes = []
+
+                def synthetic(mode, manifest, pins, roots, env, directory, **kwargs):
+                    modes.append(mode)
+                    directory.mkdir()
+                    (directory / "after.ppm").write_bytes(self.ppm)
+                    return dict(
+                        mode=mode,
+                        status="failed" if mode == failure else "passed",
+                        error="synthetic guest failure",
+                        unsettled=mode == failure and unsettled,
+                    )
+
+                def restore(argv, log, **kwargs):
+                    self.assertEqual(argv, ["bash", root / "scripts/kernel-uefi-smoke.sh", "normal"])
+                    self.assertEqual(kwargs["env"]["MESON_BUILD_DIR"], str(root / "build/meson"))
+                    log.write_text("normal smoke output")
+                    return restore_status
+
+                with (
+                    patch.object(preview, "ROOT", root),
+                    patch.object(preview, "preflight"),
+                    patch.object(preview.admission, "configure_paths"),
+                    patch.object(preview.admission, "checked", side_effect=lambda mode: {"mode": mode}),
+                    patch.object(preview.capture, "run_case", side_effect=synthetic),
+                    patch.object(preview.transport, "run_logged", side_effect=restore) as normal,
+                ):
+                    if failure or restore_status:
+                        with self.assertRaises(ValueError):
+                            preview.run("qemu", "firmware", "", "", "", build_dir=build, full_smoke=True)
+                    else:
+                        preview.run("qemu", "firmware", "", "", "", build_dir=build, full_smoke=True)
+                self.assertEqual(modes, list(preview.admission.MODES[:2] if failure else preview.admission.MODES))
+                self.assertEqual(normal.call_count, 0 if unsettled else 1)
+                record = json.loads(next(root.glob("build/framebuffer-preview/*/preview.json")).read_text())
+                self.assertEqual(record["status"], "failed" if failure or restore_status else "passed")
+                self.assertEqual(
+                    record["normal_restoration"]["status"], "failed" if unsettled or restore_status else "passed"
+                )
+                if failure:
+                    self.assertIn("synthetic guest failure", record["error"])
 
     def test_postcapture_source_drift_prevents_png_success(self):
         with tempfile.TemporaryDirectory() as temporary, contextlib.redirect_stdout(io.StringIO()):
@@ -222,12 +301,13 @@ class PreviewControls(unittest.TestCase):
             (root / "build").mkdir()
             with (
                 patch.object(preview, "ROOT", root),
+                patch.object(preview.admission, "configure_paths"),
                 patch.object(preview, "preflight"),
                 patch.object(preview.admission, "checked", side_effect=[{}, ValueError("changed image")]),
                 patch.object(preview.capture, "run_case", return_value={"status": "passed"}),
             ):
                 with self.assertRaisesRegex(ValueError, "changed image"):
-                    preview.run("qemu", "firmware", "", "", "")
+                    preview.run("qemu", "firmware", "", "", "", build_dir=root / "native/framebuffer")
                 self.assertEqual(list(root.glob("build/framebuffer-preview/*/framebuffer.png")), [])
                 record = next(root.glob("build/framebuffer-preview/*/preview.json"))
                 self.assertEqual(json.loads(record.read_text())["status"], "failed")
@@ -237,12 +317,13 @@ class PreviewControls(unittest.TestCase):
             root = Path(temporary)
             with (
                 patch.object(preview, "ROOT", root),
+                patch.object(preview.admission, "configure_paths"),
                 patch.object(preview, "preflight"),
                 patch.object(preview.admission, "checked", side_effect=ValueError("changed image")),
                 patch.object(preview.capture, "run_case") as guest,
             ):
                 with self.assertRaisesRegex(ValueError, "changed image"):
-                    preview.run("qemu", "firmware", "", "", "")
+                    preview.run("qemu", "firmware", "", "", "", build_dir=root / "native/framebuffer")
                 guest.assert_not_called()
                 self.assertFalse((root / "build").exists())
 

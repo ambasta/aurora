@@ -4,7 +4,15 @@ target-version = "py310"
 line-length = 120
 indent-width = 4
 preview = false
-extend-exclude = ["build", "evidence"]
+# Preserve exact historical replay inputs and their embedded import pins.
+# See tools/qemu-amdvi/README.md; the portable mocks remain ordinary host source.
+extend-exclude = [
+    "build",
+    "evidence",
+    "tests/iommu/fixtures/command-stop-diagnostic.py",
+    "tests/iommu/fixtures/frozen-import.py",
+    "tests/iommu/fixtures/transport-import-v1.py",
+]
 force-exclude = true
 
 [lint]

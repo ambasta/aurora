@@ -2,10 +2,20 @@ export module kernel.ipc_transition;
 
 // Copied transaction facts, never endpoint, participant or transaction authority.
 export namespace kernel {
-    enum class TransactionAction { invalid, refused, accepted };
+    enum class TransactionAction {
+        invalid,
+        refused,
+        accepted
+    };
     enum class TransactionEffect {
-        none, submit_request, deliver_request, store_reply,
-        consume_reply, consume_cancelled, cancel_request, recycle_record
+        none,
+        submit_request,
+        deliver_request,
+        store_reply,
+        consume_reply,
+        consume_cancelled,
+        cancel_request,
+        recycle_record
     };
 
     class TransactionSnapshot {
@@ -13,11 +23,18 @@ export namespace kernel {
         u64 state_value;
         u64 scrubbed_value;
     public:
-        TransactionSnapshot(u64 phase, u64 state, u64 scrubbed)
-            : phase_value(phase), state_value(state), scrubbed_value(scrubbed) {}
-        auto phase() const -> u64 { return phase_value; }
-        auto state() const -> u64 { return state_value; }
-        auto scrubbed() const -> u64 { return scrubbed_value; }
+        TransactionSnapshot(u64 phase, u64 state, u64 scrubbed) : phase_value(phase), state_value(state),
+            scrubbed_value(scrubbed) {
+        }
+        auto phase() const -> u64 {
+            return phase_value;
+        }
+        auto state() const -> u64 {
+            return state_value;
+        }
+        auto scrubbed() const -> u64 {
+            return scrubbed_value;
+        }
     };
 
     class TransactionDecision {
@@ -25,47 +42,63 @@ export namespace kernel {
         u64 following_state;
         TransactionEffect treatment;
     public:
-        TransactionDecision(TransactionAction action, u64 next, TransactionEffect effect)
-            : outcome(action), following_state(next), treatment(effect) {}
-        auto action() const -> TransactionAction { return outcome; }
-        auto next() const -> u64 { return following_state; }
-        auto effect() const -> TransactionEffect { return treatment; }
+        TransactionDecision(TransactionAction action, u64 next, TransactionEffect effect) : outcome(action),
+            following_state(next), treatment(effect) {
+        }
+        auto action() const -> TransactionAction {
+            return outcome;
+        }
+        auto next() const -> u64 {
+            return following_state;
+        }
+        auto effect() const -> TransactionEffect {
+            return treatment;
+        }
     };
 
     auto transaction_transition(u64 operation, TransactionSnapshot snapshot) -> TransactionDecision {
-        const TransactionDecision invalid = TransactionDecision(TransactionAction::invalid, 0u64, TransactionEffect::none);
+        const TransactionDecision invalid = TransactionDecision(TransactionAction::invalid, 0u64,
+            TransactionEffect::none);
         if (operation > 5u64 || snapshot.phase() > 3u64 || snapshot.state() > 5u64 || snapshot.scrubbed() > 1u64) {
             return invalid;
         }
-        const TransactionDecision refused = TransactionDecision(TransactionAction::refused, 0u64, TransactionEffect::none);
+        const TransactionDecision refused = TransactionDecision(TransactionAction::refused, 0u64,
+            TransactionEffect::none);
         if (operation == 0u64 && snapshot.phase() == 1u64 && snapshot.state() == 0u64) {
-            const TransactionDecision accepted = TransactionDecision(TransactionAction::accepted, 1u64, TransactionEffect::submit_request);
+            const TransactionDecision accepted = TransactionDecision(TransactionAction::accepted, 1u64,
+                TransactionEffect::submit_request);
             return accepted;
         }
         if (operation == 1u64 && snapshot.phase() == 2u64 && snapshot.state() == 1u64) {
-            const TransactionDecision accepted = TransactionDecision(TransactionAction::accepted, 2u64, TransactionEffect::deliver_request);
+            const TransactionDecision accepted = TransactionDecision(TransactionAction::accepted, 2u64,
+                TransactionEffect::deliver_request);
             return accepted;
         }
         if (operation == 2u64 && snapshot.phase() == 2u64 && snapshot.state() == 2u64) {
-            const TransactionDecision accepted = TransactionDecision(TransactionAction::accepted, 3u64, TransactionEffect::store_reply);
+            const TransactionDecision accepted = TransactionDecision(TransactionAction::accepted, 3u64,
+                TransactionEffect::store_reply);
             return accepted;
         }
         if (operation == 3u64 && snapshot.phase() == 3u64) {
             if (snapshot.state() == 3u64) {
-                const TransactionDecision accepted = TransactionDecision(TransactionAction::accepted, 5u64, TransactionEffect::consume_reply);
+                const TransactionDecision accepted = TransactionDecision(TransactionAction::accepted, 5u64,
+                    TransactionEffect::consume_reply);
                 return accepted;
             }
             if (snapshot.state() == 4u64) {
-                const TransactionDecision accepted = TransactionDecision(TransactionAction::accepted, 5u64, TransactionEffect::consume_cancelled);
+                const TransactionDecision accepted = TransactionDecision(TransactionAction::accepted, 5u64,
+                    TransactionEffect::consume_cancelled);
                 return accepted;
             }
         }
         if (operation == 4u64 && snapshot.phase() == 0u64 && (snapshot.state() == 1u64 || snapshot.state() == 2u64)) {
-            const TransactionDecision accepted = TransactionDecision(TransactionAction::accepted, 4u64, TransactionEffect::cancel_request);
+            const TransactionDecision accepted = TransactionDecision(TransactionAction::accepted, 4u64,
+                TransactionEffect::cancel_request);
             return accepted;
         }
         if (operation == 5u64 && snapshot.phase() == 0u64 && snapshot.state() == 5u64 && snapshot.scrubbed() == 1u64) {
-            const TransactionDecision accepted = TransactionDecision(TransactionAction::accepted, 0u64, TransactionEffect::recycle_record);
+            const TransactionDecision accepted = TransactionDecision(TransactionAction::accepted, 0u64,
+                TransactionEffect::recycle_record);
             return accepted;
         }
         return refused;

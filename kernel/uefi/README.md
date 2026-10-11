@@ -17,7 +17,7 @@ SANITIZE=1 ./scripts/kernel-uefi-tests.sh
 The build uses the existing g++, GNU as/ld/objcopy/nm/readelf, Python3 and Bash.
 GNU ld's i386pep backend emits PE32+ EFI subsystem10 with DIR64 relocation.
 Some native linkers omit that backend; select a capable PE linker with `UEFI_LD`
-(see [dependencies](../../docs/local-development.md#dependencies-and-overrides)).
+(see [dependencies](../../docs/local-development.md#tools-and-explicit-selections)).
 A separate cross C++ compiler is not required. The loader and payload include
 small assembly `memcpy`, `memset`, `memmove` and `memcmp` implementations for
 compiler-generated freestanding calls. These are trusted bootstrap code, not
@@ -26,7 +26,7 @@ requirements. QEMU runs q35/TCG/qemu64, one CPU,128MiB RAM, selected OVMF firmwa
 and a FAT directory with a temporary snapshot overlay. The source directory is
 read-only, the overlay is discarded, and no host disk or firmware is changed.
 Firmware discovery and explicit combined or split CODE/VARS overrides are
-documented in [local development](../../docs/local-development.md#dependencies-and-overrides).
+documented in [local development](../../docs/local-development.md#tools-and-explicit-selections).
 Split VARS changes are discarded through a QEMU snapshot.
 QEMU_DATA and LD_LIBRARY_PATH can select locally extracted dependencies; AURORAC
 can pin a previously built compiler. All modes restore the normal UEFI image
@@ -150,32 +150,22 @@ an explicit OVMF/q35 aperture and a revocable UC mapping window. It provides
 controller identities, not device activation or physical Framework support.
 
 [Sequential protected user domains](runtime.md) now have a separate version-3
-handoff profile, backed entirely by the owned arena and tested under real OVMF.
+handoff profile, backed entirely by the owned arena for the explicit OVMF profile.
 
 The staged request/reply IPC profile is documented in [ipc.md](ipc.md) and
-was verified in milestone010; its original gates remain in the current aggregate.
+has its own protocol, authority and restoration gates.
 
 The opt-in [UEFI service-budget profile](service-budget.md) adds verified local-timer
 preemption and recovery of a non-yielding staged service. See its dedicated
 acceptance gates and emulator-only boundaries.
 
-The [three-domain staged dispatcher](dispatcher.md) has passed all 12 new actual
-OVMF modes independently and in the full 122-mode exact-source run (37 BIOS and
-85 UEFI modes). The earlier 110 gates remain passing. Hosted policy/layout tests
-also passed fatal ASan/UBSan. Fresh parent aggregate, sanitizer and selected
-BIOS/dispatcher/recovery/drain checks passed. See the milestone012 verification
-record for exact provenance. These tests do not establish physical hardware
-support or a general scheduler.
+The [three-domain staged dispatcher](dispatcher.md) provides bounded staged
+request/reply scheduling. The [all-controlled-user-phase budget and retirement
+contract](user-phases.md) adds isolated client recovery. These emulator profiles
+do not establish physical hardware support or a general scheduler.
 
-The opt-in [all-controlled-user-phase budget and retirement contract](user-phases.md)
-adds isolated client recovery. All 17 new modes passed independent review, and the
-final 139-mode integration passed with the packed-byte compiler. Parent aggregate and selected spot checks passed; see the contract for exact
-compiler provenance and limits.
-
-
-## NVMe page preparation candidate
+## NVMe page preparation
 
 The [fixed five-page CPU preparation contract](NVME-QUEUE-PREPARATION.md)
 describes an opt-in, namespace-free BAR fixture using the existing allocation
-pool. Focused hosted, corrected linked-stack and actual guest gates passed; see
-[results and limits](../../docs/nvme-queue-preparation-results.md). It does not activate NVMe or DMA.
+pool. It does not activate NVMe or DMA.

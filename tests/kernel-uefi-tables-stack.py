@@ -1,117 +1,206 @@
 #!/usr/bin/env python3
-"""Actual compiler frames plus linked direct-call edges for CPU-only table modes."""
+"""Profile budgets over the shared compiler-fact and handwritten-assembly graph."""
+
 from pathlib import Path
-import hashlib,json,re,subprocess,sys
+import argparse
+import hashlib
+import importlib.util
+import json
+import re
+import sys
 
-def calculate(rows):
-    def size(fragment,optional=False):
-        found=[n for name,n in rows.items() if fragment in name]
-        if not found and not optional:raise ValueError('Missing stack frame:'+fragment)
-        return max(found,default=0)
-    # The new profile explicitly separates parsing lifetime from PCI enumeration.
-    payload=size('payload_main(');wrapper=size('discover_acpi(')
-    acpi=size('prepare_table_acpi(');topology=size('Topology::parse(');pci=size('discover_pci(')
-    verifiers=[n for name,n in rows.items() if 'PageTables::verify(' in name and '<lambda' not in name]
-    if not verifiers:raise ValueError('Missing verifier entry frame')
-    verify=max(verifiers);walks=[n for name,n in rows.items() if 'PageTables::verify(' in name and '<lambda' in name]
-    if not walks:raise ValueError('Missing four-level verifier recursion')
-    runtime=size('run_protected(');request=size('pin_request(');prepare=size('DormantTables::prepare(')
-    grant=size('PinLedger::grant(');release=size('PinLedger::release_reserved(')
-    ownership=size('DormantTables::ownership(');readback=size('table_readback(');decode=size('independent::validate(')
-    table_prepare=size('table_prepare(');table_release=size('DormantTables::release(')
-    scrub=size('table_scrub(');fault=size('pin_fault_returned(');reborn=size('pin_reborn(')
-    corruption=size('table_corruption(',True);exhaustion=size('table_exhaustion(',True)
-    if wrapper>128 or acpi>5120 or topology>4096 or pci>11264 or runtime>2048 or request>1024:
-        raise ValueError('Reviewed large frame limit exceeded')
-    if max(prepare,grant,release,ownership,readback,decode,table_prepare,table_release,scrub,fault,reborn,corruption,exhaustion)>1024:
-        raise ValueError('Table path frame exceeds bounded profile')
-    if any(n>11264 for n in rows.values()):raise ValueError('Unexpected large frame')
-    # 512 covers bounded subordinate helpers;1024 reserved for synchronous fault
-    # delivery and diagnostics. This is a conservative reviewed call-path bound,
-    # not an arbitrary recursive-program stack proof or whole-firmware bound.
-    leaf=512;fault_reserve=1024
-    cleanup=table_release+release+scrub+leaf
-    construction=table_prepare+prepare+max(grant+release+scrub,ownership,table_release+release+scrub)+leaf
-    ancillary=max([n for name,n in rows.items() if name.startswith("runtime:") and "run_protected(" not in name]+[request,prepare,grant,release,ownership,readback,decode,corruption,exhaustion])
-    paths={
-      'acpi':payload+wrapper+acpi+topology+leaf,
-      'pci':payload+wrapper+pci+verify+4*max(walks)+leaf,
-      'construction':payload+runtime+request+construction,
-      'readback':payload+runtime+request+readback+decode+leaf,
-      'corruption':payload+runtime+request+corruption+max(decode,ownership)+leaf,
-      'exhaustion':payload+runtime+request+exhaustion+max(construction,cleanup),
-      'cleanup':payload+runtime+max(request,fault,reborn)+cleanup,
-      'runtime_ancillary':payload+runtime+8*ancillary+4*192+leaf,
-    }
-    peak=max(paths.values())+fault_reserve
-    if peak>15360:raise ValueError('16KiB stack reserve exhausted')
-    return {'paths':paths,'peak_with_fault_reserve':peak,'fault_reserve':fault_reserve,'stack_bytes':16384,'minimum_unused':16384-peak}
+ROOT = Path(__file__).resolve().parents[1]
+spec = importlib.util.spec_from_file_location("tables_stack_shared", ROOT / "scripts/kernel_stack.py")
+shared = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = shared
+spec.loader.exec_module(shared)
+require = shared.require
 
-def linked_edges(disassembly):
-    current=None;edges=[]
-    for line in disassembly.splitlines():
-        head=re.match(r'^[0-9a-f]+ <(.+)>:$',line)
-        if head:current=head[1]
-        call=re.search(r'\b(?:call|jmp)\s+[0-9a-f]+ <(.+)>',line)
-        if current and call:edges.append((current,call[1]))
-    if any('prepare_table_acpi(' in a and 'discover_pci(' in b for a,b in edges):
-        raise ValueError('ACPI parser retains frame across PCI discovery')
-    for caller,callee in [('payload_main','discover_acpi('),('discover_acpi(','prepare_table_acpi('),
-        ('discover_acpi(','discover_pci('),('payload_main','run_protected('),('run_protected(','pin_request('),
-        ('pin_request(','table_prepare('),('table_prepare(','DormantTables::prepare('),
-        ('pin_request(','table_readback('),('table_readback(','independent::validate(')]:
-        if not any(caller in a and callee in b for a,b in edges):raise ValueError('Missing reviewed linked edge:'+caller+' -> '+callee)
-    return edges
+LIMITS = {
+    "payload_main(": 11264,
+    "discover_acpi(": 128,
+    "prepare_table_acpi(": 5120,
+    "Topology::parse(": 4096,
+    "discover_pci(": 11264,
+    "PageTables::verify(": 11264,
+    "run_protected(": 2048,
+    "pin_request(": 1024,
+    "DormantTables::prepare(": 1024,
+    "PinLedger::grant(": 1024,
+    "PinLedger::release_reserved(": 1024,
+    "DormantTables::ownership(": 1024,
+    "table_readback(": 1024,
+    "independent::validate(": 1024,
+    "table_prepare(": 1024,
+    "DormantTables::release(": 1024,
+    "table_scrub(": 1024,
+    "pin_fault_returned(": 1024,
+    "pin_reborn(": 1024,
+    "table_corruption(": 1024,
+    "table_exhaustion(": 1024,
+}
+OPTIONAL = ("table_corruption(", "table_exhaustion(")
+EXCLUDED = {"PageTables::verify(": ("lambda",)}
 
-def load(directory):
-    rows={}
-    for name in ('payload','acpi','pci','runtime'):
-        for line in (directory / "objects"/(name+'.su')).read_text().splitlines():
-            signature,size,kind=line.rsplit('\t',2)
-            if kind not in ('static','dynamic,bounded'):raise ValueError('Unbounded frame')
-            rows[name+':'+signature]=int(size)
-    return rows
+
+# The compiler reports only __indirect_call. This single binding is a reviewed
+# source contract, mechanically guarded below, not compiler-derived alias proof.
+CALLBACKS = (
+    (
+        ("runtime.o", "kernel/pin-ledger.hpp", "bool aurora::memory::PinLedger::release_reserved(Entry&)"),
+        (
+            "runtime.o",
+            "kernel/uefi/dormant-runtime.inc",
+            "bool aurora::uefi::{anonymous}::table_scrub(void*, U64, std::size_t)",
+        ),
+    ),
+)
+
+
+def callback_contract(runtime, profile, ledger):
+    require(
+        re.search(
+            r'#ifdef AURORA_UEFI_TABLES\s*#include "dormant-runtime.inc"\s*#else\s*'
+            r'#include "pin-runtime.inc"\s*#endif',
+            runtime,
+        ),
+        "Changed exclusive table adapter selection",
+    )
+    require(
+        len(re.findall(r"\bPinLedger\b", runtime + profile)) == 1
+        and re.search(r"std::optional<memory::PinLedger>\s+table_ledger\s*;", profile),
+        "Changed table ledger instance contract",
+    )
+    constructions = re.findall(r"\btable_ledger\s*\.\s*emplace\s*\(([^;]*)\)\s*;", profile)
+    require(
+        len(constructions) == 1
+        and re.fullmatch(r"\s*frames\s*,\s*registry\s*,\s*table_scrub\s*,\s*nullptr\s*", constructions[0]),
+        "Changed table scrub constructor target",
+    )
+    require(
+        re.search(r"\bScrub\s+const\s+scrub_\s*;", ledger) and re.search(r"\bscrub_\s*\(\s*scrub\s*\)", ledger),
+        "Changed immutable scrub field contract",
+    )
+
+
+def validate(graph):
+    result = shared.profile_stack(
+        graph,
+        LIMITS,
+        optional=OPTIONAL,
+        excluded=EXCLUDED,
+        default_limit=11264,
+        fault_reserve=1024,
+        separated=(("prepare_table_acpi(", "discover_pci("),),
+    )
+    return result
+
 
 def self_test():
-    rows={k:v for k,v in [('payload_main(',224),('discover_acpi(',48),('prepare_table_acpi(',3504),('Topology::parse(',3184),('discover_pci(',10736),('PageTables::verify(',208),('PageTables::verify(<lambda',96),('run_protected(',848),('pin_request(',416),('DormantTables::prepare(',192),('PinLedger::grant(',160),('PinLedger::release_reserved(',144),('DormantTables::ownership(',168),('table_readback(',160),('independent::validate(',48),('table_prepare(',64),('DormantTables::release(',112),('table_scrub(',8),('pin_fault_returned(',32),('pin_reborn(',48),('table_corruption(',208),('table_exhaustion(',272)]}
-    result=calculate(rows)
-    if result['peak_with_fault_reserve']!=13136:raise ValueError('Changed explicit reference sum')
-    rejected=0
-    for key in rows:
-        for operation in ('remove','inflate'):
-            changed=dict(rows)
-            if operation=='remove':del changed[key]
-            else:changed[key]=32768
-            if operation=='remove' and key in ('table_corruption(','table_exhaustion('):continue
-            try:calculate(changed)
-            except ValueError:rejected+=1
-            else:raise ValueError('Stack mutation accepted:'+key)
-    extra=dict(rows);extra['runtime:unexpected_helper(']=4096
-    try:calculate(extra)
-    except ValueError:rejected+=1
-    else:raise ValueError('New large runtime helper accepted')
-    try:linked_edges('')
-    except ValueError:rejected+=1
-    else:raise ValueError('Absent link proof accepted')
-    positive='\n'.join(f'{i:x} <{caller}>:\n {i:x}: call 100 <{callee}>' for i,(caller,callee) in enumerate([
-      ('payload_main','discover_acpi('),('discover_acpi(','prepare_table_acpi('),('discover_acpi(','discover_pci('),
-      ('payload_main','run_protected('),('run_protected(','pin_request('),('pin_request(','table_prepare('),
-      ('table_prepare(','DormantTables::prepare('),('pin_request(','table_readback('),('table_readback(','independent::validate(')]))
-    linked_edges(positive)
-    try:linked_edges(positive+'\n200 <prepare_table_acpi(>:\n 200: call 100 <discover_pci(>')
-    except ValueError:rejected+=1
-    else:raise ValueError('Nested parser/PCI path accepted')
-    print(f'PASS table stack2 positives/{rejected} negatives')
-if __name__=='__main__':
-    if sys.argv[1:]==['--self-test']:self_test()
+    from copy import deepcopy
+    from unittest import TestCase
+
+    runtime = '#ifdef AURORA_UEFI_TABLES\n#include "dormant-runtime.inc"\n#else\n#include "pin-runtime.inc"\n#endif'
+    profile = (
+        "std::optional<memory::PinLedger> table_ledger; table_ledger.emplace(frames,registry,table_scrub,nullptr);"
+    )
+    ledger = "Scrub const scrub_; PinLedger(Scrub scrub): scrub_(scrub) {}"
+    callback_contract(runtime, profile, ledger)
+    for changed in (profile.replace("table_scrub", "different_scrub"), profile + profile):
+        with TestCase().assertRaises(ValueError):
+            callback_contract(runtime, changed, ledger)
+    with TestCase().assertRaises(ValueError):
+        callback_contract(runtime, profile, ledger.replace(" const", ""))
+    symbols = {
+        name: shared.Symbol(name, address, size, 1, 2) for name, address, size in (("release", 0, 3), ("scrub", 4, 1))
+    }
+    code = {
+        row.address: row
+        for row in (
+            shared.Instruction(0, 2, "call", "*%rax"),
+            shared.Instruction(2, 1, "ret", ""),
+            shared.Instruction(4, 1, "ret", ""),
+        )
+    }
+    arguments = (
+        symbols,
+        code,
+        {0: "release", 4: "scrub"},
+        b"\xff\xd0\xc3\x90\xc3",
+        {"release": 160, "scrub": 8},
+        {("release", "__indirect_call")},
+    )
+    graph = shared.cpp_stack_functions(*arguments, callbacks={"release": "scrub"})
+    require(
+        shared.calculate(graph, "release")["peak"] == 168, "Callback closure was not charged to its full caller frame"
+    )
+    for callbacks in ({}, {"release": "foreign"}, {"scrub": "release"}):
+        with TestCase().assertRaises(ValueError):
+            shared.cpp_stack_functions(*arguments, callbacks=callbacks)
+    code[0] = shared.Instruction(0, 2, "jmp", "*%rax")
+    with TestCase().assertRaises(ValueError):
+        shared.cpp_stack_functions(*arguments, callbacks={"release": "scrub"})
+
+    # Independent work branches share a root; the bound is their maximum, not
+    # the sum of every emitted frame. No real compiler/image evidence is claimed.
+    names = set(LIMITS) - set(OPTIONAL)
+    functions = {name: dict(local_peak=8, calls=[]) for name in names}
+    functions["uefi_payload_entry"] = dict(
+        local_peak=8, calls=[dict(target=name, live_bytes=8) for name in sorted(names)]
+    )
+    functions.update({name: dict(local_peak=8, calls=[]) for name in ("uefi_payload_fault", "uefi_payload_page_fault")})
+    records = {name: [dict(record=name, bytes=8)] for name in names}
+    graph = dict(functions=functions, compiler_frames=records, bounded_switches=[])
+    result = validate(graph)
+    require(result["normal"]["peak"] == 16, "Independent profile paths were added together")
+    bad = deepcopy(graph)
+    bad["compiler_frames"]["discover_acpi("][0]["bytes"] = 129
+    with TestCase().assertRaisesRegex(ValueError, "frame ceiling"):
+        validate(bad)
+    bad = deepcopy(graph)
+    bad["functions"]["uefi_payload_entry"]["calls"] = [
+        row for row in bad["functions"]["uefi_payload_entry"]["calls"] if row["target"] != "discover_pci("
+    ]
+    with TestCase().assertRaisesRegex(ValueError, "Unreachable profile workload"):
+        validate(bad)
+    bad = deepcopy(graph)
+    bad["functions"]["prepare_table_acpi("]["calls"] = [dict(target="discover_pci(", live_bytes=8)]
+    with TestCase().assertRaisesRegex(ValueError, "retains its frame"):
+        validate(bad)
+    print("PASS tables shared stack adapter: branch maximum, frame cap, workload reachability, separated lifetime")
+
+
+if __name__ == "__main__":
+    if sys.argv[1:] == ["--self-test"]:
+        self_test()
     else:
-        directory=Path(sys.argv[1]);out=Path(sys.argv[2]);out.mkdir(parents=True,exist_ok=True)
-        rows=load(directory);result=calculate(rows)
-        disassembly=subprocess.check_output(['objdump','-d','-C',str(directory/'payload.elf')],text=True)
-        result['linked_edges']=linked_edges(disassembly)
-        for name in ('payload','acpi','pci','runtime'):(out/(name+'.su')).write_bytes((directory / "objects"/(name+'.su')).read_bytes())
-        (out/'payload.disassembly.txt').write_text(disassembly)
-        result['elf_sha256']=hashlib.sha256((directory/'payload.elf').read_bytes()).hexdigest()
-        result['compiler_frames']=rows
-        (out/'stack.json').write_text(json.dumps(result,indent=2)+'\n')
-        print('PASS CPU-table stack peak',result['peak_with_fault_reserve'],'of16384')
+        parser = argparse.ArgumentParser(description=__doc__)
+        parser.add_argument("directory", nargs="?", type=Path)
+        parser.add_argument("output", nargs="?", type=Path)
+        parser.add_argument("--build-dir", type=Path)
+        parser.add_argument("--source-root", type=Path, default=ROOT)
+        args = parser.parse_args()
+        if args.directory and args.build_dir:
+            parser.error("select one artifact directory")
+        directory = args.build_dir or args.directory or args.source_root / "build/uefi"
+        callback_contract(
+            (args.source_root / "kernel/uefi/runtime.cpp").read_text(),
+            (args.source_root / "kernel/uefi/dormant-runtime.inc").read_text(),
+            (args.source_root / "kernel/pin-ledger.hpp").read_text(),
+        )
+        graph = shared.image_stack_graph(
+            directory,
+            ("payload", "acpi", "pci", "runtime"),
+            args.source_root,
+            protected=True,
+            source_callbacks=CALLBACKS,
+        )
+        result = validate(graph)
+        result["elf_sha256"] = hashlib.sha256((directory / "payload.elf").read_bytes()).hexdigest()
+        out = args.output or directory / "table-stack"
+        out.mkdir(parents=True, exist_ok=True)
+        for name in ("payload", "acpi", "pci", "runtime"):
+            (out / (name + ".su")).write_bytes((directory / "objects" / (name + ".su")).read_bytes())
+        (out / "payload.disassembly.txt").write_text(graph["disassembly"])
+        (out / "stack.json").write_text(json.dumps(result, indent=2) + "\n")
+        print("PASS tables shared stack bound", result["peak_with_fault_reserve"], "of", result["stack_bytes"])

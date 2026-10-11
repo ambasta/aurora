@@ -3,20 +3,23 @@
 #include "console.hpp"
 
 namespace aurora::console {
-enum class Platform { bios, uefi };
+enum class Platform {
+    bios,
+    uefi
+};
 
 // Shared presentation only. Input classification remains the existing Aurora
 // policy and Line adapter; transport and shutdown authority stay with callers.
-template<class Output = hardware::Serial>
-class Presentation final {
+template <class Output = hardware::Serial> class Presentation final {
 public:
     static auto ready(Platform platform) -> void {
-        Output::text(platform == Platform::bios
-            ? "AURORA_CONSOLE_READY: BIOS, ASCII, 64-byte lines\r\naurora> "
-            : "AURORA_CONSOLE_READY: UEFI, ASCII, 64-byte lines\r\naurora> ");
+        Output::text(platform == Platform::bios ? "AURORA_CONSOLE_READY: BIOS, ASCII, 64-byte lines\r\naurora> "
+                                                : "AURORA_CONSOLE_READY: UEFI, ASCII, 64-byte lines\r\naurora> ");
     }
     [[nodiscard]] static auto render(Event event, std::uint8_t byte, Platform platform) -> bool {
-        if (event == Event::ignored) { return true; }
+        if (event == Event::ignored) {
+            return true;
+        }
         if (event == Event::echo) {
             Output::put(byte);
             return true;
@@ -31,9 +34,10 @@ public:
             Output::text("help    Show commands\r\nstatus  Show boot state\r\nexit    Close this QEMU session\r\n");
             break;
         case Event::status:
-            Output::text(platform == Platform::bios
-                ? "status: boot self-tests passed; BIOS serial console; line capacity=64\r\n"
-                : "status: boot self-tests passed; UEFI serial console; timer-woken polling; line capacity=64\r\n");
+            Output::text(
+                platform == Platform::bios
+                    ? "status: boot self-tests passed; BIOS serial console; line capacity=64\r\n"
+                    : "status: boot self-tests passed; UEFI serial console; timer-woken polling; line capacity=64\r\n");
             break;
         case Event::unknown:
             Output::text("Unknown command. Type help.\r\n");
@@ -51,4 +55,4 @@ public:
         return true;
     }
 };
-}
+} // namespace aurora::console

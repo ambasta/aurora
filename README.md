@@ -14,27 +14,33 @@ The project is currently an experimental compiler and emulator-based kernel.
 
 ## Current state
 
-Start with the [current project state and contract index](docs/completeness-matrix.md#current-project-state)
-for the six goals, implemented foundations, remaining gaps and exact API references.
+Start with the [project status table](docs/completeness-matrix.md#current-project-state)
+for the six goals, implemented foundations and remaining gaps.
 The [roadmap](docs/roadmap.md) gives the dependency order and acceptance gates.
-Historical test receipts are kept in [verification history](docs/verification.md).
+Historical test receipts remain in Git/PR history and retained run/CI artifacts when available.
 
-The merged canonical Meson graph and Aurora graphical console passed all 249
-tests on each recorded GCC 14 and GCC 16 toolchain, six image admissions, and
-28 graphical emulator cases with ordinary restorations. The two final-source
-normal BIOS smokes were completed after the PR100 merge on 2026-10-09. These
-results cover the recorded toolchains and emulator profiles; physical hardware
-and general terminal/window services remain unqualified.
+The compiler, libraries and bounded serial/graphical consoles are experimental.
+Qualification applies only to the exact source, tools and profiles recorded for
+a run; an older passing checkpoint does not qualify current changes. Physical
+hardware and general terminal/window services remain unqualified.
 
 ## Try it
 
-Use an x86-64 Linux host with GCC 16 (C++23), GNU Make and
-binutils, Python 3 and Bash. The native tests also use Meson 1.12.1+, Ninja,
-coreutils and ripgrep.
-Run commands from the repository root, in a path without whitespace, one build
-or test command at a time.
+The public dependency image pinned in `ci/image` provides the supported tools
+and firmware. With Docker installed, run from the repository root:
 
-Build the compiler and BIOS image, then compile a library example:
+```sh
+./scripts/container.sh make
+./scripts/container.sh make run-uefi
+```
+
+For a comparable local x86-64 Linux environment, select the exact supported tool
+versions and firmware described in [local development](docs/local-development.md).
+Local validation does not claim execution inside the container. Keep builds and
+guests in separate output directories when running independent work in parallel.
+
+Default `make` builds one Meson compiler and the normal image graph, atomically
+preserving the compatible `build/aurorac` path. Compile a library example with it:
 
 ```sh
 make
@@ -59,35 +65,26 @@ make run
 make run-uefi
 ```
 
-UEFI discovers an installed combined ROM or matching CODE/VARS pair. Both commands run headless,
-validate serial output and exit. Images are disposable emulator inputs; do not
+The package supplies pinned UEFI firmware; comparable local runs explicitly select
+compatible firmware as described in the developer guide. Both commands run
+headless, validate serial output and exit. Images are disposable emulator inputs; do not
 write them to a physical disk or replace your bootloader.
 
-For an interactive serial prompt, run `make console` (BIOS) or `make console-uefi`, then type `help`,
-`status` or `exit`. This opt-in QEMU profile has a 64-byte ASCII line editor and
-a five-minute session limit. See the [console contract](docs/kernel-console-contract.md)
-and the [UEFI results](docs/uefi-console-results.md) for focused validation and limits.
-The simple UEFI editor and command presentation are Aurora-owned through a
-[sealed synchronous console service](docs/native-console-service.md). BIOS and
-the protected-program console retain their explicitly scoped legacy adapters.
-The simple UEFI and graphical prompts also support `write note <text>` and `cat note`: one
-RAM-only note, at most 53 ASCII bytes, lost when the session exits. This is not
-a persistent filesystem; see its [scope](docs/native-console-service.md#session-local-ram-note).
-The same two prompts also offer four separate named RAM files: `write NAME TEXT`,
-`cat NAME`, `rm NAME` and `ls`. Names use 1–8 ASCII letters, digits, `.`, `_` or `-`
-(excluding `.` and `..`); each file holds up to 49 printable ASCII bytes. `note`
-remains reserved. All files disappear at session exit; see the
-[named-file rules](docs/native-console-service.md#session-local-named-files).
-For automated console acceptance, use `make smoke-console` (BIOS) or
-`make smoke-console-uefi`. Both are included in `make smoke-all`; `make test`
-remains native-only.
+For an interactive serial prompt, run `make console` (BIOS) or `make console-uefi`,
+then type `help`, `status` or `exit`. Both use a 64-byte ASCII editor and a five-minute
+session limit. The [console guide](docs/native-console-service.md) covers their
+commands, BIOS IRQ/UEFI timer transport, trust boundaries and acceptance gates.
+Simple UEFI and the graphical console also support one RAM-only note and four
+named RAM files; their [grammar and limits](docs/native-console-service.md#session-local-ram-note)
+are shared, but all state disappears at session exit.
+Use `make smoke-console` or `make smoke-console-uefi` for automated PTY checks;
+both belong to `make smoke-all`, while `make test` remains native-only.
 
-The protected-command profile offers `upper` and now adds the same volatile note
-commands with authenticated CPL3 reads. `upper note` replaces an existing note
-with a complete protected uppercase result after both domains retire. Its
-[contract and current qualification](docs/program-console-contract.md) describe
-automatic local build/image/stack checks for public commands, the separate
-review-pinned first-image qualification, scoped guest evidence and final integration gates.
+The separate [protected-command console](docs/program-console-contract.md) runs
+`upper` and authenticated note reads/uppercase replacement through two CPL3
+domains. Its public commands perform local build/image/stack checks. The same checked
+image can be passed by explicit build directory to the guest oracle; changed
+images still require independent review and final qualification.
 
 For the output-only graphical status page, `make capture-framebuffer` builds and
 saves a PNG under `build/`. This [developer preview](docs/framebuffer-console.md#developer-preview)
@@ -113,26 +110,27 @@ merge/release toolchain; GCC 14 checks are optional targeted compatibility evide
 - [Language design](docs/language.md): intended ownership, type and reflection model
 - [Library plan](docs/library-stack.md) and [storage plan](storage/design/roadmap.md)
 - [Roadmap](docs/roadmap.md) and [completeness matrix](docs/completeness-matrix.md)
-- [Verification history](docs/verification.md): checkpoint results and evidence
+- [Development and qualification](docs/developer-test-contract.md): test scope and merge gates
 
 Implementation lives in `compiler/`, `library/`, `kernel/` and `storage/`.
 `examples/` contains Aurora programs; `tests/` and `scripts/` hold the validation
-and build machinery. Detailed contracts sit beside the component they describe.
+and build machinery. Living component guides describe current behavior and limits.
 
 ## Contributing
 
 Start with a small running mechanism and a clear acceptance condition. Include
-positive, rejection and regression cases, and update the existing affected contract
-and current status in place. Do not create a contract/results document pair for
-every increment. Keep run-specific evidence in the existing verification/evidence
-locations; preserve historical receipts and their limits instead of copying their
-status paragraphs across README, roadmap and matrix.
+positive, rejection and regression cases. Maintain one living guide per component
+and the concise project status table in place; do not add per-feature contract/results
+pairs. Keep historical results in Git/PR history and retained run/CI evidence when
+available. Preserve raw evidence and its limits without copying checkpoint narratives
+across README, roadmap and matrix.
 Host C++ and Python follow the [source style guide](docs/style.md), with pinned
 formatter versions and explicit check/format commands.
 Use the checks appropriate to the change:
 
 ```sh
-meson compile -C build/gcc16 -j 3
+meson setup build/gcc16
+meson compile -C build/gcc16 -j 4 --ninja-args=meson-test-prereq
 meson test -C build/gcc16 --suite dev --no-rebuild --num-processes 4
 meson test -C build/gcc16 --suite full --no-rebuild --num-processes 4
 ./scripts/compiler-test.sh    # compiler-only Meson selection
@@ -153,8 +151,8 @@ Normal development reuses dependency-tracked compiler and C++ fixture builds.
 Changing source reruns affected build commands; changing toolchain/configuration
 requires another directory. Make is a convenience entrypoint to the same graph,
 with `MESON_BUILD_DIR`, `AURORA_BUILD_JOBS` and `AURORA_TEST_JOBS` controls. Omit
-`MESON_BUILD_DIR` for a stable compiler-bytes/flags-keyed directory, or set it to a
-fresh or matching configured directory. Explicit
+`MESON_BUILD_DIR` to use `build/meson` (or `build/meson-compiler` for compiler-only
+work), or set it to a fresh or matching configured directory. Explicit
 pinned legacy compatibility remains in the [developer-test contract](docs/developer-test-contract.md).
 Selected artifact identity, a focused pass or registration alone does not establish
 full native, sanitizer, emulator or hardware qualification.

@@ -22,7 +22,6 @@ def main():
     parser.add_argument("--cxx", required=True)
     parser.add_argument("--compiler", type=Path)
     parser.add_argument("--shared-output", action="store_true")
-    parser.add_argument("--bios-image", action="store_true")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     root = args.repo.resolve(strict=True)
@@ -62,23 +61,8 @@ def main():
         if compiler:
             env["AURORAC"] = str(compiler)
         command = args.command[1:] if args.command[:1] == ["--"] else args.command
-        if args.bios_image:
-            if command or compiler is None:
-                parser.error("--bios-image requires --compiler and no command")
-            # A normal root native image must never inherit a fault/console profile.
-            inherited = [
-                name
-                for name, value in env.items()
-                if value and (name.startswith("KERNEL_TEST_") or name in ("KERNEL_CONSOLE", "KERNEL_USER_PROBE_MODE"))
-            ]
-            if inherited:
-                raise RuntimeError("Unset kernel profile controls for normal BIOS image: " + ", ".join(inherited))
-            commands = [["bash", str(root / "scripts/kernel-build.sh")]]
-            # kernel-build.sh already invokes the exact kernel-image.py gate.
-        else:
-            if not command:
-                parser.error("A native command is required")
-            commands = [command]
+        if not command:
+            parser.error("A native command is required")
         lock = nullcontext()
         if args.shared_output:
             (root / "build").mkdir(exist_ok=True)
@@ -88,10 +72,7 @@ def main():
                 fcntl.flock(locked, fcntl.LOCK_EX)
             status = 0
             try:
-                for command in commands:
-                    status = subprocess.run(command, cwd=root, env=env).returncode
-                    if status:
-                        break
+                status = subprocess.run(command, cwd=root, env=env).returncode
             finally:
                 if compiler and hashlib.sha256(compiler.read_bytes()).hexdigest() != before:
                     raise RuntimeError("Meson-selected compiler changed during native gate")

@@ -3,12 +3,17 @@ import std.binary;
 import std.bytes;
 
 export namespace std {
-    enum class ByteWriteStatus { success, out_of_range, value_out_of_range };
+    enum class ByteWriteStatus {
+        success,
+        out_of_range,
+        value_out_of_range
+    };
 
     class BinaryBuffer64 {
         builtin::array<u8, 64> elements;
     public:
-        BinaryBuffer64() : elements{} {}
+        BinaryBuffer64() : elements{} {
+        }
 
         auto size() const -> i64 {
             return 64;
@@ -18,14 +23,24 @@ export namespace std {
             return elements[offset];
         }
 
-        auto starts_with(builtin::span<const u8> prefix) const -> bool {
-            if (prefix.size() > 64) { return false; }
-            i64 index = 0;
-            while (index < prefix.size()) {
-                if (elements[index] != prefix.at(index)) { return false; }
-                index = index + 1;
+        // Checked, readonly receiver-bound storage; the window never copies bytes.
+        auto bytes(i64 offset, i64 count) const -> builtin::span<const u8> {
+            const builtin::span<const u8> all = borrow_bytes(elements);
+            return all.subspan(offset, count);
+        }
+
+        auto equal(i64 offset, i64 count, builtin::span<const u8> value) const -> bool {
+            if (offset < 0 || offset > 64 || count < 0 || count > 64 - offset) {
+                return false;
             }
-            return true;
+            return std::equal(bytes(offset, count), value);
+        }
+
+        auto starts_with(i64 count, builtin::span<const u8> prefix) const -> bool {
+            if (count < 0 || count > 64) {
+                return false;
+            }
+            return std::starts_with(bytes(0, count), prefix);
         }
 
         auto read_u8(i64 offset) const -> ByteReadResult {

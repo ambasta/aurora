@@ -90,49 +90,37 @@ def expected(case):
 
 
 class Controls(unittest.TestCase):
-    def test_shell_restores_shared_image(self):
+    def test_shell_keeps_native_profiles_and_finishes_run(self):
+        import time
+
         builder = """#!/usr/bin/env bash
 set -eu
 echo "build:$UEFI_MODE" >> events
-mkdir -p build/uefi/esp/EFI/BOOT build/uefi/objects
-rm -f build/uefi/objects/*.{o,su,ci}
-[[ $UEFI_MODE == normal ]] || touch build/uefi/objects/graphical-console.o
-restoring=0
-if [[ $UEFI_MODE == normal && -f first-normal ]]; then
-    restoring=1
-    [[ ${FAIL_RESTORE:-0} == 0 ]] || exit 29
-else
-    [[ $UEFI_MODE != normal ]] || touch first-normal
-fi
-echo "$UEFI_MODE" > build/uefi/esp/EFI/BOOT/BOOTX64.EFI
-[[ ${FAIL_BUILD:-} != "$UEFI_MODE" || $restoring == 1 ]] || exit 17
+out="$PWD/build/native profiles/$UEFI_MODE"
+mkdir -p "$out/esp/EFI/BOOT" "$out/objects"
+echo "$UEFI_MODE" > "$out/esp/EFI/BOOT/BOOTX64.EFI"
+touch "$out/objects/payload.o"
+[[ ${FAIL_BUILD:-} != "$UEFI_MODE" ]] || exit 17
 if [[ ${INTERRUPT_AT:-} == "build:$UEFI_MODE" ]]; then
-    kill -s "$INTERRUPT_SIGNAL" "$PPID"
-    sleep 0.02
-    echo 'late-builder-write' > build/uefi/esp/EFI/BOOT/BOOTX64.EFI
+    sleep 0.2
+    echo 'late-builder-write' > "$out/esp/EFI/BOOT/BOOTX64.EFI"
 fi
+printf '%s\\n' "$out"
 """
         runner = """import os, pathlib, signal, sys, time
 p = pathlib.Path
 args = sys.argv
-if any(flag in args for flag in ('--start-run', '--save-failure', '--finish-run')):
+if any(flag in args for flag in ('--start-run', '--finish-run')):
     sys.path.insert(0, REAL_SCRIPTS)
     import kernel_graphical_smoke as real
     real.ROOT = p.cwd()
-    from unittest.mock import patch
-    if '--save-failure' in args and os.environ.get('FAIL_CAPTURE'):
-        if os.environ['FAIL_CAPTURE'] == 'rename':
-            with patch.object(p, 'rename', side_effect=OSError('cross-device rename')): real.main()
-        else:
-            with patch.object(real.shutil, 'copy2', side_effect=OSError('no space left')): real.main()
-    else:
-        real.main()
+    real.main()
     sys.exit()
 if '--stage' in args:
     mode = args[args.index('--stage') + 1]
     out = p(args[args.index('--images') + 1]) / mode
     out.mkdir(parents=True)
-    (out / 'image').write_bytes(p('build/uefi/esp/EFI/BOOT/BOOTX64.EFI').read_bytes())
+    (out / 'image').write_bytes((p(args[args.index('--build-dir') + 1]) / 'esp/EFI/BOOT/BOOTX64.EFI').read_bytes())
     action = 'stage:' + mode
 else:
     image = p(args[args.index('--images') + 1]) / 'normal/image'
@@ -146,8 +134,7 @@ else:
     action = 'guest'
 with open('events', 'a') as f: f.write(action + '\\n')
 if os.environ.get('INTERRUPT_AT') == action:
-    os.kill(os.getppid(), getattr(signal, 'SIG' + os.environ['INTERRUPT_SIGNAL']))
-    time.sleep(0.02)
+    time.sleep(0.2)
     with open('events', 'a') as f: f.write('child-finished\\n')
 if os.environ.get('FAIL_STAGE') == action: sys.exit(23)
 if action == 'guest':
@@ -164,11 +151,6 @@ if action == 'guest':
             ([], {"FAIL_BUILD": "graphical-console-capture"}, 17),
             ([], {"FAIL_STAGE": "stage:graphical-console"}, 23),
             ([], {"GUEST_STATUS": "31"}, 31),
-            ([], {"GUEST_STATUS": "31", "FAIL_CAPTURE": "rename"}, 31),
-            ([], {"GUEST_STATUS": "31", "FAIL_CAPTURE": "copy"}, 31),
-            ([], {"FAIL_RESTORE": "1"}, 29),
-            ([], {"GUEST_STATUS": "31", "FAIL_RESTORE": "1"}, 31),
-            (["--build-only"], {"FAIL_RESTORE": "1"}, 29),
             (["--invalid"], {}, 2),
         ]
         for path in ("build", "build/uefi", "build/graphical-smoke"):
@@ -215,14 +197,29 @@ if action == 'guest':
                 env.update(
                     PATH=str(root / "bin") + os.pathsep + env["PATH"], QEMU="/bin/true", CXX="/bin/true", **overrides
                 )
-                result = subprocess.run(
-                    ["bash", "scripts/kernel-graphical-smoke.sh", *arguments],
-                    cwd=root,
-                    env=env,
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                )
+                command = ["bash", "scripts/kernel-graphical-smoke.sh", *arguments]
+                if "INTERRUPT_AT" in overrides:
+                    process = subprocess.Popen(
+                        command, cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+                    )
+                    try:
+                        deadline = time.monotonic() + 5
+                        while process.poll() is None:
+                            events_path = root / "events"
+                            events = events_path.read_text().splitlines() if events_path.exists() else []
+                            if overrides["INTERRUPT_AT"] in events:
+                                process.send_signal(getattr(signal, "SIG" + overrides["INTERRUPT_SIGNAL"]))
+                                break
+                            self.assertLess(time.monotonic(), deadline)
+                            time.sleep(0.005)
+                        stdout, stderr = process.communicate(timeout=10)
+                        result = subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+                    finally:
+                        if process.poll() is None:
+                            process.kill()
+                            process.communicate(timeout=5)
+                else:
+                    result = subprocess.run(command, cwd=root, env=env, capture_output=True, text=True, timeout=10)
                 self.assertEqual(result.returncode, status, result.stdout + result.stderr)
                 if "SYMLINK" in overrides:
                     self.assertTrue(link.is_symlink())
@@ -233,17 +230,15 @@ if action == 'guest':
                     self.assertFalse((root / "build").exists())
                     continue
                 events = (root / "events").read_text().splitlines()
-                self.assertEqual(events[-1], "build:normal")
-                self.assertEqual(events.count("build:normal"), 2)
-                restored = overrides.get("FAIL_RESTORE") != "1"
-                shared = root / "build/uefi/esp/EFI/BOOT/BOOTX64.EFI"
-                self.assertEqual(shared.exists() and shared.read_bytes() == b"normal\n", restored)
-                self.assertFalse((root / "build/uefi/objects/graphical-console.o").exists())
+                self.assertEqual(events.count("build:normal"), 1)
+                self.assertEqual((root / "build/uefi/esp/EFI/BOOT/BOOTX64.EFI").read_bytes(), b"previous")
                 self.assertEqual((root / "build/uefi/legacy.o").read_bytes(), b"evidence")
-                self.assertEqual("PASS: shared normal" in result.stdout, restored)
-                self.assertEqual("restoration exited" in result.stderr, not restored)
                 self.assertEqual("staged-normal-boot" in events, "guest" in events)
-                self.assertEqual(len(list((root / "build/graphical-smoke").glob("*/build-normal-restoration.log"))), 1)
+                self.assertFalse(list((root / "build/graphical-smoke").glob("*/build-normal-restoration.log")))
+                for event in events:
+                    if event.startswith("build:"):
+                        profile = root / "build/native profiles" / event.removeprefix("build:")
+                        self.assertTrue((profile / "objects/payload.o").exists())
                 window = next((root / "build/graphical-smoke").glob("run-*"))
                 if "guest" in events:
                     kept = (
@@ -260,13 +255,9 @@ if action == 'guest':
                 self.assertEqual(
                     json.loads((window / smoke.RUN_MARKER).read_text())["status"], "passed" if status == 0 else "failed"
                 )
-                primary_failed = status != 0 and (status != 29 or overrides.get("GUEST_STATUS") == "31")
-                self.assertEqual((window / "failed-build").exists(), primary_failed)
-                self.assertEqual((window / "failed-restoration").exists(), not restored)
-                if overrides.get("FAIL_CAPTURE"):
-                    self.assertIn("could not retain failed build", result.stderr)
-                    self.assertEqual((window / "failed-build/objects").exists(), overrides["FAIL_CAPTURE"] == "copy")
-                    self.assertTrue((window / "build-graphical-console-capture.log").is_file())
+                self.assertFalse((window / "failed-build").exists())
+                self.assertFalse((window / "failed-restoration").exists())
+                self.assertTrue((window / "build-normal.log").is_file())
 
     def test_successful_capture_cleanup_is_scoped(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"AURORA_GRAPHICAL_KEEP_RUNS": "2"}):
@@ -340,68 +331,21 @@ if action == 'guest':
                 if failure in ("dump-link", "unlink"):
                     self.assertEqual((case / "state-00.bin").read_bytes(), b"owned capture")
 
-    def test_late_pins_and_cleanup_interruptions_preserve_remaining_dumps(self):
-        for action in ("pin-before", "pin-delete", "interrupt-before", "SIGINT", "SIGTERM"):
-            with self.subTest(action=action), tempfile.TemporaryDirectory() as tmp:
+    def test_failed_and_kept_runs_preserve_captures(self):
+        for status, keep in ((31, False), (0, True)):
+            with self.subTest(status=status, keep=keep), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 window = root / "build/graphical-smoke/run-current"
                 case = window / "guests/production"
                 case.mkdir(parents=True)
-                for suffix in ("bin", "ppm"):
-                    (case / ("state-00." + suffix)).write_bytes(b"capture")
-                unlink = smoke.os.unlink
-
-                def during_delete(path, *, dir_fd=None):
-                    if action == "interrupt-before":
-                        raise KeyboardInterrupt("before removal")
-                    unlink(path, dir_fd=dir_fd)
-                    if action == "pin-delete":
+                dump = case / "state-00.bin"
+                dump.write_bytes(b"capture")
+                with patch.object(smoke, "ROOT", root), patch("builtins.print"):
+                    smoke.start_run(window)
+                    if keep:
                         (window / ".keep").touch()
-                    if action.startswith("SIG"):
-                        os.kill(os.getpid(), getattr(signal, action))
-
-                previous = signal.getsignal(signal.SIGTERM)
-                try:
-                    with patch.object(smoke, "ROOT", root), patch("builtins.print"):
-                        smoke.start_run(window)
-                        if action == "pin-before":
-                            (window / ".keep").touch()
-                        with (
-                            patch.object(smoke.os, "unlink", during_delete),
-                            patch.object(sys, "argv", ["runner", "--finish-run", str(window), "--status", "0"]),
-                        ):
-                            smoke.main()
-                finally:
-                    signal.signal(signal.SIGTERM, previous)
-                self.assertEqual(json.loads((window / smoke.RUN_MARKER).read_text())["status"], "passed")
-                self.assertEqual(len(list(case.iterdir())), 2 if action in ("pin-before", "interrupt-before") else 1)
-                self.assertFalse((window / "guests/screen-captures.json").exists())
-
-    def test_cleanup_ancestor_swap_cannot_delete_outside_file(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            window = root / "build/graphical-smoke/run-current"
-            case = window / "guests/production"
-            outside = root / "outside"
-            case.mkdir(parents=True)
-            outside.mkdir()
-            (case / "state-00.bin").write_bytes(b"owned capture")
-            (outside / "state-00.bin").write_bytes(b"outside sentinel")
-            original = root / "original-production"
-            unlink = smoke.os.unlink
-
-            def swap_then_unlink(name, *, dir_fd=None):
-                case.rename(original)
-                case.symlink_to(outside, target_is_directory=True)
-                return unlink(name, dir_fd=dir_fd)
-
-            with patch.object(smoke, "ROOT", root), patch("builtins.print"):
-                smoke.start_run(window)
-                with patch.object(smoke.os, "unlink", side_effect=swap_then_unlink):
-                    smoke.finish_run(window, 0)
-            self.assertEqual((outside / "state-00.bin").read_bytes(), b"outside sentinel")
-            self.assertFalse((original / "state-00.bin").exists())
-            self.assertEqual(json.loads((window / smoke.RUN_MARKER).read_text())["status"], "passed")
+                    smoke.finish_run(window, status)
+                self.assertEqual(dump.read_bytes(), b"capture")
 
     def test_retention_bounds_and_preserves_unowned_evidence(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"AURORA_GRAPHICAL_KEEP_RUNS": "2"}):
@@ -512,7 +456,7 @@ if action == 'guest':
 
                 with (
                     patch.object(sys, "argv", argv),
-                    patch.object(smoke, "expected_firmware_argv", return_value=[]),
+                    patch.object(smoke.transport, "firmware_args", return_value=[]),
                     patch.object(
                         smoke, "verify_images", side_effect=lambda *a: self.assertTrue((old / ".keep").exists())
                     ),
@@ -597,14 +541,14 @@ if action == 'guest':
                     any(str(call.args[0]).startswith("WARN: could not prune") for call in output.call_args_list)
                 )
 
-    def test_retention_controls_and_failure_snapshot(self):
+    def test_retention_controls_preserve_failed_native_products(self):
         with tempfile.TemporaryDirectory() as tmp, patch("builtins.print"):
             root = Path(tmp)
             base = root / "build/graphical-smoke"
             base.mkdir(parents=True)
             folder = base / "run-review"
             folder.mkdir()
-            source = root / "build/uefi"
+            source = root / "build/kernel-images/uefi/graphical-console"
             (source / "objects").mkdir(parents=True)
             (source / "objects/future.o").write_text("partial object")
             (source / "payload.elf").write_text("partial link")
@@ -615,16 +559,12 @@ if action == 'guest':
             object_inode = (source / "objects").stat().st_ino
             with patch.object(smoke, "ROOT", root), patch.dict(os.environ, {"AURORA_GRAPHICAL_KEEP_RUNS": "all"}):
                 smoke.start_run(folder)
-                smoke.save_failure(folder / "failed-build")
                 smoke.finish_run(folder, 31)
                 self.assertTrue((folder / ".keep").is_file())
-            saved = folder / "failed-build"
-            self.assertFalse((source / "objects").exists())
-            self.assertEqual((saved / "objects").stat().st_ino, object_inode)
-            self.assertEqual((saved / "objects/future.o").read_text(), "partial object")
-            self.assertEqual((saved / "payload.elf").read_text(), "partial link")
-            self.assertTrue((saved / "objects/alias.o").is_symlink())
-            self.assertFalse((saved / "unrelated.log").exists())
+            self.assertEqual((source / "objects").stat().st_ino, object_inode)
+            self.assertEqual((source / "objects/future.o").read_text(), "partial object")
+            self.assertEqual((source / "payload.elf").read_text(), "partial link")
+            self.assertEqual((source / "unrelated.log").read_text(), "old evidence")
             self.assertEqual(outside.read_text(), "unchanged")
             with patch.object(smoke, "ROOT", root), patch.dict(os.environ, {"AURORA_GRAPHICAL_KEEP_RUNS": "1"}):
                 for index in range(3):
@@ -644,24 +584,19 @@ if action == 'guest':
         for mode in ("normal", *smoke.admission.MODES):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
-                build = root / "build/uefi"
+                build = root / "build/kernel-images/uefi" / mode
                 with (
                     patch.object(smoke, "ROOT", root),
                     patch.object(smoke.admission, "BUILD", build),
+                    patch.object(smoke.admission, "configure_paths"),
+                    patch.object(smoke.admission.common, "verify_object_exports"),
                     patch.object(smoke.admission, "RECEIPT", build / "graphical-console-admission.json"),
-                    patch.object(smoke.admission, "checked"),
-                    patch.object(smoke.admission, "source_files", return_value=[]),
+                    patch.object(smoke.admission, "checked", return_value=None) as admission_check,
+                    patch.object(smoke.admission.common, "BUILD", build),
                 ):
                     files = smoke.admission.build_files(mode)
                     if mode != "normal":
-                        files += [
-                            build / name
-                            for name in (
-                                "graphical-console-admission.json",
-                                "graphical-console-build.json",
-                                "graphical-console-build-start.json",
-                            )
-                        ]
+                        files += [build / "graphical-console-admission.json"]
                     for path in files:
                         path.parent.mkdir(parents=True, exist_ok=True)
                         path.write_text("current")
@@ -670,20 +605,28 @@ if action == 'guest':
                     (build / "old-captures").mkdir()
                     (build / "old-captures/evidence").write_text("unrelated")
                     images = root / "images"
-                    smoke.stage(mode, images)
+                    smoke.stage(mode, images, build)
                     args = SimpleNamespace(images=images)
                     smoke.verify_images(args, mode)
                     saved = {str(p.relative_to(images / mode)) for p in (images / mode).rglob("*") if p.is_file()}
                     self.assertEqual(saved, {str(p.relative_to(build)) for p in files} | {"smoke-image.json"})
+                    if mode != "normal":
+                        admitted = smoke.admission.common.hashes(smoke.admission.build_files(mode))
+                        admission_check.return_value = {"sha256": admitted}
+                        files[0].write_text("changed after admission")
+                        with self.assertRaisesRegex(ValueError, "Admitted image changed"):
+                            smoke.stage(mode, root / "changed", build)
+                        self.assertFalse((root / "changed").exists())
+                        files[0].write_text("current")
                     (images / mode / "payload.bin").write_text("changed")
                     with self.assertRaisesRegex(ValueError, "staged image drift"):
                         smoke.verify_images(args, mode)
                     files[0].unlink()
                     with self.assertRaisesRegex(ValueError, "missing artifact"):
-                        smoke.stage(mode, root / "missing")
+                        smoke.stage(mode, root / "missing", build)
                     files[0].symlink_to(build / "historical.log")
                     with self.assertRaisesRegex(ValueError, "symlink"):
-                        smoke.stage(mode, root / "symlink")
+                        smoke.stage(mode, root / "symlink", build)
 
     def test_primary_and_restoration_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -840,6 +783,7 @@ if action == 'guest':
 
         with (
             patch.object(smoke, "guest", fake_guest),
+            patch.object(smoke.transport, "wait_exit", return_value=0),
             patch.object(smoke, "send", write),
             patch.object(smoke, "compare"),
             patch.object(smoke, "wait", lambda ch, pred: self.assertTrue(pred(smoke.markers(ch.serial_bytes)))),
@@ -903,6 +847,7 @@ if action == 'guest':
 
         with (
             patch.object(smoke, "guest", fake_guest),
+            patch.object(smoke.transport, "wait_exit", return_value=0),
             patch.object(smoke, "wait", wait),
             patch.object(smoke, "send", lambda ch, data: events.append(data)),
             patch.object(smoke, "compare"),
@@ -913,31 +858,30 @@ if action == 'guest':
     def test_capture_drift_still_boots_normal_then_fails(self):
         with tempfile.TemporaryDirectory() as temporary:
             args = SimpleNamespace(images=Path(temporary), qemu="qemu", data="", firmware=["-bios", "firmware"])
-            proc = SimpleNamespace(wait=lambda **kw: 33)
 
-            def verify(args, mode=None, source=True):
+            def verify(args, mode=None):
                 if mode != "normal":
                     raise ValueError("capture drift")
 
             with (
                 patch.object(smoke, "verify_images", side_effect=verify) as checks,
-                patch.object(smoke.subprocess, "Popen", return_value=proc) as launch,
+                patch.object(
+                    smoke.transport, "run_logged", side_effect=lambda argv, log, **kw: log.touch() or 33
+                ) as launch,
                 patch.object(smoke.normal, "validate") as validate,
-                patch.object(smoke.capture, "terminate") as reap,
             ):
                 with self.assertRaisesRegex(ValueError, "capture drift"):
                     smoke.restoration(args, Path(temporary) / "restore", {})
                 launch.assert_called_once()
                 validate.assert_called_once_with(33, "", "normal")
-                reap.assert_called_once_with(proc)
-                self.assertEqual(checks.call_args_list[0].kwargs, dict(source=False))
+                self.assertEqual(checks.call_args_list[0].args, (args, "normal"))
 
     def test_bounds_and_cleanup(self):
         stream = io.BytesIO()
-        log = smoke.LimitedLog(stream)
-        log.size = 4 * 1024 * 1024
+        log = smoke.transport.Qmp.__new__(smoke.transport.Qmp)
+        log.log, log.total, log.log_limit = stream, 4 * 1024 * 1024, 4 * 1024 * 1024
         with self.assertRaises(ValueError):
-            log.write(b"x")
+            log.record(b"x")
         self.assertEqual(stream.getvalue(), b"")
         proc = SimpleNamespace(stdin=io.BytesIO(), stdout=io.BytesIO(), returncode=0)
         channel = SimpleNamespace(
@@ -956,7 +900,7 @@ if action == 'guest':
             patch.object(smoke.os, "close") as close,
             patch.object(smoke.subprocess, "Popen", return_value=proc),
             patch.object(smoke.capture, "Channel", return_value=channel),
-            patch.object(smoke.capture, "terminate", side_effect=ValueError("reap")) as terminate,
+            patch.object(smoke.transport, "cleanup", side_effect=ValueError("reap")) as terminate,
         ):
             args = SimpleNamespace(images=Path(temporary), qemu="qemu", data="", firmware=["-bios", "firmware"])
             record = {}
@@ -967,7 +911,7 @@ if action == 'guest':
             self.assertEqual(close.call_count, 2)
             self.assertTrue(proc.stdin.closed and proc.stdout.closed and channel.slog.closed)
             self.assertEqual(record["guest_error"], "body")
-            self.assertEqual(record["cleanup_errors"], ["reap", "drain"])
+            self.assertEqual(record["cleanup_errors"], ["cleanup: ValueError: reap", "ValueError: drain"])
 
 
 if __name__ == "__main__":

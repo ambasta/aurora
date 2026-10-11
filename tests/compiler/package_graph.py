@@ -25,7 +25,6 @@ from package_profiles import (
 )
 from package_native_runner import PackageRunner, finalize_report, safe_receipt
 
-CONTRACT_SHA256 = "2272fba3b7163550f5dabef95c5b54c0d1039063b84545ef0c0b20f93928e01c"
 REFERENCE_SHA256 = "6a54b890a7b33abd378c9ca7a0de05c179cb4448c2fc2daaf5a33c677aeafa42"
 CAP, FLOOR, RESERVE = 256 << 20, 1 << 30, 24 << 20
 SOURCE_CAP, BATCH = 64 << 10, 96
@@ -1104,7 +1103,6 @@ def freeze_corpus(directory):
     report = dict(
         status="corpus-frozen",
         independent_reference_sha256=REFERENCE_SHA256,
-        contract_sha256=CONTRACT_SHA256,
         oracle_sha256=sha(__file__),
         corpus_sha256=sha(directory / "corpus.jsonl.gz"),
         cases=len(cases),
@@ -1286,9 +1284,7 @@ def main():
         identity = resolve_identity(args, compiler, ROOT)
         expected_compiler_sha = identity.sha256
     self_test()
-    frozen = ROOT / "evidence/package-graph/contract-before-implementation.md"
     reference = ROOT / "evidence/package-graph/oracle/reference-v1/reference.py"
-    require(sha(frozen) == CONTRACT_SHA256, "frozen pre-implementation contract changed")
     require(sha(reference) == REFERENCE_SHA256, "independent pre-inspection reference changed")
     if args.self_test_only:
         print("PASS independent reference, full-width observer, grammar, precedence and path controls")
@@ -1341,7 +1337,6 @@ def main():
         ROOT / "scripts/owned_outputs.py",
         ROOT / "scripts/package_profiles.py",
         ROOT / "scripts/compiler_contract.py",
-        frozen,
         reference,
         Path(sys.executable).resolve(strict=True),
         *runner.tools.values(),

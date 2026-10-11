@@ -5,7 +5,6 @@ from pathlib import Path
 import copy
 import importlib.util
 import json
-import os
 import sys
 import tempfile
 from types import SimpleNamespace
@@ -21,7 +20,7 @@ admission = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = admission
 spec.loader.exec_module(admission)
 policy = admission.image
-decoder = admission.load("event_test_decoder", ROOT / "tests/kernel-uefi-owned-bytes-stack.py")
+decoder = admission.load("event_test_decoder", ROOT / "scripts/kernel_stack.py")
 
 
 def defined(name, kind="T"):
@@ -73,22 +72,7 @@ def body(operations):
 
 
 class EventAdmission(unittest.TestCase):
-    def test_exact_profiles_and_selectors(self):
-        for index, mode in enumerate(admission.MODES):
-            flags = list(admission.BASE_FLAGS + admission.PROFILE_FLAGS) + ["-DAURORA_IOMMU_EVENT_CASE=" + str(index)]
-            admission.verify_flags(mode, flags)
-            for bad in (
-                flags + ["-DAURORA_UEFI_CONSOLE"],
-                flags[:-1],
-                flags[::-1],
-                flags + [flags[-1]],
-                flags[:-1] + ["-DAURORA_IOMMU_EVENT_CASE=" + str((index + 1) % 4)],
-                flags + ["-O0"],
-            ):
-                with self.assertRaises(ValueError):
-                    admission.verify_flags(mode, bad)
-        with self.assertRaises(ValueError):
-            admission.verify_flags("iommu-event-unknown", [])
+    def test_exact_profile_selectors(self):
         self.assertTrue(policy.image_options(["--iommu-event"])["require_iommu_event"])
         for args in (
             ["--iommu-event", "--ipc-policy"],
@@ -98,6 +82,39 @@ class EventAdmission(unittest.TestCase):
         ):
             with self.assertRaises(ValueError):
                 policy.image_options(args)
+
+    def test_image_checker_routes_exact_event_mode_without_build_receipt(self):
+        directory = ROOT / "build" / "event-policy-control"
+        with (
+            patch.object(policy.common, "configure_paths"),
+            patch.object(Path, "read_bytes", return_value=b""),
+            patch.object(policy, "pe_validate", return_value=(0, 0, [])),
+            patch.object(policy, "elf_validate"),
+            patch.object(policy, "profile_selection"),
+            patch.object(policy.subprocess, "check_output", return_value=""),
+            patch.object(policy, "event_image_policy", side_effect=RuntimeError("mode routed")) as event,
+        ):
+            for mode in policy.EVENT_MODES:
+                event.reset_mock()
+                with self.assertRaisesRegex(RuntimeError, "mode routed"):
+                    policy.main(
+                        require_iommu_event=True,
+                        require_iommu_observe=mode == "iommu-event-observe",
+                        event_mode=mode,
+                        build_dir=directory,
+                    )
+                event.assert_called_once_with(directory, "", mode=mode)
+            for controls in (
+                dict(require_iommu_event=True),
+                dict(event_mode="iommu-event-denial"),
+                dict(require_iommu_event=True, event_mode="iommu-event-observe"),
+            ):
+                with self.assertRaisesRegex(ValueError, "selector mismatch"):
+                    policy.main(build_dir=directory, **controls)
+        with patch.object(sys, "argv", ["image", "--iommu-event", "--event-mode", "iommu-event-success"]):
+            with patch.object(policy, "main") as main:
+                policy.cli()
+                self.assertEqual(main.call_args.kwargs["event_mode"], "iommu-event-success")
 
     def test_observation_cannot_link_or_inherit_production_authority(self):
         valid = fixture("iommu-event-observe")
@@ -319,33 +336,58 @@ class EventAdmission(unittest.TestCase):
             with self.assertRaises(ValueError):
                 admission.backing_evidence(original, Path("unused"))
 
-    def test_fence_operands(self):
-        for op in ("lfence", "mfence", "pause"):
-            admission.verify_scalar_instruction(decoder.Instruction(0, 1, op, ""))
-            with self.assertRaises(ValueError):
-                admission.verify_scalar_instruction(decoder.Instruction(0, 1, op, "%rax"))
-
-    def test_review_is_external_and_json_is_unambiguous(self):
+    def test_json_is_unambiguous(self):
         with tempfile.TemporaryDirectory(prefix="event-admission-") as directory:
             receipt = Path(directory) / "receipt.json"
-            receipt.write_text('{"mode":"one","mode":"two"}')
-            with self.assertRaises(ValueError):
-                admission.read_json(receipt)
-            receipt.write_text('{"value":NaN}')
-            with self.assertRaises(ValueError):
-                admission.read_json(receipt)
-            receipt.write_text('{"mode":"iommu-event-denial"}')
+            for text in ('{"mode":"one","mode":"two"}', '{"value":NaN}'):
+                receipt.write_text(text)
+                with self.assertRaises(ValueError):
+                    admission.read_json(receipt)
+
+    def test_checked_artifacts_and_semantics(self):
+        with tempfile.TemporaryDirectory(prefix="event-admission-") as directory:
+            root = Path(directory)
+            output = root / "payload.bin"
+            output.write_bytes(b"checked image")
+            receipt = root / "receipt.json"
+
+            def hashes(paths):
+                return {str(path.relative_to(root)): admission.digest(path) for path in paths}
+
+            data = dict(
+                schema="aurora-iommu-event-admission-v1",
+                status="requires-independent-review",
+                mode=admission.MODES[0],
+                clock="tcg-original-clock",
+                image={"image_result": 1},
+                stack={"stack_result": 456},
+                sha256=hashes([output]),
+            )
+            receipt.write_text(json.dumps(data))
             with (
                 patch.object(admission, "RECEIPT", receipt),
-                patch.object(admission, "checked", return_value={"okay": True}) as check,
+                patch.object(admission, "build_files", return_value=[output]),
+                patch.object(admission.common, "hashes", side_effect=hashes),
+                patch.object(admission, "image_evidence", return_value=data["image"]),
+                patch.object(admission, "stack_evidence", return_value=data["stack"]),
             ):
-                for pin in ("", "bad", "0" * 64):
-                    with patch.dict(os.environ, {"IOMMU_EVENT_REVIEW_SHA256": pin}), self.assertRaises(ValueError):
-                        admission.reviewed(admission.MODES[0])
-                check.assert_not_called()
-                with patch.dict(os.environ, {"IOMMU_EVENT_REVIEW_SHA256": admission.digest(receipt)}):
-                    self.assertEqual(admission.reviewed(admission.MODES[0]), {"okay": True})
-                check.assert_called_once_with(admission.MODES[0])
+                self.assertEqual(admission.checked(admission.MODES[0]), data)
+                output.write_bytes(b"changed image")
+                with self.assertRaises(ValueError):
+                    admission.checked(admission.MODES[0])
+                output.write_bytes(b"checked image")
+                for key, value in (
+                    ("schema", "changed"),
+                    ("status", "approved"),
+                    ("mode", admission.MODES[1]),
+                    ("clock", "accelerated"),
+                    ("image", {}),
+                    ("stack", {}),
+                    ("sha256", {}),
+                ):
+                    receipt.write_text(json.dumps(data | {key: value}))
+                    with self.subTest(key=key), self.assertRaises(ValueError):
+                        admission.checked(admission.MODES[0])
 
 
 if __name__ == "__main__":

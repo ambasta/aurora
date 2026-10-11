@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Execute typed unsigned scalars, checked conversions, bit operations and std.bit."""
+
 from pathlib import Path
 import resource
 import os
@@ -19,15 +20,31 @@ def require(value, message):
 
 
 def run(command, good=True):
-    result = subprocess.run([str(x) for x in command], capture_output=True, timeout=5,
-                            preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)))
+    result = subprocess.run(
+        [str(x) for x in command],
+        capture_output=True,
+        timeout=5,
+        preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)),
+    )
     if good:
         require(result.returncode == 0, f"{command}: {result.returncode}: {result.stderr!r}")
     return result
 
 
-def check(name, source, modules=None, expected=42, error=None, library=False,
-          root_sets=None, setup=None, roots=True, trap=False, existing_output=None, calls_in_order=None):
+def check(
+    name,
+    source,
+    modules=None,
+    expected=42,
+    error=None,
+    library=False,
+    root_sets=None,
+    setup=None,
+    roots=True,
+    trap=False,
+    existing_output=None,
+    calls_in_order=None,
+):
     global COUNT
     with tempfile.TemporaryDirectory(prefix="aurora-modules-") as directory:
         base = Path(directory)
@@ -89,12 +106,13 @@ _start:
             run(["ld", "-o", base / "program", base / "entry.o", base / "program.o"])
             executed = run([base / "program"], good=not trap)
             if trap:
-                require(executed.returncode == -signal.SIGILL and not executed.stdout,
-                        name + ": expected exact SIGILL")
+                require(executed.returncode == -signal.SIGILL and not executed.stdout, name + ": expected exact SIGILL")
             else:
                 require(len(executed.stdout) == 8, name + ": missing scalar result")
-                require(int.from_bytes(executed.stdout, "little", signed=False) == expected % (1 << 64),
-                        name + ": wrong scalar result")
+                require(
+                    int.from_bytes(executed.stdout, "little", signed=False) == expected % (1 << 64),
+                    name + ": wrong scalar result",
+                )
         COUNT += 1
         print("PASS unsigned", name)
 
@@ -111,19 +129,19 @@ for name, expression, result in [
     ("leading zero eight", "08u64", 8),
     ("complement zero", "~0u64", MAX),
     ("complement maximum", f"~{MAX}u64", 0),
-    ("complement high bit", f"~{SIGN}u64", SIGN-1),
-    ("add high", f"{SIGN}u64 + 42u64", SIGN+42),
-    ("subtract maximum", f"{MAX}u64 - {SIGN}u64", SIGN-1),
-    ("multiply high", "9223372036854775807u64 * 2u64", MAX-1),
-    ("divide high", f"{MAX}u64 / 2u64", SIGN-1),
-    ("remainder high", f"{MAX}u64 % {SIGN}u64", SIGN-1),
+    ("complement high bit", f"~{SIGN}u64", SIGN - 1),
+    ("add high", f"{SIGN}u64 + 42u64", SIGN + 42),
+    ("subtract maximum", f"{MAX}u64 - {SIGN}u64", SIGN - 1),
+    ("multiply high", "9223372036854775807u64 * 2u64", MAX - 1),
+    ("divide high", f"{MAX}u64 / 2u64", SIGN - 1),
+    ("remainder high", f"{MAX}u64 % {SIGN}u64", SIGN - 1),
     ("bit and", "85u64 & 51u64", 17),
     ("bit or", "85u64 | 51u64", 119),
     ("bit xor", "85u64 ^ 51u64", 102),
     ("left count 63", "1u64 << 63", SIGN),
     ("zero left 63", "0u64 << 63", 0),
     ("right count 63", f"{MAX}u64 >> 63", 1),
-    ("logical high shift", f"{SIGN}u64 >> 1", SIGN//2),
+    ("logical high shift", f"{SIGN}u64 >> 1", SIGN // 2),
     ("left count zero", f"{MAX}u64 << 0", MAX),
     ("right count zero", f"{MAX}u64 >> 0", MAX),
     ("bit precedence", "1u64 | 2u64 ^ 3u64 & 6u64", 1),
@@ -132,10 +150,10 @@ for name, expression, result in [
     ("conversion to unsigned", "u64(42)", 42),
 ]:
     check(name, app("return " + expression + ";"), expected=result)
-check("conversion to signed", app("return i64(9223372036854775807u64);", result="i64"), expected=SIGN-1)
+check("conversion to signed", app("return i64(9223372036854775807u64);", result="i64"), expected=SIGN - 1)
 for op in ["<", "<=", ">", ">=", "==", "!="]:
-    a,b=SIGN,42
-    expected = {"<":a<b,"<=":a<=b,">":a>b,">=":a>=b,"==":a==b,"!=":a!=b}[op]
+    a, b = SIGN, 42
+    expected = {"<": a < b, "<=": a <= b, ">": a > b, ">=": a >= b, "==": a == b, "!=": a != b}[op]
     check("unsigned comparison " + op, app(f"return {a}u64 {op} {b}u64;", result="bool"), expected=int(expected))
 for name, expression, result_type in [
     ("addition overflow", f"{MAX}u64+1u64", "u64"),
@@ -153,7 +171,7 @@ for name, expression, result_type in [
 ]:
     check(name, app("return " + expression + ";", result=result_type), trap=True)
 for name, source, error in [
-    ("literal overflow", app(f"return {MAX+1}u64;"), "integer literal"),
+    ("literal overflow", app(f"return {MAX + 1}u64;"), "integer literal"),
     ("signed literal overflow", app(f"return {SIGN};"), "integer literal"),
     ("unknown suffix", app("return 1ul;"), "integer literal"),
     ("partial minimum literal suffix", app("return -9223372036854775808abc;", result="i64"), "integer literal"),
@@ -176,28 +194,113 @@ for name, source, error in [
     ("literal static assert mismatch", app("static_assert(1u64==1);return 0u64;"), "expected"),
 ]:
     check(name, source, error=error)
-check("reflection and high static comparison", app("static_assert(type_id(u64)==8);static_assert(size_of(u64)==8);static_assert(field_count(u64)==0);static_assert(18446744073709551615u64>9223372036854775807u64);static_assert(type_id(array<u64,2>)==2000002);return reflect_size(type_id(array<u64,2>))+reflect_size(type_id(u64));", result="i64"), expected=24)
-check("array independent copy", app("const array<u64,2> a={18446744073709551615u64,42u64};array<u64,2> b=a;b[0]=0u64;return a[0]-b[0];"), expected=MAX)
-check("unsigned class value boundary", """module app;
+check(
+    "reflection and high static comparison",
+    app(
+        (
+            "static_assert(type_id(u64)==8);static_assert(size_of(u64)==8);static_assert(field_count(u64)==0);s"
+            "tatic_assert(18446744073709551615u64>9223372036854775807u64);static_assert(type_id(array<u64,2>)=="
+            "2000002);return reflect_size(type_id(array<u64,2>))+reflect_size(type_id(u64));"
+        ),
+        result="i64",
+    ),
+    expected=24,
+)
+check(
+    "array independent copy",
+    app("const array<u64,2> a={18446744073709551615u64,42u64};array<u64,2> b=a;b[0]=0u64;return a[0]-b[0];"),
+    expected=MAX,
+)
+check(
+    "unsigned class value boundary",
+    """module app;
 class Box {u64 value;public:Box(u64 n):value(n){} auto get() const->u64{return value;} auto add(u64 n)->u64{value=value+n;return value;}};
 auto copy(Box b,u64 n)->Box{const Box result=Box(b.get()+n);return result;}
 auto test()->u64{Box b=Box(9223372036854775808u64);const Box c=copy(b,b.add(42u64)-b.get());return c.get();}
-""", expected=SIGN)
-for value in [0,1,2,3,42,SIGN,MAX]:
-    for function,expected,result_type in [("popcount",value.bit_count(),"i64"),("bit_width",value.bit_length(),"i64"),("has_single_bit",int(value!=0 and value&(value-1)==0),"bool")]:
-        check(f"std.bit {function} {value}", app(f"return std::{function}({value}u64);", "import std.bit;", result_type), expected=expected, library=True)
+""",  # noqa: E501 - Preserve exact embedded Aurora source bytes.
+    expected=SIGN,
+)
+for value in [0, 1, 2, 3, 42, SIGN, MAX]:
+    for function, expected, result_type in [
+        ("popcount", value.bit_count(), "i64"),
+        ("bit_width", value.bit_length(), "i64"),
+        ("has_single_bit", int(value != 0 and value & (value - 1) == 0), "bool"),
+    ]:
+        check(
+            f"std.bit {function} {value}",
+            app(f"return std::{function}({value}u64);", "import std.bit;", result_type),
+            expected=expected,
+            library=True,
+        )
 # Exercise full-width fields across the existing private aggregate ABI.
 fields = " ".join(f"u64 f{i};" for i in range(64))
-initializers = ",".join(f".f{i}={MAX-i}u64" for i in range(64))
-check("six maximum-width unsigned value parameters", "module app;class Wide{public:"+fields+"};"+
-      "auto select(Wide a,Wide b,Wide c,Wide d,Wide e,Wide f)->Wide{"+
-      "const Wide result=f;return result;}auto test()->u64{const Wide a=Wide{"+
-      initializers+"};const Wide b=select(a,a,a,a,a,a);return b.f63;}", expected=MAX-63)
-check("mixed six scalar unsigned arguments", "module app;auto choose(i64 a,u64 b,bool c,u64 d,i64 e,u64 f)->u64{if(c){return b^d^f;}return 0u64;}auto test()->u64{return 1u64+choose(0,18446744073709551615u64,true,1u64,0,9223372036854775808u64);}", expected=SIGN-1)
-check("receiver high payload survives divide and shifts", "module app;class C{u64 n;public:C(u64 x):n(x){}auto run(u64 divisor,i64 count)->u64{const u64 q=n/divisor;n=q>>count;return n;}};auto test()->u64{C c=C(18446744073709551615u64);return c.run(3u64,1);}", expected=(MAX//3)>>1)
-check("unsigned recursive scalar", "module app;auto sum(u64 n)->u64{if(n==0u64){return 0u64;}return n+sum(n-1u64);}auto test()->u64{return sum(9u64);}", expected=45)
-check("unsigned class result preserves snapshot", "module app;class C{u64 n;public:C(u64 x):n(x){}auto get()const->u64{return n;}auto bump()->u64{n=n+1u64;return n;}};auto save(C copy,u64 ignored)->C{return copy;}auto test()->u64{C c=C(9223372036854775808u64);const C snapshot=save(c,c.bump());return snapshot.get();}", expected=SIGN)
-check("cross-module u64 private field and result", app("const values::Cell c=values::make(18446744073709551615u64);return c.get();", "import values;"), modules={"values":"export module values;export namespace values{class Cell{u64 n;public:Cell(u64 x):n(x){}auto get()const->u64{return n;}};auto make(u64 x)->Cell{const Cell result=Cell(x);return result;}}"}, expected=MAX)
-check("unsigned and signed array metadata separate", app("static_assert(type_id(array<u64,1>)!=type_id(array<i64,1>));static_assert(type_id(array<u64,1>)!=type_id(array<bool,1>));static_assert(type_id(u64)!=type_id(i64));return reflect_size(8)+reflect_field_count(8);", result="i64"), expected=8)
+initializers = ",".join(f".f{i}={MAX - i}u64" for i in range(64))
+check(
+    "six maximum-width unsigned value parameters",
+    "module app;class Wide{public:"
+    + fields
+    + "};"
+    + "auto select(Wide a,Wide b,Wide c,Wide d,Wide e,Wide f)->Wide{"
+    + "const Wide result=f;return result;}auto test()->u64{const Wide a=Wide{"
+    + initializers
+    + "};const Wide b=select(a,a,a,a,a,a);return b.f63;}",
+    expected=MAX - 63,
+)
+check(
+    "mixed six scalar unsigned arguments",
+    (
+        "module app;auto choose(i64 a,u64 b,bool c,u64 d,i64 e,u64 f)->u64{if(c){return b^d^f;}return 0u64;}aut"
+        "o test()->u64{return 1u64+choose(0,18446744073709551615u64,true,1u64,0,9223372036854775808u64);}"
+    ),
+    expected=SIGN - 1,
+)
+check(
+    "receiver high payload survives divide and shifts",
+    (
+        "module app;class C{u64 n;public:C(u64 x):n(x){}auto run(u64 divisor,i64 count)->u64{const u64 q=n/divi"
+        "sor;n=q>>count;return n;}};auto test()->u64{C c=C(18446744073709551615u64);return c.run(3u64,1);}"
+    ),
+    expected=(MAX // 3) >> 1,
+)
+check(
+    "unsigned recursive scalar",
+    (
+        "module app;auto sum(u64 n)->u64{if(n==0u64){return 0u64;}return n+sum(n-1u64);}auto test()->u64{return"
+        " sum(9u64);}"
+    ),
+    expected=45,
+)
+check(
+    "unsigned class result preserves snapshot",
+    (
+        "module app;class C{u64 n;public:C(u64 x):n(x){}auto get()const->u64{return n;}auto bump()->u64{n=n+1u6"
+        "4;return n;}};auto save(C copy,u64 ignored)->C{return copy;}auto test()->u64{C c=C(9223372036854775808"
+        "u64);const C snapshot=save(c,c.bump());return snapshot.get();}"
+    ),
+    expected=SIGN,
+)
+check(
+    "cross-module u64 private field and result",
+    app("const values::Cell c=values::make(18446744073709551615u64);return c.get();", "import values;"),
+    modules={
+        "values": (
+            "export module values;export namespace values{class Cell{u64 n;public:Cell(u64 x):n(x){}auto get()c"
+            "onst->u64{return n;}};auto make(u64 x)->Cell{const Cell result=Cell(x);return result;}}"
+        )
+    },
+    expected=MAX,
+)
+check(
+    "unsigned and signed array metadata separate",
+    app(
+        (
+            "static_assert(type_id(array<u64,1>)!=type_id(array<i64,1>));static_assert(type_id(array<u64,1>)!=t"
+            "ype_id(array<bool,1>));static_assert(type_id(u64)!=type_id(i64));return reflect_size(8)+reflect_fi"
+            "eld_count(8);"
+        ),
+        result="i64",
+    ),
+    expected=8,
+)
 
 print(f"{COUNT} unsigned tests passed")

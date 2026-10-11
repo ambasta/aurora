@@ -139,33 +139,6 @@ the actual pending-drain gate and its selector-mutation receipt tests cover this
 regression. This normalizes the intended kernel state rather than widening the
 set of authorized interrupt frames.
 
-### Verified Aurora policy checkpoint
+## Aurora policy
 
-The [pure interrupt-count transition](../../docs/kernel-budget-contract.md) is
-now compiled from Aurora and called in the actual timer path after authority and
-ISR checks. The bootstrap adapter validates its private scalar transport before
-committing counts or selecting the existing resume/cancel mechanism. Four new
-`budget-policy-*` modes cover rejected state and corrupted transport. A fresh
-full native aggregate, all 170 actual emulator modes and two additional normal
-boots passed on the reconciled source, followed by independent terminal reviews.
-The four policy modes include actual pre-commit fail-stop checks; the output mode
-also passes the linked-image guard. See the
-[exact evidence index](../../docs/evidence/kernel-budget-policy/README.md).
-Earlier failed/interrupted attempts remain separate and supply no mode credit.
-
-## Historical provisional emulator clock qualification
-
-The 19 budget modes are included in the explicit 51-mode UEFI clock candidate.
-Budgets 128/3, compiled-service interruption, context/DF checks, exact exhaustion,
-pending drains and all negative reasons remain unchanged. New qualification is
-pending; historical passing receipts do not establish the changed clock. See the
-[clock contract](../../docs/kernel-emulator-clock-contract.md).
-
-### Integration status addendum — 2026-10-06
-
-The provisional status above is historical. The prior 586-file `2b4da219…`
-source subsequently passed separately reviewed native, sanitizer, all 28 bounded
-static image and 177+3+2 actual boot gates. The fresh current-main composition
-remains unqualified; its current memory primitives and linked layout require new
-review and native/runtime integration. The wall-clock failure is still unresolved.
-See the [source-specific results and remaining gates](../../docs/kernel-ipc-transition-integration-results.md).
+The [interrupt-count policy](../POLICIES.md#interrupt-budgets) computes the copied transition after live authority and ISR checks. Its host decoder validates the result before committing counts or selecting resume/cancel. Policy-negative guest modes retain their distinct exact failure reasons. Clock selection and its limits are specified in [local development](../../docs/local-development.md#emulator-clock-policy).

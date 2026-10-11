@@ -18,4 +18,4 @@ public:
     [[nodiscard]] static auto kernel_entry(std::uint64_t address) -> std::uint64_t;
     [[nodiscard]] static auto verify() -> bool;
 };
-}
+} // namespace aurora::hardware

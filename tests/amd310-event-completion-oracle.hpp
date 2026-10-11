@@ -9,10 +9,16 @@
 
 // Test assumptions over stable copied values, never hardware-observed authority.
 // AMD 48882-PUB rev 3.10: Tables 34/57/61/62, sections 2.4/2.4.11/2.5/3.4.15/3.4.16.
-// See docs/iommu-event-completion-oracle.md for the intentionally bounded profile.
+// See docs/iommu-models.md for the intentionally bounded profile.
 namespace amd310_event_oracle {
 
-enum class UnsupportedCause { input_size, event_code, event_profile, ring_geometry, model_profile };
+enum class UnsupportedCause {
+    input_size,
+    event_code,
+    event_profile,
+    ring_geometry,
+    model_profile
+};
 class Unsupported {
 public:
     UnsupportedCause cause{};
@@ -33,7 +39,10 @@ public:
     bool guest{};
 };
 
-enum class CommandErrorKind { illegal, hardware };
+enum class CommandErrorKind {
+    illegal,
+    hardware
+};
 class CommandError {
 public:
     CommandErrorKind kind{};
@@ -76,8 +85,8 @@ inline auto matches(std::optional<bool> expected, bool raw) -> bool {
         value.interrupt = (b & (1U << 19)) != 0;
         value.translation_request = (b & (1U << 24)) != 0;
         value.guest = (b & (1U << 16)) != 0;
-        if ((a & 0xffff0000U) != 0 || (b & ~0x20f0ffffU) != 0 || value.interrupt ||
-            value.translation_request || value.guest) {
+        if ((a & 0xffff0000U) != 0 || (b & ~0x20f0ffffU) != 0 || value.interrupt || value.translation_request ||
+            value.guest) {
             return Unsupported{UnsupportedCause::event_profile};
         }
         return value;
@@ -123,11 +132,21 @@ inline constexpr std::uint64_t command_running = 16;
 class Status {
 public:
     std::uint64_t raw{};
-    [[nodiscard]] auto overflow() const -> bool { return (raw & event_overflow) != 0; }
-    [[nodiscard]] auto event_pending() const -> bool { return (raw & event_interrupt) != 0; }
-    [[nodiscard]] auto completion_pending() const -> bool { return (raw & completion_interrupt) != 0; }
-    [[nodiscard]] auto logging() const -> bool { return (raw & event_running) != 0; }
-    [[nodiscard]] auto fetching() const -> bool { return (raw & command_running) != 0; }
+    [[nodiscard]] auto overflow() const -> bool {
+        return (raw & event_overflow) != 0;
+    }
+    [[nodiscard]] auto event_pending() const -> bool {
+        return (raw & event_interrupt) != 0;
+    }
+    [[nodiscard]] auto completion_pending() const -> bool {
+        return (raw & completion_interrupt) != 0;
+    }
+    [[nodiscard]] auto logging() const -> bool {
+        return (raw & event_running) != 0;
+    }
+    [[nodiscard]] auto fetching() const -> bool {
+        return (raw & command_running) != 0;
+    }
 };
 
 class EventRing {
@@ -165,9 +184,22 @@ using AppendResult = std::variant<Append, Unsupported>;
     return Append{ring, status, true};
 }
 
-enum class Command { device_table, pages, completion_wait };
-enum class Fact { device_cache_invalidated, page_cache_invalidated, reads_drained, writes_drained };
-enum class Step { advanced, blocked, unsupported };
+enum class Command {
+    device_table,
+    pages,
+    completion_wait
+};
+enum class Fact {
+    device_cache_invalidated,
+    page_cache_invalidated,
+    reads_drained,
+    writes_drained
+};
+enum class Step {
+    advanced,
+    blocked,
+    unsupported
+};
 class Wait {
 public:
     bool store{};
@@ -206,10 +238,18 @@ public:
                      (!wait.store || ((wait.address & 7) == 0 && wait.address <= 0x000fffffffffffffULL && !special));
         status_.raw |= command_running;
     }
-    [[nodiscard]] auto status() const -> Status { return status_; }
-    [[nodiscard]] auto completed() const -> bool { return completed_; }
-    [[nodiscard]] auto store() const -> std::optional<Store> { return store_; }
-    [[nodiscard]] auto fetched() const -> unsigned { return fetched_; }
+    [[nodiscard]] auto status() const -> Status {
+        return status_;
+    }
+    [[nodiscard]] auto completed() const -> bool {
+        return completed_;
+    }
+    [[nodiscard]] auto store() const -> std::optional<Store> {
+        return store_;
+    }
+    [[nodiscard]] auto fetched() const -> unsigned {
+        return fetched_;
+    }
 
     [[nodiscard]] auto fetch(Command command) -> Step {
         if (!supported_) {
@@ -218,8 +258,9 @@ public:
         if (halted_ || completed_ || fetched_ == 3) {
             return Step::blocked;
         }
-        const auto expected = fetched_ == 0 ? Command::device_table : fetched_ == 1 ? Command::pages
-                                                                                 : Command::completion_wait;
+        const auto expected = fetched_ == 0   ? Command::device_table
+                              : fetched_ == 1 ? Command::pages
+                                              : Command::completion_wait;
         if (command != expected) {
             return Step::unsupported;
         }

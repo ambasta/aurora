@@ -2,12 +2,16 @@ module enum_composition;
 import std.decimal;
 import std.utility;
 
-enum class ReceiptState { accepted, rejected };
+enum class ReceiptState {
+    accepted,
+    rejected
+};
 
 class Receipt {
     std::DecimalResult parsed;
 public:
-    Receipt(std::DecimalResult result) : parsed(result) {}
+    Receipt(std::DecimalResult result) : parsed(result) {
+    }
     auto result() const -> std::DecimalResult {
         const std::DecimalResult copy = parsed;
         return copy;
@@ -20,8 +24,7 @@ auto test() -> i64 {
     input.push_digit(2u64);
     const std::DecimalResult parsed = input.finish();
     const Receipt receipt = Receipt(parsed);
-    const std::pair<ReceiptState, Receipt> saved =
-        std::pair<ReceiptState, Receipt>(ReceiptState::accepted, receipt);
+    const std::pair<ReceiptState, Receipt> saved = std::pair<ReceiptState, Receipt>(ReceiptState::accepted, receipt);
     input.reset();
     const Receipt copy = saved.second;
     const std::DecimalResult answer = copy.result();

@@ -20,10 +20,12 @@ enum class PutResult : std::uint8_t {
     timeout
 };
 
-enum class FifoTrigger : std::uint8_t { one = 0, fourteen = 0xc0 };
+enum class FifoTrigger : std::uint8_t {
+    one = 0,
+    fourteen = 0xc0
+};
 
-template<class Ports = hardware::Io, FifoTrigger Trigger = FifoTrigger::one>
-class Uart final {
+template <class Ports = hardware::Io, FifoTrigger Trigger = FifoTrigger::one> class Uart final {
     static_assert(Trigger == FifoTrigger::one || Trigger == FifoTrigger::fourteen);
     static constexpr auto fifo_trigger = static_cast<std::uint8_t>(Trigger);
     static inline bool receive_error_{};
@@ -90,7 +92,9 @@ public:
         static_cast<void>(try_put(value));
     }
     static auto text(std::string_view value) -> void {
-        for (const auto byte : value) { put(static_cast<std::uint8_t>(byte)); }
+        for (const auto byte : value) {
+            put(static_cast<std::uint8_t>(byte));
+        }
     }
     static auto number(std::uint64_t value) -> void {
         std::array<char, 20> digits{};
@@ -99,7 +103,9 @@ public:
             digits[length++] = static_cast<char>('0' + value % 10);
             value /= 10;
         } while (value != 0);
-        while (length != 0) { put(static_cast<std::uint8_t>(digits[--length])); }
+        while (length != 0) {
+            put(static_cast<std::uint8_t>(digits[--length]));
+        }
     }
 };
-}
+} // namespace aurora::console

@@ -18,24 +18,21 @@ for name in "${!KERNEL_TEST_@}" KERNEL_USER_PROBE_MODE KERNEL_CONSOLE UEFI_MODE;
     fi
 done
 qemu="${QEMU:-qemu-system-x86_64}"
-for tool in "$qemu" timeout; do
+for tool in "$qemu" timeout python3; do
     command -v "$tool" >/dev/null || { echo "Missing dependency: $tool" >&2; exit 2; }
 done
-args=()
-if [[ -n "${QEMU_DATA:-}" ]]; then
-    [[ -d "$QEMU_DATA" ]] || { echo 'QEMU_DATA must name an existing directory.' >&2; exit 2; }
-    args+=(-L "$QEMU_DATA")
+if [[ -n "${QEMU_DATA:-}" && ! -d "$QEMU_DATA" ]]; then
+    echo 'QEMU_DATA must name an existing directory.' >&2; exit 2
 fi
-KERNEL_CONSOLE=1 ./scripts/kernel-build.sh
+image_dir="$(KERNEL_CONSOLE=1 ./scripts/kernel-build.sh --print-image-dir)"
+mapfile -d '' -t qemu_argv < <(python3 -B scripts/qemu_transport.py argv --platform bios \
+    --mode console --image "$image_dir/aurora.img" --qemu "$qemu" --data "${QEMU_DATA:-}" --snapshot)
+(( ${#qemu_argv[@]} )) || { echo 'FAIL: empty QEMU command' >&2; exit 2; }
 echo 'BIOS serial console in QEMU: type help or exit. Session limit: five minutes.'
 set +e
 # Keep QEMU in the terminal's foreground process group so serial stdio cannot
 # stop itself with SIGTTOU. No monitor, network interface or host disk is exposed.
-timeout --foreground --kill-after=2 300 "$qemu" "${args[@]}" \
-    -machine pc -accel tcg -cpu qemu64 -smp 1 -m 32M \
-    -drive file=build/aurora.img,format=raw,if=ide,snapshot=on -boot c \
-    -nic none -display none -serial stdio -monitor none -no-reboot \
-    -device isa-debug-exit,iobase=0xf4,iosize=0x04
+python3 -B scripts/qemu_transport.py run --foreground --timeout 300 -- "${qemu_argv[@]}"
 status=$?
 set -e
 if [[ "$status" == 33 ]]; then exit 0; fi

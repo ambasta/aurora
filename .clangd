@@ -1,0 +1,10 @@
+If:
+  PathMatch: kernel/.*\.(cpp|hpp)
+CompileFlags:
+  # clangd reads the real native Meson commands. These GCC-only code-generation
+  # switches do not change the parser's freestanding defines or include paths.
+  Remove:
+    - -fcallgraph-info=*
+    - -mstringop-strategy=*
+    - -maccumulate-outgoing-args
+    - -fno-tree-loop-distribute-patterns

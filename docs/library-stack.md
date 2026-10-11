@@ -9,7 +9,7 @@ Aurora requires two native layers, eventually authored in Aurora:
 
 “libc++-like” describes the second layer's role and API inspiration. It does not name the platform/runtime layer or mean adopting an existing implementation unchanged. Neither layer offers C source/API/ABI compatibility, POSIX compatibility or unchecked operations for compatibility's sake. Safety can require a different signature or an explicit failure result even where the operation feels familiar to a C++ programmer.
 
-Most of these remain requirements. A first real freestanding `std.core` module now implements scalar `std::min`, `std::max` and checked `std::abs` in Aurora; it is exercised through imports and protected user images. See [core library](../library/README.md). It is not a general runtime or standard-library package set. The C++ host compiler's standard library and trusted kernel bootstrap helpers remain construction dependencies. Typed IR and controlled execution of compiled code in a user domain are prerequisites, not a native runtime, general process service or standard-library implementation. Exact current verification belongs to [verification.md](verification.md); no empty module tree or placeholder API counts as delivery.
+The [library reference](../library/README.md) lists current scalar/value, byte-owner, text/JSON, package metadata and offline storage modules. Those bounded modules do not supply the complete platform runtime or standard library above. Host C++/assembly, GNU tools and trusted adapters remain bootstrap dependencies.
 
 ## Three execution profiles
 
@@ -59,33 +59,3 @@ Keep host build/test dependencies explicitly separate from target dependencies. 
 Native source ports may need language conversion, new backends, capability-based OS adaptation or safe rewrites. Existing binary ports are not promised: neither C ABI nor Linux/POSIX behavior follows from a familiar API. Do not add a compatibility shim without resolving its conflict with the clean-break requirement.
 
 Before reusing upstream implementation code, algorithms expressed as code, tests or data, identify source versions and review applicable licenses, attribution and redistribution obligations. A familiar project name does not authorize copying. Prefer a traceable native design; any reuse needs a recorded decision and a maintenance/security owner. Historical milestone manifests remain immutable evidence for their original source snapshots.
-
-
-## Verified milestone021 core slice
-
-The freestanding std.utility module now includes explicit std::make_pair<T,U>
-using the bounded Scalar/Value function-template contract. It returns a complete
-independent inline pair; class arguments use readonly left-to-right snapshots.
-The token/source-range example combines fixed byte storage with copied value
-projections. Release/fatal host ASan/UBSan targets, independent review/replay and
-parent aggregate/selected UEFI integration passed; see
-[function-template contract](../compiler/FUNCTION-TEMPLATES.md) and
-[M021 evidence](https://github.com/ambasta/aurora/blob/2b1776f13cd02df6588f9e3213815f13c28a71e0/docs/evidence/milestone-021/README.md). This advances reusable core value
-operations only. Heap ownership, returned references, generic recursion, complete
-text/collections, native runtime and self-hosting still need the gates above.
-
-## Initial owned-byte prerequisite candidate
-
-The [compiler contract](../compiler/OWNED-BYTES.md) introduces runtime allocation
-with explicit region/quota authority, copied checked byte access, move-only
-transfer and intrinsic normal-scope cleanup. Its trusted single-thread hosted
-adapter is bootstrap machinery. The [initial focused composite](owned-bytes-results.md)
-and [failure-safe resize](owned-bytes-resize-results.md) retain their exact scope.
-
-`std::ByteBuffer` now uses those mechanisms for a first
-[hosted growable byte collection](byte-buffer.md): logical size/capacity, checked
-scalar byte access, exact reserve, geometric append and logical truncation.
-Private ownership prevents escaped stale views, and failure preserves prior state.
-This is one concrete collection slice, not generic containers, native strings or
-a parser. Borrowed owning parameters, native startup, kernel resize integration
-and replacing host toolchain dependencies remain separate gates.

@@ -4,14 +4,81 @@ import package.identity;
 import std.array;
 
 auto answer() -> u64 {
-    builtin::array<u8,59> bytes = {97u8,117u8,114u8,111u8,114u8,97u8,45u8,112u8,97u8,99u8,107u8,97u8,103u8,101u8,32u8,49u8,10u8,112u8,97u8,99u8,107u8,97u8,103u8,101u8,32u8,100u8,101u8,109u8,111u8,64u8,49u8,46u8,48u8,46u8,48u8,10u8,100u8,101u8,112u8,101u8,110u8,100u8,115u8,32u8,99u8,111u8,114u8,101u8,64u8,50u8,46u8,51u8,46u8,52u8,10u8,101u8,110u8,100u8,10u8};
-    const package::ManifestResult summary = package::parse_manifest(borrow_bytes(bytes),0,59);
-    const package::DependencyResult selected = package::manifest_dependency(borrow_bytes(bytes),0,59,0);
+    builtin::array<u8, 59> bytes = {
+        97u8,
+        117u8,
+        114u8,
+        111u8,
+        114u8,
+        97u8,
+        45u8,
+        112u8,
+        97u8,
+        99u8,
+        107u8,
+        97u8,
+        103u8,
+        101u8,
+        32u8,
+        49u8,
+        10u8,
+        112u8,
+        97u8,
+        99u8,
+        107u8,
+        97u8,
+        103u8,
+        101u8,
+        32u8,
+        100u8,
+        101u8,
+        109u8,
+        111u8,
+        64u8,
+        49u8,
+        46u8,
+        48u8,
+        46u8,
+        48u8,
+        10u8,
+        100u8,
+        101u8,
+        112u8,
+        101u8,
+        110u8,
+        100u8,
+        115u8,
+        32u8,
+        99u8,
+        111u8,
+        114u8,
+        101u8,
+        64u8,
+        50u8,
+        46u8,
+        51u8,
+        46u8,
+        52u8,
+        10u8,
+        101u8,
+        110u8,
+        100u8,
+        10u8
+    };
+    const package::ManifestResult summary = package::parse_manifest(borrow_bytes(bytes), 0, 59);
+    const package::DependencyResult selected = package::manifest_dependency(borrow_bytes(bytes), 0, 59, 0);
     bytes[25] = 0u8;
     const package::IdentityResult identity = summary.identity_or_error();
     const package::IdentityResult dependency = selected.dependency_or_error();
-    if (summary.status() != package::ManifestStatus::success) { return 1u64; }
-    if (selected.status() != package::DependencyStatus::success) { return 2u64; }
-    if (identity.name_byte_or(0,0u8) != 100u8) { return 3u64; }
-    return u64(summary.dependency_count_or(0)) + dependency.major_or(0u64) + dependency.minor_or(0u64) + dependency.patch_or(0u64) + 32u64;
+    if (summary.status() != package::ManifestStatus::success) {
+        return 1u64;
+    }
+    if (selected.status() != package::DependencyStatus::success) {
+        return 2u64;
+    }
+    if (identity.name_byte_or(0, 0u8) != 100u8) {
+        return 3u64;
+    }
+    return u64(summary.dependency_count_or(0)) + dependency.major_or(0u64) + dependency.minor_or(0u64)
+        + dependency.patch_or(0u64) + 32u64;
 }

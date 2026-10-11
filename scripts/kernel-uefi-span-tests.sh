@@ -4,7 +4,24 @@ cd "$(dirname "$0")/.."
 export PYTHONDONTWRITEBYTECODE=1
 python3 -O tests/kernel-uefi-user-image.py
 python3 -O tests/kernel-uefi-runtime-smoke.py --self-test
-python3 -O - "${1:-${AURORAC:-build/aurorac}}" <<'PY'
+if [[ "${1:-}" == --images ]]; then
+    [[ $# == 3 ]] || { echo 'Expected --images NORMAL_DIR SPAN_DIR' >&2; exit 2; }
+    normal_dir="$2"
+    span_dir="$3"
+else
+    if [[ -n "${1:-}" ]]; then export AURORAC="$1"; fi
+    normal_dir=$(python3 -B scripts/meson_test.py --kernel uefi --profile runtime --print-image-dir)
+    span_dir=$(python3 -B scripts/meson_test.py --kernel uefi --profile runtime-span --print-image-dir)
+    export AURORAC="$(python3 -B - "$normal_dir" <<'COMPILER'
+from pathlib import Path
+import sys
+sys.path.insert(0, 'scripts')
+from meson_test import selected_kernel_compiler
+print(selected_kernel_compiler(Path(sys.argv[1]).parents[2]))
+COMPILER
+)"
+fi
+python3 -O - "${AURORAC:?native span gate requires a selected compiler}" "$normal_dir" "$span_dir" <<'PY'
 from enum import Enum
 import importlib.util
 import json
@@ -26,15 +43,13 @@ class Trap(Enum):
     BOUNDS = '.Laurora_bounds_trap'
 
 compiler = Path(sys.argv[1]).resolve()
+normal_dir, span_dir = (Path(value).resolve(strict=True) for value in sys.argv[2:])
 keys = {'entry', 'size', 'return_pc', 'bounds_pc', 'overflow_pc',
         'division_zero_pc', 'shift_count_pc', 'probe_offset', 'probe_pc'}
 with tempfile.TemporaryDirectory(prefix='aurora-uefi-span-') as temporary:
     output = Path(temporary)
-    for mode in ('normal', 'span'):
-        command([sys.executable, root / 'scripts/kernel-uefi-user-images.py',
-                 '--compiler', compiler, '--output', output / mode, '--mode', mode], timeout=30)
-    normal = json.loads((output / 'normal/user-images.json').read_text())
-    span = json.loads((output / 'span/user-images.json').read_text())
+    normal = json.loads((normal_dir / 'user-images.json').read_text())
+    span = json.loads((span_dir / 'user-images.json').read_text())
     require(set(normal) == set(span) == {'clean', 'bounds'}, 'image set changed')
     for index, name in enumerate(('clean', 'bounds')):
         for metadata in (normal, span):
@@ -42,22 +57,22 @@ with tempfile.TemporaryDirectory(prefix='aurora-uefi-span-') as temporary:
             require(set(image) == keys and image['entry'] == images.BASE + index * 4096
                     and 4 <= image['size'] <= 4096 and image['probe_pc'] == image['probe_offset'] == 0,
                     'runtime span widened image layout or probe authority')
-        require((output / f'normal/objects/user-{name}-entry.o').read_bytes()
-                == (output / f'span/objects/user-{name}-entry.o').read_bytes(), 'normal adapter changed')
+        require((normal_dir / f'objects/user-{name}-entry.o').read_bytes()
+                == (span_dir / f'objects/user-{name}-entry.o').read_bytes(), 'normal adapter changed')
     require(normal['bounds'] == span['bounds'], 'bounds metadata changed')
     for suffix in ('s', 'o', 'elf', 'bin'):
         name = ('objects/' if suffix == 'o' else '') + f'user-bounds.{suffix}'
-        require((output / 'normal' / name).read_bytes()
-                == (output / 'span' / name).read_bytes(), 'bounds fixture changed')
+        require((normal_dir / name).read_bytes()
+                == (span_dir / name).read_bytes(), 'bounds fixture changed')
 
-    elf = (output / 'span/user-clean.elf').read_bytes()
-    blob = (output / 'span/user-clean.bin').read_bytes()
+    elf = (span_dir / 'user-clean.elf').read_bytes()
+    blob = (span_dir / 'user-clean.bin').read_bytes()
     symbols = {fields[2]: int(fields[0], 16)
-               for line in command(['nm', '-a', output / 'span/user-clean.elf']).stdout.decode().splitlines()
+               for line in command(['nm', '-a', span_dir / 'user-clean.elf']).stdout.decode().splitlines()
                if len(fields := line.split()) == 3}
     helpers = [name for name in symbols if name.endswith('read_clean_byte')]
     require(len(helpers) == 1, 'span helper missing from compiled image')
-    require('call ' + helpers[0] in (output / 'span/user-clean.s').read_text(),
+    require('call ' + helpers[0] in (span_dir / 'user-clean.s').read_text(),
             'span helper not called by fixture')
     require(images.verify(elf, blob, images.BASE, symbols) == span['clean'],
             'stored metadata differs from generated span image')
@@ -88,9 +103,9 @@ with tempfile.TemporaryDirectory(prefix='aurora-uefi-span-') as temporary:
     native = output / 'native'
     native.mkdir()
     runner = NativeRunner(native, compiler, 5)
-    observed, _ = runner.assemble((output / 'span/user-clean.s').read_text(), ['aurora_user_main'])
+    observed, _ = runner.assemble((span_dir / 'user-clean.s').read_text(), ['aurora_user_main'])
     validate_values(observed, [Case('span-clean', '', 42, 'i64')])
-    observed, native_symbols = runner.assemble((output / 'span/user-bounds.s').read_text(), ['aurora_user_main'])
+    observed, native_symbols = runner.assemble((span_dir / 'user-bounds.s').read_text(), ['aurora_user_main'])
     validate_trap(observed, Trap.BOUNDS, native_symbols, 'unchanged bounds fixture')
     source = (root / 'tests/kernel-programs/span-clean.au').read_text()
     require(source.count('view.at(0)') == 1, 'span bounds mutation is ambiguous')

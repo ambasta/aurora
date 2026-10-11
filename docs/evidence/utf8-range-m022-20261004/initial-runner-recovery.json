@@ -1,6 +1,0 @@
-{
-  "status": "exact original bytes recovered and SHA256 checked against initial run manifest",
-  "sha256": "f9f079f0b1f65942cb27aeaf16b6010cdf1f081ce77f481765c5bf78f4bbe0f9",
-  "file": "initial-runner-hash-recovered.py",
-  "method": "reverse only four diagnostic expectation substitutions from corrected runner; library source never changed"
-}

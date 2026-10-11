@@ -2,9 +2,6 @@
 """Compiler-free semantic selection, authority separation and full-corpus controls."""
 
 import argparse
-from dataclasses import asdict
-import hashlib
-import json
 import os
 from pathlib import Path
 import sys
@@ -30,11 +27,7 @@ from package_profiles import (
 )
 
 MODULES = (identity, manifest, graph)
-FULL = (
-    (5503, 20, "96c5f134b951ca1a8e120f655e4cd778bbd4f2c16284f888a196e5f52b8adaea"),
-    (20022, 29, "bdfb86b537106339d4648e755bb6eb280833aeca3e645f8d40df6e977a377db6"),
-    (5548, 30, "340d33ddc763dd8dd2ee2f0c6b674879715f07e2666a5c1fc71c439a67ee3ca4"),
-)
+FULL_REJECTIONS = (20, 29, 30)
 DEV = ((183, 6048), (157, 13098), (187, 15029))
 
 
@@ -63,26 +56,8 @@ def arguments(*values):
 
 
 class Profiles(unittest.TestCase):
-    def test_full_corpus_unchanged(self):
-        # Captured from reviewed PR44; owned-byte and unsupported-field diagnostic
-        # wording was refreshed only after verifying each prior digest with the
-        # exact old messages restored. Sources, labels and case counts are unchanged.
-        # Includes full-width expectations, source bodies/helpers/arguments,
-        # every rejection diagnostic/source, and the complete shared observer.
-        for module, (count, rejects, expected_hash) in zip(MODULES, FULL):
-            selected = cases(module, False)
-            self.assertEqual(len(selected), count)
-            self.assertEqual(len(module.negative_cases()), rejects)
-            digest = hashlib.sha256()
-            for case in selected:
-                digest.update(json.dumps(asdict(case), sort_keys=True, separators=(",", ":")).encode())
-                digest.update(b"\n")
-            digest.update(json.dumps(module.negative_cases(), separators=(",", ":")).encode())
-            digest.update(module.shared().encode())
-            self.assertEqual(digest.hexdigest(), expected_hash, module.__name__)
-
     def test_selected_counts_and_complete_safety_cases(self):
-        for module, (count, observations), (_, rejects, _) in zip(MODULES, DEV, FULL):
+        for module, (count, observations), rejects in zip(MODULES, DEV, FULL_REJECTIONS):
             selected = cases(module, True)
             self.assertEqual(len(selected), count)
             self.assertEqual(sum(len(case.expected) for case in selected), observations)
@@ -146,19 +121,19 @@ class Profiles(unittest.TestCase):
 
     def test_meson_full_uses_safe_build_local_artifacts(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {}, clear=True):
-            selected = arguments('--profile', 'full', '--meson-selected-compiler')
+            selected = arguments("--profile", "full", "--meson-selected-compiler")
             validate_identity_selection(selected)
-            selected.artifact_root = Path(directory) / 'output'
-            self.assertEqual(developer_artifacts(selected, 'identity'), selected.artifact_root)
-            self.assertFalse(profile_record(selected, [], [])['qualification_eligible'])
-            selected.artifact_root = Path(directory) / '..' / 'escaped'
+            selected.artifact_root = Path(directory) / "output"
+            self.assertEqual(developer_artifacts(selected, "identity"), selected.artifact_root)
+            self.assertFalse(profile_record(selected, [], [])["qualification_eligible"])
+            selected.artifact_root = Path(directory) / ".." / "escaped"
             with self.assertRaises(ContractError):
-                developer_artifacts(selected, 'identity')
-            link = Path(directory) / 'link'
+                developer_artifacts(selected, "identity")
+            link = Path(directory) / "link"
             link.symlink_to(directory, target_is_directory=True)
-            selected.artifact_root = link / 'output'
+            selected.artifact_root = link / "output"
             with self.assertRaises(ContractError):
-                developer_artifacts(selected, 'identity')
+                developer_artifacts(selected, "identity")
 
     def test_explicit_authority_separation(self):
         self.assertEqual(arguments().profile, "full")

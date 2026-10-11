@@ -2,37 +2,53 @@ export module std.utf8_range;
 import std.utf8;
 
 export namespace std {
-    enum class Utf8RangeStatus { success, out_of_range, invalid_sequence, truncated };
+    enum class Utf8RangeStatus {
+        success,
+        out_of_range,
+        invalid_sequence,
+        truncated
+    };
 
     class Utf8RangeResult {
         Utf8RangeStatus outcome;
         i64 relative_offset;
         i64 byte_length;
     public:
-        Utf8RangeResult(Utf8RangeStatus status, i64 offset, i64 count)
-            : outcome(status), relative_offset(offset), byte_length(count) {}
+        Utf8RangeResult(Utf8RangeStatus status, i64 offset, i64 count) : outcome(status), relative_offset(offset),
+            byte_length(count) {
+        }
 
         auto status() const -> Utf8RangeStatus {
-            if (outcome != Utf8RangeStatus::success) { return outcome; }
-            if (relative_offset < 0) { return Utf8RangeStatus::out_of_range; }
-            if (byte_length < 0) { return Utf8RangeStatus::out_of_range; }
+            if (outcome != Utf8RangeStatus::success) {
+                return outcome;
+            }
+            if (relative_offset < 0) {
+                return Utf8RangeStatus::out_of_range;
+            }
+            if (byte_length < 0) {
+                return Utf8RangeStatus::out_of_range;
+            }
             if (byte_length > 9223372036854775807 - relative_offset) {
                 return Utf8RangeStatus::out_of_range;
             }
             return Utf8RangeStatus::success;
         }
         auto byte_offset() const -> i64 {
-            if (status() != Utf8RangeStatus::success) { return 0; }
+            if (status() != Utf8RangeStatus::success) {
+                return 0;
+            }
             return relative_offset;
         }
         auto byte_count() const -> i64 {
-            if (status() != Utf8RangeStatus::success) { return 0; }
+            if (status() != Utf8RangeStatus::success) {
+                return 0;
+            }
             return byte_length;
         }
     };
 
-    auto utf8_subrange(builtin::span<const u8> bytes, i64 offset, i64 count,
-                       i64 first_scalar, i64 scalar_count) -> Utf8RangeResult {
+    auto utf8_subrange(builtin::span<const u8> bytes, i64 offset, i64 count, i64 first_scalar,
+        i64 scalar_count) -> Utf8RangeResult {
         if (first_scalar < 0) {
             const Utf8RangeResult failure = Utf8RangeResult(Utf8RangeStatus::out_of_range, 0, 0);
             return failure;
@@ -44,8 +60,12 @@ export namespace std {
         const Utf8ValidationResult valid = validate_utf8(bytes, offset, count, true);
         if (valid.status() != Utf8Status::success) {
             Utf8RangeStatus status = Utf8RangeStatus::out_of_range;
-            if (valid.status() == Utf8Status::invalid_sequence) { status = Utf8RangeStatus::invalid_sequence; }
-            if (valid.status() == Utf8Status::truncated) { status = Utf8RangeStatus::truncated; }
+            if (valid.status() == Utf8Status::invalid_sequence) {
+                status = Utf8RangeStatus::invalid_sequence;
+            }
+            if (valid.status() == Utf8Status::truncated) {
+                status = Utf8RangeStatus::truncated;
+            }
             const Utf8RangeResult failure = Utf8RangeResult(status, 0, 0);
             return failure;
         }
@@ -65,7 +85,9 @@ export namespace std {
             const Utf8DecodeResult decoded = decode_utf8(bytes, offset + position, count - position, true);
             position = position + decoded.width();
             index = index + 1;
-            if (index == first_scalar) { start = position; }
+            if (index == first_scalar) {
+                start = position;
+            }
         }
         const Utf8RangeResult result = Utf8RangeResult(Utf8RangeStatus::success, start, position - start);
         return result;

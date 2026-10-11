@@ -12,9 +12,15 @@ auto answer() -> i64 {
 
     const std::array<u8, 4> previous = active.exchange(replacement);
     replacement.set(0, 99u8);
-    if (previous.at(0) != 21u8) { return 0; }
-    if (previous.at(1) != 7u8) { return 0; }
-    if (active.at(1) != 9u8) { return 0; }
+    if (previous.at(0) != 21u8) {
+        return 0;
+    }
+    if (previous.at(1) != 7u8) {
+        return 0;
+    }
+    if (active.at(1) != 9u8) {
+        return 0;
+    }
 
     const std::array<u8, 4> self_snapshot = active.exchange(active);
     active.set(0, 0u8);

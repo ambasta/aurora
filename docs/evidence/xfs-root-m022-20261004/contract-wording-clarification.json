@@ -1,5 +1,0 @@
-{
-  "change": "Independent review clarified not_found preserves facts; no API or implementation change. Sealed recovery source untouched.",
-  "before_sha256": "0318237baa99af57fb1742c6d0bb39ea763202d7a60fecb6474b5e61fa5f5ea9",
-  "after_sha256": "fc176f63fbc995e91684e8244479b8ed51b0d9fdf225ac4c2a83229bec1ad9fe"
-}

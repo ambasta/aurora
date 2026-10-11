@@ -84,6 +84,7 @@ public:
     std::optional<ByteToken> ownedToken = {};
     int ownedField = -1;
     bool literalOrigin = false;
+    int arrayField = -1; // direct fixed u8 field of an exact receiver/object lifetime
     bool operator==(const SpanCapability &) const = default;
 };
 enum class ByteDisposition {
@@ -138,8 +139,8 @@ public:
     std::set<int> receiverInitialized;
     std::set<int> receiverMaybeInitialized;
     std::set<int> maybeConstructedObjects;
-    std::set<int> activeObjects;
-    std::map<int, std::size_t> activeArrays; // array base -> BeginArray site
+    std::map<int, std::size_t> activeObjects; // object base -> creation/binding site
+    std::map<int, std::size_t> activeArrays;  // array base -> BeginArray site
     std::map<int, SpanCapability> activeSpans;
     std::map<int, ServiceIdentity> activeServices;
     std::map<int, ServiceLoan> serviceLoans;
@@ -313,9 +314,8 @@ inline void verifyFunction(Function &function,
         if (type.isSpan()) {
             require(type == Type::ByteSpan && ((parameter && (!function.receiver || !function.receiver->constructor)) ||
                                                (!parameter && function.receiver && !function.receiver->mutableValue &&
-                                                !function.receiver->constructor && function.receiverSpanField &&
-                                                owningClass(classFields, function.receiver->className))),
-                    "readonly span boundary requires ordinary parameter or const owning receiver result");
+                                                !function.receiver->constructor && function.receiverSpanField)),
+                    "readonly span boundary requires ordinary parameter or const receiver result");
             return;
         }
         require(!function.receiver || parameter || !function.receiver->constructor,
@@ -370,8 +370,9 @@ inline void verifyFunction(Function &function,
     if (function.receiverSpanField) {
         const int field = *function.receiverSpanField;
         require(receiverFields && field >= 0 && static_cast<std::size_t>(field) < receiverFields->size() &&
-                    (*receiverFields)[field].elementType == Type::OwnedBytes && !(*receiverFields)[field].array,
-                "receiver span field summary requires exact direct owned byte field");
+                    (((*receiverFields)[field].elementType == Type::OwnedBytes && !(*receiverFields)[field].array) ||
+                     ((*receiverFields)[field].elementType == Type::U8 && (*receiverFields)[field].array)),
+                "receiver span field summary requires exact direct byte-storage field");
     }
     // Physical reservation and logical completion are separate. Every occupied
     // scalar byte is disjoint; object padding (including empty storage) has no slot.
@@ -729,6 +730,19 @@ inline void verifyFunction(Function &function,
                         "array element access outside active lifetime");
             };
             auto arrayWritable = [&](int offset) {
+                if (objectBases.contains(offset)) {
+                    const int root = objectBases.at(offset);
+                    const auto &name = function.objectSlots.at(root).className;
+                    for (const auto &[unused, capability] : state.activeSpans) {
+                        (void)unused;
+                        if (capability.arrayField < 0 || capability.origin != root)
+                            continue;
+                        const int first = storage.at(name).fieldOffsets.at(capability.arrayField);
+                        const int length = classFields.at(name).at(capability.arrayField).length;
+                        require(root - offset < first || root - offset >= first + length,
+                                "fixed array field write with live readonly span");
+                    }
+                }
                 if (!arrayBases.contains(offset))
                     return;
                 const int base = arrayBases.at(offset);
@@ -751,6 +765,25 @@ inline void verifyFunction(Function &function,
                     require(literal && literal->resultOffset == capability.origin &&
                                 literal->bytes.size() <= maxByteStringBytes,
                             "literal span must retain its exact immutable origin");
+                } else if (capability.arrayField >= 0) {
+                    require(!capability.parameterOrigin && !capability.ownedToken && capability.ownedField == -1,
+                            "fixed array span cannot carry another origin kind");
+                    loanAccess(capability.origin, false);
+                    if (capability.origin == 0) {
+                        require(function.receiver && !function.receiver->constructor && capability.originSite == 0,
+                                "fixed array span receiver lifetime is not active");
+                    } else {
+                        require(state.activeObjects.contains(capability.origin) &&
+                                    state.activeObjects.at(capability.origin) == capability.originSite,
+                                "fixed array span object lifetime is not active");
+                    }
+                    const auto &name = capability.origin == 0 ? function.receiver->className
+                                                              : function.objectSlots.at(capability.origin).className;
+                    const auto &fields = classFields.at(name);
+                    require(static_cast<std::size_t>(capability.arrayField) < fields.size() &&
+                                fields[capability.arrayField].array &&
+                                fields[capability.arrayField].elementType == Type::U8,
+                            "fixed array span field provenance mismatch");
                 } else if (capability.ownedToken) {
                     loanAccess(capability.origin, false);
                     require(!capability.parameterOrigin, "owned span cannot have parameter origin");
@@ -798,7 +831,9 @@ inline void verifyFunction(Function &function,
                                 parent->second.origin == capability.origin &&
                                 parent->second.originSite == capability.originSite &&
                                 parent->second.ownedToken == capability.ownedToken &&
-                                parent->second.ownedField == capability.ownedField,
+                                parent->second.ownedField == capability.ownedField &&
+                                parent->second.arrayField == capability.arrayField &&
+                                parent->second.literalOrigin == capability.literalOrigin,
                             "span direct parent origin mismatch");
                 }
                 return capability;
@@ -812,8 +847,9 @@ inline void verifyFunction(Function &function,
                 loanAccess(root, true);
                 for (const auto &[unused, capability] : state.activeSpans) {
                     (void)unused;
-                    require(!capability.ownedToken || capability.origin != root ||
-                                (field && capability.ownedField != *field),
+                    const int ordinal = capability.arrayField >= 0 ? capability.arrayField : capability.ownedField;
+                    require((!capability.ownedToken && capability.arrayField < 0) || capability.origin != root ||
+                                (field && ordinal != *field),
                             "owned byte or root mutation with live readonly span");
                 }
             };
@@ -1171,6 +1207,31 @@ inline void verifyFunction(Function &function,
                 const auto rootSite = ordinal == -1 ? binding.site : state.ownedObjects.at(root).site;
                 state.activeSpans.emplace(result,
                                           SpanCapability{false, root, rootSite, 0, 0, index, binding.token, ordinal});
+            };
+            auto borrowArrayField = [&](int root, int ordinal, int result, bool verifiedMethodView = false) {
+                require(root >= 0 && ordinal >= 0, "invalid fixed array span root or field");
+                loanAccess(root, false);
+                const ClassField *field = nullptr;
+                std::size_t site = 0;
+                if (root == 0) {
+                    field = &receiverShape(ordinal, verifiedMethodView);
+                    require(!function.receiver->constructor, "constructor cannot borrow receiver array");
+                    for (int leaf = 0; leaf < field->length; ++leaf)
+                        require(state.receiverInitialized.contains(field->firstLeaf + leaf),
+                                "receiver array span requires complete initialization");
+                } else {
+                    require(verifiedMethodView, "local fixed array fields require verified receiver result");
+                    const auto &object = completeObject(root);
+                    const auto &fields = classFields.at(object.className);
+                    require(static_cast<std::size_t>(ordinal) < fields.size(), "fixed array span field out of range");
+                    field = &fields[ordinal];
+                    site = state.activeObjects.at(root);
+                }
+                require(field->array && field->elementType == Type::U8,
+                        "fixed array span requires direct u8 array field");
+                spanTarget(result);
+                state.activeSpans.emplace(result,
+                                          SpanCapability{false, root, site, 0, 0, index, {}, -1, false, ordinal});
             };
             auto closedOwnedObjects = [&]() {
                 require(state.serviceLoans.empty(), "return with active synchronous service loan");
@@ -1610,6 +1671,8 @@ inline void verifyFunction(Function &function,
                                                                  0,
                                                                  0,
                                                                  index});
+                    } else if constexpr (std::is_same_v<Op, BorrowReceiverArraySpan>) {
+                        borrowArrayField(0, operation.fieldIndex, operation.resultOffset);
                     } else if constexpr (std::is_same_v<Op, BorrowLiteralSpan>) {
                         require(operation.bytes.size() <= maxByteStringBytes, "literal span exceeds byte-string bound");
                         spanTarget(operation.resultOffset);
@@ -1653,7 +1716,7 @@ inline void verifyFunction(Function &function,
                             require(!objectParameterSlots.contains(operation.offset),
                                     "object parameter lifetime cannot restart");
                             require(!state.activeObjects.contains(operation.offset), "object lifetime already active");
-                            state.activeObjects.insert(operation.offset);
+                            state.activeObjects.emplace(operation.offset, index);
                             const auto &name = function.objectSlots.at(operation.offset).className;
                             if (owningClass(classFields, name))
                                 beginOwnedObject(operation.offset, name);
@@ -1893,6 +1956,7 @@ inline void verifyFunction(Function &function,
                         require(function.receiver->mutableValue, "write through const receiver");
                         current(field.elementType);
                         receiverGuard(pop(), operation.fieldIndex, field);
+                        ownerWritable(0, operation.fieldIndex);
                     } else if constexpr (std::is_same_v<Op, AcquireObjectLoan>) {
                         require(operation.loanId > 0 && !state.objectLoans.contains(operation.loanId),
                                 "invalid or duplicate object loan identity");
@@ -1955,8 +2019,7 @@ inline void verifyFunction(Function &function,
                         require((scalarValueType(target.result, enumCases) ||
                                  (!target.receiver->constructor && target.result.isClass()) ||
                                  (target.result == Type::ByteSpan && target.receiverSpanField &&
-                                  !target.receiver->mutableValue && !target.receiver->constructor &&
-                                  owningClass(classFields, target.receiver->className))) &&
+                                  !target.receiver->mutableValue && !target.receiver->constructor)) &&
                                     std::all_of(target.parameters.begin(),
                                                 target.parameters.end(),
                                                 [&](const Type &type) {
@@ -2058,11 +2121,15 @@ inline void verifyFunction(Function &function,
                             }
                         }
                         if (target.result == Type::ByteSpan) {
-                            require(operation.receiverFieldIndex == -1,
-                                    "span result requires direct owning receiver root");
+                            require(operation.receiverFieldIndex == -1, "span result requires direct receiver root");
                             require(target.receiverSpanField.has_value(), "span result lacks receiver field summary");
-                            borrowOwned(
-                                operation.receiverOffset, *target.receiverSpanField, operation.resultOffset, true);
+                            const auto &field = classFields.at(receiver.className).at(*target.receiverSpanField);
+                            if (field.array)
+                                borrowArrayField(
+                                    operation.receiverOffset, *target.receiverSpanField, operation.resultOffset, true);
+                            else
+                                borrowOwned(
+                                    operation.receiverOffset, *target.receiverSpanField, operation.resultOffset, true);
                             state.current.reset();
                         } else if (target.result.isClass()) {
                             const int base = operation.resultOffset;
@@ -2133,10 +2200,16 @@ inline void verifyFunction(Function &function,
                                     !function.receiver->constructor && !function.receiver->mutableValue,
                                 "span return requires const owning receiver field summary");
                         const auto &capability = span(operation.offset);
-                        const auto &owner = accessBytes(0, *function.receiverSpanField, false);
-                        require(capability.ownedToken && capability.origin == 0 &&
-                                    capability.ownedField == *function.receiverSpanField &&
-                                    capability.ownedToken == owner.token,
+                        const bool fixed = receiverShape(*function.receiverSpanField).array;
+                        const auto token = fixed ? std::optional<ByteToken>{}
+                                                 : accessBytes(0, *function.receiverSpanField, false).token;
+                        auto matchesReceiver = [&](const SpanCapability &view) {
+                            return view.origin == 0 && !view.parameterOrigin && !view.literalOrigin &&
+                                   (fixed ? view.arrayField == *function.receiverSpanField && !view.ownedToken
+                                          : view.arrayField == -1 && view.ownedField == *function.receiverSpanField &&
+                                                view.ownedToken == token && token && token->region.borrowed);
+                        };
+                        require(matchesReceiver(capability),
                                 "span return does not match receiver field summary and token");
                         require(state.stack.empty(), "unbalanced stack at span return");
                         require(state.activeBytes.empty() && state.activeArrays.empty() && state.activeObjects.empty(),
@@ -2150,9 +2223,7 @@ inline void verifyFunction(Function &function,
                             require(retained.insert(base).second, "cyclic returned span parent chain");
                         for (const auto &[base, active] : state.activeSpans) {
                             span(base);
-                            require(retained.contains(base) && active.ownedToken && active.origin == 0 &&
-                                        active.ownedField == *function.receiverSpanField &&
-                                        active.ownedToken == owner.token && active.ownedToken->region.borrowed,
+                            require(retained.contains(base) && matchesReceiver(active),
                                     "span return with unrelated active span lifetime");
                         }
                         fallsThrough = false;
@@ -2392,7 +2463,7 @@ inline void verifyFunction(Function &function,
                                 "owning class parameter must be mutable");
                         require(!state.activeObjects.contains(operation.offset),
                                 "owning class parameter lifetime already active");
-                        state.activeObjects.insert(operation.offset);
+                        state.activeObjects.emplace(operation.offset, index);
                         beginOwnedObject(operation.offset, operation.className);
                         mintObject(operation.offset, operation.className, region(*regionParameterSlot));
                     } else if constexpr (std::is_same_v<Op, BindObjectParameter>) {
@@ -2410,7 +2481,7 @@ inline void verifyFunction(Function &function,
                         require(!object.mutableValue, "object parameter must be readonly");
                         require(!state.activeObjects.contains(operation.offset),
                                 "object parameter lifetime already active");
-                        state.activeObjects.insert(operation.offset);
+                        state.activeObjects.emplace(operation.offset, index);
                         markObject(operation.offset);
                     } else if constexpr (std::is_same_v<Op, BindParameter>) {
                         require(operation.index >= 0 &&
@@ -2746,6 +2817,29 @@ inline ValidatedModule validate(Module module) {
         }
         verification::require(!hasReceiver || (componentSize == 1 && !selfEdge), "recursive receiver call cycle");
     }
+    // Every source/IR function and recursion component above is checked before
+    // discarding unused imported implementations. Root-unit functions include
+    // private service/native bridges; keep them all, independent of visibility.
+    // Reflection and fail-stop/runtime dependencies remain backend-managed.
+    std::vector<bool> retained(module.functions.size(), false);
+    std::vector<std::size_t> pending;
+    for (std::size_t index = 0; index < module.functions.size(); ++index)
+        if (module.functions[index].moduleScope == 0) {
+            retained[index] = true;
+            pending.push_back(index);
+        }
+    while (!pending.empty()) {
+        const auto index = pending.back();
+        pending.pop_back();
+        for (const auto target : calls[index])
+            if (!retained[target]) {
+                retained[target] = true;
+                pending.push_back(target);
+            }
+    }
+    std::erase_if(module.functions, [&](const Function &function) {
+        return !retained[functionIndices.at(function.name)];
+    });
     return ValidatedModule(std::move(module));
 }
 } // namespace aurora::ir

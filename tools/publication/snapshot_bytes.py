@@ -76,7 +76,7 @@ def snapshot_archive(archive, prefix="aurora/"):
                     continue
                 if not name.startswith(prefix):
                     raise ValueError(f"Member outside explicit archive prefix: {name}")
-                name = name[len(prefix):]
+                name = name[len(prefix) :]
             elif name.startswith("./"):
                 name = name[2:]
             if member.isdir() and name in ("", "."):
@@ -155,7 +155,9 @@ def git_tree_id(entries):
     def visit(directory):
         output = bytearray()
         # Git sorts subdirectory names as if they ended with a slash.
-        for name, value in sorted(directory.items(), key=lambda pair: (pair[0] + ("/" if isinstance(pair[1], dict) else "")).encode("utf-8")):
+        for name, value in sorted(
+            directory.items(), key=lambda pair: (pair[0] + ("/" if isinstance(pair[1], dict) else "")).encode("utf-8")
+        ):
             mode, digest = ("40000", visit(value)) if isinstance(value, dict) else value
             output.extend(mode.encode("ascii") + b" " + name.encode("utf-8") + b"\0" + bytes.fromhex(digest))
         return git_object_id("tree", bytes(output))
@@ -225,7 +227,16 @@ def main():
         target = read_snapshot(args.target)
         entries = make_delta(base, target, args.expected_base_tree)
         digest = write_json_new(args.output, entries)
-        print(json.dumps({"delta_entries": len(entries), "base_tree": git_tree_id(base), "target_tree": git_tree_id(target), "output_sha256": digest}))
+        print(
+            json.dumps(
+                {
+                    "delta_entries": len(entries),
+                    "base_tree": git_tree_id(base),
+                    "target_tree": git_tree_id(target),
+                    "output_sha256": digest,
+                }
+            )
+        )
 
 
 if __name__ == "__main__":

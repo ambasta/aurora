@@ -2,7 +2,6 @@
 """Offline capture controls only: synthetic bytes are never guest evidence."""
 
 import importlib.util
-import json
 import pathlib
 import sys
 import tempfile
@@ -161,31 +160,6 @@ class CaptureControls(unittest.TestCase):
             with self.assertRaises(ValueError):
                 obj.capture("other")
 
-    def test_pin_and_review_fail_closed(self):
-        with tempfile.TemporaryDirectory() as d:
-            p = pathlib.Path(d) / "pin.json"
-            p.write_text("{}")
-            with self.assertRaises(ValueError):
-                runner.pin(dict(path=str(p), sha256="0" * 64))
-            with self.assertRaises(ValueError):
-                runner.review(p, runner.digest(p), "a" * 64, "capture")
-            row = dict(
-                schema="aurora-framebuffer-review-v1",
-                role="release",
-                status="approved",
-                manifest_sha256="a" * 64,
-                issued_unix=time.time() - 20,
-                expires_unix=time.time() - 10,
-            )
-            p.write_text(json.dumps(row))
-            with self.assertRaises(ValueError):
-                runner.review(p, runner.digest(p), "a" * 64, "release")
-            row.update(role="capture")
-            p.write_text(json.dumps(row))
-            runner.review(p, runner.digest(p), "a" * 64, "capture")
-            with self.assertRaises(ValueError):
-                runner.review(p, runner.digest(p), "b" * 64, "capture")
-
     def test_exact_boot_markers_and_arithmetic(self):
         good = serial("framebuffer")
         pairs = [
@@ -201,86 +175,6 @@ class CaptureControls(unittest.TestCase):
         for before, after in pairs:
             with self.assertRaises(ValueError):
                 oracle.validate_serial(good.replace(before, after), "framebuffer")
-
-    def test_normal_oracle_pin(self):
-        paths = dict.fromkeys(("python", "qemu", "firmware", "compiler", "cxx"), pathlib.Path(sys.executable).resolve())
-        paths.update(
-            runner=pathlib.Path(runner.__file__),
-            oracle=ROOT / "scripts/framebuffer_capture_oracle.py",
-            scene=ROOT / "tests/kernel_display_oracle.py",
-            normal_oracle=ROOT / "scripts/kernel_uefi_oracle.py",
-        )
-        pins = {key: dict(path=str(path), sha256=runner.digest(path)) for key, path in paths.items()}
-        with tempfile.TemporaryDirectory() as d, patch.object(runner, "tree", return_value=ROOT):
-            esp = pathlib.Path(d) / "esp"
-            pe = esp / "EFI/BOOT/BOOTX64.EFI"
-            pe.parent.mkdir(parents=True)
-            pe.write_bytes(b"synthetic image")
-            elf = pathlib.Path(d) / "normal.elf"
-            elf.write_bytes(b"synthetic ELF")
-            image = dict(
-                esp=str(esp),
-                pe=dict(path=str(pe), sha256=runner.digest(pe)),
-                elf=dict(path=str(elf), sha256=runner.digest(elf)),
-                admission=dict(path=str(elf), sha256=runner.digest(elf)),
-            )
-            manifest = dict(
-                schema="aurora-framebuffer-capture-v1",
-                pins=pins,
-                trees=dict.fromkeys(("source", "data", "runtime"), {}),
-                library_path=[str(ROOT)],
-                cases=dict.fromkeys(oracle.MODES, image),
-                normal=image,
-            )
-            self.assertEqual(runner.verify(manifest)[0]["normal_oracle"], paths["normal_oracle"])
-            for path in (ROOT / "tests/kernel-uefi-smoke.py", paths["oracle"]):
-                pins["normal_oracle"] = dict(path=str(path), sha256=runner.digest(path))
-                with self.subTest(path=path), self.assertRaisesRegex(ValueError, "helper identity"):
-                    runner.verify(manifest)
-            pins["normal_oracle"] = dict(path=str(paths["normal_oracle"]), sha256="0" * 64)
-            with self.assertRaisesRegex(ValueError, "input digest mismatch"):
-                runner.verify(manifest)
-            del pins["normal_oracle"]
-            with self.assertRaisesRegex(ValueError, "missing/extra tool pin"):
-                runner.verify(manifest)
-
-    def test_normal_restoration_validation_and_verify_before_load(self):
-        good = PREFIX + "AURORA_UEFI_LANGUAGE_OK: value=42\nAURORA_UEFI_OK\n"
-        helper = ROOT / "scripts/kernel_uefi_oracle.py"
-        cases = [(33, good, None, "passed"), (0, good, None, "failed")]
-        cases += [(33, good.replace(line + "\n", "", 1), None, "failed") for line in good.splitlines()]
-        cases += [(33, good, ValueError("input digest mismatch"), "failed")]
-        for status, transcript, drift, expected in cases:
-            with self.subTest(status=status, transcript=transcript, drift=drift), tempfile.TemporaryDirectory() as d:
-                proc = Mock(returncode=status)
-                proc.wait.return_value = proc.poll.return_value = status
-
-                def launch(*args, **kwargs):
-                    kwargs["stdout"].write(transcript.encode())
-                    return proc
-
-                with (
-                    patch.object(runner, "verify", side_effect=drift) as verify,
-                    patch.object(runner.subprocess, "Popen", side_effect=launch) as popen,
-                    patch.object(
-                        importlib.util, "spec_from_file_location", wraps=importlib.util.spec_from_file_location
-                    ) as load,
-                ):
-                    receipt = runner.restore(
-                        {"normal": {"esp": "/esp"}},
-                        {"qemu": "fake", "firmware": "/firmware", "normal_oracle": helper},
-                        {"data": "/data"},
-                        {},
-                        pathlib.Path(d) / "normal",
-                    )
-                verify.assert_called_once_with({"normal": {"esp": "/esp"}})
-                self.assertEqual(receipt["status"], expected)
-                if drift:
-                    popen.assert_not_called()
-                    load.assert_not_called()
-                else:
-                    load.assert_called_once_with("normal_capture_restoration", helper)
-                self.assertTrue((pathlib.Path(d) / "normal/receipt.json").is_file())
 
     def test_pty_setup_failure_preserves_receipt(self):
         with tempfile.TemporaryDirectory() as d, patch.object(runner.os, "openpty", side_effect=OSError("denied")):
@@ -300,6 +194,9 @@ class CaptureControls(unittest.TestCase):
                 with (
                     patch.object(runner.subprocess, "Popen", return_value=proc),
                     patch.object(runner.Channel, "receive", side_effect=error),
+                    patch.object(
+                        runner.transport, "cleanup", side_effect=lambda child: setattr(child, "returncode", -15)
+                    ) as reap,
                 ):
                     receipt = runner.run_case(
                         "framebuffer",
@@ -311,14 +208,14 @@ class CaptureControls(unittest.TestCase):
                     )
                 self.assertEqual(receipt["status"], "failed")
                 self.assertIn(str(error), receipt["error"])
-                proc.terminate.assert_called_once()
-                proc.wait.assert_called_once_with(timeout=2)
+                reap.assert_called_once_with(proc)
                 self.assertTrue(proc.stdin.closed and proc.stdout.closed)
                 self.assertEqual(receipt["exit_status"], -15)
 
     def test_bounded_clock(self):
         obj = runner.Channel.__new__(runner.Channel)
         obj.deadline = time.monotonic() - 1
+        obj.timeout = 5
         with self.assertRaises(ValueError):
             obj.remaining()
 

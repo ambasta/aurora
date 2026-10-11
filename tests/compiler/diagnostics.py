@@ -241,4 +241,47 @@ with tempfile.TemporaryDirectory(prefix="aurora-diagnostics-") as directory:
     plain = run([source, "-o", emitted], 0, json_mode=False)
     require(plain.stdout == plain.stderr == "" and emitted.stat().st_size > 0, "normal emission regression")
 
+    original_assembly = emitted.read_bytes()
+    facts_path = root / "good.stack.json"
+    run([source, "-o", emitted, "--stack-facts", facts_path], 0, json_mode=False)
+    require(emitted.read_bytes() == original_assembly, "stack facts changed ordinary assembly bytes")
+    facts = json.loads(facts_path.read_text())
+    require(
+        facts
+        == {
+            "version": 1,
+            "functions": {
+                "demo": {"local_bytes": 16, "calls": {}},
+                "aurora_reflect_size": {"local_bytes": 8, "calls": {}},
+                "aurora_reflect_field_count": {"local_bytes": 8, "calls": {}},
+            },
+        },
+        "simple emitted stack facts",
+    )
+    original_facts = facts_path.read_bytes()
+    for options in (
+        ["--stack-facts"],
+        [source, "-o", emitted, "--stack-facts", ""],
+        [source, "-o", emitted, "--stack-facts", facts_path, "--stack-facts", facts_path],
+        [source, "-o", emitted, "--stack-facts", emitted.parent / "." / emitted.name],
+    ):
+        run(options, 2, json_mode=False)
+    run(["--check", "--diagnostics=json", source, "--stack-facts", facts_path], 2, "AU5001")
+    require(
+        emitted.read_bytes() == original_assembly and facts_path.read_bytes() == original_facts,
+        "rejected stack-facts option changed artifacts",
+    )
+    # Output authority applies equally to the sidecar; source aliases and symlinks fail.
+    run([source, "-o", emitted, "--stack-facts", source], 1, json_mode=False)
+    link = root / "facts-link"
+    link.symlink_to(facts_path)
+    run([source, "-o", emitted, "--stack-facts", link], 1, json_mode=False)
+    source.write_text("module demo; auto demo() -> i64 { return missing; }\n")
+    run([source, "-o", emitted, "--stack-facts", facts_path], 1, json_mode=False)
+    require(
+        emitted.read_bytes() == original_assembly and facts_path.read_bytes() == original_facts,
+        "failed stack-facts emission changed artifacts",
+    )
+    require(not list(root.glob(".aurora-output-*.tmp")), "stack-facts failure left temporary files")
+
 print(f"PASS {CASES} structured diagnostic CLI cases")

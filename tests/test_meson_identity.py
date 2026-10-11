@@ -20,12 +20,19 @@ import meson_test
 
 class MesonIdentityTests(unittest.TestCase):
     def args(self, **changes):
-        values = dict(compiler_sha256=None, developer_build_receipt=None, meson_selected_compiler=True)
+        values = dict(
+            compiler_sha256=None,
+            developer_build_receipt=None,
+            meson_selected_compiler=True,
+        )
         values.update(changes)
         return argparse.Namespace(**values)
 
     def test_no_external_pin_or_fresh_build_claim(self):
-        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {}, clear=True):
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch.dict(os.environ, {}, clear=True),
+        ):
             path = Path(tmp) / "fixture"
             path.write_text("synthetic executable bytes; never invoked")
             path.chmod(0o755)
@@ -53,12 +60,6 @@ class MesonIdentityTests(unittest.TestCase):
         with self.assertRaises(contract.ContractError):
             contract.validate_identity_selection(self.args(meson_selected_compiler=False))
 
-    def test_toolchain_replacement_rejected(self):
-        first = dict(files={"/compiler": "old"}, version="14")
-        meson_toolchain.verify(first, first.copy())
-        with self.assertRaises(ValueError):
-            meson_toolchain.verify(first, dict(files={"/compiler": "new"}, version="14"))
-
     def test_implicit_search_variables_rejected_before_tool_queries(self):
         for name in meson_toolchain.IMPLICIT_SEARCH_ENV:
             for value in ("", "/one:/two"):
@@ -68,56 +69,8 @@ class MesonIdentityTests(unittest.TestCase):
                     patch.object(meson_toolchain.subprocess, "check_output") as query,
                 ):
                     with self.assertRaisesRegex(ValueError, "Unset " + name):
-                        meson_toolchain.snapshot(["never-executed"])
+                        meson_toolchain.explicit_search()
                     query.assert_not_called()
-
-    def test_absent_search_variables_bind_policy_and_reject_legacy_record(self):
-        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {}, clear=True):
-            tool = Path(tmp) / "synthetic-tool"
-            tool.write_text("compiler-free fingerprint fixture")
-
-            def query(command, **kwargs):
-                return {"-dumpfullversion": "14.2.0", "-dumpmachine": "x86_64-linux-gnu"}.get(command[-1], str(tool))
-
-            with (
-                patch.object(meson_toolchain.shutil, "which", return_value=str(tool)),
-                patch.object(meson_toolchain.subprocess, "check_output", side_effect=query),
-            ):
-                observed = meson_toolchain.snapshot([str(tool)])
-            self.assertEqual(observed["search_policy"], "explicit-meson-flags-v1")
-            meson_toolchain.verify(observed, observed.copy())
-            legacy = {key: value for key, value in observed.items() if key != "search_policy"}
-            with self.assertRaises(ValueError):
-                meson_toolchain.verify(legacy, observed)
-
-    def test_snapshot_rejects_missing_or_mismatched_gcc_before_hashing(self):
-        for gcc in (None, "/synthetic/gcc"):
-            with (
-                self.subTest(gcc=gcc),
-                patch.dict(os.environ, {}, clear=True),
-                patch.object(meson_toolchain.shutil, "which", return_value=gcc),
-                patch.object(meson_toolchain.subprocess, "check_output", side_effect=["14.2.0", "16.2.0"]),
-                patch.object(Path, "read_bytes") as read,
-            ):
-                with self.assertRaisesRegex(ValueError, "Select matching bare gcc on PATH and configured CXX"):
-                    meson_toolchain.snapshot(["/synthetic/g++"])
-                read.assert_not_called()
-
-    def test_direct_meson_guard_rejects_before_creating_record(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            record = Path(tmp) / "aurora-toolchain.json"
-            argv = ["meson_toolchain.py", "--configure", "--cxx", "never-executed", "--record", str(record)]
-            for name in meson_toolchain.IMPLICIT_SEARCH_ENV:
-                with (
-                    self.subTest(name=name),
-                    patch.dict(os.environ, {name: ""}, clear=True),
-                    patch.object(sys, "argv", argv),
-                    patch.object(meson_toolchain.subprocess, "check_output") as query,
-                ):
-                    with self.assertRaisesRegex(ValueError, "Unset " + name):
-                        meson_toolchain.main()
-                    query.assert_not_called()
-                    self.assertFalse(record.exists())
 
     def test_make_convenience_rejects_before_meson_or_build_directory(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -127,7 +80,12 @@ class MesonIdentityTests(unittest.TestCase):
                     self.subTest(name=name),
                     patch.dict(os.environ, {name: "/one:/two"}, clear=True),
                     patch.object(
-                        contract, "tool_record", return_value={"resolved": "/synthetic/compiler", "sha256": "0" * 64}
+                        contract,
+                        "tool_record",
+                        return_value={
+                            "resolved": "/synthetic/compiler",
+                            "sha256": "0" * 64,
+                        },
                     ),
                     patch.object(meson_test.shutil, "which", return_value="/synthetic/meson"),
                     patch.object(meson_test.subprocess, "run") as launch,
@@ -168,16 +126,21 @@ class MesonEntrypointTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.calls = []
-        self.identity = dict(files={"/synthetic/g++": "fixture"}, version="14")
         self.failure = None
         self.flags = []
         self.configured_compiler = "/synthetic/g++"
+        self.kernel_images = True
+        self.kernel_compiler = ""
+        self.missing_options = set()
+        self.reconfigured_missing_options = set()
         for patcher in (
             patch.dict(os.environ, {}, clear=True),
-            patch.object(contract, "tool_record", side_effect=lambda name: dict(resolved=name, sha256=name)),
             patch.object(contract, "parse_cxx", return_value="/synthetic/g++"),
-            patch.object(meson_test.shutil, "which", return_value="/synthetic/meson"),
-            patch.object(meson_toolchain, "snapshot", return_value=self.identity),
+            patch.object(
+                meson_test.shutil,
+                "which",
+                side_effect=lambda name: name if name.startswith("/") else "/synthetic/" + name,
+            ),
             patch.object(meson_test.subprocess, "run", side_effect=self.run_command),
             patch.object(meson_test.subprocess, "check_output", side_effect=self.introspect),
         ):
@@ -191,18 +154,79 @@ class MesonEntrypointTests(unittest.TestCase):
         self.assertEqual(kwargs["env"]["CXX"], "/synthetic/g++")
         if command[1] == self.failure:
             raise subprocess.CalledProcessError(23, command)
-        if command[1] == "setup":
+        if command[1:3] == ["setup", "--reconfigure"]:
+            self.assertEqual(command[3:], [str(self.root / "build/meson"), str(self.root)])
+            self.missing_options = self.reconfigured_missing_options.copy()
+        elif command[1] == "setup":
             build = Path(command[2])
-            self.assertEqual(command[3:], [str(self.root), "--backend=ninja", "-Dlsp=false"])
+            self.assertEqual(command[3:6], [str(self.root), "--backend=ninja", "-Dlsp=false"])
+            self.assertIn(command[6], ("-Dkernel_images=true", "-Dkernel_images=false"))
+            self.kernel_images = command[6] == "-Dkernel_images=true"
+            self.kernel_compiler = command[7].removeprefix("-Dkernel_compiler=")
             (build / "build.ninja").touch()
-            (build / "aurora-toolchain.json").write_text(json.dumps(self.identity))
         return subprocess.CompletedProcess(command, 0)
 
     def introspect(self, command, **kwargs):
         if command[-1] == "--compilers":
             return json.dumps({"build": {"cpp": {"exelist": [self.configured_compiler]}}}).encode()
         self.assertEqual(command[-1], "--buildoptions")
-        return json.dumps([{"name": "cpp_args", "value": self.flags}]).encode()
+        options = [
+            {"name": "cpp_args", "value": self.flags},
+            {"name": "kernel_images", "value": self.kernel_images},
+            {"name": "kernel_compiler", "value": self.kernel_compiler},
+            {"name": "uefi_ld", "value": ""},
+        ]
+        return json.dumps([item for item in options if item["name"] not in self.missing_options]).encode()
+
+    def test_old_build_missing_options_reconfigures_once_before_build(self):
+        meson_test.execute(self.root, "full")
+        for missing in (
+            {"kernel_compiler"},
+            {"kernel_images"},
+            {"uefi_ld"},
+            {"kernel_compiler", "kernel_images", "uefi_ld"},
+        ):
+            with self.subTest(missing=missing):
+                self.calls.clear()
+                self.missing_options = missing
+                meson_test.execute(self.root, "full")
+                self.assertEqual([command[1] for command in self.calls], ["setup", "compile", "test"])
+                self.assertIn("--reconfigure", self.calls[0])
+                self.assertEqual(self.calls[1][4:6], ["-j", "3"])
+                self.calls.clear()
+                meson_test.execute(self.root, "full")
+                self.assertEqual([command[1] for command in self.calls], ["compile", "test"])
+
+    def test_old_build_reconfigure_failure_stops_before_build(self):
+        meson_test.execute(self.root, "full")
+        self.calls.clear()
+        self.missing_options = {"kernel_compiler"}
+        self.failure = "setup"
+        with self.assertRaises(subprocess.CalledProcessError):
+            meson_test.execute(self.root, "full")
+        self.assertEqual([command[1] for command in self.calls], ["setup"])
+
+    def test_old_build_reconfiguration_does_not_hide_missing_or_mismatched_options(self):
+        meson_test.execute(self.root, "full")
+        cases = [
+            ("missing", "Missing Meson build options after reconfigure"),
+            ("compiler", "Configured compiler differs"),
+            ("flags", "Configured cpp_args differ"),
+            ("external", "AURORAC/native selection"),
+            ("disabled", "Kernel images disabled"),
+        ]
+        for case, message in cases:
+            with self.subTest(case=case):
+                self.calls.clear()
+                self.missing_options = {"kernel_compiler"}
+                self.reconfigured_missing_options = {"kernel_compiler"} if case == "missing" else set()
+                self.configured_compiler = "/different/g++" if case == "compiler" else "/synthetic/g++"
+                self.flags = ["-O1"] if case == "flags" else []
+                self.kernel_compiler = "/configured/external" if case == "external" else ""
+                self.kernel_images = case != "disabled"
+                with self.assertRaisesRegex(contract.ContractError, message):
+                    meson_test.execute(self.root, None, ["kernel-uefi-normal"])
+                self.assertEqual([command[1] for command in self.calls], ["setup"])
 
     def test_fresh_default_and_explicit_builds_setup_then_compile_then_full(self):
         for supplied in (None, "build/chosen-gcc", str(self.root / "absolute-gcc")):
@@ -214,26 +238,120 @@ class MesonEntrypointTests(unittest.TestCase):
                 self.assertEqual([command[1] for command in self.calls], ["setup", "compile", "test"])
                 build = Path(self.calls[0][2])
                 self.assertEqual(self.calls[1][2:4], ["-C", str(build)])
-                self.assertEqual(self.calls[2][2:7], ["-C", str(build), "--suite", "full", "--no-rebuild"])
+                self.assertEqual(
+                    self.calls[2][2:7],
+                    ["-C", str(build), "--suite", "full", "--no-rebuild"],
+                )
+                self.assertIn("--no-rebuild", self.calls[2])
+                self.assertIn("--ninja-args=meson-test-prereq", self.calls[1])
+                self.assertEqual(self.calls[1][4:6], ["-j", "3"])
                 if supplied:
                     self.assertEqual(build, (self.root / supplied).resolve())
                 else:
                     self.assertEqual(build.parent, self.root / "build")
-                    self.assertTrue(build.name.startswith("meson-"))
+                    self.assertEqual(build.name, "meson")
 
-    def test_incremental_reuse_and_changed_flags_select_separate_default(self):
+    def test_native_image_build_selects_only_requested_alias(self):
+        for profile in ("bios", "uefi"):
+            self.calls.clear()
+            build = meson_test.execute(self.root, None, ["kernel-" + profile + "-normal"])
+            self.assertEqual(self.calls[-1][-1], "kernel-" + profile + "-normal")
+            self.assertFalse(any(command[1] == "test" for command in self.calls))
+            self.assertEqual(build, Path(self.calls[-1][3]))
+
+    def test_kernel_compiler_switch_requires_matching_configuration_in_both_directions(self):
+        external = self.root / "external-compiler"
+        external.write_bytes(b"synthetic compiler, never run")
+        external.chmod(0o755)
+        os.environ["AURORAC"] = str(external)
+        meson_test.execute(self.root, None, ["kernel-uefi-normal"])
+        self.assertEqual(self.kernel_compiler, str(external))
+        self.calls.clear()
+        os.environ.pop("AURORAC")
+        with self.assertRaisesRegex(contract.ContractError, "AURORAC/native selection"):
+            meson_test.execute(self.root, None, ["kernel-bios-normal"])
+        self.assertEqual(self.calls, [])
+        self.kernel_compiler = ""
+        os.environ["AURORAC"] = str(external)
+        with self.assertRaisesRegex(contract.ContractError, "AURORAC/native selection"):
+            meson_test.execute(self.root, None, ["kernel-uefi-normal"])
+        self.assertEqual(self.calls, [])
+
+    def test_disabled_image_request_fails_before_compile(self):
+        os.environ["MESON_BUILD_DIR"] = str(self.root / "hosted-only")
         meson_test.execute(self.root, "compiler")
+        self.calls.clear()
+        with self.assertRaisesRegex(contract.ContractError, "Kernel images disabled"):
+            meson_test.execute(self.root, None, ["kernel-bios-normal"])
+        self.assertEqual(self.calls, [])
+
+    def test_make_all_compiler_copy_is_regular_and_unchanged_copy_is_stable(self):
+        build = self.root / "native"
+        build.mkdir()
+        compiler = build / "aurorac"
+        compiler.write_bytes(b"synthetic compiler; never executed")
+        compiler.chmod(0o755)
+        (build / "meson-info").mkdir()
+        (build / "meson-info/intro-buildoptions.json").write_text(json.dumps([dict(name="kernel_compiler", value="")]))
+        meson_test.publish_compatibility_compiler(self.root, build)
+        destination = self.root / "build/aurorac"
+        self.assertFalse(destination.is_symlink())
+        self.assertEqual(destination.read_bytes(), compiler.read_bytes())
+        self.assertEqual(destination.stat().st_mode, compiler.stat().st_mode)
+        before = destination.stat().st_mtime_ns
+        meson_test.publish_compatibility_compiler(self.root, build)
+        self.assertEqual(destination.stat().st_mtime_ns, before)
+        compiler.write_bytes(b"changed synthetic compiler")
+        with patch.object(meson_test.shutil, "copy2", side_effect=OSError("copy fixture")):
+            with self.assertRaises(OSError):
+                meson_test.publish_compatibility_compiler(self.root, build)
+        self.assertEqual(destination.read_bytes(), b"synthetic compiler; never executed")
+        self.assertEqual(list(destination.parent.iterdir()), [destination])
+
+    def test_selected_kernel_compiler_uses_configured_path_and_rejects_ambiguous_option(
+        self,
+    ):
+        build = self.root / "native"
+        (build / "meson-info").mkdir(parents=True)
+        options = build / "meson-info/intro-buildoptions.json"
+        selected = self.root / "reviewed-compiler"
+        for value, expected in (("", build / "aurorac"), (str(selected), selected)):
+            options.write_text(json.dumps([dict(name="kernel_compiler", value=value)]))
+            self.assertEqual(meson_test.selected_kernel_compiler(build), expected)
+        for values in (
+            [],
+            [dict(name="kernel_compiler", value="relative/compiler")],
+            [dict(name="kernel_compiler", value="")] * 2,
+        ):
+            options.write_text(json.dumps(values))
+            with self.assertRaises(contract.ContractError):
+                meson_test.selected_kernel_compiler(build)
+
+    def test_make_all_compiler_copy_rejects_existing_symlink(self):
+        directory = self.root / "build"
+        directory.mkdir()
+        (directory / "aurorac").symlink_to(self.root / "do-not-touch")
+        with self.assertRaisesRegex(contract.ContractError, "symlinked compatibility compiler"):
+            meson_test.publish_compatibility_compiler(self.root, self.root)
+
+    def test_incremental_reuse_rejects_changed_flags_until_explicit_reconfigure(self):
+        meson_test.execute(self.root, "compiler")
+        self.assertFalse(self.kernel_images)
         first = self.calls[0][2]
         self.calls.clear()
         meson_test.execute(self.root, "compiler")
         self.assertEqual([command[1] for command in self.calls], ["compile", "test"])
         self.assertEqual(self.calls[0][3], first)
         os.environ["CXXFLAGS"] = "-O1"
-        self.flags = ["-O1"]
         self.calls.clear()
+        with self.assertRaisesRegex(contract.ContractError, "Configured cpp_args differ"):
+            meson_test.execute(self.root, "compiler")
+        self.assertEqual(self.calls, [])
+        self.flags = ["-O1"]  # Meson was explicitly reconfigured by the developer.
         meson_test.execute(self.root, "compiler")
-        self.assertEqual(self.calls[0][1], "setup")
-        self.assertNotEqual(self.calls[0][2], first)
+        self.assertEqual([command[1] for command in self.calls], ["compile", "test"])
+        self.assertEqual(self.calls[0][3], first)
+        self.assertEqual(Path(first).name, "meson-compiler")
 
     def test_setup_compile_and_test_failures_propagate_without_later_steps(self):
         for step, expected in [
@@ -291,60 +409,6 @@ class MesonEntrypointTests(unittest.TestCase):
                 meson_test.execute(self.root, "full")
         self.assertEqual(self.calls, [])
 
-    def test_changed_backend_rejects_default_and_explicit_reuse(self):
-        meson_test.execute(self.root, "full")
-        original = self.calls[0][2]
-        self.identity["files"]["/synthetic/ld"] = "replacement"
-        for supplied in (None, original):
-            with self.subTest(directory=supplied):
-                if supplied:
-                    os.environ["MESON_BUILD_DIR"] = supplied
-                self.calls.clear()
-                with self.assertRaisesRegex(contract.ContractError, "Host toolchain changed.*MESON_BUILD_DIR"):
-                    meson_test.execute(self.root, "full")
-                self.assertEqual(self.calls, [])
-
-    def test_changed_compiler_selects_fresh_default(self):
-        meson_test.execute(self.root, "full")
-        original = self.calls[0][2]
-        self.calls.clear()
-        with patch.object(contract, "tool_record", side_effect=lambda name: dict(resolved=name, sha256="new")):
-            meson_test.execute(self.root, "full")
-        self.assertEqual(self.calls[0][1], "setup")
-        self.assertNotEqual(self.calls[0][2], original)
-
-    def test_single_snapshot_after_setup_and_introspection_before_compile(self):
-        for fresh in (True, False):
-            with self.subTest(fresh=fresh):
-                self.calls.clear()
-                inspected = []
-
-                def introspect(command, **kwargs):
-                    inspected.append(command[-1])
-                    return self.introspect(command, **kwargs)
-
-                def snapshot(command):
-                    self.assertEqual(inspected, ["--compilers", "--buildoptions"])
-                    self.assertEqual([call[1] for call in self.calls], ["setup"] if fresh else [])
-                    self.assertEqual(command, [self.configured_compiler])
-                    return self.identity
-
-                with (
-                    patch.object(meson_toolchain, "snapshot", side_effect=snapshot) as observe,
-                    patch.object(meson_test.subprocess, "check_output", side_effect=introspect),
-                ):
-                    meson_test.execute(self.root, "full")
-                observe.assert_called_once_with([self.configured_compiler])
-                self.assertEqual([call[1] for call in self.calls][-2:], ["compile", "test"])
-
-    def test_post_setup_toolchain_change_rejected_before_compile(self):
-        changed = dict(files={"/synthetic/g++": "replacement"}, version="14")
-        with patch.object(meson_toolchain, "snapshot", return_value=changed) as observe:
-            with self.assertRaisesRegex(contract.ContractError, "Host toolchain changed.*MESON_BUILD_DIR"):
-                meson_test.execute(self.root, "full")
-        observe.assert_called_once_with([self.configured_compiler])
-        self.assertEqual([command[1] for command in self.calls], ["setup"])
-
     def test_build_preparation_failure_names_operation_path_and_recovery(self):
         blocked = self.root / "not-a-build-directory"
         blocked.write_text("keep this file")
@@ -356,18 +420,6 @@ class MesonEntrypointTests(unittest.TestCase):
         self.assertIn(str(blocked), message)
         self.assertIn("writable MESON_BUILD_DIR", message)
         self.assertEqual(blocked.read_text(), "keep this file")
-        self.assertEqual(self.calls, [])
-
-    def test_existing_unbound_build_rejected_before_compile(self):
-        build = self.root / "unbound"
-        build.mkdir()
-        (build / "build.ninja").touch()
-        os.environ["MESON_BUILD_DIR"] = str(build)
-        with self.assertRaises(contract.ContractError) as caught:
-            meson_test.execute(self.root, "full")
-        self.assertIn("Cannot read configured toolchain identity", str(caught.exception))
-        self.assertIn(str(build / "aurora-toolchain.json"), str(caught.exception))
-        self.assertIn("fresh MESON_BUILD_DIR", str(caught.exception))
         self.assertEqual(self.calls, [])
 
     def test_cli_remaining_oserror_names_path_and_recovery(self):
@@ -478,14 +530,24 @@ class MesonArtifactTests(unittest.TestCase):
         self.sibling.mkdir()
         (self.sibling / "evidence").write_text("older evidence")
         self.adapter = Path(__file__).resolve().with_name("meson_artifacts.py")
-        self.env = {**os.environ, "TMPDIR": str(self.scratch), "CXX": "chosen-cxx --flag"}
+        self.env = {
+            **os.environ,
+            "TMPDIR": str(self.scratch),
+            "CXX": "chosen-cxx --flag",
+        }
         self.env.pop("AURORA_MESON_KEEP_ARTIFACTS", None)
 
     def run_adapter(self, code=None, *, command=None):
         if command is None:
             command = [sys.executable, "-B", "-c", code, "@ARTIFACTS@"]
         result = subprocess.run(
-            [sys.executable, "-B", *(["-O"] if sys.flags.optimize else []), str(self.adapter), *command],
+            [
+                sys.executable,
+                "-B",
+                *(["-O"] if sys.flags.optimize else []),
+                str(self.adapter),
+                *command,
+            ],
             cwd=self.cwd,
             env=self.env,
             capture_output=True,
@@ -530,7 +592,14 @@ class MesonArtifactTests(unittest.TestCase):
             [
                 True,
                 str(self.cwd),
-                [str(parent / "output"), "--artifacts", str(self.external), "literal @ARTIFACTS@", "a b", ""],
+                [
+                    str(parent / "output"),
+                    "--artifacts",
+                    str(self.external),
+                    "literal @ARTIFACTS@",
+                    "a b",
+                    "",
+                ],
                 self.env["CXX"],
                 self.env["PATH"],
             ],

@@ -8,6 +8,7 @@ use fault injection, signal observers, kernel tests, or implementation IR.
 Run: python3 tests/compiler/decimal_values.py build/aurorac
 Optional reproducible sequence: --seed 10011 --steps 96
 """
+
 from __future__ import annotations
 
 import argparse
@@ -31,8 +32,7 @@ def require(condition, message):
 
 
 def program(body, definitions="", helpers="", imports="", result="i64"):
-    return ("module app;" + imports + definitions + helpers +
-            f"auto test()->{result}{{{body}}}")
+    return "module app;" + imports + definitions + helpers + f"auto test()->{result}{{{body}}}"
 
 
 class Suite:
@@ -49,8 +49,7 @@ class Suite:
             input_path = directory / "input.au"
             assembly = directory / "program.s"
             input_path.write_text(source)
-            command = [self.compiler, input_path, "-o", assembly,
-                       "--module-root", ROOT / "library"]
+            command = [self.compiler, input_path, "-o", assembly, "--module-root", ROOT / "library"]
             if modules:
                 module_root = directory / "modules"
                 module_root.mkdir()
@@ -60,17 +59,16 @@ class Suite:
                     path.write_text(content)
                 command.extend(["--module-root", module_root])
             try:
-                compiled = subprocess.run([str(x) for x in command],
-                                          capture_output=True, timeout=5)
+                compiled = subprocess.run([str(x) for x in command], capture_output=True, timeout=5)
                 if reject:
-                    require(compiled.returncode == 1,
-                            f"expected rejection exit 1, got {compiled.returncode}: "
-                            f"{compiled.stderr!r}")
+                    require(
+                        compiled.returncode == 1,
+                        f"expected rejection exit 1, got {compiled.returncode}: {compiled.stderr!r}",
+                    )
                     require(bool(compiled.stderr.strip()), "missing type/syntax diagnostic")
                     self.rejections += 1
                 else:
-                    require(compiled.returncode == 0,
-                            f"compiler exit {compiled.returncode}: {compiled.stderr!r}")
+                    require(compiled.returncode == 0, f"compiler exit {compiled.returncode}: {compiled.stderr!r}")
                     entry = directory / "entry.s"
                     entry.write_text(""".text
 .globl _start
@@ -90,22 +88,15 @@ _start:
                     for build_command in (
                         ["as", "--64", assembly, "-o", directory / "program.o"],
                         ["as", "--64", entry, "-o", directory / "entry.o"],
-                        ["ld", "-o", directory / "program", directory / "entry.o",
-                         directory / "program.o"],
+                        ["ld", "-o", directory / "program", directory / "entry.o", directory / "program.o"],
                     ):
-                        built = subprocess.run([str(x) for x in build_command],
-                                               capture_output=True, timeout=5)
-                        require(built.returncode == 0,
-                                f"{build_command[0]} failed: {built.stderr!r}")
-                    observed = subprocess.run([str(directory / "program")],
-                                              capture_output=True, timeout=5)
-                    require(observed.returncode == 0,
-                            f"native exit {observed.returncode}: {observed.stderr!r}")
-                    require(len(observed.stdout) == 8,
-                            f"expected eight result bytes, got {observed.stdout!r}")
+                        built = subprocess.run([str(x) for x in build_command], capture_output=True, timeout=5)
+                        require(built.returncode == 0, f"{build_command[0]} failed: {built.stderr!r}")
+                    observed = subprocess.run([str(directory / "program")], capture_output=True, timeout=5)
+                    require(observed.returncode == 0, f"native exit {observed.returncode}: {observed.stderr!r}")
+                    require(len(observed.stdout) == 8, f"expected eight result bytes, got {observed.stdout!r}")
                     actual = int.from_bytes(observed.stdout, "little", signed=False)
-                    require(actual == expected % (1 << 64),
-                            f"expected {expected % (1 << 64)}, got {actual}")
+                    require(actual == expected % (1 << 64), f"expected {expected % (1 << 64)}, got {actual}")
                     self.executions += 1
                 self.count += 1
                 print("PASS decimal values", name, flush=True)
@@ -118,81 +109,138 @@ def enum_cases(suite):
         for right in ("ready", "done", "failed"):
             for operator in ("==", "!="):
                 value = left == right if operator == "==" else left != right
-                suite.check(f"enum {left} {operator} {right}",
-                            program(f"return State::{left}{operator}State::{right};",
-                                    ENUM, result="bool"), expected=int(value))
+                suite.check(
+                    f"enum {left} {operator} {right}",
+                    program(f"return State::{left}{operator}State::{right};", ENUM, result="bool"),
+                    expected=int(value),
+                )
 
-    suite.check("enum locals and assignment", program(
-        "const State first=State::ready;State next=first;next=State::done;"
-        "if(first!=State::ready){return 1;}if(next!=State::done){return 2;}return 42;",
-        ENUM))
-    suite.check("enum compile time equality", program(
-        "static_assert(State::ready==State::ready);"
-        "static_assert(State::ready!=State::done);"
-        "static_assert(!(State::failed==State::done));return 42;", ENUM))
-    suite.check("builtin Scalar template remains available", program(
-        "Pair<u64> p=Pair<u64>(42u64);return p.value;",
-        "template<Scalar T>class Pair{public:T value;Pair(T n):value(n){}};",
-        result="u64"))
-    suite.check("enum fields and independent class copies", program(
-        "Flag first=Flag{.state=State::ready};Flag second=first;"
-        "second.state=State::done;if(first.state!=State::ready){return 1;}"
-        "if(second.state!=State::done){return 2;}return 42;",
-        ENUM + "class Flag{public:State state;};"))
-    suite.check("enum constructor and mutable method boundary", program(
-        "Flag flag=Flag(State::ready);const State old=flag.set(State::done);"
-        "if(old!=State::ready){return 1;}if(flag.get()!=State::done){return 2;}return 42;",
-        ENUM + "class Flag{State state;public:Flag(State initial):state(initial){}"
-        "auto get()const->State{return state;}auto set(State next)->State{"
-        "const State old=state;state=next;return old;}};"))
-    suite.check("enum ordinary function parameters and result", program(
-        "const State selected=choose(State::ready,State::done,true);"
-        "if(selected==State::done){return 42;}return 0;", ENUM,
-        "auto choose(State a,State b,bool second)->State{if(second){return b;}return a;}"))
-    suite.check("six enum function arguments", program(
-        "if(last(State::ready,State::failed,State::ready,State::ready,"
-        "State::failed,State::done)==State::done){return 42;}return 0;", ENUM,
-        "auto last(State a,State b,State c,State d,State e,State f)->State{return f;}"))
-    suite.check("enum field copied across function result", program(
-        "Flag first=Flag{.state=State::ready};const Flag second=copy(first);"
-        "first.state=State::failed;if(second.state==State::ready){return 42;}return 0;",
-        ENUM + "class Flag{public:State state;};",
-        "auto copy(Flag value)->Flag{return value;}"))
-    suite.check("enum reflection nominal identity", program(
-        "static_assert(size_of(State)==8);static_assert(field_count(State)==0);"
-        "static_assert(type_id(State)!=type_id(Other));"
-        "static_assert(type_id(State)!=type_id(i64));"
-        "static_assert(type_id(State)!=type_id(u64));"
-        "static_assert(type_id(State)!=type_id(bool));"
-        "static_assert(type_id(State)!=type_id(Box));"
-        "if(reflect_size(type_id(State))!=8){return 1;}"
-        "if(reflect_field_count(type_id(State))!=0){return 2;}return 42;",
-        ENUM + "enum class Other{ready,done,failed};class Box{public:State state;};"))
-    suite.check("enum field reflection matches class layout", program(
-        "static_assert(size_of(Box)==16);static_assert(field_count(Box)==1);"
-        "if(reflect_size(type_id(Box))!=16){return 1;}"
-        "if(reflect_field_count(type_id(Box))!=1){return 2;}return 42;",
-        ENUM + "class Box{State hidden;public:State shown;"
-        "Box(State a,State b):hidden(a),shown(b){}};"))
-    exported = ("export module states;export namespace items{"
-                "enum class State{ready,done};"
-                "auto ready()->State{return State::ready;}"
-                "auto same(State a,State b)->bool{return a==b;}}")
-    suite.check("exported enum module boundary", program(
-        "const items::State state=items::ready();"
-        "if(items::same(state,items::State::ready)){return 42;}return 0;",
-        imports="import states;"), modules={"states": exported})
-    suite.check("imported enum reflection", program(
-        "static_assert(size_of(items::State)==8);"
-        "static_assert(field_count(items::State)==0);"
-        "if(reflect_size(type_id(items::State))!=8){return 1;}"
-        "if(reflect_field_count(type_id(items::State))!=0){return 2;}return 42;",
-        imports="import states;"), modules={"states": exported})
-    suite.check("namespace enums keep nominal identity", program(
-        "static_assert(type_id(left::State)!=type_id(right::State));"
-        "if(left::State::ready==left::State::ready){return 42;}return 0;",
-        "namespace left{enum class State{ready};}"
-        "namespace right{enum class State{ready};}"))
+    suite.check(
+        "enum locals and assignment",
+        program(
+            "const State first=State::ready;State next=first;next=State::done;"
+            "if(first!=State::ready){return 1;}if(next!=State::done){return 2;}return 42;",
+            ENUM,
+        ),
+    )
+    suite.check(
+        "enum compile time equality",
+        program(
+            "static_assert(State::ready==State::ready);"
+            "static_assert(State::ready!=State::done);"
+            "static_assert(!(State::failed==State::done));return 42;",
+            ENUM,
+        ),
+    )
+    suite.check(
+        "builtin Scalar template remains available",
+        program(
+            "Pair<u64> p=Pair<u64>(42u64);return p.value;",
+            "template<Scalar T>class Pair{public:T value;Pair(T n):value(n){}};",
+            result="u64",
+        ),
+    )
+    suite.check(
+        "enum fields and independent class copies",
+        program(
+            "Flag first=Flag{.state=State::ready};Flag second=first;"
+            "second.state=State::done;if(first.state!=State::ready){return 1;}"
+            "if(second.state!=State::done){return 2;}return 42;",
+            ENUM + "class Flag{public:State state;};",
+        ),
+    )
+    suite.check(
+        "enum constructor and mutable method boundary",
+        program(
+            "Flag flag=Flag(State::ready);const State old=flag.set(State::done);"
+            "if(old!=State::ready){return 1;}if(flag.get()!=State::done){return 2;}return 42;",
+            ENUM + "class Flag{State state;public:Flag(State initial):state(initial){}"
+            "auto get()const->State{return state;}auto set(State next)->State{"
+            "const State old=state;state=next;return old;}};",
+        ),
+    )
+    suite.check(
+        "enum ordinary function parameters and result",
+        program(
+            "const State selected=choose(State::ready,State::done,true);if(selected==State::done){return 42;}return 0;",
+            ENUM,
+            "auto choose(State a,State b,bool second)->State{if(second){return b;}return a;}",
+        ),
+    )
+    suite.check(
+        "six enum function arguments",
+        program(
+            "if(last(State::ready,State::failed,State::ready,State::ready,"
+            "State::failed,State::done)==State::done){return 42;}return 0;",
+            ENUM,
+            "auto last(State a,State b,State c,State d,State e,State f)->State{return f;}",
+        ),
+    )
+    suite.check(
+        "enum field copied across function result",
+        program(
+            "Flag first=Flag{.state=State::ready};const Flag second=copy(first);"
+            "first.state=State::failed;if(second.state==State::ready){return 42;}return 0;",
+            ENUM + "class Flag{public:State state;};",
+            "auto copy(Flag value)->Flag{return value;}",
+        ),
+    )
+    suite.check(
+        "enum reflection nominal identity",
+        program(
+            "static_assert(size_of(State)==8);static_assert(field_count(State)==0);"
+            "static_assert(type_id(State)!=type_id(Other));"
+            "static_assert(type_id(State)!=type_id(i64));"
+            "static_assert(type_id(State)!=type_id(u64));"
+            "static_assert(type_id(State)!=type_id(bool));"
+            "static_assert(type_id(State)!=type_id(Box));"
+            "if(reflect_size(type_id(State))!=8){return 1;}"
+            "if(reflect_field_count(type_id(State))!=0){return 2;}return 42;",
+            ENUM + "enum class Other{ready,done,failed};class Box{public:State state;};",
+        ),
+    )
+    suite.check(
+        "enum field reflection matches class layout",
+        program(
+            "static_assert(size_of(Box)==16);static_assert(field_count(Box)==1);"
+            "if(reflect_size(type_id(Box))!=16){return 1;}"
+            "if(reflect_field_count(type_id(Box))!=1){return 2;}return 42;",
+            ENUM + "class Box{State hidden;public:State shown;Box(State a,State b):hidden(a),shown(b){}};",
+        ),
+    )
+    exported = (
+        "export module states;export namespace items{"
+        "enum class State{ready,done};"
+        "auto ready()->State{return State::ready;}"
+        "auto same(State a,State b)->bool{return a==b;}}"
+    )
+    suite.check(
+        "exported enum module boundary",
+        program(
+            "const items::State state=items::ready();if(items::same(state,items::State::ready)){return 42;}return 0;",
+            imports="import states;",
+        ),
+        modules={"states": exported},
+    )
+    suite.check(
+        "imported enum reflection",
+        program(
+            "static_assert(size_of(items::State)==8);"
+            "static_assert(field_count(items::State)==0);"
+            "if(reflect_size(type_id(items::State))!=8){return 1;}"
+            "if(reflect_field_count(type_id(items::State))!=0){return 2;}return 42;",
+            imports="import states;",
+        ),
+        modules={"states": exported},
+    )
+    suite.check(
+        "namespace enums keep nominal identity",
+        program(
+            "static_assert(type_id(left::State)!=type_id(right::State));"
+            "if(left::State::ready==left::State::ready){return 42;}return 0;",
+            "namespace left{enum class State{ready};}namespace right{enum class State{ready};}",
+        ),
+    )
 
     invalid_bodies = [
         ("wrong enum local", "State s=Other::ready;return 42;"),
@@ -219,16 +267,16 @@ def enum_cases(suite):
         ("enum scalar template argument", "Pair<State> p=Pair<State>(State::ready);return 42;"),
     ]
     for operator in ("+", "-", "*", "/", "%", "&", "|", "^", "<<", ">>"):
-        invalid_bodies.append(("enum numeric operator " + operator,
-                               f"State s=State::ready{operator}State::done;return 42;"))
+        invalid_bodies.append(
+            ("enum numeric operator " + operator, f"State s=State::ready{operator}State::done;return 42;")
+        )
     for operator in ("<", "<=", ">", ">="):
-        invalid_bodies.append(("enum ordering " + operator,
-                               f"if(State::ready{operator}State::done){{return 42;}}return 0;"))
+        invalid_bodies.append(
+            ("enum ordering " + operator, f"if(State::ready{operator}State::done){{return 42;}}return 0;")
+        )
     for operator in ("-", "~"):
-        invalid_bodies.append(("enum unary " + operator,
-                               f"State s={operator}State::ready;return 42;"))
-    extras = ("enum class Other{ready,done};"
-              "template<Scalar T>class Pair{public:T value;Pair(T n):value(n){}};")
+        invalid_bodies.append(("enum unary " + operator, f"State s={operator}State::ready;return 42;"))
+    extras = "enum class Other{ready,done};template<Scalar T>class Pair{public:T value;Pair(T n):value(n){}};"
     for name, body in invalid_bodies:
         suite.check(name, program(body, ENUM + extras), reject=True)
     for name, definition in [
@@ -239,33 +287,46 @@ def enum_cases(suite):
     ]:
         suite.check(name, program("return 42;", definition), reject=True)
     for name, helper, body in [
-        ("wrong enum function argument", "auto take(State s)->i64{return 42;}",
-         "return take(Other::ready);"),
-        ("wrong enum function return", "auto make()->State{return Other::ready;}",
-         "const State s=make();return 42;"),
-        ("enum returned as integer", "auto make()->i64{return State::ready;}",
-         "return make();"),
-        ("enum function parameter immutable", "auto take(State s)->i64{"
-         "s=State::done;return 42;}", "return take(State::ready);"),
+        ("wrong enum function argument", "auto take(State s)->i64{return 42;}", "return take(Other::ready);"),
+        ("wrong enum function return", "auto make()->State{return Other::ready;}", "const State s=make();return 42;"),
+        ("enum returned as integer", "auto make()->i64{return State::ready;}", "return make();"),
+        (
+            "enum function parameter immutable",
+            "auto take(State s)->i64{s=State::done;return 42;}",
+            "return take(State::ready);",
+        ),
     ]:
         suite.check(name, program(body, ENUM + extras, helper), reject=True)
-    suite.check("wrong enum class field", program(
-        "Flag f=Flag{.state=Other::ready};return 42;",
-        ENUM + extras + "class Flag{public:State state;};"), reject=True)
-    suite.check("same named enums in modules are distinct", program(
-        "a::State state=b::State::ready;return 42;",
-        imports="import one;import two;"), reject=True,
-        modules={"one": "export module one;export namespace a{enum class State{ready};}",
-                 "two": "export module two;export namespace b{enum class State{ready};}"})
-    flag = (ENUM + "enum class Other{ready};class Flag{State state;public:"
-            "Flag(State initial):state(initial){}"
-            "auto set(State next)->State{state=next;return state;}};")
-    suite.check("wrong enum constructor argument", program(
-        "Flag f=Flag(Other::ready);return 42;", flag), reject=True)
-    suite.check("wrong enum method argument", program(
-        "Flag f=Flag(State::ready);f.set(Other::ready);return 42;", flag), reject=True)
-    suite.check("false enum equality static assertion", program(
-        "static_assert(State::ready==State::done);return 42;", ENUM), reject=True)
+    suite.check(
+        "wrong enum class field",
+        program("Flag f=Flag{.state=Other::ready};return 42;", ENUM + extras + "class Flag{public:State state;};"),
+        reject=True,
+    )
+    suite.check(
+        "same named enums in modules are distinct",
+        program("a::State state=b::State::ready;return 42;", imports="import one;import two;"),
+        reject=True,
+        modules={
+            "one": "export module one;export namespace a{enum class State{ready};}",
+            "two": "export module two;export namespace b{enum class State{ready};}",
+        },
+    )
+    flag = (
+        ENUM + "enum class Other{ready};class Flag{State state;public:"
+        "Flag(State initial):state(initial){}"
+        "auto set(State next)->State{state=next;return state;}};"
+    )
+    suite.check("wrong enum constructor argument", program("Flag f=Flag(Other::ready);return 42;", flag), reject=True)
+    suite.check(
+        "wrong enum method argument",
+        program("Flag f=Flag(State::ready);f.set(Other::ready);return 42;", flag),
+        reject=True,
+    )
+    suite.check(
+        "false enum equality static assertion",
+        program("static_assert(State::ready==State::done);return 42;", ENUM),
+        reject=True,
+    )
 
 
 REPORT = """class Report {
@@ -289,129 +350,233 @@ public:
 
 def method_result_cases(suite):
     for name, body, expected in [
-        ("const method class result", "const Counter c=Counter(42u64);"
-         "const Report r=c.snapshot();return r.get();", 42),
-        ("mutable method class result", "Counter c=Counter(40u64);"
-         "const Report r=c.advance(2u64);return r.get();", 42),
-        ("method result independent after receiver changes", "Counter c=Counter(42u64);"
-         "const Report r=c.snapshot();c.add(9u64);return r.get();", 42),
-        ("method result local may independently mutate", "Counter c=Counter(40u64);"
-         "Report r=c.snapshot();r.set(2u64);return c.get()+r.get();", 42),
-        ("mutable method result independent after next call", "Counter c=Counter(40u64);"
-         "const Report r=c.advance(2u64);const Report next=c.advance(99u64);return r.get();", 42),
-        ("bound sibling class result", "const Counter c=Counter(42u64);"
-         "const Report r=c.forwarded();return r.get();", 42),
+        ("const method class result", "const Counter c=Counter(42u64);const Report r=c.snapshot();return r.get();", 42),
+        ("mutable method class result", "Counter c=Counter(40u64);const Report r=c.advance(2u64);return r.get();", 42),
+        (
+            "method result independent after receiver changes",
+            "Counter c=Counter(42u64);const Report r=c.snapshot();c.add(9u64);return r.get();",
+            42,
+        ),
+        (
+            "method result local may independently mutate",
+            "Counter c=Counter(40u64);Report r=c.snapshot();r.set(2u64);return c.get()+r.get();",
+            42,
+        ),
+        (
+            "mutable method result independent after next call",
+            "Counter c=Counter(40u64);"
+            "const Report r=c.advance(2u64);const Report next=c.advance(99u64);return r.get();",
+            42,
+        ),
+        (
+            "bound sibling class result",
+            "const Counter c=Counter(42u64);const Report r=c.forwarded();return r.get();",
+            42,
+        ),
         ("class result survives receiver block exit", "const Report r=make();return r.get();", 42),
-        ("method full unsigned result", f"const Counter c=Counter({MAX_U64}u64);"
-         "const Report r=c.snapshot();return r.get();", MAX_U64),
-        ("copied method result through function", "Counter c=Counter(42u64);"
-         "const Report r=c.snapshot();const Report copy=identity(r);"
-         "c.add(1u64);return copy.get();", 42),
-        ("method result in loop", "Counter c=Counter(18u64);u64 sum=0u64;i64 i=0;"
-         "while(i<2){const Report r=c.advance(2u64);sum=sum+r.get();i=i+1;}return sum;", 42),
+        (
+            "method full unsigned result",
+            f"const Counter c=Counter({MAX_U64}u64);const Report r=c.snapshot();return r.get();",
+            MAX_U64,
+        ),
+        (
+            "copied method result through function",
+            "Counter c=Counter(42u64);"
+            "const Report r=c.snapshot();const Report copy=identity(r);"
+            "c.add(1u64);return copy.get();",
+            42,
+        ),
+        (
+            "method result in loop",
+            "Counter c=Counter(18u64);u64 sum=0u64;i64 i=0;"
+            "while(i<2){const Report r=c.advance(2u64);sum=sum+r.get();i=i+1;}return sum;",
+            42,
+        ),
     ]:
-        suite.check(name, program(body, REPORT,
-                    "auto make()->Report{Counter c=Counter(42u64);"
-                    "const Report r=c.snapshot();return r;}"
-                    "auto identity(Report r)->Report{return r;}", result="u64"), expected)
-    suite.check("method arguments evaluate left to right", program(
-        "Counter c=Counter(10u64);const Report r=c.combine(c.add(1u64),c.add(2u64));"
-        "return r.get();", REPORT.replace(
-            "auto forwarded()", "auto combine(u64 a,u64 b)const->Report{"
-            "const Report r=Report(a*100u64+b*10u64+value);return r;}auto forwarded()"),
-        result="u64"), expected=1243)
-    suite.check("six explicit arguments with receiver and class result", program(
-        "Counter c=Counter(1u64);const Report r=c.combine(1u64,2u64,3u64,4u64,5u64,26u64);"
-        "return r.get();", REPORT.replace(
-            "auto forwarded()", "auto combine(u64 a,u64 b,u64 c,u64 d,u64 e,u64 f)"
-            "const->Report{const Report r=Report(value+a+b+c+d+e+f);return r;}"
-            "auto forwarded()"), result="u64"))
-    suite.check("enum explicit argument and class result", program(
-        "const Factory f=Factory();const Flag r=f.make(State::done);"
-        "if(r.state==State::done){return 42;}return 0;", ENUM +
-        "class Flag{public:State state;};class Factory{public:Factory(){}"
-        "auto make(State state)const->Flag{const Flag result=Flag{.state=state};return result;}};"))
-    suite.check("empty class method result", program(
-        "Factory f=Factory();const Empty result=f.make();return 42;",
-        "class Empty{public:Empty(){}};class Factory{public:Factory(){}"
-        "auto make()const->Empty{const Empty value=Empty();return value;}};"))
-    suite.check("class method result through module", program(
-        "const items::Counter c=items::Counter(42u64);"
-        "const items::Report r=c.snapshot();return r.get();",
-        imports="import reports;", result="u64"), modules={
-            "reports": "export module reports;export namespace items{" + REPORT + "}"})
-    suite.check("class result remains independent of another result", program(
-        "Counter c=Counter(21u64);Report first=c.snapshot();Report second=c.snapshot();"
-        "first.set(0u64);return second.get()+c.get();", REPORT, result="u64"))
-    suite.check("const binding copied into mutable method result", program(
-        "const Counter c=Counter(40u64);Report result=c.snapshot();"
-        "result.set(42u64);return result.get();", REPORT, result="u64"))
-    suite.check("class result method calls ordinary aggregate function", program(
-        "const Counter c=Counter(21u64);const Report r=c.copied();return r.get();",
-        REPORT.replace("auto forwarded()", "auto copied()const->Report{"
-                       "const Report base=Report(value);const Report copy=copy_report(base);"
-                       "const Report result=Report(copy.get()+get());return result;}"
-                       "auto forwarded()"),
-        "auto copy_report(Report r)->Report{return r;}", result="u64"))
-    suite.check("mutable result method calls nested result methods and function", program(
-        "Counter c=Counter(10u64);const Report r=c.updated(6u64);return r.get();",
-        REPORT.replace("auto forwarded()", "auto updated(u64 delta)->Report{"
-                       "const Report initial=snapshot();const Report after=advance(delta);"
-                       "const Report copy=copy_report(after);"
-                       "const Report result=Report(initial.get()+copy.get()+value);"
-                       "return result;}auto forwarded()"),
-        "auto copy_report(Report r)->Report{return r;}", result="u64"))
-    suite.check("method result copies private fixed array leaves", program(
-        "const Factory f=Factory();std::array<u64,3> first=f.make();"
-        "const std::array<u64,3> second=first;first.set(0,0u64);"
-        "if(second.at(1)!=42u64){return 0u64;}"
-        "if(second.at(2)!=9223372036854775808u64){return 0u64;}return second.at(0);",
-        "class Factory{public:Factory(){}auto make()const->std::array<u64,3>{"
-        "std::array<u64,3> r=std::array<u64,3>();r.set(0,18446744073709551615u64);"
-        "r.set(1,42u64);r.set(2,9223372036854775808u64);return r;}};",
-        imports="import std.array;", result="u64"), expected=MAX_U64)
+        suite.check(
+            name,
+            program(
+                body,
+                REPORT,
+                "auto make()->Report{Counter c=Counter(42u64);"
+                "const Report r=c.snapshot();return r;}"
+                "auto identity(Report r)->Report{return r;}",
+                result="u64",
+            ),
+            expected,
+        )
+    suite.check(
+        "method arguments evaluate left to right",
+        program(
+            "Counter c=Counter(10u64);const Report r=c.combine(c.add(1u64),c.add(2u64));return r.get();",
+            REPORT.replace(
+                "auto forwarded()",
+                "auto combine(u64 a,u64 b)const->Report{"
+                "const Report r=Report(a*100u64+b*10u64+value);return r;}auto forwarded()",
+            ),
+            result="u64",
+        ),
+        expected=1243,
+    )
+    suite.check(
+        "six explicit arguments with receiver and class result",
+        program(
+            "Counter c=Counter(1u64);const Report r=c.combine(1u64,2u64,3u64,4u64,5u64,26u64);return r.get();",
+            REPORT.replace(
+                "auto forwarded()",
+                "auto combine(u64 a,u64 b,u64 c,u64 d,u64 e,u64 f)"
+                "const->Report{const Report r=Report(value+a+b+c+d+e+f);return r;}"
+                "auto forwarded()",
+            ),
+            result="u64",
+        ),
+    )
+    suite.check(
+        "enum explicit argument and class result",
+        program(
+            "const Factory f=Factory();const Flag r=f.make(State::done);if(r.state==State::done){return 42;}return 0;",
+            ENUM + "class Flag{public:State state;};class Factory{public:Factory(){}"
+            "auto make(State state)const->Flag{const Flag result=Flag{.state=state};return result;}};",
+        ),
+    )
+    suite.check(
+        "empty class method result",
+        program(
+            "Factory f=Factory();const Empty result=f.make();return 42;",
+            "class Empty{public:Empty(){}};class Factory{public:Factory(){}"
+            "auto make()const->Empty{const Empty value=Empty();return value;}};",
+        ),
+    )
+    suite.check(
+        "class method result through module",
+        program(
+            "const items::Counter c=items::Counter(42u64);const items::Report r=c.snapshot();return r.get();",
+            imports="import reports;",
+            result="u64",
+        ),
+        modules={"reports": "export module reports;export namespace items{" + REPORT + "}"},
+    )
+    suite.check(
+        "class result remains independent of another result",
+        program(
+            "Counter c=Counter(21u64);Report first=c.snapshot();Report second=c.snapshot();"
+            "first.set(0u64);return second.get()+c.get();",
+            REPORT,
+            result="u64",
+        ),
+    )
+    suite.check(
+        "const binding copied into mutable method result",
+        program(
+            "const Counter c=Counter(40u64);Report result=c.snapshot();result.set(42u64);return result.get();",
+            REPORT,
+            result="u64",
+        ),
+    )
+    suite.check(
+        "class result method calls ordinary aggregate function",
+        program(
+            "const Counter c=Counter(21u64);const Report r=c.copied();return r.get();",
+            REPORT.replace(
+                "auto forwarded()",
+                "auto copied()const->Report{"
+                "const Report base=Report(value);const Report copy=copy_report(base);"
+                "const Report result=Report(copy.get()+get());return result;}"
+                "auto forwarded()",
+            ),
+            "auto copy_report(Report r)->Report{return r;}",
+            result="u64",
+        ),
+    )
+    suite.check(
+        "mutable result method calls nested result methods and function",
+        program(
+            "Counter c=Counter(10u64);const Report r=c.updated(6u64);return r.get();",
+            REPORT.replace(
+                "auto forwarded()",
+                "auto updated(u64 delta)->Report{"
+                "const Report initial=snapshot();const Report after=advance(delta);"
+                "const Report copy=copy_report(after);"
+                "const Report result=Report(initial.get()+copy.get()+value);"
+                "return result;}auto forwarded()",
+            ),
+            "auto copy_report(Report r)->Report{return r;}",
+            result="u64",
+        ),
+    )
+    suite.check(
+        "method result copies private fixed array leaves",
+        program(
+            "const Factory f=Factory();std::array<u64,3> first=f.make();"
+            "const std::array<u64,3> second=first;first.set(0,0u64);"
+            "if(second.at(1)!=42u64){return 0u64;}"
+            "if(second.at(2)!=9223372036854775808u64){return 0u64;}return second.at(0);",
+            "class Factory{public:Factory(){}auto make()const->std::array<u64,3>{"
+            "std::array<u64,3> r=std::array<u64,3>();r.set(0,18446744073709551615u64);"
+            "r.set(1,42u64);r.set(2,9223372036854775808u64);return r;}};",
+            imports="import std.array;",
+            result="u64",
+        ),
+        expected=MAX_U64,
+    )
 
     for width in (1, 64):
         fields = "".join(f"u64 f{i};" for i in range(width))
-        initializers = ",".join(f".f{i}={MAX_U64-i}u64" for i in range(width))
-        definitions = ("class Wide{public:" + fields + "};class Factory{u64 seed;public:"
-                       "Factory(u64 n):seed(n){}auto make()const->Wide{"
-                       f"const Wide result=Wide{{{initializers}}};return result;}}}};")
+        initializers = ",".join(f".f{i}={MAX_U64 - i}u64" for i in range(width))
+        definitions = (
+            "class Wide{public:" + fields + "};class Factory{u64 seed;public:"
+            "Factory(u64 n):seed(n){}auto make()const->Wide{"
+            f"const Wide result=Wide{{{initializers}}};return result;}}}};"
+        )
         body = "const Factory f=Factory(42u64);const Wide result=f.make();"
         for index in range(width):
-            body += f"if(result.f{index}!={MAX_U64-index}u64){{return 0u64;}}"
-        body += f"return result.f{width-1};"
-        suite.check(f"method class result {width} scalar leaves",
-                    program(body, definitions, result="u64"), MAX_U64-width+1)
+            body += f"if(result.f{index}!={MAX_U64 - index}u64){{return 0u64;}}"
+        body += f"return result.f{width - 1};"
+        suite.check(
+            f"method class result {width} scalar leaves", program(body, definitions, result="u64"), MAX_U64 - width + 1
+        )
 
     for name, body in [
-        ("mutable result method on const receiver", "const Counter c=Counter(1u64);"
-         "const Report r=c.advance(1u64);return 42;"),
-        ("class result cannot initialize scalar", "Counter c=Counter(1u64);"
-         "u64 n=c.snapshot();return 42;"),
-        ("method result requires typed local", "Counter c=Counter(1u64);"
-         "c.snapshot();return 42;"),
-        ("method result cannot be temporary argument", "Counter c=Counter(1u64);"
-         "return consume(c.snapshot());"),
-        ("method result wrong nominal class", "Counter c=Counter(1u64);"
-         "Other r=c.snapshot();return 42;"),
-        ("const method result cannot mutate", "Counter c=Counter(1u64);"
-         "const Report r=c.snapshot();r.set(42u64);return 42;"),
+        (
+            "mutable result method on const receiver",
+            "const Counter c=Counter(1u64);const Report r=c.advance(1u64);return 42;",
+        ),
+        ("class result cannot initialize scalar", "Counter c=Counter(1u64);u64 n=c.snapshot();return 42;"),
+        ("method result requires typed local", "Counter c=Counter(1u64);c.snapshot();return 42;"),
+        ("method result cannot be temporary argument", "Counter c=Counter(1u64);return consume(c.snapshot());"),
+        ("method result wrong nominal class", "Counter c=Counter(1u64);Other r=c.snapshot();return 42;"),
+        (
+            "const method result cannot mutate",
+            "Counter c=Counter(1u64);const Report r=c.snapshot();r.set(42u64);return 42;",
+        ),
     ]:
         helpers = "auto consume(Report r)->i64{return 42;}"
-        suite.check(name, program(body, REPORT + "class Other{public:u64 value;};", helpers),
-                    reject=True)
-    suite.check("direct copied method return preserves payload", program(
-        "Counter c=Counter(1u64);const Report r=forward(c);return r.get();", REPORT,
-        "auto forward(Counter c)->Report{return c.snapshot();}", result="u64"), expected=1)
-    suite.check("explicit method class parameter copies independent result", program(
-        "Counter receiver=Counter(0u64);Report source=Report(42u64);Report result=receiver.take(source);"
-        "source.set(0u64);return i64(result.get());", REPORT.replace("auto forwarded()", "auto take(Report r)"
-        "const->Report{return r;}auto forwarded()")))
-    suite.check("class method constructor return copies independent value", program(
-        "Counter c=Counter(42u64);Report r=c.snapshot();c.add(1u64);return i64(r.get());",
-        REPORT.replace("const Report result=Report(value);return result;",
-                       "return Report(value);", 1)))
+        suite.check(name, program(body, REPORT + "class Other{public:u64 value;};", helpers), reject=True)
+    suite.check(
+        "direct copied method return preserves payload",
+        program(
+            "Counter c=Counter(1u64);const Report r=forward(c);return r.get();",
+            REPORT,
+            "auto forward(Counter c)->Report{return c.snapshot();}",
+            result="u64",
+        ),
+        expected=1,
+    )
+    suite.check(
+        "explicit method class parameter copies independent result",
+        program(
+            "Counter receiver=Counter(0u64);Report source=Report(42u64);Report result=receiver.take(source);"
+            "source.set(0u64);return i64(result.get());",
+            REPORT.replace("auto forwarded()", "auto take(Report r)const->Report{return r;}auto forwarded()"),
+        ),
+    )
+    suite.check(
+        "class method constructor return copies independent value",
+        program(
+            "Counter c=Counter(42u64);Report r=c.snapshot();c.add(1u64);return i64(r.get());",
+            REPORT.replace("const Report result=Report(value);return result;", "return Report(value);", 1),
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -450,10 +615,12 @@ class DecimalModel:
 
 
 def decimal_checks(variable, report, fallback, failed):
-    return (f"if({variable}.status()!={STATUS}{report.status}){{return {failed}u64;}}"
-            f"if({variable}.position()!={report.position}){{return {failed}u64;}}"
-            f"if({variable}.value_or({fallback}u64)!={report.value_or(fallback)}u64)"
-            f"{{return {failed}u64;}}")
+    return (
+        f"if({variable}.status()!={STATUS}{report.status}){{return {failed}u64;}}"
+        f"if({variable}.position()!={report.position}){{return {failed}u64;}}"
+        f"if({variable}.value_or({fallback}u64)!={report.value_or(fallback)}u64)"
+        f"{{return {failed}u64;}}"
+    )
 
 
 def modeled_sequence(suite, name, actions, fallback=MAX_U64):
@@ -469,8 +636,7 @@ def modeled_sequence(suite, name, actions, fallback=MAX_U64):
     body += decimal_checks("initial", DecimalReport("empty", 0, 0), fallback, failed)
     saved = []
     for index, (action, (status, report)) in enumerate(zip(actions, expected_reports)):
-        expression = ("accumulator.reset()" if action is None else
-                      f"accumulator.push_digit({action}u64)")
+        expression = "accumulator.reset()" if action is None else f"accumulator.push_digit({action}u64)"
         body += f"if({expression}!={STATUS}{status}){{return {failed}u64;}}"
         variable = f"report{index}"
         body += f"const std::DecimalResult {variable}=accumulator.finish();"
@@ -488,8 +654,22 @@ def modeled_sequence(suite, name, actions, fallback=MAX_U64):
 
 def decimal_cases(suite, seed, steps):
     modeled_sequence(suite, "decimal empty", [])
-    for value in (0, 1, 9, 10, 42, 99, 100, 1000, HIGH_U64-1, HIGH_U64,
-                  HIGH_U64+1, MAX_U64//10, MAX_U64-1, MAX_U64):
+    for value in (
+        0,
+        1,
+        9,
+        10,
+        42,
+        99,
+        100,
+        1000,
+        HIGH_U64 - 1,
+        HIGH_U64,
+        HIGH_U64 + 1,
+        MAX_U64 // 10,
+        MAX_U64 - 1,
+        MAX_U64,
+    ):
         modeled_sequence(suite, f"decimal exact value {value}", [int(x) for x in str(value)])
     for name, actions in [
         ("decimal leading zeros", [0, 0, 0, 4, 2]),
@@ -511,12 +691,17 @@ def decimal_cases(suite, seed, steps):
     ]:
         modeled_sequence(suite, name, actions)
     for last_digit in range(10):
-        modeled_sequence(suite, f"decimal final boundary digit {last_digit}",
-                         [int(x) for x in str(MAX_U64 // 10)] + [last_digit])
+        modeled_sequence(
+            suite, f"decimal final boundary digit {last_digit}", [int(x) for x in str(MAX_U64 // 10)] + [last_digit]
+        )
     for fallback in (0, 1, HIGH_U64, MAX_U64):
-        for label, actions in (("empty", []), ("zero", [0]), ("success", [4, 2]),
-                               ("invalid", [10]),
-                               ("overflow", [int(x) for x in str(MAX_U64 + 1)])):
+        for label, actions in (
+            ("empty", []),
+            ("zero", [0]),
+            ("success", [4, 2]),
+            ("invalid", [10]),
+            ("overflow", [int(x) for x in str(MAX_U64 + 1)]),
+        ):
             modeled_sequence(suite, f"decimal {label} fallback {fallback}", actions, fallback)
 
     rng = random.Random(seed)
@@ -538,56 +723,99 @@ def decimal_cases(suite, seed, steps):
                 actions.extend(rng.randrange(10) for _ in range(3))
             else:
                 actions.extend(rng.randrange(10) for _ in range(rng.randrange(1, 27)))
-        modeled_sequence(suite, f"decimal modeled sequence {sequence} seed {seed}",
-                         actions[:steps], rng.randrange(MAX_U64 + 1))
+        modeled_sequence(
+            suite, f"decimal modeled sequence {sequence} seed {seed}", actions[:steps], rng.randrange(MAX_U64 + 1)
+        )
 
-    suite.check("decimal accumulator copies have independent input", program(
-        "std::DecimalAccumulator first=std::DecimalAccumulator();first.push_digit(4u64);"
-        "std::DecimalAccumulator second=first;first.push_digit(2u64);second.push_digit(3u64);"
-        "const std::DecimalResult a=first.finish();const std::DecimalResult b=second.finish();"
-        "if(a.value_or(0u64)!=42u64){return 0u64;}return b.value_or(0u64);",
-        imports="import std.decimal;", result="u64"), expected=43)
-    suite.check("decimal result ordinary function copy", program(
-        "std::DecimalAccumulator a=std::DecimalAccumulator();a.push_digit(4u64);"
-        "a.push_digit(2u64);const std::DecimalResult first=a.finish();"
-        "const std::DecimalResult second=copy(first);a.reset();return second.value_or(0u64);",
-        helpers="auto copy(std::DecimalResult r)->std::DecimalResult{return r;}",
-        imports="import std.decimal;", result="u64"))
-    suite.check("decimal finish accepts const copied accumulator", program(
-        "std::DecimalAccumulator a=std::DecimalAccumulator();a.push_digit(4u64);"
-        "a.push_digit(2u64);const std::DecimalAccumulator frozen=a;"
-        "a.reset();const std::DecimalResult r=frozen.finish();return r.value_or(0u64);",
-        imports="import std.decimal;", result="u64"))
-    for label, digits, expected in (("success", (4, 2), 42), ("empty", (), 1),
-                                    ("invalid", (10,), 1),
-                                    ("overflow", tuple(int(x) for x in str(MAX_U64+1)), 1)):
+    suite.check(
+        "decimal accumulator copies have independent input",
+        program(
+            "std::DecimalAccumulator first=std::DecimalAccumulator();first.push_digit(4u64);"
+            "std::DecimalAccumulator second=first;first.push_digit(2u64);second.push_digit(3u64);"
+            "const std::DecimalResult a=first.finish();const std::DecimalResult b=second.finish();"
+            "if(a.value_or(0u64)!=42u64){return 0u64;}return b.value_or(0u64);",
+            imports="import std.decimal;",
+            result="u64",
+        ),
+        expected=43,
+    )
+    suite.check(
+        "decimal result ordinary function copy",
+        program(
+            "std::DecimalAccumulator a=std::DecimalAccumulator();a.push_digit(4u64);"
+            "a.push_digit(2u64);const std::DecimalResult first=a.finish();"
+            "const std::DecimalResult second=copy(first);a.reset();return second.value_or(0u64);",
+            helpers="auto copy(std::DecimalResult r)->std::DecimalResult{return r;}",
+            imports="import std.decimal;",
+            result="u64",
+        ),
+    )
+    suite.check(
+        "decimal finish accepts const copied accumulator",
+        program(
+            "std::DecimalAccumulator a=std::DecimalAccumulator();a.push_digit(4u64);"
+            "a.push_digit(2u64);const std::DecimalAccumulator frozen=a;"
+            "a.reset();const std::DecimalResult r=frozen.finish();return r.value_or(0u64);",
+            imports="import std.decimal;",
+            result="u64",
+        ),
+    )
+    for label, digits, expected in (
+        ("success", (4, 2), 42),
+        ("empty", (), 1),
+        ("invalid", (10,), 1),
+        ("overflow", tuple(int(x) for x in str(MAX_U64 + 1)), 1),
+    ):
         body = "std::DecimalAccumulator a=std::DecimalAccumulator();"
         body += "".join(f"a.push_digit({digit}u64);" for digit in digits)
-        body += ("const std::DecimalResult r=a.finish();Counter side=Counter(0u64);"
-                 "const u64 value=r.value_or(side.add(1u64));"
-                 "if(side.get()!=1u64){return 0u64;}return value;")
-        suite.check(f"decimal {label} fallback evaluates eagerly", program(
-            body, REPORT, imports="import std.decimal;", result="u64"), expected)
-    suite.check("decimal result status nominal reflection", program(
-        "static_assert(size_of(std::DecimalStatus)==8);"
-        "static_assert(field_count(std::DecimalStatus)==0);"
-        "static_assert(type_id(std::DecimalStatus)!=type_id(std::DecimalResult));"
-        "static_assert(type_id(std::DecimalStatus)!=type_id(std::DecimalAccumulator));"
-        "if(reflect_size(type_id(std::DecimalStatus))!=8){return 1;}return 42;",
-        imports="import std.decimal;"))
+        body += (
+            "const std::DecimalResult r=a.finish();Counter side=Counter(0u64);"
+            "const u64 value=r.value_or(side.add(1u64));"
+            "if(side.get()!=1u64){return 0u64;}return value;"
+        )
+        suite.check(
+            f"decimal {label} fallback evaluates eagerly",
+            program(body, REPORT, imports="import std.decimal;", result="u64"),
+            expected,
+        )
+    suite.check(
+        "decimal result status nominal reflection",
+        program(
+            "static_assert(size_of(std::DecimalStatus)==8);"
+            "static_assert(field_count(std::DecimalStatus)==0);"
+            "static_assert(type_id(std::DecimalStatus)!=type_id(std::DecimalResult));"
+            "static_assert(type_id(std::DecimalStatus)!=type_id(std::DecimalAccumulator));"
+            "if(reflect_size(type_id(std::DecimalStatus))!=8){return 1;}return 42;",
+            imports="import std.decimal;",
+        ),
+    )
     for name, body in [
-        ("decimal digit must be unsigned", "std::DecimalAccumulator a=std::DecimalAccumulator();"
-         "a.push_digit(1);return 42;"),
-        ("decimal fallback must be unsigned", "std::DecimalAccumulator a=std::DecimalAccumulator();"
-         "const std::DecimalResult r=a.finish();return r.value_or(0);"),
-        ("decimal status cannot mix other enum", "std::DecimalAccumulator a=std::DecimalAccumulator();"
-         "const std::DecimalResult r=a.finish();if(r.status()==State::ready){return 42;}return 0;"),
-        ("decimal push requires mutable accumulator", "const std::DecimalAccumulator a="
-         "std::DecimalAccumulator();a.push_digit(1u64);return 42;"),
-        ("decimal reset requires mutable accumulator", "const std::DecimalAccumulator a="
-         "std::DecimalAccumulator();a.reset();return 42;"),
-        ("decimal finish requires result local", "std::DecimalAccumulator a=std::DecimalAccumulator();"
-         "a.finish();return 42;"),
+        (
+            "decimal digit must be unsigned",
+            "std::DecimalAccumulator a=std::DecimalAccumulator();a.push_digit(1);return 42;",
+        ),
+        (
+            "decimal fallback must be unsigned",
+            "std::DecimalAccumulator a=std::DecimalAccumulator();"
+            "const std::DecimalResult r=a.finish();return r.value_or(0);",
+        ),
+        (
+            "decimal status cannot mix other enum",
+            "std::DecimalAccumulator a=std::DecimalAccumulator();"
+            "const std::DecimalResult r=a.finish();if(r.status()==State::ready){return 42;}return 0;",
+        ),
+        (
+            "decimal push requires mutable accumulator",
+            "const std::DecimalAccumulator a=std::DecimalAccumulator();a.push_digit(1u64);return 42;",
+        ),
+        (
+            "decimal reset requires mutable accumulator",
+            "const std::DecimalAccumulator a=std::DecimalAccumulator();a.reset();return 42;",
+        ),
+        (
+            "decimal finish requires result local",
+            "std::DecimalAccumulator a=std::DecimalAccumulator();a.finish();return 42;",
+        ),
     ]:
         suite.check(name, program(body, ENUM, imports="import std.decimal;"), reject=True)
 
@@ -604,9 +832,11 @@ def main():
     enum_cases(suite)
     method_result_cases(suite)
     decimal_cases(suite, arguments.seed, arguments.steps)
-    print(f"{suite.count} decimal value checks passed: {suite.executions} native executions, "
-          f"{suite.rejections} ordinary type/syntax rejections, "
-          f"{suite.modeled_steps} independently modeled decimal steps; seed {arguments.seed}")
+    print(
+        f"{suite.count} decimal value checks passed: {suite.executions} native executions, "
+        f"{suite.rejections} ordinary type/syntax rejections, "
+        f"{suite.modeled_steps} independently modeled decimal steps; seed {arguments.seed}"
+    )
 
 
 if __name__ == "__main__":

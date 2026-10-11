@@ -169,46 +169,64 @@ public:
             (framebuffer && (framebuffer->owned_arena() != arena || h.get(8, 4) != 5 || apic)))
             return false;
         std::array<bool, Handoff::table_pages> visited{};
-        const auto walk = [&](auto &&self, std::uint64_t physical, unsigned level, std::uint64_t prefix)
-                              __attribute__((noinline, noclone)) -> bool {
-            if (physical < base_ || physical >= base_ + used_ * 4096 || physical % 4096)
-                return false;
-            const auto slot = (physical - base_) / 4096;
-            if (visited[slot])
-                return false;
-            visited[slot] = true;
-            for (std::uint64_t i = 0; i < 512; ++i) {
-                const auto value = table(physical)[i] & ~0x60ULL;
-                if (!value)
-                    continue;
-                const auto address = prefix | (i << (12 + 9 * level));
-                if (level != 0) {
-                    if ((value & ~0x000ffffffffff000ULL) != 3 ||
-                        !self(self, value & 0x000ffffffffff000ULL, level - 1, address))
-                        return false;
-                } else {
-                    const auto canonical = (address & (1ULL << 47)) ? address | 0xffff000000000000ULL : address;
-                    if (apic && canonical == LocalApicAdmission::virtual_address) {
-                        if (value != (LocalApicAdmission::physical_address | LocalApicAdmission::leaf_flags))
-                            return false;
-                        continue;
-                    }
-                    if (framebuffer && framebuffer->mapping(canonical)) {
-                        if (value != framebuffer->mapping(canonical))
-                            return false;
-                        continue;
-                    }
-                    if (address < arena || address >= arena + Handoff::arena_bytes)
-                        return false;
-                    const auto flags = expected_flags(address - arena, h);
-                    if (!flags || value != (address | flags))
-                        return false;
-                }
-            }
-            return true;
+        // The same fixed-slot traversal as verify_graphical, preserving this
+        // overload's narrower authority and its historical A/D normalization.
+        // Four levels need four slots; each descent initializes all child state.
+        class Frame final {
+        public:
+            std::uint64_t physical, prefix, next;
         };
-        if (!walk(walk, base_, 3, 0))
-            return false;
+        std::array<Frame, 4> traversal;
+        traversal[0] = {base_, 0, 0};
+        unsigned depth = 0;
+        for (;;) {
+            if (depth >= traversal.size())
+                return false;
+            auto &frame = traversal[depth];
+            const auto physical = frame.physical, prefix = frame.prefix;
+            if (frame.next == 0) {
+                if (physical < base_ || physical >= base_ + used_ * 4096 || physical % 4096)
+                    return false;
+                const auto slot = (physical - base_) / 4096;
+                if (visited[slot])
+                    return false;
+                visited[slot] = true;
+            }
+            if (frame.next == 512) {
+                if (depth == 0)
+                    break;
+                --depth;
+                continue;
+            }
+            const auto index = frame.next++;
+            const auto value = table(physical)[index] & ~0x60ULL;
+            if (!value)
+                continue;
+            const auto level = 3 - depth;
+            const auto address = prefix | (index << (12 + 9 * level));
+            if (level != 0) {
+                if (depth + 1 >= traversal.size() || (value & ~0x000ffffffffff000ULL) != 3)
+                    return false;
+                traversal[++depth] = {value & 0x000ffffffffff000ULL, address, 0};
+            } else {
+                const auto canonical = (address & (1ULL << 47)) ? address | 0xffff000000000000ULL : address;
+                if (apic && canonical == LocalApicAdmission::virtual_address) {
+                    if (value != (LocalApicAdmission::physical_address | LocalApicAdmission::leaf_flags))
+                        return false;
+                    continue;
+                }
+                if (framebuffer && framebuffer->mapping(canonical)) {
+                    if (value != framebuffer->mapping(canonical))
+                        return false;
+                    continue;
+                }
+                if (address < arena || address >= arena + Handoff::arena_bytes)
+                    return false;
+                const auto flags = expected_flags(address - arena, h);
+                if (!flags || value != (address | flags))
+                    return false;
+            }
+        }
         for (std::size_t i = 0; i < used_; ++i)
             if (!visited[i])
                 return false;

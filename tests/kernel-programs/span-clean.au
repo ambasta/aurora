@@ -5,6 +5,8 @@ auto read_clean_byte(builtin::span<const u8> view) -> i64 {
 }
 
 auto aurora_user_main() -> i64 {
-    const builtin::array<u8, 1> bytes = {42u8};
+    const builtin::array<u8, 1> bytes = {
+        42u8
+    };
     return read_clean_byte(borrow_bytes(bytes));
 }

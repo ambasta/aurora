@@ -1,8 +1,0 @@
-{
-  "compiler": "/tmp/aurora-m014-compiler-corrected-sanitized",
-  "exit_code": 1,
-  "stage": "compiler invocation before native assembly/execution",
-  "native_cases_executed": 0,
-  "diagnostic_excerpt": "==9==LeakSanitizer has encountered a fatal error.\n==9==HINT: For debugging, try setting environment variable LSAN_OPTIONS=verbosity=1:log_threads=1\n==9==HINT: LeakSanitizer does not work under ptrace (strace, gdb, etc)\n",
-  "preservation_note": "Diagnostic excerpt copied from the first tool result; a complete stderr file was not retained for that failed attempt."
-}

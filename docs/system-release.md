@@ -58,43 +58,4 @@ Require an explicit list of trusted exceptions: firmware, CPU microcode, GPU fir
 
 The Linux ecosystem is an evolving, externally maintained collection, not a fixed completion checklist. Name the native packages and workflows required for each release, then grow that inventory. Every claimed equivalent needs its own tests, security boundary and maintenance owner. The first coherent release above is a testable milestone; it does not replace the requested long-term complete ecosystem or full Zen/Navi-family qualification goal.
 
-## Evidence history
-
-Keep the milestone001 source manifest as a historical record of that exact checkpoint. Later desktop, porting or kernel work gets its own source identity, test evidence and release manifest; do not rewrite the earlier manifest to imply it contained later features. Report passed and missing gates rather than speculative completion percentages.
-
-## Independent package metadata prerequisite candidate
-
-The library-only [package identity token](package-identity-contract.md) candidate
-implements bounded canonical name/version reading and comparisons in Aurora.
-It deliberately grants no authority and handles no complete manifests, sources,
-dependency constraints, build execution, installation, authentication or updates.
-Its freestanding example and full independent oracle/focused Make gates pass with
-the accepted M022 compiler; parent aggregate is required before acceptance. The native
-source-package release row above remains a requirement.
-
-
-## Declarative package metadata profile candidate
-
-The library-only [manifest profile](package-manifest-contract.md) advances the
-identity prerequisite with a real parser for one package and up to eight pinned
-direct dependencies. Unknown fields, scripts, duplicate names and self-dependencies
-reject; copied observations appear only after full validation. This authored,
-versioned grammar is an initial bounded metadata profile, not the complete source
-recipe format or a package manager. Source retrieval/integrity, version ranges,
-features, transitive resolution, build isolation, reproducibility, installation and
-updates remain the release requirements above. Candidate acceptance requires the
-independent native oracle, separate review and full unchanged-input aggregate.
-
-
-## Exact-manifest bootstrap-order candidate
-
-The library-only [package graph](package-graph-contract.md) candidate validates
-whole supplied catalogs and computes deterministic dependency-first ordering for
-up to eight exact-version manifests. Missing packages, incompatible exact pins,
-duplicate root names and transitive cycles have explicit recoverable outcomes.
-All facts are copied and masked on errors. This supplies a running prerequisite
-for the source-package row's bootstrap ordering/cycle/conflict gate; it does not
-satisfy source retrieval, general resolution, ranges/features, integrity, isolated
-builds, reproducibility, installation or recovery. Full independent oracle and
-corrected focused Make gates passed with separate source/native review; a fresh
-unchanged-input aggregate and final integration seal remain required.
+The implemented [bounded metadata modules](packages.md) cover identity, up to eight direct manifest dependencies and deterministic whole-catalog ordering. They supply no package fetching, integrity, build isolation, installation or update service.

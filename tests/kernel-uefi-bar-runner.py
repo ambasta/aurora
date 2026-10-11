@@ -18,6 +18,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
 SPEC = importlib.util.spec_from_file_location("bar_runner", ROOT / "scripts/kernel-uefi-bar-run.py")
 runner = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(runner)
@@ -33,13 +34,15 @@ class BarRunner(unittest.TestCase):
         (self.repo / "scripts").mkdir(parents=True)
         self.out = self.home / "fresh receipts"
         self.calls = self.home / "calls"
-        self.builder = self.repo / "scripts/kernel-uefi-build.sh"
+        self.build = self.repo / "build/kernel-images/uefi/bar-prepare"
+        self.builder = self.repo / "scripts/meson_test.py"
         self.builder.write_text(
-            '#!/bin/sh\nprintf "%s\\n" "$UEFI_MODE" >> "$CALLS"\n'
-            'if [ "$UEFI_MODE" = normal ]; then exit "${RESTORE_STATUS:-0}"; fi\n'
-            'exit "${BUILD_STATUS:-0}"\n'
+            "import os, pathlib, sys\n"
+            "mode = sys.argv[sys.argv.index('--profile') + 1]\n"
+            "with pathlib.Path(os.environ['CALLS']).open('a') as calls: calls.write(mode + '\\n')\n"
+            "sys.exit(int(os.environ['BUILD_STATUS'])) if os.environ.get('BUILD_STATUS') else None\n"
+            "print(pathlib.Path('build/kernel-images/uefi', mode).resolve())\n"
         )
-        self.builder.chmod(0o755)
         self.qemu = self.home / "qemu-system-x86_64"
         self.qemu.write_text("#!/bin/sh\nexit 93\n")
         self.qemu.chmod(0o755)
@@ -84,6 +87,7 @@ class BarRunner(unittest.TestCase):
         self.addCleanup(patch.stopall)
         patch.object(runner, "ROOT", self.repo).start()
         patch.object(runner, "module", side_effect=self.module).start()
+        patch.object(runner, "selected_kernel_compiler", side_effect=lambda build: build / "aurorac").start()
         patch.dict(os.environ, self.env, clear=True).start()
 
     def module(self, name):
@@ -121,19 +125,220 @@ class BarRunner(unittest.TestCase):
         for other in {"PASS", "FAIL", "BLOCKED"} - {outcome}:
             self.assertFalse(any(line.startswith(other + ":") for line in transcript.splitlines()), transcript)
 
-    def test_main_missing_selectors_and_qemu_report_blocked_without_work(self):
-        for name in ("QEMU_DATA", "AURORA_BAR_COVERAGE", "AURORA_BAR_FIRMWARE", "LD_LIBRARY_PATH"):
-            for value in (None, ""):
-                with self.subTest(name=name, value=value), patch.dict(os.environ):
-                    if value is None:
-                        del os.environ[name]
-                    else:
-                        os.environ[name] = value
-                    self.assert_outcome(self.main_result(), "BLOCKED", "Set " + name)
-                    self.assert_no_work()
+    def test_missing_qemu_reports_blocked_without_work(self):
         os.environ["QEMU"] = "missing-qemu"
         self.assert_outcome(self.main_result(), "BLOCKED", "Missing dependency: missing-qemu")
         self.assert_no_work()
+
+    def test_ordinary_defaults_select_package_and_fresh_controls(self):
+        for name in ("AURORA_BAR_COVERAGE", "AURORA_BAR_FIRMWARE", "LD_LIBRARY_PATH"):
+            del os.environ[name]
+        with (
+            patch.object(
+                runner.controls, "supported_firmware", return_value=(self.code, self.variables, self.firmware_patch)
+            ),
+            patch.object(runner.controls, "stock_firmware", return_value=self.stock),
+        ):
+            config = runner.preflight("bar-prepare", self.out, dict(os.environ))
+        self.assertTrue(config["packaged"])
+        self.assertIsNone(config["coverage_path"])
+        self.assertEqual(config["stock"], self.stock)
+        self.trace.validate_coverage.assert_not_called()
+        self.assert_no_work()
+
+    def test_default_controls_generated_once_before_selected_guest(self):
+        del os.environ["AURORA_BAR_COVERAGE"]
+        with (
+            patch.object(runner.controls, "stock_firmware", return_value=self.stock),
+            patch.object(runner.controls, "generate", return_value=self.coverage_path) as generate,
+            patch.object(runner, "execute") as execute,
+            redirect_stdout(io.StringIO()),
+        ):
+            runner.run("bar-prepare", self.out)
+        generate.assert_called_once_with(
+            "bar", self.out / "controls", self.qemu, self.data, self.stock, dict(os.environ)
+        )
+        self.assertEqual(execute.call_args.args[1]["coverage_path"], self.coverage_path)
+        self.assertEqual(self.calls.read_text().splitlines(), ["bar-prepare"])
+
+    def test_stock_control_selects_inherited_measurement_not_early_refusal(self):
+        controls = runner.controls
+        build = self.home / "native-bar-read"
+        (build / "esp").mkdir(parents=True)
+        (build / "bar-metadata.json").write_text("{}")
+        stock_check = Mock(side_effect=RuntimeError("stock trace oracle reached"))
+        trace = SimpleNamespace(EVENT_TEXT=REAL_TRACE.EVENT_TEXT, validate_stock_control=stock_check)
+        for family, mode in ((family, mode) for family in ("bar", "ivrs") for mode in ("bar-inherited", "bar-state")):
+            with self.subTest(family=family, mode=mode):
+                _, serial, _ = REAL_TRACE.bar.fixture(mode)
+                root = self.home / ("controls-" + family + "-" + mode)
+
+                def fake_run(argv, output, **kwargs):
+                    Path(output).write_text(serial if Path(output).name == "serial.log" else "events\n")
+                    if Path(output).name == "serial.log":
+                        self.assertEqual(kwargs["expected"], 35)
+                        (root / "stock.trace").write_text("synthetic stock trace\n")
+
+                with (
+                    patch.object(controls, "digest", return_value=controls.QEMU_SHA256),
+                    patch.object(controls, "native_image", return_value=build) as native,
+                    patch.object(controls.transport, "run_logged", side_effect=fake_run),
+                    patch.object(
+                        controls, "module", side_effect=lambda name: trace if name == "bar-trace" else REAL_TRACE.bar
+                    ),
+                    patch.object(controls, "msix_control") as msix,
+                ):
+                    if mode == "bar-inherited":
+                        with self.assertRaisesRegex(RuntimeError, "stock trace oracle reached"):
+                            controls.generate(family, root, self.qemu, self.data, self.stock, self.env)
+                        stock_check.assert_called_once_with("synthetic stock trace\n")
+                        stock_check.reset_mock()
+                    else:
+                        with self.assertRaisesRegex(ValueError, "Missing/duplicate/malformed descriptor"):
+                            controls.generate(family, root, self.qemu, self.data, self.stock, self.env)
+                        stock_check.assert_not_called()
+                    native.assert_called_once_with("bar-read", root / "stock", self.env)
+                    msix.assert_not_called()
+
+    def test_supported_firmware_prefix_checks_marker_patch_and_image_shapes(self):
+        prefix = self.home / "package"
+        firmware = prefix / "firmware"
+        firmware.mkdir(parents=True)
+        code, variables, policy, version = [
+            firmware / name for name in ("OVMF_CODE.fd", "OVMF_VARS.fd", "policy-three-file.patch", "VERSION")
+        ]
+        for path, size in ((code, 3653632), (variables, 540672)):
+            with path.open("wb") as stream:
+                stream.truncate(size)
+        policy.write_bytes(b"synthetic reviewed policy")
+        version.write_text(runner.controls.FIRMWARE_VERSION + "\n")
+        env = {"AURORA_BOOT_FIXTURE_PREFIX": str(prefix)}
+        with patch.object(runner.controls, "PATCH_SHA256", runner.digest(policy)):
+            self.assertEqual(runner.controls.supported_firmware(env), (code, variables, policy))
+            for path, value in ((version, b"wrong version\n"), (policy, b"modified policy"), (variables, b"truncated")):
+                with self.subTest(path=path):
+                    original = path.read_bytes()
+                    path.write_bytes(value)
+                    try:
+                        with self.assertRaises(ValueError) as caught:
+                            runner.controls.supported_firmware(env)
+                        self.assertNotIsInstance(caught.exception, runner.MissingPrerequisite)
+                    finally:
+                        path.write_bytes(original)
+            variables.unlink()
+            with self.assertRaises(runner.MissingPrerequisite):
+                runner.controls.supported_firmware(env)
+
+    def test_packaged_receipt_cannot_choose_its_own_firmware_prefix(self):
+        oracle = runner.controls.module("bar-provenance")
+        prefix = self.home / "package"
+        firmware = prefix / "firmware"
+        firmware.mkdir(parents=True)
+        (firmware / "VERSION").write_text(runner.controls.FIRMWARE_VERSION + "\n")
+        files = {
+            role: {"path": str(firmware / name)}
+            for role, name in (
+                ("firmware_code", "OVMF_CODE.fd"),
+                ("vars_template", "OVMF_VARS.fd"),
+                ("firmware_patch", "policy-three-file.patch"),
+            )
+        }
+        files["firmware_patch"]["sha256"] = oracle.PINS["clean_patch"]
+        contents = dict(
+            firmware_code=b"x" * 3653632,
+            vars_template=b"v" * 540672,
+            vars_initial=b"v" * 540672,
+            firmware_patch=b"policy",
+        )
+        receipt = dict(firmware_package=runner.controls.FIRMWARE_VERSION, firmware_source_revision=oracle.REVISION)
+        oracle.validate_clean_firmware(receipt, files, contents, str(prefix))
+        files["firmware_code"]["path"] = str(self.home / "untrusted-code")
+        with self.assertRaisesRegex(ValueError, "path mismatch"):
+            oracle.validate_clean_firmware(receipt, files, contents, str(prefix))
+        files["firmware_code"]["path"] = str(firmware / "OVMF_CODE.fd")
+        contents["vars_initial"] = b"reused"
+        with self.assertRaisesRegex(ValueError, "non-pristine"):
+            oracle.validate_clean_firmware(receipt, files, contents, str(prefix))
+
+    def test_ivrs_external_coverage_missing_is_blocked_and_malformed_fails(self):
+        spec = importlib.util.spec_from_file_location(
+            "ivrs_runner_input_controls", ROOT / "scripts/kernel-uefi-ivrs-run.py"
+        )
+        ivrs = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ivrs)
+        msix, amdvi = self.home / "msix", self.home / "amdvi"
+        trace = SimpleNamespace(
+            load_coverage=Mock(return_value={"msix_control": str(msix), "amdvi_control": str(amdvi)}),
+            validate_coverage=Mock(),
+        )
+        env = dict(self.env, AURORA_IVRS_COVERAGE=str(self.coverage_path))
+        with (
+            patch.object(
+                ivrs, "module", side_effect=lambda name: self.provenance if name == "ivrs-provenance" else trace
+            ),
+            patch.object(
+                ivrs.controls, "supported_firmware", return_value=(self.code, self.variables, self.firmware_patch)
+            ),
+        ):
+            for missing in (msix, amdvi):
+                with self.subTest(missing=missing), self.assertRaises(runner.MissingPrerequisite):
+                    ivrs.prerequisites(env)
+                missing.mkdir()
+            trace.validate_coverage.side_effect = ValueError("contradictory raw control")
+            with self.assertRaisesRegex(ValueError, "Invalid AURORA_IVRS_COVERAGE") as caught:
+                ivrs.prerequisites(env)
+            self.assertNotIsInstance(caught.exception, runner.MissingPrerequisite)
+            trace.load_coverage.side_effect = TypeError("wrong coverage JSON shape")
+            with self.assertRaisesRegex(ValueError, "Invalid AURORA_IVRS_COVERAGE"):
+                ivrs.prerequisites(env)
+
+    def test_explicit_run_only_uses_selected_image_without_any_build(self):
+        self.build.mkdir(parents=True)
+        with (
+            patch.object(runner.transport, "run_logged", side_effect=AssertionError("unexpected build")),
+            patch.object(runner.controls, "generate", side_effect=AssertionError("unexpected setup controls")),
+            patch.object(runner, "execute") as execute,
+            redirect_stdout(io.StringIO()),
+        ):
+            runner.run("bar-prepare", self.out, self.build)
+        self.assertEqual(execute.call_args.args[3], self.build)
+        self.assertFalse(self.calls.exists())
+        self.assertFalse((self.out / "build.log").exists())
+
+    def test_run_only_rejects_unprepared_coverage_and_wrong_profile(self):
+        self.build.mkdir(parents=True)
+        with self.assertRaisesRegex(ValueError, "Wrong prebuilt BAR profile"):
+            runner.run("bar-read", self.out, self.build)
+        with self.assertRaisesRegex(ValueError, "cannot modify"):
+            runner.run("bar-prepare", self.build / "esp" / "run", self.build)
+        self.assertFalse((self.build / "esp").exists())
+        del os.environ["AURORA_BAR_COVERAGE"]
+        with patch.object(runner.controls, "stock_firmware", return_value=self.stock):
+            with self.assertRaisesRegex(ValueError, "requires explicit validated"):
+                runner.run("bar-prepare", self.out, self.build)
+        self.assertFalse(self.calls.exists())
+        self.assertFalse(self.out.exists())
+
+    def test_ivrs_run_only_extracts_execution_without_ninja(self):
+        spec = importlib.util.spec_from_file_location(
+            "ivrs_run_only_controls", ROOT / "scripts/kernel-uefi-ivrs-run.py"
+        )
+        ivrs = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ivrs)
+        build = self.build.parent / "ivrs-read"
+        build.mkdir(parents=True)
+        paths = dict(QEMU=self.qemu, QEMU_DATA=self.data, AURORA_IVRS_COVERAGE=self.coverage_path)
+        with (
+            patch.object(ivrs.transport, "run_logged", side_effect=AssertionError("unexpected build")),
+            patch.object(ivrs, "execute") as execute,
+        ):
+            ivrs.run("ivrs-read", self.out, paths, build)
+        self.assertEqual(execute.call_args.args[:4], ("ivrs-read", self.out, paths, build))
+        with self.assertRaisesRegex(ValueError, "cannot modify"):
+            ivrs.run("ivrs-read", build / "esp" / "run", paths, build)
+        self.assertFalse((build / "esp").exists())
+        self.assertFalse(self.calls.exists())
+        self.assertFalse((self.out / "build.log").exists())
 
     def test_main_missing_external_paths_and_selected_compiler_are_blocked(self):
         for name in ("QEMU_DATA", "AURORA_BAR_COVERAGE", "AURORA_BAR_FIRMWARE", "AURORAC"):
@@ -216,20 +421,18 @@ class BarRunner(unittest.TestCase):
         self.assert_outcome(self.main_result(), "FAIL", "Unreviewed clean firmware CODE")
         self.assert_no_work()
 
-    def test_main_build_validator_and_restoration_failures_never_report_blocked(self):
+    def test_main_build_and_validator_failures_never_report_blocked(self):
         cases = (
             ({"BUILD_STATUS": "79"}, None, "79"),
             ({}, ValueError("serial rejected"), "serial rejected"),
             ({}, OSError("missing generated trace"), "missing generated trace"),
             ({}, subprocess.TimeoutExpired("synthetic qemu", 60), "timed out"),
-            ({"RESTORE_STATUS": "81"}, None, "81"),
-            ({"RESTORE_STATUS": "81"}, ValueError("trace rejected"), "trace rejected"),
         )
         for env, error, diagnostic in cases:
             with self.subTest(env=env, error=error), patch.dict(os.environ, env):
                 with patch.object(runner, "execute", side_effect=error):
                     self.assert_outcome(self.main_result(), "FAIL", diagnostic)
-                self.assertEqual(self.calls.read_text().splitlines(), ["bar-prepare", "normal"])
+                self.assertEqual(self.calls.read_text().splitlines(), ["bar-prepare"])
                 shutil.rmtree(self.out)
                 self.calls.unlink()
 
@@ -246,15 +449,38 @@ class BarRunner(unittest.TestCase):
             self.assert_outcome(self.main_result(), "FAIL", "output unavailable")
         self.assert_no_work()
 
-    def test_main_success_reports_pass_only_after_normal_restoration(self):
+    def test_main_success_reports_selected_native_profile(self):
         with patch.object(runner, "execute"):
-            self.assert_outcome(self.main_result(), "PASS", "normal image restored")
-        self.assertEqual(self.calls.read_text().splitlines(), ["bar-prepare", "normal"])
+            self.assert_outcome(self.main_result(), "PASS", "actual cold BAR gate")
+        self.assertEqual(self.calls.read_text().splitlines(), ["bar-prepare"])
 
-    def test_each_missing_required_selector_rejects_without_artifacts_or_restore(self):
-        for name in ("QEMU_DATA", "AURORA_BAR_COVERAGE", "AURORA_BAR_FIRMWARE", "LD_LIBRARY_PATH"):
-            with self.subTest(name=name), patch.dict(os.environ, {name: ""}):
-                self.reject("Set " + name)
+    def test_hardware_alias_uses_canonical_image_and_original_guest_mode(self):
+        build = self.build.parent / "bar-read"
+        self.builder.write_text("print(" + repr(str(build)) + ")\n")
+        with patch.object(runner, "execute") as execute, redirect_stdout(io.StringIO()):
+            runner.run("bar-inherited", self.out)
+        self.assertEqual(execute.call_args.args[0], "bar-inherited")
+        self.assertEqual(execute.call_args.args[3], build)
+
+    def test_invalid_native_handoff_never_launches_guest(self):
+        for selected in ("relative\n", str(self.build) + "\nextra\n", str(self.build.parent / "normal") + "\n"):
+            with self.subTest(selected=selected):
+                self.builder.write_text("print(" + repr(selected) + ", end='')\n")
+                with patch.object(runner, "execute") as execute:
+                    with self.assertRaisesRegex(ValueError, "native image"):
+                        runner.run("bar-prepare", self.out)
+                    execute.assert_not_called()
+                shutil.rmtree(self.out)
+
+    def test_missing_or_invalid_supported_firmware_fails_before_work(self):
+        del os.environ["AURORA_BAR_FIRMWARE"]
+        for error, label in (
+            (runner.MissingPrerequisite("missing package"), "BLOCKED"),
+            (ValueError("package mismatch"), "FAIL"),
+        ):
+            with self.subTest(label=label), patch.object(runner.controls, "supported_firmware", side_effect=error):
+                self.assert_outcome(self.main_result(), label, str(error))
+                self.assert_no_work()
 
     def test_qemu_default_name_is_discovered_without_executing_it(self):
         del os.environ["QEMU"]
@@ -306,7 +532,10 @@ class BarRunner(unittest.TestCase):
 
     def test_clean_profile_never_uses_stock_firmware(self):
         del os.environ["AURORA_BAR_FIRMWARE"]
-        self.reject("stock OVMF is unsuitable")
+        with patch.object(
+            runner.controls, "supported_firmware", side_effect=runner.MissingPrerequisite("clean package absent")
+        ):
+            self.reject("clean package absent")
 
     def test_mixed_controls_reject_before_build(self):
         for name in (
@@ -353,61 +582,32 @@ class BarRunner(unittest.TestCase):
         with patch.object(Path, "mkdir", side_effect=OSError("output unavailable")):
             self.reject("output unavailable")
 
-    def test_build_spawn_failure_does_not_restore(self):
+    def test_missing_native_builder_fails_without_guest(self):
         self.builder.unlink()
-        with self.assertRaises(FileNotFoundError):
+        with self.assertRaisesRegex(ValueError, "Child exited 2"):
             runner.run("bar-prepare", self.out)
         self.assertFalse(self.calls.exists())
         self.assertFalse((self.out / "restore.log").exists())
 
-    def test_failed_started_build_restores_once_and_preserves_failure(self):
+    def test_failed_native_build_preserves_failure(self):
         os.environ["BUILD_STATUS"] = "79"
         with patch.object(runner, "execute") as execute:
-            with self.assertRaises(subprocess.CalledProcessError) as result:
+            with self.assertRaisesRegex(ValueError, "Child exited 79"):
                 runner.run("bar-prepare", self.out)
-            self.assertEqual(result.exception.returncode, 79)
             execute.assert_not_called()
-        self.assertEqual(self.calls.read_text().splitlines(), ["bar-prepare", "normal"])
-        self.assertTrue((self.out / "restore.log").is_file())
+        self.assertEqual(self.calls.read_text().splitlines(), ["bar-prepare"])
+        self.assertFalse((self.out / "restore.log").exists())
 
-    def test_interrupted_build_is_killed_and_joined_before_restore(self):
-        events = []
-        process = Mock(pid=12345)
-        process.poll.return_value = None
-        process.wait.side_effect = [KeyboardInterrupt(), 0]
-        with patch.object(runner.subprocess, "Popen", return_value=process) as spawn:
-            with patch.object(runner.os, "killpg", side_effect=lambda *args: events.append("kill-group")):
-                with patch.object(
-                    runner.subprocess, "run", side_effect=lambda *args, **kwargs: events.append("restore")
-                ):
-                    with self.assertRaises(KeyboardInterrupt):
-                        runner.run("bar-prepare", self.out)
-        self.assertEqual(events, ["kill-group", "restore"])
-        self.assertEqual(process.wait.call_count, 2)
-        self.assertTrue(spawn.call_args.kwargs["start_new_session"])
-
-    def test_interrupted_wait_never_signals_an_already_reaped_builder(self):
-        process = Mock(pid=12345)
-        process.poll.return_value = 0
-        process.wait.side_effect = [KeyboardInterrupt(), 0]
-        with patch.object(runner.subprocess, "Popen", return_value=process):
-            with patch.object(runner.os, "killpg") as kill:
-                with patch.object(runner.subprocess, "run") as restore:
-                    with self.assertRaises(KeyboardInterrupt):
-                        runner.run("bar-prepare", self.out)
-        kill.assert_not_called()
-        restore.assert_called_once()
-        self.assertEqual(process.wait.call_count, 2)
-
-    def test_real_sigint_cannot_leave_a_child_overwriting_restored_image(self):
+    def test_real_sigint_reaps_owned_builder_children(self):
         self.check_real_interruption(signal.SIGINT)
 
-    def test_real_sigterm_cannot_leave_a_child_overwriting_restored_image(self):
+    def test_real_sigterm_reaps_owned_builder_children(self):
         self.check_real_interruption(signal.SIGTERM)
 
     def check_real_interruption(self, interruption):
         ready = self.home / "child-ready"
         profile = self.home / "profile"
+        profile.write_text("normal")
         child = self.home / "delayed-child.py"
         child.write_text(
             "import pathlib, sys, time\n"
@@ -416,15 +616,17 @@ class BarRunner(unittest.TestCase):
             "pathlib.Path(sys.argv[2]).write_text('stale-console')\n"
         )
         self.builder.write_text(
-            '#!/bin/sh\nif [ "$UEFI_MODE" = normal ]; then printf normal > "$PROFILE"; exit 0; fi\n'
-            '"$REAL_PYTHON" "$CHILD" "$READY" "$PROFILE" &\nwait\n'
+            "import os, subprocess, sys\n"
+            "p = subprocess.Popen([sys.executable, os.environ['CHILD'], os.environ['READY'], os.environ['PROFILE']])\n"
+            "p.wait()\n"
         )
         script = (
             "import importlib.util, pathlib, sys\n"
+            "sys.path.insert(0, str(pathlib.Path(sys.argv[1]).resolve().parent))\n"
             "s=importlib.util.spec_from_file_location('runner',sys.argv[1])\n"
             "m=importlib.util.module_from_spec(s); s.loader.exec_module(m)\n"
             "m.ROOT=pathlib.Path(sys.argv[2])\n"
-            "m.preflight=lambda mode, output, env: {'output': output}\n"
+            "m.preflight=lambda mode, output, env: {'output': output, 'coverage_path': 'already-checked'}\n"
             "m.execute=lambda *args: None\n"
             "sys.argv=['runner','bar-prepare','--output',sys.argv[3]]\n"
             "sys.exit(m.main())\n"
@@ -457,47 +659,31 @@ class BarRunner(unittest.TestCase):
                 self.assertEqual(process.returncode, 143)
             self.assertEqual(profile.read_text(), "normal")
             time.sleep(0.7)
-            self.assertEqual(profile.read_text(), "normal", "surviving build child raced normal restoration")
+            self.assertEqual(profile.read_text(), "normal", "surviving build child wrote after runner exit")
         finally:
             if process.poll() is None:
                 process.kill()
                 process.communicate(timeout=5)
 
-    def test_validator_failure_restores_without_suppressing_rejection(self):
+    def test_validator_failure_preserves_rejection(self):
         with patch.object(runner, "execute", side_effect=ValueError("exact serial rejected")):
             with self.assertRaisesRegex(ValueError, "exact serial rejected"):
                 runner.run("bar-prepare", self.out)
-        self.assertEqual(self.calls.read_text().splitlines(), ["bar-prepare", "normal"])
+        self.assertEqual(self.calls.read_text().splitlines(), ["bar-prepare"])
 
-    def test_dual_failure_retains_validator_error_and_reports_restore_error(self):
-        os.environ["RESTORE_STATUS"] = "81"
-        errors = io.StringIO()
-        with patch.object(runner, "execute", side_effect=ValueError("trace rejected")), redirect_stderr(errors):
-            with self.assertRaisesRegex(ValueError, "trace rejected"):
-                runner.run("bar-prepare", self.out)
-        self.assertIn("normal-image restoration also failed", errors.getvalue())
-        self.assertIn("81", errors.getvalue())
-
-    def test_restore_failure_cannot_print_pass(self):
-        os.environ["RESTORE_STATUS"] = "81"
-        output = io.StringIO()
-        with patch.object(runner, "execute"), redirect_stdout(output):
-            with self.assertRaises(subprocess.CalledProcessError):
-                runner.run("bar-prepare", self.out)
-        self.assertNotIn("PASS:", output.getvalue())
-
-    def test_success_restores_once_and_uses_exact_requested_output(self):
+    def test_success_builds_once_and_uses_exact_requested_output(self):
         output = io.StringIO()
         with patch.object(runner, "execute") as execute, redirect_stdout(output):
             runner.run("bar-prepare", self.out)
         execute.assert_called_once()
         self.assertEqual(execute.call_args.args[1]["output"], self.out)
-        self.assertEqual(self.calls.read_text().splitlines(), ["bar-prepare", "normal"])
+        self.assertEqual(execute.call_args.args[3], self.build)
+        self.assertEqual(self.calls.read_text().splitlines(), ["bar-prepare"])
         self.assertIn(str(self.out / "receipt.json"), output.getvalue())
-        self.assertIn("normal image restored", output.getvalue())
+        self.assertIn("actual cold BAR gate", output.getvalue())
 
     def test_actual_executor_keeps_original_clock_profile_and_mandatory_validators(self):
-        build = self.repo / "build/uefi"
+        build = self.build
         (build / "esp/EFI/BOOT").mkdir(parents=True)
         (build / "esp/EFI/BOOT/BOOTX64.EFI").write_text("synthetic loader")
         (self.repo / "build/aurorac").write_text("synthetic compiler identity")
@@ -527,15 +713,15 @@ class BarRunner(unittest.TestCase):
                 self.out.mkdir()
                 status = 33 if mode in ("bar-read", "bar-prepare") else 35
 
-                def guest(argv, **kwargs):
-                    kwargs["stdout"].write("synthetic serial\n")
+                def guest(argv, log, **kwargs):
+                    log.write_text("synthetic serial\n")
                     (self.out / "trace.log").write_text("synthetic trace\n")
                     (self.out / "firmware.log").write_text("synthetic firmware log\n")
-                    return SimpleNamespace(returncode=status)
+                    return status
 
-                with patch.object(runner.subprocess, "run", side_effect=guest) as launch:
+                with patch.object(runner.transport, "run_logged", side_effect=guest) as launch:
                     with redirect_stdout(io.StringIO()):
-                        runner.execute(mode, config, dict(os.environ))
+                        runner.execute(mode, config, dict(os.environ), build)
                 launch.assert_called_once()
                 argv = launch.call_args.args[0]
                 firmware = (
@@ -588,7 +774,7 @@ class BarRunner(unittest.TestCase):
                         "isa-debug-exit,iobase=0xf4,iosize=0x04",
                     ],
                 )
-                self.assertEqual(launch.call_args.kwargs["stdin"], subprocess.DEVNULL)
+                self.assertEqual(launch.call_args.args[1], self.out / "serial.log")
                 self.assertEqual(launch.call_args.kwargs["timeout"], 60)
                 self.smoke.validate.assert_called_once_with(status, "synthetic serial\n", mode, {})
                 self.trace.validate_trace.assert_called_once_with(
@@ -603,9 +789,12 @@ class BarRunner(unittest.TestCase):
                     shutil.rmtree(self.out)
                     self.out.mkdir()
                     validator.side_effect = ValueError(label)
-                    with patch.object(runner.subprocess, "run", side_effect=guest), redirect_stdout(io.StringIO()):
+                    with (
+                        patch.object(runner.transport, "run_logged", side_effect=guest),
+                        redirect_stdout(io.StringIO()),
+                    ):
                         with self.assertRaisesRegex(ValueError, label):
-                            runner.execute(mode, config, dict(os.environ))
+                            runner.execute(mode, config, dict(os.environ), build)
                     validator.side_effect = None
                 self.smoke.validate.reset_mock()
                 self.trace.validate_trace.reset_mock()
@@ -615,7 +804,8 @@ class BarRunner(unittest.TestCase):
     def prepare_public_runner(self):
         """Run real Make/main/lifecycle with synthetic validators, images and QEMU."""
         shutil.copy2(ROOT / "Makefile", self.repo / "Makefile")
-        shutil.copy2(ROOT / "scripts/kernel-uefi-bar-run.py", self.repo / "scripts/kernel-uefi-bar-run.py")
+        for name in ("kernel-uefi-bar-run.py", "qemu_transport.py", "kernel_profiles.py", "kernel_trace_controls.py"):
+            shutil.copy2(ROOT / "scripts" / name, self.repo / "scripts" / name)
         self.python_calls = self.home / "python-calls"
         self.main_status = self.home / "main-status"
         self.public_bin = self.home / "bin"
@@ -634,6 +824,7 @@ from types import SimpleNamespace
 
 Path(os.environ["PYTHON_CALLS"]).write_text("runner invoked\n")
 sys.argv = sys.argv[1:]
+sys.path.insert(0, str(Path(sys.argv[0]).resolve().parent))
 spec = importlib.util.spec_from_file_location("public_bar_runner", sys.argv[0])
 runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
@@ -667,20 +858,17 @@ modules = {
     "bar-smoke": SimpleNamespace(validate=smoke),
 }
 runner.module = modules.__getitem__
-real_run = subprocess.run
-
-def synthetic_qemu(argv, **kwargs):
-    if str(argv[0]) != os.environ["QEMU"]:
-        return real_run(argv, **kwargs)
-    out = Path(kwargs["stdout"].name).parent
-    kwargs["stdout"].write("synthetic serial\n")
+real_run_logged = runner.transport.run_logged
+def synthetic_qemu(argv, log, **kwargs):
+    if "--print-image-dir" in argv:
+        return real_run_logged(argv, log, **kwargs)
+    out = log.parent
+    log.write_text("synthetic serial\n")
     (out / "trace.log").write_text("synthetic trace\n")
     (out / "firmware.log").write_text("synthetic firmware\n")
-    if os.environ.get("GUEST_TIMEOUT"):
-        raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
-    return SimpleNamespace(returncode=int(os.environ.get("GUEST_STATUS", "33")))
+    return 124 if os.environ.get("GUEST_TIMEOUT") else int(os.environ.get("GUEST_STATUS", "33"))
 
-runner.subprocess.run = synthetic_qemu
+runner.transport.run_logged = synthetic_qemu
 status = runner.main()
 Path(os.environ["MAIN_STATUS"]).write_text(str(status) + "\n")
 sys.exit(status)
@@ -695,21 +883,24 @@ sys.exit(status)
 from pathlib import Path
 import sys
 
-mode = os.environ["UEFI_MODE"]
-with Path(os.environ["CALLS"]).open("a") as calls:
-    calls.write(mode + "\n")
-if mode == "normal":
-    sys.exit(int(os.environ.get("RESTORE_STATUS", "0")))
-status = int(os.environ.get("BUILD_STATUS", "0"))
-if status:
-    sys.exit(status)
-build = Path("build/uefi")
-(build / "esp/EFI/BOOT").mkdir(parents=True)
-(build / "esp/EFI/BOOT/BOOTX64.EFI").write_text("synthetic loader")
-Path("build/aurorac").write_text("synthetic compiler identity")
-for name in ("payload.bin", "payload.elf"):
-    (build / name).write_text("synthetic payload")
-(build / "bar-metadata.json").write_text("{}")
+def selected_kernel_compiler(build):
+    return build / "aurorac"
+
+if __name__ == "__main__":
+    mode = sys.argv[sys.argv.index("--profile") + 1]
+    with Path(os.environ["CALLS"]).open("a") as calls:
+        calls.write(mode + "\n")
+    status = int(os.environ.get("BUILD_STATUS", "0"))
+    if status:
+        sys.exit(status)
+    build = Path("build/kernel-images/uefi") / mode
+    (build / "esp/EFI/BOOT").mkdir(parents=True)
+    (build / "esp/EFI/BOOT/BOOTX64.EFI").write_text("synthetic loader")
+    Path("build/aurorac").write_text("synthetic compiler identity")
+    for name in ("payload.bin", "payload.elf"):
+        (build / name).write_text("synthetic payload")
+    (build / "bar-metadata.json").write_text("{}")
+    print(build.resolve())
 """
         )
 
@@ -748,8 +939,6 @@ for name in ("payload.bin", "payload.elf"):
             ({"QEMU": "missing-qemu"}, "BLOCKED", "Missing dependency: missing-qemu"),
             ({"QEMU": str(self.data)}, "FAIL", "QEMU"),
             ({"QEMU": str(self.code)}, "FAIL", "QEMU"),
-            ({"QEMU_DATA": ""}, "BLOCKED", "Set QEMU_DATA"),
-            ({"AURORA_BAR_FIRMWARE": ""}, "BLOCKED", "Set AURORA_BAR_FIRMWARE"),
             ({"AURORA_BAR_COVERAGE": str(self.home / "missing")}, "BLOCKED", "AURORA_BAR_COVERAGE"),
             ({"QEMU_DATA": str(self.code)}, "FAIL", "QEMU_DATA"),
         )
@@ -763,7 +952,7 @@ for name in ("payload.bin", "payload.elf"):
         self.assert_outcome(self.public_make_result(), "FAIL", "Unreviewed clean firmware CODE")
         self.assert_no_work()
 
-    def test_public_make_real_runner_build_guest_validator_restore_and_success_outcomes(self):
+    def test_public_make_real_runner_build_guest_validator_and_success_outcomes(self):
         self.prepare_public_runner()
         cases = (
             ({"BUILD_STATUS": "79"}, "FAIL", "79"),
@@ -772,18 +961,16 @@ for name in ("payload.bin", "payload.elf"):
             ({"VALIDATOR_FAILURE": "serial"}, "FAIL", "serial rejected"),
             ({"VALIDATOR_FAILURE": "trace"}, "FAIL", "trace rejected"),
             ({"VALIDATOR_FAILURE": "provenance"}, "FAIL", "provenance rejected"),
-            ({"RESTORE_STATUS": "81"}, "FAIL", "81"),
-            ({"VALIDATOR_FAILURE": "trace", "RESTORE_STATUS": "81"}, "FAIL", "restoration also failed"),
-            ({}, "PASS", "normal image restored"),
+            ({}, "PASS", "actual cold BAR gate"),
         )
         for env, outcome, diagnostic in cases:
             with self.subTest(env=env):
                 result = self.public_make_result(env)
                 self.assert_outcome(result, outcome, diagnostic)
                 self.assertEqual(self.main_status.read_text(), "0\n" if outcome == "PASS" else "2\n")
-                self.assertEqual(self.calls.read_text().splitlines(), ["bar-prepare", "normal"])
+                self.assertEqual(self.calls.read_text().splitlines(), ["bar-prepare"])
                 self.assertTrue((self.out / "build.log").is_file())
-                self.assertTrue((self.out / "restore.log").is_file())
+                self.assertFalse((self.out / "restore.log").exists())
                 if outcome == "PASS":
                     receipt = json.loads((self.out / "receipt.json").read_text())
                     self.assertEqual(receipt["mode"], "bar-prepare")
