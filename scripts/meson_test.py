@@ -71,11 +71,9 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
         + "; use a configured MESON_BUILD_DIR (compatibility outputs: build/aurorac and build/aurora-fmt)",
     )
     if scope is not None:
-        contract.prepare_controls(argparse.Namespace(goal="test", entry="root", repo_root=root), env)
-        contract.require(
-            not env.get("AURORA_TEST_CONTEXT"),
-            "Legacy test contexts are retired; use the configured predecessor-backed Meson graph",
-        )
+        contract.selected_flag_vectors(env)
+        for name in (*contract.OPAQUE_ENV, *contract.TEST_FLAGS, "IR_TEST_BUILD_PREFIX"):
+            contract.require(not env.get(name), "Unsupported Meson environment override: " + name)
     contract.require(
         not any(env.get(name) for name in contract.CAP_CONTROLS) and (scope is None or not env.get("IR_TEST_CXXFLAGS")),
         "Canonical Meson uses registered full caps and fixture flags; remove legacy overrides",
@@ -185,11 +183,6 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
             + ", ".join(sorted(missing))
             + "; configure a predecessor-backed MESON_BUILD_DIR using compiler/README.md#source-bootstrap",
         )
-        contract.require(
-            isinstance(options["bootstrap_compiler"], str) and Path(options["bootstrap_compiler"]).is_absolute(),
-            "Configured bootstrap_compiler must select an absolute predecessor; "
-            "see compiler/README.md#source-bootstrap",
-        )
         command = introspect("--compilers")["build"]["cpp"]["exelist"]
         contract.require(
             len(command) == 1 and meson_toolchain.selected_tool(command[0]) == cxx,
@@ -218,11 +211,16 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
                 + " or select a matching MESON_BUILD_DIR",
             )
             run(*setup)
-            refreshed = {item["name"]: item["value"] for item in introspect("--buildoptions")}
+            options = {item["name"]: item["value"] for item in introspect("--buildoptions")}
             contract.require(
-                refreshed.get("bootstrap_compiler") == requested_bootstrap,
+                options.get("bootstrap_compiler") == requested_bootstrap,
                 "Meson did not apply the requested bootstrap_compiler",
             )
+        contract.require(
+            isinstance(options["bootstrap_compiler"], str) and Path(options["bootstrap_compiler"]).is_absolute(),
+            "Configured bootstrap_compiler must select an absolute predecessor; "
+            "see compiler/README.md#source-bootstrap",
+        )
         if tests:
             registered = {item["name"] for item in introspect("--tests")}
             unknown = sorted(set(tests) - registered)

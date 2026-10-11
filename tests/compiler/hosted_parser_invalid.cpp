@@ -20,11 +20,11 @@ using EdgeWords = std::array<std::int64_t, 5>;
 using TypeWords = std::array<std::int64_t, 8>;
 using StatementWords = std::array<std::int64_t, 11>;
 using InputWords = std::array<std::uint64_t, 18>;
-static_assert(sizeof(ResultWords) == sizeof(aurora::hosted_abi::ParseResult) &&
-              sizeof(NodeWords) == sizeof(aurora::hosted_abi::Node) &&
-              sizeof(EdgeWords) == sizeof(aurora::hosted_abi::Edge) &&
-              sizeof(TypeWords) == sizeof(aurora::hosted_abi::TypeSyntax) &&
-              sizeof(StatementWords) == sizeof(aurora::hosted_abi::StatementSyntax) &&
+static_assert(sizeof(ResultWords) == sizeof(aurora::hosted_abi::compiler_parser::ParseResult) &&
+              sizeof(NodeWords) == sizeof(aurora::hosted_abi::compiler_parser::AstNode) &&
+              sizeof(EdgeWords) == sizeof(aurora::hosted_abi::compiler_parser::ChildEdge) &&
+              sizeof(TypeWords) == sizeof(aurora::hosted_abi::compiler_parser::TypeSyntax) &&
+              sizeof(StatementWords) == sizeof(aurora::hosted_abi::compiler_parser::StatementSyntax) &&
               sizeof(InputWords) == sizeof(aurora::hosted_abi::ParserInput));
 using aurora::DiagnosticCode;
 using aurora::hosted_parser::NodeKind;
@@ -53,10 +53,10 @@ void require(bool value, const std::string &message) {
         throw std::runtime_error(message);
 }
 void reset() {
-    result = {wire(Status::Success), 2, 3, 3, 3};
-    records = {{wire(NodeKind::Literal), 0, -1, -1, 1, 0, 0},
-               {wire(NodeKind::Literal), 2, -1, -1, 1, 2, 2},
-               {wire(NodeKind::Binary), 1, 0, 1, 2, 1, 1}};
+    result = {wire(Status::success), 2, 3, 3, 3};
+    records = {{wire(NodeKind::literal), 0, -1, -1, 1, 0, 0},
+               {wire(NodeKind::literal), 2, -1, -1, 1, 2, 2},
+               {wire(NodeKind::binary), 1, 0, 1, 2, 1, 1}};
     count = 3;
     edgeCount = typeCount = statementCount = 0;
     edges.clear();
@@ -77,7 +77,7 @@ void fixture(const std::string &source,
     edgeCount = static_cast<std::int64_t>(edges.size());
     if (consumed < 0)
         consumed = static_cast<std::int64_t>(tokens.size()) - 2;
-    result = {wire(Status::Success),
+    result = {wire(Status::success),
               count - 1,
               count,
               consumed,
@@ -85,44 +85,44 @@ void fixture(const std::string &source,
 }
 void callFixture(const std::string &source = "f(1,2);") {
     fixture(source,
-            {{wire(NodeKind::Literal), 2, -1, -1, 1, 2, 2},
-             {wire(NodeKind::Literal), 4, -1, -1, 1, 4, 4},
-             {wire(NodeKind::Call), 0, 1, 2, 2, 0, 5}},
+            {{wire(NodeKind::literal), 2, -1, -1, 1, 2, 2},
+             {wire(NodeKind::literal), 4, -1, -1, 1, 4, 4},
+             {wire(NodeKind::call), 0, 1, 2, 2, 0, 5}},
             {{0, -1, 1, 2, -1}, {1, 0, 2, 2, -1}});
 }
 void methodFixture(const std::string &source = "a.m(1);") {
     fixture(source,
-            {{wire(NodeKind::Name), 0, -1, -1, 1, 0, 0},
-             {wire(NodeKind::Literal), 4, -1, -1, 1, 4, 4},
-             {wire(NodeKind::MethodCall), 2, 1, 2, 2, 2, 5}},
+            {{wire(NodeKind::name), 0, -1, -1, 1, 0, 0},
+             {wire(NodeKind::literal), 4, -1, -1, 1, 4, 4},
+             {wire(NodeKind::method_call), 2, 1, 2, 2, 2, 5}},
             {{0, -1, 1, 2, -1}, {1, 0, 2, 2, -1}});
 }
 void indexFixture(const std::string &source = "a[i];") {
     fixture(source,
-            {{wire(NodeKind::Name), 0, -1, -1, 1, 0, 0},
-             {wire(NodeKind::Name), 2, -1, -1, 1, 2, 2},
-             {wire(NodeKind::Index), 1, 0, 1, 2, 1, 3}});
+            {{wire(NodeKind::name), 0, -1, -1, 1, 0, 0},
+             {wire(NodeKind::name), 2, -1, -1, 1, 2, 2},
+             {wire(NodeKind::index), 1, 0, 1, 2, 1, 3}});
 }
 void arrayFixture(const std::string &source = "{1,2};") {
     fixture(source,
-            {{wire(NodeKind::Literal), 1, -1, -1, 1, 1, 1},
-             {wire(NodeKind::Literal), 3, -1, -1, 1, 3, 3},
-             {wire(NodeKind::ArrayLiteral), 0, 1, 2, 2, 0, 4}},
+            {{wire(NodeKind::literal), 1, -1, -1, 1, 1, 1},
+             {wire(NodeKind::literal), 3, -1, -1, 1, 3, 3},
+             {wire(NodeKind::array_literal), 0, 1, 2, 2, 0, 4}},
             {{0, -1, 1, 2, -1}, {1, 0, 2, 2, -1}});
 }
 void constructFixture(const std::string &source = "T{.a=1,.b=2};") {
     fixture(source,
-            {{wire(NodeKind::Literal), 5, -1, -1, 1, 5, 5},
-             {wire(NodeKind::Literal), 10, -1, -1, 1, 10, 10},
-             {wire(NodeKind::Construct), 0, 1, 2, 2, 0, 11}},
+            {{wire(NodeKind::literal), 5, -1, -1, 1, 5, 5},
+             {wire(NodeKind::literal), 10, -1, -1, 1, 10, 10},
+             {wire(NodeKind::construct), 0, 1, 2, 2, 0, 11}},
             {{0, -1, 1, 2, 3}, {1, 0, 2, 2, 8}});
 }
 void constructorFixture(const std::string &source = "field{1};", bool empty = false) {
     if (empty)
-        fixture(source, {{wire(NodeKind::ArrayZero), 0, -1, 0, 1, 0, 2}}, {}, 3);
+        fixture(source, {{wire(NodeKind::array_zero), 0, -1, 0, 1, 0, 2}}, {}, 3);
     else
         fixture(source,
-                {{wire(NodeKind::Literal), 2, -1, -1, 1, 2, 2}, {wire(NodeKind::ArrayLiteral), 0, 0, 1, 2, 0, 3}},
+                {{wire(NodeKind::literal), 2, -1, -1, 1, 2, 2}, {wire(NodeKind::array_literal), 0, 0, 1, 2, 0, 3}},
                 {{0, -1, 1, 2, -1}},
                 4);
 }
@@ -132,19 +132,19 @@ void typedFixture(const std::string &source,
                   std::vector<EdgeWords> arguments = {}) {
     const auto tokens = aurora::lex(source, "forged.au");
     if (nodes.empty())
-        nodes = {{wire(NodeKind::Call), 0, -1, 0, 1, 0, static_cast<std::int64_t>(tokens.size()) - 3}};
+        nodes = {{wire(NodeKind::call), 0, -1, 0, 1, 0, static_cast<std::int64_t>(tokens.size()) - 3}};
     fixture(source, std::move(nodes), std::move(arguments));
     types = std::move(syntax);
     typeCount = static_cast<std::int64_t>(types.size());
 }
 void reflectedFixture(const std::string &source = "size_of(i64);") {
-    typedFixture(source, {{wire(TypeKind::I64), 2, 2, 4, -1, -1, 0, 2}});
+    typedFixture(source, {{wire(TypeKind::i64_type), 2, 2, 4, -1, -1, 0, 2}});
 }
 void splitFixture(const std::string &source = "f<Box<i64>>();") {
     typedFixture(source,
-                 {{wire(TypeKind::I64), 4, 4, 8, -1, -1, -1, 0},
-                  {wire(TypeKind::Named), 2, 2, 10, 0, -1, -1, 0},
-                  {wire(TypeKind::Named), 0, 0, 11, 1, -1, 0, 1}});
+                 {{wire(TypeKind::i64_type), 4, 4, 8, -1, -1, -1, 0},
+                  {wire(TypeKind::named), 2, 2, 10, 0, -1, -1, 0},
+                  {wire(TypeKind::named), 0, 0, 11, 1, -1, 0, 1}});
 }
 std::string nestedTemplateSource(int levels, bool reflected) {
     std::string source = reflected ? "size_of(" : "";
@@ -159,10 +159,10 @@ void nestedTemplateFixture(int levels, bool reflected) {
     const auto source = nestedTemplateSource(levels, reflected);
     const std::int64_t begin = reflected ? 2 : 0;
     const auto scalar = begin + 2 * levels;
-    std::vector<TypeWords> syntax{{wire(TypeKind::I64), scalar, scalar, scalar * 2, -1, -1, -1, 0}};
+    std::vector<TypeWords> syntax{{wire(TypeKind::i64_type), scalar, scalar, scalar * 2, -1, -1, -1, 0}};
     for (int index = 0; index < levels; ++index) {
         const auto token = begin + 2 * (levels - index - 1);
-        syntax.push_back({wire(TypeKind::Named),
+        syntax.push_back({wire(TypeKind::named),
                           token,
                           token,
                           2 * (scalar + index + 1),
@@ -178,7 +178,7 @@ using Inspect = std::function<void(const aurora::ExpressionPtr &, const Tokens &
 void valid(const std::string &source,
            const std::function<void()> &configure,
            const Inspect &inspect,
-           Stop stop = Stop::Semicolon) {
+           Stop stop = Stop::semicolon) {
     reset();
     configure();
     const auto tokens = aurora::lex(source, "forged.au");
@@ -197,7 +197,7 @@ void invalid(const std::string &label, const std::function<void()> &mutate, cons
     std::size_t position = 0;
     bool rejected = false;
     try {
-        static_cast<void>(aurora::parseHostedExpression(tokens, position, Stop::Semicolon));
+        static_cast<void>(aurora::parseHostedExpression(tokens, position, Stop::semicolon));
     } catch (const aurora::Error &error) {
         rejected = error.diagnostic.code == DiagnosticCode::Internal &&
                    error.diagnostic.message == "hosted parser returned an invalid result";
@@ -212,7 +212,7 @@ void diagnostic(const std::string &source,
                 std::size_t ordinal,
                 aurora::DiagnosticCode code,
                 const std::string &message,
-                Stop stop = Stop::Semicolon,
+                Stop stop = Stop::semicolon,
                 bool secondHalf = false) {
     reset();
     const auto tokens = aurora::lex(source, "forged.au");
@@ -257,7 +257,7 @@ void conversionControls() {
         valid(
             source,
             [&] {
-                fixture(source, {{wire(NodeKind::Literal), 0, -1, -1, 1, 0, 0}});
+                fixture(source, {{wire(NodeKind::literal), 0, -1, -1, 1, 0, 0}});
             },
             [&](const auto &tree, const auto &) {
                 require(tree->op == op, "literal tag conversion changed");
@@ -265,7 +265,7 @@ void conversionControls() {
     valid(
         "ns::value;",
         [] {
-            fixture("ns::value;", {{wire(NodeKind::Name), 0, -1, -1, 1, 2, 2}});
+            fixture("ns::value;", {{wire(NodeKind::name), 0, -1, -1, 1, 2, 2}});
         },
         [](const auto &tree, const auto &tokens) {
             require(tree->op == "name" && tree->token.text == "ns::value" &&
@@ -329,7 +329,7 @@ void conversionControls() {
             require(tree->op == "array_zero" && tree->args.empty() && tree->token.text == "field",
                     "zero initializer lost field token");
         },
-        Stop::ConstructorBraces);
+        Stop::constructor_braces);
     valid(
         "f<Box<i64>>();",
         [] {
@@ -345,9 +345,9 @@ void conversionControls() {
         "size_of(array<i64,8>);",
         [] {
             typedFixture("size_of(array<i64,8>);",
-                         {{wire(TypeKind::I64), 4, 4, 8, -1, -1, -1, 0},
-                          {wire(TypeKind::Capacity), 6, 6, 12, -1, -1, -1, 0},
-                          {wire(TypeKind::Array), 2, 2, 14, 0, 1, 0, 2}});
+                         {{wire(TypeKind::i64_type), 4, 4, 8, -1, -1, -1, 0},
+                          {wire(TypeKind::capacity), 6, 6, 12, -1, -1, -1, 0},
+                          {wire(TypeKind::array_type), 2, 2, 14, 0, 1, 0, 2}});
         },
         [](const auto &tree, const auto &) {
             require(tree->reflectedType == aurora::Type::array(aurora::Type::I64, 8), "array Type changed");
@@ -355,7 +355,7 @@ void conversionControls() {
     valid(
         "size_of(builtin::ConsoleSample);",
         [] {
-            typedFixture("size_of(builtin::ConsoleSample);", {{wire(TypeKind::BuiltinClass), 2, 4, 8, -1, -1, 0, 2}});
+            typedFixture("size_of(builtin::ConsoleSample);", {{wire(TypeKind::builtin_class), 2, 4, 8, -1, -1, 0, 2}});
         },
         [](const auto &tree, const auto &) {
             require(tree->reflectedType.isClass() && tree->reflectedType.displayName == "builtin::ConsoleSample" &&
@@ -364,12 +364,12 @@ void conversionControls() {
         });
 }
 void resultControls() {
-    for (const auto tag : {-1LL, static_cast<long long>(wire(Status::Invalid)), std::numeric_limits<long long>::max()})
+    for (const auto tag : {-1LL, static_cast<long long>(wire(Status::invalid)), std::numeric_limits<long long>::max()})
         invalid("status tag", [=] {
             result[0] = tag;
         });
     invalid("unsupported result", [] {
-        result[0] = wire(Status::Unsupported);
+        result[0] = wire(Status::unsupported);
     });
     invalid("negative count", [] {
         result[2] = count = -1;
@@ -405,11 +405,11 @@ void resultControls() {
             typeCount = value;
         });
     invalid("error with root", [] {
-        result[0] = wire(Status::ExpectedExpression);
+        result[0] = wire(Status::expected_expression);
     });
 }
 void graphControls() {
-    for (const auto kind : {-1LL, 0LL, static_cast<long long>(wire(NodeKind::ArrayZero) + 1)})
+    for (const auto kind : {-1LL, 0LL, static_cast<long long>(wire(NodeKind::array_zero) + 1)})
         invalid("node tag", [=] {
             records[0][0] = kind;
         });
@@ -438,10 +438,10 @@ void graphControls() {
         records[0][2] = 0;
     });
     invalid("missing unary child", [] {
-        records[0][0] = wire(NodeKind::Unary);
+        records[0][0] = wire(NodeKind::unary);
     });
     invalid("orphan node", [] {
-        records[2] = {wire(NodeKind::Literal), 0, -1, -1, 1, 0, 0};
+        records[2] = {wire(NodeKind::literal), 0, -1, -1, 1, 0, 0};
     });
     for (const auto value : {0LL, 1LL, 129LL, std::numeric_limits<long long>::max()})
         invalid("node depth", [=] {
@@ -519,10 +519,10 @@ void graphControls() {
         "shared edge chain",
         [] {
             fixture("f(g(1),2);",
-                    {{wire(NodeKind::Literal), 4, -1, -1, 1, 4, 4},
-                     {wire(NodeKind::Literal), 7, -1, -1, 1, 7, 7},
-                     {wire(NodeKind::Call), 2, 0, 1, 2, 2, 5},
-                     {wire(NodeKind::Call), 0, 2, 3, 3, 0, 8}},
+                    {{wire(NodeKind::literal), 4, -1, -1, 1, 4, 4},
+                     {wire(NodeKind::literal), 7, -1, -1, 1, 7, 7},
+                     {wire(NodeKind::call), 2, 0, 1, 2, 2, 5},
+                     {wire(NodeKind::call), 0, 2, 3, 3, 0, 8}},
                     {{0, -1, 1, 2, -1}, {1, 0, 2, 2, -1}, {2, 1, 3, 3, -1}});
         },
         "f(g(1),2);");
@@ -567,7 +567,7 @@ void typeControls() {
             },
             source);
     };
-    for (const auto tag : {-1LL, 0LL, static_cast<long long>(wire(TypeKind::BuiltinClass) + 1)})
+    for (const auto tag : {-1LL, 0LL, static_cast<long long>(wire(TypeKind::builtin_class) + 1)})
         bad("type tag", [=] {
             types[0][0] = tag;
         });
@@ -596,10 +596,10 @@ void typeControls() {
         types[1][5] = 0;
     });
     bad("atomic type child", [] {
-        types[1][0] = wire(TypeKind::I64);
+        types[1][0] = wire(TypeKind::i64_type);
     });
     bad("missing array child", [] {
-        types[1][0] = wire(TypeKind::Array);
+        types[1][0] = wire(TypeKind::array_type);
     });
     bad("type second without first", [] {
         types[1][4] = -1;
@@ -626,22 +626,22 @@ void typeControls() {
         types[2][7] = 0;
     });
     bad("non-template root value", [] {
-        types[2][0] = wire(TypeKind::Array);
+        types[2][0] = wire(TypeKind::array_type);
     });
     invalid(
         "capacity overflow",
         [] {
             typedFixture(
                 "f<999999999999999999999>();",
-                {{wire(TypeKind::Capacity), 2, 2, 4, -1, -1, -1, 0}, {wire(TypeKind::Named), 0, 0, 6, 0, -1, 0, 1}});
+                {{wire(TypeKind::capacity), 2, 2, 4, -1, -1, -1, 0}, {wire(TypeKind::named), 0, 0, 6, 0, -1, 0, 1}});
         },
         "f<999999999999999999999>();");
 }
 std::string depthFixture(int depth) {
     const std::string source = std::string(static_cast<std::size_t>(depth - 1), '!') + "1;";
-    std::vector<NodeWords> nodes{{wire(NodeKind::Literal), depth - 1, -1, -1, 1, depth - 1, depth - 1}};
+    std::vector<NodeWords> nodes{{wire(NodeKind::literal), depth - 1, -1, -1, 1, depth - 1, depth - 1}};
     for (int index = 1; index < depth; ++index)
-        nodes.push_back({wire(NodeKind::Unary),
+        nodes.push_back({wire(NodeKind::unary),
                          depth - index - 1,
                          index - 1,
                          -1,
@@ -690,7 +690,7 @@ void inputControls() {
         reset();
         auto tokens = aurora::lex("1+2;", "input.au");
         std::size_t position = 0;
-        auto stop = Stop::Semicolon;
+        auto stop = Stop::semicolon;
         aurora::hosted_parser::Context context;
         if (control == 0)
             position = tokens.size();
@@ -733,7 +733,7 @@ void inputControls() {
         std::size_t position = 0;
         bool rejected = false;
         try {
-            static_cast<void>(aurora::parseHostedExpression(tokens, position, Stop::Semicolon));
+            static_cast<void>(aurora::parseHostedExpression(tokens, position, Stop::semicolon));
         } catch (const aurora::Error &error) {
             rejected = error.diagnostic.code == DiagnosticCode::Internal;
         }
@@ -747,7 +747,7 @@ void inputControls() {
     auto supplied = aurora::lex("1+2;", "supplied.au");
     supplied[1].text = "opaque operator";
     std::size_t suppliedPosition = 0;
-    const auto suppliedTree = aurora::parseHostedExpression(supplied, suppliedPosition, Stop::Semicolon);
+    const auto suppliedTree = aurora::parseHostedExpression(supplied, suppliedPosition, Stop::semicolon);
     require(suppliedTree->op == "binary" && suppliedTree->token.text == "opaque operator" && suppliedPosition == 3 &&
                 released == 1,
             "adapter replayed operator grammar or spelling provenance");
@@ -758,7 +758,7 @@ void inputControls() {
     context.typeParameters = {tokens[0]};
     result[4] += 2;
     std::size_t position = 2;
-    const auto tree = aurora::parseHostedExpression(tokens, position, Stop::Semicolon, context);
+    const auto tree = aurora::parseHostedExpression(tokens, position, Stop::semicolon, context);
     require(tree->op == "binary" && position == 5 && capturedInput[7] == 2 && capturedInput[11] == 0 &&
                 capturedInput[12] == 1 && capturedInput[17] == 1 && released == 1,
             "nonzero cursor or copied context span changed");
@@ -767,21 +767,21 @@ void inputControls() {
 void bodyFixture(bool local = false) {
     const std::string source = local ? "{i64 x=1;return x;}" : "{return 1;}";
     const auto tokens = aurora::lex(source, "body.au");
-    records = local ? std::vector<NodeWords>{{wire(NodeKind::Literal), 4, -1, -1, 1, 4, 4},
-                                             {wire(NodeKind::Name), 7, -1, -1, 1, 7, 7}}
-                    : std::vector<NodeWords>{{wire(NodeKind::Literal), 2, -1, -1, 1, 2, 2}};
+    records = local ? std::vector<NodeWords>{{wire(NodeKind::literal), 4, -1, -1, 1, 4, 4},
+                                             {wire(NodeKind::name), 7, -1, -1, 1, 7, 7}}
+                    : std::vector<NodeWords>{{wire(NodeKind::literal), 2, -1, -1, 1, 2, 2}};
     statements =
-        local ? std::vector<StatementWords>{{wire(StatementKind::Local), 1, 6, -1, 0, -1, 0, 2, -1, -1, 1},
-                                            {wire(StatementKind::ReturnValue), 6, 9, 0, 1, -1, -1, -1, -1, -1, 0},
-                                            {wire(StatementKind::Block), 0, 10, -1, -1, -1, -1, -1, 1, -1, 0}}
-              : std::vector<StatementWords>{{wire(StatementKind::ReturnValue), 1, 4, -1, 0, -1, -1, -1, -1, -1, 0},
-                                            {wire(StatementKind::Block), 0, 5, -1, -1, -1, -1, -1, 0, -1, 0}};
+        local ? std::vector<StatementWords>{{wire(StatementKind::local), 1, 6, -1, 0, -1, 0, 2, -1, -1, 1},
+                                            {wire(StatementKind::return_value), 6, 9, 0, 1, -1, -1, -1, -1, -1, 0},
+                                            {wire(StatementKind::block), 0, 10, -1, -1, -1, -1, -1, 1, -1, 0}}
+              : std::vector<StatementWords>{{wire(StatementKind::return_value), 1, 4, -1, 0, -1, -1, -1, -1, -1, 0},
+                                            {wire(StatementKind::block), 0, 5, -1, -1, -1, -1, -1, 0, -1, 0}};
     if (local)
-        types = {{wire(TypeKind::I64), 1, 1, 2, -1, -1, 1, 3}};
+        types = {{wire(TypeKind::i64_type), 1, 1, 2, -1, -1, 1, 3}};
     count = static_cast<std::int64_t>(records.size());
     typeCount = static_cast<std::int64_t>(types.size());
     statementCount = static_cast<std::int64_t>(statements.size());
-    result = {wire(Status::Success),
+    result = {wire(Status::success),
               statementCount - 1,
               count,
               static_cast<std::int64_t>(tokens.size()) - 1,
@@ -793,9 +793,9 @@ void declarationTypeControls() {
         reset();
         records.clear();
         count = 0;
-        types = {{wire(TypeKind::I64), 2, 2, 4, -1, -1, -1, 0}, {wire(TypeKind::Named), 0, 0, 6, 0, -1, 0, 3}};
+        types = {{wire(TypeKind::i64_type), 2, 2, 4, -1, -1, -1, 0}, {wire(TypeKind::named), 0, 0, 6, 0, -1, 0, 3}};
         typeCount = 2;
-        result = {wire(Status::Success), 1, 0, 3, 8};
+        result = {wire(Status::success), 1, 0, 3, 8};
     };
     const auto unchanged = [](const Tokens &before, const Tokens &after) {
         if (before.size() != after.size())
@@ -822,7 +822,7 @@ void declarationTypeControls() {
                 tokens[3].span.begin.offset == 8 && tokens[3].span.begin.column == 9 &&
                 tokens[3].span.source->text == source && read == 0 && edgeRead == 0 && statementRead == 0 &&
                 typeRead == 2 && created == 1 && parsed == 1 && released == 1 &&
-                capturedInput[10] == static_cast<std::uint64_t>(Stop::Type),
+                capturedInput[10] == static_cast<std::uint64_t>(Stop::type),
             "declaration type lost copied conversion, residual cursor or cleanup");
     tokens[3] = original[3];
     require(unchanged(original, tokens), "type conversion modified another caller token");
@@ -906,9 +906,9 @@ void bodyControls() {
     reset();
     records.clear();
     count = 0;
-    statements = {{wire(StatementKind::Block), 0, 2, -1, -1, -1, -1, -1, -1, -1, 0}};
+    statements = {{wire(StatementKind::block), 0, 2, -1, -1, -1, -1, -1, -1, -1, 0}};
     statementCount = 1;
-    result = {wire(Status::Success), 0, 0, 2, 2};
+    result = {wire(Status::success), 0, 0, 2, 2};
     auto tokens = aurora::lex("{}", "empty.au");
     std::size_t position = 0;
     require(aurora::parseHostedBody(tokens, position).empty() && position == 2 && read == 0 && statementRead == 1 &&
@@ -994,7 +994,7 @@ void bodyControls() {
         statements[0][5] = 0;
     });
     reject("missing assignment target", [] {
-        statements[0][0] = wire(StatementKind::Assign);
+        statements[0][0] = wire(StatementKind::assign);
     });
     reject("root carries expression", [] {
         statements[1][4] = 0;
@@ -1045,9 +1045,9 @@ void bodyControls() {
         },
         true);
     reject("duplicate branch owner", [] {
-        statements = {{wire(StatementKind::Block), 1, 2, -1, -1, -1, -1, -1, -1, -1, 0},
-                      {wire(StatementKind::Conditional), 1, 4, -1, 0, -1, -1, -1, 0, 0, 0},
-                      {wire(StatementKind::Block), 0, 5, -1, -1, -1, -1, -1, 1, -1, 0}};
+        statements = {{wire(StatementKind::block), 1, 2, -1, -1, -1, -1, -1, -1, -1, 0},
+                      {wire(StatementKind::conditional), 1, 4, -1, 0, -1, -1, -1, 0, 0, 0},
+                      {wire(StatementKind::block), 0, 5, -1, -1, -1, -1, -1, 1, -1, 0}};
         statementCount = 3;
         result[1] = 2;
     });
@@ -1058,9 +1058,9 @@ void bodyControls() {
         records.clear();
         count = 0;
         for (int index = 0; index < depth; ++index)
-            statements.push_back({wire(StatementKind::Block), 0, depth * 2, -1, -1, -1, -1, -1, index - 1, -1, 0});
+            statements.push_back({wire(StatementKind::block), 0, depth * 2, -1, -1, -1, -1, -1, index - 1, -1, 0});
         statementCount = depth;
-        result = {wire(Status::Success), depth - 1, 0, depth * 2, depth * 2};
+        result = {wire(Status::success), depth - 1, 0, depth * 2, depth * 2};
         position = 0;
         bool rejected = false;
         try {
@@ -1103,7 +1103,7 @@ void cleanupControls() {
         std::size_t position = 0;
         bool threw = false;
         try {
-            static_cast<void>(aurora::parseHostedExpression(tokens, position, Stop::Semicolon));
+            static_cast<void>(aurora::parseHostedExpression(tokens, position, Stop::semicolon));
         } catch (const std::runtime_error &error) {
             threw = std::string(error.what()) == "injected read failure";
         }
@@ -1176,9 +1176,9 @@ extern "C" void aurora_hosted_parser_statement(const void *, std::int64_t index,
 }
 extern "C" void aurora_hosted_parser_release(void *owner) {
     const auto &record = *static_cast<const aurora::hosted_abi::ParserRelease *>(owner);
-    require(record.arena.data() == arenaAddress, "release did not receive the enclosing owner");
+    require(record.arena.storage.data() == arenaAddress, "release did not receive the enclosing owner");
     std::uint64_t canary = 0;
-    std::memcpy(&canary, record.arena.data() + record.arena.size() - sizeof(canary), sizeof(canary));
+    std::memcpy(&canary, record.arena.storage.data() + record.arena.storage.size() - sizeof(canary), sizeof(canary));
     require(record.region == arenaRegion && canary == arenaCanary, "owner region or arena boundary was corrupted");
     ++released;
 }
@@ -1195,19 +1195,19 @@ int main() {
         bodyControls();
         declarationTypeControls();
         diagnostic("f(",
-                   Status::ExpectedExpression,
+                   Status::expected_expression,
                    2,
                    DiagnosticCode::UnexpectedToken,
                    "expected expression (found '<eof>')");
-        diagnostic("1;", Status::AllocationFailure, 0, DiagnosticCode::Internal, "hosted parser allocation failed");
+        diagnostic("1;", Status::allocation_failure, 0, DiagnosticCode::Internal, "hosted parser allocation failed");
         diagnostic(
-            "1;", Status::NestingLimit, 0, DiagnosticCode::NestingLimit, "expression parser nesting exceeds 128");
+            "1;", Status::nesting_limit, 0, DiagnosticCode::NestingLimit, "expression parser nesting exceeds 128");
         diagnostic("size_of(Box<i64>>);",
-                   Status::ExpectedClose,
+                   Status::expected_close,
                    5,
                    DiagnosticCode::UnexpectedToken,
                    "expected ')' (found '>')",
-                   Stop::Semicolon,
+                   Stop::semicolon,
                    true);
         std::cout << "hosted parser representation controls: " << cases << " passed\n";
         return 0;

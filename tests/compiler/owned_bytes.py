@@ -417,7 +417,7 @@ class Suite:
         )
         self.run(moved, 4800, 0, 0, 42, 2, 1)
 
-        arena_source = (ROOT / "compiler/expression_arena.au").read_text()
+        arena_source = (ROOT / "compiler/syntax_arena.au").read_text()
         arena = self.compile(
             "compiler-typed-ast-arena",
             arena_source

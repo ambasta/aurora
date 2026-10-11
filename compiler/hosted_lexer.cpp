@@ -15,7 +15,7 @@ namespace aurora {
 namespace {
 using hosted_lexer::Event;
 using Input = hosted_abi::LexerInput;
-using Output = hosted_abi::Lexeme;
+using Output = hosted_abi::compiler_lexer::Lexeme;
 
 SourcePosition position(std::int64_t offset, std::int64_t line, std::int64_t start) {
     if (offset < 0 || start < 0 || start > offset || line < 1 || line > std::numeric_limits<int>::max() ||
@@ -35,42 +35,46 @@ LexedSource lexSource(std::shared_ptr<const SourceText> source, TriviaRetention 
     LexedSource out;
     out.source = std::move(source);
     Input input;
-    input.backing = out.source->text.data();
-    input.length = static_cast<std::int64_t>(out.source->text.size());
+    input.cursor.line = 1;
+    input.source.backing = out.source->text.data();
+    input.source.length = static_cast<std::int64_t>(out.source->text.size());
     for (;;) {
-        const auto begin = position(input.offset, input.line, input.lineStart);
+        const auto begin = position(input.cursor.offset, input.cursor.line, input.cursor.line_start);
         Output next;
         aurora_hosted_lexer_invoke(&input, &next);
         // Do not let malformed private results index host memory, loop forever,
         // or narrow unchecked into the public diagnostic representation.
-        if (next.event < Event::Token || next.event >= Event::InvalidCursor || next.offset < input.offset ||
-            next.offset > input.length || next.line < input.line ||
-            next.line - input.line > next.offset - input.offset || next.lineStart < input.lineStart ||
-            next.lineStart > next.offset || (next.line == input.line && next.lineStart != input.lineStart) ||
-            (next.line != input.line && next.lineStart <= input.offset) ||
-            (next.event != Event::Whitespace && (next.line != input.line || next.lineStart != input.lineStart)) ||
-            (next.event == Event::EndOfInput ? (input.offset != input.length || next.offset != input.offset)
-                                             : next.offset == input.offset))
+        if (next.event < Event::token || next.event >= Event::invalid_cursor || next.offset < input.cursor.offset ||
+            next.offset > input.source.length || next.line < input.cursor.line ||
+            next.line - input.cursor.line > next.offset - input.cursor.offset ||
+            next.line_start < input.cursor.line_start || next.line_start > next.offset ||
+            (next.line == input.cursor.line && next.line_start != input.cursor.line_start) ||
+            (next.line != input.cursor.line && next.line_start <= input.cursor.offset) ||
+            (next.event != Event::whitespace &&
+             (next.line != input.cursor.line || next.line_start != input.cursor.line_start)) ||
+            (next.event == Event::end_of_input
+                 ? (input.cursor.offset != input.source.length || next.offset != input.cursor.offset)
+                 : next.offset == input.cursor.offset))
             throw Error(DiagnosticCode::Internal, "hosted lexer returned an invalid event");
-        const SourceSpan span{out.source, begin, position(next.offset, next.line, next.lineStart)};
-        if (next.event == Event::UnsupportedCharacter)
+        const SourceSpan span{out.source, begin, position(next.offset, next.line, next.line_start)};
+        if (next.event == Event::unsupported_character)
             throw Error(DiagnosticCode::UnsupportedCharacter, "unsupported character", span);
-        if (next.event == Event::InvalidByte)
+        if (next.event == Event::invalid_byte)
             throw Error(DiagnosticCode::InvalidByteLiteral, "invalid byte literal", span);
-        if (next.event == Event::InvalidString)
+        if (next.event == Event::invalid_string)
             throw Error(DiagnosticCode::InvalidByteStringLiteral, "invalid byte-string literal", span);
-        if (next.event == Event::EndOfInput) {
+        if (next.event == Event::end_of_input) {
             out.tokens.emplace_back("<eof>", span);
             return out;
         }
-        if (next.event == Event::Token)
+        if (next.event == Event::token)
             out.tokens.emplace_back(out.source->text.substr(begin.offset, span.end.offset - begin.offset), span);
         else if (retention == TriviaRetention::Keep)
             out.trivia.push_back(
-                {next.event == Event::Whitespace ? TriviaKind::Whitespace : TriviaKind::LineComment, span});
-        input.offset = next.offset;
-        input.line = next.line;
-        input.lineStart = next.lineStart;
+                {next.event == Event::whitespace ? TriviaKind::Whitespace : TriviaKind::LineComment, span});
+        input.cursor.offset = next.offset;
+        input.cursor.line = next.line;
+        input.cursor.line_start = next.line_start;
     }
 }
 } // namespace aurora

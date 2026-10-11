@@ -52,7 +52,7 @@ using Input = std::array<std::uint64_t, 10>;
 using Event = std::array<std::int64_t, 4>;
 static_assert(sizeof(Input) == 80 && sizeof(Event) == 32);
 static_assert(sizeof(Input) == sizeof(aurora::hosted_abi::LexerInput) &&
-              sizeof(Event) == sizeof(aurora::hosted_abi::Lexeme));
+              sizeof(Event) == sizeof(aurora::hosted_abi::compiler_lexer::Lexeme));
 static_assert(sizeof(void *) == 8);
 
 std::string context;
@@ -553,18 +553,18 @@ void eventAbiCases() {
     // Observe the real Aurora result through the independent raw record/ABI
     // envelope, not through lexSource or a source-text enum-order check.
     const std::array<std::pair<std::string, Kind>, 8> cases{{
-        {"name", Kind::Token},
-        {" \t\r\n", Kind::Whitespace},
-        {"// comment", Kind::LineComment},
-        {"", Kind::EndOfInput},
-        {"@", Kind::UnsupportedCharacter},
-        {"'ab'", Kind::InvalidByte},
-        {"\"\\q\"", Kind::InvalidString},
-        {"name", Kind::InvalidCursor},
+        {"name", Kind::token},
+        {" \t\r\n", Kind::whitespace},
+        {"// comment", Kind::line_comment},
+        {"", Kind::end_of_input},
+        {"@", Kind::unsupported_character},
+        {"'ab'", Kind::invalid_byte},
+        {"\"\\q\"", Kind::invalid_string},
+        {"name", Kind::invalid_cursor},
     }};
     for (const auto &[source, expected] : cases) {
         context = "host/Aurora event ABI parity " + std::to_string(static_cast<std::int64_t>(expected));
-        const auto observed = raw(input(source.data(), source.size(), expected == Kind::InvalidCursor ? -1 : 0));
+        const auto observed = raw(input(source.data(), source.size(), expected == Kind::invalid_cursor ? -1 : 0));
         require(observed[0] == static_cast<std::int64_t>(expected), "generated event disagrees with host ABI enum");
     }
 }

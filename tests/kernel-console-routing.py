@@ -116,7 +116,7 @@ class ConsoleRouting(unittest.TestCase):
             '    exit "${PTY_STATUS:-0}" ;;\n'
             '  "-B tests/kernel-boot-capacity.py --qemu")\n'
             '    printf "existing|kernel-boot-capacity.py --qemu\\n" >> "$CALLS"; exit 0 ;;\n'
-            '  "-B scripts/compiler_contract.py "*|"-B scripts/meson_test.py "*)\n'
+            '  "-B scripts/meson_test.py "*)\n'
             '    printf "native-dispatch|%s\\n" "$*" >> "$CALLS"\n'
             '    exit "${CONTEXT_STATUS:-0}" ;;\n'
             '  *) printf "unexpected-python|%s\\n" "$*" >> "$CALLS"; exit 93 ;;\n'
@@ -490,7 +490,7 @@ class ConsoleRouting(unittest.TestCase):
         self.assertTrue(self.calls()[0].endswith("--suite full"))
         source = (self.repo / "Makefile").read_text()
         prerequisites = target_prerequisites(source, "test")
-        self.assertIn("test-console", prerequisites)
+        self.assertEqual(prerequisites, [])
         self.assertFalse(any(name.startswith("smoke") for name in prerequisites), prerequisites)
 
     def test_make_help_discovers_both_public_console_gates(self):
@@ -498,14 +498,6 @@ class ConsoleRouting(unittest.TestCase):
         self.assertIn("make smoke-console ", output)
         self.assertIn("make smoke-console-uefi ", output)
         self.assert_no_work()
-
-    def test_make_rejects_invalid_native_context_before_console_dispatch(self):
-        for target in ("smoke-console", "smoke-console-uefi"):
-            self.run_make(target, env={"AURORA_TEST_CONTEXT": "invalid", "CONTEXT_STATUS": "79"}, expected=2)
-            self.assertEqual(len(self.calls()), 1)
-            self.assertIn("scripts/compiler_contract.py check", self.calls()[0])
-            self.assertFalse((self.repo / "build").exists())
-            self.clear_calls()
 
 
 class NormalRestoration(unittest.TestCase):

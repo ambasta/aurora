@@ -281,10 +281,17 @@ C/D/c/d require zero counters and an unchanged framebuffer. F/I complete with co
 PRE_SAMPLE. I preserves a 6×9 background cell and first glyph pixel. These inject
 transport failure at valid coordinates, not geometry or synchronous faults.
 
-`make test-graphical-console` uses the controlled compiler and includes paging
-and ordinary/optimized admission controls. Meson `slow`/`full` has the hosted
-runner; `dev`/`full` has paging/admission and compiler-free smoke controls
-(`make test-graphical-controls`). For a pinned hosted run:
+Select the hosted/paging/admission checks from the configured Meson build:
+
+```sh
+meson test -C BUILD graphical-console-native graphical-paging \
+    graphical-admission-controls graphical-admission-controls-optimized \
+    graphical-smoke-controls graphical-smoke-controls-optimized
+```
+
+Meson `slow`/`full` includes the hosted runner; `dev`/`full` includes paging,
+admission and compiler-free smoke controls (`make test-graphical-controls`).
+For a pinned hosted run:
 
 ```sh
 python3 -B -O tests/kernel-graphical-console.py --run /path/to/aurorac \

@@ -9,8 +9,6 @@ readable for historical validation; new builds use predecessor-backed Meson.
 
 from __future__ import annotations
 
-import argparse
-from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
 import json
@@ -19,10 +17,7 @@ from pathlib import Path
 import re
 import shlex
 import shutil
-import signal
 import stat
-import subprocess
-import sys
 
 SCHEMA = "aurora.compiler-contract.v1"
 DEFAULT_FLAGS = "-std=c++23 -O2 -Wall -Wextra -Wpedantic -Werror"
@@ -55,27 +50,6 @@ TEST_FLAGS = (
     "XFS_GEOMETRY_TEST_FLAGS",
     "XFS_ROOT_TEST_FLAGS",
     "XFS_ROOT_API_TEST_FLAGS",
-)
-FORWARDED = (
-    "CXX",
-    "CXXFLAGS",
-    "IR_TEST_CXXFLAGS",
-    "IR_TEST_BUILD_PREFIX",
-    "UTF8_LINES_ARTIFACT_PARENT",
-    "UTF8_RANGE_ARTIFACT_PARENT",
-    "XFS_ROOT_REPO",
-    "XFS_ROOT_FIXTURES",
-    "XFS_ROOT_ARTIFACT_PARENT",
-    "PACKAGE_IDENTITY_CAP_MIB",
-    "PACKAGE_MANIFEST_CAP_MIB",
-    "PACKAGE_GRAPH_CAP_MIB",
-    "KERNEL_BUDGET_CAP_MIB",
-    "ROUND_ROBIN_TEST_CAP_MIB",
-    "IPC_TRANSACTION_CAP_MIB",
-    "SANITIZE",
-    "ASAN_OPTIONS",
-    "UBSAN_OPTIONS",
-    *TEST_FLAGS,
 )
 CAP_CONTROLS = {
     "PACKAGE_IDENTITY_CAP_MIB": (128, 1024),
@@ -222,11 +196,6 @@ def validate_identity_selection(args, preflight=False):
     require(count <= 1, "choose exactly one compiler identity mode")
     if not preflight:
         require(count == 1, "provide one of --compiler-sha256, --developer-build-receipt, or --meson-selected-compiler")
-    if selected:
-        require(
-            not os.environ.get("AURORA_TEST_CONTEXT"),
-            "Meson artifact selection cannot enter a legacy sealed Make context",
-        )
     if expected is not None:
         pin(expected)
 
@@ -326,19 +295,6 @@ class Identity:
         if self.receipt:
             require(digest(self.receipt) == self.receipt_hash, "developer receipt changed during gate")
             read_context(self.receipt, self.root, self.compiler, developer=True)
-        active = os.environ.get("AURORA_TEST_CONTEXT")
-        if active:
-            context = read_context(active, self.root, self.compiler)
-            if self.receipt is not None:
-                require(
-                    context["mode"] == "developer" and Path(active).resolve() == self.receipt,
-                    "developer receipt conflicts with active test context",
-                )
-            if self.expected is not None:
-                require(
-                    context["mode"] == "acceptance" and context["external_expected_sha256"] == self.expected,
-                    "explicit pin conflicts with active test context",
-                )
 
 
 @dataclass
@@ -357,10 +313,6 @@ class MesonIdentity:
         return self.before["sha256"]
 
     def verify(self):
-        require(
-            not os.environ.get("AURORA_TEST_CONTEXT"),
-            "Meson artifact selection cannot enter a legacy sealed Make context",
-        )
         require(file_record(self.compiler) == self.before, "Meson compiler changed during gate")
 
     def record(self):
@@ -400,62 +352,6 @@ def tool_record(name):
     found = shutil.which(name)
     require(found is not None, "required host tool unavailable: " + name)
     return file_record(found)
-
-
-class RunInterrupted(BaseException):
-    def __init__(self, number):
-        super().__init__("test supervisor interrupted by signal " + str(number))
-        self.number = number
-
-
-@contextmanager
-def interrupt_handlers():
-    def interrupted(number, frame):
-        # Repeated cancellation cannot interrupt owned-group cleanup/finalization.
-        signal.signal(signal.SIGTERM, signal.SIG_IGN)
-        signal.signal(signal.SIGINT, signal.SIG_IGN)
-        raise RunInterrupted(number)
-
-    old = {number: signal.signal(number, interrupted) for number in (signal.SIGTERM, signal.SIGINT)}
-    try:
-        yield
-    finally:
-        for number, handler in old.items():
-            signal.signal(number, handler)
-
-
-def stop_group(child):
-    # Descendants may remain after the direct child exits. Own the session group,
-    # not only the direct Popen object's liveness.
-    for number in (signal.SIGTERM, signal.SIGKILL):
-        try:
-            os.killpg(child.pid, number)
-        except ProcessLookupError:
-            break
-        if number == signal.SIGTERM:
-            try:
-                child.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                pass
-    child.wait()
-
-
-def capture(argv, cwd, timeout=60):
-    child = subprocess.Popen(argv, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
-    try:
-        out, err = child.communicate(timeout=timeout)
-        return subprocess.CompletedProcess(argv, child.returncode, out, err)
-    except BaseException:
-        stop_group(child)
-        raise
-
-
-def query(argv, cwd):
-    result = capture(argv, cwd)
-    require(
-        result.returncode == 0, "tool query failed: " + shlex.join(argv) + "\n" + result.stderr.decode(errors="replace")
-    )
-    return result.stdout.decode()
 
 
 def parse_flags(value, name="CXXFLAGS"):
@@ -611,230 +507,3 @@ def reject_pch(headers):
 def build_argv(cxx, flags, output, dependencies):
     """Historical gnu-cxx-main-v1 receipt comparison only; never executed here."""
     return [cxx, *flags, "-MD", "-MF", dependencies, "-MT", "aurora-contract", "main.cpp", "-o", output]
-
-
-def actual_dependency_paths(path, cwd):
-    data = Path(path).read_text()
-    require(data.startswith("aurora-contract:"), "unexpected actual dependency output")
-    return {str((cwd / name).absolute()) for name in shlex.split(data.split(":", 1)[1].replace("\\\n", " "))}
-
-
-def write_json(path, value):
-    Path(path).write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
-
-
-def execute(argv, cwd, env, log):
-    """Retain and stream output; never leave the owned process group on interruption."""
-    with Path(log).open("wb") as output:
-        child = subprocess.Popen(
-            argv, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True
-        )
-        try:
-            while True:
-                data = child.stdout.read1(65536)
-                if not data:
-                    break
-                output.write(data)
-                output.flush()
-                sys.stdout.buffer.write(data)
-                sys.stdout.buffer.flush()
-            code = child.wait()
-            try:
-                os.killpg(child.pid, 0)
-            except ProcessLookupError:
-                return code
-            stop_group(child)
-            raise ContractError("command left descendants running after its exit")
-        except BaseException:
-            stop_group(child)
-            raise
-
-
-def reject_make_controls(env):
-    require(not env.get("MAKEFILES"), "MAKEFILES is unsupported for supervised tests")
-    # GNU Make's inherited ordinary assignments are read from the whitelisted
-    # environment below. Option flags that can skip/ignore work are never allowed.
-    for name in ("MAKEFLAGS", "GNUMAKEFLAGS", "MFLAGS"):
-        text = env.get(name, "")
-        require(
-            not any(option in text for option in ("--eval", "--file", "--makefile")),
-            name + " may not select or inject Make recipes",
-        )
-        words = shlex.split(text)
-        for word in words:
-            if "=" in word or word == "--":
-                continue
-            option = word.lstrip("-")
-            require(
-                not any(x in option for x in ("just-print", "dry-run", "question", "touch", "ignore-errors")),
-                name + " contains coverage-skipping options",
-            )
-            if option and not word.startswith("--") and not word[0].isdigit():
-                require(not any(letter in option for letter in "nqtif"), name + " contains coverage-skipping options")
-    if env.get("SHELL"):
-        require(
-            Path(env["SHELL"]).resolve() in (Path("/bin/sh").resolve(), Path("/bin/bash").resolve()),
-            "custom SHELL is unsupported for supervised tests",
-        )
-    if env.get("MAKE"):
-        require(
-            Path(shutil.which(env["MAKE"]) or env["MAKE"]).resolve() == Path(shutil.which("make")).resolve(),
-            "custom MAKE is unsupported for supervised tests",
-        )
-    require(not env.get(".SHELLFLAGS"), "custom .SHELLFLAGS is unsupported for supervised tests")
-
-
-def validate_cap_controls(env):
-    """Treat caps as bounded decimal data, never extra command-line options."""
-    for name, (minimum, maximum) in CAP_CONTROLS.items():
-        if name not in env:
-            continue  # Omission retains the Make target's reviewed default.
-        value = env[name]
-        require(
-            isinstance(value, str) and re.fullmatch(r"[0-9]{1,4}", value) is not None,
-            name + " must be an unsigned decimal integer with no whitespace or options",
-        )
-        require(
-            minimum <= int(value) <= maximum,
-            name + " must be between " + str(minimum) + " and " + str(maximum) + " MiB",
-        )
-
-
-def prepare_controls(args, env):
-    require(args.entry in ("root", "compiler"), "invalid Make entrypoint")
-    require(re.fullmatch(r"test(?:-[a-z0-9-]+)?", args.goal) is not None, "invalid test goal")
-    require(env.get("ACCEPTANCE_COMPILER") != "", "ACCEPTANCE_COMPILER must not be empty; omit it for a fresh build")
-    reject_make_controls(env)
-    validate_cap_controls(env)
-    selected_flag_vectors(env)
-    parse_cxx(env["CXX"] if "CXX" in env else "g++")
-    expected = env.get("ACCEPTANCE_COMPILER_SHA256")
-    mode = (
-        "acceptance"
-        if args.goal == "test-acceptance" or (args.goal != "test" and expected is not None)
-        else "developer"
-    )
-    alias_pins = [env[name] for name in PINS if env.get(name)]
-    if args.goal != "test" and alias_pins and expected is None:
-        expected = alias_pins[0]
-        mode = "acceptance"
-    if expected is not None:
-        pin(expected)
-        require(mode == "acceptance", "use test-acceptance for an external aggregate pin")
-    require(mode != "acceptance" or expected is not None, "test-acceptance requires ACCEPTANCE_COMPILER_SHA256")
-    require(all(pin(value) == expected for value in alias_pins), "conflicting compiler SHA256 selectors")
-    prebuilt = env.get("ACCEPTANCE_COMPILER")
-    require(not prebuilt or mode == "acceptance", "prebuilt compiler is only valid in acceptance mode")
-    if prebuilt:
-        prebuilt = Path(prebuilt).resolve(strict=True)
-        require(os.access(prebuilt, os.X_OK) and prebuilt.is_file(), "prebuilt compiler must be executable")
-        require(digest(prebuilt) == expected, "prebuilt compiler does not match external expected pin")
-    entry_cwd = Path(args.repo_root).resolve() / ("compiler" if args.entry == "compiler" else "")
-    if env.get("XFS_ROOT_REPO"):
-        require(
-            (entry_cwd / env["XFS_ROOT_REPO"]).resolve() == Path(args.repo_root).resolve(),
-            "XFS_ROOT_REPO conflicts with the supervised source root",
-        )
-    supplied = [name for name in SELECTORS if env.get(name)]
-    if supplied:
-        require(
-            prebuilt is not None,
-            "Make tests own the fresh compiler path; remove compiler path overrides: " + ", ".join(supplied),
-        )
-        cwd = Path(args.repo_root).resolve() / ("compiler" if args.entry == "compiler" else "")
-        require(
-            all((cwd / env[name]).resolve() == prebuilt for name in supplied), "conflicting prebuilt compiler selectors"
-        )
-    for name in OPAQUE_ENV:
-        require(not env.get(name), "opaque compiler/loader environment unsupported: " + name)
-    full = args.goal in ("test", "test-acceptance")
-    if full or mode == "acceptance":
-        require(
-            not any(env.get(name) for name in TEST_FLAGS),
-            "full/acceptance tests reject TEST_FLAGS overrides; use an explicitly focused developer target",
-        )
-        require(not env.get("IR_TEST_BUILD_PREFIX"), "full aggregates reject opaque IR_TEST_BUILD_PREFIX overrides")
-    return mode, expected, prebuilt, full
-
-
-def run(args):
-    """Reject obsolete execution without querying tools or creating artifacts."""
-    require(args.entry in ("root", "compiler"), "invalid Make entrypoint")
-    require(re.fullmatch(r"test(?:-[a-z0-9-]+)?", args.goal) is not None, "invalid test goal")
-    root = Path(args.repo_root).resolve()
-    default = "meson-compiler" if args.entry == "compiler" else "meson"
-    build = (root / os.environ.get("MESON_BUILD_DIR", "build/" + default)).resolve()
-    aggregate = args.goal in ("test", "test-acceptance", "test-compiler")
-    if aggregate:
-        directory = root / "compiler" if args.entry == "compiler" or args.goal == "test-compiler" else root
-        command = shlex.join(["make", "-C", str(directory), "test", "MESON_BUILD_DIR=" + str(build)])
-    else:
-        # Some old aliases composed multiple gates. Do not guess an incomplete
-        # replacement: the explicit list lets the caller choose the full scope.
-        command = shlex.join(["meson", "test", "-C", str(build), "--list"])
-    raise ContractError(
-        "Legacy compiler_contract run is retired; it cannot build a C++ seed or execute a sealed Make graph. "
-        "Use a predecessor-backed Meson directory configured with bootstrap_compiler "
-        "(compiler/README.md#source-bootstrap), then run: "
-        + command
-        + ("; select the required named Meson tests from that list" if not aggregate else "")
-    )
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    sub = parser.add_subparsers(dest="command", required=True)
-    launch = sub.add_parser("run")
-    launch.add_argument("--repo-root", type=Path, required=True)
-    launch.add_argument("--entry", choices=("root", "compiler"), required=True)
-    launch.add_argument("--goal", required=True)
-    check = sub.add_parser("check")
-    check.add_argument("--repo-root", type=Path, required=True)
-    check.add_argument("--context", type=Path, required=True)
-    args = parser.parse_args()
-    try:
-        with interrupt_handlers():
-            dispatch(args)
-    except RunInterrupted as error:
-        parser.exit(128 + error.number, str(error) + "\n")
-    except (ContractError, OSError, ValueError, KeyError) as error:
-        parser.exit(1, "compiler contract: " + str(error) + "\n")
-
-
-def dispatch(args):
-    if args.command == "run":
-        run(args)
-    else:
-        value = read_context(args.context, args.repo_root, os.environ.get("AURORA_TEST_COMPILER"))
-        require(os.environ.get("AURORA_TEST_MODE") == value["mode"], "active mode/context mismatch")
-        expected_args = (
-            ["--developer-build-receipt", str(args.context.resolve())]
-            if value["mode"] == "developer"
-            else ["--compiler-sha256", value["external_expected_sha256"]]
-        )
-        require(
-            shlex.split(os.environ.get("AURORA_TEST_IDENTITY_ARGS", "")) == expected_args,
-            "active identity arguments conflict with context",
-        )
-        if value["mode"] == "acceptance":
-            require(
-                os.environ.get("ACCEPTANCE_COMPILER_SHA256") == value["external_expected_sha256"],
-                "active acceptance pin conflicts with context",
-            )
-        else:
-            require(not os.environ.get("ACCEPTANCE_COMPILER_SHA256"), "developer context cannot supply acceptance pin")
-        for name in PINS:
-            require(
-                not os.environ.get(name) or os.environ[name] == value.get("external_expected_sha256"),
-                "per-family pin conflicts with context: " + name,
-            )
-        for name in SELECTORS:
-            if os.environ.get(name):
-                require(
-                    str(Path(os.environ[name]).resolve()) == value["compiler"]["resolved"],
-                    "active compiler selector mismatch: " + name,
-                )
-
-
-if __name__ == "__main__":
-    main()

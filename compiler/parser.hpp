@@ -266,12 +266,12 @@ public:
                                         auto candidate = fieldPosition;
                                         value = parseHostedExpression(tokens,
                                                                       candidate,
-                                                                      hosted_parser::Stop::ConstructorBraces,
+                                                                      hosted_parser::Stop::constructor_braces,
                                                                       expressionContext());
                                         position = candidate;
                                     } else {
                                         need("(");
-                                        value = statementExpression(hosted_parser::Stop::CloseParenthesis);
+                                        value = statementExpression(hosted_parser::Stop::close_parenthesis);
                                         need(")");
                                     }
                                     method.initializers.emplace_back(fieldName, value);

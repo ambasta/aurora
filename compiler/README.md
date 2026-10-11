@@ -37,18 +37,24 @@ compares the actual generated frontend and current compiler stages.
 Start from a normal Git checkout containing the historical seed source
 `bdf646f09d5e14c88124c4bc9e4f998beda16183` and the reviewed ABI-facts precursor
 [`17f4f1440e6faa9cdaf8711c04400854bdb60d9e`](https://github.com/ambasta/aurora/commit/17f4f1440e6faa9cdaf8711c04400854bdb60d9e)
-(retained on `bootstrap/abi-facts-v1`). Open the
-[pinned development environment](../docs/local-development.md) first, for example
-`./scripts/container.sh bash`, and run all these commands there from the current
-checkout. Keep the historical worktree and compiler separate from current source:
+(retained by the annotated tag `bootstrap-abi-facts-v1`). Prepare the source worktrees on the host,
+where Git is installed; the pinned development image does not include Git:
 
 ```sh
+git fetch origin tag bootstrap-abi-facts-v1
 git worktree add --detach build/predecessor-source bdf646f09d5e14c88124c4bc9e4f998beda16183
+git worktree add --detach build/abi-facts-source 17f4f1440e6faa9cdaf8711c04400854bdb60d9e
+test "$(git -C build/abi-facts-source rev-parse HEAD)" = 17f4f1440e6faa9cdaf8711c04400854bdb60d9e
+```
+
+Then enter the [pinned development environment](../docs/local-development.md)
+with `./scripts/container.sh bash` and run the build commands from the current
+checkout. Keep the historical worktrees and compilers separate from current source:
+
+```sh
 meson setup build/predecessor-seed build/predecessor-source -Dkernel_images=false
 meson compile -C build/predecessor-seed -j 2 aurorac
 SEED=$(realpath build/predecessor-seed/aurorac)
-git fetch origin bootstrap/abi-facts-v1
-git worktree add --detach build/abi-facts-source 17f4f1440e6faa9cdaf8711c04400854bdb60d9e
 meson setup build/abi-facts-compiler build/abi-facts-source -Dkernel_images=false \
   "-Dbootstrap_compiler=$SEED" \
   "-Dbootstrap_compiler_sha256=$(sha256sum "$SEED" | cut -d ' ' -f 1)"
@@ -178,7 +184,7 @@ These temporary register choices are implementation machinery, not a source-leve
 `examples/kernel.au` performs a mutable borrow, releases it, moves ownership and returns 42. `examples/class_values.au` demonstrates class copies/visibility/reflection. `examples/loops_arrays.au` demonstrates checked traversal and independent arrays.
 
 Runtime-sized [typed copied-class owners](OWNERSHIP.md#runtime-sized-copied-class-ownership)
-support the `expression_arena.au` AST, explicit parser-frame and variable-arity
+support the `syntax_arena.au` AST, explicit parser-frame and variable-arity
 argument-edge, unresolved type-syntax and statement storage. Complete existing scalar,
 byte-string, qualified-name, unary, binary, call, postfix, aggregate, explicit
 template and type-taking reflection expressions are parsed in Aurora, including

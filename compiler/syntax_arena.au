@@ -1,4 +1,4 @@
-export module aurora.compiler.expression_arena;
+export module aurora.compiler.syntax_arena;
 
 // Compiler-owned graph storage. Indices belong to one arena invocation and
 // never expose references, owner descriptors or byte representations.

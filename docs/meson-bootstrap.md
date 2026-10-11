@@ -187,7 +187,7 @@ Use `meson test -C BUILD --list` or Meson introspection for the current registra
 never starts QEMU. Keep development quick with `dev` or exact test names; full
 package profiles are slow. `packages` selects both partial and full profiles.
 
-Compiler Python runners reachable from root Make and the fixed lexer/IR/ABI and
+Compiler Python runners selected by root Make's Meson forwarding and the fixed lexer/IR/ABI and
 module C++ fixtures are registered in the canonical graph. The offline XFS
 verifier is registered too. Explicitly classified supplemental/style runners
 still require their separate inputs; inspect the current inventory for scope.
@@ -195,7 +195,7 @@ still require their separate inputs; inspect the current inventory for scope.
 Full package Identity/Manifest/Graph retain respectively 5,503/20, 20,022/29 and
 5,548/30 native/rejection cases; dev selections remain 183/20, 157/29 and 187/30.
 Both retain output-preservation and native negative controls. Full profiles use
-fresh build-local artifacts and the existing 1,024 MiB candidate caps. Non-compiler root prerequisites retain their native registrations, preserving
+fresh build-local artifacts and the existing 1,024 MiB candidate caps. Native Meson registrations preserve
 ordinary/optimized Python controls, fault/capacity checks and complex negative
 compilation sweeps. See `tests/native/inventory.json` for exact mappings and the
 few byte-identical repeated commands deduplicated within a full invocation.

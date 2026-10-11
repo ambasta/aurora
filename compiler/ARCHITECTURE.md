@@ -17,7 +17,7 @@ The C++ implementation uses internal header units and one main translation unit,
 
 ## Hosted Aurora expression parser
 
-`expression_parser.au` parses complete expressions containing integer, byte,
+`parser.au` parses complete expressions containing integer, byte,
 byte-string and bool literals, qualified names, ordinary function/constructor-shaped
 calls, explicit template calls/construction, type-taking reflection,
 member/method/index chains, array literals, designated named construction,
@@ -25,7 +25,7 @@ grouping, unary `-`/`!`/`~`, and all existing binary precedence tiers. Local and
 constructor field initializers, return/static-assert expressions, if/while
 conditions, expression statements and assignment operands enter this path. An
 iterative Pratt state machine stores copied frames and AST nodes in
-`expression_arena.au`; parser nesting and AST depth retain their separate bounds
+`syntax_arena.au`; parser nesting and AST depth retain their separate bounds
 of 128. A third copied-owner store holds reverse-linked argument edges with
 checked child indices, count/depth summaries and optional designator-token indices.
 Argument arity grows within source/resource bounds; parsing adds no fixed
@@ -74,12 +74,17 @@ token coverage or template eligibility. It commits the caller position only afte
 conversion succeeds. RAII consumes the opaque Aurora arena before closing its
 host Region, including errors and allocation exceptions. Semantic type checking,
 ownership analysis, typed IR and backend emission retain their existing authority.
+This conversion adapter is temporary: as semantic analysis moves into Aurora,
+it should consume these syntax records directly and delete the corresponding
+C++ AST conversion, rather than maintain two semantic representations.
 
 The selected predecessor emits the lexer/arena/parser graph with `--local-symbols`
 and `--abi-facts`. The latter describes the same validated module's physical class
 layouts, resolved enum values, function symbols and argument/result extents.
 The bootstrap driver generates the private C++ records/enums and opaque arena
-storage from those facts, with size and field-offset assertions. This is a closed
+storage from those facts, with size and field-offset assertions. Records and enums
+retain their Aurora namespace, field and case names; no hand-maintained alias map
+mirrors their fields. This is a closed
 frontend binding, not a general C ABI generator. Only the builtin readonly-span
 encoding and tiny register-move bridges remain explicit trusted ABI conventions.
 Bridge targets use compiler-reported symbols rather than handwritten mangling.
@@ -89,7 +94,12 @@ emits B, and C2 links B using the same host C++ objects. The bootstrap test chec
 A/B generated-header equality, regenerates B and C, and compares assembly, raw
 output, ABI facts, headers and objects, including the B actually linked into C2.
 The source-build route in [README.md](README.md#source-bootstrap) includes the
-fact-capable predecessor stage. No generated binary or layout snapshot is checked
+fact-capable predecessor stage, preserved by tag `bootstrap-abi-facts-v1` at source
+commit `17f4f1440e6faa9cdaf8711c04400854bdb60d9e`. Advance that predecessor only
+when it cannot build the current frontend, or to shorten the source-bootstrap
+chain after reproducible source rebuild, current-stage convergence and full
+qualification. Preserve earlier source refs; ordinary features do not require a
+predecessor hop. No generated binary or layout snapshot is checked
 in. Focused conversion/ABI and multi-stage corpus checks do not replace the final
 integrated GCC 16 full/image/guest qualification.
 
@@ -99,8 +109,9 @@ Current source has removed `expr`, `primary`, `postfix`, precedence parsing,
 `templateExpressionAhead`, `templateStatementExpressionAhead`, and the reference
 selection switch. Current source also removes C++ `block`, `statement`,
 `startsDeclaration` and `templateArgumentEnd`; ordinary bodies and constructor
-initializers enter Aurora directly. Declaration `type`, `templateArguments` and
-split-closer handling remain for class fields, parameters and declaration headers.
+initializers enter Aurora directly. Declaration `type` and `templateArguments` grammar is also removed; class fields,
+parameters and results use the same Aurora type entry and checked residual-closer
+projection. C++ retains declaration structure and semantic admission.
 
 Targeted fixtures state expected ASTs, token spans, child/designator order and
 exact diagnostics directly. The independent raw ABI, bounded-conversion, depth and

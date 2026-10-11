@@ -94,7 +94,7 @@ def frontend_abi_entries(facts):
 
 
 def frontend_abi_header(facts):
-    """Generate only this private frontend's supported record shapes."""
+    """Render compiler-described classes and enums without a second field schema."""
     frontend_abi_entries(facts)
     lines = [
         "// Generated from compiler ABI facts; do not edit.",
@@ -103,73 +103,42 @@ def frontend_abi_header(facts):
         "#include <cstddef>",
         "#include <cstdint>",
     ]
-    enums = {}
-    enum_specs = [
-        ("compiler_lexer::Event", "hosted_lexer", "Event"),
-        ("compiler_parser::NodeKind", "hosted_parser", "NodeKind"),
-        ("compiler_parser::StatementKind", "hosted_parser", "StatementKind"),
-        ("compiler_parser::TypeKind", "hosted_parser", "TypeKind"),
-        ("compiler_parser::ParseStatus", "hosted_parser", "Status"),
-        ("compiler_parser::Stop", "hosted_parser", "Stop"),
-    ]
-    type_aliases = {
-        "i64_type": "I64",
-        "u64_type": "U64",
-        "u8_type": "U8",
-        "bool_type": "Bool",
-        "array_type": "Array",
-        "own_type": "Own",
-        "ref_type": "Ref",
-        "mutref_type": "MutRef",
-        "builtin_type": "Builtin",
-    }
-    for source, namespace, name in enum_specs:
-        symbol, record = abi_declaration(facts, "enums", source)
-        cpp = f"aurora::{namespace}::{name}"
-        enums[symbol] = cpp
-        lines += [f"namespace aurora::{namespace} {{", f"enum class {name} : std::int64_t {{"]
-        for case, value in record["cases"].items():
-            if not re.fullmatch(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*", case) or type(value) is not int:
-                raise ValueError("unsupported private ABI enum case")
-            alias = type_aliases.get(case) if name == "TypeKind" else None
-            alias = alias or "".join(part.capitalize() for part in case.split("_"))
-            lines.append(f"    {alias} = {value},")
-        lines += ["};", "}"]
-    lines.append("namespace aurora::hosted_abi {")
-
-    def declaration(source):
-        return abi_declaration(facts, "records", source)
 
     def number(value):
         if type(value) is not int or not 0 <= value <= 65536:
             raise ValueError("invalid private ABI extent")
         return value
 
-    def field_type(field):
-        if field["array_length"] != 0:
-            raise ValueError("array field is outside the private copied ABI")
-        kind = field["kind"]
-        if kind == "enum":
-            cpp = enums.get(field["type_name"])
-            if cpp is None or field["bytes"] != 8:
-                raise ValueError("unknown private ABI enum field")
-            return cpp
-        if kind not in ("i64", "u64", "u8", "bool") or field["bytes"] != (1 if kind == "u8" else 8):
-            raise ValueError("unsupported private copied field")
-        return "std::uint8_t" if kind == "u8" else "std::uint64_t" if kind == "u64" else "std::int64_t"
+    def identifier(name):
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+            raise ValueError("unsupported private ABI identifier")
+        return name
 
-    def fields(source, aliases, defaults=None):
-        _, record = declaration(source)
-        defaults = defaults or {}
-        if set(aliases) != {field["name"] for field in record["fields"]}:
-            raise ValueError(f"private ABI fields changed: {source}")
-        result = []
-        for field in record["fields"]:
-            name = aliases[field["name"]]
-            cpp = field_type(field)
-            default = defaults.get(name, f"static_cast<{cpp}>(-1)")
-            result.append((field["offset"], field["bytes"], cpp, name, default))
-        return record, result
+    names = {}
+    for group in ("enums", "records"):
+        for symbol, declaration in facts[group].items():
+            name = "::".join(identifier(part) for part in declaration["source_name"].split("::"))
+            if name in names.values():
+                raise ValueError("ambiguous private ABI source name")
+            names[symbol] = name
+
+    def cpp_name(symbol):
+        if symbol not in names:
+            raise ValueError("unknown private ABI type")
+        return "aurora::hosted_abi::" + names[symbol]
+
+    for symbol, declaration in sorted(facts["enums"].items(), key=lambda item: names[item[0]]):
+        namespace, _, name = names[symbol].rpartition("::")
+        lines += [
+            "namespace aurora::hosted_abi" + ("::" + namespace if namespace else "") + " {",
+            f"enum class {name} : std::int64_t {{",
+        ]
+        for case, value in declaration["cases"].items():
+            identifier(case)
+            if type(value) is not int or not -(2**63) <= value < 2**63:
+                raise ValueError("unsupported private ABI enum value")
+            lines.append(f"    {case} = {value},")
+        lines += ["};", "}"]
 
     def record(name, size, alignment, members):
         nonlocal lines
@@ -177,200 +146,121 @@ def frontend_abi_header(facts):
         if alignment not in (1, 8) or not size:
             raise ValueError("unsupported private ABI alignment/size")
         lines.append(f"struct alignas({alignment}) {name} {{")
+        field_names = {field for _, _, _, field in members}
+
+        def padding_name(candidate):
+            while candidate in field_names:
+                candidate += "_"
+            return candidate
+
         cursor = 0
-        for index, (offset, width, cpp, field, default) in enumerate(members):
+        for index, (offset, width, cpp, field) in enumerate(members):
             offset, width = number(offset), number(width)
             if offset < cursor or width <= 0 or offset + width > size:
                 raise ValueError("overlapping private ABI fields")
             if offset > cursor:
-                lines.append(f"    std::array<std::byte, {offset - cursor}> padding{index}{{}};")
-            lines.append(f"    {cpp} {field} = {default};")
+                lines.append(
+                    f"    std::array<std::byte, {offset - cursor}> {padding_name(f'abi_padding_{index}')}{{}};"
+                )
+            lines.append(f"    {cpp} {field}{{}};")
             cursor = offset + width
         if cursor < size:
-            lines.append(f"    std::array<std::byte, {size - cursor}> tailPadding{{}};")
+            lines.append(f"    std::array<std::byte, {size - cursor}> {padding_name('abi_tail_padding')}{{}};")
         lines += ["};", f"static_assert(sizeof({name}) == {size} && alignof({name}) == {alignment});"]
-        for offset, _, _, field, _ in members:
+        for offset, width, _, field in members:
             lines.append(f"static_assert(offsetof({name}, {field}) == {offset});")
+            lines.append(f"static_assert(sizeof({name}::{field}) == {width});")
 
-    copied = [
-        (
-            "Lexeme",
-            "compiler_lexer::Lexeme",
-            {"event": "event", "offset": "offset", "line": "line", "line_start": "lineStart"},
-            {},
-        ),
-        (
-            "ParseResult",
-            "compiler_parser::ParseResult",
-            {
-                "result": "status",
-                "root_node": "root",
-                "node_count": "count",
-                "token_count": "tokens",
-                "source_offset": "offset",
-            },
-            {"status": "aurora::hosted_parser::Status::Invalid"},
-        ),
-        (
-            "Node",
-            "compiler_parser::AstNode",
-            {
-                "tag": "kind",
-                "token_index": "token",
-                "first_child": "first",
-                "second_child": "second",
-                "tree_depth": "depth",
-                "name_end": "nameEnd",
-                "closing_token": "close",
-            },
-            {"kind": "aurora::hosted_parser::NodeKind::Invalid"},
-        ),
-        (
-            "Edge",
-            "compiler_parser::ChildEdge",
-            {
-                "child_node": "child",
-                "previous_edge": "previous",
-                "argument_count": "count",
-                "tree_depth": "depth",
-                "field_token": "field",
-            },
-            {},
-        ),
-        (
-            "TypeSyntax",
-            "compiler_parser::TypeSyntax",
-            {
-                "tag": "kind",
-                "token_index": "token",
-                "name_end": "nameEnd",
-                "closing_token": "close",
-                "first_child": "first",
-                "second_child": "second",
-                "owner_token": "owner",
-                "owner_role": "role",
-            },
-            {"kind": "aurora::hosted_parser::TypeKind::Invalid", "role": "0"},
-        ),
-        (
-            "StatementSyntax",
-            "compiler_parser::StatementSyntax",
-            {
-                "tag": "kind",
-                "token_index": "token",
-                "end_token": "end",
-                "previous_statement": "previous",
-                "expression_root": "expression",
-                "target_root": "target",
-                "declared_type": "declaredType",
-                "binding_token": "binding",
-                "body_statement": "body",
-                "other_statement": "other",
-                "mutable_value": "mutableValue",
-            },
-            {"kind": "aurora::hosted_parser::StatementKind::Invalid", "mutableValue": "0"},
-        ),
-    ]
-    for name, source, aliases, defaults in copied:
-        layout, members = fields(source, aliases, defaults)
-        record(name, layout["reserved"], layout["alignment"], members)
+    emitted, active = set(), set()
 
-    cursor_symbol, cursor = declaration("compiler_lexer::Cursor")
-    context_symbol, context = declaration("compiler_parser::TypeContext")
-    cursor_aliases = {"offset": "offset", "line": "line", "line_start": "lineStart"}
-    context_aliases = {
-        "first_begin": "type1Begin",
-        "first_end": "type1End",
-        "second_begin": "type2Begin",
-        "second_end": "type2End",
-        "capacity_begin": "capacityBegin",
-        "capacity_end": "capacityEnd",
-        "template_mode": "mode",
-    }
-    _, cursor_fields = fields("compiler_lexer::Cursor", cursor_aliases, {"offset": "0", "line": "1", "lineStart": "0"})
-    _, context_fields = fields(
-        "compiler_parser::TypeContext", context_aliases, {name: "0" for name in context_aliases.values()}
-    )
-    # One intentionally trusted builtin encoding: a contiguous readonly span.
-    # Aurora source classes, enums and composite argument extents are generated.
+    def owning(symbol, ancestors=()):
+        if symbol in ancestors or symbol not in facts["records"]:
+            raise ValueError("invalid private ABI record dependency")
+        return any(
+            field["kind"] == "owner" or (field["kind"] == "class" and owning(field["type_name"], (*ancestors, symbol)))
+            for field in facts["records"][symbol]["fields"]
+        )
+
+    def copied_type(field):
+        kind, width = field["kind"], field["bytes"]
+        if field.get("array_length", 0):
+            raise ValueError("array field is outside the private copied ABI")
+        if kind in ("enum", "class"):
+            symbol = field["type_name"]
+            if kind == "class":
+                emit_record(symbol)
+            expected = 8 if kind == "enum" else facts["records"][symbol]["reserved"]
+            if width != expected:
+                raise ValueError("private nested ABI extent mismatch")
+            return cpp_name(symbol)
+        if kind not in ("i64", "u64", "u8", "bool") or width != (1 if kind == "u8" else 8):
+            raise ValueError("unsupported private copied field")
+        return "std::uint8_t" if kind == "u8" else "std::uint64_t" if kind == "u64" else "std::int64_t"
+
+    def emit_record(symbol):
+        if symbol in emitted:
+            return
+        if symbol in active or symbol not in facts["records"]:
+            raise ValueError("invalid private ABI record dependency")
+        active.add(symbol)
+        declaration = facts["records"][symbol]
+        # Owning descriptors never become host-inspectable fields. The host only
+        # supplies storage which Aurora constructs and consumes through bridges.
+        opaque = owning(symbol)
+        members = []
+        for field in declaration["fields"] if not opaque else []:
+            name = identifier(field["name"])
+            members.append((field["offset"], field["bytes"], copied_type(field), name))
+        namespace, _, name = names[symbol].rpartition("::")
+        lines.append("namespace aurora::hosted_abi" + ("::" + namespace if namespace else "") + " {")
+        if opaque:
+            size = number(declaration["reserved"])
+            members = [(0, size, f"std::array<std::byte, {size}>", "storage")]
+        record(name, declaration["reserved"], declaration["alignment"], members)
+        lines.append("}")
+        active.remove(symbol)
+        emitted.add(symbol)
+
+    for symbol in sorted(facts["records"], key=lambda symbol: names[symbol]):
+        emit_record(symbol)
+
+    lines.append("namespace aurora::hosted_abi {")
+    # The only manual physical shape is the trusted contiguous readonly span.
+    # Source records and their nesting use the compiler's names and field facts.
     if facts["span_bytes"] != 56:
         raise ValueError("unsupported builtin span ABI")
-    span = [
-        (0, 8, "std::uint64_t", "kind", "0"),
-        (8, 8, "const char *", "backing", "nullptr"),
-        (16, 24, "std::array<std::uint64_t, 3>", "reserved", "{}"),
-        (40, 8, "std::int64_t", "start", "0"),
-        (48, 8, "std::int64_t", "length", "0"),
-    ]
-    for name, source, parser in (
-        ("LexerInput", "compiler_lexer::next_lexeme", False),
-        ("ParserInput", "compiler_parser::parse", True),
+    record(
+        "BuiltinSpan",
+        56,
+        8,
+        [
+            (0, 8, "std::uint64_t", "kind"),
+            (8, 8, "const char *", "backing"),
+            (16, 24, "std::array<std::uint64_t, 3>", "reserved"),
+            (40, 8, "std::int64_t", "start"),
+            (48, 8, "std::int64_t", "length"),
+        ],
+    )
+    for name, source, fields in (
+        ("LexerInput", "compiler_lexer::next_lexeme", ("source", "cursor")),
+        ("ParserInput", "compiler_parser::parse", ("source", "cursor", "stop", "context")),
+        ("ParserCreate", "compiler_parser::create", ("region", "capacity")),
+        ("ParserRelease", "compiler_parser::release", ("region", "arena")),
     ):
         _, function = abi_declaration(facts, "functions", source)
-        params = function["parameters"]
-        if (
-            len(params) != (4 if parser else 2)
-            or params[0]["kind"] != "span"
-            or params[0]["bytes"] != 56
-            or params[0]["offset"] != 0
-        ):
-            raise ValueError("unsupported private parser/lexer input")
-        if params[1].get("type_name") != cursor_symbol or params[1]["bytes"] != cursor["reserved"]:
-            raise ValueError("private cursor parameter mismatch")
-        members = list(span) + [
-            (params[1]["offset"] + off, width, cpp, field, default) for off, width, cpp, field, default in cursor_fields
-        ]
-        if parser:
-            stop_symbol, _ = abi_declaration(facts, "enums", "compiler_parser::Stop")
-            if (
-                params[2].get("type_name") != stop_symbol
-                or params[2]["bytes"] != 8
-                or params[3].get("type_name") != context_symbol
-                or params[3]["bytes"] != context["reserved"]
-            ):
-                raise ValueError("private parser context mismatch")
-            members.append(
-                (params[2]["offset"], 8, enums[stop_symbol], "stop", "aurora::hosted_parser::Stop::Semicolon")
-            )
-            members += [
-                (params[3]["offset"] + off, width, cpp, field, default)
-                for off, width, cpp, field, default in context_fields
-            ]
+        members = []
+        for field, parameter in zip(fields, function["parameters"]):
+            kind = parameter["kind"]
+            cpp = "BuiltinSpan" if kind == "span" else "std::uint64_t" if kind == "region" else copied_type(parameter)
+            members.append((parameter["offset"], parameter["bytes"], cpp, field))
         record(name, function["parameter_bytes"], 8, members)
-
-    arena_symbol, arena = declaration("compiler_parser::AstArena")
-    _, frame = declaration("compiler_parser::ParseFrame")
-    if not frame["reserved"]:
-        raise ValueError("invalid private parser frame extent")
     lines += [
-        f"inline constexpr std::size_t frameBytes = {number(frame['reserved'])};",
-        f"inline constexpr std::size_t arenaBytes = {number(arena['reserved'])};",
-        f"inline constexpr std::size_t arenaAlignment = {number(arena['alignment'])};",
+        "inline constexpr std::size_t frameBytes = sizeof(compiler_parser::ParseFrame);",
+        "inline constexpr std::size_t arenaBytes = sizeof(compiler_parser::AstArena);",
+        "inline constexpr std::size_t arenaAlignment = alignof(compiler_parser::AstArena);",
+        "static_assert(sizeof(void *) == 8);",
+        "}",
     ]
-    for name, source, owning in (
-        ("ParserCreate", "compiler_parser::create", False),
-        ("ParserRelease", "compiler_parser::release", True),
-    ):
-        _, function = abi_declaration(facts, "functions", source)
-        params = function["parameters"]
-        if len(params) != 2 or params[0]["kind"] != "region" or params[0]["bytes"] != 8:
-            raise ValueError("unsupported private arena authority record")
-        members = [(params[0]["offset"], 8, "std::uint64_t", "region", "0")]
-        if owning:
-            if params[1].get("type_name") != arena_symbol or params[1]["bytes"] != arena["reserved"]:
-                raise ValueError("private arena release extent mismatch")
-            members.append((params[1]["offset"], arena["reserved"], "std::array<std::byte, arenaBytes>", "arena", "{}"))
-        else:
-            if (
-                params[1]["kind"] != "i64"
-                or params[1]["bytes"] != 8
-                or function["result"].get("type_name") != arena_symbol
-                or function["result"]["bytes"] != arena["reserved"]
-            ):
-                raise ValueError("private arena create extent mismatch")
-            members.append((params[1]["offset"], 8, "std::int64_t", "capacity", "0"))
-        record(name, function["parameter_bytes"], 8, members)
-    lines += ["static_assert(sizeof(void *) == 8);", "}"]
     return "\n".join(lines) + "\n"
 
 
@@ -385,7 +275,7 @@ def frontend_bridge(bridge, facts):
 def stage_modules(module_root, lexer, arena):
     destination = module_root / "aurora" / "compiler"
     destination.mkdir(parents=True, exist_ok=True)
-    for source, name in ((lexer, "lexer.au"), (arena, "expression_arena.au")):
+    for source, name in ((lexer, "lexer.au"), (arena, "syntax_arena.au")):
         shutil.copyfile(source, destination / name)
 
 

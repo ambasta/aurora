@@ -133,13 +133,10 @@ class ProfileMetadata(unittest.TestCase):
     def test_root_registration_and_compiler_inventory_stay_complete(self):
         inventory = load("graphical_metadata_inventory", "tests/test-inventory.py")
         root = (ROOT / "Makefile").read_text()
-        root_all, root_runners, reached, recipes = inventory.make_inventory(root)
+        _, _, _, recipes = inventory.make_inventory(root)
         manifest = json.loads((ROOT / "tests/compiler-test-inventory.json").read_text())
-        compiler_all, compiler_runners = inventory.compiler_meson_inventory(
-            (ROOT / "compiler/Makefile").read_text(), manifest
-        )
-        self.assertIn("test-developer-commands", reached)
-        self.assertTrue(inventory.compiler_dispatch(recipes))
+        compiler_all, _ = inventory.compiler_meson_inventory((ROOT / "compiler/Makefile").read_text(), manifest)
+        root_runners = inventory.root_meson_inventory(root, manifest)
         commands = [
             line.strip()
             for line in recipes["test-developer-commands"]
@@ -180,8 +177,8 @@ class ProfileMetadata(unittest.TestCase):
         inventory.check(
             manifest,
             {path.name for path in (ROOT / "tests/compiler").glob("*.py")},
-            root_all | compiler_all,
-            root_runners=root_runners | compiler_runners,
+            root_runners | compiler_all,
+            root_runners=root_runners,
         )
         meson = (ROOT / "tests/meson.build").read_text()
         for name in ("graphical-profile-metadata", "graphical-profile-metadata-optimized"):
@@ -319,22 +316,6 @@ class ProfileMetadata(unittest.TestCase):
 
     def test_graphical_route_inventory_mutations(self):
         inventory = load("graphical_metadata_routes", "tests/test-inventory.py")
-        root = (ROOT / "Makefile").read_text()
-        inventory.check_graphical_make(root)
-        for before, after in (
-            ("test: test-graphical-console", "test: unrelated"),
-            ('--run "$(AURORAC)"', '--run "unrelated"'),
-            ("test-graphical-console: compiler", "test-graphical-console:"),
-            ("-no-pie tests/kernel-graphical-paging.cpp", "tests/kernel-graphical-paging.cpp"),
-            ("\tbuild/kernel-graphical-paging-test", "\t-build/kernel-graphical-paging-test"),
-            (
-                "python3 -B -O tests/kernel-graphical-admission-controls.py",
-                "python3 -B tests/kernel-graphical-admission-controls.py",
-            ),
-        ):
-            self.assertIn(before, root)
-            with self.subTest(before=before), self.assertRaises(ValueError):
-                inventory.check_graphical_make(root.replace(before, after))
         entries = []
         for name, (script, feedback, optimized) in inventory.GRAPHICAL_PYTHON_TESTS.items():
             argv = ["python3", "-B", *(["-O"] if optimized else []), str(ROOT / "tests" / script)]
