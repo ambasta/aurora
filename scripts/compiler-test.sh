@@ -6,7 +6,8 @@ if [[ $# == 1 && ( "$1" == --help || "$1" == -h ) ]]; then
 Usage: scripts/compiler-test.sh
 
 Run the complete compiler-only Meson suite with an incremental current-source build.
-Equivalent to make -C compiler test. No historical compiler hash is required.
+Equivalent to make -C compiler test. First configure the pinned predecessor route
+documented in compiler/README.md#source-bootstrap.
 Use environment overrides, for example CXX=g++-16 ./scripts/compiler-test.sh.
 The existing developer-test contract validates compiler and flag selections.
 Use make test for the full native aggregate; QEMU gates remain separate.

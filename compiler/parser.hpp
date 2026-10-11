@@ -1,10 +1,7 @@
 #pragma once
 #include "syntax.hpp"
 #include "services.hpp"
-#include "hosted_parser_abi.hpp"
-#ifdef AURORA_HOSTED_PARSER
 #include "hosted_parser.hpp"
-#endif
 #include <algorithm>
 #include <cctype>
 #include <set>
@@ -12,12 +9,11 @@ namespace aurora {
 class Parser {
     std::vector<Token> tokens;
     std::size_t position = 0;
-    int expressionNesting = 0, blockNesting = 0, typeNesting = 0, templateNesting = 0;
+    int blockNesting = 0, typeNesting = 0, templateNesting = 0;
     std::set<std::string> templateParameters;
     std::set<std::string> capacityParameters;
     bool functionTemplate = false;
     std::vector<Token> templateParameterTokens, capacityParameterTokens;
-    bool hostedExpressions = true;
     class Nesting {
         int &depth;
 
@@ -34,16 +30,9 @@ class Parser {
             --depth;
         }
     };
-    void attach(const ExpressionPtr &parent, const ExpressionPtr &child) {
-        // Check before attaching: error cleanup must never own an over-deep tree.
-        if (child->depth >= 128)
-            fail("expression AST depth exceeds 128");
-        parent->depth = std::max(parent->depth, child->depth + 1);
-        parent->args.push_back(child);
-    }
 
 public:
-    explicit Parser(std::vector<Token> t, bool hosted = true) : tokens(std::move(t)), hostedExpressions(hosted) {
+    explicit Parser(std::vector<Token> t) : tokens(std::move(t)) {
     }
     Token peek() const {
         return tokens.at(position);
@@ -146,10 +135,8 @@ public:
         }
         return tokens.size();
     }
-    std::vector<TemplateArgument> templateArguments(int callAllowance = 0) {
-        // Calls are kind-resolved later. Their outer argument list is not a
-        // class-template level; class construction depth is checked in resolution.
-        Nesting nesting(templateNesting, maximumTemplateNesting + callAllowance, peek(), "template-id");
+    std::vector<TemplateArgument> templateArguments() {
+        Nesting nesting(templateNesting, maximumTemplateNesting, peek(), "template-id");
         if (!templateParameters.empty() && !functionTemplate)
             fail("template-id references inside template definitions are not supported");
         need("<");
@@ -189,7 +176,7 @@ public:
                     value.type = TypeKind::Parameter;
                 }
                 if (peek().text == "<")
-                    value.templateArguments = templateArguments(callAllowance);
+                    value.templateArguments = templateArguments();
                 arguments.push_back(std::move(value));
             } else
                 fail("template arguments require scalar, named class or enum types, or capacities "
@@ -197,10 +184,6 @@ public:
         } while (eat(","));
         templateClose();
         return arguments;
-    }
-    bool templateExpressionAhead() const {
-        const auto end = templateArgumentEnd(position);
-        return end < tokens.size() && (tokens[end].text == "(" || tokens[end].text == "{");
     }
     Type type() {
         Nesting nesting(typeNesting, 64, peek(), "type");
@@ -335,138 +318,6 @@ public:
         need(">");
         return v;
     }
-    ExpressionPtr postfix(ExpressionPtr expression) {
-        while (true) {
-            if (eat(".")) {
-                auto member = std::make_shared<Expression>("member", ident());
-                attach(member, expression);
-                if (eat("(")) {
-                    member->op = "method_call";
-                    if (!eat(")")) {
-                        do {
-                            attach(member, expr());
-                        } while (eat(","));
-                        need(")");
-                    }
-                }
-                expression = member;
-            } else if (eat("[")) {
-                auto index = std::make_shared<Expression>("index", expression->token);
-                attach(index, expression);
-                attach(index, expr());
-                need("]");
-                expression = index;
-            } else
-                return expression;
-        }
-    }
-    ExpressionPtr primary() {
-        Nesting nesting(expressionNesting, 128, peek(), "expression parser");
-        auto t = take();
-        auto e = std::make_shared<Expression>("name", t);
-        if (t.text == "{") {
-            e->op = "array_literal";
-            if (!eat("}")) {
-                do {
-                    attach(e, expr());
-                } while (eat(","));
-                need("}");
-            }
-            return postfix(e);
-        }
-        if (t.text == "(") {
-            e = expr();
-            need(")");
-            return postfix(e);
-        }
-        if (t.text == "-" || t.text == "!" || t.text == "~") {
-            e->op = "unary";
-            attach(e, primary());
-            return e;
-        }
-        if (t.text[0] == '"') {
-            e->op = "byte_string";
-            return e;
-        }
-        if (t.text[0] == '\'') {
-            e->op = "byte";
-            return e;
-        }
-        if (std::isdigit(static_cast<unsigned char>(t.text[0]))) {
-            e->op = "number";
-            return e;
-        }
-        if (t.text == "true" || t.text == "false") {
-            e->op = "bool";
-            return e;
-        }
-        if (!(std::isalpha(static_cast<unsigned char>(t.text[0])) || t.text[0] == '_'))
-            fail("expected expression");
-        t = qualifiedTail(std::move(t), true);
-        e->token = t;
-        if (templateExpressionAhead())
-            e->templateArguments = templateArguments(1);
-        if (eat("(")) {
-            e->op = "call";
-            if (t.text == "size_of" || t.text == "type_id" || t.text == "field_count") {
-                e->reflectedType = type();
-                need(")");
-            } else if (!eat(")")) {
-                do {
-                    attach(e, expr());
-                } while (eat(","));
-                need(")");
-            }
-        }
-        if (e->op == "name" && eat("{")) {
-            e->op = "construct";
-            if (!eat("}")) {
-                do {
-                    need(".");
-                    e->fieldNames.push_back(ident().text);
-                    need("=");
-                    attach(e, expr());
-                } while (eat(","));
-                need("}");
-            }
-        }
-        return postfix(e);
-    }
-    int precedence(const std::string &s) {
-        if (s == "||")
-            return 1;
-        if (s == "&&")
-            return 2;
-        if (s == "|")
-            return 3;
-        if (s == "^")
-            return 4;
-        if (s == "&")
-            return 5;
-        if (s == "==" || s == "!=")
-            return 6;
-        if (s == "<" || s == ">" || s == "<=" || s == ">=")
-            return 7;
-        if (s == "<<" || s == ">>")
-            return 8;
-        if (s == "+" || s == "-")
-            return 9;
-        if (s == "*" || s == "/" || s == "%")
-            return 10;
-        return 0;
-    }
-    ExpressionPtr expr(int min = 1) {
-        auto e = primary();
-        while (precedence(peek().text) >= min) {
-            auto t = take();
-            auto x = std::make_shared<Expression>("binary", t);
-            attach(x, e);
-            attach(x, expr(precedence(t.text) + 1));
-            e = x;
-        }
-        return e;
-    }
-#ifdef AURORA_HOSTED_PARSER
     hosted_parser::Context expressionContext() const {
         hosted_parser::Context context;
         context.typeParameters = templateParameterTokens;
@@ -474,83 +325,8 @@ public:
         context.functionTemplate = functionTemplate;
         return context;
     }
-#endif
     ExpressionPtr statementExpression(hosted_parser::Stop stop) {
-#ifdef AURORA_HOSTED_PARSER
-        if (hostedExpressions)
-            return parseHostedExpression(tokens, position, stop, expressionContext());
-#else
-        (void)stop;
-#endif
-        return expr();
-    }
-    // Retained reference-router control; hosted production disambiguates in Aurora.
-    // Retire this with the predecessor-backed reference expression parser.
-    // Linear, non-consuming template candidate selection. Only candidates whose
-    // closing > or >> precedes construction/call syntax invoke the existing
-    // template lookahead. Ordinary comparison chains do not rescan their tails.
-    bool templateStatementExpressionAhead(std::size_t expressionStart, bool constructorBraces = false) const {
-        std::vector<std::size_t> openings;
-        int groups = 0, braces = 0;
-        auto boundary = tokens.size();
-        for (auto index = expressionStart; index < tokens.size(); ++index) {
-            const auto &text = tokens[index].text;
-            if (text == "<eof>" || text == ";" || (text == "=" && braces == 0))
-                return false;
-            if (text == "{") {
-                if (boundary != tokens.size())
-                    return false;
-                ++braces;
-                openings.clear();
-            } else if (text == "}") {
-                if (braces == 0)
-                    return false;
-                --braces;
-                openings.clear();
-                if (constructorBraces && braces == 0)
-                    return false;
-            } else if (text == "=") {
-                // A designator starts a new expression; templateArgumentEnd
-                // cannot accept candidates crossing its '=' or either brace.
-                openings.clear();
-            } else if (text == "(") {
-                if (boundary != tokens.size())
-                    return false;
-                ++groups;
-                openings.clear();
-            } else if (text == ")") {
-                // ')' is deliberately not a templateArgumentEnd blocker. An
-                // earlier '<' may still be a malformed template attempt; later
-                // openings cannot become candidates beyond this expression.
-                if (groups > 0)
-                    --groups;
-                else {
-                    if (openings.empty())
-                        return false;
-                    boundary = std::min(boundary, index);
-                }
-            } else if (text == "<")
-                openings.push_back(index);
-            else if (text == ">" || text == ">>") {
-                const auto count = text == ">>" ? 2U : 1U;
-                if (openings.size() < count) {
-                    openings.clear();
-                    continue;
-                }
-                const auto start = openings[openings.size() - count];
-                openings.resize(openings.size() - count);
-                if (index + 1 < tokens.size() && (tokens[index + 1].text == "(" || tokens[index + 1].text == "{") &&
-                    start < boundary && start > expressionStart && !tokens[start - 1].text.empty() &&
-                    tokens[start - 1].text != "true" && tokens[start - 1].text != "false" &&
-                    (std::isalpha(static_cast<unsigned char>(tokens[start - 1].text.front())) ||
-                     tokens[start - 1].text.front() == '_') &&
-                    templateArgumentEnd(start) == index + 1)
-                    return true;
-            }
-            if (boundary != tokens.size() && openings.empty())
-                return false;
-        }
-        return false;
+        return parseHostedExpression(tokens, position, stop, expressionContext());
     }
     std::vector<StatementPtr> block() {
         Nesting nesting(blockNesting, 128, peek(), "block");
@@ -807,30 +583,12 @@ public:
                                     auto fieldName = ident();
                                     ExpressionPtr value;
                                     if (peek().text == "{") {
-#ifdef AURORA_HOSTED_PARSER
-                                        if (hostedExpressions) {
-                                            auto candidate = fieldPosition;
-                                            value = parseHostedExpression(tokens,
-                                                                          candidate,
-                                                                          hosted_parser::Stop::ConstructorBraces,
-                                                                          expressionContext());
-                                            position = candidate;
-                                        }
-#else
-                                        (void)fieldPosition;
-#endif
-                                        if (!value) {
-                                            need("{");
-                                            if (eat("}"))
-                                                value = std::make_shared<Expression>("array_zero", fieldName);
-                                            else {
-                                                value = std::make_shared<Expression>("array_literal", fieldName);
-                                                do {
-                                                    attach(value, expr());
-                                                } while (eat(","));
-                                                need("}");
-                                            }
-                                        }
+                                        auto candidate = fieldPosition;
+                                        value = parseHostedExpression(tokens,
+                                                                      candidate,
+                                                                      hosted_parser::Stop::ConstructorBraces,
+                                                                      expressionContext());
+                                        position = candidate;
                                     } else {
                                         need("(");
                                         value = statementExpression(hosted_parser::Stop::CloseParenthesis);

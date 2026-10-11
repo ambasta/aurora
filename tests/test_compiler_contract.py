@@ -316,7 +316,7 @@ class Controls(unittest.TestCase):
                 patch.object(c, "write_json", side_effect=AssertionError("no artifact write")) as write,
                 self.assertRaisesRegex(c.ContractError, "ACCEPTANCE_COMPILER must not be empty"),
             ):
-                c.run(args)
+                c.prepare_controls(args, os.environ)
             for forbidden in (tool, query, capture, execute, write):
                 forbidden.assert_not_called()
             self.assertEqual(before, artifacts())
@@ -411,181 +411,71 @@ class Controls(unittest.TestCase):
         path.write_text("synthetic inventory input")
         self.assertIn(relative, c.source_inventory(self.root))
 
-    def test_system_header_dependency_parser(self):
+    def test_historical_dependency_parser_and_pch_rejection(self):
         header = self.root / "system header.hpp"
         header.write_text("// synthetic system header")
         escaped = str(header).replace(" ", "\\ ")
-        with patch.object(c, "query", return_value="aurora-contract: main.cpp \\\n " + escaped + "\n"):
-            inputs = c.dependency_inputs(str(self.tool), c.parse_flags(c.DEFAULT_FLAGS), self.root / "compiler")
-        self.assertIn(str(header), inputs)
-        self.assertIn(str(self.root / "compiler/main.cpp"), inputs)
+        self.depfile.write_text("aurora-contract: main.cpp " + escaped + "\n")
+        paths = c.actual_dependency_paths(self.depfile, self.root / "compiler")
+        self.assertEqual(paths, {str(header), str(self.root / "compiler/main.cpp")})
+        inputs = {name: c.file_record(name) for name in paths}
+        c.reject_pch(inputs)
         Path(str(header) + ".gch").write_text("opaque PCH")
         with self.assertRaises(c.ContractError):
             c.reject_pch(inputs)
 
-    def mock_queries(self, argv, cwd):
-        if "-dumpmachine" in argv:
-            return "x86_64-linux-gnu\n"
-        if "-M" in argv:
-            return "aurora-contract: main.cpp\n"
-        if any(value.startswith("-print-prog-name=") for value in argv):
-            return str(self.tool) + "\n"
-        return "synthetic tool version\n"
+    def test_retired_executor_rejects_every_mode_before_tools_and_artifacts(self):
+        before_paths = set(self.root.rglob("*"))
+        before = {str(path): c.digest(path) for path in self.root.rglob("*") if path.is_file()}
+        for entry in ("root", "compiler"):
+            for goal in ("test", "test-acceptance", "test-short-circuit", "test-package-identity"):
+                for controls in (
+                    {},
+                    {"ACCEPTANCE_COMPILER": str(self.compiler), "ACCEPTANCE_COMPILER_SHA256": c.digest(self.compiler)},
+                ):
+                    with (
+                        self.subTest(entry=entry, goal=goal, pinned=bool(controls)),
+                        patch.dict(os.environ, controls),
+                        patch.object(c, "tool_record") as tools,
+                        patch.object(c, "execute") as execute,
+                        patch.object(c, "write_json") as write,
+                        self.assertRaisesRegex(c.ContractError, "Legacy compiler_contract run is retired") as caught,
+                    ):
+                        c.run(self.launch(goal, entry=entry))
+                    message = str(caught.exception)
+                    self.assertIn("bootstrap_compiler_sha256", message)
+                    self.assertIn("compiler/README.md#source-bootstrap", message)
+                    self.assertIn("make -C" if goal in ("test", "test-acceptance") else "--list", message)
+                    for forbidden in (tools, execute, write):
+                        forbidden.assert_not_called()
+        after = {str(path): c.digest(path) for path in self.root.rglob("*") if path.is_file()}
+        self.assertEqual(before, after)
+        self.assertEqual(before_paths, set(self.root.rglob("*")))
 
-    def simulate(self, goal="test", build_status=0, native_status=0, change=None, produce=True, prebuilt=False):
-        calls = []
+    def test_retirement_migration_preserves_explicit_build_directory(self):
+        build = self.root / "configured directory"
+        with patch.dict(os.environ, {"MESON_BUILD_DIR": str(build)}):
+            with self.assertRaises(c.ContractError) as caught:
+                c.run(self.launch("test-acceptance"))
+        self.assertIn(shlex.quote("MESON_BUILD_DIR=" + str(build)), str(caught.exception))
+        self.assertFalse(build.exists())
 
-        def execute(argv, cwd, env, log):
-            calls.append((argv, cwd, env))
-            work = Path(log).parent
-            planned = json.loads((work / "run.json").read_text())
-            self.assertIn("source_inputs", planned)
-            self.assertIn("tools", planned)
-            self.assertIn("selected_controls", planned)
-            if Path(log).name == "compiler.log":
-                self.assertEqual(planned["build_command"], argv)
-                if produce:
-                    output = Path(argv[argv.index("-o") + 1])
-                    output.write_bytes(self.compiler.read_bytes())
-                    Path(argv[argv.index("-MF") + 1]).write_text("aurora-contract: main.cpp\n")
-                return build_status
-            if change:
-                change(env)
-            return native_status
-
-        if prebuilt:
-            os.environ["ACCEPTANCE_COMPILER"] = str(self.compiler)
-            os.environ["ACCEPTANCE_COMPILER_SHA256"] = c.digest(self.compiler)
-        version = subprocess.CompletedProcess([], 0, b"", b"gcc version synthetic\n")
-        with (
-            patch.object(c, "query", side_effect=self.mock_queries),
-            patch.object(c, "capture", return_value=version),
-            patch.object(c, "execute", side_effect=execute),
-        ):
-            with redirect_stdout(io.StringIO()):
-                c.run(self.launch(goal))
-        return calls
-
-    def latest_attempt(self):
-        paths = list((self.root / "build").glob("test-contract-*/run.json"))
-        self.assertEqual(len(paths), 1)
-        return paths[0], json.loads(paths[0].read_text())
-
-    def test_every_subprocess_uses_retained_build_temporary_root(self):
-        os.environ.update(TMPDIR="/unrelated-user-tmp", TMP="/other-tmp", TEMP="/another-tmp")
-        calls = self.simulate()
-        path, record = self.latest_attempt()
-        expected = str(path.parent / "tmp")
-        self.assertTrue(Path(expected).is_dir())
-        for _, _, env in calls:
-            for name in ("TMPDIR", "TMP", "TEMP"):
-                self.assertEqual(env[name], expected)
-
-    def test_failed_build_preserves_plan(self):
-        with self.assertRaises(c.ContractError):
-            self.simulate(build_status=7)
-        path, record = self.latest_attempt()
-        self.assertEqual(record["status"], "failed")
-        self.assertEqual(record["build_returncode"], 7)
-        self.assertFalse(record["native_complete"])
-        self.assertTrue(record["source_inputs"])
-        self.assertTrue(record["tools"])
-        self.assertTrue(record["header_inputs"])
-        self.assertEqual(record["build_cwd"], str(self.root / "compiler"))
-        self.assertFalse((path.parent / "compiler-context.json").exists())
-
-    def test_success_without_compiler_is_failure(self):
-        with self.assertRaises(c.ContractError):
-            self.simulate(produce=False)
-        path, record = self.latest_attempt()
-        self.assertEqual(record["status"], "failed")
-        self.assertFalse((path.parent / "compiler-context.json").exists())
-
-    def test_fresh_acceptance_mismatch_never_starts_tests(self):
-        os.environ["ACCEPTANCE_COMPILER_SHA256"] = "0" * 64
-        with self.assertRaises(c.ContractError):
-            self.simulate("test-acceptance")
-        path, record = self.latest_attempt()
-        self.assertIn("observed_compiler", record)
-        self.assertNotIn("make_command", record)
-        self.assertFalse((path.parent / "compiler-context.json").exists())
-
-    def test_known_failing_native_stage_stays_failed(self):
-        with self.assertRaises(c.ContractError):
-            self.simulate(native_status=9)
-        path, record = self.latest_attempt()
-        self.assertEqual(record["status"], "failed")
-        self.assertEqual(record["make_returncode"], 9)
-        self.assertFalse(record["native_complete"])
-
-    def test_changed_output_during_native_stage_fails(self):
-        def change(env):
-            path = Path(env["AURORA_TEST_COMPILER"])
-            path.chmod(0o755)
-            path.write_text("replaced bytes")
-
-        with self.assertRaises(c.ContractError):
-            self.simulate(change=change)
-        self.assertFalse(self.latest_attempt()[1]["native_complete"])
-
-    def test_interrupted_attempt_is_terminal_failed(self):
-        def change(env):
-            raise c.RunInterrupted(signal.SIGTERM)
-
-        with self.assertRaises(c.RunInterrupted):
-            self.simulate(change=change)
-        record = self.latest_attempt()[1]
-        self.assertEqual(record["status"], "failed")
-        self.assertEqual(record["interrupted_by_signal"], signal.SIGTERM)
-        self.assertFalse(record["native_complete"])
-        self.assertIn("finished_ns", record)
-
-    def test_mocked_success_records_mode_and_scope(self):
-        # Deliberately mocked commands test receipt logic, not compiler behavior.
-        self.simulate("test-package-identity")
-        record = self.latest_attempt()[1]
-        self.assertEqual(record["status"], "passed")
-        self.assertEqual(record["mode"], "developer")
-        self.assertEqual(record["scope"], "focused")
-        self.assertFalse(record["native_complete"])
-
-    def test_prebuilt_acceptance_does_not_build(self):
-        original = c.file_record(self.compiler)
-        calls = self.simulate("test-acceptance", prebuilt=True)
-        path, record = self.latest_attempt()
-        context = json.loads((path.parent / "compiler-context.json").read_text())
-        self.assertEqual(len(calls), 1)
-        self.assertEqual(context["origin"], "externally-pinned-prebuilt")
-        self.assertNotIn("build_returncode", context)
-        self.assertEqual(context["compiler"]["sha256"], c.digest(self.compiler))
-        self.assertEqual(c.file_record(self.compiler), original)
-        self.assertEqual(context["compiler"]["mode"], 0o555)
-
-    def test_nested_future_source_does_not_rebuild_compiler(self):
-        # Make -n executes no compiler/native recipe; the source has a future mtime.
+    def test_retired_inner_make_context_rejects_even_with_future_source(self):
         copied = self.root / "compiler/Makefile"
         shutil.copyfile(ROOT / "compiler/Makefile", copied)
         os.utime(self.root / "compiler/main.cpp", ns=(2_000_000_000_000_000_000,) * 2)
-        env = {
-            **self.env,
-            "AURORA_TEST_CONTEXT": str(self.receipt),
-            "AURORA_TEST_COMPILER": str(self.compiler),
-            "AURORA_TEST_MODE": "developer",
-            "AURORA_TEST_IDENTITY_ARGS": "--developer-build-receipt " + str(self.receipt),
-            "OUT": str(self.compiler),
-            "AURORAC": str(self.compiler),
-        }
         result = subprocess.run(
             [shutil.which("make"), "-n", "all"],
             cwd=copied.parent,
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
+            env={**self.env, "AURORA_TEST_CONTEXT": str(self.receipt)},
+            capture_output=True,
+            text=True,
             timeout=10,
         )
-        self.assertEqual(result.returncode, 0, result.stdout.decode())
-        self.assertIn("compiler_contract.py check", result.stdout.decode())
-        self.assertNotIn("main.cpp -o", result.stdout.decode())
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unsupported legacy compiler controls: AURORA_TEST_CONTEXT", result.stderr)
+        self.assertNotIn("main.cpp", result.stdout)
+        self.assertNotIn("meson_test.py", result.stdout)
 
     def test_sigterm_cleans_owned_child_and_grandchild(self):
         ready = self.root / "build/ready.json"
@@ -657,29 +547,22 @@ class Controls(unittest.TestCase):
                 except ProcessLookupError:
                     pass
 
-    def test_every_pin_aware_make_call_receives_identity(self):
-        runners = (
-            "package_identity.py",
-            "package_manifest.py",
-            "package_graph.py",
-            "kernel-budget-native.py",
-            "utf8_range.py",
-            "utf8_lines.py",
-            "xfs_root.py",
-            "xfs_root_api.py",
-            "xfs_geometry.py",
-            "verify_native.py",
-        )
+    def test_remaining_pin_aware_make_calls_receive_identity(self):
+        # Root legacy recipes remain readable behind the retired run dispatcher.
+        # Compiler aliases now use Meson's selected-artifact identity directly.
+        runners = {"package_identity.py", "package_manifest.py", "package_graph.py", "kernel-budget-native.py"}
         found = set()
-        for path in (ROOT / "Makefile", ROOT / "compiler/Makefile"):
-            for line in path.read_text().splitlines():
-                if not line.startswith("\t"):
-                    continue
-                for runner in runners:
-                    if runner in line and "python3" in line:
-                        found.add(runner)
-                        self.assertIn("$(AURORA_TEST_IDENTITY_ARGS)", line, line)
-        self.assertEqual(found, set(runners))
+        for line in (ROOT / "Makefile").read_text().splitlines():
+            for runner in runners:
+                if line.startswith("\t") and runner in line and "python3" in line:
+                    found.add(runner)
+                    self.assertIn("$(AURORA_TEST_IDENTITY_ARGS)", line, line)
+        self.assertEqual(found, runners)
+        compiler_make = (ROOT / "compiler/Makefile").read_text()
+        self.assertNotIn("compiler_contract.py run", compiler_make)
+        self.assertNotIn("main.cpp", compiler_make)
+        for family in ("utf8-range", "utf8-lines", "xfs-root", "xfs-geometry"):
+            self.assertIn("--tests " + family, compiler_make)
 
     def test_native_runner_identity_rejections_precede_artifacts(self):
         output = self.root / "build/forbidden-artifacts"
@@ -824,19 +707,6 @@ class Controls(unittest.TestCase):
                     with self.subTest(name=name, value=str(value)[:50], goal=goal), self.assertRaises(c.ContractError):
                         c.prepare_controls(self.launch(goal), env)
 
-    def test_mocked_full_cap_overrides_preserve_complete_requested_goal(self):
-        # Command execution is mocked: this checks routing, not native coverage.
-        with patch.dict(os.environ, {name: "1024" for name in c.CAP_CONTROLS}):
-            calls = self.simulate()
-        record = self.latest_attempt()[1]
-        self.assertEqual(len(calls), 2)
-        self.assertEqual(record["make_command"][1:4], ["--no-print-directory", "-j1", "test"])
-        self.assertEqual(set(record["make_command"][4:]), {name + "=1024" for name in c.CAP_CONTROLS})
-        self.assertFalse(any("--check-cap-only" in argument for argument in record["make_command"]))
-        self.assertEqual(record["scope"], "native-aggregate")
-        for name in c.CAP_CONTROLS:
-            self.assertEqual(record["selected_controls"][name], "1024")
-
     def test_cap_controls_reject_before_artifacts_or_execution(self):
         # Pure Python pre-dispatch coverage. This does not run Make or reproduce
         # the retired end-to-end executable-expression observation.
@@ -888,7 +758,7 @@ class Controls(unittest.TestCase):
                         patch.object(c, "write_json", side_effect=AssertionError("no artifact write")) as write,
                         self.assertRaises(c.ContractError),
                     ):
-                        c.run(self.launch(goal, entry=entry))
+                        c.prepare_controls(self.launch(goal, entry=entry), os.environ)
                     for forbidden in (tool, query, capture, execute, write):
                         forbidden.assert_not_called()
                     self.assertEqual(before, artifacts())
@@ -1030,28 +900,25 @@ class Controls(unittest.TestCase):
                     patch.object(c, "execute", side_effect=AssertionError("no command")) as execute,
                     self.assertRaises(c.ContractError),
                 ):
-                    c.run(self.launch())
+                    c.prepare_controls(self.launch(), os.environ)
                 tool.assert_not_called()
                 execute.assert_not_called()
         self.assertEqual(before, set(self.root.rglob("*")))
 
-    def test_both_flag_vectors_are_canonical_in_forwarding_and_receipts(self):
+    def test_historical_receipt_retains_exact_both_flag_vectors(self):
         raw_build = '-std=c++23  -O2 "-DCOUNT=7" -D WORD=token'
         raw_ir = "-std=c++23 -O1 -g '-DTRACE=1' -U DROP"
         expected = {"CXXFLAGS": shlex.split(raw_build), "IR_TEST_CXXFLAGS": shlex.split(raw_ir)}
+        self.context["host_test_flags"] = expected
+        self.context["flags"] = expected["CXXFLAGS"]
+        self.context["build_command"] = c.build_argv(
+            str(self.tool), expected["CXXFLAGS"], str(self.compiler), str(self.depfile)
+        )
+        self.write()
         with patch.dict(os.environ, {"CXXFLAGS": raw_build, "IR_TEST_CXXFLAGS": raw_ir}):
-            calls = self.simulate("test-round-robin")
-        path, record = self.latest_attempt()
-        context = json.loads((path.parent / "compiler-context.json").read_text())
-        self.assertEqual(record["host_test_flags"], expected)
-        self.assertEqual(context["host_test_flags"], expected)
-        self.assertEqual(record["flags"], expected["CXXFLAGS"])
-        build_argv = calls[0][0]
-        self.assertEqual(build_argv[1 : build_argv.index("-MD")], expected["CXXFLAGS"])
+            self.assertEqual(self.checked()["host_test_flags"], expected)
         for name, vector in expected.items():
-            self.assertEqual(calls[1][2][name], shlex.join(vector))
-            self.assertEqual(shlex.split(calls[1][2][name]), vector)
-        self.assertEqual(record["selected_controls"]["IR_TEST_CXXFLAGS"], raw_ir)
+            self.assertEqual(shlex.split(shlex.join(vector)), vector)
 
     def test_ir_receipt_vector_mismatch_or_omission_rejects(self):
         for vectors in (
@@ -1068,24 +935,24 @@ class Controls(unittest.TestCase):
         with patch.dict(os.environ, {"IR_TEST_CXXFLAGS": "-O0"}), self.assertRaises(c.ContractError):
             self.checked()
 
-    def test_prebuilt_receipt_records_host_vectors_without_fresh_build_claim(self):
+    def test_historical_prebuilt_receipt_retains_host_vectors_without_fresh_build_claim(self):
+        self.context.update(
+            mode="acceptance",
+            origin="externally-pinned-prebuilt",
+            external_expected_sha256=c.digest(self.compiler),
+            prebuilt_input=c.file_record(self.compiler),
+            host_test_flags=c.selected_flag_vectors({"IR_TEST_CXXFLAGS": "-std=c++23 -O0 -g"}),
+        )
+        for field in ("build_command", "build_returncode", "header_inputs", "build_recipe"):
+            self.context.pop(field)
+        self.write()
         with patch.dict(os.environ, {"IR_TEST_CXXFLAGS": "-std=c++23 -O0 -g"}):
-            calls = self.simulate("test-acceptance", prebuilt=True)
-        path, record = self.latest_attempt()
-        context = json.loads((path.parent / "compiler-context.json").read_text())
-        self.assertEqual(len(calls), 1)
-        self.assertEqual(context["origin"], "externally-pinned-prebuilt")
-        self.assertNotIn("build_returncode", context)
-        self.assertNotIn("build_command", context)
-        self.assertEqual(context["host_test_flags"]["IR_TEST_CXXFLAGS"], ["-std=c++23", "-O0", "-g"])
-        self.assertEqual(record["host_test_flags"], context["host_test_flags"])
-        self.assertEqual(shlex.split(calls[0][2]["IR_TEST_CXXFLAGS"]), context["host_test_flags"]["IR_TEST_CXXFLAGS"])
-        with patch.dict(os.environ, {"IR_TEST_CXXFLAGS": "-std=c++23 -O0 -g"}):
-            self.assertEqual(
-                c.read_context(path.parent / "compiler-context.json", self.root)["origin"], "externally-pinned-prebuilt"
-            )
+            context = c.read_context(self.receipt, self.root)
+            self.assertEqual(context["origin"], "externally-pinned-prebuilt")
+            self.assertNotIn("build_command", context)
+            self.assertEqual(context["host_test_flags"]["IR_TEST_CXXFLAGS"], ["-std=c++23", "-O0", "-g"])
         with patch.dict(os.environ, {"IR_TEST_CXXFLAGS": "-O1"}), self.assertRaises(c.ContractError):
-            c.read_context(path.parent / "compiler-context.json", self.root)
+            c.read_context(self.receipt, self.root)
 
     def test_safe_public_make_dry_runs_reject_inert_raw_flag_syntax(self):
         # Only inert variable references/malformed data; no executable Make
@@ -1109,24 +976,11 @@ class Controls(unittest.TestCase):
                             self.assertNotIn(value, result.stderr)
                             self.assertNotIn("compiler_contract.py run", result.stdout)
 
-    def test_safe_public_make_dry_runs_preserve_canonical_flag_arguments(self):
-        build = ["-std=c++23", "-O2", "-D", "WORD=token", "-DCOUNT=7"]
-        ir = ["-std=c++23", "-O1", "-DTRACE=1", "-U", "DROP"]
-        env = {
-            **self.env,
-            "CXX": "g++",
-            "CXXFLAGS": shlex.join(build),
-            "IR_TEST_CXXFLAGS": shlex.join(ir),
-            "AURORA_TEST_CONTEXT": str(self.receipt),
-            "AURORA_TEST_COMPILER": str(self.compiler),
-            "AURORA_TEST_MODE": "developer",
-            "AURORA_TEST_IDENTITY_ARGS": "--developer-build-receipt " + str(self.receipt),
-            "OUT": str(self.compiler),
-            "AURORAC": str(self.compiler),
-        }
-        for goal, suffix, expected in (
-            ("test-initialization-facts", "initialization_facts.cpp", build),
-            ("test-short-circuit", "short_circuit_ir.cpp", ir),
+    def test_safe_compiler_make_dry_runs_only_forward_to_meson(self):
+        env = {**self.env, "CXX": "g++", "CXXFLAGS": "-std=c++23 -O2 -DCOUNT=7"}
+        for goal, names in (
+            ("test-initialization-facts", "initialization-facts"),
+            ("test-short-circuit", "short-circuit short-circuit-ir short-circuit-ir-native"),
         ):
             result = subprocess.run(
                 [shutil.which("make"), "-n", goal],
@@ -1137,9 +991,10 @@ class Controls(unittest.TestCase):
                 timeout=10,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
-            line = next(line for line in result.stdout.splitlines() if suffix in line and line.startswith("g++ "))
-            argv = shlex.split(line.rstrip().removesuffix("\\").strip())
-            self.assertEqual(argv[1 : argv.index("-I.")], expected)
+            self.assertIn("meson_test.py", result.stdout)
+            self.assertIn("--tests " + names, result.stdout)
+            self.assertNotIn("g++ ", result.stdout)
+            self.assertNotIn(".cpp", result.stdout)
 
     def test_supervised_header_option_forms_reject_in_both_vectors(self):
         forms = (
@@ -1213,7 +1068,7 @@ class Controls(unittest.TestCase):
                         patch.object(c, "execute", side_effect=AssertionError("no execution")) as execute,
                         self.assertRaisesRegex(c.ContractError, "header/search/forced-header"),
                     ):
-                        c.run(self.launch(goal))
+                        c.prepare_controls(self.launch(goal), os.environ)
                     tool.assert_not_called()
                     query.assert_not_called()
                     execute.assert_not_called()
@@ -1230,16 +1085,11 @@ class Controls(unittest.TestCase):
         for name, value in explicit.items():
             self.assertEqual(parsed[name], shlex.split(value))
             self.assertEqual(c.parse_flags(shlex.join(parsed[name]), name), parsed[name])
-        # Recipe-owned includes are immutable source inputs, not admitted user
-        # flags. This check reads the Makefile; it never invokes Make.
-        self.assertIn(
-            "$(CXX) $(CXXFLAGS) -I. ../tests/compiler/initialization_facts.cpp",
-            (ROOT / "compiler/Makefile").read_text(),
-        )
-        self.assertIn(
-            "$(CXX) $(IR_TEST_CXXFLAGS) -I. ../tests/compiler/short_circuit_ir.cpp",
-            (ROOT / "compiler/Makefile").read_text(),
-        )
+        # Fixture includes now belong to Meson rather than a second Make graph.
+        meson = (ROOT / "tests/meson.build").read_text()
+        self.assertIn("'compiler/initialization_facts.cpp'", meson)
+        self.assertIn("'short_circuit_ir'", meson)
+        self.assertIn("include_directories('../compiler')", meson)
 
     def test_cxx_omission_and_empty_are_distinct_before_tools(self):
         before = set(self.root.rglob("*"))
@@ -1251,7 +1101,7 @@ class Controls(unittest.TestCase):
                 patch.object(c, "tool_record", side_effect=AssertionError("no tool query")) as tool,
                 self.assertRaises(c.ContractError),
             ):
-                c.run(self.launch())
+                c.prepare_controls(self.launch(), os.environ)
             tool.assert_not_called()
         self.assertEqual(before, set(self.root.rglob("*")))
 
@@ -1272,7 +1122,7 @@ class Controls(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(c.ContractError):
                 c.parse_cxx(value)
 
-    def test_pr26_consuming_targets_use_shared_fresh_route(self):
+    def test_consuming_targets_use_meson_or_explicit_retirement_route(self):
         for directory, targets in (
             (
                 "",
@@ -1304,15 +1154,19 @@ class Controls(unittest.TestCase):
                         timeout=10,
                     )
                     self.assertEqual(result.returncode, 0, result.stderr)
-                    self.assertIn("compiler_contract.py run", result.stdout)
-                    self.assertIn('--goal "' + target + '"', result.stdout)
+                    if directory == "compiler":
+                        self.assertIn("meson_test.py", result.stdout)
+                        self.assertIn("--tests short-circuit short-circuit-ir short-circuit-ir-native", result.stdout)
+                    else:
+                        self.assertIn("compiler_contract.py run", result.stdout)
+                        self.assertIn('--goal "' + target + '"', result.stdout)
                     self.assertNotIn("g++", result.stdout)
                     self.assertNotIn("kernel-round-robin-native.py", result.stdout)
         root_make = (ROOT / "Makefile").read_text()
         compiler_make = (ROOT / "compiler/Makefile").read_text()
         self.assertRegex(root_make, r"(?m)^test:[^\n]*\btest-round-robin(?:[ \t]|$)")
         self.assertIn("test: test-native-cap-contracts", root_make)
-        self.assertIn("test: test-short-circuit", compiler_make)
+        self.assertIn("--tests short-circuit short-circuit-ir short-circuit-ir-native", compiler_make)
         self.assertIn("ROUND_ROBIN_TEST_CAP_MIB", c.FORWARDED)
         self.assertIn("IPC_TRANSACTION_CAP_MIB", c.FORWARDED)
         self.assertIn("IPC_TRANSACTION_COMPILER", c.SELECTORS)

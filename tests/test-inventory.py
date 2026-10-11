@@ -47,6 +47,68 @@ def make_inventory(source):
     return runners(recipes), runners(reached), reached, recipes
 
 
+COMPILER_MESON_ROUTES = {
+    "all": "--build-only aurorac --publish-compiler",
+    "formatter": "--build-only aurora-fmt --publish-formatter",
+    "test": "--suite compiler",
+    "test-modules": "--tests modules source-depth host-sources-tests host-output-tests",
+    "test-storage": "--tests storage-binary xfs-offline-native",
+    "test-initialization-facts": "--tests initialization-facts",
+    "test-utf8": "--tests utf8",
+    "test-utf8-encoding": "--tests utf8-encoding",
+    "test-xfs-geometry": "--tests xfs-geometry",
+    "test-xfs-root": "--tests xfs-root xfs-root-api xfs-root-entry",
+    "test-utf8-range": "--tests utf8-range",
+    "test-utf8-lines": "--tests utf8-lines",
+    "test-function-overloads": "--tests function-overloads",
+    "test-readonly-windows": "--tests readonly-windows readonly-windows-ir readonly-windows-ir-native",
+    "test-short-circuit": "--tests short-circuit short-circuit-ir short-circuit-ir-native",
+    "test-token-scan": "--tests token-scan",
+    "test-json": "--tests json-profile json-owned",
+    "test-json-codecs": "--tests json-codecs",
+    "test-json-integers": "--tests json-integers",
+    "test-json-lookup": "--tests json-lookup",
+    "test-borrowed-objects": "--tests borrowed-objects borrowed-objects-ir borrowed-objects-abi",
+    "test-json-string-write": "--tests json-string-write",
+    "test-console-service": "--tests console-service-source-native console-service-ir console-session",
+    "test-display-service": "--tests display-service-source-native display-service-ir",
+    "test-iommu-event-service": "--tests iommu-event-source-native iommu-event-session",
+    "test-formatter": "--tests hosted-lexer-format hosted-lexer-format-cli",
+    "test-lint": "--tests semantic-lint",
+}
+
+
+def compiler_meson_inventory(source, manifest, records=None):
+    """Check exact forwarding recipes and derive coverage from declared Meson commands.
+
+    The manifest's exact argv/suite bindings are independently compared with real
+    Meson introspection by check_commands; a forwarded alias cannot remove any
+    component of the previous focused selection unnoticed.
+    """
+    _, _, _, recipes = make_inventory(source)
+    if set(recipes) != set(COMPILER_MESON_ROUTES):
+        raise ValueError("compiler Make entrypoint set drift")
+    prefix = 'python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" '
+    named = set()
+    for target, selection in COMPILER_MESON_ROUTES.items():
+        if [line.strip() for line in recipes[target]] != [prefix + selection]:
+            raise ValueError("compiler Meson route drift: " + target)
+        if selection.startswith("--tests "):
+            named.update(selection.split()[1:])
+    if records is not None:
+        names = [record["name"] for record in records]
+        for name in named:
+            if names.count(name) != 1:
+                raise ValueError("missing or duplicate compiler alias Meson test: " + name)
+    aggregate = {
+        runner
+        for runner, entry in manifest.items()
+        if any("compiler" in command["suites"] for command in entry.get("meson_commands", {}).values())
+    }
+    focused = {runner for runner, entry in manifest.items() if named.intersection(entry.get("meson_commands", {}))}
+    return aggregate | focused, aggregate
+
+
 def compiler_dispatch(recipes):
     return any(
         re.fullmatch(r"\s*[@+]*\s*\$\(MAKE\)\s+-C\s+compiler\s+test\s*", recipe)
@@ -315,6 +377,30 @@ def self_test():
             continue
         raise ValueError("inventory mutation was not rejected")
 
+    source = "\n".join(
+        target + ':\n\tpython3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" ' + selection
+        for target, selection in COMPILER_MESON_ROUTES.items()
+    )
+    compiler_manifest = {
+        "a.py": {"meson_commands": {"frontend": {"suites": ["compiler", "full"]}}},
+        "b.py": {"meson_commands": {"separate": {"suites": ["full"]}}},
+    }
+    if compiler_meson_inventory(source, compiler_manifest) != ({"a.py"}, {"a.py"}):
+        raise ValueError("compiler Meson aggregate coverage control failed")
+    for changed in (
+        source.replace("--suite compiler", "--suite dev"),
+        source.replace("short-circuit short-circuit-ir short-circuit-ir-native", "short-circuit"),
+        source.replace("--tests semantic-lint", "--tests another-test"),
+        source.replace("\tpython3", "\t-python3", 1),
+        source + "\nextra:\n\ttrue\n",
+    ):
+        try:
+            compiler_meson_inventory(changed, compiler_manifest)
+        except ValueError:
+            pass
+        else:
+            raise ValueError("compiler Meson forwarding mutation was accepted")
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -324,7 +410,8 @@ def main():
     manifest = json.loads((ROOT / "tests/compiler-test-inventory.json").read_text())
     files = {p.name for p in (ROOT / "tests/compiler").glob("*.py")}
     root_all, root_runners, reached, recipes = make_inventory((ROOT / "Makefile").read_text())
-    compiler_all, compiler_runners, _, _ = make_inventory((ROOT / "compiler/Makefile").read_text())
+    compiler_source = (ROOT / "compiler/Makefile").read_text()
+    compiler_all, compiler_runners = compiler_meson_inventory(compiler_source, manifest)
     if "test-compiler" not in reached or not compiler_dispatch(recipes):
         raise ValueError("root Make no longer dispatches the complete compiler aggregate")
     make_runners = root_all | compiler_all
@@ -346,6 +433,7 @@ def main():
     check(manifest, files, make_runners, registered, root_runners)
     if records is not None:
         check_commands(manifest, records, ROOT, args.meson_info.resolve().parents[1])
+        compiler_meson_inventory(compiler_source, manifest, records)
     native_spec = importlib.util.spec_from_file_location("aurora_native_inventory", ROOT / "tests/native/inventory.py")
     native = importlib.util.module_from_spec(native_spec)
     native_spec.loader.exec_module(native)
@@ -359,7 +447,7 @@ def main():
         f"({'verified' if registered is not None else 'declared, not checked in this invocation'}); "
         f"{len(gaps)} separate baseline-dependent gates"
     )
-    print("PASS graphical focused Make routes and declared Meson bindings")
+    print("PASS exact compiler Meson forwarding and graphical focused Make routes")
     print("Native inventory: " + json.dumps(native_summary, sort_keys=True))
     print("Registration is not execution; final-source full Meson and affected emulator gates remain required.")
 

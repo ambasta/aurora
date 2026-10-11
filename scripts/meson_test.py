@@ -5,6 +5,7 @@ import argparse
 import fcntl
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import shlex
@@ -18,9 +19,19 @@ import kernel_profiles
 import compiler_contract as contract
 
 
-def execute(root, scope, targets=(), output=None):
+def execute(root, scope, targets=(), output=None, *, build_only=False, tests=()):
     root = root.resolve(strict=True)
     env = os.environ.copy()
+    contract.require(not (build_only and tests), "Choose build-only targets or named tests")
+    contract.require(not build_only or scope == "compiler", "Build-only targets require compiler scope")
+    contract.require(
+        not build_only or bool(targets) and set(targets) <= {"aurorac", "aurora-fmt"},
+        "Build-only targets are aurorac and aurora-fmt",
+    )
+    contract.require(
+        all(isinstance(name, str) and re.fullmatch(r"[a-z0-9][a-z0-9-]*", name) for name in tests),
+        "Named tests require exact Meson names; patterns and options are unsupported",
+    )
     selected_compiler = None
     if scope is None:
         # A supervising caller owns its receipt checks and supplies AURORAC.
@@ -34,11 +45,36 @@ def execute(root, scope, targets=(), output=None):
             # Legacy image recipes never inherited hosted CXXFLAGS. The native
             # graph likewise uses its exact fixed freestanding options.
             env.pop("CXXFLAGS", None)
-    else:
+    # These settings belonged to the removed Make recipes. Do not silently ignore
+    # even an explicitly empty output/path setting on the ordinary graph.
+    unsupported = ("OUT", "FORMAT_OUT", "LEXER_EVENTS")
+    if scope is not None:
+        unsupported += (
+            *contract.SELECTORS,
+            *contract.PINS,
+            "ACCEPTANCE_COMPILER",
+            "ACCEPTANCE_COMPILER_SHA256",
+            "UTF8_LINES_ARTIFACT_PARENT",
+            "UTF8_RANGE_ARTIFACT_PARENT",
+            "XFS_ROOT_REPO",
+            "XFS_ROOT_FIXTURES",
+            "XFS_ROOT_ARTIFACT_PARENT",
+            "AURORA_TEST_MODE",
+            "AURORA_TEST_COMPILER",
+            "AURORA_TEST_IDENTITY_ARGS",
+        )
+    supplied_unsupported = sorted({name for name in unsupported if name in env})
+    contract.require(
+        not supplied_unsupported,
+        "Unsupported legacy controls: "
+        + ", ".join(supplied_unsupported)
+        + "; use a configured MESON_BUILD_DIR (compatibility outputs: build/aurorac and build/aurora-fmt)",
+    )
+    if scope is not None:
         contract.prepare_controls(argparse.Namespace(goal="test", entry="root", repo_root=root), env)
         contract.require(
             not env.get("AURORA_TEST_CONTEXT"),
-            "Use test-acceptance for the separately pinned legacy workflow",
+            "Legacy test contexts are retired; use the configured predecessor-backed Meson graph",
         )
     contract.require(
         not any(env.get(name) for name in contract.CAP_CONTROLS) and (scope is None or not env.get("IR_TEST_CXXFLAGS")),
@@ -67,19 +103,22 @@ def execute(root, scope, targets=(), output=None):
             reason + "\nUse ./scripts/container.sh make test for the supported pinned environment; "
             "see docs/local-development.md."
         ) from error
-    # One normal build and one hosted-only compiler build. Other configurations
-    # require an explicit directory; Meson/Ninja owns dependency invalidation.
+    # Bootstrap setup explicitly configures the predecessor path and pin once.
+    # Reuse that selection; this convenience wrapper cannot invent a predecessor.
     supplied = env.get("MESON_BUILD_DIR")
     default = "meson" if kernel_images else "meson-compiler"
     build = (root / supplied if supplied else root / "build" / default).resolve()
+    contract.require(
+        (build / "build.ninja").is_file(),
+        "Predecessor-backed Meson setup required at "
+        + str(build)
+        + "; follow compiler/README.md#source-bootstrap to configure bootstrap_compiler and bootstrap_compiler_sha256, "
+        "then retry with MESON_BUILD_DIR=" + shlex.quote(str(build)),
+    )
     defaults = {
         "kernel_images": kernel_images,
         "kernel_compiler": str(selected_compiler or ""),
         "uefi_ld": env.get("UEFI_LD", ""),
-    }
-    option_args = {
-        name: "-D" + name + "=" + (str(value).lower() if isinstance(value, bool) else value)
-        for name, value in defaults.items()
     }
     build_jobs = int(env.get("AURORA_BUILD_JOBS", "3"))
     test_jobs = int(env.get("AURORA_TEST_JOBS", "4"))
@@ -98,7 +137,6 @@ def execute(root, scope, targets=(), output=None):
         return json.loads(subprocess.check_output([meson, "introspect", str(build), option], cwd=root, env=env))
 
     try:
-        build.mkdir(parents=True, exist_ok=True)
         lock = (build / ".aurora-test.lock").open("a")
     except OSError as error:
         raise contract.ContractError(
@@ -114,23 +152,27 @@ def execute(root, scope, targets=(), output=None):
             ) from error
         except OSError as error:
             raise contract.ContractError(f"Cannot lock {build}: {error}. Check directory/lock permissions.") from error
-        if not (build / "build.ninja").exists():
-            run(
-                "setup",
-                build,
-                root,
-                "--backend=ninja",
-                "-Dlsp=false",
-                *option_args.values(),
-                stdout=output,
-            )
         options = {item["name"]: item["value"] for item in introspect("--buildoptions")}
-        missing = {"kernel_compiler", "kernel_images", "uefi_ld", "cpp_args"} - options.keys()
-        migrate = not supplied and missing and missing <= {"kernel_compiler", "kernel_images", "uefi_ld"}
+        missing = {
+            "kernel_compiler",
+            "kernel_images",
+            "uefi_ld",
+            "cpp_args",
+            "bootstrap_compiler",
+            "bootstrap_compiler_sha256",
+        } - options.keys()
         contract.require(
-            not missing or migrate,
-            "Missing Meson build options: " + ", ".join(sorted(missing)) + "; select a fresh matching MESON_BUILD_DIR",
+            not missing,
+            "Missing Meson build options: "
+            + ", ".join(sorted(missing))
+            + "; configure a predecessor-backed MESON_BUILD_DIR using compiler/README.md#source-bootstrap",
         )
+        contract.require(
+            isinstance(options["bootstrap_compiler"], str) and Path(options["bootstrap_compiler"]).is_absolute(),
+            "Configured bootstrap_compiler must select an absolute predecessor; "
+            "see compiler/README.md#source-bootstrap",
+        )
+        contract.pin(options["bootstrap_compiler_sha256"])
         command = introspect("--compilers")["build"]["cpp"]["exelist"]
         contract.require(
             len(command) == 1 and meson_toolchain.selected_tool(command[0]) == cxx,
@@ -147,37 +189,35 @@ def execute(root, scope, targets=(), output=None):
                 f"Configured {name} differs from request ({options.get(name)!r} != {expected!r}); "
                 "select a matching MESON_BUILD_DIR",
             )
-        if migrate:
-            # New project options need regeneration, not deletion of the build,
-            # its held lock, retained scratch, or user files. Keep existing options.
-            # Meson must discover new options before accepting their -D values.
-            run("setup", build, root, "--reconfigure", stdout=output)
-            options = {item["name"]: item["value"] for item in introspect("--buildoptions")}
-            changes = [option_args[name] for name in sorted(missing) if options.get(name) != defaults[name]]
-            if changes:
-                run("setup", build, root, "--reconfigure", *changes, stdout=output)
-                options = {item["name"]: item["value"] for item in introspect("--buildoptions")}
+        if tests:
+            registered = {item["name"] for item in introspect("--tests")}
+            unknown = sorted(set(tests) - registered)
             contract.require(
-                all(options.get(name) == defaults[name] for name in missing),
-                "Meson reconfiguration did not restore requested build options",
+                not unknown,
+                "Unregistered Meson tests: "
+                + ", ".join(unknown)
+                + "; inspect meson test -C "
+                + shlex.quote(str(build))
+                + " --list",
             )
         # Meson's generated aggregate covers declared test dependencies, including
         # non-default fixtures. Build it with our explicit jobs bound before tests.
-        build_targets = list(targets) if scope is None else ["--ninja-args=meson-test-prereq"]
+        build_targets = list(targets) if scope is None or build_only else ["--ninja-args=meson-test-prereq"]
         run("compile", "-C", build, "-j", build_jobs, *build_targets, stdout=output)
-        if scope is None:
+        if scope is None or build_only:
             return build
         run(
             "test",
             "-C",
             build,
-            "--suite",
-            scope,
+            *([] if tests else ["--suite", scope]),
             "--no-rebuild",
             "--num-processes",
             test_jobs,
             "--print-errorlogs",
+            *tests,
         )
+        return build
 
 
 def selected_kernel_compiler(build):
@@ -194,23 +234,29 @@ def selected_kernel_compiler(build):
     return selected
 
 
-def publish_compatibility_compiler(root, build):
-    """Keep the ordinary make-all compiler output without a second compilation."""
+def publish_compatibility_output(root, source, name):
+    """Atomically preserve the documented path without a second compilation."""
+    contract.require(name in ("aurorac", "aurora-fmt"), "Unsupported compatibility output name")
     directory = root.resolve() / "build"
     contract.require(not directory.is_symlink(), "Refusing a symlinked compatibility build directory")
     directory.mkdir(exist_ok=True)
-    destination = directory / "aurorac"
-    contract.require(not destination.is_symlink(), "Refusing a symlinked compatibility compiler")
-    compiler = selected_kernel_compiler(build)
+    destination = directory / name
+    contract.require(not destination.is_symlink(), "Refusing a symlinked compatibility output: " + name)
+    compiler = Path(source).resolve(strict=True)
+    contract.require(compiler.is_file() and os.access(compiler, os.X_OK), "Executable compatibility output required")
     if destination.is_file() and destination.read_bytes() == compiler.read_bytes():
         return
-    with tempfile.NamedTemporaryFile(prefix=".aurorac-", dir=directory, delete=False) as temporary:
+    with tempfile.NamedTemporaryFile(prefix="." + name + "-", dir=directory, delete=False) as temporary:
         pending = Path(temporary.name)
     try:
         shutil.copy2(compiler, pending)
         pending.replace(destination)
     finally:
         pending.unlink(missing_ok=True)
+
+
+def publish_compatibility_compiler(root, build):
+    publish_compatibility_output(root, selected_kernel_compiler(build), "aurorac")
 
 
 def main():
@@ -226,7 +272,7 @@ def main():
     parser.add_argument(
         "--publish-compiler",
         action="store_true",
-        help="With --kernel, retain build/aurorac compatibility output",
+        help="With --kernel or --build-only aurorac, retain build/aurorac",
     )
     parser.add_argument(
         "--print-image-dir",
@@ -236,10 +282,20 @@ def main():
     selection.add_argument(
         "--suite",
         choices=["full", "compiler", "dev", "slow", "integration", "boot"],
-        default="full",
     )
+    selection.add_argument("--build-only", nargs="+", choices=["aurorac", "aurora-fmt"])
+    selection.add_argument("--tests", nargs="+", help="Run exact registered names in the hosted-only build")
+    parser.add_argument("--publish-formatter", action="store_true", help="Retain build/aurora-fmt after its build")
     args = parser.parse_args()
     try:
+        contract.require(
+            not args.publish_formatter or args.build_only and "aurora-fmt" in args.build_only,
+            "--publish-formatter requires --build-only aurora-fmt",
+        )
+        contract.require(
+            not args.publish_compiler or args.kernel or args.build_only and "aurorac" in args.build_only,
+            "--publish-compiler requires --kernel or --build-only aurorac",
+        )
         if args.kernel:
             profile = kernel_profiles.select(args.kernel, os.environ, args.profile or "normal")
             canonical = kernel_profiles.canonical_profile(args.kernel, profile)
@@ -263,10 +319,20 @@ def main():
             )
         else:
             contract.require(
-                not args.print_image_dir and not args.publish_compiler and args.profile is None,
-                "--profile/--print-image-dir/--publish-compiler require --kernel",
+                not args.print_image_dir and args.profile is None,
+                "--profile/--print-image-dir require --kernel",
             )
-            execute(args.repo_root, args.suite)
+            build = execute(
+                args.repo_root,
+                "compiler" if args.build_only or args.tests else args.suite or "full",
+                args.build_only or (),
+                build_only=bool(args.build_only),
+                tests=args.tests or (),
+            )
+            if args.publish_compiler:
+                publish_compatibility_output(args.repo_root, build / "aurorac", "aurorac")
+            if args.publish_formatter:
+                publish_compatibility_output(args.repo_root, build / "aurora-fmt", "aurora-fmt")
     except OSError as error:
         target = error.filename or os.environ.get("MESON_BUILD_DIR") or args.repo_root
         raise SystemExit(

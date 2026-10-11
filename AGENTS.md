@@ -62,10 +62,10 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
    The native `boot` suite does not run QEMU. Missing tools, skipped gates and
    prior-source results leave the current candidate unqualified. Record the actual
    GCC 16 distribution/version; Debian GCC 16.2.0-3 is not Gentoo 16.2.1 evidence.
-   Separately pinned bootstrap compatibility remains available through
-   `make test-acceptance ACCEPTANCE_COMPILER_SHA256=<reviewed digest>` and its
-   existing matching `run.json` contract. It is not an additional mandatory
-   duplicate native graph unless that distinct workflow is the change under test.
+   New builds require the predecessor source-bootstrap route in compiler/README.md.
+   Historical raw-seed/prebuilt receipts retain their original validation meaning;
+   retired legacy execution gives migration instructions rather than creating
+   another native graph or silently reinterpreting those records.
 5. Review changes independently before considering a milestone verified. Record
    reproduced defects and fixes, commands, source revision, tool versions and limits.
 6. Update implementation docs and the completeness matrix in the same change.
@@ -86,8 +86,6 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
 - meson test -C build/meson --suite full --num-processes 2: all registered non-LSP tests (see Meson introspection)
 - make test: incremental compile then the complete Meson `full` suite;
   `MESON_BUILD_DIR`, `AURORA_BUILD_JOBS` and `AURORA_TEST_JOBS` are configurable
-- make test-acceptance ACCEPTANCE_COMPILER_SHA256=<reviewed digest>: explicitly
-  pinned root native graph; optional ACCEPTANCE_COMPILER selects a reviewed prebuilt
 - make -C compiler test: complete compiler-only scope, not the root full aggregate
 - make smoke: real QEMU normal boot
 - make smoke-fault: real fail-stop exception injection (see scripts for modes)
@@ -95,7 +93,7 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
 
 Read [development and qualification](docs/developer-test-contract.md) before
 changing test routing. Normal development uses the incremental Meson graph;
-explicit independently supervised legacy pins remain available. Full aggregates
+historical receipts remain readable while new execution uses Meson. Full aggregates
 and acceptance reject coverage-reducing overrides. Focused and compiler-free
 checks do not establish root native acceptance. There is no established pinned
 CI replacement for this policy; retain these gates until that mechanism is real.

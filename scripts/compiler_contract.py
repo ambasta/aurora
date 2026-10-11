@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Controlled local test builds and explicitly labelled compiler identity.
+"""Compiler identity validators and historical local build-receipt readers.
 
 This is a trusted local workflow, not a compiler-correctness proof or a signed
 attestation. Explicit pins and local build provenance are intentionally distinct.
-The historical gnu-cxx-main-v1 recipe builds the C++ lexer seed/reference. Hosted
-Aurora-lexer qualification uses the canonical Meson stage 1 build instead.
+The gnu-cxx-main-v1 executor is retired. Its receipt schema and exact argv remain
+readable for historical validation; new builds use predecessor-backed Meson.
 """
 
 from __future__ import annotations
@@ -12,7 +12,6 @@ from __future__ import annotations
 import argparse
 from contextlib import contextmanager
 from dataclasses import dataclass
-import fcntl
 import hashlib
 import json
 import os
@@ -24,8 +23,6 @@ import signal
 import stat
 import subprocess
 import sys
-import tempfile
-import time
 
 SCHEMA = "aurora.compiler-contract.v1"
 DEFAULT_FLAGS = "-std=c++23 -O2 -Wall -Wextra -Wpedantic -Werror"
@@ -611,18 +608,8 @@ def reject_pch(headers):
             require(not Path(name).exists(), "precompiled header input unsupported: " + name)
 
 
-def dependency_inputs(cxx, flags, cwd):
-    data = query([cxx, *flags, "-M", "-MT", "aurora-contract", "main.cpp"], cwd)
-    require(data.startswith("aurora-contract:"), "unexpected dependency discovery output")
-    names = shlex.split(data.split(":", 1)[1].replace("\\\n", " "))
-    require(names, "empty dependency discovery result")
-    paths = {str((cwd / name).absolute()) for name in names}
-    records = {name: file_record(name) for name in sorted(paths)}
-    reject_pch(records)
-    return records
-
-
 def build_argv(cxx, flags, output, dependencies):
+    """Historical gnu-cxx-main-v1 receipt comparison only; never executed here."""
     return [cxx, *flags, "-MD", "-MF", dependencies, "-MT", "aurora-contract", "main.cpp", "-o", output]
 
 
@@ -771,221 +758,27 @@ def prepare_controls(args, env):
 
 
 def run(args):
-    root = Path(args.repo_root).resolve(strict=True)
-    env = os.environ.copy()
-    mode, expected, prebuilt, full = prepare_controls(args, env)  # No artifacts before this point.
-    requested_cxx = parse_cxx(env["CXX"] if "CXX" in env else "g++")
-    host_test_flags = selected_flag_vectors(env)
-    flags = host_test_flags["CXXFLAGS"]
-    tools = {name: tool_record(name) for name in TOOLS}
-    tools["python-supervisor"] = file_record(sys.executable)
-    tools["shell"] = file_record("/bin/sh")
-    tools["cxx"] = tool_record(requested_cxx)
-    cxx = parse_cxx(tools["cxx"]["resolved"])
-    source = source_inventory(root)
-    build_env = {name: env.get(name) for name in BUILD_ENV}
-    versions = {
-        name: query([entry["resolved"], "--version"], root).splitlines()[0]
-        for name, entry in tools.items()
-        if name not in ("shell",)
-    }
-    headers = {}
-    if prebuilt is None:
-        print(
-            "NOTE: legacy supervisor builds the C++ lexer seed/reference; "
-            "use canonical Meson stage 1 for Aurora-lexer qualification.",
-            flush=True,
-        )
-        # GCC's ordinary distribution symlinks are supported; opaque wrappers are not.
-        verbose = capture([cxx, "-v"], root, timeout=30)
-        require(verbose.returncode == 0 and b"gcc version " in verbose.stderr, "controlled build requires GNU C++")
-        require(
-            "linux" in query([cxx, "-dumpmachine"], root) and query([cxx, "-dumpmachine"], root).startswith("x86_64"),
-            "x86-64 Linux host compiler required",
-        )
-        for name in ("cc1plus", "collect2", "as", "ld"):
-            selected = query([cxx, *flags, "-print-prog-name=" + name], root / "compiler").strip()
-            if "/" in selected and not Path(selected).is_absolute():
-                selected = str(root / "compiler" / selected)
-            tools["cxx-" + name] = tool_record(selected)
-        headers = dependency_inputs(cxx, flags, root / "compiler")
-    require(source_inventory(root) == source, "source drift during build preflight")
-    check_files(tools)
-    # The lock serializes separate invocations sharing the existing kernel output.
-    build = root / "build"
-    build.mkdir(exist_ok=True)
-    with (build / ".test-contract.lock").open("a") as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as error:
-            raise ContractError("another supervised test run owns this source tree") from error
-        work = Path(tempfile.mkdtemp(prefix="test-contract-", dir=build))
-        temporary = work / "tmp"
-        temporary.mkdir()
-        env.update(TMPDIR=str(temporary), TMP=str(temporary), TEMP=str(temporary))
-        compiler = work / "aurorac"
-        depfile = work / "compiler.d"
-        planned = None if prebuilt else build_argv(cxx, flags, str(compiler), str(depfile))
-        original = file_record(prebuilt) if prebuilt else None
-        attempt = dict(
-            schema=SCHEMA,
-            mode=mode,
-            goal=args.goal,
-            entry=args.entry,
-            root=str(root),
-            status="running",
-            native_complete=False,
-            origin="externally-pinned-prebuilt" if prebuilt else "fresh-source-build",
-            external_expected_sha256=expected,
-            started_ns=time.time_ns(),
-            source_inputs=source,
-            tools=tools,
-            tool_versions=versions,
-            header_inputs=headers,
-            build_environment=build_env,
-            build_command=planned,
-            build_cwd=str(root / "compiler"),
-            flags=flags,
-            host_test_flags=host_test_flags,
-            prebuilt_input=original,
-            selected_controls={name: env.get(name) for name in FORWARDED},
-            planned_output=str(compiler),
-        )
-        write_json(work / "run.json", attempt)
-        try:
-            command = None
-            if prebuilt is not None:
-                require(file_record(prebuilt) == original, "prebuilt compiler changed after planning")
-                require(original["sha256"] == expected, "prebuilt compiler changed before copy")
-                shutil.copyfile(prebuilt, compiler)
-                attempt["prebuilt_copy_sha256"] = digest(compiler)
-                write_json(work / "run.json", attempt)
-                require(file_record(prebuilt) == original, "prebuilt compiler changed during copy")
-            else:
-                command = planned
-                code = execute(command, root / "compiler", env, work / "compiler.log")
-                attempt["build_returncode"] = code
-                write_json(work / "run.json", attempt)
-                require(code == 0, "fresh compiler build failed with status " + str(code))
-                require(
-                    compiler.is_file() and depfile.is_file(), "build did not produce compiler and dependency outputs"
-                )
-                require(
-                    actual_dependency_paths(depfile, root / "compiler") == set(headers),
-                    "header dependency set changed during build",
-                )
-                check_files(headers)
-            require(compiler.is_file() and compiler.stat().st_size > 0, "build did not produce a compiler")
-            compiler.chmod(0o555)
-            output = file_record(compiler)
-            attempt["observed_compiler"] = output
-            write_json(work / "run.json", attempt)
-            require(
-                expected is None or output["sha256"] == expected,
-                "fresh compiler does not match external expected pin; no tests started",
-            )
-            require(source_inventory(root) == source, "source drift during compiler build")
-            check_files(tools)
-            context = dict(
-                schema=SCHEMA,
-                status="built",
-                mode=mode,
-                root=str(root),
-                origin="externally-pinned-prebuilt" if prebuilt else "fresh-source-build",
-                source_inputs=source,
-                tools=tools,
-                tool_versions=versions,
-                build_environment=build_env,
-                compiler=output,
-                host_test_flags=host_test_flags,
-                external_expected_sha256=expected,
-                assurance="Trusted local workflow; not correctness, external approval or complete supply-chain proof",
-            )
-            if prebuilt:
-                context["prebuilt_input"] = original
-            else:
-                context.update(
-                    build_returncode=0,
-                    build_recipe="gnu-cxx-main-v1",
-                    flags=flags,
-                    build_cwd=str(root / "compiler"),
-                    build_command=command,
-                    dependency_file=str(depfile),
-                    header_inputs=headers,
-                )
-            receipt = work / "compiler-context.json"
-            write_json(receipt, context)
-            receipt.chmod(0o444)
-            receipt_hash = digest(receipt)
-            inner = env.copy()
-            for name in (
-                *MAKE_CONTROL,
-                *SELECTORS,
-                *PINS,
-                "ACCEPTANCE_COMPILER",
-                "ACCEPTANCE_COMPILER_SHA256",
-                "AURORA_TEST_CONTEXT",
-                "AURORA_TEST_MODE",
-                "AURORA_TEST_COMPILER",
-                "AURORA_TEST_IDENTITY_ARGS",
-            ):
-                inner.pop(name, None)
-            inner.update({name: value for name in FORWARDED if (value := env.get(name)) is not None})
-            inner.update(
-                CXX=cxx,
-                CXXFLAGS=shlex.join(host_test_flags["CXXFLAGS"]),
-                IR_TEST_CXXFLAGS=shlex.join(host_test_flags["IR_TEST_CXXFLAGS"]),
-                PYTHONDONTWRITEBYTECODE="1",
-                AURORA_TEST_CONTEXT=str(receipt),
-                AURORA_TEST_MODE=mode,
-                AURORA_TEST_COMPILER=str(compiler),
-            )
-            inner.update({name: str(compiler) for name in SELECTORS})
-            if mode == "acceptance":
-                inner["ACCEPTANCE_COMPILER_SHA256"] = expected
-                inner["AURORA_TEST_IDENTITY_ARGS"] = shlex.join(["--compiler-sha256", expected])
-            else:
-                inner["AURORA_TEST_IDENTITY_ARGS"] = shlex.join(["--developer-build-receipt", str(receipt)])
-            goal = "test" if args.goal == "test-acceptance" else args.goal
-            argv = [tools["make"]["resolved"], "--no-print-directory", "-j1", goal]
-            # Preserve explicit command-line cap admission over target-specific defaults.
-            argv += [name + "=" + env[name] for name in FORWARDED if name.endswith("_CAP_MIB") and name in env]
-            cwd = root / ("compiler" if args.entry == "compiler" else "")
-            read_context(receipt, root, compiler)
-            attempt.update(
-                origin=context["origin"],
-                compiler_sha256=output["sha256"],
-                context_sha256=receipt_hash,
-                make_command=argv,
-                make_cwd=str(cwd),
-                scope=("native-aggregate" if args.entry == "root" else "compiler-suite") if full else "focused",
-                native_complete=False,
-            )
-            write_json(work / "run.json", attempt)
-            code = execute(argv, cwd, inner, work / "native.log")
-            attempt["make_returncode"] = code
-            require(code == 0, "native tests failed with status " + str(code))
-            require(digest(receipt) == receipt_hash, "compiler context changed during aggregate")
-            read_context(receipt, root, compiler)
-            attempt.update(
-                status="passed",
-                native_complete=full and args.entry == "root",
-                coverage="complete-requested-goal" if full else "focused-or-diagnostic",
-                limits=(
-                    "Native stage only; no emulator, external approval, cross-host or physical-hardware qualification"
-                ),
-            )
-            print("PASS " + mode + " " + attempt["scope"] + ": " + str(work), flush=True)
-        except BaseException as error:
-            attempt.update(
-                status="failed", native_complete=False, error=str(error), exception_type=type(error).__name__
-            )
-            if isinstance(error, RunInterrupted):
-                attempt["interrupted_by_signal"] = error.number
-            raise
-        finally:
-            attempt["finished_ns"] = time.time_ns()
-            write_json(work / "run.json", attempt)
+    """Reject obsolete execution without querying tools or creating artifacts."""
+    require(args.entry in ("root", "compiler"), "invalid Make entrypoint")
+    require(re.fullmatch(r"test(?:-[a-z0-9-]+)?", args.goal) is not None, "invalid test goal")
+    root = Path(args.repo_root).resolve()
+    default = "meson-compiler" if args.entry == "compiler" else "meson"
+    build = (root / os.environ.get("MESON_BUILD_DIR", "build/" + default)).resolve()
+    aggregate = args.goal in ("test", "test-acceptance", "test-compiler")
+    if aggregate:
+        directory = root / "compiler" if args.entry == "compiler" or args.goal == "test-compiler" else root
+        command = shlex.join(["make", "-C", str(directory), "test", "MESON_BUILD_DIR=" + str(build)])
+    else:
+        # Some old aliases composed multiple gates. Do not guess an incomplete
+        # replacement: the explicit list lets the caller choose the full scope.
+        command = shlex.join(["meson", "test", "-C", str(build), "--list"])
+    raise ContractError(
+        "Legacy compiler_contract run is retired; it cannot build a C++ seed or execute a sealed Make graph. "
+        "Use a predecessor-backed Meson directory configured with bootstrap_compiler and "
+        "bootstrap_compiler_sha256 (compiler/README.md#source-bootstrap), then run: "
+        + command
+        + ("; select the required named Meson tests from that list" if not aggregate else "")
+    )
 
 
 def main():

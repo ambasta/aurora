@@ -644,8 +644,8 @@ hosted_lexer_invalid = executable(
 )
 test('hosted-lexer-invalid', hosted_lexer_invalid, suite: ['full', 'dev', 'core', 'compiler'], timeout: 30)
 
-# A real generated-code fixture prevents universal C++ fallback from satisfying
-# the differential oracle. The separate forged-return fixture never links it.
+# The real generated-code fixture checks explicit AST/diagnostic contracts and
+# private ABI behavior. The separate forged-return fixture never links it.
 hosted_parser_abi = custom_target(
     'hosted-parser-abi-object', input: 'compiler/hosted_parser_abi.S', output: 'hosted-parser-abi.o',
     command: native_cpp.cmd_array() + ['-c', '-x', 'assembler', '@INPUT@', '-o', '@OUTPUT@'],

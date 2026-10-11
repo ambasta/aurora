@@ -12,26 +12,20 @@ lexer_events = custom_target(
   'hosted-lexer-events', input: 'compiler/lexer.au', output: 'hosted_lexer_events.inc',
   command: [python, '-B', files('scripts/bootstrap_frontend.py'), '--events', '@INPUT@', '@OUTPUT@'],
 )
-# An external predecessor is explicit and byte-pinned; an incomplete selection
-# never falls back to the current C++ seed. The default retains that seed until
-# predecessor bootstrapping and reference-fixture migration permit its removal.
+# The current source has no C++ expression seed. Bootstrap from an explicitly
+# selected, byte-pinned predecessor built using the documented source route.
 bootstrap_compiler_path = get_option('bootstrap_compiler')
 bootstrap_compiler_sha256 = get_option('bootstrap_compiler_sha256')
-bootstrap_pin_args = []
-bootstrap_depend_files = []
-if (bootstrap_compiler_path == '') != (bootstrap_compiler_sha256 == '')
-  error('bootstrap_compiler and bootstrap_compiler_sha256 must be selected together.')
+if bootstrap_compiler_path == '' or bootstrap_compiler_sha256 == ''
+  error('Set both bootstrap_compiler (absolute executable path) and bootstrap_compiler_sha256. ' +
+        'Build the pinned predecessor from source using compiler/README.md#source-bootstrap; ' +
+        'the current C++ expression seed has been retired.')
 endif
-if bootstrap_compiler_path != ''
-  run_command(python, '-B', files('scripts/bootstrap_frontend.py'), '--verify-compiler',
-              bootstrap_compiler_path, bootstrap_compiler_sha256, check: true)
-  bootstrap_compiler = find_program(bootstrap_compiler_path, native: true)
-  bootstrap_pin_args = ['--compiler-sha256', bootstrap_compiler_sha256]
-  bootstrap_depend_files = files(bootstrap_compiler_path)
-else
-  aurorac_stage0 = executable('aurorac-stage0', 'compiler/main.cpp', native: true, install: false)
-  bootstrap_compiler = aurorac_stage0
-endif
+run_command(python, '-B', files('scripts/bootstrap_frontend.py'), '--verify-compiler',
+            bootstrap_compiler_path, bootstrap_compiler_sha256, check: true)
+bootstrap_compiler = find_program(bootstrap_compiler_path, native: true)
+bootstrap_pin_args = ['--compiler-sha256', bootstrap_compiler_sha256]
+bootstrap_depend_files = files(bootstrap_compiler_path)
 frontend_inputs = files('compiler/lexer.au', 'compiler/expression_arena.au', 'compiler/expression_parser.au',
                         'compiler/hosted_lexer.S', 'compiler/hosted_parser.S')
 frontend_assembly = custom_target(

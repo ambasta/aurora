@@ -28,12 +28,16 @@ hardware and general terminal/window services remain unqualified.
 
 The public dependency image pinned in `ci/image` is the supported reproducible
 development environment, with the exact tools and firmware. With Docker or
-Podman installed, run from the repository root:
+Podman installed, start from the repository root.
+
+Open the pinned shell with `./scripts/container.sh bash`, then complete the
+[source-bootstrap recipe](compiler/README.md#source-bootstrap) once. It builds a
+reviewed historical compiler from source and configures both current Meson graphs. Then run:
 
 ```sh
-./scripts/container.sh make
-./scripts/container.sh make test
-./scripts/container.sh make run-uefi
+make
+make test
+make run-uefi
 ```
 
 Native x86-64 Linux setup is an advanced route requiring the exact pinned tool
@@ -135,7 +139,8 @@ formatter versions and explicit check/format commands.
 Use the checks appropriate to the change:
 
 ```sh
-meson setup build/gcc16
+meson setup build/gcc16 \
+  "-Dbootstrap_compiler=$P" "-Dbootstrap_compiler_sha256=$PIN"
 meson compile -C build/gcc16 -j 4 --ninja-args=meson-test-prereq
 meson test -C build/gcc16 --suite dev --no-rebuild --num-processes 4
 meson test -C build/gcc16 --suite full --no-rebuild --num-processes 4
@@ -159,6 +164,6 @@ requires another directory. Make is a convenience entrypoint to the same graph,
 with `MESON_BUILD_DIR`, `AURORA_BUILD_JOBS` and `AURORA_TEST_JOBS` controls. Omit
 `MESON_BUILD_DIR` to use `build/meson` (or `build/meson-compiler` for compiler-only
 work), or set it to a fresh or matching configured directory. Explicit
-pinned legacy compatibility remains in the [developer-test contract](docs/developer-test-contract.md).
+historical receipt boundaries remain in the [developer-test contract](docs/developer-test-contract.md).
 Selected artifact identity, a focused pass or registration alone does not establish
 full native, sanitizer, emulator or hardware qualification.

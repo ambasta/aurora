@@ -9,12 +9,16 @@ packages the dependency image; it does not run product validation.
 
 ## Quick start
 
-With Docker or Podman installed, run from the repository root:
+With Docker or Podman installed, start from the repository root.
+
+Open the pinned shell with `./scripts/container.sh bash`, then complete the
+[source-bootstrap recipe](../compiler/README.md#source-bootstrap) once. It builds a
+reviewed historical compiler from source and configures both current Meson graphs. Then run:
 
 ```sh
-./scripts/container.sh make
-./scripts/container.sh make test
-./scripts/container.sh make run-uefi
+make
+make test
+make run-uefi
 ```
 
 The wrapper uses Docker when available, otherwise Podman. It recognizes Podman's
@@ -288,11 +292,10 @@ open-file guarantees.
 - `make test-developer-commands` checks command routing with fake tools, without
   compiling Aurora or starting a real guest. It is not native acceptance.
 
-Developer shortcuts configure when needed and reuse matching dependency-tracked
-builds. Setup, compile and test failures stop the command. Raw test logs stay in
+Developer shortcuts reuse the matching predecessor-configured dependency graph. Setup, compile and test failures stop the command. Raw test logs stay in
 `<build>/meson-logs`; a selected compiler hash proves stability, not a fresh-build
 or external-pin claim. The [test contract](developer-test-contract.md) defines
-identity, bounds and the separate legacy pinned acceptance workflow.
+identity, bounds and the historical receipt boundary.
 
 `make console`, `make console-uefi` and `make program-console-uefi` provide bounded
 interactive serial sessions. Read the [console guide](native-console-service.md)
@@ -305,7 +308,7 @@ Simple console smoke uses isolated products and performs no normal rebuild or
 normal boot afterward. The PTY driver terminates and joins its owned QEMU on exit
 or handled interruption. Its log/metrics and UEFI clock receipt live in
 `<build>/kernel-images/<bios|uefi>/console/`. Protected PTY evidence stays under
-`build/program-console-evidence/`; explicit reviewed legacy qualification can
+`build/program-console-evidence/`; explicit retained qualification commands can
 still use its selected `build/uefi` inputs. Final normal BIOS/UEFI boots remain
 separate merge/release requirements.
 

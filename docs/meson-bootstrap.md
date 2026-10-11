@@ -14,8 +14,10 @@ Select matching real `gcc` and `g++` on PATH: a stack-guard
 runner invokes bare `gcc`. Keep one stable build directory per toolchain/configuration:
 
 ```sh
+# Complete source bootstrap first; P and PIN select that built predecessor.
 # PATH must already select the matching GCC 16 pair.
-CXX=g++ meson setup build/gcc16 --backend=ninja -Dlsp=false
+CXX=g++ meson setup build/gcc16 --backend=ninja -Dlsp=false \
+  "-Dbootstrap_compiler=$P" "-Dbootstrap_compiler_sha256=$PIN"
 meson compile -C build/gcc16 -j 3
 # Optional quick feedback while developing; full below includes these tests.
 meson test -C build/gcc16 --suite dev --no-rebuild --num-processes 4 --print-errorlogs
@@ -64,22 +66,23 @@ never sweep historical, failed, kept or user-owned review output automatically.
 
 `make test` invokes the same `full` graph. `make test-compiler`, `make -C compiler
 test` and `scripts/compiler-test.sh` select `compiler`. Set `MESON_BUILD_DIR` to a
-fresh or matching configured directory, or omit it for `build/meson` (normal
+matching predecessor-configured directory, or omit it for `build/meson` (normal
 image-enabled work) or `build/meson-compiler` (hosted-only compiler work).
-The shortcuts run Meson setup automatically when needed, stop on setup/build/test
-failure, and reject mismatched existing compiler/flag selections. When an implicit
-default build predates the kernel project options, the shortcuts refresh it with
-`meson setup --reconfigure` under the same lock. Existing options, products,
-retained scratch and user files stay in place. Explicit `MESON_BUILD_DIR` selections
-are never migrated automatically; select a fresh matching directory or reconfigure
-the chosen build explicitly. `make clean` still preserves configuration.
+First configure these directories with the paired predecessor options using the
+[source-bootstrap recipe](../compiler/README.md#source-bootstrap). Missing
+predecessor selections reject with that recipe rather than creating a raw seed.
+The shortcuts stop on build/test failure and reject mismatched compiler/flag
+selections or missing project options. Reconfigure an older chosen build
+explicitly with both predecessor options, or configure a fresh matching directory.
+The wrapper does not invent a predecessor or automatically migrate configurations.
+`make clean` still preserves configuration.
 `AURORA_BUILD_JOBS=3` and `AURORA_TEST_JOBS=4` are independent.
 The container wrapper forwards these two controls and `MESON_BUILD_DIR` when set;
 use checkout-relative build paths, since the checkout is mounted at `/workspace`.
 `SANITIZE` and nondefault `CPPFLAGS`/`LDFLAGS` are not silently accepted by the
 convenience route; use explicit configured sanitizer builds/separate focused gates.
-Explicit pinned `make test-acceptance` remains a distinct legacy compatibility
-workflow, not another mandatory run of the same native cases.
+The obsolete legacy acceptance executor gives a migration error; historical
+receipts remain readable without being reinterpreted as current Meson results.
 
 ## Native kernel images
 
@@ -101,8 +104,8 @@ MESON_BUILD_DIR=build/gcc16 make kernel-uefi
 
 `make` / `make all` builds the Meson compiler once through the BIOS image graph
 and atomically copies it to the compatible `build/aurorac` path. `make kernel`
-keeps all outputs isolated; explicit `make compiler` retains the legacy compiler
-recipe for unmigrated consumers.
+keeps all outputs isolated; `make compiler` also enters the configured Meson
+graph and retains its documented compatibility compiler output.
 
 Both normal images are also default build products. BIOS and UEFI have distinct
 object/generated-file owners and can build together in one Ninja invocation.
@@ -123,8 +126,8 @@ sanitizers, PGO and debug-STL additions. BIOS stays non-PIE; UEFI payload stays
 PIE/hidden and its loader retains the Microsoft-ABI outgoing-argument option.
 For hosted-only compiler or sanitizer configurations, pass `-Dkernel_images=false`
 to a separate Meson setup. That configuration accepts explicit hosted flags and
-does not probe the PE linker. Fresh compiler-only convenience setups automatically select this option and a
-separate default directory; an explicitly supplied existing image-enabled build
+does not probe the PE linker. The source-bootstrap recipe selects this option
+for the separate compiler-only default directory; an explicitly supplied image-enabled build
 can still be reused with matching compiler/flags. The two normal
 image tests remain registered and fail clearly in `full`/`boot`, including with
 `--no-rebuild`; disabled images cannot yield a qualified full pass.
