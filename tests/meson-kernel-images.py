@@ -30,6 +30,41 @@ image = load("kernel_image", "scripts/kernel_uefi_image.py")
 
 
 class GeneratorBoundaries(unittest.TestCase):
+    def test_snapshot_runtime_inventory_remains_exact(self):
+        # Literal independent ABI inventory, not derived from the policy helper.
+        names = {
+            "__au_runtime_bytes_allocate": "T",
+            "__au_runtime_bytes_at": "T",
+            "__au_runtime_bytes_set": "T",
+            "__au_runtime_bytes_drop": "T",
+            "__au_runtime_bytes_borrow_length": "T",
+            "__au_runtime_bytes_resize": "T",
+            "__au_runtime_bytes_kernel_fault": "T",
+            "__au_runtime_values_allocate": "T",
+            "__au_runtime_values_at": "T",
+            "__au_runtime_values_set": "T",
+            "__au_runtime_values_resize": "T",
+            "__au_runtime_snapshot_produce": "T",
+            "unrelated_payload_function": "T",
+        }
+        image.snapshot_runtime_symbols(names)
+        for name in names:
+            if not name.startswith("__au_runtime_"):
+                continue
+            with self.subTest(missing=name):
+                broken = dict(names)
+                del broken[name]
+                with self.assertRaisesRegex(ValueError, "Closed snapshot runtime authority inventory"):
+                    image.snapshot_runtime_symbols(broken)
+            for kind in ("U", "W", "D", "t"):
+                with self.subTest(symbol=name, kind=kind):
+                    with self.assertRaisesRegex(ValueError, "global text definition"):
+                        image.snapshot_runtime_symbols(names | {name: kind})
+        for extra in ("__au_runtime_values_borrow", "__au_runtime_values_extra", "__au_runtime_foreign"):
+            with self.subTest(extra=extra):
+                with self.assertRaisesRegex(ValueError, "Closed snapshot runtime authority inventory"):
+                    image.snapshot_runtime_symbols(names | {extra: "T"})
+
     def test_reflection_emission_is_explicit_and_program_supervisor_only(self):
         recipe = (ROOT / "kernel-images/meson.build").read_text()
         selection = "if admission == 'program'\n    root_args += ['--referenced-reflection-only']\n  endif"
