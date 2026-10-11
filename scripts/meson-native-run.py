@@ -38,8 +38,9 @@ def main():
     cxx[0] = os.path.abspath(executable)
     # The checked-in wrappers hardcode g++; pin that invocation to the configured
     # Meson native compiler rather than accidentally selecting another GCC on PATH.
-    with tempfile.TemporaryDirectory(prefix="native-tools-", dir=args.build_root) as temporary:
-        work = Path(temporary)
+    work = Path(tempfile.mkdtemp(prefix="native-tools-", dir=args.build_root))
+    completed_successfully = False
+    try:
         wrapper = work / "g++"
         # Restore the search path inside the wrapper too, so compiler launchers
         # that look up g++ cannot re-enter this wrapper.
@@ -90,6 +91,17 @@ def main():
             )
             if status:
                 sys.exit(status if status > 0 else 128 - status)
+            completed_successfully = True
+    finally:
+        if completed_successfully and os.environ.get("AURORA_MESON_KEEP_ARTIFACTS") != "1":
+            try:
+                shutil.rmtree(work)
+            except OSError as error:
+                print(
+                    "Native scratch cleanup incomplete: " + str(work) + ": " + str(error), file=sys.stderr, flush=True
+                )
+        else:
+            print("Retained native scratch: " + str(work), flush=True)
 
 
 if __name__ == "__main__":

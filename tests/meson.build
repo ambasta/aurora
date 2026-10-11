@@ -1,5 +1,5 @@
-# Every registered Python runner owns unique TemporaryDirectory outputs beneath
-# this build directory, including module alias, FIFO and oversized-source cases.
+# Compiler runner scratch lives beneath this build directory, including module
+# alias, FIFO and oversized-source cases. Native routing below handles its own paths.
 # Source/library inputs are read-only; parallel tests share no generated paths.
 oracle_env = environment()
 oracle_env.set('TMPDIR', meson.current_build_dir())
@@ -45,10 +45,14 @@ foreach entry : [
     if entry[0] in ['block-io', 'sector-window', 'xfs-sector', 'xfs-file']
         feedback = 'slow'
     endif
+    runner_args = ['-B', '-O', files(entry[1]), aurorac]
+    if entry[0] == 'json-owned'
+        runner_args = ['-B', artifact_adapter, python] + runner_args + ['--artifacts', '@ARTIFACTS@']
+    endif
     test(
         entry[0],
         python,
-        args: ['-B', '-O', files(entry[1]), aurorac],
+        args: runner_args,
         depends: aurorac,
         suite: ['full', feedback, entry[2], 'compiler'],
         env: oracle_env,
@@ -315,7 +319,8 @@ test('console-service-ir', console_service_ir, suite: ['full', 'dev', 'core', 'c
 console_session = executable('console-session', 'kernel-console-session.cpp', native: true, install: false)
 test('console-session', console_session, suite: ['full', 'dev'], timeout: 120)
 test('console-service-source-native', python,
-     args: ['-B', '-O', files('compiler/console_service.py'), aurorac],
+     args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/console_service.py'), aurorac,
+            '--artifacts', '@ARTIFACTS@'],
      depends: aurorac, suite: ['full', 'slow', 'core', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 300)
 test('console-service-admission-controls', python,
@@ -328,10 +333,12 @@ display_service_ir = executable(
     include_directories: include_directories('../compiler'), native: true, install: false,
 )
 test('display-service-ir', python,
-     args: ['-B', '-O', files('compiler/service_group_ir_abi.py'), display_service_ir.full_path()],
+     args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/service_group_ir_abi.py'),
+            display_service_ir.full_path(), '--artifacts', '@ARTIFACTS@'],
      depends: display_service_ir, suite: ['full', 'dev', 'core', 'compiler'], env: oracle_env, timeout: 120)
 test('display-service-source-native', python,
-     args: ['-B', '-O', files('compiler/display_service.py'), aurorac],
+     args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/display_service.py'), aurorac,
+            '--artifacts', '@ARTIFACTS@'],
      depends: aurorac, suite: ['full', 'slow', 'core', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 300)
 
@@ -409,8 +416,12 @@ foreach runner : [
   'method_values', 'u8_numeric', 'readonly_spans', 'utf8', 'utf8_encoding',
   'integer_oracle', 'unsigned_oracle',
 ]
+  runner_args = ['-B', '-O', files('compiler/' + runner + '.py'), aurorac]
+  if runner in ['utf8', 'utf8_encoding']
+    runner_args = ['-B', artifact_adapter, python] + runner_args + ['--artifacts', '@ARTIFACTS@']
+  endif
   test(runner.replace('_', '-'), python,
-       args: ['-B', '-O', files('compiler/' + runner + '.py'), aurorac],
+       args: runner_args,
        depends: aurorac, suite: ['full', 'slow', 'compiler'], env: oracle_env,
        workdir: meson.current_build_dir(), timeout: 900, is_parallel: true)
 endforeach

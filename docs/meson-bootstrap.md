@@ -43,6 +43,13 @@ signalled, interrupted or unlaunched runs remain; cleanup errors are reported
 without changing the test result. The adapter prints the path before the child
 and the cleanup outcome afterward. Raw Meson logs, historical evidence, sibling
 directories and explicit artifact paths passed directly to a runner are untouched.
+UTF-8, encoding, owned JSON, console/display/grouped services, native policy,
+cap-control, dormant and protected note/snapshot gates use this adapter. Display's
+grouped-service child writes beneath the same owned output. Native runners that
+require source-contained paths get
+fresh scratch under the source root, including with out-of-tree builds. The outer
+adapter waits for the native runner's compiler-stability check; its separate
+host-tool scratch also survives failures and explicit keeps.
 For disk reclamation, `meson compile -C build/gcc16 --clean` removes tracked
 build products while keeping configuration/logs. Retire whole directories only
 through the [explicit per-directory cleanup steps](local-development.md#reclaiming-old-local-output-explicitly);

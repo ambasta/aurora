@@ -280,9 +280,14 @@
       "console-service-source-native": {
         "arguments": [
           "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
           "-O",
           "@SOURCE@/tests/compiler/console_service.py",
-          "@BUILD@/aurorac"
+          "@BUILD@/aurorac",
+          "--artifacts",
+          "@ARTIFACTS@"
         ],
         "suites": [
           "compiler",
@@ -348,9 +353,14 @@
       "display-service-source-native": {
         "arguments": [
           "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
           "-O",
           "@SOURCE@/tests/compiler/display_service.py",
-          "@BUILD@/aurorac"
+          "@BUILD@/aurorac",
+          "--artifacts",
+          "@ARTIFACTS@"
         ],
         "suites": [
           "compiler",
@@ -746,9 +756,14 @@
       "json-owned": {
         "arguments": [
           "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
           "-O",
           "@SOURCE@/tests/compiler/json_owned.py",
-          "@BUILD@/aurorac"
+          "@BUILD@/aurorac",
+          "--artifacts",
+          "@ARTIFACTS@"
         ],
         "suites": [
           "bytes",
@@ -1600,9 +1615,14 @@
       "display-service-ir": {
         "arguments": [
           "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
           "-O",
           "@SOURCE@/tests/compiler/service_group_ir_abi.py",
-          "@BUILD@/tests/display-service-ir"
+          "@BUILD@/tests/display-service-ir",
+          "--artifacts",
+          "@ARTIFACTS@"
         ],
         "suites": [
           "compiler",
@@ -1840,9 +1860,14 @@
       "utf8": {
         "arguments": [
           "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
           "-O",
           "@SOURCE@/tests/compiler/utf8.py",
-          "@BUILD@/aurorac"
+          "@BUILD@/aurorac",
+          "--artifacts",
+          "@ARTIFACTS@"
         ],
         "suites": [
           "compiler",
@@ -1862,9 +1887,14 @@
       "utf8-encoding": {
         "arguments": [
           "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
           "-O",
           "@SOURCE@/tests/compiler/utf8_encoding.py",
-          "@BUILD@/aurorac"
+          "@BUILD@/aurorac",
+          "--artifacts",
+          "@ARTIFACTS@"
         ],
         "suites": [
           "compiler",

@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import os
 import signal
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -118,6 +119,74 @@ class MesonIdentityTests(unittest.TestCase):
         contract.add_identity_arguments(parser)
         with self.assertRaises(SystemExit):
             parser.parse_args(["--meson-selected-compiler", "--compiler-sha256", "0" * 64])
+
+
+class MesonToolchainDiagnosticTests(unittest.TestCase):
+    def test_setup_reports_exact_version_and_recovery_without_a_compiler(self):
+        meson = shutil.which("meson")
+        if meson is None:
+            self.skipTest("Meson is required for the language-free setup diagnostic fixture")
+        repo = Path(__file__).resolve().parents[1]
+        source = (repo / "meson.build").read_text()
+        # Exercise the actual setup stanza, with no languages or compilation.
+        preflight = source[source.index("toolchain_check = run_command(") : source.index("# The JSON dependency")]
+        for mode in ("version", "empty-stderr", "supported"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                scripts = root / "scripts"
+                scripts.mkdir()
+                if mode == "empty-stderr":
+                    (scripts / "meson_toolchain.py").write_text("raise SystemExit(7)\n")
+                else:
+                    shutil.copy2(repo / "scripts/meson_toolchain.py", scripts / "meson_toolchain.py")
+                tools = root / "tools"
+                tools.mkdir()
+                versions = {
+                    "g++": "16.1.0" if mode == "version" else "16.2.0",
+                    "gcc": "16.2.0",
+                    "meson": "1.12.1",
+                    "ninja": "1.13.2",
+                    **{name: "GNU synthetic " + "2.47" for name in ("as", "ld", "nm", "objcopy", "objdump", "readelf")},
+                }
+                for name, version in versions.items():
+                    tool = tools / name
+                    tool.write_text('#!/bin/sh\nprintf "%s\\n" "' + version + '"\n')
+                    tool.chmod(0o755)
+                # Meson itself is real; only version-inspection tools are synthetic.
+                (root / "meson.build").write_text(
+                    "project('toolchain-diagnostic')\n"
+                    + "python = find_program('"
+                    + sys.executable
+                    + "')\n"
+                    + "oracle_cxx = 'g++'\ntoolchain_args = []\n"
+                    + preflight
+                )
+                env = {
+                    key: value for key, value in os.environ.items() if key not in meson_toolchain.IMPLICIT_SEARCH_ENV
+                }
+                env["PATH"] = (
+                    str(tools) + os.pathsep + str(Path(sys.executable).parent) + os.pathsep + env.get("PATH", "")
+                )
+                result = subprocess.run(
+                    [meson, "setup", str(root / "build"), str(root)],
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+                terminal = result.stdout + result.stderr
+                if mode == "supported":
+                    self.assertEqual(result.returncode, 0, terminal)
+                    self.assertNotIn("BLOCKED:", terminal)
+                else:
+                    self.assertNotEqual(result.returncode, 0, terminal)
+                    self.assertIn("BLOCKED:", terminal)
+                    self.assertIn("./scripts/container.sh make test", terminal)
+                    self.assertIn("docs/local-development.md", terminal)
+                    self.assertIn(
+                        "require 16.2.0, got 16.1.0" if mode == "version" else "check failed (exit 7)", terminal
+                    )
+                    self.assertFalse((root / "build/build.ninja").exists())
 
 
 class MesonEntrypointTests(unittest.TestCase):
@@ -450,6 +519,7 @@ class NativeCompilerWrapperTests(unittest.TestCase):
             for selection in ("g++", str(compiler), "launcher g++"):
                 with self.subTest(selection=selection):
                     env = {**os.environ, "PATH": str(tools)}
+                    env.pop("AURORA_MESON_KEEP_ARTIFACTS", None)
                     command = [
                         sys.executable,
                         "-B",
@@ -618,6 +688,60 @@ class MesonArtifactTests(unittest.TestCase):
                 self.assertEqual(parent.exists(), value == "1")
                 outcome = "Retained" if value == "1" else "Removed"
                 self.assertIn(outcome + " artifacts: " + str(parent), result.stdout)
+
+    def test_native_wrapper_retains_output_and_spill_until_complete_success(self):
+        native_adapter = Path(__file__).resolve().parents[1] / "scripts/meson-native-run.py"
+        compiler = self.root / "compiler"
+        build = self.root / "native-build"
+        for keep, ending, expected in (
+            ("", "sys.exit(0)", 0),
+            ("1", "sys.exit(0)", 0),
+            ("", "sys.exit(23)", 23),
+            ("", "Path(os.environ['AURORAC']).write_text('changed')", 1),
+        ):
+            with self.subTest(keep=keep, ending=ending):
+                compiler.write_text("selected compiler")
+                self.env["AURORA_MESON_KEEP_ARTIFACTS"] = keep
+                code = (
+                    "import json, os, sys, tempfile; from pathlib import Path; "
+                    "output = Path(sys.argv[1]); output.relative_to(Path.cwd()); output.mkdir(); "
+                    "(output / 'evidence').write_text('native output'); "
+                    "spill = Path(tempfile.mkdtemp()); (spill / 'evidence').write_text('native spill'); "
+                    "print(json.dumps([str(output), str(spill)]), flush=True); " + ending
+                )
+                result, parent = self.run_adapter(
+                    command=[
+                        sys.executable,
+                        "-B",
+                        str(native_adapter),
+                        "--repo",
+                        str(self.scratch),
+                        "--build-root",
+                        str(build),
+                        "--cxx",
+                        sys.executable,
+                        "--compiler",
+                        str(compiler),
+                        "--",
+                        sys.executable,
+                        "-B",
+                        "-c",
+                        code,
+                        "@ARTIFACTS@",
+                    ]
+                )
+                self.assertEqual(result.returncode, expected, result.stderr)
+                output, spill = map(Path, json.loads(result.stdout.splitlines()[1]))
+                self.assertEqual(output, parent / "output")
+                self.assertEqual(spill.parent.parent, build)
+                retained = expected != 0 or keep == "1"
+                self.assertEqual(parent.exists(), retained)
+                self.assertEqual(spill.parent.exists(), retained)
+                if retained:
+                    self.assertEqual((output / "evidence").read_text(), "native output")
+                    self.assertEqual((spill / "evidence").read_text(), "native spill")
+                if expected == 1:
+                    self.assertIn("Meson-selected compiler changed during native gate", result.stderr)
 
     def test_failure_signal_and_interruption_retain_evidence(self):
         for end, expected in (

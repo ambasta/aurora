@@ -294,7 +294,12 @@ def build(loader, loader_sha256, mtools_root, output_dir, *, developer=False, ru
         tools = verify_tools(mtools_root)
     output = Path(output_dir).absolute()
     need(output.parent.resolve(strict=True) == output.parent and output.parent.is_dir(), "Invalid output parent")
-    need(output != ROOT and ROOT not in output.parents, "ESP output must be outside author source")
+    # Developer runs may retain evidence in the checkout's disposable build area.
+    # Independently pinned ESP preparation still requires external output.
+    need(
+        not output.is_relative_to(ROOT) or (developer and output.is_relative_to(ROOT / "build")),
+        "ESP output must be outside author source, except developer output in build/",
+    )
     need(not os.path.lexists(output), "Output directory already exists")
     reservation = max(RESERVATION_BYTES, 3 * IMAGE_BYTES + 3 * loader.stat().st_size + 16 * 1024 * 1024)
     need(shutil.disk_usage(output.parent).free >= FREE_FLOOR_BYTES + reservation, "ESP disk reservation failed")

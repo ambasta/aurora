@@ -23,7 +23,9 @@ Every merge/release still requires final-source GCC 16 `full`, independent revie
 normal BIOS/UEFI images and real smokes, plus affected admission/fault/recovery/
 restoration gates. See [development and qualification](developer-test-contract.md).
 Validation runs locally with the selected pinned tools; container packaging is
-separate. No CI replacement, physical AMD support, general memory-safety proof or
+separate. Meson cleans its owned successful test scratch while retaining failed
+or explicitly kept runs; artifact cleanup does not reduce qualification coverage.
+No CI replacement, physical AMD support, general memory-safety proof or
 measured equivalent-C performance is established.
 
 Implementation: [compiler](../compiler/README.md), [libraries](../library/README.md),

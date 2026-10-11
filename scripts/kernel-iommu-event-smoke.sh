@@ -8,7 +8,7 @@ if [[ ${1:-} == --help ]]; then
     echo 'Set EVENT_TOOL_PREFIX for packaged Event tools, or EVENT_BUILD_RECEIPT/CODE/VARS/DATA for external inputs.'
     echo 'Ordinary QEMU/OVMF controls boot normal afterward.'
     echo 'GNU mtools 4.0.48 required (MTOOLS_DIR optional); EVENT_ESP_DIR can supply validated current raw ESPs.'
-    echo 'Evidence uses a new external directory under EVENT_OUTPUT_PARENT (default temporary directory).'
+    echo 'Evidence is retained in a fresh build/aurora-event-smoke-* directory by default; EVENT_OUTPUT_PARENT overrides it.'
     exit 0
 fi
 [[ $# == 0 || ( $# == 1 && $1 == --build-only ) ]] || { echo 'Invalid Event smoke arguments' >&2; exit 2; }
