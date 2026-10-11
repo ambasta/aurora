@@ -152,14 +152,14 @@ test('package-profile-controls', python,
      workdir: meson.current_build_dir(), timeout: 60, is_parallel: true)
 
 # Named semantic selections, explicitly partial; Meson/Ninja builds aurorac.
-# Each family creates a unique retained receipt/output directory beneath TMPDIR
-# and gives every subprocess a private, cap-accounted tmp subdirectory.
+# Each family uses adapter-owned output beneath TMPDIR and gives every
+# subprocess a private, cap-accounted tmp subdirectory.
 foreach family : ['identity', 'manifest', 'graph']
     test(
         'package-' + family,
         python,
-        args: ['-B', '-O', files('compiler/package_' + family + '.py'), aurorac,
-               '--profile', 'dev', '--developer-selected-compiler'],
+        args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/package_' + family + '.py'), aurorac,
+               '--profile', 'dev', '--developer-selected-compiler', '--artifact-root', '@ARTIFACTS@'],
         depends: aurorac,
         suite: ['full', 'dev', 'packages'],
         env: oracle_env,
@@ -201,11 +201,13 @@ owned_spans_ir = executable(
 )
 test('owned-spans-ir', owned_spans_ir, suite: ['full', 'dev', 'core', 'bytes', 'compiler'], timeout: 120)
 test('owned-spans-source', python,
-     args: ['-B', '-O', files('compiler/owned_spans_source.py'), aurorac],
+     args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/owned_spans_source.py'), aurorac,
+            '--artifacts', '@ARTIFACTS@'],
      depends: aurorac, suite: ['full', 'dev', 'core', 'bytes', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 180)
 foreach mode : ['standalone', 'receiver']
-    span_kernel_args = ['-B', '-O', files('compiler/owned_spans_kernel.py'), aurorac]
+    span_kernel_args = ['-B', artifact_adapter, python, '-B', '-O', files('compiler/owned_spans_kernel.py'), aurorac,
+                        '--artifacts', '@ARTIFACTS@']
     if mode == 'receiver'
         span_kernel_args += ['--receiver-bound']
     endif
@@ -349,7 +351,8 @@ iommu_event_ir = executable(
     include_directories: include_directories('../compiler'), native: true, install: false,
 )
 test('iommu-event-source-native', python,
-     args: ['-B', '-O', files('compiler/iommu_event_service.py'), aurorac, iommu_event_ir.full_path()],
+     args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/iommu_event_service.py'), aurorac,
+            iommu_event_ir.full_path(), '--artifacts', '@ARTIFACTS@'],
      depends: [aurorac, iommu_event_ir], suite: ['full', 'slow', 'core', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 300)
 iommu_event_session = executable('iommu-event-session', 'kernel-iommu-event-session.cpp', native: true, install: false)
@@ -388,8 +391,8 @@ test('display-renderer-native', python,
 # The complete generated graphical consumer remains outside fast developer feedback.
 # Its driver builds consumer/harness artifacts per invocation, never aurorac itself.
 test('graphical-console-native', python,
-     args: ['-B', '-O', files('kernel-graphical-console.py'), '--run', aurorac,
-            '--developer-selected-compiler'], depends: aurorac,
+     args: ['-B', artifact_adapter, python, '-B', '-O', files('kernel-graphical-console.py'), '--run', aurorac,
+            '--developer-selected-compiler', '--artifacts', '@ARTIFACTS@'], depends: aurorac,
      suite: ['full', 'slow'], env: oracle_env, workdir: meson.current_build_dir(), timeout: 600)
 graphical_paging = executable('graphical-paging', 'kernel-graphical-paging.cpp',
                             native: true, install: false, override_options: ['optimization=1'],

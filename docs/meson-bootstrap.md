@@ -50,6 +50,9 @@ require source-contained paths get
 fresh scratch under the source root, including with out-of-tree builds. The outer
 adapter waits for the native runner's compiler-stability check; its separate
 host-tool scratch also survives failures and explicit keeps.
+Hosted graphical and Event services, owned-span source/kernel checks, and partial
+package profiles use the same lifecycle; direct runner output selections remain
+available for retained review artifacts.
 For disk reclamation, `meson compile -C build/gcc16 --clean` removes tracked
 build products while keeping configuration/logs. Retire whole directories only
 through the [explicit per-directory cleanup steps](local-development.md#reclaiming-old-local-output-explicitly);

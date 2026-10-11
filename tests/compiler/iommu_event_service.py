@@ -61,9 +61,14 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("compiler", type=Path)
     parser.add_argument("ir", type=Path)
+    parser.add_argument("--artifacts", type=Path)
     args = parser.parse_args()
     compiler, ir = args.compiler.resolve(strict=True), args.ir.resolve(strict=True)
-    work = Path(tempfile.mkdtemp(prefix="iommu-event-service-"))
+    if args.artifacts:
+        work = args.artifacts.resolve()
+        work.mkdir(parents=True)
+    else:
+        work = Path(tempfile.mkdtemp(prefix="iommu-event-service-"))
     cxx = shlex.split(os.environ.get("CXX", "c++"))
     records = []
 
