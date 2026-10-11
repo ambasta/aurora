@@ -52,7 +52,7 @@ public:
 };
 class Edge {
 public:
-    std::int64_t child = -1, previous = -1, count = -1, depth = -1;
+    std::int64_t child = -1, previous = -1, count = -1, depth = -1, field = -1;
 };
 class Arena {
     hosted::bytes::Region region;
@@ -80,7 +80,7 @@ public:
 static_assert(sizeof(Input) == 88 && offsetof(Input, backing) == 8 && offsetof(Input, start) == 40 &&
               offsetof(Input, length) == 48 && offsetof(Input, offset) == 56 && offsetof(Input, line) == 64 &&
               offsetof(Input, lineStart) == 72 && offsetof(Input, stop) == 80);
-static_assert(sizeof(Result) == 40 && sizeof(Node) == 56 && sizeof(Edge) == 32);
+static_assert(sizeof(Result) == 40 && sizeof(Node) == 56 && sizeof(Edge) == 40 && offsetof(Edge, field) == 32);
 
 [[noreturn]] void invalid() {
     throw Error(DiagnosticCode::Internal, "hosted parser returned an invalid result");
@@ -115,8 +115,8 @@ bool binary(const std::string &text) {
 } // namespace
 
 ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens, std::size_t &position, Stop stop) {
-    if (position >= tokens.size() ||
-        (stop != Stop::Semicolon && stop != Stop::CloseParenthesis && stop != Stop::Assignment))
+    if (position >= tokens.size() || (stop != Stop::Semicolon && stop != Stop::CloseParenthesis &&
+                                      stop != Stop::Assignment && stop != Stop::ConstructorBraces))
         invalid();
     const auto &begin = tokens[position].span;
     if (!begin.source)
@@ -179,6 +179,14 @@ ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens, std::size_
             message = "expected ')'";
         else if (result.status == Status::ExpectedIndexClose)
             message = "expected ']'";
+        else if (result.status == Status::ExpectedBraceClose)
+            message = "expected '}'";
+        else if (result.status == Status::ExpectedDot)
+            message = "expected '.'";
+        else if (result.status == Status::ExpectedEqual)
+            message = "expected '='";
+        else if (result.status == Status::ExpectedBraceOpen)
+            message = "expected '{'";
         else if (result.status == Status::ExpectedIdentifier)
             message = "expected identifier";
         else if (result.status == Status::ReservedIdentifier)
@@ -197,8 +205,9 @@ ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens, std::size_
     }
     if (result.tokens == 0 || result.count == 0 || result.count > result.tokens || edgeCount >= result.count ||
         result.root != result.count - 1 ||
-        !(stop == Stop::CloseParenthesis ? at.text == ")"
-                                         : at.text == ";" || (stop == Stop::Assignment && at.text == "=")))
+        !(stop == Stop::ConstructorBraces ||
+          (stop == Stop::CloseParenthesis ? at.text == ")"
+                                          : at.text == ";" || (stop == Stop::Assignment && at.text == "="))))
         invalid();
     const auto size = static_cast<std::size_t>(result.tokens);
     const auto text = [&](std::int64_t ordinal) -> const std::string & {
@@ -218,14 +227,14 @@ ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens, std::size_
         claim(ordinal);
     };
     // Match all delimiters independently before any grouping expansion. A call
-    // close cannot be borrowed by another call, an index, or a grouping node.
+    // close cannot be borrowed by another call, index, aggregate or grouping node.
     std::vector<std::int64_t> matching(size, -1), openings;
     for (std::int64_t ordinal = 0; ordinal < result.tokens; ++ordinal) {
         const auto &spelling = text(ordinal);
-        if (spelling == "(" || spelling == "[")
+        if (spelling == "(" || spelling == "[" || spelling == "{")
             openings.push_back(ordinal);
-        else if (spelling == ")" || spelling == "]") {
-            if (openings.empty() || text(openings.back()) != (spelling == ")" ? "(" : "["))
+        else if (spelling == ")" || spelling == "]" || spelling == "}") {
+            if (openings.empty() || text(openings.back()) != (spelling == ")" ? "(" : spelling == "]" ? "[" : "{"))
                 invalid();
             matching[static_cast<std::size_t>(ordinal)] = openings.back();
             matching[static_cast<std::size_t>(openings.back())] = ordinal;
@@ -234,9 +243,9 @@ ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens, std::size_
     }
     if (!openings.empty())
         invalid();
-    const auto delimiters = [&](std::int64_t open, std::int64_t close, bool index) {
-        punctuation(open, index ? "[" : "(");
-        punctuation(close, index ? "]" : ")");
+    const auto delimiters = [&](std::int64_t open, std::int64_t close, const std::string &opening) {
+        punctuation(open, opening);
+        punctuation(close, opening == "(" ? ")" : opening == "[" ? "]" : "}");
         if (matching[static_cast<std::size_t>(open)] != close)
             invalid();
     };
@@ -252,7 +261,16 @@ ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens, std::size_
             node.depth < 1 || node.depth > 128)
             invalid();
         const auto &spelling = text(node.token);
-        if (node.kind == NodeKind::Name || node.kind == NodeKind::Call) {
+        const bool constructorRoot = stop == Stop::ConstructorBraces && index == result.root;
+        if (constructorRoot) {
+            if (node.token != 0 || node.nameEnd != 0 || node.close != result.tokens - 1 ||
+                !tailIdentifier(spelling, false) ||
+                (node.kind != NodeKind::ArrayLiteral && node.kind != NodeKind::ArrayZero) ||
+                (node.kind == NodeKind::ArrayZero) != (node.second == 0))
+                invalid();
+            claim(node.token);
+            delimiters(1, node.close, "{");
+        } else if (node.kind == NodeKind::Name || node.kind == NodeKind::Call || node.kind == NodeKind::Construct) {
             if (!identifier(spelling) || spelling == "true" || spelling == "false" ||
                 (node.nameEnd - node.token) % 2 != 0)
                 invalid();
@@ -268,10 +286,10 @@ ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens, std::size_
                     invalid();
             } else {
                 // These unqualified builtins take a type, not expression args.
-                if (node.nameEnd == node.token &&
+                if (node.kind == NodeKind::Call && node.nameEnd == node.token &&
                     (spelling == "size_of" || spelling == "type_id" || spelling == "field_count"))
                     invalid();
-                delimiters(node.nameEnd + 1, node.close, false);
+                delimiters(node.nameEnd + 1, node.close, node.kind == NodeKind::Construct ? "{" : "(");
             }
         } else if (node.kind == NodeKind::Member || node.kind == NodeKind::MethodCall) {
             if (node.nameEnd != node.token || !tailIdentifier(spelling, false))
@@ -282,11 +300,15 @@ ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens, std::size_
                 if (node.close != node.token)
                     invalid();
             } else
-                delimiters(node.token + 1, node.close, false);
+                delimiters(node.token + 1, node.close, "(");
         } else if (node.kind == NodeKind::Index) {
             if (node.nameEnd != node.token)
                 invalid();
-            delimiters(node.token, node.close, true);
+            delimiters(node.token, node.close, "[");
+        } else if (node.kind == NodeKind::ArrayLiteral) {
+            if (node.nameEnd != node.token)
+                invalid();
+            delimiters(node.token, node.close, "{");
         } else {
             if (node.nameEnd != node.token || node.close != node.token ||
                 (node.kind != NodeKind::Literal && node.kind != NodeKind::Unary && node.kind != NodeKind::Binary))
@@ -297,7 +319,8 @@ ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens, std::size_
     for (std::int64_t index = 0; index < edgeCount; ++index) {
         auto &edge = edges[static_cast<std::size_t>(index)];
         aurora_hosted_parser_edge(arena.data(), index, &edge);
-        if (edge.child < 0 || edge.child >= result.count || edge.previous < -1 || edge.previous >= index)
+        if (edge.child < 0 || edge.child >= result.count || edge.previous < -1 || edge.previous >= index ||
+            edge.field < -1 || edge.field >= result.tokens)
             invalid();
         const auto childDepth = records[static_cast<std::size_t>(edge.child)].depth + 1;
         const auto previousCount = edge.previous < 0 ? 0 : edges[static_cast<std::size_t>(edge.previous)].count;
@@ -316,8 +339,8 @@ ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens, std::size_
         const auto &node = records[static_cast<std::size_t>(index)];
         auto token = tokens[position + static_cast<std::size_t>(node.token)];
         std::string op;
-        if (node.kind == NodeKind::Name || node.kind == NodeKind::Call) {
-            op = node.kind == NodeKind::Name ? "name" : "call";
+        if (node.kind == NodeKind::Name || node.kind == NodeKind::Call || node.kind == NodeKind::Construct) {
+            op = node.kind == NodeKind::Name ? "name" : node.kind == NodeKind::Call ? "call" : "construct";
             for (auto tail = node.token + 2; tail <= node.nameEnd; tail += 2)
                 token.text += "::" + text(tail);
             token.span.end = tokens[position + static_cast<std::size_t>(node.nameEnd)].span.end;
@@ -339,6 +362,10 @@ ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens, std::size_
             op = "method_call";
         else if (node.kind == NodeKind::Index)
             op = "index";
+        else if (node.kind == NodeKind::ArrayLiteral)
+            op = "array_literal";
+        else if (node.kind == NodeKind::ArrayZero)
+            op = "array_zero";
         else
             invalid();
         auto expression = std::make_shared<Expression>(op, token);
@@ -360,7 +387,8 @@ ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens, std::size_
                 invalid();
             firstToken = range.first;
         };
-        if (node.kind == NodeKind::Call || node.kind == NodeKind::MethodCall) {
+        if (node.kind == NodeKind::Call || node.kind == NodeKind::MethodCall || node.kind == NodeKind::ArrayLiteral ||
+            node.kind == NodeKind::Construct || node.kind == NodeKind::ArrayZero) {
             if (node.second < 0 || node.second > edgeCount || (node.first == -1) != (node.second == 0) ||
                 (node.kind == NodeKind::MethodCall && node.second == 0))
                 invalid();
@@ -370,7 +398,9 @@ ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens, std::size_
                     invalid();
                 edgeUsed[static_cast<std::size_t>(edge)] = true;
                 const auto &record = edges[static_cast<std::size_t>(edge)];
-                children.push_back(record.child);
+                if ((node.kind == NodeKind::Construct) != (record.field >= 0))
+                    invalid();
+                children.push_back(edge);
                 edge = record.previous;
             }
             if (children.size() != static_cast<std::size_t>(node.second) ||
@@ -379,12 +409,23 @@ ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens, std::size_
             std::reverse(children.begin(), children.end());
             std::size_t argument = 0;
             if (node.kind == NodeKind::MethodCall) {
-                receiver(children.front(), node.token - 1);
+                receiver(edges[static_cast<std::size_t>(children.front())].child, node.token - 1);
                 argument = 1;
             }
-            auto next = node.nameEnd + 2;
+            const bool constructorRoot = stop == Stop::ConstructorBraces && index == result.root;
+            auto next = node.kind == NodeKind::ArrayLiteral && !constructorRoot ? node.token + 1 : node.nameEnd + 2;
             for (; argument < children.size(); ++argument) {
-                const auto range = attach(children[argument]);
+                const auto &edge = edges[static_cast<std::size_t>(children[argument])];
+                if (node.kind == NodeKind::Construct) {
+                    if (edge.field != next + 1 || !tailIdentifier(text(edge.field), false))
+                        invalid();
+                    punctuation(next, ".");
+                    claim(edge.field);
+                    punctuation(next + 2, "=");
+                    expression->fieldNames.push_back(text(edge.field));
+                    next += 3;
+                }
+                const auto range = attach(edge.child);
                 if (range.first != next || range.second >= node.close)
                     invalid();
                 next = range.second + 1;
@@ -430,7 +471,8 @@ ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens, std::size_
         }
         postfixAllowed.push_back(grouped || node.kind == NodeKind::Name || node.kind == NodeKind::Call ||
                                  node.kind == NodeKind::Member || node.kind == NodeKind::MethodCall ||
-                                 node.kind == NodeKind::Index);
+                                 node.kind == NodeKind::Index || node.kind == NodeKind::ArrayLiteral ||
+                                 node.kind == NodeKind::Construct);
         bounds.emplace_back(firstToken, lastToken);
         nodes.push_back(std::move(expression));
     }

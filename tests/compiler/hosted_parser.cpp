@@ -54,7 +54,7 @@ using aurora::hosted_parser::Status;
 using aurora::hosted_parser::Stop;
 using Words = std::array<std::int64_t, 5>;
 using NodeWords = std::array<std::int64_t, 7>;
-using EdgeWords = std::array<std::int64_t, 4>;
+using EdgeWords = std::array<std::int64_t, 5>;
 constexpr std::int64_t wire(NodeKind value) {
     return static_cast<std::int64_t>(value);
 }
@@ -250,23 +250,28 @@ void bootstrapStatements(const std::vector<aurora::Token> &tokens,
 void bootstrapFunctions(const std::vector<aurora::Token> &tokens,
                         const std::vector<aurora::Function> &functions,
                         std::size_t &initializers,
-                        std::size_t &strings) {
+                        std::size_t &strings,
+                        std::size_t &newInitializers) {
     for (const auto &function : functions) {
         for (const auto &[field, expression] : function.initializers) {
             const auto position = tokenAt(tokens, field) + 1;
-            // Brace initializers remain entirely in the retained parser.
+            // These three compiler sources currently have no brace initializers.
             if (tokens.at(position).text == "{")
                 continue;
             require(function.constructor && tokens.at(position).text == "(",
                     "constructor initializer has no parenthesized source root");
             hostedRoot(tokens, position + 1, Stop::CloseParenthesis, expression);
-            ++initializers;
+            if (field.text == "field_token" &&
+                (function.token.text == "ParseFrame" || function.token.text == "ChildEdge"))
+                ++newInitializers;
+            else
+                ++initializers;
         }
         bootstrapStatements(tokens, function.body, strings);
     }
 }
 void bootstrapSources(char **paths) {
-    std::size_t initializers = 0, strings = 0;
+    std::size_t initializers = 0, strings = 0, newInitializers = 0;
     const std::array<std::string, 3> modules{
         "aurora.compiler.lexer", "aurora.compiler.expression_arena", "aurora.compiler.expression_parser"};
     for (std::size_t i = 0; i < modules.size(); ++i) {
@@ -278,17 +283,168 @@ void bootstrapSources(char **paths) {
         const auto tokens = aurora::lex(source, paths[i]);
         const auto program = compareProgram(tokens);
         require(program.moduleName == modules[i], "unexpected bootstrap source module/order");
-        bootstrapFunctions(tokens, program.functions, initializers, strings);
-        bootstrapFunctions(tokens, program.functionTemplates, initializers, strings);
+        bootstrapFunctions(tokens, program.functions, initializers, strings, newInitializers);
+        bootstrapFunctions(tokens, program.functionTemplates, initializers, strings, newInitializers);
         for (const auto &definition : program.classes)
-            bootstrapFunctions(tokens, definition.methods, initializers, strings);
+            bootstrapFunctions(tokens, definition.methods, initializers, strings, newInitializers);
         for (const auto &definition : program.templates)
-            bootstrapFunctions(tokens, definition.methods, initializers, strings);
+            bootstrapFunctions(tokens, definition.methods, initializers, strings, newInitializers);
     }
     context = "actual bootstrap source roots";
-    require(initializers == 40 && strings == 5,
-            "expected 40 parenthesized constructor and 5 byte-string roots, observed " + std::to_string(initializers) +
-                " and " + std::to_string(strings));
+    require(initializers == 40 && strings == 5 && newInitializers == 2,
+            "expected the original 40 constructor and 5 string roots plus 2 field-token initializers, observed " +
+                std::to_string(initializers) + ", " + std::to_string(strings) + " and " +
+                std::to_string(newInitializers));
+}
+
+std::size_t closingBrace(const std::vector<aurora::Token> &tokens, std::size_t opening) {
+    require(tokens.at(opening).text == "{", "aggregate source root has no opening brace");
+    std::size_t depth = 0;
+    for (std::size_t index = opening; index < tokens.size(); ++index) {
+        if (tokens[index].text == "{")
+            ++depth;
+        else if (tokens[index].text == "}" && --depth == 0)
+            return index;
+    }
+    throw std::runtime_error(context + ": aggregate source root has no closing brace");
+}
+void hostedBraces(const std::vector<aurora::Token> &tokens,
+                  const aurora::Token &field,
+                  const aurora::ExpressionPtr &expected) {
+    const auto start = tokenAt(tokens, field);
+    const auto close = closingBrace(tokens, start + 1);
+    auto position = start;
+    const auto expression = aurora::parseHostedExpression(tokens, position, Stop::ConstructorBraces);
+    require(bool(expression), "constructor-brace root silently fell back");
+    sameExpression(expression, expected);
+    sameToken(expression->token, field);
+    require(position == close + 1, "constructor braces did not commit exactly through their closing token");
+    require(expression->op == (expression->args.empty() ? "array_zero" : "array_literal"),
+            "constructor braces lost their empty-array distinction");
+    ++cases;
+}
+using AggregateRoots = std::vector<std::pair<std::string, std::size_t>>;
+void consumerStatements(const std::vector<aurora::Token> &tokens,
+                        const std::vector<aurora::StatementPtr> &statements,
+                        AggregateRoots &aggregates) {
+    for (const auto &statement : statements) {
+        if (statement->expr && (statement->expr->op == "array_literal" || statement->expr->op == "construct")) {
+            const auto &expression = statement->expr;
+            const auto start = tokenAt(tokens, expression->token);
+            const bool construct = expression->op == "construct";
+            const auto close = closingBrace(tokens, start + (construct ? 1 : 0));
+            auto position = start;
+            const auto hosted = aurora::parseHostedExpression(tokens, position, Stop::Semicolon);
+            require(bool(hosted), "actual consumer aggregate silently fell back");
+            sameExpression(hosted, expression);
+            require(position == close + 1 && tokens.at(position).text == ";",
+                    "consumer aggregate lost its exact closing delimiter");
+            if (construct)
+                require(statement->name == "current" && expression->token.text == "Sample" &&
+                            expression->fieldNames == std::vector<std::string>{"value", "ready"} &&
+                            expression->args.size() == 2 && expression->args[0]->token.text == "40" &&
+                            expression->args[1]->token.text == "false",
+                        "class-values consumer lost its designated field order/values");
+            aggregates.emplace_back(statement->name, expression->args.size());
+            ++cases;
+        }
+        consumerStatements(tokens, statement->body, aggregates);
+        consumerStatements(tokens, statement->other, aggregates);
+    }
+}
+void consumerFunctions(const std::vector<aurora::Token> &tokens,
+                       const std::vector<aurora::Function> &functions,
+                       AggregateRoots &aggregates,
+                       AggregateRoots &braces) {
+    for (const auto &function : functions) {
+        for (const auto &[field, expression] : function.initializers) {
+            if (tokens.at(tokenAt(tokens, field) + 1).text != "{")
+                continue;
+            require(function.constructor, "brace initializer escaped its constructor");
+            hostedBraces(tokens, field, expression);
+            braces.emplace_back(field.text, expression->args.size());
+            if (field.text == "records")
+                for (const auto &child : expression->args)
+                    require(child->op == "name" && child->token.text == "empty",
+                            "session-file record initialization changed its source/order");
+        }
+        consumerStatements(tokens, function.body, aggregates);
+    }
+}
+bool containsTypeQuery(const aurora::ExpressionPtr &expression) {
+    if (!expression)
+        return false;
+    if (expression->op == "call" && (expression->token.text == "size_of" || expression->token.text == "type_id" ||
+                                     expression->token.text == "field_count"))
+        return true;
+    return std::any_of(expression->args.begin(), expression->args.end(), containsTypeQuery);
+}
+void consumerReflection(const std::vector<aurora::Token> &tokens,
+                        const std::vector<aurora::StatementPtr> &statements,
+                        std::size_t &roots) {
+    for (const auto &statement : statements) {
+        if (containsTypeQuery(statement->expr)) {
+            const bool assertion = statement->token.text == "static_assert";
+            require(assertion || statement->token.text == "return", "unexpected reflection consumer statement");
+            const auto start = tokenAt(tokens, statement->token) + (assertion ? 2 : 1);
+            auto position = start;
+            const auto before = tokens;
+            require(!aurora::parseHostedExpression(
+                        tokens, position, assertion ? Stop::CloseParenthesis : Stop::Semicolon) &&
+                        position == start,
+                    "actual reflection consumer did not retain atomic whole-root fallback");
+            require(tokens.size() == before.size(), "reflection fallback changed token count");
+            for (std::size_t index = 0; index < tokens.size(); ++index)
+                sameToken(tokens[index], before[index]);
+            ++roots;
+            ++cases;
+        }
+        consumerReflection(tokens, statement->body, roots);
+        consumerReflection(tokens, statement->other, roots);
+    }
+}
+void consumerSources(char **paths) {
+    const std::array<std::string, 5> modules{
+        "std.array", "console.session_files", "kernel_graphical_console", "fs.xfs_sector", "examples.class_values"};
+    const std::array<AggregateRoots, 5> expectedAggregates{
+        AggregateRoots{},
+        AggregateRoots{},
+        AggregateRoots{{"text", 61}, {"text", 27}, {"text", 63}, {"text", 19}, {"blank", 1}, {"text", 22}},
+        AggregateRoots{{"bytes", 512}},
+        AggregateRoots{{"current", 2}}};
+    const std::array<AggregateRoots, 5> expectedBraces{AggregateRoots{{"elements", 0}},
+                                                       AggregateRoots{{"bytes", 0}, {"records", 4}},
+                                                       AggregateRoots{{"bytes", 0}, {"desired", 0}, {"committed", 0}},
+                                                       AggregateRoots{},
+                                                       AggregateRoots{}};
+    std::size_t roots = 0;
+    for (std::size_t index = 0; index < modules.size(); ++index) {
+        context = paths[index];
+        std::ifstream input(paths[index], std::ios::binary);
+        require(bool(input), "cannot read actual aggregate consumer source");
+        const std::string source((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+        require(!input.bad(), "cannot finish reading actual aggregate consumer source");
+        const auto tokens = aurora::lex(source, paths[index]);
+        const auto program = compareProgram(tokens);
+        require(program.moduleName == modules[index], "unexpected aggregate consumer module/order");
+        AggregateRoots aggregates, braces;
+        consumerFunctions(tokens, program.functions, aggregates, braces);
+        consumerFunctions(tokens, program.functionTemplates, aggregates, braces);
+        for (const auto &definition : program.classes)
+            consumerFunctions(tokens, definition.methods, aggregates, braces);
+        for (const auto &definition : program.templates)
+            consumerFunctions(tokens, definition.methods, aggregates, braces);
+        require(aggregates == expectedAggregates[index] && braces == expectedBraces[index],
+                "actual consumer aggregate roots changed shape/order or were omitted");
+        roots += aggregates.size() + braces.size();
+        if (index == 4) {
+            std::size_t reflection = 0;
+            for (const auto &function : program.functions)
+                consumerReflection(tokens, function.body, reflection);
+            require(reflection == 3, "expected all three retained class-values reflection roots");
+        }
+    }
+    require(roots == 14, "expected all 14 actual product aggregate roots");
 }
 
 class Allocations {
@@ -321,7 +477,7 @@ public:
     }
 };
 static_assert(sizeof(Words) == 40 && sizeof(GuardedWords<5>) == 56 && sizeof(GuardedWords<7>) == 72 &&
-              sizeof(GuardedWords<4>) == 48);
+              sizeof(EdgeWords) == 40);
 class RawArena {
     aurora::hosted::bytes::Region region;
     // This storage is never copied or inspected as an owner descriptor. Aurora
@@ -382,7 +538,7 @@ public:
         return checked_hosted_parser_edges(data());
     }
     EdgeWords edge(std::int64_t index) {
-        GuardedWords<4> output;
+        GuardedWords<5> output;
         checked_hosted_parser_edge(data(), index, output.value.data());
         output.check();
         guards();
@@ -469,13 +625,7 @@ void constructors() {
                    "Box(T x):value(x){} auto read() const->T {return value;} };");
     // Excluded roots must continue to fall back as a whole, including after a
     // supported string/call prefix and inside parenthesized initializers.
-    for (const auto &expression : {"Box{.value=1}",
-                                   "{1,2}",
-                                   R"(f("text", Box{.value=1}))",
-                                   "size_of(i64)",
-                                   "type_id(array<u8,2>)",
-                                   "field_count(Box)",
-                                   "f(size_of(i64))"}) {
+    for (const auto &expression : {"size_of(i64)", "type_id(array<u8,2>)", "field_count(Box)", "f(size_of(i64))"}) {
         rawCase(std::string(expression) + ")", Status::Unsupported, Stop::CloseParenthesis);
         compareProgram(prefix + expression + suffix);
     }
@@ -500,6 +650,173 @@ void constructors() {
     compareProgram("export module constructors; class Box { i64 value; public: Box():value(1 {} };", false);
     compareProgram("export module constructors; class Box { i64 value; public: Box():value(1),{} };", false);
 }
+void constructorBraces(const std::string &contents) {
+    const std::string source = "export module braces; class Box { array<i64,4> value; array<i64,4> other; public: "
+                               "Box():value" +
+                               contents + ",other{}{} };";
+    context = source;
+    const auto tokens = aurora::lex(source, "constructor-braces.au");
+    const auto program = compareProgram(tokens);
+    require(program.classes.size() == 1 && program.classes[0].methods.size() == 1,
+            "constructor-brace fixture lost its class/method");
+    const auto &initializers = program.classes[0].methods[0].initializers;
+    require(initializers.size() == 2 && initializers[0].first.text == "value" && initializers[1].first.text == "other",
+            "constructor-brace field order differs");
+    for (const auto &[field, expression] : initializers)
+        hostedBraces(tokens, field, expression);
+}
+void aggregateSyntax() {
+    for (const auto &expression : {"{};",
+                                   "{1};",
+                                   "{1,2,3};",
+                                   "{{}, {1, {2}}, f(3, {4,5})};",
+                                   "{1,2}[0];",
+                                   "({1,2}).field;",
+                                   "{}.size();",
+                                   "ns::Box{};",
+                                   "one // qualified trivia\n :: two::Box{.last=3,.first=1,.middle=2};",
+                                   "Box{.first=f(1,{2}),.last=Other{.items={3,4}}};",
+                                   "Box{.value=1}.value;",
+                                   "Box{.items={1,2}}.items[0];",
+                                   "Box{.items={1,2}}.at({3,4}[0]);",
+                                   "f({}, Box{.value=1}, {f(2),object.at(3)});",
+                                   "f(\"text\", Box{.value=1});",
+                                   "{true < x > (y), a < b >> (c)};",
+                                   "{1,f<T}>(0);",
+                                   "Box{.first=true < x > (y),.last=a < b >> (c)};",
+                                   "{Box{}, ns::array{}, object.size_of()};"}) {
+        supported(expression);
+        compareProgram("module aggregates; auto f()->i64{return " + std::string(expression) + "}");
+    }
+    supported("{1,2}[0] = 3;", Stop::Assignment);
+    supported("Box{.value={1,2}[0]})", Stop::CloseParenthesis);
+    for (const auto &contents : {"{}",
+                                 "{1,2}",
+                                 "{{1,2},{3,4}}",
+                                 "{f(), object.at(2), a[0]}",
+                                 "{Box{.value=1}, ns::Box{}, {}}",
+                                 "{true < x > (y), a < b >> (c)}"})
+        constructorBraces(contents);
+    const auto grouped = std::string(127, '(') + "1" + std::string(127, ')');
+    // The constructor list adds AST depth but does not consume a primary level.
+    constructorBraces("{" + grouped + "}");
+    compareProgram("module depth; auto f()->i64{return {" + grouped + "};}", false);
+    const auto nested = std::string(127, '{') + "1" + std::string(127, '}');
+    supported(nested + ";");
+    compareProgram("module depth; auto f()->i64{return {" + nested + "};}", false);
+    constructorBraces("{" + chain(127) + "}");
+    compareProgram("export module depth; class Box { array<i64,1> value; public: Box():value{" + chain(128) + "}{} };",
+                   false);
+    // Reflection excludes the entire aggregate, including supported siblings.
+    for (const auto &expression : {"{1,size_of(i64)};",
+                                   "Box{.first=1,.second=type_id(array<u8,2>)};",
+                                   "f({1,field_count(Box)});",
+                                   "{Box{.value=f(size_of(i64))}};"}) {
+        unsupported(expression);
+        rawCase(expression, Status::Unsupported);
+    }
+    for (const auto &contents : {"{1,size_of(i64)}", "{Box{.value=type_id(array<u8,2>)}}"}) {
+        const std::string text = std::string("value") + contents;
+        context = text;
+        const auto tokens = aurora::lex(text, "constructor-fallback.au");
+        const auto before = tokens;
+        std::size_t position = 0;
+        require(!aurora::parseHostedExpression(tokens, position, Stop::ConstructorBraces) && position == 0,
+                "constructor aggregate fallback was not whole-root and atomic");
+        require(tokens.size() == before.size(), "constructor fallback changed token count");
+        for (std::size_t index = 0; index < tokens.size(); ++index)
+            sameToken(tokens[index], before[index]);
+        rawCase(text, Status::Unsupported, Stop::ConstructorBraces);
+        compareProgram("export module fallback; class Box { array<i64,2> value; public: Box():" + text + "{} };");
+    }
+    // The actual dispatcher owns template selection; its retained C++ oracle
+    // must also agree at malformed boundaries and preserve arithmetic shifts.
+    for (const auto &expression : {"{f<i64>(1),2}",
+                                   "Box{.first=f<a<b<c>>>(0),.second={x<y<z>>(a)}}",
+                                   "f({Box<i64>{.value=1},2})",
+                                   "{1,f<a<b<c>>(0)}"}) {
+        compareProgram("module templates; auto f()->i64{return " + std::string(expression) + ";}");
+        compareProgram("export module templates; class Box { array<i64,2> value; public: Box():value{" +
+                       std::string(expression) + "}{} };");
+    }
+    for (const auto &expression : {"{f<T)>(0)}", "{f<T]>(0)}", "{f<T:>(0)}", "Box{.value=f<T)>(0)}", "f({f<T]>(0)})"}) {
+        compareProgram("module templates; auto f()->i64{return " + std::string(expression) + ";}", false);
+        compareProgram("export module templates; class Box { array<i64,2> value; public: Box():value{" +
+                           std::string(expression) + "}{} };",
+                       false);
+    }
+    for (const auto &expression : {"{,};",
+                                   "{1,};",
+                                   "{1 2};",
+                                   "{1;",
+                                   "{1,2",
+                                   "{1];",
+                                   "{1)};",
+                                   "Box{value=1};",
+                                   "Box{..value=1};",
+                                   "Box{.1=1};",
+                                   "Box{.true=1};",
+                                   "Box{.array=1};",
+                                   "Box{.builtin=1};",
+                                   "Box{.__au_private=1};",
+                                   "Box{.value 1};",
+                                   "Box{.value==1};",
+                                   "Box{.value=};",
+                                   "Box{.value=1,};",
+                                   "Box{.value=1;",
+                                   "Box{.value=1 .other=2};",
+                                   "Box{.value={1,}};",
+                                   "{}(1);",
+                                   "Box{}(1);"})
+        compareProgram("module errors; auto f()->i64{return " + std::string(expression) + "}", false);
+    for (const auto &contents : {"{,}", "{1,}", "{1 2}", "{1", "{1]}", "{Box{.value=1,}}"})
+        compareProgram("export module errors; class Box { array<i64,2> value; public: Box():value" +
+                           std::string(contents) + "{} };",
+                       false);
+}
+void rawAggregateDiagnostics() {
+    struct Rejection {
+        std::string source;
+        Status status;
+        std::int64_t token;
+        Stop stop = Stop::Semicolon;
+    };
+    for (const auto &test :
+         std::vector<Rejection>{{"{1;", Status::ExpectedBraceClose, 2},
+                                {"{1,};", Status::ExpectedExpression, 4},
+                                {"{,};", Status::ExpectedExpression, 2},
+                                {"{1 2};", Status::ExpectedBraceClose, 2},
+                                {"{1,2", Status::ExpectedBraceClose, 4},
+                                {"Box{value=1};", Status::ExpectedDot, 2},
+                                {"Box{.1=1};", Status::ExpectedIdentifier, 3},
+                                {"Box{.true=1};", Status::ReservedIdentifier, 3},
+                                {"Box{.array=1};", Status::ReservedBuiltin, 3},
+                                {"Box{.__au_private=1};", Status::ReservedPrefix, 3},
+                                {"Box{.value 1};", Status::ExpectedEqual, 4},
+                                {"Box{.value=};", Status::ExpectedExpression, 6},
+                                {"Box{.value=1,};", Status::ExpectedDot, 7},
+                                {"Box{.value=1;", Status::ExpectedBraceClose, 6},
+                                {"value(1)", Status::ExpectedBraceOpen, 1, Stop::ConstructorBraces},
+                                {"value{1,}", Status::ExpectedExpression, 5, Stop::ConstructorBraces},
+                                {"value{1", Status::ExpectedBraceClose, 3, Stop::ConstructorBraces},
+                                {"true{}", Status::ReservedIdentifier, 0, Stop::ConstructorBraces},
+                                {"array{}", Status::ReservedBuiltin, 0, Stop::ConstructorBraces},
+                                {"__au_field{}", Status::ReservedPrefix, 0, Stop::ConstructorBraces}}) {
+        context = "raw aggregate diagnostic " + test.source;
+        const auto tokens = aurora::lex(test.source, "raw-aggregate-diagnostic.au");
+        Allocations allocations;
+        RawArena arena(allocations);
+        const auto result = arena.parse(test.source, test.stop);
+        require(result[0] == wire(test.status) && result[1] == -1 && result[3] == test.token &&
+                    result[4] == static_cast<std::int64_t>(tokens.at(test.token).span.begin.offset),
+                "aggregate rejection status/token/offset differs");
+        arena.finish();
+        require(allocations.successful == allocations.released, "aggregate diagnostic leaked an owner");
+        ++cases;
+    }
+    rawCase("{};", Status::Invalid, static_cast<Stop>(4));
+}
+
 void abiControls() {
     context = "independent ABI envelope controls";
     const rlimit noCore{0, 0};
@@ -563,7 +880,7 @@ void rawGrowth() {
         Allocations allocations;
         allocations.allowed = allowed;
         RawArena arena(allocations);
-        require(arena.parse("{1};")[0] == wire(Status::AllocationFailure),
+        require(arena.parse("size_of(i64);")[0] == wire(Status::AllocationFailure),
                 "failed arena allocation silently fell back on unsupported syntax");
         arena.finish();
     }
@@ -624,7 +941,7 @@ void rawFrameGrowth() {
         // One leaf needs only the first eight-node capacity. Payload above the
         // first eight-frame plus eight-node capacities therefore proves actual
         // explicit-frame growth, independently of the allocation count.
-        require(used.peak_used > 8 * 32 + 8 * 56 && used.successful_allocations > 4 &&
+        require(used.peak_used > 8 * 40 + 8 * 56 && used.successful_allocations > 4 &&
                     used.peak_live_allocations == 3 && used.live_allocations == 3,
                 "nested parser did not grow its explicit frame owner");
         successful = allocations.successful;
@@ -666,7 +983,7 @@ void rawArguments() {
                     arena.read(count) == NodeWords{wire(NodeKind::Call), 0, count - 1, count, 2, 0, 2 * count + 1},
                 "call ABI, arity or closing-token provenance differs");
         for (std::int64_t index = 0; index < count; ++index)
-            require(arena.edge(index) == EdgeWords{index, index - 1, index + 1, 2},
+            require(arena.edge(index) == EdgeWords{index, index - 1, index + 1, 2, -1},
                     "reverse-linked argument ABI differs");
         const auto metrics = arena.metrics();
         require(metrics.successful_allocations > 10 && metrics.live_allocations == 3 &&
@@ -700,12 +1017,183 @@ void rawArguments() {
     supported(source);
     ++cases;
 }
+void rawAggregates() {
+    struct Empty {
+        std::string source;
+        Stop stop;
+        NodeKind kind;
+        std::int64_t last, close, tokens, offset;
+    };
+    for (const auto &test : std::vector<Empty>{
+             {"{};", Stop::Semicolon, NodeKind::ArrayLiteral, 0, 1, 2, 2},
+             {"{};size_of(i64)", Stop::Semicolon, NodeKind::ArrayLiteral, 0, 1, 2, 2},
+             {"ns::Box{};", Stop::Semicolon, NodeKind::Construct, 2, 4, 5, 9},
+             {"field{}", Stop::ConstructorBraces, NodeKind::ArrayZero, 0, 2, 3, 7},
+             {"field{},other{}", Stop::ConstructorBraces, NodeKind::ArrayZero, 0, 2, 3, 7},
+             {"field{}{size_of(i64)", Stop::ConstructorBraces, NodeKind::ArrayZero, 0, 2, 3, 7},
+             {"field{};size_of(i64)", Stop::ConstructorBraces, NodeKind::ArrayZero, 0, 2, 3, 7},
+             {"field{} // following trivia\n {", Stop::ConstructorBraces, NodeKind::ArrayZero, 0, 2, 3, 29}}) {
+        context = "empty aggregate ABI " + test.source;
+        if (test.stop == Stop::ConstructorBraces) {
+            const auto tokens = aurora::lex(test.source, "empty-brace-boundary.au");
+            std::size_t position = 0;
+            const auto expression = aurora::parseHostedExpression(tokens, position, test.stop);
+            require(expression && expression->op == "array_zero" && expression->args.empty() &&
+                        expression->depth == 1 && position == static_cast<std::size_t>(test.tokens) &&
+                        tokens.at(position).span.begin.offset == static_cast<std::size_t>(test.offset),
+                    "empty constructor host conversion lost its exact next-token/EOF boundary");
+            sameToken(expression->token, tokens[0]);
+        }
+        Allocations allocations;
+        RawArena arena(allocations);
+        const auto result = arena.parse(test.source, test.stop);
+        require(result == Words{wire(Status::Success), 0, 1, test.tokens, test.offset} && arena.edges() == 0 &&
+                    arena.read(0) == NodeWords{wire(test.kind), 0, -1, 0, 1, test.last, test.close},
+                "empty aggregate kind/token/close/cursor ABI differs");
+        arena.finish();
+        require(allocations.successful == allocations.released, "empty aggregate cleanup mismatch");
+        ++cases;
+    }
+    for (const auto &suffix : {"", ",other{}", "{size_of(i64)", ";"}) {
+        context = "nonempty constructor aggregate boundary " + std::string(suffix);
+        const auto tokens = aurora::lex(std::string("field{1}") + suffix, "brace-boundary.au");
+        std::size_t position = 0;
+        const auto expression = aurora::parseHostedExpression(tokens, position, Stop::ConstructorBraces);
+        require(expression && expression->op == "array_literal" && expression->args.size() == 1 &&
+                    expression->depth == 2 && expression->args[0]->op == "number" && expression->args[0]->depth == 1 &&
+                    position == 4 && tokens.at(position).span.begin.offset == 8,
+                "nonempty constructor host conversion lost its exact next-token/EOF boundary");
+        sameToken(expression->token, tokens[0]);
+        sameToken(expression->args[0]->token, tokens[2]);
+        Allocations allocations;
+        RawArena arena(allocations);
+        require(arena.parse(std::string("field{1}") + suffix, Stop::ConstructorBraces) ==
+                        Words{wire(Status::Success), 1, 2, 4, 8} &&
+                    arena.read(0) == NodeWords{wire(NodeKind::Literal), 2, -1, -1, 1, 2, 2} &&
+                    arena.read(1) == NodeWords{wire(NodeKind::ArrayLiteral), 0, 0, 1, 2, 0, 3} && arena.edges() == 1 &&
+                    arena.edge(0) == EdgeWords{0, -1, 1, 2, -1},
+                "nonempty constructor braces changed their field token or consumed following syntax");
+        arena.finish();
+        require(allocations.successful == allocations.released, "constructor aggregate cleanup mismatch");
+        ++cases;
+    }
+    {
+        context = "nested array exact graph and edge provenance";
+        Allocations allocations;
+        RawArena arena(allocations);
+        require(arena.parse("{1,{2,3}};") == Words{wire(Status::Success), 4, 5, 9, 9},
+                "nested array graph/cursor differs");
+        const std::array<NodeWords, 5> expected{{{wire(NodeKind::Literal), 1, -1, -1, 1, 1, 1},
+                                                 {wire(NodeKind::Literal), 4, -1, -1, 1, 4, 4},
+                                                 {wire(NodeKind::Literal), 6, -1, -1, 1, 6, 6},
+                                                 {wire(NodeKind::ArrayLiteral), 3, 2, 2, 2, 3, 7},
+                                                 {wire(NodeKind::ArrayLiteral), 0, 3, 2, 3, 0, 8}}};
+        const std::array<EdgeWords, 4> edges{
+            {{0, -1, 1, 2, -1}, {1, -1, 1, 2, -1}, {2, 1, 2, 2, -1}, {3, 0, 2, 3, -1}}};
+        require(arena.edges() == static_cast<std::int64_t>(edges.size()), "nested array edge count differs");
+        for (std::size_t index = 0; index < expected.size(); ++index)
+            require(arena.read(index) == expected[index], "nested array node ABI differs");
+        for (std::size_t index = 0; index < edges.size(); ++index)
+            require(arena.edge(index) == edges[index], "nested array edge chain/depth differs");
+        arena.finish();
+        require(allocations.successful == allocations.released, "nested array cleanup mismatch");
+        ++cases;
+    }
+    {
+        context = "qualified designated field source order";
+        const std::string source = "ns::Box{.last=1,.first=2};";
+        Allocations allocations;
+        RawArena arena(allocations);
+        require(arena.parse(source) ==
+                        Words{wire(Status::Success), 2, 3, 14, static_cast<std::int64_t>(source.size() - 1)} &&
+                    arena.read(0) == NodeWords{wire(NodeKind::Literal), 7, -1, -1, 1, 7, 7} &&
+                    arena.read(1) == NodeWords{wire(NodeKind::Literal), 12, -1, -1, 1, 12, 12} &&
+                    arena.read(2) == NodeWords{wire(NodeKind::Construct), 0, 1, 2, 2, 2, 13} && arena.edges() == 2 &&
+                    arena.edge(0) == EdgeWords{0, -1, 1, 2, 5} && arena.edge(1) == EdgeWords{1, 0, 2, 2, 10},
+                "designated construction lost qualified name/field-label provenance");
+        arena.finish();
+        require(allocations.successful == allocations.released, "designated construction cleanup mismatch");
+        ++cases;
+    }
+    constexpr std::int64_t count = 257;
+    for (const auto kind : {NodeKind::ArrayLiteral, NodeKind::Construct, NodeKind::ArrayZero}) {
+        // ArrayZero selects the constructor profile; its nonempty result must
+        // be ArrayLiteral. No input profile imposes a fixed arity ceiling.
+        const bool designated = kind == NodeKind::Construct, constructor = kind == NodeKind::ArrayZero;
+        const auto stop = constructor ? Stop::ConstructorBraces : Stop::Semicolon;
+        std::string source = designated ? "ns::Box{" : constructor ? "values{" : "{";
+        for (std::int64_t index = 0; index < count; ++index) {
+            if (index)
+                source += ',';
+            if (designated)
+                source += ".f" + std::to_string(index) + "=";
+            source += '1';
+        }
+        source += "};";
+        context = "wide aggregate ABI " + source;
+        const auto first = designated ? 7 : constructor ? 2 : 1;
+        const auto step = designated ? 5 : 2;
+        const auto close = designated ? 5 * count + 3 : constructor ? 2 * count + 1 : 2 * count;
+        std::size_t successful = 0;
+        {
+            Allocations allocations;
+            RawArena arena(allocations);
+            require(arena.parse(source, stop) == Words{wire(Status::Success),
+                                                       count,
+                                                       count + 1,
+                                                       close + 1,
+                                                       static_cast<std::int64_t>(source.size() - 1)} &&
+                        arena.read(count) == NodeWords{wire(designated ? NodeKind::Construct : NodeKind::ArrayLiteral),
+                                                       0,
+                                                       count - 1,
+                                                       count,
+                                                       2,
+                                                       designated ? 2 : 0,
+                                                       close} &&
+                        arena.edges() == count,
+                    "wide aggregate did not return the exact complete graph/cursor");
+            for (std::int64_t index = 0; index < count; ++index) {
+                const auto token = first + step * index;
+                require(arena.read(index) == NodeWords{wire(NodeKind::Literal), token, -1, -1, 1, token, token},
+                        "wide aggregate child order/token differs");
+                require(arena.edge(index) == EdgeWords{index, index - 1, index + 1, 2, designated ? 5 + 5 * index : -1},
+                        "wide aggregate edge/field-label ABI differs");
+            }
+            const auto metrics = arena.metrics();
+            require(metrics.successful_allocations > 10 && metrics.live_allocations == 3 &&
+                        metrics.peak_live_allocations == 3,
+                    "wide aggregate did not grow independent node/edge owners");
+            successful = allocations.successful;
+            arena.finish();
+            require(allocations.successful == allocations.released, "wide aggregate cleanup mismatch");
+        }
+        for (std::size_t allowed = 0; allowed < successful; ++allowed) {
+            Allocations allocations;
+            allocations.allowed = allowed;
+            RawArena arena(allocations);
+            const auto result = arena.parse(source, stop);
+            require(result[0] == wire(Status::AllocationFailure) && result[1] == -1,
+                    "aggregate allocation/growth failure did not fail closed");
+            if (result[2] > 0)
+                require(arena.read(0) == NodeWords{wire(NodeKind::Literal), first, -1, -1, 1, first, first},
+                        "failed aggregate growth changed a committed node");
+            arena.finish();
+            require(allocations.successful == allocations.released, "partial aggregate graph leaked an owner");
+        }
+        if (constructor)
+            constructorBraces(source.substr(6, source.size() - 7));
+        else
+            supported(source);
+        ++cases;
+    }
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
     try {
         context = "fixture arguments";
-        require(argc == 4, "expected lexer.au, expression_arena.au and expression_parser.au source paths");
+        require(argc == 9, "expected three bootstrap and five aggregate consumer source paths");
         for (const auto &expression :
              {"1;",
               "false;",
@@ -755,14 +1243,8 @@ int main(int argc, char **argv) {
             supported(expression);
         supported("a[1] = 2;", Stop::Assignment);
         supported("f(a[1], b.member))", Stop::CloseParenthesis);
-        for (const auto &expression : {"Box{.value=1};",
-                                       "{1,2};",
-                                       "f(Box{.value=1});",
-                                       "f(\"text\", Box{.value=1});",
-                                       "size_of(i64);",
-                                       "type_id(array<u8,2>);",
-                                       "field_count(Box);",
-                                       "f(size_of(i64));"})
+        for (const auto &expression :
+             {"size_of(i64);", "type_id(array<u8,2>);", "field_count(Box);", "f(size_of(i64));"})
             unsupported(expression);
         compareProgram("module templates; auto f()->i64{return f<i64>(1);}");
         compareProgram("module templates; auto f()->i64{return x<y<z>>(a);}");
@@ -831,7 +1313,7 @@ int main(int argc, char **argv) {
         compareProgram("module depth; auto f()->i64{return " + indices + "[0];}", false);
         compareProgram("module depth; auto f()->i64{return f(" + calls + ");}", false);
         rawCase("1;", Status::Success);
-        rawCase("{1};", Status::Unsupported);
+        rawCase("{1};", Status::Success);
         rawCase("f(1);", Status::Success);
         rawCase("a[1;", Status::ExpectedIndexClose);
         rawCase("a.;", Status::ExpectedIdentifier);
@@ -851,14 +1333,20 @@ int main(int argc, char **argv) {
         rawCase("name=", Status::Success, Stop::Assignment);
         byteStrings();
         constructors();
+        aggregateSyntax();
+        rawAggregateDiagnostics();
         abiControls();
         rawGrowth();
         rawFrameGrowth();
         rawArguments();
+        rawAggregates();
         bootstrapSources(argv + 1);
-        std::cout << "PASS hosted parser " << cases
-                  << " differential/ABI cases, 199-node/frame and 257-argument growth with allocation cleanup; "
-                     "5 byte-string and 40 constructor roots from actual bootstrap sources\n";
+        consumerSources(argv + 4);
+        std::cout
+            << "PASS hosted parser " << cases
+            << " differential/ABI cases, 199-node/frame and 257-argument/aggregate growth with allocation cleanup; "
+               "5 byte-string and 42 constructor roots from actual bootstrap sources; "
+               "14 aggregate roots from actual library/example consumers, including 512 XFS elements\n";
     } catch (const std::exception &error) {
         std::cerr << "FAIL " << error.what() << '\n';
         return 1;

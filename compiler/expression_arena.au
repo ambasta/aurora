@@ -12,7 +12,10 @@ export namespace compiler_parser {
         call,
         member,
         method_call,
-        index
+        index,
+        array_literal,
+        construct,
+        array_zero
     };
 
     enum class ArenaFailure {
@@ -31,7 +34,11 @@ export namespace compiler_parser {
         primary_postfix,
         call_arguments,
         method_arguments,
-        index_expression
+        index_expression,
+        array_arguments,
+        construct_field,
+        construct_arguments,
+        constructor_arguments
     };
 
     class ParseFrame {
@@ -39,9 +46,10 @@ export namespace compiler_parser {
         i64 minimum;
         i64 left;
         i64 operator_token;
+        i64 field_token;
     public:
         ParseFrame(FrameState state, i64 precedence, i64 lhs, i64 token) : step(state), minimum(precedence), left(lhs),
-            operator_token(token) {
+            operator_token(token), field_token(-1) {
         }
         auto state() const -> FrameState {
             return step;
@@ -54,6 +62,13 @@ export namespace compiler_parser {
         }
         auto token() const -> i64 {
             return operator_token;
+        }
+        auto designate(i64 field) -> i64 {
+            field_token = field;
+            return 0;
+        }
+        auto field() const -> i64 {
+            return field_token;
         }
     };
 
@@ -102,9 +117,10 @@ export namespace compiler_parser {
         i64 previous_edge;
         i64 argument_count;
         i64 tree_depth;
+        i64 field_token;
     public:
-        ChildEdge(i64 child, i64 previous, i64 count, i64 depth) : child_node(child), previous_edge(previous),
-            argument_count(count), tree_depth(depth) {
+        ChildEdge(i64 child, i64 previous, i64 count, i64 depth, i64 field) : child_node(child),
+            previous_edge(previous), argument_count(count), tree_depth(depth), field_token(field) {
         }
         auto child() const -> i64 {
             return child_node;
@@ -117,6 +133,9 @@ export namespace compiler_parser {
         }
         auto depth() const -> i64 {
             return tree_depth;
+        }
+        auto field() const -> i64 {
+            return field_token;
         }
     };
 
@@ -283,10 +302,10 @@ export namespace compiler_parser {
         }
         // Reverse-linked argument records permit source/resource-bounded arity.
         // Count/depth summaries avoid repeatedly walking a growing argument list.
-        auto append_argument(i64 previous, i64 child) -> i64 {
+        auto append_field(i64 previous, i64 child, i64 field) -> i64 {
             error = ArenaFailure::invalid;
             if (!edges.ok() || child < 0 || child >= used || previous < -1 || previous >= edge_count || edge_count
-                == 9223372036854775807) {
+                == 9223372036854775807 || field < -1) {
                 return -1;
             }
             AstNode node = nodes.at(child);
@@ -312,13 +331,13 @@ export namespace compiler_parser {
                         next = edge_count * 2;
                     }
                 }
-                ChildEdge empty = ChildEdge(-1, -1, 0, 0);
+                ChildEdge empty = ChildEdge(-1, -1, 0, 0, -1);
                 if (!edges.try_resize(next, empty)) {
                     error = ArenaFailure::allocation;
                     return -1;
                 }
             }
-            ChildEdge argument = ChildEdge(child, previous, count, depth);
+            ChildEdge argument = ChildEdge(child, previous, count, depth, field);
             if (!edges.set(edge_count, argument)) {
                 return -1;
             }
@@ -327,10 +346,14 @@ export namespace compiler_parser {
             error = ArenaFailure::none;
             return index;
         }
-        auto append_call(NodeKind kind, i64 token, i64 last, i64 close, i64 head) -> i64 {
+        auto append_argument(i64 previous, i64 child) -> i64 {
+            return append_field(previous, child, -1);
+        }
+        auto append_list(NodeKind kind, i64 token, i64 last, i64 close, i64 head) -> i64 {
             error = ArenaFailure::invalid;
             if (!nodes.ok() || !edges.ok() || token < 0 || last < token || close <= last || head < -1 || head
-                >= edge_count || (kind != NodeKind::call && kind != NodeKind::method_call)) {
+                >= edge_count || (kind != NodeKind::call && kind != NodeKind::method_call && kind
+                != NodeKind::array_literal && kind != NodeKind::construct && kind != NodeKind::array_zero)) {
                 return -1;
             }
             i64 count = 0;
@@ -340,7 +363,7 @@ export namespace compiler_parser {
                 count = argument.count();
                 depth = argument.depth();
             }
-            if (kind == NodeKind::method_call && count == 0) {
+            if ((kind == NodeKind::method_call && count == 0) || (kind == NodeKind::array_zero && count != 0)) {
                 return -1;
             }
             AstNode node = AstNode(kind, token, head, count, depth);
@@ -353,7 +376,7 @@ export namespace compiler_parser {
         builtin::OwnedValues<AstNode> storage = region.try_allocate(initial_capacity, empty);
         ParseFrame frame = ParseFrame(FrameState::expression_start, 1, -1, -1);
         builtin::OwnedValues<ParseFrame> scratch = region.try_allocate(0, frame);
-        ChildEdge argument = ChildEdge(-1, -1, 0, 0);
+        ChildEdge argument = ChildEdge(-1, -1, 0, 0, -1);
         builtin::OwnedValues<ChildEdge> edges = region.try_allocate(0, argument);
         AstArena arena = AstArena(region, move(storage), move(scratch), move(edges));
         return move(arena);
