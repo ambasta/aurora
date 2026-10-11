@@ -8,7 +8,7 @@ behavior and limits; Git/PR history and retained run evidence hold past results.
 | Destination | Current status |
 |---|---|
 | Modern safe kernel | Emulator boot, bounded Aurora policies, scheduling and copied IPC work; general protected services, SMP, native implementation and assurance remain incomplete. |
-| Safe C++-like language with TypeScript-like types | Checked values/classes/modules, bounded generics, ownership and Aurora expression/body parsing work; general borrowing, concurrency, type transformations, reflection and self-hosting remain incomplete. |
+| Safe C++-like language with TypeScript-like types | Checked values/classes/modules, bounded generics, ownership and Aurora expression/body/type parsing work; general borrowing, concurrency, type transformations, reflection and self-hosting remain incomplete. |
 | Ideal filesystem and XFS compatibility | Host crash models, RAM sectors and offline XFS readers work; mounted persistent file services, recovery and XFS read-write remain incomplete. |
 | Framework Laptop 13 AMD system | Emulator discovery and bounded device models work; active drivers, DMA isolation, power/recovery and physical machine qualification remain incomplete. |
 | Native binutils/glibc/Mesa alternatives | Source-bootstrapped compiler, ABI metadata, core libraries and bounded package tools work; native toolchain/runtime, graphics stack and reproducible native rebuilds remain incomplete. |

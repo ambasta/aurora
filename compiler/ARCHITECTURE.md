@@ -6,7 +6,7 @@ The typed-IR milestone established behavior-preserving compiler phase boundaries
 
 1. `host_sources.hpp` owns the trusted Linux descriptor-relative source reader and atomic artifact writer. `modules.hpp` loads explicit-root module graphs and resolves names/exports in defining-module contexts; MODULES.md specifies that boundary.
 2. `types.hpp` defines source types and common tokens/errors.
-3. The hosted Aurora lexer turns bytes into tokens; `syntax.hpp` defines the untyped source AST. `parser.hpp` handles declarations and dispatches ordinary bodies and constructor initializer expressions to the hosted Aurora parser.
+3. The hosted Aurora lexer turns bytes into tokens; `syntax.hpp` defines the untyped source AST. `parser.hpp` handles declaration structure and dispatches parameter/result/field types, ordinary bodies and constructor initializer expressions to the hosted Aurora parser.
 4. `semantics.hpp` performs source-level name resolution, scalar/aggregate type checking, initialization rules, const/private access checking, ownership moves, lexical borrow checks and conservative branch/loop joins. It emits typed instructions, not assembly strings.
 5. `ir.hpp` defines a target-independent accumulator/value-stack instruction model. Its operations include checked integer arithmetic, typed loads/stores, explicit control flow, metadata queries and array guard/access operations.
 6. `ir_verify.hpp` validates a complete module and creates an immutable `ValidatedModule`. Only this validated wrapper can be passed to the emitter. It checks lower-level type, initialization, control-flow, operand-stack, frame and bounds-token invariants.
@@ -35,8 +35,8 @@ retains the inner node's original token span; index nodes retain their base toke
 The parser calls `lexer.au::next_lexeme` for every token and trivia boundary.
 A single linear candidate pass uses the existing frame scratch to preserve the
 reference's template/call ambiguity, then one iterative type parser produces an
-unresolved `TypeSyntax` forest for both explicit template arguments and
-`size_of`/`type_id`/`field_count`. A fourth checked owner holds these copied records.
+unresolved `TypeSyntax` forest for declaration/local types, explicit template
+arguments and `size_of`/`type_id`/`field_count`. A fourth checked owner holds these copied records.
 Type nesting retains its limit of 64; template nesting retains four levels and
 the existing explicit-call allowance. Declaration parsing passes the original
 type/capacity parameter tokens and class/function-template mode. No resolved
@@ -59,6 +59,11 @@ local types reuse `TypeSyntax`. Nested expression/type parsing restores its save
 frame base on every exit. Block nesting remains independently bounded at 128;
 empty bodies need no expression nodes. Constructor declarations still require
 literal empty bodies and retain their separate initializer entrypoints.
+
+The declaration-type entry parses exactly one type, using the same context and
+depth limits. A residual second `>` of `>>` is projected into the caller-owned
+token copy only after successful conversion; source bytes and failure state stay
+unchanged. C++ retains declaration lists and policies, but no type grammar.
 
 `hosted_parser.cpp` converts the Aurora syntax records into the existing C++ AST.
 It checks bounded counts, valid tags and indices, backward child references,

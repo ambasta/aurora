@@ -9,27 +9,10 @@ namespace aurora {
 class Parser {
     std::vector<Token> tokens;
     std::size_t position = 0;
-    int typeNesting = 0, templateNesting = 0;
     std::set<std::string> templateParameters;
     std::set<std::string> capacityParameters;
     bool functionTemplate = false;
     std::vector<Token> templateParameterTokens, capacityParameterTokens;
-    class Nesting {
-        int &depth;
-
-    public:
-        Nesting(int &value, int limit, const Token &token, const std::string &kind) : depth(value) {
-            if (depth >= limit)
-                throw Error(
-                    DiagnosticCode::NestingLimit, kind + " nesting exceeds " + std::to_string(limit), token.span);
-            ++depth;
-        }
-        Nesting(const Nesting &) = delete;
-        Nesting &operator=(const Nesting &) = delete;
-        ~Nesting() {
-            --depth;
-        }
-    };
 
 public:
     explicit Parser(std::vector<Token> t) : tokens(std::move(t)) {
@@ -39,8 +22,7 @@ public:
     }
     Token take() {
         const auto token = tokens.at(position);
-        // Keep EOF available for a located rejection in truncated expressions,
-        // types and array lengths, instead of peeking past the token vector.
+        // Keep EOF available for a located rejection in truncated declarations.
         if (position + 1 < tokens.size())
             ++position;
         return token;
@@ -99,203 +81,8 @@ public:
     bool scalarOrParameter(const Type &value) const {
         return scalar(value) || value.kind == TypeKind::Parameter;
     }
-    void templateClose() {
-        if (eat(">"))
-            return;
-        if (peek().text == ">>") {
-            // Split only the parser-owned copy. Retained lexical tokens and the
-            // immutable source snapshot still describe the original two bytes.
-            tokens[position].text = ">";
-            if (tokens[position].span.source) {
-                ++tokens[position].span.begin.offset;
-                ++tokens[position].span.begin.column;
-            }
-            return;
-        }
-        fail("expected '>'");
-    }
-    std::vector<TemplateArgument> templateArguments() {
-        Nesting nesting(templateNesting, maximumTemplateNesting, peek(), "template-id");
-        if (!templateParameters.empty() && !functionTemplate)
-            fail("template-id references inside template definitions are not supported");
-        need("<");
-        std::vector<TemplateArgument> arguments;
-        do {
-            if (arguments.size() >= 2)
-                fail("template arguments are limited to one or two types or capacity literals");
-            // Concrete named types and nested template-ids bind in the requesting
-            // module. Resource, reference and builtin storage arguments stay closed.
-            if (eat("i64"))
-                arguments.push_back(TypeKind::I64);
-            else if (eat("u64"))
-                arguments.push_back(TypeKind::U64);
-            else if (eat("u8"))
-                arguments.push_back(TypeKind::U8);
-            else if (eat("bool"))
-                arguments.push_back(TypeKind::Bool);
-            else if (!peek().text.empty() && std::isdigit(static_cast<unsigned char>(peek().text[0]))) {
-                const auto argument = take();
-                try {
-                    std::size_t used = 0;
-                    const auto value = std::stoull(argument.text, &used);
-                    if (used != argument.text.size() || value < 1 || value > 64)
-                        fail("capacity template arguments must be decimal literals from 1 to 64");
-                    arguments.push_back(TemplateArgument::capacity(static_cast<std::int64_t>(value)));
-                } catch (const std::exception &) {
-                    fail("capacity template arguments must be decimal literals from 1 to 64");
-                }
-            } else if (peek().text != "own" && peek().text != "ref" && peek().text != "mutref" &&
-                       peek().text != "array" && peek().text != "builtin" && peek().text != "true" &&
-                       peek().text != "false") {
-                const auto argument = qualifiedTail(ident(), true);
-                TemplateArgument value(argument.text);
-                if (templateParameters.contains(argument.text)) {
-                    if (templateNesting != 1 || peek().text == "<")
-                        fail("nested dependent template arguments are not supported");
-                    value.type = TypeKind::Parameter;
-                }
-                if (peek().text == "<")
-                    value.templateArguments = templateArguments();
-                arguments.push_back(std::move(value));
-            } else
-                fail("template arguments require scalar, named class or enum types, or capacities "
-                     "from 1 to 64");
-        } while (eat(","));
-        templateClose();
-        return arguments;
-    }
     Type type() {
-        Nesting nesting(typeNesting, 64, peek(), "type");
-        static const std::set<std::string> forbidden = {"fn",
-                                                        "let",
-                                                        "mut",
-                                                        "auto",
-                                                        "const",
-                                                        "class",
-                                                        "unsafe",
-                                                        "struct",
-                                                        "extern",
-                                                        "int",
-                                                        "void",
-                                                        "char",
-                                                        "float",
-                                                        "double",
-                                                        "new",
-                                                        "delete",
-                                                        "enum"};
-        if (forbidden.contains(peek().text))
-            fail("unsupported or reserved type spelling");
-        if (eat("i64"))
-            return Type::I64;
-        if (eat("u64"))
-            return Type::U64;
-        if (eat("u8"))
-            return Type::U8;
-        if (eat("bool"))
-            return Type::Bool;
-        auto t = take();
-        if (t.text == "builtin") {
-            need("::");
-            if (eat("span")) {
-                // This is one dedicated borrow type, not a generic template-id.
-                need("<");
-                need("const");
-                need("u8");
-                need(">");
-                return Type::ByteSpan;
-            }
-            if (eat("IommuEventSession"))
-                return Type::IommuEventSession;
-            if (eat("IommuEventSample"))
-                return service::eventSampleType();
-            if (eat("EventPollResult"))
-                return service::eventPollResultType();
-            if (eat("EventAckResult"))
-                return service::eventAckResultType();
-            if (eat("EventIntakeCompletion"))
-                return service::eventIntakeCompletionType();
-            if (eat("DisplaySession"))
-                return Type::DisplaySession;
-            if (eat("DisplayPutResult"))
-                return service::displayPutResultType();
-            if (eat("DisplayCompletion"))
-                return service::displayCompletionType();
-            if (eat("ConsoleSession"))
-                return Type::ConsoleSession;
-            if (eat("ConsoleSample"))
-                return service::sampleType();
-            if (eat("ConsolePutResult"))
-                return service::putResultType();
-            if (eat("ConsoleCompletion"))
-                return service::completionType();
-            if (eat("ByteRegion"))
-                return Type::ByteRegion;
-            if (eat("OwnedBytes"))
-                return Type::OwnedBytes;
-            if (eat("OwnedValues")) {
-                need("<");
-                const auto element = type();
-                if (!element.isClass() || !element.templateArguments.empty())
-                    fail("owned values require a named concrete copied class");
-                templateClose();
-                return Type::ownedValues(element);
-            }
-            need("array");
-            t.text = "array";
-        }
-        if (templateParameters.contains(t.text)) {
-            Type parameter(TypeKind::Parameter);
-            parameter.className = t.text;
-            return parameter;
-        }
-        if (t.text == "array") {
-            need("<");
-            const auto element = type();
-            if (!scalarOrParameter(element) && !element.isClass())
-                fail("array elements require i64, u64, u8, bool or a concrete copied class");
-            need(",");
-            const auto count = take();
-            Type result = Type::array(element, 0);
-            if (capacityParameters.contains(count.text))
-                result.lengthParameter = count.text;
-            else {
-                try {
-                    std::size_t used = 0;
-                    const auto length = std::stoull(count.text, &used);
-                    if (used != count.text.size())
-                        fail("array length requires a decimal integer literal");
-                    if (length < 1 || length > 4096)
-                        fail("array length must be between 1 and 4096");
-                    result.length = static_cast<int>(length);
-                } catch (const std::exception &) {
-                    fail("array length requires a decimal integer literal between 1 and 4096");
-                }
-            }
-            templateClose();
-            if (element.isClass() && result.lengthParameter.empty() && result.length > maximumClassScalarArrayLength)
-                fail("class-element array capacity must be between 1 and 64");
-            return result;
-        }
-        Type v;
-        if (t.text == "own")
-            v = Type::Own;
-        else if (t.text == "ref")
-            v = Type::Ref;
-        else if (t.text == "mutref")
-            v = Type::MutRef;
-        else {
-            if (t.text.empty() || !(std::isalpha(static_cast<unsigned char>(t.text[0])) || t.text[0] == '_'))
-                fail("expected type name");
-            t = qualifiedTail(std::move(t), true);
-            Type result(t.text);
-            if (peek().text == "<")
-                result.templateArguments = templateArguments();
-            return result;
-        }
-        need("<");
-        need("i64");
-        need(">");
-        return v;
+        return parseHostedType(tokens, position, expressionContext());
     }
     hosted_parser::Context expressionContext() const {
         hosted_parser::Context context;

@@ -35,15 +35,20 @@ void checkPositions() {
     }
 }
 void checkParserRanges() {
-    const auto original = aurora::lex(">>", "closers.au");
+    const auto original = aurora::lex("Box<i64>>", "closers.au");
     aurora::Parser parser(original);
-    parser.templateClose();
-    require(parser.peek().text == ">" && parser.peek().span.begin.offset == 1 && parser.peek().span.end.offset == 2 &&
-                parser.peek().span.begin.column == 2,
+    const auto type = parser.type();
+    require(type.isClass() && type.className == "Box" && type.templateArguments.size() == 1 &&
+                type.templateArguments[0].type == aurora::TypeKind::I64,
+            "complete declaration type before residual closer");
+    require(parser.peek().text == ">" && parser.peek().span.begin.offset == 8 && parser.peek().span.end.offset == 9 &&
+                parser.peek().span.begin.column == 9 && parser.peek().line == 1 && parser.peek().span.begin.line == 1 &&
+                parser.peek().span.end.line == 1 && parser.peek().span.end.column == 10,
             "virtual second template closer range");
-    require(original[0].text == ">>" && original[0].span.begin.offset == 0 && original[0].span.end.offset == 2,
+    require(original[3].text == ">>" && original[3].span.begin.offset == 7 && original[3].span.end.offset == 9 &&
+                original[3].span.source->text == "Box<i64>>",
             "parser must not mutate retained lexical stream");
-    parser.templateClose();
+    parser.need(">");
     require(parser.peek().text == "<eof>", "second closer consumption");
     aurora::Parser qualified(aurora::lex("one :: two"));
     const auto name = qualified.qualifiedIdent();

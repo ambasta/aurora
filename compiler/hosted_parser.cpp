@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <limits>
+#include <optional>
 #include <utility>
 
 #ifndef AURORA_HOSTED_PARSER
@@ -66,6 +67,8 @@ class ImportedSyntax {
 public:
     ExpressionPtr expression;
     std::vector<StatementPtr> body;
+    Type type;
+    std::optional<Token> residual;
 };
 
 ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
@@ -73,6 +76,7 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
                                  Stop stop,
                                  const hosted_parser::Context &context) {
     const bool body = stop == Stop::Body;
+    const bool declarationType = stop == Stop::Type;
     if (position >= tokens.size())
         invalid();
     const auto &begin = tokens[position].span;
@@ -141,7 +145,8 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
     }
     auto at = tokens[end];
     if (static_cast<std::size_t>(result.offset) != at.span.begin.offset) {
-        if (result.status == Status::Success || at.text != ">>" || at.span.end.offset - at.span.begin.offset != 2 ||
+        if ((result.status == Status::Success && !declarationType) || at.text != ">>" ||
+            at.span.end.offset - at.span.begin.offset != 2 ||
             static_cast<std::size_t>(result.offset) != at.span.begin.offset + 1 ||
             at.span.begin.column == std::numeric_limits<int>::max())
             invalid();
@@ -244,18 +249,21 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
             invalid();
         throw Error(DiagnosticCode::UnexpectedToken, message + " (found '" + at.text + "')", at.span);
     }
-    if (result.tokens == 0 || result.count > result.tokens || typeCount > result.tokens ||
+    const bool residual = static_cast<std::size_t>(result.offset) != tokens[end].span.begin.offset;
+    const auto tokenCount = result.tokens + (residual ? 1 : 0);
+    if (result.tokens == 0 || result.count > result.tokens || typeCount > tokenCount ||
         statementCount > result.tokens || (result.count == 0 ? edgeCount != 0 : edgeCount >= result.count) ||
-        (body ? statementCount == 0 || result.root != statementCount - 1
-              : result.count == 0 || result.root != result.count - 1))
+        (declarationType ? result.count != 0 || typeCount == 0 || result.root != typeCount - 1
+         : body          ? statementCount == 0 || result.root != statementCount - 1
+                         : result.count == 0 || result.root != result.count - 1))
         invalid();
     const auto text = [&](std::int64_t ordinal) -> const std::string & {
-        if (ordinal < 0 || ordinal >= result.tokens)
+        if (ordinal < 0 || ordinal >= tokenCount)
             invalid();
         return tokens[position + static_cast<std::size_t>(ordinal)].text;
     };
     const auto name = [&](std::int64_t first, std::int64_t last) {
-        if (first < 0 || last < first || last >= result.tokens)
+        if (first < 0 || last < first || last >= tokenCount)
             invalid();
         std::string value;
         for (auto ordinal = first; ordinal <= last; ++ordinal)
@@ -340,9 +348,9 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
     std::vector<std::int64_t> capacities(static_cast<std::size_t>(typeCount), 0);
     std::vector<bool> typeUsed(static_cast<std::size_t>(typeCount), false);
     std::vector<int> typeDepth(static_cast<std::size_t>(typeCount), 1);
-    std::vector<std::int64_t> templateRoots(static_cast<std::size_t>(result.tokens), -1);
-    std::vector<std::int64_t> reflectedRoots(static_cast<std::size_t>(result.tokens), -1);
-    std::vector<std::int64_t> declarationRoots(static_cast<std::size_t>(result.tokens), -1);
+    std::vector<std::int64_t> templateRoots(static_cast<std::size_t>(tokenCount), -1);
+    std::vector<std::int64_t> reflectedRoots(static_cast<std::size_t>(tokenCount), -1);
+    std::vector<std::int64_t> declarationRoots(static_cast<std::size_t>(tokenCount), -1);
     // Aurora owns grammar validation. Here each recursive host value has one
     // owner and bounded structural depth, so forged DAGs cannot amplify copies.
     // This is a host construction limit, not a replay of type/template nesting.
@@ -350,16 +358,16 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
         auto &type = types[static_cast<std::size_t>(index)];
         aurora_hosted_parser_type(arena.data(), index, &type);
         if (type.kind <= SyntaxKind::Invalid || type.kind > SyntaxKind::BuiltinClass || type.token < 0 ||
-            type.token >= result.tokens || type.nameEnd < type.token || type.nameEnd >= result.tokens ||
-            type.close < 0 || type.close / 2 >= result.tokens || type.first < -1 || type.second < -1 ||
-            type.first >= index || type.second >= index || (type.first == -1 && type.second != -1))
+            type.token >= tokenCount || type.nameEnd < type.token || type.nameEnd >= tokenCount || type.close < 0 ||
+            type.close / 2 >= tokenCount || type.first < -1 || type.second < -1 || type.first >= index ||
+            type.second >= index || (type.first == -1 && type.second != -1))
             invalid();
         if (type.role == 0) {
             if (type.owner != -1)
                 invalid();
         } else {
-            if (type.owner < 0 || type.owner >= result.tokens ||
-                (type.role != 1 && type.role != 2 && !(body && type.role == 3)) ||
+            if (type.owner < 0 || type.owner >= tokenCount ||
+                (type.role != 1 && type.role != 2 && !((body || declarationType) && type.role == 3)) ||
                 (type.role == 1 && (type.kind != SyntaxKind::Named || type.first < 0)) ||
                 type.kind == SyntaxKind::Capacity || type.kind == SyntaxKind::LengthParameter)
                 invalid();
@@ -686,7 +694,15 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
         statementValues.push_back(std::move(statement));
     }
     ImportedSyntax imported;
-    if (body)
+    if (declarationType) {
+        const auto root = static_cast<std::size_t>(result.root);
+        if (types[root].role != 3 || types[root].owner != 0 || typeUsed[root])
+            invalid();
+        typeUsed[root] = true;
+        imported.type = std::move(typeValues[root]);
+        if (residual)
+            imported.residual = std::move(at);
+    } else if (body)
         imported.body = std::move(statementValues[static_cast<std::size_t>(result.root)]->body);
     else
         imported.expression = takeExpression(result.root);
@@ -712,5 +728,18 @@ ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens,
 std::vector<StatementPtr>
 parseHostedBody(const std::vector<Token> &tokens, std::size_t &position, const hosted_parser::Context &context) {
     return parseHostedSyntax(tokens, position, Stop::Body, context).body;
+}
+
+Type parseHostedType(std::vector<Token> &tokens, std::size_t &position, const hosted_parser::Context &context) {
+    auto candidate = position;
+    auto imported = parseHostedSyntax(tokens, candidate, Stop::Type, context);
+    // A type may consume only the first half of >>. Project the remaining
+    // token in the caller-owned copy only after complete safe conversion.
+    static_assert(noexcept(std::swap(tokens[candidate], *imported.residual)));
+    static_assert(noexcept(Type(std::move(imported.type))));
+    if (imported.residual)
+        std::swap(tokens[candidate], *imported.residual);
+    position = candidate;
+    return std::move(imported.type);
 }
 } // namespace aurora

@@ -787,6 +787,121 @@ void bodyFixture(bool local = false) {
               static_cast<std::int64_t>(tokens.size()) - 1,
               static_cast<std::int64_t>(tokens.back().span.begin.offset)};
 }
+void declarationTypeControls() {
+    const std::string source = "Box<i64>> name;";
+    const auto configure = [&] {
+        reset();
+        records.clear();
+        count = 0;
+        types = {{wire(TypeKind::I64), 2, 2, 4, -1, -1, -1, 0}, {wire(TypeKind::Named), 0, 0, 6, 0, -1, 0, 3}};
+        typeCount = 2;
+        result = {wire(Status::Success), 1, 0, 3, 8};
+    };
+    const auto unchanged = [](const Tokens &before, const Tokens &after) {
+        if (before.size() != after.size())
+            return false;
+        for (std::size_t index = 0; index < before.size(); ++index)
+            if (before[index].text != after[index].text || before[index].line != after[index].line ||
+                before[index].span.source != after[index].span.source ||
+                before[index].span.begin.offset != after[index].span.begin.offset ||
+                before[index].span.begin.line != after[index].span.begin.line ||
+                before[index].span.begin.column != after[index].span.begin.column ||
+                before[index].span.end.offset != after[index].span.end.offset ||
+                before[index].span.end.line != after[index].span.end.line ||
+                before[index].span.end.column != after[index].span.end.column)
+                return false;
+        return true;
+    };
+    configure();
+    auto tokens = aurora::lex(source, "type.au");
+    const auto original = tokens;
+    std::size_t position = 0;
+    const auto value = aurora::parseHostedType(tokens, position);
+    require(value.isClass() && value.className == "Box" && value.templateArguments.size() == 1 &&
+                value.templateArguments[0].type == aurora::TypeKind::I64 && position == 3 && tokens[3].text == ">" &&
+                tokens[3].span.begin.offset == 8 && tokens[3].span.begin.column == 9 &&
+                tokens[3].span.source->text == source && read == 0 && edgeRead == 0 && statementRead == 0 &&
+                typeRead == 2 && created == 1 && parsed == 1 && released == 1 &&
+                capturedInput[10] == static_cast<std::uint64_t>(Stop::Type),
+            "declaration type lost copied conversion, residual cursor or cleanup");
+    tokens[3] = original[3];
+    require(unchanged(original, tokens), "type conversion modified another caller token");
+    ++cases;
+    const auto reject = [&](const std::string &label, const std::function<void()> &mutate, bool readFailure = false) {
+        configure();
+        mutate();
+        auto input = aurora::lex(source, "bad-type.au");
+        const auto before = input;
+        std::size_t cursor = 0;
+        bool rejected = false;
+        try {
+            static_cast<void>(aurora::parseHostedType(input, cursor));
+        } catch (const aurora::Error &error) {
+            rejected = !readFailure && error.diagnostic.code == DiagnosticCode::Internal;
+        } catch (const std::runtime_error &error) {
+            rejected = readFailure && std::string(error.what()) == "injected read failure";
+        }
+        require(rejected && cursor == 0 && unchanged(before, input) && input.front().span.source->text == source &&
+                    created == 1 && parsed == 1 && released == 1,
+                label + ": unsafe type representation escaped or published caller state");
+        ++cases;
+    };
+    reject("missing type root", [] {
+        result[1] = -1;
+    });
+    reject("wrong type root", [] {
+        result[1] = 0;
+    });
+    reject("negative type count", [] {
+        typeCount = -1;
+    });
+    reject("oversized type count", [] {
+        typeCount = result[3] + 2;
+    });
+    reject("expression in type result", [] {
+        result[2] = count = 1;
+    });
+    reject("statement in type result", [] {
+        statementCount = 1;
+    });
+    reject("edge in type result", [] {
+        edgeCount = 1;
+    });
+    reject("unknown type tag", [] {
+        types[1][0] = 99;
+    });
+    reject("forward type child", [] {
+        types[0][4] = 1;
+    });
+    reject("shared type child", [] {
+        types[1][5] = 0;
+    });
+    reject("orphan type child", [] {
+        types[1][4] = -1;
+    });
+    reject("missing root owner", [] {
+        types[1][6] = -1;
+        types[1][7] = 0;
+    });
+    reject("wrong root role", [] {
+        types[1][7] = 2;
+    });
+    reject("out-of-range type token", [] {
+        types[1][1] = 4;
+    });
+    reject("out-of-range type close", [] {
+        types[1][3] = 8;
+    });
+    reject("invalid residual offset", [] {
+        result[4] = 9;
+    });
+    reject(
+        "type read exception",
+        [] {
+            throwingRead = 3;
+        },
+        true);
+}
 void bodyControls() {
     reset();
     records.clear();
@@ -1078,6 +1193,7 @@ int main() {
         inputControls();
         cleanupControls();
         bodyControls();
+        declarationTypeControls();
         diagnostic("f(",
                    Status::ExpectedExpression,
                    2,

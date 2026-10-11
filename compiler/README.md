@@ -185,7 +185,9 @@ template and type-taking reflection expressions are parsed in Aurora, including
 both forms of constructor field initializer, and converted to the existing source
 AST through the private hosted adapter. Ordinary function/method bodies also use
 Aurora for all existing block, local, control-flow and assignment grammar.
-The hosted path does not fall back to C++ for bodies or expressions. The replaced
-C++ statement/block and expression parsing code is removed from current source. The
+Parameter, result and class-field types use the same Aurora TypeSyntax parser as
+local declarations and reflection. The hosted path has no body/expression/type
+fallback; their replaced C++ grammar is removed. Declaration structure and its
+existing category, borrowing and visibility policies remain in C++. The
 historical predecessor remains the source-bootstrap starting point; this does not
 establish whole-compiler self-hosting.
