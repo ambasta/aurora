@@ -371,9 +371,9 @@ class Controls(unittest.TestCase):
             def poll(self):
                 return None
 
-        with patch.object(smoke.os, "getpgid", return_value=456), patch.object(smoke.os, "killpg") as kill:
+        with patch.object(transport.os, "getpgid", return_value=456), patch.object(transport.os, "killpg") as kill:
             with self.assertRaisesRegex(ValueError, "group changed"):
-                smoke.cleanup(Child())
+                transport.cleanup(Child())
             kill.assert_not_called()
 
     def test_strict_json_and_regular_paths(self):

@@ -52,6 +52,12 @@ Rare required exceptions need a nearby reason and the narrowest suppression;
 do not exclude a whole file to hide ordinary long expressions. C++ formatting
 also needs review for unsplittable tokens and exact-layout fixtures.
 
+The three [historical IOMMU replay fixtures](../tools/qemu-amdvi/README.md#historical-fixtures-and-future-runtime-preparation)
+are exact-byte evidence inputs with pinned imports. Ruff excludes only those
+three files, including when selected explicitly; do not reformat them or refresh
+their hashes. Their static checks and portable mocks remain under ordinary style
+rules.
+
 The [Aurora language-tooling plan](../compiler/TOOLING.md) describes the compiler
 work needed for native `.au` support.
 

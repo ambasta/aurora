@@ -274,6 +274,14 @@ def lifetime_cases(suite):
     initial = array("bytes", [17, 128, 255])
     done = f"return {MAX_U64}u64;"
     suite.check(
+        "private receiver array supports a local readonly span",
+        "Hidden h=Hidden();return h.get();",
+        expected=0,
+        definitions="class Hidden{array<u8,3> bytes;public:Hidden():bytes{}{}auto get()const->u64{"
+        + view()
+        + "return u64(view.at(0));}};",
+    )
+    suite.check(
         "shared views permit owner reads and independent mutable array copies",
         initial + view("first") + view("second") + "array<u8,3> independent=bytes;independent[1]=9u8;"
         "if(bytes[1]!=128u8){return 1u64;}"
@@ -578,13 +586,6 @@ def rejection_cases(suite):
         "private class array cannot be borrowed by caller",
         "Hidden h=Hidden();" + f"const {SPAN} v=borrow_bytes(h.bytes);" + done,
         definitions="class Hidden{array<u8,3> bytes;public:Hidden():bytes{}{} };",
-    )
-    suite.reject(
-        "private receiver array cannot become a local span",
-        "Hidden h=Hidden();return h.get();",
-        definitions="class Hidden{array<u8,3> bytes;public:Hidden():bytes{}{}auto get()const->u64{"
-        + view()
-        + "return u64(view.at(0));}};",
     )
     suite.reject(
         "std array private storage cannot become an alias",

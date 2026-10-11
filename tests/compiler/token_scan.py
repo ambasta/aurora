@@ -814,8 +814,8 @@ def mutation_specs(source):
         ),
         (
             "invalid-progress",
-            "TokenKind::none, offset + begin, 1, begin + 1, skipped);",
-            "TokenKind::none, offset + begin, 1, begin + 2, skipped);",
+            "TokenKind::none, offset + begin, 1, begin\n                + 1, skipped);",
+            "TokenKind::none, offset + begin, 1, begin\n                + 2, skipped);",
             source_case(Case("single invalid-byte progress mutation detector", b" \xffZ")),
         ),
         (

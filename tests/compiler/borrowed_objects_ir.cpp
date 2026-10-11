@@ -935,7 +935,8 @@ void graphTests() {
                            EndObject{48},
                            Return{}});
         },
-        "incompatible owning object lifetimes or field ownership at control-flow join");
+        // Root creation sites are checked before owning fields and active loans.
+        "incompatible active object lifetimes at control-flow join");
     reject(
         "direct borrowed recursion",
         forwarded(true, true),

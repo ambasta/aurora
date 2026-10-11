@@ -1049,7 +1049,7 @@ def mutation_controls(suite, real):
             "unknown bit admission",
             (
                 "(unsupported.compat() | unsupported.ro_compat() | unsupported.incompat() | unsupported.log_inc"
-                "ompat()) != 0u64"
+                "ompat())\n            != 0u64"
             ),
             "compat single bit 31",
         ),
@@ -1073,8 +1073,8 @@ def mutation_controls(suite, real):
         (
             "realtime zero relations",
             (
-                "(xfs_geometry_read64(bytes, 24) | xfs_geometry_read32(bytes, 92) | u64(bytes.at(125)) | xfs_ge"
-                "ometry_read64(bytes, 152)) != 0u64"
+                "(xfs_geometry_read64(bytes, 24) | xfs_geometry_read32(bytes, 92) | u64(bytes.at(125))\n"
+                "            | xfs_geometry_read64(bytes, 152)) != 0u64"
             ),
             "rextents=1",
         ),
@@ -1183,8 +1183,8 @@ def mutation_controls(suite, real):
         "last AG fact loses shortening",
         [
             (
-                "ag_blocks * block_bytes, data_blocks - tail_base, tail_base * block_bytes);",
-                "ag_blocks * block_bytes, ag_blocks, tail_base * block_bytes);",
+                "ag_blocks * block_bytes, data_blocks - tail_base,\n            tail_base * block_bytes);",
+                "ag_blocks * block_bytes, ag_blocks,\n            tail_base * block_bytes);",
             )
         ],
         corpus["last AG blocks 64"],
@@ -1203,8 +1203,8 @@ def mutation_controls(suite, real):
         "combined last AG range guards",
         [
             (
-                "if (log_ag == ag_count - 1u64) { actual_ag_blocks = last_ag_blocks; }",
-                "if (false) { actual_ag_blocks = last_ag_blocks; }",
+                "if (log_ag == ag_count - 1u64) {\n            actual_ag_blocks = last_ag_blocks;\n        }",
+                "if (false) {\n            actual_ag_blocks = last_ag_blocks;\n        }",
             ),
             ("if (linear_start > data_blocks) {", "if (false) {"),
             ("if (log_blocks > data_blocks - linear_start) {", "if (false) {"),
