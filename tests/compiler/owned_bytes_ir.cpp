@@ -1548,7 +1548,476 @@ void emittedSymbolTests() {
     checkVisibility("scalar-only graph preserves legacy global entry points", moduleWith(std::move(scalarOnly)), false);
 }
 
+// Literal storage oracle: Record/Other reserve 24 bytes, with leaves at 0, 8, 16.
+// The extra empty field in Nested occupies no scalar bytes but needs completion.
+Module valueShapes() {
+    Module module;
+    module.enumCases["Mode"] = 2;
+    module.classLayouts = {{"Record", {Type::U8, Type::U64, Type::U8}},
+                           {"Other", {Type::U8, Type::U64, Type::U8}},
+                           {"Empty", {}},
+                           {"Nested", {Type::U8, Type::U64, Type::U8}},
+                           {"ValuesBox", {}},
+                           {"ByteBox", {}}};
+    module.classFields["Record"] = {{Type::U8, 0, 1, false}, {Type::U64, 1, 1, false}, {Type::U8, 2, 1, false}};
+    module.classFields["Other"] = module.classFields["Record"];
+    module.classFields["Empty"] = {};
+    module.classFields["Nested"] = {{Type("Record"), 0, 3, false}, {Type("Empty"), 3, 0, false}};
+    module.classFields["ValuesBox"] = {{Type::ownedValues(Type("Record")), 0, 0, false}};
+    module.classFields["ByteBox"] = {{Type::OwnedBytes, 0, 0, false}};
+    module.classStorage = {{"Record", {{0, 8, 16}, {0, 8, 16}, 24, 8, 24}},
+                           {"Other", {{0, 8, 16}, {0, 8, 16}, 24, 8, 24}},
+                           {"Empty", {{}, {}, 8, 8, 8}},
+                           {"Nested", {{0, 8, 16}, {0, 24}, 24, 8, 24}},
+                           {"ValuesBox", {{}, {0}, 32, 8, 32}},
+                           {"ByteBox", {{}, {0}, 32, 8, 32}}};
+    return module;
+}
+void recordSlot(IRFunction &function, int base, bool mutableValue = false, const std::string &name = "Record") {
+    function.objectSlots[base] = {name, mutableValue};
+    function.slots[base] = Type::U8;
+    function.slots[base - 8] = Type::U64;
+    function.slots[base - 16] = Type::U8;
+}
+Module values() {
+    auto module = valueShapes();
+    auto function = frame("typed_values");
+    function.ownedValueTypes = {{40, "Record"}, {72, "Record"}};
+    function.frameBytes = 208;
+    recordSlot(function, 208, true);
+    recordSlot(function, 160);
+    recordSlot(function, 184);
+    append(function,
+           {BeginObject{208},
+            Constant{7, Type::U8},
+            Store{208, Type::U8},
+            Constant{42, Type::U64},
+            Store{200, Type::U64},
+            Constant{9, Type::U8},
+            Store{192, Type::U8},
+            BeginObject{160},
+            CopyObject{208, 160},
+            EndObject{208},
+            BeginBytes{40},
+            Constant{2, Type::I64},
+            AllocateValues{8, 40, 160},
+            BeginObject{184},
+            Constant{0, Type::I64},
+            ValuesLoad{40, -1, 184},
+            Constant{1, Type::I64},
+            ValuesStore{40, -1, 184},
+            Constant{5, Type::I64},
+            ValuesResize{40, -1, 160},
+            BytesOk{40},
+            BytesLength{40},
+            EndObject{184},
+            EndObject{160},
+            EndBytes{40},
+            Return{}});
+    module.functions.push_back(std::move(function));
+    return module;
+}
+Module valuesParameter() {
+    auto module = valueShapes();
+    auto function = frame("values_parameter", Type::ownedValues(Type("Record")));
+    function.parameters.push_back(Type::ownedValues(Type("Record")));
+    function.ownedValueTypes = {{40, "Record"}, {72, "Record"}};
+    append(function, {BindBytesParameter{1, 40}, BeginBytes{72}, MoveBytes{40, 72}, EndBytes{40}, ReturnBytes{72}});
+    module.functions.push_back(std::move(function));
+    return module;
+}
+Module valuesCall() {
+    auto module = valuesParameter();
+    auto function = frame("values_caller", Type::ownedValues(Type("Record")));
+    function.parameters.push_back(Type::ownedValues(Type("Record")));
+    function.ownedValueTypes = {{40, "Record"}, {72, "Record"}};
+    append(function,
+           {BindBytesParameter{1, 40},
+            BeginBytes{72},
+            ResourceCall{"values_parameter", 8, {0, 40}, 72},
+            EndBytes{40},
+            ReturnBytes{72}});
+    module.functions.insert(module.functions.begin(), std::move(function));
+    return module;
+}
+Module valuesConstructor() {
+    auto module = valueShapes();
+    auto function = frame("values_constructor");
+    function.receiver = Receiver{"ValuesBox", true, true};
+    function.parameters.push_back(Type::ownedValues(Type("Record")));
+    function.ownedValueTypes = {{40, "Record"}};
+    append(function,
+           {BindBytesParameter{1, 40}, InitializeBytesField{0, 0, 40}, EndBytes{40}, Constant{0, Type::I64}, Return{}});
+    module.functions.push_back(std::move(function));
+    return module;
+}
+Module valuesMethod(bool mutableValue = true) {
+    auto module = valueShapes();
+    IRFunction function;
+    function.name = "values_method";
+    function.result = mutableValue ? Type::Bool : Type::I64;
+    function.receiver = Receiver{"ValuesBox", mutableValue, false};
+    function.parameters = {Type("Record")};
+    function.frameBytes = 64;
+    recordSlot(function, 24);
+    recordSlot(function, 48);
+    function.code = {BindObjectParameter{0, 24, "Record"},
+                     BeginObject{48},
+                     Constant{0, Type::I64},
+                     ValuesLoad{0, 0, 48},
+                     EndObject{48}};
+    if (mutableValue)
+        append(function, {Constant{3, Type::I64}, ValuesResize{0, 0, 24}});
+    else
+        append(function, {BytesLength{0, 0}});
+    append(function, {Return{}});
+    module.functions.push_back(std::move(function));
+    return module;
+}
+Module emptyValues() {
+    auto module = valueShapes();
+    auto function = frame("empty_values");
+    function.parameters.push_back(Type::ownedValues(Type("Empty")));
+    function.ownedValueTypes = {{40, "Empty"}, {72, "Empty"}};
+    function.objectSlots = {{144, {"Empty", false}}, {152, {"Empty", false}}};
+    append(function,
+           {BindBytesParameter{1, 40},
+            BeginObject{144},
+            Constant{0, Type::I64},
+            ValuesLoad{40, -1, 144},
+            BeginBytes{72},
+            Constant{3, Type::I64},
+            AllocateValues{8, 72, 144},
+            BeginObject{152},
+            Constant{0, Type::I64},
+            ValuesLoad{72, -1, 152},
+            Constant{0, Type::I64},
+            ValuesStore{40, -1, 152},
+            Constant{6, Type::I64},
+            ValuesResize{40, -1, 144},
+            BytesLength{40},
+            EndObject{152},
+            EndObject{144},
+            EndBytes{72},
+            EndBytes{40},
+            Return{}});
+    module.functions.push_back(std::move(function));
+    return module;
+}
+Module nestedValues() {
+    auto module = valueShapes();
+    auto function = frame("nested_values");
+    function.parameters.push_back(Type::ownedValues(Type("Nested")));
+    function.ownedValueTypes = {{40, "Nested"}};
+    recordSlot(function, 160, false, "Nested");
+    append(function,
+           {BindBytesParameter{1, 40},
+            BeginObject{160},
+            Constant{0, Type::I64},
+            ValuesLoad{40, -1, 160},
+            Constant{6, Type::I64},
+            ValuesResize{40, -1, 160},
+            BytesLength{40},
+            EndObject{160},
+            EndBytes{40},
+            Return{}});
+    module.functions.push_back(std::move(function));
+    return module;
+}
+Module initializedEmpty() {
+    Module module;
+    module.classLayouts["Empty"] = {};
+    IRFunction function;
+    function.name = "explicit_empty";
+    function.result = Type("Empty");
+    function.frameBytes = 16;
+    function.objectSlots = {{8, {"Empty", false}}};
+    function.code = {BeginObject{8}, InitializeEmptyObject{8}, ReturnObject{8}};
+    module.functions.push_back(std::move(function));
+    return module;
+}
+void explicitEmptyTests() {
+    accept("explicit zero-field completion returns independent value", initializedEmpty());
+    reject("empty marker requires begun storage", initializedEmpty(), [](Module &module) {
+        eraseOperation<BeginObject>(module.functions[0]);
+    });
+    reject("empty marker requires exact object slot", initializedEmpty(), [](Module &module) {
+        operation<InitializeEmptyObject>(module).offset = 0;
+    });
+    reject("empty marker cannot complete twice", initializedEmpty(), [](Module &module) {
+        module.functions[0].code.insert(module.functions[0].code.begin() + 2, InitializeEmptyObject{8});
+    });
+    reject("empty marker cannot complete ended storage", initializedEmpty(), [](Module &module) {
+        module.functions[0].code.insert(module.functions[0].code.begin() + 1, EndObject{8});
+    });
+    reject("empty marker cannot complete scalar fields", initializedEmpty(), [](Module &module) {
+        module.classLayouts["Empty"] = {Type::I64};
+        module.functions[0].slots = {{8, Type::I64}};
+    });
+    reject("empty marker cannot bypass nested empty field", initializedEmpty(), [](Module &module) {
+        module.classLayouts["Child"] = {};
+        module.classFields["Empty"] = {{Type("Child"), 0, 0, false}};
+    });
+    reject("empty marker cannot initialize class array carrier", initializedEmpty(), [](Module &module) {
+        module.classLayouts["Child"] = {};
+        module.classFields["Empty"] = {{Type("Child"), 0, 0, true, 2}};
+        module.classArrayCarriers.insert("Empty");
+        module.functions[0].result = Type::I64;
+        module.functions[0].code.back() = Constant{0, Type::I64};
+        module.functions[0].code.push_back(Return{});
+    });
+    reject("conditional empty marker cannot establish completion", initializedEmpty(), [](Module &module) {
+        module.functions[0].code = {BeginObject{8},
+                                    Constant{1, Type::Bool},
+                                    BranchFalse{1},
+                                    InitializeEmptyObject{8},
+                                    Label{1},
+                                    ReturnObject{8}};
+    });
+    auto both = initializedEmpty();
+    both.functions[0].code = {BeginObject{8},
+                              Constant{1, Type::Bool},
+                              BranchFalse{1},
+                              InitializeEmptyObject{8},
+                              Jump{2},
+                              Label{1},
+                              InitializeEmptyObject{8},
+                              Label{2},
+                              ReturnObject{8}};
+    accept("both branches explicitly complete empty value", both);
+}
+void typedValueTests() {
+    explicitEmptyTests();
+    accept("typed allocate copy load store resize and cleanup", values());
+    accept("typed empty elements retain copied completion", emptyValues());
+    accept("typed nested get establishes all logical fields", nestedValues());
+    reject("typed empty fill cannot be bare lifetime", emptyValues(), [](Module &module) {
+        eraseOperation<ValuesLoad>(module.functions[0]);
+    });
+    reject("typed empty fill completion must dominate join", emptyValues(), [](Module &module) {
+        auto &function = module.functions[0];
+        insertBefore<ValuesLoad>(function, {Constant{1, Type::Bool}, BranchFalse{1}, Constant{0, Type::I64}});
+        function.code.insert(function.code.begin() + position<ValuesLoad>(function) + 1, Label{1});
+    });
+    reject("typed empty load cannot reinitialize result", emptyValues(), [](Module &module) {
+        operation<ValuesLoad>(module, 1).resultOffset = 144;
+    });
+    reject("typed fill requires copied snapshot completion", values(), [](Module &module) {
+        auto &function = module.functions[0];
+        function.code[position<CopyObject>(function)] = Constant{7, Type::U8};
+        insertBefore<AllocateValues>(function,
+                                     {Constant{7, Type::U8},
+                                      Store{160, Type::U8},
+                                      Constant{42, Type::U64},
+                                      Store{152, Type::U64},
+                                      Constant{9, Type::U8},
+                                      Store{144, Type::U8},
+                                      Constant{2, Type::I64}});
+    });
+    accept("typed owner parameter move and return", valuesParameter());
+    accept("typed owner resource call", valuesCall());
+    accept("typed owner constructor field", valuesConstructor());
+    accept("typed owner mutable receiver field", valuesMethod());
+    accept("typed owner readonly receiver copy", valuesMethod(false));
+    reject("typed metadata must name owner spill", values(), [](Module &module) {
+        module.functions[0].ownedValueTypes[160] = "Record";
+    });
+    reject("typed metadata cannot name unknown class", values(), [](Module &module) {
+        module.functions[0].ownedValueTypes[72] = "Absent";
+    });
+    reject("typed metadata cannot use owning element", values(), [](Module &module) {
+        module.functions[0].ownedValueTypes[72] = "ByteBox";
+    });
+    reject("typed metadata cannot use typed owning element", values(), [](Module &module) {
+        module.functions[0].ownedValueTypes[72] = "ValuesBox";
+    });
+    reject("typed metadata cannot use nominal enum", values(), [](Module &module) {
+        module.functions[0].ownedValueTypes[72] = "Mode";
+    });
+    reject("typed metadata cannot use carrier element", values(), [](Module &module) {
+        module.classLayouts["Carrier"] = {Type::U8, Type::U64, Type::U8};
+        module.classFields["Carrier"] = {{Type("Record"), 0, 3, true}};
+        module.classArrayCarriers.insert("Carrier");
+        module.classStorage.clear();
+        module.functions[0].ownedValueTypes[72] = "Carrier";
+    });
+    reject("typed metadata checks inactive element leaf limits", values(), [](Module &module) {
+        module.classLayouts["TooMany"] = std::vector<Type>(65, Type::I64);
+        module.classStorage.clear();
+        module.functions[0].ownedValueTypes[72] = "TooMany";
+    });
+    reject("typed metadata checks inactive element physical size", values(), [](Module &module) {
+        module.classLayouts["TooWide"] = std::vector<Type>(64, Type::I64);
+        module.classLayouts["TooWide"].insert(module.classLayouts["TooWide"].end(), 9, Type::U8);
+        module.classStorage.clear();
+        module.functions[0].ownedValueTypes[72] = "TooWide";
+    });
+    reject("typed field requires canonical element type", values(), [](Module &module) {
+        module.classFields["ValuesBox"][0].elementType.lengthParameter = "N";
+    });
+    reject("typed field rejects unresolved template arguments", values(), [](Module &module) {
+        module.classFields["ValuesBox"][0].elementType.templateArguments.push_back(TemplateArgument(TypeKind::I64));
+    });
+    reject("typed field rejects absent element layout", values(), [](Module &module) {
+        module.classFields["ValuesBox"][0].elementType = Type::ownedValues(Type("Absent"));
+    });
+    reject("typed field rejects resource element", values(), [](Module &module) {
+        module.classFields["ValuesBox"][0].elementType = Type::ownedValues(Type("ByteBox"));
+    });
+    reject("typed field rejects array descriptor", values(), [](Module &module) {
+        module.classFields["ValuesBox"][0].array = true;
+    });
+    reject("typed field rejects scalar payload leaves", values(), [](Module &module) {
+        module.classFields["ValuesBox"][0].length = 1;
+    });
+    reject("typed canonical stride cannot be forged", values(), [](Module &module) {
+        module.classStorage["Record"].sizeBytes = 17;
+    });
+    reject("typed allocation cannot target bytes", values(), [](Module &module) {
+        module.functions[0].ownedValueTypes.erase(40);
+    });
+    reject("byte allocation cannot target typed owner", values(), [](Module &module) {
+        module.functions[0].code[position<AllocateValues>(module.functions[0])] = AllocateBytes{8, 40};
+    });
+    for (int opcode = 0; opcode < 3; ++opcode)
+        reject("typed payload opcode cannot access byte owner", values(), [&](Module &module) {
+            auto &function = module.functions[0];
+            function.ownedValueTypes.erase(40);
+            function.code[position<AllocateValues>(function)] = AllocateBytes{8, 40};
+            if (opcode >= 1)
+                function.code[position<ValuesLoad>(function)] = CopyObject{160, 184};
+            if (opcode >= 2)
+                function.code[position<ValuesStore>(function)] = Constant{1, Type::Bool};
+        });
+    reject("typed allocation needs i64 count", values(), [](Module &module) {
+        module.functions[0].code[position<AllocateValues>(module.functions[0]) - 1] = Constant{2, Type::U64};
+    });
+    reject("typed allocation needs readonly fill snapshot", values(), [](Module &module) {
+        module.functions[0].objectSlots[160].mutableValue = true;
+    });
+    reject("typed allocation needs complete fill snapshot", values(), [](Module &module) {
+        eraseOperation<Store>(module.functions[0], 2);
+    });
+    reject("typed allocation needs active fill snapshot", values(), [](Module &module) {
+        insertBefore<AllocateValues>(module.functions[0], {EndObject{160}});
+    });
+    reject("typed allocation rejects equal-layout foreign fill", values(), [](Module &module) {
+        module.functions[0].objectSlots[160].className = "Other";
+    });
+    reject("typed allocation rejects owner fill alias", values(), [](Module &module) {
+        operation<AllocateValues>(module).fillOffset = 40;
+    });
+    reject("typed allocation rejects overwriting live owner", values(), [](Module &module) {
+        insertBefore<ValuesLoad>(module.functions[0], {Constant{1, Type::I64}, AllocateValues{8, 40, 160}});
+    });
+    reject("typed load needs i64 index", values(), [](Module &module) {
+        module.functions[0].code[position<ValuesLoad>(module.functions[0]) - 1] = Constant{0, Type::U8};
+    });
+    reject("typed load needs pristine result", values(), [](Module &module) {
+        operation<ValuesLoad>(module).resultOffset = 160;
+    });
+    reject("typed load needs exact nominal result", values(), [](Module &module) {
+        module.functions[0].objectSlots[184].className = "Other";
+    });
+    reject("typed load cannot alias owning root", values(), [](Module &module) {
+        operation<ValuesLoad>(module).resultOffset = 40;
+    });
+    reject("typed load needs active result", values(), [](Module &module) {
+        eraseOperation<BeginObject>(module.functions[0], 2);
+    });
+    reject("typed load cannot use invalid field selector", values(), [](Module &module) {
+        operation<ValuesLoad>(module).fieldIndex = -2;
+    });
+    reject("typed store needs readonly snapshot", values(), [](Module &module) {
+        module.functions[0].objectSlots[184].mutableValue = true;
+    });
+    reject("typed store needs active snapshot", values(), [](Module &module) {
+        insertBefore<ValuesStore>(module.functions[0], {EndObject{184}});
+    });
+    reject("typed store needs i64 index", values(), [](Module &module) {
+        module.functions[0].code[position<ValuesStore>(module.functions[0]) - 1] = Constant{1, Type::U8};
+    });
+    reject("typed resize needs i64 count", values(), [](Module &module) {
+        module.functions[0].code[position<ValuesResize>(module.functions[0]) - 1] = Constant{5, Type::U64};
+    });
+    reject("typed resize needs active fill", values(), [](Module &module) {
+        insertBefore<ValuesResize>(module.functions[0], {EndObject{160}});
+    });
+    reject("typed resize rejects owner fill alias", values(), [](Module &module) {
+        operation<ValuesResize>(module).fillOffset = 40;
+    });
+    reject("typed mutation rejects const owner", values(), [](Module &module) {
+        module.functions[0].byteSlots[40] = false;
+    });
+    reject("typed access rejects ended owner", values(), [](Module &module) {
+        insertBefore<ValuesLoad>(module.functions[0], {EndBytes{40}});
+    });
+    reject("typed access rejects consumed owner", values(), [](Module &module) {
+        insertBefore<ValuesLoad>(module.functions[0], {BeginBytes{72}, MoveBytes{40, 72}});
+    });
+    for (const Instruction &instruction : std::vector<Instruction>{BytesLoad{40}, BytesStore{40}, BytesResize{40}})
+        reject("typed owner rejects byte payload opcode", values(), [&](Module &module) {
+            insertBefore<ValuesLoad>(module.functions[0], {instruction});
+        });
+    reject("typed owner rejects byte span", values(), [](Module &module) {
+        module.functions[0].frameBytes = 272;
+        module.functions[0].spanSlots.insert(264);
+        insertBefore<ValuesLoad>(module.functions[0], {BorrowOwnedSpan{40, -1, 264}});
+    });
+    reject("typed move rejects bytes destination", valuesParameter(), [](Module &module) {
+        module.functions[0].ownedValueTypes.erase(72);
+    });
+    reject("typed move rejects foreign nominal destination", valuesParameter(), [](Module &module) {
+        module.functions[0].ownedValueTypes[72] = "Other";
+    });
+    reject("typed parameter requires metadata", valuesParameter(), [](Module &module) {
+        module.functions[0].ownedValueTypes.erase(40);
+    });
+    reject("byte parameter rejects typed metadata", valuesParameter(), [](Module &module) {
+        module.functions[0].parameters[1] = Type::OwnedBytes;
+    });
+    reject("typed parameter rejects dependent metadata", valuesParameter(), [](Module &module) {
+        module.functions[0].parameters[1].lengthParameter = "N";
+    });
+    reject("typed return rejects byte boundary", valuesParameter(), [](Module &module) {
+        module.functions[0].result = Type::OwnedBytes;
+    });
+    reject("typed return rejects foreign nominal boundary", valuesParameter(), [](Module &module) {
+        module.functions[0].result = Type::ownedValues(Type("Other"));
+    });
+    reject("resource call rejects foreign typed argument", valuesCall(), [](Module &module) {
+        auto &callee = module.functions[1];
+        callee.parameters[1] = Type::ownedValues(Type("Other"));
+        callee.result = Type::ownedValues(Type("Other"));
+        callee.ownedValueTypes = {{40, "Other"}, {72, "Other"}};
+    });
+    reject("resource call rejects foreign typed result", valuesCall(), [](Module &module) {
+        module.functions[0].ownedValueTypes[72] = "Other";
+        module.functions[0].result = Type::ownedValues(Type("Other"));
+    });
+    reject("resource call rejects owner argument result alias", valuesCall(), [](Module &module) {
+        operation<ResourceCall>(module).resultOffset = 40;
+    });
+    reject("constructor field rejects foreign owner", valuesConstructor(), [](Module &module) {
+        module.classFields["ValuesBox"][0].elementType = Type::ownedValues(Type("Other"));
+    });
+    reject("constructor field rejects byte owner", valuesConstructor(), [](Module &module) {
+        module.classFields["ValuesBox"][0].elementType = Type::OwnedBytes;
+    });
+    reject("typed receiver mutation requires mutable receiver", valuesMethod(), [](Module &module) {
+        module.functions[0].receiver->mutableValue = false;
+    });
+    reject("typed receiver field rejects byte access", valuesMethod(), [](Module &module) {
+        insertBefore<ValuesResize>(module.functions[0], {BytesResize{0, 0}});
+    });
+    reject("typed receiver field rejects byte span summary", valuesMethod(false), [](Module &module) {
+        module.functions[0].result = Type::ByteSpan;
+        module.functions[0].receiverSpanField = 0;
+    });
+}
+
 void directTests() {
+    typedValueTests();
     signatureTests();
     layoutTests();
     bindingTests();

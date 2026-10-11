@@ -95,7 +95,11 @@ public:
         invariant_trap();
     }
 
-    static void allocate(std::uint64_t id, std::int64_t length, NativeOwner *output) noexcept {
+    static void allocate(std::uint64_t id,
+                         std::int64_t length,
+                         NativeOwner *output,
+                         const unsigned char *fill = nullptr,
+                         std::int64_t stride = 1) noexcept {
         if (output == nullptr || !pristine(*output)) {
             invariant_trap();
         }
@@ -122,7 +126,11 @@ public:
         // registry entry, quota or observation commits before allocation succeeds.
         auto *payload = static_cast<unsigned char *>(memory) + sizeof(Region::Allocation);
         auto *record = ::new (memory) Region::Allocation{next_allocation_id, length, payload, target.allocations_};
-        std::memset(record->payload, 0, static_cast<std::size_t>(count));
+        if (fill != nullptr) {
+            for (std::size_t offset = 0; offset < count; offset += static_cast<std::size_t>(stride))
+                std::memcpy(record->payload + offset, fill, static_cast<std::size_t>(stride));
+        } else
+            std::memset(record->payload, 0, static_cast<std::size_t>(count));
         target.allocations_ = record;
         target.metrics_.used += count;
         ++target.metrics_.live_allocations;
@@ -169,7 +177,10 @@ public:
         return 1;
     }
 
-    static std::uint64_t resize(NativeOwner *owner, std::int64_t length) noexcept {
+    static std::uint64_t resize(NativeOwner *owner,
+                                std::int64_t length,
+                                const unsigned char *fill = nullptr,
+                                std::int64_t stride = 1) noexcept {
         Region *target = nullptr;
         auto *record = allocation(owner, target);
         // Validate even same-size and invalid requests. A canonical failed
@@ -203,7 +214,11 @@ public:
         auto *replacement = ::new (memory) Region::Allocation{next_allocation_id, length, payload, record->next};
         const auto prefix = static_cast<std::size_t>(count < old_count ? count : old_count);
         std::memcpy(replacement->payload, record->payload, prefix);
-        std::memset(replacement->payload + prefix, 0, static_cast<std::size_t>(count) - prefix);
+        if (fill != nullptr) {
+            for (std::size_t offset = prefix; offset < count; offset += static_cast<std::size_t>(stride))
+                std::memcpy(replacement->payload + offset, fill, static_cast<std::size_t>(stride));
+        } else
+            std::memset(replacement->payload + prefix, 0, static_cast<std::size_t>(count) - prefix);
 
         // One allocation owns both metadata and bytes. All fallible work is
         // over: commit final logical quota, fresh identity and replacement as
@@ -224,6 +239,54 @@ public:
         record->~Allocation();
         target->allocator_.deallocate(target->allocator_.context, record);
         return 1;
+    }
+
+    static void allocate_values(
+        std::uint64_t id, std::int64_t count, std::int64_t stride, const void *fill, NativeOwner *output) noexcept {
+        if (!valid_value_stride(stride) || fill == nullptr)
+            invariant_trap();
+        allocate(id, value_byte_length(count, stride), output, static_cast<const unsigned char *>(fill), stride);
+    }
+
+    static Region::Allocation *
+    value_allocation(const NativeOwner *owner, std::int64_t stride, Region *&target) noexcept {
+        auto *record = allocation(owner, target);
+        if (!valid_value_stride(stride) || owner->length % stride != 0)
+            invariant_trap();
+        return record;
+    }
+
+    static void values_at(const NativeOwner *owner, std::int64_t index, std::int64_t stride, void *output) noexcept {
+        Region *target = nullptr;
+        auto *record = value_allocation(owner, stride, target);
+        if (output == nullptr)
+            invariant_trap();
+        if (record == nullptr || index < 0 || index >= record->length / stride)
+            bounds_trap();
+        const auto begin = static_cast<std::size_t>(index * stride);
+        std::memcpy(output, record->payload + begin, static_cast<std::size_t>(stride));
+    }
+
+    static std::uint64_t
+    values_set(NativeOwner *owner, std::int64_t index, std::int64_t stride, const void *value) noexcept {
+        Region *target = nullptr;
+        auto *record = value_allocation(owner, stride, target);
+        if (value == nullptr)
+            invariant_trap();
+        if (record == nullptr || index < 0 || index >= record->length / stride)
+            return 0;
+        const auto begin = static_cast<std::size_t>(index * stride);
+        std::memcpy(record->payload + begin, value, static_cast<std::size_t>(stride));
+        return 1;
+    }
+
+    static std::uint64_t
+    resize_values(NativeOwner *owner, std::int64_t count, std::int64_t stride, const void *fill) noexcept {
+        Region *target = nullptr;
+        value_allocation(owner, stride, target); // validate even an invalid request
+        if (fill == nullptr)
+            invariant_trap();
+        return resize(owner, value_byte_length(count, stride), static_cast<const unsigned char *>(fill), stride);
     }
 
     static void drop(NativeOwner *owner) noexcept {
@@ -307,6 +370,23 @@ bool Region::close() noexcept {
     next_ = nullptr;
     open_ = false;
     return true;
+}
+
+extern "C" void __au_runtime_values_allocate(
+    std::uint64_t region, std::int64_t count, std::int64_t stride, const void *fill, NativeOwner *output) noexcept {
+    RuntimeAccess::allocate_values(region, count, stride, fill, output);
+}
+extern "C" void
+__au_runtime_values_at(const NativeOwner *owner, std::int64_t index, std::int64_t stride, void *output) noexcept {
+    RuntimeAccess::values_at(owner, index, stride, output);
+}
+extern "C" std::uint64_t
+__au_runtime_values_set(NativeOwner *owner, std::int64_t index, std::int64_t stride, const void *value) noexcept {
+    return RuntimeAccess::values_set(owner, index, stride, value);
+}
+extern "C" std::uint64_t
+__au_runtime_values_resize(NativeOwner *owner, std::int64_t count, std::int64_t stride, const void *fill) noexcept {
+    return RuntimeAccess::resize_values(owner, count, stride, fill);
 }
 
 extern "C" void __au_runtime_bytes_allocate(std::uint64_t region, std::int64_t length, NativeOwner *output) noexcept {

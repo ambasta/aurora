@@ -57,6 +57,19 @@ Classes are inline values with nominal identity, private-by-default access and e
   their bodies retain defining-module/class resolution and reflection views.
   Private sibling functions cannot be hijacked by root or namespace functions.
 
+### Explicit empty values
+
+A zero-field class without a declared constructor remains explicitly initialized
+with `Empty{}` and can be copied, returned or used as a typed-owner fill. Its
+storage reservation does not by itself establish a complete value. The
+`InitializeEmptyObject` instruction requires an exact active pristine class slot
+whose canonical logical fields and scalar leaves are both empty; owning types
+and internal class-array carriers reject. It establishes the same completion
+facts as construction/copy and emits no machine code, because `BeginObject`
+already clears canonical padding. Repeated or conditional-only initialization
+cannot bypass the existing join rules. Nested empty children still require their
+own logical initialization through ordinary construction/copy operations.
+
 ### Lowering boundary
 
 IR has nominal scalar class layouts, local object-slot declarations, lexical

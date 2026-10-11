@@ -211,6 +211,32 @@ public:
     int regionOffset;
     int resultOffset; // consumes the current i64 length, creates an owning result
 };
+// Typed copied-value payload operations reuse byte-owner lifetimes and tokens.
+// Element identity comes from the exact owner slot/field, never an operand.
+class AllocateValues {
+public:
+    int regionOffset;
+    int resultOffset;
+    int fillOffset; // complete exact-nominal readonly copied snapshot; current i64 count
+};
+class ValuesLoad {
+public:
+    int offset;
+    int fieldIndex;
+    int resultOffset; // pristine exact-nominal copied object; current i64 index
+};
+class ValuesStore {
+public:
+    int offset;
+    int fieldIndex;
+    int valueOffset; // complete exact-nominal readonly copied snapshot; current i64 index
+};
+class ValuesResize {
+public:
+    int offset;
+    int fieldIndex;
+    int fillOffset; // complete exact-nominal readonly copied snapshot; current i64 count
+};
 class MoveBytes {
 public:
     int sourceOffset;
@@ -332,6 +358,12 @@ public:
 // Receiver capabilities are deliberately not scalar Values. Only these operations
 // can address the hidden receiver, and a call consumes a synchronous reborrow.
 class BeginObject {
+public:
+    int offset;
+};
+// Explicit designated initialization of a zero-field copied class. A lifetime
+// reservation alone never establishes complete value initialization.
+class InitializeEmptyObject {
 public:
     int offset;
 };
@@ -513,6 +545,7 @@ using Instruction = std::variant<BindServiceParameter,
                                  Call,
                                  AggregateCall,
                                  BeginObject,
+                                 InitializeEmptyObject,
                                  EndObject,
                                  CopyObject,
                                  ObjectFieldCopy,
@@ -552,6 +585,10 @@ using Instruction = std::variant<BindServiceParameter,
                                  BindSpanParameter,
                                  BeginBytes,
                                  AllocateBytes,
+                                 AllocateValues,
+                                 ValuesLoad,
+                                 ValuesStore,
+                                 ValuesResize,
                                  MoveBytes,
                                  BytesOk,
                                  BytesLength,
@@ -600,6 +637,9 @@ public:
     std::set<int> serviceSlots;    // sealed sixteen-byte grant/generation spills
     std::set<int> regionSlots;     // private eight-byte authority spills
     std::map<int, bool> byteSlots; // private 32-byte owner spills, mutable binding
+    // Exact subset of byteSlots: missing means OwnedBytes, present means
+    // OwnedValues of the named canonical copied class. Never grants a lifetime.
+    std::map<int, std::string> ownedValueTypes;
     std::optional<Receiver> receiver;
     // Named free-function formal shares receiver storage, never lexical privileges.
     bool borrowedParameter = false;
@@ -633,7 +673,7 @@ inline bool owningClass(const std::map<std::string, std::vector<ClassField>> &fi
     if (found == fields.end())
         return false;
     for (const auto &field : found->second)
-        if (field.elementType.isBytes())
+        if (field.elementType.isOwnerStorage())
             return true;
     return false;
 }

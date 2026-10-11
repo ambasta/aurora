@@ -70,8 +70,8 @@ Linux binaries, configuration, wire protocols or POSIX compatibility.
 ## 4. Language, runtime and native toolchain
 
 Grow the language where the above consumers need it, retaining checked values,
-private class state and explicit ownership. Bounded byte owners, move-only
-classes and synchronous borrows already exist; general lifetime/effect and
+private class state and explicit ownership. Runtime-capacity byte and copied-class
+owners, move-only classes and synchronous borrows already exist; general lifetime/effect and
 concurrency models, TypeScript-like type transformations and richer reflection
 remain open. See the [compiler reference](../compiler/README.md) and
 [library dependency plan](library-stack.md), rather than historical exclusions.
@@ -81,7 +81,12 @@ A C++ seed emits the lexer; hosted stage 1 then uses it to rebuild the same Auro
 source with identical assembly. This is partial hosted bootstrap: parsing,
 semantic analysis and native emission remain C++, and host C++/assembly still
 imports immutable source storage. Full compiler self-hosting needs those remaining
-phases in Aurora, safe AST/collection storage, and reproducible multi-stage builds.
+phases in Aurora and reproducible multi-stage builds. The concrete typed
+`expression_arena.au` now supplies append-only copied AST storage with local
+child indices and checked depth. The next parser slice must actually feed those
+nodes into the existing resolver/code generator through a checked bootstrap
+adapter, preserve diagnostics and unsupported-syntax fallback boundaries, and
+exercise more than 64 nodes. Arena construction alone is not parser migration.
 A native toolchain additionally needs the assembler, linker, runtime and target
 file/process services; the lexer checkpoint does not supply those dependencies.
 

@@ -261,6 +261,7 @@ Module copiedFactory(bool empty = false, bool nested = false) {
                 Constant{0x123456789LL, Type::U64},
                 Store{56, Type::U64},
                 BeginObject{72},
+                MethodCall{"empty_constructor", 72},
                 MethodCall{"nested_constructor", 32, {64, 72}},
                 EndObject{72},
                 EndObject{64}});
@@ -269,6 +270,8 @@ Module copiedFactory(bool empty = false, bool nested = false) {
             factory,
             {Constant{201, Type::U8}, Store{32, Type::U8}, Constant{0x123456789LL, Type::U64}, Store{24, Type::U64}});
     }
+    if (empty && !nested)
+        append(factory, {MethodCall{"empty_constructor", 32}});
     append(factory, {ReturnObject{32}});
     module.functions = {caller, factory};
     if (nested) {
@@ -286,6 +289,14 @@ Module copiedFactory(bool empty = false, bool nested = false) {
                             InitializeObjectField{0, 1, 24},
                             Constant{0, Type::I64},
                             Return{}};
+        module.functions.push_back(constructor);
+    }
+    if (empty || nested) {
+        IRFunction constructor;
+        constructor.name = "empty_constructor";
+        constructor.result = Type::I64;
+        constructor.receiver = Receiver{"Empty", true, true};
+        constructor.code = {Constant{0, Type::I64}, Return{}};
         module.functions.push_back(constructor);
     }
     return module;
@@ -506,6 +517,21 @@ void copiedResourceTests() {
     accept("copied resource result after mixed owner cleanup", copiedResource());
     accept("copied resource result carries no owning provenance", copiedFactory());
     accept("empty resource result retains completion marker", copiedFactory(true));
+    reject("empty resource return cannot be bare lifetime", copiedFactory(true), [](Module &m) {
+        remove<MethodCall>(m.functions[1]);
+    });
+    reject("empty copied source cannot launder bare lifetime", copiedFactory(true), [](Module &m) {
+        auto &function = m.functions[1];
+        function.code[at<MethodCall>(function)] = BeginObject{48};
+        before<ReturnObject>(function, {CopyObject{32, 48}});
+        std::get<ReturnObject>(function.code[at<ReturnObject>(function)]).offset = 48;
+    });
+    reject("empty copied completion must dominate join", copiedFactory(true), [](Module &m) {
+        auto &function = m.functions[1];
+        before<MethodCall>(function, {Constant{1, Type::Bool}, BranchFalse{1}});
+        before<ReturnObject>(function, {Label{1}, BeginObject{48}, CopyObject{32, 48}});
+        std::get<ReturnObject>(function.code[at<ReturnObject>(function)]).offset = 48;
+    });
     accept("nested resource result establishes logical completion", copiedFactory(false, true));
     reject("copied result requires exact root", copiedFactory(), [](Module &m) {
         op<ResourceCall>(m).resultOffset = 24;

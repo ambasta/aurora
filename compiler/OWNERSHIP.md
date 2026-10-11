@@ -214,6 +214,84 @@ Scalar-only generated programs retain their old symbol visibility and gain no
 runtime symbols. Resource programs link the explicit hosted adapter; those host
 dependencies have not been removed.
 
+## Runtime-sized copied-class ownership
+
+`builtin::OwnedValues<Node>` owns a runtime count of one named concrete,
+non-owning copied class. `Node` must satisfy the existing canonical copied-class
+leaf, containment and 520-byte limits. Each element has complete independent
+storage. Resource classes, capabilities, references, class-array carriers,
+scalar elements and dependent/generic owner types are not admitted. This does
+not add generic resource classes, nested owning fields or mutable views.
+
+```cpp
+Node fill = Node(...);
+builtin::OwnedValues<Node> nodes = region.try_allocate(count, fill);
+if (!nodes.ok()) { return -1; }
+Node copied = nodes.at(index);
+bool written = nodes.set(index, copied);
+bool resized = nodes.try_resize(new_count, fill);
+```
+
+The allocator and resize require an explicit complete, same-nominal-type named
+fill value. Count and index are signed i64. `.size()` returns element count,
+including zero on allocation failure; `.ok()` distinguishes success with zero
+capacity. Every slot is initialized, including spare capacity. `.at()` returns
+one copied value into a fresh explicitly typed local or direct copied return,
+and fail-stops on negative,
+out-of-range, failed or empty access. `.set()` requires a mutable owner and an
+exact nominal copied value; invalid bounds return false without writing.
+
+Operands are evaluated left-to-right. Count/index evaluation completes before
+the named fill/value is copied into an independent readonly snapshot; owner and
+containing-object liveness are rechecked before access. Scalar side effects
+already completed are not rolled back. Fill expressions cannot manufacture
+resource authority, and equal-layout classes are not interchangeable.
+
+Resize preserves the complete retained prefix and explicitly fills new elements.
+Shrinking then growing never resurrects discarded values. Same-count success
+preserves identity, contents and accounting, even when a different fill is given.
+A failed owner stays failed. Invalid count, count/stride overflow, quota/resource
+exhaustion or host allocation failure leaves the old owner and committed state
+unchanged. Existing byte-region final-logical-quota and transient replacement
+bounds apply to payload bytes. Kernel page hygiene failures remain terminal and
+retain authority for reclamation rather than reporting recoverable failure.
+
+Owners move, bind, return and drop through the existing resource operations and
+region provenance rules. A direct private typed-owner field makes a concrete
+class move-only, just as a byte-owner field does. Its constructor explicitly
+moves a matching owner; synchronous methods may read, set and resize the field.
+No typed-owner byte borrow, raw byte mutation, reinterpretation, escaping element
+reference or owner copy exists.
+
+The compiler reuses the canonical copied layout, including its initialized
+padding, and uses `classStorage.sizeBytes` as the positive element stride. Empty
+classes therefore use eight bytes per element, preserving count and identity.
+The private descriptor remains 32 bytes with a byte length; runtime helpers
+check signed multiplication before allocation and descriptor divisibility before
+typed payload access. Hosted storage is contiguous; the kernel adapter traverses
+page boundaries without exporting addresses. Both share existing allocation,
+replacement, cleanup, identity and accounting mechanisms.
+
+Typed IR records exact nominal element types on an independently checked subset
+of owner slots and on declared fields. Every move, parameter, call/result,
+constructor field initialization and return checks that type. Typed payload
+instructions derive their layout from validated class metadata; no instruction
+supplies an arbitrary stride, pointer or reinterpretation. Old byte allocation,
+access, resize and span instructions reject typed owners. Copied reads require
+fresh exact destinations and establish complete logical initialization, including
+empty descendants. Empty copied values require explicit complete-value evidence,
+not merely a begun storage reservation, even through copies and control-flow joins.
+
+`compiler/expression_arena.au` is the concrete bootstrap consumer. Its private
+owner and logical count store copied `AstNode` records beyond the fixed 64-element
+and 520-byte aggregate limits. Appends check local child-before-parent indices
+and the existing 128-node expression depth bound before growth; successful set
+precedes count publication. Reads check logical count, and growth is explicit
+Aurora code. Nodes retain original-token indices so a future checked host adapter
+can recover existing token spelling/spans without a second decoder. This is an
+AST-storage prerequisite, not an integrated Aurora expression parser: the current
+compiler still parses expressions in C++.
+
 ## Move-only classes
 
 ### Source and ownership

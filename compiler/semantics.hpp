@@ -69,7 +69,23 @@ class SemanticAnalyzer {
         return type.isClass() && ir::owningClass(classShapes, type.className);
     }
     bool ownerType(const Type &type) const {
-        return type.isBytes() || owningClass(type);
+        return type.isOwnerStorage() || owningClass(type);
+    }
+    void requireOwnedElement(const Type &type, const Token &token) {
+        if (!type.isOwnedValues())
+            return;
+        const auto element = type.ownedElement();
+        const auto &definition = classDefinition(element, token);
+        if (owningClass(element) || !ir::copiedClassLeavesSupported(classLeaves.at(definition.name)) ||
+            classStorage.at(definition.name).reservedBytes > maximumCopiedClassBytes)
+            fail(token, "owned values require a bounded pointer-free copied class element");
+    }
+    int snapshotOwnedElement(const Type &type, ExpressionPtr value) {
+        const int original = source(value);
+        match(locals[original].type, type.ownedElement(), value->token);
+        const int snapshot = add("", type.ownedElement(), false, value->token, false);
+        copyClass(original, snapshot, value->token);
+        return snapshot;
     }
     static bool classArray(const Type &type) {
         return type.isArray() && type.elementKind == TypeKind::Class;
@@ -152,7 +168,7 @@ class SemanticAnalyzer {
                 const auto &child = classLeaves.at(member.type.className);
                 leaves.insert(leaves.end(), child.begin(), child.end());
                 depth = std::max(depth, 1 + classDepths.at(member.type.className));
-            } else if (member.type.isBytes()) {
+            } else if (member.type.isOwnerStorage()) {
                 needsConstructor = true;
                 if (member.publicAccess)
                     fail(member.token, "owned byte fields must be private");
@@ -335,7 +351,7 @@ class SemanticAnalyzer {
         l.type = t;
         l.mut = mut;
         const auto needed = t.isService()                  ? service::capabilityBytes / 8
-                            : t.isBytes()                  ? 4
+                            : t.isOwnerStorage()           ? 4
                             : t.isSpan()                   ? ir::spanBytes / 8
                             : (t.isClass() || t.isArray()) ? ir::roundedStorage(static_cast<int>(typeSize(t, tok))) / 8
                                                            : 1;
@@ -347,8 +363,12 @@ class SemanticAnalyzer {
             lowered.serviceSlots.insert(l.offset);
         } else if (t.isRegion()) {
             lowered.regionSlots.insert(l.offset);
-        } else if (t.isBytes()) {
+        } else if (t.isOwnerStorage()) {
             lowered.byteSlots[l.offset] = mut;
+            if (t.isOwnedValues()) {
+                requireOwnedElement(t, tok);
+                lowered.ownedValueTypes[l.offset] = t.className;
+            }
             l.resourceActive = true;
             if (begin)
                 emit(ir::BeginBytes{l.offset});
@@ -593,7 +613,7 @@ class SemanticAnalyzer {
         return movedOwner(value, Type::OwnedBytes);
     }
     void moveOwner(int original, int destination) {
-        if (locals[original].type.isBytes())
+        if (locals[original].type.isOwnerStorage())
             emit(ir::MoveBytes{offset(original), offset(destination)});
         else
             emit(ir::MoveObject{offset(original), offset(destination)});
@@ -601,7 +621,7 @@ class SemanticAnalyzer {
         locals[original].live = false;
     }
     void endOwner(int local) {
-        if (locals[local].type.isBytes())
+        if (locals[local].type.isOwnerStorage())
             emit(ir::EndBytes{offset(local)});
         else
             emit(ir::EndObject{offset(local)});
@@ -615,7 +635,7 @@ class SemanticAnalyzer {
     }
     Type callResource(ExpressionPtr value, const Function &callee, const StatementPtr &binding) {
         const bool constructor = callee.constructor;
-        if ((callee.result.isClass() || callee.result.isBytes() || constructor) && !binding)
+        if ((callee.result.isClass() || callee.result.isOwnerStorage() || constructor) && !binding)
             fail(value->token, "resource result requires a typed local initializer");
         if (binding)
             match(constructor ? Type(callee.receiverClass) : callee.result, binding->type, value->token);
@@ -666,7 +686,7 @@ class SemanticAnalyzer {
     void initializeBytes(StatementPtr binding) {
         const auto value = binding->expr;
         if (value->op == "call" && value->token.text == "move") {
-            const int original = movedBytes(value);
+            const int original = movedOwner(value, binding->type);
             const int local = add(binding->name, binding->type, binding->mutableValue, binding->token);
             emit(ir::MoveBytes{offset(original), offset(local)});
             locals[local].owner = locals[original].owner;
@@ -674,13 +694,24 @@ class SemanticAnalyzer {
             return;
         }
         if (value->op == "method_call" && value->token.text == "try_allocate") {
-            arity(value, 2);
+            arity(value, binding->type.isOwnedValues() ? 3 : 2);
             const int region = source(value->args[0]);
             match(locals[region].type, Type::ByteRegion, value->token);
             match(expression(value->args[1]), Type::I64, value->token);
+            int fill = -1;
+            if (binding->type.isOwnedValues()) {
+                requireOwnedElement(binding->type, binding->token);
+                push();
+                fill = snapshotOwnedElement(binding->type, value->args[2]);
+                pop();
+            }
             const int local = add(binding->name, binding->type, binding->mutableValue, binding->token);
             locals[local].owner = region;
-            emit(ir::AllocateBytes{offset(region), offset(local)});
+            if (fill >= 0) {
+                emit(ir::AllocateValues{offset(region), offset(local), offset(fill)});
+                emit(ir::EndObject{offset(fill)});
+            } else
+                emit(ir::AllocateBytes{offset(region), offset(local)});
             return;
         }
         if (value->op == "call" && value->overloadCandidates.empty()) {
@@ -737,6 +768,10 @@ class SemanticAnalyzer {
         fail(token, constructor ? "class has no declared constructor" : "unknown class method");
     }
     void requireVisibleType(const Type &type, const Token &token) {
+        if (type.isOwnedValues()) {
+            requireVisibleType(type.ownedElement(), token);
+            return;
+        }
         if (service::copiedType(type))
             return;
         if ((!type.isClass() && !type.isEnum()) || reflectionAccess.empty())
@@ -796,7 +831,7 @@ class SemanticAnalyzer {
                 fail(value->token, "method receiver requires a class local or direct owned class field");
             }
             if (member) {
-                if (!member->type.isClass() && !member->type.isBytes())
+                if (!member->type.isClass() && !member->type.isOwnerStorage())
                     fail(target->token, "nested method receiver requires an owned class field or owned byte field");
                 requireVisibleType(member->type, target->token);
                 type = member->type;
@@ -804,7 +839,7 @@ class SemanticAnalyzer {
             }
         }
         if (!bindResult && resultBinding && resultBinding->type.isClass() &&
-            (type.isService() || receiverFieldIndex >= 0))
+            (type.isService() || (receiverFieldIndex >= 0 && !type.isOwnedValues())))
             fail(value->token, "direct copied return requires an ordinary method on a complete receiver");
         auto requireLiveReceiver = [&] {
             if (receiver >= 0 && !locals[receiver].live)
@@ -870,6 +905,59 @@ class SemanticAnalyzer {
                 return service::displayPutResultType();
             }
             fail(value->token, "unknown operation for sealed service kind");
+        }
+        if (type.isOwnedValues()) {
+            if (implicit)
+                fail(value->token, "typed owner operation requires a named owner");
+            requireOwnedElement(type, value->token);
+            const auto &name = value->token.text;
+            if (name == "ok" || name == "size") {
+                arity(value, 1);
+                if (resultBinding)
+                    fail(value->token, "owner status and size return scalar values");
+                if (name == "ok") {
+                    emit(ir::BytesOk{receiverOffset, receiverFieldIndex});
+                    return Type::Bool;
+                }
+                emit(ir::BytesLength{receiverOffset, receiverFieldIndex});
+                return Type::I64;
+            }
+            if (name != "at" && name != "set" && name != "try_resize")
+                fail(value->token, "unknown typed owner operation");
+            arity(value, name == "at" ? 2 : 3);
+            if (name != "at" && !mutableReceiver)
+                fail(value->token, "cannot write a const typed owner");
+            if (name == "at") {
+                if (!resultBinding)
+                    fail(value->token, "typed owner access requires a typed copied local or direct copied return");
+                match(resultBinding->type, type.ownedElement(), value->token);
+            } else if (resultBinding)
+                fail(value->token, "typed owner mutation returns bool");
+            match(expression(value->args[1]), Type::I64, value->token);
+            // Recheck after arbitrary scalar calls; never access a consumed root.
+            requireLiveReceiver();
+            if (name == "at") {
+                const int destination = add(resultBinding->name,
+                                            resultBinding->type,
+                                            resultBinding->mutableValue,
+                                            resultBinding->token,
+                                            bindResult);
+                emit(ir::ValuesLoad{receiverOffset, receiverFieldIndex, offset(destination)});
+                if (resultLocal)
+                    *resultLocal = destination;
+                return type.ownedElement();
+            }
+            push();
+            const int snapshot = snapshotOwnedElement(type, value->args[2]);
+            pop();
+            requireLiveReceiver();
+            requireUnborrowed(receiver >= 0 ? receiver : -2, receiverFieldIndex, value->token);
+            if (name == "set")
+                emit(ir::ValuesStore{receiverOffset, receiverFieldIndex, offset(snapshot)});
+            else
+                emit(ir::ValuesResize{receiverOffset, receiverFieldIndex, offset(snapshot)});
+            emit(ir::EndObject{offset(snapshot)});
+            return Type::Bool;
         }
         if (type.isBytes()) {
             if (resultBinding || implicit)
@@ -1787,6 +1875,8 @@ class SemanticAnalyzer {
         if (initialized.size() != definition.fields.size())
             fail(expression->token, "every class field must be initialized exactly once");
         const int destination = add(statement->name, statement->type, statement->mutableValue, statement->token);
+        if (definition.fields.empty())
+            emit(ir::InitializeEmptyObject{offset(destination)});
         for (std::size_t index = expression->args.size(); index > 0; --index) {
             const auto &member =
                 field(statement->type, Token(expression->fieldNames[index - 1], expression->token.line));
@@ -1885,8 +1975,8 @@ class SemanticAnalyzer {
                 for (std::size_t index = locals.size(); index > 0; --index)
                     if (locals[index - 1].live && locals[index - 1].type.isSpan())
                         releaseSpan(static_cast<int>(index - 1), false);
-            } else if (result.isBytes()) {
-                const int local = movedBytes(s->expr);
+            } else if (result.isOwnerStorage()) {
+                const int local = movedOwner(s->expr, result);
                 endReturnBorrows();
                 endReturnBytes(local);
                 emit(ir::ReturnBytes{offset(local)});
@@ -1937,7 +2027,7 @@ class SemanticAnalyzer {
                 fail(s->token, "service capability cannot be stored in a local");
             if (s->type.isRegion())
                 fail(s->token, "region authority is available only as the first function parameter");
-            if (s->type.isBytes()) {
+            if (s->type.isOwnerStorage()) {
                 initializeBytes(s);
                 return false;
             }
@@ -2209,6 +2299,8 @@ public:
                     fail(token, "owning classes cannot be template arguments");
         };
         for (const auto &definition : classes) {
+            for (const auto &member : definition.fields)
+                requireOwnedElement(member.type, member.token);
             checkTemplateOwners(definition.templateArguments, definition.token);
             const bool composed =
                 std::any_of(definition.fields.begin(), definition.fields.end(), [](const Field &member) {
@@ -2233,6 +2325,9 @@ public:
             if (sourceFunctions[i].params.size() > 6)
                 fail(sourceFunctions[i].token, "at most six parameters supported");
             const auto &candidate = sourceFunctions[i];
+            requireOwnedElement(candidate.result, candidate.token);
+            for (const auto &parameter : candidate.params)
+                requireOwnedElement(parameter.type, candidate.token);
             checkTemplateOwners(candidate.templateArguments, candidate.token);
             const auto borrowedCount =
                 std::count_if(candidate.params.begin(), candidate.params.end(), [](const Param &parameter) {
@@ -2308,7 +2403,7 @@ public:
                          "resource functions and owning constructors require one first region "
                          "parameter and scalar, copied class or owning result");
                 for (std::size_t index = 1; index < candidate.params.size(); ++index)
-                    if (!scalarValue(candidate.params[index].type) && !candidate.params[index].type.isBytes() &&
+                    if (!scalarValue(candidate.params[index].type) && !candidate.params[index].type.isOwnerStorage() &&
                         !(resourceConstructor
                               ? candidate.params[index].type.isClass() && !owningClass(candidate.params[index].type)
                               : owningClass(candidate.params[index].type)))
@@ -2401,12 +2496,12 @@ public:
                                       ownerType(parameter.type),
                                       function.token,
                                       true,
-                                      !parameter.type.isClass() && !parameter.type.isBytes());
+                                      !parameter.type.isClass() && !parameter.type.isOwnerStorage());
                 if (parameter.type.isService())
                     emit(ir::BindServiceParameter{parameterIndex, offset(local), service::kind(parameter.type)});
                 else if (parameter.type.isRegion())
                     emit(ir::BindRegionParameter{parameterIndex, offset(local)});
-                else if (parameter.type.isBytes()) {
+                else if (parameter.type.isOwnerStorage()) {
                     locals[local].owner = 0;
                     emit(ir::BindBytesParameter{parameterIndex, offset(local)});
                 } else if (parameter.type.isSpan())
@@ -2436,8 +2531,8 @@ public:
                     fail(function.token, "constructor must initialize every field exactly once");
                 for (const auto &member : definition.fields) {
                     const auto &initializer = initializers.at(member.token.text);
-                    if (member.type.isBytes()) {
-                        const int original = movedBytes(initializer);
+                    if (member.type.isOwnerStorage()) {
+                        const int original = movedOwner(initializer, member.type);
                         if (locals[original].owner != 0)
                             fail(initializer->token, "constructor byte field belongs to a different region");
                         emit(ir::InitializeBytesField{0, member.index, offset(original)});

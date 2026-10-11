@@ -6,6 +6,8 @@ namespace aurora::kernel::bytes {
 
 namespace {
 using hosted::bytes::NativeOwner;
+using hosted::bytes::valid_value_stride;
+using hosted::bytes::value_byte_length;
 
 constinit Region *first_region = nullptr;
 constinit std::uint64_t next_region_id = 1;
@@ -197,7 +199,37 @@ public:
         __au_runtime_bytes_kernel_fault(1);
     }
 
-    static void allocate(std::uint64_t id, std::int64_t length, NativeOwner *output) noexcept {
+    static void fill_values(Region &target,
+                            Region::Allocation &record,
+                            std::size_t begin,
+                            std::size_t end,
+                            std::size_t stride,
+                            const unsigned char *fill,
+                            Region::Allocation *original = nullptr) noexcept {
+        // Elements may cross physical page boundaries; no contiguous backing
+        // pointer or unchecked element address is exported to generated code.
+        while (begin < end) {
+            const auto page = target.page(record, begin / Region::page_bytes);
+            if (!page) {
+                if (original != nullptr)
+                    original->state = Region::State::retained;
+                target.retain(record);
+            }
+            const auto page_offset = begin % Region::page_bytes;
+            const auto remaining = end - begin;
+            const auto available = Region::page_bytes - page_offset;
+            const auto chunk = remaining < available ? remaining : available;
+            for (std::size_t byte = 0; byte < chunk; ++byte)
+                (*page)[page_offset + byte] = std::byte{fill[(begin + byte) % stride]};
+            begin += chunk;
+        }
+    }
+
+    static void allocate(std::uint64_t id,
+                         std::int64_t length,
+                         NativeOwner *output,
+                         const unsigned char *fill = nullptr,
+                         std::int64_t stride = 1) noexcept {
         if (output == nullptr || !pristine(*output)) {
             __au_runtime_bytes_kernel_fault(1);
         }
@@ -236,6 +268,8 @@ public:
         if (!target.scrub(*record)) {
             target.retain(*record);
         }
+        if (fill != nullptr)
+            fill_values(target, *record, 0, static_cast<std::size_t>(count), static_cast<std::size_t>(stride), fill);
         // All fallible work precedes the ID, quota and descriptor commit. A
         // successful empty owner consumes a distinct bounded metadata slot.
         record->id = next_allocation_id;
@@ -299,7 +333,10 @@ public:
         return 1;
     }
 
-    static std::uint64_t resize(NativeOwner *owner, std::int64_t length) noexcept {
+    static std::uint64_t resize(NativeOwner *owner,
+                                std::int64_t length,
+                                const unsigned char *fill = nullptr,
+                                std::int64_t stride = 1) noexcept {
         Region *target = nullptr;
         auto *record = allocation(owner, target);
         // Even invalid and same-size requests must validate current authority.
@@ -372,6 +409,14 @@ public:
             }
             offset += chunk;
         }
+        if (fill != nullptr)
+            fill_values(*target,
+                        *replacement,
+                        static_cast<std::size_t>(prefix),
+                        static_cast<std::size_t>(count),
+                        static_cast<std::size_t>(stride),
+                        fill,
+                        record);
         const auto staging_peak = target->metrics_.held_pages;
         const auto retired_id = record->id;
         // All recoverable failures precede retirement. A scrub/lease failure
@@ -397,6 +442,66 @@ public:
         commit_id(next_allocation_id, allocation_ids_exhausted);
         *owner = NativeOwner{target->id_, replacement->id, length, 1};
         return 1;
+    }
+
+    static void allocate_values(
+        std::uint64_t id, std::int64_t count, std::int64_t stride, const void *fill, NativeOwner *output) noexcept {
+        if (!valid_value_stride(stride) || fill == nullptr)
+            __au_runtime_bytes_kernel_fault(1);
+        allocate(id, value_byte_length(count, stride), output, static_cast<const unsigned char *>(fill), stride);
+    }
+
+    static Region::Allocation *
+    value_allocation(const NativeOwner *owner, std::int64_t stride, Region *&target) noexcept {
+        auto *record = allocation(owner, target);
+        if (!valid_value_stride(stride) || owner->length % stride != 0)
+            __au_runtime_bytes_kernel_fault(1);
+        return record;
+    }
+
+    static void values_at(const NativeOwner *owner, std::int64_t index, std::int64_t stride, void *output) noexcept {
+        Region *target = nullptr;
+        auto *record = value_allocation(owner, stride, target);
+        if (output == nullptr)
+            __au_runtime_bytes_kernel_fault(1);
+        if (record == nullptr || index < 0 || index >= record->length / stride)
+            __au_runtime_bytes_kernel_fault(2);
+        const auto begin = static_cast<std::size_t>(index * stride);
+        auto *destination = static_cast<unsigned char *>(output);
+        for (std::size_t byte = 0; byte < static_cast<std::size_t>(stride); ++byte) {
+            const auto offset = begin + byte;
+            const auto page = target->page(*record, offset / Region::page_bytes);
+            if (!page)
+                target->retain(*record);
+            destination[byte] = std::to_integer<unsigned char>((*page)[offset % Region::page_bytes]);
+        }
+    }
+
+    static std::uint64_t
+    values_set(NativeOwner *owner, std::int64_t index, std::int64_t stride, const void *value) noexcept {
+        Region *target = nullptr;
+        auto *record = value_allocation(owner, stride, target);
+        if (value == nullptr)
+            __au_runtime_bytes_kernel_fault(1);
+        if (record == nullptr || index < 0 || index >= record->length / stride)
+            return 0;
+        const auto begin = static_cast<std::size_t>(index * stride);
+        fill_values(*target,
+                    *record,
+                    begin,
+                    begin + static_cast<std::size_t>(stride),
+                    static_cast<std::size_t>(stride),
+                    static_cast<const unsigned char *>(value));
+        return 1;
+    }
+
+    static std::uint64_t
+    resize_values(NativeOwner *owner, std::int64_t count, std::int64_t stride, const void *fill) noexcept {
+        Region *target = nullptr;
+        value_allocation(owner, stride, target); // validate even an invalid request
+        if (fill == nullptr)
+            __au_runtime_bytes_kernel_fault(1);
+        return resize(owner, value_byte_length(count, stride), static_cast<const unsigned char *>(fill), stride);
     }
 
     static void drop(NativeOwner *owner) noexcept {
@@ -482,6 +587,23 @@ void advance_next_ids(std::uint64_t region, std::uint64_t allocation) noexcept {
 } // namespace aurora::kernel::bytes
 
 namespace aurora::hosted::bytes {
+extern "C" void __au_runtime_values_allocate(
+    std::uint64_t region, std::int64_t count, std::int64_t stride, const void *fill, NativeOwner *output) noexcept {
+    kernel::bytes::RuntimeAccess::allocate_values(region, count, stride, fill, output);
+}
+extern "C" void
+__au_runtime_values_at(const NativeOwner *owner, std::int64_t index, std::int64_t stride, void *output) noexcept {
+    kernel::bytes::RuntimeAccess::values_at(owner, index, stride, output);
+}
+extern "C" std::uint64_t
+__au_runtime_values_set(NativeOwner *owner, std::int64_t index, std::int64_t stride, const void *value) noexcept {
+    return kernel::bytes::RuntimeAccess::values_set(owner, index, stride, value);
+}
+extern "C" std::uint64_t
+__au_runtime_values_resize(NativeOwner *owner, std::int64_t count, std::int64_t stride, const void *fill) noexcept {
+    return kernel::bytes::RuntimeAccess::resize_values(owner, count, stride, fill);
+}
+
 extern "C" void __au_runtime_bytes_allocate(std::uint64_t region, std::int64_t length, NativeOwner *output) noexcept {
     kernel::bytes::RuntimeAccess::allocate(region, length, output);
 }

@@ -984,6 +984,39 @@ void identity_ceilings() {
             "exhausted region identity cannot be revived by closing and reopening storage");
 }
 
+void typed_value_pages() {
+    using namespace aurora::hosted::bytes;
+    Fixture fixture;
+    NativeOwner owner;
+    std::array<unsigned char, 24> fill{}, value{}, output{};
+    for (std::size_t byte = 0; byte < fill.size(); ++byte) {
+        fill[byte] = static_cast<unsigned char>(byte + 1);
+        value[byte] = static_cast<unsigned char>(180 - byte);
+    }
+    __au_runtime_values_allocate(fixture.region.id(), 200, 24, fill.data(), &owner);
+    require(owner.success == 1 && owner.length == 4800, "typed kernel allocation has runtime element capacity");
+    // Element 170 occupies bytes 4080..4103 and crosses a page boundary.
+    __au_runtime_values_at(&owner, 170, 24, output.data());
+    require(output == fill, "typed get crosses page boundary without exposing backing pointers");
+    require(__au_runtime_values_set(&owner, 170, 24, value.data()) == 1, "typed set crosses page boundary");
+    __au_runtime_values_at(&owner, 170, 24, output.data());
+    require(output == value, "typed page-crossing copied value is complete");
+    const auto original = owner;
+    const auto metrics = fixture.region.metrics();
+    require(__au_runtime_values_resize(&owner, INT64_MAX, 24, fill.data()) == 0 && same_owner(owner, original) &&
+                fixture.region.metrics() == metrics,
+            "typed kernel count overflow is failure atomic");
+    require(__au_runtime_values_resize(&owner, 171, 24, fill.data()) == 1, "typed kernel shrink succeeds");
+    require(__au_runtime_values_resize(&owner, 250, 24, value.data()) == 1, "typed kernel growth succeeds");
+    __au_runtime_values_at(&owner, 169, 24, output.data());
+    require(output == fill, "typed kernel resize preserves prefix");
+    __au_runtime_values_at(&owner, 249, 24, output.data());
+    require(output == value, "typed kernel resize fills extension");
+    __au_runtime_bytes_drop(&owner);
+    require(output == value && fixture.region.metrics().used == 0 && fixture.arena.pool.used() == 0,
+            "typed kernel cleanup releases pages while copied result survives");
+}
+
 } // namespace
 
 extern "C" [[noreturn]] void __au_runtime_bytes_kernel_fault(std::uint64_t reason) noexcept {
@@ -998,6 +1031,7 @@ extern "C" [[noreturn]] void __au_runtime_bytes_kernel_fault(std::uint64_t reaso
 }
 
 int main() {
+    typed_value_pages();
     readonly_descriptor_snapshots();
     admission();
     runtime_lengths_and_pages();

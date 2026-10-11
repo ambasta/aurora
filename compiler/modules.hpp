@@ -475,6 +475,13 @@ class ModuleResolver {
                              const ModuleLoader::Unit &unit,
                              const std::string &scope,
                              std::vector<TemplateRequest> &requests) {
+        if (type.isOwnedValues()) {
+            auto element = type.ownedElement();
+            if (!element.templateArguments.empty())
+                throw Error("owned values require a named concrete copied class");
+            collectTemplateType(element, unit, scope, requests);
+            return;
+        }
         if (type.isArray()) {
             if (!type.elementParameter.empty() || !type.lengthParameter.empty())
                 throw Error("unsubstituted array element or capacity parameter");
@@ -727,6 +734,14 @@ class ModuleResolver {
         return &inserted.first->second;
     }
     void resolveType(Type &type, const ModuleLoader::Unit &unit, const std::string &scope) {
+        if (type.isOwnedValues()) {
+            auto element = type.ownedElement();
+            resolveType(element, unit, scope);
+            if (!element.isClass() || !element.templateArguments.empty())
+                throw Error("owned values require a named concrete copied class");
+            type = Type::ownedValues(element);
+            return;
+        }
         if (type.isArray()) {
             if (!type.elementParameter.empty() || !type.lengthParameter.empty())
                 throw Error("unsubstituted array element or capacity parameter");
@@ -806,6 +821,10 @@ class ModuleResolver {
         while (!pending.empty()) {
             const auto current = std::move(pending.back());
             pending.pop_back();
+            if (current.isOwnedValues()) {
+                pending.push_back(current.ownedElement());
+                continue;
+            }
             if (current.isArray()) {
                 pending.push_back(current.arrayElement());
                 continue;

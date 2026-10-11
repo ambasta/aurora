@@ -323,6 +323,26 @@ def budget_noapic_policy(runtime_symbols, payload_symbols):
     )
 
 
+def snapshot_runtime_symbols(names):
+    # The shared allocator object defines both copied-value and byte operations.
+    # This is an exact linked implementation inventory, not additional imports
+    # granted to the snapshot's generated source (checked separately below).
+    need(
+        {name for name in names if name.startswith("__au_runtime_")}
+        == {
+            "__au_runtime_bytes_" + name
+            for name in ("allocate", "at", "set", "drop", "borrow_length", "resize", "kernel_fault")
+        }
+        | {"__au_runtime_values_" + name for name in ("allocate", "at", "set", "resize")}
+        | {"__au_runtime_snapshot_produce"},
+        "Closed snapshot runtime authority inventory",
+    )
+    need(
+        all(kind == "T" for name, kind in names.items() if name.startswith("__au_runtime_")),
+        "Snapshot runtime authority must be a global text definition",
+    )
+
+
 def snapshot_image_policy(directory, symbols):
     expected_objects = {
         "payload",
@@ -373,15 +393,7 @@ def snapshot_image_policy(directory, symbols):
     producer = "__au_v_m1_15kernel_snapshot_n0__d16produce_snapshot"
     need(entries.get(producer) == "t", "Private copied producer entry")
     names = nm_entries(symbols)
-    need(
-        {name for name in names if name.startswith("__au_runtime_")}
-        == {
-            "__au_runtime_bytes_" + name
-            for name in ("allocate", "at", "set", "drop", "borrow_length", "resize", "kernel_fault")
-        }
-        | {"__au_runtime_snapshot_produce"},
-        "Closed snapshot runtime authority inventory",
-    )
+    snapshot_runtime_symbols(names)
     need(
         not any(name.startswith(("__cxa_", "_GLOBAL__sub_I", "_Zn", "_Zd")) for name in names),
         "Snapshot acquired constructor or heap machinery",
