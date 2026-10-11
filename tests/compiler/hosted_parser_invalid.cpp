@@ -3,6 +3,7 @@
 #include "lexer.hpp"
 #include "hosted_parser.hpp"
 #include "parser.hpp"
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -27,6 +28,7 @@ constexpr std::int64_t wire(NodeKind value) {
     return static_cast<std::int64_t>(value);
 }
 bool hookControl = false;
+std::vector<Stop> hookStops;
 ResultWords result;
 std::vector<NodeWords> records;
 std::vector<EdgeWords> edges;
@@ -45,6 +47,7 @@ void reset() {
     count = 3;
     edgeCount = 0;
     edges.clear();
+    hookStops.clear();
     created = parsed = released = read = edgeRead = 0;
 }
 void fixture(const std::string &source, std::vector<NodeWords> nodes, std::vector<EdgeWords> arguments = {}) {
@@ -166,9 +169,15 @@ extern "C" void aurora_hosted_parser_parse(void *, const void *input, void *outp
         std::memcpy(value.data(), input, sizeof(value));
         const auto *source = reinterpret_cast<const char *>(value[1]);
         const auto offset = static_cast<std::int64_t>(value[7]);
-        result = {wire(Status::Success), 0, 1, 1, offset + 1};
+        const auto lexical = aurora::lex(std::string(source, static_cast<std::size_t>(value[6])), "hook.au");
+        const auto token = std::find_if(lexical.begin(), lexical.end(), [&](const auto &item) {
+            return item.span.begin.offset == static_cast<std::size_t>(offset);
+        });
+        require(token != lexical.end() && token + 1 != lexical.end(), "hook cursor is not a source token");
+        result = {wire(Status::Success), 0, 1, 1, static_cast<std::int64_t>((token + 1)->span.begin.offset)};
         count = 1;
         records = {{wire(source[offset] == 'x' ? NodeKind::Name : NodeKind::Literal), 0, -1, -1, 1, 0, 0}};
+        hookStops.push_back(static_cast<Stop>(value[10]));
     }
     std::memcpy(output, result.data(), sizeof(result));
 }
@@ -334,6 +343,45 @@ int main() {
                     records[0][0] = static_cast<std::int64_t>(aurora::hosted_parser::NodeKind::Name);
                 },
                 word + "+2;");
+
+        for (const std::string source : {R"("";)", R"("\0\xff";)", R"("é😀";)"})
+            valid(source, [&] {
+                fixture(source, {{wire(NodeKind::Literal), 0, -1, -1, 1, 0, 0}});
+            });
+        valid(R"(f("text");)", [] {
+            fixture(R"(f("text");)",
+                    {{wire(NodeKind::Literal), 2, -1, -1, 1, 2, 2}, {wire(NodeKind::Call), 0, 0, 1, 2, 0, 3}},
+                    {{0, -1, 1, 2}});
+        });
+        valid(R"(("x")[0];)", [] {
+            fixture(R"(("x")[0];)",
+                    {{wire(NodeKind::Literal), 1, -1, -1, 1, 1, 1},
+                     {wire(NodeKind::Literal), 4, -1, -1, 1, 4, 4},
+                     {wire(NodeKind::Index), 3, 0, 1, 2, 3, 5}});
+        });
+        invalid(
+            "byte string forged as name",
+            [] {
+                fixture(R"("text";)", {{wire(NodeKind::Name), 0, -1, -1, 1, 0, 0}});
+            },
+            R"("text";)");
+        invalid(
+            "bare byte string cannot receive a method",
+            [] {
+                fixture(R"("x".m();)",
+                        {{wire(NodeKind::Literal), 0, -1, -1, 1, 0, 0}, {wire(NodeKind::MethodCall), 2, 0, 1, 2, 2, 4}},
+                        {{0, -1, 1, 2}});
+            },
+            R"("x".m();)");
+        invalid(
+            "bare byte string cannot receive an index",
+            [] {
+                fixture(R"("x"[0];)",
+                        {{wire(NodeKind::Literal), 0, -1, -1, 1, 0, 0},
+                         {wire(NodeKind::Literal), 2, -1, -1, 1, 2, 2},
+                         {wire(NodeKind::Index), 1, 0, 1, 2, 1, 3}});
+            },
+            R"("x"[0];)");
 
         valid("f(1,2);", [] {
             callFixture();
@@ -725,6 +773,29 @@ int main() {
         hookControl = false;
         require(hooks.functions.size() == 1 && parsed == 8 && created == 8 && released == 8,
                 "a statement hook bypassed hosted dispatch or lost cleanup");
+        reset();
+        hookControl = true;
+        const auto constructors =
+            aurora::Parser(aurora::lex("export module hooks;class Hook{i64 first;i64 second;array<u8,2> bytes;public:"
+                                       "Hook(i64 x):first(x),second(1),bytes(\"ok\"){}auto get()->i64{return 1;}};"),
+                           true)
+                .parse();
+        hookControl = false;
+        require(constructors.classes.size() == 1 && constructors.classes[0].methods.size() == 2 &&
+                    constructors.classes[0].methods[0].initializers.size() == 3 && parsed == 4 && created == 4 &&
+                    released == 4 &&
+                    hookStops ==
+                        std::vector<Stop>{
+                            Stop::CloseParenthesis, Stop::CloseParenthesis, Stop::CloseParenthesis, Stop::Semicolon},
+                "constructor initializer bypassed hosted dispatch or lost its stopping context");
+        reset();
+        hookControl = true;
+        static_cast<void>(
+            aurora::Parser(aurora::lex("export module hooks;class Hook{array<i64,1> value;public:Hook():value{1}{}};"),
+                           true)
+                .parse());
+        hookControl = false;
+        require(created == 0 && parsed == 0 && released == 0, "brace initializer changed its excluded entry path");
         reset();
         static_cast<void>(aurora::Parser(aurora::lex("module reference;auto f()->i64{return 1;}"), false).parse());
         require(created == 0 && parsed == 0 && released == 0, "explicit reference parser used a hosted hook");

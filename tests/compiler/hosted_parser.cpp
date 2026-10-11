@@ -4,12 +4,15 @@
 #include "parser.hpp"
 #include "hosted_parser.hpp"
 #include "../../runtime/hosted_bytes.hpp"
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <csignal>
 #include <cstdint>
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
+#include <iterator>
 #include <limits>
 #include <optional>
 #include <stdexcept>
@@ -73,13 +76,17 @@ void sameSpan(const aurora::SourceSpan &a, const aurora::SourceSpan &b) {
     samePosition(a.begin, b.begin);
     samePosition(a.end, b.end);
 }
+void sameToken(const aurora::Token &a, const aurora::Token &b) {
+    require(a.text == b.text && a.line == b.line, "token spelling/line differs");
+    sameSpan(a.span, b.span);
+}
 void sameExpression(const aurora::ExpressionPtr &a, const aurora::ExpressionPtr &b) {
     require(bool(a) == bool(b), "expression presence differs");
     if (!a)
         return;
     require(a->op == b->op && a->depth == b->depth && a->token.text == b->token.text &&
                 a->token.line == b->token.line && a->args.size() == b->args.size() && a->fieldNames == b->fieldNames &&
-                a->templateArguments.size() == b->templateArguments.size(),
+                a->templateArguments == b->templateArguments && a->reflectedType == b->reflectedType,
             "expression shape/spelling/depth differs");
     sameSpan(a->token.span, b->token.span);
     for (std::size_t i = 0; i < a->args.size(); ++i)
@@ -95,7 +102,7 @@ void sameStatements(const std::vector<aurora::StatementPtr> &a, const std::vecto
     require(a.size() == b.size(), "statement count differs");
     for (std::size_t i = 0; i < a.size(); ++i) {
         require(a[i]->kind == b[i]->kind && a[i]->name == b[i]->name && a[i]->fieldName == b[i]->fieldName &&
-                    a[i]->mutableValue == b[i]->mutableValue,
+                    a[i]->mutableValue == b[i]->mutableValue && a[i]->type == b[i]->type,
                 "statement shape differs");
         sameSpan(a[i]->token.span, b[i]->token.span);
         sameSpan(a[i]->bindingSpan, b[i]->bindingSpan);
@@ -105,9 +112,46 @@ void sameStatements(const std::vector<aurora::StatementPtr> &a, const std::vecto
         sameStatements(a[i]->other, b[i]->other);
     }
 }
-void compareProgram(const std::string &source, bool valid = true) {
-    context = source;
-    const auto tokens = aurora::lex(source, "parser-differential.au");
+void sameFunctions(const std::vector<aurora::Function> &a, const std::vector<aurora::Function> &b) {
+    require(a.size() == b.size(), "function/method count differs");
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        require(a[i].name == b[i].name && a[i].scope == b[i].scope && a[i].exported == b[i].exported &&
+                    a[i].constructor == b[i].constructor && a[i].receiverConst == b[i].receiverConst &&
+                    a[i].publicAccess == b[i].publicAccess && a[i].result == b[i].result &&
+                    a[i].params.size() == b[i].params.size() && a[i].initializers.size() == b[i].initializers.size(),
+                "function/method shape differs");
+        sameToken(a[i].token, b[i].token);
+        for (std::size_t j = 0; j < a[i].params.size(); ++j) {
+            const auto &left = a[i].params[j], &right = b[i].params[j];
+            require(left.name == right.name && left.type == right.type && left.borrowed == right.borrowed &&
+                        left.borrowConst == right.borrowConst,
+                    "parameter shape/order differs");
+            sameSpan(left.borrowSpan, right.borrowSpan);
+        }
+        for (std::size_t j = 0; j < a[i].initializers.size(); ++j) {
+            sameToken(a[i].initializers[j].first, b[i].initializers[j].first);
+            sameExpression(a[i].initializers[j].second, b[i].initializers[j].second);
+        }
+        sameStatements(a[i].body, b[i].body);
+    }
+}
+void sameClasses(const std::vector<aurora::ClassDefinition> &a, const std::vector<aurora::ClassDefinition> &b) {
+    require(a.size() == b.size(), "class count differs");
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        require(a[i].name == b[i].name && a[i].scope == b[i].scope && a[i].exported == b[i].exported &&
+                    a[i].fields.size() == b[i].fields.size(),
+                "class shape differs");
+        sameToken(a[i].token, b[i].token);
+        for (std::size_t j = 0; j < a[i].fields.size(); ++j) {
+            sameToken(a[i].fields[j].token, b[i].fields[j].token);
+            require(a[i].fields[j].type == b[i].fields[j].type &&
+                        a[i].fields[j].publicAccess == b[i].fields[j].publicAccess,
+                    "field shape/order differs");
+        }
+        sameFunctions(a[i].methods, b[i].methods);
+    }
+}
+aurora::Program compareProgram(const std::vector<aurora::Token> &tokens, bool valid = true) {
     std::array<std::optional<aurora::Program>, 2> programs;
     std::array<std::optional<aurora::Diagnostic>, 2> errors;
     for (std::size_t i = 0; i < 2; ++i) {
@@ -124,11 +168,17 @@ void compareProgram(const std::string &source, bool valid = true) {
                 "diagnostic code/message differs: " + errors[0]->message + " versus " + errors[1]->message);
         sameSpan(errors[0]->span, errors[1]->span);
     } else {
-        require(programs[0]->functions.size() == programs[1]->functions.size(), "function count differs");
-        for (std::size_t i = 0; i < programs[0]->functions.size(); ++i)
-            sameStatements(programs[0]->functions[i].body, programs[1]->functions[i].body);
+        sameFunctions(programs[0]->functions, programs[1]->functions);
+        sameFunctions(programs[0]->functionTemplates, programs[1]->functionTemplates);
+        sameClasses(programs[0]->classes, programs[1]->classes);
+        sameClasses(programs[0]->templates, programs[1]->templates);
     }
     ++cases;
+    return valid ? std::move(*programs[1]) : aurora::Program{};
+}
+void compareProgram(const std::string &source, bool valid = true) {
+    context = source;
+    compareProgram(aurora::lex(source, "parser-differential.au"), valid);
 }
 std::string chain(std::size_t count) {
     std::string result = "1";
@@ -145,7 +195,7 @@ void supported(const std::string &text, Stop stop = Stop::Semicolon) {
     aurora::Parser reference(tokens, false);
     const auto expected = reference.expr();
     sameExpression(hosted, expected);
-    require(tokens[position].text == reference.peek().text, "committed token cursor differs");
+    sameToken(tokens[position], reference.peek());
     if (text == chain(100) + ";")
         require(nodes(hosted) == 199 && hosted->depth == 100, "100 terms did not yield 199 real Aurora nodes");
     ++cases;
@@ -163,6 +213,82 @@ void unsupported(const std::string &text) {
         sameSpan(tokens[i].span, before[i].span);
     }
     compareProgram("module fallback; auto f()->i64{return " + text + "}");
+}
+
+std::size_t tokenAt(const std::vector<aurora::Token> &tokens, const aurora::Token &token) {
+    const auto found = std::lower_bound(
+        tokens.begin(), tokens.end(), token.span.begin.offset, [](const auto &candidate, std::size_t offset) {
+            return candidate.span.begin.offset < offset;
+        });
+    require(found != tokens.end(), "source root has no retained token");
+    sameToken(*found, token);
+    return static_cast<std::size_t>(found - tokens.begin());
+}
+void hostedRoot(const std::vector<aurora::Token> &tokens,
+                std::size_t position,
+                Stop stop,
+                const aurora::ExpressionPtr &expected) {
+    const auto expression = aurora::parseHostedExpression(tokens, position, stop);
+    require(bool(expression), "bootstrap expression silently fell back");
+    sameExpression(expression, expected);
+    require(tokens.at(position).text == (stop == Stop::CloseParenthesis ? ")" : ";"),
+            "bootstrap expression committed the wrong delimiter");
+    ++cases;
+}
+void bootstrapStatements(const std::vector<aurora::Token> &tokens,
+                         const std::vector<aurora::StatementPtr> &statements,
+                         std::size_t &strings) {
+    for (const auto &statement : statements) {
+        if (statement->expr && statement->expr->op == "byte_string") {
+            hostedRoot(tokens, tokenAt(tokens, statement->expr->token), Stop::Semicolon, statement->expr);
+            ++strings;
+        }
+        bootstrapStatements(tokens, statement->body, strings);
+        bootstrapStatements(tokens, statement->other, strings);
+    }
+}
+void bootstrapFunctions(const std::vector<aurora::Token> &tokens,
+                        const std::vector<aurora::Function> &functions,
+                        std::size_t &initializers,
+                        std::size_t &strings) {
+    for (const auto &function : functions) {
+        for (const auto &[field, expression] : function.initializers) {
+            const auto position = tokenAt(tokens, field) + 1;
+            // Brace initializers remain entirely in the retained parser.
+            if (tokens.at(position).text == "{")
+                continue;
+            require(function.constructor && tokens.at(position).text == "(",
+                    "constructor initializer has no parenthesized source root");
+            hostedRoot(tokens, position + 1, Stop::CloseParenthesis, expression);
+            ++initializers;
+        }
+        bootstrapStatements(tokens, function.body, strings);
+    }
+}
+void bootstrapSources(char **paths) {
+    std::size_t initializers = 0, strings = 0;
+    const std::array<std::string, 3> modules{
+        "aurora.compiler.lexer", "aurora.compiler.expression_arena", "aurora.compiler.expression_parser"};
+    for (std::size_t i = 0; i < modules.size(); ++i) {
+        context = paths[i];
+        std::ifstream input(paths[i], std::ios::binary);
+        require(bool(input), "cannot read actual bootstrap source");
+        const std::string source((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+        require(!input.bad(), "cannot finish reading actual bootstrap source");
+        const auto tokens = aurora::lex(source, paths[i]);
+        const auto program = compareProgram(tokens);
+        require(program.moduleName == modules[i], "unexpected bootstrap source module/order");
+        bootstrapFunctions(tokens, program.functions, initializers, strings);
+        bootstrapFunctions(tokens, program.functionTemplates, initializers, strings);
+        for (const auto &definition : program.classes)
+            bootstrapFunctions(tokens, definition.methods, initializers, strings);
+        for (const auto &definition : program.templates)
+            bootstrapFunctions(tokens, definition.methods, initializers, strings);
+    }
+    context = "actual bootstrap source roots";
+    require(initializers == 40 && strings == 5,
+            "expected 40 parenthesized constructor and 5 byte-string roots, observed " + std::to_string(initializers) +
+                " and " + std::to_string(strings));
 }
 
 class Allocations {
@@ -287,6 +413,93 @@ void rawCase(const std::string &source, Status expected, Stop stop = Stop::Semic
     require(allocations.released == allocations.successful, "host allocator did not observe exact cleanup");
     ++cases;
 }
+void byteStrings() {
+    const std::array<std::string, 7> spellings{R"("")",
+                                               R"("text")",
+                                               R"("\'\\\0\a\b\f\n\r\t\v\"\x00\x7f\x80\xff")",
+                                               R"("é😀")",
+                                               R"("\0\x00\x7f\x80\xff")",
+                                               "\"" + std::string(4095, 'a') + "\"",
+                                               "\"" + std::string(4096, 'a') + "\""};
+    for (const auto &spelling : spellings) {
+        context = "raw byte string " + spelling;
+        Allocations allocations;
+        RawArena arena(allocations);
+        const auto result = arena.parse(spelling + ";");
+        require(result == Words{wire(Status::Success), 0, 1, 1, static_cast<std::int64_t>(spelling.size())} &&
+                    arena.read(0) == NodeWords{wire(NodeKind::Literal), 0, -1, -1, 1, 0, 0} && arena.edges() == 0,
+                "byte string did not retain the exact single Literal node ABI/cursor");
+        arena.finish();
+        require(allocations.released == allocations.successful, "byte-string cleanup mismatch");
+        ++cases;
+        supported("// preceding trivia\r\n\t" + spelling + ";");
+        supported(spelling + ")", Stop::CloseParenthesis);
+        compareProgram("module strings; class Text { array<u8,512> bytes; public: Text():bytes(" + spelling +
+                       "){} auto first() const->u8 {return bytes[0];} }; "
+                       "auto f()->i64 {const array<u8,4096> bytes=" +
+                       spelling + ";return 0;}");
+    }
+    for (const auto &expression : {R"(f("text");)",
+                                   R"(ns::f("", "é😀", "\0\xff");)",
+                                   R"(object.write("\"\\\n");)",
+                                   R"("left" == "right";)",
+                                   R"(("text")[0];)"})
+        supported(expression);
+}
+void constructors() {
+    const std::string prefix = "export module constructors; class Box { i64 value; public: Box(i64 x):value(";
+    const std::string suffix = "){} auto read() const->i64 {return value;} };";
+    for (const auto &expression : {"1",
+                                   "x",
+                                   "(x + 1) * 2",
+                                   "-x + ns::value",
+                                   "ns::Mode::ready",
+                                   "f()",
+                                   "ns::make(x, a[2]).field",
+                                   "object.at(index + 1)",
+                                   R"(f("a\0\xff", a[one::index(f(1))]))",
+                                   "true < x > (y)"}) {
+        supported(std::string(expression) + ")", Stop::CloseParenthesis);
+        compareProgram(prefix + expression + suffix);
+    }
+    compareProgram("export module constructors; namespace ns { class Pair { i64 first; i64 second; public: "
+                   "Pair(i64 x):second // initializer order and field-token trivia\n (ns::value),\n"
+                   "first(f(\"text\", a[x + 1])){} auto get() const->i64 {return first + second;} }; }");
+    compareProgram("export module constructors; template<Scalar T> class Box { T value; public: "
+                   "Box(T x):value(x){} auto read() const->T {return value;} };");
+    // Excluded roots must continue to fall back as a whole, including after a
+    // supported string/call prefix and inside parenthesized initializers.
+    for (const auto &expression : {"Box{.value=1}",
+                                   "{1,2}",
+                                   R"(f("text", Box{.value=1}))",
+                                   "size_of(i64)",
+                                   "type_id(array<u8,2>)",
+                                   "field_count(Box)",
+                                   "f(size_of(i64))"}) {
+        rawCase(std::string(expression) + ")", Status::Unsupported, Stop::CloseParenthesis);
+        compareProgram(prefix + expression + suffix);
+    }
+    for (const auto &expression : {"f<i64>(1)", "x<y<z>>(a)", "f<a<b<c>>>(0)"})
+        compareProgram(prefix + expression + suffix);
+    compareProgram("export module constructors; class Box { array<i64,2> values; public: Box():values{1,2}{} };");
+    compareProgram("export module constructors; class Box { array<i64,2> values; public: Box():values{}{} };");
+    for (const auto &expression : {"",
+                                   "1 +",
+                                   "(1 + 2",
+                                   "1 2",
+                                   "f(1,)",
+                                   "f(,)",
+                                   "a[]",
+                                   "a[1",
+                                   "a.",
+                                   "name::",
+                                   R"("text"(1))",
+                                   R"("text"[0])",
+                                   "f<T)>(0)"})
+        compareProgram(prefix + expression + suffix, false);
+    compareProgram("export module constructors; class Box { i64 value; public: Box():value(1 {} };", false);
+    compareProgram("export module constructors; class Box { i64 value; public: Box():value(1),{} };", false);
+}
 void abiControls() {
     context = "independent ABI envelope controls";
     const rlimit noCore{0, 0};
@@ -350,7 +563,7 @@ void rawGrowth() {
         Allocations allocations;
         allocations.allowed = allowed;
         RawArena arena(allocations);
-        require(arena.parse("\"text\";")[0] == wire(Status::AllocationFailure),
+        require(arena.parse("{1};")[0] == wire(Status::AllocationFailure),
                 "failed arena allocation silently fell back on unsupported syntax");
         arena.finish();
     }
@@ -489,8 +702,10 @@ void rawArguments() {
 }
 } // namespace
 
-int main() {
+int main(int argc, char **argv) {
     try {
+        context = "fixture arguments";
+        require(argc == 4, "expected lexer.au, expression_arena.au and expression_parser.au source paths");
         for (const auto &expression :
              {"1;",
               "false;",
@@ -540,11 +755,10 @@ int main() {
             supported(expression);
         supported("a[1] = 2;", Stop::Assignment);
         supported("f(a[1], b.member))", Stop::CloseParenthesis);
-        for (const auto &expression : {"\"text\";",
-                                       "Box{.value=1};",
+        for (const auto &expression : {"Box{.value=1};",
                                        "{1,2};",
-                                       "f(\"text\");",
                                        "f(Box{.value=1});",
+                                       "f(\"text\", Box{.value=1});",
                                        "size_of(i64);",
                                        "type_id(array<u8,2>);",
                                        "field_count(Box);",
@@ -617,7 +831,7 @@ int main() {
         compareProgram("module depth; auto f()->i64{return " + indices + "[0];}", false);
         compareProgram("module depth; auto f()->i64{return f(" + calls + ");}", false);
         rawCase("1;", Status::Success);
-        rawCase("\"text\";", Status::Unsupported);
+        rawCase("{1};", Status::Unsupported);
         rawCase("f(1);", Status::Success);
         rawCase("a[1;", Status::ExpectedIndexClose);
         rawCase("a.;", Status::ExpectedIdentifier);
@@ -635,12 +849,16 @@ int main() {
         rawCase(chain(129) + ";", Status::DepthLimit);
         rawCase("1)", Status::Success, Stop::CloseParenthesis);
         rawCase("name=", Status::Success, Stop::Assignment);
+        byteStrings();
+        constructors();
         abiControls();
         rawGrowth();
         rawFrameGrowth();
         rawArguments();
+        bootstrapSources(argv + 1);
         std::cout << "PASS hosted parser " << cases
-                  << " differential/ABI cases, 199-node/frame and 257-argument growth with allocation cleanup\n";
+                  << " differential/ABI cases, 199-node/frame and 257-argument growth with allocation cleanup; "
+                     "5 byte-string and 40 constructor roots from actual bootstrap sources\n";
     } catch (const std::exception &error) {
         std::cerr << "FAIL " << error.what() << '\n';
         return 1;

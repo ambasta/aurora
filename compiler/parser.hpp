@@ -787,7 +787,7 @@ public:
                                         }
                                     } else {
                                         need("(");
-                                        value = expr();
+                                        value = statementExpression(hosted_parser::Stop::CloseParenthesis);
                                         need(")");
                                     }
                                     method.initializers.emplace_back(fieldName, value);

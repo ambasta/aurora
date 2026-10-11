@@ -108,9 +108,10 @@ These temporary register choices are implementation machinery, not a source-leve
 `examples/kernel.au` performs a mutable borrow, releases it, moves ownership and returns 42. `examples/class_values.au` demonstrates class copies/visibility/reflection. `examples/loops_arrays.au` demonstrates checked traversal and independent arrays.
 
 Runtime-sized [typed copied-class owners](OWNERSHIP.md#runtime-sized-copied-class-ownership)
-support the `expression_arena.au` AST, explicit parser-frame and variable-arity argument-edge storage. Complete
-scalar, qualified-name, unary, binary, call and postfix statement expressions
-are parsed in Aurora and converted to the existing source AST through the private
-hosted adapter. Templates, type-taking queries, strings and brace/array forms
-still use the C++ parser as a whole; this bounded migration does not establish
-compiler self-hosting.
+support the `expression_arena.au` AST, explicit parser-frame and variable-arity
+argument-edge storage. Complete
+scalar, byte-string, qualified-name, unary, binary, call and postfix expressions
+are parsed in Aurora, including parenthesized constructor field initializers,
+and converted to the existing source AST through the private hosted adapter.
+Templates, type-taking queries and brace/array forms still use the C++ parser as a
+whole; this bounded migration does not establish compiler self-hosting.
