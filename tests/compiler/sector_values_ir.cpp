@@ -201,6 +201,17 @@ std::string between(const std::string &text, const std::string &first, const std
 std::string
 copies(int bytes, const std::function<std::string(int)> &source, const std::function<std::string(int)> &destination) {
     std::string expected;
+    if (bytes >= 64) {
+        const bool stack = destination(0).ends_with("(%rsp)");
+        if (stack)
+            expected += "    leaq " + destination(0) + ", %rax\n";
+        expected += "    pushq %rsi\n    pushq %rdi\n    pushq %rcx\n";
+        expected += "    leaq " + source(0) + ", %rsi\n";
+        expected += stack ? "    movq %rax, %rdi\n" : "    leaq " + destination(0) + ", %rdi\n";
+        expected += "    movq $" + std::to_string(bytes) + ", %rcx\n";
+        expected += "    cld\n    rep movsb\n    popq %rcx\n    popq %rdi\n    popq %rsi\n";
+        return expected;
+    }
     for (int byte = 0; byte < bytes;) {
         const bool word = bytes - byte >= 8;
         expected += std::string("    ") + (word ? "movq " : "movzbq ") + source(byte) + ", %rax\n";
@@ -210,12 +221,29 @@ copies(int bytes, const std::function<std::string(int)> &source, const std::func
     return expected;
 }
 
-// Extract only adjacent payload load/store pairs. Setup, gap zeroing, probes,
+// Extract adjacent scalar pairs or the complete fixed-size compact idiom.
+// Every instruction inside a compact copy is compared, including saves and CLD.
+// Setup, gap zeroing, probes,
 // hidden capability saves and call cleanup remain covered by the ABI runner.
 std::string transfers(const std::string &assembly) {
     std::istringstream lines(assembly);
     std::string line, store, result;
     while (std::getline(lines, line)) {
+        const bool stackCapture = line.starts_with("    leaq ") && line.ends_with("(%rsp), %rax");
+        if (line == "    pushq %rsi" || stackCapture) {
+            result += line + "\n";
+            for (int instruction = 1; instruction < (stackCapture ? 12 : 11); ++instruction) {
+                require(static_cast<bool>(std::getline(lines, line)), "truncated compact copy");
+                result += line + "\n";
+            }
+            continue;
+        }
+        if (line.starts_with("    popq %rsi") || line.starts_with("    popq %rdi") ||
+            line.starts_with("    popq %rcx") || line.starts_with("    pushq %rdi") ||
+            line.starts_with("    pushq %rcx") || line == "    cld" || line.starts_with("    rep ")) {
+            result += line + "\n";
+            continue;
+        }
         if ((line.starts_with("    movq ") || line.starts_with("    movzbq ")) && line.ends_with(", %rax") &&
             line.find('(') != std::string::npos) {
             require(static_cast<bool>(std::getline(lines, store)), "payload load without store");
@@ -225,6 +253,63 @@ std::string transfers(const std::string &assembly) {
         }
     }
     return result;
+}
+
+void copyOracleControls() {
+    for (const bool stack : {false, true}) {
+        const auto expected = copies(
+            64,
+            [](int) {
+                return "-64(%rbp)";
+            },
+            [=](int) {
+                return stack ? "0(%rsp)" : "0(%r10)";
+            });
+        require(transfers(expected) == expected, "compact oracle positive");
+        std::vector<std::string> instructions;
+        std::istringstream input(expected);
+        std::string line;
+        while (std::getline(input, line))
+            instructions.push_back(line + "\n");
+        for (std::size_t index = 0; index < instructions.size(); ++index) {
+            for (int mutation : {0, 1, 2}) {
+                std::string changed;
+                for (std::size_t at = 0; at < instructions.size(); ++at) {
+                    if (at != index)
+                        changed += instructions[at];
+                    else if (mutation == 0)
+                        changed += "    nop\n";
+                    else if (mutation == 2)
+                        changed += instructions[at] + instructions[at];
+                }
+                bool matches = false;
+                try {
+                    matches = transfers(changed) == expected;
+                } catch (const Error &) {
+                    // Truncated or malformed copies are also rejected.
+                }
+                require(!matches, "compact oracle accepted altered instruction");
+                ++rejected;
+            }
+        }
+        for (const auto &[from, to] : std::vector<std::pair<std::string, std::string>>{
+                 {"-64(%rbp)", "-63(%rbp)"},
+                 {stack ? "0(%rsp)" : "0(%r10)", stack ? "1(%rsp)" : "1(%r10)"},
+                 {"$64", "$63"},
+                 {"$64", "$65"},
+                 {"cld", "std"},
+                 {"rep movsb", "rep movsq"},
+                 {"pushq %rcx", "pushq %rdx"},
+                 {"popq %rdi", "popq %rsi"}}) {
+            auto changed = expected;
+            const auto at = changed.find(from);
+            require(at != std::string::npos, "missing compact mutation target");
+            changed.replace(at, from.size(), to);
+            require(transfers(changed) != expected, "compact oracle accepted changed operand");
+            ++rejected;
+        }
+        ++accepted;
+    }
 }
 
 void byteRunTests() {
@@ -296,7 +381,7 @@ void byteRunTests() {
                                                                                    pointer),
                 "bounded byte result");
         ++accepted;
-        std::cout << "PASS sector IR exact qwords and byte tail length=" << bytes << '\n';
+        std::cout << "PASS sector IR exact scalar/compact byte copy length=" << bytes << '\n';
     }
 }
 
@@ -939,6 +1024,7 @@ int main(int argc, char **argv) {
             return 0;
         }
         require(argc == 1, "usage: sector-values-ir [--emit-abi]");
+        copyOracleControls();
         directTests();
         std::cout << "PASS sector IR: " << accepted << " accepted, " << rejected << " rejected, " << accepted + rejected
                   << " total\n";
