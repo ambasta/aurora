@@ -9,7 +9,7 @@ namespace aurora {
 class Parser {
     std::vector<Token> tokens;
     std::size_t position = 0;
-    int blockNesting = 0, typeNesting = 0, templateNesting = 0;
+    int typeNesting = 0, templateNesting = 0;
     std::set<std::string> templateParameters;
     std::set<std::string> capacityParameters;
     bool functionTemplate = false;
@@ -113,27 +113,6 @@ public:
             return;
         }
         fail("expected '>'");
-    }
-    // Locate an entire explicit argument list without changing tokens. Only this
-    // type/construction lookahead treats >> as two closers; arithmetic keeps it.
-    std::size_t templateArgumentEnd(std::size_t start) const {
-        if (start >= tokens.size() || tokens[start].text != "<")
-            return tokens.size();
-        int depth = 0;
-        for (std::size_t index = start; index < tokens.size(); ++index) {
-            const auto &token = tokens[index].text;
-            if (token == "<")
-                ++depth;
-            else if (token == ">" || token == ">>") {
-                depth -= token == ">>" ? 2 : 1;
-                if (depth < 0)
-                    return tokens.size();
-                if (depth == 0)
-                    return index + 1;
-            } else if (token == ";" || token == "}" || token == "<eof>" || token == "(" || token == "{" || token == "=")
-                return tokens.size();
-        }
-        return tokens.size();
     }
     std::vector<TemplateArgument> templateArguments() {
         Nesting nesting(templateNesting, maximumTemplateNesting, peek(), "template-id");
@@ -328,92 +307,6 @@ public:
     ExpressionPtr statementExpression(hosted_parser::Stop stop) {
         return parseHostedExpression(tokens, position, stop, expressionContext());
     }
-    std::vector<StatementPtr> block() {
-        Nesting nesting(blockNesting, 128, peek(), "block");
-        need("{");
-        std::vector<StatementPtr> b;
-        while (!eat("}")) {
-            if (peek().text == "<eof>")
-                fail("unterminated block");
-            b.push_back(statement());
-        }
-        return b;
-    }
-    bool startsDeclaration() const {
-        const auto name = peek().text;
-        if (name == "const" || name == "i64" || name == "u64" || name == "u8" || name == "bool" || name == "own" ||
-            name == "ref" || name == "mutref" || name == "array")
-            return true;
-        std::size_t look = position + 1;
-        while (look + 1 < tokens.size() && tokens[look].text == "::")
-            look += 2;
-        if (look < tokens.size() && tokens[look].text == "<") {
-            look = templateArgumentEnd(look);
-        }
-        const auto &next = tokens.at(std::min(look, tokens.size() - 1)).text;
-        return !next.empty() && (std::isalpha(static_cast<unsigned char>(next[0])) || next[0] == '_') &&
-               name != "return" && name != "if" && name != "while";
-    }
-    StatementPtr statement() {
-        auto t = peek();
-        auto s = std::make_shared<Statement>(t);
-        if (t.text == "{") {
-            s->kind = "block";
-            s->body = block();
-            return s;
-        }
-        if (startsDeclaration()) {
-            s->kind = "let";
-            const bool immutable = eat("const");
-            s->type = type();
-            const auto binding = ident();
-            s->name = binding.text;
-            s->bindingSpan = binding.span;
-            s->mutableValue = !immutable;
-            need("=");
-            s->expr = statementExpression(hosted_parser::Stop::Semicolon);
-            need(";");
-            return s;
-        }
-        take();
-        if (t.text == "return" || t.text == "static_assert") {
-            if (t.text == "static_assert")
-                need("(");
-            s->expr = statementExpression(t.text == "static_assert" ? hosted_parser::Stop::CloseParenthesis
-                                                                    : hosted_parser::Stop::Semicolon);
-            if (t.text == "static_assert")
-                need(")");
-            need(";");
-        } else if (t.text == "if" || t.text == "while") {
-            need("(");
-            s->expr = statementExpression(hosted_parser::Stop::CloseParenthesis);
-            need(")");
-            s->body = block();
-            if (t.text == "if" && eat("else"))
-                s->other = block();
-        } else {
-            --position;
-            s->kind = "expression";
-            s->expr = statementExpression(hosted_parser::Stop::Assignment);
-            if (eat("=")) {
-                if (s->expr->op == "index") {
-                    s->kind = "index_assign";
-                    s->target = s->expr;
-                } else if (s->expr->op == "member" && s->expr->args[0]->op == "name") {
-                    s->kind = "field_assign";
-                    s->fieldName = s->expr->token.text;
-                    s->name = s->expr->args[0]->token.text;
-                } else if (s->expr->op == "name") {
-                    s->kind = "assign";
-                    s->name = s->expr->token.text;
-                } else
-                    fail("assignment requires a local or local field");
-                s->expr = statementExpression(hosted_parser::Stop::Semicolon);
-            }
-            need(";");
-        }
-        return s;
-    }
     void parameters(Function &function, bool allowClass = false, bool allowBorrow = false) {
         need("(");
         if (!eat(")")) {
@@ -606,7 +499,7 @@ public:
                             if (!scalarOrParameter(method.result) && !method.result.isClass() &&
                                 !method.result.isSpan() && !method.result.isEnum())
                                 fail("only scalar, enum, class or readonly span method results are supported");
-                            method.body = block();
+                            method.body = parseHostedBody(tokens, position, expressionContext());
                         }
                         definition.methods.push_back(std::move(method));
                         continue;
@@ -662,7 +555,7 @@ public:
             if (!scalarOrParameter(function.result) && !function.result.isClass() &&
                 !function.result.isOwnerStorage() && !function.result.isEnum())
                 fail("only scalar function results or scalar-field class values are supported");
-            function.body = block();
+            function.body = parseHostedBody(tokens, position, expressionContext());
             if (declaredParameters.empty())
                 program.functions.push_back(std::move(function));
             else

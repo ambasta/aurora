@@ -65,6 +65,8 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
         "aurora_hosted_parser_edge",
         "aurora_hosted_parser_types",
         "aurora_hosted_parser_type",
+        "aurora_hosted_parser_statements",
+        "aurora_hosted_parser_statement",
         "aurora_hosted_parser_release",
     }
     # A is predecessor-generated and need not equal B. Both actual build

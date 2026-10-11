@@ -46,7 +46,11 @@ export namespace compiler_parser {
         type_argument_first,
         type_argument_second,
         type_array_element,
-        type_owned_element
+        type_owned_element,
+        body_block,
+        body_if_then,
+        body_if_else,
+        body_while
     };
 
     class ParseFrame {
@@ -167,7 +171,7 @@ export namespace compiler_parser {
         builtin_class
     };
     // Unresolved syntax only. close encodes the original token and its half;
-    // a root names its containing expression by the original name-token index.
+    // roots name their containing expression or declaration by its first token.
     class TypeSyntax {
         TypeKind tag;
         i64 token_index;
@@ -207,12 +211,95 @@ export namespace compiler_parser {
             return owner_role;
         }
         auto bind_owner(i64 token, i64 role) -> bool {
-            if (owner_token != -1 || owner_role != 0 || token < 0 || (role != 1 && role != 2)) {
+            if (owner_token != -1 || owner_role != 0 || token < 0 || (role != 1 && role != 2 && role != 3)) {
                 return false;
             }
             owner_token = token;
             owner_role = role;
             return true;
+        }
+    };
+
+    enum class StatementKind {
+        invalid,
+        block,
+        local,
+        return_value,
+        static_assertion,
+        conditional,
+        loop,
+        expression,
+        assign,
+        field_assign,
+        index_assign
+    };
+    // Complete body syntax, with child-before-parent block/control ownership.
+    // Siblings are reverse-linked; expression and type indices share this arena.
+    class StatementSyntax {
+        StatementKind tag;
+        i64 token_index;
+        i64 end_token;
+        i64 previous_statement;
+        i64 expression_root;
+        i64 target_root;
+        i64 declared_type;
+        i64 binding_token;
+        i64 body_statement;
+        i64 other_statement;
+        i64 mutable_value;
+    public:
+        StatementSyntax(StatementKind kind, i64 token, i64 end, i64 previous) : tag(kind), token_index(token),
+            end_token(end), previous_statement(previous), expression_root(-1), target_root(-1), declared_type(-1),
+            binding_token(-1), body_statement(-1), other_statement(-1), mutable_value(0) {
+        }
+        auto kind() const -> StatementKind {
+            return tag;
+        }
+        auto token() const -> i64 {
+            return token_index;
+        }
+        auto end() const -> i64 {
+            return end_token;
+        }
+        auto previous() const -> i64 {
+            return previous_statement;
+        }
+        auto expression() const -> i64 {
+            return expression_root;
+        }
+        auto target() const -> i64 {
+            return target_root;
+        }
+        auto type() const -> i64 {
+            return declared_type;
+        }
+        auto binding() const -> i64 {
+            return binding_token;
+        }
+        auto body() const -> i64 {
+            return body_statement;
+        }
+        auto other() const -> i64 {
+            return other_statement;
+        }
+        auto mutable_binding() const -> i64 {
+            return mutable_value;
+        }
+        auto bind_expression(i64 expression, i64 target) -> i64 {
+            expression_root = expression;
+            target_root = target;
+            return 0;
+        }
+        auto bind_local(i64 type, i64 binding, i64 mutable_binding) -> i64 {
+            declared_type = type;
+            binding_token = binding;
+            mutable_value = mutable_binding;
+            return 0;
+        }
+        auto bind_body(i64 body, i64 other) -> i64 {
+            body_statement = body;
+            other_statement = other;
+            return 0;
         }
     };
 
@@ -226,6 +313,8 @@ export namespace compiler_parser {
         i64 edge_count;
         builtin::OwnedValues<TypeSyntax> type_nodes;
         i64 type_count;
+        builtin::OwnedValues<StatementSyntax> statement_nodes;
+        i64 statement_count;
         auto store(AstNode node) -> i64 {
             if (node.depth() > 128) {
                 error = ArenaFailure::depth;
@@ -262,12 +351,13 @@ export namespace compiler_parser {
     public:
         AstArena(builtin::ByteRegion region, builtin::OwnedValues<AstNode> initial,
             builtin::OwnedValues<ParseFrame> scratch, builtin::OwnedValues<ChildEdge> arguments,
-            builtin::OwnedValues<TypeSyntax> types) : nodes(move(initial)), used(0), frames(move(scratch)),
+            builtin::OwnedValues<TypeSyntax> types,
+            builtin::OwnedValues<StatementSyntax> statements) : nodes(move(initial)), used(0), frames(move(scratch)),
             frame_count(0), error(ArenaFailure::none), edges(move(arguments)), edge_count(0), type_nodes(move(types)),
-            type_count(0) {
+            type_count(0), statement_nodes(move(statements)), statement_count(0) {
         }
         auto ok() const -> bool {
-            return nodes.ok() && frames.ok() && edges.ok() && type_nodes.ok();
+            return nodes.ok() && frames.ok() && edges.ok() && type_nodes.ok() && statement_nodes.ok();
         }
         auto size() const -> i64 {
             return used;
@@ -369,6 +459,49 @@ export namespace compiler_parser {
             }
             error = ArenaFailure::none;
             return true;
+        }
+        auto statements() const -> i64 {
+            return statement_count;
+        }
+        auto statement_at(i64 index) const -> StatementSyntax {
+            i64 checked = index;
+            if (index < 0 || index >= statement_count) {
+                checked = -1;
+            }
+            return statement_nodes.at(checked);
+        }
+        auto append_statement(StatementSyntax value) -> i64 {
+            error = ArenaFailure::invalid;
+            if (!statement_nodes.ok() || value.kind() == StatementKind::invalid || value.token() < 0 || value.end()
+                <= value.token() || value.previous() < -1 || value.previous() >= statement_count || value.expression()
+                < -1 || value.expression() >= used || value.target() < -1 || value.target() >= used || value.type() < -1
+                || value.type() >= type_count || value.binding() < -1 || value.body() < -1 || value.body()
+                >= statement_count || value.other() < -1 || value.other() >= statement_count || value.mutable_binding()
+                < 0 || value.mutable_binding() > 1 || statement_count == 9223372036854775807) {
+                return -1;
+            }
+            if (statement_count == statement_nodes.size()) {
+                i64 next = 8;
+                if (statement_count > 0) {
+                    if (statement_count > 4611686018427387903) {
+                        next = statement_count + 1;
+                    } else {
+                        next = statement_count * 2;
+                    }
+                }
+                StatementSyntax empty = StatementSyntax(StatementKind::invalid, -1, -1, -1);
+                if (!statement_nodes.try_resize(next, empty)) {
+                    error = ArenaFailure::allocation;
+                    return -1;
+                }
+            }
+            if (!statement_nodes.set(statement_count, value)) {
+                return -1;
+            }
+            const i64 index = statement_count;
+            statement_count = statement_count + 1;
+            error = ArenaFailure::none;
+            return index;
         }
         auto frame() const -> ParseFrame {
             return frames.at(frame_count - 1);
@@ -556,7 +689,9 @@ export namespace compiler_parser {
         builtin::OwnedValues<ChildEdge> edges = region.try_allocate(0, argument);
         TypeSyntax type_node = TypeSyntax(TypeKind::invalid, -1, -1, -1, -1, -1);
         builtin::OwnedValues<TypeSyntax> types = region.try_allocate(0, type_node);
-        AstArena arena = AstArena(region, move(storage), move(scratch), move(edges), move(types));
+        StatementSyntax statement = StatementSyntax(StatementKind::invalid, -1, -1, -1);
+        builtin::OwnedValues<StatementSyntax> statements = region.try_allocate(0, statement);
+        AstArena arena = AstArena(region, move(storage), move(scratch), move(edges), move(types), move(statements));
         return move(arena);
     }
 }

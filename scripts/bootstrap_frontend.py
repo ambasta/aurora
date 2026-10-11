@@ -62,11 +62,16 @@ def frontend_abi_entries(facts):
     ]
     checks += [
         ("parser_" + name, "compiler_parser::" + name, arena, [], "i64")
-        for name in ("node_count", "edge_count", "type_count")
+        for name in ("node_count", "edge_count", "type_count", "statement_count")
     ]
     checks += [
         ("parser_" + name, "compiler_parser::" + name, arena, ["i64"], "compiler_parser::" + result)
-        for name, result in (("read_node", "AstNode"), ("read_edge", "ChildEdge"), ("read_type", "TypeSyntax"))
+        for name, result in (
+            ("read_node", "AstNode"),
+            ("read_edge", "ChildEdge"),
+            ("read_type", "TypeSyntax"),
+            ("read_statement", "StatementSyntax"),
+        )
     ]
     entries = {}
     for alias, source, receiver, parameters, result in checks:
@@ -102,6 +107,7 @@ def frontend_abi_header(facts):
     enum_specs = [
         ("compiler_lexer::Event", "hosted_lexer", "Event"),
         ("compiler_parser::NodeKind", "hosted_parser", "NodeKind"),
+        ("compiler_parser::StatementKind", "hosted_parser", "StatementKind"),
         ("compiler_parser::TypeKind", "hosted_parser", "TypeKind"),
         ("compiler_parser::ParseStatus", "hosted_parser", "Status"),
         ("compiler_parser::Stop", "hosted_parser", "Stop"),
@@ -246,6 +252,24 @@ def frontend_abi_header(facts):
             },
             {"kind": "aurora::hosted_parser::TypeKind::Invalid", "role": "0"},
         ),
+        (
+            "StatementSyntax",
+            "compiler_parser::StatementSyntax",
+            {
+                "tag": "kind",
+                "token_index": "token",
+                "end_token": "end",
+                "previous_statement": "previous",
+                "expression_root": "expression",
+                "target_root": "target",
+                "declared_type": "declaredType",
+                "binding_token": "binding",
+                "body_statement": "body",
+                "other_statement": "other",
+                "mutable_value": "mutableValue",
+            },
+            {"kind": "aurora::hosted_parser::StatementKind::Invalid", "mutableValue": "0"},
+        ),
     ]
     for name, source, aliases, defaults in copied:
         layout, members = fields(source, aliases, defaults)
@@ -315,7 +339,11 @@ def frontend_abi_header(facts):
         record(name, function["parameter_bytes"], 8, members)
 
     arena_symbol, arena = declaration("compiler_parser::AstArena")
+    _, frame = declaration("compiler_parser::ParseFrame")
+    if not frame["reserved"]:
+        raise ValueError("invalid private parser frame extent")
     lines += [
+        f"inline constexpr std::size_t frameBytes = {number(frame['reserved'])};",
         f"inline constexpr std::size_t arenaBytes = {number(arena['reserved'])};",
         f"inline constexpr std::size_t arenaAlignment = {number(arena['alignment'])};",
     ]

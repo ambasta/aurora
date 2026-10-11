@@ -464,14 +464,95 @@ class Suite:
         """,
             entry_name="arena_entry",
         )
-        # Empty frame, argument and type stores each retain real owner metadata.
+        # Empty frame, argument, type and statement stores each retain real owner metadata.
         # Class cleanup reverses field order; node growth first retires its old block.
-        self.run(arena, 16384, 200, 0, 42, 4, 4, release_order=[4, 3, 2, 1])
-        self.run(arena, 16384, 100, 0, 42, 5, 4, release_order=[1, 4, 3, 2, 5])
-        self.run(arena, 112, 2, 1, 42, 4, 4, release_order=[4, 3, 2, 1])
-        self.run(arena, 16384, 200, 2, 42, 4, 4, release_order=[4, 3, 2, 1])
-        self.run(arena, 16384, -1, 0, -1, 3, 3, release_order=[3, 2, 1])
+        self.run(arena, 16384, 200, 0, 42, 5, 5, release_order=[5, 4, 3, 2, 1])
+        self.run(arena, 16384, 100, 0, 42, 6, 5, release_order=[1, 5, 4, 3, 2, 6])
+        self.run(arena, 112, 2, 1, 42, 5, 5, release_order=[5, 4, 3, 2, 1])
+        self.run(arena, 16384, 200, 2, 42, 5, 5, release_order=[5, 4, 3, 2, 1])
+        self.run(arena, 16384, -1, 0, -1, 4, 4, release_order=[4, 3, 2, 1])
+        # Zero-length statement storage is a real fifth owner. Refuse every
+        # initial allocation and the node-growth replacement; each successfully
+        # allocated prefix must unwind once in exact reverse field order.
+        for allowed in range(5):
+            self.run(
+                arena,
+                16384,
+                200,
+                0,
+                -1,
+                allowed,
+                allowed,
+                fail_after=allowed,
+                release_order=list(range(allowed, 0, -1)),
+            )
+        self.run(arena, 16384, 100, 0, -3, 5, 5, fail_after=5, release_order=[5, 4, 3, 2, 1])
         self.trap(arena, 16384, 200, 3)
+
+        statement_arena = self.compile(
+            "compiler-statement-arena",
+            arena_source
+            + """
+            auto statement_arena_entry(builtin::ByteRegion region,i64 n,i64 flag)->i64 {
+                compiler_parser::AstArena arena=compiler_parser::make_arena(region,0);
+                if(!arena.ok()){return -1;}
+                i64 count=0;
+                bool failed=false;
+                while(count<n&&!failed){
+                    compiler_parser::StatementSyntax value=compiler_parser::StatementSyntax(
+                        compiler_parser::StatementKind::block,2*count,2*count+2,count-1);
+                    const i64 appended=arena.append_statement(value);
+                    if(appended<0){failed=true;}
+                    else{
+                        if(appended!=count){return -3;}
+                        count=count+1;
+                    }
+                }
+                if(arena.statements()!=count||arena.size()!=0||arena.types()!=0||arena.arguments()!=0){return -4;}
+                if(failed&&arena.failure()!=compiler_parser::ArenaFailure::allocation){return -5;}
+                i64 index=0;
+                while(index<count){
+                    compiler_parser::StatementSyntax kept=arena.statement_at(index);
+                    if(kept.kind()!=compiler_parser::StatementKind::block||kept.token()!=2*index
+                        ||kept.end()!=2*index+2||kept.previous()!=index-1||kept.expression()!=-1
+                        ||kept.target()!=-1||kept.type()!=-1||kept.binding()!=-1||kept.body()!=-1
+                        ||kept.other()!=-1||kept.mutable_binding()!=0){return -6;}
+                    index=index+1;
+                }
+                if(failed){return -2;}
+                return 42;
+            }
+        """,
+            entry_name="statement_arena_entry",
+        )
+        # make_arena owns nodes, frames, edges, types and statements in that
+        # order. Each statement resize retires its prior block (starting at 5);
+        # class cleanup drops the replacement before the four unchanged owners.
+        self.run(statement_arena, 1048576, 0, 0, 42, 5, 5, release_order=[5, 4, 3, 2, 1])
+        self.run(statement_arena, 1048576, 1, 0, 42, 6, 5, release_order=[5, 6, 4, 3, 2, 1])
+        self.run(statement_arena, 1048576, 9, 0, 42, 7, 5, release_order=[5, 6, 7, 4, 3, 2, 1])
+        self.run(
+            statement_arena,
+            1048576,
+            513,
+            0,
+            42,
+            13,
+            5,
+            release_order=[*range(5, 14), 4, 3, 2, 1],
+        )
+        for allowed in range(5, 13):
+            self.run(
+                statement_arena,
+                1048576,
+                513,
+                0,
+                -2,
+                allowed,
+                5,
+                fail_after=allowed,
+                release_order=[*range(5, allowed + 1), 4, 3, 2, 1],
+            )
 
         same_layout = "class Other {public:i64 a;i64 b;i64 c;};"
         for name, body in {

@@ -120,5 +120,7 @@ checked_entry edges
 checked_entry edge
 checked_entry types
 checked_entry type
+checked_entry statements
+checked_entry statement
 checked_entry release
 .section .note.GNU-stack,"",@progbits
