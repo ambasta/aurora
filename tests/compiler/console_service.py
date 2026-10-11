@@ -403,8 +403,9 @@ auto typed_files_contract() -> i64 {
         const console::FileName invalid = console::FileName(a, bad_counts[index]);
         const console::FileReply read = files.read_file(invalid);
         const console::FileReply formatted_name =
-            console::file_write_reply(invalid, empty, console::FileEvent::written);
-        const console::FileReply formatted_value = console::file_write_reply(name, bad, console::FileEvent::written);
+            console::file_write_reply(invalid, empty.size(), console::FileEvent::written);
+        const console::FileReply formatted_value =
+            console::file_write_reply(name, bad.size(), console::FileEvent::written);
         if (files.write_file(name, bad) != console::FileEvent::invalid
             || files.write_file(invalid, empty) != console::FileEvent::invalid
             || files.remove(invalid) != console::FileEvent::invalid

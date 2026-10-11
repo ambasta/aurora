@@ -49,24 +49,21 @@ export namespace console {
             return reply;
         }
         auto select(std::BinaryBuffer64 command, i64 count) const -> FileSelection {
-            const std::BinaryBuffer64 empty = std::BinaryBuffer64();
-            const FileName invalid = FileName(empty, -1);
-            if (count < 0 || count > 64) { return FileSelection(invalid, 0u64, 0u64); }
-            i64 start = 4;
-            u64 writable = 0u64;
-            if (command.starts_with(count, "upper ")) {
-                start = 6;
-                writable = 1u64;
-            } else {
-                if (!command.starts_with(count, "cat ")) { return FileSelection(invalid, 0u64, 0u64); }
-            }
-            const FileName name = file_name(command, start, count - start);
+            i64 start = -1;
+            if (command.starts_with(count, "cat ")) { start = 4; }
+            const bool upper = command.starts_with(count, "upper ");
+            if (upper) { start = 6; }
+            i64 length = -1;
+            if (count >= 0 && count <= 64 && start >= 0) { length = count - start; }
+            const FileName name = file_name(command, start, length);
             const FileReply reply = files.read_file(name);
-            if (reply.status() != FileEvent::read && reply.status() != FileEvent::missing) {
-                return FileSelection(invalid, 0u64, 0u64);
+            u64 version = 0u64;
+            u64 writable = 0u64;
+            if (reply.status() == FileEvent::read || reply.status() == FileEvent::missing) {
+                version = revision;
             }
-            if (reply.status() == FileEvent::missing) { writable = 0u64; }
-            return FileSelection(name, revision, writable);
+            if (upper && reply.status() == FileEvent::read) { writable = 1u64; }
+            return FileSelection(name, version, writable);
         }
         auto project(FileSelection selection) const -> FileReply {
             if (selection.version() == 0u64 || selection.version() != revision) {
@@ -90,7 +87,7 @@ export namespace console {
             const FileValue value = FileValue(output, count);
             const FileEvent event = files.write_file(name, value);
             if (event == FileEvent::written) { revision = revision + 1u64; }
-            return file_write_reply(name, value, event);
+            return file_write_reply(name, value.size(), event);
         }
     };
 }

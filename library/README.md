@@ -31,6 +31,8 @@ build/aurorac --module-root library application.au -o build/application.s
   value/count and sticky invalid_digit/out_of_range failure; `reset` restores
   empty state. `finish` copies status, accepted-digit position and eager
   `value_or`. `format_decimal_i64/u64` return bounded canonical decimal bytes.
+  `decimal_width_u64` returns 1..20; `decimal_digit_at_u64` projects an ASCII
+  digit by units-based place, returning NUL for absent or invalid places.
 
 All arguments evaluate left-to-right. Fallbacks are eager, reports are ordinary
 forgeable copied data, and no report grants access to source or a resource.

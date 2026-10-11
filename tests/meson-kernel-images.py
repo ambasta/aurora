@@ -65,19 +65,24 @@ class GeneratorBoundaries(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "Closed snapshot runtime authority inventory"):
                     image.snapshot_runtime_symbols(names | {extra: "T"})
 
-    def test_reflection_emission_is_explicit_and_program_supervisor_only(self):
+    def test_reflection_and_local_symbols_are_explicit_and_supervisor_only(self):
         recipe = (ROOT / "kernel-images/meson.build").read_text()
-        selection = "if admission == 'program'\n    root_args += ['--referenced-reflection-only']\n  endif"
+        selection = (
+            "if admission == 'program'\n    root_args += ['--referenced-reflection-only', '--local-symbols']\n  endif"
+        )
         self.assertIn(selection, recipe)
         self.assertEqual(recipe.count("--referenced-reflection-only"), 1)
+        self.assertEqual(recipe.count("--local-symbols"), 1)
         self.assertLess(recipe.index(selection), recipe.index("language = custom_target"))
         self.assertNotIn("--referenced-reflection-only", recipe[recipe.index("user_root_args = []") :])
+        self.assertNotIn("--local-symbols", recipe[recipe.index("user_root_args = []") :])
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             compiler, source = root / "compiler", root / "source.au"
             compiler.write_bytes(b"fake compiler")
             source.write_text("module test;\n")
-            for selected in (False, True):
+            flags = ("--referenced-reflection-only", "--local-symbols")
+            for selected in ((), flags[:1], flags[1:], flags):
                 output, depfile = root / "output.s", root / "output.d"
                 arguments = [
                     "generator",
@@ -90,11 +95,11 @@ class GeneratorBoundaries(unittest.TestCase):
                     "--depfile",
                     str(depfile),
                 ]
-                if selected:
-                    arguments.append("--referenced-reflection-only")
+                arguments.extend(selected)
 
                 def emit(command, **kwargs):
-                    self.assertEqual(command.count("--referenced-reflection-only"), int(selected))
+                    for flag in flags:
+                        self.assertEqual(command.count(flag), int(flag in selected))
                     Path(command[command.index("-o") + 1]).write_text("complete assembly\n")
 
                 with patch("sys.argv", arguments), patch.object(assembly.subprocess, "run", side_effect=emit):

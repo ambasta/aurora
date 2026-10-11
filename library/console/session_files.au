@@ -160,9 +160,9 @@ export namespace console {
     }
 
     // Shared presentation adapter for ordinary and protected write outcomes.
-    auto file_write_reply(FileName name, FileValue value, FileEvent event) -> FileReply {
+    auto file_write_reply(FileName name, i64 count, FileEvent event) -> FileReply {
         FileReply reply = FileReply();
-        if (event == FileEvent::written && (!name.valid() || !value.valid())) {
+        if (event == FileEvent::written && (!name.valid() || count < 0 || count > 49)) {
             reply.select(FileEvent::invalid);
             return reply;
         }
@@ -175,14 +175,13 @@ export namespace console {
             index = index + 1;
         }
         reply.text(": ");
-        const std::DecimalEncodingResult size = std::format_decimal_i64(value.size());
-        index = 0;
-        while (index < size.size()) {
-            reply.append(size.byte_or(index, '\0'));
-            index = index + 1;
+        i64 place = std::decimal_width_u64(u64(count));
+        while (place > 0) {
+            place = place - 1;
+            reply.append(std::decimal_digit_at_u64(u64(count), place));
         }
         reply.text(" byte");
-        if (value.size() != 1) { reply.append('s'); }
+        if (count != 1) { reply.append('s'); }
         return reply;
     }
 
@@ -306,7 +305,7 @@ export namespace console {
             if (action == FileEvent::removed) { reply.select(remove(name)); return reply; }
             const FileValue value = file_value(command, end + 1, count - end - 1);
             const FileEvent event = write_file(name, value);
-            return file_write_reply(name, value, event);
+            return file_write_reply(name, value.size(), event);
         }
     };
 }
