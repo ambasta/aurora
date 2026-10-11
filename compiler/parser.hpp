@@ -264,6 +264,14 @@ public:
                 return Type::ByteRegion;
             if (eat("OwnedBytes"))
                 return Type::OwnedBytes;
+            if (eat("OwnedValues")) {
+                need("<");
+                const auto element = type();
+                if (!element.isClass() || !element.templateArguments.empty())
+                    fail("owned values require a named concrete copied class");
+                templateClose();
+                return Type::ownedValues(element);
+            }
             need("array");
             t.text = "array";
         }
@@ -744,7 +752,7 @@ public:
                              fieldType.length > maximumClassArrayLength(fieldType.arrayElement())))
                             fail("class array field capacity must be between 1 and " +
                                  std::to_string(maximumClassArrayLength(fieldType.arrayElement())));
-                    } else if (fieldType.isBytes()) {
+                    } else if (fieldType.isOwnerStorage()) {
                         if (publicAccess)
                             fail("owned byte fields must be private");
                         if (!declaredParameters.empty())
@@ -778,8 +786,8 @@ public:
             parameters(function, true, true);
             need("->");
             function.result = type();
-            if (!scalarOrParameter(function.result) && !function.result.isClass() && !function.result.isBytes() &&
-                !function.result.isEnum())
+            if (!scalarOrParameter(function.result) && !function.result.isClass() &&
+                !function.result.isOwnerStorage() && !function.result.isEnum())
                 fail("only scalar function results or scalar-field class values are supported");
             function.body = block();
             if (declaredParameters.empty())

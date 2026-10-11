@@ -275,7 +275,25 @@ void run() {
     vacuous.functions[0].code[9] = ClassArrayAssign{64, 0, 80};
     vacuous.functions[0].code[12] = EndObject{80};
     vacuous.functions[0].code.insert(vacuous.functions[0].code.begin() + 13, BeginObject{80});
-    accept("standalone empty sources retain vacuous completeness", std::move(vacuous));
+    reject(
+        "standalone empty sources require explicit completion",
+        vacuous,
+        [](Module &) {
+        },
+        "empty object not completely initialized");
+    auto completedEmpty = vacuous;
+    completedEmpty.functions[0].code.insert(completedEmpty.functions[0].code.begin() + 3, CopyObject{16, 80});
+    accept("standalone empty sources retain copied completion", std::move(completedEmpty));
+    reject(
+        "empty class array source cannot launder through copy",
+        vacuous,
+        [](Module &module) {
+            auto &function = module.functions[0];
+            function.frameBytes = 144;
+            function.objectSlots[136] = {"Child", false};
+            function.code.insert(function.code.begin() + 3, {BeginObject{136}, CopyObject{80, 136}});
+        },
+        "empty object not completely initialized");
     accept("receiver checked copy and replacement", receiver());
     accept("complete field constructor", receiver(true));
     accept("empty complete field constructor", receiver(true, true));

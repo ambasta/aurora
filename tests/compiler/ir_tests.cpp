@@ -164,8 +164,12 @@ Module emptyValueBaseline() {
     entry.result = Type::I64;
     entry.frameBytes = 16;
     entry.objectSlots = {{8, ObjectSlot{"Empty", false}}, {16, ObjectSlot{"Empty", false}}};
-    entry.code = {
-        BeginObject{8}, BeginObject{16}, AggregateCall{"copy_empty", {8}, 16}, Constant{42, Type::I64}, Return{}};
+    entry.code = {BeginObject{8},
+                  InitializeEmptyObject{8},
+                  BeginObject{16},
+                  AggregateCall{"copy_empty", {8}, 16},
+                  Constant{42, Type::I64},
+                  Return{}};
     aurora::ir::Function copy;
     copy.name = "copy_empty";
     copy.result = Type("Empty");
@@ -176,7 +180,7 @@ Module emptyValueBaseline() {
     auto make = copy;
     make.name = "make_empty";
     make.parameters.clear();
-    make.code = {BeginObject{8}, ReturnObject{8}};
+    make.code = {BeginObject{8}, InitializeEmptyObject{8}, ReturnObject{8}};
     module.functions = {entry, copy, make};
     return module;
 }
@@ -1540,6 +1544,7 @@ Module composedBaseline() {
                   Constant{9, Type::I64},
                   Store{16, Type::I64},
                   BeginObject{104},
+                  InitializeEmptyObject{104},
                   BeginObject{56},
                   Constant{7, Type::I64},
                   Push{},
@@ -1595,7 +1600,7 @@ Module composedBaseline() {
     return module;
 }
 MethodCall &composedCall(Module &module) {
-    return std::get<MethodCall>(module.functions[0].code[15]);
+    return std::get<MethodCall>(module.functions[0].code[16]);
 }
 Module composedEmptyBaseline() {
     Module module;
@@ -1608,6 +1613,7 @@ Module composedEmptyBaseline() {
     entry.objectSlots = {
         {8, {"Empty", false}}, {16, {"OuterEmpty", false}}, {24, {"Empty", false}}, {32, {"OuterEmpty", false}}};
     entry.code = {BeginObject{8},
+                  InitializeEmptyObject{8},
                   BeginObject{16},
                   MethodCall{"construct_empty_outer", 16, {8}},
                   BeginObject{24},
@@ -1631,25 +1637,25 @@ Module composedEmptyBaseline() {
 Module composedNativeModule() {
     auto module = composedBaseline();
     auto entry = module.functions[0];
-    entry.code.resize(16);
+    entry.code.resize(17);
     entry.code.insert(entry.code.end(), {MethodCall{"get_outer", 56}, Return{}});
     entry.name = "nested_receiver_projection";
     module.functions.push_back(entry);
     entry.name = "nested_scalar_mapping";
-    entry.code[16] = Load{56, Type::I64};
+    entry.code[17] = Load{56, Type::I64};
     module.functions.push_back(entry);
     entry.name = "nested_snapshot_independence";
-    entry.code[16] = Load{16, Type::I64};
+    entry.code[17] = Load{16, Type::I64};
     module.functions.push_back(entry);
     entry = module.functions[0];
     entry.name = "nested_projection_independence";
-    entry.code.resize(22);
+    entry.code.resize(23);
     entry.code.insert(entry.code.end(),
                       {Constant{99, Type::I64}, Store{72, Type::I64}, MethodCall{"get_outer", 128}, Return{}});
     module.functions.push_back(entry);
     entry.name = "nested_bool_mapping";
     entry.result = Type::Bool;
-    entry.code.resize(22);
+    entry.code.resize(23);
     entry.code.insert(entry.code.end(), {Load{64, Type::Bool}, Return{}});
     module.functions.push_back(entry);
     // A receiver-local constructor executes while another receiver is bound.
@@ -1677,7 +1683,7 @@ Module composedNativeModule() {
     module.functions.push_back(relay);
     entry = module.functions[0];
     entry.name = "nested_distinct_receiver_record";
-    entry.code.resize(16);
+    entry.code.resize(17);
     entry.code.insert(entry.code.end(), {MethodCall{"nested_receiver_constructor", 56}, Return{}});
     module.functions.push_back(entry);
     auto empty = composedEmptyBaseline();
@@ -1701,13 +1707,13 @@ void composedTests() {
         rejectComposed(
             "projection invalid logical index " + std::to_string(index),
             [=](Module &m) {
-                std::get<ObjectFieldCopy>(m.functions[0].code[21]).fieldIndex = index;
+                std::get<ObjectFieldCopy>(m.functions[0].code[22]).fieldIndex = index;
             },
             "logical field index");
     rejectComposed(
         "projection scalar field rejected",
         [](Module &m) {
-            std::get<ObjectFieldCopy>(m.functions[0].code[21]).fieldIndex = 0;
+            std::get<ObjectFieldCopy>(m.functions[0].code[22]).fieldIndex = 0;
         },
         "projection requires class field");
     rejectComposed(
@@ -1725,19 +1731,19 @@ void composedTests() {
     rejectComposed(
         "projection interior source",
         [](Module &m) {
-            std::get<ObjectFieldCopy>(m.functions[0].code[21]).sourceOffset = 120;
+            std::get<ObjectFieldCopy>(m.functions[0].code[22]).sourceOffset = 120;
         },
         "exact object slot");
     rejectComposed(
         "projection interior result",
         [](Module &m) {
-            std::get<ObjectFieldCopy>(m.functions[0].code[21]).resultOffset = 64;
+            std::get<ObjectFieldCopy>(m.functions[0].code[22]).resultOffset = 64;
         },
         "exact object slot");
     rejectComposed(
         "projection aliases owner",
         [](Module &m) {
-            std::get<ObjectFieldCopy>(m.functions[0].code[21]).resultOffset = 128;
+            std::get<ObjectFieldCopy>(m.functions[0].code[22]).resultOffset = 128;
         },
         "projection source aliases result");
     rejectComposed(
@@ -1785,7 +1791,7 @@ void composedTests() {
     rejectComposed(
         "nested direct scalar initialization rejected",
         [](Module &m) {
-            m.functions[0].code.insert(m.functions[0].code.begin() + 15,
+            m.functions[0].code.insert(m.functions[0].code.begin() + 16,
                                        {Constant{3, Type::I64}, Store{48, Type::I64}});
         },
         "scalar store cannot write nested class field");
@@ -1793,7 +1799,7 @@ void composedTests() {
         "nested direct scalar mutation rejected",
         [](Module &m) {
             m.functions[0].objectSlots[56].mutableValue = true;
-            m.functions[0].code.insert(m.functions[0].code.begin() + 16,
+            m.functions[0].code.insert(m.functions[0].code.begin() + 17,
                                        {Constant{3, Type::I64}, Store{48, Type::I64}});
         },
         "scalar store cannot write nested class field");
@@ -1801,7 +1807,7 @@ void composedTests() {
         "nested direct indexed mutation rejected",
         [](Module &m) {
             m.functions[0].objectSlots[56].mutableValue = true;
-            m.functions[0].code.insert(m.functions[0].code.begin() + 16,
+            m.functions[0].code.insert(m.functions[0].code.begin() + 17,
                                        {Constant{0, Type::I64},
                                         BoundsGuard{48, 1, Type::I64},
                                         Push{},
@@ -1909,7 +1915,7 @@ void composedTests() {
     rejectComposed(
         "constructor argument scalar operand missing",
         [](Module &m) {
-            m.functions[0].code.erase(m.functions[0].code.begin() + 14);
+            m.functions[0].code.erase(m.functions[0].code.begin() + 15);
         },
         "value stack underflow");
     rejectComposed(
@@ -2029,7 +2035,7 @@ void composedTests() {
     rejectEmpty(
         "empty nested copy cannot forge initialization",
         [](Module &m) {
-            m.functions[0].code.erase(m.functions[0].code.begin() + 2);
+            m.functions[0].code.erase(m.functions[0].code.begin() + 3);
         },
         "nested class field not completely initialized");
     rejectEmpty(
@@ -2047,7 +2053,7 @@ void composedTests() {
     rejectEmpty(
         "empty nested duplicate whole copy rejected",
         [](Module &m) {
-            m.functions[0].code.insert(m.functions[0].code.begin() + 7, CopyObject{16, 32});
+            m.functions[0].code.insert(m.functions[0].code.begin() + 8, CopyObject{16, 32});
         },
         "already initialized");
     rejectEmpty(
@@ -2069,7 +2075,7 @@ void composedTests() {
     rejectEmpty(
         "empty nested logical completion reset by lifetime",
         [](Module &m) {
-            m.functions[0].code.insert(m.functions[0].code.begin() + 3, {EndObject{16}, BeginObject{16}});
+            m.functions[0].code.insert(m.functions[0].code.begin() + 4, {EndObject{16}, BeginObject{16}});
         },
         "nested class field not completely initialized");
     const auto assembly = X86Emitter{}.emit(validate(composedBaseline()));
@@ -2304,6 +2310,7 @@ Module methodResultBaseline() {
     addObject(module, entry, 184, "Leaf", true);
     addObject(module, entry, 192, "Empty");
     entry.code = {BeginObject{8},
+                  InitializeEmptyObject{8},
                   BeginObject{40},
                   EnumConstant{mode, 1},
                   Push{},
@@ -2809,21 +2816,21 @@ void enumAndMethodResultTests() {
     rejectResult(
         "method result partial destination",
         [](Module &m) {
-            m.functions[0].code.insert(m.functions[0].code.begin() + 31,
+            m.functions[0].code.insert(m.functions[0].code.begin() + 32,
                                        {Constant{0, Type::I64}, Store{152, Type::I64}});
         },
         "method result requires uninitialized object");
     rejectResult(
         "method result complete destination",
         [](Module &m) {
-            m.functions[0].code.insert(m.functions[0].code.begin() + 31, CopyObject{112, 152});
+            m.functions[0].code.insert(m.functions[0].code.begin() + 32, CopyObject{112, 152});
         },
         "method result object already initialized");
     rejectResult(
         "method result conditional partial destination",
         [](Module &m) {
             m.functions[0].code.insert(
-                m.functions[0].code.begin() + 31,
+                m.functions[0].code.begin() + 32,
                 {Constant{1, Type::Bool}, BranchFalse{7}, Constant{0, Type::I64}, Store{152, Type::I64}, Label{7}});
         },
         "method result requires uninitialized object");
@@ -2886,13 +2893,13 @@ void enumAndMethodResultTests() {
     rejectResult(
         "method result wrong enum scalar argument",
         [=](Module &m) {
-            m.functions[0].code[33] = EnumConstant{other, 1};
+            m.functions[0].code[34] = EnumConstant{other, 1};
         },
         "method argument type mismatch");
     rejectResult(
         "constructor record wrong enum argument",
         [=](Module &m) {
-            m.functions[0].code[2] = EnumConstant{other, 1};
+            m.functions[0].code[3] = EnumConstant{other, 1};
         },
         "method argument type mismatch");
     rejectResult(
@@ -2910,7 +2917,7 @@ void enumAndMethodResultTests() {
     rejectResult(
         "method result cannot expose scalar current value",
         [](Module &m) {
-            m.functions[0].code.insert(m.functions[0].code.begin() + 36, Push{});
+            m.functions[0].code.insert(m.functions[0].code.begin() + 37, Push{});
         },
         "push without current value");
     rejectResult(
@@ -4377,7 +4384,7 @@ int main(int argc, char **argv) {
         accept("direct constructor result uses complete active object", directConstructorReturn);
         auto directEmptyComposedReturn = composedEmptyBaseline();
         directEmptyComposedReturn.functions[0].result = Type("OuterEmpty");
-        directEmptyComposedReturn.functions[0].code.resize(3);
+        directEmptyComposedReturn.functions[0].code.resize(4);
         directEmptyComposedReturn.functions[0].code.push_back(EndObject{8});
         directEmptyComposedReturn.functions[0].code.push_back(ReturnObject{16});
         accept("direct composed empty result ends argument snapshot", directEmptyComposedReturn);
@@ -4385,7 +4392,7 @@ int main(int argc, char **argv) {
             "direct composed empty result cannot omit logical initialization",
             directEmptyComposedReturn,
             [](Module &m) {
-                m.functions[0].code.erase(m.functions[0].code.begin() + 2);
+                m.functions[0].code.erase(m.functions[0].code.begin() + 3);
             },
             "nested class field not completely initialized");
 
@@ -5462,7 +5469,7 @@ int main(int argc, char **argv) {
             "empty value result cannot initialize twice",
             emptyValues,
             [](Module &m) {
-                m.functions[0].code.insert(m.functions[0].code.begin() + 3, AggregateCall{"copy_empty", {8}, 16});
+                m.functions[0].code.insert(m.functions[0].code.begin() + 4, AggregateCall{"copy_empty", {8}, 16});
             },
             "result object already initialized");
         rejectModule(
@@ -5476,7 +5483,7 @@ int main(int argc, char **argv) {
             "empty result cannot alias empty argument",
             emptyValues,
             [](Module &m) {
-                std::get<AggregateCall>(m.functions[0].code[2]).resultOffset = 8;
+                std::get<AggregateCall>(m.functions[0].code[3]).resultOffset = 8;
             },
             "result aliases argument");
         auto largeValue = emptyValues;

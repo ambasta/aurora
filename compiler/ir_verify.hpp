@@ -150,6 +150,8 @@ public:
     std::map<int, OwnedObjectBinding> ownedObjects; // root zero is the bound receiver
     // Logical completion is independent of leaf initialization: empty embedded
     // values also require one complete, nominally checked initialization.
+    // Ordinal -1 is whole-object completion minted by markObject. Like nested
+    // completion, it is a must-fact at joins, including for leafless snapshots.
     std::set<std::pair<int, int>> objectClassesInitialized;
     std::set<int> receiverClassesInitialized;
     std::set<int> receiverClassesMaybeInitialized;
@@ -187,6 +189,28 @@ public:
 inline bool scalarValueType(const Type &type, const std::map<std::string, int> &enumCases) {
     return scalar(type) ||
            (type.isEnum() && type == Type::enumeration(type.className) && enumCases.contains(type.className));
+}
+// A typed owner carries exactly one canonical copied-class identity. Descriptor
+// shape alone never authorizes scalar reinterpretation, a carrier or resource payload.
+inline void verifyOwnerType(const Type &type,
+                            const std::map<std::string, std::vector<Type>> &classLayouts,
+                            const std::map<std::string, std::vector<ClassField>> &classFields,
+                            const std::map<std::string, ClassStorage> &classStorage,
+                            const std::set<std::string> &classArrayCarriers) {
+    if (type == Type::OwnedBytes)
+        return;
+    require(type.isOwnedValues() && type == Type::ownedValues(Type(type.className)),
+            "invalid canonical owned value type");
+    require(classLayouts.contains(type.className) && classStorage.contains(type.className),
+            "owned value element requires known canonical class layout");
+    require(!owningClass(classFields, type.className) && !classArrayCarriers.contains(type.className),
+            "owned value element must be a copied class, not an owner or carrier");
+    require(copiedClassLeavesSupported(classLayouts.at(type.className)),
+            "owned value element exceeds copied class leaf limits");
+    const auto &storage = classStorage.at(type.className);
+    require(storage.sizeBytes >= 1 && storage.sizeBytes <= maximumCopiedClassBytes &&
+                storage.reservedBytes <= maximumCopiedClassBytes,
+            "owned value element storage exceeds 520 bytes");
 }
 inline bool serviceSignature(const Function &function) {
     return std::any_of(function.parameters.begin(), function.parameters.end(), [](const Type &type) {
@@ -233,6 +257,15 @@ inline void verifyFunction(Function &function,
         derivedStorage = computeClassStorageLayouts(classLayouts, fields);
     }
     const auto &storage = classStorage.empty() ? derivedStorage : classStorage;
+    auto ownerType = [&](int base) {
+        require(function.byteSlots.contains(base), "owner type requires exact typed spill");
+        return function.ownedValueTypes.contains(base) ? Type::ownedValues(Type(function.ownedValueTypes.at(base)))
+                                                       : Type::OwnedBytes;
+    };
+    for (const auto &[base, name] : function.ownedValueTypes) {
+        require(function.byteSlots.contains(base), "owned value metadata requires exact owner spill");
+        verifyOwnerType(Type::ownedValues(Type(name)), classLayouts, classFields, storage, classArrayCarriers);
+    }
     auto objectLeaf = [&](int base, std::size_t leaf) {
         return base - storage.at(function.objectSlots.at(base).className).leafOffsets.at(leaf);
     };
@@ -288,12 +321,12 @@ inline void verifyFunction(Function &function,
                 "resource signature only supports an owning constructor receiver");
         require(!function.parameters.empty() && function.parameters.front() == Type::ByteRegion,
                 "resource signature requires its region parameter first");
-        require(scalarValueType(function.result, enumCases) || function.result == Type::OwnedBytes ||
+        require(scalarValueType(function.result, enumCases) || function.result.isOwnerStorage() ||
                     (!function.receiver && function.result.isClass()),
                 "resource signature requires scalar, owned byte or class result");
         for (std::size_t index = 1; index < function.parameters.size(); ++index)
             require(scalarValueType(function.parameters[index], enumCases) ||
-                        function.parameters[index] == Type::OwnedBytes ||
+                        function.parameters[index].isOwnerStorage() ||
                         (!function.receiver && owningType(function.parameters[index])) ||
                         (owningConstructor && function.parameters[index].isClass() &&
                          !owningType(function.parameters[index])),
@@ -307,8 +340,10 @@ inline void verifyFunction(Function &function,
             return;
         }
         if (type.isResource()) {
-            require(resourceFunction && (type == Type::OwnedBytes || (parameter && type == Type::ByteRegion)),
+            require(resourceFunction && (type.isOwnerStorage() || (parameter && type == Type::ByteRegion)),
                     "invalid resource boundary type");
+            if (type.isOwnerStorage())
+                verifyOwnerType(type, classLayouts, classFields, storage, classArrayCarriers);
             return;
         }
         if (type.isSpan()) {
@@ -497,7 +532,7 @@ inline void verifyFunction(Function &function,
                         "region parameter binding must begin the entry prefix");
                 require(!regionParameterSlot, "duplicate region parameter binding");
                 regionParameterSlot = regionBinding->offset;
-            } else if (type.isBytes()) {
+            } else if (type.isOwnerStorage()) {
                 require(byteBinding && byteBinding->index == static_cast<int>(index),
                         "owned byte parameter bindings must form the entry prefix");
                 require(byteParameterSlots.insert(byteBinding->offset).second, "owned byte parameter bindings overlap");
@@ -568,7 +603,7 @@ inline void verifyFunction(Function &function,
             0, function.receiver->constructor ? ByteDisposition::Pristine : ByteDisposition::Live, {}};
         const RegionIdentity borrowed{0, 0, true};
         for (std::size_t field = 0; field < receiverFields->size(); ++field)
-            if ((*receiverFields)[field].elementType == Type::OwnedBytes) {
+            if ((*receiverFields)[field].elementType.isOwnerStorage()) {
                 ByteBinding binding{0, receiver.disposition, {}};
                 if (!function.receiver->constructor)
                     binding.token = ByteToken{0, borrowed, static_cast<int>(field)};
@@ -1003,11 +1038,15 @@ inline void verifyFunction(Function &function,
                         if (classFields.at(name)[field].elementType.isClass())
                             require(state.objectClassesInitialized.contains({base, static_cast<int>(field)}),
                                     "nested class field not completely initialized");
+                if (classLayouts.at(name).empty())
+                    require(state.objectClassesInitialized.contains({base, -1}),
+                            "empty object not completely initialized");
             };
             auto markObject = [&](int base) {
                 const auto &name = function.objectSlots.at(base).className;
                 const auto &layout = classLayouts.at(name);
                 state.maybeConstructedObjects.insert(base);
+                state.objectClassesInitialized.insert({base, -1});
                 for (std::size_t leaf = 0; leaf < layout.size(); ++leaf) {
                     const int offset = objectLeaf(base, leaf);
                     state.initialized.insert(offset);
@@ -1117,7 +1156,7 @@ inline void verifyFunction(Function &function,
                 require(!state.ownedObjects.contains(base), "owning object lifetime already active");
                 OwnedObjectBinding object{index, ByteDisposition::Pristine, {}};
                 for (std::size_t field = 0; field < classFields.at(name).size(); ++field)
-                    if (classFields.at(name)[field].elementType == Type::OwnedBytes)
+                    if (classFields.at(name)[field].elementType.isOwnerStorage())
                         object.fields.emplace(static_cast<int>(field),
                                               ByteBinding{index, ByteDisposition::Pristine, {}});
                 state.ownedObjects.emplace(base, std::move(object));
@@ -1171,7 +1210,7 @@ inline void verifyFunction(Function &function,
                 require(base >= 0, "invalid owned byte object root");
                 if (base == 0) {
                     const auto &field = receiverShape(ordinal, verifiedMethodView);
-                    require(field.elementType == Type::OwnedBytes && !field.array,
+                    require(field.elementType.isOwnerStorage() && !field.array,
                             "owned byte access requires direct resource field");
                     require(!function.receiver->constructor,
                             "constructor cannot access resource field during initialization");
@@ -1182,7 +1221,8 @@ inline void verifyFunction(Function &function,
                     require(!mutableAccess || object.mutableValue, "const object cannot mutate resource field");
                     require(classFields.contains(object.className) &&
                                 static_cast<std::size_t>(ordinal) < classFields.at(object.className).size() &&
-                                classFields.at(object.className)[ordinal].elementType == Type::OwnedBytes,
+                                classFields.at(object.className)[ordinal].elementType.isOwnerStorage() &&
+                                !classFields.at(object.className)[ordinal].array,
                             "owned byte access requires direct resource field");
                 }
                 require(state.ownedObjects.contains(base), "resource field requires owning root");
@@ -1201,8 +1241,30 @@ inline void verifyFunction(Function &function,
                     ownerWritable(base, ordinal);
                 return field;
             };
+            auto accessedOwnerType = [&](int base, int ordinal) {
+                if (ordinal == -1)
+                    return ownerType(base);
+                require(ordinal >= 0 && base >= 0, "invalid owned storage field selector");
+                const auto &name = base == 0 ? function.receiver->className : function.objectSlots.at(base).className;
+                const auto &type = classFields.at(name).at(ordinal).elementType;
+                verifyOwnerType(type, classLayouts, classFields, storage, classArrayCarriers);
+                return type;
+            };
+            auto copiedValue = [&](int base, const Type &owner, int root) {
+                require(base != root, "owned value snapshot aliases owner root");
+                const auto &value = completeObject(base);
+                require(owner.isOwnedValues() && value.className == owner.className,
+                        "owned value snapshot nominal class mismatch");
+                require(!value.mutableValue, "owned value snapshot must be readonly");
+                require(state.objectClassesInitialized.contains({base, -1}),
+                        "owned value snapshot requires complete copied or constructed value");
+                require(!owningClass(classFields, value.className) && !classArrayCarriers.contains(value.className),
+                        "owned value snapshot must be copied class");
+            };
             auto borrowOwned = [&](int root, int ordinal, int result, bool verifiedMethodView = false) {
                 const auto &binding = accessBytes(root, ordinal, false, verifiedMethodView);
+                require(accessedOwnerType(root, ordinal) == Type::OwnedBytes,
+                        "typed owned values cannot supply a byte span");
                 spanTarget(result);
                 const auto rootSite = ordinal == -1 ? binding.site : state.ownedObjects.at(root).site;
                 state.activeSpans.emplace(result,
@@ -1513,15 +1575,18 @@ inline void verifyFunction(Function &function,
                         for (std::size_t arg = target.parameters.size(); arg > 0; --arg) {
                             const auto &type = target.parameters[arg - 1];
                             const int base = operation.ownerArguments[arg - 1];
-                            if (type == Type::OwnedBytes || owningType(type)) {
-                                require(!constructor || type == Type::OwnedBytes,
+                            if (type.isOwnerStorage() || owningType(type)) {
+                                require(!constructor || type.isOwnerStorage(),
                                         "constructor cannot take owning class arguments");
                                 require(argumentStorage.insert(base).second,
                                         "resource call argument storage must be distinct");
                                 arguments.emplace(base, owningType(type));
                                 require(base != operation.receiverOffset,
                                         "resource constructor receiver aliases owning argument");
-                                const auto argumentOrigin = type == Type::OwnedBytes
+                                if (type.isOwnerStorage())
+                                    require(ownerType(base) == type,
+                                            "resource call owner argument nominal type mismatch");
+                                const auto argumentOrigin = type.isOwnerStorage()
                                                                 ? bytes(base, true).token->region
                                                                 : ownedObject(base, type.className, true);
                                 require(argumentOrigin == origin, "resource call owning argument has wrong region");
@@ -1551,11 +1616,14 @@ inline void verifyFunction(Function &function,
                                         function.objectSlots.at(operation.receiverOffset).className ==
                                             target.receiver->className,
                                     "owning constructor requires exact nominal receiver root");
-                        } else if (target.result == Type::OwnedBytes || owningType(target.result)) {
+                        } else if (target.result.isOwnerStorage() || owningType(target.result)) {
                             require(!arguments.contains(operation.resultOffset),
                                     "resource call owning result aliases argument");
-                            if (target.result == Type::OwnedBytes)
+                            if (target.result.isOwnerStorage()) {
+                                require(ownerType(operation.resultOffset) == target.result,
+                                        "resource call owner result nominal type mismatch");
                                 byteTarget(operation.resultOffset);
+                            }
                         } else if (target.result.isClass()) {
                             const int base = operation.resultOffset;
                             require(function.objectSlots.contains(base),
@@ -1586,7 +1654,7 @@ inline void verifyFunction(Function &function,
                         if (constructor) {
                             mintObject(operation.receiverOffset, target.receiver->className, origin);
                             state.current = Value{target.result, {}};
-                        } else if (target.result == Type::OwnedBytes) {
+                        } else if (target.result.isOwnerStorage()) {
                             mintBytes(operation.resultOffset, origin);
                             state.current.reset();
                         } else if (owningType(target.result)) {
@@ -1606,12 +1674,41 @@ inline void verifyFunction(Function &function,
                         require(!state.activeBytes.contains(operation.offset), "owned byte lifetime already active");
                         state.activeBytes.emplace(operation.offset, ByteBinding{index, ByteDisposition::Pristine, {}});
                     } else if constexpr (std::is_same_v<Op, AllocateBytes>) {
+                        require(ownerType(operation.resultOffset) == Type::OwnedBytes,
+                                "byte allocation cannot initialize typed owned values");
                         current(Type::I64);
                         mintBytes(operation.resultOffset, region(operation.regionOffset));
                         state.current.reset();
+                    } else if constexpr (std::is_same_v<Op, AllocateValues>) {
+                        const auto type = ownerType(operation.resultOffset);
+                        require(type.isOwnedValues(), "value allocation requires typed owner");
+                        current(Type::I64);
+                        copiedValue(operation.fillOffset, type, operation.resultOffset);
+                        mintBytes(operation.resultOffset, region(operation.regionOffset));
+                        state.current.reset();
+                    } else if constexpr (std::is_same_v<Op, ValuesLoad>) {
+                        accessBytes(operation.offset, operation.fieldIndex, false);
+                        const auto type = accessedOwnerType(operation.offset, operation.fieldIndex);
+                        require(type.isOwnedValues(), "value load requires typed owner");
+                        current(Type::I64);
+                        require(operation.resultOffset != operation.offset, "value load result aliases owner root");
+                        copyTarget(operation.resultOffset, type.className);
+                        state.current.reset();
+                    } else if constexpr (std::is_same_v<Op, ValuesStore> || std::is_same_v<Op, ValuesResize>) {
+                        accessBytes(operation.offset, operation.fieldIndex, true);
+                        const auto type = accessedOwnerType(operation.offset, operation.fieldIndex);
+                        require(type.isOwnedValues(), "value mutation requires typed owner");
+                        current(Type::I64);
+                        if constexpr (std::is_same_v<Op, ValuesStore>)
+                            copiedValue(operation.valueOffset, type, operation.offset);
+                        else
+                            copiedValue(operation.fillOffset, type, operation.offset);
+                        state.current = Value{Type::Bool, {}};
                     } else if constexpr (std::is_same_v<Op, MoveBytes>) {
                         require(operation.sourceOffset != operation.resultOffset,
                                 "owned byte move source aliases result");
+                        require(ownerType(operation.sourceOffset) == ownerType(operation.resultOffset),
+                                "owner move nominal type mismatch");
                         const auto token = bytes(operation.sourceOffset, true).token;
                         auto &target = byteTarget(operation.resultOffset);
                         consumeBytes(operation.sourceOffset);
@@ -1622,15 +1719,21 @@ inline void verifyFunction(Function &function,
                         state.current = Value{std::is_same_v<Op, BytesOk> ? Type::Bool : Type::I64, {}};
                     } else if constexpr (std::is_same_v<Op, BytesLoad>) {
                         accessBytes(operation.offset, operation.fieldIndex, false);
+                        require(accessedOwnerType(operation.offset, operation.fieldIndex) == Type::OwnedBytes,
+                                "byte payload operation cannot access typed owned values");
                         current(Type::I64);
                         state.current = Value{Type::U8, {}};
                     } else if constexpr (std::is_same_v<Op, BytesStore>) {
                         accessBytes(operation.offset, operation.fieldIndex, true);
+                        require(accessedOwnerType(operation.offset, operation.fieldIndex) == Type::OwnedBytes,
+                                "byte payload operation cannot access typed owned values");
                         current(Type::U8);
                         require(pop().type == Type::I64, "owned byte store index requires i64");
                         state.current = Value{Type::Bool, {}};
                     } else if constexpr (std::is_same_v<Op, BytesResize>) {
                         accessBytes(operation.offset, operation.fieldIndex, true);
+                        require(accessedOwnerType(operation.offset, operation.fieldIndex) == Type::OwnedBytes,
+                                "byte payload operation cannot access typed owned values");
                         current(Type::I64);
                         state.current = Value{Type::Bool, {}};
                     } else if constexpr (std::is_same_v<Op, EndBytes>) {
@@ -1753,6 +1856,15 @@ inline void verifyFunction(Function &function,
                             else
                                 ++field;
                         }
+                    } else if constexpr (std::is_same_v<Op, InitializeEmptyObject>) {
+                        require(function.objectSlots.contains(operation.offset),
+                                "empty initialization requires exact object slot");
+                        const auto &name = function.objectSlots.at(operation.offset).className;
+                        require(classLayouts.at(name).empty() && classFields.at(name).empty() &&
+                                    !owningClass(classFields, name) && !classArrayCarriers.contains(name),
+                                "empty initialization requires zero logical fields and leaves");
+                        copyTarget(operation.offset, name);
+                        state.current.reset();
                     } else if constexpr (std::is_same_v<Op, MoveObject>) {
                         require(operation.sourceOffset != operation.resultOffset,
                                 "owning object move source aliases result");
@@ -1773,8 +1885,10 @@ inline void verifyFunction(Function &function,
                         require(operation.objectOffset == 0 && owningConstructor,
                                 "resource field initialization requires bound owning constructor");
                         const auto &shape = receiverShape(operation.fieldIndex);
-                        require(shape.elementType == Type::OwnedBytes && !shape.array,
-                                "resource field initialization requires direct owned byte field");
+                        require(shape.elementType.isOwnerStorage() && !shape.array,
+                                "resource field initialization requires direct owner field");
+                        require(ownerType(operation.sourceOffset) == shape.elementType,
+                                "resource field initialization owner nominal type mismatch");
                         auto &target = state.ownedObjects.at(0).fields.at(operation.fieldIndex);
                         require(target.disposition == ByteDisposition::Pristine && !target.token,
                                 "constructor resource field initialized more than once");
@@ -2263,7 +2377,8 @@ inline void verifyFunction(Function &function,
                         require(state.stack.empty(), "unbalanced stack at owning object return");
                         fallsThrough = false;
                     } else if constexpr (std::is_same_v<Op, ReturnBytes>) {
-                        require(function.result == Type::OwnedBytes, "owned byte return requires owned byte result");
+                        require(function.result.isOwnerStorage() && ownerType(operation.offset) == function.result,
+                                "owner return nominal type mismatch");
                         require(regionParameterSlot.has_value(), "owned byte return requires bound region parameter");
                         require(bytes(operation.offset, true).token->region == region(*regionParameterSlot),
                                 "owned byte return has wrong region");
@@ -2425,7 +2540,8 @@ inline void verifyFunction(Function &function,
                         require(operation.index > 0 &&
                                     static_cast<std::size_t>(operation.index) < function.parameters.size(),
                                 "invalid owned byte parameter index");
-                        require(function.parameters[operation.index] == Type::OwnedBytes,
+                        require(function.parameters[operation.index].isOwnerStorage() &&
+                                    ownerType(operation.offset) == function.parameters[operation.index],
                                 "owned byte parameter type mismatch");
                         require(regionParameterSlot.has_value(), "owned byte parameter requires bound region");
                         require(function.byteSlots.contains(operation.offset),
@@ -2596,9 +2712,13 @@ inline ValidatedModule validate(Module module) {
                                   "class array carrier cannot be nested element type");
             verification::require(field.firstLeaf >= 0 && static_cast<std::size_t>(field.firstLeaf) == nextLeaf,
                                   "invalid logical class field shape");
-            if (field.elementType == Type::OwnedBytes) {
+            if (field.elementType.isOwnerStorage()) {
                 verification::require(!field.array && field.length == 0,
-                                      "owned byte field requires zero scalar leaves");
+                                      "owned storage field requires zero scalar leaves");
+                verification::require(field.elementType == Type::OwnedBytes ||
+                                          (field.elementType.isOwnedValues() &&
+                                           field.elementType == Type::ownedValues(Type(field.elementType.className))),
+                                      "invalid canonical owned value field type");
             } else if (child) {
                 composed = true;
                 verification::require(!owningClass(module.classFields, field.elementType.className),
@@ -2708,6 +2828,13 @@ inline ValidatedModule validate(Module module) {
             verification::require(module.enumCases.at(std::string(name)) == 2, "noncanonical sealed service enum");
     const auto canonicalStorage = computeClassStorageLayouts(module.classLayouts, module.classFields);
     for (const auto &[name, fields] : module.classFields) {
+        for (const auto &field : fields)
+            if (field.elementType.isOwnerStorage())
+                verification::verifyOwnerType(field.elementType,
+                                              module.classLayouts,
+                                              module.classFields,
+                                              canonicalStorage,
+                                              module.classArrayCarriers);
         const bool composed = std::any_of(fields.begin(), fields.end(), [](const ClassField &field) {
             return field.elementType.isClass();
         });

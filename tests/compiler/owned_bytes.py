@@ -276,7 +276,351 @@ class Suite:
             )
         self.rejections += 1
 
+    def typed_cases(self):
+        previous_entry = self.entry_name
+        self.entry_name = "entry"
+        node = """
+            enum class Kind { unused, literal, binary };
+            class Node {
+                Kind kind;
+                u8 tag;
+                i64 payload;
+            public:
+                Node(Kind k,u8 t,i64 p):kind(k),tag(t),payload(p){}
+                auto score() const -> i64 {
+                    if (kind == Kind::literal) { return payload + i64(tag); }
+                    return -1;
+                }
+            };
+        """
+        owner = "builtin::OwnedValues<Node>"
+        dynamic = self.compile(
+            "typed-runtime-capacity",
+            program(
+                f"""
+            Node fill = Node(Kind::literal,2u8,40);
+            {owner} values = region.try_allocate(n,fill);
+            if (!values.ok()) {{ return 43; }}
+            if (values.size()!=n) {{ return -1; }}
+            i64 i=0;
+            while(i<n) {{
+                Node copied=values.at(i);
+                if(copied.score()!=42) {{return -2;}}
+                i=i+1;
+            }}
+            if(values.set(-1,fill)||values.set(n,fill)) {{return -3;}}
+            return 42;
+        """,
+                node,
+            ),
+        )
+        for count in (0, 1, 65, 171, 513):
+            self.run(dynamic, count * 24, count, 0, 42, 1, 1)
+        for count in (-1, (1 << 63) - 1):
+            self.run(dynamic, 24000, count, 0, 43, 0, 0)
+        self.run(dynamic, 23, 1, 0, 43, 0, 0)
+
+        resize = self.compile(
+            "typed-replacement",
+            program(
+                f"""
+            Node fill=Node(Kind::literal,2u8,40);
+            Node next=Node(Kind::literal,3u8,60);
+            {owner} values=region.try_allocate(200,fill);
+            if(!values.ok()) {{return -1;}}
+            Node independent=values.at(170);
+            if(!values.set(170,next)) {{return -2;}}
+            if(!values.try_resize(n,fill)) {{
+                Node retained=values.at(170);
+                if(values.size()!=200||retained.score()!=63||independent.score()!=42) {{return -3;}}
+                return 43;
+            }}
+            if(values.size()!=n) {{return -4;}}
+            if(n>200) {{Node grown=values.at(n-1);if(grown.score()!=42){{return -5;}}}}
+            {owner} moved=move(values);
+            return independent.score();
+        """,
+                node,
+            ),
+        )
+        self.run(resize, 7200, 300, 0, 42, 2, 1)
+        self.run(resize, 4800, 201, 0, 43, 1, 1)
+        self.run(resize, 7200, 300, 0, 43, 1, 1, fail_after=1)
+        self.run(resize, 4800, -1, 0, 43, 1, 1)
+        self.run(resize, 4800, 200, 0, 42, 1, 1)
+        self.run(resize, 4800, 0, 0, 42, 2, 1)
+
+        empty = self.compile(
+            "typed-empty-elements",
+            program(
+                """
+            Empty fill=Empty();
+            builtin::OwnedValues<Empty> values=region.try_allocate(n,fill);
+            if(!values.ok()||values.size()!=n){return -1;}
+            Empty copied=values.at(n-1);
+            if(!values.set(n-1,copied)){return -2;}
+            return 42;
+        """,
+                "class Empty {public:Empty(){} };",
+            ),
+        )
+        self.run(empty, 800, 100, 0, 42, 1, 1)
+        self.trap(empty, 0, 0)
+
+        blank = self.compile(
+            "typed-zero-field-braces",
+            program(
+                """
+            Blank fill=Blank{};
+            Blank independent=fill;
+            builtin::OwnedValues<Blank> values=region.try_allocate(100,independent);
+            Blank copied=values.at(99);
+            if(!values.set(0,copied)){return -1;}
+            return values.size();
+        """,
+                "class Blank {};",
+            ),
+        )
+        self.run(blank, 800, 0, 0, 100, 1, 1)
+
+        moved_helpers = (
+            node
+            + f"""
+            auto pass(builtin::ByteRegion region,{owner} input)->{owner} {{return move(input);}}
+            class Arena {{
+                {owner} nodes;
+            public:
+                Arena(builtin::ByteRegion region,{owner} initial):nodes(move(initial)){{}}
+                auto size() const -> i64 {{return nodes.size();}}
+                auto get(i64 i) const -> Node {{return nodes.at(i);}}
+                auto put(i64 i,Node value)->bool {{return nodes.set(i,value);}}
+                auto grow(i64 n,Node fill)->bool {{return nodes.try_resize(n,fill);}}
+            }};
+        """
+        )
+        moved = self.compile(
+            "typed-owning-class",
+            program(
+                f"""
+            Node fill=Node(Kind::literal,2u8,40);
+            {owner} initial=region.try_allocate(100,fill);
+            {owner} transferred=pass(region,move(initial));
+            Arena arena=Arena(region,move(transferred));
+            Node next=Node(Kind::literal,3u8,60);
+            if(!arena.put(99,next)||!arena.grow(200,fill)){{return -1;}}
+            Node copied=arena.get(99);
+            if(arena.size()!=200||copied.score()!=63){{return -2;}}
+            return 42;
+        """,
+                moved_helpers,
+            ),
+        )
+        self.run(moved, 4800, 0, 0, 42, 2, 1)
+
+        arena_source = (ROOT / "compiler/expression_arena.au").read_text()
+        arena = self.compile(
+            "compiler-typed-ast-arena",
+            arena_source
+            + """
+            auto arena_entry(builtin::ByteRegion region,i64 n,i64 flag)->i64 {
+                compiler_parser::AstArena arena=compiler_parser::make_arena(region,n);
+                if(!arena.ok()){return -1;}
+                if(flag==1){
+                    const i64 first=arena.append(compiler_parser::NodeKind::literal,0,-1,-1);
+                    if(first!=0||arena.append(compiler_parser::NodeKind::unary,1,1,-1)!=-1||arena.size()!=1){return -6;}
+                    const i64 second=arena.append(compiler_parser::NodeKind::literal,1,-1,-1);
+                    if(second!=1||arena.append(compiler_parser::NodeKind::unary,2,0,-1)!=-1||arena.size()!=2){
+                        return -7;
+                    }
+                    compiler_parser::AstNode kept=arena.at(0);
+                    if(kept.token()!=0||kept.depth()!=1){return -8;}
+                    return 42;
+                }
+                if(flag==2){
+                    i64 parent=arena.append(compiler_parser::NodeKind::literal,0,-1,-1);
+                    i64 depth=1;
+                    while(depth<128){parent=arena.append(compiler_parser::NodeKind::unary,depth,parent,-1);depth=depth+1;}
+                    if(parent!=127||arena.append(compiler_parser::NodeKind::unary,128,parent,-1)!=-1||arena.size()!=128){
+                        return -9;
+                    }
+                    return 42;
+                }
+                if(flag==3){compiler_parser::AstNode invalid=arena.at(0);return invalid.token();}
+                i64 token=0;
+                i64 root=-1;
+                while(token<100){
+                    const i64 leaf=arena.append(compiler_parser::NodeKind::literal,token,-1,-1);
+                    if(leaf<0){return -2;}
+                    if(root<0){root=leaf;}
+                    else{root=arena.append(compiler_parser::NodeKind::binary,token,root,leaf);}
+                    if(root<0){return -3;}
+                    token=token+1;
+                }
+                if(arena.size()!=199||arena.append(compiler_parser::NodeKind::unary,0,199,-1)!=-1){return -4;}
+                compiler_parser::AstNode node=arena.at(root);
+                if(node.kind()!=compiler_parser::NodeKind::binary||node.first()>=root||node.second()>=root){return -5;}
+                return 42;
+            }
+        """,
+            entry_name="arena_entry",
+        )
+        self.run(arena, 8192, 200, 0, 42, 1, 1)
+        self.run(arena, 8192, 100, 0, 42, 2, 1)
+        self.run(arena, 80, 2, 1, 42, 1, 1)
+        self.run(arena, 8192, 200, 2, 42, 1, 1)
+        self.run(arena, 8192, -1, 0, -1, 0, 0)
+        self.trap(arena, 8192, 200, 3)
+
+        same_layout = "class Other {public:i64 a;i64 b;i64 c;};"
+        for name, body in {
+            "wrong-fill": f"Other fill=Other{{.a=1,.b=2,.c=3}};{owner} values=region.try_allocate(1,fill);return 0;",
+            "wrong-copy": f"""
+                Node fill=Node(Kind::literal,2u8,40);
+                {owner} values=region.try_allocate(1,fill);
+                Other out=values.at(0);
+                return 0;
+            """,
+            "byte-borrow": f"""
+                Node fill=Node(Kind::literal,2u8,40);
+                {owner} values=region.try_allocate(1,fill);
+                const builtin::span<const u8> bytes=borrow_bytes(values);
+                return bytes.size();
+            """,
+            "byte-set": f"""
+                Node fill=Node(Kind::literal,2u8,40);
+                {owner} values=region.try_allocate(1,fill);
+                return i64(values.set(0,42u8));
+            """,
+            "missing-fill": f"{owner} values=region.try_allocate(1);return 0;",
+            "resize-missing-fill": f"""
+                Node fill=Node(Kind::literal,2u8,40);
+                {owner} values=region.try_allocate(1,fill);
+                return i64(values.try_resize(2));
+            """,
+            "const-set": f"""
+                Node fill=Node(Kind::literal,2u8,40);
+                const {owner} values=region.try_allocate(1,fill);
+                return i64(values.set(0,fill));
+            """,
+            "owner-assignment": f"""
+                Node fill=Node(Kind::literal,2u8,40);
+                {owner} values=region.try_allocate(1,fill);
+                {owner} copy=values;
+                return 0;
+            """,
+            "nominal-move": f"""
+                Node fill=Node(Kind::literal,2u8,40);
+                {owner} values=region.try_allocate(1,fill);
+                builtin::OwnedValues<Other> wrong=move(values);
+                return 0;
+            """,
+            "use-after-move": f"""
+                Node fill=Node(Kind::literal,2u8,40);
+                {owner} values=region.try_allocate(1,fill);
+                {owner} moved=move(values);
+                Node out=values.at(0);
+                return out.score();
+            """,
+        }.items():
+            self.reject("typed-" + name, program(body, node + same_layout))
+        for element in ("i64", "builtin::OwnedBytes", "builtin::ByteRegion", "builtin::span<const u8>"):
+            self.reject(
+                "typed-invalid-element-" + str(self.rejections),
+                program(f"builtin::OwnedValues<{element}> values=region.try_allocate(1);return 0;"),
+            )
+
+        direct_return = (
+            node
+            + f"""
+            auto get(builtin::ByteRegion region)->Node{{
+                Node fill=Node(Kind::literal,2u8,40);
+                {owner} values=region.try_allocate(1,fill);
+                return values.at(0);
+            }}
+        """
+        )
+        direct = self.compile(
+            "typed-direct-return", program("Node copied=get(region);return copied.score();", direct_return)
+        )
+        self.run(direct, 24, 0, 0, 42, 1, 1)
+
+        # A full 64-byte copied element crosses the compact REP threshold. This
+        # exercises typed snapshot staging, RSP argument packing with live scalar
+        # arguments, resize, and copied return before the owner is dropped.
+        wide_helpers = """
+            class Wide {public:i64 a;i64 b;i64 c;i64 d;i64 e;i64 f;i64 g;i64 h;};
+            auto score(i64 head,Wide value,i64 tail)->i64{
+                return head+value.a+value.b+value.c+value.d+value.e+value.f+value.g+value.h+tail;
+            }
+            auto snapshot(builtin::ByteRegion region,i64 count,i64 flag)->Wide{
+                Wide fill=Wide{.a=1,.b=2,.c=3,.d=4,.e=5,.f=6,.g=7,.h=8};
+                Wide next=Wide{.a=11,.b=12,.c=13,.d=14,.e=15,.f=16,.g=17,.h=18};
+                builtin::OwnedValues<Wide> values=region.try_allocate(2,fill);
+                Wide saved=values.at(1);
+                bool replaced=values.set(0,next);
+                bool resized=values.try_resize(count,next);
+                if(!replaced||!resized){return fill;}
+                if(flag==0){return saved;}
+                return values.at(count-1);
+            }
+        """
+        compact = self.compile(
+            "typed-compact-copied-return",
+            program("Wide copied=snapshot(region,n,flag);return score(17,copied,29)-46;", wide_helpers),
+        )
+        compact_text = (compact.parent / "output.s").read_text()
+        require("rep movsb" in compact_text, "typed wide copied value did not exercise compact copies")
+        require(
+            "leaq 8(%rsp), %rax\n    pushq %rsi\n    pushq %rdi\n    pushq %rcx" in compact_text,
+            "typed wide copied argument did not exercise captured RSP packing",
+        )
+        for count in (1, 3):
+            for flag, expected in ((0, 36), (1, 116)):
+                self.run(compact, 192, count, flag, expected, 2, 1)
+
+        consuming = (
+            node
+            + f"""
+            auto consume(builtin::ByteRegion region,{owner} value)->i64{{return 0;}}
+        """
+        )
+        for operation in ("at(consume(region,move(values)))", "try_resize(consume(region,move(values)),fill)"):
+            body = f"Node fill=Node(Kind::literal,2u8,40);{owner} values=region.try_allocate(1,fill);"
+            body += (
+                ("Node out=values." if operation.startswith("at") else "bool out=values.") + operation + ";return 0;"
+            )
+            self.reject("typed-consumed-receiver-" + str(self.rejections), program(body, consuming))
+
+        module_root = self.directory / "typed-module-inputs"
+        module_root.mkdir()
+        (module_root / "left.au").write_text(
+            "export module left;export namespace left {class Node{public:i64 value;};auto marker()->i64{return 0;}}"
+        )
+        (module_root / "right.au").write_text(
+            "export module right;export namespace right {class Node{public:i64 value;};auto marker()->i64{return 0;}}"
+        )
+        previous_modules = self.module_args
+        self.module_args = [*previous_modules, "--module-root", module_root]
+        imported = """
+            module typed_imports;import left;import right;
+            auto entry(builtin::ByteRegion region,i64 n,i64 flag)->i64{
+                left::Node left=left::Node{.value=42};
+                right::Node right=right::Node{.value=7};
+                builtin::OwnedValues<left::Node> values=region.try_allocate(100,left);
+                left::Node copied=values.at(99);
+                return copied.value;
+            }
+        """
+        imported_owner = self.compile("typed-imported-identity", imported)
+        self.run(imported_owner, 800, 0, 0, 42, 1, 1)
+        self.reject("typed-imported-wrong-fill", imported.replace("(100,left)", "(100,right)"))
+        self.reject("typed-imported-wrong-result", imported.replace("left::Node copied", "right::Node copied"))
+        self.module_args = previous_modules
+
+        self.entry_name = previous_entry
+
     def cases(self):
+        self.typed_cases()
         dynamic = self.compile(
             "dynamic-two-owners",
             program(f"""

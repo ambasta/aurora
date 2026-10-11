@@ -1057,9 +1057,68 @@ void nonwrapping_identity_limits() {
 }
 #endif
 
+void typed_value_storage() {
+    AllocationTrace trace;
+    Region region(20000, Allocator{&trace, AllocationTrace::allocate, AllocationTrace::deallocate});
+    std::array<unsigned char, 24> fill{}, replacement{}, output{};
+    for (std::size_t byte = 0; byte < fill.size(); ++byte) {
+        fill[byte] = static_cast<unsigned char>(byte + 1);
+        replacement[byte] = static_cast<unsigned char>(200 - byte);
+    }
+    NativeOwner owner;
+    __au_runtime_values_allocate(region.id(), 200, 24, fill.data(), &owner);
+    require_live(owner, region, 4800);
+    __au_runtime_values_at(&owner, 170, 24, output.data());
+    require(output == fill, "typed allocation fills every complete element beyond fixed-array bounds");
+    require(__au_runtime_values_set(&owner, 170, 24, replacement.data()) == 1, "typed copied set succeeds");
+    require(__au_runtime_values_set(&owner, -1, 24, fill.data()) == 0 &&
+                __au_runtime_values_set(&owner, 200, 24, fill.data()) == 0,
+            "typed copied set checks signed and upper bounds");
+    const auto before = owner;
+    const auto metrics = region.metrics();
+    trace.fail_next = true;
+    require(__au_runtime_values_resize(&owner, 300, 24, fill.data()) == 0 && same_owner(owner, before) &&
+                region.metrics() == metrics,
+            "typed replacement host failure preserves descriptor and accounting");
+    __au_runtime_values_at(&owner, 170, 24, output.data());
+    require(output == replacement, "typed replacement failure preserves complete payload");
+    require(__au_runtime_values_resize(&owner, std::numeric_limits<std::int64_t>::max(), 24, fill.data()) == 0 &&
+                same_owner(owner, before) && region.metrics() == metrics,
+            "typed count multiplication overflow is rejected before allocation");
+    require(__au_runtime_values_resize(&owner, 171, 24, fill.data()) == 1, "typed shrink succeeds");
+    require(__au_runtime_values_resize(&owner, 220, 24, replacement.data()) == 1, "typed regrow succeeds");
+    __au_runtime_values_at(&owner, 169, 24, output.data());
+    require(output == fill, "typed resize preserves retained prefix");
+    __au_runtime_values_at(&owner, 219, 24, output.data());
+    require(output == replacement, "typed regrow fills the complete new suffix explicitly");
+    const auto current = owner;
+    const auto same_metrics = region.metrics();
+    require(__au_runtime_values_resize(&owner, 220, 24, fill.data()) == 1 && same_owner(owner, current) &&
+                region.metrics() == same_metrics,
+            "same typed count does not replace or refill");
+    invariant("typed storage rejects wrong stride", [&] {
+        __au_runtime_values_at(&owner, 0, 23, output.data());
+    });
+    invariant("typed storage rejects zero stride", [&] {
+        __au_runtime_values_resize(&owner, 0, 0, fill.data());
+    });
+    __au_runtime_bytes_drop(&owner);
+    require(output == replacement, "copied value remains independent after owner drop");
+    __au_runtime_values_allocate(region.id(), 0, 8, fill.data(), &owner);
+    require_live(owner, region, 0);
+    __au_runtime_bytes_drop(&owner);
+    __au_runtime_values_allocate(region.id(), -1, 24, fill.data(), &owner);
+    require_failed(owner, region);
+    require(__au_runtime_values_resize(&owner, 0, 24, fill.data()) == 0,
+            "failed typed owner remains inert even for empty resize");
+    __au_runtime_bytes_drop(&owner);
+    require(region.close(), "typed owners release all shared byte-region allocations");
+}
+
 } // namespace
 
 int main() {
+    typed_value_storage();
     readonly_descriptor_snapshots();
     runtime_lengths_and_initialization();
     failure_atomicity_and_quota_reuse();

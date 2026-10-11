@@ -104,6 +104,7 @@ Module logicalBaseline() {
               Constant{40, Type::I64},
               Store{8, Type::I64},
               BeginObject{16},
+              InitializeEmptyObject{16},
               BeginObject{24},
               MethodCall{"construct_env", 24, {16}},
               BeginObject{32},
@@ -396,7 +397,7 @@ void directTests() {
         "empty nested snapshot not logically complete",
         logicalBaseline(),
         [](Module &m) {
-            m.functions[0].code.erase(m.functions[0].code.begin() + 5);
+            m.functions[0].code.erase(m.functions[0].code.begin() + 6);
         },
         "nested class field not completely initialized");
     reject(
@@ -417,7 +418,7 @@ void directTests() {
         "empty class result reused",
         logicalBaseline(),
         [](Module &m) {
-            m.functions[0].code.insert(m.functions[0].code.begin() + 8, MethodCall{"roundtrip_env", 8, {24}, 32});
+            m.functions[0].code.insert(m.functions[0].code.begin() + 9, MethodCall{"roundtrip_env", 8, {24}, 32});
         },
         "already initialized");
     reject(
@@ -550,18 +551,31 @@ Module abiModule() {
                    {72, Type::U8},
                    {64, Type::I64},
                    {56, Type::U8}};
-        f.code = {BeginObject{8},          Constant{1000, Type::I64},
-                  Store{8, Type::I64},     BeginObject{16},
-                  Constant{3, Type::U8},   Store{16, Type::U8},
-                  Constant{5, Type::U8},   Store{15, Type::U8},
-                  BeginObject{24},         BeginObject{48},
-                  Constant{11, Type::U8},  Store{48, Type::U8},
-                  Constant{13, Type::I64}, Store{40, Type::I64},
-                  Constant{17, Type::U8},  Store{32, Type::U8},
-                  Constant{1, Type::I64},  Push{},
-                  Constant{7, Type::U8},   Push{},
-                  EnumConstant{mode, 1},   Push{},
-                  Constant{19, Type::I64}, Push{}};
+        f.code = {BeginObject{8},
+                  Constant{1000, Type::I64},
+                  Store{8, Type::I64},
+                  BeginObject{16},
+                  Constant{3, Type::U8},
+                  Store{16, Type::U8},
+                  Constant{5, Type::U8},
+                  Store{15, Type::U8},
+                  BeginObject{24},
+                  InitializeEmptyObject{24},
+                  BeginObject{48},
+                  Constant{11, Type::U8},
+                  Store{48, Type::U8},
+                  Constant{13, Type::I64},
+                  Store{40, Type::I64},
+                  Constant{17, Type::U8},
+                  Store{32, Type::U8},
+                  Constant{1, Type::I64},
+                  Push{},
+                  Constant{7, Type::U8},
+                  Push{},
+                  EnumConstant{mode, 1},
+                  Push{},
+                  Constant{19, Type::I64},
+                  Push{}};
         if (result)
             f.code.push_back(BeginObject{72});
         f.code.push_back(MethodCall{target.name, 8, {16, 0, 24, 0, 48, 0}, result ? 72 : 0});

@@ -35,7 +35,8 @@ enum class TypeKind {
     OwnedBytes,
     ConsoleSession,
     DisplaySession,
-    IommuEventSession
+    IommuEventSession,
+    OwnedValues
 };
 enum class TemplateArgumentKind {
     Type,
@@ -141,8 +142,26 @@ public:
     bool isBytes() const {
         return kind == TypeKind::OwnedBytes;
     }
+    bool isOwnedValues() const {
+        return kind == TypeKind::OwnedValues;
+    }
+    bool isOwnerStorage() const {
+        return isBytes() || isOwnedValues();
+    }
+    Type ownedElement() const {
+        Type element(className);
+        element.displayName = displayName;
+        element.resolvedClass = resolvedClass;
+        element.templateArguments = templateArguments;
+        return element;
+    }
+    static Type ownedValues(const Type &element) {
+        Type type = element;
+        type.kind = TypeKind::OwnedValues;
+        return type;
+    }
     bool isResource() const {
-        return isRegion() || isBytes();
+        return isRegion() || isOwnerStorage();
     }
     static Type enumeration(std::string name) {
         Type type(TypeKind::Enum);
@@ -204,6 +223,8 @@ inline std::string typeName(const Type &type) {
         return "builtin::ConsoleSession";
     case TypeKind::OwnedBytes:
         return "builtin::OwnedBytes";
+    case TypeKind::OwnedValues:
+        return "builtin::OwnedValues<" + typeName(type.ownedElement()) + ">";
     case TypeKind::Parameter:
         return type.className;
     case TypeKind::Enum:

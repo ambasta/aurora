@@ -55,7 +55,7 @@ computeClassStorageLayouts(const std::map<std::string, std::vector<Type>> &leave
             if (field.firstLeaf != static_cast<int>(layout.leafOffsets.size()) || field.length < 0 ||
                 (!(field.array && field.elementType.isClass()) && field.elementCount != 1))
                 throw Error("IR: invalid logical field range for storage");
-            if (field.elementType == Type::OwnedBytes) {
+            if (field.elementType.isOwnerStorage()) {
                 if (field.array || field.length != 0)
                     throw Error("IR: owned byte field requires one non-scalar descriptor");
                 align(8);

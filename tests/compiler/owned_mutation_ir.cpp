@@ -169,6 +169,7 @@ Module emptyFields() {
     function.objectSlots = {{8, {"Empty", false}}, {16, {"Envelope", false}}, {32, {"Envelope", true}}};
     function.code = {BindObjectParameter{0, 16, "Envelope"},
                      BeginObject{8},
+                     InitializeEmptyObject{8},
                      BeginObject{32},
                      CopyObject{16, 32},
                      AssignObjectField{32, 0, 8},
@@ -190,8 +191,8 @@ void directTests() {
         emptyFields(),
         [](Module &m) {
             auto &code = m.functions[0].code;
-            code.erase(code.begin() + 3);
-            code.insert(code.begin() + 3, {Constant{7, Type::U64}, Store{32, Type::U64}});
+            code.erase(code.begin() + 4);
+            code.insert(code.begin() + 4, {Constant{7, Type::U64}, Store{32, Type::U64}});
         },
         "nested class field not completely initialized");
     reject(
@@ -199,8 +200,8 @@ void directTests() {
         emptyFields(),
         [](Module &m) {
             auto &code = m.functions[0].code;
-            code.erase(code.begin() + 3, code.begin() + 5);
-            code.insert(code.begin() + 3, {Constant{7, Type::U64}, Store{32, Type::U64}});
+            code.erase(code.begin() + 4, code.begin() + 6);
+            code.insert(code.begin() + 4, {Constant{7, Type::U64}, Store{32, Type::U64}});
         },
         "nested class field not completely initialized");
     for (bool implicit : {false, true}) {

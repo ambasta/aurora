@@ -1,0 +1,87 @@
+module aurora.compiler.expression_arena;
+
+// Compiler-owned graph storage. Indices belong to one arena invocation and
+// never expose references, owner descriptors or byte representations.
+namespace compiler_parser {
+    enum class NodeKind { invalid, literal, name, unary, binary };
+
+    class AstNode {
+        NodeKind tag;
+        i64 token_index;
+        i64 first_child;
+        i64 second_child;
+        i64 tree_depth;
+    public:
+        AstNode(NodeKind kind, i64 token, i64 first, i64 second, i64 depth)
+            : tag(kind), token_index(token), first_child(first), second_child(second), tree_depth(depth) {
+        }
+        auto kind() const -> NodeKind { return tag; }
+        auto token() const -> i64 { return token_index; }
+        auto first() const -> i64 { return first_child; }
+        auto second() const -> i64 { return second_child; }
+        auto depth() const -> i64 { return tree_depth; }
+    };
+
+    class AstArena {
+        builtin::OwnedValues<AstNode> nodes;
+        i64 used;
+    public:
+        AstArena(builtin::ByteRegion region, builtin::OwnedValues<AstNode> initial)
+            : nodes(move(initial)), used(0) {
+        }
+        auto ok() const -> bool { return nodes.ok(); }
+        auto size() const -> i64 { return used; }
+        auto capacity() const -> i64 { return nodes.size(); }
+
+        auto at(i64 index) const -> AstNode {
+            i64 checked = index;
+            if (index < 0 || index >= used) { checked = -1; }
+            return nodes.at(checked);
+        }
+
+        auto append(NodeKind kind, i64 token, i64 first, i64 second) -> i64 {
+            if (!nodes.ok() || token < 0) { return -1; }
+            i64 depth = 1;
+            if (kind == NodeKind::literal || kind == NodeKind::name) {
+                if (first != -1 || second != -1) { return -1; }
+            }
+            if (kind == NodeKind::unary) {
+                if (first < 0 || first >= used || second != -1) { return -1; }
+                AstNode child = nodes.at(first);
+                depth = child.depth() + 1;
+            }
+            if (kind == NodeKind::binary) {
+                if (first < 0 || first >= used || second < 0 || second >= used) { return -1; }
+                AstNode left = nodes.at(first);
+                AstNode right = nodes.at(second);
+                depth = left.depth() + 1;
+                if (right.depth() >= depth) { depth = right.depth() + 1; }
+            }
+            if (kind != NodeKind::literal && kind != NodeKind::name && kind != NodeKind::unary && kind != NodeKind::binary) {
+                return -1;
+            }
+            if (depth > 128) { return -1; }
+            if (used == 9223372036854775807) { return -1; }
+            if (used == nodes.size()) {
+                i64 next = 8;
+                if (used > 0) {
+                    if (used > 4611686018427387903) { next = used + 1; }
+                    else { next = used * 2; }
+                }
+                AstNode empty = AstNode(NodeKind::invalid, -1, -1, -1, 0);
+                if (!nodes.try_resize(next, empty)) { return -1; }
+            }
+            AstNode node = AstNode(kind, token, first, second, depth);
+            if (!nodes.set(used, node)) { return -1; }
+            const i64 index = used;
+            used = used + 1;
+            return index;
+        }
+    };
+    auto make_arena(builtin::ByteRegion region, i64 initial_capacity) -> AstArena {
+        AstNode empty = AstNode(NodeKind::invalid, -1, -1, -1, 0);
+        builtin::OwnedValues<AstNode> storage = region.try_allocate(initial_capacity, empty);
+        AstArena arena = AstArena(region, move(storage));
+        return move(arena);
+    }
+}
