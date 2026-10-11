@@ -830,10 +830,10 @@ def decimal_projection_cases(suite):
         checks = []
         for value in values[start : start + 16]:
             digits = str(value)
-            checks.append(f"if(std::decimal_width_u64({value}u64)!={len(digits)}){{return 1;}}")
+            checks.append(f"if(std::format_decimal_width_u64({value}u64)!={len(digits)}){{return 1;}}")
             for place in (-9223372036854775808, -1, *range(len(digits) + 1), 9223372036854775807):
                 expected = ord(digits[-1 - place]) if 0 <= place < len(digits) else 0
-                checks.append(f"if(std::decimal_digit_at_u64({value}u64,{place})!={expected}u8){{return 2;}}")
+                checks.append(f"if(std::format_decimal_digit_at_u64({value}u64,{place})!={expected}u8){{return 2;}}")
         suite.check(
             "scalar decimal width and digit projections",
             program("".join(checks) + "return 42;", imports="import std.decimal;"),

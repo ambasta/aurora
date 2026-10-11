@@ -175,10 +175,10 @@ export namespace console {
             index = index + 1;
         }
         reply.text(": ");
-        i64 place = std::decimal_width_u64(u64(count));
+        i64 place = std::format_decimal_width_u64(u64(count));
         while (place > 0) {
             place = place - 1;
-            reply.append(std::decimal_digit_at_u64(u64(count), place));
+            reply.append(std::format_decimal_digit_at_u64(u64(count), place));
         }
         reply.text(" byte");
         if (count != 1) { reply.append('s'); }
