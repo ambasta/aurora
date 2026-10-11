@@ -2402,7 +2402,16 @@ Module methodResultNativeModule() {
     module.functions.push_back(entry);
     entry = module.functions[0];
     entry.name = "method_result_saved_operand";
-    entry.code.insert(entry.code.begin() + 30, {Constant{3, Type::I64}, Push{}});
+    // Save below the method arguments, after the constructor has consumed its
+    // own operands. Find the result lifetime boundary rather than an IR index:
+    // explicit empty-object initialization adds a real instruction earlier.
+    const auto savedPosition = std::find_if(entry.code.begin(), entry.code.end(), [](const Instruction &instruction) {
+        const auto *begin = std::get_if<BeginObject>(&instruction);
+        return begin && begin->offset == 152;
+    });
+    if (savedPosition == entry.code.end())
+        throw Error("missing method-result lifetime boundary in saved-operand fixture");
+    entry.code.insert(savedPosition, {Constant{3, Type::I64}, Push{}});
     entry.code.insert(entry.code.end() - 1, BinaryValue{Binary::CheckedAdd});
     module.functions.push_back(entry);
     return module;
