@@ -550,6 +550,87 @@ def native_cases(suite):
         ),
     )
 
+    holder = "class Holder{public:Counter item;Holder(Counter source):item(source){}};"
+    field_direct = p(
+        "Counter source=Counter(42);Holder holder=Holder(source);Counter result=forward(holder,source);"
+        "holder.item.set(7);source.set(9);return result.get();",
+        COUNTER + holder,
+        "auto forward(Holder holder,Counter source)->Counter{return holder.item.copy(source);}",
+    )
+    suite.check(
+        "direct public field method result matches named-local assembly",
+        field_direct,
+        equivalent_source=field_direct.replace(
+            "return holder.item.copy(source);", "const Counter result=holder.item.copy(source);return result;"
+        ),
+    )
+    for mutable, method in ((False, "copy"), (True, "replace")):
+        qualifier = "" if mutable else "const"
+        direct = p(
+            "Counter initial=Counter(42);Counter source=Counter(7);Holder holder=Holder(initial);"
+            "Counter result=holder.forward(source);source.set(9);"
+            + f"if(!holder.intact()||holder.get()!={7 if mutable else 42}){{return 0;}}return result.get();",
+            COUNTER + "class Holder{u8 first;Counter item;u8 last;public:"
+            "Holder(Counter source):first(13u8),item(source),last(29u8){}"
+            "auto intact()const->bool{return first==13u8&&last==29u8;}"
+            "auto get()const->i64{return item.get();}"
+            + f"auto forward(Counter source){qualifier}->Counter{{return item.{method}(source);}}}};",
+        )
+        suite.check(
+            "direct padded private field method result " + method,
+            direct,
+            expected=42 if mutable else 7,
+            equivalent_source=direct.replace(
+                f"return item.{method}(source);", f"const Counter result=item.{method}(source);return result;"
+            ),
+        )
+    direct = p(
+        "Counter result=forward();return result.get();",
+        COUNTER.replace(
+            "};",
+            "auto merge(Counter before,i64 ignored,Counter after)->Counter{"
+            "value=99;return Counter(before.get()+after.get());}};",
+        )
+        + holder,
+        "auto forward()->Counter{Counter source=Counter(20);Holder holder=Holder(source);"
+        "return holder.item.merge(source,source.add(2),source);}",
+    )
+    suite.check(
+        "direct field method preserves left-to-right snapshots",
+        direct,
+        equivalent_source=direct.replace(
+            "return holder.item.merge(source,source.add(2),source);",
+            "const Counter result=holder.item.merge(source,source.add(2),source);return result;",
+        ),
+    )
+    direct = p(
+        "Counter source=Counter(0);Holder holder=Holder(source);Counter result=holder.forward();return result.get();",
+        COUNTER + "class Holder{Counter item;public:Holder(Counter source):item(source){}"
+        "auto forward()const->Counter{builtin::array<u8,1> bytes={42u8};"
+        "const builtin::span<const u8> view=borrow_bytes(bytes);Counter source=Counter(i64(view.at(0)));"
+        "return item.copy(source);}};",
+    )
+    suite.check(
+        "direct field method closes live array and span",
+        direct,
+        equivalent_source=direct.replace(
+            "return item.copy(source);", "const Counter result=item.copy(source);return result;"
+        ),
+    )
+    direct = p(
+        "Empty source=Empty();Holder holder=Holder(source);Empty result=forward(holder,source);return result.answer();",
+        EMPTY.replace("};", "auto copy(Empty source)const->Empty{return source;}};")
+        + "class Holder{public:Empty item;Holder(Empty source):item(source){}};",
+        "auto forward(Holder holder,Empty source)->Empty{return holder.item.copy(source);}",
+    )
+    suite.check(
+        "direct empty field method result keeps logical completeness",
+        direct,
+        equivalent_source=direct.replace(
+            "return holder.item.copy(source);", "const Empty result=holder.item.copy(source);return result;"
+        ),
+    )
+
 
 def model_cases(suite, seed, steps):
     rng = random.Random(seed)
@@ -748,10 +829,36 @@ def rejection_cases(suite):
             "complete local name",
         ),
         (
-            "field receiver remains unsupported",
+            "readonly field receiver forbids mutable method",
             COUNTER + "class Holder{public:Counter item;Holder(Counter source):item(source){}};",
+            "auto forward(Holder holder,Counter source)->Counter{return holder.item.replace(source);}",
+            "mutable receiver",
+        ),
+        (
+            "private field receiver stays inaccessible",
+            COUNTER + "class Holder{Counter item;public:Holder(Counter source):item(source){}};",
             "auto forward(Holder holder,Counter source)->Counter{return holder.item.copy(source);}",
-            "complete receiver",
+            "private",
+        ),
+        (
+            "chained field receiver remains unsupported",
+            COUNTER + "class Holder{public:Counter item;Holder(Counter source):item(source){}};"
+            "class Outer{public:Holder holder;Outer(Holder source):holder(source){}};",
+            "auto forward(Outer outer,Counter source)->Counter{return outer.holder.item.copy(source);}",
+            "method receiver",
+        ),
+        (
+            "temporary containing receiver remains unsupported",
+            COUNTER + "class Holder{public:Counter item;Holder(Counter source):item(source){}};",
+            "auto forward(Counter source)->Counter{return Holder(source).item.copy(source);}",
+            "method receiver",
+        ),
+        (
+            "field receiver exact nominal result",
+            COUNTER + "class Holder{public:Counter item;Holder(Counter source):item(source){}};"
+            "class Other{public:i64 value;};",
+            "auto forward(Holder holder,Counter source)->Other{return holder.item.copy(source);}",
+            "expected Other",
         ),
         (
             "implicit method cannot override parameter binding",
@@ -761,6 +868,18 @@ def rejection_cases(suite):
         ),
     ):
         suite.reject("direct method " + label, p("return 42;", definition, helper), error=diagnostic)
+    owning_field = (
+        COUNTER + "class Owner{builtin::OwnedBytes bytes;public:"
+        "Owner(builtin::ByteRegion region,builtin::OwnedBytes source):bytes(move(source)){}"
+        "auto copy(Counter source)const->Counter{return source;}};"
+        "class Holder{Owner item;public:Holder(builtin::ByteRegion region,Owner source):item(move(source)){}"
+        "auto forward(Counter source)const->Counter{return item.copy(source);}};"
+    )
+    suite.reject(
+        "direct field call does not admit nested owning classes",
+        p("return 42;", owning_field),
+        error="nested owning class fields are unsupported",
+    )
     suite.reject(
         "direct service operation result dispatch remains rejected",
         p(
