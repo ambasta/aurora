@@ -76,19 +76,17 @@ concurrency models, TypeScript-like type transformations and richer reflection
 remain open. See the [compiler reference](../compiler/README.md) and
 [library dependency plan](library-stack.md), rather than historical exclusions.
 
-The next hosted compiler checkpoint has a complete [Aurora lexical phase](../compiler/LEXER.md).
-A C++ seed emits the lexer; hosted stage 1 then uses it to rebuild the same Aurora
-source with identical assembly. This is partial hosted bootstrap: parsing,
-semantic analysis and native emission remain C++, and host C++/assembly still
-imports immutable source storage. Full compiler self-hosting needs those remaining
-phases in Aurora and reproducible multi-stage builds. The concrete typed
-`expression_arena.au` now supplies append-only copied AST storage with local
-child indices and checked depth. The next parser slice must actually feed those
-nodes into the existing resolver/code generator through a checked bootstrap
-adapter, preserve diagnostics and unsupported-syntax fallback boundaries, and
-exercise more than 64 nodes. Arena construction alone is not parser migration.
-A native toolchain additionally needs the assembler, linker, runtime and target
-file/process services; the lexer checkpoint does not supply those dependencies.
+The hosted compiler has an [Aurora lexical phase](../compiler/LEXER.md) and a
+[bounded statement-expression parser](../compiler/ARCHITECTURE.md#hosted-aurora-expression-parser).
+A C++ seed emits one imported lexer/arena/parser graph; hosted stage 1 uses its
+returned AST in the existing resolver, semantic checker and backend. The Aurora
+arena owns both copied nodes and explicit parser frames. Unsupported complete
+expressions retain a non-consuming C++ fallback; malformed supported grammar and
+allocation/adapter failures reject. The remaining grammar, semantic analysis and
+native emission remain C++. The next dependency is broader grammar migration
+with the same diagnostic/ownership and multi-stage reproducibility gates.
+Full self-hosting additionally needs a native assembler, linker, runtime and
+file/process services; these hosted compiler slices do not supply them.
 
 Gate: positive, rejection, adversarial, resource and ABI tests with independent
 review; no unchecked assertion, visibility bypass or resource duplication. Then

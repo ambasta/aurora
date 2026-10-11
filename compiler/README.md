@@ -2,8 +2,9 @@
 
 Aurora is an intentionally incompatible safe C++-inspired language. It has no
 C header/macro layer, raw-pointer escape, unsafe block or C ABI. The hosted build
-uses an Aurora-written [lexer](LEXER.md) bootstrapped from a C++ seed; parsing,
-semantic/lifetime analysis, typed-IR verification and x86-64 emission remain C++23.
+uses an Aurora-written [lexer](LEXER.md) and a bounded
+[statement-expression parser](ARCHITECTURE.md#hosted-aurora-expression-parser), bootstrapped from a C++ seed.
+The remaining grammar, semantic/lifetime analysis, typed-IR verification and x86-64 emission remain C++23.
 GNU assembler/linker and Linux host I/O remain bootstrap dependencies.
 
 ## Build and check
@@ -107,5 +108,8 @@ These temporary register choices are implementation machinery, not a source-leve
 `examples/kernel.au` performs a mutable borrow, releases it, moves ownership and returns 42. `examples/class_values.au` demonstrates class copies/visibility/reflection. `examples/loops_arrays.au` demonstrates checked traversal and independent arrays.
 
 Runtime-sized [typed copied-class owners](OWNERSHIP.md#runtime-sized-copied-class-ownership)
-now support the concrete `expression_arena.au` bootstrap AST storage consumer.
-The expression parser remains C++; typed storage does not establish parser migration.
+support the `expression_arena.au` AST and explicit parser-frame storage. Supported
+complete scalar/name/unary/binary/parenthesized statement expressions are parsed
+in Aurora and converted to the existing source AST through the private hosted
+adapter. Extended expressions use the unchanged C++ parser as a whole; this
+bounded migration does not establish compiler self-hosting.

@@ -15,6 +15,45 @@ The typed-IR milestone established behavior-preserving compiler phase boundaries
 
 The implementation uses internal header units and one translation unit so existing bootstrap commands that compile `main.cpp` continue to work. These are actual phase boundaries rather than separately named files wrapping the old assembly-text emitter. This packaging is not a stable external compiler-library API.
 
+## Hosted Aurora expression parser
+
+`expression_parser.au` parses complete statement expressions containing integer,
+byte and bool literals, unqualified names, grouping, unary `-`/`!`/`~`, and all
+existing binary precedence tiers. Initializers, return/static-assert expressions,
+if/while conditions, expression statements and assignment operands enter this
+path. An iterative Pratt state machine stores copied frames and AST nodes in
+`expression_arena.au`; parser nesting and AST depth retain their separate bounds
+of 128. Grouping retains the inner node's original token span.
+
+The parser calls `lexer.au::next_lexeme` for every token and trivia boundary.
+A local eligibility pass returns Unsupported for calls, qualified names,
+member/index access, construction, strings and arrays. Existing non-consuming
+host template lookahead protects template/call ambiguity, including exact `>>`
+closer behavior. No supported prefix is committed: Unsupported falls back for
+the whole expression with tokens and position unchanged. Empty/truncated or
+otherwise malformed supported grammar, allocation/depth failure and malformed
+private results reject. Constructor initializer expressions and recursive parsing
+inside unsupported constructs remain on the C++ reference path.
+
+`hosted_parser.cpp` and `hosted_parser.S` are trusted bootstrap adapters. Aurora
+creates and consumes the arena; C++ only reserves opaque storage and imports the
+same immutable source snapshot used by the lexer. Copied results contain named
+status values, indices and source offsets. The adapter checks token/spelling/span
+bounds, exact stopping delimiter, child-before-parent order, arity, independently
+recomputed depth and one connected non-sharing tree before committing position.
+It constructs the existing `Expression` objects iteratively. All exits, including
+fallback, syntax errors and host allocation exceptions, consume the Aurora owner
+before the host Region closes. Semantic checking, typed IR and backend emission
+consume this returned AST unchanged.
+
+The hosted build stages exact exported lexer/arena files under their module paths,
+then emits one parser/arena/lexer graph with `--local-symbols`; no overlapping
+lexer object, second scanner or source concatenation is used. The existing C++
+stage-0 seed remains able to build the graph. Compiler, source fixtures, formatter
+and optional LSP link the same graph and hosted owner runtime. Standalone lexer
+bootstrap regression remains separate. Focused parser/ABI and multi-stage corpus
+checks do not replace final integrated GCC 16 full/image/guest qualification.
+
 ## Typed instruction model
 
 The current value and temporary operand stack carry explicit scalar/reference payload types. Source owners lower to scalar payload slots after the source ownership checks succeed. Borrow bindings lower to typed compiler-internal stack handles. No instruction offers arbitrary address arithmetic, arbitrary indirect stores, source-level raw pointers or opaque assembly injection.

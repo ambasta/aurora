@@ -464,11 +464,13 @@ class Suite:
         """,
             entry_name="arena_entry",
         )
-        self.run(arena, 8192, 200, 0, 42, 1, 1)
-        self.run(arena, 8192, 100, 0, 42, 2, 1)
-        self.run(arena, 80, 2, 1, 42, 1, 1)
-        self.run(arena, 8192, 200, 2, 42, 1, 1)
-        self.run(arena, 8192, -1, 0, -1, 0, 0)
+        # The arena owns a separate empty frame allocation even before parsing.
+        # Zero payload still has real lifetime metadata and must be released.
+        self.run(arena, 8192, 200, 0, 42, 2, 2)
+        self.run(arena, 8192, 100, 0, 42, 3, 2)
+        self.run(arena, 80, 2, 1, 42, 2, 2)
+        self.run(arena, 8192, 200, 2, 42, 2, 2)
+        self.run(arena, 8192, -1, 0, -1, 1, 1)
         self.trap(arena, 8192, 200, 3)
 
         same_layout = "class Other {public:i64 a;i64 b;i64 c;};"

@@ -1,9 +1,53 @@
-module aurora.compiler.expression_arena;
+export module aurora.compiler.expression_arena;
 
 // Compiler-owned graph storage. Indices belong to one arena invocation and
 // never expose references, owner descriptors or byte representations.
-namespace compiler_parser {
-    enum class NodeKind { invalid, literal, name, unary, binary };
+export namespace compiler_parser {
+    enum class NodeKind {
+        invalid,
+        literal,
+        name,
+        unary,
+        binary
+    };
+
+    enum class ArenaFailure {
+        none,
+        allocation,
+        depth,
+        invalid
+    };
+    enum class FrameState {
+        expression_start,
+        expression_left,
+        expression_right,
+        primary_start,
+        primary_group,
+        primary_unary
+    };
+
+    class ParseFrame {
+        FrameState step;
+        i64 minimum;
+        i64 left;
+        i64 operator_token;
+    public:
+        ParseFrame(FrameState state, i64 precedence, i64 lhs, i64 token) : step(state), minimum(precedence), left(lhs),
+            operator_token(token) {
+        }
+        auto state() const -> FrameState {
+            return step;
+        }
+        auto min() const -> i64 {
+            return minimum;
+        }
+        auto lhs() const -> i64 {
+            return left;
+        }
+        auto token() const -> i64 {
+            return operator_token;
+        }
+    };
 
     class AstNode {
         NodeKind tag;
@@ -12,76 +56,166 @@ namespace compiler_parser {
         i64 second_child;
         i64 tree_depth;
     public:
-        AstNode(NodeKind kind, i64 token, i64 first, i64 second, i64 depth)
-            : tag(kind), token_index(token), first_child(first), second_child(second), tree_depth(depth) {
+        AstNode(NodeKind kind, i64 token, i64 first, i64 second, i64 depth) : tag(kind), token_index(token),
+            first_child(first), second_child(second), tree_depth(depth) {
         }
-        auto kind() const -> NodeKind { return tag; }
-        auto token() const -> i64 { return token_index; }
-        auto first() const -> i64 { return first_child; }
-        auto second() const -> i64 { return second_child; }
-        auto depth() const -> i64 { return tree_depth; }
+        auto kind() const -> NodeKind {
+            return tag;
+        }
+        auto token() const -> i64 {
+            return token_index;
+        }
+        auto first() const -> i64 {
+            return first_child;
+        }
+        auto second() const -> i64 {
+            return second_child;
+        }
+        auto depth() const -> i64 {
+            return tree_depth;
+        }
     };
 
     class AstArena {
         builtin::OwnedValues<AstNode> nodes;
         i64 used;
+        builtin::OwnedValues<ParseFrame> frames;
+        i64 frame_count;
+        ArenaFailure error;
     public:
-        AstArena(builtin::ByteRegion region, builtin::OwnedValues<AstNode> initial)
-            : nodes(move(initial)), used(0) {
+        AstArena(builtin::ByteRegion region, builtin::OwnedValues<AstNode> initial,
+            builtin::OwnedValues<ParseFrame> scratch) : nodes(move(initial)), used(0), frames(move(scratch)),
+            frame_count(0), error(ArenaFailure::none) {
         }
-        auto ok() const -> bool { return nodes.ok(); }
-        auto size() const -> i64 { return used; }
-        auto capacity() const -> i64 { return nodes.size(); }
+        auto ok() const -> bool {
+            return nodes.ok() && frames.ok();
+        }
+        auto size() const -> i64 {
+            return used;
+        }
+        auto capacity() const -> i64 {
+            return nodes.size();
+        }
+
+        auto failure() const -> ArenaFailure {
+            return error;
+        }
+        auto stack_size() const -> i64 {
+            return frame_count;
+        }
+        auto frame() const -> ParseFrame {
+            return frames.at(frame_count - 1);
+        }
+        auto pop() -> i64 {
+            if (frame_count <= 0) {
+                error = ArenaFailure::invalid;
+                return -1;
+            }
+            frame_count = frame_count - 1;
+            return 0;
+        }
+        auto replace(ParseFrame value) -> bool {
+            return frames.set(frame_count - 1, value);
+        }
+        auto push(ParseFrame value) -> bool {
+            if (frame_count == frames.size()) {
+                i64 next = 8;
+                if (frame_count > 0) {
+                    next = frame_count * 2;
+                }
+                ParseFrame empty = ParseFrame(FrameState::expression_start, 1, -1, -1);
+                if (!frames.try_resize(next, empty)) {
+                    error = ArenaFailure::allocation;
+                    return false;
+                }
+            }
+            if (!frames.set(frame_count, value)) {
+                error = ArenaFailure::invalid;
+                return false;
+            }
+            frame_count = frame_count + 1;
+            return true;
+        }
 
         auto at(i64 index) const -> AstNode {
             i64 checked = index;
-            if (index < 0 || index >= used) { checked = -1; }
+            if (index < 0 || index >= used) {
+                checked = -1;
+            }
             return nodes.at(checked);
         }
 
         auto append(NodeKind kind, i64 token, i64 first, i64 second) -> i64 {
-            if (!nodes.ok() || token < 0) { return -1; }
+            error = ArenaFailure::invalid;
+            if (!nodes.ok() || token < 0) {
+                return -1;
+            }
             i64 depth = 1;
             if (kind == NodeKind::literal || kind == NodeKind::name) {
-                if (first != -1 || second != -1) { return -1; }
+                if (first != -1 || second != -1) {
+                    return -1;
+                }
             }
             if (kind == NodeKind::unary) {
-                if (first < 0 || first >= used || second != -1) { return -1; }
+                if (first < 0 || first >= used || second != -1) {
+                    return -1;
+                }
                 AstNode child = nodes.at(first);
                 depth = child.depth() + 1;
             }
             if (kind == NodeKind::binary) {
-                if (first < 0 || first >= used || second < 0 || second >= used) { return -1; }
+                if (first < 0 || first >= used || second < 0 || second >= used) {
+                    return -1;
+                }
                 AstNode left = nodes.at(first);
                 AstNode right = nodes.at(second);
                 depth = left.depth() + 1;
-                if (right.depth() >= depth) { depth = right.depth() + 1; }
+                if (right.depth() >= depth) {
+                    depth = right.depth() + 1;
+                }
             }
-            if (kind != NodeKind::literal && kind != NodeKind::name && kind != NodeKind::unary && kind != NodeKind::binary) {
+            if (kind != NodeKind::literal && kind != NodeKind::name && kind != NodeKind::unary && kind
+                != NodeKind::binary) {
                 return -1;
             }
-            if (depth > 128) { return -1; }
-            if (used == 9223372036854775807) { return -1; }
+            if (depth > 128) {
+                error = ArenaFailure::depth;
+                return -1;
+            }
+            if (used == 9223372036854775807) {
+                return -1;
+            }
             if (used == nodes.size()) {
                 i64 next = 8;
                 if (used > 0) {
-                    if (used > 4611686018427387903) { next = used + 1; }
-                    else { next = used * 2; }
+                    if (used > 4611686018427387903) {
+                        next = used + 1;
+                    } else {
+                        next = used * 2;
+                    }
                 }
                 AstNode empty = AstNode(NodeKind::invalid, -1, -1, -1, 0);
-                if (!nodes.try_resize(next, empty)) { return -1; }
+                if (!nodes.try_resize(next, empty)) {
+                    error = ArenaFailure::allocation;
+                    return -1;
+                }
             }
             AstNode node = AstNode(kind, token, first, second, depth);
-            if (!nodes.set(used, node)) { return -1; }
+            if (!nodes.set(used, node)) {
+                return -1;
+            }
             const i64 index = used;
             used = used + 1;
+            error = ArenaFailure::none;
             return index;
         }
     };
     auto make_arena(builtin::ByteRegion region, i64 initial_capacity) -> AstArena {
         AstNode empty = AstNode(NodeKind::invalid, -1, -1, -1, 0);
         builtin::OwnedValues<AstNode> storage = region.try_allocate(initial_capacity, empty);
-        AstArena arena = AstArena(region, move(storage));
+        ParseFrame frame = ParseFrame(FrameState::expression_start, 1, -1, -1);
+        builtin::OwnedValues<ParseFrame> scratch = region.try_allocate(0, frame);
+        AstArena arena = AstArena(region, move(storage), move(scratch));
         return move(arena);
     }
 }
