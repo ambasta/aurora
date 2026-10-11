@@ -8,31 +8,21 @@ project(
 # The compiler runs on the build machine, even when a future target is cross-built.
 native_cpp = meson.get_compiler('cpp', native: true)
 python = find_program('python3', native: true)
-lexer_events = custom_target(
-  'hosted-lexer-events', input: 'compiler/lexer.au', output: 'hosted_lexer_events.inc',
-  command: [python, '-B', files('scripts/bootstrap_frontend.py'), '--events', '@INPUT@', '@OUTPUT@'],
-)
-# The current source has no C++ expression seed. Bootstrap from an explicitly
-# selected, byte-pinned predecessor built using the documented source route.
+# The selected predecessor is a normal executable dependency tracked by Ninja.
 bootstrap_compiler_path = get_option('bootstrap_compiler')
-bootstrap_compiler_sha256 = get_option('bootstrap_compiler_sha256')
-if bootstrap_compiler_path == '' or bootstrap_compiler_sha256 == ''
-  error('Set both bootstrap_compiler (absolute executable path) and bootstrap_compiler_sha256. ' +
-        'Build the pinned predecessor from source using compiler/README.md#source-bootstrap; ' +
-        'the current C++ expression seed has been retired.')
+fs = import('fs')
+if not fs.is_absolute(bootstrap_compiler_path) or not fs.is_file(bootstrap_compiler_path)
+  error('Set bootstrap_compiler to an absolute predecessor executable path. ' +
+        'Build it from source using compiler/README.md#source-bootstrap.')
 endif
-run_command(python, '-B', files('scripts/bootstrap_frontend.py'), '--verify-compiler',
-            bootstrap_compiler_path, bootstrap_compiler_sha256, check: true)
 bootstrap_compiler = find_program(bootstrap_compiler_path, native: true)
-bootstrap_pin_args = ['--compiler-sha256', bootstrap_compiler_sha256]
 bootstrap_depend_files = files(bootstrap_compiler_path)
 frontend_inputs = files('compiler/lexer.au', 'compiler/expression_arena.au', 'compiler/expression_parser.au',
                         'compiler/hosted_lexer.S', 'compiler/hosted_parser.S')
 frontend_assembly = custom_target(
   'hosted-frontend-assembly', input: frontend_inputs,
-  output: ['hosted-frontend.s', 'hosted-frontend.generated.s'],
-  command: [python, '-B', files('scripts/bootstrap_frontend.py')] + bootstrap_pin_args +
-           [bootstrap_compiler, '@INPUT0@', '@INPUT1@', '@INPUT2@', '@INPUT3@', '@INPUT4@', '@OUTPUT0@'],
+  output: ['hosted-frontend.s', 'hosted-frontend.generated.s', 'hosted-frontend.abi.json', 'hosted_frontend_abi.hpp'],
+  command: [python, '-B', files('scripts/bootstrap_frontend.py'), bootstrap_compiler, '@INPUT0@', '@INPUT1@', '@INPUT2@', '@INPUT3@', '@INPUT4@', '@OUTPUT0@'],
   depend_files: bootstrap_depend_files,
 )
 frontend_object = custom_target(
@@ -42,10 +32,10 @@ frontend_object = custom_target(
 frontend_args = ['-DAURORA_HOSTED_LEXER', '-DAURORA_HOSTED_PARSER']
 frontend_host_sources = files('compiler/hosted_lexer.cpp', 'compiler/hosted_parser.cpp', 'runtime/hosted_bytes.cpp')
 frontend_library = static_library(
-  'hosted-frontend', [frontend_host_sources, frontend_object, lexer_events],
+  'hosted-frontend', [frontend_host_sources, frontend_object, frontend_assembly[3]],
   cpp_args: frontend_args, native: true, install: false,
 )
-hosted_frontend = declare_dependency(link_with: frontend_library, sources: lexer_events,
+hosted_frontend = declare_dependency(link_with: frontend_library, sources: frontend_assembly[3],
                                    include_directories: include_directories('.'),
                                    compile_args: frontend_args)
 aurorac = executable('aurorac', 'compiler/main.cpp', dependencies: hosted_frontend, native: true, install: false)
@@ -56,10 +46,11 @@ aurora_fmt = executable('aurora-fmt', 'compiler/format_main.cpp', dependencies: 
 # Reuse only the current host C++ objects; C2 must not link frontend A. These
 # test prerequisites stay outside the default build unless the test is selected.
 frontend_stage2_assembly = custom_target(
-  'hosted-frontend-stage2-assembly', input: frontend_inputs,
-  output: ['hosted-frontend-stage2.s', 'hosted-frontend-stage2.generated.s'],
+  'hosted-frontend-stage2-assembly', input: frontend_inputs + [frontend_assembly[3]],
+  output: ['hosted-frontend-stage2.s', 'hosted-frontend-stage2.generated.s',
+           'hosted-frontend-stage2.abi.json', 'hosted_frontend_stage2_abi.hpp'],
   command: [python, '-B', files('scripts/bootstrap_frontend.py'), aurorac,
-            '@INPUT0@', '@INPUT1@', '@INPUT2@', '@INPUT3@', '@INPUT4@', '@OUTPUT0@'],
+            '@INPUT0@', '@INPUT1@', '@INPUT2@', '@INPUT3@', '@INPUT4@', '@OUTPUT0@', '@INPUT5@'],
   build_by_default: false,
 )
 frontend_stage2_object = custom_target(

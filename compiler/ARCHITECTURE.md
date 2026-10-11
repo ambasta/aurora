@@ -51,40 +51,33 @@ The constructor-brace entry starts at the original field token and ends after it
 closing brace. It preserves field-anchored `array_zero` for an empty initializer;
 ordinary `{}` remains `array_literal`.
 
-`hosted_parser.cpp` and `hosted_parser.S` are trusted bootstrap adapters. Aurora
-creates and consumes the arena; C++ only reserves opaque storage and imports the
-same immutable source snapshot used by the lexer. Copied results contain named
-status values, indices and source offsets. The adapter checks token/spelling/span
-bounds, qualified spellings, matched delimiters, exact stopping delimiter and
-complete unique token coverage, including aggregate designators, commas,
-grouping and separately owned halves of `>>`. Type roots identify their owning
-expression and template/reflection role. The adapter validates a bounded,
-complete non-sharing type forest before constructing existing C++ `Type` and
-`TemplateArgument` values. Split-closer diagnostics preserve the original token
-index and exact second-byte span without mutating lexical tokens. It checks
-subtree source order, child-before-parent order, unique argument edges, arity,
-independently recomputed depth and one connected non-sharing tree before committing
-position.
-It constructs the existing `Expression` objects iteratively. All exits, including
-syntax errors and host allocation exceptions, consume the Aurora owners
-before the host Region closes. Semantic checking, typed IR and backend emission
-consume this returned AST unchanged.
+`hosted_parser.cpp` converts the Aurora syntax records into the existing C++ AST.
+It checks bounded counts, valid tags and indices, backward child references,
+non-sharing ownership and bounded construction depth so malformed records cannot
+cause unsafe indexing, cycles or exponential copies. Aurora owns grammar and
+source-token interpretation; the adapter does not replay delimiters, spelling,
+token coverage or template eligibility. It commits the caller position only after
+conversion succeeds. RAII consumes the opaque Aurora arena before closing its
+host Region, including errors and allocation exceptions. Semantic type checking,
+ownership analysis, typed IR and backend emission retain their existing authority.
 
-The hosted build stages exact exported lexer/arena files under their module paths,
-then emits one parser/arena/lexer graph with `--local-symbols`; no overlapping
-lexer object, second scanner or source concatenation is used. Required paired
-predecessor path/digest options select the compiler that emits frontend A. The
-current source contains no C++ expression seed target.
-Current C1 links A, emits a distinct frontend B, and current C2 links B with the
-same host C++ objects. The existing bootstrap test regenerates B through C1 and C
-through C2, requires exact assembly/raw/object equality, and checks regenerated B
-against the build-produced B consumed by C2. It compares current C1/C2 corpus
-behavior; predecessor compatibility is limited to emitting the current frontend.
-See the [source-build route](README.md#source-bootstrap).
-Compiler, source fixtures, formatter and optional LSP link frontend A and the
-hosted owner runtime. Standalone lexer bootstrap regression remains separate.
-Focused parser/ABI and multi-stage corpus checks do not replace final integrated
-GCC 16 full/image/guest qualification.
+The selected predecessor emits the lexer/arena/parser graph with `--local-symbols`
+and `--abi-facts`. The latter describes the same validated module's physical class
+layouts, resolved enum values, function symbols and argument/result extents.
+The bootstrap driver generates the private C++ records/enums and opaque arena
+storage from those facts, with size and field-offset assertions. This is a closed
+frontend binding, not a general C ABI generator. Only the builtin readonly-span
+encoding and tiny register-move bridges remain explicit trusted ABI conventions.
+Bridge targets use compiler-reported symbols rather than handwritten mangling.
+
+The predecessor is a normal executable dependency. Current C1 links frontend A,
+emits B, and C2 links B using the same host C++ objects. The bootstrap test checks
+A/B generated-header equality, regenerates B and C, and compares assembly, raw
+output, ABI facts, headers and objects, including the B actually linked into C2.
+The source-build route in [README.md](README.md#source-bootstrap) includes the
+fact-capable predecessor stage. No generated binary or layout snapshot is checked
+in. Focused conversion/ABI and multi-stage corpus checks do not replace the final
+integrated GCC 16 full/image/guest qualification.
 
 ### C++ expression parser retirement
 
@@ -95,7 +88,7 @@ Declaration `type`, `templateArguments`, `templateArgumentEnd` and split-closer
 handling remain because declaration parsing still uses them.
 
 Targeted fixtures state expected ASTs, token spans, child/designator order and
-exact diagnostics directly. The independent raw ABI, forged-result, depth and
+exact diagnostics directly. The independent raw ABI, bounded-conversion, depth and
 allocation-failure controls remain. Actual-source whole-vs-direct expression
 checks establish dispatch consistency, not an independent parser oracle.
 Retirement qualification additionally compares the current compiler with a

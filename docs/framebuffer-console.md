@@ -106,11 +106,13 @@ Standalone outputs and historical windows are never adopted for this cleanup.
 Graphical and Event smoke use one shared output-retention helper. Default retention
 keeps the newest two successful managed windows and preserves all failed windows.
 `AURORA_GRAPHICAL_KEEP_RUNS=N` accepts 1..999 for the successful-run limit; `all` skips pruning
-and pins the new window. A regular `.keep` pins one window. A separate runner pins
-a completed local window before image checks; remove that pin manually after use.
-A foreign checkout's managed window must already have a regular `.keep`; this
-reader never modifies foreign retention files. Unmarked, malformed and unfinished
-windows remain for manual review outside the count bound. See
+and pins the new window. A `.keep` pins one window. Successful runs are ordered by
+the modification time of their status marker; existing successful markers use the
+same policy, without a schema migration. Unmarked, malformed, active and failed
+windows remain outside the count bound. Pruning happens only after the run finishes.
+Reusing staged images does not create a pin or change their owner's status marker.
+Finish image readers before another run completes, or explicitly add `.keep` to
+the image directory's run before using it concurrently. See
 [explicit local cleanup](local-development.md#reclaiming-old-local-output-explicitly).
 
 ## Rendering and authority

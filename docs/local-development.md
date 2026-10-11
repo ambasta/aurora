@@ -248,8 +248,8 @@ BAR/IVRS have isolated profile outputs and need no final normal rebuild. Graphic
 and Event qualification still actually boot a separately staged normal image.
 They retain failures and explicit keeps. Within retained graphical windows,
 only successful disposable pixel dumps/probes may be discarded; logs, summaries
-and staged images remain. Default managed-window retention is two successful and
-two failed windows, with `AURORA_GRAPHICAL_KEEP_RUNS=all` and `.keep` protection.
+and staged images remain. Default managed-window retention is the two newest
+successful runs and all failed or active runs, with `AURORA_GRAPHICAL_KEEP_RUNS=all` and `.keep` protection.
 See [graphical retention](framebuffer-console.md#restoration-and-retention).
 Event retains its diagnostic artifacts. None of these gates qualifies hardware.
 

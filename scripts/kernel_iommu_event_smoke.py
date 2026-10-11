@@ -37,7 +37,6 @@ STREAM_LIMIT = 1024 * 1024
 EVIDENCE_LIMIT = 1024**3
 FREE_FLOOR = 1024**3
 RUN_MARKER = ".event-smoke-run.json"
-RUN_SCHEMA = "aurora-event-smoke-run-v1"
 FIRMWARE = {
     "code": (3653632, "624e06de18b4fa535e90db7160d00d3d07d206422b89999bf1e27d920264e4e0"),
     "vars": (540672, "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e"),
@@ -875,7 +874,7 @@ def main():
         signal.signal(sig, interrupted)
     directory = Path(tempfile.mkdtemp(prefix="aurora-event-smoke-", dir=parent))
     print("Event smoke evidence: " + str(directory), flush=True)
-    outputs = smoke_outputs.SmokeOutputs(parent, "aurora-event-smoke-", RUN_MARKER, RUN_SCHEMA, keep)
+    outputs = smoke_outputs.SmokeOutputs(parent, "aurora-event-smoke-", RUN_MARKER, keep)
     outputs.start(directory)
     status = 1
     try:

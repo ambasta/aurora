@@ -443,7 +443,8 @@ class Controls(unittest.TestCase):
                     ):
                         c.run(self.launch(goal, entry=entry))
                     message = str(caught.exception)
-                    self.assertIn("bootstrap_compiler_sha256", message)
+                    self.assertIn("bootstrap_compiler", message)
+                    self.assertNotIn("bootstrap_compiler_sha256", message)
                     self.assertIn("compiler/README.md#source-bootstrap", message)
                     self.assertIn("make -C" if goal in ("test", "test-acceptance") else "--list", message)
                     for forbidden in (tools, execute, write):

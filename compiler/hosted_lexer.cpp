@@ -2,7 +2,6 @@
 // exposed by Aurora. Immutable SourceText stays alive through every invocation.
 #include "lexer.hpp"
 #include "hosted_lexer_abi.hpp"
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -15,32 +14,8 @@ extern "C" void aurora_hosted_lexer_invoke(const void *input, void *output);
 namespace aurora {
 namespace {
 using hosted_lexer::Event;
-// Literal private ABI layout, checked separately against the emitted assembly.
-// Contiguous span: kind, backing, three reserved words, start, length.
-// Cursor and result are copied values, never descriptors or borrowed views.
-class Input {
-public:
-    std::uint64_t kind = 0;
-    const char *backing;
-    std::array<std::uint64_t, 3> reserved{};
-    std::int64_t start = 0;
-    std::int64_t length;
-    std::int64_t offset = 0;
-    std::int64_t line = 1;
-    std::int64_t lineStart = 0;
-};
-class Output {
-public:
-    Event event = static_cast<Event>(-1);
-    std::int64_t offset = -1;
-    std::int64_t line = -1;
-    std::int64_t lineStart = -1;
-};
-static_assert(sizeof(void *) == 8 && sizeof(Input) == 80 && sizeof(Output) == 32);
-static_assert(offsetof(Input, backing) == 8 && offsetof(Input, start) == 40 && offsetof(Input, length) == 48 &&
-              offsetof(Input, offset) == 56 && offsetof(Input, line) == 64 && offsetof(Input, lineStart) == 72);
-static_assert(offsetof(Output, event) == 0 && offsetof(Output, offset) == 8 && offsetof(Output, line) == 16 &&
-              offsetof(Output, lineStart) == 24);
+using Input = hosted_abi::LexerInput;
+using Output = hosted_abi::Lexeme;
 
 SourcePosition position(std::int64_t offset, std::int64_t line, std::int64_t start) {
     if (offset < 0 || start < 0 || start > offset || line < 1 || line > std::numeric_limits<int>::max() ||

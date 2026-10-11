@@ -232,7 +232,6 @@ class MesonEntrypointTests(unittest.TestCase):
         self.kernel_images = True
         self.kernel_compiler = ""
         self.bootstrap_compiler = str(self.root / "reviewed-predecessor")
-        self.bootstrap_pin = "a" * 64
         self.missing_options = set()
         self.test_names = {"short-circuit", "short-circuit-ir", "short-circuit-ir-native", "console-session"}
         self.preflight = unittest.mock.Mock()
@@ -263,9 +262,10 @@ class MesonEntrypointTests(unittest.TestCase):
         self.assertEqual(command[0], "/synthetic/meson")
         self.assertTrue(kwargs["check"])
         self.assertEqual(kwargs["env"]["CXX"], "/synthetic/g++")
-        self.assertNotEqual(command[1], "setup", "ordinary shortcuts must preserve the configured predecessor")
         if command[1] == self.failure:
             raise subprocess.CalledProcessError(23, command)
+        if command[1] == "setup":
+            self.bootstrap_compiler = command[-1].removeprefix("-Dbootstrap_compiler=")
         return subprocess.CompletedProcess(command, 0)
 
     def introspect(self, command, **kwargs):
@@ -281,7 +281,6 @@ class MesonEntrypointTests(unittest.TestCase):
             {"name": "kernel_compiler", "value": self.kernel_compiler},
             {"name": "uefi_ld", "value": ""},
             {"name": "bootstrap_compiler", "value": self.bootstrap_compiler},
-            {"name": "bootstrap_compiler_sha256", "value": self.bootstrap_pin},
         ]
         return json.dumps([item for item in options if item["name"] not in self.missing_options]).encode()
 
@@ -310,7 +309,6 @@ class MesonEntrypointTests(unittest.TestCase):
                 {"kernel_compiler"},
                 {"cpp_args"},
                 {"bootstrap_compiler"},
-                {"bootstrap_compiler_sha256"},
                 {"kernel_images", "uefi_ld"},
             ):
                 with self.subTest(supplied=supplied, missing=missing):
@@ -320,18 +318,67 @@ class MesonEntrypointTests(unittest.TestCase):
                     self.assertEqual(self.calls, [])
                     self.assertEqual(sentinel.read_text(), "keep this evidence")
 
-    def test_configured_predecessor_requires_absolute_path_and_exact_pin(self):
+    def test_configured_predecessor_requires_absolute_path(self):
         self.configured()
-        for path, pin in (
-            ("", ""),
-            ("relative/compiler", "a" * 64),
-            (self.bootstrap_compiler, ""),
-            (self.bootstrap_compiler, "A" * 64),
-        ):
-            self.bootstrap_compiler, self.bootstrap_pin = path, pin
-            with self.subTest(path=path, pin=pin), self.assertRaises(contract.ContractError):
+        for path in ("", "relative/compiler"):
+            self.bootstrap_compiler = path
+            with self.subTest(path=path), self.assertRaises(contract.ContractError):
                 meson_test.execute(self.root, "full")
             self.assertEqual(self.calls, [])
+
+    def test_requested_predecessor_refreshes_only_implicit_default(self):
+        build = self.configured()
+        sentinel = build / "retained-failure"
+        sentinel.write_text("preserve")
+        lock = build / ".aurora-test.lock"
+        lock.touch()
+        inode = lock.stat().st_ino
+        self.flags = ["-O2"]
+        os.environ["CXXFLAGS"] = "-O2"
+        predecessor = self.root / "new predecessor"
+        predecessor.write_text("#!/bin/sh\nexit 0\n")
+        predecessor.chmod(0o755)
+        os.environ["BOOTSTRAP_COMPILER"] = str(predecessor)
+        meson_test.execute(self.root, "full")
+        self.assertEqual([c[1] for c in self.calls], ["setup", "compile", "test"])
+        self.assertEqual(self.calls[0][2:], ["--reconfigure", str(build), "-Dbootstrap_compiler=" + str(predecessor)])
+        self.assertEqual(sentinel.read_text(), "preserve")
+        self.assertEqual(lock.stat().st_ino, inode)
+        self.assertEqual(self.flags, ["-O2"])
+        self.calls.clear()
+        meson_test.execute(self.root, "full")
+        self.assertEqual([c[1] for c in self.calls], ["compile", "test"])
+        self.calls.clear()
+        self.bootstrap_compiler = str(self.root / "old predecessor")
+        os.environ["MESON_BUILD_DIR"] = str(build)
+        with self.assertRaisesRegex(contract.ContractError, "differs from BOOTSTRAP_COMPILER; run"):
+            meson_test.execute(self.root, "full")
+        self.assertEqual(self.calls, [])
+        self.assertEqual(sentinel.read_text(), "preserve")
+
+    def test_failed_predecessor_refresh_does_not_compile(self):
+        build = self.configured()
+        selected = self.root / "new predecessor"
+        selected.write_text("#!/bin/sh\nexit 0\n")
+        selected.chmod(0o755)
+        os.environ["BOOTSTRAP_COMPILER"] = str(selected)
+        original = self.bootstrap_compiler
+        self.failure = "setup"
+        with self.assertRaises(subprocess.CalledProcessError):
+            meson_test.execute(self.root, "full")
+        self.assertEqual([c[1] for c in self.calls], ["setup"])
+        self.assertEqual(self.bootstrap_compiler, original)
+        self.assertTrue((build / ".aurora-test.lock").is_file())
+
+    def test_invalid_requested_predecessor_rejects_before_meson(self):
+        nonexecutable = self.root / "nonexecutable"
+        nonexecutable.write_text("not executable")
+        for selected in ("", "relative/compiler", str(self.root), str(self.root / "missing"), str(nonexecutable)):
+            os.environ["BOOTSTRAP_COMPILER"] = selected
+            with self.subTest(selected=selected), self.assertRaisesRegex(contract.ContractError, "BOOTSTRAP_COMPILER"):
+                meson_test.execute(self.root, "full")
+            self.assertEqual(self.calls, [])
+            self.assertEqual(self.queries, [])
 
     def test_configured_default_and_explicit_builds_compile_then_full(self):
         for supplied in (None, "build/chosen-gcc", str(self.root / "absolute-gcc")):
@@ -347,7 +394,6 @@ class MesonEntrypointTests(unittest.TestCase):
                 self.assertEqual(
                     self.calls[1][2:9], ["-C", str(build), "--suite", "full", "--no-rebuild", "--num-processes", "4"]
                 )
-                self.assertEqual(self.bootstrap_pin, "a" * 64)
 
     def test_build_only_selects_one_existing_target_without_tests(self):
         build = self.configured("compiler")

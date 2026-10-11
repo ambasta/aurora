@@ -8,9 +8,9 @@ cd "$(dirname "$0")/.."
 out="${1:-${KERNEL_PROGRAM_NOTE_BUILD_DIR:-build/note-native-focused}}"
 mkdir -p "$out"
 "$AURORAC" tests/kernel-programs/program-upper-client.au -o "$out/client.s"
-"$AURORAC" --module-root kernel/policies tests/kernel-programs/program-stream-service.au -o "$out/service.s"
+"$AURORAC" --module-root kernel/policies tests/kernel-programs/program-stream-service.au -o "$out/service.s" --abi-facts "$out/service.abi.json"
 "$AURORAC" --local-symbols --module-root kernel/policies --module-root library \
-    examples/kernel-program-console.au -o "$out/supervisor.s"
+    examples/kernel-program-console.au -o "$out/supervisor.s" --abi-facts "$out/supervisor.abi.json"
 # Test the native initial representation against the real library constructor.
 # This is a separate test-only root; all production inputs above are unchanged.
 cat > "$out/initial.au" <<'SOURCE'
@@ -35,7 +35,8 @@ SOURCE
 "$AURORAC" --module-root library "$out/initial.au" -o "$out/initial.s"
 as --64 -L "$out/client.s" -o "$out/client.o"
 as --64 -L kernel/uefi/ipc-user-entry.S -o "$out/client-entry.o"
-as --64 -L --defsym PROGRAM_NOTE_SERVICE=1 "$out/service.s" kernel/uefi/ipc-user-entry.S -o "$out/service.o"
+python3 -B scripts/meson_aurora_assembly.py --render-bridge "$out/service.abi.json" kernel/uefi/ipc-user-entry.S "$out/service-entry.s"
+as --64 -L --defsym PROGRAM_NOTE_SERVICE=1 "$out/service.s" "$out/service-entry.s" -o "$out/service.o"
 for part in client service; do
     extra=()
     case "$part" in
@@ -47,7 +48,8 @@ for part in client service; do
     objcopy -O binary "$out/$part.elf" "$out/$part.bin"
 done
 python3 -B tests/kernel-snapshot-abi.py "$out" --note
-as --64 -L "$out/supervisor.s" kernel/uefi/program-note-entry.S -o "$out/supervisor-host.o"
+python3 -B scripts/meson_aurora_assembly.py --render-bridge "$out/supervisor.abi.json" kernel/uefi/program-note-entry.S "$out/supervisor-entry.s"
+as --64 -L "$out/supervisor.s" "$out/supervisor-entry.s" kernel/uefi/kernel-policy-entry.S -o "$out/supervisor-host.o"
 as --64 -L "$out/service.s" tests/kernel-program-note-entry.S -o "$out/service-host.o"
 as --64 -L --defsym NOTE_TEST_INITIAL=1 "$out/initial.s" tests/kernel-program-note-entry.S -o "$out/initial-host.o"
 as --64 -L "$out/client.s" -o "$out/client-host.o"

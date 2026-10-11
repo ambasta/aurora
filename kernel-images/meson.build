@@ -80,16 +80,30 @@ foreach profile_id : profile_data['profiles'].split('|')
   if admission == 'program'
     root_args += ['--referenced-reflection-only', '--local-symbols']
   endif
+  bridge = profile_data[key + '.bridge']
+  bridge_input = bridge == '' ? [] : files('../' + bridge)
+  language_outputs = [platform == 'bios' ? 'kernel-language.s' : 'language.s',
+                      platform == 'bios' ? 'kernel-language.stack.json' : 'language.stack.json']
+  language_dependencies = compiler_files
+  if admission == 'program'
+    language_outputs += ['language.abi.json']
+    root_args += ['--abi-facts', '@OUTPUT2@', '--bridge', kernel_source / bridge,
+                  '--bridge', kernel_source / 'kernel/uefi/kernel-policy-entry.S']
+    language_dependencies += bridge_input + files('../kernel/uefi/kernel-policy-entry.S',
+                                                 '../scripts/bootstrap_frontend.py')
+    bridge_input = []
+  endif
   language_name = platform == 'bios' ? 'kernel-language' : 'language'
   language = custom_target(prefix + '-language-assembly',
-    input: files('../' + profile_data[key + '.language']), output: [language_name + '.s', language_name + '.stack.json'],
-    build_subdir: output_subdir, depfile: language_name + '.d', depend_files: compiler_files,
+    input: files('../' + profile_data[key + '.language']), output: language_outputs,
+    build_subdir: output_subdir, depfile: language_name + '.d', depend_files: language_dependencies,
     command: [python, '-B', kernel_assembly_helper, '--compiler', kernel_image_compiler, '--source', '@INPUT@',
               '--output', '@OUTPUT0@', '--stack-facts', '@OUTPUT1@', '--depfile', '@DEPFILE@'] + root_args)
   aurora_facts += [language[1]]
-  bridge = profile_data[key + '.bridge']
+  if admission == 'program'
+    aurora_facts += [language[2]]
+  endif
   # Private local symbols require the bridge and generated source in ONE as command.
-  bridge_input = bridge == '' ? [] : files('../' + bridge)
   objects += {language_name: custom_target(prefix + '-language-object',
     input: [language[0]] + bridge_input, output: language_name + '.o', build_subdir: object_subdir,
     command: [kernel_as, '--64', '@INPUT@', '-o', '@OUTPUT@'])}
@@ -119,16 +133,30 @@ foreach profile_id : profile_data['profiles'].split('|')
       foreach root : profile_data[user_key + '.roots'].split('|')
         user_root_args += ['--module-root', kernel_source / root]
       endforeach
+      entry_source = files('../' + profile_data[user_key + '.entry'])
+      combined = profile_data[user_key + '.combined'] == '1'
+      user_outputs = ['user-' + name + '.s', 'user-' + name + '.stack.json']
+      user_dependencies = compiler_files
+      if admission == 'program'
+        user_outputs += ['user-' + name + '.abi.json']
+        user_root_args += ['--abi-facts', '@OUTPUT2@']
+        if combined
+          user_root_args += ['--bridge', kernel_source / profile_data[user_key + '.entry']]
+          user_dependencies += entry_source + files('../scripts/bootstrap_frontend.py')
+          entry_source = []
+        endif
+      endif
       user_assembly = custom_target(prefix + '-user-' + name + '-assembly',
-        input: files('../' + profile_data[user_key + '.source']), output: ['user-' + name + '.s', 'user-' + name + '.stack.json'],
-        build_subdir: output_subdir, depfile: 'user-' + name + '.d', depend_files: compiler_files,
+        input: files('../' + profile_data[user_key + '.source']), output: user_outputs,
+        build_subdir: output_subdir, depfile: 'user-' + name + '.d', depend_files: user_dependencies,
         command: [python, '-B', kernel_assembly_helper, '--compiler', kernel_image_compiler, '--source', '@INPUT@',
                   '--output', '@OUTPUT0@', '--stack-facts', '@OUTPUT1@', '--depfile', '@DEPFILE@'] + user_root_args)
       aurora_facts += [user_assembly[1]]
+      if admission == 'program'
+        aurora_facts += [user_assembly[2]]
+      endif
       entry_flags_text = profile_data[user_key + '.entry_flags']
       entry_flags = entry_flags_text == '' ? [] : entry_flags_text.split('|')
-      entry_source = files('../' + profile_data[user_key + '.entry'])
-      combined = profile_data[user_key + '.combined'] == '1'
       user_object = custom_target(prefix + '-user-' + name + '-object',
         input: [user_assembly[0]] + (combined ? entry_source : []), output: 'user-' + name + '.o',
         build_subdir: object_subdir,
@@ -167,9 +195,9 @@ foreach profile_id : profile_data['profiles'].split('|')
       user_tool = profile_data[key + '.user_kind'] == 'ipc' ? 'kernel-uefi-ipc-images.py' : 'kernel-uefi-user-images.py'
       user_option_text = profile_data[key + '.user_options']
       user_options = user_option_text == '' ? [] : user_option_text.split('|')
-      user_metadata = custom_target(prefix + '-user-metadata', input: user_inputs,
+      user_metadata = custom_target(prefix + '-user-metadata', input: user_inputs + aurora_facts,
         output: ['uefi-user-images.hpp', 'user-images.json'], build_subdir: output_subdir,
-        depend_files: files('../scripts/kernel-uefi-user-images.py'),
+        depend_files: files('../scripts/kernel-uefi-user-images.py', '../scripts/bootstrap_frontend.py'),
         command: [python, '-B', files('../scripts/' + user_tool), '--output', output_dir,
                   '--mode', profile_data[key + '.user_mode']] + user_options)
       generated_headers = [user_metadata[0]]
@@ -268,7 +296,7 @@ foreach profile_id : profile_data['profiles'].split('|')
       command: [python, '-B', files('../scripts/kernel_uefi_image.py'), '--build-dir', output_dir] + image_options)
   endif
   check_names = profile_data[key + '.checks']
-  validation_dependencies = files('../scripts/kernel_program_console_admission.py',
+  validation_dependencies = files('../scripts/bootstrap_frontend.py', '../scripts/kernel_program_console_admission.py',
     '../scripts/kernel_stack.py', '../scripts/kernel_snapshot_abi.py', '../scripts/kernel_uefi_image.py',
     '../scripts/kernel_owned_bytes_admission.py',
     '../scripts/kernel-uefi-user-images.py', '../scripts/kernel-uefi-ipc-images.py',

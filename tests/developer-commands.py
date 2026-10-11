@@ -170,6 +170,7 @@ class DeveloperCommands(unittest.TestCase):
         self.container_engine("docker", "Docker version 28.0.0")
         controls = {
             "MESON_BUILD_DIR": "build/path with spaces;$(do-not-execute)",
+            "BOOTSTRAP_COMPILER": "/workspace/build/predecessor with spaces;literal",
             "AURORA_BUILD_JOBS": "2",
             "AURORA_TEST_JOBS": "",
         }

@@ -103,8 +103,16 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
             reason + "\nUse ./scripts/container.sh make test for the supported pinned environment; "
             "see docs/local-development.md."
         ) from error
-    # Bootstrap setup explicitly configures the predecessor path and pin once.
+    # Bootstrap setup explicitly configures the predecessor path.
     # Reuse that selection; this convenience wrapper cannot invent a predecessor.
+    requested_bootstrap = env.get("BOOTSTRAP_COMPILER")
+    if requested_bootstrap is not None:
+        selected = Path(requested_bootstrap)
+        contract.require(
+            selected.is_absolute() and selected.is_file() and os.access(selected, os.X_OK),
+            "BOOTSTRAP_COMPILER must name an absolute executable predecessor; see compiler/README.md#source-bootstrap",
+        )
+        requested_bootstrap = str(selected.resolve())
     supplied = env.get("MESON_BUILD_DIR")
     default = "meson" if kernel_images else "meson-compiler"
     build = (root / supplied if supplied else root / "build" / default).resolve()
@@ -112,8 +120,19 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
         (build / "build.ninja").is_file(),
         "Predecessor-backed Meson setup required at "
         + str(build)
-        + "; follow compiler/README.md#source-bootstrap to configure bootstrap_compiler and bootstrap_compiler_sha256, "
-        "then retry with MESON_BUILD_DIR=" + shlex.quote(str(build)),
+        + "; first follow compiler/README.md#source-bootstrap, then run "
+        + shlex.join(
+            [
+                meson,
+                "setup",
+                str(build),
+                str(root),
+                "-Dbootstrap_compiler=" + (requested_bootstrap or "/absolute/path/to/aurorac"),
+            ]
+        )
+        + (" -Dkernel_images=false" if not kernel_images else "")
+        + "; retry with MESON_BUILD_DIR="
+        + shlex.quote(str(build)),
     )
     defaults = {
         "kernel_images": kernel_images,
@@ -159,7 +178,6 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
             "uefi_ld",
             "cpp_args",
             "bootstrap_compiler",
-            "bootstrap_compiler_sha256",
         } - options.keys()
         contract.require(
             not missing,
@@ -172,7 +190,6 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
             "Configured bootstrap_compiler must select an absolute predecessor; "
             "see compiler/README.md#source-bootstrap",
         )
-        contract.pin(options["bootstrap_compiler_sha256"])
         command = introspect("--compilers")["build"]["cpp"]["exelist"]
         contract.require(
             len(command) == 1 and meson_toolchain.selected_tool(command[0]) == cxx,
@@ -188,6 +205,23 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
                 options.get(name, expected) == expected,
                 f"Configured {name} differs from request ({options.get(name)!r} != {expected!r}); "
                 "select a matching MESON_BUILD_DIR",
+            )
+        if (
+            requested_bootstrap is not None
+            and str(Path(options["bootstrap_compiler"]).resolve()) != requested_bootstrap
+        ):
+            setup = ["setup", "--reconfigure", str(build), "-Dbootstrap_compiler=" + requested_bootstrap]
+            contract.require(
+                not supplied,
+                "Configured bootstrap_compiler differs from BOOTSTRAP_COMPILER; run "
+                + shlex.join([meson, *setup])
+                + " or select a matching MESON_BUILD_DIR",
+            )
+            run(*setup)
+            refreshed = {item["name"]: item["value"] for item in introspect("--buildoptions")}
+            contract.require(
+                refreshed.get("bootstrap_compiler") == requested_bootstrap,
+                "Meson did not apply the requested bootstrap_compiler",
             )
         if tests:
             registered = {item["name"] for item in introspect("--tests")}

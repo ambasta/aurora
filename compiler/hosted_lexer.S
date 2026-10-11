@@ -7,5 +7,5 @@
 aurora_hosted_lexer_invoke:
     movq %rdi, %r11
     movq %rsi, %r10
-    jmp __au_v_m3_6aurora8compiler5lexer_n1_14compiler_lexer_d11next_lexeme
+    jmp __aurora_frontend_lexer_next
 .size aurora_hosted_lexer_invoke, .-aurora_hosted_lexer_invoke

@@ -4,7 +4,7 @@ Aurora is an intentionally incompatible safe C++-inspired language. It has no
 C header/macro layer, raw-pointer escape, unsafe block or C ABI. The hosted build
 uses an Aurora-written [lexer](LEXER.md) and a bounded
 [statement-expression parser](ARCHITECTURE.md#hosted-aurora-expression-parser),
-bootstrapped with an explicitly pinned predecessor compiler.
+bootstrapped with an explicitly selected predecessor compiler.
 Declaration/type parsing outside expressions, semantic/lifetime analysis,
 typed-IR verification and x86-64 emission remain C++23.
 GNU assembler/linker and Linux host I/O remain bootstrap dependencies.
@@ -29,14 +29,15 @@ The optional [language server](lsp/README.md) has its own dependency and suite.
 ### Source bootstrap
 
 The current source no longer contains a C++ expression parser or raw compiler
-seed. Meson requires both `bootstrap_compiler` (an absolute executable path) and
-`bootstrap_compiler_sha256` (its lowercase SHA-256). Invalid or missing selections
-reject before frontend generation. The driver checks the pin at setup and before
-each invocation, and Ninja tracks the executable. A digest identifies bytes; the
-source build below establishes where those bytes came from.
+seed. Meson requires `bootstrap_compiler`, an absolute executable path. Ninja
+tracks that executable as an ordinary input; changing it regenerates the frontend.
+The source build below establishes the predecessor's provenance. Acceptance still
+compares the actual generated frontend and current compiler stages.
 
-Start from a normal Git checkout containing reviewed predecessor commit
-`bdf646f09d5e14c88124c4bc9e4f998beda16183`. Open the
+Start from a normal Git checkout containing the historical seed source
+`bdf646f09d5e14c88124c4bc9e4f998beda16183` and the reviewed ABI-facts precursor
+[`17f4f1440e6faa9cdaf8711c04400854bdb60d9e`](https://github.com/ambasta/aurora/commit/17f4f1440e6faa9cdaf8711c04400854bdb60d9e)
+(retained on `bootstrap/abi-facts-v1`). Open the
 [pinned development environment](../docs/local-development.md) first, for example
 `./scripts/container.sh bash`, and run all these commands there from the current
 checkout. Keep the historical worktree and compiler separate from current source:
@@ -45,27 +46,48 @@ checkout. Keep the historical worktree and compiler separate from current source
 git worktree add --detach build/predecessor-source bdf646f09d5e14c88124c4bc9e4f998beda16183
 meson setup build/predecessor-seed build/predecessor-source -Dkernel_images=false
 meson compile -C build/predecessor-seed -j 2 aurorac
-P=$(realpath build/predecessor-seed/aurorac)
-PIN=$(sha256sum "$P" | cut -d ' ' -f 1)
+SEED=$(realpath build/predecessor-seed/aurorac)
+git fetch origin bootstrap/abi-facts-v1
+git worktree add --detach build/abi-facts-source 17f4f1440e6faa9cdaf8711c04400854bdb60d9e
+meson setup build/abi-facts-compiler build/abi-facts-source -Dkernel_images=false \
+  "-Dbootstrap_compiler=$SEED" \
+  "-Dbootstrap_compiler_sha256=$(sha256sum "$SEED" | cut -d ' ' -f 1)"
+meson compile -C build/abi-facts-compiler -j 2 aurorac
+P=$(realpath build/abi-facts-compiler/aurorac)
 meson setup build/meson . \
-  "-Dbootstrap_compiler=$P" "-Dbootstrap_compiler_sha256=$PIN"
+  "-Dbootstrap_compiler=$P"
 meson setup build/meson-compiler . -Dkernel_images=false \
-  "-Dbootstrap_compiler=$P" "-Dbootstrap_compiler_sha256=$PIN"
+  "-Dbootstrap_compiler=$P"
 meson compile -C build/meson-compiler -j 2 aurorac aurorac-stage2
 meson test -C build/meson-compiler --no-rebuild --num-processes 1 \
   hosted-lexer-bootstrap compiler-test-inventory
 ```
 
+The digest option above belongs only to the unchanged historical precursor graph.
+Current setup selects the resulting fact-capable predecessor by path; its deprecated
+digest option is ignored and retained solely for existing-directory compatibility.
+
 Both ordinary default directories are now configured: `make`/`make test` use the
 image-enabled graph, while `make -C compiler test` uses the hosted-only graph.
-For other configurations, repeat setup with the same pair and select the result
-through `MESON_BUILD_DIR`. Existing builds with an empty pair need explicit
-`meson setup --reconfigure` with both options. Keep using the same host/container
-path layout so configured absolute executable paths remain valid.
+For other configurations, repeat setup with the selected path and use
+`MESON_BUILD_DIR`. Keep using the same host/container path layout so configured
+absolute executable paths remain valid. An unconfigured directory needs explicit
+setup; the wrapper does not guess a predecessor.
+
+`BOOTSTRAP_COMPILER=/absolute/path/to/aurorac make test` requests a different
+predecessor. The wrapper reconfigures an implicit default build in place, preserving
+its other options and files. An explicit `MESON_BUILD_DIR` with a different
+selection is rejected with the exact reconfigure command. Without this variable,
+the wrapper reuses the configured predecessor. The container launcher forwards
+`BOOTSTRAP_COMPILER` literally; its path must be valid inside the container.
 
 The predecessor emits frontend A for current compiler C1; C1 emits B for current
-compiler C2. The existing bootstrap test checks current C1/C2 assembly and object
-convergence, binds B to the frontend actually linked into C2, and compares current
+compiler C2. The same compilation emits `--abi-facts` metadata for collected
+resolved declarations and the exact emitted module. The closed private bootstrap
+adapter generates its record layouts, enum values and bridge symbol targets from
+those facts; this is not a general exported ABI. Both stages generate their own
+facts and header. The existing bootstrap test checks current C1/C2 assembly, object,
+facts and header convergence, binds B to the frontend actually linked into C2, and compares current
 C1/C2 corpus diagnostics/output. No compiler binary or generated frontend is
 committed. Declaration parsing, semantics, IR and backend remain C++.
 

@@ -211,8 +211,12 @@ correctness, memory authority or termination.
 
 Version 2 Aurora facts also describe the R11 packed-input/R10 copied-result ABI
 for receiver-free dense non-owning values and qword scalar parameters. The four
-note/file boundaries require those facts and retain independent private symbol
-names and ordered native record sizes. Compiler-local frames, spills and return
+note/file boundaries require those facts and retain independent source-entry
+selection, private linkage and ordered native record sizes. Compiler-produced
+`.abi.json` maps each selected source declaration to its emitted symbol for the
+protected supervisor and copied CPL3 service bridges and admission; no mangling
+recipe is duplicated there. Scalar policy exports live in `kernel-policy-entry.S`;
+imported library helpers stay local. Compiler-local frames, spills and return
 paths are not duplicated in their admission checks. Padded, owning, capability
 and receiver signatures have no such fact. Version 1 remains supported only for
 stack accounting; it cannot supply a copied-record boundary contract. These facts

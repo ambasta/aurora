@@ -77,7 +77,9 @@ the newest two successful managed runs; `AURORA_EVENT_KEEP_RUNS=N` accepts 1..99
 or `all` to keep and pin the new run, including its raw files. Use `all` when
 build-only inspection requires the raw ESPs. A `.keep` also pins an individual run.
 Failures and interruptions retain all output. Unmarked historical directories,
-active runs and malformed markers are never adopted for cleanup. Cleanup errors
+active runs and malformed markers are never adopted for cleanup. Successful runs
+are ordered by status-marker modification time, including older successful markers;
+pruning happens after the current run finishes. Cleanup errors
 warn without changing the completed test result. Each run reserves 1 GiB with a
 1 GiB free floor; the shared policy bounds completed successful output without
 removing failures or explicit keeps.

@@ -184,7 +184,7 @@
     "graphical-profile-metadata-optimized": {"optimized": true, "source": "tests/kernel-graphical-profile-metadata.py"}
   },
   "wrapper_sha256": {
-    "scripts/kernel-program-note-tests.sh": "118bad1d66fdb74950bbbbd2ffdd835171334e306d07c949cd349e96524b65c0",
+    "scripts/kernel-program-note-tests.sh": "d8581e95bf51cddff8a21f0076601e525dbbd161990dc8a6a1c7124df6ddbfb1",
     "scripts/kernel-snapshot-tests.sh": "d98c6e03a3f5a1358a0918984522a347d599eef4fcf42546ba4da030cd7db106",
     "scripts/kernel-uefi-pin-tests.sh": "dc6b138aa73d5390f4add786fe12ea30206f92a072cde485674889b24496902d",
     "scripts/kernel-uefi-dispatch-tests.sh": "9911bf15518c8d058da38ea80c7ad916cd2cdf39d1774096ff27e0ff02e32ee9",
@@ -217,7 +217,7 @@
   },
   "files": {
     "tests/compiler/hosted_parser.cpp": {"kind": "native-fixture", "reason": "Real generated Aurora parser, explicit AST/diagnostic, private ABI and allocation cleanup fixture. Exact registration and target mappings are checked below.", "tests": ["hosted-parser"]},
-    "tests/compiler/hosted_parser_invalid.cpp": {"kind": "native-fixture", "reason": "Forged hosted parser result/provenance controls and all statement dispatch hooks, with isolated bootstrap stubs and exact owner cleanup.", "tests": ["hosted-parser-invalid"]},
+    "tests/compiler/hosted_parser_invalid.cpp": {"kind": "native-fixture", "reason": "Memory-safe hosted parser conversion controls with isolated bootstrap stubs, bounded indices/ownership and exact owner cleanup.", "tests": ["hosted-parser-invalid"]},
     "tests/test_clean.py": {"kind": "direct-registration", "reason": "Compiler-free Meson product cleanup and explicit scratch selection on tiny temporary fixtures only.", "tests": ["clean-controls"]},
     "tests/compiler/hosted_lexer_invalid.cpp": {"kind": "native-fixture", "reason": "Dependency-tracked hosted Aurora lexer C++ fixture; exact registration and target source/output mappings are checked below.", "tests": ["hosted-lexer-invalid"]},
     "tests/compiler/hosted_lexer.cpp": {"kind": "native-fixture", "reason": "Dependency-tracked hosted Aurora lexer C++ fixture; exact registration and target source/output mappings are checked below.", "tests": ["hosted-lexer"]},

@@ -51,6 +51,8 @@ using Snapshot = std::shared_ptr<const SourceText>;
 using Input = std::array<std::uint64_t, 10>;
 using Event = std::array<std::int64_t, 4>;
 static_assert(sizeof(Input) == 80 && sizeof(Event) == 32);
+static_assert(sizeof(Input) == sizeof(aurora::hosted_abi::LexerInput) &&
+              sizeof(Event) == sizeof(aurora::hosted_abi::Lexeme));
 static_assert(sizeof(void *) == 8);
 
 std::string context;

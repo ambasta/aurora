@@ -310,4 +310,95 @@ with tempfile.TemporaryDirectory(prefix="aurora-diagnostics-") as directory:
     )
     require(not list(root.glob(".aurora-output-*.tmp")), "stack-facts failure left temporary files")
 
+    # Private adapter layouts come from the same validated module as assembly.
+    source.write_text("""module demo;
+namespace abi {
+    enum class Mode { ready, done };
+    class Child { public: u8 small; i64 wide; };
+    class Record {
+    public:
+        u8 tag; bool valid; Child nested; Mode mode;
+        Record(Child value) : tag(1u8), valid(true), nested(value), mode(Mode::ready) {}
+    };
+    class Owner {
+        u8 prefix; builtin::OwnedBytes payload; i64 suffix;
+    public:
+        Owner(builtin::ByteRegion region, builtin::OwnedBytes bytes)
+            : prefix(1u8), payload(move(bytes)), suffix(2) {}
+    };
+    auto copied(Record value) -> Record { return value; }
+    auto released(builtin::ByteRegion region, Owner value) -> i64 { return 0; }
+    auto scan(builtin::span<const u8> source, i64 value) -> i64 { return source.size() + value; }
+}
+auto demo() -> i64 { return 42; }
+""")
+    abi_path = root / "good.abi.json"
+    run([source, "-o", emitted], 0, json_mode=False)
+    abi_assembly = emitted.read_bytes()
+    run([source, "-o", emitted, "--abi-facts", abi_path, "--stack-facts", facts_path], 0, json_mode=False)
+    require(emitted.read_bytes() == abi_assembly, "ABI facts changed generated assembly")
+    abi = json.loads(abi_path.read_text())
+    require(abi["version"] == 1 and abi["span_bytes"] == 56, "ABI facts schema/span")
+
+    def declaration(group, name):
+        matches = [(symbol, value) for symbol, value in abi[group].items() if value["source_name"] == name]
+        require(len(matches) == 1, f"ambiguous/missing ABI declaration: {name}")
+        return matches[0]
+
+    _, child = declaration("records", "abi::Child")
+    _, record = declaration("records", "abi::Record")
+    _, owner = declaration("records", "abi::Owner")
+    require((child["size"], child["alignment"], child["reserved"]) == (16, 8, 16), "nested ABI layout")
+    require((record["size"], record["alignment"], record["reserved"]) == (40, 8, 40), "copied ABI layout")
+    require(
+        [(field["name"], field["offset"], field["bytes"], field["kind"]) for field in record["fields"]]
+        == [("tag", 0, 1, "u8"), ("valid", 8, 8, "bool"), ("nested", 16, 16, "class"), ("mode", 32, 8, "enum")],
+        "ABI physical widths/offsets, including eight-byte bool",
+    )
+    require(
+        owner["size"] == owner["reserved"] == 48
+        and [(field["offset"], field["bytes"]) for field in owner["fields"]] == [(0, 1), (8, 32), (40, 8)],
+        "opaque owning ABI extent",
+    )
+    _, enumeration = declaration("enums", "abi::Mode")
+    require(enumeration["cases"] == {"ready": 0, "done": 1}, "resolved enum names/values")
+    copied_symbol, copied = declaration("functions", "abi::copied")
+    _, released = declaration("functions", "abi::released")
+    _, scan = declaration("functions", "abi::scan")
+    require(copied_symbol.encode() + b":" in abi_assembly, "source name maps to emitted symbol")
+    require(copied["parameter_bytes"] == copied["result"]["bytes"] == 40, "copied call record extents")
+    require(
+        released["parameter_bytes"] == 56
+        and [(part["offset"], part["bytes"]) for part in released["parameters"]] == [(0, 8), (8, 48)],
+        "owning release record extents",
+    )
+    require(
+        scan["parameter_bytes"] == 64
+        and [(part["offset"], part["bytes"]) for part in scan["parameters"]] == [(0, 56), (56, 8)],
+        "span call record extents",
+    )
+    original_abi, original_stack = abi_path.read_bytes(), facts_path.read_bytes()
+    for options in (
+        ["--abi-facts"],
+        [source, "-o", emitted, "--abi-facts", ""],
+        [source, "-o", emitted, "--abi-facts", abi_path, "--abi-facts", abi_path],
+        [source, "-o", emitted, "--abi-facts", emitted.parent / "." / emitted.name],
+        [source, "-o", emitted, "--stack-facts", facts_path, "--abi-facts", facts_path],
+    ):
+        run(options, 2, json_mode=False)
+    run(["--check", "--diagnostics=json", source, "--abi-facts", abi_path], 2, "AU5001")
+    run([source, "-o", emitted, "--abi-facts", source], 1, json_mode=False)
+    abi_link = root / "abi-link"
+    abi_link.symlink_to(abi_path)
+    run([source, "-o", emitted, "--abi-facts", abi_link], 1, json_mode=False)
+    source.write_text("module demo; auto demo() -> i64 { return missing; }\n")
+    run([source, "-o", emitted, "--abi-facts", abi_path], 1, json_mode=False)
+    require(
+        emitted.read_bytes() == abi_assembly
+        and abi_path.read_bytes() == original_abi
+        and facts_path.read_bytes() == original_stack,
+        "failed ABI generation changed assembly or sidecars",
+    )
+    require(not list(root.glob(".aurora-output-*.tmp")), "ABI failure left temporary files")
+
 print(f"PASS {CASES} structured diagnostic CLI cases")

@@ -357,20 +357,17 @@ if action == 'guest':
             outside.mkdir()
             (outside / "evidence").write_text("unchanged")
             (base / "run-link").symlink_to(outside, target_is_directory=True)
-            protected = ("run-legacy", "run-invalid", "run-active", "run-pinned", "run-markerlink", "run-duplicate")
+            protected = ("run-legacy", "run-invalid", "run-active", "run-pinned", "run-markerlink")
             for name in protected:
                 (base / name).mkdir()
                 (base / name / "evidence").write_text("unchanged")
             (base / "run-invalid" / smoke.RUN_MARKER).write_text('{"status": []}')
-            (base / "run-duplicate" / smoke.RUN_MARKER).write_text(
-                '{"schema": "' + smoke.RUN_SCHEMA + '", "status": "running", "status": "passed", "finished_ns": 1}'
-            )
             (base / "run-markerlink" / smoke.RUN_MARKER).symlink_to(outside / "evidence")
             with patch.object(smoke, "ROOT", root), patch("builtins.print"):
                 smoke.start_run(base / "run-active")
                 smoke.start_run(base / "run-pinned")
                 (base / "run-pinned/.keep").touch()
-                smoke.finish_run(base / "run-pinned", 31)
+                smoke.finish_run(base / "run-pinned", 0)
                 windows = []
                 for index, status in enumerate((0, 31, 0, 31, 0, 31, 0, 31)):
                     folder = base / f"run-{index}"
@@ -426,101 +423,85 @@ if action == 'guest':
             self.assertCountEqual(statuses, ["running", "passed", "passed", "failed", "failed", "failed", "failed"])
             self.assertTrue((base / "run-active").exists())
 
-    def test_standalone_reader_pins_before_checks_and_concurrent_prune(self):
-        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"AURORA_GRAPHICAL_KEEP_RUNS": "1"}):
+    def test_reused_images_do_not_create_persistent_pins(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for owner in (root, root / "another-checkout"):
+                with self.subTest(owner=owner):
+                    old = owner / "build/graphical-smoke/run-review"
+                    (old / "images").mkdir(parents=True)
+                    marker = old / smoke.RUN_MARKER
+                    contents = json.dumps(dict(schema="aurora-graphical-smoke-run-v1", status="passed", finished_ns=1))
+                    marker.write_text(contents)
+                    argv = [
+                        "runner",
+                        "--images",
+                        str(old / "images"),
+                        "--evidence",
+                        str(old / "guests"),
+                        "qemu",
+                        "firmware",
+                        "",
+                        "",
+                        "",
+                    ]
+                    with (
+                        patch.object(smoke, "ROOT", root),
+                        patch.object(sys, "argv", argv),
+                        patch.object(smoke.transport, "firmware_args", return_value=[]),
+                        patch.object(smoke, "verify_images") as verify,
+                        patch.object(smoke.signal, "signal"),
+                        patch.object(smoke, "window") as window,
+                    ):
+                        smoke.main()
+                    verify.assert_called_once()
+                    window.assert_called_once()
+                    self.assertFalse((old / ".keep").exists())
+                    self.assertEqual(marker.read_text(), contents)
+
+    def test_older_markers_use_completion_mtime_without_schema_migration(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"AURORA_GRAPHICAL_KEEP_RUNS": "2"}):
             root = Path(tmp)
             base = root / "build/graphical-smoke"
             base.mkdir(parents=True)
-            old = base / "run-old"
-            (old / "images").mkdir(parents=True)
-            with patch.object(smoke, "ROOT", root), patch("builtins.print"):
-                smoke.start_run(old)
-                smoke.finish_run(old, 0)
-                argv = [
-                    "runner",
-                    "--images",
-                    str(old / "images"),
-                    "--evidence",
-                    str(old / "guests"),
-                    "qemu",
-                    "firmware",
-                    "",
-                    "",
-                    "",
-                ]
-
-                def concurrent_completion(*args):
-                    new = base / "run-new"
-                    new.mkdir()
-                    smoke.start_run(new)
-                    smoke.finish_run(new, 0)
-                    self.assertTrue((old / "images").exists())
-                    self.assertTrue((old / "guests").exists())
-
-                with (
-                    patch.object(sys, "argv", argv),
-                    patch.object(smoke.transport, "firmware_args", return_value=[]),
-                    patch.object(
-                        smoke, "verify_images", side_effect=lambda *a: self.assertTrue((old / ".keep").exists())
-                    ),
-                    patch.object(smoke.signal, "signal"),
-                    patch.object(smoke, "CASES", []),
-                    patch.object(smoke, "production_case", side_effect=concurrent_completion),
-                    patch.object(smoke, "restoration"),
-                ):
-                    smoke.main()
-                self.assertTrue((old / ".keep").exists())
-                self.assertTrue((old / "guests/summary.json").exists())
-                old.joinpath(".keep").unlink()  # Simulate deliberate release of this fixture's pin.
-                later = base / "run-later"
-                later.mkdir()
-                smoke.start_run(later)
-                smoke.finish_run(later, 0)
-                self.assertFalse(old.exists())
-                with patch.object(sys, "argv", argv), patch.object(smoke, "verify_images") as check:
-                    with self.assertRaisesRegex(ValueError, "missing smoke run directory"):
-                        smoke.main()
-                    check.assert_not_called()
-
-    def test_foreign_managed_images_require_an_existing_regular_pin(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            current = root / "current"
-            current.mkdir()
-            foreign = root / "foreign/build/graphical-smoke/run-review"
-            (foreign / "images").mkdir(parents=True)
-            marker = foreign / smoke.RUN_MARKER
-            contents = json.dumps(dict(schema=smoke.RUN_SCHEMA, status="passed", finished_ns=1))
-            marker.write_text(contents)
-            pin = foreign / ".keep"
-            with patch.object(smoke, "ROOT", current):
-                with self.assertRaisesRegex(ValueError, "owning checkout"):
-                    smoke.pin_reused_images(foreign / "images")
-                self.assertFalse(pin.exists())
-                self.assertFalse((foreign.parent / ".retention.lock").exists())
-                target = root / "ordinary-file"
-                target.touch()
-                pin.symlink_to(target)
-                with self.assertRaisesRegex(ValueError, "owning checkout"):
-                    smoke.pin_reused_images(foreign / "images")
-                pin.unlink()
-                pin.mkdir()
-                with self.assertRaisesRegex(ValueError, "owning checkout"):
-                    smoke.pin_reused_images(foreign / "images")
-                pin.rmdir()
-                pin.touch()
-                smoke.pin_reused_images(foreign / "images")
-                self.assertEqual(marker.read_text(), contents)
-                self.assertFalse((foreign.parent / ".retention.lock").exists())
+            # Name and the retired timestamp disagree with mtime deliberately.
+            for name, modified, finished in (("run-a", 2, 1), ("run-z", 1, 2)):
+                folder = base / name
+                folder.mkdir()
+                marker = folder / smoke.RUN_MARKER
                 marker.write_text(
-                    '{"schema": "' + smoke.RUN_SCHEMA + '", "status": "running", "status": "passed", "finished_ns": 1}'
+                    json.dumps(dict(schema="aurora-graphical-smoke-run-v1", status="passed", finished_ns=finished))
                 )
-                with self.assertRaisesRegex(ValueError, "Duplicate JSON key"):
-                    smoke.pin_reused_images(foreign / "images")
-                unmanaged = root / "unmanaged/images"
-                unmanaged.mkdir(parents=True)
-                smoke.pin_reused_images(unmanaged)
-                self.assertFalse((unmanaged.parent / ".keep").exists())
+                os.utime(marker, ns=(modified, modified))
+            current = base / "run-current"
+            current.mkdir()
+            with patch.object(smoke, "ROOT", root), patch("builtins.print"):
+                smoke.start_run(current)
+                smoke.finish_run(current, 0)
+            self.assertFalse((base / "run-z").exists())
+            self.assertTrue((base / "run-a").exists())
+            self.assertEqual(json.loads((current / smoke.RUN_MARKER).read_text()), dict(status="passed"))
+
+    def test_run_remains_active_until_its_capture_cleanup_finishes(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"AURORA_GRAPHICAL_KEEP_RUNS": "1"}):
+            root = Path(tmp)
+            current = root / "build/graphical-smoke/run-current"
+            current.mkdir(parents=True)
+            with patch.object(smoke, "ROOT", root), patch("builtins.print"):
+                smoke.start_run(current)
+
+                def discard(directory):
+                    self.assertEqual(json.loads((directory / smoke.RUN_MARKER).read_text()), dict(status="running"))
+                    other = current.parent / "run-other"
+                    other.mkdir()
+                    smoke.start_run(other)
+                    smoke.output_policy().finish(other, 0, lambda _: None)
+                    self.assertTrue(current.is_dir())
+
+                with patch.object(smoke, "discard_captures", side_effect=discard):
+                    smoke.finish_run(current, 0)
+                self.assertEqual(json.loads((current / smoke.RUN_MARKER).read_text()), dict(status="passed"))
+                self.assertFalse((current.parent / "run-other").exists())
 
     def test_pruning_failure_warns_without_changing_execution_result(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"AURORA_GRAPHICAL_KEEP_RUNS": "1"}):
