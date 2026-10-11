@@ -184,7 +184,7 @@
     "graphical-profile-metadata-optimized": {"optimized": true, "source": "tests/kernel-graphical-profile-metadata.py"}
   },
   "wrapper_sha256": {
-    "scripts/kernel-program-note-tests.sh": "118bad1d66fdb74950bbbbd2ffdd835171334e306d07c949cd349e96524b65c0",
+    "scripts/kernel-program-note-tests.sh": "d8581e95bf51cddff8a21f0076601e525dbbd161990dc8a6a1c7124df6ddbfb1",
     "scripts/kernel-snapshot-tests.sh": "d98c6e03a3f5a1358a0918984522a347d599eef4fcf42546ba4da030cd7db106",
     "scripts/kernel-uefi-pin-tests.sh": "dc6b138aa73d5390f4add786fe12ea30206f92a072cde485674889b24496902d",
     "scripts/kernel-uefi-dispatch-tests.sh": "9911bf15518c8d058da38ea80c7ad916cd2cdf39d1774096ff27e0ff02e32ee9",
