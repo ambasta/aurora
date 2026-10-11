@@ -205,7 +205,11 @@ not actual UART hardware fault induction. Hostile source/IR and fake-port UART
 controls remain separate. Historical passes cover only their recorded source,
 toolchain and emulator; they do not qualify a later image or prove OS readiness.
 
-SessionFiles uses `BinaryBuffer64.equal` for reserved names and filename
-comparisons, and `std.decimal` for confirmation numbers. Comparisons borrow
-receiver storage rather than staging copied arrays; the buffer and span lifetime
-rules apply. This helper adoption does not change command grammar or authority.
+`SessionFiles` exposes checked copied `FileName` and `FileValue` inputs for const
+reads and atomic writes/removals. Names retain the eight-byte grammar and values
+the 49-byte printable-ASCII limit; invalid values cannot alias a valid empty file.
+The console `submit` adapter preserves the same transcripts and four-slot order.
+`ProtectedFiles` selects a copied name and projects it directly without copying
+the store or synthesizing commands. Replacements use the same typed write path;
+revision invalidation/exhaustion and native authenticated one-shot authority are
+unchanged. These copied values carry policy data, never mailbox authority.

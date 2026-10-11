@@ -236,7 +236,6 @@ public:
     }
 };
 auto update_files(console::ProtectedFiles current, std::BinaryBuffer64 command, i64 count) -> FileUpdate {
-    console::ProtectedFiles next = current;
     const console::FileSelection selection = current.select(command, count);
     if (selection.version() != 0u64) {
         const console::FileReply reply = current.project(selection);
@@ -254,8 +253,9 @@ auto update_files(console::ProtectedFiles current, std::BinaryBuffer64 command, 
             projection.set(index, reply.at(index));
             index = index + 1;
         }
-        return FileUpdate(next, reply, action, selection, projection);
+        return FileUpdate(current, reply, action, selection, projection);
     }
+    console::ProtectedFiles next = current;
     console::FileReply reply = next.submit(command, count);
     u64 action = 0u64;
     if (reply.status() != console::FileEvent::unknown) {

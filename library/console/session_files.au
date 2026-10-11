@@ -77,199 +77,236 @@ export namespace console {
         }
     };
 
+    // Copied inputs are checked by every store operation, independently of parsing.
+    class FileName {
+        std::BinaryBuffer64 bytes;
+        i64 length;
+    public:
+        FileName(std::BinaryBuffer64 source, i64 count) : bytes(source), length(count) {
+        }
+        auto valid() const -> bool {
+            if (length < 1 || length > 8) { return false; }
+            i64 index = 0;
+            while (index < length) {
+                const u8 byte = bytes.at(index);
+                if (!((byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z')
+                    || (byte >= '0' && byte <= '9') || byte == '.' || byte == '_' || byte == '-')) {
+                    return false;
+                }
+                index = index + 1;
+            }
+            return !bytes.equal(0, length, ".") && !bytes.equal(0, length, "..");
+        }
+        auto size() const -> i64 { return length; }
+        auto at(i64 index) const -> u8 {
+            if (index < 0 || index >= length || index >= 64) { return '\0'; }
+            return bytes.at(index);
+        }
+        auto reserved() const -> bool { return bytes.equal(0, length, "note"); }
+        auto matches(std::BinaryBuffer64 record) const -> bool {
+            const i64 count = i64(record.at(0));
+            if (count < 1 || count > 8) { return false; }
+            return bytes.equal(0, length, record.bytes(2, count));
+        }
+    };
+
+    class FileValue {
+        std::BinaryBuffer64 bytes;
+        i64 length;
+    public:
+        FileValue(std::BinaryBuffer64 source, i64 count) : bytes(source), length(count) {
+        }
+        auto valid() const -> bool {
+            if (length < 0 || length > 49) { return false; }
+            i64 index = 0;
+            while (index < length) {
+                const u8 byte = bytes.at(index);
+                if (byte < ' ' || byte > '~') { return false; }
+                index = index + 1;
+            }
+            return true;
+        }
+        auto size() const -> i64 { return length; }
+        auto at(i64 index) const -> u8 {
+            if (index < 0 || index >= length || index >= 64) { return '\0'; }
+            return bytes.at(index);
+        }
+    };
+
+    // Checked slices normalize backing bytes; malformed ranges remain invalid.
+    auto file_name(std::BinaryBuffer64 source, i64 offset, i64 count) -> FileName {
+        std::BinaryBuffer64 bytes = std::BinaryBuffer64();
+        if (offset < 0 || offset > 64 || count < 1 || count > 8 || count > 64 - offset) {
+            return FileName(bytes, -1);
+        }
+        i64 index = 0;
+        while (index < count) {
+            bytes.write_u8(index, source.at(offset + index));
+            index = index + 1;
+        }
+        return FileName(bytes, count);
+    }
+    auto file_value(std::BinaryBuffer64 source, i64 offset, i64 count) -> FileValue {
+        std::BinaryBuffer64 bytes = std::BinaryBuffer64();
+        if (offset < 0 || offset > 64 || count < 0 || count > 49 || count > 64 - offset) {
+            return FileValue(bytes, -1);
+        }
+        i64 index = 0;
+        while (index < count) {
+            bytes.write_u8(index, source.at(offset + index));
+            index = index + 1;
+        }
+        return FileValue(bytes, count);
+    }
+
+    // Shared presentation adapter for ordinary and protected write outcomes.
+    auto file_write_reply(FileName name, FileValue value, FileEvent event) -> FileReply {
+        FileReply reply = FileReply();
+        if (event == FileEvent::written && (!name.valid() || !value.valid())) {
+            reply.select(FileEvent::invalid);
+            return reply;
+        }
+        reply.select(event);
+        if (event != FileEvent::written) { return reply; }
+        reply.text("wrote ");
+        i64 index = 0;
+        while (index < name.size()) {
+            reply.append(name.at(index));
+            index = index + 1;
+        }
+        reply.text(": ");
+        const std::DecimalEncodingResult size = std::format_decimal_i64(value.size());
+        index = 0;
+        while (index < size.size()) {
+            reply.append(size.byte_or(index, '\0'));
+            index = index + 1;
+        }
+        reply.text(" byte");
+        if (value.size() != 1) { reply.append('s'); }
+        return reply;
+    }
+
     // Four session-local records: name length, content length, name[8],
     // content[49], zero suffix. Occupancy and all records die with the session.
     class SessionFiles {
         array<std::BinaryBuffer64, 4> records;
         u64 occupied;
-    public:
-        SessionFiles(std::BinaryBuffer64 empty) : records{
-            empty,
-            empty,
-            empty,
-            empty
-        }, occupied(0u64) {
+        auto find(FileName name) const -> i64 {
+            i64 slot = 0;
+            while (slot < 4) {
+                if ((occupied & (1u64 << slot)) != 0u64) {
+                    const std::BinaryBuffer64 record = records[slot];
+                    if (name.matches(record)) { return slot; }
+                }
+                slot = slot + 1;
+            }
+            return -1;
         }
-
+    public:
+        SessionFiles(std::BinaryBuffer64 empty) : records{empty, empty, empty, empty}, occupied(0u64) {
+        }
+        auto read_file(FileName name) const -> FileReply {
+            FileReply reply = FileReply();
+            if (!name.valid()) { reply.select(FileEvent::invalid); return reply; }
+            if (name.reserved()) { reply.select(FileEvent::reserved); return reply; }
+            const i64 found = find(name);
+            if (found < 0) { reply.select(FileEvent::missing); return reply; }
+            reply.select(FileEvent::read);
+            const std::BinaryBuffer64 record = records[found];
+            i64 index = 0;
+            while (index < i64(record.at(1))) {
+                reply.append(record.at(10 + index));
+                index = index + 1;
+            }
+            return reply;
+        }
+        auto write_file(FileName name, FileValue value) -> FileEvent {
+            if (!name.valid() || !value.valid()) { return FileEvent::invalid; }
+            if (name.reserved()) { return FileEvent::reserved; }
+            i64 found = find(name);
+            i64 slot = 0;
+            while (found < 0 && slot < 4) {
+                if ((occupied & (1u64 << slot)) == 0u64) { found = slot; }
+                slot = slot + 1;
+            }
+            if (found < 0) { return FileEvent::full; }
+            // Stage a complete zeroed record before committing any store field.
+            std::BinaryBuffer64 record = std::BinaryBuffer64();
+            record.write_u8(0, u8(name.size()));
+            record.write_u8(1, u8(value.size()));
+            i64 index = 0;
+            while (index < name.size()) {
+                record.write_u8(2 + index, name.at(index));
+                index = index + 1;
+            }
+            index = 0;
+            while (index < value.size()) {
+                record.write_u8(10 + index, value.at(index));
+                index = index + 1;
+            }
+            records[found] = record;
+            occupied = occupied | (1u64 << found);
+            return FileEvent::written;
+        }
+        auto remove(FileName name) -> FileEvent {
+            if (!name.valid()) { return FileEvent::invalid; }
+            if (name.reserved()) { return FileEvent::reserved; }
+            const i64 found = find(name);
+            if (found < 0) { return FileEvent::missing; }
+            const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+            records[found] = empty;
+            occupied = occupied & ~(1u64 << found);
+            return FileEvent::removed;
+        }
+        auto list() const -> FileReply {
+            FileReply reply = FileReply();
+            reply.select(FileEvent::listed);
+            reply.text("files:");
+            i64 slot = 0;
+            while (slot < 4) {
+                if ((occupied & (1u64 << slot)) != 0u64) {
+                    const std::BinaryBuffer64 record = records[slot];
+                    reply.append(' ');
+                    i64 index = 0;
+                    while (index < i64(record.at(0))) {
+                        reply.append(record.at(2 + index));
+                        index = index + 1;
+                    }
+                }
+                slot = slot + 1;
+            }
+            if (occupied == 0u64) { reply.text(" empty (RAM-only)."); }
+            return reply;
+        }
         auto submit(std::BinaryBuffer64 command, i64 count) -> FileReply {
             FileReply reply = FileReply();
-            if (count < 0 || count > 64) {
-                reply.select(FileEvent::invalid);
-                return reply;
-            }
-            if (command.equal(0, count, "ls")) {
-                reply.select(FileEvent::listed);
-                reply.text("files:");
-                i64 slot = 0;
-                while (slot < 4) {
-                    const std::BinaryBuffer64 record = records[slot];
-                    const i64 length = i64(record.at(0));
-                    if ((occupied & (1u64 << slot)) != 0u64) {
-                        reply.append(' ');
-                        i64 index = 0;
-                        while (index < length) {
-                            reply.append(record.at(2 + index));
-                            index = index + 1;
-                        }
-                    }
-                    slot = slot + 1;
-                }
-                if (occupied == 0u64) {
-                    reply.text(" empty (RAM-only).");
-                }
-                return reply;
-            }
+            if (count < 0 || count > 64) { reply.select(FileEvent::invalid); return reply; }
+            if (command.equal(0, count, "ls")) { return list(); }
             i64 start = 0;
             FileEvent action = FileEvent::unknown;
-            if (command.starts_with(count, "write ")) {
-                start = 6;
-                action = FileEvent::written;
-            }
-            if (command.starts_with(count, "cat ")) {
-                start = 4;
-                action = FileEvent::read;
-            }
-            if (command.starts_with(count, "rm ")) {
-                start = 3;
-                action = FileEvent::removed;
-            }
+            if (command.starts_with(count, "write ")) { start = 6; action = FileEvent::written; }
+            if (command.starts_with(count, "cat ")) { start = 4; action = FileEvent::read; }
+            if (command.starts_with(count, "rm ")) { start = 3; action = FileEvent::removed; }
             if (action == FileEvent::unknown) {
-                // Exact verbs and malformed ls are recognized, without accepting prefixes.
-                if (command.equal(0, count, "write") || command.equal(0, count, "cat") || command.equal(0, count, "rm")
-                    || command.starts_with(count, "ls ")) {
+                if (command.equal(0, count, "write") || command.equal(0, count, "cat")
+                    || command.equal(0, count, "rm") || command.starts_with(count, "ls ")) {
                     reply.select(FileEvent::invalid);
                 }
                 return reply;
             }
             i64 end = start;
-            while (end < count && command.at(end) != ' ') {
-                end = end + 1;
-            }
-            const i64 name_size = end - start;
-            if (name_size < 1 || name_size > 8 || (action == FileEvent::written && end == count) || (action
-                != FileEvent::written && end != count)) {
+            while (end < count && command.at(end) != ' ') { end = end + 1; }
+            if ((action == FileEvent::written && end == count)
+                || (action != FileEvent::written && end != count)) {
                 reply.select(FileEvent::invalid);
                 return reply;
             }
-            i64 index = start;
-            while (index < end) {
-                const u8 byte = command.at(index);
-                if (!((byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z') || (byte >= '0' && byte <= '9')
-                    || byte == '.' || byte == '_' || byte == '-')) {
-                    reply.select(FileEvent::invalid);
-                    return reply;
-                }
-                index = index + 1;
-            }
-            if (command.equal(start, name_size, ".") || command.equal(start, name_size, "..")) {
-                reply.select(FileEvent::invalid);
-                return reply;
-            }
-            i64 content_size = 0;
-            if (action == FileEvent::written) {
-                content_size = count - end - 1;
-                if (content_size > 49) {
-                    reply.select(FileEvent::invalid);
-                    return reply;
-                }
-                index = end + 1;
-                while (index < count) {
-                    const u8 byte = command.at(index);
-                    if (byte < ' ' || byte > '~') {
-                        reply.select(FileEvent::invalid);
-                        return reply;
-                    }
-                    index = index + 1;
-                }
-            }
-            if (command.equal(start, name_size, "note")) {
-                reply.select(FileEvent::reserved);
-                return reply;
-            }
-            i64 found = -1;
-            i64 free_slot = -1;
-            i64 slot = 0;
-            while (slot < 4) {
-                const std::BinaryBuffer64 record = records[slot];
-                const i64 length = i64(record.at(0));
-                const bool present =(occupied & (1u64 << slot)) != 0u64;
-                if (!present && free_slot == -1) {
-                    free_slot = slot;
-                }
-                if (present && command.equal(start, name_size, record.bytes(2, length))) {
-                    found = slot;
-                }
-                slot = slot + 1;
-            }
-            if (action == FileEvent::read) {
-                if (found == -1) {
-                    reply.select(FileEvent::missing);
-                    return reply;
-                }
-                reply.select(FileEvent::read);
-                const std::BinaryBuffer64 record = records[found];
-                index = 0;
-                while (index < i64(record.at(1))) {
-                    reply.append(record.at(10 + index));
-                    index = index + 1;
-                }
-                return reply;
-            }
-            if (action == FileEvent::removed && found == -1) {
-                reply.select(FileEvent::missing);
-                return reply;
-            }
-            if (action == FileEvent::written && found == -1 && free_slot == -1) {
-                reply.select(FileEvent::full);
-                return reply;
-            }
-            // Stage a complete zeroed record before committing any workspace field.
-            std::BinaryBuffer64 record = std::BinaryBuffer64();
-            if (action == FileEvent::removed) {
-                records[found] = record;
-                occupied = occupied & ~(1u64 << found);
-            } else {
-                record.write_u8(0, u8(name_size));
-                record.write_u8(1, u8(content_size));
-                index = 0;
-                while (index < name_size) {
-                    record.write_u8(2 + index, command.at(start + index));
-                    index = index + 1;
-                }
-                index = 0;
-                while (index < content_size) {
-                    record.write_u8(10 + index, command.at(end + 1 + index));
-                    index = index + 1;
-                }
-                if (found == -1) {
-                    found = free_slot;
-                }
-                records[found] = record;
-                occupied = occupied | (1u64 << found);
-            }
-            reply.select(action);
-            if (action == FileEvent::written) {
-                // At most 24 bytes: an eight-byte name and the bounded 0..49 count.
-                reply.text("wrote ");
-                index = start;
-                while (index < end) {
-                    reply.append(command.at(index));
-                    index = index + 1;
-                }
-                reply.append(':');
-                reply.append(' ');
-                const std::DecimalEncodingResult size = std::format_decimal_i64(content_size);
-                index = 0;
-                while (index < size.size()) {
-                    reply.append(size.byte_or(index, '\0'));
-                    index = index + 1;
-                }
-                reply.text(" byte");
-                if (content_size != 1) {
-                    reply.append('s');
-                }
-            }
-            return reply;
+            const FileName name = file_name(command, start, end - start);
+            if (action == FileEvent::read) { return read_file(name); }
+            if (action == FileEvent::removed) { reply.select(remove(name)); return reply; }
+            const FileValue value = file_value(command, end + 1, count - end - 1);
+            const FileEvent event = write_file(name, value);
+            return file_write_reply(name, value, event);
         }
     };
 }
