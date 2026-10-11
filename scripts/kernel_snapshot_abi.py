@@ -43,6 +43,40 @@ def check_wrapper(actual, mode="normal", service=SERVICE):
     stack.require(actual == expected, "Changed copied wrapper record/envelope/restoration")
 
 
+def copied_payload(source_base, source_offset, destination_base, destination_offset, extent):
+    """Exact emitted idiom for a known contiguous initialized copied payload.
+
+    Callers supply independently fixed layout extents, not decoded instructions.
+    The existing disassembler validates REP opcode/spelling. This expectation
+    checks all address, count, direction and save/restore instructions verbatim;
+    it is not an instruction interpreter or proof of arbitrary copy semantics.
+    """
+    stack.require(source_base in ("rbp", "r10", "r11"), "Copied source must have a stable base")
+    stack.require(destination_base in ("rbp", "r10", "r11", "rsp"), "Unknown copied destination base")
+    stack.require(destination_base != "rsp" or source_base == "rbp", "Packed copy source must be frame based")
+    stack.require(type(extent) is int and 64 <= extent <= 65536, "Unsupported compact copied extent")
+    stack.require(type(source_offset) is int and type(destination_offset) is int, "Copied offsets must be integers")
+
+    def memory(base, offset):
+        displacement = ("-" if offset < 0 else "") + f"0x{abs(offset):x}" if offset else ""
+        return displacement + f"(%{base})"
+
+    source = memory(source_base, source_offset)
+    destination = memory(destination_base, destination_offset)
+    expected = [("lea", destination + ",%rax")] if destination_base == "rsp" else []
+    expected += [("push", "%rsi"), ("push", "%rdi"), ("push", "%rcx"), ("lea", source + ",%rsi")]
+    expected += [("mov", "%rax,%rdi")] if destination_base == "rsp" else [("lea", destination + ",%rdi")]
+    expected += [
+        ("mov", f"$0x{extent:x},%rcx"),
+        ("cld", ""),
+        ("rep", "movsb %ds:(%rsi),%es:(%rdi)"),
+        ("pop", "%rcx"),
+        ("pop", "%rdi"),
+        ("pop", "%rsi"),
+    ]
+    return expected
+
+
 def check_bindings(actual, expected):
     stack.require(actual == expected, "Changed scalar/byte bindings or hidden record save")
 
@@ -127,13 +161,12 @@ def main(directory, uefi_mode=None, note=False):
     # The snapshot record ends in separately checked zero padding. Only the
     # explicit note record binds its final qword as the signed length.
     extent = 72 if note else 64
-    for byte in range(0, extent, 8):
-        expected += [("mov", f"0x{24 + byte:x}(%r11),%rax"), ("mov", f"%rax,-0x{24 + extent - byte:x}(%rbp)")]
+    expected += copied_payload("r11", 24, "rbp", -(24 + extent), extent)
     actual = [(row.op, row.args) for row in body[prefix : prefix + len(expected)]]
     check_bindings(actual, expected)
-    # Source-layout independence: corrupt the scalar, first byte and final qword
-    # bindings individually. The final note qword must never become padding.
-    for index in (2, 12, len(actual) - 2):
+    # Source-layout independence: corrupt every scalar, address, extent,
+    # direction and save/restore instruction. The final note qword is payload.
+    for index in range(len(actual)):
         changed = list(actual)
         changed[index] = ("mov", "0x100(%r11),%rax")
         try:
@@ -166,5 +199,5 @@ def main(directory, uefi_mode=None, note=False):
     (directory / ("note-abi.json" if note else "abi.json")).write_text(json.dumps(result, indent=2) + "\n")
     print(
         "PASS: fixed copied bindings, local aggregate entry and exact linked wrapper; "
-        "four wrapper and three binding mutation controls"
+        "four wrapper and exact scalar/copy binding mutation controls"
     )

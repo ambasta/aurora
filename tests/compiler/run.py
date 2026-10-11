@@ -31,14 +31,17 @@ def command(args, good=True):
     return result
 
 
-def check(name, body, expected=42, error=None, trap=None):
+def check(name, body, expected=42, error=None, trap=None, options=(), modules=None):
     global PASS
     with tempfile.TemporaryDirectory(prefix="aurora-test-") as directory:
         root = Path(directory)
         source = root / "input.au"
         source.write_text(body if body.startswith("module ") else "module test; auto test() -> i64 { " + body + " }")
+        for module_name, content in (modules or {}).items():
+            (root / (module_name + ".au")).write_text(content)
         assembly = root / "program.s"
-        result = command([COMPILER, source, "-o", assembly], good=error is None)
+        module_options = ["--module-root", root] if modules else []
+        result = command([COMPILER, *options, *module_options, source, "-o", assembly], good=error is None)
         if error is not None:
             require(result.returncode != 0, f"{name}: accepted invalid program")
             require(error in result.stderr, f"{name}: expected {error!r}: {result.stderr}")
@@ -140,6 +143,34 @@ check(
 check("reflection bool", "return reflect_size(type_id(bool));", 1)
 check("reflection unknown", "return reflect_size(999);", 0)
 check("reflection negative", "return reflect_size(-1);", 0)
+check(
+    "closed reflection preserves nonzero public fields and unknown IDs",
+    "module test;class Box{u64 hidden;public:u8 shown;Box():hidden(0u64),shown(0u8){}};"
+    "auto test()->i64{if(reflect_field_count(type_id(Box))!=1){return 1;}"
+    "if(reflect_size(type_id(Box))!=16){return 2;}"
+    "if(reflect_field_count(-1)!=0){return 3;}if(reflect_size(999999)!=0){return 4;}return 42;}",
+    options=("--referenced-reflection-only",),
+)
+check(
+    "closed scoped reflection preserves defining-module private visibility",
+    "module test;import hidden;auto test()->i64{const i64 id=hidden_id();"
+    "if(reflect_size(id)!=0){return 1;}if(hidden_size(id)!=8){return 2;}"
+    "if(hidden_size(-1)!=0){return 3;}if(hidden_size(999999)!=0){return 4;}return 42;}",
+    options=("--referenced-reflection-only",),
+    modules={
+        "hidden": "export module hidden;class Secret{public:i64 value;};"
+        "export auto hidden_id()->i64{return type_id(Secret);}"
+        "export auto hidden_size(i64 id)->i64{return reflect_size(id);}"
+    },
+)
+check(
+    "closed emission still rejects malformed unused imports",
+    "module test;import malformed;auto test()->i64{return 42;}",
+    error="unknown local",
+    options=("--referenced-reflection-only",),
+    modules={"malformed": "export module malformed;auto unused()->i64{return absent;}"},
+)
+
 
 negative = [
     ("use after move", "own<i64> a = own(42); own<i64> b = move(a); return read(a);", "use after move"),

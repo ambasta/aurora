@@ -89,6 +89,15 @@ Builtin type IDs: i64=1, bool=2, own<i64>=3, ref<i64>=4, mutref<i64>=5. U64 has 
 
 `reflect_size(id)` and `reflect_field_count(id)` execute runtime lookups. Unknown IDs return zero. Descriptor entries are emitted for builtins, declared classes and array types used in storage/size/type-ID queries. Array size is `8*N`; arrays and builtins have zero named fields. Class field counts include public fields only, and class size includes all fields. Reflection cannot expose private values or bypass lifetime checks. Runtime queries use the defining module's visible descriptor view; unavailable/private IDs return zero, and reflection cannot implicitly import a type. Member traversal, invocation, mapped/conditional types and `keyof`-style type algebra remain design goals.
 
+`--referenced-reflection-only` is an explicit closed-image output mode. It emits
+only helpers directly referenced by runtime metadata queries in retained, validated
+IR. Every source function, including unused imports, is still checked before
+retention; queried helper bodies and scope visibility are unchanged. The default
+keeps all existing external reflection symbols. Closed images must not rely on
+handwritten/native calls to helpers that source queries do not retain. Only the
+protected program-console supervisor currently opts in; other native profiles
+and user-program outputs retain their existing default inventories.
+
 ## Temporary machine integration
 
 The bootstrap assembly boundary currently passes six scalar arguments in RDI, RSI, RDX, RCX, R8, R9 and returns RAX. It preserves RBP, does not touch RBX/R12–R15, and aligns RSP to sixteen bytes immediately before calls. Scalar-only programs generate no red zone, libc, heap allocation, SIMD or runtime-library calls. Resource programs explicitly link the hosted byte adapter described in OWNERSHIP.md. Sealed service graphs use their separate checked service adapters and private source-symbol linkage without an owned-byte allocator dependency. External assembly callers must provide canonical zero/one bools and correct stack alignment.

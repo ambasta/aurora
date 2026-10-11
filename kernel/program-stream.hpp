@@ -95,7 +95,7 @@ class Stream final {
     [[nodiscard]] auto matches(std::uint64_t byte, std::uint64_t ordinal) const -> bool {
         return ordinal_ < length_ && ordinal == ordinal_ && printable(byte) && byte == requested_;
     }
-    auto scrub() -> void {
+    [[gnu::noinline]] auto scrub() -> void {
         input_.fill(0);
         output_.fill(0);
         length_ = 0;

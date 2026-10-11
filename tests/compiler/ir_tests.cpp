@@ -3853,6 +3853,63 @@ void spanTests() {
     std::cout << "PASS IR span negative and upper bounds precede pointer load\n";
 }
 
+void reflectionEmissionTests() {
+    auto module = baseline();
+    module.descriptors = {{1, {8, 0}}, {100, {16, 1}}, {101, {0, 0}}};
+    module.descriptorViews = {{0, {1, 100, 101}}, {1, {1, 100}}, {2, {101}}};
+    module.functions[0].code = {Constant{100, Type::I64},
+                                MetadataQuery{Query::Size, 0},
+                                Store{8, Type::I64},
+                                Call{"scoped"},
+                                Load{8, Type::I64},
+                                Return{}};
+    auto scoped = module.functions[0];
+    scoped.name = "scoped";
+    scoped.moduleScope = 1;
+    scoped.code = {Constant{100, Type::I64}, MetadataQuery{Query::PublicFieldCount, 1}, Return{}};
+    module.functions.push_back(scoped);
+    scoped.name = "unused";
+    scoped.moduleScope = 2;
+    scoped.code = {Constant{101, Type::I64}, MetadataQuery{Query::Size, 2}, Return{}};
+    module.functions.push_back(scoped);
+    const auto validated = validate(module);
+    X86Emitter emitter;
+    const auto complete = emitter.emit(validated);
+    const auto completeFacts = emitter.stackFactsJson();
+    const auto selected = emitter.emit(validated, SymbolBinding::Default, ReflectionEmission::Referenced);
+    const auto body = [](const std::string &assembly, const std::string &name) {
+        const auto begin = assembly.find(name + ":\n");
+        const auto end = assembly.find(".size " + name + ",", begin);
+        if (begin == std::string::npos || end == std::string::npos)
+            throw Error("missing reflection helper body");
+        return assembly.substr(begin, end - begin);
+    };
+    if (emitter.stackFacts().size() != 4 ||
+        body(selected, "aurora_reflect_size") != body(complete, "aurora_reflect_size") ||
+        body(selected, "__au_reflect_s1_field_count") != body(complete, "__au_reflect_s1_field_count") ||
+        !emitter.stackFacts().at("test").calls.contains("aurora_reflect_size") ||
+        !emitter.stackFacts().at("scoped").calls.contains("__au_reflect_s1_field_count"))
+        throw Error("referenced reflection changed retained bodies or call facts");
+    for (const auto &name :
+         {"aurora_reflect_field_count", "__au_reflect_s1_size", "__au_reflect_s2_size", "__au_reflect_s2_field_count"})
+        if (selected.find(std::string(name) + ":\n") != std::string::npos || emitter.stackFacts().contains(name))
+            throw Error("unreferenced reflection helper or fact retained");
+    if (emitter.emit(validated) != complete || emitter.stackFactsJson() != completeFacts)
+        throw Error("referenced reflection changed default output or leaked emitter state");
+    const auto empty = emitter.emit(validate(baseline()), SymbolBinding::Default, ReflectionEmission::Referenced);
+    if (empty.find("aurora_reflect_") != std::string::npos || emitter.stackFacts().size() != 1)
+        throw Error("query-free closed output retained reflection helpers");
+    rejectModule(
+        "unreferenced invalid query still rejects",
+        module,
+        [](Module &bad) {
+            std::get<MetadataQuery>(bad.functions.back().code[1]).moduleScope = 1;
+        },
+        "changes defining-module scope");
+    ++passed;
+    std::cout << "PASS IR explicit reflection emission preserves queries, scope, validation and default reuse\n";
+}
+
 void initializationPayloadMetricTests() {
     // Existing legal frame extremes and word boundaries: these are representation
     // measurements, not new semantic admission thresholds or RSS expectations.
@@ -3937,6 +3994,7 @@ int main(int argc, char **argv) {
         byteTests();
         packedStorageTests();
         initializationPayloadMetricTests();
+        reflectionEmissionTests();
         for (const auto operation : {Binary::CheckedDivide, Binary::CheckedRemainder}) {
             const auto name = operation == Binary::CheckedDivide ? "division" : "remainder";
             auto arithmetic = baseline();
@@ -5448,6 +5506,26 @@ int main(int argc, char **argv) {
         largeCopy.code = {BindObjectParameter{0, 512, "Empty"}, ReturnObject{512}};
         largeValue.functions.pop_back();
         accept("64-field value boundary accepted", largeValue);
+        X86Emitter largeEmitter;
+        const auto largeAssembly = largeEmitter.emit(validate(largeValue));
+        const auto copyBegin = largeAssembly.find("copy_empty:\n");
+        const auto copyEnd = largeAssembly.find(".size copy_empty,", copyBegin);
+        const auto firstRepeat = largeAssembly.find("rep movsb", copyBegin);
+        const auto secondRepeat = largeAssembly.find("rep movsb", firstRepeat + 1);
+        if (copyBegin == std::string::npos || copyEnd == std::string::npos || firstRepeat >= copyEnd ||
+            secondRepeat >= copyEnd || largeAssembly.find("rep movsb", secondRepeat + 1) < copyEnd ||
+            largeAssembly.substr(0, copyBegin)
+                    .find("leaq 0(%rsp), %rax\n    pushq %rsi\n    pushq %rdi\n    pushq %rcx") == std::string::npos ||
+            largeAssembly.find("pushq %rsi\n    pushq %rdi\n    pushq %rcx", copyBegin) >= copyEnd ||
+            largeAssembly.find("movq $512, %rcx\n    cld\n    rep movsb\n    popq %rcx\n    popq %rdi\n    popq %rsi",
+                               copyBegin) >= copyEnd ||
+            largeEmitter.stackFacts().at("copy_empty").localBytes != 568 ||
+            largeEmitter.stackFacts().at(largeEntry.name).localBytes != 1576 ||
+            largeEmitter.stackFacts().at(largeEntry.name).calls.at("copy_empty") != 1552)
+            throw Error("compact copies changed saved registers, exact extent, stack peak or captured RSP packing");
+        ++passed;
+        std::cout << "PASS IR compact copies preserve registers and report transient stack peak\n";
+
         auto receiverValueCycle = receiverBaseline();
         auto &valueGetter = receiverValueCycle.functions[2];
         valueGetter.frameBytes = 16;

@@ -260,6 +260,32 @@ with tempfile.TemporaryDirectory(prefix="aurora-diagnostics-") as directory:
     )
     original_facts = facts_path.read_bytes()
     for options in (
+        ["--referenced-reflection-only", source, "-o", emitted],
+        [source, "--referenced-reflection-only", "-o", emitted],
+        [source, "-o", emitted, "--referenced-reflection-only"],
+    ):
+        run([*options, "--stack-facts", facts_path], 0, json_mode=False)
+        closed = json.loads(facts_path.read_text())["functions"]
+        require(set(closed) == {"demo"}, "query-free closed mode retained helper facts")
+        require(b"aurora_reflect_" not in emitted.read_bytes(), "query-free closed mode retained helper symbols")
+    closed_assembly, closed_facts = emitted.read_bytes(), facts_path.read_bytes()
+    for options in (
+        [source, "-o", emitted, "--referenced-reflection-only", "--referenced-reflection-only"],
+        [source, "-o", emitted, "--referenced-reflection-only=yes"],
+        ["--check", "--referenced-reflection-only", source],
+        ["--referenced-reflection-only", source, "--check"],
+    ):
+        run(options, 2, json_mode=False)
+        require(
+            emitted.read_bytes() == closed_assembly and facts_path.read_bytes() == closed_facts,
+            "invalid reflection emission options changed existing artifacts",
+        )
+    run([source, "-o", emitted, "--stack-facts", facts_path], 0, json_mode=False)
+    require(
+        emitted.read_bytes() == original_assembly and facts_path.read_bytes() == original_facts,
+        "default reflection output changed after closed-mode use",
+    )
+    for options in (
         ["--stack-facts"],
         [source, "-o", emitted, "--stack-facts", ""],
         [source, "-o", emitted, "--stack-facts", facts_path, "--stack-facts", facts_path],

@@ -185,7 +185,7 @@ public:
         abort();
         return true;
     }
-    auto abort() -> void {
+    [[gnu::noinline]] auto abort() -> void {
         selection_ = {};
         projection_ = {};
         client_ = {};

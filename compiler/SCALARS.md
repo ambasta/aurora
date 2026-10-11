@@ -334,8 +334,16 @@ before addressing. Copies traverse complete typed fields. The x86 backend coales
 exact groups of eight initialized u8 leaves only when both canonical source and
 destination byte offsets are consecutive within the selected copied range. Each
 group uses one unaligned-capable qword load/store pair with RAX alone; remaining
-bytes retain exact byte operations. No group includes padding, a non-u8 leaf or an
-owning descriptor. Representation padding is zeroed separately; no source expression
+bytes retain exact byte operations. No qword group includes padding, a non-u8 leaf
+or an owning descriptor. For copied payloads, contiguous initialized
+scalar payload runs of at least 64 bytes instead use forward `REP MOVSB`. Both
+canonical offset ranges must be consecutive at every leaf's storage width; padding
+and descriptor gaps split runs. RSI/RDI/RCX are saved and restored, and the exact
+24-byte transient stack peak is included in emitted stack facts. `CLD` establishes
+the existing clear-direction ABI without changing arithmetic flags. The RSP-based call-record destination is captured in scratch RAX before saves;
+all sources retain stable RBP/R10/R11 bases. This is bounded code-size lowering, not
+copy elision or a runtime-speed claim. Representation padding is zeroed separately;
+no source expression
 can address it. Stack-reservation slack outside
 an object's representation is not a source field or copied payload. Scalar private
 calls carry canonical values in registers; aggregate records/results remain distinct

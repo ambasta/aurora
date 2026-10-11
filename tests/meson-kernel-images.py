@@ -30,6 +30,42 @@ image = load("kernel_image", "scripts/kernel_uefi_image.py")
 
 
 class GeneratorBoundaries(unittest.TestCase):
+    def test_reflection_emission_is_explicit_and_program_supervisor_only(self):
+        recipe = (ROOT / "kernel-images/meson.build").read_text()
+        selection = "if admission == 'program'\n    root_args += ['--referenced-reflection-only']\n  endif"
+        self.assertIn(selection, recipe)
+        self.assertEqual(recipe.count("--referenced-reflection-only"), 1)
+        self.assertLess(recipe.index(selection), recipe.index("language = custom_target"))
+        self.assertNotIn("--referenced-reflection-only", recipe[recipe.index("user_root_args = []") :])
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            compiler, source = root / "compiler", root / "source.au"
+            compiler.write_bytes(b"fake compiler")
+            source.write_text("module test;\n")
+            for selected in (False, True):
+                output, depfile = root / "output.s", root / "output.d"
+                arguments = [
+                    "generator",
+                    "--compiler",
+                    str(compiler),
+                    "--source",
+                    str(source),
+                    "--output",
+                    str(output),
+                    "--depfile",
+                    str(depfile),
+                ]
+                if selected:
+                    arguments.append("--referenced-reflection-only")
+
+                def emit(command, **kwargs):
+                    self.assertEqual(command.count("--referenced-reflection-only"), int(selected))
+                    Path(command[command.index("-o") + 1]).write_text("complete assembly\n")
+
+                with patch("sys.argv", arguments), patch.object(assembly.subprocess, "run", side_effect=emit):
+                    assembly.main()
+                self.assertEqual(output.read_text(), "complete assembly\n")
+
     def test_import_dependencies_include_membership_and_full_paths(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

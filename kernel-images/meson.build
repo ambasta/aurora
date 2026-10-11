@@ -76,6 +76,10 @@ foreach profile_id : profile_data['profiles'].split('|')
   foreach root : profile_data[key + '.roots'].split('|')
     root_args += ['--module-root', kernel_source / root]
   endforeach
+  # Only this closed supervisor graph omits unreferenced external helpers.
+  if admission == 'program'
+    root_args += ['--referenced-reflection-only']
+  endif
   language_name = platform == 'bios' ? 'kernel-language' : 'language'
   language = custom_target(prefix + '-language-assembly',
     input: files('../' + profile_data[key + '.language']), output: [language_name + '.s', language_name + '.stack.json'],

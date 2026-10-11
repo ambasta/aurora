@@ -328,6 +328,45 @@ def byte_run_cases(suite):
         helpers=helpers,
     )
 
+    definitions = (
+        byte_storage("Bytes65", 65) + "class Packet{public:u8 head;Bytes65 data;u8 tail;u64 number;"
+        "Packet(u8 a,Bytes65 b,u8 c,u64 d):head(a),data(b),tail(c),number(d){}"
+        "auto snapshot()const->Packet{const Bytes65 copied=data;"
+        "const Packet saved=Packet(head,copied,tail,number);return saved;}};"
+        "class Packets{array<Packet,2> items;public:"
+        "Packets(Packet a,Packet b):items{a,b}{}"
+        "auto at(i64 index)const->Packet{const Packet value=items[index];return value;}"
+        "auto replace(i64 index,Packet value)->i64{items[index]=value;return index;}};"
+    )
+    helpers = (
+        "auto checked(Packet value,u64 a,u8 b,bool c,i64 d,u64 e)->Packet{Packet result=value;"
+        f"if(a!={MAX_U64}u64){{result.head=1u8;}}"
+        "if(b!=241u8){result.head=2u8;}if(!c){result.head=3u8;}"
+        "if(d!=-42){result.head=4u8;}if(e!=123456u64){result.head=5u8;}return result;}"
+    )
+    suite.check(
+        "compact mixed payload preserves padding boundaries, argument registers and class arrays",
+        "static_assert(size_of(Packet)==80);Bytes65 bytes=Bytes65();i64 i=0;"
+        "while(i<65){bytes.set(i,u8(i+128));i=i+1;}"
+        f"Packet original=Packet(17u8,bytes,19u8,{MAX_U64}u64);"
+        f"const Packet saved=checked(original,{MAX_U64}u64,241u8,true,-42,123456u64);"
+        "Packets packets=Packets(original,saved);original.head=0u8;"
+        "const Packet extracted=packets.at(1);Packet changed=extracted;changed.tail=7u8;"
+        "packets.replace(0,changed);const Packet replaced=packets.at(0);"
+        "const Packet untouched=packets.at(1);const Packet method=untouched.snapshot();"
+        "if(saved.head!=17u8){return 1u64;}if(extracted.tail!=19u8){return 2u64;}"
+        "if(replaced.tail!=7u8){return 3u64;}if(untouched.tail!=19u8){return 4u64;}"
+        f"if(method.number!={MAX_U64}u64){{return 5u64;}}"
+        "const Bytes65 method_data=method.data;const Bytes65 replaced_data=replaced.data;"
+        "i=0;while(i<65){if(method_data.at(i)!=u8(i+128)){return 6u64;}"
+        "if(replaced_data.at(i)!=u8(i+128)){return 7u64;}i=i+1;}return 42u64;",
+        definitions=definitions,
+        helpers=helpers,
+    )
+    assembly = (suite.runner.directory / "compiled.s").read_text()
+    require("movq $67, %rcx\n    cld\n    rep movsb" in assembly, "compact run stopped at representation padding")
+    require("movq $80, %rcx\n    cld\n    rep movsb" not in assembly, "compact copy included representation padding")
+
 
 def scalar_and_layout_cases(suite):
     for scalar, value, literal in (

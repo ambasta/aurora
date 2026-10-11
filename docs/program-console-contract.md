@@ -132,12 +132,13 @@ with fresh grants. This is a bounded command service, not a general file API,
 filesystem, persistent store or proof of production security.
 
 Existing native generated-code and PTY fixtures cover this path alongside the
-note/scalar regressions. Named-file guest qualification remains pending; current
-aggregate-copy code size requires a compact-lowering dependency before proceeding
-with the unchanged mapped-image cap. Hosted checks and transcript controls do
-not establish an admitted or booted named-file image. The shared image/ABI/stack gates cover both copied-value
-bridges; no separate admission workflow is introduced. Changed source still
-requires final linked-image, guest, full-native and independent-review gates.
+note/scalar regressions. Compact aggregate copies, referenced-only supervisor
+reflection emission and shared native cleanup retain the unchanged mapped-image
+and stack caps. Both copied-value bridges use the shared image/ABI/stack admission
+workflow; no separate admission workflow is introduced. Hosted checks and
+transcript controls do not establish a booted named-file image. Changed source
+still requires final linked-image, actual guest, full-native and independent-review
+qualification.
 
 ## Authority and data
 

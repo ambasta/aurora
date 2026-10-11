@@ -20,6 +20,7 @@ int main(int argc, char **argv) {
         std::vector<std::filesystem::path> roots;
         bool checkOnly = false;
         bool localSymbols = false;
+        bool referencedReflectionOnly = false;
         bool inputSpecified = false;
         bool outputSpecified = false;
         bool stackFactsSpecified = false;
@@ -47,6 +48,10 @@ int main(int argc, char **argv) {
                 if (localSymbols)
                     throw argumentError("duplicate --local-symbols option");
                 localSymbols = true;
+            } else if (option == "--referenced-reflection-only") {
+                if (referencedReflectionOnly)
+                    throw argumentError("duplicate --referenced-reflection-only option");
+                referencedReflectionOnly = true;
             } else if (option == "--check") {
                 if (checkOnly)
                     throw argumentError("duplicate --check option");
@@ -63,7 +68,8 @@ int main(int argc, char **argv) {
             }
         }
         if (inputPath.empty() || (!checkOnly && outputPath.empty())) {
-            const std::string usage = "usage: aurorac [--local-symbols] [--module-root DIR] INPUT.au -o OUTPUT.s "
+            const std::string usage = "usage: aurorac [--local-symbols] [--referenced-reflection-only] [--module-root "
+                                      "DIR] INPUT.au -o OUTPUT.s "
                                       "[--stack-facts OUTPUT.json]\n"
                                       "       aurorac --check [--diagnostics=text|json] [--module-root DIR] INPUT.au";
             throw argumentError(usage);
@@ -76,6 +82,8 @@ int main(int argc, char **argv) {
             throw argumentError("--stack-facts requires a nonempty output path");
         if (checkOnly && localSymbols)
             throw argumentError("--check does not accept --local-symbols");
+        if (checkOnly && referencedReflectionOnly)
+            throw argumentError("--check does not accept --referenced-reflection-only");
         if (jsonDiagnostics && !checkOnly)
             throw argumentError("--diagnostics=json requires --check");
         auto checked = aurora::checkSource(inputPath, roots);
@@ -85,8 +93,10 @@ int main(int argc, char **argv) {
             return 0;
         }
         aurora::X86Emitter emitter;
-        auto result =
-            emitter.emit(checked.module, localSymbols ? aurora::SymbolBinding::Local : aurora::SymbolBinding::Default);
+        auto result = emitter.emit(checked.module,
+                                   localSymbols ? aurora::SymbolBinding::Local : aurora::SymbolBinding::Default,
+                                   referencedReflectionOnly ? aurora::ReflectionEmission::Referenced
+                                                            : aurora::ReflectionEmission::All);
         aurora::host::ArtifactWriter output(outputPath, checked.sourceIdentities);
         std::optional<aurora::host::ArtifactWriter> stackFacts;
         if (stackFactsSpecified) {
