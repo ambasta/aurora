@@ -65,6 +65,9 @@ public:
 // service reply, and stages a byte or terminal marker only when the compiled
 // client acknowledges that exact reply. EOF is an extra round, including for an
 // empty note; missing is a distinct terminal marker. No native payload oracle.
+// A transforming read carries the original reply in the low 16 bits and a
+// separately validated printable output byte above it. The compiled client owns
+// the transformation; terminal acknowledgments retain their exact encoding.
 // The runtime may release finish()'s copied output only after both participants
 // are quiescent and retired. No partial output is exposed by this class.
 class Stream final {
@@ -81,7 +84,9 @@ class Stream final {
     std::size_t length_{};
     std::size_t ordinal_{};
     std::uint64_t requested_{};
-    bool reading_{}, terminal_{}, missing_{};
+    std::uint64_t run_{};
+    const std::uint64_t run_ceiling_;
+    bool reading_{}, transforming_{}, terminal_{}, missing_{};
     Stage stage_ = Stage::idle;
 
     [[nodiscard]] static constexpr auto printable(std::uint64_t byte) -> bool {
@@ -90,17 +95,21 @@ class Stream final {
     [[nodiscard]] auto matches(std::uint64_t byte, std::uint64_t ordinal) const -> bool {
         return ordinal_ < length_ && ordinal == ordinal_ && printable(byte) && byte == requested_;
     }
-    auto scrub() -> void {
+    [[gnu::noinline]] auto scrub() -> void {
         input_.fill(0);
         output_.fill(0);
         length_ = 0;
         ordinal_ = 0;
         requested_ = 0;
-        reading_ = terminal_ = missing_ = false;
+        reading_ = transforming_ = terminal_ = missing_ = false;
     }
 
 public:
-    Stream() = default;
+    explicit constexpr Stream(std::uint64_t run_ceiling = UINT64_MAX) : run_ceiling_(run_ceiling) {
+    }
+    [[nodiscard]] auto run() const -> std::uint64_t {
+        return run_;
+    }
     Stream(const Stream &) = delete;
     auto operator=(const Stream &) -> Stream & = delete;
     Stream(Stream &&) = delete;
@@ -108,7 +117,7 @@ public:
 
     [[nodiscard]] auto begin(const StreamBytes &copied_input, std::size_t length) -> bool {
         if ((stage_ != Stage::idle && stage_ != Stage::finished && stage_ != Stage::cancelled) || !scrubbed() ||
-            length > stream_capacity)
+            length > stream_capacity || run_ >= run_ceiling_)
             return false;
         for (std::size_t index = 0; index < length; ++index) {
             if (!printable(copied_input[index]))
@@ -117,15 +126,21 @@ public:
         for (std::size_t index = 0; index < length; ++index)
             input_[index] = copied_input[index];
         length_ = length;
+        ++run_;
         stage_ = Stage::request;
         return true;
     }
-    [[nodiscard]] auto begin_read() -> bool {
+    [[nodiscard]] auto begin_read(bool transforming = false) -> bool {
         const StreamBytes empty{};
         if (!begin(empty, 0))
             return false;
         reading_ = true;
+        transforming_ = transforming;
         return true;
+    }
+    [[nodiscard]] auto awaiting_read(bool transforming) const -> bool {
+        return stage_ == Stage::request && reading_ && transforming_ == transforming && ordinal_ == 0 && length_ == 0 &&
+               requested_ == 0 && !terminal_ && !missing_;
     }
     [[nodiscard]] auto next_input() const -> std::optional<Input> {
         if (reading_) {
@@ -161,15 +176,21 @@ public:
     }
     [[nodiscard]] auto acknowledge(std::uint64_t byte, std::uint64_t ordinal) -> bool {
         if (reading_) {
-            if (stage_ != Stage::acknowledgment || ordinal != ordinal_ || byte != requested_)
+            if (stage_ != Stage::acknowledgment || ordinal != ordinal_)
                 return false;
-            if (byte == 2 || byte == 3) {
+            if (requested_ == 2 || requested_ == 3) {
+                if (byte != requested_)
+                    return false;
                 terminal_ = true;
                 missing_ = byte == 3;
             } else {
                 if (ordinal_ >= 53)
                     return false;
-                output_[ordinal_++] = static_cast<std::uint8_t>(byte >> 8);
+                // Checking the whole shifted value also rejects excess high bits.
+                if (transforming_ ? (byte & std::uint64_t{0xffff}) != requested_ || !printable(byte >> 16)
+                                  : byte != requested_)
+                    return false;
+                output_[ordinal_++] = static_cast<std::uint8_t>(byte >> (transforming_ ? 16 : 8));
                 length_ = ordinal_;
             }
             requested_ = 0;
@@ -204,7 +225,7 @@ public:
         return true;
     }
     [[nodiscard]] auto scrubbed() const -> bool {
-        if (length_ != 0 || ordinal_ != 0 || requested_ != 0 || reading_ || terminal_ || missing_)
+        if (length_ != 0 || ordinal_ != 0 || requested_ != 0 || reading_ || transforming_ || terminal_ || missing_)
             return false;
         for (std::size_t index = 0; index < stream_capacity; ++index) {
             if (input_[index] != 0 || output_[index] != 0)

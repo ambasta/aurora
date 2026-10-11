@@ -3,6 +3,7 @@
 
 from pathlib import Path
 import importlib.util
+import re
 
 path = Path(__file__).with_name("kernel-program-console-pty.py")
 spec = importlib.util.spec_from_file_location("console_pty", path)
@@ -17,7 +18,7 @@ kernel_root = arena + 0x11000
 timer = dict(drain_begin=100, drain_end=104)
 
 
-def fixture(mode, note=False, value="A", missing=False):
+def fixture(mode, note=False, value="A", missing=False, file_command=None):
     lines = [
         f"AURORA_UEFI_OWNERSHIP_OK: arena={arena}",
         f"AURORA_UEFI_TIMER_READY: physical=4276092928 virtual=18446620928407240704 id=0 root={kernel_root}",
@@ -29,9 +30,11 @@ def fixture(mode, note=False, value="A", missing=False):
     phases = ["request", "service", "completion"]
     for command in range(2 if failure else 1):
         failing = failure and command == 0
-        length = 8 if note else 2 if failing else len(value)
-        rounds = (len(value) + 1 if not missing else 1) if note else len(value)
-        kind = "note" if note else "upper"
+        reading = note or file_command is not None
+        saving_file = file_command is not None and file_command.startswith("upper ") and not missing
+        length = len(file_command) if file_command is not None else 8 if note else 2 if failing else len(value)
+        rounds = (len(value) + 1 if not missing else 1) if reading else len(value)
+        kind = "upper-file" if saving_file else "file" if file_command is not None else "note" if note else "upper"
         lines.append(f"AURORA_PROGRAM_COMMAND_BEGIN: grant={1 + command * 8} length={length} domains=2 kind={kind}")
         stop = phases.index(mode.split("-")[1]) if failing else 2
         sequence = phases + phases[: stop + 1] if failing else phases * rounds
@@ -39,7 +42,11 @@ def fixture(mode, note=False, value="A", missing=False):
             epoch += 1
             role = "service" if phase == "service" else "client"
             transaction = 0 if phase == "request" else 3 + command * 8 + offset // 3
-            source = {"request": 12, "service": 11, "completion": 13}[phase] if note else phases.index(phase)
+            source = (
+                {"request": 12, "service": 11, "completion": 14 if saving_file else 13}[phase]
+                if reading
+                else phases.index(phase)
+            )
             terminal = failing and offset + 1 == len(sequence)
             if terminal:
                 source = (
@@ -72,17 +79,19 @@ def fixture(mode, note=False, value="A", missing=False):
                 )
         if mode == "program-pending":
             lines += [
-                "AURORA_UEFI_TIMER_PENDING: epoch=3",
+                f"AURORA_UEFI_TIMER_PENDING: epoch={epoch}",
                 f"AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc={arena + 0x22000 + 102} cpl=0 root={kernel_root} "
                 f"frame={arena + 0x47000} cr2=0",
-                f"AURORA_UEFI_TIMER_DRAIN: epoch=3 root={kernel_root} ss=16",
+                f"AURORA_UEFI_TIMER_DRAIN: epoch={epoch} root={kernel_root} ss=16",
             ]
         lines.append(f"AURORA_PROGRAM_COMMAND_END: success={0 if failing else 1} used=0 epoch={epoch}")
         if failing:
             lines.append("Program stopped: checked fault or budget exhausted; output discarded.")
         else:
-            if note and missing:
-                lines.append("Note is missing.")
+            if reading and missing:
+                lines.append("File is missing." if file_command is not None else "Note is missing.")
+            elif saving_file:
+                lines.append("File saved.")
             else:
                 lines.append("output> " + value)
                 expected.append(value)
@@ -212,6 +221,105 @@ checks += 1
 text, expected, commands = fixture("program-console", note=True, value="", missing=True)
 module.validate(text.replace("length=8", "length=10"), "program-console", expected, commands, images, timer, {0: None})
 checks += 1
+
+# Named reads and replacements retain the original command length and one EOF
+# round. A missing upper selection uses the ordinary authenticated read protocol.
+for mode, command, value, missing in (
+    [
+        ("program-console", verb + " chosen", value, missing)
+        for verb in ("cat", "upper")
+        for value, missing in (
+            ("", True),
+            ("", False),
+            ("Ab !", False),
+            ("Z" * 49, False),
+            ("File saved.", False),
+            ("File is missing.", False),
+            ("Note is missing.", False),
+        )
+    ]
+    + [("program-pending", "upper chosen", "AB", False)]
+    + [
+        ("program-" + phase + "-" + outcome, "upper chosen", "AB", False)
+        for phase in ("request", "service", "completion")
+        for outcome in ("fault", "budget")
+    ]
+):
+    text, expected, commands = fixture(mode, value=value, missing=missing, file_command=command)
+    files = {index: {"command": command, "value": None if missing else value} for index in range(commands)}
+    module.validate(text, mode, expected, commands, images, timer, expected_files=files)
+    checks += 1
+    saving = command.startswith("upper ") and not missing
+    kind = "upper-file" if saving else "file"
+    marker = "File saved." if saving else "File is missing." if missing else "output> " + value
+    changed_plan = {**files, commands - 1: {"command": command, "value": value + "extra"}}
+    changes = [
+        (text.replace("source=12", "source=0", 1), files),
+        (text.replace("source=11", "source=1", 1), files),
+        (text.replace("source=14" if saving else "source=13", "source=13" if saving else "source=14", 1), files),
+        (text.replace("kind=" + kind, "kind=upper-note", 1), files),
+        (text.replace("kind=" + kind, "kind=file" if saving else "kind=upper-file", 1), files),
+        (text.replace(f"length={len(command)}", f"length={len(command) + 1}", 1), files),
+        (text, {}),
+        (text, changed_plan),
+        (text, {**files, commands: {"command": command, "value": value}}),
+        (text, {**files, commands - 1: {"command": "cat note", "value": value}}),
+        (text, {**files, commands - 1: {"command": "cat ../x", "value": value}}),
+        (text, {**files, commands - 1: {"command": "cat toolongnm", "value": value}}),
+        (text, {**files, commands - 1: {"command": command, "value": "x" * 50}}),
+        (text, {**files, commands - 1: {"command": command, "value": "bad\x01"}}),
+        (text.replace(marker + "\r\n", "", 1), files),
+        (text.replace(marker + "\r\n", marker + "\r\n" + marker + "\r\n", 1), files),
+        (text.replace("AURORA_PROGRAM_COMMAND_END:", marker + "\r\nAURORA_PROGRAM_COMMAND_END:", 1), files),
+        (text + "File saved.\r\n", files),
+        (text + "File is missing.\r\n", files),
+        ("output> partial\r\n" + text, files),
+    ]
+    if saving:
+        changes += [
+            (text.replace("File saved.", "Note saved.", 1), files),
+            (text.replace("File saved.", "output> " + value, 1), files),
+        ]
+    if missing:
+        changes += [
+            (text.replace("File is missing.", "output> ", 1), files),
+            (text.replace("File is missing.", "File saved.", 1), files),
+        ]
+    if mode == "program-pending":
+        pending = re.search(r"AURORA_UEFI_TIMER_PENDING:[^\r\n]*\r\n", text)[0]
+        changes.append((text.replace(pending, "") + pending, files))
+    if mode == "program-console":
+        runs = list(re.finditer(r"AURORA_UEFI_USER_RUN:[^\r\n]*\r\nAURORA_UEFI_DOMAIN_EVENT:[^\r\n]*\r\n", text))
+        final_round = text[runs[-3].start() : runs[-1].end()]
+        extra_round = re.sub(r"epoch=(\d+)", lambda match: "epoch=" + str(int(match[1]) + 3), final_round)
+        extra_round = re.sub(
+            r"transaction=(\d+)",
+            lambda match: "transaction=" + str(int(match[1]) + int(match[1] != "0")),
+            extra_round,
+        )
+        extra_eof = text[: runs[-1].end()] + extra_round + text[runs[-1].end() :]
+        extra_eof = re.sub(
+            r"(AURORA_PROGRAM_COMMAND_END: success=1 used=0 epoch=)(\d+)",
+            lambda match: match[1] + str(int(match[2]) + 3),
+            extra_eof,
+        )
+        changes += [
+            (text[: runs[-3].start()] + text[runs[-1].end() :], files),
+            (extra_eof, files),
+        ]
+    for control, (changed, plan) in enumerate(changes):
+        need_changed = changed != text or plan != files
+        if not need_changed:
+            raise SystemExit("FAIL: named-file hostile control did not change its fixture")
+        try:
+            module.validate(changed, mode, expected, commands, images, timer, expected_files=plan)
+        except ValueError:
+            checks += 1
+        else:
+            raise SystemExit(
+                f"FAIL: named-file lifecycle/phase/EOF/output oracle accepted drift: {mode} {command} "
+                f"missing={missing} length={len(value)} control={control}"
+            )
 
 for mode, reason in module.FAILSTOP_REASONS.items():
     image = images["bounds" if mode == "program-transaction" else "clean"]

@@ -13,6 +13,12 @@ enum class SymbolBinding {
     Default,
     Local
 };
+// Default output retains the external bootstrap reflection ABI. Native images
+// may select only helpers referenced by retained, fully validated IR.
+enum class ReflectionEmission {
+    All,
+    Referenced
+};
 // Stack use follows the instructions emitted below, not a second ABI calculator.
 // Like GCC .su, localBytes includes the incoming return address. Call-site bytes
 // stop immediately before CALL; the callee's own incoming slot is counted there.
@@ -53,17 +59,58 @@ class X86Emitter {
     void storeValue(const Type &type, const std::string &destination) {
         line(std::string(type == Type::U8 ? "movb %al, " : "movq %rax, ") + destination);
     }
+    enum class CopyBases {
+        Stable,
+        StackDestination
+    };
     template <class Source, class Destination>
     void copyLeaves(std::span<const Type> leaves,
                     std::span<const int> sourceOffsets,
                     std::span<const int> destinationOffsets,
                     const Source &source,
-                    const Destination &destination) {
+                    const Destination &destination,
+                    CopyBases bases) {
         // Only verified copied payload ranges reach this helper. Their objects,
         // receiver storage and call records are disjoint; every source leaf is
         // initialized. Check both canonical offset ranges, never address strings.
-        // RAX alone is scratch: packed scalar arguments and R10/R11 may be live.
+        // RAX alone is scratch after either path: packed scalar arguments and
+        // R10/R11 may be live. Sources use stable RBP/R10/R11 bases. The sole
+        // RSP destination is captured in RAX before any temporary stack saves.
         for (std::size_t leaf = 0; leaf < leaves.size();) {
+            std::size_t end = leaf + 1;
+            int bytes = ir::storageWidth(leaves[leaf]);
+            while (end < leaves.size() && sourceOffsets[end] == sourceOffsets[leaf] + bytes &&
+                   destinationOffsets[end] == destinationOffsets[leaf] + bytes) {
+                bytes += ir::storageWidth(leaves[end]);
+                ++end;
+            }
+            // Copy only this exact initialized run, never padding or owner
+            // descriptors. Stable bases are unchanged by these saves; capture
+            // the outgoing record address before RSP moves. No calls occur
+            // before restoration. Account for the real transient high water
+            // without altering operand depth.
+            if (bytes >= 64) {
+                if (bases == CopyBases::StackDestination)
+                    line("leaq " + destination(destinationOffsets[leaf]) + ", %rax");
+                line("pushq %rsi");
+                line("pushq %rdi");
+                line("pushq %rcx");
+                growStack(24);
+                line("leaq " + source(sourceOffsets[leaf]) + ", %rsi");
+                if (bases == CopyBases::StackDestination)
+                    line("movq %rax, %rdi");
+                else
+                    line("leaq " + destination(destinationOffsets[leaf]) + ", %rdi");
+                line("movq $" + std::to_string(bytes) + ", %rcx");
+                line("cld");
+                line("rep movsb");
+                line("popq %rcx");
+                line("popq %rdi");
+                line("popq %rsi");
+                liveStackBytes -= 24;
+                leaf = end;
+                continue;
+            }
             bool qword = leaves.size() - leaf >= 8;
             for (std::size_t byte = 0; qword && byte < 8; ++byte)
                 qword = leaves[leaf + byte] == Type::U8 &&
@@ -270,7 +317,8 @@ class X86Emitter {
                     },
                     [&](int byte) {
                         return std::to_string(offset + byte) + "(%rsp)";
-                    });
+                    },
+                    CopyBases::StackDestination);
             }
         }
         line("movq %rsp, %r11");
@@ -905,7 +953,8 @@ class X86Emitter {
                         },
                         [&](int byte) {
                             return address(operation.resultOffset - byte);
-                        });
+                        },
+                        CopyBases::Stable);
                 } else if constexpr (std::is_same_v<Op, ir::ObjectFieldCopy>) {
                     const ir::ClassField *field = nullptr;
                     const ir::ClassStorage *source = nullptr;
@@ -929,7 +978,8 @@ class X86Emitter {
                         },
                         [&](int byte) {
                             return address(operation.resultOffset - byte);
-                        });
+                        },
+                        CopyBases::Stable);
                 } else if constexpr (std::is_same_v<Op, ir::AssignObjectField>) {
                     const auto &name = operation.objectOffset == 0
                                            ? currentFunction->receiver->className
@@ -950,7 +1000,8 @@ class X86Emitter {
                         },
                         [](int byte) {
                             return std::to_string(byte) + "(%r10)";
-                        });
+                        },
+                        CopyBases::Stable);
                 } else if constexpr (std::is_same_v<Op, ir::InitializeClassArray>) {
                     const auto &name = operation.objectOffset == 0
                                            ? currentFunction->receiver->className
@@ -974,7 +1025,8 @@ class X86Emitter {
                             },
                             [](int byte) {
                                 return std::to_string(byte) + "(%r10)";
-                            });
+                            },
+                            CopyBases::Stable);
                     }
                 } else if constexpr (std::is_same_v<Op, ir::ClassArrayBoundsGuard>) {
                     const auto &name = operation.objectOffset == 0
@@ -1012,7 +1064,8 @@ class X86Emitter {
                             },
                             [&](int byte) {
                                 return address(operation.resultOffset - byte);
-                            });
+                            },
+                            CopyBases::Stable);
                     } else {
                         copyLeaves(
                             layout,
@@ -1023,7 +1076,8 @@ class X86Emitter {
                             },
                             [](int byte) {
                                 return std::to_string(byte) + "(%r10)";
-                            });
+                            },
+                            CopyBases::Stable);
                     }
                 } else if constexpr (std::is_same_v<Op, ir::InitializeObjectField>) {
                     const auto &field = receiverField(operation.fieldIndex);
@@ -1038,7 +1092,8 @@ class X86Emitter {
                         },
                         [](int byte) {
                             return std::to_string(byte) + "(%r10)";
-                        });
+                        },
+                        CopyBases::Stable);
                 } else if constexpr (std::is_same_v<Op, ir::InitializeBytesField>) {
                     // Only a constructor's bound receiver is admitted here.
                     // Initializing one descriptor never copies sibling payload.
@@ -1131,7 +1186,8 @@ class X86Emitter {
                         },
                         [](int byte) {
                             return std::to_string(byte) + "(%r10)";
-                        });
+                        },
+                        CopyBases::Stable);
                     line("xorq %rax, %rax");
                     line("jmp " + returnLabel());
                 } else if constexpr (std::is_same_v<Op, ir::ReturnOwnedObject>) {
@@ -1176,7 +1232,8 @@ class X86Emitter {
                         },
                         [&](int byte) {
                             return address(operation.offset - byte);
-                        });
+                        },
+                        CopyBases::Stable);
                 } else if constexpr (std::is_same_v<Op, ir::BindOwnedObjectParameter>) {
                     line("movq " + address(callRecordSaveOffset) + ", %r11");
                     const int offset = recordOffset(*currentFunction, operation.index);
@@ -1221,7 +1278,9 @@ public:
         facts << "}}\n";
         return facts.str();
     }
-    std::string emit(const ir::ValidatedModule &validated, SymbolBinding binding = SymbolBinding::Default) {
+    std::string emit(const ir::ValidatedModule &validated,
+                     SymbolBinding binding = SymbolBinding::Default,
+                     ReflectionEmission reflection = ReflectionEmission::All) {
         const auto &module = validated.get();
         output.str("");
         output.clear();
@@ -1238,6 +1297,12 @@ public:
             argumentCounts[function.name] = function.parameters.size();
             functions[function.name] = &function;
         }
+        std::set<std::string> referencedReflection;
+        if (reflection == ReflectionEmission::Referenced)
+            for (const auto &function : module.functions)
+                for (const auto &instruction : function.code)
+                    if (const auto *query = std::get_if<ir::MetadataQuery>(&instruction))
+                        referencedReflection.insert(querySymbol(query->query, query->moduleScope));
         // Resource graphs link a trusted host adapter. No user-selected source
         // symbol may interpose its allocator, stdio or fail-stop dependencies.
         // Derive this from validated signatures/lifetime IR, never an input flag.
@@ -1343,6 +1408,8 @@ public:
             for (const auto query : {ir::Query::Size, ir::Query::PublicFieldCount}) {
                 const std::string name = query == ir::Query::Size ? "size" : "field_count";
                 const auto symbol = querySymbol(query, scope);
+                if (reflection == ReflectionEmission::Referenced && !referencedReflection.contains(symbol))
+                    continue;
                 beginStackFacts(symbol);
                 const std::string labelPrefix = ".Lscope" + std::to_string(scope) + "_" + name;
                 output << (binding == SymbolBinding::Local ? ".local " : ".globl ") << symbol << "\n.type " << symbol

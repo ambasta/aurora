@@ -1,4 +1,5 @@
 #include "../kernel/program-note.hpp"
+#include "../kernel/program-files.hpp"
 #include "../kernel/program-stream.hpp"
 
 #include <algorithm>
@@ -21,6 +22,9 @@ using program::Note;
 extern "C" void __au_runtime_note_update(const void *, void *);
 extern "C" void __au_runtime_note_project(const void *, void *);
 extern "C" void note_test_initial(void *);
+extern "C" void files_test_initial(void *);
+extern "C" void __au_runtime_files_update(const void *, void *);
+extern "C" void __au_runtime_files_replace(const void *, void *);
 extern "C" U64 note_test_service(const void *);
 extern "C" I64 aurora_user_main(I64, I64, I64);
 
@@ -95,6 +99,7 @@ public:
     program::Stream stream;
     U64 transaction{}, ordinal{};
     bool reading = true;
+    bool transforming = false;
     alignas(16) std::array<std::byte, 128> storage{};
 
     auto start(bool read = true, std::string_view input = {}, bool upper_note = false) -> void {
@@ -173,7 +178,11 @@ public:
     }
 
     auto acknowledge(U64 result) -> void {
-        const auto accepted = aurora_user_main(reading ? 13 : 2, static_cast<I64>(result), static_cast<I64>(ordinal));
+        const auto accepted = aurora_user_main(transforming ? 14
+                                               : reading    ? 13
+                                                            : 2,
+                                               static_cast<I64>(result),
+                                               static_cast<I64>(ordinal));
         require(accepted >= 0 && stream.acknowledge(static_cast<U64>(accepted), ordinal),
                 "actual client acknowledges actual returned bytes or EOF");
         require(mailbox.recycle(ipc::Phase::inactive), "consumed transaction recycle");
@@ -630,9 +639,273 @@ auto upper_regression() -> void {
     f.finish("AZ AZ09!? ~");
     f.read("unchanged");
 }
+
+using program::Files;
+auto file_update(const Files::Value &saved, std::string_view command) -> Files::Update {
+    Files::UpdateInput input{};
+    require(command.size() <= 64, "bounded named command");
+    std::copy(saved.begin(), saved.end(), input.begin());
+    for (std::size_t i = 0; i < command.size(); ++i)
+        input[272 + i] = std::byte(command[i]);
+    put_word(input, 336, command.size());
+    const auto before = input;
+    std::array<std::byte, 552> result{};
+    result.fill(std::byte{0xa5});
+    __au_runtime_files_update(input.data(), result.data() + 16);
+    require(input == before, "file update immutable input");
+    for (unsigned i = 0; i < 16; ++i)
+        require(result[i] == std::byte{0xa5} && result[536 + i] == std::byte{0xa5}, "file update canaries");
+    Files::Update output{};
+    std::copy_n(result.begin() + 16, 520, output.begin());
+    return output;
+}
+auto file_replace(const Files::ReplaceInput &input) -> Files::Mutation {
+    const auto before = input;
+    std::array<std::byte, 384> result{};
+    result.fill(std::byte{0xa5});
+    __au_runtime_files_replace(input.data(), result.data() + 16);
+    require(input == before, "file replacement immutable input");
+    for (unsigned i = 0; i < 16; ++i)
+        require(result[i] == std::byte{0xa5} && result[368 + i] == std::byte{0xa5}, "file replacement canaries");
+    Files::Mutation output{};
+    std::copy_n(result.begin() + 16, 352, output.begin());
+    return output;
+}
+class NamedFixture final {
+public:
+    Files files;
+    Fixture f;
+    auto submit(std::string_view command) -> Files::Update {
+        const auto result = file_update(files.saved(), command);
+        require(files.update(result).has_value(), "actual file policy update");
+        return result;
+    }
+    auto start(std::string_view command, unsigned rejected_mode = 0) -> void {
+        submit(command);
+        require(files.selected(), "named selection");
+        const auto a = f.registry.create(), b = f.registry.create();
+        require(a && b, "named fresh participants");
+        f.client = *a;
+        f.service = *b;
+        require(f.mailbox.bind(f.client, f.service), "named mailbox bind");
+        f.reading = true;
+        f.transforming = files.writable();
+        require(rejected_mode == 1 ? f.stream.begin({}, 0)
+                                   : f.stream.begin_read(rejected_mode == 3 ? !f.transforming : f.transforming),
+                "named starts selected stream mode");
+        require(f.note.bind(files.projection(), *f.mailbox.endpoint(f.service)), "named copied service projection");
+        if (rejected_mode == 2)
+            f.round();
+        if (rejected_mode != 0) {
+            require(!files.bind(f.registry, f.mailbox, f.client, f.service, f.stream),
+                    "file grant refuses scalar, wrong-mode or previously progressed read ledger");
+            files.abort();
+            f.retire(true);
+            return;
+        }
+        require(files.bind(f.registry, f.mailbox, f.client, f.service, f.stream), "named authenticated file binding");
+    }
+    auto run() -> void {
+        while (f.stream.next_input())
+            f.round();
+    }
+    auto read(std::string_view name, std::string_view expected, bool missing = false) -> void {
+        start("cat " + std::string(name));
+        run();
+        require(!files.complete(f.registry, f.mailbox, f.client, *f.mailbox.endpoint(f.client), f.stream),
+                "read-only real grant cannot authorize replacement");
+        f.retire();
+        files.abort();
+        auto output = f.stream.finish();
+        require(output && output->missing() == missing && output->bytes() == bytes(expected) &&
+                    output->length() == expected.size(),
+                "exact protected named readback");
+        output->scrub();
+    }
+    auto save() -> void {
+        const auto endpoint = *f.mailbox.endpoint(f.client);
+        require(!files.complete(f.registry, f.mailbox, f.service, endpoint, f.stream),
+                "foreign caller cannot complete");
+        require(!files.complete(f.registry, f.mailbox, f.client, ipc::Endpoint{0, endpoint.generation() + 1}, f.stream),
+                "foreign generation cannot complete");
+        program::Stream other;
+        require(other.begin({}, 0) && !files.complete(f.registry, f.mailbox, f.client, endpoint, other),
+                "foreign finished stream cannot authorize replacement");
+        require(files.complete(f.registry, f.mailbox, f.client, endpoint, f.stream), "one authenticated completion");
+        require(!files.complete(f.registry, f.mailbox, f.client, endpoint, f.stream), "completion cannot replay");
+        user::DomainRegistry foreign_registry;
+        ipc::Mailbox foreign_mailbox{foreign_registry};
+        require(!files.retire(foreign_registry, foreign_mailbox),
+                "foreign empty registry and revoked mailbox cannot impersonate retirement");
+        require(!files.retire(f.registry, foreign_mailbox) && !files.retire(foreign_registry, f.mailbox),
+                "retirement retains each original authority context");
+        Files::ReplaceInput input{};
+        input.fill(std::byte{0xa5});
+        const auto untouched = input;
+        require(!files.replacement(f.stream, input) && input == untouched, "no replacement before retirement");
+        f.retire();
+        require(files.retire(f.registry, f.mailbox), "named completed authority survives actual retirement");
+        require(!files.replacement(other, input) && input == untouched, "foreign stream rejected after retirement");
+        require(files.replacement(f.stream, input), "one retired replacement extraction");
+        const auto result = file_replace(input);
+        require(files.publish(result), "Aurora selected-file atomic publication");
+        require(!files.publish(result) && !files.replacement(f.stream, input),
+                "publication and extraction cannot replay");
+    }
+    auto upper(std::string_view name, std::string_view expected) -> void {
+        const auto old = files.saved();
+        start("upper " + std::string(name));
+        while (f.stream.next_input()) {
+            f.round();
+            require(files.saved() == old, "partial named result private");
+        }
+        save();
+        read(name, expected);
+    }
+};
+auto named_file_cases() -> void {
+    NamedFixture n;
+    Files::Value initial{};
+    files_test_initial(initial.data());
+    require(initial == n.files.saved(), "actual protected-files constructor matches native initialization");
+    n.read("missing", "", true);
+    n.submit("write a lower");
+    n.submit("write b Keep Me");
+    n.submit("write c ");
+    n.submit("write d fourth");
+    const auto full = n.files.saved();
+    n.submit("write e rejected");
+    require(n.files.saved() == full, "full store refusal preserves all bytes");
+    n.upper("a", "LOWER");
+    n.read("b", "Keep Me");
+    n.read("c", "");
+    n.read("d", "fourth");
+    n.upper("c", "");
+    n.submit("rm d");
+    const std::string maximum(49, 'z');
+    n.submit("write abcdefgh " + maximum);
+    n.upper("abcdefgh", std::string(49, 'Z'));
+    const auto saved = n.files.saved();
+    for (const auto command : {"write abcdefghi x", "upper a extra", "upper ../a", "rm missing"}) {
+        n.submit(command);
+        require(n.files.saved() == saved, "invalid command preserves complete store");
+    }
+    // A privately retained selection cannot outlive any mutation, even rm/reuse.
+    const auto selection = file_update(n.files.saved(), "upper a");
+    n.submit("rm a");
+    n.submit("write a replacement");
+    Files::ReplaceInput stale{};
+    std::copy(n.files.saved().begin(), n.files.saved().end(), stale.begin());
+    std::copy_n(selection.begin() + 360, 88, stale.begin() + 272);
+    stale[360] = std::byte{'X'};
+    put_word(stale, 424, 1);
+    const auto rejected = file_replace(stale);
+    require(std::equal(n.files.saved().begin(), n.files.saved().end(), rejected.begin()),
+            "stale slot selection preserves store");
+    n.read("a", "replacement");
+    // Exhaustion refuses writes/removal/replacement without disabling reads.
+    auto exhausted = n.files.saved();
+    put_word(exhausted, 264, UINT64_MAX);
+    for (const auto command : {"write a x", "rm a", "write e x"}) {
+        const auto result = file_update(exhausted, command);
+        require(std::equal(exhausted.begin(), exhausted.end(), result.begin()), "revision exhaustion preserves store");
+    }
+    const auto exhausted_selection = file_update(exhausted, "upper a");
+    Files::ReplaceInput exhausted_replace{};
+    std::copy(exhausted.begin(), exhausted.end(), exhausted_replace.begin());
+    std::copy_n(exhausted_selection.begin() + 360, 88, exhausted_replace.begin() + 272);
+    exhausted_replace[360] = std::byte{'X'};
+    put_word(exhausted_replace, 424, 1);
+    const auto exhausted_result = file_replace(exhausted_replace);
+    require(std::equal(exhausted.begin(), exhausted.end(), exhausted_result.begin()),
+            "revision exhaustion rejects selected replacement atomically");
+    const auto readable = file_update(exhausted, "cat a");
+    require(std::to_integer<unsigned>(readable[352]) == 2, "revision exhaustion still permits protected read");
+    // Dead owner handles alone do not prove the grant table was revoked.
+    n.start("upper a");
+    n.run();
+    require(n.files.complete(n.f.registry, n.f.mailbox, n.f.client, *n.f.mailbox.endpoint(n.f.client), n.f.stream),
+            "complete skipped-revoke probe");
+    n.f.note.release();
+    require(n.f.registry.destroy(n.f.client) && n.f.registry.destroy(n.f.service), "retire owners without revoke");
+    require(!n.f.mailbox.revoked() && !n.files.retire(n.f.registry, n.f.mailbox),
+            "dead participants do not impersonate explicit grant revocation");
+    require(n.f.mailbox.revoke(ipc::Phase::inactive) && n.files.retire(n.f.registry, n.f.mailbox),
+            "actual revoke admits completed retirement");
+    n.files.abort();
+    require(n.f.stream.cancel(), "discard skipped-revoke probe");
+    // Cancelling/restarting the same ledger must not replace the bound run.
+    n.start("upper a");
+    require(n.f.stream.cancel() && n.f.stream.begin({}, 0), "replace live ledger run");
+    require(!n.files.complete(n.f.registry, n.f.mailbox, n.f.client, *n.f.mailbox.endpoint(n.f.client), n.f.stream),
+            "same-address new stream cannot use a former file grant");
+    n.files.abort();
+    n.f.retire(true);
+    n.start("upper a");
+    n.run();
+    require(n.files.complete(n.f.registry, n.f.mailbox, n.f.client, *n.f.mailbox.endpoint(n.f.client), n.f.stream),
+            "complete before run-reuse probe");
+    n.f.retire();
+    require(n.files.retire(n.f.registry, n.f.mailbox), "retired run-reuse probe");
+    require(n.f.stream.cancel() && n.f.stream.begin({}, 0), "restart retired ledger");
+    Files::ReplaceInput reused{};
+    require(!n.files.replacement(n.f.stream, reused), "retired receipt rejects same-address new run");
+    n.files.abort();
+    require(n.f.stream.cancel(), "discard reused empty run");
+    n.read("a", "replacement");
+    n.start("upper missing");
+    n.run();
+    require(!n.files.writable() &&
+                !n.files.complete(n.f.registry, n.f.mailbox, n.f.client, *n.f.mailbox.endpoint(n.f.client), n.f.stream),
+            "Aurora missing-uppercase selection has no replacement authority");
+    n.f.retire();
+    n.files.abort();
+    auto absent = n.f.stream.finish();
+    require(absent && absent->missing() && absent->length() == 0, "missing uppercase completes a protected read");
+    absent->scrub();
+    n.read("missing", "", true);
+    for (unsigned mode = 1; mode <= 3; ++mode) {
+        n.start("upper a", mode);
+        n.read("a", "replacement");
+    }
+    n.start("cat a", 3);
+    n.read("a", "replacement");
+
+    for (unsigned stage = 0; stage < 7; ++stage) {
+        n.submit("write a fault safe");
+        const auto old = n.files.saved();
+        n.start("upper a");
+        const auto old_client = *n.f.mailbox.endpoint(n.f.client);
+        n.f.round();
+        U64 reply = 0;
+        if (stage >= 1)
+            n.f.request();
+        if (stage >= 2)
+            reply = n.f.receive(11);
+        if (stage >= 3)
+            n.f.reply(reply);
+        if (stage >= 4)
+            reply = n.f.consume();
+        if (stage >= 5)
+            n.f.acknowledge(reply);
+        if (stage == 6)
+            n.run();
+        n.files.abort();
+        n.f.retire(true);
+        require(n.files.saved() == old, "every named cancellation stage preserves complete store");
+        n.start("upper a");
+        require(!n.files.complete(n.f.registry, n.f.mailbox, n.f.client, old_client, n.f.stream),
+                "reused domain rejects stale grant");
+        n.run();
+        n.save();
+        n.read("a", "FAULT SAFE");
+        n.read("b", "Keep Me");
+    }
+}
 } // namespace
 
 auto main() -> int {
+    named_file_cases();
     command_cases();
     representation_controls();
     reply_controls();

@@ -82,7 +82,8 @@ both belong to `make smoke-all`, while `make test` remains native-only.
 
 The separate [protected-command console](docs/program-console-contract.md) runs
 `upper` and authenticated note reads/uppercase replacement through two CPL3
-domains. Its public commands perform local build/image/stack checks. The same checked
+domains. The named RAM-file read/atomic replacement source mechanism is awaiting
+image qualification after compact aggregate-copy lowering. Its public commands perform local build/image/stack checks. The same checked
 image can be passed by explicit build directory to the guest oracle; changed
 images still require independent review and final qualification.
 

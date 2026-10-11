@@ -25,3 +25,27 @@ __au_runtime_note_project:
     leave
     ret
 .size __au_runtime_note_project,.-__au_runtime_note_project
+.global __au_runtime_files_update
+.hidden __au_runtime_files_update
+.type __au_runtime_files_update,@function
+__au_runtime_files_update:
+    pushq %rbp
+    movq %rsp,%rbp
+    movq %rdi,%r11
+    movq %rsi,%r10
+    call __au_v_m1_22kernel_program_console_n0__d12update_files
+    leave
+    ret
+.size __au_runtime_files_update,.-__au_runtime_files_update
+.global __au_runtime_files_replace
+.hidden __au_runtime_files_replace
+.type __au_runtime_files_replace,@function
+__au_runtime_files_replace:
+    pushq %rbp
+    movq %rsp,%rbp
+    movq %rdi,%r11
+    movq %rsi,%r10
+    call __au_v_m1_22kernel_program_console_n0__d13replace_files
+    leave
+    ret
+.size __au_runtime_files_replace,.-__au_runtime_files_replace

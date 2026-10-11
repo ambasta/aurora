@@ -34,6 +34,22 @@ def main():
 
     instruction = namedtuple("Instruction", "address size op args")
 
+    closed = {"root": body(16)}
+    admission.check_referenced_reflection(closed, {"root"})
+    closed = {"root": body(16, ("__au_reflect_s1_size", 16)), "__au_reflect_s1_size": body(8)}
+    admission.check_referenced_reflection(closed, set(closed))
+    for functions, generated, bridges in (
+        (dict(closed, aurora_reflect_field_count=body(8)), set(closed) | {"aurora_reflect_field_count"}, ()),
+        (closed, {"__au_reflect_s1_size"}, ()),
+        (closed, set(closed), ("root",)),
+        ({"root": body(16, ("aurora_reflect_size", 16))}, {"root"}, ()),
+        (dict(closed, __au_reflect_invalid=body(8)), set(closed) | {"__au_reflect_invalid"}, ()),
+    ):
+        reject(
+            lambda: admission.check_referenced_reflection(functions, generated, bridges),
+            "closed reflection provenance or exact reference inventory",
+        )
+
     bridge = [
         ("push", "%rbp"),
         ("mov", "%rsp,%rbp"),
@@ -53,6 +69,40 @@ def main():
         changed = list(bridge)
         changed[index] = replacement
         reject(lambda: admission.check_note_bridge(changed, "private"), "copied note bridge binding")
+
+    # The shared helper owns the exact REP idiom; this layer retains the
+    # private note/file layouts, hidden pointers and number of result paths.
+    copied = admission.load("program_copied_abi", ROOT / "scripts/kernel_snapshot_abi.py").copied_payload
+    parameters = ((0, -272, 272), (272, -336, 64), (336, -344, 8))
+    inputs = [("mov", "%r11,-0xd38(%rbp)"), ("mov", "%r10,-0xd40(%rbp)"), ("mov", "-0xd38(%rbp),%r11")]
+    inputs += copied("r11", 0, "rbp", -272, 272)
+    inputs += [("mov", "-0xd38(%rbp),%r11")] + copied("r11", 272, "rbp", -336, 64)
+    inputs += [("mov", "-0xd38(%rbp),%r11"), ("mov", "0x150(%r11),%rax"), ("mov", "%rax,-0x158(%rbp)")]
+    result_a = [("mov", "-0xd40(%rbp),%r10")] + copied("rbp", -2064, "r10", 0, 520)
+    result_b = [("mov", "-0xd40(%rbp),%r10")] + copied("rbp", -3376, "r10", 0, 520)
+    rows = [("nop", "")] + inputs + [("nop", "")] + result_a + [("nop", "")] + result_b
+
+    def check_copies(candidate, params=parameters, starts=(-2064, -3376), count=520):
+        admission.check_note_copies(candidate, 1, -3384, -3392, params, starts, count, copied)
+
+    check_copies(rows)
+    for index, replacement in (
+        (1, ("mov", "%r11,-0xd30(%rbp)")),
+        (2, ("mov", "%r10,-0xd38(%rbp)")),
+        (3, ("mov", "-0xd30(%rbp),%r11")),
+        (len(inputs), ("mov", "%rax,-0x150(%rbp)")),
+    ):
+        changed = list(rows)
+        changed[index] = replacement
+        reject(lambda changed=changed: check_copies(changed), "hidden save/input scalar binding")
+    reject(lambda: check_copies(rows, params=((8, -272, 272),) + parameters[1:]), "copied source offset")
+    reject(lambda: check_copies(rows, params=((0, -264, 272),) + parameters[1:]), "copied destination offset")
+    reject(lambda: check_copies(rows, params=((0, -272, 264),) + parameters[1:]), "copied input extent")
+    reject(lambda: check_copies(rows, count=512), "copied result extent")
+    reject(lambda: check_copies(rows, starts=(-2056, -3376)), "copied result source")
+    reject(lambda: check_copies(rows, starts=(-2064,)), "missing result path")
+    reject(lambda: check_copies(rows + result_a), "extra result path")
+    reject(lambda: check_copies(rows[: -len(result_b)]), "removed result path")
 
     # Scalar AND semantics and hostile destinations are covered by the shared
     # decoder's self-test, not a program-only compiler-layout normalization.

@@ -230,7 +230,10 @@ operations, and receiver-method calls retain their own separate contract.
 The backend marshals copied fields into a bounded private call record. Its
 [bounded byte-run lowering](SCALARS.md) combines only
 exact groups of eight contiguous u8 payload leaves, using RAX alone so live scalar
-argument registers remain intact. It changes neither snapshots nor copy ordering,
+argument registers remain intact. Copies also compact contiguous
+initialized scalar runs of at least 64 bytes with forward REP, preserving the
+additional scratch registers and accounting for their temporary stack saves.
+RSP-based argument packing captures its destination before those saves. It changes neither snapshots nor copy ordering,
 and never copies representation padding or owning descriptors. Hidden
 record/result addresses are kept outside source-addressable slots and scalar IR
 values. Aggregate-signature entrypoints are native-mangled local symbols. There
@@ -514,14 +517,19 @@ Copied payload lowering coalesces eight initialized contiguous u8 leaves into on
 existing x86 MOVQ load/store pair. Both canonical source and destination offsets
 must be consecutive inside the current operation's selected leaf range; there is
 no alignment rounding, padding access or overread. Remaining bytes use the existing
-byte operations, and bool/enum/i64/u64 leaves retain their existing operations.
+byte operations, and short bool/enum/i64/u64 runs retain their existing operations.
 
 This applies only to argument packing, local copies, nested-field projection,
 assignment and initialization, copied returns and copied parameter binding. These
 operations already require disjoint source/destination storage through verified
 reservations, fresh snapshots/results and caller-versus-callee frames. RAX remains
-the sole scratch register, preserving live scalar arguments, hidden receiver/record
-addresses and flags. Ownership transfers, descriptor clearing, zeroing and checked
-indexed operations are unchanged. Copies remain explicit and in IR order, with
-unchanged reservations, probes and hidden saves. No loop, REP, runtime copy call,
-copy elision or C ABI is introduced.
+the sole externally clobbered scratch register, preserving live scalar arguments,
+hidden receiver/record addresses and arithmetic flags. Contiguous runs
+of at least 64 initialized bytes use forward REP MOVSB with saved RSI/RDI/RCX and
+an explicitly tracked 24-byte temporary stack peak. Padding and owner descriptors
+are never included; RSP-based argument packing captures its destination in RAX
+before saves and keeps its RBP-based source stable.
+Ownership transfers, descriptor clearing, zeroing and checked indexed operations
+are unchanged. Copies remain explicit and in IR order, with unchanged object
+reservations, probes and hidden saves. No runtime copy call, copy elision or C ABI
+is introduced.

@@ -14,13 +14,14 @@ auto aurora_user_main(i64 phase, i64 value, i64 ordinal) -> i64 {
         return items[10];
     }
     // Completion accepts actual service bytes/EOF, never an expected payload.
+    // Phase 14 retains that reply alongside the client-transformed output byte.
     if (phase == 12) {
         if (ordinal >= 0 && ordinal <= 53) {
             return 1;
         }
         return -1;
     }
-    if (phase == 13) {
+    if (phase == 13 || phase == 14) {
         if (ordinal < 0 || ordinal > 53 || value < 0) {
             return -1;
         }
@@ -29,6 +30,13 @@ auto aurora_user_main(i64 phase, i64 value, i64 ordinal) -> i64 {
         }
         if (ordinal < 53 && (u64(value) & 255u64) == 1u64 && (u64(value) >> 8) >= 32u64 && (u64(value) >> 8)
             <= 126u64) {
+            if (phase == 14) {
+                i64 transformed = i64(u64(value) >> 8);
+                if (transformed >= 97 && transformed <= 122) {
+                    transformed = transformed - 32;
+                }
+                return i64(u64(value) | (u64(transformed) << 16));
+            }
             return value;
         }
         return -1;

@@ -184,7 +184,7 @@
     "graphical-profile-metadata-optimized": {"optimized": true, "source": "tests/kernel-graphical-profile-metadata.py"}
   },
   "wrapper_sha256": {
-    "scripts/kernel-program-note-tests.sh": "49ddd96e89c029080c799a1ffa8a5699c80be9341e431c91b66c770cf8b6c6a4",
+    "scripts/kernel-program-note-tests.sh": "a6056e0c71617fb6c0a45ee2410bc3b36cf9c1dfd9e54bb88da0549be2bfddba",
     "scripts/kernel-snapshot-tests.sh": "d98c6e03a3f5a1358a0918984522a347d599eef4fcf42546ba4da030cd7db106",
     "scripts/kernel-uefi-pin-tests.sh": "dc6b138aa73d5390f4add786fe12ea30206f92a072cde485674889b24496902d",
     "scripts/kernel-uefi-dispatch-tests.sh": "9911bf15518c8d058da38ea80c7ad916cd2cdf39d1774096ff27e0ff02e32ee9",
@@ -221,7 +221,7 @@
     "tests/compiler/hosted_lexer.cpp": {"kind": "native-fixture", "reason": "Dependency-tracked hosted Aurora lexer C++ fixture; exact registration and target source/output mappings are checked below.", "tests": ["hosted-lexer"]},
     "tests/kernel-iommu-event-oracle.py": {"kind": "direct-registration", "reason": "Compiler-free current Event byte oracles and owned fake-child lifecycle; never guest qualification.", "tests": ["iommu-event-oracle-controls", "iommu-event-oracle-controls-optimized"]},
     "tests/kernel-iommu-event-smoke.py": {"kind": "direct-registration", "reason": "Compiler-free current Event byte oracles and owned fake-child lifecycle; never guest qualification.", "tests": ["iommu-event-smoke-controls", "iommu-event-smoke-controls-optimized"]},
-    "tests/kernel-program-note.cpp": {"kind": "native-fixture", "reason": "Actual generated note roots, initial constructor equivalence, cancellation/fresh grants and upper regression.", "tests": ["native-protected-note"]},
+    "tests/kernel-program-note.cpp": {"kind": "native-fixture", "reason": "Actual generated note/file roots, constructor equivalence, selected replacement, one-shot grants, cancellation and upper regression.", "tests": ["native-protected-note"]},
     "scripts/kernel-program-note-tests.sh": {"kind": "direct-registration", "reason": "One selected-compiler note update/project/client/service and real Mailbox lifecycle runner with private outputs.", "tests": ["native-protected-note"]},
     "scripts/kernel-snapshot-tests.sh": {"kind": "direct-registration", "reason": "One selected-compiler native producer/client/service, Mailbox and linked copied-ABI gate with private Meson outputs.", "tests": ["native-protected-snapshot"]},
     "tests/kernel-snapshot.cpp": {"kind": "native-fixture", "reason": "Actual compiled snapshot producer/client/service and existing Mailbox controls, invoked by the registered native runner.", "tests": ["native-protected-snapshot"]},

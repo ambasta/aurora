@@ -55,7 +55,10 @@ def configure_paths(build_dir, source_root=None):
     global ROOT, BUILD, RECEIPT
     root = Path(source_root or ROOT).resolve(strict=True)
     build = Path(build_dir).absolute()
-    need(build.resolve() == build, "Build directory contains a symlink or noncanonical component")
+    need(
+        build.resolve() == build,
+        "Build directory contains a symlink or noncanonical component",
+    )
     need(not root.is_relative_to(build), "Build directory cannot contain the source root")
     ROOT, BUILD = root, build
     RECEIPT = BUILD / "program-console-admission.json"
@@ -63,7 +66,12 @@ def configure_paths(build_dir, source_root=None):
 
 def path_arguments(parser):
     parser.add_argument("--source-root", type=Path, default=ROOT)
-    parser.add_argument("--build-dir", type=Path, required=True, help="exact native profile output directory")
+    parser.add_argument(
+        "--build-dir",
+        type=Path,
+        required=True,
+        help="exact native profile output directory",
+    )
 
 
 def native_directory(directory):
@@ -101,9 +109,15 @@ def verify_reflection_body(decoder, symbol, rows, payload):
     )
     cursor = symbol.address
     for row in rows:
-        need(row.address == cursor and row.size > 0, "Reflection instruction coverage gap/overlap")
+        need(
+            row.address == cursor and row.size > 0,
+            "Reflection instruction coverage gap/overlap",
+        )
         cursor += row.size
-    need(cursor == symbol.address + symbol.size <= len(payload), "Reflection extent/coverage mismatch")
+    need(
+        cursor == symbol.address + symbol.size <= len(payload),
+        "Reflection extent/coverage mismatch",
+    )
 
     def raw(row):
         return payload[row.address : row.address + row.size]
@@ -124,7 +138,10 @@ def verify_reflection_body(decoder, symbol, rows, payload):
     index, keys, targets = 0, [], []
     while index < len(rows) and rows[index].op == "cmp":
         value = immediate(rows[index], "cmp", "rdi")
-        need(value not in keys and index + 1 < len(rows), "Duplicate/truncated reflection comparison")
+        need(
+            value not in keys and index + 1 < len(rows),
+            "Duplicate/truncated reflection comparison",
+        )
         branch = rows[index + 1]
         need(branch.op == "je", "Reflection comparison must have an equality branch")
         target = decoder.target_of(branch)
@@ -151,7 +168,10 @@ def verify_reflection_body(decoder, symbol, rows, payload):
         row = rows[index]
         arms.append(row.address)
         if row.op == "ud2":
-            need(not row.args and raw(row) == bytes.fromhex("0f0b"), "Reflection trap bytes/operands mismatch")
+            need(
+                not row.args and raw(row) == bytes.fromhex("0f0b"),
+                "Reflection trap bytes/operands mismatch",
+            )
             index += 1
             continue
         if row.op == "xor":
@@ -187,7 +207,10 @@ def verify_reflection_body(decoder, symbol, rows, payload):
 def verify_reflection_image(directory):
     """Reuse closed lookup validation for imported modules, never a name-only allowance."""
     decoder = load("reflection_decoder", ROOT / "scripts/kernel_stack.py")
-    language, linked = decoder.Elf(directory / "objects/language.o"), decoder.Elf(directory / "payload.elf")
+    language, linked = (
+        decoder.Elf(directory / "objects/language.o"),
+        decoder.Elf(directory / "payload.elf"),
+    )
     names = stack_facts.reflection_inventory(language.functions)
     for obj in (language, linked):
         helpers = [row for row in obj.symbols if row.name.startswith(("aurora_reflect_", "__au_reflect_"))]
@@ -231,6 +254,24 @@ def symbols(path):
 graph_peak = stack_facts.calculate
 
 
+def check_referenced_reflection(functions, generated_names, bridges=()):
+    """Closed supervisor policy over the already validated linked call graph."""
+    helpers = {name for name in functions if name.startswith(("aurora_reflect_", "__au_reflect_"))}
+    need(all(is_reflection_helper(name) for name in helpers), "Unknown reflection helper")
+    need(helpers <= set(generated_names), "Reflection helper is not generated Aurora code")
+    referenced = set()
+    for owner, function in functions.items():
+        for call in function["calls"]:
+            target = call["target"]
+            if target is not None and is_reflection_helper(target):
+                need(
+                    owner in generated_names and owner not in bridges and owner not in helpers,
+                    "Native or handwritten code references closed reflection helper",
+                )
+                referenced.add(target)
+    need(helpers == referenced, "Closed supervisor reflection helper/reference inventory mismatch")
+
+
 def stack_evidence(directory, *, snapshot=False):
     decoder = load("program_stack_decoder", ROOT / "scripts/kernel_stack.py")
     units = ("payload", "acpi", "pci", "runtime")
@@ -244,12 +285,25 @@ def stack_evidence(directory, *, snapshot=False):
             "aurora_kernel_terminal_event",
         )
         if snapshot
-        else ("__au_runtime_note_update", "__au_runtime_note_project")
+        else (
+            "__au_runtime_note_update",
+            "__au_runtime_note_project",
+            "__au_runtime_files_update",
+            "__au_runtime_files_replace",
+        )
     )
     graph = decoder.image_stack_graph(
-        directory, units, ROOT, protected=True, bridges=bridges, noreturn=decoder.OWNED_NORETURN if snapshot else ()
+        directory,
+        units,
+        ROOT,
+        protected=True,
+        bridges=bridges,
+        noreturn=decoder.OWNED_NORETURN if snapshot else (),
     )
     functions = graph["functions"]
+    if not snapshot:
+        generated_names = decoder.Elf(directory / "objects/language.o").functions
+        check_referenced_reflection(functions, generated_names, bridges)
     linked = graph["linked"]
     named = {symbol.name: symbol for symbol in linked.symbols if symbol.section}
     normal = graph_peak(functions, "uefi_payload_entry")
@@ -332,8 +386,16 @@ def note_evidence(directory, mode="program-console"):
     generated = decoder.Elf(directory / "objects" / "language.o")
     code, _ = decoder.disassemble(directory / "payload.elf")
     names = {row.name: row for row in linked.symbols if row.section}
-    bridges = {"__au_runtime_note_update", "__au_runtime_note_project"}
-    need({name for name in names if name.startswith("__au_runtime_")} == bridges, "Closed note runtime inventory")
+    bridges = {
+        "__au_runtime_note_update",
+        "__au_runtime_note_project",
+        "__au_runtime_files_update",
+        "__au_runtime_files_replace",
+    }
+    need(
+        {name for name in names if name.startswith("__au_runtime_")} == bridges,
+        "Closed note runtime inventory",
+    )
     need(
         not any(name.startswith(("__cxa_", "_GLOBAL__sub_I", "_Zn", "_Zd")) for name in names),
         "Note acquired constructor or heap machinery",
@@ -370,7 +432,8 @@ def note_evidence(directory, mode="program-console"):
     public = {
         row.split()[2]
         for row in subprocess.check_output(
-            ["nm", "-g", "--defined-only", directory / "objects" / "language.o"], text=True
+            ["nm", "-g", "--defined-only", directory / "objects" / "language.o"],
+            text=True,
         ).splitlines()
         if len(row.split()) == 3
     }
@@ -387,22 +450,70 @@ def note_evidence(directory, mode="program-console"):
         "__au_v_m2_6kernel7console_n1_6kernel_d15console_command",
         "__au_v_m2_6kernel14terminal_event_n1_6kernel_d14terminal_event",
     }
-    need({name for name in public if not is_reflection_helper(name)} == policies | bridges, "Exact note native exports")
+    need(
+        {name for name in public if not is_reflection_helper(name)} == policies | bridges,
+        "Exact note native exports",
+    )
     assembly = (directory / "language.s").read_text()
     evidence = []
 
-    def memory(offset, register):
-        return (f"-0x{-offset:x}" if offset < 0 else f"0x{offset:x}" if offset else "") + f"(%{register})"
-
-    for action, frame, argument_save, result_save, parameters, result_start, result_bytes in (
-        ("update", 464, -456, -464, ((0, -72, 72), (72, -136, 64), (136, -144, 8)), -448, 80),
-        ("project", 176, -168, -176, ((0, -72, 72),), -144, 72),
+    for (
+        action,
+        frame,
+        argument_save,
+        result_save,
+        parameters,
+        result_starts,
+        result_bytes,
+        entry,
+    ) in (
+        (
+            "note_update",
+            464,
+            -456,
+            -464,
+            ((0, -72, 72), (72, -136, 64), (136, -144, 8)),
+            (-448,),
+            80,
+            "11update_note",
+        ),
+        (
+            "note_project",
+            176,
+            -168,
+            -176,
+            ((0, -72, 72),),
+            (-144,),
+            72,
+            "12project_note",
+        ),
+        (
+            "files_update",
+            3392,
+            -3384,
+            -3392,
+            ((0, -272, 272), (272, -336, 64), (336, -344, 8)),
+            (-2064, -3376),
+            520,
+            "12update_files",
+        ),
+        (
+            "files_replace",
+            1664,
+            -1656,
+            -1664,
+            ((0, -272, 272), (272, -360, 88), (360, -424, 64), (424, -432, 8)),
+            (-1640,),
+            352,
+            "13replace_files",
+        ),
     ):
-        private = "__au_v_m1_22kernel_program_console_n0__d" + (
-            "11update_note" if action == "update" else "12project_note"
+        private = "__au_v_m1_22kernel_program_console_n0__d" + entry
+        bridge = "__au_runtime_" + action
+        need(
+            private not in public and private in generated.functions,
+            "Private note source entry",
         )
-        bridge = "__au_runtime_note_" + action
-        need(private not in public and private in generated.functions, "Private note source entry")
         symbol = linked.functions[bridge]
         wrapper = []
         for address, row in sorted(code.items()):
@@ -425,25 +536,15 @@ def note_evidence(directory, mode="program-console"):
         source = assembly.split(private + ":\n", 1)[1].split(".size " + private, 1)[0]
         actual_frame, prefix = decoder.private_frame_layout([line.strip() for line in source.splitlines()], body)
         need(actual_frame == frame, "Exact copied note helper frame")
-        expected = [("mov", "%r11," + memory(argument_save, "rbp")), ("mov", "%r10," + memory(result_save, "rbp"))]
-        for offset, local, extent in parameters:
-            expected += [("mov", memory(argument_save, "rbp") + ",%r11")]
-            for byte in range(0, extent, 8):
-                expected += [
-                    ("mov", memory(offset + byte, "r11") + ",%rax"),
-                    ("mov", "%rax," + memory(local + byte, "rbp")),
-                ]
-        need(
-            [(row.op, row.args) for row in body[prefix : prefix + len(expected)]] == expected,
-            "Exact note copied input binding",
-        )
-        result = [("mov", memory(result_save, "rbp") + ",%r10")]
-        for byte in range(0, result_bytes, 8):
-            result += [("mov", memory(result_start + byte, "rbp") + ",%rax"), ("mov", "%rax," + memory(byte, "r10"))]
-        rows = [(row.op, row.args) for row in body]
-        starts = [i for i, row in enumerate(rows) if row == result[0]]
-        need(
-            len(starts) == 1 and rows[starts[0] : starts[0] + len(result)] == result, "Exact note copied result binding"
+        check_note_copies(
+            [(row.op, row.args) for row in body],
+            prefix,
+            argument_save,
+            result_save,
+            parameters,
+            result_starts,
+            result_bytes,
+            abi.copied_payload,
         )
         evidence.append(
             dict(
@@ -454,8 +555,55 @@ def note_evidence(directory, mode="program-console"):
                 result_bytes=result_bytes,
             )
         )
-    abi.main(directory, "transaction" if mode == "program-transaction" else "normal", note=True)
+    abi.main(
+        directory,
+        "transaction" if mode == "program-transaction" else "normal",
+        note=True,
+    )
     return dict(bridges=evidence, record=json.loads((directory / "note-abi.json").read_text()))
+
+
+def check_note_copies(
+    rows,
+    prefix,
+    argument_save,
+    result_save,
+    parameters,
+    result_starts,
+    result_bytes,
+    copied_payload,
+):
+    def memory(offset, register):
+        return (f"-0x{-offset:x}" if offset < 0 else f"0x{offset:x}" if offset else "") + f"(%{register})"
+
+    expected = [
+        ("mov", "%r11," + memory(argument_save, "rbp")),
+        ("mov", "%r10," + memory(result_save, "rbp")),
+    ]
+    for offset, local, extent in parameters:
+        expected.append(("mov", memory(argument_save, "rbp") + ",%r11"))
+        if extent >= 64:
+            expected += copied_payload("r11", offset, "rbp", local, extent)
+        else:
+            # The only scalar parameter is an exact qword; no padding is copied.
+            need(extent == 8, "Exact scalar copied parameter extent")
+            expected += [
+                ("mov", memory(offset, "r11") + ",%rax"),
+                ("mov", "%rax," + memory(local, "rbp")),
+            ]
+    need(
+        rows[prefix : prefix + len(expected)] == expected,
+        "Exact note/file copied input binding",
+    )
+    first = ("mov", memory(result_save, "rbp") + ",%r10")
+    starts = [i for i, row in enumerate(rows) if row == first]
+    need(len(starts) == len(result_starts), "Exact copied result path count")
+    for start, result_start in zip(starts, result_starts, strict=True):
+        result = [first] + copied_payload("rbp", result_start, "r10", 0, result_bytes)
+        need(
+            rows[start : start + len(result)] == result,
+            "Exact note/file copied result binding",
+        )
 
 
 def check_note_bridge(actual, private):
@@ -493,7 +641,19 @@ def build_files():
         "runtime-exceptions.o",
         "payload-entry.o",
     ]
-    names += [name + ".o" for name in ("payload", "acpi", "pci", "runtime", "loader", "memory", "embed", "transition")]
+    names += [
+        name + ".o"
+        for name in (
+            "payload",
+            "acpi",
+            "pci",
+            "runtime",
+            "loader",
+            "memory",
+            "embed",
+            "transition",
+        )
+    ]
     names += [name + suffix for name in ("payload", "acpi", "pci", "runtime", "loader") for suffix in (".su", ".ci")]
     names += [name + "-pe.o" for name in ("loader", "memory", "embed", "transition")]
     names += [
@@ -524,12 +684,22 @@ def emit(mode):
     need(mode in MODES, "Unsupported program console profile")
     before = hashes(build_files())
     subprocess.run(
-        [sys.executable, "-B", ROOT / "scripts/kernel_uefi_image.py", "--build-dir", BUILD, "--ipc-policy"],
+        [
+            sys.executable,
+            "-B",
+            ROOT / "scripts/kernel_uefi_image.py",
+            "--build-dir",
+            BUILD,
+            "--ipc-policy",
+        ],
         cwd=ROOT,
         check=True,
     )
     metadata = json.loads((BUILD / "user-images.json").read_text())
-    need(set(metadata) == {"clean", "bounds"}, "Expected exactly two compiled user images")
+    need(
+        set(metadata) == {"clean", "bounds"},
+        "Expected exactly two compiled user images",
+    )
     builder = load("program_image_admission", ROOT / "scripts/kernel-uefi-ipc-images.py")
     for index, name in enumerate(("clean", "bounds")):
         prefix = BUILD / ("user-" + name)
@@ -549,7 +719,10 @@ def emit(mode):
         ("uefi_program_poll_begin", "uefi_program_poll_end", "fbf4fa"),
         ("uefi_service_drain_begin", "uefi_service_drain_end", "fb9090fa"),
     ):
-        need(payload[names[begin] : names[end]] == bytes.fromhex(opcode), "Changed exact poll/drain window")
+        need(
+            payload[names[begin] : names[end]] == bytes.fromhex(opcode),
+            "Changed exact poll/drain window",
+        )
     result = dict(
         schema="aurora-program-console-admission-v1",
         status="requires-independent-review",
@@ -603,7 +776,10 @@ def check_admission(path, schema, mode, files):
         "Admission profile/status/clock mismatch",
     )
     verify_object_exports(files)
-    need(receipt["sha256"] == hashes(files), "Admitted image/object/sidecar inventory or bytes changed")
+    need(
+        receipt["sha256"] == hashes(files),
+        "Admitted image/object/sidecar inventory or bytes changed",
+    )
     return receipt
 
 
@@ -634,5 +810,11 @@ if __name__ == "__main__":
     except Blocked as error:
         print("BLOCKED: program console admission: " + str(error), file=sys.stderr)
         raise SystemExit(2) from error
-    except (ValueError, OSError, KeyError, TypeError, subprocess.CalledProcessError) as error:
+    except (
+        ValueError,
+        OSError,
+        KeyError,
+        TypeError,
+        subprocess.CalledProcessError,
+    ) as error:
         raise SystemExit("FAIL: program console admission: " + str(error)) from error
