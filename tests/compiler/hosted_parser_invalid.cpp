@@ -4,6 +4,7 @@
 #include "hosted_parser.hpp"
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <functional>
@@ -14,23 +15,26 @@
 #include <vector>
 
 namespace {
-using ResultWords = std::array<std::int64_t, 5>;
+using ResultWords = std::array<std::int64_t, 6>;
 using NodeWords = std::array<std::int64_t, 7>;
 using EdgeWords = std::array<std::int64_t, 5>;
 using TypeWords = std::array<std::int64_t, 8>;
-using StatementWords = std::array<std::int64_t, 11>;
+using SyntaxWords = std::array<std::int64_t, 12>;
 using InputWords = std::array<std::uint64_t, 18>;
 static_assert(sizeof(ResultWords) == sizeof(aurora::hosted_abi::compiler_parser::ParseResult) &&
               sizeof(NodeWords) == sizeof(aurora::hosted_abi::compiler_parser::AstNode) &&
               sizeof(EdgeWords) == sizeof(aurora::hosted_abi::compiler_parser::ChildEdge) &&
               sizeof(TypeWords) == sizeof(aurora::hosted_abi::compiler_parser::TypeSyntax) &&
-              sizeof(StatementWords) == sizeof(aurora::hosted_abi::compiler_parser::StatementSyntax) &&
+              sizeof(SyntaxWords) == sizeof(aurora::hosted_abi::compiler_parser::SyntaxNode) &&
               sizeof(InputWords) == sizeof(aurora::hosted_abi::ParserInput));
+static_assert(sizeof(ResultWords) == 48 && sizeof(SyntaxWords) == 96 && sizeof(InputWords) == 144);
+static_assert(offsetof(aurora::hosted_abi::compiler_parser::ParseResult, token_half) == 40 &&
+              offsetof(aurora::hosted_abi::compiler_parser::SyntaxNode, borrow_token) == 88);
 using aurora::DiagnosticCode;
 using aurora::hosted_parser::NodeKind;
-using aurora::hosted_parser::StatementKind;
 using aurora::hosted_parser::Status;
 using aurora::hosted_parser::Stop;
+using aurora::hosted_parser::SyntaxKind;
 using aurora::hosted_parser::TypeKind;
 template <class T> constexpr std::int64_t wire(T value) {
     return static_cast<std::int64_t>(value);
@@ -39,7 +43,7 @@ ResultWords result;
 std::vector<NodeWords> records;
 std::vector<EdgeWords> edges;
 std::vector<TypeWords> types;
-std::vector<StatementWords> statements;
+std::vector<SyntaxWords> statements;
 InputWords capturedInput{};
 void *arenaAddress = nullptr;
 std::uint64_t arenaRegion = 0;
@@ -174,6 +178,21 @@ void nestedTemplateFixture(int levels, bool reflected) {
     typedFixture(source, std::move(syntax));
 }
 using Tokens = std::vector<aurora::Token>;
+bool unchanged(const Tokens &before, const Tokens &after) {
+    if (before.size() != after.size())
+        return false;
+    for (std::size_t index = 0; index < before.size(); ++index)
+        if (before[index].text != after[index].text || before[index].line != after[index].line ||
+            before[index].span.source != after[index].span.source ||
+            before[index].span.begin.offset != after[index].span.begin.offset ||
+            before[index].span.begin.line != after[index].span.begin.line ||
+            before[index].span.begin.column != after[index].span.begin.column ||
+            before[index].span.end.offset != after[index].span.end.offset ||
+            before[index].span.end.line != after[index].span.end.line ||
+            before[index].span.end.column != after[index].span.end.column)
+            return false;
+    return true;
+}
 using Inspect = std::function<void(const aurora::ExpressionPtr &, const Tokens &)>;
 void valid(const std::string &source,
            const std::function<void()> &configure,
@@ -220,7 +239,8 @@ void diagnostic(const std::string &source,
               -1,
               0,
               static_cast<std::int64_t>(ordinal),
-              static_cast<std::int64_t>(tokens[ordinal].span.begin.offset) + (secondHalf ? 1 : 0)};
+              static_cast<std::int64_t>(tokens[ordinal].span.begin.offset) + (secondHalf ? 1 : 0),
+              secondHalf ? 1 : 0};
     count = 0;
     std::size_t position = 0;
     bool rejected = false;
@@ -364,6 +384,10 @@ void conversionControls() {
         });
 }
 void resultControls() {
+    for (const auto half : {-1LL, 1LL, 2LL, std::numeric_limits<long long>::max()})
+        invalid("expression result half", [=] {
+            result[5] = half;
+        });
     for (const auto tag : {-1LL, static_cast<long long>(wire(Status::invalid)), std::numeric_limits<long long>::max()})
         invalid("status tag", [=] {
             result[0] = tag;
@@ -771,11 +795,11 @@ void bodyFixture(bool local = false) {
                                              {wire(NodeKind::name), 7, -1, -1, 1, 7, 7}}
                     : std::vector<NodeWords>{{wire(NodeKind::literal), 2, -1, -1, 1, 2, 2}};
     statements =
-        local ? std::vector<StatementWords>{{wire(StatementKind::local), 1, 6, -1, 0, -1, 0, 2, -1, -1, 1},
-                                            {wire(StatementKind::return_value), 6, 9, 0, 1, -1, -1, -1, -1, -1, 0},
-                                            {wire(StatementKind::block), 0, 10, -1, -1, -1, -1, -1, 1, -1, 0}}
-              : std::vector<StatementWords>{{wire(StatementKind::return_value), 1, 4, -1, 0, -1, -1, -1, -1, -1, 0},
-                                            {wire(StatementKind::block), 0, 5, -1, -1, -1, -1, -1, 0, -1, 0}};
+        local ? std::vector<SyntaxWords>{{wire(SyntaxKind::local), 1, 6, -1, 0, -1, 0, 2, -1, -1, 1, -1},
+                                         {wire(SyntaxKind::return_value), 6, 9, 0, 1, -1, -1, -1, -1, -1, 0, -1},
+                                         {wire(SyntaxKind::block), 0, 10, -1, -1, -1, -1, -1, 1, -1, 0, -1}}
+              : std::vector<SyntaxWords>{{wire(SyntaxKind::return_value), 1, 4, -1, 0, -1, -1, -1, -1, -1, 0, -1},
+                                         {wire(SyntaxKind::block), 0, 5, -1, -1, -1, -1, -1, 0, -1, 0, -1}};
     if (local)
         types = {{wire(TypeKind::i64_type), 1, 1, 2, -1, -1, 1, 3}};
     count = static_cast<std::int64_t>(records.size());
@@ -795,44 +819,38 @@ void declarationTypeControls() {
         count = 0;
         types = {{wire(TypeKind::i64_type), 2, 2, 4, -1, -1, -1, 0}, {wire(TypeKind::named), 0, 0, 6, 0, -1, 0, 3}};
         typeCount = 2;
-        result = {wire(Status::success), 1, 0, 3, 8};
-    };
-    const auto unchanged = [](const Tokens &before, const Tokens &after) {
-        if (before.size() != after.size())
-            return false;
-        for (std::size_t index = 0; index < before.size(); ++index)
-            if (before[index].text != after[index].text || before[index].line != after[index].line ||
-                before[index].span.source != after[index].span.source ||
-                before[index].span.begin.offset != after[index].span.begin.offset ||
-                before[index].span.begin.line != after[index].span.begin.line ||
-                before[index].span.begin.column != after[index].span.begin.column ||
-                before[index].span.end.offset != after[index].span.end.offset ||
-                before[index].span.end.line != after[index].span.end.line ||
-                before[index].span.end.column != after[index].span.end.column)
-                return false;
-        return true;
+        result = {wire(Status::success), 1, 0, 3, 8, 1};
     };
     configure();
-    auto tokens = aurora::lex(source, "type.au");
+    const auto tokens = aurora::lex(source, "type.au");
     const auto original = tokens;
-    std::size_t position = 0;
+    const aurora::hosted_parser::Cursor position{0, 0};
     const auto value = aurora::parseHostedType(tokens, position);
-    require(value.isClass() && value.className == "Box" && value.templateArguments.size() == 1 &&
-                value.templateArguments[0].type == aurora::TypeKind::I64 && position == 3 && tokens[3].text == ">" &&
-                tokens[3].span.begin.offset == 8 && tokens[3].span.begin.column == 9 &&
+    require(value.type.isClass() && value.type.className == "Box" && value.type.templateArguments.size() == 1 &&
+                value.type.templateArguments[0].type == aurora::TypeKind::I64 && value.next.ordinal == 3 &&
+                value.next.half == 1 && position.ordinal == 0 && position.half == 0 && unchanged(original, tokens) &&
+                tokens[3].text == ">>" && tokens[3].span.begin.offset == 7 && tokens[3].span.end.offset == 9 &&
                 tokens[3].span.source->text == source && read == 0 && edgeRead == 0 && statementRead == 0 &&
                 typeRead == 2 && created == 1 && parsed == 1 && released == 1 &&
                 capturedInput[10] == static_cast<std::uint64_t>(Stop::type),
-            "declaration type lost copied conversion, residual cursor or cleanup");
-    tokens[3] = original[3];
-    require(unchanged(original, tokens), "type conversion modified another caller token");
+            "declaration type lost copied conversion, immutable half cursor or cleanup");
+    ++cases;
+    configure();
+    const auto wholeTokens = aurora::lex("Box<i64> name;", "whole-type.au");
+    const auto wholeOriginal = wholeTokens;
+    result[3] = 4;
+    result[4] = static_cast<std::int64_t>(wholeTokens[4].span.begin.offset);
+    result[5] = 0;
+    const auto whole = aurora::parseHostedType(wholeTokens, {0, 0});
+    require(whole.next.ordinal == 4 && whole.next.half == 0 && unchanged(wholeOriginal, wholeTokens) && released == 1,
+            "whole-token type cursor did not preserve its exact offset and immutable input");
     ++cases;
     const auto reject = [&](const std::string &label, const std::function<void()> &mutate, bool readFailure = false) {
         configure();
         mutate();
         auto input = aurora::lex(source, "bad-type.au");
         const auto before = input;
-        std::size_t cursor = 0;
+        const aurora::hosted_parser::Cursor cursor{0, 0};
         bool rejected = false;
         try {
             static_cast<void>(aurora::parseHostedType(input, cursor));
@@ -841,8 +859,8 @@ void declarationTypeControls() {
         } catch (const std::runtime_error &error) {
             rejected = readFailure && std::string(error.what()) == "injected read failure";
         }
-        require(rejected && cursor == 0 && unchanged(before, input) && input.front().span.source->text == source &&
-                    created == 1 && parsed == 1 && released == 1,
+        require(rejected && cursor.ordinal == 0 && cursor.half == 0 && unchanged(before, input) &&
+                    input.front().span.source->text == source && created == 1 && parsed == 1 && released == 1,
                 label + ": unsafe type representation escaped or published caller state");
         ++cases;
     };
@@ -895,6 +913,16 @@ void declarationTypeControls() {
     reject("invalid residual offset", [] {
         result[4] = 9;
     });
+    reject("half-zero residual offset", [] {
+        result[5] = 0;
+    });
+    reject("half-one whole-token offset", [] {
+        result[4] = 7;
+    });
+    for (const auto half : {-1LL, 2LL, std::numeric_limits<long long>::max()})
+        reject("invalid residual half", [=] {
+            result[5] = half;
+        });
     reject(
         "type read exception",
         [] {
@@ -902,11 +930,149 @@ void declarationTypeControls() {
         },
         true);
 }
+void continuationControls() {
+    const auto tokens = aurora::lex("Box<i64>> name;", "continuation.au");
+    const auto original = tokens;
+    const aurora::hosted_parser::Cursor cursor{3, 1};
+    // The scanner sees the residual byte as an ordinary > at entry. Its initial
+    // half-zero result is normalized to the caller's original half-one token.
+    for (const bool advance : {false, true}) {
+        reset();
+        records.clear();
+        count = 0;
+        const auto ordinal = advance ? 4U : 3U;
+        const auto offset = tokens[ordinal].span.begin.offset + (advance ? 0U : 1U);
+        result = {wire(Status::expected_type), -1, 0, advance ? 1 : 0, static_cast<std::int64_t>(offset), 0};
+        bool rejected = false;
+        try {
+            static_cast<void>(aurora::parseHostedType(tokens, cursor));
+        } catch (const aurora::Error &error) {
+            const auto &span = error.diagnostic.span;
+            const auto &expected = tokens[ordinal].span;
+            rejected = error.diagnostic.code == DiagnosticCode::UnexpectedToken &&
+                       error.diagnostic.message ==
+                           (advance ? "expected type name (found 'name')" : "expected type name (found '>')") &&
+                       span.source == expected.source && span.begin.offset == offset &&
+                       span.begin.line == expected.begin.line &&
+                       span.begin.column == expected.begin.column + (advance ? 0 : 1) &&
+                       span.end.offset == expected.end.offset && span.end.line == expected.end.line &&
+                       span.end.column == expected.end.column;
+        }
+        require(rejected && cursor.ordinal == 3 && cursor.half == 1 && unchanged(original, tokens) &&
+                    capturedInput[7] == 8 && created == 1 && parsed == 1 && released == 1,
+                "half-one continuation failure lost exact location, immutable caller state or cleanup");
+        ++cases;
+    }
+    for (const aurora::hosted_parser::Cursor invalidCursor :
+         {aurora::hosted_parser::Cursor{0, 1}, {3, 2}, {tokens.size(), 0}}) {
+        reset();
+        bool rejected = false;
+        try {
+            static_cast<void>(aurora::parseHostedType(tokens, invalidCursor));
+        } catch (const aurora::Error &error) {
+            rejected = error.diagnostic.code == DiagnosticCode::Internal;
+        }
+        require(rejected && unchanged(original, tokens) && created == 0 && parsed == 0 && released == 0,
+                "invalid input cursor crossed the arena boundary or changed caller tokens");
+        ++cases;
+    }
+}
+void fieldControls() {
+    const auto tokens = aurora::lex("Box<i64> value;", "field-record.au");
+    const auto original = tokens;
+    const aurora::hosted_parser::Cursor cursor{0, 0};
+    const auto configure = [&] {
+        reset();
+        records.clear();
+        count = 0;
+        types = {{wire(TypeKind::i64_type), 2, 2, 4, -1, -1, -1, 0}, {wire(TypeKind::named), 0, 0, 6, 0, -1, 0, 3}};
+        typeCount = 2;
+        statements = {{wire(SyntaxKind::field), 0, 6, -1, -1, -1, 1, 4, -1, -1, 0, -1}};
+        statementCount = 1;
+        result = {wire(Status::success), 0, 0, 6, static_cast<std::int64_t>(tokens.back().span.begin.offset), 0};
+    };
+    configure();
+    const auto value = aurora::parseHostedField(tokens, cursor);
+    require(value.field.token.text == "value" && value.field.type.className == "Box" &&
+                value.field.type.templateArguments.size() == 1 &&
+                value.field.type.templateArguments[0].type == aurora::TypeKind::I64 &&
+                value.typeSpan.source == tokens[0].span.source && value.typeSpan.begin.offset == 0 &&
+                value.typeSpan.end.offset == 8 && value.next.ordinal == 6 && value.next.half == 0 &&
+                value.admission.text == ";" && cursor.ordinal == 0 && cursor.half == 0 && unchanged(original, tokens) &&
+                read == 0 && edgeRead == 0 && typeRead == 2 && statementRead == 1 &&
+                capturedInput[10] == static_cast<std::uint64_t>(Stop::field) && released == 1,
+            "whole field conversion lost its owned type, range, cursor or cleanup");
+    ++cases;
+    const auto reject = [&](const std::string &label, const std::function<void()> &mutate, bool readFailure = false) {
+        configure();
+        mutate();
+        bool rejected = false;
+        try {
+            static_cast<void>(aurora::parseHostedField(tokens, cursor));
+        } catch (const aurora::Error &error) {
+            rejected = !readFailure && error.diagnostic.code == DiagnosticCode::Internal;
+        } catch (const std::runtime_error &error) {
+            rejected = readFailure && std::string(error.what()) == "injected read failure";
+        }
+        require(rejected && cursor.ordinal == 0 && cursor.half == 0 && unchanged(original, tokens) && created == 1 &&
+                    parsed == 1 && released == 1,
+                label + ": invalid field escaped or changed caller state/cleanup");
+        ++cases;
+    };
+    reject("wrong field root", [] {
+        result[1] = -1;
+    });
+    reject("wrong field tag", [] {
+        statements[0][0] = wire(SyntaxKind::local);
+    });
+    reject("field type index", [] {
+        statements[0][6] = typeCount;
+    });
+    reject("field binding index", [] {
+        statements[0][7] = result[3];
+    });
+    reject("field end cursor", [] {
+        statements[0][2] = result[3] + 1;
+    });
+    reject("field type owner", [] {
+        types[1][6] = 4;
+    });
+    reject("field type role", [] {
+        types[1][7] = 2;
+    });
+    reject("orphan field type", [] {
+        statements[0][6] = 0;
+    });
+    reject("shared field type child", [] {
+        types[1][5] = 0;
+    });
+    for (const auto slot : {3U, 4U, 5U, 8U, 9U, 11U})
+        reject("unexpected field child or borrow", [=] {
+            statements[0][slot] = 0;
+        });
+    reject("field qualifier", [] {
+        statements[0][10] = 1;
+    });
+    reject("field residual half", [] {
+        result[5] = 1;
+    });
+    reject("orphan field syntax", [] {
+        statements.push_back(statements.front());
+        statementCount = 2;
+        result[1] = 1;
+    });
+    reject(
+        "field read exception",
+        [] {
+            throwingRead = 4;
+        },
+        true);
+}
 void bodyControls() {
     reset();
     records.clear();
     count = 0;
-    statements = {{wire(StatementKind::block), 0, 2, -1, -1, -1, -1, -1, -1, -1, 0}};
+    statements = {{wire(SyntaxKind::block), 0, 2, -1, -1, -1, -1, -1, -1, -1, 0, -1}};
     statementCount = 1;
     result = {wire(Status::success), 0, 0, 2, 2};
     auto tokens = aurora::lex("{}", "empty.au");
@@ -994,7 +1160,7 @@ void bodyControls() {
         statements[0][5] = 0;
     });
     reject("missing assignment target", [] {
-        statements[0][0] = wire(StatementKind::assign);
+        statements[0][0] = wire(SyntaxKind::assign);
     });
     reject("root carries expression", [] {
         statements[1][4] = 0;
@@ -1045,9 +1211,9 @@ void bodyControls() {
         },
         true);
     reject("duplicate branch owner", [] {
-        statements = {{wire(StatementKind::block), 1, 2, -1, -1, -1, -1, -1, -1, -1, 0},
-                      {wire(StatementKind::conditional), 1, 4, -1, 0, -1, -1, -1, 0, 0, 0},
-                      {wire(StatementKind::block), 0, 5, -1, -1, -1, -1, -1, 1, -1, 0}};
+        statements = {{wire(SyntaxKind::block), 1, 2, -1, -1, -1, -1, -1, -1, -1, 0, -1},
+                      {wire(SyntaxKind::conditional), 1, 4, -1, 0, -1, -1, -1, 0, 0, 0, -1},
+                      {wire(SyntaxKind::block), 0, 5, -1, -1, -1, -1, -1, 1, -1, 0, -1}};
         statementCount = 3;
         result[1] = 2;
     });
@@ -1058,7 +1224,7 @@ void bodyControls() {
         records.clear();
         count = 0;
         for (int index = 0; index < depth; ++index)
-            statements.push_back({wire(StatementKind::block), 0, depth * 2, -1, -1, -1, -1, -1, index - 1, -1, 0});
+            statements.push_back({wire(SyntaxKind::block), 0, depth * 2, -1, -1, -1, -1, -1, index - 1, -1, 0, -1});
         statementCount = depth;
         result = {wire(Status::success), depth - 1, 0, depth * 2, depth * 2};
         position = 0;
@@ -1088,6 +1254,152 @@ void bodyControls() {
         threw = std::string(error.what()) == "injected read failure";
     }
     require(threw && position == 0 && released == 1, "statement read exception leaked arena or committed cursor");
+    ++cases;
+}
+void callableControls() {
+    const std::string source = "auto f(i64 x)->i64{return x;}";
+    const auto configure = [&] {
+        reset();
+        const auto tokens = aurora::lex(source, "callable-record.au");
+        records = {{wire(NodeKind::name), 10, -1, -1, 1, 10, 10}};
+        types = {{wire(TypeKind::i64_type), 3, 3, 6, -1, -1, 3, 3}, {wire(TypeKind::i64_type), 7, 7, 14, -1, -1, 1, 3}};
+        statements = {{wire(SyntaxKind::parameter), 3, 5, -1, -1, -1, 0, 4, -1, -1, 0, -1},
+                      {wire(SyntaxKind::return_value), 9, 12, -1, 0, -1, -1, -1, -1, -1, 0, -1},
+                      {wire(SyntaxKind::block), 8, 13, -1, -1, -1, -1, -1, 1, -1, 0, -1},
+                      {wire(SyntaxKind::function), 1, 13, -1, -1, -1, 1, -1, 2, 0, 0, -1}};
+        count = 1;
+        typeCount = 2;
+        statementCount = 4;
+        result = {wire(Status::success), 3, 1, 13, static_cast<std::int64_t>(tokens.back().span.begin.offset)};
+    };
+    configure();
+    auto tokens = aurora::lex(source, "callable-record.au");
+    const auto original = tokens;
+    const aurora::hosted_parser::Cursor cursor{0, 0};
+    const auto parsedCallable = aurora::parseHostedCallable(tokens, cursor, Stop::function);
+    require(parsedCallable.function.name == "f" && parsedCallable.function.params.size() == 1 &&
+                parsedCallable.function.params.front().name == "x" && parsedCallable.function.body.size() == 1 &&
+                parsedCallable.function.body.front()->expr->token.text == "x" && parsedCallable.next.ordinal == 13 &&
+                parsedCallable.next.half == 0 && cursor.ordinal == 0 && cursor.half == 0 &&
+                unchanged(original, tokens) && released == 1 && statementRead == 4 && typeRead == 2,
+            "complete callable conversion, immutable caller state or cleanup changed");
+    ++cases;
+    const auto reject = [&](const std::string &label, const std::function<void()> &mutate) {
+        configure();
+        mutate();
+        bool rejected = false;
+        try {
+            static_cast<void>(aurora::parseHostedCallable(tokens, cursor, Stop::function));
+        } catch (const aurora::Error &error) {
+            rejected = error.diagnostic.code == DiagnosticCode::Internal;
+        }
+        require(rejected && cursor.ordinal == 0 && cursor.half == 0 && unchanged(original, tokens) && released == 1,
+                label + " did not preserve caller state and release the arena");
+        ++cases;
+    };
+    reject("parameter type index", [] {
+        statements[0][6] = typeCount;
+    });
+    reject("parameter binding index", [] {
+        statements[0][7] = result[3];
+    });
+    reject("parameter borrow index", [] {
+        statements[0][11] = result[3];
+    });
+    reject("parameter list cycle", [] {
+        statements[0][3] = 0;
+    });
+    reject("parameter list wrong tag", [] {
+        statements[3][9] = 1;
+    });
+    reject("callable body wrong tag", [] {
+        statements[3][8] = 0;
+    });
+    reject("callable missing body", [] {
+        statements[3][8] = -1;
+    });
+    reject("shared result type", [] {
+        statements[3][6] = 0;
+    });
+    reject("unowned parameter", [] {
+        statements[3][9] = -1;
+    });
+    reject("unowned callable body", [] {
+        statements[3][8] = 1;
+    });
+    reject("wrong callable profile", [] {
+        statements[3][0] = wire(SyntaxKind::method);
+    });
+    reject("invalid callable qualifier", [] {
+        statements[3][10] = 2;
+    });
+    reject("callable residual half", [] {
+        result[5] = 1;
+    });
+    reset();
+    const std::string empty = "Box(){}";
+    tokens = aurora::lex(empty, "empty-constructor.au");
+    records.clear();
+    count = 0;
+    statements = {{wire(SyntaxKind::constructor), 0, 5, -1, -1, -1, -1, -1, -1, -1, 0, -1}};
+    statementCount = 1;
+    result = {wire(Status::success), 0, 0, 5, static_cast<std::int64_t>(tokens.back().span.begin.offset)};
+    const auto constructor = aurora::parseHostedCallable(tokens, {0, 0}, Stop::constructor);
+    require(constructor.function.constructor && constructor.function.initializers.empty() &&
+                constructor.function.params.empty() && constructor.function.body.empty() &&
+                constructor.next.ordinal == 5 && constructor.next.half == 0 && released == 1 && read == 0 &&
+                typeRead == 0 && statementRead == 1,
+            "empty constructor forest conversion changed");
+    ++cases;
+    const std::string initialized = "Box(i64 x):value(x){}";
+    const auto configureConstructor = [&] {
+        reset();
+        tokens = aurora::lex(initialized, "initializer-record.au");
+        records = {{wire(NodeKind::name), 8, -1, -1, 1, 8, 8}};
+        types = {{wire(TypeKind::i64_type), 2, 2, 4, -1, -1, 2, 3}};
+        statements = {{wire(SyntaxKind::parameter), 2, 4, -1, -1, -1, 0, 3, -1, -1, 0, -1},
+                      {wire(SyntaxKind::initializer), 6, 10, -1, 0, -1, -1, -1, -1, -1, 0, -1},
+                      {wire(SyntaxKind::constructor), 0, 12, -1, -1, -1, -1, -1, 1, 0, 0, -1}};
+        count = typeCount = 1;
+        statementCount = 3;
+        result = {wire(Status::success), 2, 1, 12, static_cast<std::int64_t>(tokens.back().span.begin.offset)};
+    };
+    configureConstructor();
+    const auto initializedCallable = aurora::parseHostedCallable(tokens, {0, 0}, Stop::constructor);
+    require(initializedCallable.function.initializers.size() == 1 &&
+                initializedCallable.function.initializers.front().first.text == "value" &&
+                initializedCallable.function.initializers.front().second->token.text == "x" && released == 1,
+            "constructor initializer conversion changed");
+    ++cases;
+    for (const int mutation : {0, 1, 2}) {
+        configureConstructor();
+        if (mutation == 0)
+            statements[1][4] = count;
+        else if (mutation == 1)
+            statements[2][8] = 0;
+        else
+            statements[1][3] = 1;
+        bool rejected = false;
+        try {
+            static_cast<void>(aurora::parseHostedCallable(tokens, {0, 0}, Stop::constructor));
+        } catch (const aurora::Error &error) {
+            rejected = error.diagnostic.code == DiagnosticCode::Internal;
+        }
+        require(rejected && released == 1, "invalid initializer ownership was not safely rejected");
+        ++cases;
+    }
+    configure();
+    tokens = aurora::lex(source, "throw-callable.au");
+    const auto beforeThrow = tokens;
+    throwingRead = 4;
+    bool threw = false;
+    try {
+        static_cast<void>(aurora::parseHostedCallable(tokens, cursor, Stop::function));
+    } catch (const std::runtime_error &error) {
+        threw = std::string(error.what()) == "injected read failure";
+    }
+    require(threw && cursor.ordinal == 0 && cursor.half == 0 && unchanged(beforeThrow, tokens) && released == 1,
+            "callable read exception leaked its arena or changed caller state");
     ++cases;
 }
 void cleanupControls() {
@@ -1163,16 +1475,16 @@ extern "C" void aurora_hosted_parser_type(const void *, std::int64_t index, void
     ++typeRead;
     std::memcpy(output, types[static_cast<std::size_t>(index)].data(), sizeof(TypeWords));
 }
-extern "C" std::int64_t aurora_hosted_parser_statements(const void *) {
+extern "C" std::int64_t aurora_hosted_parser_syntax_count(const void *) {
     return statementCount;
 }
-extern "C" void aurora_hosted_parser_statement(const void *, std::int64_t index, void *output) {
+extern "C" void aurora_hosted_parser_syntax(const void *, std::int64_t index, void *output) {
     if (throwingRead == 4)
         throw std::runtime_error("injected read failure");
     require(index >= 0 && static_cast<std::size_t>(index) < statements.size(),
             "adapter requested out-of-range statement");
     ++statementRead;
-    std::memcpy(output, statements[static_cast<std::size_t>(index)].data(), sizeof(StatementWords));
+    std::memcpy(output, statements[static_cast<std::size_t>(index)].data(), sizeof(SyntaxWords));
 }
 extern "C" void aurora_hosted_parser_release(void *owner) {
     const auto &record = *static_cast<const aurora::hosted_abi::ParserRelease *>(owner);
@@ -1193,7 +1505,10 @@ int main() {
         inputControls();
         cleanupControls();
         bodyControls();
+        callableControls();
         declarationTypeControls();
+        continuationControls();
+        fieldControls();
         diagnostic("f(",
                    Status::expected_expression,
                    2,

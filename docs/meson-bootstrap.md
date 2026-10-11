@@ -64,8 +64,8 @@ build products while keeping configuration/logs. Retire whole directories only
 through the [explicit per-directory cleanup steps](local-development.md#reclaiming-old-local-output-explicitly);
 never sweep historical, failed, kept or user-owned review output automatically.
 
-`make test` invokes the same `full` graph. `make test-compiler`, `make -C compiler
-test` and `scripts/compiler-test.sh` select `compiler`. Set `MESON_BUILD_DIR` to a
+`make test` invokes the same `full` graph. `make -C compiler test` and
+`scripts/compiler-test.sh` select `compiler`. Set `MESON_BUILD_DIR` to a
 matching predecessor-configured directory, or omit it for `build/meson` (normal
 image-enabled work) or `build/meson-compiler` (hosted-only compiler work).
 First configure these directories with the predecessor path using the
@@ -75,6 +75,19 @@ The shortcuts stop on build/test failure and reject mismatched compiler/flag
 selections or missing project options. Reconfigure an older chosen build
 explicitly with both predecessor options, or configure a fresh matching directory.
 The wrapper does not invent a predecessor or automatically migrate configurations.
+
+Focused checks use exact Meson test names rather than compiler-consuming Make
+aliases. For example, in a configured compiler build:
+
+```sh
+meson test -C build/meson-compiler --suite compiler
+meson test -C build/meson-compiler hosted-lexer-format hosted-lexer-format-cli
+meson test -C build/meson-compiler semantic-lint
+meson test -C build/meson-compiler modules source-depth host-sources-tests host-output-tests
+meson test -C build/meson-compiler short-circuit short-circuit-ir short-circuit-ir-native
+meson test -C build/meson-compiler --list
+```
+
 `make clean` still preserves configuration.
 `AURORA_BUILD_JOBS=3` and `AURORA_TEST_JOBS=4` are independent.
 The container wrapper forwards these two controls and `MESON_BUILD_DIR` when set;

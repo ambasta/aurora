@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 if [[ -z "${AURORAC:-}" || $# != 2 ]]; then
-    printf '%s\n' 'Supply AURORAC and exactly one --compiler-sha256 DIGEST or --developer-build-receipt FILE pair; use make test-round-robin for a fresh build.' >&2
+    printf '%s\n' 'Supply AURORAC and exactly one --compiler-sha256 DIGEST or --developer-build-receipt FILE pair; use meson test -C BUILD native-round-robin-adapter native-policy-round-robin for the Meson-built compiler.' >&2
     exit 2
 fi
 case "$1" in

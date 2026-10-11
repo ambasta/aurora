@@ -49,6 +49,8 @@ export namespace compiler_parser {
         unterminated_block,
         block_nesting_limit,
         assignment_target,
+        expected_auto,
+        expected_arrow,
         invalid
     };
     enum class Stop {
@@ -57,7 +59,11 @@ export namespace compiler_parser {
         assignment,
         constructor_braces,
         body,
-        type
+        type,
+        function,
+        method,
+        constructor,
+        field
     };
     // Source-backed syntactic parameters, captured by declaration parsing.
     // These names carry no resolved nominal identity or visibility authority.
@@ -101,9 +107,10 @@ export namespace compiler_parser {
         i64 node_count;
         i64 token_count;
         i64 source_offset;
+        i64 token_half;
     public:
-        ParseResult(ParseStatus status, i64 root, i64 nodes, i64 tokens, i64 offset) : result(status), root_node(root),
-            node_count(nodes), token_count(tokens), source_offset(offset) {
+        ParseResult(ParseStatus status, i64 root, i64 nodes, i64 tokens, i64 offset, i64 half) : result(status),
+            root_node(root), node_count(nodes), token_count(tokens), source_offset(offset), token_half(half) {
         }
         auto status() const -> ParseStatus {
             return result;
@@ -119,6 +126,9 @@ export namespace compiler_parser {
         }
         auto offset() const -> i64 {
             return source_offset;
+        }
+        auto half() const -> i64 {
+            return token_half;
         }
     };
 }
@@ -1581,22 +1591,22 @@ namespace compiler_parser {
         const TypeResult result = finish_parse(arena, ParseStatus::success, value, token, base);
         return result;
     }
-    auto body_word(builtin::span<const u8> source, ParseToken token) -> StatementKind {
+    auto body_word(builtin::span<const u8> source, ParseToken token) -> SyntaxKind {
         const array<u8, 30> names = "return;static_assert;if;while;";
         const builtin::span<const u8> words = borrow_bytes(names);
         if (word_matches(source, token, words, 0, 6)) {
-            return StatementKind::return_value;
+            return SyntaxKind::return_value;
         }
         if (word_matches(source, token, words, 7, 20)) {
-            return StatementKind::static_assertion;
+            return SyntaxKind::static_assertion;
         }
         if (word_matches(source, token, words, 21, 23)) {
-            return StatementKind::conditional;
+            return SyntaxKind::conditional;
         }
         if (word_matches(source, token, words, 24, 29)) {
-            return StatementKind::loop;
+            return SyntaxKind::loop;
         }
-        return StatementKind::invalid;
+        return SyntaxKind::invalid;
     }
     auto body_else(builtin::span<const u8> source, ParseToken token) -> bool {
         const array<u8, 5> name = "else;";
@@ -1614,8 +1624,8 @@ namespace compiler_parser {
             == TypeWord::ref_type || kind == TypeWord::mutref_type || kind == TypeWord::array_type) {
             return true;
         }
-        const StatementKind flow = body_word(source, begin);
-        if (flow == StatementKind::return_value || flow == StatementKind::conditional || flow == StatementKind::loop) {
+        const SyntaxKind flow = body_word(source, begin);
+        if (flow == SyntaxKind::return_value || flow == SyntaxKind::conditional || flow == SyntaxKind::loop) {
             return false;
         }
         ParseToken look = advance(source, begin);
@@ -1669,8 +1679,8 @@ namespace compiler_parser {
         }
         return TypeResult(parsed.status(), parsed.root(), token);
     }
-    auto finish_statement(AstArena& arena, StatementSyntax statement, ParseToken token, i64 base) -> TypeResult {
-        const i64 root = arena.append_statement(statement);
+    auto finish_statement(AstArena& arena, SyntaxNode statement, ParseToken token, i64 base) -> TypeResult {
+        const i64 root = arena.append_syntax(statement);
         if (root < 0) {
             const TypeResult error = failure(arena, token, base);
             return error;
@@ -1725,20 +1735,19 @@ namespace compiler_parser {
                 const TypeResult error = finish_parse(arena, ParseStatus::expected_semicolon, -1, token, base);
                 return error;
             }
-            StatementSyntax statement = StatementSyntax(StatementKind::local, begin.index(), token.index() + 1,
-                previous);
+            SyntaxNode statement = SyntaxNode(SyntaxKind::local, begin.index(), token.index() + 1, previous);
             statement.bind_expression(expression.root(), -1);
-            statement.bind_local(typed.root(), binding.index(), mutable_binding);
+            statement.bind_declaration(typed.root(), binding.index(), mutable_binding);
             const ParseToken after = advance(source, token);
             const TypeResult result = finish_statement(arena, statement, after, base);
             return result;
         }
-        StatementKind kind = body_word(source, begin);
-        if (kind == StatementKind::return_value || kind == StatementKind::static_assertion) {
+        SyntaxKind kind = body_word(source, begin);
+        if (kind == SyntaxKind::return_value || kind == SyntaxKind::static_assertion) {
             const ParseToken next = advance(source, token);
             token.update(next);
             Stop stop = Stop::semicolon;
-            if (kind == StatementKind::static_assertion) {
+            if (kind == SyntaxKind::static_assertion) {
                 if (!single(source, token, '(')) {
                     const TypeResult error = finish_parse(arena, ParseStatus::expected_open, -1, token, base);
                     return error;
@@ -1754,7 +1763,7 @@ namespace compiler_parser {
                 const TypeResult error = finish_parse(arena, expression.status(), -1, token, base);
                 return error;
             }
-            if (kind == StatementKind::static_assertion) {
+            if (kind == SyntaxKind::static_assertion) {
                 if (!single(source, token, ')')) {
                     const TypeResult error = finish_parse(arena, ParseStatus::expected_close, -1, token, base);
                     return error;
@@ -1766,13 +1775,13 @@ namespace compiler_parser {
                 const TypeResult error = finish_parse(arena, ParseStatus::expected_semicolon, -1, token, base);
                 return error;
             }
-            StatementSyntax statement = StatementSyntax(kind, begin.index(), token.index() + 1, previous);
+            SyntaxNode statement = SyntaxNode(kind, begin.index(), token.index() + 1, previous);
             statement.bind_expression(expression.root(), -1);
             const ParseToken after = advance(source, token);
             const TypeResult result = finish_statement(arena, statement, after, base);
             return result;
         }
-        kind = StatementKind::expression;
+        kind = SyntaxKind::expression;
         const TypeResult left = body_expression(arena, source, token, Stop::assignment, context);
         const ParseToken delimiter = left.token();
         token.update(delimiter);
@@ -1788,21 +1797,21 @@ namespace compiler_parser {
             target = left.root();
             const AstNode node = arena.at(target);
             if (node.kind() == NodeKind::index) {
-                kind = StatementKind::index_assign;
+                kind = SyntaxKind::index_assign;
             } else {
                 if (node.kind() == NodeKind::member) {
                     const AstNode receiver = arena.at(node.first());
                     if (receiver.kind() == NodeKind::name) {
-                        kind = StatementKind::field_assign;
+                        kind = SyntaxKind::field_assign;
                     }
                 } else {
                     if (node.kind() == NodeKind::name) {
-                        kind = StatementKind::assign;
+                        kind = SyntaxKind::assign;
                     }
                 }
             }
             // The '=' is consumed before this diagnostic, as in the host grammar.
-            if (kind == StatementKind::expression) {
+            if (kind == SyntaxKind::expression) {
                 const TypeResult error = finish_parse(arena, ParseStatus::assignment_target, -1, token, base);
                 return error;
             }
@@ -1819,7 +1828,7 @@ namespace compiler_parser {
             const TypeResult error = finish_parse(arena, ParseStatus::expected_semicolon, -1, token, base);
             return error;
         }
-        StatementSyntax statement = StatementSyntax(kind, begin.index(), token.index() + 1, previous);
+        SyntaxNode statement = SyntaxNode(kind, begin.index(), token.index() + 1, previous);
         statement.bind_expression(expression, target);
         const ParseToken after = advance(source, token);
         const TypeResult result = finish_statement(arena, statement, after, base);
@@ -1868,10 +1877,9 @@ namespace compiler_parser {
                     completed = false;
                 } else {
                     if (single(source, token, '}')) {
-                        StatementSyntax block = StatementSyntax(StatementKind::block, frame.token(), token.index() + 1,
-                            frame.min());
+                        SyntaxNode block = SyntaxNode(SyntaxKind::block, frame.token(), token.index() + 1, frame.min());
                         block.bind_body(frame.lhs(), -1);
-                        value = arena.append_statement(block);
+                        value = arena.append_syntax(block);
                         if (value < 0) {
                             const TypeResult error = failure(arena, token, base);
                             return error;
@@ -1901,8 +1909,8 @@ namespace compiler_parser {
                             }
                             nesting = nesting + 1;
                         } else {
-                            const StatementKind kind = body_word(source, token);
-                            if (kind == StatementKind::conditional || kind == StatementKind::loop) {
+                            const SyntaxKind kind = body_word(source, token);
+                            if (kind == SyntaxKind::conditional || kind == SyntaxKind::loop) {
                                 const i64 first = token.index();
                                 const ParseToken after_keyword = advance(source, token);
                                 token.update(after_keyword);
@@ -1928,7 +1936,7 @@ namespace compiler_parser {
                                 const ParseToken after_close = advance(source, token);
                                 token.update(after_close);
                                 FrameState state = FrameState::body_if_then;
-                                if (kind == StatementKind::loop) {
+                                if (kind == SyntaxKind::loop) {
                                     state = FrameState::body_while;
                                 }
                                 const ParseFrame control = ParseFrame(state, frame.lhs(), expression.root(), first);
@@ -1987,20 +1995,20 @@ namespace compiler_parser {
                     nesting = nesting + 1;
                     completed = false;
                 } else {
-                    StatementKind kind = StatementKind::conditional;
+                    SyntaxKind kind = SyntaxKind::conditional;
                     i64 body = value;
                     i64 other = -1;
                     if (frame.state() == FrameState::body_while) {
-                        kind = StatementKind::loop;
+                        kind = SyntaxKind::loop;
                     }
                     if (frame.state() == FrameState::body_if_else) {
                         body = frame.field();
                         other = value;
                     }
-                    StatementSyntax statement = StatementSyntax(kind, frame.token(), token.index(), frame.min());
+                    SyntaxNode statement = SyntaxNode(kind, frame.token(), token.index(), frame.min());
                     statement.bind_expression(frame.lhs(), -1);
                     statement.bind_body(body, other);
-                    value = arena.append_statement(statement);
+                    value = arena.append_syntax(statement);
                     if (value < 0) {
                         const TypeResult error = failure(arena, token, base);
                         return error;
@@ -2012,6 +2020,254 @@ namespace compiler_parser {
         const TypeResult result = finish_parse(arena, ParseStatus::success, value, token, base);
         return result;
     }
+    // Complete field grammar precedes declaration admission in the host.
+    auto parse_field(AstArena& arena, builtin::span<const u8> source, ParseToken begin,
+        TypeContext context) -> TypeResult {
+        const i64 base = arena.stack_size();
+        const ParseFrame type_start = ParseFrame(FrameState::type_start, 0, -1, -1);
+        const TypeResult typed = parse_type(arena, source, begin, context, type_start);
+        const ParseToken binding = typed.token();
+        if (typed.status() != ParseStatus::success) {
+            const TypeResult error = finish_parse(arena, typed.status(), -1, binding, base);
+            return error;
+        }
+        const ParseStatus identifier = identifier_status(source, binding, false);
+        if (identifier != ParseStatus::success) {
+            const TypeResult error = finish_parse(arena, identifier, -1, binding, base);
+            return error;
+        }
+        const ParseToken semicolon = advance(source, binding);
+        if (!single(source, semicolon, ';')) {
+            const TypeResult error = finish_parse(arena, ParseStatus::expected_semicolon, -1, semicolon, base);
+            return error;
+        }
+        if (!arena.own_type(typed.root(), begin.index(), 3)) {
+            const TypeResult error = failure(arena, semicolon, base);
+            return error;
+        }
+        const ParseToken after = advance(source, semicolon);
+        SyntaxNode field = SyntaxNode(SyntaxKind::field, begin.index(), after.index(), -1);
+        field.bind_declaration(typed.root(), binding.index(), 0);
+        const TypeResult result = finish_statement(arena, field, after, base);
+        return result;
+    }
+    // Parameters and initializer lists are flat reverse-linked syntax lists.
+    // Admission is deliberately deferred until the complete callable grammar
+    // succeeds; no service or resolved ownership policy lives in this parser.
+    auto callable_parameters(AstArena& arena, builtin::span<const u8> source, ParseToken begin,
+        TypeContext context) -> TypeResult {
+        const i64 base = arena.stack_size();
+        ParseToken token = begin;
+        i64 tail = -1;
+        if (!single(source, token, '(')) {
+            return TypeResult(ParseStatus::expected_open, -1, token);
+        }
+        const ParseToken first = advance(source, token);
+        token.update(first);
+        if (!single(source, token, ')')) {
+            bool more = true;
+            while (more) {
+                const i64 start = token.index();
+                i64 readonly = 0;
+                if (type_word(source, token) == TypeWord::const_type) {
+                    readonly = 1;
+                    const ParseToken after = advance(source, token);
+                    token.update(after);
+                }
+                const ParseFrame type_start = ParseFrame(FrameState::type_start, 0, -1, -1);
+                const TypeResult typed = parse_type(arena, source, token, context, type_start);
+                const ParseToken after_type = typed.token();
+                token.update(after_type);
+                if (typed.status() != ParseStatus::success) {
+                    return TypeResult(typed.status(), -1, token);
+                }
+                if (!arena.own_type(typed.root(), start, 3)) {
+                    return TypeResult(ParseStatus::invalid, -1, token);
+                }
+                i64 borrowed = -1;
+                if (single(source, token, '&')) {
+                    borrowed = token.index();
+                    const ParseToken after = advance(source, token);
+                    token.update(after);
+                }
+                const ParseStatus identifier = identifier_status(source, token, false);
+                if (identifier != ParseStatus::success) {
+                    return TypeResult(identifier, -1, token);
+                }
+                const i64 binding = token.index();
+                const ParseToken after_name = advance(source, token);
+                token.update(after_name);
+                SyntaxNode parameter = SyntaxNode(SyntaxKind::parameter, start, token.index(), tail);
+                parameter.bind_declaration(typed.root(), binding, readonly);
+                parameter.bind_borrow(borrowed);
+                tail = arena.append_syntax(parameter);
+                if (tail < 0) {
+                    const TypeResult error = failure(arena, token, base);
+                    return error;
+                }
+                more = single(source, token, ',');
+                if (more) {
+                    const ParseToken after = advance(source, token);
+                    token.update(after);
+                }
+            }
+        }
+        if (!single(source, token, ')')) {
+            return TypeResult(ParseStatus::expected_close, -1, token);
+        }
+        const ParseToken after = advance(source, token);
+        return TypeResult(ParseStatus::success, tail, after);
+    }
+    auto constructor_initializers(AstArena& arena, builtin::span<const u8> source, ParseToken begin,
+        TypeContext context) -> TypeResult {
+        const i64 base = arena.stack_size();
+        ParseToken token = begin;
+        i64 tail = -1;
+        if (single(source, token, ':')) {
+            const ParseToken first = advance(source, token);
+            token.update(first);
+            bool more = true;
+            while (more) {
+                const ParseToken field = token;
+                const ParseStatus identifier = identifier_status(source, field, false);
+                if (identifier != ParseStatus::success) {
+                    return TypeResult(identifier, -1, field);
+                }
+                const ParseToken after_field = advance(source, field);
+                token.update(after_field);
+                i64 expression = -1;
+                if (single(source, token, '{')) {
+                    const TypeResult parsed = parse_into(arena, source, field, Stop::constructor_braces, context);
+                    const ParseToken after = parsed.token();
+                    token.update(after);
+                    if (parsed.status() != ParseStatus::success) {
+                        return TypeResult(parsed.status(), -1, token);
+                    }
+                    expression = parsed.root();
+                } else {
+                    if (!single(source, token, '(')) {
+                        return TypeResult(ParseStatus::expected_open, -1, token);
+                    }
+                    const ParseToken first_value = advance(source, token);
+                    const TypeResult parsed = body_expression(arena, source, first_value, Stop::close_parenthesis,
+                        context);
+                    const ParseToken after = parsed.token();
+                    token.update(after);
+                    if (parsed.status() != ParseStatus::success) {
+                        return TypeResult(parsed.status(), -1, token);
+                    }
+                    expression = parsed.root();
+                    if (!single(source, token, ')')) {
+                        return TypeResult(ParseStatus::expected_close, -1, token);
+                    }
+                    const ParseToken close = advance(source, token);
+                    token.update(close);
+                }
+                SyntaxNode initializer = SyntaxNode(SyntaxKind::initializer, field.index(), token.index(), tail);
+                initializer.bind_expression(expression, -1);
+                tail = arena.append_syntax(initializer);
+                if (tail < 0) {
+                    const TypeResult error = failure(arena, token, base);
+                    return error;
+                }
+                more = single(source, token, ',');
+                if (more) {
+                    const ParseToken after = advance(source, token);
+                    token.update(after);
+                }
+            }
+        }
+        if (!single(source, token, '{')) {
+            return TypeResult(ParseStatus::expected_brace_open, -1, token);
+        }
+        const ParseToken close = advance(source, token);
+        if (!single(source, close, '}')) {
+            return TypeResult(ParseStatus::expected_brace_close, -1, close);
+        }
+        const ParseToken after = advance(source, close);
+        return TypeResult(ParseStatus::success, tail, after);
+    }
+    auto parse_callable(AstArena& arena, builtin::span<const u8> source, ParseToken begin, Stop stop,
+        TypeContext context) -> TypeResult {
+        const i64 base = arena.stack_size();
+        ParseToken token = begin;
+        if (stop != Stop::constructor) {
+            const array<u8, 4> spelling = "auto";
+            const builtin::span<const u8> word = borrow_bytes(spelling);
+            if (!word_matches(source, token, word, 0, 4)) {
+                return TypeResult(ParseStatus::expected_auto, -1, token);
+            }
+            const ParseToken after = advance(source, token);
+            token.update(after);
+        }
+        const ParseStatus identifier = identifier_status(source, token, stop == Stop::constructor);
+        if (identifier != ParseStatus::success) {
+            return TypeResult(identifier, -1, token);
+        }
+        const i64 name = token.index();
+        const ParseToken first = advance(source, token);
+        const TypeResult parameters = callable_parameters(arena, source, first, context);
+        const ParseToken after_parameters = parameters.token();
+        token.update(after_parameters);
+        if (parameters.status() != ParseStatus::success) {
+            return TypeResult(parameters.status(), -1, token);
+        }
+        i64 declared_type = -1;
+        i64 readonly = 0;
+        i64 body = -1;
+        SyntaxKind kind = SyntaxKind::constructor;
+        if (stop == Stop::constructor) {
+            const TypeResult initializers = constructor_initializers(arena, source, token, context);
+            const ParseToken after = initializers.token();
+            token.update(after);
+            if (initializers.status() != ParseStatus::success) {
+                return TypeResult(initializers.status(), -1, token);
+            }
+            body = initializers.root();
+        } else {
+            kind = SyntaxKind::function;
+            if (stop == Stop::method) {
+                kind = SyntaxKind::method;
+                if (type_word(source, token) == TypeWord::const_type) {
+                    readonly = 1;
+                    const ParseToken after = advance(source, token);
+                    token.update(after);
+                }
+            }
+            if (token.last() - token.first() != 2 || source.at(token.first()) != '-' || source.at(token.first() + 1)
+                != '>') {
+                return TypeResult(ParseStatus::expected_arrow, -1, token);
+            }
+            const ParseToken first_type = advance(source, token);
+            const ParseFrame type_start = ParseFrame(FrameState::type_start, 0, -1, -1);
+            const TypeResult typed = parse_type(arena, source, first_type, context, type_start);
+            const ParseToken after_type = typed.token();
+            token.update(after_type);
+            if (typed.status() != ParseStatus::success) {
+                return TypeResult(typed.status(), -1, token);
+            }
+            declared_type = typed.root();
+            if (!arena.own_type(declared_type, name, 3)) {
+                return TypeResult(ParseStatus::invalid, -1, token);
+            }
+            const TypeResult parsed = parse_body(arena, source, token, context);
+            const ParseToken after_body = parsed.token();
+            token.update(after_body);
+            if (parsed.status() != ParseStatus::success) {
+                return TypeResult(parsed.status(), -1, token);
+            }
+            body = parsed.root();
+        }
+        SyntaxNode callable = SyntaxNode(kind, name, token.index(), -1);
+        callable.bind_declaration(declared_type, -1, readonly);
+        callable.bind_body(body, parameters.root());
+        const i64 root = arena.append_syntax(callable);
+        if (root < 0) {
+            const TypeResult error = failure(arena, token, base);
+            return error;
+        }
+        return TypeResult(ParseStatus::success, root, token);
+    }
 }
 
 export namespace compiler_parser {
@@ -2019,33 +2275,44 @@ export namespace compiler_parser {
         TypeContext context) -> ParseResult {
         const ParseToken token = read_token(source, cursor, 0);
         if ((stop != Stop::semicolon && stop != Stop::close_parenthesis && stop != Stop::assignment && stop
-            != Stop::constructor_braces && stop != Stop::body && stop != Stop::type) || arena.size() != 0
-            || arena.stack_size() != 0 || arena.arguments() != 0 || arena.types() != 0 || arena.statements() != 0) {
-            return ParseResult(ParseStatus::invalid, -1, arena.size(), 0, token.first());
+            != Stop::constructor_braces && stop != Stop::body && stop != Stop::type && stop != Stop::function && stop
+            != Stop::method && stop != Stop::constructor && stop != Stop::field) || arena.size() != 0
+            || arena.stack_size() != 0 || arena.arguments() != 0 || arena.types() != 0 || arena.syntax_size() != 0) {
+            return ParseResult(ParseStatus::invalid, -1, arena.size(), 0, token.first(), token.half());
         }
         if (!arena.ok()) {
-            return ParseResult(ParseStatus::allocation_failure, -1, 0, 0, token.first());
+            return ParseResult(ParseStatus::allocation_failure, -1, 0, 0, token.first(), token.half());
         }
         if (!valid_context(source, context)) {
-            return ParseResult(ParseStatus::invalid, -1, 0, 0, token.first());
+            return ParseResult(ParseStatus::invalid, -1, 0, 0, token.first(), token.half());
+        }
+        if (stop == Stop::field) {
+            const TypeResult result = parse_field(arena, source, token, context);
+            const ParseToken at = result.token();
+            return ParseResult(result.status(), result.root(), arena.size(), at.index(), at.first(), at.half());
+        }
+        if (stop == Stop::function || stop == Stop::method || stop == Stop::constructor) {
+            const TypeResult result = parse_callable(arena, source, token, stop, context);
+            const ParseToken at = result.token();
+            return ParseResult(result.status(), result.root(), arena.size(), at.index(), at.first(), at.half());
         }
         if (stop == Stop::type) {
             const ParseFrame first = ParseFrame(FrameState::type_start, 0, -1, -1);
             const TypeResult result = parse_type(arena, source, token, context, first);
             const ParseToken at = result.token();
             if (result.status() == ParseStatus::success && !arena.own_type(result.root(), 0, 3)) {
-                return ParseResult(ParseStatus::invalid, -1, 0, at.index(), at.first());
+                return ParseResult(ParseStatus::invalid, -1, 0, at.index(), at.first(), at.half());
             }
-            return ParseResult(result.status(), result.root(), arena.size(), at.index(), at.first());
+            return ParseResult(result.status(), result.root(), arena.size(), at.index(), at.first(), at.half());
         }
         if (stop == Stop::body) {
             const TypeResult result = parse_body(arena, source, token, context);
             const ParseToken at = result.token();
-            return ParseResult(result.status(), result.root(), arena.size(), at.index(), at.first());
+            return ParseResult(result.status(), result.root(), arena.size(), at.index(), at.first(), at.half());
         }
         const TypeResult result = parse_into(arena, source, token, stop, context);
         const ParseToken at = result.token();
-        return ParseResult(result.status(), result.root(), arena.size(), at.index(), at.first());
+        return ParseResult(result.status(), result.root(), arena.size(), at.index(), at.first(), at.half());
     }
     auto create(builtin::ByteRegion region, i64 capacity) -> AstArena {
         AstArena arena = make_arena(region, capacity);
@@ -2072,11 +2339,11 @@ export namespace compiler_parser {
         const TypeSyntax type = arena.type_at(index);
         return type;
     }
-    auto statement_count(const AstArena& arena) -> i64 {
-        return arena.statements();
+    auto syntax_count(const AstArena& arena) -> i64 {
+        return arena.syntax_size();
     }
-    auto read_statement(const AstArena& arena, i64 index) -> StatementSyntax {
-        const StatementSyntax statement = arena.statement_at(index);
+    auto read_syntax(const AstArena& arena, i64 index) -> SyntaxNode {
+        const SyntaxNode statement = arena.syntax_at(index);
         return statement;
     }
     auto release(builtin::ByteRegion region, AstArena arena) -> i64 {

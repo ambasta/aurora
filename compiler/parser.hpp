@@ -1,6 +1,5 @@
 #pragma once
 #include "syntax.hpp"
-#include "services.hpp"
 #include "hosted_parser.hpp"
 #include <algorithm>
 #include <cctype>
@@ -78,12 +77,6 @@ public:
         }
         return token;
     }
-    bool scalarOrParameter(const Type &value) const {
-        return scalar(value) || value.kind == TypeKind::Parameter;
-    }
-    Type type() {
-        return parseHostedType(tokens, position, expressionContext());
-    }
     hosted_parser::Context expressionContext() const {
         hosted_parser::Context context;
         context.typeParameters = templateParameterTokens;
@@ -93,41 +86,6 @@ public:
     }
     ExpressionPtr statementExpression(hosted_parser::Stop stop) {
         return parseHostedExpression(tokens, position, stop, expressionContext());
-    }
-    void parameters(Function &function, bool allowClass = false, bool allowBorrow = false) {
-        need("(");
-        if (!eat(")")) {
-            do {
-                Param parameter;
-                parameter.borrowConst = eat("const");
-                parameter.type = type();
-                if (peek().text == "&") {
-                    parameter.borrowSpan = take().span;
-                    parameter.borrowed = true;
-                    const bool distinctServiceContinuation =
-                        parameter.type.isService() && function.params.size() == 1 && function.params.front().borrowed &&
-                        function.params.front().type.isService() && function.params.front().type != parameter.type &&
-                        service::supportedGroup(
-                            {service::kind(function.params.front().type), service::kind(parameter.type)});
-                    if (!allowBorrow || (!function.params.empty() && !distinctServiceContinuation) ||
-                        !templateParameters.empty() || (!parameter.type.isClass() && !parameter.type.isService()) ||
-                        !parameter.type.templateArguments.empty())
-                        fail("borrowed parameters require one leading concrete owning class on an ordinary function");
-                } else if (parameter.borrowConst)
-                    fail("const parameter spelling requires a leading owning-class reference");
-                parameter.name = ident().text;
-                // Nominal names are unresolved here; module resolution permits
-                // enum method arguments and class constructor/function arguments.
-                if (!scalarOrParameter(parameter.type) && !parameter.type.isClass() && !parameter.type.isSpan() &&
-                    !(allowClass && parameter.type.isResource()) && !parameter.type.isService() &&
-                    !parameter.type.isEnum())
-                    fail(allowClass ? "only scalar function parameters or scalar-field class values are "
-                                      "supported"
-                                    : "only scalar or enum method parameters are supported");
-                function.params.push_back(parameter);
-            } while (eat(","));
-            need(")");
-        }
     }
     void declarations(Program &program, const std::string &scope, bool exportScope, bool nested) {
         if (std::count(scope.begin(), scope.end(), ':') > 62)
@@ -246,77 +204,22 @@ public:
                     }
                     if ((peek().text == definition.token.text && tokens.at(position + 1).text == "(") ||
                         peek().text == "auto") {
-                        const bool constructor = peek().text != "auto";
-                        if (!constructor)
-                            take();
-                        Function method(ident(constructor && definition.token.text == "array"));
-                        if (!constructor && method.token.text == definition.token.text)
-                            fail("constructor cannot have a return type");
-                        method.scope = scope;
-                        method.publicAccess = publicAccess;
-                        method.constructor = constructor;
-                        parameters(method, constructor);
-                        if (constructor) {
-                            if (eat(":")) {
-                                do {
-                                    const auto fieldPosition = position;
-                                    auto fieldName = ident();
-                                    ExpressionPtr value;
-                                    if (peek().text == "{") {
-                                        auto candidate = fieldPosition;
-                                        value = parseHostedExpression(tokens,
-                                                                      candidate,
-                                                                      hosted_parser::Stop::constructor_braces,
-                                                                      expressionContext());
-                                        position = candidate;
-                                    } else {
-                                        need("(");
-                                        value = statementExpression(hosted_parser::Stop::close_parenthesis);
-                                        need(")");
-                                    }
-                                    method.initializers.emplace_back(fieldName, value);
-                                } while (eat(","));
-                            }
-                            need("{");
-                            need("}");
-                        } else {
-                            method.receiverConst = eat("const");
-                            need("->");
-                            method.result = type();
-                            if (!scalarOrParameter(method.result) && !method.result.isClass() &&
-                                !method.result.isSpan() && !method.result.isEnum())
-                                fail("only scalar, enum, class or readonly span method results are supported");
-                            method.body = parseHostedBody(tokens, position, expressionContext());
-                        }
-                        definition.methods.push_back(std::move(method));
+                        const auto stop =
+                            peek().text == "auto" ? hosted_parser::Stop::method : hosted_parser::Stop::constructor;
+                        const auto context = expressionContext();
+                        auto parsed = parseHostedCallable(tokens, {position}, stop, context);
+                        admitHostedCallable(parsed, stop, context, definition.token.text);
+                        parsed.function.scope = scope;
+                        parsed.function.publicAccess = publicAccess;
+                        definition.methods.push_back(std::move(parsed.function));
+                        position = parsed.next.ordinal;
                         continue;
                     }
-                    auto fieldTypeSpan = peek().span;
-                    auto fieldType = type();
-                    fieldTypeSpan.end = tokens.at(position - 1).span.end;
-                    auto fieldName = ident();
-                    if (fieldType.isArray()) {
-                        if (publicAccess)
-                            fail("array fields must be private");
-                        if (fieldType.lengthParameter.empty() &&
-                            (fieldType.length < 1 ||
-                             fieldType.length > maximumClassArrayLength(fieldType.arrayElement())))
-                            fail("class array field capacity must be between 1 and " +
-                                 std::to_string(maximumClassArrayLength(fieldType.arrayElement())));
-                    } else if (fieldType.isOwnerStorage()) {
-                        if (publicAccess)
-                            fail("owned byte fields must be private");
-                        if (!declaredParameters.empty())
-                            fail("owning class templates are unsupported");
-                    } else if (!scalarOrParameter(fieldType) && !fieldType.isClass() && !fieldType.isEnum())
-                        throw Error(DiagnosticCode::UnsupportedFieldType,
-                                    "unsupported class field type '" + typeName(fieldType) +
-                                        "': class fields require scalar, class, private fixed-array or private "
-                                        "owned-byte storage",
-                                    fieldTypeSpan);
-                    need(";");
-                    definition.fields.emplace_back(fieldName, fieldType);
-                    definition.fields.back().publicAccess = publicAccess;
+                    auto parsed = parseHostedField(tokens, {position}, expressionContext());
+                    admitHostedField(parsed, publicAccess, !declaredParameters.empty());
+                    parsed.field.publicAccess = publicAccess;
+                    definition.fields.push_back(std::move(parsed.field));
+                    position = parsed.next.ordinal;
                 }
                 need(";");
                 if (declaredParameters.empty())
@@ -329,24 +232,17 @@ public:
                 capacityParameterTokens.clear();
                 continue;
             }
-            need("auto");
-            Function function(ident());
-            function.scope = scope;
-            function.exported = exported;
-            function.templateParameters = declaredParameters;
-            if (templateParameters.contains(function.token.text))
-                fail("function name cannot shadow a template parameter");
-            parameters(function, true, true);
-            need("->");
-            function.result = type();
-            if (!scalarOrParameter(function.result) && !function.result.isClass() &&
-                !function.result.isOwnerStorage() && !function.result.isEnum())
-                fail("only scalar function results or scalar-field class values are supported");
-            function.body = parseHostedBody(tokens, position, expressionContext());
+            const auto context = expressionContext();
+            auto parsed = parseHostedCallable(tokens, {position}, hosted_parser::Stop::function, context);
+            admitHostedCallable(parsed, hosted_parser::Stop::function, context);
+            parsed.function.scope = scope;
+            parsed.function.exported = exported;
+            parsed.function.templateParameters = declaredParameters;
             if (declaredParameters.empty())
-                program.functions.push_back(std::move(function));
+                program.functions.push_back(std::move(parsed.function));
             else
-                program.functionTemplates.push_back(std::move(function));
+                program.functionTemplates.push_back(std::move(parsed.function));
+            position = parsed.next.ordinal;
             templateParameters.clear();
             capacityParameters.clear();
             templateParameterTokens.clear();

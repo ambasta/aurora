@@ -443,7 +443,7 @@ class DeveloperCommands(unittest.TestCase):
         self.run_script("compiler-test.sh", env={"CXX": "no-such-compiler"}, expected=2)
         self.assert_no_work()
 
-    def test_compiler_make_build_suite_and_focused_routes_use_only_meson(self):
+    def test_compiler_make_build_and_suite_routes_use_only_meson(self):
         self.tool(
             "python3",
             'printf "meson|%s|%s|%s|%s\\n" "$*" "${CXX-}" "${CXXFLAGS-}" "${MESON_BUILD_DIR-}" >> "$CALLS"\n'
@@ -454,12 +454,6 @@ class DeveloperCommands(unittest.TestCase):
             (["all"], "--build-only aurorac --publish-compiler"),
             (["formatter"], "--build-only aurora-fmt --publish-formatter"),
             (["test"], "--suite compiler"),
-            (["test-formatter"], "--tests hosted-lexer-format hosted-lexer-format-cli"),
-            (["test-lint"], "--tests semantic-lint"),
-            (["test-modules"], "--tests modules source-depth host-sources-tests host-output-tests"),
-            (["test-short-circuit"], "--tests short-circuit short-circuit-ir short-circuit-ir-native"),
-            (["test-console-service"], "--tests console-service-source-native console-service-ir console-session"),
-            (["test-iommu-event-service"], "--tests iommu-event-source-native iommu-event-session"),
         )
         controls = {"CXX": "g++-16", "CXXFLAGS": "-std=c++23 -O2 -DCOUNT=7", "MESON_BUILD_DIR": "build/chosen"}
         for goals, selection in routes:
@@ -483,6 +477,20 @@ class DeveloperCommands(unittest.TestCase):
                     )
                     self.assertFalse((self.repo / "build").exists())
                     self.record.unlink()
+
+    def test_removed_compiler_aliases_do_not_dispatch(self):
+        for directory, goals in (
+            (self.repo, ("test-compiler", "test-formatter", "test-lint")),
+            (self.repo / "compiler", ("test-modules", "test-short-circuit", "test-formatter", "test-lint")),
+        ):
+            for goal in goals:
+                with self.subTest(directory=directory.name, goal=goal):
+                    result = subprocess.run(
+                        [MAKE, goal], cwd=directory, env=self.env, capture_output=True, text=True, timeout=5
+                    )
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn("No rule to make target", result.stderr)
+                    self.assert_no_work()
 
     def test_make_host_checks_call_scripts_directly(self):
         routes = {
@@ -674,7 +682,7 @@ class DeveloperCommands(unittest.TestCase):
     def test_make_build_and_test_aliases_are_only_printed(self):
         for argv, expected in (
             (["-n", "kernel-uefi", "-o", "compiler"], "--kernel uefi"),
-            (["-n", "test-compiler"], "scripts/meson_test.py --repo-root"),
+            (["-n", "test"], "scripts/meson_test.py --repo-root"),
         ):
             result = subprocess.run(
                 [MAKE, *argv],

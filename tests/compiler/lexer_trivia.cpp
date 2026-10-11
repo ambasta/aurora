@@ -261,16 +261,25 @@ void cases() {
             source += pieces[random() % pieces.size()];
         verify(source, "generated.au");
     }
-    auto lexed = aurora::lexSource("// leading\n Box<i64>> // trailing");
-    aurora::Parser parser(lexed.tokens);
-    const auto type = parser.type();
-    require(type.isClass() && type.className == "Box" && type.templateArguments.size() == 1 &&
-                type.templateArguments[0].type == aurora::TypeKind::I64 && parser.peek().text == ">",
+    const auto lexed = aurora::lexSource("// leading\n Box<i64>> // trailing");
+    const auto original = lexed.tokens;
+    const auto parsed = aurora::parseHostedType(lexed.tokens, {0, 0});
+    require(parsed.type.isClass() && parsed.type.className == "Box" && parsed.type.templateArguments.size() == 1 &&
+                parsed.type.templateArguments[0].type == aurora::TypeKind::I64 && parsed.next.ordinal == 3 &&
+                parsed.next.half == 1,
             "declaration type did not preserve its residual closer");
-    parser.need(">");
+    require(lexed.tokens.size() == original.size(), "parser changed canonical token count");
+    for (std::size_t index = 0; index < original.size(); ++index) {
+        const auto &before = original[index], &after = lexed.tokens[index];
+        require(after.text == before.text && after.line == before.line && after.span.source == before.span.source,
+                "parser changed canonical token spelling or source identity");
+        samePosition(after.span.begin, before.span.begin);
+        samePosition(after.span.end, before.span.end);
+    }
     require(lexed.tokens[3].text == ">>" && lexed.tokens[3].span.end.offset - lexed.tokens[3].span.begin.offset == 2,
             "parser changed canonical template closer token");
-    require(lexed.trivia.size() == 4, "parser changed retained trivia");
+    require(lexed.trivia.size() == 4 && lexed.source->text == "// leading\n Box<i64>> // trailing",
+            "parser changed retained trivia or source bytes");
     for (const auto retention : {aurora::TriviaRetention::Keep, aurora::TriviaRetention::Discard}) {
         try {
             aurora::lexSource("// before\n @", "bad.au", retention);

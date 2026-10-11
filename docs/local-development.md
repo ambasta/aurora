@@ -281,9 +281,11 @@ open-file guarantees.
 
 ## Choosing tests and consoles
 
-- `make test`: final native `full`; `make test-compiler`, `make -C compiler test`
+- `make test`: final native `full`; `make -C compiler test`
   and `scripts/compiler-test.sh` select the same compiler-only Meson suite.
-- Meson `dev`, `core`, `bytes`, `packages` or exact test names give focused feedback.
+- Use `meson test -C BUILD --suite compiler` for compiler-only selection, or
+  `--suite dev`, `--suite core`, `--suite bytes`, `--suite packages` or exact test
+  names for focused feedback.
   Partial profiles never become full acceptance by accumulation.
 - `make smoke`, `make smoke-fault`, `make smoke-page-fault`, `make smoke-all` and
   the affected profile commands exercise actual emulator behavior.

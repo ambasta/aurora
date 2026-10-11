@@ -8,7 +8,7 @@ export EVENT_TOOL_PREFIX EVENT_BUILD_RECEIPT EVENT_CODE EVENT_VARS EVENT_DATA EV
 export AURORA_BAR_FIRMWARE AURORA_BAR_COVERAGE AURORA_BAR_RECEIPTS AURORA_NVME_RECEIPTS
 export CLEAN_PATHS
 
-.PHONY: all compiler kernel kernel-uefi test test-compiler
+.PHONY: all compiler kernel kernel-uefi test
 all:
 	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --kernel bios --publish-compiler
 
@@ -23,9 +23,6 @@ kernel-uefi:
 
 test:
 	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite full
-
-test-compiler:
-	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite compiler
 
 .PHONY: help
 help:
@@ -44,7 +41,6 @@ help:
 	  'make smoke-graphical-console  Build/check graphical guests, capture pixels and restore normal UEFI' \
 	  'make smoke-console    Build and verify BIOS console PTY acceptance' \
 	  'make smoke-console-uefi  Build and verify UEFI console PTY acceptance' \
-	  'make test-compiler    Run the incremental Meson compiler suite' \
 	  'make test             Configure/build and run the complete Meson native graph' \
 	  'make smoke-all        Run the full emulator suite, including both consoles' \
 	  'make test-developer-commands  Check shortcuts with fake tools only' \
@@ -324,14 +320,6 @@ test-iommu-diagnostics:
 .PHONY: formatter
 formatter:
 	$(MAKE) -C compiler formatter
-
-.PHONY: test-formatter
-test-formatter:
-	$(MAKE) -C compiler test-formatter
-
-.PHONY: test-lint
-test-lint:
-	$(MAKE) -C compiler test-lint
 
 .PHONY: test-graphical-controls
 test-graphical-controls:

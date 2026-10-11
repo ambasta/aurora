@@ -135,7 +135,7 @@ class ProfileMetadata(unittest.TestCase):
         root = (ROOT / "Makefile").read_text()
         _, _, _, recipes = inventory.make_inventory(root)
         manifest = json.loads((ROOT / "tests/compiler-test-inventory.json").read_text())
-        compiler_all, _ = inventory.compiler_meson_inventory((ROOT / "compiler/Makefile").read_text(), manifest)
+        compiler_all = inventory.compiler_meson_inventory((ROOT / "compiler/Makefile").read_text(), manifest)
         root_runners = inventory.root_meson_inventory(root, manifest)
         commands = [
             line.strip()
@@ -170,9 +170,6 @@ class ProfileMetadata(unittest.TestCase):
             [ast.dump(node) for node in ast.walk(ast.parse(display)) if isinstance(node, ast.Assign)],
         )
         self.assertIn("require(grouped.returncode == 0,", display)
-        self.assertIn(
-            "--tests display-service-source-native display-service-ir", (ROOT / "compiler/Makefile").read_text()
-        )
         self.assertIn("files('compiler/service_group_ir_abi.py')", (ROOT / "tests/meson.build").read_text())
         inventory.check(
             manifest,

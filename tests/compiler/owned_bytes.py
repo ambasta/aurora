@@ -464,14 +464,14 @@ class Suite:
         """,
             entry_name="arena_entry",
         )
-        # Empty frame, argument, type and statement stores each retain real owner metadata.
+        # Empty frame, argument, type and syntax stores each retain real owner metadata.
         # Class cleanup reverses field order; node growth first retires its old block.
         self.run(arena, 16384, 200, 0, 42, 5, 5, release_order=[5, 4, 3, 2, 1])
         self.run(arena, 16384, 100, 0, 42, 6, 5, release_order=[1, 5, 4, 3, 2, 6])
         self.run(arena, 112, 2, 1, 42, 5, 5, release_order=[5, 4, 3, 2, 1])
         self.run(arena, 16384, 200, 2, 42, 5, 5, release_order=[5, 4, 3, 2, 1])
         self.run(arena, 16384, -1, 0, -1, 4, 4, release_order=[4, 3, 2, 1])
-        # Zero-length statement storage is a real fifth owner. Refuse every
+        # Zero-length syntax storage is a real fifth owner. Refuse every
         # initial allocation and the node-growth replacement; each successfully
         # allocated prefix must unwind once in exact reverse field order.
         for allowed in range(5):
@@ -499,24 +499,24 @@ class Suite:
                 i64 count=0;
                 bool failed=false;
                 while(count<n&&!failed){
-                    compiler_parser::StatementSyntax value=compiler_parser::StatementSyntax(
-                        compiler_parser::StatementKind::block,2*count,2*count+2,count-1);
-                    const i64 appended=arena.append_statement(value);
+                    compiler_parser::SyntaxNode value=compiler_parser::SyntaxNode(
+                        compiler_parser::SyntaxKind::block,2*count,2*count+2,count-1);
+                    const i64 appended=arena.append_syntax(value);
                     if(appended<0){failed=true;}
                     else{
                         if(appended!=count){return -3;}
                         count=count+1;
                     }
                 }
-                if(arena.statements()!=count||arena.size()!=0||arena.types()!=0||arena.arguments()!=0){return -4;}
+                if(arena.syntax_size()!=count||arena.size()!=0||arena.types()!=0||arena.arguments()!=0){return -4;}
                 if(failed&&arena.failure()!=compiler_parser::ArenaFailure::allocation){return -5;}
                 i64 index=0;
                 while(index<count){
-                    compiler_parser::StatementSyntax kept=arena.statement_at(index);
-                    if(kept.kind()!=compiler_parser::StatementKind::block||kept.token()!=2*index
+                    compiler_parser::SyntaxNode kept=arena.syntax_at(index);
+                    if(kept.kind()!=compiler_parser::SyntaxKind::block||kept.token()!=2*index
                         ||kept.end()!=2*index+2||kept.previous()!=index-1||kept.expression()!=-1
                         ||kept.target()!=-1||kept.type()!=-1||kept.binding()!=-1||kept.body()!=-1
-                        ||kept.other()!=-1||kept.mutable_binding()!=0){return -6;}
+                        ||kept.other()!=-1||kept.mutable_binding()!=0||kept.borrow_site()!=-1){return -6;}
                     index=index+1;
                 }
                 if(failed){return -2;}
@@ -525,11 +525,15 @@ class Suite:
         """,
             entry_name="statement_arena_entry",
         )
-        # make_arena owns nodes, frames, edges, types and statements in that
-        # order. Each statement resize retires its prior block (starting at 5);
+        # make_arena owns nodes, frames, edges, types and syntax in that
+        # order. Each syntax resize retires its prior block (starting at 5);
         # class cleanup drops the replacement before the four unchanged owners.
         self.run(statement_arena, 1048576, 0, 0, 42, 5, 5, release_order=[5, 4, 3, 2, 1])
         self.run(statement_arena, 1048576, 1, 0, 42, 6, 5, release_order=[5, 6, 4, 3, 2, 1])
+        # The first growth holds eight 96-byte SyntaxNode values, including
+        # borrow_site; the fifth owner remains the same syntax allocation.
+        self.run(statement_arena, 8 * 96 - 1, 1, 0, -2, 5, 5, release_order=[5, 4, 3, 2, 1])
+        self.run(statement_arena, 8 * 96, 1, 0, 42, 6, 5, release_order=[5, 6, 4, 3, 2, 1])
         self.run(statement_arena, 1048576, 9, 0, 42, 7, 5, release_order=[5, 6, 7, 4, 3, 2, 1])
         self.run(
             statement_arena,

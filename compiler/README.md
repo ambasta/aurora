@@ -3,10 +3,10 @@
 Aurora is an intentionally incompatible safe C++-inspired language. It has no
 C header/macro layer, raw-pointer escape, unsafe block or C ABI. The hosted build
 uses an Aurora-written [lexer](LEXER.md) and a bounded
-[expression and body parser](ARCHITECTURE.md#hosted-aurora-expression-parser),
+[syntax parser](ARCHITECTURE.md#hosted-aurora-parser),
 bootstrapped with an explicitly selected predecessor compiler.
-Declaration/type parsing outside bodies, semantic/lifetime analysis,
-typed-IR verification and x86-64 emission remain C++23.
+Module/class/enum/template headers, semantic/lifetime analysis, typed-IR
+verification and x86-64 emission remain C++23.
 GNU assembler/linker and Linux host I/O remain bootstrap dependencies.
 
 ## Build and check
@@ -95,7 +95,7 @@ those facts; this is not a general exported ABI. Both stages generate their own
 facts and header. The existing bootstrap test checks current C1/C2 assembly, object,
 facts and header convergence, binds B to the frontend actually linked into C2, and compares current
 C1/C2 corpus diagnostics/output. No compiler binary or generated frontend is
-committed. Declaration parsing, semantics, IR and backend remain C++.
+committed. Module/class/enum/template headers, semantics, IR and backend remain C++.
 
 ## Supported source
 
@@ -185,15 +185,14 @@ These temporary register choices are implementation machinery, not a source-leve
 
 Runtime-sized [typed copied-class owners](OWNERSHIP.md#runtime-sized-copied-class-ownership)
 support the `syntax_arena.au` AST, explicit parser-frame and variable-arity
-argument-edge, unresolved type-syntax and statement storage. Complete existing scalar,
-byte-string, qualified-name, unary, binary, call, postfix, aggregate, explicit
-template and type-taking reflection expressions are parsed in Aurora, including
-both forms of constructor field initializer, and converted to the existing source
-AST through the private hosted adapter. Ordinary function/method bodies also use
-Aurora for all existing block, local, control-flow and assignment grammar.
-Parameter, result and class-field types use the same Aurora TypeSyntax parser as
-local declarations and reflection. The hosted path has no body/expression/type
-fallback; their replaced C++ grammar is removed. Declaration structure and its
+argument-edge, unresolved type-syntax and declaration/statement storage. Complete
+existing expressions, bodies, callable definitions and class fields are parsed in
+Aurora and converted through the private hosted adapter. Each callable or field
+uses one parser call, including its types and delimiters. Caller token snapshots
+remain immutable; a standalone type read returns an explicit ordinal/half cursor.
+Grammar errors precede semantic admission for multiply-invalid declarations, as
+specified in [architecture](ARCHITECTURE.md#hosted-aurora-parser).
+The replaced C++ grammar is removed. Module/class/enum/template headers and the
 existing category, borrowing and visibility policies remain in C++. The
 historical predecessor remains the source-bootstrap starting point; this does not
 establish whole-compiler self-hosting.

@@ -3,7 +3,7 @@
 ## Current test routing
 
 Meson/Ninja owns the complete incremental native graph. `make test` selects
-`full`; `make test-compiler`, `make -C compiler test` and
+`full`; `make -C compiler test` and
 `scripts/compiler-test.sh` select compiler-only coverage. Configure one stable
 build directory per toolchain and flags, with matching real GCC/G++ on PATH.
 See [build commands and suite selection](meson-bootstrap.md).
@@ -44,9 +44,9 @@ source-build provenance by itself.
 
 Make is a convenience layer over the predecessor-backed Meson graph. `make test`
 forwards to the complete `full` suite without a second prerequisite graph;
-compiler-only and named compiler shortcuts use the same wrapper. Compiler-free
+the compiler-only `make -C compiler test` uses the same wrapper. Compiler-free
 `make test-*` shortcuts call their scripts directly. Obsolete compiler-consuming
-root aliases and the receipt executor/check CLI have been removed; use
+focused aliases and the receipt executor/check CLI have been removed; use
 `meson test -C BUILD --list` to select exact focused test names.
 Full suites still reject coverage-reducing overrides in their owning runner.
 Ordinary Make options and custom shells retain GNU Make's normal behavior;

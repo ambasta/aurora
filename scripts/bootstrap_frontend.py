@@ -62,7 +62,7 @@ def frontend_abi_entries(facts):
     ]
     checks += [
         ("parser_" + name, "compiler_parser::" + name, arena, [], "i64")
-        for name in ("node_count", "edge_count", "type_count", "statement_count")
+        for name in ("node_count", "edge_count", "type_count", "syntax_count")
     ]
     checks += [
         ("parser_" + name, "compiler_parser::" + name, arena, ["i64"], "compiler_parser::" + result)
@@ -70,7 +70,7 @@ def frontend_abi_entries(facts):
             ("read_node", "AstNode"),
             ("read_edge", "ChildEdge"),
             ("read_type", "TypeSyntax"),
-            ("read_statement", "StatementSyntax"),
+            ("read_syntax", "SyntaxNode"),
         )
     ]
     entries = {}

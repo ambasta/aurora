@@ -76,24 +76,24 @@ aurora_hosted_parser_type:
     jmp __aurora_frontend_parser_read_type
 .size aurora_hosted_parser_type, .-aurora_hosted_parser_type
 
-# Body syntax is copied from the same arena through its generated record layout.
-.globl aurora_hosted_parser_statements
-.hidden aurora_hosted_parser_statements
-.type aurora_hosted_parser_statements, @function
-aurora_hosted_parser_statements:
+# Declaration/body syntax is copied through its generated record layout.
+.globl aurora_hosted_parser_syntax_count
+.hidden aurora_hosted_parser_syntax_count
+.type aurora_hosted_parser_syntax_count, @function
+aurora_hosted_parser_syntax_count:
     movq %rdi, %r10
-    jmp __aurora_frontend_parser_statement_count
-.size aurora_hosted_parser_statements, .-aurora_hosted_parser_statements
+    jmp __aurora_frontend_parser_syntax_count
+.size aurora_hosted_parser_syntax_count, .-aurora_hosted_parser_syntax_count
 
-.globl aurora_hosted_parser_statement
-.hidden aurora_hosted_parser_statement
-.type aurora_hosted_parser_statement, @function
-aurora_hosted_parser_statement:
+.globl aurora_hosted_parser_syntax
+.hidden aurora_hosted_parser_syntax
+.type aurora_hosted_parser_syntax, @function
+aurora_hosted_parser_syntax:
     movq %rdi, %r10
     movq %rsi, %rdi
     movq %rdx, %r11
-    jmp __aurora_frontend_parser_read_statement
-.size aurora_hosted_parser_statement, .-aurora_hosted_parser_statement
+    jmp __aurora_frontend_parser_read_syntax
+.size aurora_hosted_parser_syntax, .-aurora_hosted_parser_syntax
 
 .globl aurora_hosted_parser_release
 .hidden aurora_hosted_parser_release
