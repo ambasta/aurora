@@ -103,8 +103,9 @@ cannot recover removed captures. Keep review windows before starting cleanup.
 No screen-hash receipt replaces discarded pixels; logs record actual comparisons.
 Standalone outputs and historical windows are never adopted for this cleanup.
 
-Default retention keeps two successful and two failed managed windows.
-`AURORA_GRAPHICAL_KEEP_RUNS=N` accepts 1..999 for both limits; `all` skips pruning
+Graphical and Event smoke use one shared output-retention helper. Default retention
+keeps the newest two successful managed windows and preserves all failed windows.
+`AURORA_GRAPHICAL_KEEP_RUNS=N` accepts 1..999 for the successful-run limit; `all` skips pruning
 and pins the new window. A regular `.keep` pins one window. A separate runner pins
 a completed local window before image checks; remove that pin manually after use.
 A foreign checkout's managed window must already have a regular `.keep`; this

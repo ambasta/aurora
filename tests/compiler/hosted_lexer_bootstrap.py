@@ -37,7 +37,7 @@ def run(command):
 
 def event_generation(root, work):
     source, output = work / "events.au", work / "events.inc"
-    command = [sys.executable, "-B", str(root / "scripts/bootstrap_lexer.py"), "--events", str(source), str(output)]
+    command = [sys.executable, "-B", str(root / "scripts/bootstrap_frontend.py"), "--events", str(source), str(output)]
     original = (root / "compiler/lexer.au").read_text()
     original = original.replace("export module aurora.compiler.lexer;", "module aurora.compiler.lexer;", 1).replace(
         "export namespace compiler_lexer {", "namespace compiler_lexer {", 1
@@ -77,7 +77,7 @@ def event_generation(root, work):
         source.write_text(declaration)
         output.write_bytes(b"preserve on rejection\n")
         result = subprocess.run(command, capture_output=True, timeout=30, check=False)
-        require(result.returncode == 1 and b"bootstrap lexer:" in result.stderr, "unsupported Event syntax accepted")
+        require(result.returncode == 1 and b"bootstrap frontend:" in result.stderr, "unsupported Event syntax accepted")
         require(output.read_bytes() == b"preserve on rejection\n", "rejected Event syntax changed output")
     print(
         "PASS generated event ordering, content-stable writes, exported module parity and unsupported-syntax rejection"
@@ -112,7 +112,8 @@ def private_bootstrap(stage0, stage1, root, work, ordinary):
             [
                 sys.executable,
                 "-B",
-                str(root / "scripts/bootstrap_lexer.py"),
+                str(root / "scripts/bootstrap_frontend.py"),
+                "--lexer",
                 str(compiler),
                 str(root / "compiler/lexer.au"),
                 str(bridge),

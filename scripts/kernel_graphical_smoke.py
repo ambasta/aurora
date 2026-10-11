@@ -3,7 +3,6 @@
 
 import argparse
 from contextlib import contextmanager
-import fcntl
 import json
 import os
 from pathlib import Path
@@ -21,6 +20,7 @@ import tty
 import kernel_graphical_console_admission as admission
 import kernel_uefi_oracle as normal
 import qemu_transport as transport
+import smoke_outputs
 from framebuffer_capture_oracle import BASE, SIZE, VISIBLE, WIDTH, HEIGHT, PITCH, need, parse_ppm
 from kernel_emulator_clock import ORIGINAL, validate_clock_options
 
@@ -476,26 +476,19 @@ RUN_SCHEMA = "aurora-graphical-smoke-run-v1"
 
 
 def retained_runs():
-    value = os.environ.get("AURORA_GRAPHICAL_KEEP_RUNS", "2")
-    need(value == "all" or re.fullmatch(r"[1-9][0-9]{0,2}", value), "AURORA_GRAPHICAL_KEEP_RUNS must be 1..999 or all")
-    return None if value == "all" else int(value)
+    return smoke_outputs.retained_runs("AURORA_GRAPHICAL_KEEP_RUNS")
+
+
+def output_policy():
+    return smoke_outputs.SmokeOutputs(ROOT / "build/graphical-smoke", "run-", RUN_MARKER, RUN_SCHEMA, retained_runs())
 
 
 def run_directory(directory):
-    base = ROOT / "build/graphical-smoke"
-    need(directory.parent == base and re.fullmatch(r"run-[A-Za-z0-9]+", directory.name), "not a smoke run directory")
-    need(all(not path.is_symlink() for path in (ROOT / "build", base, directory)), "symlink in smoke run path")
-    need(directory.is_dir(), "missing smoke run directory")
-    return directory
+    return output_policy().run_directory(directory)
 
 
 def start_run(directory):
-    keep = retained_runs()
-    directory = run_directory(directory)
-    with (directory / RUN_MARKER).open("x") as output:
-        json.dump(dict(schema=RUN_SCHEMA, status="running"), output)
-    if keep is None:
-        (directory / ".keep").touch(exist_ok=False)
+    output_policy().start(directory)
 
 
 def discard_captures(directory):
@@ -512,74 +505,12 @@ def discard_captures(directory):
                 r"|probe-[0-9]{2}-[0-9]{2}\.bin)",
                 path.name,
             ):
-                need(not path.is_symlink() and path.is_file(), "nonregular smoke capture")
                 files.append(path)
-    for path in files:
-        path.unlink()
+    smoke_outputs.discard_files(directory, files)
 
 
 def finish_run(directory, status):
-    keep = retained_runs()
-    directory = run_directory(directory)
-    lock_path = directory.parent / ".retention.lock"
-    with os.fdopen(os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600), "r+") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        marker = directory / RUN_MARKER
-        need(not marker.is_symlink(), "symlink in smoke ownership marker")
-        need(admission.read_json(marker) == dict(schema=RUN_SCHEMA, status="running"), "missing active smoke marker")
-        # The build/guest/restoration outcome is complete before optional cleanup.
-        marker.write_text(
-            json.dumps(
-                dict(schema=RUN_SCHEMA, status="passed" if status == 0 else "failed", finished_ns=time.time_ns())
-            )
-            + "\n"
-        )
-        pin = directory / ".keep"
-        if not transport.retain_artifacts(status, keep is None or pin.exists() or pin.is_symlink()):
-            try:
-                discard_captures(directory)
-            except (OSError, ValueError) as error:
-                print("WARN: could not discard successful screen dumps: " + str(error), file=sys.stderr)
-            except KeyboardInterrupt:
-                print("WARN: successful-run cleanup interrupted; remaining dumps preserved", file=sys.stderr)
-                return
-        if keep is None:
-            return
-        groups = {"passed": [], "failed": []}
-        for folder in directory.parent.glob("run-*"):
-            record = folder / RUN_MARKER
-            if (
-                folder.is_symlink()
-                or not folder.is_dir()
-                or (folder / ".keep").exists()
-                or (folder / ".keep").is_symlink()
-            ):
-                continue
-            if record.is_symlink() or not record.is_file():
-                continue
-            try:
-                item = admission.read_json(record)
-            except (ValueError, OSError):
-                continue  # Unknown or incomplete evidence is never adopted for deletion.
-            if (
-                type(item) is not dict
-                or set(item) != {"schema", "status", "finished_ns"}
-                or item["schema"] != RUN_SCHEMA
-                or type(item["status"]) is not str
-                or item["status"] not in groups
-                or type(item["finished_ns"]) is not int
-            ):
-                continue
-            groups[item["status"]].append((item["finished_ns"], folder.name, folder))
-        for runs in groups.values():
-            for _, _, folder in sorted(runs, reverse=True)[keep:]:
-                if folder != directory:
-                    try:
-                        shutil.rmtree(folder)
-                    except OSError as error:
-                        print("WARN: could not prune " + str(folder) + ": " + str(error), file=sys.stderr)
-                    else:
-                        print("Pruned older graphical smoke files: " + str(folder), flush=True)
+    output_policy().finish(directory, status, discard_captures)
 
 
 def pin_reused_images(images):
@@ -618,9 +549,7 @@ def pin_reused_images(images):
             "Pin foreign managed images with a regular .keep file in the owning checkout before use: " + str(directory),
         )
         return
-    lock_path = directory.parent / ".retention.lock"
-    with os.fdopen(os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600), "r+") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with smoke_outputs.retention_lock(directory.parent):
         run_directory(directory)  # A pruner that won the lock may already have removed it.
         marker = directory / RUN_MARKER
         if not marker.exists():

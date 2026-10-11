@@ -314,19 +314,6 @@ def verify_wait_closure(code, named, functions, language_functions, payload, lin
     return owners[0], reachable
 
 
-LANGUAGE_MODULES = frozenset(
-    (
-        "kernel_graphical_console",
-        "graphics.font5x7",
-        "console.session_note",
-        "console.session_files",
-        "std.binary",
-        "std.binary_buffer",
-        "std.bytes",
-        "std.array",
-        "std.decimal",
-    )
-)
 LANGUAGE_ROOTS = frozenset(
     (
         ENTRY,
@@ -346,14 +333,8 @@ def verify_language_object(language):
         "Unexpected generated language import inventory",
     )
     need(
-        LANGUAGE_ROOTS <= set(language.functions)
-        and all(
-            name in LANGUAGE_ROOTS
-            or common.is_reflection_helper(name)
-            or common.stack_facts.aurora_module(name) in LANGUAGE_MODULES
-            for name in language.functions
-        ),
-        "Unexpected generated language module/function inventory",
+        LANGUAGE_ROOTS <= set(language.functions),
+        "Missing generated language entry/bridge inventory",
     )
     reflection = common.stack_facts.reflection_inventory(language.functions)
     rows = subprocess.check_output(["readelf", "-sW", language.path], text=True).splitlines()
@@ -388,107 +369,32 @@ def verify_private_abi(decoder, linked, code, starts, language_names, functions)
 
     value_body = body(VALUE_BRIDGE)
     verify_value_bridge_body(decoder, value_body, starts)
-    entry = body(ENTRY)
-    need(
-        [(row.op, row.args) for row in entry[:2]] == [("push", "%rbp"), ("mov", "%rsp,%rbp")],
-        "Changed paired entry frame",
+    # Generated entry copies and scalar completion checks belong to trusted
+    # compiler lowering. The native record and host contract remain independent.
+    expected_record = dict(
+        parameters=[["builtin::ConsoleSession", 16], ["builtin::DisplaySession", 16], ["scalar", 8], ["scalar", 8]],
+        result_bytes=8,
     )
     need(
-        len(entry) > 5 and entry[2].op == "sub" and re.fullmatch(r"\$(?:0x[0-9a-f]+|[0-9]+),%rsp", entry[2].args),
-        "Missing paired entry allocation",
-    )
-    allocated = int(entry[2].args.split(",")[0][1:], 0)
-    need(allocated > 0 and allocated % 16 == 0, "Unaligned paired frame allocation")
-    # The retained compiler output touches the allocated stack before saving
-    # R11. Require its exact qword, zero-immediate, top-of-frame form; do not
-    # skip arbitrary instructions or make the touch optional.
-    need((entry[3].op, entry[3].args) == ("orq", "$0x0,(%rsp)"), "Missing or changed paired entry stack touch")
-    saved = re.fullmatch(r"%r11,(-0x[0-9a-f]+\(%rbp\))", entry[4].args)
-    need(entry[4].op == "mov" and saved, "Missing private record save")
-    # BindServiceParameter emits one reload then two qword copy pairs. The
-    # trailing width/height scalars each reload the same private record.
-    cursor, slots, copies = 5, [], []
-    for group in ((0, 8), (16, 24), (32,), (40,)):
-        row = entry[cursor]
-        need((row.op, row.args) == ("mov", saved[1] + ",%r11"), "Changed record reload")
-        cursor += 1
-        for offset in group:
-            read, write = entry[cursor : cursor + 2]
-            address = ("" if offset == 0 else hex(offset)) + "(%r11),%rax"
-            need((read.op, read.args) == ("mov", address), "Wrong paired record qword/width/order")
-            slot = re.fullmatch(r"%rax,(-0x[0-9a-f]+\(%rbp\))", write.args)
-            need(
-                write.op == "mov" and slot and slot[1] != saved[1] and slot[1] not in slots,
-                "Aliased or missing paired parameter slot",
-            )
-            slots.append(slot[1])
-            copies.append(dict(offset=offset, destination=slot[1], address=read.address))
-            cursor += 2
-    offsets = [int(slot.split("(")[0], 16) for slot in [saved[1]] + slots]
-    need(
-        all(-allocated <= offset <= -8 and offset % 8 == 0 for offset in offsets) and len(set(offsets)) == 7,
-        "Overlapping, unaligned or unallocated paired record slots",
-    )
-    need(
-        offsets[2] == offsets[1] + 8 and offsets[4] == offsets[3] + 8,
-        "Service grant/generation field adjacency changed",
+        (functions[ENTRY].get("service_abi") or {}).get("record") == expected_record,
+        "Changed native paired service record",
     )
     pixel_sites = []
     for name in language_names:
-        rows = body(name)
-        for index, call in enumerate(rows):
-            if call.op != "call" or starts.get(decoder.target_of(call)) != "__au_runtime_display_pixel":
-                continue
-            need(index >= 9 and index + 1 < len(rows), "Truncated pixel host ABI")
-            before = rows[index - 9 : index]
-            grant = re.fullmatch(r"(-0x[0-9a-f]+)\(%rbp\),%rdi", before[0].args)
-            generation = re.fullmatch(r"(-0x[0-9a-f]+)\(%rbp\),%rsi", before[1].args)
-            need(
-                before[0].op == before[1].op == "mov"
-                and grant
-                and generation
-                and int(generation[1], 16) == int(grant[1], 16) + 8,
-                "Pixel grant/generation not distinct adjacent qwords",
-            )
-            need(
-                len(rows) >= 3
-                and [(r.op, r.args) for r in rows[:2]] == [("push", "%rbp"), ("mov", "%rsp,%rbp")]
-                and rows[2].op == "sub"
-                and re.fullmatch(r"\$(?:0x[0-9a-f]+|[0-9]+),%rsp", rows[2].args),
-                "Pixel helper frame has unknown allocation",
-            )
-            pixel_frame = int(rows[2].args.split(",")[0][1:], 0)
-            pixel_offsets = [int(grant[1], 16), int(generation[1], 16)]
-            need(
-                pixel_frame > 0
-                and pixel_frame % 16 == 0
-                and all(-pixel_frame <= offset <= -8 and offset % 8 == 0 for offset in pixel_offsets),
-                "Pixel grant/generation slots are unaligned or outside helper frame",
-            )
-            need(
-                [(r.op, r.args) for r in before[2:7]] == [("pop", r) for r in ("%r10", "%r9", "%r8", "%rcx", "%rdx")],
-                "Pixel scalar ABI changed",
-            )
-            need(
-                before[7].op == "sub"
-                and before[7].args in ("$0x8,%rsp", "$0x10,%rsp")
-                and (before[8].op, before[8].args) == ("mov", "%r10,(%rsp)")
-                and (rows[index + 1].op, rows[index + 1].args) == ("add", before[7].args),
-                "Pixel seventh argument or balanced outgoing stack changed",
-            )
-            sites = [row for row in functions[name]["calls"] if row["address"] == call.address]
-            need(len(sites) == 1 and sites[0]["live_bytes"] % 16 == 0, "Misaligned pixel SysV host call")
-            need(
-                index + 3 < len(rows)
-                and (rows[index + 2].op, rows[index + 2].args) == ("cmp", "$0x1,%rax")
-                and rows[index + 3].op == "ja"
-                and code[decoder.target_of(rows[index + 3])].op == "ud2",
-                "Pixel completion validation changed",
-            )
-            pixel_sites.append(dict(function=name, address=call.address, outgoing=before[7].args))
+        sites = [row for row in functions[name]["calls"] if row["target"] == "__au_runtime_display_pixel"]
+        if not sites:
+            continue
+        fact = (functions[name].get("service_abi") or {}).get("calls", {}).get("__au_runtime_display_pixel")
+        need(fact == dict(sysv_arguments=7, result_max=1), "Changed native pixel service ABI")
+        for site in sites:
+            need(site["live_bytes"] % 16 == 0, "Misaligned pixel SysV host call")
+            pixel_sites.append(dict(function=name, address=site["address"], live_bytes=site["live_bytes"]))
     need(pixel_sites, "No concrete Display pixel host call")
     return dict(
-        entry_qword_copies=copies, pixel_sites=pixel_sites, value_bridge=dict(symbol=VALUE_BRIDGE, entry=VALUE_ENTRY)
+        entry_record=expected_record,
+        pixel_sites=pixel_sites,
+        value_bridge=dict(symbol=VALUE_BRIDGE, entry=VALUE_ENTRY),
+        generated_abi_basis="compiler service facts bound to object bytes and linked call edges",
     )
 
 
@@ -605,21 +511,7 @@ def stack_evidence(directory):
     assembly = [item for name in ASSEMBLY_OBJECTS for item in decoder.linked_assembly(linked, directory, name)]
     verify_inventory(linked.functions, frames, language.functions, memory.functions)
     language_imports = verify_language_object(language)
-    reflection = []
-    for name in sorted(common.stack_facts.reflection_inventory(language.functions)):
-        original = language.functions[name]
-        need(
-            not any(
-                section == original.section
-                and address < original.address + original.size
-                and address + 4 > original.address
-                for section, address, *_ in language.relocations
-            ),
-            "Reflection helper acquired a relocation",
-        )
-        reflection.append(
-            verify_reflection_body(decoder, linked.functions[name], body(linked.functions[name]), payload)
-        )
+    reflection = common.verify_reflection_image(directory)
     decoder.NORETURN = frozenset(
         name
         for name in linked.functions

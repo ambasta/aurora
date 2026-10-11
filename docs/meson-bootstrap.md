@@ -27,7 +27,10 @@ scaling guarantee. Measure peak memory before raising worker counts; do not muta
 
 Ninja tracks C++ headers and Aurora fixture imports. Unchanged compiler/fixture
 builds are reused, but test outcomes are not cached. A different toolchain or flag
-configuration needs a separate directory. Setup checks the selected compiler, binutils, Meson and Ninja versions once.
+configuration needs a separate directory. The Make shortcuts check the selected
+compiler, binutils, Meson and Ninja versions before setup or build work, with a
+short blocked reason and the container command when tools are unsupported.
+Direct Meson setup checks the same tool versions.
 Missing or unsupported tools are blocked. Ordinary builds do not hash the
 toolchain or its runtime libraries on every invocation; after replacing tools in
 place, configure a fresh build directory. Unset `CPATH`, `CPLUS_INCLUDE_PATH`, `C_INCLUDE_PATH` and
@@ -64,10 +67,15 @@ test` and `scripts/compiler-test.sh` select `compiler`. Set `MESON_BUILD_DIR` to
 fresh or matching configured directory, or omit it for `build/meson` (normal
 image-enabled work) or `build/meson-compiler` (hosted-only compiler work).
 The shortcuts run Meson setup automatically when needed, stop on setup/build/test
-failure, and reject mismatched existing compiler/flag selections. Existing builds
-missing current Meson options require a fresh matching directory; the shortcuts
-do not migrate old build metadata automatically.
+failure, and reject mismatched existing compiler/flag selections. When an implicit
+default build predates the kernel project options, the shortcuts refresh it with
+`meson setup --reconfigure` under the same lock. Existing options, products,
+retained scratch and user files stay in place. Explicit `MESON_BUILD_DIR` selections
+are never migrated automatically; select a fresh matching directory or reconfigure
+the chosen build explicitly. `make clean` still preserves configuration.
 `AURORA_BUILD_JOBS=3` and `AURORA_TEST_JOBS=4` are independent.
+The container wrapper forwards these two controls and `MESON_BUILD_DIR` when set;
+use checkout-relative build paths, since the checkout is mounted at `/workspace`.
 `SANITIZE` and nondefault `CPPFLAGS`/`LDFLAGS` are not silently accepted by the
 convenience route; use explicit configured sanitizer builds/separate focused gates.
 Explicit pinned `make test-acceptance` remains a distinct legacy compatibility

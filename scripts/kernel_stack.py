@@ -810,7 +810,10 @@ def aurora_stack_functions(path, symbols, code, starts, generated_names):
     functions = {}
     for name, fact in facts.items():
         fields = {"local_bytes", "calls"} | ({"copied_record"} if version == 2 else set())
-        require(type(fact) is dict and set(fact) == fields, "Invalid Aurora function fact")
+        require(
+            type(fact) is dict and (set(fact) == fields or version == 2 and set(fact) == fields | {"service_abi"}),
+            "Invalid Aurora function fact",
+        )
         copied = fact.get("copied_record")
         # V1 describes stack use only. V2 may additionally describe this exact
         # R11-input/R10-result ABI; callers still supply their allowed symbols
@@ -827,6 +830,51 @@ def aurora_stack_functions(path, symbols, code, starts, generated_names):
                     for size in [*copied["parameter_bytes"], copied["result_bytes"]]
                 ),
                 "Invalid Aurora copied-record ABI fact",
+            )
+        require(type(fact["calls"]) is dict, "Invalid Aurora callee/live stack bound")
+        service_abi = fact.get("service_abi")
+        if "service_abi" in fact:
+            require(type(service_abi) is dict and set(service_abi) == {"record", "calls"}, "Invalid service ABI fact")
+            record, service_calls = service_abi["record"], service_abi["calls"]
+            kinds = {"builtin::ConsoleSession", "builtin::DisplaySession", "builtin::IommuEventSession"}
+            if record is not None:
+                require(
+                    type(record) is dict
+                    and set(record) == {"parameters", "result_bytes"}
+                    and type(record["parameters"]) is list
+                    and 1 <= len(record["parameters"]) <= 6
+                    and all(
+                        type(row) is list
+                        and len(row) == 2
+                        and type(row[0]) is str
+                        and row[0] in kinds | {"scalar"}
+                        and type(row[1]) is int
+                        and row[1] == (8 if row[0] == "scalar" else 16)
+                        for row in record["parameters"]
+                    )
+                    and any(row[0] in kinds for row in record["parameters"])
+                    and type(record["result_bytes"]) is int
+                    and record["result_bytes"] in (1, 8),
+                    "Invalid service entry record fact",
+                )
+            scalar_hosts = {
+                "__au_runtime_console_put",
+                "__au_runtime_display_pixel",
+                "__au_runtime_iommu_event_acknowledge",
+            }
+            require(
+                type(service_calls) is dict
+                and set(service_calls) == set(fact["calls"]) & scalar_hosts
+                and all(
+                    type(row) is dict
+                    and set(row) == {"sysv_arguments", "result_max"}
+                    and type(row["sysv_arguments"]) is int
+                    and 2 <= row["sysv_arguments"] <= 7
+                    and type(row["result_max"]) is int
+                    and 0 <= row["result_max"] <= 2
+                    for row in service_calls.values()
+                ),
+                "Invalid scalar service call facts",
             )
         local, edges = fact["local_bytes"], fact["calls"]
         require(type(local) is int and 8 <= local <= STACK_CAP, "Invalid Aurora local stack bound")
@@ -870,6 +918,7 @@ def aurora_stack_functions(path, symbols, code, starts, generated_names):
             calls=calls,
             returns=sum(row.op == "ret" for row in rows),
             copied_record=copied,
+            service_abi=service_abi,
             basis="Aurora emitted stack/call facts; exact object/function and linked-edge agreement",
         )
     return functions

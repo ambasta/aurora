@@ -27,6 +27,15 @@ public:
     std::vector<int> parameterBytes;
     int resultBytes;
 };
+class ServiceRecordFacts {
+public:
+    std::vector<std::pair<std::string, int>> parameters;
+    int resultBytes;
+};
+class ServiceCallFacts {
+public:
+    int arguments, resultMax;
+};
 // Stack use follows the instructions emitted below, not a second ABI calculator.
 // Like GCC .su, localBytes includes the incoming return address. Call-site bytes
 // stop immediately before CALL; the callee's own incoming slot is counted there.
@@ -35,6 +44,8 @@ public:
     int localBytes = 8;
     std::map<std::string, int> calls;
     std::optional<CopiedRecordFacts> copiedRecord;
+    std::optional<ServiceRecordFacts> serviceRecord;
+    std::map<std::string, ServiceCallFacts> serviceCalls;
 };
 // This backend accepts validated typed IR only. It has no AST, scope, borrow or move state.
 class X86Emitter {
@@ -303,6 +314,26 @@ class X86Emitter {
             facts.parameterBytes.push_back(extent);
         }
         return facts;
+    }
+    std::optional<ServiceRecordFacts> serviceRecordFacts(const ir::Function &function) const {
+        if (function.receiver || !scalarValue(function.result) ||
+            std::none_of(function.parameters.begin(), function.parameters.end(), [](const Type &type) {
+                return type.isService();
+            }))
+            return std::nullopt;
+        ServiceRecordFacts facts{{}, ir::storageWidth(function.result)};
+        for (const auto &type : function.parameters) {
+            if (!type.isService() && !scalarValue(type))
+                return std::nullopt;
+            facts.parameters.emplace_back(type.isService() ? typeName(type) : "scalar", argumentBytes(type));
+        }
+        return facts;
+    }
+    void scalarServiceCompletion(service::Operation operation, int arguments, int maximum) {
+        currentStackFacts->serviceCalls[std::string(service::description(operation).hostSymbol)] =
+            ServiceCallFacts{arguments, maximum};
+        line("cmpq $" + std::to_string(maximum) + ", %rax");
+        line("ja .Laurora_bounds_trap");
     }
     const ir::ClassField &receiverField(int fieldIndex) const {
         return classFields->at(currentFunction->receiver->className)[fieldIndex];
@@ -841,17 +872,14 @@ class X86Emitter {
                         line("movq %r10, (%rsp)");
                         directCall(std::string(service::description(operation.operation).hostSymbol));
                         releaseStack(outgoingBytes);
-                        line("cmpq $1, %rax");
-                        line("ja .Laurora_bounds_trap");
+                        scalarServiceCompletion(operation.operation, 7, 1);
                     } else if (operation.operation == service::Operation::Put) {
                         line("movq %rax, %rdx");
                         call(std::string(service::description(operation.operation).hostSymbol));
-                        line("cmpq $1, %rax");
-                        line("ja .Laurora_bounds_trap");
+                        scalarServiceCompletion(operation.operation, 3, 1);
                     } else if (operation.operation == service::Operation::IommuAcknowledge) {
                         call(std::string(service::description(operation.operation).hostSymbol));
-                        line("cmpq $2, %rax");
-                        line("ja .Laurora_bounds_trap");
+                        scalarServiceCompletion(operation.operation, 2, 2);
                     } else if (operation.operation == service::Operation::IommuPoll) {
                         line("leaq " + address(operation.resultOffset) + ", %rdx");
                         // Private raw output is four complete qwords. None is
@@ -1379,6 +1407,31 @@ public:
                 facts << "],\"result_bytes\":" << usage.copiedRecord->resultBytes << '}';
             } else
                 facts << "null";
+            if (usage.serviceRecord || !usage.serviceCalls.empty()) {
+                facts << ",\"service_abi\":{\"record\":";
+                if (usage.serviceRecord) {
+                    facts << "{\"parameters\":[";
+                    bool first = true;
+                    for (const auto &[kind, bytes] : usage.serviceRecord->parameters) {
+                        if (!std::exchange(first, false))
+                            facts << ',';
+                        facts << '[';
+                        writeJsonString(facts, kind);
+                        facts << ',' << bytes << ']';
+                    }
+                    facts << "],\"result_bytes\":" << usage.serviceRecord->resultBytes << '}';
+                } else
+                    facts << "null";
+                facts << ",\"calls\":{";
+                bool first = true;
+                for (const auto &[callee, call] : usage.serviceCalls) {
+                    if (!std::exchange(first, false))
+                        facts << ',';
+                    writeJsonString(facts, callee);
+                    facts << ":{\"sysv_arguments\":" << call.arguments << ",\"result_max\":" << call.resultMax << '}';
+                }
+                facts << "}}";
+            }
             facts << '}';
         }
         facts << "}}\n";
@@ -1474,8 +1527,10 @@ public:
             const bool resourceParameters = !function.parameters.empty() && function.parameters.front().isRegion();
             const bool packedArguments =
                 function.receiver ? classParameters(function) || resourceParameters : aggregate;
-            if (packedArguments)
+            if (packedArguments) {
                 currentStackFacts->copiedRecord = copiedRecordFacts(function);
+                currentStackFacts->serviceRecord = serviceRecordFacts(function);
+            }
             const bool combinedMethod =
                 function.receiver && packedArguments && (function.result.isClass() || function.result.isSpan());
             callRecordSaveOffset = packedArguments ? function.frameBytes + (function.receiver ? 16 : 8) : 0;

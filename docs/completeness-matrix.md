@@ -24,7 +24,11 @@ normal BIOS/UEFI images and real smokes, plus affected admission/fault/recovery/
 restoration gates. See [development and qualification](developer-test-contract.md).
 Validation runs locally with the selected pinned tools; container packaging is
 separate. Meson cleans its owned successful test scratch while retaining failed
-or explicitly kept runs; artifact cleanup does not reduce qualification coverage.
+or explicitly kept runs. Graphical and Event smoke share successful-output
+retention while preserving failures and explicit keeps; cleanup does not reduce
+qualification coverage.
+The Make shortcuts preflight pinned tools and refresh old default build options
+without wiping files; explicitly selected configurations remain user-controlled.
 No CI replacement, physical AMD support, general memory-safety proof or
 measured equivalent-C performance is established.
 

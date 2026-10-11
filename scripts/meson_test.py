@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Thin Make convenience entrypoint; Meson/Ninja owns the incremental native graph."""
+"""Make convenience entrypoint for the incremental Meson graph and kernel outputs."""
 
 import argparse
 import fcntl
@@ -23,12 +23,8 @@ def execute(root, scope, targets=(), output=None):
     env = os.environ.copy()
     selected_compiler = None
     if scope is None:
-        # Kernel selection is also used by independently supervised acceptance
-        # runners. Validate their context before isolating hosted compiler flags.
-        if env.get("AURORA_TEST_CONTEXT"):
-            context = contract.read_context(env["AURORA_TEST_CONTEXT"], root, env.get("AURORAC"))
-            selected_compiler = Path(context["compiler"]["resolved"])
-        elif env.get("AURORAC"):
+        # A supervising caller owns its receipt checks and supplies AURORAC.
+        if env.get("AURORAC"):
             selected_compiler = Path(env["AURORAC"]).resolve(strict=True)
         if selected_compiler:
             contract.require(
@@ -39,14 +35,13 @@ def execute(root, scope, targets=(), output=None):
             # graph likewise uses its exact fixed freestanding options.
             env.pop("CXXFLAGS", None)
     else:
-        controls = argparse.Namespace(goal="test", entry="root", repo_root=root)
-        mode, _, _, _ = contract.prepare_controls(controls, env)
+        contract.prepare_controls(argparse.Namespace(goal="test", entry="root", repo_root=root), env)
         contract.require(
-            mode == "developer" and not env.get("AURORA_TEST_CONTEXT"),
+            not env.get("AURORA_TEST_CONTEXT"),
             "Use test-acceptance for the separately pinned legacy workflow",
         )
     contract.require(
-        not any(env.get(name) for name in (*contract.CAP_CONTROLS, "IR_TEST_CXXFLAGS")),
+        not any(env.get(name) for name in contract.CAP_CONTROLS) and (scope is None or not env.get("IR_TEST_CXXFLAGS")),
         "Canonical Meson uses registered full caps and fixture flags; remove legacy overrides",
     )
     contract.require(
@@ -57,22 +52,35 @@ def execute(root, scope, targets=(), output=None):
         not env.get("CPPFLAGS") and not env.get("LDFLAGS"),
         "Configure nondefault CPPFLAGS/LDFLAGS directly in a separate Meson build",
     )
-    meson = shutil.which("meson")
-    contract.require(
-        meson,
-        "BLOCKED: Meson was not found on PATH; install Meson 1.12.1+ and Ninja, "
-        "then retry (see docs/meson-bootstrap.md)",
-    )
-    meson = str(Path(meson).absolute())
-    cxx = meson_toolchain.selected_tool(contract.parse_cxx(env.get("CXX", "g++")))
-    meson_toolchain.explicit_search()
     kernel_images = scope != "compiler"
+    # Fail before Meson's setup transcript or any build-directory mutation.
+    # Direct Meson setup retains the same independent toolchain gate.
+    try:
+        meson = meson_toolchain.selected_tool("meson")
+        cxx = meson_toolchain.selected_tool(contract.parse_cxx(env.get("CXX", "g++")))
+        meson_toolchain.check([cxx], env.get("UEFI_LD") if kernel_images else None)
+    except (ValueError, OSError, subprocess.SubprocessError) as error:
+        reason = str(error)
+        if not reason.startswith("BLOCKED:"):
+            reason = "BLOCKED: Cannot inspect selected development tools: " + reason
+        raise contract.ContractError(
+            reason + "\nUse ./scripts/container.sh make test for the supported pinned environment; "
+            "see docs/local-development.md."
+        ) from error
     # One normal build and one hosted-only compiler build. Other configurations
     # require an explicit directory; Meson/Ninja owns dependency invalidation.
     supplied = env.get("MESON_BUILD_DIR")
     default = "meson" if kernel_images else "meson-compiler"
-    build = Path(supplied) if supplied else root / "build" / default
-    build = (root / build).resolve() if not build.is_absolute() else build.resolve()
+    build = (root / supplied if supplied else root / "build" / default).resolve()
+    defaults = {
+        "kernel_images": kernel_images,
+        "kernel_compiler": str(selected_compiler or ""),
+        "uefi_ld": env.get("UEFI_LD", ""),
+    }
+    option_args = {
+        name: "-D" + name + "=" + (str(value).lower() if isinstance(value, bool) else value)
+        for name, value in defaults.items()
+    }
     build_jobs = int(env.get("AURORA_BUILD_JOBS", "3"))
     test_jobs = int(env.get("AURORA_TEST_JOBS", "4"))
     contract.require(
@@ -113,15 +121,14 @@ def execute(root, scope, targets=(), output=None):
                 root,
                 "--backend=ninja",
                 "-Dlsp=false",
-                "-Dkernel_images=" + str(kernel_images).lower(),
-                "-Dkernel_compiler=" + str(selected_compiler or ""),
-                *(["-Duefi_ld=" + env["UEFI_LD"]] if env.get("UEFI_LD") else []),
+                *option_args.values(),
                 stdout=output,
             )
         options = {item["name"]: item["value"] for item in introspect("--buildoptions")}
         missing = {"kernel_compiler", "kernel_images", "uefi_ld", "cpp_args"} - options.keys()
+        migrate = not supplied and missing and missing <= {"kernel_compiler", "kernel_images", "uefi_ld"}
         contract.require(
-            not missing,
+            not missing or migrate,
             "Missing Meson build options: " + ", ".join(sorted(missing)) + "; select a fresh matching MESON_BUILD_DIR",
         )
         command = introspect("--compilers")["build"]["cpp"]["exelist"]
@@ -129,33 +136,36 @@ def execute(root, scope, targets=(), output=None):
             len(command) == 1 and meson_toolchain.selected_tool(command[0]) == cxx,
             "Configured compiler differs from CXX; select the matching build directory",
         )
-        contract.require(
-            options["kernel_compiler"] == str(selected_compiler or ""),
-            "Native aggregate tests require their own compiler; use a separate kernel-only build for AURORAC"
-            if scope is not None
-            else "Configured kernel compiler differs from the requested AURORAC/native selection; "
-            "select a fresh matching MESON_BUILD_DIR",
-        )
-        contract.require(
-            scope is not None or options["kernel_images"],
-            "Kernel images disabled: select a build configured with -Dkernel_images=true",
-        )
-        if env.get("UEFI_LD"):
+        expected_options = {**defaults, "cpp_args": shlex.split(env.get("CXXFLAGS", ""))}
+        if scope is not None:
+            expected_options.pop("kernel_images")
+        if not env.get("UEFI_LD"):
+            expected_options.pop("uefi_ld")
+        for name, expected in expected_options.items():
             contract.require(
-                options["uefi_ld"] == env["UEFI_LD"],
-                "Configured UEFI linker differs from UEFI_LD; select the matching build directory",
+                options.get(name, expected) == expected,
+                f"Configured {name} differs from request ({options.get(name)!r} != {expected!r}); "
+                "select a matching MESON_BUILD_DIR",
             )
-        contract.require(
-            options["cpp_args"] == shlex.split(env.get("CXXFLAGS", "")),
-            "Configured cpp_args differ from CXXFLAGS; select matching flags/build directory",
-        )
+        if migrate:
+            # New project options need regeneration, not deletion of the build,
+            # its held lock, retained scratch, or user files. Keep existing options.
+            # Meson must discover new options before accepting their -D values.
+            run("setup", build, root, "--reconfigure", stdout=output)
+            options = {item["name"]: item["value"] for item in introspect("--buildoptions")}
+            changes = [option_args[name] for name in sorted(missing) if options.get(name) != defaults[name]]
+            if changes:
+                run("setup", build, root, "--reconfigure", *changes, stdout=output)
+                options = {item["name"]: item["value"] for item in introspect("--buildoptions")}
+            contract.require(
+                all(options.get(name) == defaults[name] for name in missing),
+                "Meson reconfiguration did not restore requested build options",
+            )
         # Meson's generated aggregate covers declared test dependencies, including
         # non-default fixtures. Build it with our explicit jobs bound before tests.
         build_targets = list(targets) if scope is None else ["--ninja-args=meson-test-prereq"]
         run("compile", "-C", build, "-j", build_jobs, *build_targets, stdout=output)
         if scope is None:
-            if os.environ.get("AURORA_TEST_CONTEXT"):
-                contract.read_context(os.environ["AURORA_TEST_CONTEXT"], root, selected_compiler)
             return build
         run(
             "test",

@@ -67,12 +67,20 @@ host configuration, `EVENT_ESP_DIR` may supply `<mode>.raw` for each fresh loade
 the same complete FAT/allocation/loader validator runs before a SHA-bound private
 copy. Historical pinned mtools behavior and receipts are unchanged.
 
-Evidence is retained on success or failure in a fresh `build/aurora-event-smoke-*`
-directory, whose path is printed before work starts. `EVENT_OUTPUT_PARENT` may
-select another existing directory within `build/` or outside the source tree.
-The default survives a container's temporary filesystem; no prior run is removed.
-Each run reserves
-1 GiB with a 1 GiB free floor; completed evidence is not automatically deleted.
+Each run creates a fresh `build/aurora-event-smoke-*` directory and prints its path
+before work starts. `EVENT_OUTPUT_PARENT` may select another existing directory
+within `build/` or outside the source tree. After all selected checks and normal
+restoration succeed, the shared graphical/Event retention helper drops only known
+raw ESP copies, writable guest VARS and RAM captures. Summaries, oracle results,
+serial/QMP/stderr, build logs and staged images remain. Default retention keeps
+the newest two successful managed runs; `AURORA_EVENT_KEEP_RUNS=N` accepts 1..999,
+or `all` to keep and pin the new run, including its raw files. Use `all` when
+build-only inspection requires the raw ESPs. A `.keep` also pins an individual run.
+Failures and interruptions retain all output. Unmarked historical directories,
+active runs and malformed markers are never adopted for cleanup. Cleanup errors
+warn without changing the completed test result. Each run reserves 1 GiB with a
+1 GiB free floor; the shared policy bounds completed successful output without
+removing failures or explicit keeps.
 Closed q35/TCG argv uses owned regular ESP/VARS copies, private HOME/empty module
 directory, no network, host disks, mounts, VFIO or arbitrary options. Fixed limits
 are 1 MiB each serial/stderr, 64 KiB QMP, 30 seconds per case except overflow's

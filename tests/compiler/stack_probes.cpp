@@ -302,6 +302,9 @@ void stackFactTests() {
     (void)emitter.emit(validate(fixture(0, "scalar")));
     require(emitter.stackFacts().size() == 3 && !emitter.stackFacts().contains("branches"),
             "reused emitter retained stale metadata");
+    require(!emitter.stackFacts().at("probe_scalar").serviceRecord &&
+                emitter.stackFacts().at("probe_scalar").serviceCalls.empty(),
+            "service facts do not leak across emitter reuse");
     require(emitter.stackFactsJson() ==
                 "{\"version\":2,\"functions\":{\"aurora_reflect_field_count\":{\"local_bytes\":8,\"calls\":{},"
                 "\"copied_record\":null},"
@@ -398,6 +401,19 @@ void serviceStackFacts() {
         const auto &facts = emitter.stackFacts();
         require(!facts.at("pixel").copiedRecord && !facts.at("pixel_caller").copiedRecord,
                 "service entries do not advertise copied-record ABI");
+        const auto &record = facts.at("pixel").serviceRecord;
+        require(record &&
+                    record->parameters == std::vector<std::pair<std::string, int>>{{"builtin::DisplaySession", 16}} &&
+                    record->resultBytes == 8 && facts.at("pixel_caller").serviceRecord &&
+                    facts.at("pixel_caller").serviceCalls.empty(),
+                "service record is distinct from copied ABI");
+        const auto &call = facts.at("pixel").serviceCalls.at("__au_runtime_display_pixel");
+        require(facts.at("pixel").serviceCalls.size() == 1 && call.arguments == 7 && call.resultMax == 1,
+                "scalar service ABI follows actual pixel argument/completion lowering");
+        require(emitter.stackFactsJson().find("\"service_abi\":{\"record\":{\"parameters\":[[\"builtin::"
+                                              "DisplaySession\",16]],\"result_bytes\":8},\"calls\":{") !=
+                    std::string::npos,
+                "deterministic service ABI metadata");
         require(facts.at("pixel").localBytes == (odd ? 128 : 120) &&
                     facts.at("pixel").calls == std::map<std::string, int>{{"__au_runtime_display_pixel", 96}},
                 "pixel facts omit operand pushes or seventh host argument/alignment");
@@ -410,6 +426,41 @@ void serviceStackFacts() {
                 "seventh argument assembly changed");
         ++passed;
     }
+}
+void pairedServiceRecordFacts() {
+    Module module;
+    auto entry = scalar(64);
+    entry.name = "paired";
+    entry.parameters = {Type::ConsoleSession, Type::DisplaySession, Type::U64, Type::U64};
+    entry.serviceSlots = {16, 32};
+    entry.slots = {{40, Type::U64}, {48, Type::U64}};
+    entry.code = {BindServiceParameter{0, 16, service::Kind::Console},
+                  BindServiceParameter{1, 32, service::Kind::Display},
+                  BindParameter{2, 40, Type::U64},
+                  BindParameter{3, 48, Type::U64},
+                  Constant{42, Type::I64},
+                  Return{}};
+    module.functions.push_back(entry);
+    X86Emitter emitter;
+    const auto assembly = emitter.emit(validate(module));
+    const auto &record = emitter.stackFacts().at("paired").serviceRecord;
+    require(record &&
+                record->parameters == std::vector<std::pair<std::string, int>>{{"builtin::ConsoleSession", 16},
+                                                                               {"builtin::DisplaySession", 16},
+                                                                               {"scalar", 8},
+                                                                               {"scalar", 8}} &&
+                record->resultBytes == 8,
+            "paired service record order and scalar widths");
+    require(assembly.find("movq 32(%r11), %rax") != std::string::npos &&
+                assembly.find("movq 40(%r11), %rax") != std::string::npos,
+            "paired scalar arguments follow both complete grants");
+    module.functions[0].parameters[0] = Type::DisplaySession;
+    try {
+        (void)validate(module);
+        throw std::runtime_error("wrong service role escaped validation");
+    } catch (const Error &) {
+    }
+    ++passed;
 }
 void resourceStackFacts() {
     Module module;
@@ -473,6 +524,7 @@ int main(int argc, char **argv) {
         stackFactTests();
         copiedRecordFacts();
         serviceStackFacts();
+        pairedServiceRecordFacts();
         resourceStackFacts();
         std::cout << passed << " stack-probe IR/assembly cases passed\n";
         return 0;

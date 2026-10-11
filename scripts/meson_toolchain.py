@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the selected development tools once at Meson setup, without byte receipts."""
+"""Check selected development tools without build artifacts or byte receipts."""
 
 import argparse
 import os
@@ -46,11 +46,10 @@ def check(cxx, pe_linker=None):
     if pe_linker:
         commands.append(([selected_tool(pe_linker)], "--version", "2.47"))
     for command, flag, expected in commands:
-        lines = subprocess.check_output([*command, flag], text=True, timeout=10).splitlines()
+        lines = subprocess.check_output([*command, flag], text=True, stderr=subprocess.STDOUT, timeout=10).splitlines()
         version = lines[0] if lines else ""
         if not version or version.split()[-1] != expected:
             raise ValueError("BLOCKED: " + shlex.join(command) + ": require " + expected + ", got " + version)
-        print(shlex.join(command) + ": " + version)
 
 
 def main():
