@@ -50,7 +50,8 @@ export namespace compiler_parser {
         body_block,
         body_if_then,
         body_if_else,
-        body_while
+        body_while,
+        enum_case
     };
 
     class ParseFrame {
@@ -237,7 +238,11 @@ export namespace compiler_parser {
         function,
         method,
         constructor,
-        field
+        field,
+        preamble,
+        import_name,
+        enum_definition,
+        enum_case
     };
     // One tagged syntax forest owns statements and complete declarations.
     // Every child/list link points backward. Statement variants use expression,
@@ -246,8 +251,11 @@ export namespace compiler_parser {
     // after the binding. Initializers use token/expression. Callable nodes use
     // token=name, type=result, other=parameters, body=block (or constructor
     // initializer list), and receiver-const qualifier. Field nodes use token=type
-    // start, type/binding, and end after the semicolon. Unused fields stay -1.
-    // The qualifier is mutable for locals and const for parameters/methods.
+    // start, type/binding, and end after the semicolon. Preambles use token/binding
+    // for the module name interval, body for imports and the interface qualifier.
+    // Enums use token=name and body=cases. Import/case lists use token/end/previous.
+    // Unused fields stay -1. The qualifier is mutable for locals, const for
+    // parameters/methods and interface for preambles.
     class SyntaxNode {
         SyntaxKind tag;
         i64 token_index;

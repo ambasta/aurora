@@ -21,7 +21,7 @@ public:
 namespace aurora {
 // The source lifetime and captured context offsets are bounded before the private ABI.
 // Position commits only after bounded, uniquely owned AST/type conversion.
-// Aurora owns expression/body/type/callable/field grammar; the adapter checks representation safety.
+// Aurora owns expression/body/type/declaration and preamble grammar; the adapter checks representation safety.
 // Unsupported is an invalid result; no entry has a host grammar fallback.
 ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens,
                                     std::size_t &position,
@@ -70,4 +70,16 @@ ParsedField parseHostedField(const std::vector<Token> &tokens,
                              hosted_parser::Cursor cursor,
                              const hosted_parser::Context &context = {});
 void admitHostedField(const ParsedField &parsed, bool publicAccess, bool templated);
+class ParsedPreamble {
+public:
+    Program program;
+    hosted_parser::Cursor next;
+};
+ParsedPreamble parseHostedPreamble(const std::vector<Token> &tokens, hosted_parser::Cursor cursor);
+class ParsedEnum {
+public:
+    EnumDefinition definition;
+    hosted_parser::Cursor next;
+};
+ParsedEnum parseHostedEnum(const std::vector<Token> &tokens, hosted_parser::Cursor cursor, std::size_t enumCount);
 } // namespace aurora

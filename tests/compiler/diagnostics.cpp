@@ -64,9 +64,13 @@ void checkParserRanges() {
     const auto call = expression.statementExpression(aurora::hosted_parser::Stop::semicolon);
     require(call->token.text == "one::two" && call->token.span.begin.offset == 0 && call->token.span.end.offset == 10,
             "qualified expression name range");
-    aurora::Parser module(aurora::lex("std . bytes"));
-    const auto dotted = module.moduleIdent();
-    require(dotted.text == "std.bytes" && dotted.span.end.offset == 11, "module name range");
+    const std::string modulePrefix = "module sample;import ";
+    const auto moduleTokens = aurora::lex(modulePrefix + "std . bytes;");
+    const auto preamble = aurora::parseHostedPreamble(moduleTokens, {});
+    const auto &dotted = preamble.program.imports.at(0);
+    require(dotted.text == "std.bytes" && dotted.span.begin.offset == modulePrefix.size() &&
+                dotted.span.end.offset == modulePrefix.size() + 11,
+            "module name range");
     try {
         aurora::Parser(aurora::lex("module sample", "missing.au")).parse();
         require(false, "expected parser rejection");

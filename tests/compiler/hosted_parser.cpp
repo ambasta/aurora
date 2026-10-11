@@ -19,6 +19,7 @@
 #include <map>
 #include <optional>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <sys/resource.h>
@@ -1091,6 +1092,7 @@ void expectedBootstrapRoots(const std::vector<aurora::Function> &functions,
 void bootstrapBodies(const std::vector<aurora::Token> &, const aurora::Program &, std::size_t);
 std::size_t wholeCallables = 0, wholeFields = 0;
 void bootstrapDeclarationTypes(const std::vector<aurora::Token> &, const aurora::Program &, std::size_t);
+void bootstrapPreambleEnums(const std::vector<aurora::Token> &, const aurora::Program &, std::size_t);
 void bootstrapSources(char **paths) {
     std::size_t initializers = 0, strings = 0, newInitializers = 0;
     std::size_t expectedInitializers = 0, expectedStrings = 0;
@@ -1107,6 +1109,7 @@ void bootstrapSources(char **paths) {
         require(program.moduleName == modules[i], "unexpected bootstrap source module/order");
         bootstrapBodies(tokens, program, i);
         bootstrapDeclarationTypes(tokens, program, i);
+        bootstrapPreambleEnums(tokens, program, i);
         expectedBootstrapRoots(program.functions, expectedInitializers, expectedStrings);
         expectedBootstrapRoots(program.functionTemplates, expectedInitializers, expectedStrings);
         for (const auto &definition : program.classes)
@@ -2683,6 +2686,232 @@ void bootstrapDeclarationTypes(const std::vector<aurora::Token> &tokens,
             "checked-in compiler declaration-type inventory lost historical or new source entries");
 }
 
+// Preamble and enum expectations are independent ordered names and token ranges.
+void sameEnum(const aurora::EnumDefinition &definition,
+              const std::vector<aurora::Token> &tokens,
+              std::size_t start,
+              const std::vector<std::string> &names) {
+    require(definition.name == tokens.at(start + 2).text && definition.cases.size() == names.size(),
+            "enum name or ordered case count differs");
+    sameToken(definition.token, tokens.at(start + 2));
+    for (std::size_t index = 0; index < names.size(); ++index) {
+        require(definition.cases[index].text == names[index], "enum case spelling/order differs");
+        sameToken(definition.cases[index], tokens.at(start + 4 + 2 * index));
+    }
+}
+void bootstrapPreambleEnums(const std::vector<aurora::Token> &tokens,
+                            const aurora::Program &program,
+                            std::size_t module) {
+    struct ExpectedEnum {
+        const char *name;
+        bool exported;
+        const char *cases;
+    };
+    // Explicit source inventory: all 154 predecessor cases plus the 16 new
+    // preamble/enum wire cases. No production AST supplies these expectations.
+    static const std::array<std::vector<ExpectedEnum>, 3> expected{{
+        {
+            {"Event",
+             true,
+             "token whitespace line_comment end_of_input unsupported_character invalid_byte invalid_string "
+             "invalid_cursor"},
+        },
+        {
+            {"NodeKind",
+             true,
+             "invalid literal name unary binary call member method_call index array_literal construct array_zero"},
+            {"ArenaFailure", true, "none allocation depth invalid"},
+            {"FrameState",
+             true,
+             "expression_start expression_left expression_right primary_start primary_group primary_unary "
+             "primary_postfix call_arguments method_arguments index_expression array_arguments construct_field "
+             "construct_arguments constructor_arguments template_opening template_candidate type_start "
+             "type_arguments type_argument_first type_argument_second type_array_element type_owned_element "
+             "body_block body_if_then body_if_else body_while enum_case"},
+            {"TypeKind",
+             true,
+             "invalid i64_type u64_type u8_type bool_type named parameter capacity length_parameter array_type "
+             "own_type ref_type mutref_type byte_span builtin_type owned_values builtin_class"},
+            {"SyntaxKind",
+             true,
+             "invalid block local return_value static_assertion conditional loop expression assign field_assign "
+             "index_assign parameter initializer function method constructor field preamble import_name "
+             "enum_definition enum_case"},
+        },
+        {
+            {"ParseStatus",
+             true,
+             "success unsupported expected_expression expected_close expected_end nesting_limit depth_limit "
+             "allocation_failure expected_index_close expected_identifier reserved_identifier reserved_builtin "
+             "reserved_prefix expected_brace_close expected_dot expected_equal expected_brace_open "
+             "expected_angle_open expected_angle_close expected_scope expected_comma expected_const expected_u8 "
+             "expected_i64 expected_array reserved_type expected_type type_nesting_limit template_nesting_limit "
+             "call_template_nesting_limit template_context template_arity template_argument capacity_argument "
+             "nested_dependent owned_element array_element array_length class_array_length expected_open "
+             "expected_semicolon unterminated_block block_nesting_limit assignment_target expected_auto "
+             "expected_arrow expected_module expected_enum expected_class module_name_limit module_enum_limit "
+             "empty_enum enum_case_limit duplicate_enum_case explicit_enum_value invalid"},
+            {"Stop",
+             true,
+             "semicolon close_parenthesis assignment constructor_braces body type function method constructor "
+             "field preamble enum_definition"},
+            {"TypeWord",
+             false,
+             "invalid i64_type u64_type u8_type bool_type array_type builtin_type span_type owned_values own_type "
+             "ref_type mutref_type const_type"},
+        },
+    }};
+    const std::array<std::string, 3> modules{
+        "aurora.compiler.lexer", "aurora.compiler.syntax_arena", "aurora.compiler.parser"};
+    const auto before = tokens;
+    const auto preamble = aurora::parseHostedPreamble(tokens, {});
+    const std::size_t imports = module == 2 ? 2 : 0, next = module == 2 ? 22 : 8;
+    require(preamble.program.moduleName == modules.at(module) && preamble.program.interfaceUnit &&
+                preamble.program.imports.size() == imports && program.imports.size() == imports &&
+                preamble.next.ordinal == next && preamble.next.half == 0,
+            "actual compiler preamble or ordered imports differ");
+    for (std::size_t index = 0; index < imports; ++index) {
+        auto expectedImport = tokens.at(9 + 7 * index);
+        expectedImport.text = modules[index];
+        expectedImport.span.end = tokens.at(13 + 7 * index).span.end;
+        sameToken(preamble.program.imports[index], expectedImport);
+        sameToken(program.imports[index], expectedImport);
+    }
+    std::vector<std::size_t> starts;
+    for (std::size_t index = 0; index + 1 < tokens.size(); ++index)
+        if (tokens[index].text == "enum" && tokens[index + 1].text == "class")
+            starts.push_back(index);
+    require(starts.size() == expected.at(module).size() && program.enums.size() == starts.size(),
+            "actual compiler enum source inventory omitted or duplicated a declaration");
+    std::size_t caseCount = 0;
+    for (std::size_t index = 0; index < starts.size(); ++index) {
+        const auto &fixture = expected[module][index];
+        std::istringstream words(fixture.cases);
+        std::vector<std::string> names;
+        for (std::string name; words >> name;)
+            names.push_back(std::move(name));
+        // These nine source declarations have no trailing comma.
+        const auto start = starts[index], end = start + 2 * names.size() + 5;
+        const auto direct = aurora::parseHostedEnum(tokens, Cursor{start}, index);
+        require(direct.definition.name == fixture.name && direct.definition.scope.empty() &&
+                    !direct.definition.exported && direct.definition.id == 0 && direct.next.ordinal == end &&
+                    direct.next.half == 0 && tokens.at(end - 1).text == ";" && tokens.at(end - 2).text == "}" &&
+                    program.enums[index].name == fixture.name && program.enums[index].exported == fixture.exported &&
+                    program.enums[index].scope == (module == 0 ? "compiler_lexer" : "compiler_parser"),
+                "actual compiler enum name/scope/export or exact cursor differs");
+        sameEnum(direct.definition, tokens, start, names);
+        sameEnum(program.enums[index], tokens, start, names);
+        caseCount += names.size();
+        ++cases;
+    }
+    const std::array<std::size_t, 3> counts{8, 81, 81};
+    require(caseCount == counts.at(module), "actual compiler enum case inventory differs");
+    unchangedTokens(tokens, before);
+    ++cases;
+}
+
+void preambleEnumSyntax() {
+    struct Preamble {
+        std::string source, module;
+        bool interface;
+        std::vector<std::pair<std::size_t, std::size_t>> imports;
+        std::size_t next;
+    };
+    for (const auto &test : std::vector<Preamble>{
+             {"module one;enum", "one", false, {}, 3},
+             {"export module one.two;import std.array;import alpha.beta;enum", "one.two", true, {{7, 9}, {12, 14}}, 16},
+             {"module a.array;import a.array;", "a.array", false, {{6, 8}}, 10},
+             {"module one;import one;import one;", "one", false, {{4, 4}, {7, 7}}, 9},
+             {"export module a // gap\n . b; // next\n import c . array;class", "a.b", true, {{7, 9}}, 11}}) {
+        for (const std::size_t base : {0U, 2U}) {
+            context = "preamble boundary " + test.source;
+            const auto tokens = aurora::lex((base ? "prefix;" : "") + test.source, "preamble.au"), before = tokens;
+            const Cursor cursor{base};
+            const auto parsed = aurora::parseHostedPreamble(tokens, cursor);
+            const auto &program = parsed.program;
+            require(program.moduleName == test.module && program.interfaceUnit == test.interface &&
+                        program.imports.size() == test.imports.size() && program.enums.empty() &&
+                        program.functions.empty() && program.functionTemplates.empty() && program.classes.empty() &&
+                        program.templates.empty() && program.namespaces.empty() && program.reflectionAccess.empty() &&
+                        parsed.next.ordinal == base + test.next && parsed.next.half == 0 && cursor.ordinal == base &&
+                        cursor.half == 0,
+                    "preamble acquired declarations or lost its exact boundary");
+            for (std::size_t index = 0; index < test.imports.size(); ++index) {
+                const auto [first, last] = test.imports[index];
+                auto expected = tokens.at(base + first);
+                for (auto ordinal = first + 1; ordinal <= last; ++ordinal)
+                    expected.text += tokens.at(base + ordinal).text;
+                expected.span.end = tokens.at(base + last).span.end;
+                sameToken(program.imports[index], expected);
+            }
+            unchangedTokens(tokens, before);
+            ++cases;
+        }
+    }
+    for (const std::size_t size : {4096U, 4097U}) {
+        const std::string name(size - 2, 'a');
+        const auto tokens = aurora::lex("module " + (size == 4096 ? name + " // gap\n . // gap\n b" : "short") +
+                                            ";import " + name + " // gap\n . b;",
+                                        "module-limits.au");
+        const auto before = tokens;
+        const auto parsed = aurora::parseHostedPreamble(tokens, {});
+        require(parsed.program.moduleName.size() == (size == 4096 ? size : 5) &&
+                    parsed.program.imports.at(0).text.size() == size && parsed.next.ordinal == tokens.size() - 1 &&
+                    parsed.next.half == 0,
+                "module-name cap incorrectly counted trivia or limited import names");
+        unchangedTokens(tokens, before);
+        ++cases;
+    }
+    struct Enum {
+        const char *source;
+        std::vector<std::string> names;
+        std::size_t next, count;
+    };
+    for (const auto &test :
+         std::vector<Enum>{{"enum class Solo{first};next", {"first"}, 7, 0},
+                           {"enum class Shade{red,green,blue,};next", {"red", "green", "blue"}, 12, 63},
+                           {"enum class Case{_zero,Same,same};next", {"_zero", "Same", "same"}, 11, 0}}) {
+        for (const std::size_t base : {0U, 2U}) {
+            context = "enum boundary " + std::string(test.source);
+            const auto tokens = aurora::lex((base ? "prefix;" : "") + std::string(test.source), "enum.au"),
+                       before = tokens;
+            const Cursor cursor{base};
+            const auto parsed = aurora::parseHostedEnum(tokens, cursor, test.count);
+            sameEnum(parsed.definition, tokens, base, test.names);
+            require(parsed.next.ordinal == base + test.next && parsed.next.half == 0 &&
+                        parsed.definition.scope.empty() && !parsed.definition.exported && parsed.definition.id == 0 &&
+                        cursor.ordinal == base && cursor.half == 0,
+                    "enum acquired declaration-context authority or lost cursor boundary");
+            unchangedTokens(tokens, before);
+            ++cases;
+        }
+    }
+    context = "enum scope/export and module-count dispatch";
+    const auto tokens =
+        aurora::lex("export module enums;namespace inner{export enum class E{a,b,};}enum class F{c};", "enum-scope.au");
+    const auto program = checkedProgram(tokens);
+    require(program.enums.size() == 2 && program.enums[0].scope == "inner" && program.enums[0].exported &&
+                program.enums[1].scope.empty() && !program.enums[1].exported,
+            "enum dispatch lost namespace/export state");
+    sameEnum(program.enums[0], tokens, 8, {"a", "b"});
+    sameEnum(program.enums[1], tokens, 19, {"c"});
+    std::string source = "export module limit;";
+    for (std::size_t index = 0; index < 64; ++index)
+        source += "enum class E" + std::to_string(index) + "{one};";
+    require(checkedProgram(aurora::lex(source, "enum-count.au")).enums.size() == 64,
+            "64 enum definitions were rejected");
+    rejectedProgram(source, "enum class Last{one};", "", {"module exceeds 64 enum definitions", 3});
+    rejectedProgram(source, "enum class 0{};", "", {"expected identifier", 2});
+    rejectedProgram(source, "enum class true{};", "", {"reserved identifier", 2});
+    rejectedProgram(source, "enum class Last", "", {"module exceeds 64 enum definitions", 3});
+}
+std::string enumSource(std::size_t width) {
+    std::string source = "enum class Wide{";
+    for (std::size_t index = 0; index < width; ++index)
+        source += (index ? "," : "") + std::string("case_") + std::to_string(index);
+    return source + "};";
+}
+
 class Allocations {
 public:
     std::size_t allowed = std::numeric_limits<std::size_t>::max(), successful = 0, released = 0;
@@ -2714,16 +2943,16 @@ public:
 };
 static_assert(sizeof(Words) == 48 && sizeof(GuardedWords<6>) == 64 && sizeof(GuardedWords<5>) == 56 &&
               sizeof(GuardedWords<7>) == 72 && sizeof(EdgeWords) == 40 && sizeof(TypeWords) == 64 &&
-              sizeof(GuardedWords<8>) == 80 && sizeof(ContextWords) == 56 && sizeof(GuardedWords<18>) == 160 &&
+              sizeof(GuardedWords<8>) == 80 && sizeof(ContextWords) == 56 && sizeof(GuardedWords<19>) == 168 &&
               sizeof(SyntaxWords) == 96 && sizeof(GuardedWords<12>) == 112);
 static_assert(sizeof(Words) == sizeof(aurora::hosted_abi::compiler_parser::ParseResult) &&
               sizeof(NodeWords) == sizeof(aurora::hosted_abi::compiler_parser::AstNode) &&
               sizeof(EdgeWords) == sizeof(aurora::hosted_abi::compiler_parser::ChildEdge) &&
               sizeof(TypeWords) == sizeof(aurora::hosted_abi::compiler_parser::TypeSyntax) &&
               sizeof(SyntaxWords) == sizeof(aurora::hosted_abi::compiler_parser::SyntaxNode) &&
-              sizeof(std::array<std::int64_t, 18>) == sizeof(aurora::hosted_abi::ParserInput));
-static_assert(sizeof(ContextWords) ==
-              sizeof(aurora::hosted_abi::ParserInput) - offsetof(aurora::hosted_abi::ParserInput, context));
+              sizeof(std::array<std::int64_t, 19>) == sizeof(aurora::hosted_abi::ParserInput));
+static_assert(sizeof(ContextWords) == offsetof(aurora::hosted_abi::ParserInput, enum_count) -
+                                          offsetof(aurora::hosted_abi::ParserInput, context));
 class RawArena {
     aurora::hosted::bytes::Region region;
     // This storage is never copied or inspected as an owner descriptor. Aurora
@@ -2758,8 +2987,9 @@ public:
     Words parse(const std::string &source,
                 Stop stop = Stop::semicolon,
                 std::int64_t offset = 0,
-                ContextWords typeContext = {}) {
-        GuardedWords<18> input;
+                ContextWords typeContext = {},
+                std::int64_t enumCount = 0) {
+        GuardedWords<19> input;
         input.value = {0,
                        static_cast<std::int64_t>(reinterpret_cast<std::uintptr_t>(source.data())),
                        0,
@@ -2771,14 +3001,17 @@ public:
                        1,
                        0,
                        static_cast<std::int64_t>(stop)};
-        static_assert(sizeof(input.value) == 144);
+        static_assert(sizeof(input.value) == 152);
+        input.value[18] = enumCount;
+        const auto beforeSource = source;
         for (std::size_t index = 0; index < typeContext.size(); ++index)
             input.value[11 + index] = typeContext[index];
         const auto beforeInput = input.value;
         GuardedWords<6> output;
         checked_hosted_parser_parse(data(), input.value.data(), output.value.data());
         input.check();
-        require(input.value == beforeInput, "parse changed its copied input/context record");
+        require(input.value == beforeInput && source == beforeSource,
+                "parse changed its copied input/source/context record");
         output.check();
         guards();
         require(output.value[2] == checked_hosted_parser_count(data()),
@@ -2844,6 +3077,176 @@ public:
         require(region.close(), "empty parser region did not close");
     }
 };
+void preambleEnumDiagnostics() {
+    struct Rejection {
+        std::string source;
+        Stop stop;
+        Status status;
+        ExpectedError error;
+        std::size_t count = 0;
+    };
+    for (const auto &test : std::vector<Rejection>{
+             {"", Stop::preamble, Status::expected_module, {"expected 'module'", 0}},
+             {"export", Stop::preamble, Status::expected_module, {"expected 'module'", 1}},
+             {"module", Stop::preamble, Status::expected_identifier, {"expected identifier", 1}},
+             {"module 0;", Stop::preamble, Status::expected_identifier, {"expected identifier", 1}},
+             {"module true;", Stop::preamble, Status::reserved_identifier, {"reserved identifier", 1}},
+             {"module array;", Stop::preamble, Status::reserved_builtin, {"reserved builtin storage name", 1}},
+             {"module __au_private;",
+              Stop::preamble,
+              Status::reserved_prefix,
+              {"reserved compiler identifier prefix: __au_", 1}},
+             {"module a.;", Stop::preamble, Status::expected_identifier, {"expected identifier", 3}},
+             {"module a.true;", Stop::preamble, Status::reserved_identifier, {"reserved identifier", 3}},
+             {"module a.builtin;", Stop::preamble, Status::reserved_builtin, {"reserved builtin storage name", 3}},
+             {"module a.__au_private;",
+              Stop::preamble,
+              Status::reserved_prefix,
+              {"reserved compiler identifier prefix: __au_", 3}},
+             {"module a::b;", Stop::preamble, Status::expected_semicolon, {"expected ';'", 2}},
+             {"module a", Stop::preamble, Status::expected_semicolon, {"expected ';'", 2}},
+             {"module a;import", Stop::preamble, Status::expected_identifier, {"expected identifier", 4}},
+             {"module a;import array;", Stop::preamble, Status::reserved_builtin, {"reserved builtin storage name", 4}},
+             {"module a;import a.true;", Stop::preamble, Status::reserved_identifier, {"reserved identifier", 6}},
+             {"module a;import a.builtin;",
+              Stop::preamble,
+              Status::reserved_builtin,
+              {"reserved builtin storage name", 6}},
+             {"module a;import a.", Stop::preamble, Status::expected_identifier, {"expected identifier", 6}},
+             {"module a;import a", Stop::preamble, Status::expected_semicolon, {"expected ';'", 5}},
+             {"module " + std::string(4095, 'a') + " // gap\n . b;",
+              Stop::preamble,
+              Status::module_name_limit,
+              {"module name exceeds 4096 bytes", 4}},
+             {"module " + std::string(4097, 'a') + ".true;",
+              Stop::preamble,
+              Status::reserved_identifier,
+              {"reserved identifier", 3}},
+             {"module " + std::string(4097, 'a') + ".;",
+              Stop::preamble,
+              Status::expected_identifier,
+              {"expected identifier", 3}},
+             {"module " + std::string(4097, 'a') + " missing",
+              Stop::preamble,
+              Status::module_name_limit,
+              {"module name exceeds 4096 bytes", 2}},
+             {"class E{a};", Stop::enum_definition, Status::expected_enum, {"expected 'enum'", 0}},
+             {"enum E{a};", Stop::enum_definition, Status::expected_class, {"expected 'class'", 1}},
+             {"enum class", Stop::enum_definition, Status::expected_identifier, {"expected identifier", 2}},
+             {"enum class true{a};", Stop::enum_definition, Status::reserved_identifier, {"reserved identifier", 2}},
+             {"enum class array{a};",
+              Stop::enum_definition,
+              Status::reserved_builtin,
+              {"reserved builtin storage name", 2}},
+             {"enum class __au_E{a};",
+              Stop::enum_definition,
+              Status::reserved_prefix,
+              {"reserved compiler identifier prefix: __au_", 2}},
+             {"enum class E", Stop::enum_definition, Status::expected_brace_open, {"expected '{'", 3}},
+             {"enum class E{};",
+              Stop::enum_definition,
+              Status::empty_enum,
+              {"enum class requires at least one named case", 4}},
+             {"enum class E{", Stop::enum_definition, Status::expected_identifier, {"expected identifier", 4}},
+             {"enum class E{0};", Stop::enum_definition, Status::expected_identifier, {"expected identifier", 4}},
+             {"enum class E{true};", Stop::enum_definition, Status::reserved_identifier, {"reserved identifier", 4}},
+             {"enum class E{array};",
+              Stop::enum_definition,
+              Status::reserved_builtin,
+              {"reserved builtin storage name", 4}},
+             {"enum class E{__au_case};",
+              Stop::enum_definition,
+              Status::reserved_prefix,
+              {"reserved compiler identifier prefix: __au_", 4}},
+             {"enum class E{a,a};", Stop::enum_definition, Status::duplicate_enum_case, {"duplicate enum case: a", 7}},
+             {"enum class E{a,a=1};",
+              Stop::enum_definition,
+              Status::duplicate_enum_case,
+              {"duplicate enum case: a", 7}},
+             {"enum class E{ab,a,ab};",
+              Stop::enum_definition,
+              Status::duplicate_enum_case,
+              {"duplicate enum case: ab", 9}},
+             {"enum class E{a=1};",
+              Stop::enum_definition,
+              Status::explicit_enum_value,
+              {"enum cases cannot have explicit values", 5}},
+             {"enum class E{a", Stop::enum_definition, Status::expected_brace_close, {"expected '}'", 5}},
+             {"enum class E{a b};", Stop::enum_definition, Status::expected_brace_close, {"expected '}'", 5}},
+             {"enum class E{a,,};", Stop::enum_definition, Status::expected_identifier, {"expected identifier", 6}},
+             {"enum class E{a,", Stop::enum_definition, Status::expected_identifier, {"expected identifier", 6}},
+             {"enum class E{a}", Stop::enum_definition, Status::expected_semicolon, {"expected ';'", 6}},
+             {"enum class 0{};", Stop::enum_definition, Status::expected_identifier, {"expected identifier", 2}, 64},
+             {"enum class true{};", Stop::enum_definition, Status::reserved_identifier, {"reserved identifier", 2}, 64},
+             {"enum E{};", Stop::enum_definition, Status::expected_class, {"expected 'class'", 1}, 64},
+             {"enum class E",
+              Stop::enum_definition,
+              Status::module_enum_limit,
+              {"module exceeds 64 enum definitions", 3},
+              64},
+             {"enum class E{};",
+              Stop::enum_definition,
+              Status::module_enum_limit,
+              {"module exceeds 64 enum definitions", 3},
+              64},
+             {enumSource(255).substr(0, enumSource(255).size() - 2) + ",case_0};",
+              Stop::enum_definition,
+              Status::duplicate_enum_case,
+              {"duplicate enum case: case_0", 515}},
+             {enumSource(257),
+              Stop::enum_definition,
+              Status::enum_case_limit,
+              {"enum class exceeds 256 named cases", 516}},
+             {enumSource(256).substr(0, enumSource(256).size() - 2) + ",true};",
+              Stop::enum_definition,
+              Status::enum_case_limit,
+              {"enum class exceeds 256 named cases", 516}}}) {
+        context = "preamble/enum diagnostic " + test.source.substr(0, 100);
+        const auto tokens = aurora::lex(test.source, "preamble-enum-error.au"), before = tokens;
+        const Cursor cursor{};
+        expectError(tokens, test.error, [&] {
+            if (test.stop == Stop::preamble)
+                static_cast<void>(aurora::parseHostedPreamble(tokens, cursor));
+            else
+                static_cast<void>(aurora::parseHostedEnum(tokens, cursor, test.count));
+        });
+        require(cursor.ordinal == 0 && cursor.half == 0, "failed preamble/enum changed caller cursor");
+        unchangedTokens(tokens, before);
+        Allocations allocations;
+        RawArena arena(allocations);
+        const auto result = arena.parse(test.source, test.stop, 0, {}, test.count);
+        require(result == Words{wire(test.status),
+                                -1,
+                                0,
+                                static_cast<std::int64_t>(test.error.token),
+                                static_cast<std::int64_t>(tokens.at(test.error.token).span.begin.offset),
+                                0} &&
+                    arena.types() == 0 && arena.edges() == 0,
+                "raw preamble/enum first diagnostic or foreign record count differs");
+        arena.finish();
+        require(allocations.successful == allocations.released, "failed preamble/enum leaked an owner");
+        ++cases;
+        if (test.count == 0 && test.error.message != "expected 'enum'")
+            rejectedProgram(test.stop == Stop::preamble ? "" : "export module errors;", test.source, "", test.error);
+    }
+    context = "256 named cases and trailing comma";
+    for (const bool trailing : {false, true}) {
+        auto source = enumSource(256);
+        if (trailing)
+            source.insert(source.size() - 2, ",");
+        const auto tokens = aurora::lex(source, "enum-wide.au"), before = tokens;
+        std::vector<std::string> names;
+        for (std::size_t index = 0; index < 256; ++index)
+            names.push_back("case_" + std::to_string(index));
+        const auto parsed = aurora::parseHostedEnum(tokens, {}, 63);
+        sameEnum(parsed.definition, tokens, 0, names);
+        require(parsed.next.ordinal == 517U + trailing && parsed.next.half == 0,
+                "256-case enum lost its exact closing semicolon");
+        unchangedTokens(tokens, before);
+        ++cases;
+    }
+}
+
 void rawBodies() {
     static_assert(sizeof(SyntaxWords) == 96 && static_cast<std::int64_t>(Stop::body) == 4);
     static_assert(wire(SyntaxKind::block) == 1 && wire(SyntaxKind::local) == 2 && wire(SyntaxKind::return_value) == 3 &&
@@ -2933,6 +3336,10 @@ void rawDeclarations() {
     static_assert(wire(SyntaxKind::parameter) == 11 && wire(SyntaxKind::initializer) == 12 &&
                   wire(SyntaxKind::function) == 13 && wire(SyntaxKind::method) == 14 &&
                   wire(SyntaxKind::constructor) == 15);
+    static_assert(static_cast<std::int64_t>(Stop::preamble) == 10 &&
+                  static_cast<std::int64_t>(Stop::enum_definition) == 11 && wire(SyntaxKind::preamble) == 17 &&
+                  wire(SyntaxKind::import_name) == 18 && wire(SyntaxKind::enum_definition) == 19 &&
+                  wire(SyntaxKind::enum_case) == 20);
     struct Fixture {
         const char *source;
         Stop stop;
@@ -2951,6 +3358,21 @@ void rawDeclarations() {
                {1, 0, 10, -1, -1, -1, -1, -1, 1, -1, 0, -1}},
               {{1, 1, 1, 2, -1, -1, 1, 3}},
               {{1, 4, -1, -1, 1, 4, 4}, {2, 7, -1, -1, 1, 7, 7}}},
+             {"module one;next", Stop::preamble, {{17, 1, 3, -1, -1, -1, -1, 1, -1, -1, 0, -1}}},
+             {"export module one.two;import std.array;import alpha.beta;next",
+              Stop::preamble,
+              {{18, 7, 10, -1, -1, -1, -1, -1, -1, -1, 0, -1},
+               {18, 12, 15, 0, -1, -1, -1, -1, -1, -1, 0, -1},
+               {17, 2, 16, -1, -1, -1, -1, 4, 1, -1, 1, -1}}},
+             {"enum class Solo{first};next",
+              Stop::enum_definition,
+              {{20, 4, 5, -1, -1, -1, -1, -1, -1, -1, 0, -1}, {19, 2, 7, -1, -1, -1, -1, -1, 0, -1, 0, -1}}},
+             {"enum class Shade{red,green,blue,};next",
+              Stop::enum_definition,
+              {{20, 4, 5, -1, -1, -1, -1, -1, -1, -1, 0, -1},
+               {20, 6, 7, 0, -1, -1, -1, -1, -1, -1, 0, -1},
+               {20, 8, 9, 1, -1, -1, -1, -1, -1, -1, 0, -1},
+               {19, 2, 12, -1, -1, -1, -1, -1, 2, -1, 0, -1}}},
              {"i64 value;next",
               Stop::field,
               {{16, 0, 3, -1, -1, -1, 0, 1, -1, -1, 0, -1}},
@@ -3060,6 +3482,89 @@ void rawDeclarations() {
         ++cases;
     }
 }
+void rawPreambleEnums() {
+    context = "explicit enum-count ABI isolation";
+    for (std::int64_t stop = 0; stop <= static_cast<std::int64_t>(Stop::enum_definition); ++stop)
+        for (const std::int64_t count :
+             std::array<std::int64_t, 4>{-1, 1, 65, std::numeric_limits<std::int64_t>::max()}) {
+            if (stop == static_cast<std::int64_t>(Stop::enum_definition) && count == 1)
+                continue;
+            Allocations allocations;
+            RawArena arena(allocations);
+            const auto result = arena.parse("enum class E{a};", static_cast<Stop>(stop), 0, {}, count);
+            require(result == Words{wire(Status::invalid), -1, 0, 0, 0, 0} && arena.syntaxCount() == 0 &&
+                        arena.types() == 0 && arena.edges() == 0,
+                    "invalid or cross-profile enum count acquired syntax authority");
+            arena.finish();
+            require(allocations.successful == allocations.released, "invalid enum-count input leaked an owner");
+            ++cases;
+        }
+    for (const auto stop : {Stop::preamble, Stop::enum_definition}) {
+        context = "preamble/enum fifth-owner growth and every allocation failure";
+        const std::int64_t width = stop == Stop::preamble ? 513 : 256;
+        std::string source = stop == Stop::preamble ? "export module wide;" : enumSource(width);
+        std::vector<SyntaxWords> expected;
+        for (std::int64_t index = 0; index < width; ++index) {
+            if (stop == Stop::preamble)
+                source += "import item_" + std::to_string(index) + ";";
+            const auto ordinal = stop == Stop::preamble ? 5 + 3 * index : 4 + 2 * index;
+            expected.push_back(
+                {stop == Stop::preamble ? 18 : 20, ordinal, ordinal + 1, index - 1, -1, -1, -1, -1, -1, -1, 0, -1});
+        }
+        const auto tokens = aurora::lex(source, "preamble-enum-growth.au");
+        const auto end = static_cast<std::int64_t>(tokens.size() - 1);
+        expected.push_back({stop == Stop::preamble ? 17 : 19,
+                            2,
+                            end,
+                            -1,
+                            -1,
+                            -1,
+                            -1,
+                            stop == Stop::preamble ? 2 : -1,
+                            width - 1,
+                            -1,
+                            stop == Stop::preamble ? 1 : 0,
+                            -1});
+        std::size_t successful = 0;
+        for (std::size_t allowed = 0;; ++allowed) {
+            Allocations allocations;
+            allocations.allowed = allowed;
+            RawArena arena(allocations);
+            const auto result = arena.parse(source, stop, 0, {}, stop == Stop::enum_definition ? 63 : 0);
+            const bool accepted = result[0] == wire(Status::success);
+            if (accepted) {
+                require(result == Words{wire(Status::success),
+                                        width,
+                                        0,
+                                        end,
+                                        static_cast<std::int64_t>(tokens.back().span.begin.offset),
+                                        0} &&
+                            arena.syntaxCount() == width + 1,
+                        "wide preamble/enum root or cursor differs");
+                const auto metrics = arena.metrics();
+                require(metrics.live_allocations == 5 && metrics.peak_live_allocations == 5 &&
+                            metrics.successful_allocations > 5 && metrics.peak_used > 8 * 96,
+                        "preamble/enum growth added an owner or bypassed syntax storage");
+                successful = allocations.successful;
+            } else {
+                require(result[0] == wire(Status::allocation_failure) && result[1] == -1 && result[2] == 0 &&
+                            arena.syntaxCount() >= 0 && arena.syntaxCount() <= width,
+                        "preamble/enum allocation failure published a root");
+            }
+            require(arena.types() == 0 && arena.edges() == 0, "preamble/enum acquired unrelated graph records");
+            for (std::int64_t index = 0; index < arena.syntaxCount(); ++index)
+                require(arena.syntax(index) == expected.at(index), "preamble/enum growth changed its committed prefix");
+            arena.finish();
+            require(allocations.successful == allocations.released, "preamble/enum failed growth leaked an owner");
+            ++cases;
+            if (accepted) {
+                require(allowed == successful, "allocation sweep skipped a failing allocation");
+                break;
+            }
+        }
+    }
+}
+
 void rawCallableGrowth() {
     constexpr std::int64_t width = 513;
     for (const auto stop : {Stop::function, Stop::method, Stop::constructor}) {
@@ -3956,7 +4461,7 @@ void rawAggregateDiagnostics() {
         ++cases;
     }
     rawCase("{};", Status::invalid, static_cast<Stop>(-1));
-    rawCase("{};", Status::invalid, static_cast<Stop>(static_cast<std::int64_t>(Stop::field) + 1));
+    rawCase("{};", Status::invalid, static_cast<Stop>(static_cast<std::int64_t>(Stop::enum_definition) + 1));
 }
 
 void abiControls() {
@@ -4468,7 +4973,10 @@ int main(int argc, char **argv) {
         fieldSyntax();
         fieldDiagnostics();
         declarationContexts();
+        preambleEnumSyntax();
+        preambleEnumDiagnostics();
         rawDeclarations();
+        rawPreambleEnums();
         rawCallableGrowth();
         rawFields();
         declarationTypeSyntax();
@@ -4495,16 +5003,18 @@ int main(int argc, char **argv) {
         typedConsumerSources(argv + 9);
         require(wholeCallables >= 172 && wholeFields >= 76,
                 "whole-declaration coverage omitted historical bootstrap callables/fields");
-        std::cout << "PASS hosted parser " << cases
-                  << " explicit AST/diagnostic, dispatch-consistency and ABI cases, 199-node/frame and "
-                     "257-argument/aggregate growth with allocation cleanup; "
-                     "dispatch-consistent constructor/string roots from all three actual bootstrap sources; "
-                     "14 aggregate roots including 512 XFS elements, 16 direct typed product roots, "
-                     "1,285-record type growth, all 125 historical and all new bootstrap bodies, "
-                     "513-statement/128-block growth and fifth-owner cleanup; "
-                     "independent declaration types and diagnostics, all 490 historical and new compiler declaration "
-                     "type occurrences, 31-record standalone type growth with existing-owner cleanup; "
-                     "whole callable/field boundaries, 513-entry callable and 31-type field failure sweeps\n";
+        std::cout
+            << "PASS hosted parser " << cases
+            << " explicit AST/diagnostic, dispatch-consistency and ABI cases, 199-node/frame and "
+               "257-argument/aggregate growth with allocation cleanup; "
+               "dispatch-consistent constructor/string roots from all three actual bootstrap sources; "
+               "14 aggregate roots including 512 XFS elements, 16 direct typed product roots, "
+               "1,285-record type growth, all 125 historical and all new bootstrap bodies, "
+               "513-statement/128-block growth and fifth-owner cleanup; "
+               "independent declaration types and diagnostics, all 490 historical and new compiler declaration "
+               "type occurrences, 31-record standalone type growth with existing-owner cleanup; "
+               "whole callable/field boundaries, 513-entry callable and 31-type field failure sweeps; "
+               "three compiler preambles, two imports, nine enums/170 cases, 513-import and 256-case failure sweeps\n";
     } catch (const std::exception &error) {
         std::cerr << "FAIL " << error.what() << '\n';
         return 1;
