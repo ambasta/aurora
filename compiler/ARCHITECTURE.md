@@ -6,7 +6,7 @@ The typed-IR milestone established behavior-preserving compiler phase boundaries
 
 1. `host_sources.hpp` owns the trusted Linux descriptor-relative source reader and atomic artifact writer. `modules.hpp` loads explicit-root module graphs and resolves names/exports in defining-module contexts; MODULES.md specifies that boundary.
 2. `types.hpp` defines source types and common tokens/errors.
-3. The hosted Aurora lexer turns bytes into tokens; `syntax.hpp` defines the untyped source AST. `parser.hpp` handles declarations/statements and dispatches expressions to the hosted Aurora parser.
+3. The hosted Aurora lexer turns bytes into tokens; `syntax.hpp` defines the untyped source AST. `parser.hpp` handles declarations and dispatches ordinary bodies and constructor initializer expressions to the hosted Aurora parser.
 4. `semantics.hpp` performs source-level name resolution, scalar/aggregate type checking, initialization rules, const/private access checking, ownership moves, lexical borrow checks and conservative branch/loop joins. It emits typed instructions, not assembly strings.
 5. `ir.hpp` defines a target-independent accumulator/value-stack instruction model. Its operations include checked integer arithmetic, typed loads/stores, explicit control flow, metadata queries and array guard/access operations.
 6. `ir_verify.hpp` validates a complete module and creates an immutable `ValidatedModule`. Only this validated wrapper can be passed to the emitter. It checks lower-level type, initialization, control-flow, operand-stack, frame and bounds-token invariants.
@@ -51,6 +51,15 @@ The constructor-brace entry starts at the original field token and ends after it
 closing brace. It preserves field-anchored `array_zero` for an empty initializer;
 ordinary `{}` remains `array_literal`.
 
+Ordinary function and non-constructor method bodies use one iterative body
+state machine in the same arena: nested blocks, initialized local declarations,
+return/static-assert, if/else, while, expression statements and supported
+assignments. A fifth owner stores reverse-linked `StatementSyntax` records;
+local types reuse `TypeSyntax`. Nested expression/type parsing restores its saved
+frame base on every exit. Block nesting remains independently bounded at 128;
+empty bodies need no expression nodes. Constructor declarations still require
+literal empty bodies and retain their separate initializer entrypoints.
+
 `hosted_parser.cpp` converts the Aurora syntax records into the existing C++ AST.
 It checks bounded counts, valid tags and indices, backward child references,
 non-sharing ownership and bounded construction depth so malformed records cannot
@@ -83,9 +92,10 @@ integrated GCC 16 full/image/guest qualification.
 
 Current source has removed `expr`, `primary`, `postfix`, precedence parsing,
 `templateExpressionAhead`, `templateStatementExpressionAhead`, and the reference
-selection switch. Statement and constructor entrypoints always call Aurora.
-Declaration `type`, `templateArguments`, `templateArgumentEnd` and split-closer
-handling remain because declaration parsing still uses them.
+selection switch. Current source also removes C++ `block`, `statement`,
+`startsDeclaration` and `templateArgumentEnd`; ordinary bodies and constructor
+initializers enter Aurora directly. Declaration `type`, `templateArguments` and
+split-closer handling remain for class fields, parameters and declaration headers.
 
 Targeted fixtures state expected ASTs, token spans, child/designator order and
 exact diagnostics directly. The independent raw ABI, bounded-conversion, depth and
@@ -95,8 +105,8 @@ Retirement qualification additionally compares the current compiler with a
 freshly source-built historical C++ seed on valid and malformed source. Historical
 source/binaries stay outside the current tree; there is no copied parser snapshot.
 The predecessor-backed C1/C2 frontend and whole-corpus reproducibility gates
-remain required, followed by final integrated qualification. Migrating statement
-and declaration grammar is the next separate frontend responsibility.
+remain required, followed by final integrated qualification. Declaration grammar
+is the next separate frontend responsibility.
 
 ## Typed instruction model
 

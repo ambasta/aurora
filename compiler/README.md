@@ -3,9 +3,9 @@
 Aurora is an intentionally incompatible safe C++-inspired language. It has no
 C header/macro layer, raw-pointer escape, unsafe block or C ABI. The hosted build
 uses an Aurora-written [lexer](LEXER.md) and a bounded
-[statement-expression parser](ARCHITECTURE.md#hosted-aurora-expression-parser),
+[expression and body parser](ARCHITECTURE.md#hosted-aurora-expression-parser),
 bootstrapped with an explicitly selected predecessor compiler.
-Declaration/type parsing outside expressions, semantic/lifetime analysis,
+Declaration/type parsing outside bodies, semantic/lifetime analysis,
 typed-IR verification and x86-64 emission remain C++23.
 GNU assembler/linker and Linux host I/O remain bootstrap dependencies.
 
@@ -179,12 +179,13 @@ These temporary register choices are implementation machinery, not a source-leve
 
 Runtime-sized [typed copied-class owners](OWNERSHIP.md#runtime-sized-copied-class-ownership)
 support the `expression_arena.au` AST, explicit parser-frame and variable-arity
-argument-edge and unresolved type-syntax storage. Complete existing scalar,
+argument-edge, unresolved type-syntax and statement storage. Complete existing scalar,
 byte-string, qualified-name, unary, binary, call, postfix, aggregate, explicit
 template and type-taking reflection expressions are parsed in Aurora, including
 both forms of constructor field initializer, and converted to the existing source
-AST through the private hosted adapter.
-The hosted path does not fall back to C++ for expressions. The C++
-expression parser and expression router are removed from current source. The
+AST through the private hosted adapter. Ordinary function/method bodies also use
+Aurora for all existing block, local, control-flow and assignment grammar.
+The hosted path does not fall back to C++ for bodies or expressions. The replaced
+C++ statement/block and expression parsing code is removed from current source. The
 historical predecessor remains the source-bootstrap starting point; this does not
 establish whole-compiler self-hosting.

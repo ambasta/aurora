@@ -17,6 +17,7 @@
 #include <limits>
 #include <map>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <sys/resource.h>
@@ -35,6 +36,8 @@ std::int64_t checked_hosted_parser_edges(const void *);
 void checked_hosted_parser_edge(const void *, std::int64_t, void *);
 std::int64_t checked_hosted_parser_types(const void *);
 void checked_hosted_parser_type(const void *, std::int64_t, void *);
+std::int64_t checked_hosted_parser_statements(const void *);
+void checked_hosted_parser_statement(const void *, std::int64_t, void *);
 void checked_hosted_parser_release(void *);
 }
 
@@ -61,8 +64,13 @@ using Words = std::array<std::int64_t, 5>;
 using NodeWords = std::array<std::int64_t, 7>;
 using EdgeWords = std::array<std::int64_t, 5>;
 using TypeWords = std::array<std::int64_t, 8>;
+using StatementWords = std::array<std::int64_t, 11>;
+using aurora::hosted_parser::StatementKind;
 using ContextWords = std::array<std::int64_t, 7>;
 constexpr std::int64_t wire(NodeKind value) {
+    return static_cast<std::int64_t>(value);
+}
+constexpr std::int64_t wire(StatementKind value) {
     return static_cast<std::int64_t>(value);
 }
 constexpr std::int64_t wire(Status value) {
@@ -183,6 +191,48 @@ aurora::ExpressionPtr expectedTree(const std::vector<aurora::Token> &tokens, con
         result->depth = std::max(result->depth, result->args.back()->depth + 1);
     }
     return result;
+}
+// Body AST contracts compare every ordered statement field, including the
+// declaration binding span rather than inferring it from the initializer.
+void sameStatements(const std::vector<aurora::StatementPtr> &actual,
+                    const std::vector<aurora::StatementPtr> &expected) {
+    require(actual.size() == expected.size(), "statement list size/order differs");
+    for (std::size_t index = 0; index < actual.size(); ++index) {
+        const auto &a = actual[index];
+        const auto &b = expected[index];
+        require(a && b && a->kind == b->kind && a->name == b->name && a->fieldName == b->fieldName &&
+                    a->type == b->type && a->mutableValue == b->mutableValue,
+                "statement kind/binding/type/field/mutability differs");
+        sameToken(a->token, b->token);
+        sameSpan(a->bindingSpan, b->bindingSpan);
+        sameExpression(a->expr, b->expr);
+        sameExpression(a->target, b->target);
+        sameStatements(a->body, b->body);
+        sameStatements(a->other, b->other);
+    }
+}
+aurora::StatementPtr statement(const std::vector<aurora::Token> &tokens,
+                               std::size_t token,
+                               const std::string &kind,
+                               std::optional<Ast> expression = {}) {
+    auto value = std::make_shared<aurora::Statement>(tokens.at(token));
+    value->kind = kind;
+    if (expression)
+        value->expr = expectedTree(tokens, *expression);
+    return value;
+}
+aurora::StatementPtr local(const std::vector<aurora::Token> &tokens,
+                           std::size_t token,
+                           std::size_t binding,
+                           aurora::Type type,
+                           bool mutableValue,
+                           Ast expression) {
+    auto value = statement(tokens, token, "let", std::move(expression));
+    value->name = tokens.at(binding).text;
+    value->bindingSpan = tokens.at(binding).span;
+    value->type = std::move(type);
+    value->mutableValue = mutableValue;
+    return value;
 }
 std::string fixtureKey(const std::vector<aurora::Token> &tokens) {
     std::string result;
@@ -343,6 +393,252 @@ void rejected(const std::string &text, Stop stop = Stop::Semicolon) {
     for (std::size_t index = 0; index < tokens.size(); ++index)
         sameToken(tokens[index], before[index]);
     ++cases;
+}
+
+template <typename Expected> void bodyFixture(const std::string &source, Expected expected) {
+    context = "explicit body AST " + source;
+    const auto tokens = aurora::lex(source, "body-contract.au"), before = tokens;
+    std::size_t position = 0;
+    const auto body = aurora::parseHostedBody(tokens, position);
+    sameStatements(body, expected(tokens));
+    require(position == tokens.size() - 1, "body did not consume its exact closing brace");
+    for (std::size_t index = 0; index < tokens.size(); ++index)
+        sameToken(tokens[index], before[index]);
+    ++cases;
+}
+void bodySyntax() {
+    using Body = std::vector<aurora::StatementPtr>;
+    bodyFixture("{}", [](const auto &) {
+        return Body{};
+    });
+    bodyFixture("{{}}", [](const auto &tokens) {
+        return Body{statement(tokens, 1, "block")};
+    });
+    bodyFixture("{i64 x=1;const u8 y=2u8;return x;}", [](const auto &tokens) {
+        return Body{local(tokens, 1, 2, aurora::Type::I64, true, number(4)),
+                    local(tokens, 6, 8, aurora::Type::U8, false, number(10)),
+                    statement(tokens, 12, "return", name(13))};
+    });
+    bodyFixture("{x=1;obj.field=2;a[0]=3;f();}", [](const auto &tokens) {
+        auto assign = statement(tokens, 1, "assign", number(3));
+        assign->name = "x";
+        auto field = statement(tokens, 5, "field_assign", number(9));
+        field->name = "obj";
+        field->fieldName = "field";
+        auto element = statement(tokens, 11, "index_assign", number(16));
+        element->target = expectedTree(tokens, index(name(11), number(13)));
+        return Body{assign, field, element, statement(tokens, 18, "expression", call(18))};
+    });
+    bodyFixture("{if(true){return 1;}else{while(false){return 2;}}}", [](const auto &tokens) {
+        auto branch = statement(tokens, 1, "if", tree("bool", 3));
+        branch->body = {statement(tokens, 6, "return", number(7))};
+        auto loop = statement(tokens, 12, "while", tree("bool", 14));
+        loop->body = {statement(tokens, 17, "return", number(18))};
+        branch->other = {loop};
+        return Body{branch};
+    });
+    bodyFixture("{static_assert(1);{return (2);}}", [](const auto &tokens) {
+        auto block = statement(tokens, 6, "block");
+        block->body = {statement(tokens, 7, "return", number(9))};
+        return Body{statement(tokens, 1, "static_assert", number(3)), block};
+    });
+    bodyFixture("{array<u8,2> bytes={1u8,2u8};return bytes[0];}", [](const auto &tokens) {
+        return Body{local(tokens,
+                          1,
+                          7,
+                          aurora::Type::array(aurora::TypeKind::U8, 2),
+                          true,
+                          tree("array_literal", 9, {number(10), number(12)})),
+                    statement(tokens, 15, "return", index(name(16), number(18)))};
+    });
+    bodyFixture("{Box<Box<i64>> value=Box<Box<i64>>{};return size_of(Box<Box<i64>>);}", [](const auto &tokens) {
+        const auto inner = namedArgument("Box", {aurora::TypeKind::I64});
+        const auto type = namedType("Box", {inner});
+        return Body{local(tokens, 1, 7, type, true, typed(construct(9, 9), {inner})),
+                    statement(tokens, 18, "return", reflected(19, type))};
+    });
+    bodyFixture("{1;if(true){2;}else{}3;while(false){}4;}", [](const auto &tokens) {
+        auto branch = statement(tokens, 3, "if", tree("bool", 5));
+        branch->body = {statement(tokens, 8, "expression", number(8))};
+        auto loop = statement(tokens, 16, "while", tree("bool", 18));
+        return Body{statement(tokens, 1, "expression", number(1)),
+                    branch,
+                    statement(tokens, 14, "expression", number(14)),
+                    loop,
+                    statement(tokens, 22, "expression", number(22))};
+    });
+    bodyFixture("{return values[indices[0]];}", [](const auto &tokens) {
+        return Body{statement(tokens, 1, "return", index(name(2), index(name(4), number(6))))};
+    });
+    bodyFixture("{\n const i64 binding = 1;\n return binding;\n}", [](const auto &tokens) {
+        return Body{local(tokens, 1, 3, aurora::Type::I64, false, number(5)), statement(tokens, 7, "return", name(8))};
+    });
+    // These spellings remain unresolved named types after const. In contrast,
+    // the same first-token control words cannot be reclassified as locals.
+    bodyFixture("{const return x=1;const if y=2;const while z=3;static_assert a=4;}", [](const auto &tokens) {
+        return Body{local(tokens, 1, 3, aurora::Type("return"), false, number(5)),
+                    local(tokens, 7, 9, aurora::Type("if"), false, number(11)),
+                    local(tokens, 13, 15, aurora::Type("while"), false, number(17)),
+                    local(tokens, 19, 20, aurora::Type("static_assert"), true, number(22))};
+    });
+    // The root consumes exactly its own brace even when a second body follows.
+    const auto tokens = aurora::lex("{} {return 1;}", "body-boundary.au");
+    std::size_t position = 0;
+    require(aurora::parseHostedBody(tokens, position).empty() && position == 2,
+            "empty body consumed the following body");
+    const auto second = aurora::parseHostedBody(tokens, position);
+    sameStatements(second, {statement(tokens, 3, "return", number(4))});
+    require(position == 7, "second body did not stop at EOF");
+    ++cases;
+    // Root block counts once. If/while wrappers must not halve the block limit.
+    for (const std::string kind : {"block", "if", "while"}) {
+        const auto opening = kind == "block" ? "{" : kind + "(true){";
+        std::string source = "{";
+        for (int level = 1; level < 128; ++level)
+            source += opening;
+        source += "return 1;" + std::string(128, '}');
+        const auto nested = aurora::lex(source, "body-depth.au");
+        std::size_t at = 0;
+        auto body = aurora::parseHostedBody(nested, at);
+        require(at == nested.size() - 1, "128-block body cursor differs");
+        for (int level = 1; level < 128; ++level) {
+            require(body.size() == 1 && body[0]->kind == kind && body[0]->other.empty(),
+                    "nested body wrapper/order differs");
+            body = body[0]->body;
+        }
+        require(body.size() == 1 && body[0]->kind == "return" && body[0]->expr->token.text == "1",
+                "nested body lost its final statement");
+        ++cases;
+    }
+}
+void bodyContexts() {
+    using T = aurora::Type;
+    using K = aurora::TypeKind;
+    auto parameter = T(K::Parameter), otherParameter = T(K::Parameter);
+    parameter.className = "T";
+    otherParameter.className = "U";
+    auto typeArgument = namedArgument("T"), otherArgument = namedArgument("U");
+    typeArgument.type = otherArgument.type = K::Parameter;
+    auto dependentArray = T::array(parameter, 0);
+    dependentArray.lengthParameter = "N";
+    for (const bool function : {false, true}) {
+        const std::string prefix =
+            function ? "export module body_context;template<Value T,Value U>auto f(T x,U y)->i64"
+                     : "export module body_context;template<Scalar T,i64 N>class Buffer{public:auto f()->i64";
+        const std::string body = function ? "{const Pair<T,U> p=Pair<T,U>(x,y);return size_of(T)+type_id(U);}"
+                                          : "{array<T,N> items={};return size_of(T);}";
+        const auto tokens = aurora::lex(prefix + body + (function ? "" : "};"), "body-context.au");
+        context = function ? "explicit function-template body context" : "explicit class-template body context";
+        const auto begin = aurora::lex(prefix).size() - 1;
+        Context captured;
+        require(tokens.at(7).text == "T" && tokens.at(10).text == (function ? "U" : "N"),
+                "body context fixture lost its original declaration tokens");
+        captured.typeParameters = {tokens.at(7)};
+        if (function)
+            captured.typeParameters.push_back(tokens.at(10));
+        else
+            captured.capacityParameters.push_back(tokens.at(10));
+        captured.functionTemplate = function;
+        std::vector<aurora::StatementPtr> expected;
+        if (function) {
+            expected = {
+                local(tokens,
+                      begin + 1,
+                      begin + 8,
+                      namedType("Pair", {typeArgument, otherArgument}),
+                      false,
+                      typed(call(begin + 10, {name(begin + 17), name(begin + 19)}), {typeArgument, otherArgument})),
+                statement(tokens,
+                          begin + 22,
+                          "return",
+                          binary(begin + 27, reflected(begin + 23, parameter), reflected(begin + 28, otherParameter)))};
+        } else {
+            expected = {local(tokens, begin + 1, begin + 7, dependentArray, true, tree("array_literal", begin + 9)),
+                        statement(tokens, begin + 12, "return", reflected(begin + 13, parameter))};
+        }
+        auto position = begin;
+        sameStatements(aurora::parseHostedBody(tokens, position, captured), expected);
+        require(position == begin + aurora::lex(body).size() - 1, "context body consumed a declaration delimiter");
+        const auto program = checkedProgram(tokens);
+        if (function) {
+            require(program.functionTemplates.size() == 1, "function-template body fixture was omitted");
+            sameStatements(program.functionTemplates.front().body, expected);
+        } else {
+            require(program.templates.size() == 1 && program.templates.front().methods.size() == 1,
+                    "class-template body fixture was omitted");
+            sameStatements(program.templates.front().methods.front().body, expected);
+        }
+        ++cases;
+    }
+}
+void bodyDiagnostics() {
+    struct Rejection {
+        const char *source;
+        const char *message;
+        std::size_t token;
+    };
+    for (const auto &test : std::vector<Rejection>{{"return 1;", "expected '{'", 0},
+                                                   {"{", "unterminated block", 1},
+                                                   {"{return 1;", "unterminated block", 4},
+                                                   {"{return 1}", "expected ';'", 3},
+                                                   {"{return;}", "expected expression", 3},
+                                                   {"{1 2;}", "expected ';'", 2},
+                                                   {"{if true){}}", "expected '('", 2},
+                                                   {"{if(true {}}", "expected ')'", 4},
+                                                   {"{if(true)1;}", "expected '{'", 5},
+                                                   {"{if(true){}else if(false){}}", "expected '{'", 8},
+                                                   {"{while(1){}", "unterminated block", 7},
+                                                   {"{static_assert 1;}", "expected '('", 2},
+                                                   {"{static_assert(1)}", "expected ';'", 5},
+                                                   {"{i64 x 1;}", "expected '='", 3},
+                                                   {"{const i64 x=1}", "expected ';'", 6},
+                                                   {"{i64 true=1;}", "reserved identifier", 2},
+                                                   {"{1=2;}", "assignment requires a local or local field", 3},
+                                                   {"{f()=2;}", "assignment requires a local or local field", 5},
+                                                   {"{a.b.c=2;}", "assignment requires a local or local field", 7},
+                                                   {"{return f(1;}", "expected ')'", 5},
+                                                   {"{if(1 2){}}", "expected ')'", 4},
+                                                   {"{i64 x=1 2;}", "expected ';'", 5},
+                                                   {"{return size_of(i64,);}", "expected ')'", 5},
+                                                   {"{return x=1;}", "expected ';'", 3},
+                                                   {"{if x=1;}", "expected '('", 2},
+                                                   {"{while x=1;}", "expected '('", 2}}) {
+        context = "explicit body diagnostic " + std::string(test.source);
+        const auto tokens = aurora::lex(test.source, "body-error.au"), before = tokens;
+        std::size_t position = 0;
+        std::optional<aurora::Diagnostic> diagnostic;
+        try {
+            static_cast<void>(aurora::parseHostedBody(tokens, position));
+        } catch (const aurora::Error &error) {
+            diagnostic = error.diagnostic;
+        }
+        require(bool(diagnostic) && position == 0, "body rejection was accepted or committed cursor");
+        sameError(*diagnostic, tokens, {test.message, test.token});
+        for (std::size_t index = 0; index < tokens.size(); ++index)
+            sameToken(tokens[index], before[index]);
+        ++cases;
+    }
+    for (const std::string kind : {"block", "if", "while"}) {
+        const auto opening = kind == "block" ? "{" : kind + "(true){";
+        std::string source = "{";
+        for (int level = 1; level < 129; ++level)
+            source += opening;
+        source += std::string(129, '}');
+        const auto tokens = aurora::lex(source, "body-depth-error.au");
+        std::size_t position = 0;
+        std::optional<aurora::Diagnostic> diagnostic;
+        try {
+            static_cast<void>(aurora::parseHostedBody(tokens, position));
+        } catch (const aurora::Error &error) {
+            diagnostic = error.diagnostic;
+        }
+        require(bool(diagnostic) && position == 0, "129-block body was accepted or committed cursor");
+        sameError(
+            *diagnostic,
+            tokens,
+            {"block nesting exceeds 128", kind == "block" ? 128u : 640u, 0, aurora::DiagnosticCode::NestingLimit});
+        ++cases;
+    }
 }
 
 void diagnosticExpectations() {
@@ -828,6 +1124,7 @@ void expectedBootstrapRoots(const std::vector<aurora::Function> &functions,
         strings += expectedStringRoots(function.body);
     }
 }
+void bootstrapBodies(const std::vector<aurora::Token> &, const aurora::Program &, std::size_t);
 void bootstrapSources(char **paths) {
     std::size_t initializers = 0, strings = 0, newInitializers = 0;
     std::size_t expectedInitializers = 0, expectedStrings = 0;
@@ -842,6 +1139,7 @@ void bootstrapSources(char **paths) {
         const auto tokens = aurora::lex(source, paths[i]);
         const auto program = checkedProgram(tokens);
         require(program.moduleName == modules[i], "unexpected bootstrap source module/order");
+        bootstrapBodies(tokens, program, i);
         expectedBootstrapRoots(program.functions, expectedInitializers, expectedStrings);
         expectedBootstrapRoots(program.functionTemplates, expectedInitializers, expectedStrings);
         for (const auto &definition : program.classes)
@@ -1040,6 +1338,178 @@ Context fixtureContext(const std::vector<aurora::Token> &tokens,
     result.functionTemplate = functionTemplate;
     return result;
 }
+// This inventory is pinned to PR147's 18/56/51 pre-migration entries.
+// Names are a multiset: all historical methods (including repeated accessors)
+// must remain, and every new source auto entry must route through Body too.
+// Whole/direct equality establishes dispatch consistency, not independence.
+void bootstrapBodies(const std::vector<aurora::Token> &tokens, const aurora::Program &program, std::size_t module) {
+    const std::array<std::multiset<std::string>, 3> historical{{
+        {"at",
+         "row",
+         "start",
+         "kind",
+         "next_offset",
+         "next_line",
+         "next_line_start",
+         "space",
+         "letter",
+         "digit",
+         "word",
+         "hex",
+         "escape",
+         "punctuation",
+         "pair",
+         "valid_byte",
+         "valid_string",
+         "next_lexeme"},
+        {"state",
+         "min",
+         "lhs",
+         "token",
+         "designate",
+         "field",
+         "kind",
+         "token",
+         "first",
+         "second",
+         "depth",
+         "locate",
+         "last",
+         "close",
+         "child",
+         "previous",
+         "count",
+         "depth",
+         "field",
+         "kind",
+         "token",
+         "last",
+         "close",
+         "first",
+         "second",
+         "owner",
+         "role",
+         "bind_owner",
+         "store",
+         "ok",
+         "size",
+         "capacity",
+         "failure",
+         "stack_size",
+         "scratch_at",
+         "replace_scratch",
+         "truncate_stack",
+         "types",
+         "type_at",
+         "append_type",
+         "own_type",
+         "frame",
+         "pop",
+         "replace",
+         "push",
+         "at",
+         "append_at",
+         "append",
+         "append_name",
+         "append_index",
+         "arguments",
+         "edge",
+         "append_field",
+         "append_argument",
+         "append_list",
+         "make_arena"},
+        {"begin",
+         "end",
+         "mode",
+         "status",
+         "root",
+         "size",
+         "tokens",
+         "offset",
+         "update",
+         "kind",
+         "first",
+         "last",
+         "row",
+         "start",
+         "index",
+         "half",
+         "split",
+         "status",
+         "root",
+         "token",
+         "read_token",
+         "advance",
+         "single",
+         "boolean_literal",
+         "precedence",
+         "stopped",
+         "pair",
+         "word_matches",
+         "word_list_matches",
+         "identifier_status",
+         "type_query",
+         "reserved_type_name",
+         "builtin_type_name",
+         "type_word",
+         "parameter",
+         "valid_context",
+         "decimal_capacity",
+         "type_close",
+         "type_error",
+         "parse_type",
+         "prepare_templates",
+         "failure",
+         "parse",
+         "create",
+         "node_count",
+         "read_node",
+         "edge_count",
+         "read_edge",
+         "type_count",
+         "read_type",
+         "release"},
+    }};
+    auto remaining = historical.at(module);
+    std::set<std::size_t> lexical, imported;
+    for (std::size_t token = 0; token + 1 < tokens.size(); ++token)
+        if (tokens[token].text == "auto")
+            lexical.insert(token + 1);
+    const auto functions = [&](const std::vector<aurora::Function> &items, const Context &classContext) {
+        for (const auto &function : items) {
+            if (function.constructor) {
+                require(function.body.empty(), "bootstrap constructor acquired a nonempty body");
+                continue;
+            }
+            const auto name = tokenAt(tokens, function.token);
+            require(lexical.contains(name) && imported.insert(name).second,
+                    "body inventory duplicated or synthesized a nonconstructor declaration");
+            const auto found = remaining.find(function.token.text);
+            if (found != remaining.end())
+                remaining.erase(found);
+            auto opening = name + 1;
+            while (opening < tokens.size() && tokens[opening].text != "{")
+                ++opening;
+            require(opening < tokens.size(), "auto declaration lost its body opening");
+            const auto expectedEnd = closingBrace(tokens, opening) + 1;
+            const auto captured = function.templateParameters.empty()
+                                      ? classContext
+                                      : fixtureContext(tokens, function.token, function.templateParameters, true);
+            auto position = opening;
+            sameStatements(aurora::parseHostedBody(tokens, position, captured), function.body);
+            require(position == expectedEnd, "actual body dispatch lost its exact closing brace");
+            ++cases;
+        }
+    };
+    functions(program.functions, {});
+    functions(program.functionTemplates, {});
+    for (const auto &definition : program.classes)
+        functions(definition.methods, {});
+    for (const auto &definition : program.templates)
+        functions(definition.methods, fixtureContext(tokens, definition.token, definition.templateParameters, false));
+    require(remaining.empty() && imported == lexical && imported.size() >= historical[module].size(),
+            "actual bootstrap body inventory lost an old entry or omitted a new auto entry");
+}
 bool containsTypedSyntax(const aurora::ExpressionPtr &expression) {
     if (!expression)
         return false;
@@ -1209,11 +1679,13 @@ public:
 };
 static_assert(sizeof(Words) == 40 && sizeof(GuardedWords<5>) == 56 && sizeof(GuardedWords<7>) == 72 &&
               sizeof(EdgeWords) == 40 && sizeof(TypeWords) == 64 && sizeof(GuardedWords<8>) == 80 &&
-              sizeof(ContextWords) == 56 && sizeof(GuardedWords<18>) == 160);
+              sizeof(ContextWords) == 56 && sizeof(GuardedWords<18>) == 160 && sizeof(StatementWords) == 88 &&
+              sizeof(GuardedWords<11>) == 104);
 static_assert(sizeof(Words) == sizeof(aurora::hosted_abi::ParseResult) &&
               sizeof(NodeWords) == sizeof(aurora::hosted_abi::Node) &&
               sizeof(EdgeWords) == sizeof(aurora::hosted_abi::Edge) &&
               sizeof(TypeWords) == sizeof(aurora::hosted_abi::TypeSyntax) &&
+              sizeof(StatementWords) == sizeof(aurora::hosted_abi::StatementSyntax) &&
               sizeof(std::array<std::int64_t, 18>) == sizeof(aurora::hosted_abi::ParserInput));
 static_assert(sizeof(ContextWords) ==
               sizeof(aurora::hosted_abi::ParserInput) - offsetof(aurora::hosted_abi::ParserInput, type1Begin));
@@ -1276,6 +1748,8 @@ public:
         guards();
         require(output.value[2] == checked_hosted_parser_count(data()),
                 "reported arena count differs from real storage");
+        if (stop != Stop::Body)
+            require(statements() == 0, "expression profile acquired statement records");
         return output.value;
     }
     NodeWords read(std::int64_t index) {
@@ -1307,6 +1781,18 @@ public:
         guards();
         return output.value;
     }
+    std::int64_t statements() {
+        const auto count = checked_hosted_parser_statements(data());
+        guards();
+        return count;
+    }
+    StatementWords statement(std::int64_t index) {
+        GuardedWords<11> output;
+        checked_hosted_parser_statement(data(), index, output.value.data());
+        output.check();
+        guards();
+        return output.value;
+    }
     aurora::hosted::bytes::Metrics metrics() const {
         return region.metrics();
     }
@@ -1320,6 +1806,112 @@ public:
         require(region.close(), "empty parser region did not close");
     }
 };
+void rawBodies() {
+    static_assert(sizeof(StatementWords) == 88 && static_cast<std::int64_t>(Stop::Body) == 4);
+    static_assert(wire(StatementKind::Block) == 1 && wire(StatementKind::Local) == 2 &&
+                  wire(StatementKind::ReturnValue) == 3 && wire(StatementKind::StaticAssertion) == 4 &&
+                  wire(StatementKind::Conditional) == 5 && wire(StatementKind::Loop) == 6 &&
+                  wire(StatementKind::Expression) == 7 && wire(StatementKind::Assign) == 8 &&
+                  wire(StatementKind::FieldAssign) == 9 && wire(StatementKind::IndexAssign) == 10);
+    for (const bool empty : {false, true}) {
+        const std::string source = empty ? "{} next" : "{i64 x=1;return x;} next";
+        context = "raw complete body " + source;
+        const auto tokens = aurora::lex(source);
+        Allocations allocations;
+        RawArena arena(allocations);
+        const auto result = arena.parse(source, Stop::Body);
+        const std::int64_t end = empty ? 2 : 10;
+        require(result == Words{wire(Status::Success),
+                                empty ? 0 : 2,
+                                empty ? 0 : 2,
+                                end,
+                                static_cast<std::int64_t>(tokens[end].span.begin.offset)} &&
+                    arena.statements() == (empty ? 1 : 3),
+                "body result/count/boundary ABI differs");
+        if (empty) {
+            require(arena.statement(0) == StatementWords{1, 0, 2, -1, -1, -1, -1, -1, -1, -1, 0} &&
+                        arena.types() == 0 && arena.edges() == 0,
+                    "empty root acquired phantom records");
+        } else {
+            require(arena.statement(0) == StatementWords{2, 1, 6, -1, 0, -1, 0, 2, -1, -1, 1} &&
+                        arena.statement(1) == StatementWords{3, 6, 9, 0, 1, -1, -1, -1, -1, -1, 0} &&
+                        arena.statement(2) == StatementWords{1, 0, 10, -1, -1, -1, -1, -1, 1, -1, 0},
+                    "statement 88-byte fields/sibling order differ");
+            require(arena.types() == 1 && arena.type(0) == TypeWords{1, 1, 1, 2, -1, -1, 1, 3} &&
+                        arena.read(0) == NodeWords{1, 4, -1, -1, 1, 4, 4} &&
+                        arena.read(1) == NodeWords{2, 7, -1, -1, 1, 7, 7},
+                    "declaration role3 or expression forest ABI differs");
+        }
+        arena.finish();
+        require(allocations.successful == allocations.released, "body owner cleanup differs");
+        ++cases;
+    }
+    // Wide bodies grow independently of expression AST depth. Empty nested
+    // blocks also force body frames/storage to grow with zero expression nodes.
+    for (const bool nested : {false, true}) {
+        constexpr std::int64_t width = 513;
+        const auto source = nested ? std::string(128, '{') + std::string(128, '}') : "{" + std::string{};
+        std::string text = source;
+        if (!nested) {
+            for (std::int64_t i = 0; i < width; ++i)
+                text += "1;";
+            text += "}";
+        }
+        context = nested ? "raw nested body growth" : "raw wide body growth";
+        std::size_t successful = 0;
+        {
+            Allocations allocations;
+            RawArena arena(allocations);
+            const auto result = arena.parse(text, Stop::Body);
+            require(result == Words{wire(Status::Success),
+                                    nested ? 127 : width,
+                                    nested ? 0 : width,
+                                    nested ? 256 : 2 * width + 2,
+                                    static_cast<std::int64_t>(text.size())} &&
+                        arena.statements() == (nested ? 128 : width + 1),
+                    "body growth result differs");
+            if (nested) {
+                for (std::int64_t i = 0; i < 128; ++i)
+                    require(arena.statement(i) == StatementWords{1, 127 - i, 129 + i, -1, -1, -1, -1, -1, i - 1, -1, 0},
+                            "nested block ABI differs");
+            } else {
+                for (std::int64_t i = 0; i < width; ++i) {
+                    require(arena.statement(i) ==
+                                StatementWords{7, 1 + 2 * i, 3 + 2 * i, i - 1, i, -1, -1, -1, -1, -1, 0},
+                            "wide sibling order/end/root differs");
+                    require(arena.read(i) == NodeWords{1, 1 + 2 * i, -1, -1, 1, 1 + 2 * i, 1 + 2 * i},
+                            "wide body expression forest differs");
+                }
+                require(arena.statement(width) ==
+                            StatementWords{1, 0, 2 * width + 2, -1, -1, -1, -1, -1, width - 1, -1, 0},
+                        "wide root differs");
+            }
+            const auto metrics = arena.metrics();
+            require(metrics.live_allocations == 5 && metrics.peak_live_allocations == 5 &&
+                        metrics.successful_allocations > 10 && metrics.peak_used > 8 * 88,
+                    "body did not grow its real fifth owner");
+            successful = allocations.successful;
+            arena.finish();
+            require(allocations.released == successful, "body growth leaked an owner");
+        }
+        for (std::size_t allowed = 0; allowed < successful; ++allowed) {
+            Allocations allocations;
+            allocations.allowed = allowed;
+            RawArena arena(allocations);
+            const auto result = arena.parse(text, Stop::Body);
+            require(result[0] == wire(Status::AllocationFailure) && result[1] == -1,
+                    "body initial/growth failure did not fail closed");
+            if (arena.statements() > 0)
+                require(arena.statement(0) == (nested ? StatementWords{1, 127, 129, -1, -1, -1, -1, -1, -1, -1, 0}
+                                                      : StatementWords{7, 1, 3, -1, 0, -1, -1, -1, -1, -1, 0}),
+                        "body failed growth damaged a committed record");
+            arena.finish();
+            require(allocations.released == allocations.successful, "body failed growth leaked owner metadata");
+            ++cases;
+        }
+        ++cases;
+    }
+}
 void rawCase(const std::string &source, Status expected, Stop stop = Stop::Semicolon) {
     context = "raw ABI " + source;
     Allocations allocations;
@@ -1943,8 +2535,8 @@ void rawTypeGrowth() {
             require(arena.type(index) == expected[static_cast<std::size_t>(index)],
                     "type growth changed committed topology/provenance/ownership");
         const auto metrics = arena.metrics();
-        require(metrics.successful_allocations > 15 && metrics.live_allocations == 4 &&
-                    metrics.peak_live_allocations == 4 && metrics.peak_used > 5 * count * 64,
+        require(metrics.successful_allocations > 15 && metrics.live_allocations == 5 &&
+                    metrics.peak_live_allocations == 5 && metrics.peak_used > 5 * count * 64,
                 "typed parse did not grow all independent storage owners");
         successful = allocations.successful;
         arena.finish();
@@ -2016,7 +2608,8 @@ void rawAggregateDiagnostics() {
         require(allocations.successful == allocations.released, "aggregate diagnostic leaked an owner");
         ++cases;
     }
-    rawCase("{};", Status::Invalid, static_cast<Stop>(4));
+    rawCase("{};", Status::Invalid, static_cast<Stop>(-1));
+    rawCase("{};", Status::Invalid, static_cast<Stop>(5));
 }
 
 void abiControls() {
@@ -2072,13 +2665,13 @@ void rawGrowth() {
                         "binary ABI/topology/depth differs");
         }
         const auto used = arena.metrics();
-        require(used.successful_allocations > 4 && used.peak_live_allocations == 4 && used.live_allocations == 4,
-                "parser did not grow its node/frame stores while retaining the empty edge/type owners");
+        require(used.successful_allocations > 5 && used.peak_live_allocations == 5 && used.live_allocations == 5,
+                "parser did not grow its node/frame stores while retaining the empty edge/type/statement owners");
         successful = allocations.successful;
         arena.finish();
         require(allocations.released == successful, "success cleanup mismatch");
     }
-    for (std::size_t allowed = 0; allowed < 4; ++allowed) {
+    for (std::size_t allowed = 0; allowed < 5; ++allowed) {
         Allocations allocations;
         allocations.allowed = allowed;
         RawArena arena(allocations);
@@ -2087,7 +2680,7 @@ void rawGrowth() {
         arena.finish();
     }
     // Refuse every allocation in sequence, including frame and node growth.
-    // All partial graphs still leave all four owners releasable exactly once.
+    // All partial graphs still leave all five owners releasable exactly once.
     for (std::size_t allowed = 0; allowed < successful; ++allowed) {
         Allocations allocations;
         allocations.allowed = allowed;
@@ -2143,8 +2736,8 @@ void rawFrameGrowth() {
         // One leaf needs only the first eight-node capacity. Payload above the
         // first eight-frame plus eight-node capacities therefore proves actual
         // explicit-frame growth, independently of the allocation count.
-        require(used.peak_used > 8 * 40 + 8 * 56 && used.successful_allocations > 4 &&
-                    used.peak_live_allocations == 4 && used.live_allocations == 4,
+        require(used.peak_used > 8 * 40 + 8 * 56 && used.successful_allocations > 5 &&
+                    used.peak_live_allocations == 5 && used.live_allocations == 5,
                 "nested parser did not grow its explicit frame owner");
         successful = allocations.successful;
         arena.finish();
@@ -2188,8 +2781,8 @@ void rawArguments() {
             require(arena.edge(index) == EdgeWords{index, index - 1, index + 1, 2, -1},
                     "reverse-linked argument ABI differs");
         const auto metrics = arena.metrics();
-        require(metrics.successful_allocations > 10 && metrics.live_allocations == 4 &&
-                    metrics.peak_live_allocations == 4,
+        require(metrics.successful_allocations > 10 && metrics.live_allocations == 5 &&
+                    metrics.peak_live_allocations == 5,
                 "wide call did not grow independent node and argument owners");
         successful = allocations.successful;
         arena.finish();
@@ -2366,8 +2959,8 @@ void rawAggregates() {
                         "wide aggregate edge/field-label ABI differs");
             }
             const auto metrics = arena.metrics();
-            require(metrics.successful_allocations > 10 && metrics.live_allocations == 4 &&
-                        metrics.peak_live_allocations == 4,
+            require(metrics.successful_allocations > 10 && metrics.live_allocations == 5 &&
+                        metrics.peak_live_allocations == 5,
                     "wide aggregate did not grow independent node/edge owners");
             successful = allocations.successful;
             arena.finish();
@@ -2594,6 +3187,10 @@ int main(int argc, char **argv) {
         constructors();
         aggregateSyntax();
         typedSyntax();
+        rawBodies();
+        bodySyntax();
+        bodyContexts();
+        bodyDiagnostics();
         rawTypeRecords();
         rawTypeDiagnostics();
         rawTypeGrowth();
@@ -2611,7 +3208,8 @@ int main(int argc, char **argv) {
                      "257-argument/aggregate growth with allocation cleanup; "
                      "dispatch-consistent constructor/string roots from all three actual bootstrap sources; "
                      "14 aggregate roots including 512 XFS elements, 16 direct typed product roots, "
-                     "and 1,285-record type growth\n";
+                     "1,285-record type growth, all 125 historical and all new bootstrap bodies, "
+                     "513-statement/128-block growth and fifth-owner cleanup\n";
     } catch (const std::exception &error) {
         std::cerr << "FAIL " << error.what() << '\n';
         return 1;

@@ -77,14 +77,15 @@ remain open. See the [compiler reference](../compiler/README.md) and
 [library dependency plan](library-stack.md), rather than historical exclusions.
 
 The hosted compiler has an [Aurora lexical phase](../compiler/LEXER.md) and a
-[bounded statement-expression parser](../compiler/ARCHITECTURE.md#hosted-aurora-expression-parser).
-An explicitly pinned, source-built predecessor emits the imported
+[bounded expression and body parser](../compiler/ARCHITECTURE.md#hosted-aurora-expression-parser).
+An explicitly selected, source-built predecessor emits the imported
 lexer/arena/parser graph; current C1/C2 stages verify frontend convergence.
 Aurora owns all existing expression grammar, including templates, reflected
-types and constructor initializers. Current source no longer contains the C++
-expression parser or its expression router. Copied node/frame/argument/type-syntax
-owners and the host adapter reject malformed results and resource failures.
-The next frontend migration is statement/declaration grammar, followed by the
+types and constructor initializers, plus complete ordinary function/method bodies.
+Current source no longer contains the replaced C++ expression, statement or block
+parser. Copied node/frame/argument/type/statement owners and the bounded host
+converter reject invalid representations and resource failures.
+The next frontend migration is declaration grammar, followed by the
 remaining C++ semantic/ownership, IR and backend responsibilities. Building the
 whole compiler from Aurora source is distinct from replacing the native assembler,
 linker and host runtime/file/process services; these remain separate dependencies.

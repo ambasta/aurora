@@ -76,6 +76,25 @@ aurora_hosted_parser_type:
     jmp __aurora_frontend_parser_read_type
 .size aurora_hosted_parser_type, .-aurora_hosted_parser_type
 
+# Body syntax is copied from the same arena through its generated record layout.
+.globl aurora_hosted_parser_statements
+.hidden aurora_hosted_parser_statements
+.type aurora_hosted_parser_statements, @function
+aurora_hosted_parser_statements:
+    movq %rdi, %r10
+    jmp __aurora_frontend_parser_statement_count
+.size aurora_hosted_parser_statements, .-aurora_hosted_parser_statements
+
+.globl aurora_hosted_parser_statement
+.hidden aurora_hosted_parser_statement
+.type aurora_hosted_parser_statement, @function
+aurora_hosted_parser_statement:
+    movq %rdi, %r10
+    movq %rsi, %rdi
+    movq %rdx, %r11
+    jmp __aurora_frontend_parser_read_statement
+.size aurora_hosted_parser_statement, .-aurora_hosted_parser_statement
+
 .globl aurora_hosted_parser_release
 .hidden aurora_hosted_parser_release
 .type aurora_hosted_parser_release, @function
