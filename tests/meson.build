@@ -656,7 +656,10 @@ hosted_parser_test = executable(
     native: true, install: false,
 )
 test('hosted-parser', hosted_parser_test,
-     args: files('../compiler/lexer.au', '../compiler/expression_arena.au', '../compiler/expression_parser.au'),
+     args: files('../compiler/lexer.au', '../compiler/expression_arena.au', '../compiler/expression_parser.au',
+                 '../library/std/array.au', '../library/console/session_files.au',
+                 '../examples/kernel-graphical-console.au', '../library/fs/xfs_sector.au',
+                 '../examples/class_values.au'),
      suite: ['full', 'dev', 'core', 'compiler'], timeout: 120)
 hosted_parser_invalid = executable(
     'hosted-parser-invalid', ['compiler/hosted_parser_invalid.cpp', '../compiler/hosted_parser.cpp',

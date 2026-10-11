@@ -19,34 +19,39 @@ The implementation uses internal header units and one translation unit so existi
 
 `expression_parser.au` parses complete expressions containing integer, byte,
 byte-string and bool literals, qualified names, ordinary function/constructor-shaped
-calls, member/method/index chains, grouping, unary `-`/`!`/`~`, and all existing
-binary precedence tiers. Local initializers, parenthesized constructor field
-initializers, return/static-assert expressions, if/while conditions, expression
-statements and assignment operands enter this path. An iterative Pratt state
-machine stores copied frames and AST nodes in
+calls, member/method/index chains, array literals, designated named construction,
+grouping, unary `-`/`!`/`~`, and all existing binary precedence tiers. Local and
+constructor field initializers, return/static-assert expressions, if/while
+conditions, expression statements and assignment operands enter this path. An
+iterative Pratt state machine stores copied frames and AST nodes in
 `expression_arena.au`; parser nesting and AST depth retain their separate bounds
 of 128. A third copied-owner store holds reverse-linked argument edges with
-checked child indices, count and depth summaries. Argument arity grows within
-source/resource bounds; parsing adds no fixed argument-count limit. Grouping
+checked child indices, count/depth summaries and optional designator-token indices.
+Argument arity grows within source/resource bounds; parsing adds no fixed
+argument-count limit. Grouping
 retains the inner node's original token span; index nodes retain their base token.
 
 The parser calls `lexer.au::next_lexeme` for every token and trivia boundary.
-A local eligibility pass returns Unsupported for type-taking reflection calls,
-brace construction and array literals. Existing non-consuming host template lookahead protects template/call ambiguity, including exact `>>`
-closer behavior. No supported prefix is committed: Unsupported falls back for
+A local eligibility pass returns Unsupported for type-taking reflection calls.
+Existing non-consuming host template lookahead also traverses aggregates and
+protects template/call ambiguity, including exact `>>` closer behavior. No supported prefix is committed: Unsupported falls back for
 the whole expression with tokens and position unchanged. Empty/truncated or
 otherwise malformed supported grammar, allocation/depth failure and malformed
-private results reject. Constructor brace initializers and recursive parsing
-inside unsupported constructs remain on the C++ reference path. Byte strings
-retain their complete original token, without a second decoder or new owned
+private results reject. Recursive parsing inside unsupported constructs remains
+on the C++ reference path. Byte strings retain their complete original token,
+without a second decoder or new owned
 payload; existing lexer validation and semantic decoding remain unchanged.
+The constructor-brace entry starts at the original field token and ends after its
+closing brace. It preserves field-anchored `array_zero` for an empty initializer;
+ordinary `{}` remains `array_literal`.
 
 `hosted_parser.cpp` and `hosted_parser.S` are trusted bootstrap adapters. Aurora
 creates and consumes the arena; C++ only reserves opaque storage and imports the
 same immutable source snapshot used by the lexer. Copied results contain named
 status values, indices and source offsets. The adapter checks token/spelling/span
 bounds, qualified spellings, matched delimiters, exact stopping delimiter and
-complete unique token coverage, including call commas and grouping. It checks
+complete unique token coverage, including aggregate designators, commas and
+grouping. It checks
 subtree source order, child-before-parent order, unique argument edges, arity,
 independently recomputed depth and one connected non-sharing tree before committing
 position.

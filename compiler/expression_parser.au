@@ -18,12 +18,17 @@ export namespace compiler_parser {
         reserved_identifier,
         reserved_builtin,
         reserved_prefix,
+        expected_brace_close,
+        expected_dot,
+        expected_equal,
+        expected_brace_open,
         invalid
     };
     enum class Stop {
         semicolon,
         close_parenthesis,
-        assignment
+        assignment,
+        constructor_braces
     };
     class ParseResult {
         ParseStatus result;
@@ -178,7 +183,8 @@ namespace compiler_parser {
         if (stop == Stop::close_parenthesis) {
             return single(source, token, ')');
         }
-        return single(source, token, ';') || (stop == Stop::assignment && single(source, token, '='));
+        return stop != Stop::constructor_braces && (single(source, token, ';') || (stop == Stop::assignment
+            && single(source, token, '=')));
     }
     auto pair(builtin::span<const u8> source, ParseToken token, u8 value) -> bool {
         return token.last() - token.first() == 2 && source.at(token.first()) == value && source.at(token.first() + 1)
@@ -256,24 +262,23 @@ namespace compiler_parser {
             if (groups == 0 && stopped(source, token, stop)) {
                 return true;
             }
-            const u8 first = source.at(token.first());
-            if (first == '{') {
-                return false;
-            }
             const ParseToken next_token = advance(source, token);
             if (!qualified && type_query(source, token) && single(source, next_token, '(')) {
                 return false;
             }
-            if (single(source, token, '(') || single(source, token, '[')) {
+            if (single(source, token, '(') || single(source, token, '[') || single(source, token, '{')) {
                 groups = groups + 1;
             }
-            if (single(source, token, ')') || single(source, token, ']')) {
+            if (single(source, token, ')') || single(source, token, ']') || single(source, token, '}')) {
                 if (groups == 0) {
                     return true;
                 }
                 groups = groups - 1;
+                if (groups == 0 && stop == Stop::constructor_braces && single(source, token, '}')) {
+                    return true;
+                }
             }
-            if (single(source, token, ';') || single(source, token, '}')) {
+            if (single(source, token, ';')) {
                 return true;
             }
             qualified = single(source, token, '.') || pair(source, token, ':');
@@ -297,8 +302,8 @@ export namespace compiler_parser {
     auto parse(AstArena& arena, builtin::span<const u8> source, compiler_lexer::Cursor cursor,
         Stop stop) -> ParseResult {
         ParseToken token = read_token(source, cursor, 0);
-        if ((stop != Stop::semicolon && stop != Stop::close_parenthesis && stop != Stop::assignment) || arena.size()
-            != 0 || arena.stack_size() != 0 || arena.arguments() != 0) {
+        if ((stop != Stop::semicolon && stop != Stop::close_parenthesis && stop != Stop::assignment && stop
+            != Stop::constructor_braces) || arena.size() != 0 || arena.stack_size() != 0 || arena.arguments() != 0) {
             return ParseResult(ParseStatus::invalid, -1, arena.size(), 0, token.first());
         }
         if (!arena.ok()) {
@@ -308,6 +313,33 @@ export namespace compiler_parser {
             return ParseResult(ParseStatus::unsupported, -1, 0, 0, token.first());
         }
         ParseFrame initial = ParseFrame(FrameState::expression_start, 1, -1, -1);
+        if (stop == Stop::constructor_braces) {
+            const ParseStatus status = identifier_status(source, token, false);
+            if (status != ParseStatus::success) {
+                return ParseResult(status, -1, arena.size(), token.index(), token.first());
+            }
+            const ParseToken opening = advance(source, token);
+            token.update(opening);
+            if (!single(source, token, '{')) {
+                return ParseResult(ParseStatus::expected_brace_open, -1, arena.size(), token.index(), token.first());
+            }
+            const ParseToken first = advance(source, token);
+            token.update(first);
+            if (single(source, token, '}')) {
+                const i64 root = arena.append_list(NodeKind::array_zero, 0, 0, token.index(), -1);
+                if (root < 0) {
+                    const ParseResult error = failure(arena, token);
+                    return error;
+                }
+                const ParseToken after = advance(source, token);
+                return ParseResult(ParseStatus::success, root, arena.size(), after.index(), after.first());
+            }
+            const ParseFrame aggregate = ParseFrame(FrameState::constructor_arguments, 0, -1, 0);
+            if (!arena.push(aggregate)) {
+                const ParseResult error = failure(arena, token);
+                return error;
+            }
+        }
         if (!arena.push(initial)) {
             const ParseResult error = failure(arena, token);
             return error;
@@ -379,9 +411,38 @@ export namespace compiler_parser {
                 nesting = nesting - 1;
                 arena.pop();
             }
-            if (frame.state() == FrameState::call_arguments || frame.state() == FrameState::method_arguments) {
+            if (frame.state() == FrameState::construct_field) {
                 handled = true;
-                const i64 head = arena.append_argument(frame.lhs(), value);
+                if (!single(source, token, '.')) {
+                    return ParseResult(ParseStatus::expected_dot, -1, arena.size(), token.index(), token.first());
+                }
+                const ParseToken field = advance(source, token);
+                token.update(field);
+                const ParseStatus status = identifier_status(source, token, false);
+                if (status != ParseStatus::success) {
+                    return ParseResult(status, -1, arena.size(), token.index(), token.first());
+                }
+                const i64 label = token.index();
+                const ParseToken equals = advance(source, token);
+                token.update(equals);
+                if (!single(source, token, '=')) {
+                    return ParseResult(ParseStatus::expected_equal, -1, arena.size(), token.index(), token.first());
+                }
+                const ParseToken child_token = advance(source, token);
+                token.update(child_token);
+                ParseFrame next = ParseFrame(FrameState::construct_arguments, frame.min(), frame.lhs(), frame.token());
+                next.designate(label);
+                const ParseFrame child = ParseFrame(FrameState::expression_start, 1, -1, -1);
+                if (!arena.replace(next) || !arena.push(child)) {
+                    const ParseResult error = failure(arena, token);
+                    return error;
+                }
+            }
+            if (frame.state() == FrameState::call_arguments || frame.state() == FrameState::method_arguments
+                || frame.state() == FrameState::array_arguments || frame.state() == FrameState::construct_arguments
+                || frame.state() == FrameState::constructor_arguments) {
+                handled = true;
+                const i64 head = arena.append_field(frame.lhs(), value, frame.field());
                 if (head < 0) {
                     const ParseResult error = failure(arena, token);
                     return error;
@@ -389,31 +450,59 @@ export namespace compiler_parser {
                 if (single(source, token, ',')) {
                     const ParseToken next_token = advance(source, token);
                     token.update(next_token);
-                    const ParseFrame next = ParseFrame(frame.state(), frame.min(), head, frame.token());
-                    const ParseFrame child = ParseFrame(FrameState::expression_start, 1, -1, -1);
-                    if (!arena.replace(next) || !arena.push(child)) {
+                    FrameState state = frame.state();
+                    if (state == FrameState::construct_arguments) {
+                        state = FrameState::construct_field;
+                    }
+                    const ParseFrame next = ParseFrame(state, frame.min(), head, frame.token());
+                    if (!arena.replace(next)) {
                         const ParseResult error = failure(arena, token);
                         return error;
                     }
-                } else {
-                    if (!single(source, token, ')')) {
-                        return ParseResult(ParseStatus::expected_close, -1, arena.size(), token.index(), token.first());
+                    if (state != FrameState::construct_field) {
+                        const ParseFrame child = ParseFrame(FrameState::expression_start, 1, -1, -1);
+                        if (!arena.push(child)) {
+                            const ParseResult error = failure(arena, token);
+                            return error;
+                        }
                     }
+                } else {
                     NodeKind kind = NodeKind::call;
+                    u8 close = ')';
                     if (frame.state() == FrameState::method_arguments) {
                         kind = NodeKind::method_call;
                     }
-                    value = arena.append_call(kind, frame.token(), frame.min(), token.index(), head);
+                    if (frame.state() == FrameState::array_arguments || frame.state()
+                        == FrameState::constructor_arguments) {
+                        kind = NodeKind::array_literal;
+                        close = '}';
+                    }
+                    if (frame.state() == FrameState::construct_arguments) {
+                        kind = NodeKind::construct;
+                        close = '}';
+                    }
+                    if (!single(source, token, close)) {
+                        ParseStatus status = ParseStatus::expected_close;
+                        if (close == '}') {
+                            status = ParseStatus::expected_brace_close;
+                        }
+                        return ParseResult(status, -1, arena.size(), token.index(), token.first());
+                    }
+                    value = arena.append_list(kind, frame.token(), frame.min(), token.index(), head);
                     if (value < 0) {
                         const ParseResult error = failure(arena, token);
                         return error;
                     }
                     const ParseToken next_token = advance(source, token);
                     token.update(next_token);
-                    const ParseFrame next = ParseFrame(FrameState::primary_postfix, 0, value, -1);
-                    if (!arena.replace(next)) {
-                        const ParseResult error = failure(arena, token);
-                        return error;
+                    if (frame.state() == FrameState::constructor_arguments) {
+                        arena.pop();
+                    } else {
+                        const ParseFrame next = ParseFrame(FrameState::primary_postfix, 0, value, -1);
+                        if (!arena.replace(next)) {
+                            const ParseResult error = failure(arena, token);
+                            return error;
+                        }
                     }
                 }
             }
@@ -466,7 +555,7 @@ export namespace compiler_parser {
                         const ParseToken argument_token = advance(source, token);
                         token.update(argument_token);
                         if (single(source, token, ')')) {
-                            value = arena.append_call(NodeKind::method_call, member, member, token.index(), head);
+                            value = arena.append_list(NodeKind::method_call, member, member, token.index(), head);
                             if (value < 0) {
                                 const ParseResult error = failure(arena, token);
                                 return error;
@@ -537,87 +626,141 @@ export namespace compiler_parser {
                         return error;
                     }
                 } else {
-                    if (single(source, original, '-') || single(source, original, '!') || single(source, original,
-                        '~')) {
-                        const ParseFrame next = ParseFrame(FrameState::primary_unary, 0, -1, original.index());
-                        const ParseFrame child = ParseFrame(FrameState::primary_start, 0, -1, -1);
-                        if (!arena.replace(next) || !arena.push(child)) {
-                            const ParseResult error = failure(arena, token);
-                            return error;
-                        }
-                    } else {
-                        NodeKind kind = NodeKind::invalid;
-                        if (original.kind() == compiler_lexer::Event::token) {
-                            const u8 first = source.at(original.first());
-                            if (compiler_lexer::letter(first)) {
-                                kind = NodeKind::name;
-                            }
-                            if (compiler_lexer::digit(first) || first == '\'' || first == '"' || boolean_literal(source,
-                                original)) {
-                                kind = NodeKind::literal;
-                            }
-                        }
-                        if (kind == NodeKind::invalid) {
-                            return ParseResult(ParseStatus::expected_expression, -1, arena.size(), token.index(),
-                                token.first());
-                        }
-                        if (kind == NodeKind::literal) {
-                            value = arena.append(kind, original.index(), -1, -1);
+                    if (single(source, original, '{')) {
+                        if (single(source, token, '}')) {
+                            value = arena.append_list(NodeKind::array_literal, original.index(), original.index(),
+                                token.index(), -1);
                             if (value < 0) {
                                 const ParseResult error = failure(arena, token);
                                 return error;
                             }
-                            nesting = nesting - 1;
-                            arena.pop();
-                        } else {
-                            i64 last = original.index();
-                            while (pair(source, token, ':')) {
-                                const ParseToken component = advance(source, token);
-                                token.update(component);
-                                const ParseStatus status = identifier_status(source, token, true);
-                                if (status != ParseStatus::success) {
-                                    return ParseResult(status, -1, arena.size(), token.index(), token.first());
-                                }
-                                last = token.index();
-                                const ParseToken after_name = advance(source, token);
-                                token.update(after_name);
+                            const ParseToken after = advance(source, token);
+                            token.update(after);
+                            const ParseFrame next = ParseFrame(FrameState::primary_postfix, 0, value, -1);
+                            if (!arena.replace(next)) {
+                                const ParseResult error = failure(arena, token);
+                                return error;
                             }
-                            if (single(source, token, '(')) {
-                                const ParseToken argument_token = advance(source, token);
-                                token.update(argument_token);
-                                if (single(source, token, ')')) {
-                                    value = arena.append_call(NodeKind::call, original.index(), last, token.index(),
-                                        -1);
-                                    if (value < 0) {
-                                        const ParseResult error = failure(arena, token);
-                                        return error;
-                                    }
-                                    const ParseToken after_call = advance(source, token);
-                                    token.update(after_call);
-                                    const ParseFrame next = ParseFrame(FrameState::primary_postfix, 0, value, -1);
-                                    if (!arena.replace(next)) {
-                                        const ParseResult error = failure(arena, token);
-                                        return error;
-                                    }
-                                } else {
-                                    const ParseFrame next = ParseFrame(FrameState::call_arguments, last, -1,
-                                        original.index());
-                                    const ParseFrame child = ParseFrame(FrameState::expression_start, 1, -1, -1);
-                                    if (!arena.replace(next) || !arena.push(child)) {
-                                        const ParseResult error = failure(arena, token);
-                                        return error;
-                                    }
+                        } else {
+                            const ParseFrame next = ParseFrame(FrameState::array_arguments, original.index(), -1,
+                                original.index());
+                            const ParseFrame child = ParseFrame(FrameState::expression_start, 1, -1, -1);
+                            if (!arena.replace(next) || !arena.push(child)) {
+                                const ParseResult error = failure(arena, token);
+                                return error;
+                            }
+                        }
+                    } else {
+                        if (single(source, original, '-') || single(source, original, '!') || single(source, original,
+                            '~')) {
+                            const ParseFrame next = ParseFrame(FrameState::primary_unary, 0, -1, original.index());
+                            const ParseFrame child = ParseFrame(FrameState::primary_start, 0, -1, -1);
+                            if (!arena.replace(next) || !arena.push(child)) {
+                                const ParseResult error = failure(arena, token);
+                                return error;
+                            }
+                        } else {
+                            NodeKind kind = NodeKind::invalid;
+                            if (original.kind() == compiler_lexer::Event::token) {
+                                const u8 first = source.at(original.first());
+                                if (compiler_lexer::letter(first)) {
+                                    kind = NodeKind::name;
                                 }
-                            } else {
-                                value = arena.append_name(original.index(), last);
+                                if (compiler_lexer::digit(first) || first == '\'' || first == '"'
+                                    || boolean_literal(source, original)) {
+                                    kind = NodeKind::literal;
+                                }
+                            }
+                            if (kind == NodeKind::invalid) {
+                                return ParseResult(ParseStatus::expected_expression, -1, arena.size(), token.index(),
+                                    token.first());
+                            }
+                            if (kind == NodeKind::literal) {
+                                value = arena.append(kind, original.index(), -1, -1);
                                 if (value < 0) {
                                     const ParseResult error = failure(arena, token);
                                     return error;
                                 }
-                                const ParseFrame next = ParseFrame(FrameState::primary_postfix, 0, value, -1);
-                                if (!arena.replace(next)) {
-                                    const ParseResult error = failure(arena, token);
-                                    return error;
+                                nesting = nesting - 1;
+                                arena.pop();
+                            } else {
+                                i64 last = original.index();
+                                while (pair(source, token, ':')) {
+                                    const ParseToken component = advance(source, token);
+                                    token.update(component);
+                                    const ParseStatus status = identifier_status(source, token, true);
+                                    if (status != ParseStatus::success) {
+                                        return ParseResult(status, -1, arena.size(), token.index(), token.first());
+                                    }
+                                    last = token.index();
+                                    const ParseToken after_name = advance(source, token);
+                                    token.update(after_name);
+                                }
+                                if (single(source, token, '(')) {
+                                    const ParseToken argument_token = advance(source, token);
+                                    token.update(argument_token);
+                                    if (single(source, token, ')')) {
+                                        value = arena.append_list(NodeKind::call, original.index(), last, token.index(),
+                                            -1);
+                                        if (value < 0) {
+                                            const ParseResult error = failure(arena, token);
+                                            return error;
+                                        }
+                                        const ParseToken after_call = advance(source, token);
+                                        token.update(after_call);
+                                        const ParseFrame next = ParseFrame(FrameState::primary_postfix, 0, value, -1);
+                                        if (!arena.replace(next)) {
+                                            const ParseResult error = failure(arena, token);
+                                            return error;
+                                        }
+                                    } else {
+                                        const ParseFrame next = ParseFrame(FrameState::call_arguments, last, -1,
+                                            original.index());
+                                        const ParseFrame child = ParseFrame(FrameState::expression_start, 1, -1, -1);
+                                        if (!arena.replace(next) || !arena.push(child)) {
+                                            const ParseResult error = failure(arena, token);
+                                            return error;
+                                        }
+                                    }
+                                } else {
+                                    if (single(source, token, '{')) {
+                                        const ParseToken first = advance(source, token);
+                                        token.update(first);
+                                        if (single(source, token, '}')) {
+                                            value = arena.append_list(NodeKind::construct, original.index(), last,
+                                                token.index(), -1);
+                                            if (value < 0) {
+                                                const ParseResult error = failure(arena, token);
+                                                return error;
+                                            }
+                                            const ParseToken after = advance(source, token);
+                                            token.update(after);
+                                            const ParseFrame next = ParseFrame(FrameState::primary_postfix, 0, value,
+                                                -1);
+                                            if (!arena.replace(next)) {
+                                                const ParseResult error = failure(arena, token);
+                                                return error;
+                                            }
+                                        } else {
+                                            const ParseFrame next = ParseFrame(FrameState::construct_field, last, -1,
+                                                original.index());
+                                            if (!arena.replace(next)) {
+                                                const ParseResult error = failure(arena, token);
+                                                return error;
+                                            }
+                                        }
+                                    } else {
+                                        value = arena.append_name(original.index(), last);
+                                        if (value < 0) {
+                                            const ParseResult error = failure(arena, token);
+                                            return error;
+                                        }
+                                        const ParseFrame next = ParseFrame(FrameState::primary_postfix, 0, value, -1);
+                                        if (!arena.replace(next)) {
+                                            const ParseResult error = failure(arena, token);
+                                            return error;
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -628,7 +771,7 @@ export namespace compiler_parser {
                 return ParseResult(ParseStatus::invalid, -1, arena.size(), token.index(), token.first());
             }
         }
-        if (!stopped(source, token, stop)) {
+        if (stop != Stop::constructor_braces && !stopped(source, token, stop)) {
             return ParseResult(ParseStatus::expected_end, -1, arena.size(), token.index(), token.first());
         }
         return ParseResult(ParseStatus::success, value, arena.size(), token.index(), token.first());

@@ -467,7 +467,7 @@ public:
     }
     ExpressionPtr statementExpression(hosted_parser::Stop stop) {
 #ifdef AURORA_HOSTED_PARSER
-        if (hostedExpressions && !templateStatementExpressionAhead()) {
+        if (hostedExpressions && !templateStatementExpressionAhead(position)) {
             if (auto result = parseHostedExpression(tokens, position, stop))
                 return result;
         }
@@ -479,15 +479,31 @@ public:
     // Linear, non-consuming template candidate selection. Only candidates whose
     // closing > or >> precedes construction/call syntax invoke the existing
     // template lookahead. Ordinary comparison chains do not rescan their tails.
-    bool templateStatementExpressionAhead() const {
+    bool templateStatementExpressionAhead(std::size_t expressionStart, bool constructorBraces = false) const {
         std::vector<std::size_t> openings;
-        int groups = 0;
+        int groups = 0, braces = 0;
         auto boundary = tokens.size();
-        for (auto index = position; index < tokens.size(); ++index) {
+        for (auto index = expressionStart; index < tokens.size(); ++index) {
             const auto &text = tokens[index].text;
-            if (text == "<eof>" || text == ";" || text == "}" || text == "{" || text == "=")
+            if (text == "<eof>" || text == ";" || (text == "=" && braces == 0))
                 return false;
-            if (text == "(") {
+            if (text == "{") {
+                if (boundary != tokens.size())
+                    return false;
+                ++braces;
+                openings.clear();
+            } else if (text == "}") {
+                if (braces == 0)
+                    return false;
+                --braces;
+                openings.clear();
+                if (constructorBraces && braces == 0)
+                    return false;
+            } else if (text == "=") {
+                // A designator starts a new expression; templateArgumentEnd
+                // cannot accept candidates crossing its '=' or either brace.
+                openings.clear();
+            } else if (text == "(") {
                 if (boundary != tokens.size())
                     return false;
                 ++groups;
@@ -514,7 +530,7 @@ public:
                 const auto start = openings[openings.size() - count];
                 openings.resize(openings.size() - count);
                 if (index + 1 < tokens.size() && (tokens[index + 1].text == "(" || tokens[index + 1].text == "{") &&
-                    start < boundary && start > position && !tokens[start - 1].text.empty() &&
+                    start < boundary && start > expressionStart && !tokens[start - 1].text.empty() &&
                     tokens[start - 1].text != "true" && tokens[start - 1].text != "false" &&
                     (std::isalpha(static_cast<unsigned char>(tokens[start - 1].text.front())) ||
                      tokens[start - 1].text.front() == '_') &&
@@ -773,17 +789,33 @@ public:
                         if (constructor) {
                             if (eat(":")) {
                                 do {
+                                    const auto fieldPosition = position;
                                     auto fieldName = ident();
                                     ExpressionPtr value;
-                                    if (eat("{")) {
-                                        if (eat("}"))
-                                            value = std::make_shared<Expression>("array_zero", fieldName);
-                                        else {
-                                            value = std::make_shared<Expression>("array_literal", fieldName);
-                                            do {
-                                                attach(value, expr());
-                                            } while (eat(","));
-                                            need("}");
+                                    if (peek().text == "{") {
+#ifdef AURORA_HOSTED_PARSER
+                                        if (hostedExpressions &&
+                                            !templateStatementExpressionAhead(fieldPosition, true)) {
+                                            auto candidate = fieldPosition;
+                                            value = parseHostedExpression(
+                                                tokens, candidate, hosted_parser::Stop::ConstructorBraces);
+                                            if (value)
+                                                position = candidate;
+                                        }
+#else
+                                        (void)fieldPosition;
+#endif
+                                        if (!value) {
+                                            need("{");
+                                            if (eat("}"))
+                                                value = std::make_shared<Expression>("array_zero", fieldName);
+                                            else {
+                                                value = std::make_shared<Expression>("array_literal", fieldName);
+                                                do {
+                                                    attach(value, expr());
+                                                } while (eat(","));
+                                                need("}");
+                                            }
                                         }
                                     } else {
                                         need("(");

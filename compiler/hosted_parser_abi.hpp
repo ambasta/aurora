@@ -12,7 +12,10 @@ enum class NodeKind : std::int64_t {
     Call,
     Member,
     MethodCall,
-    Index
+    Index,
+    ArrayLiteral,
+    Construct,
+    ArrayZero
 };
 enum class Status : std::int64_t {
     Success,
@@ -28,11 +31,16 @@ enum class Status : std::int64_t {
     ReservedIdentifier,
     ReservedBuiltin,
     ReservedPrefix,
+    ExpectedBraceClose,
+    ExpectedDot,
+    ExpectedEqual,
+    ExpectedBraceOpen,
     Invalid
 };
 enum class Stop : std::int64_t {
     Semicolon,
     CloseParenthesis,
-    Assignment
+    Assignment,
+    ConstructorBraces
 };
 } // namespace aurora::hosted_parser
