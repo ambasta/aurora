@@ -20,14 +20,15 @@ using NodeWords = std::array<std::int64_t, 7>;
 using EdgeWords = std::array<std::int64_t, 5>;
 using TypeWords = std::array<std::int64_t, 8>;
 using SyntaxWords = std::array<std::int64_t, 12>;
-using InputWords = std::array<std::uint64_t, 18>;
+using InputWords = std::array<std::uint64_t, 19>;
 static_assert(sizeof(ResultWords) == sizeof(aurora::hosted_abi::compiler_parser::ParseResult) &&
               sizeof(NodeWords) == sizeof(aurora::hosted_abi::compiler_parser::AstNode) &&
               sizeof(EdgeWords) == sizeof(aurora::hosted_abi::compiler_parser::ChildEdge) &&
               sizeof(TypeWords) == sizeof(aurora::hosted_abi::compiler_parser::TypeSyntax) &&
               sizeof(SyntaxWords) == sizeof(aurora::hosted_abi::compiler_parser::SyntaxNode) &&
               sizeof(InputWords) == sizeof(aurora::hosted_abi::ParserInput));
-static_assert(sizeof(ResultWords) == 48 && sizeof(SyntaxWords) == 96 && sizeof(InputWords) == 144);
+static_assert(sizeof(ResultWords) == 48 && sizeof(SyntaxWords) == 96 && sizeof(InputWords) == 152);
+static_assert(offsetof(aurora::hosted_abi::ParserInput, enum_count) == 144);
 static_assert(offsetof(aurora::hosted_abi::compiler_parser::ParseResult, token_half) == 40 &&
               offsetof(aurora::hosted_abi::compiler_parser::SyntaxNode, borrow_token) == 88);
 using aurora::DiagnosticCode;
@@ -1068,6 +1069,122 @@ void fieldControls() {
         },
         true);
 }
+void preambleEnumControls() {
+    for (const auto stop : {Stop::preamble, Stop::enum_definition}) {
+        const bool preamble = stop == Stop::preamble;
+        const auto tokens = aurora::lex(preamble ? "prefix;export module one.two;import alpha.beta;import gamma;next"
+                                                 : "prefix;enum class E{first,second};next",
+                                        "record.au");
+        const auto original = tokens;
+        const aurora::hosted_parser::Cursor cursor{2};
+        const std::int64_t end = preamble ? 14 : 9;
+        const auto configure = [&] {
+            reset();
+            records.clear();
+            count = 0;
+            statements = preamble ? std::vector<SyntaxWords>{{18, 7, 10, -1, -1, -1, -1, -1, -1, -1, 0, -1},
+                                                             {18, 12, 13, 0, -1, -1, -1, -1, -1, -1, 0, -1},
+                                                             {17, 2, 14, -1, -1, -1, -1, 4, 1, -1, 1, -1}}
+                                  : std::vector<SyntaxWords>{{20, 4, 5, -1, -1, -1, -1, -1, -1, -1, 0, -1},
+                                                             {20, 6, 7, 0, -1, -1, -1, -1, -1, -1, 0, -1},
+                                                             {19, 2, 9, -1, -1, -1, -1, -1, 1, -1, 0, -1}};
+            statementCount = 3;
+            result = {wire(Status::success),
+                      2,
+                      0,
+                      end,
+                      static_cast<std::int64_t>(tokens.at(cursor.ordinal + end).span.begin.offset),
+                      0};
+        };
+        configure();
+        if (preamble) {
+            const auto value = aurora::parseHostedPreamble(tokens, cursor);
+            require(value.program.moduleName == "one.two" && value.program.interfaceUnit &&
+                        value.program.imports.size() == 2 && value.program.imports[0].text == "alpha.beta" &&
+                        value.program.imports[1].text == "gamma" &&
+                        value.program.imports[0].span.begin.offset == tokens[9].span.begin.offset &&
+                        value.program.imports[0].span.end.offset == tokens[11].span.end.offset &&
+                        value.program.imports[1].span.begin.offset == tokens[14].span.begin.offset &&
+                        value.program.imports[1].span.end.offset == tokens[14].span.end.offset &&
+                        value.next.ordinal == cursor.ordinal + end && value.next.half == 0,
+                    "preamble conversion lost source ranges, import order or cursor");
+        } else {
+            const auto value = aurora::parseHostedEnum(tokens, cursor, 63);
+            require(value.definition.name == "E" && value.definition.scope.empty() && !value.definition.exported &&
+                        value.definition.cases.size() == 2 && value.definition.cases[0].text == "first" &&
+                        value.definition.cases[1].text == "second" &&
+                        value.definition.token.span.begin.offset == tokens[4].span.begin.offset &&
+                        value.definition.cases[0].span.begin.offset == tokens[6].span.begin.offset &&
+                        value.definition.cases[1].span.end.offset == tokens[8].span.end.offset &&
+                        value.next.ordinal == cursor.ordinal + end && value.next.half == 0,
+                    "enum conversion lost source ranges, case order or cursor");
+        }
+        require(cursor.ordinal == 2 && cursor.half == 0 && unchanged(original, tokens) && created == 1 && parsed == 1 &&
+                    released == 1 && read == 0 && edgeRead == 0 && typeRead == 0 && statementRead == 3 &&
+                    capturedInput[10] == static_cast<std::uint64_t>(stop) && capturedInput[18] == (preamble ? 0U : 63U),
+                "preamble/enum conversion changed immutable input, explicit count or exact owner cleanup");
+        ++cases;
+        const auto reject = [&](const char *label, const std::function<void()> &mutate, bool readFailure = false) {
+            configure();
+            mutate();
+            bool rejected = false;
+            try {
+                if (preamble)
+                    static_cast<void>(aurora::parseHostedPreamble(tokens, cursor));
+                else
+                    static_cast<void>(aurora::parseHostedEnum(tokens, cursor, 63));
+            } catch (const aurora::Error &error) {
+                rejected = !readFailure && error.diagnostic.code == DiagnosticCode::Internal;
+            } catch (const std::runtime_error &error) {
+                rejected = readFailure && std::string(error.what()) == "injected read failure";
+            }
+            require(rejected && cursor.ordinal == 2 && cursor.half == 0 && unchanged(original, tokens) &&
+                        created == 1 && parsed == 1 && released == 1,
+                    std::string(label) + ": invalid preamble/enum representation escaped or changed owner cleanup");
+            ++cases;
+        };
+        reject("cyclic list link", [] {
+            statements[0][3] = 0;
+        });
+        reject("orphan list record", [] {
+            statements[2][8] = 0;
+        });
+        reject("out-of-range name index", [] {
+            statements[1][1] = result[3];
+        });
+        if (preamble) {
+            reject("empty name range", [] {
+                statements[0][2] = statements[0][1];
+            });
+            reject("invalid interface flag", [] {
+                statements[2][10] = 2;
+            });
+        }
+        reject("wrong root tag", [] {
+            statements[2][0] = wire(SyntaxKind::field);
+        });
+        reject(
+            "syntax read exception",
+            [] {
+                throwingRead = 4;
+            },
+            true);
+    }
+    for (const auto count : {std::size_t{65}, std::numeric_limits<std::size_t>::max()}) {
+        reset();
+        const auto tokens = aurora::lex("enum class E{one};", "invalid-count.au"), original = tokens;
+        bool rejected = false;
+        try {
+            static_cast<void>(aurora::parseHostedEnum(tokens, {}, count));
+        } catch (const aurora::Error &error) {
+            rejected = error.diagnostic.code == DiagnosticCode::Internal;
+        }
+        require(rejected && unchanged(original, tokens) && created == 0 && parsed == 0 && released == 0,
+                "unrepresentable enum count crossed the arena boundary");
+        ++cases;
+    }
+}
+
 void bodyControls() {
     reset();
     records.clear();
@@ -1441,7 +1558,7 @@ extern "C" void aurora_hosted_parser_parse(void *arena, const void *input, void 
     std::memcpy(capturedInput.data(), input, sizeof(capturedInput));
     require(capturedInput[0] == 0 && capturedInput[2] == 0 && capturedInput[3] == 0 && capturedInput[4] == 0 &&
                 capturedInput[5] == 0,
-            "copied Input144 changed the borrowed source descriptor");
+            "copied Input152 changed the borrowed source descriptor");
     ++parsed;
     std::memcpy(output, result.data(), sizeof(result));
 }
@@ -1509,6 +1626,7 @@ int main() {
         declarationTypeControls();
         continuationControls();
         fieldControls();
+        preambleEnumControls();
         diagnostic("f(",
                    Status::expected_expression,
                    2,

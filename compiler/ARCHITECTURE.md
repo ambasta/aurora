@@ -6,7 +6,7 @@ The typed-IR milestone established behavior-preserving compiler phase boundaries
 
 1. `host_sources.hpp` owns the trusted Linux descriptor-relative source reader and atomic artifact writer. `modules.hpp` loads explicit-root module graphs and resolves names/exports in defining-module contexts; MODULES.md specifies that boundary.
 2. `types.hpp` defines source types and common tokens/errors.
-3. The hosted Aurora lexer turns bytes into tokens; `syntax.hpp` defines the untyped source AST. `parser.hpp` handles module/class/enum/template headers and dispatches each complete callable or field declaration to the hosted Aurora parser.
+3. The hosted Aurora lexer turns bytes into tokens; `syntax.hpp` defines the untyped source AST. `parser.hpp` handles namespace/class/template headers and dispatches module preambles, enums and each complete callable or field declaration to the hosted Aurora parser.
 4. `semantics.hpp` performs source-level name resolution, scalar/aggregate type checking, initialization rules, const/private access checking, ownership moves, lexical borrow checks and conservative branch/loop joins. It emits typed instructions, not assembly strings.
 5. `ir.hpp` defines a target-independent accumulator/value-stack instruction model. Its operations include checked integer arithmetic, typed loads/stores, explicit control flow, metadata queries and array guard/access operations.
 6. `ir_verify.hpp` validates a complete module and creates an immutable `ValidatedModule`. Only this validated wrapper can be passed to the emitter. It checks lower-level type, initialization, control-flow, operand-stack, frame and bounds-token invariants.
@@ -66,6 +66,10 @@ their type, binding and semicolon. The existing syntax owner also stores disjoin
 parameter, initializer, callable and field variants; no additional owner is needed.
 Host admission then applies the existing service, borrowing and category policies
 in declaration order, before publishing the converted declaration.
+Module preambles and enum declarations use the same syntax owner and bounded
+name-list conversion. The enum-count input preserves the existing 64-definition
+check before the opening brace; at most 256 transient scratch entries compare
+case names. Source offsets and diagnostic precedence remain unchanged.
 
 Complete-definition grammar errors precede admission errors. This deliberately
 changes first-error precedence only for multiply-invalid declarations, including
@@ -124,7 +128,7 @@ selection switch. Current source also removes C++ `block`, `statement`,
 `startsDeclaration` and `templateArgumentEnd`; ordinary bodies and constructor
 initializers enter Aurora directly. Declaration `type`, `templateArguments`,
 parameter-list and constructor-initializer grammar is also removed. C++ retains
-module/class/enum/template headers and temporary semantic admission, which retires
+namespace/class/template headers and temporary semantic admission, which retires
 with the corresponding Aurora semantic analysis.
 
 Targeted fixtures state expected ASTs, token spans, child/designator order and

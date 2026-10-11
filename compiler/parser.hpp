@@ -68,15 +68,6 @@ public:
     Token qualifiedIdent() {
         return qualifiedTail(ident());
     }
-    Token moduleIdent() {
-        auto token = ident();
-        while (eat(".")) {
-            const auto next = ident(true);
-            token.text += "." + next.text;
-            token.span.end = next.span.end;
-        }
-        return token;
-    }
     hosted_parser::Context expressionContext() const {
         hosted_parser::Context context;
         context.typeParameters = templateParameterTokens;
@@ -113,32 +104,12 @@ public:
                 need("}");
                 continue;
             }
-            if (eat("enum")) {
-                need("class");
-                EnumDefinition definition(ident());
-                definition.scope = scope;
-                definition.exported = exported;
-                if (program.enums.size() >= 64)
-                    fail("module exceeds 64 enum definitions");
-                need("{");
-                if (peek().text == "}")
-                    fail("enum class requires at least one named case");
-                std::set<std::string> cases;
-                do {
-                    if (definition.cases.size() >= 256)
-                        fail("enum class exceeds 256 named cases");
-                    auto name = ident();
-                    if (!cases.insert(name.text).second)
-                        fail("duplicate enum case: " + name.text);
-                    if (peek().text == "=")
-                        fail("enum cases cannot have explicit values");
-                    definition.cases.push_back(std::move(name));
-                    if (!eat(",") || peek().text == "}")
-                        break;
-                } while (true);
-                need("}");
-                need(";");
-                program.enums.push_back(std::move(definition));
+            if (peek().text == "enum") {
+                auto parsed = parseHostedEnum(tokens, {position}, program.enums.size());
+                parsed.definition.scope = scope;
+                parsed.definition.exported = exported;
+                program.enums.push_back(std::move(parsed.definition));
+                position = parsed.next.ordinal;
                 continue;
             }
             std::vector<TemplateParameter> declaredParameters;
@@ -251,17 +222,9 @@ public:
         }
     }
     Program parse() {
-        Program program;
-        program.interfaceUnit = eat("export");
-        need("module");
-        program.moduleName = moduleIdent().text;
-        if (program.moduleName.size() > 4096)
-            fail("module name exceeds 4096 bytes");
-        need(";");
-        while (eat("import")) {
-            program.imports.push_back(moduleIdent());
-            need(";");
-        }
+        auto preamble = parseHostedPreamble(tokens, {position});
+        auto program = std::move(preamble.program);
+        position = preamble.next.ordinal;
         declarations(program, "", false, false);
         if (program.functions.empty() && program.imports.empty() && !program.interfaceUnit)
             fail("module must contain a function");

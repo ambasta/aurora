@@ -87,14 +87,22 @@ public:
     hosted_parser::Cursor next;
     std::optional<ParsedField> field;
     std::optional<ParsedCallable> callable;
+    std::optional<Program> preamble;
+    std::optional<EnumDefinition> enumeration;
 };
 
 ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
                                  hosted_parser::Cursor cursor,
                                  Stop stop,
-                                 const hosted_parser::Context &context) {
+                                 const hosted_parser::Context &context,
+                                 std::size_t enumCount = 0) {
     const auto position = cursor.ordinal;
+    const bool preamble = stop == Stop::preamble;
+    const bool enumeration = stop == Stop::enum_definition;
+    const bool header = preamble || enumeration;
     const bool field = stop == Stop::field;
+    if (enumCount > 64 || (!enumeration && enumCount != 0))
+        invalid();
     const bool body = stop == Stop::body;
     const bool declarationType = stop == Stop::type;
     const bool callable = stop == Stop::function || stop == Stop::method || stop == Stop::constructor;
@@ -116,6 +124,7 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
     input.cursor.line = begin.begin.line;
     input.cursor.line_start = input.cursor.offset - begin.begin.column + 1;
     input.stop = stop;
+    input.enum_count = static_cast<std::int64_t>(enumCount);
     if (context.typeParameters.size() > 2 || context.capacityParameters.size() > 1)
         invalid();
     const auto parameter = [&](const Token &token, std::int64_t &first, std::int64_t &last) {
@@ -137,6 +146,8 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
     // has a distinct source token, as do body statements. Template candidates add at most
     // N frames. Capacity <= 2*used+8 includes every minimum allocation. Other
     // live frames are bounded by body256 + expression1549 + type70 = 1875.
+    // The standalone enum profile uses at most 256 duplicate-name scratch frames;
+    // it cannot overlap body/expression/type parsing and does not increase this bound.
     // The region charges replacement payload, not metadata or old+new resize bytes.
     constexpr std::uint64_t recordBytes = sizeof(Node) + sizeof(Edge) + sizeof(TypeSyntax) + sizeof(SyntaxNode);
     constexpr std::uint64_t perToken = 2 * (recordBytes + hosted_abi::frameBytes);
@@ -152,7 +163,7 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
     const auto statementCount = aurora_hosted_parser_syntax_count(arena.data());
     if (result.result < Status::success || result.result >= Status::invalid || result.node_count < 0 ||
         result.node_count != actualCount || edgeCount < 0 || typeCount < 0 || statementCount < 0 ||
-        (!body && !callable && !field && statementCount != 0) || result.token_count < 0 ||
+        (!body && !callable && !field && !header && statementCount != 0) || result.token_count < 0 ||
         static_cast<std::uint64_t>(result.token_count) >= tokens.size() - position ||
         result.source_offset < input.cursor.offset || result.source_offset > input.source.length ||
         result.token_half < 0 || result.token_half > 1)
@@ -179,8 +190,8 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
             invalid();
         if (result.result == Status::allocation_failure)
             throw Error(DiagnosticCode::Internal, "hosted parser allocation failed", at.span);
-        if ((!body && !callable && !field && result.result >= Status::expected_open) ||
-            ((body || callable || field) && result.result == Status::expected_end) ||
+        if ((!body && !callable && !field && !header && result.result >= Status::expected_open) ||
+            ((body || callable || field || header) && result.result == Status::expected_end) ||
             (!callable && (result.result == Status::expected_auto || result.result == Status::expected_arrow)))
             invalid();
         if (result.result == Status::block_nesting_limit)
@@ -269,6 +280,26 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
             message = "expected 'auto'";
         else if (result.result == Status::expected_arrow)
             message = "expected '->'";
+        else if (result.result == Status::expected_module)
+            message = "expected 'module'";
+        else if (result.result == Status::expected_enum)
+            message = "expected 'enum'";
+        else if (result.result == Status::expected_class)
+            message = "expected 'class'";
+        else if (result.result == Status::module_name_limit)
+            message = "module name exceeds 4096 bytes";
+        else if (result.result == Status::module_enum_limit)
+            message = "module exceeds 64 enum definitions";
+        else if (result.result == Status::empty_enum)
+            message = "enum class requires at least one named case";
+        else if (result.result == Status::enum_case_limit)
+            message = "enum class exceeds 256 named cases";
+        else if (result.result == Status::duplicate_enum_case) {
+            if (end <= position)
+                invalid();
+            message = "duplicate enum case: " + tokens[end - 1].text;
+        } else if (result.result == Status::explicit_enum_value)
+            message = "enum cases cannot have explicit values";
         else if (result.result == Status::expected_end)
             message = stop == Stop::close_parenthesis ? "expected ')'" : "expected ';'";
         else
@@ -279,9 +310,9 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
     if (result.token_count == 0 || result.node_count > result.token_count || typeCount > tokenCount ||
         statementCount > result.token_count ||
         (result.node_count == 0 ? edgeCount != 0 : edgeCount >= result.node_count) ||
-        (declarationType             ? result.node_count != 0 || typeCount == 0 || result.root_node != typeCount - 1
-         : body || callable || field ? statementCount == 0 || result.root_node != statementCount - 1
-                                     : result.node_count == 0 || result.root_node != result.node_count - 1))
+        (declarationType ? result.node_count != 0 || typeCount == 0 || result.root_node != typeCount - 1
+         : body || callable || field || header ? statementCount == 0 || result.root_node != statementCount - 1
+                                               : result.node_count == 0 || result.root_node != result.node_count - 1))
         invalid();
     const auto text = [&](std::int64_t ordinal) -> const std::string & {
         if (ordinal < 0 || ordinal >= tokenCount)
@@ -296,6 +327,58 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
             value += text(ordinal);
         return value;
     };
+    if (header) {
+        if (result.node_count != 0 || edgeCount != 0 || typeCount != 0)
+            invalid();
+        const auto tokenAt = [&](std::int64_t ordinal) -> const Token & {
+            if (ordinal < 0 || ordinal >= tokenCount)
+                invalid();
+            return tokens[position + static_cast<std::size_t>(ordinal)];
+        };
+        SyntaxNode root;
+        aurora_hosted_parser_syntax(arena.data(), result.root_node, &root);
+        if (root.tag != (preamble ? SyntaxKind::preamble : SyntaxKind::enum_definition))
+            invalid();
+        ImportedSyntax imported;
+        imported.next = {end, half};
+        if (preamble) {
+            if (root.qualifier < 0 || root.qualifier > 1)
+                invalid();
+            imported.preamble.emplace();
+            imported.preamble->moduleName = name(root.token_index, root.binding_token);
+            imported.preamble->interfaceUnit = root.qualifier != 0;
+        } else
+            imported.enumeration.emplace(tokenAt(root.token_index));
+        std::vector<Token> names;
+        auto child = root.body_node;
+        auto limit = result.root_node;
+        while (child != -1) {
+            if (child < 0 || child >= limit)
+                invalid();
+            SyntaxNode node;
+            aurora_hosted_parser_syntax(arena.data(), child, &node);
+            if (node.tag != (preamble ? SyntaxKind::import_name : SyntaxKind::enum_case))
+                invalid();
+            auto token = tokenAt(node.token_index);
+            if (preamble) {
+                if (node.end_token <= node.token_index)
+                    invalid();
+                token.text = name(node.token_index, node.end_token - 1);
+                token.span.end = tokenAt(node.end_token - 1).span.end;
+            }
+            names.push_back(std::move(token));
+            limit = child;
+            child = node.previous_node;
+        }
+        if (names.size() + 1 != static_cast<std::size_t>(statementCount))
+            invalid();
+        std::reverse(names.begin(), names.end());
+        if (preamble)
+            imported.preamble->imports = std::move(names);
+        else
+            imported.enumeration->cases = std::move(names);
+        return imported;
+    }
     // Syntax records form a closed, child-before-parent forest. List families
     // cannot alias each other or executable blocks. These checks bound host
     // ownership and construction depth; Aurora owns all declaration/body grammar.
@@ -905,6 +988,15 @@ ParsedField parseHostedField(const std::vector<Token> &tokens,
     if (!imported.field)
         invalid();
     return std::move(*imported.field);
+}
+
+ParsedPreamble parseHostedPreamble(const std::vector<Token> &tokens, hosted_parser::Cursor cursor) {
+    auto imported = parseHostedSyntax(tokens, cursor, Stop::preamble, {});
+    return {std::move(*imported.preamble), imported.next};
+}
+ParsedEnum parseHostedEnum(const std::vector<Token> &tokens, hosted_parser::Cursor cursor, std::size_t enumCount) {
+    auto imported = parseHostedSyntax(tokens, cursor, Stop::enum_definition, {}, enumCount);
+    return {std::move(*imported.enumeration), imported.next};
 }
 
 void admitHostedCallable(const ParsedCallable &parsed,

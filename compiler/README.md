@@ -5,7 +5,7 @@ C header/macro layer, raw-pointer escape, unsafe block or C ABI. The hosted buil
 uses an Aurora-written [lexer](LEXER.md) and a bounded
 [syntax parser](ARCHITECTURE.md#hosted-aurora-parser),
 bootstrapped with an explicitly selected predecessor compiler.
-Module/class/enum/template headers, semantic/lifetime analysis, typed-IR
+Namespace/class/template headers, semantic/lifetime analysis, typed-IR
 verification and x86-64 emission remain C++23.
 GNU assembler/linker and Linux host I/O remain bootstrap dependencies.
 
@@ -95,7 +95,7 @@ those facts; this is not a general exported ABI. Both stages generate their own
 facts and header. The existing bootstrap test checks current C1/C2 assembly, object,
 facts and header convergence, binds B to the frontend actually linked into C2, and compares current
 C1/C2 corpus diagnostics/output. No compiler binary or generated frontend is
-committed. Module/class/enum/template headers, semantics, IR and backend remain C++.
+committed. Namespace/class/template headers, semantics, IR and backend remain C++.
 
 ## Supported source
 
@@ -192,7 +192,7 @@ uses one parser call, including its types and delimiters. Caller token snapshots
 remain immutable; a standalone type read returns an explicit ordinal/half cursor.
 Grammar errors precede semantic admission for multiply-invalid declarations, as
 specified in [architecture](ARCHITECTURE.md#hosted-aurora-parser).
-The replaced C++ grammar is removed. Module/class/enum/template headers and the
+The replaced C++ grammar is removed. Namespace/class/template headers and the
 existing category, borrowing and visibility policies remain in C++. The
 historical predecessor remains the source-bootstrap starting point; this does not
 establish whole-compiler self-hosting.

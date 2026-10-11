@@ -51,6 +51,15 @@ export namespace compiler_parser {
         assignment_target,
         expected_auto,
         expected_arrow,
+        expected_module,
+        expected_enum,
+        expected_class,
+        module_name_limit,
+        module_enum_limit,
+        empty_enum,
+        enum_case_limit,
+        duplicate_enum_case,
+        explicit_enum_value,
         invalid
     };
     enum class Stop {
@@ -63,7 +72,9 @@ export namespace compiler_parser {
         function,
         method,
         constructor,
-        field
+        field,
+        preamble,
+        enum_definition
     };
     // Source-backed syntactic parameters, captured by declaration parsing.
     // These names carry no resolved nominal identity or visibility authority.
@@ -2020,6 +2031,189 @@ namespace compiler_parser {
         const TypeResult result = finish_parse(arena, ParseStatus::success, value, token, base);
         return result;
     }
+    // Shared module/import spelling. The copied root is the last name token;
+    // trivia does not contribute to the module's qualified-name byte limit.
+    auto module_name(builtin::span<const u8> source, ParseToken begin, bool limited) -> TypeResult {
+        ParseToken token = begin;
+        const ParseStatus identifier = identifier_status(source, token, false);
+        if (identifier != ParseStatus::success) {
+            return TypeResult(identifier, -1, token);
+        }
+        i64 bytes = token.last() - token.first();
+        i64 last = token.index();
+        const ParseToken first = advance(source, token);
+        token.update(first);
+        while (single(source, token, '.')) {
+            const ParseToken component = advance(source, token);
+            token.update(component);
+            const ParseStatus status = identifier_status(source, token, true);
+            if (status != ParseStatus::success) {
+                return TypeResult(status, -1, token);
+            }
+            bytes = bytes + (token.last() - token.first()) + 1;
+            last = token.index();
+            const ParseToken after = advance(source, token);
+            token.update(after);
+        }
+        if (limited && bytes > 4096) {
+            return TypeResult(ParseStatus::module_name_limit, -1, token);
+        }
+        return TypeResult(ParseStatus::success, last, token);
+    }
+    auto parse_preamble(AstArena& arena, builtin::span<const u8> source, ParseToken begin) -> TypeResult {
+        const i64 base = arena.stack_size();
+        const array<u8, 21> names = "export;module;import;";
+        const builtin::span<const u8> words = borrow_bytes(names);
+        ParseToken token = begin;
+        i64 interface_unit = 0;
+        if (word_matches(source, token, words, 0, 6)) {
+            interface_unit = 1;
+            const ParseToken after = advance(source, token);
+            token.update(after);
+        }
+        if (!word_matches(source, token, words, 7, 13)) {
+            return TypeResult(ParseStatus::expected_module, -1, token);
+        }
+        const ParseToken first = advance(source, token);
+        const TypeResult module_name_result = module_name(source, first, true);
+        const ParseToken after_name = module_name_result.token();
+        token.update(after_name);
+        if (module_name_result.status() != ParseStatus::success) {
+            return TypeResult(module_name_result.status(), -1, token);
+        }
+        if (!single(source, token, ';')) {
+            return TypeResult(ParseStatus::expected_semicolon, -1, token);
+        }
+        const ParseToken after_module = advance(source, token);
+        token.update(after_module);
+        i64 tail = -1;
+        while (word_matches(source, token, words, 14, 20)) {
+            const ParseToken name = advance(source, token);
+            const TypeResult imported = module_name(source, name, false);
+            const ParseToken after_import = imported.token();
+            token.update(after_import);
+            if (imported.status() != ParseStatus::success) {
+                return TypeResult(imported.status(), -1, token);
+            }
+            if (!single(source, token, ';')) {
+                return TypeResult(ParseStatus::expected_semicolon, -1, token);
+            }
+            const ParseToken after = advance(source, token);
+            token.update(after);
+            SyntaxNode import_node = SyntaxNode(SyntaxKind::import_name, name.index(), imported.root() + 1, tail);
+            tail = arena.append_syntax(import_node);
+            if (tail < 0) {
+                const TypeResult error = failure(arena, token, base);
+                return error;
+            }
+        }
+        SyntaxNode preamble = SyntaxNode(SyntaxKind::preamble, first.index(), token.index(), -1);
+        preamble.bind_declaration(-1, module_name_result.root(), interface_unit);
+        preamble.bind_body(tail, -1);
+        const TypeResult result = finish_statement(arena, preamble, token, base);
+        return result;
+    }
+    auto parse_enum(AstArena& arena, builtin::span<const u8> source, ParseToken begin, i64 enum_count) -> TypeResult {
+        const i64 base = arena.stack_size();
+        const array<u8, 11> names = "enum;class;";
+        const builtin::span<const u8> words = borrow_bytes(names);
+        ParseToken token = begin;
+        if (!word_matches(source, token, words, 0, 4)) {
+            const TypeResult error = finish_parse(arena, ParseStatus::expected_enum, -1, token, base);
+            return error;
+        }
+        const ParseToken class_token = advance(source, token);
+        token.update(class_token);
+        if (!word_matches(source, token, words, 5, 10)) {
+            const TypeResult error = finish_parse(arena, ParseStatus::expected_class, -1, token, base);
+            return error;
+        }
+        const ParseToken name = advance(source, token);
+        token.update(name);
+        const ParseStatus identifier = identifier_status(source, token, false);
+        if (identifier != ParseStatus::success) {
+            const TypeResult error = finish_parse(arena, identifier, -1, token, base);
+            return error;
+        }
+        const ParseToken open = advance(source, token);
+        token.update(open);
+        if (enum_count >= 64) {
+            const TypeResult error = finish_parse(arena, ParseStatus::module_enum_limit, -1, token, base);
+            return error;
+        }
+        if (!single(source, token, '{')) {
+            const TypeResult error = finish_parse(arena, ParseStatus::expected_brace_open, -1, token, base);
+            return error;
+        }
+        const ParseToken first = advance(source, token);
+        token.update(first);
+        if (single(source, token, '}')) {
+            const TypeResult error = finish_parse(arena, ParseStatus::empty_enum, -1, token, base);
+            return error;
+        }
+        i64 tail = -1;
+        bool more = true;
+        while (more) {
+            if (arena.stack_size() - base >= 256) {
+                const TypeResult error = finish_parse(arena, ParseStatus::enum_case_limit, -1, token, base);
+                return error;
+            }
+            const ParseToken case_name = token;
+            const ParseStatus status = identifier_status(source, token, false);
+            if (status != ParseStatus::success) {
+                const TypeResult error = finish_parse(arena, status, -1, token, base);
+                return error;
+            }
+            const ParseToken after_name = advance(source, token);
+            token.update(after_name);
+            i64 previous = base;
+            while (previous < arena.stack_size()) {
+                const ParseFrame seen = arena.scratch_at(previous);
+                if (word_matches(source, case_name, source, seen.min(), seen.lhs())) {
+                    const TypeResult error = finish_parse(arena, ParseStatus::duplicate_enum_case, -1, token, base);
+                    return error;
+                }
+                previous = previous + 1;
+            }
+            if (single(source, token, '=')) {
+                const TypeResult error = finish_parse(arena, ParseStatus::explicit_enum_value, -1, token, base);
+                return error;
+            }
+            // Case spellings stay only in bounded scratch, never in the published forest.
+            const ParseFrame seen = ParseFrame(FrameState::enum_case, case_name.first(), case_name.last(), -1);
+            if (!arena.push(seen)) {
+                const TypeResult error = failure(arena, token, base);
+                return error;
+            }
+            SyntaxNode case_node = SyntaxNode(SyntaxKind::enum_case, case_name.index(), case_name.index() + 1, tail);
+            tail = arena.append_syntax(case_node);
+            if (tail < 0) {
+                const TypeResult error = failure(arena, token, base);
+                return error;
+            }
+            more = single(source, token, ',');
+            if (more) {
+                const ParseToken after = advance(source, token);
+                token.update(after);
+                more = !single(source, token, '}');
+            }
+        }
+        if (!single(source, token, '}')) {
+            const TypeResult error = finish_parse(arena, ParseStatus::expected_brace_close, -1, token, base);
+            return error;
+        }
+        const ParseToken semicolon = advance(source, token);
+        token.update(semicolon);
+        if (!single(source, token, ';')) {
+            const TypeResult error = finish_parse(arena, ParseStatus::expected_semicolon, -1, token, base);
+            return error;
+        }
+        const ParseToken after = advance(source, token);
+        SyntaxNode definition = SyntaxNode(SyntaxKind::enum_definition, name.index(), after.index(), -1);
+        definition.bind_body(tail, -1);
+        const TypeResult result = finish_statement(arena, definition, after, base);
+        return result;
+    }
     // Complete field grammar precedes declaration admission in the host.
     auto parse_field(AstArena& arena, builtin::span<const u8> source, ParseToken begin,
         TypeContext context) -> TypeResult {
@@ -2272,12 +2466,14 @@ namespace compiler_parser {
 
 export namespace compiler_parser {
     auto parse(AstArena& arena, builtin::span<const u8> source, compiler_lexer::Cursor cursor, Stop stop,
-        TypeContext context) -> ParseResult {
+        TypeContext context, i64 enum_count) -> ParseResult {
         const ParseToken token = read_token(source, cursor, 0);
         if ((stop != Stop::semicolon && stop != Stop::close_parenthesis && stop != Stop::assignment && stop
             != Stop::constructor_braces && stop != Stop::body && stop != Stop::type && stop != Stop::function && stop
-            != Stop::method && stop != Stop::constructor && stop != Stop::field) || arena.size() != 0
-            || arena.stack_size() != 0 || arena.arguments() != 0 || arena.types() != 0 || arena.syntax_size() != 0) {
+            != Stop::method && stop != Stop::constructor && stop != Stop::field && stop != Stop::preamble && stop
+            != Stop::enum_definition) || enum_count < 0 || enum_count > 64 || (stop != Stop::enum_definition
+            && enum_count != 0) || arena.size() != 0 || arena.stack_size() != 0 || arena.arguments() != 0
+            || arena.types() != 0 || arena.syntax_size() != 0) {
             return ParseResult(ParseStatus::invalid, -1, arena.size(), 0, token.first(), token.half());
         }
         if (!arena.ok()) {
@@ -2285,6 +2481,16 @@ export namespace compiler_parser {
         }
         if (!valid_context(source, context)) {
             return ParseResult(ParseStatus::invalid, -1, 0, 0, token.first(), token.half());
+        }
+        if (stop == Stop::preamble) {
+            const TypeResult result = parse_preamble(arena, source, token);
+            const ParseToken at = result.token();
+            return ParseResult(result.status(), result.root(), arena.size(), at.index(), at.first(), at.half());
+        }
+        if (stop == Stop::enum_definition) {
+            const TypeResult result = parse_enum(arena, source, token, enum_count);
+            const ParseToken at = result.token();
+            return ParseResult(result.status(), result.root(), arena.size(), at.index(), at.first(), at.half());
         }
         if (stop == Stop::field) {
             const TypeResult result = parse_field(arena, source, token, context);
