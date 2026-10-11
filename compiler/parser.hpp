@@ -1,6 +1,10 @@
 #pragma once
 #include "syntax.hpp"
 #include "services.hpp"
+#include "hosted_parser_abi.hpp"
+#ifdef AURORA_HOSTED_PARSER
+#include "hosted_parser.hpp"
+#endif
 #include <algorithm>
 #include <cctype>
 #include <set>
@@ -12,6 +16,7 @@ class Parser {
     std::set<std::string> templateParameters;
     std::set<std::string> capacityParameters;
     bool functionTemplate = false;
+    bool hostedExpressions = true;
     class Nesting {
         int &depth;
 
@@ -37,7 +42,7 @@ class Parser {
     }
 
 public:
-    explicit Parser(std::vector<Token> t) : tokens(std::move(t)) {
+    explicit Parser(std::vector<Token> t, bool hosted = true) : tokens(std::move(t)), hostedExpressions(hosted) {
     }
     Token peek() const {
         return tokens.at(position);
@@ -460,6 +465,67 @@ public:
         }
         return e;
     }
+    ExpressionPtr statementExpression(hosted_parser::Stop stop) {
+#ifdef AURORA_HOSTED_PARSER
+        if (hostedExpressions && !templateStatementExpressionAhead()) {
+            if (auto result = parseHostedExpression(tokens, position, stop))
+                return result;
+        }
+#else
+        (void)stop;
+#endif
+        return expr();
+    }
+    // Linear, non-consuming template candidate selection. Only candidates whose
+    // closing > or >> precedes construction/call syntax invoke the existing
+    // template lookahead. Ordinary comparison chains do not rescan their tails.
+    bool templateStatementExpressionAhead() const {
+        std::vector<std::size_t> openings;
+        int groups = 0;
+        auto boundary = tokens.size();
+        for (auto index = position; index < tokens.size(); ++index) {
+            const auto &text = tokens[index].text;
+            if (text == "<eof>" || text == ";" || text == "}" || text == "{" || text == "=")
+                return false;
+            if (text == "(") {
+                if (boundary != tokens.size())
+                    return false;
+                ++groups;
+                openings.clear();
+            } else if (text == ")") {
+                // ')' is deliberately not a templateArgumentEnd blocker. An
+                // earlier '<' may still be a malformed template attempt; later
+                // openings cannot become candidates beyond this expression.
+                if (groups > 0)
+                    --groups;
+                else {
+                    if (openings.empty())
+                        return false;
+                    boundary = std::min(boundary, index);
+                }
+            } else if (text == "<")
+                openings.push_back(index);
+            else if (text == ">" || text == ">>") {
+                const auto count = text == ">>" ? 2U : 1U;
+                if (openings.size() < count) {
+                    openings.clear();
+                    continue;
+                }
+                const auto start = openings[openings.size() - count];
+                openings.resize(openings.size() - count);
+                if (index + 1 < tokens.size() && (tokens[index + 1].text == "(" || tokens[index + 1].text == "{") &&
+                    start < boundary && start > position && !tokens[start - 1].text.empty() &&
+                    tokens[start - 1].text != "true" && tokens[start - 1].text != "false" &&
+                    (std::isalpha(static_cast<unsigned char>(tokens[start - 1].text.front())) ||
+                     tokens[start - 1].text.front() == '_') &&
+                    templateArgumentEnd(start) == index + 1)
+                    return true;
+            }
+            if (boundary != tokens.size() && openings.empty())
+                return false;
+        }
+        return false;
+    }
     std::vector<StatementPtr> block() {
         Nesting nesting(blockNesting, 128, peek(), "block");
         need("{");
@@ -503,7 +569,7 @@ public:
             s->bindingSpan = binding.span;
             s->mutableValue = !immutable;
             need("=");
-            s->expr = expr();
+            s->expr = statementExpression(hosted_parser::Stop::Semicolon);
             need(";");
             return s;
         }
@@ -511,13 +577,14 @@ public:
         if (t.text == "return" || t.text == "static_assert") {
             if (t.text == "static_assert")
                 need("(");
-            s->expr = expr();
+            s->expr = statementExpression(t.text == "static_assert" ? hosted_parser::Stop::CloseParenthesis
+                                                                    : hosted_parser::Stop::Semicolon);
             if (t.text == "static_assert")
                 need(")");
             need(";");
         } else if (t.text == "if" || t.text == "while") {
             need("(");
-            s->expr = expr();
+            s->expr = statementExpression(hosted_parser::Stop::CloseParenthesis);
             need(")");
             s->body = block();
             if (t.text == "if" && eat("else"))
@@ -525,7 +592,7 @@ public:
         } else {
             --position;
             s->kind = "expression";
-            s->expr = expr();
+            s->expr = statementExpression(hosted_parser::Stop::Assignment);
             if (eat("=")) {
                 if (s->expr->op == "index") {
                     s->kind = "index_assign";
@@ -539,7 +606,7 @@ public:
                     s->name = s->expr->token.text;
                 } else
                     fail("assignment requires a local or local field");
-                s->expr = expr();
+                s->expr = statementExpression(hosted_parser::Stop::Semicolon);
             }
             need(";");
         }

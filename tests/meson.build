@@ -126,7 +126,7 @@ test(
 # Standalone behavioral runners participate in the ordinary full graph.
 lint_fixture = executable(
     'lint-fixture', 'compiler/lint.cpp',
-    include_directories: include_directories('../compiler'), dependencies: hosted_lexer,
+    include_directories: include_directories('../compiler'), dependencies: hosted_frontend,
     native: true, install: false,
 )
 test('semantic-lint', python,
@@ -485,7 +485,7 @@ foreach fixture : [
 ]
     compiler_fixtures += {fixture: executable(
         fixture.replace('_', '-') + '-fixture', 'compiler/' + fixture + '.cpp',
-        dependencies: hosted_lexer,
+        dependencies: hosted_frontend,
         include_directories: include_directories('../compiler'), native: true, install: false,
     )}
 endforeach
@@ -616,7 +616,7 @@ hosted_lexer_abi = custom_target(
 )
 hosted_lexer_test = executable(
     'hosted-lexer-test', ['compiler/hosted_lexer.cpp', hosted_lexer_abi],
-    dependencies: hosted_lexer, include_directories: include_directories('../compiler'),
+    dependencies: hosted_frontend, include_directories: include_directories('../compiler'),
     native: true, install: false,
 )
 test('hosted-lexer', python,
@@ -628,7 +628,7 @@ test('hosted-lexer-bootstrap', python,
      depends: [aurorac_stage0, aurorac], suite: ['full', 'dev', 'core', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 
-format_fixture = executable('format-fixture', 'compiler/format.cpp', dependencies: hosted_lexer,
+format_fixture = executable('format-fixture', 'compiler/format.cpp', dependencies: hosted_frontend,
                             include_directories: include_directories('../compiler'), native: true, install: false)
 test('hosted-lexer-format', python,
      args: ['-B', files('meson_lexer_inputs.py'), format_fixture, meson.project_source_root(), '--all'],
@@ -643,3 +643,25 @@ hosted_lexer_invalid = executable(
     native: true, install: false,
 )
 test('hosted-lexer-invalid', hosted_lexer_invalid, suite: ['full', 'dev', 'core', 'compiler'], timeout: 30)
+
+# A real generated-code fixture prevents universal C++ fallback from satisfying
+# the differential oracle. The separate forged-return fixture never links it.
+hosted_parser_abi = custom_target(
+    'hosted-parser-abi-object', input: 'compiler/hosted_parser_abi.S', output: 'hosted-parser-abi.o',
+    command: native_cpp.cmd_array() + ['-c', '-x', 'assembler', '@INPUT@', '-o', '@OUTPUT@'],
+)
+hosted_parser_test = executable(
+    'hosted-parser-test', ['compiler/hosted_parser.cpp', hosted_parser_abi],
+    dependencies: hosted_frontend, include_directories: include_directories('../compiler'),
+    native: true, install: false,
+)
+test('hosted-parser', hosted_parser_test,
+     suite: ['full', 'dev', 'core', 'compiler'], timeout: 120)
+hosted_parser_invalid = executable(
+    'hosted-parser-invalid', ['compiler/hosted_parser_invalid.cpp', '../compiler/hosted_parser.cpp',
+                              '../runtime/hosted_bytes.cpp'],
+    cpp_args: ['-DAURORA_HOSTED_PARSER'], include_directories: include_directories('../compiler'),
+    native: true, install: false,
+)
+test('hosted-parser-invalid', hosted_parser_invalid,
+     suite: ['full', 'dev', 'core', 'compiler'], timeout: 30)

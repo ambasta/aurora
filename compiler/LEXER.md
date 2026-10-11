@@ -74,8 +74,9 @@ option is rejected with `--check`, and it adds no source-language foreign ABI.
 Build and test routes are intentionally distinct:
 
 - Ordinary `make compiler` and `make -C compiler` build the C++ seed, use it to
-  emit `lexer.au`, and link the Aurora object into hosted stage 1. The formatter
-  uses the same object. Meson performs the same dependency-tracked chain.
+  emit one imported lexer/arena/parser graph, and link that Aurora object into
+  hosted stage 1. The formatter uses the same object. Meson performs the same
+  dependency-tracked chain. Standalone lexer bootstrap regression is retained.
 - Canonical Meson `full`/`dev`/`core`, source-consuming native fixtures, the
   formatter and optional LSP use stage 1. IR-only fixtures do not lex source.
   `hosted-lexer` links the Aurora phase and compares it against the preserved
@@ -98,9 +99,11 @@ Build and test routes are intentionally distinct:
   reference oracle for independent comparison.
 
 This is an Aurora-written lexer participating in its own hosted rebuild. The
-parser, semantic analysis and code generator remain C++; it is not a self-hosted
-compiler or native toolchain. Focused validation and independent source review
-are separate from final integrated GCC 16 full/image/guest qualification.
+remaining grammar, semantic analysis and code generator remain C++. The
+[bounded statement-expression parser](ARCHITECTURE.md#hosted-aurora-expression-parser)
+also runs in Aurora; this is not a self-hosted compiler or native toolchain.
+Focused validation and independent source review are separate from final integrated
+GCC 16 full/image/guest qualification.
 
 The focused `tests/compiler/lexer_trivia.cpp` gate checks independent positions,
 exact reconstruction, bounds, token equivalence, EOF, CRLF/tabs, comment-at-EOF,

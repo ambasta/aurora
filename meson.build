@@ -12,27 +12,31 @@ lexer_events = custom_target(
   'hosted-lexer-events', input: 'compiler/lexer.au', output: 'hosted_lexer_events.inc',
   command: [python, '-B', files('scripts/bootstrap_lexer.py'), '--events', '@INPUT@', '@OUTPUT@'],
 )
-# Stage 0 retains the C++ scanner solely as the bootstrap seed/reference.
+# Stage 0 retains the C++ scanner/parser solely as the bootstrap seed/reference.
 aurorac_stage0 = executable('aurorac-stage0', 'compiler/main.cpp', native: true, install: false)
-lexer_assembly = custom_target(
-  'hosted-lexer-assembly', input: ['compiler/lexer.au', 'compiler/hosted_lexer.S'],
-  output: ['hosted-lexer.s', 'hosted-lexer.generated.s'],
-  command: [python, '-B', files('scripts/bootstrap_lexer.py'), aurorac_stage0,
-            '@INPUT0@', '@INPUT1@', '@OUTPUT0@'],
+frontend_assembly = custom_target(
+  'hosted-frontend-assembly',
+  input: ['compiler/lexer.au', 'compiler/expression_arena.au', 'compiler/expression_parser.au',
+          'compiler/hosted_lexer.S', 'compiler/hosted_parser.S'],
+  output: ['hosted-frontend.s', 'hosted-frontend.generated.s'],
+  command: [python, '-B', files('scripts/bootstrap_frontend.py'), aurorac_stage0,
+            '@INPUT0@', '@INPUT1@', '@INPUT2@', '@INPUT3@', '@INPUT4@', '@OUTPUT0@'],
 )
-lexer_object = custom_target(
-  'hosted-lexer-object', input: lexer_assembly[0], output: 'hosted-lexer.o',
+frontend_object = custom_target(
+  'hosted-frontend-object', input: frontend_assembly[0], output: 'hosted-frontend.o',
   command: native_cpp.cmd_array() + ['-c', '-x', 'assembler', '@INPUT@', '-o', '@OUTPUT@'],
 )
-lexer_library = static_library(
-  'hosted-lexer', ['compiler/hosted_lexer.cpp', lexer_object, lexer_events],
-  cpp_args: ['-DAURORA_HOSTED_LEXER'], native: true, install: false,
+frontend_args = ['-DAURORA_HOSTED_LEXER', '-DAURORA_HOSTED_PARSER']
+frontend_library = static_library(
+  'hosted-frontend', ['compiler/hosted_lexer.cpp', 'compiler/hosted_parser.cpp',
+                      'runtime/hosted_bytes.cpp', frontend_object, lexer_events],
+  cpp_args: frontend_args, native: true, install: false,
 )
-hosted_lexer = declare_dependency(link_with: lexer_library, sources: lexer_events,
-                                include_directories: include_directories('.'),
-                                compile_args: ['-DAURORA_HOSTED_LEXER'])
-aurorac = executable('aurorac', 'compiler/main.cpp', dependencies: hosted_lexer, native: true, install: false)
-aurora_fmt = executable('aurora-fmt', 'compiler/format_main.cpp', dependencies: hosted_lexer,
+hosted_frontend = declare_dependency(link_with: frontend_library, sources: lexer_events,
+                                   include_directories: include_directories('.'),
+                                   compile_args: frontend_args)
+aurorac = executable('aurorac', 'compiler/main.cpp', dependencies: hosted_frontend, native: true, install: false)
+aurora_fmt = executable('aurora-fmt', 'compiler/format_main.cpp', dependencies: hosted_frontend,
                         native: true, install: false)
 
 # These existing native oracles use Linux/x86-64 syscalls and GNU binutils.
@@ -81,9 +85,9 @@ if get_option('lsp')
   lsp_json = dependency('nlohmann_json', version: '>=3.11.3', native: true, required: true)
   aurora_lsp = executable(
     'aurora-lsp', ['compiler/lsp/main.cpp', 'compiler/lsp/check.cpp'],
-    dependencies: [lsp_json, hosted_lexer], native: true, install: false,
+    dependencies: [lsp_json, hosted_frontend], native: true, install: false,
   )
-  lsp_units = executable('lsp-units', 'tests/lsp-units.cpp', dependencies: hosted_lexer,
+  lsp_units = executable('lsp-units', 'tests/lsp-units.cpp', dependencies: hosted_frontend,
                          native: true, install: false)
   test('lsp-units', lsp_units, suite: 'lsp', timeout: 30)
   test('lsp-protocol', python, args: ['-B', files('tests/lsp-protocol.py'), aurora_lsp],

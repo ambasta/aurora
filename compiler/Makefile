@@ -140,16 +140,16 @@ ifneq ($(strip $(AURORA_TEST_CONTEXT)),)
 # No source dependency or compile recipe may replace it in the inner graph.
 $(OUT): aurora-test-context
 else
-# The C++ seed builds first, then Aurora emits the lexer used by hosted stage 1.
+# The C++ seed builds first, then one Aurora parser/arena/lexer stage-1 graph.
 $(OUT).stage0: main.cpp $(wildcard *.hpp)
 	mkdir -p $(dir $(OUT))
 	$(CXX) $(CXXFLAGS) $< -o $@
-$(OUT).lexer.s: $(OUT).stage0 lexer.au hosted_lexer.S ../scripts/bootstrap_lexer.py
-	python3 -B ../scripts/bootstrap_lexer.py $(abspath $(OUT).stage0) lexer.au hosted_lexer.S $@
-$(OUT).lexer.o: $(OUT).lexer.s
+$(OUT).frontend.s: $(OUT).stage0 lexer.au expression_arena.au expression_parser.au hosted_lexer.S hosted_parser.S ../scripts/bootstrap_frontend.py
+	python3 -B ../scripts/bootstrap_frontend.py $(abspath $(OUT).stage0) lexer.au expression_arena.au expression_parser.au hosted_lexer.S hosted_parser.S $@
+$(OUT).frontend.o: $(OUT).frontend.s
 	$(CXX) -c -x assembler $< -o $@
-$(OUT): main.cpp hosted_lexer.cpp $(wildcard *.hpp) $(OUT).lexer.o $(LEXER_EVENTS)
-	$(CXX) $(CXXFLAGS) -I$(dir $(OUT)) -DAURORA_HOSTED_LEXER main.cpp hosted_lexer.cpp $(OUT).lexer.o -o $@
+$(OUT): main.cpp hosted_lexer.cpp hosted_parser.cpp ../runtime/hosted_bytes.cpp $(wildcard *.hpp ../runtime/*.hpp) $(OUT).frontend.o $(LEXER_EVENTS)
+	$(CXX) $(CXXFLAGS) -I$(dir $(OUT)) -DAURORA_HOSTED_LEXER -DAURORA_HOSTED_PARSER main.cpp hosted_lexer.cpp hosted_parser.cpp ../runtime/hosted_bytes.cpp $(OUT).frontend.o -o $@
 endif
 test: $(OUT) test-xfs-root test-utf8-range test-utf8-lines
 	$(CXX) $(CXXFLAGS) -I. ../tests/compiler/diagnostics.cpp -o $(dir $(OUT))diagnostics-tests
@@ -359,17 +359,17 @@ test-token-scan: $(OUT)
 FORMAT_OUT ?= ../build/aurora-fmt
 .PHONY: formatter test-formatter
 formatter: $(FORMAT_OUT)
-$(FORMAT_OUT): format_main.cpp hosted_lexer.cpp $(wildcard *.hpp) $(OUT).lexer.o $(LEXER_EVENTS)
+$(FORMAT_OUT): format_main.cpp hosted_lexer.cpp hosted_parser.cpp ../runtime/hosted_bytes.cpp $(wildcard *.hpp ../runtime/*.hpp) $(OUT).frontend.o $(LEXER_EVENTS)
 	mkdir -p $(dir $(FORMAT_OUT))
-	$(CXX) $(CXXFLAGS) -I$(dir $(OUT)) -DAURORA_HOSTED_LEXER $< hosted_lexer.cpp $(OUT).lexer.o -o $@
+	$(CXX) $(CXXFLAGS) -I$(dir $(OUT)) -DAURORA_HOSTED_LEXER -DAURORA_HOSTED_PARSER $< hosted_lexer.cpp hosted_parser.cpp ../runtime/hosted_bytes.cpp $(OUT).frontend.o -o $@
 test-formatter: $(FORMAT_OUT)
-	$(CXX) $(CXXFLAGS) -I$(dir $(OUT)) -DAURORA_HOSTED_LEXER -I. ../tests/compiler/format.cpp hosted_lexer.cpp $(OUT).lexer.o -o $(dir $(FORMAT_OUT))format-tests
+	$(CXX) $(CXXFLAGS) -I$(dir $(OUT)) -DAURORA_HOSTED_LEXER -DAURORA_HOSTED_PARSER -I. ../tests/compiler/format.cpp hosted_lexer.cpp hosted_parser.cpp ../runtime/hosted_bytes.cpp $(OUT).frontend.o -o $(dir $(FORMAT_OUT))format-tests
 	$(dir $(FORMAT_OUT))format-tests $$(find ../examples ../library ../kernel/policies ../tests/kernel-programs -name '*.au' -type f | LC_ALL=C sort)
 	python3 -B -O ../tests/compiler/format.py $(abspath $(FORMAT_OUT))
 
 .PHONY: test-lint
 test-lint: $(FORMAT_OUT) $(OUT)
-	$(CXX) $(CXXFLAGS) -I$(dir $(OUT)) -DAURORA_HOSTED_LEXER -I. ../tests/compiler/lint.cpp hosted_lexer.cpp $(OUT).lexer.o -o $(dir $(FORMAT_OUT))lint-tests
+	$(CXX) $(CXXFLAGS) -I$(dir $(OUT)) -DAURORA_HOSTED_LEXER -DAURORA_HOSTED_PARSER -I. ../tests/compiler/lint.cpp hosted_lexer.cpp hosted_parser.cpp ../runtime/hosted_bytes.cpp $(OUT).frontend.o -o $(dir $(FORMAT_OUT))lint-tests
 	python3 -B -O ../tests/compiler/lint.py $(abspath $(FORMAT_OUT)) $(abspath $(OUT)) \
 	    $(abspath $(dir $(FORMAT_OUT))lint-tests)
 

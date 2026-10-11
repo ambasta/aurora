@@ -283,14 +283,18 @@ empty descendants. Empty copied values require explicit complete-value evidence,
 not merely a begun storage reservation, even through copies and control-flow joins.
 
 `compiler/expression_arena.au` is the concrete bootstrap consumer. Its private
-owner and logical count store copied `AstNode` records beyond the fixed 64-element
+owners and logical counts store copied `AstNode` and `ParseFrame` records beyond the fixed 64-element
 and 520-byte aggregate limits. Appends check local child-before-parent indices
 and the existing 128-node expression depth bound before growth; successful set
 precedes count publication. Reads check logical count, and growth is explicit
-Aurora code. Nodes retain original-token indices so a future checked host adapter
-can recover existing token spelling/spans without a second decoder. This is an
-AST-storage prerequisite, not an integrated Aurora expression parser: the current
-compiler still parses expressions in C++.
+Aurora code, with distinct invalid/depth/allocation outcomes. The second direct
+owner stores an explicit parser stack, without nesting owning classes or adding
+borrow rules. Nodes retain original-token indices; the hosted expression adapter
+recovers existing spelling/spans without a second decoder. A synchronous mutable
+`AstArena&` helper builds the graph, const helpers return copied observations, and
+an owning helper consumes the arena before its host region closes. The host
+reserves opaque arena storage and never fabricates an owner or payload pointer.
+See the [parser boundary](ARCHITECTURE.md#hosted-aurora-expression-parser).
 
 ## Move-only classes
 
