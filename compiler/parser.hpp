@@ -16,6 +16,7 @@ class Parser {
     std::set<std::string> templateParameters;
     std::set<std::string> capacityParameters;
     bool functionTemplate = false;
+    std::vector<Token> templateParameterTokens, capacityParameterTokens;
     bool hostedExpressions = true;
     class Nesting {
         int &depth;
@@ -465,17 +466,26 @@ public:
         }
         return e;
     }
+#ifdef AURORA_HOSTED_PARSER
+    hosted_parser::Context expressionContext() const {
+        hosted_parser::Context context;
+        context.typeParameters = templateParameterTokens;
+        context.capacityParameters = capacityParameterTokens;
+        context.functionTemplate = functionTemplate;
+        return context;
+    }
+#endif
     ExpressionPtr statementExpression(hosted_parser::Stop stop) {
 #ifdef AURORA_HOSTED_PARSER
-        if (hostedExpressions && !templateStatementExpressionAhead(position)) {
-            if (auto result = parseHostedExpression(tokens, position, stop))
-                return result;
-        }
+        if (hostedExpressions)
+            return parseHostedExpression(tokens, position, stop, expressionContext());
 #else
         (void)stop;
 #endif
         return expr();
     }
+    // Retained reference-router control; hosted production disambiguates in Aurora.
+    // Retire this with the predecessor-backed reference expression parser.
     // Linear, non-consuming template candidate selection. Only candidates whose
     // closing > or >> precedes construction/call syntax invoke the existing
     // template lookahead. Ordinary comparison chains do not rescan their tails.
@@ -732,15 +742,19 @@ public:
                         kind = TemplateParameterKind::Capacity;
                     else
                         fail("template parameters require Scalar, Value or bounded i64 capacity");
-                    const auto parameter = ident().text;
+                    const auto parameterToken = ident();
+                    const auto &parameter = parameterToken.text;
                     if (parameter == "i64" || parameter == "u64" || parameter == "u8" || parameter == "bool" ||
                         parameter == "own" || parameter == "ref" || parameter == "mutref" || parameter == "array" ||
                         templateParameters.contains(parameter) || capacityParameters.contains(parameter))
                         fail("duplicate or reserved template parameter");
-                    if (kind != TemplateParameterKind::Capacity)
+                    if (kind != TemplateParameterKind::Capacity) {
                         templateParameters.insert(parameter);
-                    else
+                        templateParameterTokens.push_back(parameterToken);
+                    } else {
                         capacityParameters.insert(parameter);
+                        capacityParameterTokens.push_back(parameterToken);
+                    }
                     declaredParameters.emplace_back(kind, parameter);
                 } while (eat(","));
                 need(">");
@@ -794,13 +808,13 @@ public:
                                     ExpressionPtr value;
                                     if (peek().text == "{") {
 #ifdef AURORA_HOSTED_PARSER
-                                        if (hostedExpressions &&
-                                            !templateStatementExpressionAhead(fieldPosition, true)) {
+                                        if (hostedExpressions) {
                                             auto candidate = fieldPosition;
-                                            value = parseHostedExpression(
-                                                tokens, candidate, hosted_parser::Stop::ConstructorBraces);
-                                            if (value)
-                                                position = candidate;
+                                            value = parseHostedExpression(tokens,
+                                                                          candidate,
+                                                                          hosted_parser::Stop::ConstructorBraces,
+                                                                          expressionContext());
+                                            position = candidate;
                                         }
 #else
                                         (void)fieldPosition;
@@ -873,6 +887,8 @@ public:
                     program.templates.push_back(std::move(definition));
                 templateParameters.clear();
                 capacityParameters.clear();
+                templateParameterTokens.clear();
+                capacityParameterTokens.clear();
                 continue;
             }
             need("auto");
@@ -895,6 +911,8 @@ public:
                 program.functionTemplates.push_back(std::move(function));
             templateParameters.clear();
             capacityParameters.clear();
+            templateParameterTokens.clear();
+            capacityParameterTokens.clear();
             functionTemplate = false;
         }
     }

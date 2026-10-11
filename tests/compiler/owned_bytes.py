@@ -464,12 +464,13 @@ class Suite:
         """,
             entry_name="arena_entry",
         )
-        # Empty frame and argument stores each retain real owner metadata.
-        self.run(arena, 16384, 200, 0, 42, 3, 3)
-        self.run(arena, 16384, 100, 0, 42, 4, 3)
-        self.run(arena, 112, 2, 1, 42, 3, 3)
-        self.run(arena, 16384, 200, 2, 42, 3, 3)
-        self.run(arena, 16384, -1, 0, -1, 2, 2)
+        # Empty frame, argument and type stores each retain real owner metadata.
+        # Class cleanup reverses field order; node growth first retires its old block.
+        self.run(arena, 16384, 200, 0, 42, 4, 4, release_order=[4, 3, 2, 1])
+        self.run(arena, 16384, 100, 0, 42, 5, 4, release_order=[1, 4, 3, 2, 5])
+        self.run(arena, 112, 2, 1, 42, 4, 4, release_order=[4, 3, 2, 1])
+        self.run(arena, 16384, 200, 2, 42, 4, 4, release_order=[4, 3, 2, 1])
+        self.run(arena, 16384, -1, 0, -1, 3, 3, release_order=[3, 2, 1])
         self.trap(arena, 16384, 200, 3)
 
         same_layout = "class Other {public:i64 a;i64 b;i64 c;};"

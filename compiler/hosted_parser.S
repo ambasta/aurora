@@ -57,6 +57,25 @@ aurora_hosted_parser_edge:
     jmp __au_v_m3_6aurora8compiler17expression_parser_n1_15compiler_parser_d9read_edge
 .size aurora_hosted_parser_edge, .-aurora_hosted_parser_edge
 
+# Unresolved type syntax records are copied; ownership stays inside the arena.
+.globl aurora_hosted_parser_types
+.hidden aurora_hosted_parser_types
+.type aurora_hosted_parser_types, @function
+aurora_hosted_parser_types:
+    movq %rdi, %r10
+    jmp __au_v_m3_6aurora8compiler17expression_parser_n1_15compiler_parser_d10type_count
+.size aurora_hosted_parser_types, .-aurora_hosted_parser_types
+
+.globl aurora_hosted_parser_type
+.hidden aurora_hosted_parser_type
+.type aurora_hosted_parser_type, @function
+aurora_hosted_parser_type:
+    movq %rdi, %r10
+    movq %rsi, %rdi
+    movq %rdx, %r11
+    jmp __au_v_m3_6aurora8compiler17expression_parser_n1_15compiler_parser_d9read_type
+.size aurora_hosted_parser_type, .-aurora_hosted_parser_type
+
 .globl aurora_hosted_parser_release
 .hidden aurora_hosted_parser_release
 .type aurora_hosted_parser_release, @function

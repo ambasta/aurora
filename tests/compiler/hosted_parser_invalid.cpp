@@ -18,23 +18,36 @@ namespace {
 using ResultWords = std::array<std::int64_t, 5>;
 using NodeWords = std::array<std::int64_t, 7>;
 using EdgeWords = std::array<std::int64_t, 5>;
+using TypeWords = std::array<std::int64_t, 8>;
+using InputWords = std::array<std::uint64_t, 18>;
+static_assert(sizeof(TypeWords) == 64 && sizeof(InputWords) == 144);
 using aurora::hosted_parser::NodeKind;
 using aurora::hosted_parser::Status;
 using aurora::hosted_parser::Stop;
+using aurora::hosted_parser::TypeKind;
 constexpr std::int64_t wire(Status value) {
     return static_cast<std::int64_t>(value);
 }
 constexpr std::int64_t wire(NodeKind value) {
     return static_cast<std::int64_t>(value);
 }
-bool hookControl = false;
+constexpr std::int64_t wire(TypeKind value) {
+    return static_cast<std::int64_t>(value);
+}
+bool hookControl = false, hookPrepared = false;
 bool hookUnsupported = false, hookCorrupt = false;
 std::vector<Stop> hookStops;
+std::vector<std::array<std::uint64_t, 7>> hookContexts;
 ResultWords result;
 std::vector<NodeWords> records;
 std::vector<EdgeWords> edges;
-std::int64_t count = 0, edgeCount = 0;
-int created = 0, parsed = 0, released = 0, read = 0, edgeRead = 0;
+std::vector<TypeWords> types;
+InputWords capturedInput{};
+void *arenaAddress = nullptr;
+std::uint64_t arenaRegion = 0;
+constexpr std::uint64_t arenaCanary = 0x746970656172656eULL;
+std::int64_t count = 0, edgeCount = 0, typeCount = 0;
+int created = 0, parsed = 0, released = 0, read = 0, edgeRead = 0, typeRead = 0;
 std::size_t cases = 0;
 void require(bool value, const std::string &message) {
     if (!value)
@@ -46,11 +59,15 @@ void reset() {
                {wire(NodeKind::Literal), 2, -1, -1, 1, 2, 2},
                {wire(NodeKind::Binary), 1, 0, 1, 2, 1, 1}};
     count = 3;
-    edgeCount = 0;
+    edgeCount = typeCount = 0;
     edges.clear();
+    types.clear();
     hookStops.clear();
-    hookUnsupported = hookCorrupt = false;
-    created = parsed = released = read = edgeRead = 0;
+    hookContexts.clear();
+    hookUnsupported = hookCorrupt = hookPrepared = false;
+    created = parsed = released = read = edgeRead = typeRead = 0;
+    capturedInput = {};
+    arenaAddress = nullptr;
 }
 void fixture(const std::string &source,
              std::vector<NodeWords> nodes,
@@ -112,10 +129,65 @@ void constructorFixture(const std::string &source = "field{1};", bool empty = fa
                 {{0, -1, 1, 2, -1}},
                 4);
 }
+void typedFixture(const std::string &source,
+                  std::vector<TypeWords> syntax,
+                  std::vector<NodeWords> nodes = {},
+                  std::vector<EdgeWords> arguments = {}) {
+    const auto tokens = aurora::lex(source, "forged.au");
+    if (nodes.empty())
+        nodes = {{wire(NodeKind::Call), 0, -1, 0, 1, 0, static_cast<std::int64_t>(tokens.size()) - 3}};
+    fixture(source, std::move(nodes), std::move(arguments));
+    types = std::move(syntax);
+    typeCount = static_cast<std::int64_t>(types.size());
+}
+void templateFixture(const std::string &source = "f<i64>();") {
+    typedFixture(source,
+                 {{wire(TypeKind::I64), 2, 2, 4, -1, -1, -1, 0}, {wire(TypeKind::Named), 0, 0, 6, 0, -1, 0, 1}});
+}
+void reflectedFixture(const std::string &source = "size_of(i64);") {
+    typedFixture(source, {{wire(TypeKind::I64), 2, 2, 4, -1, -1, 0, 2}});
+}
+void splitFixture(const std::string &source = "f<Box<i64>>();") {
+    typedFixture(source,
+                 {{wire(TypeKind::I64), 4, 4, 8, -1, -1, -1, 0},
+                  {wire(TypeKind::Named), 2, 2, 10, 0, -1, -1, 0},
+                  {wire(TypeKind::Named), 0, 0, 11, 1, -1, 0, 1}});
+}
+std::string nestedTemplateSource(int levels, bool reflected) {
+    std::string source = reflected ? "size_of(" : "";
+    for (int level = 0; level < levels; ++level)
+        source += level == 0 && !reflected ? "f<" : "Box<";
+    source += "i64";
+    for (int level = 0; level < levels; ++level)
+        source += " >";
+    return source + (reflected ? ");" : "();");
+}
+void nestedTemplateFixture(int levels, bool reflected) {
+    const auto source = nestedTemplateSource(levels, reflected);
+    const std::int64_t begin = reflected ? 2 : 0;
+    const auto scalar = begin + 2 * levels;
+    std::vector<TypeWords> syntax{{wire(TypeKind::I64), scalar, scalar, scalar * 2, -1, -1, -1, 0}};
+    for (int index = 0; index < levels; ++index) {
+        const auto token = begin + 2 * (levels - index - 1);
+        syntax.push_back({wire(TypeKind::Named),
+                          token,
+                          token,
+                          2 * (scalar + index + 1),
+                          index,
+                          -1,
+                          index + 1 == levels ? 0 : -1,
+                          index + 1 == levels ? (reflected ? 2 : 1) : 0});
+    }
+    typedFixture(source, std::move(syntax));
+}
 void sameExpression(const aurora::ExpressionPtr &actual, const aurora::ExpressionPtr &expected) {
     require(actual && expected && actual->op == expected->op && actual->token.text == expected->token.text &&
                 actual->token.line == expected->token.line && actual->depth == expected->depth &&
-                actual->args.size() == expected->args.size() && actual->fieldNames == expected->fieldNames,
+                actual->args.size() == expected->args.size() && actual->fieldNames == expected->fieldNames &&
+                actual->templateArguments == expected->templateArguments &&
+                actual->reflectedType == expected->reflectedType &&
+                actual->reflectedType.displayName == expected->reflectedType.displayName &&
+                actual->reflectedType.resolvedClass == expected->reflectedType.resolvedClass,
             "valid forged control changed AST spelling, kind, depth or arguments");
     const auto &a = actual->token.span, &b = expected->token.span;
     require(a.source == b.source && a.begin.offset == b.begin.offset && a.begin.line == b.begin.line &&
@@ -133,8 +205,14 @@ void valid(const std::string &source, const std::function<void()> &configure) {
     const auto actual = aurora::parseHostedExpression(tokens, position, Stop::Semicolon);
     sameExpression(actual, aurora::Parser(tokens, false).expr());
     require(position == static_cast<std::size_t>(result[3]) && created == 1 && parsed == 1 && released == 1 &&
-                read == count && edgeRead == edgeCount,
+                read == count && edgeRead == edgeCount && typeRead == typeCount,
             "valid forged control lost cursor, record reads or exact cleanup");
+    require(std::all_of(capturedInput.begin() + 11,
+                        capturedInput.end(),
+                        [](auto word) {
+                            return word == 0;
+                        }),
+            "ordinary expression did not copy an empty TypeContext");
     ++cases;
 }
 void validConstructor(const std::string &source, const std::function<void()> &configure) {
@@ -158,7 +236,7 @@ void validConstructor(const std::string &source, const std::function<void()> &co
     }
     sameExpression(actual, expected);
     require(position == static_cast<std::size_t>(result[3]) && created == 1 && parsed == 1 && released == 1 &&
-                read == count && edgeRead == edgeCount &&
+                read == count && edgeRead == edgeCount && typeRead == typeCount &&
                 reference.peek().span.begin.offset == tokens[position].span.begin.offset,
             "constructor control lost its cursor, original field token or exact cleanup");
     ++cases;
@@ -183,17 +261,95 @@ void invalid(const std::string &label,
     require(tokens.front().span.source->text == source, label + ": immutable source changed");
     ++cases;
 }
-void diagnostic(const std::string &source, Status status, std::size_t ordinal, Stop stop = Stop::Semicolon) {
+void contextControl(
+    const std::string &label,
+    const std::string &expression,
+    const std::function<void(aurora::hosted_parser::Context &, std::vector<aurora::Token> &)> &configure,
+    const std::function<void()> &prepare,
+    bool accepted,
+    bool beforeArena = false,
+    const std::string &prefix = "T U N;\n") {
+    reset();
+    prepare();
+    auto tokens = aurora::lex(prefix + expression, "context.au");
+    aurora::hosted_parser::Context context;
+    context.typeParameters = {tokens[0]};
+    configure(context, tokens);
+    result[4] += static_cast<std::int64_t>(prefix.size());
+    std::size_t position = 4;
+    bool rejected = false;
+    aurora::ExpressionPtr actual;
+    try {
+        actual = aurora::parseHostedExpression(tokens, position, Stop::Semicolon, context);
+    } catch (const aurora::Error &error) {
+        rejected = error.diagnostic.code == aurora::DiagnosticCode::Internal &&
+                   error.diagnostic.message == "hosted parser returned an invalid result";
+    }
+    if (accepted) {
+        require(!rejected && actual && position == 4 + static_cast<std::size_t>(result[3]) && created == 1 &&
+                    parsed == 1 && released == 1 && typeRead == typeCount,
+                label + ": valid copied context changed cursor/read/cleanup");
+        std::array<std::uint64_t, 7> expected{};
+        if (!context.typeParameters.empty()) {
+            expected[0] = context.typeParameters[0].span.begin.offset;
+            expected[1] = context.typeParameters[0].span.end.offset;
+            expected[6] = context.functionTemplate ? 2 : 1;
+        }
+        if (context.typeParameters.size() == 2) {
+            expected[2] = context.typeParameters[1].span.begin.offset;
+            expected[3] = context.typeParameters[1].span.end.offset;
+        }
+        if (!context.capacityParameters.empty()) {
+            expected[4] = context.capacityParameters[0].span.begin.offset;
+            expected[5] = context.capacityParameters[0].span.end.offset;
+        }
+        require(std::equal(expected.begin(), expected.end(), capturedInput.begin() + 11),
+                label + ": Context's seven copied words or mode changed");
+        if (expression == "size_of(T);")
+            require(actual->reflectedType.kind == aurora::TypeKind::Parameter &&
+                        actual->reflectedType.className == "T" && !actual->reflectedType.resolvedClass,
+                    "captured parameter gained a nominal identity or changed spelling");
+        if (expression == "size_of(array<T,N>);")
+            require(actual->reflectedType.isArray() && actual->reflectedType.elementParameter == "T" &&
+                        actual->reflectedType.lengthParameter == "N" && actual->reflectedType.length == 0,
+                    "captured array element or length parameter changed");
+        if (context.functionTemplate && context.typeParameters.size() == 1 && expression.starts_with("f<"))
+            require(actual->templateArguments.size() == 1 &&
+                        actual->templateArguments[0].type == aurora::TypeKind::Parameter &&
+                        actual->templateArguments[0].className == context.typeParameters[0].text &&
+                        !actual->templateArguments[0].resolvedClass,
+                    "captured call parameter gained a nominal identity or changed its spelling");
+        if (expression == "f<T,U>();")
+            require(actual->templateArguments.size() == 2 &&
+                        actual->templateArguments[0].type == aurora::TypeKind::Parameter &&
+                        actual->templateArguments[0].className == "T" &&
+                        actual->templateArguments[1].type == aurora::TypeKind::Parameter &&
+                        actual->templateArguments[1].className == "U",
+                    "function-template parameters were not imported from their distinct context spans");
+    } else {
+        const auto calls = beforeArena ? 0 : 1;
+        require(rejected && position == 4 && created == calls && parsed == calls && released == calls,
+                label + ": invalid context/typed graph escaped or changed cursor/cleanup");
+    }
+    ++cases;
+}
+void diagnostic(const std::string &source,
+                Status status,
+                std::size_t ordinal,
+                Stop stop = Stop::Semicolon,
+                bool secondHalf = false) {
     reset();
     const auto tokens = aurora::lex(source, "forged.au");
     result = {wire(status),
               -1,
               0,
               static_cast<std::int64_t>(ordinal),
-              static_cast<std::int64_t>(tokens[ordinal].span.begin.offset)};
+              static_cast<std::int64_t>(tokens[ordinal].span.begin.offset) + (secondHalf ? 1 : 0)};
     count = 0;
     std::size_t position = 0;
     std::string message;
+    aurora::SourceSpan referenceSpan;
+    aurora::DiagnosticCode referenceCode = aurora::DiagnosticCode::Unclassified;
     try {
         aurora::Parser reference(tokens, false);
         if (stop == Stop::ConstructorBraces) {
@@ -203,6 +359,8 @@ void diagnostic(const std::string &source, Status status, std::size_t ordinal, S
         static_cast<void>(reference.expr());
     } catch (const aurora::Error &error) {
         message = error.diagnostic.message;
+        referenceSpan = error.diagnostic.span;
+        referenceCode = error.diagnostic.code;
     }
     require(!message.empty(), "diagnostic control did not reject in reference parser");
     bool rejected = false;
@@ -210,27 +368,954 @@ void diagnostic(const std::string &source, Status status, std::size_t ordinal, S
         static_cast<void>(aurora::parseHostedExpression(tokens, position, stop));
     } catch (const aurora::Error &error) {
         const auto &span = error.diagnostic.span, &expected = tokens[ordinal].span;
-        rejected = error.diagnostic.code == aurora::DiagnosticCode::UnexpectedToken &&
-                   error.diagnostic.message == message && span.source == expected.source &&
-                   span.begin.offset == expected.begin.offset && span.end.offset == expected.end.offset;
+        const auto code = status == Status::TypeNestingLimit || status == Status::TemplateNestingLimit ||
+                                  status == Status::CallTemplateNestingLimit
+                              ? aurora::DiagnosticCode::NestingLimit
+                              : aurora::DiagnosticCode::UnexpectedToken;
+        rejected = error.diagnostic.code == code && code == referenceCode && error.diagnostic.message == message &&
+                   span.source == expected.source && span.source == referenceSpan.source &&
+                   span.begin.offset == referenceSpan.begin.offset && span.end.offset == referenceSpan.end.offset &&
+                   span.begin.offset == expected.begin.offset + (secondHalf ? 1 : 0) &&
+                   span.begin.line == expected.begin.line &&
+                   span.begin.column == expected.begin.column + (secondHalf ? 1 : 0) &&
+                   span.end.offset == expected.end.offset && span.end.line == expected.end.line &&
+                   span.end.column == expected.end.column;
     }
     require(rejected && position == 0 && created == 1 && parsed == 1 && released == 1,
             "diagnostic conversion lost reference message, location, cursor or cleanup");
     ++cases;
 }
+void contextControls() {
+    const auto parameterFixture = [] {
+        typedFixture("size_of(T);", {{wire(TypeKind::Parameter), 2, 2, 4, -1, -1, 0, 2}});
+    };
+    const auto arrayParameterFixture = [] {
+        typedFixture("size_of(array<T,N>);",
+                     {{wire(TypeKind::Parameter), 4, 4, 8, -1, -1, -1, 0},
+                      {wire(TypeKind::LengthParameter), 6, 6, 12, -1, -1, -1, 0},
+                      {wire(TypeKind::Array), 2, 2, 14, 0, 1, 0, 2}});
+    };
+    contextControl(
+        "ordinary mode zeroes all seven context words",
+        "size_of(i64);",
+        [](auto &context, auto &) {
+            context.typeParameters.clear();
+        },
+        [] {
+            reflectedFixture();
+        },
+        true);
+    contextControl(
+        "captured class parameter",
+        "size_of(T);",
+        [](auto &, auto &) {
+        },
+        parameterFixture,
+        true);
+    contextControl(
+        "two captured class parameters",
+        "size_of(T);",
+        [](auto &context, auto &tokens) {
+            context.typeParameters.push_back(tokens[1]);
+        },
+        parameterFixture,
+        true);
+    contextControl(
+        "captured function parameter",
+        "size_of(T);",
+        [](auto &context, auto &) {
+            context.functionTemplate = true;
+        },
+        parameterFixture,
+        true);
+    contextControl(
+        "captured capacity parameter",
+        "size_of(array<T,N>);",
+        [](auto &context, auto &tokens) {
+            context.capacityParameters = {tokens[2]};
+        },
+        arrayParameterFixture,
+        true);
+    contextControl(
+        "two function type arguments",
+        "f<T,U>();",
+        [](auto &context, auto &tokens) {
+            context.typeParameters.push_back(tokens[1]);
+            context.functionTemplate = true;
+        },
+        [] {
+            typedFixture("f<T,U>();",
+                         {{wire(TypeKind::Parameter), 2, 2, 4, -1, -1, -1, 0},
+                          {wire(TypeKind::Parameter), 4, 4, 8, -1, -1, -1, 0},
+                          {wire(TypeKind::Named), 0, 0, 10, 0, 1, 0, 1}});
+        },
+        true);
+    for (int mode = 0; mode < 21; ++mode)
+        contextControl(
+            "invalid context cardinality, mode or captured-token provenance",
+            "size_of(T);",
+            [=](auto &context, auto &tokens) {
+                auto &parameter = context.typeParameters[0];
+                switch (mode) {
+                case 0:
+                    context.typeParameters = {tokens[0], tokens[1], tokens[2]};
+                    break;
+                case 1:
+                    context.capacityParameters = {tokens[1], tokens[2]};
+                    break;
+                case 2:
+                    context.typeParameters.push_back(tokens[1]);
+                    context.capacityParameters = {tokens[2]};
+                    break;
+                case 3:
+                    context.typeParameters.clear();
+                    context.capacityParameters = {tokens[2]};
+                    break;
+                case 4:
+                    context.capacityParameters = {tokens[2]};
+                    context.functionTemplate = true;
+                    break;
+                case 5:
+                    context.typeParameters.clear();
+                    context.functionTemplate = true;
+                    break;
+                case 6:
+                    context.typeParameters.push_back(tokens[0]);
+                    break;
+                case 7:
+                    context.capacityParameters = {tokens[0]};
+                    break;
+                case 8:
+                    parameter.span.source =
+                        std::make_shared<const aurora::SourceText>("other.au", "T U N;\nsize_of(T);");
+                    break;
+                case 9:
+                    parameter.text = "U";
+                    break;
+                case 10:
+                    parameter.span.end.offset = parameter.span.begin.offset;
+                    break;
+                case 11:
+                    parameter.span.end.offset = tokens.back().span.end.offset;
+                    break;
+                case 12:
+                    parameter = tokens[6];
+                    break;
+                case 13:
+                    ++parameter.span.begin.line;
+                    break;
+                case 14:
+                    ++parameter.span.begin.column;
+                    break;
+                case 15:
+                    ++parameter.span.end.line;
+                    break;
+                case 16:
+                    ++parameter.span.end.column;
+                    break;
+                case 17:
+                    ++parameter.line;
+                    break;
+                case 18:
+                    parameter.span.source.reset();
+                    break;
+                case 19:
+                    parameter = tokens[3];
+                    break;
+                case 20:
+                    parameter.span.begin.offset = 1;
+                    parameter.span.end.offset = 2;
+                    break;
+                }
+            },
+            parameterFixture,
+            false,
+            true);
+    contextControl(
+        "wire parameter must be declared in the captured context",
+        "size_of(T);",
+        [](auto &context, auto &) {
+            context.typeParameters.clear();
+        },
+        parameterFixture,
+        false);
+    contextControl(
+        "captured parameter cannot be forged into a nominal class",
+        "size_of(T);",
+        [](auto &, auto &) {
+        },
+        [] {
+            typedFixture("size_of(T);", {{wire(TypeKind::Named), 2, 2, 4, -1, -1, 0, 2}});
+        },
+        false);
+    contextControl(
+        "captured type parameter is not a capacity parameter",
+        "size_of(array<T,N>);",
+        [](auto &context, auto &tokens) {
+            context.typeParameters.push_back(tokens[2]);
+        },
+        arrayParameterFixture,
+        false);
+    contextControl(
+        "class templates cannot carry concrete callee template-ids",
+        "f<i64>();",
+        [](auto &, auto &) {
+        },
+        [] {
+            templateFixture();
+        },
+        false);
+    contextControl(
+        "class templates cannot carry reflected template-ids",
+        "size_of(Box<i64>);",
+        [](auto &, auto &) {
+        },
+        [] {
+            nestedTemplateFixture(1, true);
+        },
+        false);
+    for (const std::string name : {"int", "void", "char", "float", "double", "new", "delete"}) {
+        const auto call = "f<" + name + ">();";
+        contextControl(
+            "reserved type word is still a legal captured call parameter",
+            call,
+            [](auto &context, auto &) {
+                context.functionTemplate = true;
+            },
+            [&] {
+                templateFixture(call);
+                types[0][0] = wire(TypeKind::Parameter);
+            },
+            true,
+            false,
+            name + " U N;\n");
+        const auto query = "size_of(" + name + ");";
+        contextControl(
+            "captured parameter cannot bypass reserved reflected-type spelling",
+            query,
+            [](auto &, auto &) {
+            },
+            [&] {
+                typedFixture(query, {{wire(TypeKind::Parameter), 2, 2, 4, -1, -1, 0, 2}});
+            },
+            false,
+            false,
+            name + " U N;\n");
+    }
+    contextControl(
+        "nested dependent call argument remains rejected",
+        "f<Box<T>>();",
+        [](auto &context, auto &) {
+            context.functionTemplate = true;
+        },
+        [] {
+            splitFixture("f<Box<T>>();");
+            types[0][0] = wire(TypeKind::Parameter);
+        },
+        false);
+}
+void typedDiagnosticControls() {
+    diagnostic("size_of(own i64>);", Status::ExpectedAngleOpen, 3);
+    diagnostic("size_of(own<i64);", Status::ExpectedAngleClose, 5);
+    diagnostic("size_of(builtin ByteRegion);", Status::ExpectedScope, 3);
+    diagnostic("size_of(array<i64 1>);", Status::ExpectedComma, 5);
+    diagnostic("size_of(builtin::span<u8>);", Status::ExpectedConst, 6);
+    diagnostic("size_of(builtin::span<const i64>);", Status::ExpectedU8, 7);
+    diagnostic("size_of(own<u64>);", Status::ExpectedI64, 4);
+    diagnostic("size_of(builtin::Unknown);", Status::ExpectedArray, 4);
+    diagnostic("size_of(int);", Status::ReservedType, 2);
+    diagnostic("size_of(1);", Status::ExpectedType, 3);
+    diagnostic("f<i64,u8,bool>();", Status::TemplateArity, 6);
+    diagnostic("f<own<i64>>();", Status::TemplateArgument, 2);
+    diagnostic("f<65>();", Status::CapacityArgument, 3);
+    diagnostic("size_of(builtin::OwnedValues<i64>);", Status::OwnedElement, 7);
+    diagnostic("size_of(array<own<i64>,1>);", Status::ArrayElement, 8);
+    diagnostic("size_of(array<u8,0>);", Status::ArrayLength, 7);
+    diagnostic("size_of(array<Box,65>);", Status::ClassArrayLength, 8);
+    diagnostic("size_of(Box<i64>>);", Status::ExpectedClose, 5, Stop::Semicolon, true);
+    diagnostic(nestedTemplateSource(5, true), Status::TemplateNestingLimit, 11);
+    diagnostic(nestedTemplateSource(6, false), Status::CallTemplateNestingLimit, 11);
+    std::string deep = "size_of(";
+    for (int depth = 0; depth < 64; ++depth)
+        deep += "array<";
+    deep += "i64";
+    for (int depth = 0; depth < 64; ++depth)
+        deep += ",1>";
+    deep += ");";
+    diagnostic(deep, Status::TypeNestingLimit, 130);
+    for (const auto adjustment : {-1, 2, 3})
+        invalid(
+            "split-token diagnostic requires exactly the second byte",
+            [=] {
+                const auto tokens = aurora::lex("size_of(Box<i64>>);");
+                count = 0;
+                result = {wire(Status::ExpectedClose),
+                          -1,
+                          0,
+                          5,
+                          static_cast<std::int64_t>(tokens[5].span.begin.offset) + adjustment};
+            },
+            "size_of(Box<i64>>);");
+    invalid(
+        "successful result cannot end inside a split token",
+        [] {
+            splitFixture();
+            result[3] = 5;
+            result[4] = 10;
+        },
+        "f<Box<i64>>();");
+    invalid(
+        "single greater token cannot borrow a second-byte diagnostic",
+        [] {
+            const auto tokens = aurora::lex("size_of(Box<i64>);");
+            count = 0;
+            result = {
+                wire(Status::ExpectedClose), -1, 0, 5, static_cast<std::int64_t>(tokens[5].span.begin.offset) + 1};
+        },
+        "size_of(Box<i64>);");
+    for (const std::size_t ordinal : {0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U, 8U}) {
+        reset();
+        splitFixture();
+        auto tokens = aurora::lex("f<Box<i64>>();", "type-provenance.au");
+        tokens[ordinal].span.source = std::make_shared<const aurora::SourceText>("foreign.au", "f<Box<i64>>();");
+        std::size_t position = 0;
+        bool rejected = false;
+        try {
+            static_cast<void>(aurora::parseHostedExpression(tokens, position, Stop::Semicolon));
+        } catch (const aurora::Error &error) {
+            rejected = error.diagnostic.code == aurora::DiagnosticCode::Internal &&
+                       error.diagnostic.message == "hosted parser returned an invalid result";
+        }
+        require(rejected && position == 0 && created == 1 && parsed == 1 && released == 1,
+                "typed name, child, delimiter, split closer or end token lost original-source provenance");
+        ++cases;
+    }
+}
+void contextDispatchControls() {
+    const std::string functionSource = "export module hooks;template<Scalar T>auto f(T unused)->i64{"
+                                       "i64 x=1;x=1;1;static_assert(1);if(1){}while(1){}return 1;}";
+    reset();
+    hookControl = true;
+    const auto functionTokens = aurora::lex(functionSource, "context-hooks.au");
+    const auto function = aurora::Parser(functionTokens, true).parse();
+    hookControl = false;
+    const auto typeToken = std::find_if(functionTokens.begin(), functionTokens.end(), [](const auto &token) {
+        return token.text == "T";
+    });
+    require(typeToken != functionTokens.end() && function.functionTemplates.size() == 1 && parsed == 8 &&
+                created == 8 && released == 8 && hookContexts.size() == 8,
+            "function-template statement entry bypassed hosted dispatch");
+    const std::array<std::uint64_t, 7> expectedFunction{
+        typeToken->span.begin.offset, typeToken->span.end.offset, 0, 0, 0, 0, 2};
+    for (const auto &context : hookContexts)
+        require(context == expectedFunction, "a statement entry lost its captured function-template context");
+    ++cases;
+
+    reset();
+    hookControl = true;
+    const auto classTokens = aurora::lex(
+        "export module hooks;template<Scalar T,i64 N>class Hook{array<T,N> value;array<T,N> zero;i64 scalar;"
+        "public:Hook():value{1},zero{},scalar(1){}auto get()->i64{return 1;}};",
+        "context-hooks.au");
+    const auto definition = aurora::Parser(classTokens, true).parse();
+    hookControl = false;
+    const auto capturedType = std::find_if(classTokens.begin(), classTokens.end(), [](const auto &token) {
+        return token.text == "T";
+    });
+    const auto capturedCapacity = std::find_if(classTokens.begin(), classTokens.end(), [](const auto &token) {
+        return token.text == "N";
+    });
+    require(capturedType != classTokens.end() && capturedCapacity != classTokens.end() &&
+                definition.templates.size() == 1 && created == 4 && parsed == 4 && released == 4 &&
+                hookStops ==
+                    std::vector<Stop>{
+                        Stop::ConstructorBraces, Stop::ConstructorBraces, Stop::CloseParenthesis, Stop::Semicolon},
+            "class-template initializer or method entry bypassed hosted dispatch");
+    const std::array<std::uint64_t, 7> expectedClass{capturedType->span.begin.offset,
+                                                     capturedType->span.end.offset,
+                                                     0,
+                                                     0,
+                                                     capturedCapacity->span.begin.offset,
+                                                     capturedCapacity->span.end.offset,
+                                                     1};
+    for (const auto &context : hookContexts)
+        require(context == expectedClass, "constructor/method entry lost captured class-template/capacity context");
+    ++cases;
+
+    for (const bool functionTemplate : {false, true}) {
+        reset();
+        const std::string prefix =
+            functionTemplate ? "export module hooks;template<Scalar T>auto f()->i64{return "
+                             : "export module hooks;template<Scalar T>class Hook{public:auto f()->i64{return ";
+        const std::string expression = functionTemplate ? "g<Box<T>>();" : "g<i64>();";
+        const auto tokens = aurora::lex(prefix + expression + (functionTemplate ? "}" : "}};"), "context-hooks.au");
+        std::string message;
+        aurora::SourceSpan expected;
+        try {
+            static_cast<void>(aurora::Parser(tokens, false).parse());
+        } catch (const aurora::Error &error) {
+            message = error.diagnostic.message;
+            expected = error.diagnostic.span;
+        }
+        require(!message.empty(), "context diagnostic reference unexpectedly accepted malformed template syntax");
+        const auto expressionTokens = aurora::lex(expression);
+        const std::int64_t ordinal = functionTemplate ? 5 : 1;
+        result = {wire(functionTemplate ? Status::NestedDependent : Status::TemplateContext),
+                  -1,
+                  0,
+                  ordinal,
+                  static_cast<std::int64_t>(expressionTokens[static_cast<std::size_t>(ordinal)].span.begin.offset)};
+        count = 0;
+        hookControl = hookPrepared = true;
+        bool rejected = false;
+        try {
+            static_cast<void>(aurora::Parser(tokens, true).parse());
+        } catch (const aurora::Error &error) {
+            rejected = error.diagnostic.message == message && error.diagnostic.span.source == expected.source &&
+                       error.diagnostic.span.begin.offset == expected.begin.offset &&
+                       error.diagnostic.span.end.offset == expected.end.offset;
+        }
+        hookControl = false;
+        require(rejected && created == 1 && parsed == 1 && released == 1 &&
+                    capturedInput[17] == (functionTemplate ? 2U : 1U),
+                "context diagnostic changed the reference message/provenance or escaped direct dispatch");
+        ++cases;
+    }
+}
+void typedControls() {
+    for (const auto kind : {TypeKind::I64, TypeKind::U64, TypeKind::U8, TypeKind::Bool}) {
+        const std::string word = kind == TypeKind::I64   ? "i64"
+                                 : kind == TypeKind::U64 ? "u64"
+                                 : kind == TypeKind::U8  ? "u8"
+                                                         : "bool";
+        const auto source = "f<" + word + ">();";
+        valid(source, [&] {
+            templateFixture(source);
+            types[0][0] = wire(kind);
+        });
+        const auto query = "size_of(" + word + ");";
+        valid(query, [&] {
+            reflectedFixture(query);
+            types[0][0] = wire(kind);
+        });
+    }
+    for (const std::string query : {"size_of", "type_id", "field_count"}) {
+        const auto source = query + "(pkg::Box);";
+        valid(source, [&] {
+            typedFixture(source, {{wire(TypeKind::Named), 2, 4, 8, -1, -1, 0, 2}});
+        });
+    }
+    valid("ns::f<i64>();", [] {
+        typedFixture("ns::f<i64>();",
+                     {{wire(TypeKind::I64), 4, 4, 8, -1, -1, -1, 0}, {wire(TypeKind::Named), 0, 2, 10, 0, -1, 0, 1}},
+                     {{wire(NodeKind::Call), 0, -1, 0, 1, 2, 7}});
+    });
+    valid("Box<i64>{};", [] {
+        templateFixture("Box<i64>{};");
+        records[0][0] = wire(NodeKind::Construct);
+    });
+    for (const std::string capacity : {"1", "64", "00064"}) {
+        const auto source = "f<i64," + capacity + ">();";
+        valid(source, [&] {
+            typedFixture(source,
+                         {{wire(TypeKind::I64), 2, 2, 4, -1, -1, -1, 0},
+                          {wire(TypeKind::Capacity), 4, 4, 8, -1, -1, -1, 0},
+                          {wire(TypeKind::Named), 0, 0, 10, 0, 1, 0, 1}});
+        });
+    }
+    valid("f<Box<i64>>();", [] {
+        splitFixture();
+    });
+    valid("f<Box<i64> >();", [] {
+        splitFixture("f<Box<i64> >();");
+        types.back()[3] = 12;
+    });
+    valid("size_of<Box<i64>>(Box<u8>);", [] {
+        typedFixture("size_of<Box<i64>>(Box<u8>);",
+                     {{wire(TypeKind::I64), 4, 4, 8, -1, -1, -1, 0},
+                      {wire(TypeKind::Named), 2, 2, 10, 0, -1, -1, 0},
+                      {wire(TypeKind::Named), 0, 0, 11, 1, -1, 0, 1},
+                      {wire(TypeKind::U8), 9, 9, 18, -1, -1, -1, 0},
+                      {wire(TypeKind::Named), 7, 7, 20, 3, -1, 0, 2}});
+    });
+    for (const std::string source : {"pkg::size_of(\"Box<i64>\");", "pkg::type_id(\"x\");", "pkg::field_count(\"x\");"})
+        valid(source, [&] {
+            fixture(source,
+                    {{wire(NodeKind::Literal), 4, -1, -1, 1, 4, 4}, {wire(NodeKind::Call), 0, 0, 1, 2, 2, 5}},
+                    {{0, -1, 1, 2, -1}});
+        });
+    valid("\"size_of(Box<i64>)\";", [] {
+        fixture("\"size_of(Box<i64>)\";", {{wire(NodeKind::Literal), 0, -1, -1, 1, 0, 0}});
+    });
+    valid("a>>b;", [] {
+        fixture("a>>b;",
+                {{wire(NodeKind::Name), 0, -1, -1, 1, 0, 0},
+                 {wire(NodeKind::Name), 2, -1, -1, 1, 2, 2},
+                 {wire(NodeKind::Binary), 1, 0, 1, 2, 1, 1}});
+    });
+    for (const auto kind : {TypeKind::Own, TypeKind::Ref, TypeKind::MutRef}) {
+        const auto source = std::string("size_of(") +
+                            (kind == TypeKind::Own   ? "own"
+                             : kind == TypeKind::Ref ? "ref"
+                                                     : "mutref") +
+                            "<i64>);";
+        valid(source, [&] {
+            typedFixture(source, {{wire(kind), 2, 2, 10, -1, -1, 0, 2}});
+        });
+    }
+    valid("size_of(builtin::span<const u8>);", [] {
+        typedFixture("size_of(builtin::span<const u8>);", {{wire(TypeKind::ByteSpan), 2, 4, 16, -1, -1, 0, 2}});
+    });
+    for (const std::string name : {"ByteRegion",
+                                   "OwnedBytes",
+                                   "ConsoleSession",
+                                   "DisplaySession",
+                                   "IommuEventSession",
+                                   "ConsolePutResult",
+                                   "ConsoleCompletion",
+                                   "DisplayPutResult",
+                                   "DisplayCompletion",
+                                   "EventPollResult",
+                                   "EventAckResult",
+                                   "EventIntakeCompletion",
+                                   "ConsoleSample",
+                                   "IommuEventSample"}) {
+        const auto source = "size_of(builtin::" + name + ");";
+        const bool copiedClass = name == "ConsoleSample" || name == "IommuEventSample";
+        valid(source, [&] {
+            typedFixture(source,
+                         {{wire(copiedClass ? TypeKind::BuiltinClass : TypeKind::Builtin), 2, 4, 8, -1, -1, 0, 2}});
+        });
+        invalid(
+            "closed builtin alias has the wrong nominal category",
+            [&] {
+                typedFixture(source,
+                             {{wire(copiedClass ? TypeKind::Builtin : TypeKind::BuiltinClass), 2, 4, 8, -1, -1, 0, 2}});
+            },
+            source);
+    }
+    for (const std::string length : {"1", "4096"}) {
+        const auto source = "size_of(array<u8," + length + ">);";
+        valid(source, [&] {
+            typedFixture(source,
+                         {{wire(TypeKind::U8), 4, 4, 8, -1, -1, -1, 0},
+                          {wire(TypeKind::Capacity), 6, 6, 12, -1, -1, -1, 0},
+                          {wire(TypeKind::Array), 2, 2, 14, 0, 1, 0, 2}});
+        });
+    }
+    valid("size_of(builtin::array<Box,64>);", [] {
+        typedFixture("size_of(builtin::array<Box,64>);",
+                     {{wire(TypeKind::Named), 6, 6, 12, -1, -1, -1, 0},
+                      {wire(TypeKind::Capacity), 8, 8, 16, -1, -1, -1, 0},
+                      {wire(TypeKind::Array), 2, 4, 18, 0, 1, 0, 2}});
+    });
+    valid("size_of(builtin::OwnedValues<Box>);", [] {
+        typedFixture(
+            "size_of(builtin::OwnedValues<Box>);",
+            {{wire(TypeKind::Named), 6, 6, 12, -1, -1, -1, 0}, {wire(TypeKind::OwnedValues), 2, 4, 14, 0, -1, 0, 2}});
+    });
+    for (const std::string name : {"ConsoleSample", "IommuEventSample"}) {
+        const auto array = "size_of(array<builtin::" + name + ",64>);";
+        valid(array, [&] {
+            typedFixture(array,
+                         {{wire(TypeKind::BuiltinClass), 4, 6, 12, -1, -1, -1, 0},
+                          {wire(TypeKind::Capacity), 8, 8, 16, -1, -1, -1, 0},
+                          {wire(TypeKind::Array), 2, 2, 18, 0, 1, 0, 2}});
+        });
+        const auto source = "size_of(builtin::OwnedValues<builtin::" + name + ">);";
+        valid(source, [&] {
+            typedFixture(source,
+                         {{wire(TypeKind::BuiltinClass), 6, 8, 16, -1, -1, -1, 0},
+                          {wire(TypeKind::OwnedValues), 2, 4, 18, 0, -1, 0, 2}});
+        });
+    }
+
+    const auto independentRoots = [] {
+        typedFixture("f<i64>()+g<u8>();",
+                     {{wire(TypeKind::I64), 2, 2, 4, -1, -1, -1, 0},
+                      {wire(TypeKind::Named), 0, 0, 6, 0, -1, 0, 1},
+                      {wire(TypeKind::U8), 9, 9, 18, -1, -1, -1, 0},
+                      {wire(TypeKind::Named), 7, 7, 20, 2, -1, 7, 1}},
+                     {{wire(NodeKind::Call), 0, -1, 0, 1, 0, 5},
+                      {wire(NodeKind::Call), 7, -1, 0, 1, 7, 12},
+                      {wire(NodeKind::Binary), 6, 0, 1, 2, 6, 6}});
+    };
+    valid("f<i64>()+g<u8>();", independentRoots);
+    invalid(
+        "distinct callee roots cannot share a type child",
+        [&] {
+            independentRoots();
+            types[3][4] = 0;
+        },
+        "f<i64>()+g<u8>();");
+    invalid(
+        "distinct roots cannot borrow another owner's token",
+        [&] {
+            independentRoots();
+            types[3][6] = 0;
+        },
+        "f<i64>()+g<u8>();");
+    invalid(
+        "child source tokens cannot be reused by separate type subtrees",
+        [&] {
+            independentRoots();
+            types[2][0] = wire(TypeKind::I64);
+            types[2][1] = types[2][2] = 2;
+            types[2][3] = 4;
+        },
+        "f<i64>()+g<u8>();");
+    std::string deepSource = "size_of(";
+    for (int depth = 0; depth < 64; ++depth)
+        deepSource += "array<";
+    deepSource += "i64";
+    for (int depth = 0; depth < 64; ++depth)
+        deepSource += ",1>";
+    deepSource += ");";
+    invalid(
+        "untrusted type forest cannot exceed 64 before recursive host-value import",
+        [&] {
+            std::vector<TypeWords> syntax{{wire(TypeKind::I64), 130, 130, 260, -1, -1, -1, 0}};
+            std::int64_t child = 0;
+            for (std::int64_t level = 0; level < 64; ++level) {
+                const auto token = 128 - level * 2, length = 132 + level * 3, close = length + 1;
+                const auto capacity = static_cast<std::int64_t>(syntax.size());
+                syntax.push_back({wire(TypeKind::Capacity), length, length, length * 2, -1, -1, -1, 0});
+                syntax.push_back({wire(TypeKind::Array),
+                                  token,
+                                  token,
+                                  close * 2,
+                                  child,
+                                  capacity,
+                                  level == 63 ? 0 : -1,
+                                  level == 63 ? 2 : 0});
+                child = capacity + 1;
+            }
+            typedFixture(deepSource, std::move(syntax));
+        },
+        deepSource);
+
+    for (const auto countValue : {-1LL, 7LL, std::numeric_limits<long long>::max()})
+        invalid(
+            "type count is negative or exceeds consumed token capacity",
+            [=] {
+                templateFixture();
+                typeCount = countValue;
+            },
+            "f<i64>();");
+    for (const auto kind : {-1LL, 0LL, static_cast<long long>(wire(TypeKind::BuiltinClass) + 1)})
+        invalid(
+            "type kind is outside the closed wire enum",
+            [=] {
+                templateFixture();
+                types[0][0] = kind;
+            },
+            "f<i64>();");
+    for (const auto field : {1, 2, 3, 4, 5, 6, 7})
+        for (const auto value : {-2LL, std::numeric_limits<long long>::max()})
+            invalid(
+                "type word outside its bounded domain",
+                [=] {
+                    templateFixture();
+                    types[0][static_cast<std::size_t>(field)] = value;
+                },
+                "f<i64>();");
+    for (const auto child : {0, 1, 2})
+        invalid(
+            "type child must precede its parent",
+            [=] {
+                templateFixture();
+                types[0][4] = child;
+            },
+            "f<i64>();");
+    invalid(
+        "type parent must follow child",
+        [] {
+            templateFixture();
+            std::swap(types[0], types[1]);
+            types[0][4] = 1;
+        },
+        "f<i64>();");
+    invalid(
+        "type child cannot be shared by siblings",
+        [] {
+            typedFixture("f<i64,u64>();",
+                         {{wire(TypeKind::I64), 2, 2, 4, -1, -1, -1, 0},
+                          {wire(TypeKind::U64), 4, 4, 8, -1, -1, -1, 0},
+                          {wire(TypeKind::Named), 0, 0, 10, 0, 0, 0, 1}});
+        },
+        "f<i64,u64>();");
+    invalid(
+        "orphan type record cannot remain outside the forest",
+        [] {
+            templateFixture();
+            types.push_back({wire(TypeKind::I64), 2, 2, 4, -1, -1, -1, 0});
+            ++typeCount;
+        },
+        "f<i64>();");
+    invalid(
+        "rootless type forest cannot replace a callee root",
+        [] {
+            templateFixture();
+            types[1][6] = -1;
+            types[1][7] = 0;
+        },
+        "f<i64>();");
+    invalid(
+        "duplicate same-role roots cannot name one owner",
+        [] {
+            templateFixture();
+            types.push_back(types[1]);
+            ++typeCount;
+        },
+        "f<i64>();");
+    invalid(
+        "type child cannot also be an independently owned reflected root",
+        [] {
+            templateFixture();
+            types[0][6] = 0;
+            types[0][7] = 2;
+        },
+        "f<i64>();");
+    invalid(
+        "callee root must have a template argument",
+        [] {
+            templateFixture();
+            types[1][4] = -1;
+        },
+        "f<i64>();");
+    invalid(
+        "callee root must have Named kind",
+        [] {
+            templateFixture();
+            types[1][0] = wire(TypeKind::Array);
+        },
+        "f<i64>();");
+    for (const auto owner : {-1, 1, 2, 5})
+        invalid(
+            "callee root owner must match its name-start token",
+            [=] {
+                templateFixture();
+                types[1][6] = owner;
+            },
+            "f<i64>();");
+    invalid(
+        "root role cannot be transferred from callee to reflection",
+        [] {
+            templateFixture();
+            types[1][7] = 2;
+        },
+        "f<i64>();");
+    invalid(
+        "reflected root cannot be attached to a name node",
+        [] {
+            reflectedFixture();
+            records[0][0] = wire(NodeKind::Name);
+        },
+        "size_of(i64);");
+    invalid(
+        "reflected root cannot be attached to a construct",
+        [] {
+            reflectedFixture("size_of{i64};");
+            records[0][0] = wire(NodeKind::Construct);
+        },
+        "size_of{i64};");
+    invalid(
+        "reflected root requires an unqualified query call",
+        [] {
+            reflectedFixture("f(i64);");
+        },
+        "f(i64);");
+    invalid(
+        "query call must carry exactly one reflected root",
+        [] {
+            reflectedFixture();
+            types.clear();
+            typeCount = 0;
+        },
+        "size_of(i64);");
+    invalid(
+        "unused reflected root must not survive token coverage",
+        [] {
+            reflectedFixture();
+            types[0][6] = 1;
+        },
+        "size_of(i64);");
+    invalid(
+        "byte string is not a reflected type name",
+        [] {
+            typedFixture("size_of(\"i64\");", {{wire(TypeKind::Named), 2, 2, 4, -1, -1, 0, 2}});
+        },
+        "size_of(\"i64\");");
+    invalid(
+        "qualified query spelling does not acquire reflection syntax",
+        [] {
+            typedFixture("pkg::size_of(i64);",
+                         {{wire(TypeKind::I64), 4, 4, 8, -1, -1, 0, 2}},
+                         {{wire(NodeKind::Call), 0, -1, 0, 1, 2, 5}});
+        },
+        "pkg::size_of(i64);");
+    invalid(
+        "scalar cannot be forged as a nominal template argument",
+        [] {
+            templateFixture();
+            types[0][0] = wire(TypeKind::Named);
+        },
+        "f<i64>();");
+    invalid(
+        "scalar kind must match original spelling",
+        [] {
+            templateFixture();
+            types[0][0] = wire(TypeKind::U64);
+        },
+        "f<i64>();");
+    invalid(
+        "type name cannot skip an interior qualification token",
+        [] {
+            typedFixture("size_of(pkg::Box);", {{wire(TypeKind::Named), 2, 2, 8, -1, -1, 0, 2}});
+        },
+        "size_of(pkg::Box);");
+    invalid(
+        "success cannot omit template syntax records",
+        [] {
+            templateFixture();
+            types.clear();
+            typeCount = 0;
+        },
+        "f<i64>();");
+    for (const auto close : {10, 12, 13})
+        invalid(
+            "split closer requires exact first/second half ownership",
+            [=] {
+                splitFixture();
+                types[2][3] = close;
+            },
+            "f<Box<i64>>();");
+    invalid(
+        "duplicate second half cannot close both parent and child",
+        [] {
+            splitFixture();
+            types[1][3] = 11;
+        },
+        "f<Box<i64>>();");
+    invalid(
+        "unsplit greater token cannot have a second half",
+        [] {
+            templateFixture();
+            types[1][3] = 7;
+        },
+        "f<i64>();");
+    invalid(
+        "template success cannot leave one half of shift token unclaimed",
+        [] {
+            templateFixture("f<i64>>();");
+        },
+        "f<i64>>();");
+    invalid(
+        "whole shift operator cannot share its token with type halves",
+        [] {
+            splitFixture("f<Box<i64>>();");
+            types[0][1] = types[0][2] = 5;
+            types[0][3] = 10;
+        },
+        "f<Box<i64>>();");
+    invalid(
+        "a template child cannot skip a comma-delimited source argument",
+        [] {
+            typedFixture(
+                "f<i64,u8>();",
+                {{wire(TypeKind::I64), 2, 2, 4, -1, -1, -1, 0}, {wire(TypeKind::Named), 0, 0, 10, 0, -1, 0, 1}});
+        },
+        "f<i64,u8>();");
+    invalid(
+        "a type root cannot extend across its query close",
+        [] {
+            reflectedFixture();
+            types[0][3] = 6;
+        },
+        "size_of(i64);");
+
+    for (const std::string capacity : {"0", "65", "4097", "0xff", "1u64", "999999999999999999999999999"}) {
+        const auto source = "f<" + capacity + ">();";
+        invalid(
+            "template capacity must preserve decimal range 1..64",
+            [&] {
+                templateFixture(source);
+                types[0][0] = wire(TypeKind::Capacity);
+            },
+            source);
+    }
+    for (const std::string length : {"0", "4097", "0xff", "1u64"}) {
+        const auto source = "size_of(array<u8," + length + ">);";
+        invalid(
+            "array length must preserve decimal range 1..4096",
+            [&] {
+                typedFixture(source,
+                             {{wire(TypeKind::U8), 4, 4, 8, -1, -1, -1, 0},
+                              {wire(TypeKind::Capacity), 6, 6, 12, -1, -1, -1, 0},
+                              {wire(TypeKind::Array), 2, 2, 14, 0, 1, 0, 2}});
+            },
+            source);
+    }
+    invalid(
+        "class array capacity is independently limited to 64",
+        [] {
+            typedFixture("size_of(array<Box,65>);",
+                         {{wire(TypeKind::Named), 4, 4, 8, -1, -1, -1, 0},
+                          {wire(TypeKind::Capacity), 6, 6, 12, -1, -1, -1, 0},
+                          {wire(TypeKind::Array), 2, 2, 14, 0, 1, 0, 2}});
+        },
+        "size_of(array<Box,65>);");
+    invalid(
+        "OwnedValues element must be a concrete copied class",
+        [] {
+            typedFixture(
+                "size_of(builtin::OwnedValues<i64>);",
+                {{wire(TypeKind::I64), 6, 6, 12, -1, -1, -1, 0}, {wire(TypeKind::OwnedValues), 2, 4, 14, 0, -1, 0, 2}});
+        },
+        "size_of(builtin::OwnedValues<i64>);");
+    invalid(
+        "builtin result enum is not a copied array class",
+        [] {
+            typedFixture("size_of(array<builtin::ConsolePutResult,1>);",
+                         {{wire(TypeKind::Builtin), 4, 6, 12, -1, -1, -1, 0},
+                          {wire(TypeKind::Capacity), 8, 8, 16, -1, -1, -1, 0},
+                          {wire(TypeKind::Array), 2, 2, 18, 0, 1, 0, 2}});
+        },
+        "size_of(array<builtin::ConsolePutResult,1>);");
+    for (const bool reflected : {false, true}) {
+        const auto limit = reflected ? 4 : 5;
+        valid(nestedTemplateSource(limit, reflected), [&] {
+            nestedTemplateFixture(limit, reflected);
+        });
+        invalid(
+            "template depth exceeds its independent call/reflection allowance",
+            [&] {
+                nestedTemplateFixture(limit + 1, reflected);
+            },
+            nestedTemplateSource(limit + 1, reflected));
+    }
+}
 } // namespace
 
-extern "C" void aurora_hosted_parser_create(const void *input, void *) {
+extern "C" void aurora_hosted_parser_create(const void *input, void *output) {
     std::array<std::uint64_t, 2> value{};
     std::memcpy(value.data(), input, sizeof(value));
     require(value[0] != 0 && value[1] == 0, "adapter did not request empty arena with live region");
+    arenaAddress = output;
+    arenaRegion = value[0];
+    // Exercise the newly extended arena's last word and the enclosing owner base.
+    std::memcpy(static_cast<unsigned char *>(output) + 160, &arenaCanary, sizeof(arenaCanary));
     ++created;
 }
-extern "C" void aurora_hosted_parser_parse(void *, const void *input, void *output) {
+extern "C" void aurora_hosted_parser_parse(void *arena, const void *input, void *output) {
+    require(arena == arenaAddress, "parse changed the 168-byte arena address");
+    std::memcpy(capturedInput.data(), input, sizeof(capturedInput));
+    require(capturedInput[0] == 0 && capturedInput[2] == 0 && capturedInput[3] == 0 && capturedInput[4] == 0 &&
+                capturedInput[5] == 0,
+            "copied Input144 changed the borrowed source descriptor");
     ++parsed;
     if (hookControl) {
-        std::array<std::uint64_t, 11> value{};
-        std::memcpy(value.data(), input, sizeof(value));
+        const auto &value = capturedInput;
         const auto *source = reinterpret_cast<const char *>(value[1]);
         const auto offset = static_cast<std::int64_t>(value[7]);
         const auto lexical = aurora::lex(std::string(source, static_cast<std::size_t>(value[6])), "hook.au");
@@ -240,9 +1325,17 @@ extern "C" void aurora_hosted_parser_parse(void *, const void *input, void *outp
         require(token != lexical.end() && token + 1 != lexical.end(), "hook cursor is not a source token");
         const auto stop = static_cast<Stop>(value[10]);
         hookStops.push_back(stop);
-        edgeCount = 0;
-        edges.clear();
-        if (hookUnsupported) {
+        std::array<std::uint64_t, 7> copiedContext{};
+        std::copy(capturedInput.begin() + 11, capturedInput.end(), copiedContext.begin());
+        hookContexts.push_back(copiedContext);
+        if (!hookPrepared) {
+            edgeCount = typeCount = 0;
+            edges.clear();
+            types.clear();
+        }
+        if (hookPrepared) {
+            result[4] += offset;
+        } else if (hookUnsupported) {
             result = {wire(Status::Unsupported), -1, 0, 0, offset};
             count = 0;
             records.clear();
@@ -291,7 +1384,21 @@ extern "C" void aurora_hosted_parser_edge(const void *, std::int64_t index, void
     ++edgeRead;
     std::memcpy(output, edges[static_cast<std::size_t>(index)].data(), sizeof(EdgeWords));
 }
-extern "C" void aurora_hosted_parser_release(void *) {
+extern "C" std::int64_t aurora_hosted_parser_types(const void *) {
+    return typeCount;
+}
+extern "C" void aurora_hosted_parser_type(const void *, std::int64_t index, void *output) {
+    require(index >= 0 && static_cast<std::size_t>(index) < types.size(), "adapter requested out-of-range type");
+    ++typeRead;
+    std::memcpy(output, types[static_cast<std::size_t>(index)].data(), sizeof(TypeWords));
+}
+extern "C" void aurora_hosted_parser_release(void *owner) {
+    require(static_cast<unsigned char *>(owner) + 8 == arenaAddress,
+            "release did not receive the enclosing 176-byte owner");
+    std::uint64_t region = 0, canary = 0;
+    std::memcpy(&region, owner, sizeof(region));
+    std::memcpy(&canary, static_cast<unsigned char *>(owner) + 168, sizeof(canary));
+    require(region == arenaRegion && canary == arenaCanary, "owner region or arena168 boundary was corrupted");
     ++released;
 }
 
@@ -332,7 +1439,7 @@ int main() {
                 result[1] = root;
             });
         for (std::size_t field = 1; field < 5; ++field)
-            invalid("non-atomic fallback", [=] {
+            invalid("non-atomic Unsupported result", [=] {
                 result = {wire(Status::Unsupported), -1, 0, 0, 0};
                 count = 0;
                 result[field] = 1;
@@ -788,7 +1895,7 @@ int main() {
         invalid("impossible edge count", [] {
             edgeCount = count;
         });
-        invalid("fallback retains edges", [] {
+        invalid("Unsupported result retains edges", [] {
             result = {wire(Status::Unsupported), -1, 0, 0, 0};
             count = 0;
             edgeCount = 1;
@@ -1059,12 +2166,10 @@ int main() {
         diagnostic("T{.__au_x=1};", Status::ReservedPrefix, 3);
         diagnostic("field(1);", Status::ExpectedBraceOpen, 1, Stop::ConstructorBraces);
 
-        reset();
-        result = {wire(Status::Unsupported), -1, 0, 0, 0};
-        count = 0;
-        position = 0;
-        require(!aurora::parseHostedExpression(tokens, position, Stop::Semicolon) && position == 0 && released == 1,
-                "valid unsupported control did not preserve position and cleanup");
+        invalid("unexpected unsupported result is fail-closed", [] {
+            result = {wire(Status::Unsupported), -1, 0, 0, 0};
+            count = 0;
+        });
         reset();
         result = {wire(Status::AllocationFailure), -1, 0, 0, 0};
         count = 0;
@@ -1163,13 +2268,18 @@ int main() {
                            braceReference.classes[0].methods[0].initializers[index].second);
         reset();
         hookControl = hookUnsupported = true;
-        const auto braceFallback = aurora::Parser(braceTokens, true).parse();
+        aurora::Parser unsupportedConstructor(braceTokens, true);
+        bool unsupportedRejected = false;
+        try {
+            static_cast<void>(unsupportedConstructor.parse());
+        } catch (const aurora::Error &error) {
+            unsupportedRejected = error.diagnostic.code == aurora::DiagnosticCode::Internal &&
+                                  error.diagnostic.message == "hosted parser returned an invalid result";
+        }
         hookControl = false;
-        require(created == 2 && parsed == 2 && released == 2,
-                "unsupported brace initializer failed to release and use the reference fallback");
-        for (std::size_t index = 0; index < 2; ++index)
-            sameExpression(braceFallback.classes[0].methods[0].initializers[index].second,
-                           braceReference.classes[0].methods[0].initializers[index].second);
+        require(unsupportedRejected && unsupportedConstructor.peek().text == "{" && created == 1 && parsed == 1 &&
+                    released == 1,
+                "unexpected Unsupported escaped direct brace dispatch or changed cursor/cleanup");
         reset();
         hookControl = hookCorrupt = true;
         aurora::Parser corruptConstructor(braceTokens, true);
@@ -1184,13 +2294,24 @@ int main() {
                     released == 1,
                 "rejected constructor hook changed the caller cursor or lost cleanup");
         reset();
-        hookControl = true;
+        hookControl = hookPrepared = true;
+        fixture("value{Box<Box<i64>>{.x=1}}{}",
+                {{wire(NodeKind::Literal), 12, -1, -1, 1, 12, 12},
+                 {wire(NodeKind::Construct), 2, 0, 1, 2, 2, 13},
+                 {wire(NodeKind::ArrayLiteral), 0, 1, 1, 3, 0, 14}},
+                {{0, -1, 1, 2, 10}, {1, -1, 1, 3, -1}},
+                15);
+        types = {{wire(TypeKind::I64), 6, 6, 12, -1, -1, -1, 0},
+                 {wire(TypeKind::Named), 4, 4, 14, 0, -1, -1, 0},
+                 {wire(TypeKind::Named), 2, 2, 15, 1, -1, 2, 1}};
+        typeCount = 3;
         const auto templateBraceTokens = aurora::lex(
             "export module hooks;class Hook{array<i64,1> value;public:Hook():value{Box<Box<i64>>{.x=1}}{}};");
         const auto templateBrace = aurora::Parser(templateBraceTokens, true).parse();
         hookControl = false;
-        require(created == 0 && parsed == 0 && released == 0,
-                "nested template constructor value escaped the non-consuming template screen");
+        require(created == 1 && parsed == 1 && released == 1 && typeRead == 3 &&
+                    hookStops == std::vector<Stop>{Stop::ConstructorBraces},
+                "nested template constructor value bypassed the direct hosted route");
         sameExpression(templateBrace.classes[0].methods[0].initializers[0].second,
                        aurora::Parser(templateBraceTokens, false).parse().classes[0].methods[0].initializers[0].second);
         for (const std::string source :
@@ -1206,7 +2327,19 @@ int main() {
                 expectedMessage = error.diagnostic.message;
                 expectedOffset = error.diagnostic.span.begin.offset;
             }
-            hookControl = true;
+            const auto expressionTokens = aurora::lex(source);
+            const auto failure = std::find_if(expressionTokens.begin(), expressionTokens.end(), [](const auto &token) {
+                return token.text == ">";
+            });
+            require(failure != expressionTokens.end(), "malformed template hook lost its failure token");
+            count = 0;
+            records.clear();
+            result = {wire(Status::ExpectedIdentifier),
+                      -1,
+                      0,
+                      static_cast<std::int64_t>(failure - expressionTokens.begin()),
+                      static_cast<std::int64_t>(failure->span.begin.offset)};
+            hookControl = hookPrepared = true;
             bool rejected = false;
             try {
                 static_cast<void>(aurora::Parser(malformedTokens, true).parse());
@@ -1215,8 +2348,8 @@ int main() {
                            error.diagnostic.span.begin.offset == expectedOffset;
             }
             hookControl = false;
-            require(rejected && created == 0 && parsed == 0 && released == 0,
-                    "malformed nested template changed its brace fallback diagnostic");
+            require(rejected && created == 1 && parsed == 1 && released == 1,
+                    "malformed nested template bypassed hosted dispatch or changed its brace diagnostic");
             ++cases;
         }
         for (const std::string source : {"field{1}Box<i64>{}", "field{1},next{Box<i64>{}}", "field{a<b}c>d()"}) {
@@ -1228,6 +2361,11 @@ int main() {
         reset();
         static_cast<void>(aurora::Parser(aurora::lex("module reference;auto f()->i64{return 1;}"), false).parse());
         require(created == 0 && parsed == 0 && released == 0, "explicit reference parser used a hosted hook");
+        require(cases >= 273, "an existing forged-result/provenance control was lost");
+        typedControls();
+        contextControls();
+        contextDispatchControls();
+        typedDiagnosticControls();
         std::cout << "PASS hosted parser " << cases << " forged-result/provenance controls and exact cleanup\n";
     } catch (const std::exception &error) {
         std::cerr << "FAIL " << error.what() << '\n';
