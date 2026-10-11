@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Require stage 1 to rebuild its entire Aurora frontend and preserve outputs."""
+"""Require current compiler frontend convergence and pinned bootstrap selection."""
 
 from pathlib import Path
 import hashlib
+import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -33,6 +35,149 @@ def sources(root):
 
 def run(command):
     return subprocess.run(command, capture_output=True, timeout=30, check=True).stdout
+
+
+def compiler_digest(compiler):
+    return hashlib.sha256(compiler.read_bytes()).hexdigest()
+
+
+def frontend_arguments(compiler, root, output):
+    return [
+        str(compiler),
+        str(root / "compiler/lexer.au"),
+        str(root / "compiler/expression_arena.au"),
+        str(root / "compiler/expression_parser.au"),
+        str(root / "compiler/hosted_lexer.S"),
+        str(root / "compiler/hosted_parser.S"),
+        str(output),
+    ]
+
+
+def compiler_pin_controls(compiler, root, work):
+    driver_path = root / "scripts/bootstrap_frontend.py"
+    command = [sys.executable, "-B", str(driver_path)]
+    digest = compiler_digest(compiler)
+    control = work / "pin-controls"
+    control.mkdir()
+    output = control / "frontend.s"
+    raw = output.with_suffix(".generated.s")
+    modules = control / "compiler-modules/aurora/compiler"
+    modules.mkdir(parents=True)
+    protected = [output, raw, modules / "lexer.au", modules / "expression_arena.au"]
+    for index, path in enumerate(protected):
+        path.write_bytes(f"preserve pinned selection {index}\n".encode())
+    preserved = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in protected}
+    nonexecutable = control / "nonexecutable"
+    nonexecutable.write_text("not executable\n")
+    nonexecutable.chmod(0o644)
+    selected = control / "selected-compiler"
+    shutil.copyfile(compiler, selected)
+    selected.chmod(0o755)
+    for accepted in (compiler, selected):
+        result = subprocess.run(
+            [*command, "--verify-compiler", str(accepted), digest], capture_output=True, timeout=30, check=True
+        )
+        require(not result.stdout and not result.stderr, "compiler verification wrote output")
+    mismatch = ("0" if digest[0] != "0" else "1") + digest[1:]
+
+    def require_preserved():
+        for path, expected in preserved.items():
+            require(
+                (path.read_bytes(), path.stat().st_mtime_ns) == expected,
+                f"rejected compiler selection changed output or staged module: {path.name}",
+            )
+
+    def reject(arguments):
+        result = subprocess.run([*command, *arguments], cwd=control, capture_output=True, timeout=30, check=False)
+        require(
+            result.returncode == 1 and b"bootstrap frontend:" in result.stderr and not result.stdout,
+            f"invalid compiler selection did not fail closed: {arguments[:3]}",
+        )
+        require_preserved()
+
+    for invalid_compiler, invalid_digest in (
+        (compiler, ""),
+        (compiler, digest[:-1]),
+        (compiler, "A" * 64),
+        (compiler, "g" * 64),
+        (compiler, mismatch),
+        (control / "missing-compiler", digest),
+        (control, digest),
+        (nonexecutable, compiler_digest(nonexecutable)),
+        (Path(selected.name), digest),
+    ):
+        reject(["--verify-compiler", str(invalid_compiler), invalid_digest])
+        reject(["--compiler-sha256", invalid_digest, *frontend_arguments(invalid_compiler, root, output)])
+        reject(
+            [
+                "--compiler-sha256",
+                invalid_digest,
+                "--lexer",
+                str(invalid_compiler),
+                str(root / "compiler/lexer.au"),
+                str(root / "compiler/hosted_lexer.S"),
+                str(output),
+            ]
+        )
+    for arguments in (
+        ["--compiler-sha256"],
+        ["--compiler-sha256", digest],
+        ["--verify-compiler"],
+        ["--verify-compiler", str(compiler)],
+        ["--compiler-sha256", digest, "--events", str(root / "compiler/lexer.au"), str(output)],
+    ):
+        reject(arguments)
+
+    # Replace an already verified selection at exactly the same path. Its old
+    # digest must fail in the CLI, without changing outputs or staged modules.
+    selected.write_text("#!/bin/sh\nexit 99\n")
+    reject(["--verify-compiler", str(selected), digest])
+    reject(["--compiler-sha256", digest, *frontend_arguments(selected, root, output)])
+
+    # Exercise the second check deterministically: staging replaces the selected
+    # executable after main's first verification and before emit executes it.
+    shutil.copyfile(compiler, selected)
+    specification = importlib.util.spec_from_file_location("bootstrap_frontend_pin_control", driver_path)
+    driver = importlib.util.module_from_spec(specification)
+    original_dont_write_bytecode = sys.dont_write_bytecode
+    try:
+        sys.dont_write_bytecode = True
+        specification.loader.exec_module(driver)
+    finally:
+        sys.dont_write_bytecode = original_dont_write_bytecode
+    original_stage = driver.stage_modules
+    staged = False
+
+    def replace_after_staging(*arguments):
+        nonlocal staged
+        original_stage(*arguments)
+        staged = True
+        selected.write_text("#!/bin/sh\nexit 99\n")
+
+    driver.stage_modules = replace_after_staging
+    original_argv = sys.argv
+    try:
+        sys.argv = [str(driver_path), "--compiler-sha256", digest, *frontend_arguments(selected, root, output)]
+        try:
+            driver.main()
+        except ValueError:
+            require(staged, "compiler replacement control failed before staging")
+        else:
+            raise AssertionError("compiler replacement after staging was executed")
+    finally:
+        sys.argv = original_argv
+        driver.stage_modules = original_stage
+    for path in (output, raw):
+        require(
+            (path.read_bytes(), path.stat().st_mtime_ns) == preserved[path],
+            "compiler replacement after staging changed generated output",
+        )
+    for name in ("lexer.au", "expression_arena.au"):
+        require(
+            (modules / name).read_bytes() == (root / "compiler" / name).read_bytes(),
+            "compiler replacement control did not stage the exact exported modules",
+        )
+    print("PASS compiler pin validation, silent verification, rejection preservation and same-path replacement checks")
 
 
 def event_generation(root, work):
@@ -100,19 +245,21 @@ def sections(path):
     return contents
 
 
-def private_bootstrap(stage0, stage1, root, work, ordinary):
+def private_bootstrap(current1, current2, root, work, ordinary):
     bridge = root / "compiler/hosted_lexer.S"
     entry = "aurora_hosted_lexer_invoke"
     ordinary_unit = work / "ordinary.s"
     ordinary_unit.write_bytes(ordinary + b"\n" + bridge.read_bytes())
     units = [ordinary_unit]
-    for number, compiler in enumerate((stage0, stage1)):
-        output = work / f"private-stage{number}.s"
+    for number, compiler in enumerate((current1, current2), start=1):
+        output = work / f"private-c{number}.s"
         run(
             [
                 sys.executable,
                 "-B",
                 str(root / "scripts/bootstrap_frontend.py"),
+                "--compiler-sha256",
+                compiler_digest(compiler),
                 "--lexer",
                 str(compiler),
                 str(root / "compiler/lexer.au"),
@@ -123,7 +270,7 @@ def private_bootstrap(stage0, stage1, root, work, ordinary):
         units.append(output)
     require(
         units[1].read_bytes() == units[2].read_bytes(),
-        "private stage 0/1 bootstrap assembly differs",
+        "private current C1/C2 lexer bootstrap assembly differs",
     )
     objects, executables = [], []
     for unit in units:
@@ -161,7 +308,7 @@ def private_bootstrap(stage0, stage1, root, work, ordinary):
         )
     output = work / "rejected-options.s"
     marker = b"preserve on argument rejection\n"
-    for compiler in (stage0, stage1):
+    for compiler in (current1, current2):
         for flags, message in (
             (("--local-symbols", "--local-symbols", "-o", str(output)), "duplicate --local-symbols option"),
             (("--check", "--local-symbols"), "--check does not accept --local-symbols"),
@@ -178,10 +325,10 @@ def private_bootstrap(stage0, stage1, root, work, ordinary):
                 "local-symbols option combination did not produce its specific argument rejection",
             )
             require(output.read_bytes() == marker, "invalid local-symbols options changed output")
-    print("PASS private bootstrap stage identity, sole shim export, symbol layouts and unchanged linked code/data")
+    print("PASS current C1/C2 private lexer identity, sole shim export, symbol layouts and unchanged linked code/data")
 
 
-def frontend_bootstrap(stage0, stage1, root, work):
+def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
     entries = {
         "aurora_hosted_lexer_invoke",
         "aurora_hosted_parser_create",
@@ -194,21 +341,24 @@ def frontend_bootstrap(stage0, stage1, root, work):
         "aurora_hosted_parser_type",
         "aurora_hosted_parser_release",
     }
+    # A is predecessor-generated and need not equal B. Both actual build
+    # objects must expose exactly the private host shim contract.
+    for unit in (built_a, built_b):
+        require(
+            set(symbols(unit.with_suffix(".o"), globals_only=True)) == entries,
+            f"built frontend leaked a generated symbol or lost a shim: {unit}",
+        )
     units = []
-    for number, compiler in enumerate((stage0, stage1)):
-        output = work / f"frontend-stage{number}.s"
+    for number, compiler in enumerate((current1, current2), start=1):
+        output = work / f"frontend-c{number}.s"
         run(
             [
                 sys.executable,
                 "-B",
                 str(root / "scripts/bootstrap_frontend.py"),
-                str(compiler),
-                str(root / "compiler/lexer.au"),
-                str(root / "compiler/expression_arena.au"),
-                str(root / "compiler/expression_parser.au"),
-                str(root / "compiler/hosted_lexer.S"),
-                str(root / "compiler/hosted_parser.S"),
-                str(output),
+                "--compiler-sha256",
+                compiler_digest(compiler),
+                *frontend_arguments(compiler, root, output),
             ]
         )
         units.append(output)
@@ -221,24 +371,28 @@ def frontend_bootstrap(stage0, stage1, root, work):
                 == (root / "compiler" / name).read_bytes(),
                 f"staged compiler module changed exported source: {name}",
             )
-    require(units[0].read_bytes() == units[1].read_bytes(), "whole frontend stage 0/1 bootstrap assembly differs")
-    require(
-        units[0].with_suffix(".generated.s").read_bytes() == units[1].with_suffix(".generated.s").read_bytes(),
-        "whole frontend stage 0/1 generated graph differs",
+    for suffix, description in ((".s", "assembly"), (".generated.s", "generated graph"), (".o", "object bytes")):
+        regenerated_b = units[0].with_suffix(suffix).read_bytes()
+        require(
+            regenerated_b == built_b.with_suffix(suffix).read_bytes(),
+            f"regenerated frontend B differs from the actual B consumed by current C2: {description}",
+        )
+        require(
+            regenerated_b == units[1].with_suffix(suffix).read_bytes(),
+            f"current compiler frontend B/C convergence differs: {description}",
+        )
+    print(
+        "PASS frontend B/C convergence, built-B identity, exact exported module staging and private shim-only exports"
     )
-    require(
-        units[0].with_suffix(".o").read_bytes() == units[1].with_suffix(".o").read_bytes(),
-        "whole frontend stage 0/1 object bytes differ",
-    )
-    print("PASS whole frontend stage identity, exact exported module staging and private shim-only exports")
 
 
 def main():
-    stage0, stage1, root = (Path(value).resolve() for value in sys.argv[1:])
+    current1, current2, root, built_a, built_b = (Path(value).resolve() for value in sys.argv[1:])
     with tempfile.TemporaryDirectory(prefix="hosted-lexer-bootstrap-") as temporary:
         work = Path(temporary)
+        compiler_pin_controls(current1, root, work)
         event_generation(root, work)
-        outputs = [work / "stage0.s", work / "stage1.s"]
+        outputs = [work / "current-c1.s", work / "current-c2.s"]
         module_root = work / "compiler-modules"
         stage_modules(root, module_root)
         records = []
@@ -247,7 +401,7 @@ def main():
         require(root / "compiler/expression_parser.au" in corpus, "whole frontend self-rebuild input is missing")
         for source in corpus:
             runs = []
-            for compiler, output in zip((stage0, stage1), outputs, strict=True):
+            for compiler, output in zip((current1, current2), outputs, strict=True):
                 output.write_bytes(b"preserve on rejection\n")
                 runs.append(
                     subprocess.run(
@@ -286,15 +440,15 @@ def main():
             )
             if source == root / "compiler/lexer.au":
                 require(runs[0].returncode == 0, "lexer self-rebuild failed")
-                print("PASS stage 1 lexer self-rebuild SHA256 " + hashlib.sha256(outputs[1].read_bytes()).hexdigest())
-                private_bootstrap(stage0, stage1, root, work, outputs[0].read_bytes())
+                print("PASS current C2 lexer rebuild SHA256 " + hashlib.sha256(outputs[1].read_bytes()).hexdigest())
+                private_bootstrap(current1, current2, root, work, outputs[0].read_bytes())
             if source == root / "compiler/expression_parser.au":
                 require(runs[0].returncode == 0, "whole frontend self-rebuild failed")
-                frontend_bootstrap(stage0, stage1, root, work)
+                frontend_bootstrap(current1, current2, root, work, built_a, built_b)
             records.append({"source": str(source.relative_to(root)), "status": runs[0].returncode})
         require(len(records) > 1, "source corpus is empty")
         print(
-            "PASS stage0/stage1 diagnostics, assembly and output preservation: "
+            "PASS current C1/C2 diagnostics, assembly and output preservation: "
             + json.dumps(
                 {
                     "sources": len(records),

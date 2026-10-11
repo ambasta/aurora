@@ -12,24 +12,43 @@ lexer_events = custom_target(
   'hosted-lexer-events', input: 'compiler/lexer.au', output: 'hosted_lexer_events.inc',
   command: [python, '-B', files('scripts/bootstrap_frontend.py'), '--events', '@INPUT@', '@OUTPUT@'],
 )
-# Stage 0 retains the C++ scanner/parser solely as the bootstrap seed/reference.
-aurorac_stage0 = executable('aurorac-stage0', 'compiler/main.cpp', native: true, install: false)
+# An external predecessor is explicit and byte-pinned; an incomplete selection
+# never falls back to the current C++ seed. The default retains that seed until
+# predecessor bootstrapping and reference-fixture migration permit its removal.
+bootstrap_compiler_path = get_option('bootstrap_compiler')
+bootstrap_compiler_sha256 = get_option('bootstrap_compiler_sha256')
+bootstrap_pin_args = []
+bootstrap_depend_files = []
+if (bootstrap_compiler_path == '') != (bootstrap_compiler_sha256 == '')
+  error('bootstrap_compiler and bootstrap_compiler_sha256 must be selected together.')
+endif
+if bootstrap_compiler_path != ''
+  run_command(python, '-B', files('scripts/bootstrap_frontend.py'), '--verify-compiler',
+              bootstrap_compiler_path, bootstrap_compiler_sha256, check: true)
+  bootstrap_compiler = find_program(bootstrap_compiler_path, native: true)
+  bootstrap_pin_args = ['--compiler-sha256', bootstrap_compiler_sha256]
+  bootstrap_depend_files = files(bootstrap_compiler_path)
+else
+  aurorac_stage0 = executable('aurorac-stage0', 'compiler/main.cpp', native: true, install: false)
+  bootstrap_compiler = aurorac_stage0
+endif
+frontend_inputs = files('compiler/lexer.au', 'compiler/expression_arena.au', 'compiler/expression_parser.au',
+                        'compiler/hosted_lexer.S', 'compiler/hosted_parser.S')
 frontend_assembly = custom_target(
-  'hosted-frontend-assembly',
-  input: ['compiler/lexer.au', 'compiler/expression_arena.au', 'compiler/expression_parser.au',
-          'compiler/hosted_lexer.S', 'compiler/hosted_parser.S'],
+  'hosted-frontend-assembly', input: frontend_inputs,
   output: ['hosted-frontend.s', 'hosted-frontend.generated.s'],
-  command: [python, '-B', files('scripts/bootstrap_frontend.py'), aurorac_stage0,
-            '@INPUT0@', '@INPUT1@', '@INPUT2@', '@INPUT3@', '@INPUT4@', '@OUTPUT0@'],
+  command: [python, '-B', files('scripts/bootstrap_frontend.py')] + bootstrap_pin_args +
+           [bootstrap_compiler, '@INPUT0@', '@INPUT1@', '@INPUT2@', '@INPUT3@', '@INPUT4@', '@OUTPUT0@'],
+  depend_files: bootstrap_depend_files,
 )
 frontend_object = custom_target(
   'hosted-frontend-object', input: frontend_assembly[0], output: 'hosted-frontend.o',
   command: native_cpp.cmd_array() + ['-c', '-x', 'assembler', '@INPUT@', '-o', '@OUTPUT@'],
 )
 frontend_args = ['-DAURORA_HOSTED_LEXER', '-DAURORA_HOSTED_PARSER']
+frontend_host_sources = files('compiler/hosted_lexer.cpp', 'compiler/hosted_parser.cpp', 'runtime/hosted_bytes.cpp')
 frontend_library = static_library(
-  'hosted-frontend', ['compiler/hosted_lexer.cpp', 'compiler/hosted_parser.cpp',
-                      'runtime/hosted_bytes.cpp', frontend_object, lexer_events],
+  'hosted-frontend', [frontend_host_sources, frontend_object, lexer_events],
   cpp_args: frontend_args, native: true, install: false,
 )
 hosted_frontend = declare_dependency(link_with: frontend_library, sources: lexer_events,
@@ -38,6 +57,32 @@ hosted_frontend = declare_dependency(link_with: frontend_library, sources: lexer
 aurorac = executable('aurorac', 'compiler/main.cpp', dependencies: hosted_frontend, native: true, install: false)
 aurora_fmt = executable('aurora-fmt', 'compiler/format_main.cpp', dependencies: hosted_frontend,
                         native: true, install: false)
+
+# P emits frontend A, current C1 links A, C1 emits B, and current C2 links B.
+# Reuse only the current host C++ objects; C2 must not link frontend A. These
+# test prerequisites stay outside the default build unless the test is selected.
+frontend_stage2_assembly = custom_target(
+  'hosted-frontend-stage2-assembly', input: frontend_inputs,
+  output: ['hosted-frontend-stage2.s', 'hosted-frontend-stage2.generated.s'],
+  command: [python, '-B', files('scripts/bootstrap_frontend.py'), aurorac,
+            '@INPUT0@', '@INPUT1@', '@INPUT2@', '@INPUT3@', '@INPUT4@', '@OUTPUT0@'],
+  build_by_default: false,
+)
+frontend_stage2_object = custom_target(
+  'hosted-frontend-stage2-object', input: frontend_stage2_assembly[0], output: 'hosted-frontend-stage2.o',
+  command: native_cpp.cmd_array() + ['-c', '-x', 'assembler', '@INPUT@', '-o', '@OUTPUT@'],
+  build_by_default: false,
+)
+frontend_stage2_library = static_library(
+  'hosted-frontend-stage2', frontend_stage2_object,
+  objects: frontend_library.extract_objects(frontend_host_sources),
+  native: true, install: false, build_by_default: false,
+)
+aurorac_stage2 = executable(
+  'aurorac-stage2', objects: aurorac.extract_objects('compiler/main.cpp'),
+  link_with: frontend_stage2_library, link_language: 'cpp',
+  native: true, install: false, build_by_default: false,
+)
 
 # These existing native oracles use Linux/x86-64 syscalls and GNU binutils.
 if build_machine.system() != 'linux' or build_machine.cpu_family() != 'x86_64'

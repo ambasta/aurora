@@ -528,9 +528,11 @@
           "-B",
           "-O",
           "@SOURCE@/tests/compiler/hosted_lexer_bootstrap.py",
-          "@BUILD@/aurorac-stage0",
           "@BUILD@/aurorac",
-          "@SOURCE@"
+          "@BUILD@/aurorac-stage2",
+          "@SOURCE@",
+          "@BUILD@/hosted-frontend.s",
+          "@BUILD@/hosted-frontend-stage2.s"
         ],
         "suites": [
           "compiler",
@@ -540,7 +542,7 @@
         ]
       }
     },
-    "reason": "Canonical hosted bootstrap runner compares stage 0 and stage 1 diagnostics, assembly and output preservation.",
+    "reason": "Canonical hosted bootstrap runner compares current C1/C2 diagnostics and frontend convergence, including the frontend actually linked into C2.",
     "root_make": false
   },
   "integer_oracle.py": {
