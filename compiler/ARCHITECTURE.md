@@ -7,7 +7,7 @@ The typed-IR milestone established behavior-preserving compiler phase boundaries
 1. `host_sources.hpp` owns the trusted Linux descriptor-relative source reader and atomic artifact writer. `modules.hpp` loads explicit-root module graphs; `resolver.au` resolves module names/exports, nominal identities and templates in defining-module contexts. MODULES.md specifies that boundary.
 2. `types.hpp` defines source types and common tokens/errors.
 3. The hosted Aurora lexer turns bytes into tokens; `syntax.hpp` defines the untyped source AST. `parser.hpp` is a compatibility entrypoint for one complete hosted Aurora module parse; all declaration/container grammar lives in `parser.au`.
-4. `lowering_types.au`, `lowering_values.au` and `lowering_body.au` perform resolved layout/signature analysis, local/member resolution, exact argument-type overload selection, initialization and const/private checks, ownership moves, lexical borrow checks and conservative branch/loop joins. `lowering.au` publishes typed instructions and metadata from the same resolved Session.
+4. `lowering_types.au`, `lowering_values.au` and the `lowering_frames`, `lowering_calls`, `lowering_expressions`, `lowering_statements` and `lowering_body` modules perform resolved layout/signature analysis, local/member resolution, exact argument-type overload selection, initialization and const/private checks, ownership moves, lexical borrow checks and conservative branch/loop joins. `lowering.au` publishes typed instructions and metadata from the same resolved Session.
 5. `hosted_lowering.cpp` mechanically projects the generated typed records into the target-independent accumulator/value-stack model in `ir.hpp`. Its operations include checked arithmetic, typed loads/stores, explicit control flow, metadata queries and array guard/access operations. Instruction/operator enums come from predecessor-generated Aurora facts.
 6. `ir_verify.hpp` validates a complete module and creates an immutable `ValidatedModule`. Only this validated wrapper can be passed to the emitter. It checks lower-level type, initialization, control-flow, operand-stack, frame and bounds-token invariants.
 7. `x86.hpp` lowers validated operations to GNU x86-64 assembly. It has no source AST, scope lookup, const policy, owner-liveness state or borrow-state checker. Target registers, ABI argument placement, stack alignment and machine trap sequences exist only here.
@@ -266,6 +266,7 @@ varies too much for a stable threshold.
 
 | Change | Measured | CPU ratio |
 |---|---|---|
+| Generated lowering messages and the `lowering_body.au` split | `scripts/compiler-speed.py` against #162: 0.96-1.03x per input, identical output | 1.00x |
 | #162, typed lowering in Aurora | five library/example inputs 1.24-1.48x wall; `std/json.au` 125 -> 184 ms; peak RSS 22 -> 22-27 MiB; full suite +16.8% (commit message) | about 1.44x |
 | Parser and resolver migrations before #162 | not recorded per step; `std/json.au` went from about 40 ms at the expression-parser stage to 125 ms before #162, on loaded hosts | - |
 

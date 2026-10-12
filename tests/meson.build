@@ -684,7 +684,9 @@ test('hosted-parser', hosted_parser_test,
                  '../compiler/resolution_arena.au', '../compiler/resolver.au', '../compiler/frontend.au',
                  '../compiler/lowering_kinds.au', '../compiler/lowering_errors.au', '../compiler/lowering_storage.au',
                  '../compiler/lowering_common.au', '../compiler/lowering_configuration.au', '../compiler/lowering_types.au',
-                 '../compiler/lowering_values.au', '../compiler/lowering_body.au', '../compiler/lowering.au'),
+                 '../compiler/lowering_values.au', '../compiler/lowering_body.au', '../compiler/lowering.au',
+                 '../compiler/lowering_frames.au', '../compiler/lowering_calls.au',
+                 '../compiler/lowering_expressions.au', '../compiler/lowering_statements.au'),
      suite: ['full', 'dev', 'core', 'compiler'], timeout: 120)
 hosted_parser_invalid = executable(
     'hosted-parser-invalid', ['compiler/hosted_parser_invalid.cpp', '../compiler/hosted_parser.cpp',

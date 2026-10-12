@@ -21,8 +21,9 @@ frontend_inputs = files('compiler/lexer.au', 'compiler/syntax_arena.au', 'compil
                         'compiler/resolution_kinds.au', 'compiler/lowering_errors.au', 'compiler/lowering_kinds.au',
                         'compiler/lowering_storage.au', 'compiler/resolution_arena.au', 'compiler/resolver.au',
                         'compiler/frontend.au', 'compiler/lowering_common.au', 'compiler/lowering_configuration.au',
-                        'compiler/lowering_types.au', 'compiler/lowering_values.au', 'compiler/lowering_body.au',
-                        'compiler/lowering.au',
+                        'compiler/lowering_types.au', 'compiler/lowering_values.au', 'compiler/lowering_frames.au',
+                        'compiler/lowering_calls.au', 'compiler/lowering_expressions.au',
+                        'compiler/lowering_statements.au', 'compiler/lowering_body.au', 'compiler/lowering.au',
                         'compiler/hosted_lexer.S', 'compiler/hosted_parser.S', 'compiler/hosted_resolver.S')
 frontend_assembly = custom_target(
   'hosted-frontend-assembly', input: frontend_inputs,
