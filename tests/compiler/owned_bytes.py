@@ -398,6 +398,74 @@ class Suite:
             ),
         )
         self.run(empty, 800, 100, 0, 42, 1, 1)
+
+        # An element read returned at once is copied straight into the caller's
+        # result; one with any code between keeps its local copy. Both must agree.
+        pool = """
+            class Pool {
+                builtin::OwnedValues<Node> rows;
+            public:
+                Pool(builtin::ByteRegion region, i64 count, Node fill) : rows(region.try_allocate(count, fill)) {}
+                auto put(i64 index, Node row) -> bool { return rows.set(index, row); }
+                auto direct(i64 index) const -> Node { return rows.at(index); }
+                auto held(i64 index) const -> Node {
+                    const Node row = rows.at(index);
+                    if (index < 0) { return row; }
+                    return row;
+                }
+            };
+        """
+        returned = self.compile(
+            "typed-returned-element",
+            program(
+                """
+            Node fill=Node(Kind::literal,2u8,-1);
+            Pool pool=Pool(region,n,fill);
+            i64 i=0;
+            while(i<n) {
+                Node row=Node(Kind::literal,2u8,i);
+                if(!pool.put(i,row)) {return -1;}
+                i=i+1;
+            }
+            // Each element scores its index + 2, so a wrong element, owner or stride shows.
+            Node last=pool.direct(n-1);
+            Node kept=pool.held(n-1);
+            Node first=pool.direct(0);
+            Node chosen=pool.direct(flag);
+            if(last.score()!=n+1||kept.score()!=n+1||first.score()!=2||chosen.score()!=flag+2) {return -2;}
+            return 42;
+        """,
+                node + pool,
+            ),
+        )
+        text = (self.directory / "typed-returned-element" / "output.s").read_text()
+
+        def body(method):
+            start = re.search(r"^__au_m_\w+_d%d%s:$" % (len(method), method), text, re.M)
+            require(start, f"missing {method}")
+            return text[start.end() : text.index("\n.size ", start.end())].split("\n")
+
+        direct, held, score = body("direct"), body("held"), body("score")
+        call = direct.index("    call __au_runtime_values_at")
+        require(
+            direct[call - 1].startswith("    movq -")
+            and direct[call - 1].endswith("(%rbp), %rcx")
+            and direct[call + 1] == "    xorq %rax, %rax"
+            and direct[call + 2].startswith("    jmp .Lreturn"),
+            "direct element return still copies through a local",
+        )
+        call = held.index("    call __au_runtime_values_at")
+        require(held[call - 1].startswith("    leaq -"), "held element return lost its local copy")
+        # The receiver's kind is compared with the enum case without a stack round trip.
+        compare = score.index("    cmpq %rax, %rcx")
+        require(
+            score[compare - 2] == "    movq %rax, %rcx" and "    pushq %rax" not in score[compare - 3 : compare],
+            "constant comparison still spills its left operand",
+        )
+        for count, flag in ((1, 0), (4, 2), (200, 199)):
+            self.run(returned, count * 24, count, flag, 42, 1, 1)
+        for flag in (-1, 4):
+            self.trap(returned, 96, 4, flag)
         self.trap(empty, 0, 0)
 
         blank = self.compile(

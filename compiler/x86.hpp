@@ -59,6 +59,8 @@ class X86Emitter {
     int receiverSaveOffset = 0;
     int callRecordSaveOffset = 0;
     int resultSaveOffset = 0;
+    bool directResult = false; // the next ValuesLoad writes the function result storage
+    bool leftInRcx = false;    // the next binary operation's left operand is in %rcx, not pushed
     bool ownedSpanRuntime = false;
     std::vector<std::vector<unsigned char>> literalBytes;
     std::map<int, int> serviceLoanOffsets;
@@ -595,6 +597,13 @@ class X86Emitter {
         } else
             line("shrq %cl, %rax");
     }
+    static bool plainLoad(const ir::Instruction &operation) {
+        return std::holds_alternative<ir::Constant>(operation) || std::holds_alternative<ir::EnumConstant>(operation) ||
+               std::holds_alternative<ir::Load>(operation) || std::holds_alternative<ir::ReceiverLoad>(operation);
+    }
+    static bool poppedBinary(const ir::Instruction &operation) {
+        return std::holds_alternative<ir::BinaryValue>(operation) || std::holds_alternative<ir::Compare>(operation);
+    }
     void instruction(const ir::Instruction &instruction) {
         std::visit(
             [&](const auto &operation) {
@@ -627,7 +636,8 @@ class X86Emitter {
                         break;
                     }
                 } else if constexpr (std::is_same_v<Op, ir::BinaryValue>) {
-                    pop("%rcx");
+                    if (!leftInRcx)
+                        pop("%rcx");
                     const bool byteValue = operation.operandType == Type::U8;
                     const bool unsignedValue = operation.operandType == Type::U64 || byteValue;
                     const std::string overflowJump = unsignedValue ? "jc" : "jo";
@@ -694,7 +704,8 @@ class X86Emitter {
                     }
                     // Widening canonical u8 is exact: its high bits are already zero.
                 } else if constexpr (std::is_same_v<Op, ir::Compare>) {
-                    pop("%rcx");
+                    if (!leftInRcx)
+                        pop("%rcx");
                     line("cmpq %rax, %rcx");
                     const bool byteValue = operation.operandType == Type::U8;
                     const bool unsignedValue = operation.operandType == Type::U64 || byteValue;
@@ -779,7 +790,10 @@ class X86Emitter {
                     line("movq $" + std::to_string(ownerElementStride(operation.offset, operation.fieldIndex)) +
                          ", %rdx");
                     if constexpr (std::is_same_v<Op, ir::ValuesLoad>) {
-                        line("leaq " + address(operation.resultOffset) + ", %rcx");
+                        if (directResult)
+                            line("movq " + address(resultSaveOffset) + ", %rcx");
+                        else
+                            line("leaq " + address(operation.resultOffset) + ", %rcx");
                         call("__au_runtime_values_at");
                     } else if constexpr (std::is_same_v<Op, ir::ValuesStore>) {
                         line("leaq " + address(operation.valueOffset) + ", %rcx");
@@ -1677,8 +1691,41 @@ public:
             // Validation certifies operand-depth continuity in this exact retained
             // sequence, including branch joins. Outgoing reservations are balanced
             // inside each instruction; no instruction-text interpretation is used.
-            for (const auto &operation : function.code)
-                instruction(operation);
+            // Both forms are set and cleared around one instruction; start each
+            // function clean even if an earlier emission was abandoned by a throw.
+            directResult = false;
+            leftInRcx = false;
+            for (std::size_t at = 0; at < function.code.size(); ++at) {
+                // An element read returned at once is copied into the result
+                // storage directly. Adjacency means no label or other use lies
+                // between; the slot is never read again after the return.
+                const auto *load = std::get_if<ir::ValuesLoad>(&function.code[at]);
+                const auto *result =
+                    at + 1 < function.code.size() ? std::get_if<ir::ReturnObject>(&function.code[at + 1]) : nullptr;
+                // A pushed left operand followed by a plain accumulator load stays
+                // in %rcx for the binary operation that would pop it. The load
+                // touches neither %rcx nor the stack, and no label lies between.
+                if (at + 2 < function.code.size() && std::holds_alternative<ir::Push>(function.code[at]) &&
+                    plainLoad(function.code[at + 1]) && poppedBinary(function.code[at + 2])) {
+                    line("movq %rax, %rcx");
+                    instruction(function.code[at + 1]);
+                    leftInRcx = true;
+                    instruction(function.code[at + 2]);
+                    leftInRcx = false;
+                    at += 2;
+                } else if (load && result && result->offset == load->resultOffset) {
+                    if (classStorage->at(function.result.className).sizeBytes !=
+                        ownerElementStride(load->offset, load->fieldIndex))
+                        throw Error("x86 backend returned element storage of a different extent");
+                    directResult = true;
+                    instruction(function.code[at]);
+                    directResult = false;
+                    line("xorq %rax, %rax");
+                    line("jmp " + returnLabel());
+                    ++at;
+                } else
+                    instruction(function.code[at]);
+            }
             if (stackDepth != 0 || liveStackBytes != frameBytes + 16)
                 throw Error("x86 backend left an unbalanced stack reservation");
             output << returnLabel() << ":\n";

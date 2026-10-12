@@ -10,7 +10,7 @@ The typed-IR milestone established behavior-preserving compiler phase boundaries
 4. `lowering_types.au`, `lowering_values.au` and the `lowering_frames`, `lowering_calls`, `lowering_expressions`, `lowering_statements` and `lowering_body` modules perform resolved layout/signature analysis, local/member resolution, exact argument-type overload selection, initialization and const/private checks, ownership moves, lexical borrow checks and conservative branch/loop joins. `lowering.au` publishes typed instructions and metadata from the same resolved Session.
 5. `hosted_lowering.cpp` mechanically projects the generated typed records into the target-independent accumulator/value-stack model in `ir.hpp`. Its operations include checked arithmetic, typed loads/stores, explicit control flow, metadata queries and array guard/access operations. Instruction/operator enums come from predecessor-generated Aurora facts.
 6. `ir_verify.hpp` validates a complete module and creates an immutable `ValidatedModule`. Only this validated wrapper can be passed to the emitter. It checks lower-level type, initialization, control-flow, operand-stack, frame and bounds-token invariants.
-7. `x86.hpp` lowers validated operations to GNU x86-64 assembly. It has no source AST, scope lookup, const policy, owner-liveness state or borrow-state checker. Target registers, ABI argument placement, stack alignment and machine trap sequences exist only here.
+7. `x86.hpp` lowers validated operations to GNU x86-64 assembly. It has no source AST, scope lookup, const policy, owner-liveness state or borrow-state checker. Target registers, ABI argument placement, stack alignment and machine trap sequences exist only here. Two local forms avoid stack and copy traffic without changing any check: a pushed left operand followed directly by a constant, local or receiver-field load stays in `%rcx` for the arithmetic or comparison that would pop it, and an element read that the next instruction returns is copied straight into the caller's result storage.
 8. `main.cpp` coordinates file I/O and those stages. GNU assembler/linker remain the bootstrap native toolchain.
 
 The C++ host uses internal header units and one main translation unit, linked with the generated Aurora frontend through Meson. Raw `main.cpp` compilation no longer builds a compiler. These are actual phase boundaries, not a stable external compiler-library API.
@@ -271,8 +271,15 @@ add a row here. The script fails if the two builds compile any input differently
 There is no automated time budget, because host load on development machines
 varies too much for a stable threshold.
 
+`aurorac` links the frontend that the predecessor compiler emitted, so a backend
+change reaches its own speed only once a predecessor carrying it is selected.
+Measure such a change as `aurorac-stage2` against `aurorac` from the same build:
+both share the new backend and must compile identically, and only the frontend's
+generated code differs.
+
 | Change | Measured | CPU ratio |
 |---|---|---|
+| x86 backend keeps a pushed operand in `%rcx` before a plain load and copies a returned element straight into the result | not yet in `aurorac` (see above): `aurorac-stage2` against `aurorac` from the same build, `compiler/frontend.au` 0.78x, library inputs 0.86-0.95x, identical output | 0.87x once a predecessor carries it |
 | Hosted runtime moves a looked-up allocation to the front of its region's list | `scripts/compiler-speed.py` against the previous build: `compiler/frontend.au` 0.85x, library inputs 0.87-0.93x, identical output | 0.90x |
 | Enum cases named once, one copy per heap child, index values from the lookup loop | `scripts/compiler-speed.py` against the Session split: `compiler/frontend.au` 0.88x, library inputs 0.95-1.00x, identical output | 0.95x |
 | `resolution_arena.au` split into Session, rows, names and ingest; shared pool growth | `scripts/compiler-speed.py` against the `lowering_body.au` split: 0.98-1.03x per input, identical output | 1.01x |
