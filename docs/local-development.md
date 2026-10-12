@@ -297,7 +297,7 @@ open-file guarantees.
 Developer shortcuts reuse the matching predecessor-configured dependency graph. Setup, compile and test failures stop the command. Raw test logs stay in
 `<build>/meson-logs`; a selected compiler hash proves stability, not a fresh-build
 or external-pin claim. The [test contract](developer-test-contract.md) defines
-identity, bounds and the historical receipt boundary.
+identity modes and bounds.
 
 `make console`, `make console-uefi` and `make program-console-uefi` provide bounded
 interactive serial sessions. Read the [console guide](native-console-service.md)

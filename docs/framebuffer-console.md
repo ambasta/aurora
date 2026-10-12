@@ -297,7 +297,7 @@ python3 -B -O tests/kernel-graphical-console.py --run /path/to/aurorac \
     --compiler-sha256 REVIEWED_SHA256
 ```
 
-A controlled `--developer-build-receipt` is also supported. Each run recompiles
+Each run recompiles
 the observer and hashes its recursive quoted-header closure, including capture
 policy. The inventory requires 145 generated-consumer cases: 108 transcript/
 geometry, two session resets, 13 output failures and 22 entry denials.

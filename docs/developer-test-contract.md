@@ -32,13 +32,12 @@ Maintain one living component document and update the status table in place.
 Historical results belong in Git/PR history and retained run or CI artifacts when
 available, rather than new tracked per-feature result files.
 
-## Predecessor-backed frontend and historical receipts
+## Predecessor-backed frontend and compiler identity
 
 Current compiler source has no C++ expression seed. Complete the explicit
 [source-bootstrap recipe](../compiler/README.md#source-bootstrap) before using
-Meson or ordinary Make shortcuts. The paired predecessor executable and digest
-are checked before generation; all current source-consuming targets link the
-Aurora frontend. Current C1/C2 regeneration and corpus checks use the existing
+Meson or ordinary Make shortcuts. Ninja tracks the selected predecessor
+executable; all current source-consuming targets link the Aurora frontend. Current C1/C2 regeneration and corpus checks use the existing
 bootstrap gate. A digest proves artifact identity, not independent review or
 source-build provenance by itself.
 
@@ -52,12 +51,12 @@ Full suites still reject coverage-reducing overrides in their owning runner.
 Ordinary Make options and custom shells retain GNU Make's normal behavior;
 a dry run, skipped command or ignored failure is not qualification evidence.
 
-Historical `gnu-cxx-main-v1` and externally pinned prebuilt receipts remain
-readable under their original schema, source/header/tool/argv and tamper checks.
-They retain their original scope and do not qualify changed current source.
-Direct pin-aware runners retain their existing explicit identity requirements;
-no new receipt format is introduced. Current qualification uses the selected
-source/tool/compiler identities, standard Meson logs and independent review.
+Focused runners accept one compiler identity: an explicit `--compiler-sha256`
+pin, or `--meson-selected-compiler`, which records the Meson-built artifact's
+before/after stability. Historical build receipts keep their original scope in
+Git/PR history; read them with the source revision that produced them. Current
+qualification uses the selected source/tool/compiler identities, standard Meson
+logs and independent review.
 
 `CXX` selects one supported GNU executable. `CXXFLAGS` and `IR_TEST_CXXFLAGS`
 retain their explicit allowlist: user header/search/forced-header options,
@@ -117,7 +116,7 @@ complete expected outputs and rejection controls, and records
 `qualification_eligible: false`. Full factories remain separate. Do not combine
 it with historical quick/smoke prefix selection. Meson controls the selected
 compiler artifact; its before/after digest is stability evidence, not an external
-pin or fresh-build receipt. Explicit pinned/fresh-build modes remain available.
+pin or fresh-build receipt. The explicit pin mode remains available.
 
 Manifest/Graph serial transport checks compiler, library, oracle and generated
 program identities around commands. Python and GNU host-tool full-content hashes

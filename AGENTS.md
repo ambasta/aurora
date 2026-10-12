@@ -63,9 +63,9 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
    prior-source results leave the current candidate unqualified. Record the actual
    GCC 16 distribution/version; Debian GCC 16.2.0-3 is not Gentoo 16.2.1 evidence.
    New builds require the predecessor source-bootstrap route in compiler/README.md.
-   Historical raw-seed/prebuilt receipts retain their original validation meaning;
-   legacy execution entrypoints are removed; new execution uses only the native
-   Meson graph without reinterpreting those records.
+   Historical raw-seed/prebuilt receipts retain their original validation meaning
+   and are read with the source revision that produced them; new execution uses
+   only the native Meson graph without reinterpreting those records.
 5. Review changes independently before considering a milestone verified. Record
    reproduced defects and fixes, commands, source revision, tool versions and limits.
 6. Update implementation docs and the completeness matrix in the same change.
@@ -93,7 +93,7 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
 
 Read [development and qualification](docs/developer-test-contract.md) before
 changing test routing. Normal development uses the incremental Meson graph;
-historical receipts remain readable while new execution uses Meson. Full aggregates
+historical receipts stay in Git history with the source that reads them. Full aggregates
 and acceptance reject coverage-reducing overrides. Focused and compiler-free
 checks do not establish root native acceptance. There is no established pinned
 CI replacement for this policy; retain these gates until that mechanism is real.
