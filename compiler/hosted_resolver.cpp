@@ -1334,7 +1334,8 @@ std::uint64_t resolutionQuota() {
     const auto S = mul(4, B), Sx = mul(I + 1, S), U = mul(12, B), D = std::max(b, longest);
     const auto L = sum({S, textCount, H}), N = sum({U, L, textCount}), Q = add(B, textBytes);
     const auto P = mul(sum({mul(34, N), S, K}), D);
-    const auto storage = sum({64, mul(2, U), textCount, mul(4, Q), mul(2, P), N, mul(2, L), mul(2, H), mul(2, M)});
+    const auto storage = sum({64, U, textCount, mul(2, Q), P, L, H});
+    const auto storageIndexes = sum({U, mul(2, Q), P, N, L, H, mul(2, M)});
     const auto primitiveKinds = static_cast<std::uint64_t>(ResolvedTypeKind::owned_values) + 1;
     const auto types = sum({mul(2, Sx), K, primitiveKinds}), categories = mul(7, M + 1);
     const auto nominals = add(Sx, K), authority = mul(I, nominals);
@@ -1357,7 +1358,8 @@ std::uint64_t resolutionQuota() {
                                members});
     const auto indexes = sum({types,     S,  categories, 1,  S, authority, mul(32, S),         Sx,       S, S, I,
                               mul(2, K), Sx, Sx,         Sx, S, mul(M, S), mul(mul(32, M), S), nominals, 1, Sx});
-    const auto records = sum({storage, semantic, indexes});
+    const auto records = add(storage, semantic);
+    const auto indexRecords = add(storageIndexes, indexes);
     const auto work = std::max(mul(12, b), sum({mul(3, Sx), types, mul(2, D), 128}));
     const auto capacity = [&](std::uint64_t count) {
         return add(mul(2, count), 8);
@@ -1365,6 +1367,7 @@ std::uint64_t resolutionQuota() {
     const auto session = sum({capacity(add(B, textBytes)),
                               mul(sizeof(wire::SyntaxRow), capacity(Sx)),
                               mul(sizeof(wire::MetaRow), capacity(records)),
+                              mul(sizeof(wire::IndexRow), capacity(indexRecords)),
                               mul(sizeof(wire::ResolvedRow), capacity(Sx)),
                               mul(sizeof(wire::WorkRow), capacity(work))});
     const auto parserWidths = sum({sizeof(hosted_abi::compiler_parser::AstNode),

@@ -137,8 +137,11 @@ The source-build route in [README.md](README.md#source-bootstrap) includes the
 fact-capable predecessor stage, preserved by tag `bootstrap-abi-facts-v1` at source
 commit `17f4f1440e6faa9cdaf8711c04400854bdb60d9e`, followed by the copied-argument
 checkpoint under `bootstrap-copied-arguments-v1` at source commit
-`c0ef02cc105de2b7699d8565f6a53f1dea9e1205`. This adds one source-build hop
-before the current compiler can build its adopted frontend. Advance the predecessor only
+`c0ef02cc105de2b7699d8565f6a53f1dea9e1205`, then the owner-field checkpoint under
+`bootstrap-owner-field-initializers-v1` at source commit
+`bbf18f40d73b0f7b862a4b23d77b03dfb3f3d0e4`. These add two source-build hops after
+the facts stage before the current compiler can build its adopted frontend.
+Advance the predecessor only
 when it cannot build the current frontend, or to shorten the source-bootstrap
 chain after reproducible source rebuild, current-stage convergence and full
 qualification. Preserve earlier source refs; ordinary features do not require a
@@ -153,7 +156,11 @@ the imported parser and resolver implementations under ordinary dead-code rules;
 the bridge selects their compiler-produced symbols and layouts directly.
 
 `resolution_arena.au` owns one flat session: source bytes, syntax, metadata,
-resolved decorations and reusable work rows. Loading transfers each parsed arena
+resolved decorations, reusable work rows and a compact typed AVL index pool.
+The ten-i64 index rows keep private node IDs separate from heterogeneous payload
+IDs; metadata retains its original append order. The sixth owner is created by a
+region-backed field factory, and generated facts govern its layout and transfers.
+Host projection reads metadata, not the index pool. Loading transfers each parsed arena
 once, preserving immutable host snapshots for diagnostics. Aurora registers module
 and nominal identities, checks direct-import/export visibility, interns and
 substitutes concrete templates, resolves signatures/bodies, and publishes explicit
