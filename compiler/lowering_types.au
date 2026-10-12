@@ -236,7 +236,12 @@ export namespace compiler_lowering {
         }
         return 8;
     }
-    auto logical_layout(compiler_resolver::Session& session, i64 nominal, i64 nesting) -> bool {
+    // Logical DFS owns exactly two WorkRows per active class, at most eight
+    // rows. The first is [nominal,nesting,next field,leaves,byte leaves,depth].
+    // The second is [composed,needs constructor,phase,element,repetitions,first leaf].
+    // Phase0 starts a field; phase1/2 resumes a class/class-array child. Child
+    // admission checks visiting, depth, then completion before allocating a row.
+    auto push_logical_class(compiler_resolver::Session& session, i64 nominal, i64 nesting) -> bool {
         const i64 source = symbol_source(session, nominal);
         const i64 state = session.index(71, nominal, 0, 0, 0);
         if (state == 1) {
@@ -249,124 +254,22 @@ export namespace compiler_lowering {
             return true;
         }
         index_set(session, 71, nominal, 0, 1);
+        const compiler_resolver::WorkRow frame = compiler_resolver::WorkRow(nominal, nesting, 0, 0, 0, 1);
+        const compiler_resolver::WorkRow field = compiler_resolver::WorkRow(0, 0, 0, -1, 1, 0);
+        session.append_work(frame);
+        session.append_work(field);
+        return session.good();
+    }
+    auto finish_logical_class(compiler_resolver::Session& session, compiler_resolver::WorkRow frame,
+        compiler_resolver::WorkRow pending) -> bool {
+        const i64 nominal = frame.word(0);
+        const i64 source = symbol_source(session, nominal);
         const i64 count = field_total(session, nominal);
-        i64 leaves = 0;
-        i64 bytes = 0;
-        i64 depth = 1;
-        bool composed = false;
-        bool needs_constructor = false;
-        i64 at = 0;
-        while (at < count && session.good()) {
-            const i64 token = field_source(session, nominal, at);
-            const i64 type = field_type(session, nominal, at);
-            const compiler_resolver::ResolvedTypeKind kind = tk(session, type);
-            const i64 name = session.source_name(token);
-            if (session.index(90, nominal, name, 0, 0) >= 0) {
-                return fail(session, LoweringError::duplicate_class_field, token);
-            }
-            index_set(session, 90, nominal, name, at);
-            i64 element = type;
-            i64 repetitions = 1;
-            const i64 first_leaf = leaves;
-            const bool is_array = kind == compiler_resolver::ResolvedTypeKind::array_value;
-            if (is_array) {
-                element = tm(session, type, 2);
-                repetitions = tm(session, type, 3);
-                needs_constructor = true;
-                const compiler_resolver::ResolvedTypeKind element_kind = tk(session, element);
-                i64 maximum = configured_limit(session, OperandRole::MaximumScalarArrayLength);
-                if (element_kind == compiler_resolver::ResolvedTypeKind::u8_value) {
-                    maximum = configured_limit(session, OperandRole::MaximumByteArrayLength);
-                }
-                if (field_public(session, nominal, at) || repetitions < 1 || repetitions > maximum
-                    || (!compiler_resolver::scalar_kind(element_kind) && element_kind
-                    != compiler_resolver::ResolvedTypeKind::class_value)) {
-                    return fail(session, LoweringError::class_array_field_storage, token);
-                }
-            }
-            const compiler_resolver::ResolvedTypeKind element_kind = tk(session, element);
-            if (element_kind == compiler_resolver::ResolvedTypeKind::class_value) {
-                composed = true;
-                needs_constructor = true;
-                const i64 child = tm(session, element, 1);
-                if (child < 0) {
-                    return fail_pair(session, LoweringError::unknown_nested_class_type, -1,
-                        scalar(OperandRole::DiagnosticNameId, -child - 2), scalar(OperandRole::NoDiagnosticValue, 0));
-                }
-                if (session.index(73, child, 0, 0, 0) < 0) {
-                    session.fail_storage(compiler_resolver::StorageStatus::invalid);
-                    return false;
-                }
-                if (!logical_layout(session, child, nesting + 1)) {
-                    return false;
-                }
-                if (owning_type(session, element)) {
-                    if (is_array) {
-                        return fail(session, LoweringError::owning_class_array, token);
-                    }
-                    return fail(session, LoweringError::nested_owning_class_field, token);
-                }
-                const i64 child_row = class_row(session, element);
-                const OperandRow child_leaves = record_slice(session, child_row, OperandRole::LeafTypes);
-                if (is_array && child_leaves.count() > configured_limit(session, OperandRole::MaximumCopiedLeaves)
-                    / repetitions) {
-                    return fail(session, LoweringError::class_array_copied_leaf_limit, token);
-                }
-                leaves = leaves + child_leaves.count() * repetitions;
-                bytes = bytes + session.index(86, child, 0, 0, 0) * repetitions;
-                const i64 child_depth = session.index(72, child, 0, 0, 0) + 1;
-                if (depth < child_depth) {
-                    depth = child_depth;
-                }
-            } else {
-                if (owner_storage(session, element)) {
-                    needs_constructor = true;
-                    if (field_public(session, nominal, at)) {
-                        return fail(session, LoweringError::owned_byte_field_must_be_private, token);
-                    }
-                    if (tm(session, nominal, 9) >= 0 || tm(session, nominal, 8) >= 0) {
-                        return fail(session, LoweringError::owning_class_template, token);
-                    }
-                } else {
-                    if (!compiler_resolver::scalar_value_kind(element_kind)) {
-                        return fail(session, LoweringError::class_field_requires_concrete_type, token);
-                    }
-                    leaves = leaves + repetitions;
-                    if (element_kind == compiler_resolver::ResolvedTypeKind::u8_value) {
-                        bytes = bytes + repetitions;
-                    }
-                }
-            }
-            if (is_array) {
-                reflection_id(session, type, token);
-            }
-            const i64 begin = session.operand_count();
-            put(session, OperandRole::ElementTypeId, element);
-            put(session, OperandRole::FirstLeaf, first_leaf);
-            put(session, OperandRole::Length, leaves - first_leaf);
-            i64 array_flag = 0;
-            if (is_array) {
-                array_flag = 1;
-            }
-            put(session, OperandRole::Array, array_flag);
-            i64 element_count = 1;
-            if (is_array && element_kind == compiler_resolver::ResolvedTypeKind::class_value) {
-                element_count = repetitions;
-            }
-            put(session, OperandRole::ElementCount, element_count);
-            const i64 shape = emit_record(session, RecordKind::ClassField, begin);
-            index_set(session, 78, nominal, at, shape);
-            if (leaves > 8192) {
-                return fail(session, LoweringError::class_layout_frame_limit, source);
-            }
-            if (composed && !copied_leaves(session, leaves, bytes)) {
-                return fail(session, LoweringError::composed_class_leaf_limit, source);
-            }
-            at = at + 1;
-        }
-        if (!session.good()) {
-            return false;
-        }
+        const i64 leaves = frame.word(3);
+        const i64 bytes = frame.word(4);
+        const i64 depth = frame.word(5);
+        const bool composed = pending.word(0) != 0;
+        const bool needs_constructor = pending.word(1) != 0;
         if (composed && depth > 4) {
             return fail(session, LoweringError::composed_class_depth, source);
         }
@@ -374,7 +277,7 @@ export namespace compiler_lowering {
             return fail(session, LoweringError::aggregate_field_requires_constructor, source);
         }
         const i64 leaf_begin = session.operand_count();
-        at = 0;
+        i64 at = 0;
         while (at < count && session.good()) {
             const i64 shape = session.index(78, nominal, at, 0, 0);
             const i64 element = record_signed(session, shape, OperandRole::ElementTypeId);
@@ -424,6 +327,182 @@ export namespace compiler_lowering {
         index_set(session, 86, nominal, 0, bytes);
         return index_set(session, 71, nominal, 0, 2);
     }
+    auto step_logical_class(compiler_resolver::Session& session, i64 frame_index) -> bool {
+        compiler_resolver::WorkRow frame = session.work(frame_index);
+        compiler_resolver::WorkRow pending = session.work(frame_index + 1);
+        const i64 nominal = frame.word(0);
+        const i64 nesting = frame.word(1);
+        const i64 at = frame.word(2);
+        const i64 count = field_total(session, nominal);
+        if (at == count) {
+            const bool complete = finish_logical_class(session, frame, pending);
+            session.truncate_work(frame_index);
+            return complete;
+        }
+        if (at < 0 || at > count || pending.word(2) < 0 || pending.word(2) > 2) {
+            session.fail_storage(compiler_resolver::StorageStatus::invalid);
+            return false;
+        }
+        const i64 source = symbol_source(session, nominal);
+        const i64 token = field_source(session, nominal, at);
+        const i64 type = field_type(session, nominal, at);
+        i64 leaves = frame.word(3);
+        i64 bytes = frame.word(4);
+        i64 depth = frame.word(5);
+        bool composed = pending.word(0) != 0;
+        bool needs_constructor = pending.word(1) != 0;
+        i64 element = pending.word(3);
+        i64 repetitions = pending.word(4);
+        i64 first_leaf = pending.word(5);
+        bool is_array = pending.word(2) == 2;
+        if (pending.word(2) == 0) {
+            const compiler_resolver::ResolvedTypeKind kind = tk(session, type);
+            const i64 name = session.source_name(token);
+            if (session.index(90, nominal, name, 0, 0) >= 0) {
+                return fail(session, LoweringError::duplicate_class_field, token);
+            }
+            index_set(session, 90, nominal, name, at);
+            element = type;
+            repetitions = 1;
+            first_leaf = leaves;
+            is_array = kind == compiler_resolver::ResolvedTypeKind::array_value;
+            if (is_array) {
+                element = tm(session, type, 2);
+                repetitions = tm(session, type, 3);
+                needs_constructor = true;
+                const compiler_resolver::ResolvedTypeKind element_kind = tk(session, element);
+                i64 maximum = configured_limit(session, OperandRole::MaximumScalarArrayLength);
+                if (element_kind == compiler_resolver::ResolvedTypeKind::u8_value) {
+                    maximum = configured_limit(session, OperandRole::MaximumByteArrayLength);
+                }
+                if (field_public(session, nominal, at) || repetitions < 1 || repetitions > maximum
+                    || (!compiler_resolver::scalar_kind(element_kind) && element_kind
+                    != compiler_resolver::ResolvedTypeKind::class_value)) {
+                    return fail(session, LoweringError::class_array_field_storage, token);
+                }
+            }
+            const compiler_resolver::ResolvedTypeKind element_kind = tk(session, element);
+            if (element_kind == compiler_resolver::ResolvedTypeKind::class_value) {
+                const i64 child = tm(session, element, 1);
+                if (child < 0) {
+                    return fail_pair(session, LoweringError::unknown_nested_class_type, -1,
+                        scalar(OperandRole::DiagnosticNameId, -child - 2), scalar(OperandRole::NoDiagnosticValue, 0));
+                }
+                if (session.index(73, child, 0, 0, 0) < 0) {
+                    session.fail_storage(compiler_resolver::StorageStatus::invalid);
+                    return false;
+                }
+                pending.set_word(0, 1);
+                pending.set_word(1, 1);
+                i64 phase = 1;
+                if (is_array) {
+                    phase = 2;
+                }
+                pending.set_word(2, phase);
+                pending.set_word(3, element);
+                pending.set_word(4, repetitions);
+                pending.set_word(5, first_leaf);
+                session.set_work(frame_index + 1, pending);
+                return push_logical_class(session, child, nesting + 1);
+            }
+            if (owner_storage(session, element)) {
+                needs_constructor = true;
+                if (field_public(session, nominal, at)) {
+                    return fail(session, LoweringError::owned_byte_field_must_be_private, token);
+                }
+                if (tm(session, nominal, 9) >= 0 || tm(session, nominal, 8) >= 0) {
+                    return fail(session, LoweringError::owning_class_template, token);
+                }
+            } else {
+                if (!compiler_resolver::scalar_value_kind(element_kind)) {
+                    return fail(session, LoweringError::class_field_requires_concrete_type, token);
+                }
+                leaves = leaves + repetitions;
+                if (element_kind == compiler_resolver::ResolvedTypeKind::u8_value) {
+                    bytes = bytes + repetitions;
+                }
+            }
+        } else {
+            // Resume once, after the child completed or was already cached.
+            // The duplicate-name and array-admission decisions are not repeated.
+            if (owning_type(session, element)) {
+                if (is_array) {
+                    return fail(session, LoweringError::owning_class_array, token);
+                }
+                return fail(session, LoweringError::nested_owning_class_field, token);
+            }
+            const i64 child = tm(session, element, 1);
+            const i64 child_row = class_row(session, element);
+            const OperandRow child_leaves = record_slice(session, child_row, OperandRole::LeafTypes);
+            if (is_array && child_leaves.count() > configured_limit(session, OperandRole::MaximumCopiedLeaves)
+                / repetitions) {
+                return fail(session, LoweringError::class_array_copied_leaf_limit, token);
+            }
+            leaves = leaves + child_leaves.count() * repetitions;
+            bytes = bytes + session.index(86, child, 0, 0, 0) * repetitions;
+            const i64 child_depth = session.index(72, child, 0, 0, 0) + 1;
+            if (depth < child_depth) {
+                depth = child_depth;
+            }
+        }
+        if (is_array) {
+            reflection_id(session, type, token);
+        }
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::ElementTypeId, element);
+        put(session, OperandRole::FirstLeaf, first_leaf);
+        put(session, OperandRole::Length, leaves - first_leaf);
+        i64 array_flag = 0;
+        if (is_array) {
+            array_flag = 1;
+        }
+        put(session, OperandRole::Array, array_flag);
+        i64 element_count = 1;
+        if (is_array && pending.word(2) == 2) {
+            element_count = repetitions;
+        }
+        put(session, OperandRole::ElementCount, element_count);
+        const i64 shape = emit_record(session, RecordKind::ClassField, begin);
+        index_set(session, 78, nominal, at, shape);
+        if (leaves > 8192) {
+            return fail(session, LoweringError::class_layout_frame_limit, source);
+        }
+        if (composed && !copied_leaves(session, leaves, bytes)) {
+            return fail(session, LoweringError::composed_class_leaf_limit, source);
+        }
+        frame.set_word(2, at + 1);
+        frame.set_word(3, leaves);
+        frame.set_word(4, bytes);
+        frame.set_word(5, depth);
+        i64 composed_flag = 0;
+        if (composed) {
+            composed_flag = 1;
+        }
+        i64 constructor_flag = 0;
+        if (needs_constructor) {
+            constructor_flag = 1;
+        }
+        pending.set_word(0, composed_flag);
+        pending.set_word(1, constructor_flag);
+        pending.set_word(2, 0);
+        session.set_work(frame_index, frame);
+        return session.set_work(frame_index + 1, pending);
+    }
+    auto logical_layout(compiler_resolver::Session& session, i64 nominal, i64 nesting) -> bool {
+        const i64 base = session.work_count();
+        push_logical_class(session, nominal, nesting);
+        while (session.work_count() > base && session.good()) {
+            const i64 active = session.work_count() - base;
+            if (active < 2 || active > 8 || active % 2 != 0) {
+                session.fail_storage(compiler_resolver::StorageStatus::invalid);
+            } else {
+                const i64 frame_index = session.work_count() - 2;
+                step_logical_class(session, frame_index);
+            }
+        }
+        session.truncate_work(base);
+        return session.good();
+    }
     auto align_storage(compiler_resolver::Session& session, i64 cursor, i64 alignment) -> i64 {
         if (alignment != 1 && alignment != 8) {
             return error(session, LoweringError::ir_class_storage_alignment, -1);
@@ -433,7 +512,10 @@ export namespace compiler_lowering {
         }
         return ((cursor + alignment - 1) / alignment) * alignment;
     }
-    auto physical_layout(compiler_resolver::Session& session, i64 class_record, i64 depth) -> bool {
+    // Physical DFS uses one WorkRow per active class, at most four rows:
+    // [Class output row,depth,next child field,0,0,0]. Canonical top-level
+    // class iteration remains in prepare_types. No fifth row is allocated.
+    auto push_physical_class(compiler_resolver::Session& session, i64 class_record, i64 depth) -> bool {
         if (depth > 4) {
             return fail(session, LoweringError::ir_class_storage_depth, -1);
         }
@@ -442,32 +524,19 @@ export namespace compiler_lowering {
         if (existing.operand_count() != 0) {
             return true;
         }
+        const compiler_resolver::WorkRow frame = compiler_resolver::WorkRow(class_record, depth, 0, 0, 0, 0);
+        session.append_work(frame);
+        return session.good();
+    }
+    auto finish_physical_class(compiler_resolver::Session& session, i64 class_record) -> bool {
+        const i64 storage = record_signed(session, class_record, OperandRole::StorageRef);
         const OperandRow fields = record_slice(session, class_record, OperandRole::Fields);
         const OperandRow leaves = record_slice(session, class_record, OperandRole::LeafTypes);
-        // Complete child layouts before appending this contiguous offset vector.
-        i64 at = 0;
-        while (at < fields.count() && session.good()) {
-            const i64 field = list_value(session, fields, at);
-            const i64 element = record_signed(session, field, OperandRole::ElementTypeId);
-            if (tk(session, element) == compiler_resolver::ResolvedTypeKind::class_value) {
-                if (owning_type(session, element)) {
-                    return fail(session, LoweringError::ir_nested_owning_class_field, -1);
-                }
-                const i64 child = class_row(session, element);
-                if (child < 0) {
-                    return fail(session, LoweringError::ir_missing_class_storage_shape, -1);
-                }
-                if (!physical_layout(session, child, depth + 1)) {
-                    return false;
-                }
-            }
-            at = at + 1;
-        }
         const i64 leaf_begin = session.operand_count();
         i64 cursor = 0;
         i64 alignment = 1;
         i64 covered = 0;
-        at = 0;
+        i64 at = 0;
         while (at < fields.count() && session.good()) {
             const i64 field = list_value(session, fields, at);
             const i64 element = record_signed(session, field, OperandRole::ElementTypeId);
@@ -583,6 +652,53 @@ export namespace compiler_lowering {
         put(session, OperandRole::Alignment, alignment);
         put(session, OperandRole::ReservedBytes, reserved);
         return session.set_output(storage, OutputRow(RecordKind::ClassStorage, InstructionForm::Constant, begin, 5));
+    }
+    auto step_physical_class(compiler_resolver::Session& session, i64 frame_index) -> bool {
+        compiler_resolver::WorkRow frame = session.work(frame_index);
+        const i64 class_record = frame.word(0);
+        const i64 depth = frame.word(1);
+        const i64 at = frame.word(2);
+        const OperandRow fields = record_slice(session, class_record, OperandRole::Fields);
+        if (at == fields.count()) {
+            const bool complete = finish_physical_class(session, class_record);
+            session.truncate_work(frame_index);
+            return complete;
+        }
+        if (at < 0 || at > fields.count()) {
+            session.fail_storage(compiler_resolver::StorageStatus::invalid);
+            return false;
+        }
+        const i64 field = list_value(session, fields, at);
+        const i64 element = record_signed(session, field, OperandRole::ElementTypeId);
+        if (tk(session, element) == compiler_resolver::ResolvedTypeKind::class_value) {
+            if (owning_type(session, element)) {
+                return fail(session, LoweringError::ir_nested_owning_class_field, -1);
+            }
+            const i64 child = class_row(session, element);
+            if (child < 0) {
+                return fail(session, LoweringError::ir_missing_class_storage_shape, -1);
+            }
+            frame.set_word(2, at + 1);
+            session.set_work(frame_index, frame);
+            return push_physical_class(session, child, depth + 1);
+        }
+        frame.set_word(2, at + 1);
+        return session.set_work(frame_index, frame);
+    }
+    auto physical_layout(compiler_resolver::Session& session, i64 class_record, i64 depth) -> bool {
+        const i64 base = session.work_count();
+        push_physical_class(session, class_record, depth);
+        while (session.work_count() > base && session.good()) {
+            const i64 active = session.work_count() - base;
+            if (active > 4) {
+                session.fail_storage(compiler_resolver::StorageStatus::invalid);
+            } else {
+                const i64 frame_index = session.work_count() - 1;
+                step_physical_class(session, frame_index);
+            }
+        }
+        session.truncate_work(base);
+        return session.good();
     }
     auto owned_element(compiler_resolver::Session& session, i64 type, i64 source) -> bool {
         if (tk(session, type) != compiler_resolver::ResolvedTypeKind::owned_values) {

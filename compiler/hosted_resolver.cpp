@@ -1303,7 +1303,12 @@ std::uint64_t resolutionQuota() {
                                       32});
     const auto records = sum({storage, semantic, loweringMetadata});
     const auto indexRecords = sum({storageIndexes, indexes, loweringIndexes});
-    const auto work = std::max({mul(12, b), sum({mul(3, Sx), types, mul(2, D), 128}), nominals});
+    // Lowering layout DFS uses at most eight WorkRows (two per depth-four
+    // logical frame; physical frames use four). Name helpers retain their
+    // existing <=2*D scratch above that saved base. The initial class-order
+    // permutation is a separate phase with at most one mark per nominal.
+    const auto loweringWork = std::max(nominals, add(8, mul(2, D)));
+    const auto work = std::max({mul(12, b), sum({mul(3, Sx), types, mul(2, D), 128}), loweringWork});
     const auto capacity = [&](std::uint64_t count) {
         return add(mul(2, count), 8);
     };
