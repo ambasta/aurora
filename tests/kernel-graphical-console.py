@@ -77,9 +77,6 @@ def arguments(argv=None):
             args.compiler_sha256 is None,
             "developer-selected compiler cannot claim a pin",
         )
-        require(
-            not os.environ.get("AURORA_TEST_CONTEXT"), "developer-selected compiler cannot enter an aggregate context"
-        )
     else:
         validate_identity_selection(args)
     return args

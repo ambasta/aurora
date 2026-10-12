@@ -932,7 +932,6 @@ def main():
             args.compiler_sha256 is None,
             "developer-selected compiler cannot claim a pin",
         )
-        require(not os.environ.get("AURORA_TEST_CONTEXT"), "developer-selected compiler cannot enter aggregate")
     else:
         harness.validate_identity_selection(args, preflight=args.self_test_only or args.describe)
     controls, audit = self_test(), oracle_audit()

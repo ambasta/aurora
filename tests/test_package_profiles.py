@@ -146,9 +146,6 @@ class Profiles(unittest.TestCase):
             with self.assertRaises(ContractError):
                 validate_identity_selection(arguments(*values))
         selected = arguments("--profile", "dev", "--developer-selected-compiler")
-        with patch.dict(os.environ, {"AURORA_TEST_CONTEXT": "aggregate.json"}):
-            with self.assertRaises(ContractError):
-                validate_identity_selection(selected)
         with patch.dict(os.environ, {}, clear=True):
             validate_identity_selection(selected)
             with self.assertRaises(ContractError):

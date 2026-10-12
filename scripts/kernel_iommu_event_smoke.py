@@ -733,7 +733,6 @@ def prerequisites(args):
                 name.startswith("KERNEL_TEST_")
                 or name
                 in (
-                    "AURORA_TEST_CONTEXT",
                     "KERNEL_USER_PROBE_MODE",
                     "KERNEL_CONSOLE",
                     "UEFI_MODE",

@@ -68,12 +68,8 @@ if [[ "$protected" == true ]]; then
     if [[ "$action" == --console && "$mode" != program-console ]]; then profile_fail 'fault profiles are smoke-only'; fi
 fi
 if [[ "$strict" == true || "$mode" == graphical-console ]]; then
-    controls=("${!KERNEL_TEST_@}" AURORA_TEST_CONTEXT KERNEL_USER_PROBE_MODE KERNEL_CONSOLE UEFI_MODE UEFI_CONSOLE_HANDOFF)
+    controls=("${!KERNEL_TEST_@}" KERNEL_USER_PROBE_MODE KERNEL_CONSOLE UEFI_MODE UEFI_CONSOLE_HANDOFF)
 else
-    if [[ -n "${AURORA_TEST_CONTEXT:-}" ]]; then
-        echo 'This standalone shortcut rejects inherited AURORA_TEST_CONTEXT; start it outside the active supervised test run.' >&2
-        exit 2
-    fi
     controls=("${!KERNEL_TEST_@}" KERNEL_USER_PROBE_MODE KERNEL_CONSOLE UEFI_MODE)
     if [[ "$mode" == console && ( "$platform" == uefi || "$action" == --smoke ) ]]; then controls+=(UEFI_CONSOLE_HANDOFF); fi
 fi

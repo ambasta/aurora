@@ -362,7 +362,7 @@ class DeveloperCommands(unittest.TestCase):
             self.assertIn("-nic none -display none -serial stdio -monitor none", command)
 
     def test_console_launcher_rejects_mixed_controls_before_build(self):
-        for name in ("KERNEL_TEST_SCHEDULE", "KERNEL_USER_PROBE_MODE", "KERNEL_CONSOLE", "AURORA_TEST_CONTEXT"):
+        for name in ("KERNEL_TEST_SCHEDULE", "KERNEL_USER_PROBE_MODE", "KERNEL_CONSOLE"):
             self.run_script("kernel-console.sh", env={name: "1"}, expected=2)
         self.run_script("kernel-console.sh", "extra", expected=2)
         self.assert_no_work()
@@ -399,7 +399,6 @@ class DeveloperCommands(unittest.TestCase):
             "KERNEL_CONSOLE",
             "UEFI_MODE",
             "UEFI_CONSOLE_HANDOFF",
-            "AURORA_TEST_CONTEXT",
         ):
             self.run_script("kernel-uefi-console.sh", env={name: "1"}, expected=2)
         self.run_script("kernel-uefi-console.sh", "extra", expected=2)
@@ -668,15 +667,7 @@ class DeveloperCommands(unittest.TestCase):
 
     def test_host_check_missing_linker_or_active_context_starts_no_build(self):
         self.run_script("host-build-check.sh", env={"UEFI_LD": "missing-linker"}, expected=2)
-        self.run_script("host-build-check.sh", env={"AURORA_TEST_CONTEXT": "active"}, expected=2)
         self.run_script("host-build-check.sh", "unexpected", expected=2)
-        self.assert_no_work()
-
-    def test_direct_shortcuts_reject_inherited_context_before_work(self):
-        env = {"AURORA_TEST_CONTEXT": "/invalid/context.json", "AURORAC": "/selected/aurorac"}
-        for name, args in (("kernel-run.sh", ("bios",)), ("kernel-run.sh", ("uefi",)), ("compiler-test.sh", ())):
-            output = self.run_script(name, *args, env=env, expected=2)
-            self.assertIn("rejects inherited AURORA_TEST_CONTEXT", output)
         self.assert_no_work()
 
     def test_make_build_and_test_aliases_are_only_printed(self):

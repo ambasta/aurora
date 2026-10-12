@@ -15,11 +15,6 @@ HELP
     exit 0
 fi
 if [[ $# != 0 ]]; then echo 'Usage: scripts/compiler-test.sh (or --help)' >&2; exit 2; fi
-# These convenience commands start standalone runs; never inherit a sealed run.
-if [[ -n "${AURORA_TEST_CONTEXT:-}" ]]; then
-    echo 'This standalone shortcut rejects inherited AURORA_TEST_CONTEXT; start it outside the active supervised test run.' >&2
-    exit 2
-fi
 cd "$(dirname "$0")/.."
 for tool in make python3 "${CXX:-g++}"; do
     command -v "$tool" >/dev/null || { echo "Missing dependency: $tool" >&2; exit 2; }

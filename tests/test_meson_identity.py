@@ -447,15 +447,13 @@ class MesonEntrypointTests(unittest.TestCase):
             meson_test.execute(self.root, None, ["kernel-bios-normal"])
         self.assertEqual(self.calls, [])
 
-    def test_kernel_caller_owns_receipt_and_ir_flags_do_not_configure_images(self):
+    def test_kernel_selection_and_ir_flags_do_not_configure_images(self):
         self.configured()
         compiler = self.root / "supervised-compiler"
         compiler.write_text("synthetic compiler; never executed")
         compiler.chmod(0o755)
         self.kernel_compiler = str(compiler)
-        os.environ.update(
-            AURORAC=str(compiler), AURORA_TEST_CONTEXT="caller-owned-receipt", CXXFLAGS="-O0", IR_TEST_CXXFLAGS="-O1"
-        )
+        os.environ.update(AURORAC=str(compiler), CXXFLAGS="-O0", IR_TEST_CXXFLAGS="-O1")
 
         def fixed_kernel_flags(command, **kwargs):
             self.assertNotIn("CXXFLAGS", kwargs["env"])
@@ -466,13 +464,11 @@ class MesonEntrypointTests(unittest.TestCase):
         self.assertEqual(self.flags, [])
         self.assertEqual([command[1] for command in self.calls], ["compile"])
 
-    def test_suites_still_reject_legacy_context_and_ir_flags_before_artifacts(self):
-        for name, value in (("AURORA_TEST_CONTEXT", "caller-owned-receipt"), ("IR_TEST_CXXFLAGS", "-O0")):
-            with self.subTest(control=name), patch.dict(os.environ, {name: value}):
-                with self.assertRaises(contract.ContractError):
-                    meson_test.execute(self.root, "full")
-                self.assertEqual(self.calls, [])
-                self.assertFalse((self.root / "build").exists())
+    def test_suites_reject_ir_flags_before_artifacts(self):
+        with patch.dict(os.environ, {"IR_TEST_CXXFLAGS": "-O0"}), self.assertRaises(contract.ContractError):
+            meson_test.execute(self.root, "full")
+        self.assertEqual(self.calls, [])
+        self.assertFalse((self.root / "build").exists())
 
     def test_unsupported_output_and_fixture_controls_are_not_ignored(self):
         for name in ("OUT", "FORMAT_OUT", "LEXER_EVENTS", "UTF8_LINES_ARTIFACT_PARENT", "XFS_ROOT_FIXTURES"):

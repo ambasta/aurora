@@ -107,7 +107,6 @@ class Routing(unittest.TestCase):
             "KERNEL_USER_PROBE_MODE",
             "KERNEL_CONSOLE",
             "UEFI_MODE",
-            "AURORA_TEST_CONTEXT",
         ):
             with self.subTest(name=name):
                 self.assertIn("FAIL:", self.run_script(env={name: "1"}, expected=1))

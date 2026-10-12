@@ -53,9 +53,6 @@ def execute(root, scope, targets=(), output=None, *, build_only=False):
             "XFS_ROOT_REPO",
             "XFS_ROOT_FIXTURES",
             "XFS_ROOT_ARTIFACT_PARENT",
-            "AURORA_TEST_MODE",
-            "AURORA_TEST_COMPILER",
-            "AURORA_TEST_IDENTITY_ARGS",
         )
     supplied_unsupported = sorted({name for name in unsupported if name in env})
     contract.require(

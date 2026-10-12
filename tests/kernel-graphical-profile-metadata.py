@@ -166,8 +166,6 @@ class ProfileMetadata(unittest.TestCase):
             self.assertFalse(
                 runner.arguments(["--run", "compiler", "--compiler-sha256", "0" * 64]).developer_selected_compiler
             )
-        with patch.dict(os.environ, {"AURORA_TEST_CONTEXT": "active"}), self.assertRaises(RuntimeError):
-            runner.arguments(["--run", "compiler", "--developer-selected-compiler"])
 
     def test_hosted_failure_receipts_and_identity_finalization(self):
         runner = load("graphical_metadata_receipts", "tests/kernel-graphical-console.py")

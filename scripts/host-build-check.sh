@@ -8,10 +8,6 @@ if [[ $# == 1 && ( "$1" == --help || "$1" == -h ) ]]; then
     exit 0
 fi
 if [[ $# != 0 ]]; then echo 'Usage: scripts/host-build-check.sh' >&2; exit 2; fi
-if [[ -n "${AURORA_TEST_CONTEXT:-}" ]]; then
-    echo 'Run this standalone host check outside an active supervised test run.' >&2
-    exit 2
-fi
 # This entrypoint checks fresh normal builds, never a stale pin or dry/ignored run.
 for name in AURORAC OUT MAKEFLAGS MFLAGS GNUMAKEFLAGS MAKEFILES MAKEOVERRIDES \
             "${!KERNEL_TEST_@}" KERNEL_USER_PROBE_MODE KERNEL_CONSOLE UEFI_MODE; do

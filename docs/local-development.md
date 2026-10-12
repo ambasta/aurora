@@ -63,7 +63,6 @@ The [Meson guide](meson-bootstrap.md) specifies native targets, setup options,
 profile selection, dependency tracking and full-suite coverage.
 
 Run/compiler wrappers accept `--help` and work from another working directory.
-They are standalone entrypoints: inherited `AURORA_TEST_CONTEXT` is rejected.
 Normal launchers also reject nonempty fault/profile controls rather than silently
 changing a normal boot. Explicit supervised/pinned workflows remain separate.
 

@@ -195,7 +195,6 @@ exit "${BUILD_STATUS:-0}"
     def test_invalid_controls_fail_before_any_mutation(self):
         for env in (
             {"UEFI_MODE": "normal"},
-            {"AURORA_TEST_CONTEXT": "context"},
             {"KERNEL_TEST_FAULT": "1"},
             {"OVMF_CODE": "code.fd"},
             {"OVMF": "", "OVMF_CODE": "code.fd"},

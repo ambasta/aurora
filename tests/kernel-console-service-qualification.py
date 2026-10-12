@@ -221,8 +221,8 @@ def main():
         "Expected the selected native console profile directory",
     )
     need(
-        not os.environ.get("AURORA_TEST_CONTEXT") and not os.environ.get("UEFI_MODE"),
-        "Unset inherited test/profile controls",
+        not os.environ.get("UEFI_MODE"),
+        "Unset inherited UEFI_MODE",
     )
     # Failed preflight must neither start a guest nor modify/restage its image.
     receipt = admission.checked(args.mode)

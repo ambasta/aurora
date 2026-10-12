@@ -300,7 +300,6 @@ class ConsoleRouting(unittest.TestCase):
                 "KERNEL_CONSOLE",
                 "UEFI_MODE",
                 "UEFI_CONSOLE_HANDOFF",
-                "AURORA_TEST_CONTEXT",
             ):
                 with self.subTest(mode=mode, name=name):
                     self.run_script(mode, env={name: "1"}, expected=2)

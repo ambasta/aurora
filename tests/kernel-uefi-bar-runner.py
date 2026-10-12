@@ -544,7 +544,6 @@ class BarRunner(unittest.TestCase):
             "KERNEL_CONSOLE",
             "UEFI_MODE",
             "UEFI_CONSOLE_HANDOFF",
-            "AURORA_TEST_CONTEXT",
         ):
             with self.subTest(name=name), patch.dict(os.environ, {name: "active"}):
                 self.reject("Unset " + name)

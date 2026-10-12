@@ -187,7 +187,6 @@ if action == 'guest':
                 (root / "bin/python3").symlink_to(sys.executable)
                 env = {k: v for k, v in os.environ.items() if not k.startswith("KERNEL_TEST_")}
                 for name in (
-                    "AURORA_TEST_CONTEXT",
                     "KERNEL_USER_PROBE_MODE",
                     "KERNEL_CONSOLE",
                     "UEFI_MODE",
