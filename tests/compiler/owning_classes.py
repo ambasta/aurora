@@ -101,6 +101,113 @@ class OwningSuite(Suite):
         else:
             super().trap(*args, **kwargs)
 
+    def producing_field_initializers(self):
+        helpers = f"""
+        auto fixed({REGION} region) -> {OWNER} {{
+            {OWNER} result = region.try_allocate(3); return move(result);
+        }}
+        auto keep({REGION} region, bool first, bool second, {OWNER} input) -> {OWNER} {{
+            if (input.ok() && (!first || !second || input.at(0) != 99u8)) {{
+                {OWNER} failed = region.try_allocate(-1); return move(failed);
+            }}
+            return move(input);
+        }}
+        class Six {{
+            {OWNER} a; {OWNER} b; {OWNER} c; {OWNER} d; {OWNER} e; {OWNER} f;
+        public:
+            Six({REGION} region, {OWNER} first, {OWNER} incoming)
+                : f(region.try_allocate(0)), e(region.try_allocate(5)),
+                  d(keep(region, incoming.set(0, 42u8), incoming.set(0, 99u8), move(incoming))),
+                  c(fixed(region)), b(region.try_allocate(2)), a(move(first)) {{}}
+            auto status() const -> i64 {{
+                if (a.size() != i64(a.ok()) || b.size() != 2 * i64(b.ok()) ||
+                    c.size() != 3 * i64(c.ok()) || d.size() != 4 * i64(d.ok()) ||
+                    e.size() != 5 * i64(e.ok()) || f.size() != 0) {{ return -1; }}
+                if (d.ok() && d.at(0) != 99u8) {{ return -2; }}
+                return i64(a.ok()) + 2 * i64(b.ok()) + 4 * i64(c.ok()) +
+                    8 * i64(d.ok()) + 16 * i64(e.ok()) + 32 * i64(f.ok());
+            }}
+        }};
+        auto forward({REGION} region, Six input) -> Six {{ return move(input); }}
+        """
+        mixed = self.compile(
+            "produced-fields-declaration-order-six-owners",
+            program(
+                f"{OWNER} first = region.try_allocate(1); {OWNER} incoming = region.try_allocate(4); "
+                "Six box = Six(region, move(first), move(incoming)); "
+                "const Six result = forward(region, move(box)); "
+                "if (size_of(Six) != 192) { return -3; } return result.status();",
+                helpers,
+            ),
+        )
+        # The host adapter adds a 32-byte allocation record even for zero capacity.
+        # Caller allocations precede field-order producers; d keeps caller allocation 2.
+        for allowed in range(7):
+            self.run(
+                mixed,
+                32,
+                0,
+                0,
+                sum([1, 8, 2, 4, 16, 32][:allowed]),
+                allowed,
+                allowed,
+                fail_after=allowed,
+                release_order=[i for i in [6, 5, 2, 4, 3, 1] if i <= allowed],
+                attempted_sizes=[33, 36, 34, 35, 37, 32],
+            )
+        self.run(mixed, 7, 0, 0, 43, 4, 4, release_order=[4, 2, 3, 1], attempted_sizes=[33, 36, 34, 32])
+
+        bad_initializers = {
+            "implicit-copy": "first(input), second(region.try_allocate(2))",
+            "duplicate-move": "first(keep(region, true, true, move(input))), second(move(input))",
+            "consumed-argument-read": (
+                "first(keep(region, true, true, move(input))), second(region.try_allocate(input.size()))"
+            ),
+            "temporary-owner-argument": "first(keep(region, true, true, fixed(region))), second(move(input))",
+            "receiver-read": "first(region.try_allocate(1)), second(region.try_allocate(first.size()))",
+            "scalar-result": "first(42), second(move(input))",
+            "conditional-producer": "first(true ? fixed(region) : fixed(region)), second(move(input))",
+            "missing-field": "first(fixed(region))",
+            "duplicate-field": "first(fixed(region)), first(fixed(region)), second(move(input))",
+        }
+        for name, initializers in bad_initializers.items():
+            self.reject(
+                "produced-field-" + name,
+                program(
+                    "return 0;",
+                    helpers
+                    + f"""
+                    class Bad {{ {OWNER} first; {OWNER} second;
+                    public: Bad({REGION} region, {OWNER} input) : {initializers} {{}} }};
+                """,
+                ),
+            )
+        self.reject(
+            "produced-field-second-region",
+            program(
+                "return 0;",
+                f"class Bad {{ {OWNER} value; public: "
+                f"Bad({REGION} first, {REGION} other) : value(other.try_allocate(1)) {{}} }};",
+            ),
+        )
+        later_trap = self.compile(
+            "produced-field-later-bounds-trap",
+            program(
+                "Trap result = Trap(region, n); return 0;",
+                f"""
+                auto fail({REGION} region, i64 index) -> {OWNER} {{
+                    {OWNER} source = region.try_allocate(1);
+                    {OWNER} result = region.try_allocate(i64(source.at(index))); return move(result);
+                }}
+                class Trap {{ {OWNER} first; {OWNER} second;
+                public: Trap({REGION} region, i64 index)
+                    : second(fail(region, index)), first(region.try_allocate(2)) {{}} }};
+            """,
+            ),
+        )
+        # Fail-stop subprocess observation makes no claim about unwinding live owners.
+        self.trap(later_trap, 16, 1)
+
     def copied_resource_results(self):
         snapshots = self.compile(
             "copied-resource-result-left-to-right-snapshots",
@@ -817,6 +924,7 @@ class OwningSuite(Suite):
         self.imported_diagnostic_locations()
         self.resize_cases()
         self.copied_resource_results()
+        self.producing_field_initializers()
         return {
             "mode": "compile-only" if self.compile_only else "native",
             "compiled_programs": self.programs,

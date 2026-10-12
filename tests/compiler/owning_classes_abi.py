@@ -142,7 +142,7 @@ int main(int argc, char **argv) {
     const auto input_before = input;
     const auto answer = __au_runtime_bytes_test_entry(record,result);
     if (mode.starts_with("construct"))
-        check(answer == (mode == "construct" ? 8 : 42),"constructor lengths and cleanup preserve result");
+        check(answer == ((mode == "construct" || mode == "construct-produced") ? 8 : 42),"constructor lengths and cleanup preserve result");
     else if (mode == "copied") check(answer == 42,"owning receiver with copied args and result");
     else if (copied_resource) {
         consumed(record+8,0); consumed(record+96,1);
@@ -237,7 +237,7 @@ def bridge(mode):
     text += "addq $8,%rsp\npopq %r15\npopq %r14\npopq %r13\npopq %r12\npopq %rbx\npopq %rbp\nret\n"
     for name in ("allocate", "drop", "at", "set", "resize"):
         text += f"owning_abi_{name}:\n{ALIGN}"
-        if mode == "copied-resource":
+        if mode == "copied-resource" or mode.startswith("construct-produced"):
             # Force each runtime cleanup/allocation to destroy caller-saved hidden capabilities.
             text += f"subq $8,%rsp\ncall __au_runtime_bytes_{name}\naddq $8,%rsp\n"
             text += "movabsq $0x1111222233334444,%r10\nmovabsq $0x5555666677778888,%r11\nret\n"
@@ -379,6 +379,9 @@ def main():
             "construct",
             "construct-odd",
             "construct-even",
+            "construct-produced",
+            "construct-produced-odd",
+            "construct-produced-even",
             "six",
             "method",
             "copied",

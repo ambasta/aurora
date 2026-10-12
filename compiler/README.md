@@ -124,7 +124,8 @@ committed. Module file loading, local/lifetime analysis, IR and backend remain C
 - Arithmetic, conversions and indexing are checked. Operands and arguments
   evaluate left-to-right. Array stores check their index before evaluating RHS.
   Constructor arguments snapshot left-to-right, then fields initialize in
-  declaration order. Checked failure is fail-stop, with no exception unwinding.
+  declaration order; direct owner fields may allocate or call a region-backed
+  owner factory. Checked failure is fail-stop, with no exception unwinding.
 - Decimal/binary integers, ASCII byte literals, exact-length byte-string array
   initializers and synchronous readonly literal arguments have exact scalar/byte
   rules. Comments use `//`; legacy `fn`/`let` and conventional C declarations reject.

@@ -308,8 +308,8 @@ See the [parser boundary](ARCHITECTURE.md#hosted-aurora-expression-parser).
 class Device {
     builtin::OwnedBytes payload;
 public:
-    Device(builtin::ByteRegion region, builtin::OwnedBytes initial)
-        : payload(move(initial)) {}
+    Device(builtin::ByteRegion region, i64 length)
+        : payload(region.try_allocate(length)) {}
 
     auto size() const -> i64 {
         return payload.size();
@@ -330,12 +330,19 @@ Canonical owning-class storage, including descriptors, is bounded to 520 bytes;
 existing copied-leaf limits remain.
 
 An owning constructor requires exactly one ByteRegion parameter, first. Later
-parameters may be scalar/enum, OwnedBytes or copyable class snapshots. Each byte
-field requires explicit move(named_parameter) initialization, in declaration
-order. Copyable child fields use their existing named snapshot initialization.
-Constructor bodies stay empty and every field must be initialized exactly once.
-Unneeded owning parameters are closed normally. A failed byte allocation is an
-initialized inert owner, not an incomplete constructor result.
+parameters may be scalar/enum, direct owners or copyable class snapshots. A private
+OwnedBytes or OwnedValues field accepts move(named_parameter), region.try_allocate,
+or an ordinary region-first function returning its exact owner type. Typed
+allocation still requires a named copied fill. Each producer executes once in
+field declaration order, using the constructor's first region; a hidden mutable
+owner holds its result until field transfer consumes it. Copyable child fields
+retain named snapshot initialization. Constructor bodies stay empty, every field
+must initialize exactly once, and initializers cannot read the partial receiver.
+
+Unneeded parameters and consumed temporary bindings close normally. A failed
+allocation is an initialized inert owner: later initializers still run, and the
+completed object retains successful siblings until reverse-order destruction.
+Safety traps remain fail-stop without partial-construction exception unwinding.
 
 Whole-class transfer requires move(named_local), into a fresh typed local, an
 ordinary owning parameter or an owning return. Owning ordinary functions require

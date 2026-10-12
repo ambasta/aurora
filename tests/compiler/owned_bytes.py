@@ -51,6 +51,9 @@ static void trapped(int signal, siginfo_t *info, void *context) {
 // Bounded observation storage belongs to this test host, not the allocation API.
 struct Trace {
     std::int64_t remaining = -1;
+    bool observe_attempts = false;
+    std::size_t attempted_sizes[128] {};
+    std::size_t attempted_count = 0;
     void *allocations[128] {};
     bool live[128] {};
     std::size_t released[128] {};
@@ -59,6 +62,11 @@ struct Trace {
 };
 static void *allocate(void *context, std::size_t size) noexcept {
     auto &trace = *static_cast<Trace *>(context);
+    if (trace.observe_attempts) {
+        if (trace.attempted_count == 128)
+            std::abort();
+        trace.attempted_sizes[trace.attempted_count++] = size;
+    }
     if (trace.remaining == 0)
         return nullptr;
     if (trace.remaining > 0)
@@ -85,7 +93,7 @@ static void deallocate(void *context, void *address) noexcept {
     std::abort();
 }
 int main(int argc, char **argv) {
-    if (argc != 4 && argc != 5)
+    if (argc != 4 && argc != 5 && argc != 6)
         return 80;
     struct sigaction action {};
     action.sa_sigaction = trapped;
@@ -94,7 +102,8 @@ int main(int argc, char **argv) {
     if (sigaction(SIGILL, &action, nullptr) != 0)
         return 81;
     Trace trace;
-    trace.remaining = argc == 5 ? std::strtoll(argv[4], nullptr, 10) : -1;
+    trace.remaining = argc >= 5 ? std::strtoll(argv[4], nullptr, 10) : -1;
+    trace.observe_attempts = argc == 6;
     aurora::hosted::bytes::Allocator allocator {&trace, allocate, deallocate};
     aurora::hosted::bytes::Region region(std::strtoull(argv[1], nullptr, 10), allocator);
     const auto result = __au_runtime_bytes_test_entry(region.id(), std::strtoll(argv[2], nullptr, 10),
@@ -111,6 +120,11 @@ int main(int argc, char **argv) {
     for (std::size_t index = 0; index < trace.released_count; ++index)
         std::printf(" %zu", trace.released[index]);
     std::puts("");
+    if (trace.observe_attempts) {
+        for (std::size_t index = 0; index < trace.attempted_count; ++index)
+            std::printf("%zu ", trace.attempted_sizes[index]);
+        std::puts("");
+    }
 }
 """
 
@@ -234,14 +248,33 @@ class Suite:
         self.programs += 1
         return executable
 
-    def run(self, executable, quota, length, flag, expected, allocations, peak, fail_after=None, release_order=None):
+    def run(
+        self,
+        executable,
+        quota,
+        length,
+        flag,
+        expected,
+        allocations,
+        peak,
+        fail_after=None,
+        release_order=None,
+        attempted_sizes=None,
+    ):
         arguments = [executable, quota, length, flag]
-        if fail_after is not None:
-            arguments.append(fail_after)
+        if fail_after is not None or attempted_sizes is not None:
+            arguments.append(-1 if fail_after is None else fail_after)
+        if attempted_sizes is not None:
+            arguments.append("trace-attempts")
         result = command(arguments)
         self.last_observation = result
         require(result.returncode == 0, f"{executable.name}: execution failed {result.returncode}: {result.stderr!r}")
-        observed = [int(part) for part in result.stdout.split()]
+        lines = result.stdout.splitlines()
+        require(len(lines) == (1 if attempted_sizes is None else 2), "unexpected allocator trace output")
+        observed = [int(part) for part in lines[0].split()]
+        if attempted_sizes is not None:
+            attempts = [int(part) for part in lines[1].split()]
+            require(attempts == attempted_sizes, f"wrong allocation attempts: {attempts} != {attempted_sizes}")
         require(
             observed[:4] == [expected & MASK, allocations, allocations, peak],
             f"{executable.parent.name}: observed {observed}, expected {expected, allocations, peak}",
@@ -416,6 +449,79 @@ class Suite:
             ),
         )
         self.run(moved, 4800, 0, 0, 42, 2, 1)
+
+        produced_node = node.replace(
+            "auto score()", "auto change(i64 value) -> i64 { payload = value; return 2; } auto score()"
+        )
+        produced_helpers = (
+            produced_node
+            + f"""
+            auto make_nodes({REGION} region) -> {owner} {{
+                const Node fill = Node(Kind::literal, 2u8, 7);
+                {owner} result = region.try_allocate(1, fill); return move(result);
+            }}
+            class Produced {{
+                {owner} direct; {owner} returned;
+            public:
+                Produced({REGION} region, Node fill, i64 count)
+                    : returned(make_nodes(region)), direct(region.try_allocate(count, fill)) {{}}
+                auto check(i64 count) const -> i64 {{
+                    if (!returned.ok() || returned.size() != 1) {{ return -1; }}
+                    Node saved = returned.at(0);
+                    if (saved.score() != 9) {{ return -2; }}
+                    if (!direct.ok()) {{ return 43; }}
+                    if (direct.size() != count) {{ return -3; }}
+                    if (count > 0) {{
+                        Node copied = direct.at(count - 1); copied.change(99);
+                        Node retained = direct.at(count - 1);
+                        if (copied.score() != 101 || retained.score() != 42) {{ return -3; }}
+                    }}
+                    return 42;
+                }}
+            }};
+            auto pass_produced({REGION} region, Produced input) -> Produced {{ return move(input); }}
+        """
+        )
+        produced = self.compile(
+            "typed-produced-fields-named-fill-and-return",
+            program(
+                "Node fill = Node(Kind::literal, 2u8, 40); Produced initial = Produced(region, fill, n); "
+                "fill.change(99); const Produced result = pass_produced(region, move(initial)); "
+                "if (fill.score() != 101) { return -4; } return result.check(n);",
+                produced_helpers,
+            ),
+        )
+        for count in (0, 2):
+            self.run(produced, 72, count, 0, 42, 2, 2, release_order=[2, 1], attempted_sizes=[32 + 24 * count, 56])
+        for count in (-1, (1 << 63) - 1, 4):
+            self.run(produced, 72, count, 0, 43, 1, 1, release_order=[1], attempted_sizes=[56])
+        for name, initializer in {
+            "temporary-fill": "region.try_allocate(1, Node(Kind::literal, 2u8, 40))",
+            "scalar-fill": "region.try_allocate(1, 42)",
+            "wrong-fill": "region.try_allocate(1, other)",
+            "missing-fill": "region.try_allocate(1)",
+            "byte-result": "make_bytes(region)",
+            "wrong-nominal-result": "make_other(region)",
+        }.items():
+            self.reject(
+                "typed-produced-field-" + name,
+                program(
+                    "return 0;",
+                    produced_node
+                    + f"""
+                class Other {{ public: i64 first; i64 second; i64 third; }};
+                auto make_bytes({REGION} region) -> {OWNER} {{
+                    {OWNER} result = region.try_allocate(1); return move(result);
+                }}
+                auto make_other({REGION} region) -> builtin::OwnedValues<Other> {{
+                    Other fill = Other{{.first = 1, .second = 2, .third = 3}};
+                    builtin::OwnedValues<Other> result = region.try_allocate(1, fill); return move(result);
+                }}
+                class Bad {{ {owner} nodes; public:
+                    Bad({REGION} region, Node fill, Other other) : nodes({initializer}) {{}} }};
+            """,
+                ),
+            )
 
         arena_source = (ROOT / "compiler/syntax_arena.au").read_text()
         arena = self.compile(

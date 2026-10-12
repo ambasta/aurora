@@ -633,7 +633,13 @@ class SemanticAnalyzer {
                 endOwner(local);
         }
     }
-    Type callResource(ExpressionPtr value, const Function &callee, const StatementPtr &binding) {
+    Type callResource(ExpressionPtr value,
+                      const Function &callee,
+                      const StatementPtr &binding,
+                      bool bindResult = true,
+                      int *resultLocal = nullptr) {
+        if (resultLocal)
+            *resultLocal = -1;
         const bool constructor = callee.constructor;
         if ((callee.result.isClass() || callee.result.isOwnerStorage() || constructor) && !binding)
             fail(value->token, "resource result requires a typed local initializer");
@@ -668,7 +674,9 @@ class SemanticAnalyzer {
         }
         int destination = 0;
         if (binding) {
-            const int local = add(binding->name, binding->type, binding->mutableValue, binding->token);
+            const int local = add(binding->name, binding->type, binding->mutableValue, binding->token, bindResult);
+            if (resultLocal)
+                *resultLocal = local;
             if (ownerType(binding->type))
                 locals[local].owner = region;
             destination = offset(local);
@@ -683,15 +691,18 @@ class SemanticAnalyzer {
             emit(ir::EndObject{snapshot});
         return constructor ? Type(callee.receiverClass) : callee.result;
     }
-    void initializeBytes(StatementPtr binding) {
+    int initializeBytes(
+        StatementPtr binding,
+        bool bindResult = true,
+        const char *unsupported = "owned bytes require region.try_allocate, move or an owned-result function call") {
         const auto value = binding->expr;
         if (value->op == "call" && value->token.text == "move") {
             const int original = movedOwner(value, binding->type);
-            const int local = add(binding->name, binding->type, binding->mutableValue, binding->token);
+            const int local = add(binding->name, binding->type, binding->mutableValue, binding->token, bindResult);
             emit(ir::MoveBytes{offset(original), offset(local)});
             locals[local].owner = locals[original].owner;
             locals[original].live = false;
-            return;
+            return local;
         }
         if (value->op == "method_call" && value->token.text == "try_allocate") {
             arity(value, binding->type.isOwnedValues() ? 3 : 2);
@@ -705,26 +716,27 @@ class SemanticAnalyzer {
                 fill = snapshotOwnedElement(binding->type, value->args[2]);
                 pop();
             }
-            const int local = add(binding->name, binding->type, binding->mutableValue, binding->token);
+            const int local = add(binding->name, binding->type, binding->mutableValue, binding->token, bindResult);
             locals[local].owner = region;
             if (fill >= 0) {
                 emit(ir::AllocateValues{offset(region), offset(local), offset(fill)});
                 emit(ir::EndObject{offset(fill)});
             } else
                 emit(ir::AllocateBytes{offset(region), offset(local)});
-            return;
+            return local;
         }
         if (value->op == "call" && value->overloadCandidates.empty()) {
             const auto found = functions.find(value->resolvedName.empty() ? value->token.text : value->resolvedName);
             if (found != functions.end()) {
                 const auto &callee = sourceFunctions[found->second];
                 if (!callee.params.empty() && callee.params[0].type.isRegion()) {
-                    callResource(value, callee, binding);
-                    return;
+                    int destination;
+                    callResource(value, callee, binding, bindResult, &destination);
+                    return destination;
                 }
             }
         }
-        fail(value->token, "owned bytes require region.try_allocate, move or an owned-result function call");
+        fail(value->token, unsupported);
     }
     class IndexedStorage {
     public:
@@ -2588,7 +2600,16 @@ public:
                 for (const auto &member : definition.fields) {
                     const auto &initializer = initializers.at(member.token.text);
                     if (member.type.isOwnerStorage()) {
-                        const int original = movedOwner(initializer, member.type);
+                        int original;
+                        if (initializer->op == "call" && initializer->token.text == "move")
+                            original = movedOwner(initializer, member.type);
+                        else {
+                            auto binding = std::make_shared<Statement>(initializer->token);
+                            binding->type = member.type;
+                            binding->mutableValue = true;
+                            binding->expr = initializer;
+                            original = initializeBytes(binding, false, "owning transfer requires move(named_local)");
+                        }
                         if (locals[original].owner != 0)
                             fail(initializer->token, "constructor byte field belongs to a different region");
                         emit(ir::InitializeBytesField{0, member.index, offset(original)});
