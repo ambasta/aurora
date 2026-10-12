@@ -536,6 +536,14 @@ def method_result_cases(suite):
             f"method class result {width} scalar leaves", program(body, definitions, result="u64"), MAX_U64 - width + 1
         )
 
+    suite.check(
+        "method result copied temporary argument",
+        program(
+            "Counter c=Counter(1u64);return consume(c.snapshot());",
+            REPORT + "class Other{public:u64 value;};",
+            "auto consume(Report r)->i64{return 42;}",
+        ),
+    )
     for name, body in [
         (
             "mutable result method on const receiver",
@@ -543,7 +551,6 @@ def method_result_cases(suite):
         ),
         ("class result cannot initialize scalar", "Counter c=Counter(1u64);u64 n=c.snapshot();return 42;"),
         ("method result requires typed local", "Counter c=Counter(1u64);c.snapshot();return 42;"),
-        ("method result cannot be temporary argument", "Counter c=Counter(1u64);return consume(c.snapshot());"),
         ("method result wrong nominal class", "Counter c=Counter(1u64);Other r=c.snapshot();return 42;"),
         (
             "const method result cannot mutate",

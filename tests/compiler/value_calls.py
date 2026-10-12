@@ -330,18 +330,6 @@ for name, body, helpers, error in [
         "expected Counter",
     ),
     (
-        "temporary class argument denied",
-        "return get(Counter(42));",
-        "auto get(Counter c)->i64{return c.get();}",
-        "complete local name",
-    ),
-    (
-        "class-return call argument needs local",
-        "return get(make());",
-        "auto make()->Counter{Counter c=Counter(42);return c;}auto get(Counter c)->i64{return c.get();}",
-        "complete local name",
-    ),
-    (
         "discard class-return call denied",
         "make();return 42;",
         "auto make()->Counter{Counter c=Counter(42);return c;}",
@@ -524,6 +512,15 @@ check(
     ),
 )
 check(
+    "six maximum-width temporary class arguments",
+    program(
+        "return sum(make(),make(),make(),make(),make(),make());",
+        "auto make()->Wide{Wide value=Wide{" + wide_init + "};return value;}"
+        "auto sum(Wide a,Wide b,Wide c,Wide d,Wide e,Wide f)->i64{return a.f63+b.f63+c.f63+d.f63+e.f63+f.f63;}",
+        wide_class,
+    ),
+)
+check(
     "maximum-width result with mixed arguments",
     program(
         "Wide x=Wide{" + wide_init + "};Wide result=select(x,true,x,21,x,14);return result.f63+35;",
@@ -576,7 +573,7 @@ check(
 )
 
 # Direct constructor returns share the typed-local constructor lowering. They
-# deliberately do not admit nested aggregate calls or arbitrary temporaries.
+# also admit bounded copied arguments, while arbitrary class expressions remain excluded.
 check(
     "direct constructor ordinary result",
     program("Counter c=make(42);return c.get();", "auto make(i64 n)->Counter{return Counter(n);}"),
@@ -737,11 +734,6 @@ for label, source, diagnostic in [
         "argument count",
     ),
     (
-        "direct nested constructor argument rejected",
-        program("return 42;", "auto make()->Box{return Box(Counter(20),22);}", COUNTER + box),
-        "requires a local name",
-    ),
-    (
         "direct temporary receiver rejected",
         program("return 42;", "auto make()->Counter{return Counter(Counter(42).get());}"),
         "method receiver",
@@ -900,26 +892,6 @@ for label, source, diagnostic, use_library in [
         False,
     ),
     (
-        "direct ordinary nested class-result argument",
-        program(
-            "return 42;",
-            factory + "auto identity(Counter source)->Counter{return source;}"
-            "auto forward()->Counter{return identity(make(42));}",
-        ),
-        "complete local name",
-        False,
-    ),
-    (
-        "direct ordinary nested constructor argument",
-        program(
-            "return 42;",
-            "auto identity(Counter source)->Counter{return source;}"
-            "auto forward()->Counter{return identity(Counter(42));}",
-        ),
-        "complete local name",
-        False,
-    ),
-    (
         "direct ordinary return field projection",
         program(
             "return 42;",
@@ -958,5 +930,75 @@ for label, source, diagnostic, use_library in [
 ]:
     for prior in (None, "existing assembly must survive rejection\n"):
         check(label, source, error=diagnostic, existing_output=prior, library=use_library)
+
+# Bounded copied arguments use the same observable behavior as explicit locals.
+for label, expression, helpers in (
+    ("constructor", "Counter(42)", ""),
+    ("ordinary result", "make()", "auto make()->Counter{Counter c=Counter(42);return c;}"),
+):
+    consumer = "auto get(Counter c)->i64{return c.get();}"
+    check("copied temporary argument " + label, program("return get(" + expression + ");", helpers + consumer))
+    check(
+        "copied explicit local " + label,
+        program("const Counter value=" + expression + ";return get(value);", helpers + consumer),
+    )
+check(
+    "direct nested constructor argument",
+    program("return 42;", "auto make()->Box{return Box(Counter(20),22);}", COUNTER + box),
+)
+check(
+    "nested constructor result executes copied payload",
+    program(
+        "Box result=make();return result.answer();", "auto make()->Box{return Box(Counter(20),22);}", COUNTER + box
+    ),
+)
+for label, expression, helpers in (
+    ("class-result", "make(42)", factory),
+    ("constructor", "Counter(42)", ""),
+):
+    check(
+        "direct ordinary nested " + label + " argument",
+        program(
+            "return 42;",
+            helpers + "auto identity(Counter source)->Counter{return source;}"
+            "auto forward()->Counter{return identity(" + expression + ");}",
+        ),
+    )
+    check(
+        "nested ordinary return executes " + label,
+        program(
+            "Counter result=forward();return result.get();",
+            helpers + "auto identity(Counter source)->Counter{return source;}"
+            "auto forward()->Counter{return identity(" + expression + ");}",
+        ),
+    )
+for label, body in (
+    ("inline", "return sum(c,Counter(c.add(1)),make(c.add(1)),c);"),
+    (
+        "explicit locals",
+        "const Counter first=c;const Counter second=Counter(c.add(1));"
+        "const Counter third=make(c.add(1));const Counter last=c;return sum(first,second,third,last);",
+    ),
+):
+    check(
+        "nested argument snapshots once in order " + label,
+        program(
+            "Counter c=Counter(9);" + body,
+            factory + "auto sum(Counter a,Counter b,Counter d,Counter e)->i64{"
+            "if(a.get()!=9||b.get()!=10||d.get()!=11||e.get()!=11){return 0;}return 42;}",
+        ),
+    )
+for expression in ("Other(42)", "make_other()"):
+    for prior in (None, "existing assembly must survive rejection\n"):
+        check(
+            "temporary exact nominal mismatch " + expression,
+            program(
+                "return get(" + expression + ");",
+                "auto get(Counter c)->i64{return c.get();}auto make_other()->Other{return Other(42);}",
+                COUNTER + COUNTER.replace("Counter", "Other"),
+            ),
+            error="expected Counter",
+            existing_output=prior,
+        )
 
 print(f"{COUNT} class value function-boundary checks passed")

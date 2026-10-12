@@ -808,6 +808,19 @@ def depth_and_leaf_cases(suite):
 def rejection_cases(suite):
     definitions = LEAF + WRAP + PAIR
     for name, body in (
+        ("nested constructor temporary argument", "Wrap w=Wrap(0,Leaf(42),0);return 42;"),
+        ("nested constructor result argument", "Wrap w=Wrap(0,make(),0);return 42;"),
+    ):
+        suite.check(
+            name,
+            program(
+                body,
+                definitions,
+                "auto consume(Leaf source)->i64{return source.get();}"
+                "auto make()->Leaf{Leaf source=Leaf(42);return source;}",
+            ),
+        )
+    for name, body in (
         ("chained scalar read", "Leaf source=Leaf(42);Wrap w=Wrap(0,source,0);return w.item.value;"),
         ("chained scalar mutation", "Leaf source=Leaf(42);Wrap w=Wrap(0,source,0);w.item.value=0;return 42;"),
         (
@@ -819,8 +832,6 @@ def rejection_cases(suite):
             "nested field constructor argument requires local copy",
             "Leaf source=Leaf(42);Wrap w=Wrap(0,source,0);Wrap other=Wrap(0,w.item,0);return 42;",
         ),
-        ("nested constructor temporary argument", "Wrap w=Wrap(0,Leaf(42),0);return 42;"),
-        ("nested constructor result argument", "Wrap w=Wrap(0,make(),0);return 42;"),
         ("nested constructor scalar mismatch", "Wrap w=Wrap(0,42,0);return 42;"),
         ("nested copy scalar mismatch", "Leaf source=Leaf(42);Wrap w=Wrap(0,source,0);i64 local=w.item;return local;"),
         (

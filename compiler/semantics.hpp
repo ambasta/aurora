@@ -1027,7 +1027,12 @@ class SemanticAnalyzer {
         requireVisibleType(callee.result, value->token);
         for (const auto &parameter : callee.params)
             requireVisibleType(parameter.type, value->token);
-        if (callee.result.isClass() && !resultBinding)
+        const bool inferredResult = !resultBinding && resultLocal;
+        if (inferredResult && ownerType(callee.result))
+            fail(value->token, "copied argument cannot consume an owning result");
+        if (inferredResult && callee.result.isClass() && receiverFieldIndex >= 0 && owningClass(type))
+            fail(value->token, "copied argument requires an ordinary method on a complete receiver");
+        if (callee.result.isClass() && !resultBinding && !inferredResult)
             fail(value->token, "class-returning method requires a typed local initializer");
         if (callee.result.isSpan() && !resultBinding)
             fail(value->token, "span-returning method requires a typed local initializer or span argument");
@@ -1061,12 +1066,8 @@ class SemanticAnalyzer {
                 spanBorrows.push_back(borrowed);
             } else if (parameterType.isClass()) {
                 packed = true;
-                if (argument->op != "name")
-                    fail(argument->token, "class argument requires a complete local name");
-                const int original = source(argument);
-                match(locals[original].type, parameterType, argument->token);
-                const int snapshot = add("", parameterType, false, argument->token, false);
-                copyClass(original, snapshot, argument->token);
+                int snapshot;
+                match(materializeCopiedArgument(argument, snapshot, &parameterType), parameterType, argument->token);
                 arguments[index] = offset(snapshot);
                 snapshots.push_back(offset(snapshot));
             } else {
@@ -1093,6 +1094,9 @@ class SemanticAnalyzer {
                 if (receiver >= 0)
                     ++locals[receiver].shared;
             }
+        } else if (inferredResult && callee.result.isClass()) {
+            *resultLocal = add("", callee.result, false, value->token, false);
+            destination = offset(*resultLocal);
         }
         emit(ir::MethodCall{callee.name,
                             receiverOffset,
@@ -1163,15 +1167,22 @@ class SemanticAnalyzer {
                       const StatementPtr &resultBinding = nullptr,
                       bool bindResult = true,
                       int *resultLocal = nullptr) {
-        if (!bindResult && !callee.params.empty() &&
+        // Without a binding, a result-local request is argument staging: infer
+        // the selected copied type rather than imposing an expected result type.
+        const bool inferredResult = !resultBinding && resultLocal;
+        if (inferredResult && ownerType(callee.result))
+            fail(expression->token, "copied argument cannot consume an owning result");
+        if (!bindResult && (resultBinding || callee.result.isClass()) && !callee.params.empty() &&
             (callee.params.front().type.isService() || callee.params.front().type.isRegion() ||
              callee.params.front().borrowed))
-            fail(expression->token, "direct copied return requires an ordinary function call");
+            fail(expression->token,
+                 inferredResult ? "copied argument requires an ordinary function call"
+                                : "direct copied return requires an ordinary function call");
         if (!callee.params.empty() && callee.params.front().type.isService())
             return callService(expression, callee, resultBinding);
         if (!callee.params.empty() && callee.params[0].type.isRegion())
             return callResource(expression, callee, resultBinding);
-        if (callee.result.isClass() && !resultBinding)
+        if (callee.result.isClass() && !resultBinding && !inferredResult)
             fail(expression->token, "class-returning call requires a typed local initializer");
         if (resultBinding)
             match(callee.result, resultBinding->type, expression->token);
@@ -1210,12 +1221,8 @@ class SemanticAnalyzer {
                 spanBorrows.push_back(borrowed);
             } else if (type.isClass()) {
                 aggregate = true;
-                if (argument->op != "name")
-                    fail(argument->token, "class argument requires a complete local name");
-                const int original = source(argument);
-                match(locals[original].type, type, argument->token);
-                const int snapshot = add("", type, false, argument->token, false);
-                copyClass(original, snapshot, argument->token);
+                int snapshot;
+                match(materializeCopiedArgument(argument, snapshot, &type), type, argument->token);
                 arguments[index - first] = offset(snapshot);
                 snapshots.push_back(offset(snapshot));
             } else {
@@ -1233,6 +1240,9 @@ class SemanticAnalyzer {
             destination = offset(local);
             if (resultLocal)
                 *resultLocal = local;
+        } else if (inferredResult && callee.result.isClass()) {
+            *resultLocal = add("", callee.result, false, expression->token, false);
+            destination = offset(*resultLocal);
         }
         if (borrowed) {
             emit(ir::BorrowedCall{callee.name,
@@ -1279,7 +1289,6 @@ class SemanticAnalyzer {
         bool aggregate = false;
         for (std::size_t index = 0; index < value->args.size(); ++index) {
             const auto &argument = value->args[index];
-            const int local = argument->op == "name" ? lookupLocal(argument->token) : -1;
             const bool span = spanExpression(argument);
             if (span) {
                 aggregate = true;
@@ -1287,18 +1296,15 @@ class SemanticAnalyzer {
                 types.push_back(Type::ByteSpan);
                 spanArguments[index] = offset(borrowed);
                 spanBorrows.push_back(borrowed);
-            } else if (local >= 0 && locals[local].type.isClass()) {
-                aggregate = true;
-                const int original = source(argument);
-                const Type type = locals[original].type;
-                types.push_back(type);
-                const int snapshot = add("", type, false, argument->token, false);
-                copyClass(original, snapshot, argument->token);
-                arguments[index] = offset(snapshot);
-                snapshots.push_back(offset(snapshot));
             } else {
-                types.push_back(expression(argument));
-                push();
+                int snapshot;
+                types.push_back(materializeCopiedArgument(argument, snapshot));
+                if (snapshot >= 0) {
+                    aggregate = true;
+                    arguments[index] = offset(snapshot);
+                    snapshots.push_back(offset(snapshot));
+                } else
+                    push();
             }
         }
         const Function *selected = nullptr;
@@ -1316,7 +1322,10 @@ class SemanticAnalyzer {
             fail(value->token, "no exact ordinary overload for " + value->token.text);
         if (value->inaccessibleOverloads.contains(selected->name))
             fail(value->token, "function signature type requires a direct visible import");
-        if (selected->result.isClass() && !resultBinding)
+        const bool inferredResult = !resultBinding && resultLocal;
+        if (inferredResult && ownerType(selected->result))
+            fail(value->token, "copied argument cannot consume an owning result");
+        if (selected->result.isClass() && !resultBinding && !inferredResult)
             fail(value->token, "class-returning call requires a typed local initializer");
         if (resultBinding)
             match(selected->result, resultBinding->type, value->token);
@@ -1330,6 +1339,9 @@ class SemanticAnalyzer {
             destination = offset(local);
             if (resultLocal)
                 *resultLocal = local;
+        } else if (inferredResult && selected->result.isClass()) {
+            *resultLocal = add("", selected->result, false, value->token, false);
+            destination = offset(*resultLocal);
         }
         if (aggregate || selected->result.isClass())
             emit(ir::AggregateCall{selected->name, arguments, destination, spanArguments});
@@ -1721,8 +1733,8 @@ class SemanticAnalyzer {
         match(locals[original].type, member.type, value->token);
         emit(ir::AssignObjectField{receiverOffset, member.index, offset(original)});
     }
-    // Both local construction and direct copied-value returns use the same
-    // left-to-right argument snapshots and complete constructor initialization.
+    // Locals, direct copied returns and copied arguments share left-to-right
+    // argument materialization and complete constructor initialization.
     int initializeCopiedConstructor(ExpressionPtr expression,
                                     const Type &type,
                                     const Token &bindingToken,
@@ -1739,10 +1751,10 @@ class SemanticAnalyzer {
             const auto &argument = expression->args[index];
             if (type.isClass()) {
                 aggregate = true;
-                const int original = source(argument);
-                match(locals[original].type, type, argument->token);
-                const int snapshot = add("", type, false, argument->token, false);
-                copyClass(original, snapshot, argument->token);
+                int snapshot;
+                match(materializeCopiedArgument(argument, snapshot, &type, "ownership operation requires a local name"),
+                      type,
+                      argument->token);
                 arguments[index] = offset(snapshot);
                 snapshots.push_back(offset(snapshot));
             } else {
@@ -1760,18 +1772,59 @@ class SemanticAnalyzer {
         auto binding = std::make_shared<Statement>(token);
         binding->type = type;
         binding->mutableValue = false;
-        int destination = -1;
-        if (expression->op == "method_call" || expression->op == "implicit_method_call")
-            callMethod(expression, binding, false, &destination);
-        else if (!expression->overloadCandidates.empty())
-            callOverloadedFunction(expression, binding, false, &destination);
-        else {
-            const auto found = functions.find(expression->resolvedName);
-            if (found == functions.end())
-                fail(expression->token, "direct copied return requires a class-returning function");
-            callFunction(expression, sourceFunctions[found->second], binding, false, &destination);
-        }
+        int destination;
+        initializeCopiedCall(expression, destination, binding);
         return destination;
+    }
+    Type initializeCopiedCall(ExpressionPtr expression, int &destination, const StatementPtr &binding = nullptr) {
+        destination = -1;
+        if (expression->op == "method_call" || expression->op == "implicit_method_call")
+            return callMethod(expression, binding, false, &destination);
+        if (!expression->overloadCandidates.empty())
+            return callOverloadedFunction(expression, binding, false, &destination);
+        const auto found = functions.find(expression->resolvedName);
+        if (found == functions.end())
+            fail(expression->token,
+                 binding ? "direct copied return requires a class-returning function"
+                         : "copied argument requires an ordinary function call");
+        return callFunction(expression, sourceFunctions[found->second], binding, false, &destination);
+    }
+    // Evaluate once at the argument's left-to-right position. A copied value
+    // owns a fresh, unbound, readonly destination; scalars retain normal lowering.
+    // Call results supply their actual type only after ordinary overload selection.
+    // A class result always sets snapshot; a scalar cannot pass callers' class match.
+    Type materializeCopiedArgument(ExpressionPtr value,
+                                   int &snapshot,
+                                   const Type *expected = nullptr,
+                                   const char *unsupported = "class argument requires a complete local name") {
+        snapshot = -1;
+        const int local = value->op == "name" ? (expected ? source(value) : lookupLocal(value->token)) : -1;
+        // Preserve named-value mismatch diagnostics before copying. Never pass
+        // the expected type into call lowering or ordinary overload selection.
+        if (expected && local >= 0)
+            match(locals[local].type, *expected, value->token);
+        if (local >= 0 && locals[local].type.isClass()) {
+            const int original = source(value);
+            const Type type = locals[original].type;
+            if (owningClass(type))
+                fail(value->token, "owning class cannot be copied; use move(named_local)");
+            snapshot = add("", type, false, value->token, false);
+            copyClass(original, snapshot, value->token);
+            return type;
+        }
+        if (value->op == "constructor_call") {
+            const Type type = value->reflectedType;
+            if (!type.isClass() || owningClass(type))
+                fail(value->token, "class argument requires a copied constructor");
+            snapshot = initializeCopiedConstructor(value, type, value->token);
+            return type;
+        }
+        if (value->op == "method_call" || value->op == "implicit_method_call" ||
+            (value->op == "call" && (!value->overloadCandidates.empty() || functions.contains(value->resolvedName))))
+            return initializeCopiedCall(value, snapshot);
+        if (expected)
+            fail(value->token, unsupported);
+        return expression(value);
     }
     void initializeClass(StatementPtr statement) {
         const auto &definition = classDefinition(statement->type, statement->token);

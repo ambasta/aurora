@@ -429,6 +429,10 @@ check(
     },
 )
 
+check(
+    "temporary generic argument",
+    program("return consume(Pair<i64,u64>(1,2u64));", PAIR, "auto consume(Pair<i64,u64> p)->i64{return 42;}"),
+)
 for label, body, helpers, error in [
     ("copy cross specialization", "Pair<i64,u64> a=Pair<i64,u64>(1,2u64);Pair<u64,i64> b=a;return 42;", "", "expected"),
     (
@@ -462,12 +466,6 @@ for label, body, helpers, error in [
         "Pair<i64,u64> a=Pair(1,2u64);return 42;",
         "",
         ("template", "constructor", "argument"),
-    ),
-    (
-        "temporary generic argument",
-        "return consume(Pair<i64,u64>(1,2u64));",
-        "auto consume(Pair<i64,u64> p)->i64{return 42;}",
-        "complete local name",
     ),
     (
         "direct generic result nominal mismatch",

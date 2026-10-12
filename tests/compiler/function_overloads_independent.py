@@ -127,6 +127,53 @@ def scalar_cases(s):
 
 def value_cases(s):
     s.check(
+        "overload consumes nested template and named method results",
+        p(
+            "Source source=Source();return pick(copy<Pair>(source.make()));",
+            PAIR + "class Source{public:Source(){}auto make()const->Pair{return Pair(42);}};"
+            "template<Value T>auto copy(T value)->T{return value;}"
+            "auto pick(Pair value)->i64{return value.value;}auto pick(Other value)->i64{return 0;}",
+        ),
+    )
+    s.check(
+        "nested copied overload results select actual nominal types",
+        p(
+            "return pick(make(20))+pick(make(22u8));",
+            PAIR + "auto make(i64 n)->Pair{return Pair(n);}auto make(u8 n)->Other{return Other(i64(n));}"
+            "auto pick(Pair x)->i64{return x.value;}auto pick(Other x)->i64{return x.value;}",
+        ),
+    )
+    s.check(
+        "nested copied overload staging never replays effects",
+        p(
+            "Counter c=Counter(0);return take(make(c.add(1)),make(c.add(1)))+c.get();",
+            COUNTER + PAIR + "auto make(i64 n)->Pair{return Pair(n);}auto make(bool n)->Other{return Other(99);}"
+            "auto take(Pair a,Pair b)->i64{return a.value*38+b.value;}auto take(Other a,Other b)->i64{return 0;}",
+        ),
+    )
+    for first, second, trap in (
+        ("9223372036854775807+1", "1/0", Trap.OVERFLOW),
+        ("1/0", "9223372036854775807+1", Trap.ZERO),
+    ):
+        s.check(
+            "copied producer first trap wins " + trap.name,
+            p(
+                "return take(make(" + first + "),Pair(" + second + "));",
+                PAIR + "auto make(i64 n)->Pair{return Pair(n);}auto make(bool n)->Other{return Other(0);}"
+                "auto take(Pair a,Pair b)->i64{return 0;}auto take(Other a,Other b)->i64{return 0;}",
+            ),
+            trap,
+        )
+    s.reject(
+        "copied outer context cannot choose inner result overload",
+        p(
+            "return take(make(42));",
+            PAIR + "auto make(i64 n)->Other{return Other(n);}auto make(u8 n)->Pair{return Pair(i64(n));}"
+            "auto take(Pair x)->i64{return x.value;}",
+        ),
+        error="expected Pair",
+    )
+    s.check(
         "nominal class equal-layout selection",
         p(
             "Pair a=Pair(40);Other b=Other(2);return pick(a)+pick(b);",
@@ -392,8 +439,8 @@ def rejected_cases(s):
             "auto make(u8 x)->Pair{const Pair r=Pair(i64(x));return r;}",
         ),
     )
-    s.reject(
-        "class temporary argument still disallowed",
+    s.check(
+        "class temporary argument selects exact overload",
         p(
             "return pick(Pair(42));",
             PAIR + "auto pick(Pair x)->i64{return x.value;}auto pick(Other x)->i64{return x.value;}",

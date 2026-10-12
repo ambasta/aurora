@@ -492,6 +492,18 @@ def boundary_cases(suite):
             imports="",
         ),
     )
+    for leaves in (4095, 4096):
+        body = "const array<i64,4096> first={" + ",".join(["0"] * 4096) + "};"
+        body += f"const array<i64,{leaves}> second={{" + ",".join(["0"] * leaves) + "};"
+        source = p(
+            body + "return take_word(Word(42));",
+            "class Word{public:i64 value;Word(i64 n):value(n){}};auto take_word(Word value)->i64{return value.value;}",
+            imports="",
+        )
+        if leaves == 4095:
+            suite.check("copied temporary occupies final eight frame bytes", source)
+        else:
+            suite.reject("copied temporary exceeds full frame", source, error="65536")
     # i64 parameter (8) + 4096 i64 elements (32768) + 4095 i64 elements
     # (32760) is exactly 65536 bytes. One additional i64 exceeds the frame cap.
     frame_body = (
@@ -780,6 +792,21 @@ def rejection_cases(suite):
         p("return 42;", COPY + "template<Value T>class Bad{public:Bad(){copy<i64>(42);} };"),
     )
     prefix = "Leaf source=Leaf(42u8);"
+    for label, body, generic in (
+        ("class argument temporary", "Leaf result=copy<Leaf>(Leaf(42u8));return 42;", COPY),
+        ("class nested result argument", "Leaf result=copy<Leaf>(copy<Leaf>(source));return 42;", COPY),
+    ):
+        suite.check("copied template " + label, p(prefix + body, LEAF + EMPTY + generic))
+    suite.check(
+        "copied template constructor method and function nesting",
+        p(
+            "Leaf source=Leaf(42u8);Leaf result=copy<Leaf>(forward(copy<Leaf>(Leaf(source.get()))));"
+            "source.set(0u8);return i64(result.get());",
+            LEAF.replace("};", "auto copied()const->Leaf{return Leaf(value);}};")
+            + COPY
+            + "auto forward(Leaf value)->Leaf{return value.copied();}",
+        ),
+    )
     suite.check(
         "class return constructor copies complete value",
         p(
@@ -819,8 +846,6 @@ def rejection_cases(suite):
             "return expose<Leaf>(source);",
             "template<Value T>auto expose(T x)->i64{return i64(x.value);}",
         ),
-        ("class argument temporary", "Leaf result=copy<Leaf>(Leaf(42u8));return 42;", COPY),
-        ("class nested result argument", "Leaf result=copy<Leaf>(copy<Leaf>(source));return 42;", COPY),
         ("wrong nominal argument", "Empty result=copy<Empty>(source);return 42;", COPY),
         ("wrong nominal result", "Empty result=copy<Leaf>(source);return 42;", COPY),
         ("resource result", "return bad<i64>(42);", "template<Value T>auto bad(T x)->own<i64>{return new i64(x);}"),
