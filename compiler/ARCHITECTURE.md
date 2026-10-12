@@ -79,6 +79,10 @@ marker charged to the class, so this phase fits the existing per-token scratch b
 The current six-parameter ceiling requires a small copied scope value; copied
 field getters return through named locals. These are concrete language-ergonomics
 dependencies, not a permanent semantic protocol.
+The compiler also accepts bounded copied constructor/call arguments through shared
+semantic materialization. The frontend retains its named argument locals until a
+separately qualified source-built predecessor supports that spelling; adding the
+capability does not silently advance the bootstrap dependency.
 
 The host supplies one copied configuration derived from the canonical array limits
 and service-group helper still shared with later semantic/IR checks. Aurora selects

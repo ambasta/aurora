@@ -948,6 +948,12 @@ def rejection_cases(suite):
             reject=True,
         )
     method_init = "Factory factory=Factory(Status::ok,42u64);"
+    suite.check(
+        "class result copied temporary argument",
+        program(
+            method_init + "return consume(factory.snapshot());", BASE, "auto consume(Packet value)->i64{return 42;}"
+        ),
+    )
     for label, body, helpers in (
         ("class result cannot initialize scalar", method_init + "u64 wrong=factory.snapshot();return 42;", ""),
         (
@@ -960,11 +966,6 @@ def rejection_cases(suite):
             "class result requires fresh local",
             method_init + "Packet saved=factory.snapshot();saved=factory.snapshot();return 42;",
             "",
-        ),
-        (
-            "class result cannot be temporary argument",
-            method_init + "return consume(factory.snapshot());",
-            "auto consume(Packet value)->i64{return 42;}",
         ),
         (
             "mutable result method rejects const receiver",

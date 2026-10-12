@@ -169,11 +169,13 @@ make a separate mutable local copy. Returning a complete local or parameter copi
 its scalar state; it neither re-runs its constructor nor transfers a reference.
 A checked trap is fail-stop and does not publish a partially produced result.
 
-The intentionally small expression grammar requires:
+Copied argument and result expressions are bounded:
 
-- A class argument is a complete local name.
+- A copied class argument is a complete local name, a copied constructor call,
+  or an ordinary function/overload/template or method call producing that exact
+  nominal class.
 - A class-returning ordinary function or method call occurs in a typed local
-  initializer or a direct copied-class return.
+  initializer, a direct copied-class return or an admitted copied argument.
 - A copied class return expression is a complete local name, a direct constructor
   call, or an ordinary free-function/overload/template or method call with the
   exact declared result type.
@@ -200,9 +202,15 @@ disjoint from receiver/argument storage. Argument snapshots and synchronous span
 loans finish before the usual return cleanup; the result is then copied through
 the existing private ABI. This is source convenience, not copy elision.
 
-`consume(make());`, temporary class arguments/receivers, direct returned field
-projections and `return Box{.value=42};` remain unsupported. Resource calls, service operations, service helpers and borrowed-object helpers
-still need their typed result locals.
+`consume(make());` and `consume(Box(42));` materialize complete independent
+readonly arguments using the same checked constructor/call paths as named
+locals. Ordinary methods retain their existing receivers, including named owning
+or borrowed objects, the implicit receiver and direct copied-class fields. Their
+copied results carry no ownership or loan authority. Temporary receivers, direct field/index
+arguments, designated construction arguments, direct returned field projections
+and `return Box{.value=42};` remain unsupported. Resource calls, builtin owner and
+service operations, service helpers and borrowed-object helpers still need their
+typed result locals.
 Owning results still require an explicit `move(named_local)` return. This narrow
 convenience does not enable general class-valued expressions. `std.json` uses
 direct copied call returns; `std.json_write` uses direct constructor returns for
@@ -213,6 +221,13 @@ later argument side effects. In `f(object, object.add(1))`, the first argument
 contains the pre-add value. Repeated use of one source object creates distinct
 snapshots. The new result binding enters scope after argument evaluation, so
 `Box box = copy(box);` inside an inner scope can read the outer binding.
+Nested calls evaluate once and finish their own argument lifetimes before the
+next outer argument. Exact overload selection uses the actual staged argument
+types, never the expected result type or speculative candidate evaluation.
+An earlier borrowed argument retains its loan during later argument evaluation;
+materializing a copied value cannot bypass that loan. Copied snapshots end after
+their containing call. No new ownership, heap allocation or lifetime escape is
+introduced, and existing frame limits still apply.
 
 ### Modules, encapsulation and reflection
 
@@ -277,8 +292,8 @@ instance/definition limits, literal capacities and the source frame cap remain
 unchanged. Private signatures and direct-import visibility are checked as before.
 
 Receiver identity resolves first. Arguments then evaluate left-to-right; each
-class argument must be a complete named local and is copied immediately into a
-fresh readonly snapshot at its argument position. Later arguments can mutate the
+copied argument is materialized into a fresh readonly snapshot at its argument
+position under the ordinary-call contract above. Later arguments can mutate the
 source or receiver without changing earlier snapshots. Repeated arguments and a
 receiver supplied as an argument are legal because their snapshots are distinct.
 Only after all argument evaluation is synchronous receiver authority acquired.
@@ -299,10 +314,10 @@ containing a method or constructor is still rejected.
 
 The [direct owned-field extension](VALUES.md) separately permits
 one owned class field as receiver and complete direct field replacement.
-No temporary/deeper-chained receiver or class argument, reference, resource
+No temporary/deeper-chained receiver, projection argument, reference, resource
 method parameter, generic method, overload or new
 template-body grammar is added. Use a named local for an
-intermediate projection/result. This is bounded value transport, not a general
+intermediate projection. This is bounded value transport, not a general
 heap/lifetime or optional/expected implementation.
 
 ### Typed IR contract
@@ -381,7 +396,7 @@ contract.
 ### Complete copied method results
 
 A method may return a complete named class local or a
-[direct copied-class constructor](VALUES.md#source-contract). A caller uses a fresh explicitly typed local or an admitted direct copied return. This includes composed classes with
+[direct copied-class constructor](VALUES.md#source-contract). A caller uses a fresh explicitly typed local, an admitted direct copied return or a copied argument. This includes composed classes with
 private array, enum and empty-class descendants. The result has independent
 storage; changing the original receiver or the extracted copy cannot change the
 other. Const receivers may return copies that the caller binds mutably.
@@ -398,7 +413,7 @@ methods on one copied-class field, and constructors can be returned as described
 above. Direct field-value returns such as `return item;` still require a complete
 named local. The [direct owned-field extension](VALUES.md) also supports complete
 direct field replacement. Deeper chained mutation, source references to subobjects
-and implicit class-valued temporaries remain outside this subset.
+and general class-valued expressions remain outside this subset.
 
 ### Internal calling convention
 

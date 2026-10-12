@@ -209,6 +209,70 @@ class Suite:
 
 
 def native_cases(suite):
+    for label, body, helpers in (
+        ("constructor temporary class argument", "return receiver.inspect(Counter(42));", ""),
+        (
+            "function result temporary class argument",
+            "return receiver.inspect(make());",
+            "auto make()->Counter{Counter x=Counter(42);return x;}",
+        ),
+        ("method result temporary class argument", "return receiver.inspect(receiver.copy(source));", ""),
+    ):
+        suite.check(label, p("Counter source=Counter(42);Counter receiver=Counter(0);" + body, COUNTER, helpers))
+    suite.check(
+        "direct method nested class-result argument",
+        p("return 42;", COUNTER, "auto forward(Counter source)->Counter{return source.copy(source.copy(source));}"),
+    )
+    suite.check(
+        "temporary copied result from direct copied field receiver",
+        p(
+            "Counter source=Counter(42);Holder holder=Holder(source);Counter receiver=Counter(0);"
+            "return receiver.inspect(holder.item.copy(source));",
+            COUNTER + "class Holder{public:Counter item;Holder(Counter source):item(source){}};",
+        ),
+    )
+    suite.check(
+        "array exchange temporary replacement",
+        p(
+            "std::array<u8,3> receiver=std::array<u8,3>();std::array<u8,3> old=receiver.exchange(std::array<u8,3>());"
+            "return 42;",
+            imports="import std.array;",
+        ),
+    )
+    for label, body in (
+        ("inline", "Counter saved=receiver.replace(receiver.copy(Counter(receiver.add(1))));"),
+        (
+            "explicit locals",
+            "const Counter initial=Counter(receiver.add(1));const Counter copied=receiver.copy(initial);"
+            "Counter saved=receiver.replace(copied);",
+        ),
+    ):
+        suite.check(
+            "nested mutable receiver effect and snapshots " + label,
+            p("Counter receiver=Counter(20);" + body + "return saved.get()+receiver.get();", COUNTER),
+        )
+    suite.check(
+        "temporary empty nested constructor and method results",
+        p(
+            "Receiver receiver=Receiver();Empty result=receiver.copy(make(),Empty());return result.answer();",
+            EMPTY + "class Receiver{public:Receiver(){}auto copy(Empty a,Empty b)const->Empty{return b;}};",
+            "auto make()->Empty{return Empty();}",
+        ),
+    )
+    suite.check(
+        "temporary packed array and enum constructor payload",
+        p(
+            "Receiver receiver=Receiver();"
+            "Packet result=receiver.copy(Packet(7u8,std::array<u8,3>(),Status::ready,Empty(),2u8));"
+            "const std::array<u8,3> saved=result.data;const Empty zero=result.zero;"
+            "if(saved.at(2)!=0u8||result.state!=Status::ready||result.head!=7u8||result.tail!=2u8){return 0;}"
+            "return zero.answer();",
+            ENUMS + EMPTY + "class Packet{public:u8 head;std::array<u8,3> data;Status state;Empty zero;u8 tail;"
+            "Packet(u8 h,std::array<u8,3> b,Status s,Empty e,u8 t):head(h),data(b),state(s),zero(e),tail(t){} };"
+            "class Receiver{public:Receiver(){}auto copy(Packet value)const->Packet{return value;}};",
+            imports="import std.array;",
+        ),
+    )
     for receiver_const in (False, True):
         for argument_const in (False, True):
             for result_const in (False, True):
@@ -759,13 +823,12 @@ def boundary_cases(suite):
 def rejection_cases(suite):
     prefix = "Counter source=Counter(42);Counter receiver=Counter(0);"
     for label, body, helpers in (
-        ("constructor temporary class argument", "return receiver.inspect(Counter(42));", ""),
+        ("designated copied argument remains unsupported", "return receiver.inspect(Counter{.value=42});", ""),
         (
-            "function result temporary class argument",
-            "return receiver.inspect(make());",
-            "auto make()->Counter{Counter x=Counter(42);return x;}",
+            "indexed copied argument remains unsupported",
+            "array<Counter,1> values={source};return receiver.inspect(values[0]);",
+            "",
         ),
-        ("method result temporary class argument", "return receiver.inspect(receiver.copy(source));", ""),
         ("scalar literal cannot be copied class argument", "return receiver.inspect(42);", ""),
         ("scalar local cannot be copied class argument", "i64 wrong=42;return receiver.inspect(wrong);", ""),
         ("class argument cannot enter scalar slot", "return receiver.add(source);", ""),
@@ -821,12 +884,6 @@ def rejection_cases(suite):
             COUNTER,
             "auto forward(Counter source)->Counter{return Counter(0).copy(source);}",
             "method receiver",
-        ),
-        (
-            "nested class-result argument remains unsupported",
-            COUNTER,
-            "auto forward(Counter source)->Counter{return source.copy(source.copy(source));}",
-            "complete local name",
         ),
         (
             "readonly field receiver forbids mutable method",
@@ -1098,10 +1155,6 @@ def rejection_cases(suite):
                 "std::array<u8,3> receiver=std::array<u8,3>();std::array<i64,3> source=std::array<i64,3>();std:"
                 ":array<u8,3> old=receiver.exchange(source);"
             ),
-        ),
-        (
-            "temporary replacement",
-            "std::array<u8,3> receiver=std::array<u8,3>();std::array<u8,3> old=receiver.exchange(std::array<u8,3>());",
         ),
         (
             "private storage stays private",

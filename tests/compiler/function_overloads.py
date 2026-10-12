@@ -142,6 +142,14 @@ class Suite:
 
 
 def cases(s):
+    s.check(
+        "class temporary selects copied overload",
+        p(
+            "return pick(Counter(42));",
+            COUNTER + "auto pick(Counter c)->i64{return c.get();}auto pick(i64 c)->i64{return c;}",
+        ),
+        42,
+    )
     definitions = "".join(f"auto pick({t} x)->i64{{return {i + 39};}}" for i, t in enumerate(SCALARS))
     for i, t in enumerate(SCALARS):
         s.check("four exact scalars " + t, p(f"return pick({VALUES[t]});", definitions), i + 39)
@@ -369,12 +377,6 @@ def cases(s):
             COUNTER
             + "auto pick(i64 x)->Counter{const Counter c=Counter(x);return c;}auto pick(u8 x)->i64{return i64(x);}",
             "return pick(42);",
-            "typed local",
-        ),
-        (
-            "class temporary remains unsupported",
-            COUNTER + "auto pick(Counter c)->i64{return c.get();}auto pick(i64 c)->i64{return c;}",
-            "return pick(Counter(42));",
             "typed local",
         ),
         (

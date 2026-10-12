@@ -579,12 +579,6 @@ def rejection_cases(suite):
             ("local", "borrow"),
         ),
         (
-            "no temporary parameter bypass",
-            "return consume(std::array<i64,2>());",
-            "auto consume(std::array<i64,2> a)->i64{return a.at(0);}",
-            ("local", "construction"),
-        ),
-        (
             "no constructor arguments",
             "std::array<i64,2> a=std::array<i64,2>(42);return 42;",
             "",
@@ -617,6 +611,13 @@ def rejection_cases(suite):
     ):
         suite.check(label, program(body, helpers=helpers), error=error)
 
+    suite.check(
+        "temporary wrapper copied parameter",
+        program(
+            "return consume(std::array<i64,2>());", helpers="auto consume(std::array<i64,2> a)->i64{return a.at(0);}"
+        ),
+        expected=0,
+    )
     suite.check(
         "direct array construction return copies initialized storage",
         program(

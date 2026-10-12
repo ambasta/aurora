@@ -153,7 +153,35 @@ READER = (
 )
 
 
+COPIED_HELPERS = (
+    HELPERS.replace(
+        "    auto later(",
+        "    auto snapshot() const -> Value { return Value(i64(payload.at(0))); }"
+        "    auto touch() -> i64 { payload.set(0,32u8); return 32; }"
+        "    auto take(Value value) const -> i64 { return value.get(); }"
+        "    auto later(",
+    )
+    + f"""
+auto snapshot({SPAN} input) -> Value {{ return Value(i64(input.at(0))); }}
+auto combine(Value before, i64 after) -> i64 {{ return before.get() + after; }}
+auto observe({SPAN} input, Value copied) -> i64 {{ return input.size() + copied.get(); }}
+auto inspect(const Reader& reader, Value copied) -> i64 {{ return reader.take(reader.snapshot()) + copied.get(); }}
+auto consume_reader(builtin::ByteRegion region, Reader input) -> i64 {{ return 0; }}
+"""
+)
+
+
 def method_cases(suite):
+    exe = suite.compile(
+        "copied-temporary-owning-receiver-and-nested-span-release",
+        program(
+            READER + "if(reader.take(reader.snapshot())!=10){return 0;}"
+            "if(inspect(reader,Value(32))!=42){return 0;}"
+            "return combine(snapshot(reader.bytes()),reader.touch());",
+            COPIED_HELPERS,
+        ),
+    )
+    suite.run(exe, 3, 0, 0, 42, 1, 1, release_order=[1])
     exe = suite.compile(
         "mixed-method-records-and-self-aliases",
         program(
@@ -259,6 +287,39 @@ def reject(suite, name, source, diagnostic):
 
 
 def rejection_cases(suite):
+    for name, body, helpers, diagnostic in (
+        (
+            "earlier-span-freezes-nested-copied-constructor",
+            "return observe(reader.bytes(),Value(reader.touch()));",
+            "",
+            "cannot mutate or move an owner while a readonly span is live",
+        ),
+        (
+            "earlier-borrow-freezes-nested-copied-constructor",
+            "return inspect(reader,Value(reader.touch()));",
+            "",
+            "cannot mutate or move an owning object while borrowed",
+        ),
+        (
+            "nested-copied-constructor-consumes-receiver",
+            "return reader.take(Value(consume_reader(region,move(reader))));",
+            "",
+            "method arguments consumed the receiver",
+        ),
+        (
+            "borrowed-producer-is-not-ordinary-copied-argument",
+            "return reader.take(borrowed(reader));",
+            "auto borrowed(const Reader& input)->Value{const Value result=Value(42);return result;}",
+            "copied argument requires an ordinary function call",
+        ),
+        (
+            "resource-producer-is-not-ordinary-copied-argument",
+            "return reader.take(resource(region));",
+            "auto resource(builtin::ByteRegion region)->Value{const Value result=Value(42);return result;}",
+            "copied argument requires an ordinary function call",
+        ),
+    ):
+        reject(suite, name, program(READER + body, COPIED_HELPERS + helpers), diagnostic)
     frozen = "cannot mutate or move an owner while a readonly span is live"
     for name, body in {
         "self-append": "buffer.try_append_bytes(buffer.bytes());",

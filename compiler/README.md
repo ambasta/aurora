@@ -193,7 +193,8 @@ Caller token snapshots remain immutable; a standalone type read returns an expli
 ordinal/half cursor. Grammar errors precede semantic admission for multiply-invalid
 files, including cross-declaration cases, as
 specified in [architecture](ARCHITECTURE.md#hosted-aurora-parser).
-The replaced C++ grammar is removed, including module/container headers. Existing
-category, borrowing and visibility policies remain in C++. The
+The replaced C++ grammar is removed, including module/container headers. Unresolved
+declaration admission runs in Aurora; resolved type, lifetime and visibility
+policies remain in C++. The
 historical predecessor remains the source-bootstrap starting point; this does not
 establish whole-compiler self-hosting.
