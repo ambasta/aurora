@@ -530,6 +530,13 @@ class MesonEntrypointTests(unittest.TestCase):
             meson_test.execute(self.root, "full")
         self.assertEqual(self.calls, [])
 
+    def test_compiler_scope_ignores_inherited_uefi_linker(self):
+        # The pinned image exports UEFI_LD; the compiler-only build never sets uefi_ld.
+        self.configured("compiler")
+        os.environ["UEFI_LD"] = "/usr/bin/x86_64-w64-mingw32-ld"
+        meson_test.execute(self.root, "compiler")
+        self.assertEqual([command[1] for command in self.calls], ["compile", "test"])
+
     def test_compatibility_outputs_are_regular_stable_and_atomic_on_failure(self):
         build = self.root / "native"
         build.mkdir()

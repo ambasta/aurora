@@ -191,7 +191,8 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
         expected_options = {**defaults, "cpp_args": shlex.split(env.get("CXXFLAGS", ""))}
         if scope is not None:
             expected_options.pop("kernel_images")
-        if not env.get("UEFI_LD"):
+        # The UEFI linker only matters to image builds; a compiler-only build has none.
+        if not kernel_images or not env.get("UEFI_LD"):
             expected_options.pop("uefi_ld")
         for name, expected in expected_options.items():
             contract.require(
