@@ -172,8 +172,11 @@ select declarations or grant visibility. Setup reserves a diagnostic payload, th
 seals fifteen typed prelude rows before lowering. All semantic decisions remain in
 Aurora. Generated argument layouts govern owner transfer: two alternating records
 hold the live Session and optional parser arena, with paired cleanup before transfer
-and Session cleanup afterward. Owners stay armed through lowering, diagnostic or
-IR projection and independent verification. They are released before Region closes.
+and Session cleanup afterward. Owners stay armed through lowering and diagnostic
+or IR projection. Once the projected values own their data and shared source
+snapshots, temporary projection views are destroyed and Session is released before
+independent verification. The outer cleanup guard still covers earlier failures;
+Region verifies that its owners were released before it closes.
 
 Pool growth is checked and on demand. The arithmetic quota includes existing graph,
 source and instance bounds plus geometric spare capacity; it is deliberately loose,

@@ -51,7 +51,7 @@ struct HostedLoweringOutput {
 
 // Call only for a checked LoweringResult success. Checks transport integrity and
 // materializes privately; deliberately does not call ir::validate. The caller
-// independently validates once before publication, retaining Session ownership
-// through projection, rendering, and verifier exceptions.
+// retains Session through projection and rendering, then destroys these views
+// and releases Session before independently validating the owned result.
 HostedLoweringOutput projectHostedLowering(const HostedLoweringInput &input, const HostedLoweringServices &services);
 } // namespace aurora
