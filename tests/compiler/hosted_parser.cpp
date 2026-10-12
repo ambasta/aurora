@@ -2607,14 +2607,36 @@ std::map<std::string, aurora::Type> compilerDeclarationTypes() {
                              "compiler_lexer::Cursor",
                              "compiler_lexer::Event"})
         result.emplace(name, T(name));
-    for (const auto &name : {"AstNode", "ParseFrame", "ChildEdge", "TypeSyntax", "SyntaxNode", "IndexRow",
-                             "OutputRow", "OperandRow", "SnapshotRow", "LocalRow", "ContinuationRow"})
+    for (const auto &name : {"AstNode",
+                             "ParseFrame",
+                             "ChildEdge",
+                             "TypeSyntax",
+                             "SyntaxNode",
+                             "IndexRow",
+                             "OutputRow",
+                             "OperandRow",
+                             "SnapshotRow",
+                             "LocalRow",
+                             "ContinuationRow"})
         result.emplace(std::string("builtin::OwnedValues<") + name + ">", T::ownedValues(T(name)));
-    for (const auto &name : {"Session", "MetaRow", "SyntaxRow", "ResolvedRow", "ResolvedTypeKind", "NativeMode",
-                             "DeclarationKind", "BindContext", "Arguments"})
+    for (const auto &name : {"Session",
+                             "MetaRow",
+                             "SyntaxRow",
+                             "ResolvedRow",
+                             "ResolvedTypeKind",
+                             "NativeMode",
+                             "DeclarationKind",
+                             "BindContext",
+                             "Arguments"})
         result.emplace("compiler_resolver::" + std::string(name), T("compiler_resolver::" + std::string(name)));
-    for (const auto &name : {"LoweringConfig", "ScalarSeed", "ServiceParameters", "ServiceSeed", "LocalRequest",
-                             "LiteralValue", "IndexedStorage", "FunctionBodyResult"})
+    for (const auto &name : {"LoweringConfig",
+                             "ScalarSeed",
+                             "ServiceParameters",
+                             "ServiceSeed",
+                             "LocalRequest",
+                             "LiteralValue",
+                             "IndexedStorage",
+                             "FunctionBodyResult"})
         result.emplace(name, T(name));
     return result;
 }
@@ -3702,8 +3724,7 @@ const aurora::ir::Function &typedFunction(const aurora::ir::Module &module, cons
     require(found != module.functions.end(), "typed function was omitted: " + name);
     return *found;
 }
-template <class Instruction>
-std::vector<Instruction> typedInstructions(const aurora::ir::Function &function) {
+template <class Instruction> std::vector<Instruction> typedInstructions(const aurora::ir::Function &function) {
     std::vector<Instruction> result;
     for (const auto &instruction : function.code)
         if (const auto *value = std::get_if<Instruction>(&instruction))
@@ -3818,8 +3839,7 @@ void resolvedModules() {
             "__au_m_m1_3dep_n2_3lib6Buffer_d8own_size_t2_u8_v" + std::to_string(capacity)};
         for (std::size_t method = 0; method < names.size(); ++method) {
             const auto &function = typedFunction(module, names[method]);
-            require(function.moduleScope == 1 && function.receiver &&
-                        function.receiver->className == buffers[index] &&
+            require(function.moduleScope == 1 && function.receiver && function.receiver->className == buffers[index] &&
                         function.receiver->constructor == (method == 0) &&
                         function.receiver->mutableValue == (method == 0) && function.receiver->publicAccess,
                     "method/constructor identity, receiver mode or defining module differs");
@@ -3852,8 +3872,8 @@ void resolvedModules() {
     require(enumValues.size() == 1 && enumValues[0].type.isEnum() && enumValues[0].type.className == state &&
                 enumValues[0].caseIndex == 1,
             "typed enum expression lost its nominal identity or declaration ordinal");
-    require(nominalViews(module) == std::map<int, std::set<int>>{{0, {100, 101, 102, 103, 104, 105}},
-                                                               {1, {100, 101, 102, 104}}},
+    require(nominalViews(module) ==
+                std::map<int, std::set<int>>{{0, {100, 101, 102, 103, 104, 105}}, {1, {100, 101, 102, 104}}},
             "template argument authority leaked into runtime reflection views");
     require(resolved.lintDiagnostics.size() == 1 &&
                 resolved.lintDiagnostics[0].code == aurora::DiagnosticCode::UnreadLocal &&
@@ -3910,8 +3930,9 @@ void resolvedVisibility() {
         aurora::HostedResolution resolution;
         const auto root = resolution.add(rootSource);
         const auto functions = resolution.add(std::make_shared<const aurora::SourceText>(
-            "private-functions.au", "export module functions;export auto choose(i64 value)->i64{return value;}"
-                                    "auto choose(bool value)->i64{return 2;}"));
+            "private-functions.au",
+            "export module functions;export auto choose(i64 value)->i64{return value;}"
+            "auto choose(bool value)->i64{return 2;}"));
         static_cast<void>(resolution.resolve({functions.id, root.id}, root.id));
     } catch (const aurora::Error &error) {
         rejected = error.diagnostic;
@@ -3936,8 +3957,8 @@ void resolvedVisibility() {
     }();
     require(nominalViews(empty.module.get()) == std::map<int, std::set<int>>{{0, {}}, {1, {}}} &&
                 empty.abiDeclarations.records.empty() && empty.abiDeclarations.enums.empty() &&
-                empty.abiDeclarations.functions.empty() && empty.lintDiagnostics.size() == 1 &&
-                !retained.expired() && empty.lintDiagnostics[0].span.source == retained.lock() &&
+                empty.abiDeclarations.functions.empty() && empty.lintDiagnostics.size() == 1 && !retained.expired() &&
+                empty.lintDiagnostics[0].span.source == retained.lock() &&
                 spanText(empty.lintDiagnostics[0].span) == "unused" &&
                 empty.lintDiagnostics[0].span.source->path == "empty-view-root.au",
             "typed cleanup omitted empty views, ignored optional ABI collection or invalidated lint sources");
@@ -3952,9 +3973,10 @@ void resolvedVisibility() {
             "template-error.au", "export module dep;export template<Value T> auto bad()->i64{return true;}");
         definition = source;
         const auto imported = resolution.add(source);
-        const auto root = resolution.add(std::make_shared<const aurora::SourceText>(
-            "template-request.au", "module caller;import dep;class Hidden{public:i64 value;};"
-                                   "auto answer()->i64{return bad<Hidden>();}"));
+        const auto root = resolution.add(
+            std::make_shared<const aurora::SourceText>("template-request.au",
+                                                       "module caller;import dep;class Hidden{public:i64 value;};"
+                                                       "auto answer()->i64{return bad<Hidden>();}"));
         static_cast<void>(resolution.resolve({imported.id, root.id}, root.id));
     } catch (const aurora::Error &error) {
         rejected = error.diagnostic;
@@ -4136,30 +4158,29 @@ void rawResolutionOwnership() {
     // Literal physical expectations are independent of generated header checks.
     // Session remains opaque; copied rows expose only their named typed fields.
     static_assert(sizeof(Wire::Session) == 520 && alignof(Wire::Session) == 8);
-    static_assert(sizeof(Output) == 64 && alignof(Output) == 8 &&
-                  offsetof(Output, recordKind) == 0 && offsetof(Output, instructionForm) == 8 &&
-                  offsetof(Output, unaryOperation) == 16 && offsetof(Output, binaryOperation) == 24 &&
-                  offsetof(Output, comparisonOperation) == 32 && offsetof(Output, queryOperation) == 40 &&
-                  offsetof(Output, operandBegin) == 48 && offsetof(Output, operandCount) == 56);
-    static_assert(sizeof(Operand) == 40 && alignof(Operand) == 8 &&
-                  offsetof(Operand, operandRole) == 0 && offsetof(Operand, signedValue) == 8 &&
-                  offsetof(Operand, unsignedValue) == 16 && offsetof(Operand, sliceBegin) == 24 &&
-                  offsetof(Operand, sliceCount) == 32);
-    static_assert(sizeof(Snapshot) == 48 && alignof(Snapshot) == 8 &&
-                  offsetof(Snapshot, sharedCount) == 0 && offsetof(Snapshot, objectSharedCount) == 8 &&
-                  offsetof(Snapshot, liveValue) == 16 && offsetof(Snapshot, exclusiveValue) == 24 &&
-                  offsetof(Snapshot, resourceActiveValue) == 32 && offsetof(Snapshot, objectExclusiveValue) == 40);
-    static_assert(sizeof(Local) == 160 && alignof(Local) == 8 &&
-                  offsetof(Local, nameSourceId) == 0 && offsetof(Local, concreteTypeId) == 8 &&
-                  offsetof(Local, storageOffset) == 16 && offsetof(Local, scopeId) == 24 &&
-                  offsetof(Local, previousBinding) == 32 && offsetof(Local, mutableValue) == 40 &&
-                  offsetof(Local, borrowedObject) == 48 && offsetof(Local, lintEligible) == 56 &&
-                  offsetof(Local, readValue) == 64 && offsetof(Local, ownerId) == 72 &&
-                  offsetof(Local, spanOriginKind) == 80 && offsetof(Local, originLocalId) == 88 &&
-                  offsetof(Local, spanFieldIndex) == 96 && offsetof(Local, temporaryParent) == 104 &&
-                  offsetof(Local, sharedCount) == 112 && offsetof(Local, objectSharedCount) == 120 &&
-                  offsetof(Local, liveValue) == 128 && offsetof(Local, exclusiveValue) == 136 &&
-                  offsetof(Local, resourceActiveValue) == 144 && offsetof(Local, objectExclusiveValue) == 152);
+    static_assert(sizeof(Output) == 64 && alignof(Output) == 8 && offsetof(Output, recordKind) == 0 &&
+                  offsetof(Output, instructionForm) == 8 && offsetof(Output, unaryOperation) == 16 &&
+                  offsetof(Output, binaryOperation) == 24 && offsetof(Output, comparisonOperation) == 32 &&
+                  offsetof(Output, queryOperation) == 40 && offsetof(Output, operandBegin) == 48 &&
+                  offsetof(Output, operandCount) == 56);
+    static_assert(sizeof(Operand) == 40 && alignof(Operand) == 8 && offsetof(Operand, operandRole) == 0 &&
+                  offsetof(Operand, signedValue) == 8 && offsetof(Operand, unsignedValue) == 16 &&
+                  offsetof(Operand, sliceBegin) == 24 && offsetof(Operand, sliceCount) == 32);
+    static_assert(sizeof(Snapshot) == 48 && alignof(Snapshot) == 8 && offsetof(Snapshot, sharedCount) == 0 &&
+                  offsetof(Snapshot, objectSharedCount) == 8 && offsetof(Snapshot, liveValue) == 16 &&
+                  offsetof(Snapshot, exclusiveValue) == 24 && offsetof(Snapshot, resourceActiveValue) == 32 &&
+                  offsetof(Snapshot, objectExclusiveValue) == 40);
+    static_assert(sizeof(Local) == 160 && alignof(Local) == 8 && offsetof(Local, nameSourceId) == 0 &&
+                  offsetof(Local, concreteTypeId) == 8 && offsetof(Local, storageOffset) == 16 &&
+                  offsetof(Local, scopeId) == 24 && offsetof(Local, previousBinding) == 32 &&
+                  offsetof(Local, mutableValue) == 40 && offsetof(Local, borrowedObject) == 48 &&
+                  offsetof(Local, lintEligible) == 56 && offsetof(Local, readValue) == 64 &&
+                  offsetof(Local, ownerId) == 72 && offsetof(Local, spanOriginKind) == 80 &&
+                  offsetof(Local, originLocalId) == 88 && offsetof(Local, spanFieldIndex) == 96 &&
+                  offsetof(Local, temporaryParent) == 104 && offsetof(Local, sharedCount) == 112 &&
+                  offsetof(Local, objectSharedCount) == 120 && offsetof(Local, liveValue) == 128 &&
+                  offsetof(Local, exclusiveValue) == 136 && offsetof(Local, resourceActiveValue) == 144 &&
+                  offsetof(Local, objectExclusiveValue) == 152);
     static_assert(sizeof(Lane) == 56 && alignof(Lane) == 8 && offsetof(Lane, argumentIndex) == 0 &&
                   offsetof(Lane, argumentKind) == 8 && offsetof(Lane, concreteTypeId) == 16 &&
                   offsetof(Lane, localId) == 24 && offsetof(Lane, loanId) == 32 &&
@@ -4168,19 +4189,20 @@ void rawResolutionOwnership() {
                   offsetof(Continuation, continuationKind) == 0 && offsetof(Continuation, continuationPhase) == 8 &&
                   offsetof(Continuation, syntaxNode) == 16 && offsetof(Continuation, childCursor) == 24 &&
                   offsetof(Continuation, scopeHead) == 32 && offsetof(Continuation, localPrefixLength) == 40 &&
-                  offsetof(Continuation, incomingSnapshotBase) == 48 && offsetof(Continuation, thenSnapshotBase) == 56 &&
-                  offsetof(Continuation, firstLabel) == 64 && offsetof(Continuation, secondLabel) == 72 &&
-                  offsetof(Continuation, childTypeId) == 80 && offsetof(Continuation, childLocalId) == 88 &&
-                  offsetof(Continuation, callTarget) == 96 && offsetof(Continuation, capabilityRootLocal) == 104 &&
+                  offsetof(Continuation, incomingSnapshotBase) == 48 &&
+                  offsetof(Continuation, thenSnapshotBase) == 56 && offsetof(Continuation, firstLabel) == 64 &&
+                  offsetof(Continuation, secondLabel) == 72 && offsetof(Continuation, childTypeId) == 80 &&
+                  offsetof(Continuation, childLocalId) == 88 && offsetof(Continuation, callTarget) == 96 &&
+                  offsetof(Continuation, capabilityRootLocal) == 104 &&
                   offsetof(Continuation, receiverFieldIndex) == 112 && offsetof(Continuation, nextArgument) == 120 &&
                   offsetof(Continuation, argumentCount) == 128 && offsetof(Continuation, outputMark) == 136 &&
                   offsetof(Continuation, operandMark) == 144 && offsetof(Continuation, cleanupCursor) == 152 &&
                   offsetof(Continuation, firstArgument) == 160 && offsetof(Continuation, secondArgument) == 216 &&
                   offsetof(Continuation, thirdArgument) == 272 && offsetof(Continuation, fourthArgument) == 328 &&
                   offsetof(Continuation, fifthArgument) == 384 && offsetof(Continuation, sixthArgument) == 440);
-    static_assert(sizeof(Result) == 32 && alignof(Result) == 8 &&
-                  offsetof(Result, result_status) == 0 && offsetof(Result, result_reason) == 8 &&
-                  offsetof(Result, diagnostic_row) == 16 && offsetof(Result, root_row) == 24);
+    static_assert(sizeof(Result) == 32 && alignof(Result) == 8 && offsetof(Result, result_status) == 0 &&
+                  offsetof(Result, result_reason) == 8 && offsetof(Result, diagnostic_row) == 16 &&
+                  offsetof(Result, root_row) == 24);
     static_assert(std::is_same_v<decltype(Output::instructionForm), Lowering::InstructionForm> &&
                   std::is_same_v<decltype(Operand::operandRole), Lowering::OperandRole> &&
                   std::is_same_v<decltype(Operand::unsignedValue), std::uint64_t> &&
@@ -4199,9 +4221,17 @@ void rawResolutionOwnership() {
         initialBytes = allocations.initialBytes;
         const auto emptyOwner = initialBytes[0];
         require(allocations.attempted == 11 && allocations.successful == 11 &&
-                    initialBytes == std::array<std::size_t, 11>{emptyOwner, emptyOwner,
-                        emptyOwner + 64 * sizeof(Wire::MetaRow), emptyOwner, emptyOwner, emptyOwner,
-                        emptyOwner, emptyOwner, emptyOwner, emptyOwner, emptyOwner} &&
+                    initialBytes == std::array<std::size_t, 11>{emptyOwner,
+                                                                emptyOwner,
+                                                                emptyOwner + 64 * sizeof(Wire::MetaRow),
+                                                                emptyOwner,
+                                                                emptyOwner,
+                                                                emptyOwner,
+                                                                emptyOwner,
+                                                                emptyOwner,
+                                                                emptyOwner,
+                                                                emptyOwner,
+                                                                emptyOwner} &&
                     resolution.status().storage == Wire::StorageStatus::none,
                 "Session creation did not retain six original owners followed by five empty typed pools");
         require(resolution.ingest(source) && resolution.transferred && allocations.observed > 0 &&
@@ -4299,28 +4329,39 @@ void loweringSchemaSources(const std::vector<aurora::Token> &tokens,
                            std::size_t module) {
     static const std::array<std::vector<ContainerAst>, 3> classes{{
         {},
-        {{"LoweringResult", true, "-result_status -result_reason -diagnostic_row -root_row",
+        {{"LoweringResult",
+          true,
+          "-result_status -result_reason -diagnostic_row -root_row",
           "+LoweringResult +status +reason +diagnostic_payload_row +module_root"}},
-        {{"OutputRow", true,
+        {{"OutputRow",
+          true,
           "-recordKind -instructionForm -unaryOperation -binaryOperation -comparisonOperation -queryOperation "
           "-operandBegin -operandCount",
           "+OutputRow +kind +form +unary_operation +binary_operation +comparison_operation +query +operand_begin "
           "+operand_count +set_unary +set_binary +set_comparison +set_query +discard_instruction"},
-         {"OperandRow", true, "-operandRole -signedValue -unsignedValue -sliceBegin -sliceCount",
+         {"OperandRow",
+          true,
+          "-operandRole -signedValue -unsignedValue -sliceBegin -sliceCount",
           "+OperandRow +role +signed_value +unsigned_value +begin +count"},
-         {"SnapshotRow", true,
+         {"SnapshotRow",
+          true,
           "-sharedCount -objectSharedCount -liveValue -exclusiveValue -resourceActiveValue -objectExclusiveValue",
           "+SnapshotRow +shared_count +object_shared_count +live +exclusive +resource_active +object_exclusive"},
-         {"LocalRow", true,
+         {"LocalRow",
+          true,
           "-nameSourceId -concreteTypeId -storageOffset -scopeId -previousBinding -mutableValue -borrowedObject "
           "-lintEligible -readValue -ownerId -spanOriginKind -originLocalId -spanFieldIndex -temporaryParent "
           "-sharedCount -objectSharedCount -liveValue -exclusiveValue -resourceActiveValue -objectExclusiveValue",
           "+LocalRow +name_source_id +concrete_type_id +offset +scope_id +previous_binding +mutable_value "
           "+borrowed_object +lint_eligible +was_read +owner_id +span_origin_kind +origin_local_id +span_field_index "
           "+temporary_parent +set_binding_flags +set_origin +mark_read +state +set_state"},
-         {"ArgumentLane", true, "-argumentIndex -argumentKind -concreteTypeId -localId -loanId -serviceKindId -cleanupKind",
-          "+ArgumentLane +index +kind +concrete_type_id +local_id +loan_id +service_kind_id +cleanup_kind +set_cleanup"},
-         {"ContinuationRow", true,
+         {"ArgumentLane",
+          true,
+          "-argumentIndex -argumentKind -concreteTypeId -localId -loanId -serviceKindId -cleanupKind",
+          "+ArgumentLane +index +kind +concrete_type_id +local_id +loan_id +service_kind_id +cleanup_kind "
+          "+set_cleanup"},
+         {"ContinuationRow",
+          true,
           "-continuationKind -continuationPhase -syntaxNode -childCursor -scopeHead -localPrefixLength "
           "-incomingSnapshotBase -thenSnapshotBase -firstLabel -secondLabel -childTypeId -childLocalId -callTarget "
           "-capabilityRootLocal -receiverFieldIndex -nextArgument -argumentCount -outputMark -operandMark "
@@ -4332,9 +4373,18 @@ void loweringSchemaSources(const std::vector<aurora::Token> &tokens,
           "+set_call +set_next_argument +set_marks +set_cleanup_cursor +argument +set_argument"}},
     }};
     static const std::array<std::vector<std::pair<const char *, std::size_t>>, 3> enums{{
-        {{"InstructionForm", 84}, {"Unary", 3}, {"Binary", 10}, {"Comparison", 6}, {"Query", 2},
-         {"RecordKind", 27}, {"OperandRole", 96}, {"SpanOriginKind", 5}, {"ContinuationKind", 7},
-         {"ContinuationPhase", 14}, {"ArgumentKind", 7}, {"CleanupKind", 6}},
+        {{"InstructionForm", 84},
+         {"Unary", 3},
+         {"Binary", 10},
+         {"Comparison", 6},
+         {"Query", 2},
+         {"RecordKind", 27},
+         {"OperandRole", 96},
+         {"SpanOriginKind", 5},
+         {"ContinuationKind", 7},
+         {"ContinuationPhase", 14},
+         {"ArgumentKind", 7},
+         {"CleanupKind", 6}},
         {{"LoweringStatus", 4}, {"LoweringError", 242}},
         {},
     }};
@@ -4367,19 +4417,31 @@ void loweringImplementationSources(const std::vector<aurora::Token> &tokens,
                                    std::size_t module) {
     static const std::array<std::vector<ContainerAst>, 6> classes{{
         {},
-        {{"LoweringConfig", true,
-          "-byteLeaves -nonByteLeaves -totalLeaves -copiedBytes -byteArrayLength -scalarArrayLength -analysisMode -serviceGroups",
-          "+LoweringConfig +byte_leaves +non_byte_leaves +total_leaves +copied_bytes +byte_array_length +scalar_array_length +mode +service_groups +set_policy"},
+        {{"LoweringConfig",
+          true,
+          "-byteLeaves -nonByteLeaves -totalLeaves -copiedBytes -byteArrayLength -scalarArrayLength -analysisMode "
+          "-serviceGroups",
+          "+LoweringConfig +byte_leaves +non_byte_leaves +total_leaves +copied_bytes +byte_array_length "
+          "+scalar_array_length +mode +service_groups +set_policy"},
          {"ScalarSeed", true, "-concreteKind -publicId -byteSize", "+ScalarSeed +concrete_kind +public_id +byte_size"},
-         {"ServiceParameters", true, "-parameterCount -firstType -secondType -thirdType -fourthType -fifthType",
+         {"ServiceParameters",
+          true,
+          "-parameterCount -firstType -secondType -thirdType -fourthType -fifthType",
           "+ServiceParameters +count +type_at"},
-         {"ServiceSeed", true, "-receiverKind -kindId -operationId -spellingSource -resultType -parameterTypes",
+         {"ServiceSeed",
+          true,
+          "-receiverKind -kindId -operationId -spellingSource -resultType -parameterTypes",
           "+ServiceSeed +receiver_kind +kind_id +operation_id +spelling_source +result_type +parameters"}},
         {},
-        {{"LocalRequest", true,
-          "-nameRef -typeId -sourceRef -mutableValue -bindValue -beginValue -ownerId -originKind -originId -fieldId -temporaryParent -borrowedValue -lintValue",
-          "+LocalRequest +name +type +source +mutable_value +bind +begin +owner +origin +origin_id +field +temporary +borrowed +lint +set_origin +set_flags"},
-         {"LiteralValue", true, "-typeId -signedValue -unsignedValue -validValue",
+        {{"LocalRequest",
+          true,
+          "-nameRef -typeId -sourceRef -mutableValue -bindValue -beginValue -ownerId -originKind -originId -fieldId "
+          "-temporaryParent -borrowedValue -lintValue",
+          "+LocalRequest +name +type +source +mutable_value +bind +begin +owner +origin +origin_id +field +temporary "
+          "+borrowed +lint +set_origin +set_flags"},
+         {"LiteralValue",
+          true,
+          "-typeId -signedValue -unsignedValue -validValue",
           "+LiteralValue +type +signed_value +unsigned_value +valid"}},
         {{"IndexedStorage", true, "-rootId -fieldId -typeId", "+IndexedStorage +root +field +type"},
          {"FunctionBodyResult", true, "-functionRow -nextLabel", "+FunctionBodyResult +function_row +next_label"}},
@@ -4387,15 +4449,17 @@ void loweringImplementationSources(const std::vector<aurora::Token> &tokens,
     }};
     static const std::array<const char *, 6> entries{
         "fail_pair", "begin_lowering", "prepare_types", "add_local", "lower_function_body", "run_lowering"};
-    require(program.classes.size() == classes.at(module).size() && program.enums.empty() &&
-                program.templates.empty() && program.functionTemplates.empty() &&
-                program.namespaces == std::set<std::string>{"compiler_lowering"},
+    require(program.classes.size() == classes.at(module).size() && program.enums.empty() && program.templates.empty() &&
+                program.functionTemplates.empty() && program.namespaces == std::set<std::string>{"compiler_lowering"},
             "typed implementation class/enum/template/namespace inventory differs");
     for (std::size_t index = 0; index < classes[module].size(); ++index)
         sameContainer(program.classes[index], tokens, "compiler_lowering", classes[module][index]);
-    require(std::count_if(program.functions.begin(), program.functions.end(), [&](const auto &function) {
-                return function.name == entries[module] && function.scope == "compiler_lowering" && function.exported;
-            }) == 1,
+    require(std::count_if(program.functions.begin(),
+                          program.functions.end(),
+                          [&](const auto &function) {
+                              return function.name == entries[module] && function.scope == "compiler_lowering" &&
+                                     function.exported;
+                          }) == 1,
             "typed implementation lost its source entry");
     // Lexical function/constructor/field inventories cover every helper without
     // storing another per-helper semantic or native-name oracle here.
@@ -4406,21 +4470,48 @@ void loweringImplementationSources(const std::vector<aurora::Token> &tokens,
 void resolvedCompilerSources(char **paths) {
     context = "all sixteen real compiler modules through production typed lowering";
     const std::array<std::size_t, 16> arguments{0, 1, 2, 15, 19, 20, 21, 16, 17, 22, 23, 24, 25, 26, 27, 18};
-    const std::array<std::string, 16> modules{
-        "lexer", "syntax_arena", "parser", "resolution_kinds", "lowering_kinds", "lowering_errors",
-        "lowering_storage", "resolution_arena", "resolver", "lowering_common", "lowering_configuration",
-        "lowering_types", "lowering_values", "lowering_body", "lowering", "frontend"};
+    const std::array<std::string, 16> modules{"lexer",
+                                              "syntax_arena",
+                                              "parser",
+                                              "resolution_kinds",
+                                              "lowering_kinds",
+                                              "lowering_errors",
+                                              "lowering_storage",
+                                              "resolution_arena",
+                                              "resolver",
+                                              "lowering_common",
+                                              "lowering_configuration",
+                                              "lowering_types",
+                                              "lowering_values",
+                                              "lowering_body",
+                                              "lowering",
+                                              "frontend"};
     const std::array<std::vector<std::string>, 16> classNames{{
         {"Cursor", "Lexeme"},
         {"ParseFrame", "AstNode", "ChildEdge", "TypeSyntax", "SyntaxNode", "AstArena"},
-        {"AdmissionConfig", "AdmissionResult", "TypeContext", "ParseResult", "ParseToken", "TypeResult",
-         "HeaderResult", "AdmissionProgress", "AdmissionType", "AdmissionScope"},
-        {}, {}, {"LoweringResult"},
+        {"AdmissionConfig",
+         "AdmissionResult",
+         "TypeContext",
+         "ParseResult",
+         "ParseToken",
+         "TypeResult",
+         "HeaderResult",
+         "AdmissionProgress",
+         "AdmissionType",
+         "AdmissionScope"},
+        {},
+        {},
+        {"LoweringResult"},
         {"OutputRow", "OperandRow", "SnapshotRow", "LocalRow", "ArgumentLane", "ContinuationRow"},
         {"SyntaxRow", "MetaRow", "IndexRow", "ResolvedRow", "WorkRow", "SessionStatus", "Session"},
-        {"BindContext", "Arguments"}, {},
-        {"LoweringConfig", "ScalarSeed", "ServiceParameters", "ServiceSeed"}, {},
-        {"LocalRequest", "LiteralValue"}, {"IndexedStorage", "FunctionBodyResult"}, {}, {},
+        {"BindContext", "Arguments"},
+        {},
+        {"LoweringConfig", "ScalarSeed", "ServiceParameters", "ServiceSeed"},
+        {},
+        {"LocalRequest", "LiteralValue"},
+        {"IndexedStorage", "FunctionBodyResult"},
+        {},
+        {},
     }};
     // Frontend's direct imports give this DFS postorder, independent of file argv.
     std::array<aurora::Program, 16> syntax;
@@ -4462,10 +4553,11 @@ void resolvedCompilerSources(char **paths) {
         const auto found = std::find_if(declarations.begin(), declarations.end(), [&](const auto &entry) {
             return entry.second.sourceName == name;
         });
-        require(found != declarations.end() &&
-                    std::count_if(declarations.begin(), declarations.end(), [&](const auto &entry) {
-                        return entry.second.sourceName == name;
-                    }) == 1,
+        require(found != declarations.end() && std::count_if(declarations.begin(),
+                                                             declarations.end(),
+                                                             [&](const auto &entry) {
+                                                                 return entry.second.sourceName == name;
+                                                             }) == 1,
                 "compiler source ABI declaration was omitted or duplicated: " + name);
         return found->first;
     };
@@ -4476,13 +4568,27 @@ void resolvedCompilerSources(char **paths) {
     std::set<std::string> identities;
     for (std::size_t index = 0; index < syntax.size(); ++index) {
         const auto scope = index + 1 == syntax.size() ? 0 : static_cast<int>(index + 1);
-        const auto function = [&](const aurora::Function &source, const std::string &sourceName,
+        const auto function = [&](const aurora::Function &source,
+                                  const std::string &sourceName,
                                   const std::string &receiver) {
-            const auto &name = native(abi.functions, sourceName);
-            const auto &actual = typedFunction(module, name);
-            require(identities.insert(name).second && actual.moduleScope == scope &&
+            // Legacy ABI method source names contain the namespace and method,
+            // not the owning class. Typed receiver identity disambiguates them.
+            const auto matches = [&](const auto &candidate) {
+                const auto declaration = abi.functions.find(candidate.name);
+                return declaration != abi.functions.end() && declaration->second.sourceName == sourceName &&
+                       candidate.moduleScope == scope &&
+                       (receiver.empty() ? !candidate.receiver || candidate.borrowedParameter
+                                         : candidate.receiver && candidate.receiver->className == receiver);
+            };
+            const auto found = std::find_if(module.functions.begin(), module.functions.end(), matches);
+            require(found != module.functions.end() &&
+                        std::count_if(module.functions.begin(), module.functions.end(), matches) == 1,
+                    "compiler typed callable/source identity was omitted or duplicated: " + sourceName);
+            const auto &actual = *found;
+            require(identities.insert(actual.name).second && actual.moduleScope == scope &&
                         actual.borrowedParameter == (!source.params.empty() && source.params.front().borrowed &&
                                                      !source.params.front().type.isService()) &&
+                        actual.parameters.size() == source.params.size() - std::size_t(actual.borrowedParameter) &&
                         bool(actual.receiver) == (!receiver.empty() || actual.borrowedParameter),
                     "compiler typed callable identity, module or receiver presence differs");
             if (!receiver.empty())
@@ -4507,7 +4613,7 @@ void resolvedCompilerSources(char **paths) {
             require(abi.records.at(name).members == names, "compiler ABI field source order differs");
             fields += names.size();
             for (const auto &method : source.methods) {
-                function(method, sourceName + "::" + method.token.text, name);
+                function(method, qualified(method.scope, method.token.text), name);
                 ++methods;
             }
             ++classes;
@@ -6508,10 +6614,12 @@ int main(int argc, char **argv) {
                "three compiler preambles, two imports, twelve enums/233 cases, 513-import and 256-case failure sweeps; "
                "18 compiler classes/six namespace blocks, std::array/pair/make_pair template inventories, "
                "whole-module container/depth/header contracts and post-grammar admission scratch-failure controls; "
-               "typed native identities, dependency/instance order, exact nominal reflection views, selected overloads, "
+               "typed native identities, dependency/instance order, exact nominal reflection views, selected "
+               "overloads, "
                "independent concrete layouts and retained lint/template-error source spans; "
                "sixteen-module compiler graph, fifteen typed classes/14 enums/513 cases, all implementation "
-               "declaration boundaries, generated typed-row extents and eleven-owner Session failure/release prefixes\n";
+               "declaration boundaries, generated typed-row extents and eleven-owner Session failure/release "
+               "prefixes\n";
     } catch (const std::exception &error) {
         std::cerr << "FAIL " << error.what() << '\n';
         return 1;

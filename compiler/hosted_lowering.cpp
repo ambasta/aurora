@@ -58,8 +58,7 @@ class Projection {
             invalidLowering();
         materializedBytes += count * width;
     }
-    static std::pair<std::size_t, std::size_t> range(std::int64_t begin, std::int64_t count,
-                                                   std::size_t published) {
+    static std::pair<std::size_t, std::size_t> range(std::int64_t begin, std::int64_t count, std::size_t published) {
         const auto first = sizeValue(begin), length = sizeValue(count);
         if (first > published || length > published - first)
             invalidLowering();
@@ -93,9 +92,11 @@ class Projection {
     class Operands {
         std::span<const wire::OperandRow> values;
         std::size_t next = 0;
+
     public:
         Operands(Projection &owner, const wire::OutputRow &row)
-            : values(owner.takeRange(row.operandBegin, row.operandCount)) {}
+            : values(owner.takeRange(row.operandBegin, row.operandCount)) {
+        }
         const wire::OperandRow &take() {
             if (next == values.size())
                 invalidLowering();
@@ -107,9 +108,15 @@ class Projection {
                 invalidLowering();
             return value;
         }
-        std::int64_t scalar(OperandRole role) { return take(role).signedValue; }
-        int integer(OperandRole role) { return intValue(scalar(role)); }
-        bool boolean(OperandRole role) { return boolValue(scalar(role)); }
+        std::int64_t scalar(OperandRole role) {
+            return take(role).signedValue;
+        }
+        int integer(OperandRole role) {
+            return intValue(scalar(role));
+        }
+        bool boolean(OperandRole role) {
+            return boolValue(scalar(role));
+        }
         void finish() const {
             if (next != values.size())
                 invalidLowering();
@@ -184,8 +191,8 @@ class Projection {
             if (items[at].operandRole != OperandRole::ServiceLoanId ||
                 items[at + 1].operandRole != OperandRole::ServiceKindId)
                 invalidLowering();
-            result.push_back({intValue(items[at].signedValue),
-                              services.serviceKind(identity(items[at + 1].signedValue))});
+            result.push_back(
+                {intValue(items[at].signedValue), services.serviceKind(identity(items[at + 1].signedValue))});
         }
         return result;
     }
@@ -250,21 +257,26 @@ class Projection {
         // the exact ordered transport fields; defaults never fill omitted data.
         switch (header.instructionForm) {
         case InstructionForm::BindServiceParameter:
-            return ir::BindServiceParameter{values.integer(OperandRole::Index), values.integer(OperandRole::Offset),
-                                            serviceKind(values)};
+            return ir::BindServiceParameter{
+                values.integer(OperandRole::Index), values.integer(OperandRole::Offset), serviceKind(values)};
         case InstructionForm::AcquireServiceLoan:
-            return ir::AcquireServiceLoan{values.integer(OperandRole::LoanId), values.integer(OperandRole::Offset),
-                                          serviceKind(values)};
+            return ir::AcquireServiceLoan{
+                values.integer(OperandRole::LoanId), values.integer(OperandRole::Offset), serviceKind(values)};
         case InstructionForm::ReleaseServiceLoan:
             return ir::ReleaseServiceLoan{values.integer(OperandRole::LoanId), serviceKind(values)};
         case InstructionForm::ServiceOperation:
-            return ir::ServiceOperation{values.integer(OperandRole::Offset),
-                                         services.serviceOperation(identity(values.scalar(OperandRole::ServiceOperationId))),
-                                         values.integer(OperandRole::ResultOffset), serviceKind(values)};
+            return ir::ServiceOperation{
+                values.integer(OperandRole::Offset),
+                services.serviceOperation(identity(values.scalar(OperandRole::ServiceOperationId))),
+                values.integer(OperandRole::ResultOffset),
+                serviceKind(values)};
         case InstructionForm::ServiceCall:
-            return ir::ServiceCall{functionName(values, OperandRole::CalleeSymbolId), values.integer(OperandRole::LoanId),
-                                   values.integer(OperandRole::ResultOffset), offsets(values, OperandRole::SpanArguments),
-                                   serviceKind(values), additionalServices(values)};
+            return ir::ServiceCall{functionName(values, OperandRole::CalleeSymbolId),
+                                   values.integer(OperandRole::LoanId),
+                                   values.integer(OperandRole::ResultOffset),
+                                   offsets(values, OperandRole::SpanArguments),
+                                   serviceKind(values),
+                                   additionalServices(values)};
         case InstructionForm::Constant: {
             const auto &payload = values.take();
             auto resultType = type(values, OperandRole::TypeId);
@@ -299,21 +311,26 @@ class Projection {
         case InstructionForm::Compare:
             return ir::Compare{comparison(header.comparisonOperation), type(values, OperandRole::OperandTypeId)};
         case InstructionForm::BoundsGuard:
-            return ir::BoundsGuard{values.integer(OperandRole::Offset), values.integer(OperandRole::Length),
-                                    type(values, OperandRole::ElementTypeId)};
+            return ir::BoundsGuard{values.integer(OperandRole::Offset),
+                                   values.integer(OperandRole::Length),
+                                   type(values, OperandRole::ElementTypeId)};
         case InstructionForm::IndexLoad:
-            return ir::IndexLoad{values.integer(OperandRole::Offset), values.integer(OperandRole::Length),
+            return ir::IndexLoad{values.integer(OperandRole::Offset),
+                                 values.integer(OperandRole::Length),
                                  type(values, OperandRole::ElementTypeId)};
         case InstructionForm::IndexStore:
-            return ir::IndexStore{values.integer(OperandRole::Offset), values.integer(OperandRole::Length),
+            return ir::IndexStore{values.integer(OperandRole::Offset),
+                                  values.integer(OperandRole::Length),
                                   type(values, OperandRole::ElementTypeId)};
         case InstructionForm::BorrowHandle:
-            return ir::BorrowHandle{values.integer(OperandRole::OwnerOffset), type(values, OperandRole::ReferenceTypeId)};
+            return ir::BorrowHandle{values.integer(OperandRole::OwnerOffset),
+                                    type(values, OperandRole::ReferenceTypeId)};
         case InstructionForm::Call:
             return ir::Call{functionName(values, OperandRole::CalleeSymbolId)};
         case InstructionForm::AggregateCall:
             return ir::AggregateCall{functionName(values, OperandRole::CalleeSymbolId),
-                                     offsets(values, OperandRole::ObjectArguments), values.integer(OperandRole::ResultOffset),
+                                     offsets(values, OperandRole::ObjectArguments),
+                                     values.integer(OperandRole::ResultOffset),
                                      offsets(values, OperandRole::SpanArguments)};
         case InstructionForm::BeginObject:
             return ir::BeginObject{values.integer(OperandRole::Offset)};
@@ -324,24 +341,31 @@ class Projection {
         case InstructionForm::CopyObject:
             return ir::CopyObject{values.integer(OperandRole::SourceOffset), values.integer(OperandRole::ResultOffset)};
         case InstructionForm::ObjectFieldCopy:
-            return ir::ObjectFieldCopy{values.integer(OperandRole::SourceOffset), values.integer(OperandRole::FieldIndex),
+            return ir::ObjectFieldCopy{values.integer(OperandRole::SourceOffset),
+                                       values.integer(OperandRole::FieldIndex),
                                        values.integer(OperandRole::ResultOffset)};
         case InstructionForm::AssignObjectField:
-            return ir::AssignObjectField{values.integer(OperandRole::ObjectOffset), values.integer(OperandRole::FieldIndex),
+            return ir::AssignObjectField{values.integer(OperandRole::ObjectOffset),
+                                         values.integer(OperandRole::FieldIndex),
                                          values.integer(OperandRole::SourceOffset)};
         case InstructionForm::InitializeObjectField:
             return ir::InitializeObjectField{values.integer(OperandRole::ObjectOffset),
-                                             values.integer(OperandRole::FieldIndex), values.integer(OperandRole::SourceOffset)};
+                                             values.integer(OperandRole::FieldIndex),
+                                             values.integer(OperandRole::SourceOffset)};
         case InstructionForm::InitializeClassArray:
             return ir::InitializeClassArray{values.integer(OperandRole::ObjectOffset),
-                                            values.integer(OperandRole::FieldIndex), offsets(values, OperandRole::Sources)};
+                                            values.integer(OperandRole::FieldIndex),
+                                            offsets(values, OperandRole::Sources)};
         case InstructionForm::ClassArrayBoundsGuard:
-            return ir::ClassArrayBoundsGuard{values.integer(OperandRole::ObjectOffset), values.integer(OperandRole::FieldIndex)};
+            return ir::ClassArrayBoundsGuard{values.integer(OperandRole::ObjectOffset),
+                                             values.integer(OperandRole::FieldIndex)};
         case InstructionForm::ClassArrayCopy:
-            return ir::ClassArrayCopy{values.integer(OperandRole::ObjectOffset), values.integer(OperandRole::FieldIndex),
+            return ir::ClassArrayCopy{values.integer(OperandRole::ObjectOffset),
+                                      values.integer(OperandRole::FieldIndex),
                                       values.integer(OperandRole::ResultOffset)};
         case InstructionForm::ClassArrayAssign:
-            return ir::ClassArrayAssign{values.integer(OperandRole::ObjectOffset), values.integer(OperandRole::FieldIndex),
+            return ir::ClassArrayAssign{values.integer(OperandRole::ObjectOffset),
+                                        values.integer(OperandRole::FieldIndex),
                                         values.integer(OperandRole::SourceOffset)};
         case InstructionForm::ReceiverLoad:
             return ir::ReceiverLoad{values.integer(OperandRole::FieldIndex), type(values, OperandRole::TypeId)};
@@ -356,9 +380,12 @@ class Projection {
         case InstructionForm::ReceiverIndexStore:
             return ir::ReceiverIndexStore{values.integer(OperandRole::FieldIndex)};
         case InstructionForm::MethodCall:
-            return ir::MethodCall{functionName(values, OperandRole::CalleeSymbolId), values.integer(OperandRole::ReceiverOffset),
-                                  offsets(values, OperandRole::ObjectArguments), values.integer(OperandRole::ResultOffset),
-                                  values.integer(OperandRole::ReceiverFieldIndex), offsets(values, OperandRole::SpanArguments)};
+            return ir::MethodCall{functionName(values, OperandRole::CalleeSymbolId),
+                                  values.integer(OperandRole::ReceiverOffset),
+                                  offsets(values, OperandRole::ObjectArguments),
+                                  values.integer(OperandRole::ResultOffset),
+                                  values.integer(OperandRole::ReceiverFieldIndex),
+                                  offsets(values, OperandRole::SpanArguments)};
         case InstructionForm::MetadataQuery:
             return ir::MetadataQuery{query(header.queryOperation), moduleScope(values)};
         case InstructionForm::Label:
@@ -372,11 +399,12 @@ class Projection {
         case InstructionForm::ReturnObject:
             return ir::ReturnObject{values.integer(OperandRole::Offset)};
         case InstructionForm::BindParameter:
-            return ir::BindParameter{values.integer(OperandRole::Index), values.integer(OperandRole::Offset),
+            return ir::BindParameter{values.integer(OperandRole::Index),
+                                     values.integer(OperandRole::Offset),
                                      type(values, OperandRole::TypeId)};
         case InstructionForm::BindObjectParameter:
-            return ir::BindObjectParameter{values.integer(OperandRole::Index), values.integer(OperandRole::Offset),
-                                           className(values)};
+            return ir::BindObjectParameter{
+                values.integer(OperandRole::Index), values.integer(OperandRole::Offset), className(values)};
         case InstructionForm::BeginArray:
             return ir::BeginArray{values.integer(OperandRole::Offset)};
         case InstructionForm::EndArray:
@@ -384,16 +412,19 @@ class Projection {
         case InstructionForm::BorrowSpan:
             return ir::BorrowSpan{values.integer(OperandRole::ArrayOffset), values.integer(OperandRole::ResultOffset)};
         case InstructionForm::BorrowReceiverArraySpan:
-            return ir::BorrowReceiverArraySpan{values.integer(OperandRole::FieldIndex), values.integer(OperandRole::ResultOffset)};
+            return ir::BorrowReceiverArraySpan{values.integer(OperandRole::FieldIndex),
+                                               values.integer(OperandRole::ResultOffset)};
         case InstructionForm::BorrowLiteralSpan:
             return ir::BorrowLiteralSpan{literalBytes(values), values.integer(OperandRole::ResultOffset)};
         case InstructionForm::BorrowOwnedSpan:
-            return ir::BorrowOwnedSpan{values.integer(OperandRole::Offset), values.integer(OperandRole::FieldIndex),
+            return ir::BorrowOwnedSpan{values.integer(OperandRole::Offset),
+                                       values.integer(OperandRole::FieldIndex),
                                        values.integer(OperandRole::ResultOffset)};
         case InstructionForm::ReturnSpan:
             return ir::ReturnSpan{values.integer(OperandRole::Offset)};
         case InstructionForm::ReborrowSpan:
-            return ir::ReborrowSpan{values.integer(OperandRole::SourceOffset), values.integer(OperandRole::ResultOffset)};
+            return ir::ReborrowSpan{values.integer(OperandRole::SourceOffset),
+                                    values.integer(OperandRole::ResultOffset)};
         case InstructionForm::Subspan:
             return ir::Subspan{values.integer(OperandRole::SourceOffset), values.integer(OperandRole::ResultOffset)};
         case InstructionForm::EndSpan:
@@ -407,18 +438,23 @@ class Projection {
         case InstructionForm::BeginBytes:
             return ir::BeginBytes{values.integer(OperandRole::Offset)};
         case InstructionForm::AllocateBytes:
-            return ir::AllocateBytes{values.integer(OperandRole::RegionOffset), values.integer(OperandRole::ResultOffset)};
+            return ir::AllocateBytes{values.integer(OperandRole::RegionOffset),
+                                     values.integer(OperandRole::ResultOffset)};
         case InstructionForm::AllocateValues:
-            return ir::AllocateValues{values.integer(OperandRole::RegionOffset), values.integer(OperandRole::ResultOffset),
+            return ir::AllocateValues{values.integer(OperandRole::RegionOffset),
+                                      values.integer(OperandRole::ResultOffset),
                                       values.integer(OperandRole::FillOffset)};
         case InstructionForm::ValuesLoad:
-            return ir::ValuesLoad{values.integer(OperandRole::Offset), values.integer(OperandRole::FieldIndex),
+            return ir::ValuesLoad{values.integer(OperandRole::Offset),
+                                  values.integer(OperandRole::FieldIndex),
                                   values.integer(OperandRole::ResultOffset)};
         case InstructionForm::ValuesStore:
-            return ir::ValuesStore{values.integer(OperandRole::Offset), values.integer(OperandRole::FieldIndex),
+            return ir::ValuesStore{values.integer(OperandRole::Offset),
+                                   values.integer(OperandRole::FieldIndex),
                                    values.integer(OperandRole::ValueOffset)};
         case InstructionForm::ValuesResize:
-            return ir::ValuesResize{values.integer(OperandRole::Offset), values.integer(OperandRole::FieldIndex),
+            return ir::ValuesResize{values.integer(OperandRole::Offset),
+                                    values.integer(OperandRole::FieldIndex),
                                     values.integer(OperandRole::FillOffset)};
         case InstructionForm::MoveBytes:
             return ir::MoveBytes{values.integer(OperandRole::SourceOffset), values.integer(OperandRole::ResultOffset)};
@@ -439,30 +475,37 @@ class Projection {
         case InstructionForm::BindBytesParameter:
             return ir::BindBytesParameter{values.integer(OperandRole::Index), values.integer(OperandRole::Offset)};
         case InstructionForm::ResourceCall:
-            return ir::ResourceCall{functionName(values, OperandRole::CalleeSymbolId), values.integer(OperandRole::RegionOffset),
-                                    offsets(values, OperandRole::OwnerArguments), values.integer(OperandRole::ResultOffset),
+            return ir::ResourceCall{functionName(values, OperandRole::CalleeSymbolId),
+                                    values.integer(OperandRole::RegionOffset),
+                                    offsets(values, OperandRole::OwnerArguments),
+                                    values.integer(OperandRole::ResultOffset),
                                     values.integer(OperandRole::ReceiverOffset)};
         case InstructionForm::ReturnBytes:
             return ir::ReturnBytes{values.integer(OperandRole::Offset)};
         case InstructionForm::InitializeBytesField:
-            return ir::InitializeBytesField{values.integer(OperandRole::ObjectOffset), values.integer(OperandRole::FieldIndex),
+            return ir::InitializeBytesField{values.integer(OperandRole::ObjectOffset),
+                                            values.integer(OperandRole::FieldIndex),
                                             values.integer(OperandRole::SourceOffset)};
         case InstructionForm::MoveObject:
             return ir::MoveObject{values.integer(OperandRole::SourceOffset), values.integer(OperandRole::ResultOffset)};
         case InstructionForm::BindOwnedObjectParameter:
-            return ir::BindOwnedObjectParameter{values.integer(OperandRole::Index), values.integer(OperandRole::Offset),
-                                                className(values)};
+            return ir::BindOwnedObjectParameter{
+                values.integer(OperandRole::Index), values.integer(OperandRole::Offset), className(values)};
         case InstructionForm::ReturnOwnedObject:
             return ir::ReturnOwnedObject{values.integer(OperandRole::Offset)};
         case InstructionForm::AcquireObjectLoan:
-            return ir::AcquireObjectLoan{values.integer(OperandRole::LoanId), values.integer(OperandRole::Root),
+            return ir::AcquireObjectLoan{values.integer(OperandRole::LoanId),
+                                         values.integer(OperandRole::Root),
                                          values.boolean(OperandRole::MutableValue)};
         case InstructionForm::ReleaseObjectLoan:
             return ir::ReleaseObjectLoan{values.integer(OperandRole::LoanId)};
         case InstructionForm::BorrowedCall:
-            return ir::BorrowedCall{functionName(values, OperandRole::CalleeSymbolId), values.integer(OperandRole::ReceiverOffset),
-                                    values.integer(OperandRole::LoanId), offsets(values, OperandRole::ObjectArguments),
-                                    values.integer(OperandRole::ResultOffset), offsets(values, OperandRole::SpanArguments)};
+            return ir::BorrowedCall{functionName(values, OperandRole::CalleeSymbolId),
+                                    values.integer(OperandRole::ReceiverOffset),
+                                    values.integer(OperandRole::LoanId),
+                                    offsets(values, OperandRole::ObjectArguments),
+                                    values.integer(OperandRole::ResultOffset),
+                                    offsets(values, OperandRole::SpanArguments)};
         }
         invalidLowering();
     }
@@ -525,8 +568,10 @@ class Projection {
     }
     ir::Receiver receiver(std::int64_t id) {
         Operands values(*this, own(id, RecordKind::Receiver));
-        ir::Receiver result{className(values), values.boolean(OperandRole::MutableValue),
-                            values.boolean(OperandRole::Constructor), values.boolean(OperandRole::PublicAccess)};
+        ir::Receiver result{className(values),
+                            values.boolean(OperandRole::MutableValue),
+                            values.boolean(OperandRole::Constructor),
+                            values.boolean(OperandRole::PublicAccess)};
         values.finish();
         return result;
     }
@@ -562,16 +607,20 @@ class Projection {
     }
     ir::ClassField field(std::int64_t id) {
         Operands values(*this, own(id, RecordKind::ClassField));
-        ir::ClassField result{type(values, OperandRole::ElementTypeId), values.integer(OperandRole::FirstLeaf),
-                              values.integer(OperandRole::Length), values.boolean(OperandRole::Array),
+        ir::ClassField result{type(values, OperandRole::ElementTypeId),
+                              values.integer(OperandRole::FirstLeaf),
+                              values.integer(OperandRole::Length),
+                              values.boolean(OperandRole::Array),
                               values.integer(OperandRole::ElementCount)};
         values.finish();
         return result;
     }
     ir::ClassStorage storage(std::int64_t id) {
         Operands values(*this, own(id, RecordKind::ClassStorage));
-        ir::ClassStorage result{offsets(values, OperandRole::LeafOffsets), offsets(values, OperandRole::FieldOffsets),
-                                values.integer(OperandRole::SizeBytes), values.integer(OperandRole::Alignment),
+        ir::ClassStorage result{offsets(values, OperandRole::LeafOffsets),
+                                offsets(values, OperandRole::FieldOffsets),
+                                values.integer(OperandRole::SizeBytes),
+                                values.integer(OperandRole::Alignment),
                                 values.integer(OperandRole::ReservedBytes)};
         values.finish();
         return result;
@@ -640,8 +689,10 @@ class Projection {
         Operands values(*this, own(id, RecordKind::UnreadLocal));
         auto identifier = services.identifier(identity(values.scalar(OperandRole::IdentifierSourceRef)));
         values.finish();
-        return {DiagnosticCode::UnreadLocal, "local binding '" + identifier.text + "' is never read",
-                std::move(identifier.span), DiagnosticSeverity::Warning};
+        return {DiagnosticCode::UnreadLocal,
+                "local binding '" + identifier.text + "' is never read",
+                std::move(identifier.span),
+                DiagnosticSeverity::Warning};
     }
     void prelude() {
         if (input.rows.size() < sizeValue(hostedLoweringPreludeRows) || input.moduleRoot < hostedLoweringPreludeRows)
@@ -762,8 +813,7 @@ public:
     }
 };
 } // namespace
-HostedLoweringOutput projectHostedLowering(const HostedLoweringInput &input,
-                                          const HostedLoweringServices &services) {
+HostedLoweringOutput projectHostedLowering(const HostedLoweringInput &input, const HostedLoweringServices &services) {
     const auto maximum = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
     if (input.rows.size() > maximum || input.operands.size() > maximum)
         invalidLowering();

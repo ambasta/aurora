@@ -413,17 +413,44 @@ def frontend_bridge(bridge, facts):
 
 
 def stage_modules(
-    module_root, lexer, arena, parser, kinds, lowering_errors, lowering_kinds, lowering_storage,
-    resolution, resolver, frontend, lowering_common, lowering_configuration, lowering_types,
-    lowering_values, lowering_body, lowering,
+    module_root,
+    lexer,
+    arena,
+    parser,
+    kinds,
+    lowering_errors,
+    lowering_kinds,
+    lowering_storage,
+    resolution,
+    resolver,
+    frontend,
+    lowering_common,
+    lowering_configuration,
+    lowering_types,
+    lowering_values,
+    lowering_body,
+    lowering,
 ):
     destination = module_root / "aurora" / "compiler"
     destination.mkdir(parents=True, exist_ok=True)
     for source, name in zip(
         (
-            lexer, arena, parser, kinds, lowering_errors, lowering_kinds, lowering_storage,
-            resolution, resolver, frontend, lowering_common, lowering_configuration, lowering_types,
-            lowering_values, lowering_body, lowering,
+            lexer,
+            arena,
+            parser,
+            kinds,
+            lowering_errors,
+            lowering_kinds,
+            lowering_storage,
+            resolution,
+            resolver,
+            frontend,
+            lowering_common,
+            lowering_configuration,
+            lowering_types,
+            lowering_values,
+            lowering_body,
+            lowering,
         ),
         (
             "lexer.au",
@@ -497,9 +524,23 @@ def main():
         raise ValueError("expected at most one shared-host ABI header")
     module_root = output.parent / "compiler-modules"
     stage_modules(
-        module_root, lexer, arena, parser, kinds, lowering_errors, lowering_kinds, lowering_storage,
-        resolution, resolver, frontend, lowering_common, lowering_configuration, lowering_types,
-        lowering_values, lowering_body, lowering,
+        module_root,
+        lexer,
+        arena,
+        parser,
+        kinds,
+        lowering_errors,
+        lowering_kinds,
+        lowering_storage,
+        resolution,
+        resolver,
+        frontend,
+        lowering_common,
+        lowering_configuration,
+        lowering_types,
+        lowering_values,
+        lowering_body,
+        lowering,
     )
     emit(
         compiler,

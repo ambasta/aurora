@@ -11,10 +11,10 @@
 namespace aurora::ir {
 inline constexpr int spanBytes = 56;
 // Operations describe language semantics, never target-register names or assembly text.
-using hosted_abi::compiler_lowering::Unary;
 using hosted_abi::compiler_lowering::Binary;
 using hosted_abi::compiler_lowering::Comparison;
 using hosted_abi::compiler_lowering::Query;
+using hosted_abi::compiler_lowering::Unary;
 class Constant {
 public:
     // U64 payloads preserve all 64 bits via std::bit_cast<std::int64_t>.

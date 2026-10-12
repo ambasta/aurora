@@ -15,8 +15,7 @@ struct HostedLoweringDiagnosticServices {
     // The reason fixes the name domain: original field/local/binding/call
     // spelling, canonical nominal name, or already selected callable name.
     // It never authorizes choosing between native and source names anew.
-    std::function<std::string(hosted_abi::compiler_lowering::LoweringError,
-                              std::int64_t)> name;
+    std::function<std::string(hosted_abi::compiler_lowering::LoweringError, std::int64_t)> name;
 };
 
 // Render only a published semantic rejection or one of the selected IR-layout
@@ -26,8 +25,7 @@ struct HostedLoweringDiagnosticServices {
 // 0..2, with no module root. Inactive row/operand fields are ignored.
 // Throws Internal on malformed transport. Callback/allocation exceptions remain
 // owned by the caller's armed Session guard; no partial diagnostic is published.
-Diagnostic renderHostedLoweringDiagnostic(
-    const hosted_abi::compiler_lowering::LoweringResult &result,
-    const HostedLoweringInput &input,
-    const HostedLoweringDiagnosticServices &services);
+Diagnostic renderHostedLoweringDiagnostic(const hosted_abi::compiler_lowering::LoweringResult &result,
+                                          const HostedLoweringInput &input,
+                                          const HostedLoweringDiagnosticServices &services);
 } // namespace aurora

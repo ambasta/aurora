@@ -50,8 +50,7 @@ class DiagnosticRenderer {
             const auto &location = token.span;
             if (!location.source || location.begin.offset > location.end.offset ||
                 location.end.offset > location.source->text.size() || location.begin.line < 1 ||
-                location.begin.column < 1 || location.end.line < location.begin.line ||
-                location.end.column < 1 ||
+                location.begin.column < 1 || location.end.line < location.begin.line || location.end.column < 1 ||
                 (location.begin.line == location.end.line && location.end.column < location.begin.column))
                 invalidDiagnostic();
             span = location;
@@ -61,13 +60,14 @@ class DiagnosticRenderer {
     }
 
 public:
-    DiagnosticRenderer(const wire::LoweringResult &value, const HostedLoweringInput &pools,
+    DiagnosticRenderer(const wire::LoweringResult &value,
+                       const HostedLoweringInput &pools,
                        const HostedLoweringDiagnosticServices &renderers)
         : result(value), input(pools), services(renderers) {
         if ((result.result_status != LoweringStatus::semantic_failure &&
              result.result_status != LoweringStatus::invalid) ||
-            result.root_row != -1 || input.moduleRoot != -1 || result.diagnostic_row != 0 ||
-            input.diagnosticRow != 0 || input.rows.empty() || input.operands.size() < 3)
+            result.root_row != -1 || input.moduleRoot != -1 || result.diagnostic_row != 0 || input.diagnosticRow != 0 ||
+            input.rows.empty() || input.operands.size() < 3)
             invalidDiagnostic();
         const auto &row = input.rows[0];
         if (row.recordKind != wire::RecordKind::DiagnosticPayload || row.operandBegin != 0 || row.operandCount != 3)
@@ -80,13 +80,11 @@ public:
         return {DiagnosticCode::Semantic, std::move(message), span};
     }
     Diagnostic fixed(std::string_view message, Origin origin = Origin::sourceOrSynthetic) {
-        check(LoweringStatus::semantic_failure, origin, OperandRole::NoDiagnosticValue,
-              OperandRole::NoDiagnosticValue);
+        check(LoweringStatus::semantic_failure, origin, OperandRole::NoDiagnosticValue, OperandRole::NoDiagnosticValue);
         return finish(std::string(message));
     }
     Diagnostic integrity(std::string_view message) {
-        check(LoweringStatus::invalid, Origin::none, OperandRole::NoDiagnosticValue,
-              OperandRole::NoDiagnosticValue);
+        check(LoweringStatus::invalid, Origin::none, OperandRole::NoDiagnosticValue, OperandRole::NoDiagnosticValue);
         return finish(std::string(message));
     }
     void dynamic(Origin origin, OperandRole first, OperandRole second = OperandRole::NoDiagnosticValue) {
@@ -459,8 +457,8 @@ Diagnostic renderHostedLoweringDiagnostic(const wire::LoweringResult &result,
         return render.fixed("byte-string initializers require u8 array elements");
     case LoweringError::byte_array_initializer_length:
         render.dynamic(Origin::sourceOrSynthetic, OperandRole::DiagnosticInteger, OperandRole::DiagnosticInteger);
-        return render.finish("array initializer length does not match its declared type: expected " + render.integer(0) +
-                             " bytes, got " + render.integer(1) + " decoded bytes");
+        return render.finish("array initializer length does not match its declared type: expected " +
+                             render.integer(0) + " bytes, got " + render.integer(1) + " decoded bytes");
     case LoweringError::array_initializer_requires_literal_or_copy:
         return render.fixed("array local requires an array literal or same-type array copy");
     case LoweringError::array_initializer_length:

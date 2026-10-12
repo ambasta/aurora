@@ -267,10 +267,9 @@ export namespace compiler_lowering {
         i64 diagnostic_row;
         i64 root_row;
     public:
-        LoweringResult(LoweringStatus status, LoweringError reason,
-                       i64 diagnosticPayloadRow, i64 moduleRoot)
-            : result_status(status), result_reason(reason),
-              diagnostic_row(diagnosticPayloadRow), root_row(moduleRoot) {
+        LoweringResult(LoweringStatus status, LoweringError reason, i64 diagnosticPayloadRow,
+            i64 moduleRoot) : result_status(status), result_reason(reason), diagnostic_row(diagnosticPayloadRow),
+            root_row(moduleRoot) {
         }
         auto status() const -> LoweringStatus {
             return result_status;

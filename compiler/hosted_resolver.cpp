@@ -528,7 +528,8 @@ class Projection {
                 result = Type(prefix(-value.value1 - 2));
             } else {
                 const auto expected = value.concrete_tag == ResolvedTypeKind::class_value
-                                          ? DeclarationKind::class_value : DeclarationKind::enumeration;
+                                          ? DeclarationKind::class_value
+                                          : DeclarationKind::enumeration;
                 if (meta(value.value1, MetaTag::symbol).declaration_tag != expected)
                     invalidResolution();
                 result = value.concrete_tag == ResolvedTypeKind::class_value ? Type(native(value.value1))
@@ -611,8 +612,7 @@ public:
         // Match the former ordered native-name map's traversal. This is the
         // complete original class permutation, with no host legality filtering.
         std::sort(result.begin(), result.end(), [&](auto left, auto right) {
-            return nominalName(left, DeclarationKind::class_value) <
-                   nominalName(right, DeclarationKind::class_value);
+            return nominalName(left, DeclarationKind::class_value) < nominalName(right, DeclarationKind::class_value);
         });
         return result;
     }
@@ -680,9 +680,15 @@ public:
         return result;
     }
     HostedLoweringDiagnosticServices diagnosticServices() {
-        return {[&](auto reference) { return sourceToken(reference); },
-                [&](auto identity) { return typeName(type(identity)); },
-                [&](auto reason, auto identity) { return diagnosticName(reason, identity); }};
+        return {[&](auto reference) {
+                    return sourceToken(reference);
+                },
+                [&](auto identity) {
+                    return typeName(type(identity));
+                },
+                [&](auto reason, auto identity) {
+                    return diagnosticName(reason, identity);
+                }};
     }
     std::string diagnosticName(lowering::LoweringError reason, std::int64_t identity) {
         using lowering::LoweringError;
@@ -712,13 +718,25 @@ public:
     }
     HostedLoweringServices loweringServices(const std::vector<service::Kind> &kinds) {
         HostedLoweringServices result;
-        result.type = [&](auto identity) { return type(identity); };
-        result.functionName = [&](auto identity) { return callableName(identity); };
-        result.className = [&](auto identity) { return nominalName(identity, DeclarationKind::class_value); };
-        result.enumName = [&](auto identity) { return nominalName(identity, DeclarationKind::enumeration); };
-        result.identifier = [&](auto identity) { return sourceToken(identity); };
+        result.type = [&](auto identity) {
+            return type(identity);
+        };
+        result.functionName = [&](auto identity) {
+            return callableName(identity);
+        };
+        result.className = [&](auto identity) {
+            return nominalName(identity, DeclarationKind::class_value);
+        };
+        result.enumName = [&](auto identity) {
+            return nominalName(identity, DeclarationKind::enumeration);
+        };
+        result.identifier = [&](auto identity) {
+            return sourceToken(identity);
+        };
         result.checkModuleScope = [&](auto scope) {
-            if (std::none_of(sources.begin(), sources.end(), [&](const auto &source) { return source.scope == scope; }))
+            if (std::none_of(sources.begin(), sources.end(), [&](const auto &source) {
+                    return source.scope == scope;
+                }))
                 invalidResolution();
         };
         result.serviceKind = [&kinds](auto identity) {
@@ -748,8 +766,9 @@ public:
         };
         return result;
     }
-    std::int64_t sourceByteCount() const { return sourceBytes; }
-
+    std::int64_t sourceByteCount() const {
+        return sourceBytes;
+    }
 };
 [[noreturn]] void Projection::diagnostic(const wire::SessionStatus &status) {
     std::string message;
@@ -1200,8 +1219,8 @@ std::uint64_t resolutionQuota() {
     // designated/constructor fields <=3 per field/edge; parameter binding <=6/F.
     // Lifetime begins/staging consume <=2/allocation. Every explicit/synthetic
     // return may repeat a full Local prefix; non-return cleanup <=allLocals.
-    const auto instructions = sum({mul(16, X), mul(4 * 4096, X), mul(3, X), mul(6, F),
-                                   mul(2, allLocals), allLocals, mul(returns, localHigh)});
+    const auto instructions = sum(
+        {mul(16, X), mul(4 * 4096, X), mul(3, X), mul(6, F), mul(2, allLocals), allLocals, mul(returns, localHigh)});
     const auto instructionLists = add(mul(12, X), mul(64, X));
     const auto literalBytes = mul(4096, X);
     // Packed u8 leaves make scalar slot count byte-bounded, not word-bounded.
@@ -1211,27 +1230,60 @@ std::uint64_t resolutionQuota() {
     const auto arraySlots = mul(frameWords, F), spanSlots = mul(frameWords / 7, F);
     const auto serviceSlots = mul(2, F), regionSlots = F, byteSlots = mul(frameWords / 4, F);
     const auto ownedTypes = byteSlots;
-    const auto slots = sum({scalarSlots, objectSlots, arraySlots, spanSlots, serviceSlots,
-                            regionSlots, byteSlots, ownedTypes});
+    const auto slots =
+        sum({scalarSlots, objectSlots, arraySlots, spanSlots, serviceSlots, regionSlots, byteSlots, ownedTypes});
     const auto receiverRows = F, classRows = add(nominals, carriers), fieldRows = add(fields, carriers);
     const auto descriptors = sum({7, nominals, X}), views = M, enums = nominals, lint = X;
-    const auto outputRows = sum({hostedLoweringPreludeRows, 1, instructions, slots, F, receiverRows,
-                                 mul(2, classRows), fieldRows, carriers, descriptors, views, enums, lint});
+    const auto outputRows = sum({hostedLoweringPreludeRows,
+                                 1,
+                                 instructions,
+                                 slots,
+                                 F,
+                                 receiverRows,
+                                 mul(2, classRows),
+                                 fieldRows,
+                                 carriers,
+                                 descriptors,
+                                 views,
+                                 enums,
+                                 lint});
     // Every fixed role and owning-list item costs a real OperandRow. Code refs
     // charge all generated instructions conservatively, including discarded
     // occurrences. Logical leafless fields retain both Fields and FieldOffsets.
-    const auto slotOperands = sum({mul(2, scalarSlots), mul(3, objectSlots), mul(2, arraySlots),
-                                   spanSlots, serviceSlots, regionSlots, mul(2, byteSlots), mul(2, ownedTypes)});
-    const auto setupOperands = sum({3, 8, 7 * 3, mul(6, service::operations.size()),
-                                    serviceParameters, nominals, 1});
-    const auto metadataOperands = sum({7, mul(10, F), mul(6, F), slots, mul(4, receiverRows),
-                                       mul(4, classRows), mul(5, classRows), mul(5, fieldRows),
-                                       mul(2, carriers), mul(3, descriptors), mul(2, views),
-                                       mul(2, enums), lint, mul(2 * 8192, classRows),
-                                       mul(2, fieldRows), mul(views, descriptors),
-                                       F, classRows, carriers, descriptors, views, enums, lint});
-    const auto operandRows = sum({setupOperands, mul(6, instructions), instructions,
-                                  instructionLists, slotOperands, metadataOperands});
+    const auto slotOperands = sum({mul(2, scalarSlots),
+                                   mul(3, objectSlots),
+                                   mul(2, arraySlots),
+                                   spanSlots,
+                                   serviceSlots,
+                                   regionSlots,
+                                   mul(2, byteSlots),
+                                   mul(2, ownedTypes)});
+    const auto setupOperands = sum({3, 8, 7 * 3, mul(6, service::operations.size()), serviceParameters, nominals, 1});
+    const auto metadataOperands = sum({7,
+                                       mul(10, F),
+                                       mul(6, F),
+                                       slots,
+                                       mul(4, receiverRows),
+                                       mul(4, classRows),
+                                       mul(5, classRows),
+                                       mul(5, fieldRows),
+                                       mul(2, carriers),
+                                       mul(3, descriptors),
+                                       mul(2, views),
+                                       mul(2, enums),
+                                       lint,
+                                       mul(2 * 8192, classRows),
+                                       mul(2, fieldRows),
+                                       mul(views, descriptors),
+                                       F,
+                                       classRows,
+                                       carriers,
+                                       descriptors,
+                                       views,
+                                       enums,
+                                       lint});
+    const auto operandRows =
+        sum({setupOperands, mul(6, instructions), instructions, instructionLists, slotOperands, metadataOperands});
     // Shared resolution owners remain live. Additional type/name/source rows
     // have distinct charges; lowering lookup domains retain nominal/layout,
     // field, function, lexical-binding, forward-list and reflection indexes.
@@ -1239,8 +1291,16 @@ std::uint64_t resolutionQuota() {
     // grants above; no new source-sized coordinate or token array is introduced.
     const auto loweringTypes = sum({nominals, X, primitiveKinds});
     const auto loweringMetadata = sum({loweringTypes, mul(2, X), 1});
-    const auto loweringIndexes = sum({loweringTypes, mul(2, X), mul(12, nominals), mul(8, fieldRows),
-                                      mul(3, F), X, mul(3, X), mul(3, carriers), mul(2, descriptors), 32});
+    const auto loweringIndexes = sum({loweringTypes,
+                                      mul(2, X),
+                                      mul(12, nominals),
+                                      mul(8, fieldRows),
+                                      mul(3, F),
+                                      X,
+                                      mul(3, X),
+                                      mul(3, carriers),
+                                      mul(2, descriptors),
+                                      32});
     const auto records = sum({storage, semantic, loweringMetadata});
     const auto indexRecords = sum({storageIndexes, indexes, loweringIndexes});
     const auto work = std::max({mul(12, b), sum({mul(3, Sx), types, mul(2, D), 128}), nominals});
@@ -1290,7 +1350,9 @@ public:
         aurora_hosted_resolver_create(&input, data());
         sessionLive = true;
     }
-    ~SessionOwner() { release(); }
+    ~SessionOwner() {
+        release();
+    }
     void release() noexcept {
         if (arenaLive)
             aurora_hosted_resolver_release_pair(&slots[active]);
@@ -1474,9 +1536,14 @@ class HostedResolution::Impl {
         limits.byteArrayLength = maximumClassByteArrayLength;
         limits.scalarArrayLength = maximumClassScalarArrayLength;
         switch (mode) {
-        case AnalysisMode::Check: limits.analysisMode = 0; break;
-        case AnalysisMode::Lint: limits.analysisMode = 1; break;
-        default: invalidResolution();
+        case AnalysisMode::Check:
+            limits.analysisMode = 0;
+            break;
+        case AnalysisMode::Lint:
+            limits.analysisMode = 1;
+            break;
+        default:
+            invalidResolution();
         }
         limits.serviceGroups = service::supportedGroupBitmap();
         if (aurora_hosted_lowering_begin(owner.data(), &configuration) != 1) {
@@ -1519,11 +1586,11 @@ class HostedResolution::Impl {
             input.seed.resultType = result->second;
             auto &types = input.seed.parameterTypes;
             types.parameterCount = static_cast<std::int64_t>(parameters.size());
-            const std::array fields{&types.firstType, &types.secondType, &types.thirdType,
-                                    &types.fourthType, &types.fifthType};
+            const std::array fields{
+                &types.firstType, &types.secondType, &types.thirdType, &types.fourthType, &types.fifthType};
             for (std::size_t parameter = 0; parameter < fields.size(); ++parameter)
-                *fields[parameter] = parameter < parameters.size() ? wireKind(parameters[parameter])
-                                                                  : ResolvedTypeKind::invalid;
+                *fields[parameter] =
+                    parameter < parameters.size() ? wireKind(parameters[parameter]) : ResolvedTypeKind::invalid;
             if (aurora_hosted_lowering_seed_service(owner.data(), &input) != static_cast<std::int64_t>(index) + 9) {
                 lowerStorage();
                 invalidResolution();
@@ -1631,8 +1698,8 @@ public:
             throw;
         }
     }
-    HostedResolvedSource resolve(const std::vector<std::size_t> &order, std::size_t root,
-                                 AnalysisMode mode, bool collectAbi) {
+    HostedResolvedSource
+    resolve(const std::vector<std::size_t> &order, std::size_t root, AnalysisMode mode, bool collectAbi) {
         if (finished || failed || root >= sources.size() || order.size() != sources.size())
             invalidResolution();
         finished = true;
@@ -1640,7 +1707,9 @@ public:
         // owner on every exit, after all source/ABI/IR projection and validation.
         struct Release {
             SessionOwner &owner;
-            ~Release() { owner.release(); }
+            ~Release() {
+                owner.release();
+            }
         } release{owner};
         std::vector<bool> seen(sources.size());
         std::map<std::string, std::size_t> names;
@@ -1707,8 +1776,10 @@ HostedResolution::~HostedResolution() = default;
 HostedModule HostedResolution::add(std::shared_ptr<const SourceText> source) {
     return implementation->add(std::move(source));
 }
-HostedResolvedSource HostedResolution::resolve(const std::vector<std::size_t> &order, std::size_t root,
-                                              AnalysisMode mode, bool collectAbiDeclarations) {
+HostedResolvedSource HostedResolution::resolve(const std::vector<std::size_t> &order,
+                                               std::size_t root,
+                                               AnalysisMode mode,
+                                               bool collectAbiDeclarations) {
     return implementation->resolve(order, root, mode, collectAbiDeclarations);
 }
 } // namespace aurora

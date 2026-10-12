@@ -1,4 +1,6 @@
 export module aurora.compiler.lowering;
+import aurora.compiler.syntax_arena;
+import aurora.compiler.lexer;
 import aurora.compiler.resolver;
 import aurora.compiler.resolution_arena;
 import aurora.compiler.resolution_kinds;
@@ -13,16 +15,12 @@ import aurora.compiler.lowering_body;
 
 export namespace compiler_lowering {
     auto layout_failure(LoweringError reason) -> bool {
-        return reason == LoweringError::ir_storage_extent_limit
-            || reason == LoweringError::ir_class_storage_depth
-            || reason == LoweringError::ir_missing_class_storage_shape
-            || reason == LoweringError::ir_class_storage_alignment
-            || reason == LoweringError::ir_logical_field_storage_range
-            || reason == LoweringError::ir_owned_byte_field_descriptor
-            || reason == LoweringError::ir_nested_owning_class_field
-            || reason == LoweringError::ir_nested_field_storage_shape
-            || reason == LoweringError::ir_scalar_field_storage_shape
-            || reason == LoweringError::ir_class_storage_limit
+        return reason == LoweringError::ir_storage_extent_limit || reason == LoweringError::ir_class_storage_depth
+            || reason == LoweringError::ir_missing_class_storage_shape || reason
+            == LoweringError::ir_class_storage_alignment || reason == LoweringError::ir_logical_field_storage_range
+            || reason == LoweringError::ir_owned_byte_field_descriptor || reason
+            == LoweringError::ir_nested_owning_class_field || reason == LoweringError::ir_nested_field_storage_shape
+            || reason == LoweringError::ir_scalar_field_storage_shape || reason == LoweringError::ir_class_storage_limit
             || reason == LoweringError::ir_class_storage_leaf_coverage;
     }
     auto failed_result(compiler_resolver::Session& session) -> LoweringResult {
@@ -32,8 +30,8 @@ export namespace compiler_lowering {
             if (storage == compiler_resolver::StorageStatus::allocation) {
                 status = LoweringStatus::storage_failure;
             }
-            const LoweringResult result = LoweringResult(status, LoweringError::none,
-                session.diagnostic_payload_row(), -1);
+            const LoweringResult result = LoweringResult(status, LoweringError::none, session.diagnostic_payload_row(),
+                -1);
             return result;
         }
         const LoweringError reason = session.lowering_error();
@@ -100,7 +98,8 @@ export namespace compiler_lowering {
         const OperandRow descriptors = module_list(session, RecordKind::Descriptor, OperandRole::Descriptors, limit);
         const OperandRow views = module_list(session, RecordKind::DescriptorView, OperandRole::DescriptorViews, limit);
         const OperandRow enums = module_list(session, RecordKind::EnumCases, OperandRole::Enumerations, limit);
-        const OperandRow lint_messages = module_list(session, RecordKind::UnreadLocal, OperandRole::LintDiagnostics, limit);
+        const OperandRow lint_messages = module_list(session, RecordKind::UnreadLocal, OperandRole::LintDiagnostics,
+            limit);
         const i64 begin = session.operand_count();
         session.append_operand(functions);
         session.append_operand(classes);

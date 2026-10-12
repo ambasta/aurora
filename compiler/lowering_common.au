@@ -1,4 +1,6 @@
 export module aurora.compiler.lowering_common;
+import aurora.compiler.syntax_arena;
+import aurora.compiler.lexer;
 import aurora.compiler.resolver;
 import aurora.compiler.resolution_arena;
 import aurora.compiler.resolution_kinds;
@@ -23,24 +25,30 @@ export namespace compiler_lowering {
         return session.append_operand(slice(role, begin, count));
     }
     auto record(compiler_resolver::Session& session, RecordKind kind, i64 begin, i64 count) -> i64 {
-        if (!session.good()) { return -1; }
+        if (!session.good()) {
+            return -1;
+        }
         if (begin < 0 || count < 0 || begin > session.operand_count() || count > session.operand_count() - begin) {
             return session.fail_storage(compiler_resolver::StorageStatus::invalid);
         }
         return session.append_output(OutputRow(kind, InstructionForm::Constant, begin, count));
     }
     auto emit_record(compiler_resolver::Session& session, RecordKind kind, i64 begin) -> i64 {
-        return record(session, kind, begin, session.operand_count() - begin);
+        const i64 count = session.operand_count() - begin;
+        return record(session, kind, begin, count);
     }
     auto instruction(compiler_resolver::Session& session, InstructionForm form, i64 begin, i64 count) -> i64 {
-        if (!session.good()) { return -1; }
+        if (!session.good()) {
+            return -1;
+        }
         if (begin < 0 || count < 0 || begin > session.operand_count() || count > session.operand_count() - begin) {
             return session.fail_storage(compiler_resolver::StorageStatus::invalid);
         }
         return session.append_output(OutputRow(RecordKind::Instruction, form, begin, count));
     }
     auto emit(compiler_resolver::Session& session, InstructionForm form, i64 begin) -> i64 {
-        return instruction(session, form, begin, session.operand_count() - begin);
+        const i64 count = session.operand_count() - begin;
+        return instruction(session, form, begin, count);
     }
     auto operand(compiler_resolver::Session& session, i64 row, i64 ordinal) -> OperandRow {
         const OutputRow output = session.view_output(row);
@@ -59,7 +67,9 @@ export namespace compiler_lowering {
         i64 at = 0;
         while (at < output.operand_count() && session.good()) {
             const OperandRow item = operand(session, row, at);
-            if (item.role() == role) { return item; }
+            if (item.role() == role) {
+                return item;
+            }
             at = at + 1;
         }
         session.fail_storage(compiler_resolver::StorageStatus::invalid);
@@ -90,10 +100,12 @@ export namespace compiler_lowering {
         session.fail_storage(compiler_resolver::StorageStatus::invalid);
         return false;
     }
-    auto fail_pair(compiler_resolver::Session& session, LoweringError reason, i64 source,
-        OperandRow first, OperandRow second) -> bool {
+    auto fail_pair(compiler_resolver::Session& session, LoweringError reason, i64 source, OperandRow first,
+        OperandRow second) -> bool {
         OperandRole origin = OperandRole::DiagnosticSourceRef;
-        if (source < 0) { origin = OperandRole::NoDiagnosticSource; } else {
+        if (source < 0) {
+            origin = OperandRole::NoDiagnosticSource;
+        } else {
             const compiler_resolver::MetaRow location = session.view_meta(source);
             if (location.kind() == compiler_resolver::MetaTag::source_reference && location.word(0) < 0) {
                 origin = OperandRole::DiagnosticSyntheticRef;
@@ -110,8 +122,8 @@ export namespace compiler_lowering {
         return fail_pair(session, reason, source, scalar(OperandRole::DiagnosticTypeId, type),
             scalar(OperandRole::NoDiagnosticValue, 0));
     }
-    auto fail_synthetic(compiler_resolver::Session& session, LoweringError reason, i64 source,
-        OperandRow first, OperandRow second) -> bool {
+    auto fail_synthetic(compiler_resolver::Session& session, LoweringError reason, i64 source, OperandRow first,
+        OperandRow second) -> bool {
         session.reject_lowering(reason, scalar(OperandRole::DiagnosticSyntheticRef, source), first, second);
         return false;
     }
@@ -130,7 +142,9 @@ export namespace compiler_lowering {
         i64 at = last;
         while (at >= 0 && session.good()) {
             const i64 previous = compiler_resolver::sw(session, at, 2);
-            if (previous >= at) { return session.fail_storage(compiler_resolver::StorageStatus::invalid); }
+            if (previous >= at) {
+                return session.fail_storage(compiler_resolver::StorageStatus::invalid);
+            }
             count = count + 1;
             at = previous;
         }
@@ -138,7 +152,9 @@ export namespace compiler_lowering {
     }
     auto syntax_list_at(compiler_resolver::Session& session, i64 last, i64 index) -> i64 {
         const i64 count = syntax_list_count(session, last);
-        if (index < 0 || index >= count) { return session.fail_storage(compiler_resolver::StorageStatus::invalid); }
+        if (index < 0 || index >= count) {
+            return session.fail_storage(compiler_resolver::StorageStatus::invalid);
+        }
         i64 remaining = count - index - 1;
         i64 at = last;
         while (remaining > 0 && session.good()) {
@@ -158,7 +174,11 @@ export namespace compiler_lowering {
             bool done = false;
             while (!done && session.good()) {
                 const compiler_resolver::IndexRow item = session.index_row(next);
-                if (item.left_child() < 0) { done = true; } else { next = item.left_child(); }
+                if (item.left_child() < 0) {
+                    done = true;
+                } else {
+                    next = item.left_child();
+                }
             }
             return next;
         }
@@ -166,9 +186,14 @@ export namespace compiler_lowering {
         i64 parent = row.parent_node();
         while (parent >= 0 && session.good()) {
             const compiler_resolver::IndexRow item = session.index_row(parent);
-            if (item.left_child() == current) { return parent; }
-            if (item.right_child() != current) { return session.fail_storage(compiler_resolver::StorageStatus::invalid); }
-            current = parent; parent = item.parent_node();
+            if (item.left_child() == current) {
+                return parent;
+            }
+            if (item.right_child() != current) {
+                return session.fail_storage(compiler_resolver::StorageStatus::invalid);
+            }
+            current = parent;
+            parent = item.parent_node();
         }
         return -1;
     }

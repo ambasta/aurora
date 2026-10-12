@@ -321,13 +321,14 @@ export namespace compiler_lowering {
         ArgumentLane fifthArgument;
         ArgumentLane sixthArgument;
     public:
-        ContinuationRow(ContinuationKind kind, i64 node, i64 cursor, ArgumentLane empty_argument) : continuationKind(kind),
-            continuationPhase(ContinuationPhase::start), syntaxNode(node), childCursor(cursor), scopeHead(-1),
-            localPrefixLength(0), incomingSnapshotBase(-1), thenSnapshotBase(-1), firstLabel(-1), secondLabel(-1),
-            childTypeId(-1), childLocalId(-1), callTarget(-1), capabilityRootLocal(-1), receiverFieldIndex(-1),
-            nextArgument(0), argumentCount(0), outputMark(0), operandMark(0), cleanupCursor(-1),
-            firstArgument(empty_argument), secondArgument(empty_argument), thirdArgument(empty_argument),
-            fourthArgument(empty_argument), fifthArgument(empty_argument), sixthArgument(empty_argument) {
+        ContinuationRow(ContinuationKind kind, i64 node, i64 cursor,
+            ArgumentLane empty_argument) : continuationKind(kind), continuationPhase(ContinuationPhase::start),
+            syntaxNode(node), childCursor(cursor), scopeHead(-1), localPrefixLength(0), incomingSnapshotBase(-1),
+            thenSnapshotBase(-1), firstLabel(-1), secondLabel(-1), childTypeId(-1), childLocalId(-1), callTarget(-1),
+            capabilityRootLocal(-1), receiverFieldIndex(-1), nextArgument(0), argumentCount(0), outputMark(0),
+            operandMark(0), cleanupCursor(-1), firstArgument(empty_argument), secondArgument(empty_argument),
+            thirdArgument(empty_argument), fourthArgument(empty_argument), fifthArgument(empty_argument),
+            sixthArgument(empty_argument) {
         }
         auto kind() const -> ContinuationKind {
             return continuationKind;

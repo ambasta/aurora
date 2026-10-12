@@ -53,6 +53,5 @@ struct HostedLoweringOutput {
 // materializes privately; deliberately does not call ir::validate. The caller
 // independently validates once before publication, retaining Session ownership
 // through projection, rendering, and verifier exceptions.
-HostedLoweringOutput projectHostedLowering(const HostedLoweringInput &input,
-                                          const HostedLoweringServices &services);
+HostedLoweringOutput projectHostedLowering(const HostedLoweringInput &input, const HostedLoweringServices &services);
 } // namespace aurora

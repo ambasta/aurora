@@ -145,8 +145,12 @@ export namespace compiler_frontend {
         return result;
     }
     auto lowering_count(const compiler_resolver::Session& session, i64 pool) -> i64 {
-        if (pool == 0) { return session.output_count(); }
-        if (pool == 1) { return session.operand_count(); }
+        if (pool == 0) {
+            return session.output_count();
+        }
+        if (pool == 1) {
+            return session.operand_count();
+        }
         return -1;
     }
     auto lowering_read_output(const compiler_resolver::Session& session, i64 index) -> compiler_lowering::OutputRow {

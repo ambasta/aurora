@@ -123,9 +123,14 @@ def abi_generation(facts):
         "resolution argument records or checked consuming-owner prefixes were omitted",
     )
     require(
-        all(f"struct alignas(8) {name} {{" in generated for name in (
-            "LoweringBeginInput", "LoweringScalarInput", "LoweringServiceInput",
-        ))
+        all(
+            f"struct alignas(8) {name} {{" in generated
+            for name in (
+                "LoweringBeginInput",
+                "LoweringScalarInput",
+                "LoweringServiceInput",
+            )
+        )
         and "aurora::hosted_abi::compiler_lowering::LoweringConfig configuration{};" in generated
         and "aurora::hosted_abi::compiler_lowering::ScalarSeed seed{};" in generated
         and "aurora::hosted_abi::compiler_lowering::ServiceSeed seed{};" in generated
@@ -146,8 +151,14 @@ def abi_generation(facts):
     # Exact root signatures are the only native entry authority. An imported
     # implementation must not become a fallback when its forwarding root is lost.
     for operation in (
-        "begin", "seed_scalar", "seed_service", "seed_layout_symbol",
-        "run", "count", "read_output", "read_operand",
+        "begin",
+        "seed_scalar",
+        "seed_service",
+        "seed_layout_symbol",
+        "run",
+        "count",
+        "read_output",
+        "read_operand",
     ):
         for mutation in ("receiver", "result", "parameters", "root"):
             changed = deepcopy(facts)
@@ -277,8 +288,14 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
     entries.update(
         "aurora_hosted_lowering_" + operation
         for operation in (
-            "begin", "seed_scalar", "seed_service", "seed_layout_symbol",
-            "run", "count", "read_output", "read_operand",
+            "begin",
+            "seed_scalar",
+            "seed_service",
+            "seed_layout_symbol",
+            "run",
+            "count",
+            "read_output",
+            "read_operand",
         )
     )
     # A is predecessor-generated and need not equal B. Both actual build

@@ -22,7 +22,9 @@ inline CheckedSource checkSource(const std::filesystem::path &input,
         auto graph = loader.load(input);
         auto identities = graph.sourceIdentities;
         auto resolved = graph.resolve(mode, collectAbiDeclarations);
-        return {std::move(resolved.module), std::move(identities), std::move(resolved.lintDiagnostics),
+        return {std::move(resolved.module),
+                std::move(identities),
+                std::move(resolved.lintDiagnostics),
                 std::move(resolved.abiDeclarations)};
     } catch (const Error &error) {
         throw error.withDefaultCode(stage);

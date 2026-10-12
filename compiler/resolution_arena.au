@@ -850,8 +850,8 @@ export namespace compiler_resolver {
                 fail_storage(StorageStatus::invalid);
                 return false;
             }
-            const compiler_lowering::OutputRow fill = compiler_lowering::OutputRow(compiler_lowering::RecordKind::invalid,
-                compiler_lowering::InstructionForm::BindServiceParameter, 0, 0);
+            const compiler_lowering::OutputRow fill = compiler_lowering::OutputRow(
+                compiler_lowering::RecordKind::invalid, compiler_lowering::InstructionForm::BindServiceParameter, 0, 0);
             if (!outputRows.try_resize(next, fill)) {
                 fail_storage(StorageStatus::allocation);
                 return false;
@@ -874,8 +874,8 @@ export namespace compiler_resolver {
                 fail_storage(StorageStatus::invalid);
                 return false;
             }
-            const compiler_lowering::OperandRow fill = compiler_lowering::OperandRow(compiler_lowering::OperandRole::invalid,
-                0, 0u64, 0, 0);
+            const compiler_lowering::OperandRow fill = compiler_lowering::OperandRow(
+                compiler_lowering::OperandRole::invalid, 0, 0u64, 0, 0);
             if (!outputOperands.try_resize(next, fill)) {
                 fail_storage(StorageStatus::allocation);
                 return false;
@@ -921,7 +921,8 @@ export namespace compiler_resolver {
                 fail_storage(StorageStatus::invalid);
                 return false;
             }
-            const compiler_lowering::SnapshotRow fill = compiler_lowering::SnapshotRow(0, 0, false, false, false, false);
+            const compiler_lowering::SnapshotRow fill = compiler_lowering::SnapshotRow(0, 0, false, false, false,
+                false);
             if (!loweringSnapshots.try_resize(next, fill)) {
                 fail_storage(StorageStatus::allocation);
                 return false;
@@ -967,14 +968,14 @@ export namespace compiler_resolver {
             loweringLocals(compiler_lowering::make_local_pool(region)),
             loweringSnapshots(compiler_lowering::make_snapshot_pool(region)),
             loweringContinuations(compiler_lowering::make_continuation_pool(region)), output_used(0), operand_used(0),
-            local_used(0), snapshot_used(0), continuation_used(0), loweringError(compiler_lowering::LoweringError::none),
-            diagnosticPayloadRow(-1) {
+            local_used(0), snapshot_used(0), continuation_used(0),
+            loweringError(compiler_lowering::LoweringError::none), diagnosticPayloadRow(-1) {
         }
         // create() checks every owner before publication; every failed resize latches failure.
         // New owner mutation or construction paths must preserve this invariant.
         auto good() const -> bool {
-            return failure == StorageStatus::none && diagnostic == SemanticError::none
-                && loweringError == compiler_lowering::LoweringError::none;
+            return failure == StorageStatus::none && diagnostic == SemanticError::none && loweringError
+                == compiler_lowering::LoweringError::none;
         }
         auto storage_status() const -> StorageStatus {
             if (failure == StorageStatus::none && (!sources.ok() || !forest.ok() || !metadata.ok() || metadata.size()
@@ -985,15 +986,15 @@ export namespace compiler_resolver {
             return failure;
         }
         auto fail_storage(StorageStatus code) -> i64 {
-            if (failure == StorageStatus::none && diagnostic == SemanticError::none
-                && loweringError == compiler_lowering::LoweringError::none) {
+            if (failure == StorageStatus::none && diagnostic == SemanticError::none && loweringError
+                == compiler_lowering::LoweringError::none) {
                 failure = code;
             }
             return -1;
         }
         auto reject(SemanticError code, i64 node, i64 first, i64 second) -> i64 {
-            if (diagnostic == SemanticError::none && failure == StorageStatus::none
-                && loweringError == compiler_lowering::LoweringError::none) {
+            if (diagnostic == SemanticError::none && failure == StorageStatus::none && loweringError
+                == compiler_lowering::LoweringError::none) {
                 if (code == SemanticError::none) {
                     failure = StorageStatus::invalid;
                 } else {
@@ -1045,8 +1046,8 @@ export namespace compiler_resolver {
             if (!good()) {
                 return false;
             }
-            if (diagnosticPayloadRow != -1 || work_used != 0 || output_used != 0 || operand_used != 0
-                || local_used != 0 || snapshot_used != 0 || continuation_used != 0) {
+            if (diagnosticPayloadRow != -1 || work_used != 0 || output_used != 0 || operand_used != 0 || local_used != 0
+                || snapshot_used != 0 || continuation_used != 0) {
                 fail_storage(StorageStatus::invalid);
                 return false;
             }
@@ -1058,8 +1059,8 @@ export namespace compiler_resolver {
             const compiler_lowering::OperandRow value = compiler_lowering::OperandRow(
                 compiler_lowering::OperandRole::NoDiagnosticValue, 0, 0u64, 0, 0);
             const compiler_lowering::OutputRow row = compiler_lowering::OutputRow(
-                compiler_lowering::RecordKind::DiagnosticPayload, compiler_lowering::InstructionForm::BindServiceParameter,
-                0, 3);
+                compiler_lowering::RecordKind::DiagnosticPayload,
+                compiler_lowering::InstructionForm::BindServiceParameter, 0, 3);
             if (!outputOperands.set(0, source) || !outputOperands.set(1, value) || !outputOperands.set(2, value)
                 || !outputRows.set(0, row)) {
                 fail_storage(StorageStatus::invalid);
@@ -1086,21 +1087,21 @@ export namespace compiler_resolver {
                 || report.operand_count() != 3) {
                 return fail_storage(StorageStatus::invalid);
             }
-            if (source.role() != compiler_lowering::OperandRole::NoDiagnosticSource
-                && source.role() != compiler_lowering::OperandRole::DiagnosticSourceRef
-                && source.role() != compiler_lowering::OperandRole::DiagnosticSyntheticRef) {
+            if (source.role() != compiler_lowering::OperandRole::NoDiagnosticSource && source.role()
+                != compiler_lowering::OperandRole::DiagnosticSourceRef && source.role()
+                != compiler_lowering::OperandRole::DiagnosticSyntheticRef) {
                 return fail_storage(StorageStatus::invalid);
             }
-            if (first.role() != compiler_lowering::OperandRole::NoDiagnosticValue
-                && first.role() != compiler_lowering::OperandRole::DiagnosticNameId
-                && first.role() != compiler_lowering::OperandRole::DiagnosticTypeId
-                && first.role() != compiler_lowering::OperandRole::DiagnosticInteger) {
+            if (first.role() != compiler_lowering::OperandRole::NoDiagnosticValue && first.role()
+                != compiler_lowering::OperandRole::DiagnosticNameId && first.role()
+                != compiler_lowering::OperandRole::DiagnosticTypeId && first.role()
+                != compiler_lowering::OperandRole::DiagnosticInteger) {
                 return fail_storage(StorageStatus::invalid);
             }
-            if (second.role() != compiler_lowering::OperandRole::NoDiagnosticValue
-                && second.role() != compiler_lowering::OperandRole::DiagnosticNameId
-                && second.role() != compiler_lowering::OperandRole::DiagnosticTypeId
-                && second.role() != compiler_lowering::OperandRole::DiagnosticInteger) {
+            if (second.role() != compiler_lowering::OperandRole::NoDiagnosticValue && second.role()
+                != compiler_lowering::OperandRole::DiagnosticNameId && second.role()
+                != compiler_lowering::OperandRole::DiagnosticTypeId && second.role()
+                != compiler_lowering::OperandRole::DiagnosticInteger) {
                 return fail_storage(StorageStatus::invalid);
             }
             if ((source.role() != compiler_lowering::OperandRole::NoDiagnosticSource && source.signed_value() < 0)
@@ -1119,7 +1120,8 @@ export namespace compiler_resolver {
         auto view_output(i64 index) const -> compiler_lowering::OutputRow {
             if (!outputRows.ok() || index < 0 || index >= output_used || index >= outputRows.size()) {
                 const compiler_lowering::OutputRow empty = compiler_lowering::OutputRow(
-                    compiler_lowering::RecordKind::invalid, compiler_lowering::InstructionForm::BindServiceParameter, 0, 0);
+                    compiler_lowering::RecordKind::invalid, compiler_lowering::InstructionForm::BindServiceParameter, 0,
+                    0);
                 return empty;
             }
             const compiler_lowering::OutputRow row = outputRows.at(index);
@@ -1138,11 +1140,11 @@ export namespace compiler_resolver {
             if (!good()) {
                 return -1;
             }
-            if (diagnosticPayloadRow != 0 || row.kind() == compiler_lowering::RecordKind::invalid
-                || row.kind() == compiler_lowering::RecordKind::DiagnosticPayload
-                || row.kind() == compiler_lowering::RecordKind::DiscardedInstruction || row.operand_begin() < 0
-                || row.operand_count() < 0 || row.operand_begin() > operand_used
-                || row.operand_count() > operand_used - row.operand_begin() || output_used == 9223372036854775807) {
+            if (diagnosticPayloadRow != 0 || row.kind() == compiler_lowering::RecordKind::invalid || row.kind()
+                == compiler_lowering::RecordKind::DiagnosticPayload || row.kind()
+                == compiler_lowering::RecordKind::DiscardedInstruction || row.operand_begin() < 0 || row.operand_count()
+                < 0 || row.operand_begin() > operand_used || row.operand_count() > operand_used - row.operand_begin()
+                || output_used == 9223372036854775807) {
                 return fail_storage(StorageStatus::invalid);
             }
             if (!reserve_output_rows(output_used + 1)) {
@@ -1159,8 +1161,8 @@ export namespace compiler_resolver {
             if (!good()) {
                 return -1;
             }
-            if (diagnosticPayloadRow != 0 || row.role() == compiler_lowering::OperandRole::invalid
-                || operand_used == 9223372036854775807) {
+            if (diagnosticPayloadRow != 0 || row.role() == compiler_lowering::OperandRole::invalid || operand_used
+                == 9223372036854775807) {
                 return fail_storage(StorageStatus::invalid);
             }
             if (!reserve_output_operands(operand_used + 1)) {
@@ -1179,13 +1181,11 @@ export namespace compiler_resolver {
             if (!good()) {
                 return false;
             }
-            if (index <= 0 || index >= output_used || index >= outputRows.size()
-                || row.kind() == compiler_lowering::RecordKind::invalid
-                || row.kind() == compiler_lowering::RecordKind::DiagnosticPayload
-                || row.kind() == compiler_lowering::RecordKind::DiscardedInstruction
-                || row.operand_begin() < 3 || row.operand_count() < 0
-                || row.operand_begin() > operand_used
-                || row.operand_count() > operand_used - row.operand_begin()) {
+            if (index <= 0 || index >= output_used || index >= outputRows.size() || row.kind()
+                == compiler_lowering::RecordKind::invalid || row.kind()
+                == compiler_lowering::RecordKind::DiagnosticPayload || row.kind()
+                == compiler_lowering::RecordKind::DiscardedInstruction || row.operand_begin() < 3 || row.operand_count()
+                < 0 || row.operand_begin() > operand_used || row.operand_count() > operand_used - row.operand_begin()) {
                 fail_storage(StorageStatus::invalid);
                 return false;
             }
@@ -1199,8 +1199,8 @@ export namespace compiler_resolver {
             if (!good()) {
                 return false;
             }
-            if (index < 3 || index >= operand_used || index >= outputOperands.size()
-                || row.role() == compiler_lowering::OperandRole::invalid) {
+            if (index < 3 || index >= operand_used || index >= outputOperands.size() || row.role()
+                == compiler_lowering::OperandRole::invalid) {
                 fail_storage(StorageStatus::invalid);
                 return false;
             }
@@ -1282,8 +1282,8 @@ export namespace compiler_resolver {
         auto snapshot(i64 index) -> compiler_lowering::SnapshotRow {
             if (!good() || index < 0 || index >= snapshot_used || index >= loweringSnapshots.size()) {
                 fail_storage(StorageStatus::invalid);
-                const compiler_lowering::SnapshotRow empty = compiler_lowering::SnapshotRow(0, 0, false, false,
-                    false, false);
+                const compiler_lowering::SnapshotRow empty = compiler_lowering::SnapshotRow(0, 0, false, false, false,
+                    false);
                 return empty;
             }
             const compiler_lowering::SnapshotRow row = loweringSnapshots.at(index);
@@ -1295,8 +1295,8 @@ export namespace compiler_resolver {
             if (!good()) {
                 return -1;
             }
-            if (diagnosticPayloadRow != 0 || prefix_length < 0 || prefix_length > local_used
-                || prefix_length > 9223372036854775807 - snapshot_used) {
+            if (diagnosticPayloadRow != 0 || prefix_length < 0 || prefix_length > local_used || prefix_length
+                > 9223372036854775807 - snapshot_used) {
                 return fail_storage(StorageStatus::invalid);
             }
             const i64 required = snapshot_used + prefix_length;
@@ -1320,8 +1320,8 @@ export namespace compiler_resolver {
             if (!good()) {
                 return false;
             }
-            if (base < 0 || prefix_length < 0 || prefix_length > local_used || base > snapshot_used
-                || prefix_length > snapshot_used - base) {
+            if (base < 0 || prefix_length < 0 || prefix_length > local_used || base > snapshot_used || prefix_length
+                > snapshot_used - base) {
                 fail_storage(StorageStatus::invalid);
                 return false;
             }
@@ -1374,8 +1374,8 @@ export namespace compiler_resolver {
             return result;
         }
         auto set_continuation(i64 index, compiler_lowering::ContinuationRow row) -> bool {
-            if (!good() || index < 0 || index >= continuation_used
-                || row.kind() == compiler_lowering::ContinuationKind::invalid || !loweringContinuations.set(index, row)) {
+            if (!good() || index < 0 || index >= continuation_used || row.kind()
+                == compiler_lowering::ContinuationKind::invalid || !loweringContinuations.set(index, row)) {
                 fail_storage(StorageStatus::invalid);
                 return false;
             }

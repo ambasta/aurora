@@ -84,7 +84,9 @@ with tempfile.TemporaryDirectory(prefix="aurora-ir-exhaustive-") as temporary:
     for enumeration in ("Unary", "Binary", "Comparison"):
         enum_pattern = re.compile(
             r"(namespace aurora::hosted_abi::compiler_lowering\s*\{\s*enum class "
-            + enumeration + r"\s*:\s*std::int64_t\s*\{)(.*?)(\};)", re.DOTALL,
+            + enumeration
+            + r"\s*:\s*std::int64_t\s*\{)(.*?)(\};)",
+            re.DOTALL,
         )
         if len(enum_pattern.findall(enum_original)) != 1:
             raise AssertionError(f"could not uniquely locate {enumeration} operation enumeration")

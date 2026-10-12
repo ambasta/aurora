@@ -47,7 +47,9 @@ public:
     HostedResolution(const HostedResolution &) = delete;
     HostedResolution &operator=(const HostedResolution &) = delete;
     HostedModule add(std::shared_ptr<const SourceText> source);
-    HostedResolvedSource resolve(const std::vector<std::size_t> &dependencyOrder, std::size_t root,
-                                 AnalysisMode mode = AnalysisMode::Check, bool collectAbiDeclarations = false);
+    HostedResolvedSource resolve(const std::vector<std::size_t> &dependencyOrder,
+                                 std::size_t root,
+                                 AnalysisMode mode = AnalysisMode::Check,
+                                 bool collectAbiDeclarations = false);
 };
 } // namespace aurora
