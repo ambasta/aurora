@@ -79,10 +79,11 @@ marker charged to the class, so this phase fits the existing per-token scratch b
 The current six-parameter ceiling requires a small copied scope value; copied
 field getters return through named locals. These are concrete language-ergonomics
 dependencies, not a permanent semantic protocol.
-The compiler also accepts bounded copied constructor/call arguments through shared
-semantic materialization. The frontend retains its named argument locals until a
-separately qualified source-built predecessor supports that spelling; adding the
-capability does not silently advance the bootstrap dependency.
+The frontend uses direct copied constructor/call arguments through the shared
+semantic materializer where that removes single-use argument locals. Saved values
+that must precede an exclusive arena borrow, mutable records and copied-field getter
+locals remain explicit. The selected source-built predecessor includes this
+capability; record layouts, source state and semantic policies are unchanged.
 
 The host supplies one copied configuration derived from the canonical array limits
 and service-group helper still shared with later semantic/IR checks. Aurora selects
@@ -132,7 +133,10 @@ A/B generated-header equality, regenerates B and C, and compares assembly, raw
 output, ABI facts, headers and objects, including the B actually linked into C2.
 The source-build route in [README.md](README.md#source-bootstrap) includes the
 fact-capable predecessor stage, preserved by tag `bootstrap-abi-facts-v1` at source
-commit `17f4f1440e6faa9cdaf8711c04400854bdb60d9e`. Advance that predecessor only
+commit `17f4f1440e6faa9cdaf8711c04400854bdb60d9e`, followed by the copied-argument
+checkpoint under `bootstrap-copied-arguments-v1` at source commit
+`c0ef02cc105de2b7699d8565f6a53f1dea9e1205`. This adds one source-build hop
+before the current compiler can build its adopted frontend. Advance the predecessor only
 when it cannot build the current frontend, or to shorten the source-bootstrap
 chain after reproducible source rebuild, current-stage convergence and full
 qualification. Preserve earlier source refs; ordinary features do not require a
