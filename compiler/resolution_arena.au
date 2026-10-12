@@ -379,6 +379,53 @@ export namespace compiler_resolver {
             }
             return child_id;
         }
+        // The matching node, or its value when value is set; -1 when absent.
+        auto find(i64 domain, i64 first, i64 second, i64 third, i64 fourth, bool value) -> i64 {
+            if (!good()) {
+                return -1;
+            }
+            if (domain < 1) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            i64 node = index_root;
+            i64 steps = 0;
+            // Between checked row reads, only atom comparison can change sticky status.
+            // Keep each node checked before its direct read, without replaying status guards.
+            while (node >= 0) {
+                if (steps >= index_used || node >= index_used || node >= indexes.size()) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+                steps = steps + 1;
+                const IndexRow row = indexes.at(node);
+                if (row.key_domain() < 1) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+                i64 order = 0;
+                if (domain == 1 && row.key_domain() == 1) {
+                    order = compare_atom(first, second, row.first_key(), row.second_key());
+                    if (!good()) {
+                        return -1;
+                    }
+                } else {
+                    order = row.key_order(domain, first, second, third, fourth);
+                }
+                if (order == 0) {
+                    if (value) {
+                        return row.value();
+                    }
+                    return node;
+                }
+                if (order < 0) {
+                    node = row.left_child();
+                } else {
+                    node = row.right_child();
+                }
+                if (node < -1) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+            }
+            return -1;
+        }
     public:
         Session(builtin::ByteRegion region, builtin::OwnedBytes bytes, builtin::OwnedValues<SyntaxRow> syntax,
             builtin::OwnedValues<MetaRow> meta, builtin::OwnedValues<ResolvedRow> resolved,
@@ -1093,55 +1140,10 @@ export namespace compiler_resolver {
             return empty;
         }
         auto index_node(i64 domain, i64 first, i64 second, i64 third, i64 fourth) -> i64 {
-            if (!good()) {
-                return -1;
-            }
-            if (domain < 1) {
-                return fail_storage(StorageStatus::invalid);
-            }
-            i64 node = index_root;
-            i64 steps = 0;
-            // Between checked row reads, only atom comparison can change sticky status.
-            // Keep each node checked before its direct read, without replaying status guards.
-            while (node >= 0) {
-                if (steps >= index_used || node >= index_used || node >= indexes.size()) {
-                    return fail_storage(StorageStatus::invalid);
-                }
-                steps = steps + 1;
-                const IndexRow row = indexes.at(node);
-                if (row.key_domain() < 1) {
-                    return fail_storage(StorageStatus::invalid);
-                }
-                i64 order = 0;
-                if (domain == 1 && row.key_domain() == 1) {
-                    order = compare_atom(first, second, row.first_key(), row.second_key());
-                    if (!good()) {
-                        return -1;
-                    }
-                } else {
-                    order = row.key_order(domain, first, second, third, fourth);
-                }
-                if (order == 0) {
-                    return node;
-                }
-                if (order < 0) {
-                    node = row.left_child();
-                } else {
-                    node = row.right_child();
-                }
-                if (node < -1) {
-                    return fail_storage(StorageStatus::invalid);
-                }
-            }
-            return -1;
+            return find(domain, first, second, third, fourth, false);
         }
         auto index(i64 domain, i64 first, i64 second, i64 third, i64 fourth) -> i64 {
-            const i64 found = index_node(domain, first, second, third, fourth);
-            if (found < 0) {
-                return -1;
-            }
-            const IndexRow row = index_row(found);
-            return row.value();
+            return find(domain, first, second, third, fourth, true);
         }
         auto index_insert(i64 domain, i64 first, i64 second, i64 third, i64 fourth, i64 value) -> i64 {
             if (!good() || domain < 1 || value < 0) {
