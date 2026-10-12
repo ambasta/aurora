@@ -213,6 +213,7 @@ class Controls(unittest.TestCase):
             for value in values:
                 with self.subTest(name=name, value=str(value)[:50]), self.assertRaises(c.ContractError):
                     c.parse_flags(value, name)
+
     def test_both_flag_vectors_have_omission_not_empty_defaults(self):
         vectors = c.selected_flag_vectors({})
         self.assertEqual(vectors["CXXFLAGS"], shlex.split(c.DEFAULT_FLAGS))
@@ -223,7 +224,6 @@ class Controls(unittest.TestCase):
         for name in ("CXXFLAGS", "IR_TEST_CXXFLAGS"):
             with self.subTest(name=name), self.assertRaises(c.ContractError):
                 c.selected_flag_vectors({name: ""})
-
 
     def test_default_and_explicit_flag_vectors_round_trip(self):
         expected = shlex.split(c.DEFAULT_FLAGS)

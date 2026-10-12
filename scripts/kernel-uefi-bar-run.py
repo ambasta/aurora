@@ -61,8 +61,7 @@ def preflight(mode, output, env):
     for name, value in env.items():
         if value and (
             name.startswith("KERNEL_TEST_")
-            or name
-            in ("KERNEL_USER_PROBE_MODE", "KERNEL_CONSOLE", "UEFI_MODE", "UEFI_CONSOLE_HANDOFF")
+            or name in ("KERNEL_USER_PROBE_MODE", "KERNEL_CONSOLE", "UEFI_MODE", "UEFI_CONSOLE_HANDOFF")
         ):
             raise ValueError(f"Unset {name} before starting a standalone BAR receipt run")
     # A normal installed command name is supported, but its exact binary still
