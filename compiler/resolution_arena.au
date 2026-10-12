@@ -271,6 +271,40 @@ export namespace compiler_resolver {
             tag = kind;
             return true;
         }
+        // Atom keys use checked source-byte ordering in Session; other domains use these scalar keys.
+        auto key_order(i64 domain, i64 first, i64 second, i64 third, i64 fourth) const -> i64 {
+            if (domain < value0) {
+                return -1;
+            }
+            if (domain > value0) {
+                return 1;
+            }
+            if (first < value1) {
+                return -1;
+            }
+            if (first > value1) {
+                return 1;
+            }
+            if (second < value2) {
+                return -1;
+            }
+            if (second > value2) {
+                return 1;
+            }
+            if (third < value3) {
+                return -1;
+            }
+            if (third > value3) {
+                return 1;
+            }
+            if (fourth < value4) {
+                return -1;
+            }
+            if (fourth > value4) {
+                return 1;
+            }
+            return 0;
+        }
         auto word(i64 slot) const -> i64 {
             if (slot == 0) {
                 return value0;
@@ -676,9 +710,10 @@ export namespace compiler_resolver {
             meta_used(64), resolved_used(0), work_used(0), modules(0), index_root(-1), failure(StorageStatus::none),
             diagnostic(SemanticError::none), diagnostic_node(-1), diagnostic_first(-1), diagnostic_second(-1) {
         }
+        // create() checks every owner before publication; every failed resize latches failure.
+        // New owner mutation or construction paths must preserve this invariant.
         auto good() const -> bool {
-            return failure == StorageStatus::none && diagnostic == SemanticError::none && sources.ok() && forest.ok()
-                && metadata.ok() && metadata.size() >= 64 && resolutions.ok() && scratch.ok();
+            return failure == StorageStatus::none && diagnostic == SemanticError::none;
         }
         auto storage_status() const -> StorageStatus {
             if (failure == StorageStatus::none && (!sources.ok() || !forest.ok() || !metadata.ok() || metadata.size()
@@ -784,9 +819,15 @@ export namespace compiler_resolver {
             const MetaRow row = metadata.at(index);
             return row;
         }
-        auto meta(i64 index) -> MetaRow {
+        auto valid_meta_index(i64 index) -> bool {
             if (!good() || index < 0 || index >= meta_used || index >= metadata.size()) {
                 fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            return true;
+        }
+        auto meta(i64 index) -> MetaRow {
+            if (!valid_meta_index(index)) {
                 const MetaRow empty = MetaRow(MetaTag::invalid);
                 return empty;
             }
@@ -973,67 +1014,28 @@ export namespace compiler_resolver {
         }
         // One AVL index serves the small set of resolver key domains. Atom keys
         // compare their checked source bytes; all other domains compare integers.
-        auto compare_key(MetaRow row, i64 domain, i64 first, i64 second, i64 third, i64 fourth) -> i64 {
-            if (row.kind() != MetaTag::index || domain < 1) {
+        auto compare_atom(i64 first, i64 second, i64 old_begin, i64 old_length) -> i64 {
+            if (first < 0 || second < 0 || first > source_used || second > source_used - first || old_begin < 0
+                || old_length < 0 || old_begin > source_used || old_length > source_used - old_begin) {
                 fail_storage(StorageStatus::invalid);
                 return 0;
             }
-            if (domain < row.word(0)) {
-                return -1;
-            }
-            if (domain > row.word(0)) {
-                return 1;
-            }
-            if (domain == 1) {
-                const i64 old_begin = row.word(1);
-                const i64 old_length = row.word(2);
-                if (first < 0 || second < 0 || first > source_used || second > source_used - first || old_begin < 0
-                    || old_length < 0 || old_begin > source_used || old_length > source_used - old_begin) {
-                    fail_storage(StorageStatus::invalid);
-                    return 0;
-                }
-                i64 at = 0;
-                while (at < second && at < old_length) {
-                    const u8 left = sources.at(first + at);
-                    const u8 right = sources.at(old_begin + at);
-                    if (left < right) {
-                        return -1;
-                    }
-                    if (left > right) {
-                        return 1;
-                    }
-                    at = at + 1;
-                }
-                if (second < old_length) {
+            i64 at = 0;
+            while (at < second && at < old_length) {
+                const u8 left = sources.at(first + at);
+                const u8 right = sources.at(old_begin + at);
+                if (left < right) {
                     return -1;
                 }
-                if (second > old_length) {
+                if (left > right) {
                     return 1;
                 }
-                return 0;
+                at = at + 1;
             }
-            if (first < row.word(1)) {
+            if (second < old_length) {
                 return -1;
             }
-            if (first > row.word(1)) {
-                return 1;
-            }
-            if (second < row.word(2)) {
-                return -1;
-            }
-            if (second > row.word(2)) {
-                return 1;
-            }
-            if (third < row.word(3)) {
-                return -1;
-            }
-            if (third > row.word(3)) {
-                return 1;
-            }
-            if (fourth < row.word(4)) {
-                return -1;
-            }
-            if (fourth > row.word(4)) {
+            if (second > old_length) {
                 return 1;
             }
             return 0;
@@ -1053,7 +1055,15 @@ export namespace compiler_resolver {
                 }
                 steps = steps + 1;
                 const MetaRow row = meta(node);
-                const i64 order = compare_key(row, domain, first, second, third, fourth);
+                if (row.kind() != MetaTag::index) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+                i64 order = 0;
+                if (domain == 1 && row.word(0) == 1) {
+                    order = compare_atom(first, second, row.word(1), row.word(2));
+                } else {
+                    order = row.key_order(domain, first, second, third, fourth);
+                }
                 if (!good()) {
                     return -1;
                 }
@@ -1083,11 +1093,15 @@ export namespace compiler_resolver {
             if (node == -1) {
                 return 0;
             }
-            const MetaRow row = meta(node);
-            if (row.kind() != MetaTag::index || row.word(9) < 1) {
+            if (!valid_meta_index(node)) {
+                return -1;
+            }
+            const MetaRow row = metadata.at(node);
+            const i64 height = row.word(9);
+            if (row.kind() != MetaTag::index || height < 1) {
                 return fail_storage(StorageStatus::invalid);
             }
-            return row.word(9);
+            return height;
         }
         auto update_height(i64 node) -> bool {
             MetaRow row = meta(node);
@@ -1205,7 +1219,15 @@ export namespace compiler_resolver {
                 }
                 steps = steps + 1;
                 const MetaRow row = meta(node);
-                direction = compare_key(row, domain, first, second, third, fourth);
+                if (row.kind() != MetaTag::index) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+                direction = 0;
+                if (domain == 1 && row.word(0) == 1) {
+                    direction = compare_atom(first, second, row.word(1), row.word(2));
+                } else {
+                    direction = row.key_order(domain, first, second, third, fourth);
+                }
                 if (!good()) {
                     return -1;
                 }
@@ -1251,14 +1273,33 @@ export namespace compiler_resolver {
             node = parent;
             steps = 0;
             while (node >= 0 && good()) {
-                if (steps >= meta_used || !update_height(node)) {
+                if (steps >= meta_used) {
                     return fail_storage(StorageStatus::invalid);
                 }
                 steps = steps + 1;
-                const MetaRow root = meta(node);
+                MetaRow root = meta(node);
+                if (root.kind() != MetaTag::index || root.word(9) < 1) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+                const i64 previous_height = root.word(9);
                 const i64 left = index_height(root.word(6));
                 const i64 right = index_height(root.word(7));
-                i64 top = node;
+                i64 height = left;
+                if (right > height) {
+                    height = right;
+                }
+                if (!good() || height == 9223372036854775807) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+                height = height + 1;
+                // Insertion cannot affect ancestors after this subtree stops growing.
+                if (left - right <= 1 && right - left <= 1 && height == previous_height) {
+                    return value;
+                }
+                root.set_word(9, height);
+                if (!set_meta(node, root)) {
+                    return -1;
+                }
                 if (left - right > 1) {
                     const MetaRow branch = meta(root.word(6));
                     const i64 outer = index_height(branch.word(6));
@@ -1269,7 +1310,12 @@ export namespace compiler_resolver {
                     if (!good()) {
                         return -1;
                     }
-                    top = rotate_right(node);
+                    rotate_right(node);
+                    if (!good()) {
+                        return -1;
+                    }
+                    // The first insertion rotation restores the old subtree height.
+                    return value;
                 } else {
                     if (right - left > 1) {
                         const MetaRow branch = meta(root.word(7));
@@ -1281,14 +1327,14 @@ export namespace compiler_resolver {
                         if (!good()) {
                             return -1;
                         }
-                        top = rotate_left(node);
+                        rotate_left(node);
+                        if (!good()) {
+                            return -1;
+                        }
+                        return value;
                     }
                 }
-                if (!good()) {
-                    return -1;
-                }
-                const MetaRow changed = meta(top);
-                node = changed.word(8);
+                node = root.word(8);
             }
             return value;
         }
@@ -1868,7 +1914,7 @@ export namespace compiler_resolver {
         const WorkRow work_fill = WorkRow(-1, -1, -1, -1, -1, -1);
         builtin::OwnedValues<WorkRow> work = region.try_allocate(0, work_fill);
         Session session = Session(region, move(bytes), move(syntax), move(meta), move(resolved), move(work));
-        if (!session.good()) {
+        if (session.storage_status() != StorageStatus::none) {
             session.fail_storage(StorageStatus::allocation);
         }
         return move(session);
