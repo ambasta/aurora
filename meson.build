@@ -27,11 +27,8 @@ frontend_inputs = files('compiler/lexer.au', 'compiler/syntax_arena.au', 'compil
 frontend_assembly = custom_target(
   'hosted-frontend-assembly', input: frontend_inputs,
   output: ['hosted-frontend.s', 'hosted-frontend.generated.s', 'hosted-frontend.abi.json', 'hosted_frontend_abi.hpp'],
-  command: [python, '-B', files('scripts/bootstrap_frontend.py'), bootstrap_compiler,
-            '@INPUT0@', '@INPUT1@', '@INPUT2@', '@INPUT3@', '@INPUT4@', '@INPUT5@',
-            '@INPUT6@', '@INPUT7@', '@INPUT8@', '@INPUT9@', '@INPUT10@', '@INPUT11@',
-            '@INPUT12@', '@INPUT13@', '@INPUT14@', '@INPUT15@', '@INPUT16@', '@INPUT17@',
-            '@INPUT18@', '@OUTPUT0@'],
+  command: [python, '-B', files('scripts/bootstrap_frontend.py'), bootstrap_compiler, '--output', '@OUTPUT0@',
+            '@INPUT@'],
   depend_files: bootstrap_depend_files,
 )
 frontend_object = custom_target(
@@ -63,11 +60,7 @@ frontend_stage2_assembly = custom_target(
   'hosted-frontend-stage2-assembly', input: frontend_inputs + [frontend_assembly[3]],
   output: ['hosted-frontend-stage2.s', 'hosted-frontend-stage2.generated.s',
            'hosted-frontend-stage2.abi.json', 'hosted_frontend_stage2_abi.hpp'],
-  command: [python, '-B', files('scripts/bootstrap_frontend.py'), aurorac,
-            '@INPUT0@', '@INPUT1@', '@INPUT2@', '@INPUT3@', '@INPUT4@', '@INPUT5@',
-            '@INPUT6@', '@INPUT7@', '@INPUT8@', '@INPUT9@', '@INPUT10@', '@INPUT11@',
-            '@INPUT12@', '@INPUT13@', '@INPUT14@', '@INPUT15@', '@INPUT16@', '@INPUT17@',
-            '@INPUT18@', '@OUTPUT0@', '@INPUT19@'],
+  command: [python, '-B', files('scripts/bootstrap_frontend.py'), aurorac, '--output', '@OUTPUT0@', '@INPUT@'],
   build_by_default: false,
 )
 frontend_stage2_object = custom_target(

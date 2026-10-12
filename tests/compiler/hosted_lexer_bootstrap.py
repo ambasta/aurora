@@ -17,27 +17,11 @@ def stage_modules(root, destination):
     sys.path.insert(0, str(root / "scripts"))
     from bootstrap_frontend import stage_modules as stage
 
-    stage(destination, *(root / "compiler" / name for name in COMPILER_MODULES))
+    stage(destination, [root / "compiler" / name for name in COMPILER_MODULES])
 
 
-COMPILER_MODULES = (
-    "lexer.au",
-    "syntax_arena.au",
-    "parser.au",
-    "resolution_kinds.au",
-    "lowering_errors.au",
-    "lowering_kinds.au",
-    "lowering_storage.au",
-    "resolution_arena.au",
-    "resolver.au",
-    "frontend.au",
-    "lowering_common.au",
-    "lowering_configuration.au",
-    "lowering_types.au",
-    "lowering_values.au",
-    "lowering_body.au",
-    "lowering.au",
-)
+# Every .au file in compiler/ is a frontend module.
+COMPILER_MODULES = tuple(sorted(path.name for path in (Path(__file__).resolve().parents[2] / "compiler").glob("*.au")))
 
 
 def require(value, message):
@@ -59,11 +43,12 @@ def run(command):
 def frontend_arguments(compiler, root, output):
     return [
         str(compiler),
+        "--output",
+        str(output),
         *(str(root / "compiler" / name) for name in COMPILER_MODULES),
         str(root / "compiler/hosted_lexer.S"),
         str(root / "compiler/hosted_parser.S"),
         str(root / "compiler/hosted_resolver.S"),
-        str(output),
     ]
 
 

@@ -484,67 +484,12 @@ def frontend_bridge(bridge, facts):
     return bridge
 
 
-def stage_modules(
-    module_root,
-    lexer,
-    arena,
-    parser,
-    kinds,
-    lowering_errors,
-    lowering_kinds,
-    lowering_storage,
-    resolution,
-    resolver,
-    frontend,
-    lowering_common,
-    lowering_configuration,
-    lowering_types,
-    lowering_values,
-    lowering_body,
-    lowering,
-):
+def stage_modules(module_root, modules):
+    """Copy each compiler module unchanged under its own name in the module root."""
     destination = module_root / "aurora" / "compiler"
     destination.mkdir(parents=True, exist_ok=True)
-    for source, name in zip(
-        (
-            lexer,
-            arena,
-            parser,
-            kinds,
-            lowering_errors,
-            lowering_kinds,
-            lowering_storage,
-            resolution,
-            resolver,
-            frontend,
-            lowering_common,
-            lowering_configuration,
-            lowering_types,
-            lowering_values,
-            lowering_body,
-            lowering,
-        ),
-        (
-            "lexer.au",
-            "syntax_arena.au",
-            "parser.au",
-            "resolution_kinds.au",
-            "lowering_errors.au",
-            "lowering_kinds.au",
-            "lowering_storage.au",
-            "resolution_arena.au",
-            "resolver.au",
-            "frontend.au",
-            "lowering_common.au",
-            "lowering_configuration.au",
-            "lowering_types.au",
-            "lowering_values.au",
-            "lowering_body.au",
-            "lowering.au",
-        ),
-        strict=True,
-    ):
-        shutil.copyfile(source, destination / name)
+    for source in modules:
+        shutil.copyfile(source, destination / source.name)
 
 
 def emit(compiler, source, bridges, output, module_root, messages, compatible_header=None):
@@ -568,59 +513,34 @@ def emit(compiler, source, bridges, output, module_root, messages, compatible_he
 
 
 def main():
-    (
-        compiler,
-        lexer,
-        arena,
-        parser,
-        kinds,
-        lowering_errors,
-        lowering_kinds,
-        lowering_storage,
-        resolution,
-        resolver,
-        frontend,
-        lowering_common,
-        lowering_configuration,
-        lowering_types,
-        lowering_values,
-        lowering_body,
-        lowering,
-        lexer_bridge,
-        parser_bridge,
-        resolver_bridge,
-        output,
-        *headers,
-    ) = map(Path, sys.argv[1:])
-    if len(headers) > 1:
-        raise ValueError("expected at most one shared-host ABI header")
+    # COMPILER --output OUTPUT INPUT...: .au inputs are the compiler modules,
+    # .S inputs are the bridges in order, and an optional .hpp is the header
+    # that stage-2 output must reproduce.
+    arguments = sys.argv[1:]
+    if len(arguments) < 4 or arguments[1] != "--output":
+        raise ValueError("expected COMPILER --output OUTPUT INPUT...")
+    compiler, output = Path(arguments[0]), Path(arguments[2])
+    inputs = [Path(argument) for argument in arguments[3:]]
+    modules = [path for path in inputs if path.suffix == ".au"]
+    bridges = [path for path in inputs if path.suffix == ".S"]
+    headers = [path for path in inputs if path.suffix == ".hpp"]
+    names = [path.name for path in modules]
+    if (
+        len(modules) + len(bridges) + len(headers) != len(inputs)
+        or len(headers) > 1
+        or len(set(names)) != len(names)
+        or not {"frontend.au", "lowering_errors.au"} <= set(names)
+    ):
+        raise ValueError("expected unique .au modules including frontend.au, .S bridges and at most one .hpp header")
     module_root = output.parent / "compiler-modules"
-    stage_modules(
-        module_root,
-        lexer,
-        arena,
-        parser,
-        kinds,
-        lowering_errors,
-        lowering_kinds,
-        lowering_storage,
-        resolution,
-        resolver,
-        frontend,
-        lowering_common,
-        lowering_configuration,
-        lowering_types,
-        lowering_values,
-        lowering_body,
-        lowering,
-    )
+    stage_modules(module_root, modules)
     emit(
         compiler,
-        frontend,
-        [lexer_bridge, parser_bridge, resolver_bridge],
+        modules[names.index("frontend.au")],
+        bridges,
         output,
         module_root,
-        lowering_errors,
+        modules[names.index("lowering_errors.au")],
         headers[0] if headers else None,
     )
 
