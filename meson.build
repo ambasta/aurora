@@ -19,13 +19,14 @@ bootstrap_compiler = find_program(bootstrap_compiler_path, native: true)
 bootstrap_depend_files = files(bootstrap_compiler_path)
 frontend_inputs = files('compiler/lexer.au', 'compiler/syntax_arena.au', 'compiler/parser.au',
                         'compiler/resolution_kinds.au', 'compiler/resolution_arena.au', 'compiler/resolver.au',
+                        'compiler/frontend.au',
                         'compiler/hosted_lexer.S', 'compiler/hosted_parser.S', 'compiler/hosted_resolver.S')
 frontend_assembly = custom_target(
   'hosted-frontend-assembly', input: frontend_inputs,
   output: ['hosted-frontend.s', 'hosted-frontend.generated.s', 'hosted-frontend.abi.json', 'hosted_frontend_abi.hpp'],
   command: [python, '-B', files('scripts/bootstrap_frontend.py'), bootstrap_compiler,
             '@INPUT0@', '@INPUT1@', '@INPUT2@', '@INPUT3@', '@INPUT4@', '@INPUT5@',
-            '@INPUT6@', '@INPUT7@', '@INPUT8@', '@OUTPUT0@'],
+            '@INPUT6@', '@INPUT7@', '@INPUT8@', '@INPUT9@', '@OUTPUT0@'],
   depend_files: bootstrap_depend_files,
 )
 frontend_object = custom_target(
@@ -55,7 +56,7 @@ frontend_stage2_assembly = custom_target(
            'hosted-frontend-stage2.abi.json', 'hosted_frontend_stage2_abi.hpp'],
   command: [python, '-B', files('scripts/bootstrap_frontend.py'), aurorac,
             '@INPUT0@', '@INPUT1@', '@INPUT2@', '@INPUT3@', '@INPUT4@', '@INPUT5@',
-            '@INPUT6@', '@INPUT7@', '@INPUT8@', '@OUTPUT0@', '@INPUT9@'],
+            '@INPUT6@', '@INPUT7@', '@INPUT8@', '@INPUT9@', '@OUTPUT0@', '@INPUT10@'],
   build_by_default: false,
 )
 frontend_stage2_object = custom_target(

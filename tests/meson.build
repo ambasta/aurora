@@ -662,7 +662,7 @@ test('hosted-parser', hosted_parser_test,
                  '../examples/class_values.au', '../library/std/utility.au', '../library/std/decimal.au',
                  '../library/std/json.au', '../library/package/graph.au', '../examples/function_token_values.au',
                  '../examples/class_values.au', '../examples/kernel-bios.au', '../compiler/resolution_kinds.au',
-                 '../compiler/resolution_arena.au', '../compiler/resolver.au'),
+                 '../compiler/resolution_arena.au', '../compiler/resolver.au', '../compiler/frontend.au'),
      suite: ['full', 'dev', 'core', 'compiler'], timeout: 120)
 hosted_parser_invalid = executable(
     'hosted-parser-invalid', ['compiler/hosted_parser_invalid.cpp', '../compiler/hosted_parser.cpp',

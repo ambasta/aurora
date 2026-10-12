@@ -3853,7 +3853,7 @@ void resolvedVisibility() {
                                                        "export auto choose(i64 value)->i64{return value;}"
                                                        "auto choose(bool value)->i64{return 2;}"));
         const auto types = resolution.add(std::make_shared<const aurora::SourceText>(
-            "types.au", "export module types;export class Leaf{public:i64 value;};"));
+            "types.au", "export module types;export class Leaf{public:i64 value;};class Hidden{public:i64 value;};"));
         program = resolution.resolve({types.id, functions.id, root.id}, root.id);
     }
     const std::array<std::string, 3> overloads{"__au_o_m1_9functions_n0__d6choose_p1_295___au_c_m1_5types_n0__d4Leaf",
@@ -3869,8 +3869,12 @@ void resolvedVisibility() {
                 call->overloadCandidates == std::vector<std::string>{overloads[0], overloads[1]} &&
                 call->inaccessibleOverloads == std::set<std::string>{overloads[0]},
             "overload visibility erased or reordered an inaccessible exact-match candidate");
-    require(program.reflectionAccess.at(0).empty() && program.reflectionAccess.size() == 3,
-            "empty caller reflection view was omitted or gained a transitive nominal type");
+    require(
+        program.reflectionAccess ==
+            std::map<int, std::set<std::string>>{{0, {}},
+                                                 {1, {"__au_c_m1_5types_n0__d4Leaf", "__au_c_m1_5types_n0__d6Hidden"}},
+                                                 {2, {"__au_c_m1_5types_n0__d4Leaf"}}},
+        "reflection views lost module-scope identity or granted a private/transitive nominal type");
     ++cases;
 
     context = "explicit empty module reflection views and returned source lifetime";
@@ -4095,11 +4099,11 @@ void rawResolutionOwnership() {
 }
 
 void resolvedCompilerSources(char **paths) {
-    context = "all six real compiler modules through production resolution";
-    const std::array<std::size_t, 6> arguments{0, 1, 2, 15, 16, 17};
-    const std::array<std::string, 6> modules{
-        "lexer", "syntax_arena", "parser", "resolution_kinds", "resolution_arena", "resolver"};
-    const std::array<std::vector<std::string>, 6> classNames{{
+    context = "all seven real compiler modules through production resolution";
+    const std::array<std::size_t, 7> arguments{0, 1, 2, 15, 16, 17, 18};
+    const std::array<std::string, 7> modules{
+        "lexer", "syntax_arena", "parser", "resolution_kinds", "resolution_arena", "resolver", "frontend"};
+    const std::array<std::vector<std::string>, 7> classNames{{
         {"Cursor", "Lexeme"},
         {"ParseFrame", "AstNode", "ChildEdge", "TypeSyntax", "SyntaxNode", "AstArena"},
         {"AdmissionConfig",
@@ -4115,11 +4119,12 @@ void resolvedCompilerSources(char **paths) {
         {},
         {"SyntaxRow", "MetaRow", "ResolvedRow", "WorkRow", "SessionStatus", "Session"},
         {"BindContext", "Arguments"},
+        {},
     }};
-    // Resolver's direct import order gives this exact DFS postorder.
-    const std::array<std::size_t, 6> order{3, 0, 1, 4, 2, 5};
-    std::array<aurora::Program, 6> syntax;
-    std::array<aurora::HostedModule, 6> headers;
+    // Frontend's direct import order gives this exact DFS postorder.
+    const std::array<std::size_t, 7> order{0, 1, 2, 3, 4, 5, 6};
+    std::array<aurora::Program, 7> syntax;
+    std::array<aurora::HostedModule, 7> headers;
     aurora::Program program;
     {
         aurora::HostedResolution resolution;
@@ -4143,7 +4148,7 @@ void resolvedCompilerSources(char **paths) {
             dependencyOrder.push_back(headers[index].id);
         program = resolution.resolve(dependencyOrder, headers.back().id);
     }
-    require(program.templates.empty() && program.functionTemplates.empty() && program.reflectionAccess.size() == 6,
+    require(program.templates.empty() && program.functionTemplates.empty() && program.reflectionAccess.size() == 7,
             "actual compiler graph retained unresolved templates or omitted a module reflection view");
     std::size_t functionIndex = 0, classIndex = 0, enumIndex = 0, methods = 0, fields = 0;
     std::set<std::string> identities;
@@ -4151,7 +4156,7 @@ void resolvedCompilerSources(char **paths) {
     // literal inventory above and resolvedModules supply independent contracts.
     for (std::size_t position = 0; position < order.size(); ++position) {
         const auto module = order[position];
-        const auto scope = module == 5 ? 0 : static_cast<int>(position + 1);
+        const auto scope = module == 6 ? 0 : static_cast<int>(position + 1);
         for (const auto &expected : syntax[module].functions) {
             const auto &actual = program.functions.at(functionIndex++);
             require(identities.insert(actual.name).second && actual.moduleScope == scope &&
@@ -6013,7 +6018,7 @@ void rawAggregates() {
 int main(int argc, char **argv) {
     try {
         context = "fixture arguments";
-        require(argc == 19, "expected six compiler, five aggregate and seven typed consumer source paths");
+        require(argc == 20, "expected seven compiler, five aggregate and seven typed consumer source paths");
         grammarExpectations();
         diagnosticExpectations();
         // Table rows cover ordinary semicolon inputs. Keep distinct trivia,

@@ -15,21 +15,21 @@ import sys
 
 # Names only: every physical field extent and offset comes from emitted facts.
 ARGUMENT_RECORDS = (
-    ("LexerInput", "compiler_lexer::next_lexeme", ("source", "cursor")),
-    ("ParserInput", "compiler_parser::parse", ("source", "cursor", "stop", "context", "enum_count")),
-    ("AdmissionInput", "compiler_parser::admit", ("source", "root", "configuration")),
-    ("ParserCreate", "compiler_parser::create", ("region", "capacity")),
-    ("ParserRelease", "compiler_parser::release", ("region", "arena")),
-    ("ResolverCreate", "compiler_resolver::create", ("region",)),
-    ("ResolverIngest", "compiler_resolver::ingest", ("region", "session", "parsed", "module", "root")),
-    ("ResolverRelease", "compiler_resolver::release", ("region", "session")),
-    ("ResolverReleasePair", "compiler_resolver::release_pair", ("region", "session", "parsed")),
-    ("ResolverSourceInput", "compiler_resolver::append_source", ("source",)),
-    ("ResolverTextInput", "compiler_resolver::append_text", ("text",)),
-    ("ResolverOrderInput", "compiler_resolver::order_module", ("module", "order", "scope", "root")),
-    ("ResolverImportInput", "compiler_resolver::bind_import", ("module", "node", "target")),
-    ("ResolverSeedBuiltinInput", "compiler_resolver::seed_builtin", ("definition",)),
-    ("ResolverSeedMemberInput", "compiler_resolver::seed_member", ("member",)),
+    ("LexerInput", "compiler_frontend::lexer_next", ("source", "cursor")),
+    ("ParserInput", "compiler_frontend::parser_parse", ("source", "cursor", "stop", "context", "enum_count")),
+    ("AdmissionInput", "compiler_frontend::parser_admit", ("source", "root", "configuration")),
+    ("ParserCreate", "compiler_frontend::parser_create", ("region", "capacity")),
+    ("ParserRelease", "compiler_frontend::parser_release", ("region", "arena")),
+    ("ResolverCreate", "compiler_frontend::resolver_create", ("region",)),
+    ("ResolverIngest", "compiler_frontend::resolver_ingest", ("region", "session", "parsed", "module", "root")),
+    ("ResolverRelease", "compiler_frontend::resolver_release", ("region", "session")),
+    ("ResolverReleasePair", "compiler_frontend::resolver_release_pair", ("region", "session", "parsed")),
+    ("ResolverSourceInput", "compiler_frontend::resolver_append_source", ("source",)),
+    ("ResolverTextInput", "compiler_frontend::resolver_append_text", ("text",)),
+    ("ResolverOrderInput", "compiler_frontend::resolver_order_module", ("module", "order", "scope", "root")),
+    ("ResolverImportInput", "compiler_frontend::resolver_bind_import", ("module", "node", "target")),
+    ("ResolverSeedBuiltinInput", "compiler_frontend::resolver_seed_builtin", ("definition",)),
+    ("ResolverSeedMemberInput", "compiler_frontend::resolver_seed_member", ("member",)),
 )
 
 
@@ -66,64 +66,88 @@ def frontend_abi_entries(facts):
     checks = [
         (
             "lexer_next",
-            "compiler_lexer::next_lexeme",
+            "compiler_frontend::lexer_next",
             None,
             ["span", "compiler_lexer::Cursor"],
             "compiler_lexer::Lexeme",
         ),
-        ("parser_create", "compiler_parser::create", None, ["region", "i64"], "compiler_parser::AstArena"),
+        ("parser_create", "compiler_frontend::parser_create", None, ["region", "i64"], "compiler_parser::AstArena"),
         (
             "parser_parse",
-            "compiler_parser::parse",
+            "compiler_frontend::parser_parse",
             arena,
             ["span", "compiler_lexer::Cursor", "compiler_parser::Stop", "compiler_parser::TypeContext", "i64"],
             "compiler_parser::ParseResult",
         ),
         (
             "parser_admit",
-            "compiler_parser::admit",
+            "compiler_frontend::parser_admit",
             arena,
             ["span", "i64", "compiler_parser::AdmissionConfig"],
             "compiler_parser::AdmissionResult",
         ),
-        ("parser_release", "compiler_parser::release", None, ["region", "compiler_parser::AstArena"], "i64"),
-        ("resolver_create", "compiler_resolver::create", None, ["region"], "compiler_resolver::Session"),
+        ("parser_release", "compiler_frontend::parser_release", None, ["region", "compiler_parser::AstArena"], "i64"),
+        ("resolver_create", "compiler_frontend::resolver_create", None, ["region"], "compiler_resolver::Session"),
         (
             "resolver_ingest",
-            "compiler_resolver::ingest",
+            "compiler_frontend::resolver_ingest",
             None,
             ["region", "compiler_resolver::Session", "compiler_parser::AstArena", "i64", "i64"],
             "compiler_resolver::Session",
         ),
-        ("resolver_release", "compiler_resolver::release", None, ["region", "compiler_resolver::Session"], "i64"),
+        (
+            "resolver_release",
+            "compiler_frontend::resolver_release",
+            None,
+            ["region", "compiler_resolver::Session"],
+            "i64",
+        ),
         (
             "resolver_release_pair",
-            "compiler_resolver::release_pair",
+            "compiler_frontend::resolver_release_pair",
             None,
             ["region", "compiler_resolver::Session", "compiler_parser::AstArena"],
             "i64",
         ),
-        ("resolver_append_source", "compiler_resolver::append_source", session, ["span"], "i64"),
-        ("resolver_append_text", "compiler_resolver::append_text", session, ["span"], "i64"),
-        ("resolver_order_module", "compiler_resolver::order_module", session, ["i64", "i64", "i64", "bool"], "bool"),
-        ("resolver_bind_import", "compiler_resolver::bind_import", session, ["i64", "i64", "i64"], "bool"),
-        ("resolver_count", "compiler_resolver::count", session, ["i64"], "i64"),
-        ("resolver_read_source", "compiler_resolver::read_source", session, ["i64"], "i64"),
-        ("resolver_status", "compiler_resolver::status", session, [], "compiler_resolver::SessionStatus"),
-        ("resolver_seed_builtin", "compiler_resolver::seed_builtin", session, ["compiler_resolver::MetaRow"], "i64"),
-        ("resolver_seed_member", "compiler_resolver::seed_member", session, ["compiler_resolver::MetaRow"], "i64"),
-        ("resolver_run", "compiler_resolver::run", session, [], "i64"),
+        ("resolver_append_source", "compiler_frontend::resolver_append_source", session, ["span"], "i64"),
+        ("resolver_append_text", "compiler_frontend::resolver_append_text", session, ["span"], "i64"),
+        (
+            "resolver_order_module",
+            "compiler_frontend::resolver_order_module",
+            session,
+            ["i64", "i64", "i64", "bool"],
+            "bool",
+        ),
+        ("resolver_bind_import", "compiler_frontend::resolver_bind_import", session, ["i64", "i64", "i64"], "bool"),
+        ("resolver_count", "compiler_frontend::resolver_count", session, ["i64"], "i64"),
+        ("resolver_read_source", "compiler_frontend::resolver_read_source", session, ["i64"], "i64"),
+        ("resolver_status", "compiler_frontend::resolver_status", session, [], "compiler_resolver::SessionStatus"),
+        (
+            "resolver_seed_builtin",
+            "compiler_frontend::resolver_seed_builtin",
+            session,
+            ["compiler_resolver::MetaRow"],
+            "i64",
+        ),
+        (
+            "resolver_seed_member",
+            "compiler_frontend::resolver_seed_member",
+            session,
+            ["compiler_resolver::MetaRow"],
+            "i64",
+        ),
+        ("resolver_run", "compiler_frontend::resolver_run", session, [], "i64"),
     ]
     checks += [
-        ("parser_" + name, "compiler_parser::" + name, arena, [], "i64")
+        ("parser_" + name, "compiler_frontend::parser_" + name, arena, [], "i64")
         for name in ("node_count", "edge_count", "type_count", "syntax_count")
     ]
     checks += [
-        ("resolver_" + name, "compiler_resolver::" + name, session, ["i64"], "compiler_resolver::" + result)
+        ("resolver_" + name, "compiler_frontend::resolver_" + name, session, ["i64"], "compiler_resolver::" + result)
         for name, result in (("read_syntax", "SyntaxRow"), ("read_meta", "MetaRow"), ("read_resolved", "ResolvedRow"))
     ]
     checks += [
-        ("parser_" + name, "compiler_parser::" + name, arena, ["i64"], "compiler_parser::" + result)
+        ("parser_" + name, "compiler_frontend::parser_" + name, arena, ["i64"], "compiler_parser::" + result)
         for name, result in (
             ("read_node", "AstNode"),
             ("read_edge", "ChildEdge"),
@@ -150,8 +174,8 @@ def frontend_abi_entries(facts):
         entries[alias] = symbol
     # Cleanup receives a generated prefix of the live transfer record. Refuse
     # layout drift before any host code can reinterpret that enclosing prefix.
-    _, ingest = abi_declaration(facts, "functions", "compiler_resolver::ingest")
-    for source, count in (("compiler_resolver::release", 2), ("compiler_resolver::release_pair", 3)):
+    _, ingest = abi_declaration(facts, "functions", "compiler_frontend::resolver_ingest")
+    for source, count in (("compiler_frontend::resolver_release", 2), ("compiler_frontend::resolver_release_pair", 3)):
         _, release = abi_declaration(facts, "functions", source)
         if (
             release["parameters"] != ingest["parameters"][:count]
@@ -347,12 +371,20 @@ def frontend_bridge(bridge, facts):
     return bridge
 
 
-def stage_modules(module_root, lexer, arena, parser, kinds, resolution, resolver):
+def stage_modules(module_root, lexer, arena, parser, kinds, resolution, resolver, frontend):
     destination = module_root / "aurora" / "compiler"
     destination.mkdir(parents=True, exist_ok=True)
     for source, name in zip(
-        (lexer, arena, parser, kinds, resolution, resolver),
-        ("lexer.au", "syntax_arena.au", "parser.au", "resolution_kinds.au", "resolution_arena.au", "resolver.au"),
+        (lexer, arena, parser, kinds, resolution, resolver, frontend),
+        (
+            "lexer.au",
+            "syntax_arena.au",
+            "parser.au",
+            "resolution_kinds.au",
+            "resolution_arena.au",
+            "resolver.au",
+            "frontend.au",
+        ),
         strict=True,
     ):
         shutil.copyfile(source, destination / name)
@@ -387,6 +419,7 @@ def main():
         kinds,
         resolution,
         resolver,
+        frontend,
         lexer_bridge,
         parser_bridge,
         resolver_bridge,
@@ -396,10 +429,10 @@ def main():
     if len(headers) > 1:
         raise ValueError("expected at most one shared-host ABI header")
     module_root = output.parent / "compiler-modules"
-    stage_modules(module_root, lexer, arena, parser, kinds, resolution, resolver)
+    stage_modules(module_root, lexer, arena, parser, kinds, resolution, resolver, frontend)
     emit(
         compiler,
-        resolver,
+        frontend,
         [lexer_bridge, parser_bridge, resolver_bridge],
         output,
         module_root,

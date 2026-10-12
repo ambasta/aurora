@@ -27,6 +27,7 @@ COMPILER_MODULES = (
     "resolution_kinds.au",
     "resolution_arena.au",
     "resolver.au",
+    "frontend.au",
 )
 
 
@@ -132,19 +133,19 @@ def abi_generation(facts):
     ):
         changed = deepcopy(facts)
         if kind == "result_extent":
-            _, entry = abi_declaration(changed, "functions", "compiler_parser::read_node")
+            _, entry = abi_declaration(changed, "functions", "compiler_frontend::parser_read_node")
             entry["result"]["bytes"] += 8
         elif kind.startswith("resolver_"):
             source = {
-                "resolver_receiver": "compiler_resolver::append_source",
-                "resolver_ingest_result": "compiler_resolver::ingest",
-                "resolver_ingest_session": "compiler_resolver::ingest",
-                "resolver_ingest_parsed": "compiler_resolver::ingest",
-                "resolver_release_prefix": "compiler_resolver::release",
-                "resolver_release_pair_prefix": "compiler_resolver::release_pair",
-                "resolver_source_shape": "compiler_resolver::append_source",
-                "resolver_order_shape": "compiler_resolver::order_module",
-                "resolver_seed_shape": "compiler_resolver::seed_member",
+                "resolver_receiver": "compiler_frontend::resolver_append_source",
+                "resolver_ingest_result": "compiler_frontend::resolver_ingest",
+                "resolver_ingest_session": "compiler_frontend::resolver_ingest",
+                "resolver_ingest_parsed": "compiler_frontend::resolver_ingest",
+                "resolver_release_prefix": "compiler_frontend::resolver_release",
+                "resolver_release_pair_prefix": "compiler_frontend::resolver_release_pair",
+                "resolver_source_shape": "compiler_frontend::resolver_append_source",
+                "resolver_order_shape": "compiler_frontend::resolver_order_module",
+                "resolver_seed_shape": "compiler_frontend::resolver_seed_member",
             }[kind]
             _, entry = abi_declaration(changed, "functions", source)
             if kind == "resolver_receiver":
@@ -158,7 +159,7 @@ def abi_generation(facts):
             else:
                 entry["parameters"][-1]["bytes"] += 8
         elif kind.startswith("admission_"):
-            _, entry = abi_declaration(changed, "functions", "compiler_parser::admit")
+            _, entry = abi_declaration(changed, "functions", "compiler_frontend::parser_admit")
             if kind == "admission_receiver":
                 entry["receiver"] = None
             elif kind == "admission_result_extent":
@@ -304,7 +305,7 @@ def main():
         records = []
         corpus = sources(root)
         require(root / "compiler/lexer.au" in corpus, "lexer self-rebuild input is missing")
-        require(root / "compiler/resolver.au" in corpus, "whole frontend self-rebuild input is missing")
+        require(root / "compiler/frontend.au" in corpus, "whole frontend self-rebuild input is missing")
         compiler_sources = {root / "compiler" / name for name in COMPILER_MODULES}
         require(compiler_sources.issubset(corpus), "a real compiler module is missing from self-rebuild coverage")
         for source in corpus:
@@ -353,7 +354,7 @@ def main():
             # the complete resolver graph below compiles and covers its enums.
             if source in compiler_sources and source.name != "resolution_kinds.au":
                 require(runs[0].returncode == 0, f"compiler module self-rebuild failed: {source.name}")
-            if source == root / "compiler/resolver.au":
+            if source == root / "compiler/frontend.au":
                 require(runs[0].returncode == 0, "whole frontend self-rebuild failed")
                 frontend_bootstrap(current1, current2, root, work, built_a, built_b)
             records.append({"source": str(source.relative_to(root)), "status": runs[0].returncode})

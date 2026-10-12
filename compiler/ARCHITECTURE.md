@@ -148,6 +148,10 @@ integrated GCC 16 full/image/guest qualification.
 
 ### Resolved module boundary
 
+`frontend.au` is the explicit root bridge surface. Its forwarding entries retain
+the imported parser and resolver implementations under ordinary dead-code rules;
+the bridge selects their compiler-produced symbols and layouts directly.
+
 `resolution_arena.au` owns one flat session: source bytes, syntax, metadata,
 resolved decorations and reusable work rows. Loading transfers each parsed arena
 once, preserving immutable host snapshots for diagnostics. Aurora registers module

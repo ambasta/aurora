@@ -112,4 +112,3 @@ aurora_hosted_resolver_run:
     movq %rdi, %r10
     jmp __aurora_frontend_resolver_run
 .size aurora_hosted_resolver_run, .-aurora_hosted_resolver_run
-.section .note.GNU-stack,"",@progbits

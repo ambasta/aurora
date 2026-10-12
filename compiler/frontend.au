@@ -1,0 +1,126 @@
+export module aurora.compiler.frontend;
+import aurora.compiler.lexer;
+import aurora.compiler.syntax_arena;
+import aurora.compiler.parser;
+import aurora.compiler.resolution_kinds;
+import aurora.compiler.resolution_arena;
+import aurora.compiler.resolver;
+
+// The host bridge enters this root module. Ordinary imported-function retention
+// then keeps exactly the parser and resolver entry implementations they call.
+// These forwards add no state, policy or owner: each moved input is consumed once.
+export namespace compiler_frontend {
+    auto lexer_next(builtin::span<const u8> source, compiler_lexer::Cursor cursor) -> compiler_lexer::Lexeme {
+        const compiler_lexer::Lexeme result = compiler_lexer::next_lexeme(source, cursor);
+        return result;
+    }
+    auto parser_create(builtin::ByteRegion region, i64 capacity) -> compiler_parser::AstArena {
+        compiler_parser::AstArena result = compiler_parser::create(region, capacity);
+        return move(result);
+    }
+    auto parser_parse(compiler_parser::AstArena& arena, builtin::span<const u8> source, compiler_lexer::Cursor cursor,
+        compiler_parser::Stop stop, compiler_parser::TypeContext context,
+        i64 enum_count) -> compiler_parser::ParseResult {
+        const compiler_parser::ParseResult result = compiler_parser::parse(arena, source, cursor, stop, context,
+            enum_count);
+        return result;
+    }
+    auto parser_admit(compiler_parser::AstArena& arena, builtin::span<const u8> source, i64 root,
+        compiler_parser::AdmissionConfig configuration) -> compiler_parser::AdmissionResult {
+        const compiler_parser::AdmissionResult result = compiler_parser::admit(arena, source, root, configuration);
+        return result;
+    }
+    auto parser_release(builtin::ByteRegion region, compiler_parser::AstArena arena) -> i64 {
+        return compiler_parser::release(region, move(arena));
+    }
+    auto parser_node_count(const compiler_parser::AstArena& arena) -> i64 {
+        return compiler_parser::node_count(arena);
+    }
+    auto parser_edge_count(const compiler_parser::AstArena& arena) -> i64 {
+        return compiler_parser::edge_count(arena);
+    }
+    auto parser_type_count(const compiler_parser::AstArena& arena) -> i64 {
+        return compiler_parser::type_count(arena);
+    }
+    auto parser_syntax_count(const compiler_parser::AstArena& arena) -> i64 {
+        return compiler_parser::syntax_count(arena);
+    }
+    auto parser_read_node(const compiler_parser::AstArena& arena, i64 index) -> compiler_parser::AstNode {
+        const compiler_parser::AstNode result = compiler_parser::read_node(arena, index);
+        return result;
+    }
+    auto parser_read_edge(const compiler_parser::AstArena& arena, i64 index) -> compiler_parser::ChildEdge {
+        const compiler_parser::ChildEdge result = compiler_parser::read_edge(arena, index);
+        return result;
+    }
+    auto parser_read_type(const compiler_parser::AstArena& arena, i64 index) -> compiler_parser::TypeSyntax {
+        const compiler_parser::TypeSyntax result = compiler_parser::read_type(arena, index);
+        return result;
+    }
+    auto parser_read_syntax(const compiler_parser::AstArena& arena, i64 index) -> compiler_parser::SyntaxNode {
+        const compiler_parser::SyntaxNode result = compiler_parser::read_syntax(arena, index);
+        return result;
+    }
+    auto resolver_create(builtin::ByteRegion region) -> compiler_resolver::Session {
+        compiler_resolver::Session result = compiler_resolver::create(region);
+        return move(result);
+    }
+    auto resolver_ingest(builtin::ByteRegion region, compiler_resolver::Session session,
+        compiler_parser::AstArena parsed, i64 module_id, i64 root) -> compiler_resolver::Session {
+        compiler_resolver::Session result = compiler_resolver::ingest(region, move(session), move(parsed), module_id,
+            root);
+        return move(result);
+    }
+    auto resolver_release(builtin::ByteRegion region, compiler_resolver::Session session) -> i64 {
+        return compiler_resolver::release(region, move(session));
+    }
+    auto resolver_release_pair(builtin::ByteRegion region, compiler_resolver::Session session,
+        compiler_parser::AstArena parsed) -> i64 {
+        return compiler_resolver::release_pair(region, move(session), move(parsed));
+    }
+    auto resolver_append_source(compiler_resolver::Session& session, builtin::span<const u8> source) -> i64 {
+        return compiler_resolver::append_source(session, source);
+    }
+    auto resolver_append_text(compiler_resolver::Session& session, builtin::span<const u8> source) -> i64 {
+        return compiler_resolver::append_text(session, source);
+    }
+    auto resolver_order_module(compiler_resolver::Session& session, i64 module_id, i64 order, i64 scope,
+        bool root) -> bool {
+        return compiler_resolver::order_module(session, module_id, order, scope, root);
+    }
+    auto resolver_bind_import(compiler_resolver::Session& session, i64 module_id, i64 node, i64 target) -> bool {
+        return compiler_resolver::bind_import(session, module_id, node, target);
+    }
+    auto resolver_count(const compiler_resolver::Session& session, i64 pool) -> i64 {
+        return compiler_resolver::count(session, pool);
+    }
+    auto resolver_read_source(const compiler_resolver::Session& session, i64 index) -> i64 {
+        return compiler_resolver::read_source(session, index);
+    }
+    auto resolver_status(const compiler_resolver::Session& session) -> compiler_resolver::SessionStatus {
+        const compiler_resolver::SessionStatus result = compiler_resolver::status(session);
+        return result;
+    }
+    auto resolver_seed_builtin(compiler_resolver::Session& session, compiler_resolver::MetaRow definition) -> i64 {
+        return compiler_resolver::seed_builtin(session, definition);
+    }
+    auto resolver_seed_member(compiler_resolver::Session& session, compiler_resolver::MetaRow definition) -> i64 {
+        return compiler_resolver::seed_member(session, definition);
+    }
+    auto resolver_run(compiler_resolver::Session& session) -> i64 {
+        return compiler_resolver::run(session);
+    }
+    auto resolver_read_syntax(const compiler_resolver::Session& session, i64 index) -> compiler_resolver::SyntaxRow {
+        const compiler_resolver::SyntaxRow result = compiler_resolver::read_syntax(session, index);
+        return result;
+    }
+    auto resolver_read_meta(const compiler_resolver::Session& session, i64 index) -> compiler_resolver::MetaRow {
+        const compiler_resolver::MetaRow result = compiler_resolver::read_meta(session, index);
+        return result;
+    }
+    auto resolver_read_resolved(const compiler_resolver::Session& session,
+        i64 index) -> compiler_resolver::ResolvedRow {
+        const compiler_resolver::ResolvedRow result = compiler_resolver::read_resolved(session, index);
+        return result;
+    }
+}

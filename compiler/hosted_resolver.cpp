@@ -61,20 +61,6 @@ int intValue(std::int64_t value) {
         invalidResolution();
     return static_cast<int>(value);
 }
-auto words(const wire::SyntaxRow &row) {
-    return std::array{row.value0,
-                      row.value1,
-                      row.value2,
-                      row.value3,
-                      row.value4,
-                      row.value5,
-                      row.value6,
-                      row.value7,
-                      row.value8,
-                      row.value9,
-                      row.value10,
-                      row.value11};
-}
 auto words(const wire::MetaRow &row) {
     return std::array{row.value0,
                       row.value1,
@@ -91,9 +77,6 @@ auto words(const wire::MetaRow &row) {
                       row.value12,
                       row.value13,
                       row.value14};
-}
-auto words(const wire::ResolvedRow &row) {
-    return std::array{row.value0, row.value1, row.value2, row.value3, row.value4, row.value5, row.value6, row.value7};
 }
 // This spelling routine is moved from the former resolver. Identity choice and
 // complete parameter/instance tuples have already been fixed by Aurora.
@@ -937,9 +920,10 @@ public:
                 invalidResolution();
             const auto bits = static_cast<std::uint64_t>(view.value1) | (static_cast<std::uint64_t>(view.value2) << 32);
             const auto name = native(view.value0);
-            for (std::size_t i = 0; i < sources.size(); ++i)
-                if (bits & (std::uint64_t{1} << i))
-                    result.reflectionAccess[sources[i].scope].insert(name);
+            // Aurora publishes module-scope bits, not ingestion-order indices.
+            for (const auto &source : sources)
+                if (bits & (std::uint64_t{1} << source.scope))
+                    result.reflectionAccess[source.scope].insert(name);
         }
         return result;
     }
