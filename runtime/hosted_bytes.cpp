@@ -84,11 +84,17 @@ public:
         if (owner->success != 1 || owner->allocation == 0 || owner->length < 0) {
             invariant_trap();
         }
-        for (auto *current = found_region->allocations_; current != nullptr; current = current->next) {
+        for (auto **link = &found_region->allocations_; *link != nullptr; link = &(*link)->next) {
+            auto *current = *link;
             if (current->id == owner->allocation) {
                 if (current->length != owner->length) {
                     invariant_trap();
                 }
+                // Move the match to the front. A few hot owners serve most accesses;
+                // membership and every check above are unchanged.
+                *link = current->next;
+                current->next = found_region->allocations_;
+                found_region->allocations_ = current;
                 return current;
             }
         }

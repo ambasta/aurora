@@ -273,6 +273,7 @@ varies too much for a stable threshold.
 
 | Change | Measured | CPU ratio |
 |---|---|---|
+| Hosted runtime moves a looked-up allocation to the front of its region's list | `scripts/compiler-speed.py` against the previous build: `compiler/frontend.au` 0.85x, library inputs 0.87-0.93x, identical output | 0.90x |
 | Enum cases named once, one copy per heap child, index values from the lookup loop | `scripts/compiler-speed.py` against the Session split: `compiler/frontend.au` 0.88x, library inputs 0.95-1.00x, identical output | 0.95x |
 | `resolution_arena.au` split into Session, rows, names and ingest; shared pool growth | `scripts/compiler-speed.py` against the `lowering_body.au` split: 0.98-1.03x per input, identical output | 1.01x |
 | Generated lowering messages and the `lowering_body.au` split | `scripts/compiler-speed.py` against #162: 0.96-1.03x per input, identical output | 1.00x |

@@ -191,7 +191,9 @@ Successful allocations and regions receive nonzero IDs that never wrap or reuse.
 Adapter helpers are nonthrowing. They validate region, allocation identity and
 canonical descriptor shape before access/release, and bounds before payload
 access. Stale and cross-region descriptors fail closed, including pre-resize descriptors
-whose old lengths later recur. Unique live ownership is
+whose old lengths later recur. A successful lookup moves its allocation to the front
+of the region's list, so the few hot owners are found first; membership and every
+check are unchanged. Unique live ownership is
 enforced by source/IR validation; the adapter does not defend against malicious
 trusted host code cloning a currently valid descriptor. Its raw host pointers and
 allocator callbacks are trusted bootstrap machinery, never an Aurora source API.
