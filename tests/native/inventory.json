@@ -3,6 +3,7 @@
   "scope": "Canonical native Meson registrations and fixtures; never emulator or physical qualification.",
   "registrations": {
     "clean-controls": {"source": "tests/test_clean.py", "optimized": false},
+    "python-assertions": {"source": "tests/python-assertions.py", "optimized": false},
     "iommu-event-oracle-controls": {"source": "tests/kernel-iommu-event-oracle.py", "optimized": false},
     "iommu-event-oracle-controls-optimized": {"source": "tests/kernel-iommu-event-oracle.py", "optimized": true},
     "iommu-event-smoke-controls": {"source": "tests/kernel-iommu-event-smoke.py", "optimized": false},
@@ -174,6 +175,7 @@
   "files": {
     "tests/compiler/hosted_parser.cpp": {"kind": "native-fixture", "reason": "Real generated Aurora parser, explicit AST/diagnostic, private ABI and allocation cleanup fixture. Exact registration and target mappings are checked below.", "tests": ["hosted-parser"]},
     "tests/compiler/hosted_parser_invalid.cpp": {"kind": "native-fixture", "reason": "Memory-safe hosted parser conversion controls with isolated bootstrap stubs, bounded indices/ownership and exact owner cleanup.", "tests": ["hosted-parser-invalid"]},
+    "tests/python-assertions.py": {"kind": "direct-registration", "reason": "Forbids Python assert statements so single-mode runners behave identically under python -O.", "tests": ["python-assertions"]},
     "tests/test_clean.py": {"kind": "direct-registration", "reason": "Compiler-free Meson product cleanup and explicit scratch selection on tiny temporary fixtures only.", "tests": ["clean-controls"]},
     "tests/compiler/hosted_lexer_invalid.cpp": {"kind": "native-fixture", "reason": "Dependency-tracked hosted Aurora lexer C++ fixture; exact registration and target source/output mappings are checked below.", "tests": ["hosted-lexer-invalid"]},
     "tests/compiler/hosted_lexer.cpp": {"kind": "native-fixture", "reason": "Dependency-tracked hosted Aurora lexer C++ fixture; exact registration and target source/output mappings are checked below.", "tests": ["hosted-lexer"]},

@@ -430,6 +430,9 @@ foreach runner : [
 endforeach
 
 # Public Make routing must be exercised by the required developer suite.
+# Runners execute once; this keeps them independent of python -O.
+test('python-assertions', python, args: ['-B', files('python-assertions.py')],
+     suite: ['full', 'dev'], env: oracle_env, timeout: 30)
 test('graphical-image-policy', python, args: ['-B', files('kernel-graphical-image-policy.py')],
      suite: ['full', 'dev'], env: oracle_env, timeout: 30)
 test('graphical-image-policy-optimized', python, args: ['-B', '-O', files('kernel-graphical-image-policy.py')],
