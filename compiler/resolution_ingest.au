@@ -72,49 +72,36 @@ namespace compiler_resolver {
         }
         return session.good();
     }
-    auto request_less(Session& session, i64 first, i64 second) -> bool {
-        const WorkRow left = session.work(first);
-        const WorkRow right = session.work(second);
-        return left.before_request(right.word(0), right.word(3), right.word(1), right.word(2));
-    }
-    auto swap_requests(Session& session, i64 first, i64 second) -> bool {
-        const WorkRow left = session.work(first);
-        const WorkRow right = session.work(second);
-        return session.set_work(first, right) && session.set_work(second, left);
-    }
-    auto sift_requests(Session& session, i64 initial, i64 end) -> bool {
-        if (end <= 1 || initial > (end - 2) / 2) {
-            return session.good();
+    // Moves the larger child into root's hole and returns its index, or -1 once
+    // held belongs at root or a write failed.
+    auto promote(Session& session, WorkRow held, i64 root, i64 child, WorkRow selected) -> i64 {
+        if (!held.before_request(selected.word(0), selected.word(3), selected.word(1), selected.word(2))
+            || !session.set_work(root, selected)) {
+            return -1;
         }
-        // Keep one independent snapshot while larger children fill its hole.
-        const WorkRow held = session.work(initial);
+        return child;
+    }
+    // Sift held down from initial within the first end rows: larger children
+    // move up and held fills the final hole. Each level copies each child once.
+    auto sift_requests(Session& session, WorkRow held, i64 initial, i64 end) -> bool {
         i64 root = initial;
-        bool finished = false;
-        while (!finished && session.good()) {
-            if (root > (end - 2) / 2) {
-                finished = true;
-            } else {
-                const i64 left = root * 2 + 1;
-                i64 largest = left;
-                if (left + 1 < end && request_less(session, left, left + 1)) {
-                    largest = left + 1;
-                }
-                const WorkRow selected = session.work(largest);
-                if (!session.good()) {
-                    return false;
-                }
-                if (!held.before_request(selected.word(0), selected.word(3), selected.word(1), selected.word(2))) {
-                    finished = true;
+        i64 next = initial;
+        while (next >= 0 && root * 2 + 1 < end && session.good()) {
+            const i64 left = root * 2 + 1;
+            const WorkRow first = session.work(left);
+            if (left + 1 < end) {
+                const WorkRow second = session.work(left + 1);
+                if (first.before_request(second.word(0), second.word(3), second.word(1), second.word(2))) {
+                    next = promote(session, held, root, left + 1, second);
                 } else {
-                    if (!session.set_work(root, selected)) {
-                        return false;
-                    }
-                    root = largest;
+                    next = promote(session, held, root, left, first);
                 }
+            } else {
+                next = promote(session, held, root, left, first);
             }
-        }
-        if (root == initial) {
-            return session.good();
+            if (next >= 0) {
+                root = next;
+            }
         }
         return session.good() && session.set_work(root, held);
     }
@@ -123,12 +110,16 @@ namespace compiler_resolver {
         i64 root = count / 2;
         while (root > 0 && session.good()) {
             root = root - 1;
-            sift_requests(session, root, count);
+            const WorkRow held = session.work(root);
+            sift_requests(session, held, root, count);
         }
+        // Move the largest request to the end, then sift the displaced last one.
         i64 end = count;
         while (end > 1 && session.good()) {
             end = end - 1;
-            if (!swap_requests(session, 0, end) || !sift_requests(session, 0, end)) {
+            const WorkRow held = session.work(end);
+            const WorkRow largest = session.work(0);
+            if (!session.set_work(end, largest) || !sift_requests(session, held, 0, end)) {
                 return false;
             }
         }
