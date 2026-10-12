@@ -1736,23 +1736,25 @@ export namespace compiler_resolver {
             }
             i64 node = index_root;
             i64 steps = 0;
-            while (node >= 0 && good()) {
-                if (steps >= index_used) {
+            // Between checked row reads, only atom comparison can change sticky status.
+            // Keep each node checked before its direct read, without replaying status guards.
+            while (node >= 0) {
+                if (steps >= index_used || node >= index_used || node >= indexes.size()) {
                     return fail_storage(StorageStatus::invalid);
                 }
                 steps = steps + 1;
-                const IndexRow row = index_row(node);
-                if (!good()) {
+                const IndexRow row = indexes.at(node);
+                if (row.key_domain() < 1) {
                     return fail_storage(StorageStatus::invalid);
                 }
                 i64 order = 0;
                 if (domain == 1 && row.key_domain() == 1) {
                     order = compare_atom(first, second, row.first_key(), row.second_key());
+                    if (!good()) {
+                        return -1;
+                    }
                 } else {
                     order = row.key_order(domain, first, second, third, fourth);
-                }
-                if (!good()) {
-                    return -1;
                 }
                 if (order == 0) {
                     return node;
