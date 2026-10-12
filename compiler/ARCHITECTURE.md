@@ -188,8 +188,11 @@ work, so a selected error needs no further allocation. Local/snapshot/continuati
 bounds and checked geometric growth are part of the quota; partial IR never
 publishes. `hosted_lowering.cpp` checks bounded roles, slices and unique ownership,
 then projects all 84 instruction forms and Function/Module metadata. It does not
-repeat source legality checks. `hosted_lowering_diagnostics.cpp` formats Aurora
-selected errors while preserving real source spans and synthetic empty spans.
+repeat source legality checks. Each Aurora-selected error's message is the `//:`
+text above its reason in `lowering_errors.au`; the frontend generator turns those
+into a table in the generated ABI header and fails if a reason lacks one.
+`hosted_lowering_diagnostics.cpp` checks the payload against that entry and fills
+its placeholders, preserving real source spans and synthetic empty spans.
 
 ### C++ expression parser retirement
 

@@ -246,8 +246,40 @@ def abi_generation(facts):
     print("PASS generic source-spelled ABI records/enums, nested layout and exact lowering bridge rejection")
 
 
+def message_generation(facts, root):
+    from bootstrap_frontend import lowering_messages
+
+    source = (root / "compiler/lowering_errors.au").read_text()
+    table = "\n".join(lowering_messages(source, facts))
+    require(
+        "{\"unknown class type '{type}'\", MessageOrigin::source_or_synthetic, false, "
+        "{OperandRole::DiagnosticTypeId, OperandRole::NoDiagnosticValue}},"
+        in table
+        and '{"IR: storage extent exceeds 65536 bytes", MessageOrigin::unlocated, true,' in table,
+        "lowering message table lost a placeholder role or integrity flag",
+    )
+    first = "        unknown_class_type,"
+    for changed in (
+        source.replace("        //: unknown class type '{type}'\n", "", 1),
+        source.replace("unknown class type '{type}'", "unknown class type '{kind}'", 1),
+        source.replace("unknown class type '{type}'", "[integrity] unknown class type '{type}'", 1),
+        source.replace(
+            "        ir_class_storage_leaf_coverage\n",
+            "        ir_class_storage_leaf_coverage\n        //: dangling\n",
+            1,
+        ),
+        source.replace(first, first + "\n        //: extra reason\n        unlisted_reason,", 1),
+    ):
+        try:
+            lowering_messages(changed, facts)
+        except ValueError:
+            continue
+        raise AssertionError("lowering message generation accepted a missing, extra or malformed message")
+
+
 def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
     abi_generation(json.loads(built_b.with_suffix(".abi.json").read_text()))
+    message_generation(json.loads(built_b.with_suffix(".abi.json").read_text()), root)
     entries = {
         "aurora_hosted_lexer_invoke",
         "aurora_hosted_parser_create",

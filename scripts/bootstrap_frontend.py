@@ -226,7 +226,77 @@ def frontend_abi_entries(facts):
     return entries
 
 
-def frontend_abi_header(facts):
+MESSAGE_ROLES = {"name": "DiagnosticNameId", "type": "DiagnosticTypeId", "integer": "DiagnosticInteger"}
+MESSAGE_ORIGINS = {
+    "": "source_or_synthetic",
+    "unlocated": "unlocated",
+    "synthetic": "synthetic",
+    "integrity": "unlocated",
+}
+
+
+def lowering_messages(source, facts):
+    """Host message table from the `//:` lines above each LoweringError case."""
+    start = source.index("enum class LoweringError {")
+    block = source[start : source.index("};", start)].splitlines()[1:]
+    messages, pending = {}, []
+    for line in (raw.strip() for raw in block):
+        if line.startswith("//:"):
+            pending.append(line[3:].strip())
+        elif not line or line.startswith("//"):
+            if pending:
+                raise ValueError("lowering message text must directly precede its reason")
+        else:
+            name = line.removesuffix(",")
+            if not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name in messages:
+                raise ValueError("unsupported or repeated lowering reason: " + line)
+            messages[name] = " ".join(pending)
+            pending = []
+    if pending:
+        raise ValueError("lowering message text must directly precede its reason")
+    _, reasons = abi_declaration(facts, "enums", "compiler_lowering::LoweringError")
+    if list(messages) != list(reasons["cases"]) or list(reasons["cases"].values()) != list(range(len(messages))):
+        raise ValueError("lowering messages differ from the compiled LoweringError reasons")
+    rows = []
+    for name, text in messages.items():
+        if name == "none":
+            if text:
+                raise ValueError("the none reason has no message")
+            rows.append(
+                "    {nullptr, MessageOrigin::unlocated, false, "
+                "{OperandRole::NoDiagnosticValue, OperandRole::NoDiagnosticValue}},"
+            )
+            continue
+        flag, _, body = text.partition("] ") if text.startswith("[") else ("", "", text)
+        flag = flag.removeprefix("[")
+        holes = re.findall(r"\{([^}]*)\}", body)
+        if not body or flag not in MESSAGE_ORIGINS or len(holes) > 2 or any(h not in MESSAGE_ROLES for h in holes):
+            raise ValueError("unsupported lowering message for " + name)
+        if flag == "integrity" and holes:
+            raise ValueError("integrity messages carry no payload values: " + name)
+        roles = [MESSAGE_ROLES[h] for h in holes] + ["NoDiagnosticValue"] * (2 - len(holes))
+        literal = '"' + body.replace("\\", "\\\\").replace('"', '\\"') + '"'
+        rows.append(
+            f"    {{{literal}, MessageOrigin::{MESSAGE_ORIGINS[flag]}, {'true' if flag == 'integrity' else 'false'}, "
+            f"{{OperandRole::{roles[0]}, OperandRole::{roles[1]}}}}},"
+        )
+    return [
+        "namespace aurora::hosted_abi::compiler_lowering {",
+        "enum class MessageOrigin : std::uint8_t { source_or_synthetic, synthetic, unlocated };",
+        "struct LoweringMessage {",
+        "    const char *text;",
+        "    MessageOrigin origin;",
+        "    bool integrity;",
+        "    std::array<OperandRole, 2> values;",
+        "};",
+        f"inline constexpr std::array<LoweringMessage, {len(rows)}> loweringMessages{{{{",
+        *rows,
+        "}};",
+        "}",
+    ]
+
+
+def frontend_abi_header(facts, messages=None):
     """Render compiler-described classes and enums without a second field schema."""
     frontend_abi_entries(facts)
     lines = [
@@ -398,6 +468,8 @@ def frontend_abi_header(facts):
         "static_assert(sizeof(void *) == 8);",
         "}",
     ]
+    if messages is not None:
+        lines += lowering_messages(messages, facts)
     return "\n".join(lines) + "\n"
 
 
@@ -475,7 +547,7 @@ def stage_modules(
         shutil.copyfile(source, destination / name)
 
 
-def emit(compiler, source, bridges, output, module_root, compatible_header=None):
+def emit(compiler, source, bridges, output, module_root, messages, compatible_header=None):
     raw = output.with_suffix(".generated.s")
     facts_output = output.with_suffix(".abi.json")
     command = ["--local-symbols", "--abi-facts", str(facts_output.resolve())]
@@ -484,7 +556,7 @@ def emit(compiler, source, bridges, output, module_root, compatible_header=None)
     subprocess.run([str(compiler.resolve()), *command], check=True)
     facts = json.loads(facts_output.read_text())
     header = output.parent / (output.stem.replace("-", "_") + "_abi.hpp")
-    content = frontend_abi_header(facts).encode()
+    content = frontend_abi_header(facts, messages.read_text()).encode()
     if compatible_header is not None and compatible_header.read_bytes() != content:
         raise ValueError("stage2 ABI header differs from the header used by shared host objects")
     if not header.exists() or header.read_bytes() != content:
@@ -548,6 +620,7 @@ def main():
         [lexer_bridge, parser_bridge, resolver_bridge],
         output,
         module_root,
+        lowering_errors,
         headers[0] if headers else None,
     )
 
