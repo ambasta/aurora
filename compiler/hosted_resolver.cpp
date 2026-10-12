@@ -1619,8 +1619,8 @@ class HostedResolution::Impl {
         }
         configureLowering(mode, layoutSymbols);
         lowering::LoweringResult result;
-        // Borrowed Session stays armed through execution, private projection,
-        // diagnostic rendering, independent validation, and every exception.
+        // Borrowed Session stays armed through execution, private projection
+        // and diagnostic rendering, including their exceptional exits.
         aurora_hosted_lowering_run(owner.data(), &result);
         const auto storageStatus = status().storage;
         if (result.result_status == lowering::LoweringStatus::storage_failure) {
@@ -1641,27 +1641,32 @@ class HostedResolution::Impl {
                    result.result_reason == lowering::LoweringError::none) {
             invalidResolution();
         }
-        // Lowering interns additional concrete types/source references. The
-        // resolver-era cache is gone; load one fresh shared metadata snapshot.
-        Projection projection(owner.data(), sources, owner.usedBytes());
-        std::vector<lowering::OutputRow> rows;
-        std::vector<lowering::OperandRow> operands;
-        const auto load = [&](auto &values, std::int64_t pool, std::size_t reportCount, auto read) {
-            const auto published = sizeValue(aurora_hosted_lowering_count(owner.data(), pool));
-            const auto count = success ? published : reportCount;
-            using Value = typename std::remove_reference_t<decltype(values)>::value_type;
-            if (count > published || published > owner.usedBytes() / sizeof(Value) || count > values.max_size())
-                invalidResolution();
-            values.resize(count);
-            for (std::size_t index = 0; index < count; ++index)
-                read(owner.data(), static_cast<std::int64_t>(index), &values[index]);
-        };
-        load(rows, 0, 1, aurora_hosted_lowering_read_output);
-        load(operands, 1, 3, aurora_hosted_lowering_read_operand);
-        HostedLoweringInput input{rows, operands, projection.sourceByteCount(), result.root_row, result.diagnostic_row};
-        if (!success)
-            throw Error(renderHostedLoweringDiagnostic(result, input, projection.diagnosticServices()));
-        auto output = projectHostedLowering(input, projection.loweringServices(serviceKinds));
+        auto output = [&] {
+            // Lowering interns additional concrete types/source references. The
+            // resolver-era cache is gone; load one fresh shared metadata snapshot.
+            Projection projection(owner.data(), sources, owner.usedBytes());
+            std::vector<lowering::OutputRow> rows;
+            std::vector<lowering::OperandRow> operands;
+            const auto load = [&](auto &values, std::int64_t pool, std::size_t reportCount, auto read) {
+                const auto published = sizeValue(aurora_hosted_lowering_count(owner.data(), pool));
+                const auto count = success ? published : reportCount;
+                using Value = typename std::remove_reference_t<decltype(values)>::value_type;
+                if (count > published || published > owner.usedBytes() / sizeof(Value) || count > values.max_size())
+                    invalidResolution();
+                values.resize(count);
+                for (std::size_t index = 0; index < count; ++index)
+                    read(owner.data(), static_cast<std::int64_t>(index), &values[index]);
+            };
+            load(rows, 0, 1, aurora_hosted_lowering_read_output);
+            load(operands, 1, 3, aurora_hosted_lowering_read_operand);
+            HostedLoweringInput input{rows, operands, projection.sourceByteCount(), result.root_row, result.diagnostic_row};
+            if (!success)
+                throw Error(renderHostedLoweringDiagnostic(result, input, projection.diagnosticServices()));
+            return projectHostedLowering(input, projection.loweringServices(serviceKinds));
+        }();
+        // The result owns its values and shared source snapshots. Destroy all
+        // native-backed views above, then free Session before verification.
+        owner.release();
         auto verified = ir::validate(std::move(output.module));
         return {std::move(verified), std::move(output.diagnostics), std::move(declarations)};
     }
@@ -1709,7 +1714,8 @@ public:
             invalidResolution();
         finished = true;
         // The direct API may outlive this call. Release its sole armed native
-        // owner on every exit, after all source/ABI/IR projection and validation.
+        // owner on earlier failures; successful projection releases it before
+        // independent validation. Releasing an inactive owner is harmless.
         struct Release {
             SessionOwner &owner;
             ~Release() {
