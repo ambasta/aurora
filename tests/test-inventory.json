@@ -22,11 +22,8 @@
     "tests/lsp-protocol.py",
     "tests/lsp-units.cpp"
   ],
-  "Unreachable wrapper or its tests; Meson does not run them yet": [
+  "Unreachable wrapper; its checks already run under Meson": [
     "scripts/kernel-division-tests.sh",
-    "scripts/kernel-uefi-console-tests.sh",
-    "scripts/kernel-unsigned-tests.sh",
-    "tests/kernel-uefi-console-clock.py",
-    "tests/kernel-uefi-console-context.cpp"
+    "scripts/kernel-unsigned-tests.sh"
   ]
 }

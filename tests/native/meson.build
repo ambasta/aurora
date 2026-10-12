@@ -431,6 +431,14 @@ endif
 test('native-uefi-firmware', python, args: ['-B', files('../../tests/uefi-firmware.py')],
      suite: ['full', 'slow', 'integration'], env: native_test_env,
      workdir: native_root, timeout: 180)
+native_host = executable('native-uefi-console-context', files('../../tests/kernel-uefi-console-context.cpp'),
+    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    cpp_args: [], link_args: ['-no-pie'])
+test('native-uefi-console-context', native_host, suite: ['full', 'slow', 'integration'],
+     env: native_test_env, timeout: 180)
+test('native-uefi-console-clock', python, args: ['-B', files('../../tests/kernel-uefi-console-clock.py')],
+     suite: ['full', 'slow', 'integration'], env: native_test_env,
+     workdir: native_root, timeout: 180)
 test('native-kernel-uefi-bar-runner', python, args: ['-B', files('../../tests/kernel-uefi-bar-runner.py')],
      suite: ['full', 'slow', 'integration'], env: native_test_env,
      workdir: native_root, timeout: 180)
