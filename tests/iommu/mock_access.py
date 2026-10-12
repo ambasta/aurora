@@ -112,7 +112,8 @@ class MockGuest(f.Guest):
         verb, address = words[0], int(words[1], 0)
         if verb == "write":
             n = int(words[2], 0)
-            assert len(words[3]) == 2 + n * 2 and words[3].startswith("0x")
+            if len(words[3]) != 2 + n * 2 or not words[3].startswith("0x"):
+                raise ValueError("Mock write payload does not match its byte count: " + command)
             self.mem_put(address, bytes.fromhex(words[3][2:]))
             return ""
         if verb == "read":
