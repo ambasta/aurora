@@ -28,12 +28,12 @@ public:
         std::string root;
         std::set<host::Identity> sourceIdentities;
         std::unique_ptr<HostedResolution> resolution = std::make_unique<HostedResolution>();
-        Program resolve() {
+        HostedResolvedSource resolve(AnalysisMode mode = AnalysisMode::Check, bool collectAbiDeclarations = false) {
             std::vector<std::size_t> modules;
             modules.reserve(order.size());
             for (const auto &name : order)
                 modules.push_back(units.at(name)->program.id);
-            return resolution->resolve(modules, units.at(root)->program.id);
+            return resolution->resolve(modules, units.at(root)->program.id, mode, collectAbiDeclarations);
         }
     };
 

@@ -1,0 +1,200 @@
+export module aurora.compiler.lowering_common;
+import aurora.compiler.syntax_arena;
+import aurora.compiler.lexer;
+import aurora.compiler.resolver;
+import aurora.compiler.resolution_arena;
+import aurora.compiler.resolution_kinds;
+import aurora.compiler.lowering_kinds;
+import aurora.compiler.lowering_errors;
+import aurora.compiler.lowering_storage;
+
+export namespace compiler_lowering {
+    auto scalar(OperandRole role, i64 value) -> OperandRow {
+        return OperandRow(role, value, u64(0), 0, 0);
+    }
+    auto unsigned_operand(OperandRole role, u64 value) -> OperandRow {
+        return OperandRow(role, 0, value, 0, 0);
+    }
+    auto slice(OperandRole role, i64 begin, i64 count) -> OperandRow {
+        return OperandRow(role, 0, u64(0), begin, count);
+    }
+    auto put(compiler_resolver::Session& session, OperandRole role, i64 value) -> i64 {
+        return session.append_operand(scalar(role, value));
+    }
+    auto put_slice(compiler_resolver::Session& session, OperandRole role, i64 begin, i64 count) -> i64 {
+        return session.append_operand(slice(role, begin, count));
+    }
+    auto record(compiler_resolver::Session& session, RecordKind kind, i64 begin, i64 count) -> i64 {
+        if (!session.good()) {
+            return -1;
+        }
+        if (begin < 0 || count < 0 || begin > session.operand_count() || count > session.operand_count() - begin) {
+            return session.fail_storage(compiler_resolver::StorageStatus::invalid);
+        }
+        return session.append_output(OutputRow(kind, InstructionForm::Constant, begin, count));
+    }
+    auto emit_record(compiler_resolver::Session& session, RecordKind kind, i64 begin) -> i64 {
+        const i64 count = session.operand_count() - begin;
+        return record(session, kind, begin, count);
+    }
+    auto instruction(compiler_resolver::Session& session, InstructionForm form, i64 begin, i64 count) -> i64 {
+        if (!session.good()) {
+            return -1;
+        }
+        if (begin < 0 || count < 0 || begin > session.operand_count() || count > session.operand_count() - begin) {
+            return session.fail_storage(compiler_resolver::StorageStatus::invalid);
+        }
+        return session.append_output(OutputRow(RecordKind::Instruction, form, begin, count));
+    }
+    auto emit(compiler_resolver::Session& session, InstructionForm form, i64 begin) -> i64 {
+        const i64 count = session.operand_count() - begin;
+        return instruction(session, form, begin, count);
+    }
+    auto operand(compiler_resolver::Session& session, i64 row, i64 ordinal) -> OperandRow {
+        const OutputRow output = session.view_output(row);
+        if (row < 0 || row >= session.output_count() || ordinal < 0 || ordinal >= output.operand_count()) {
+            session.fail_storage(compiler_resolver::StorageStatus::invalid);
+            return scalar(OperandRole::invalid, -1);
+        }
+        return session.view_operand(output.operand_begin() + ordinal);
+    }
+    auto value(compiler_resolver::Session& session, i64 row, i64 ordinal) -> i64 {
+        const OperandRow item = operand(session, row, ordinal);
+        return item.signed_value();
+    }
+    auto record_slice(compiler_resolver::Session& session, i64 row, OperandRole role) -> OperandRow {
+        const OutputRow output = session.view_output(row);
+        i64 at = 0;
+        while (at < output.operand_count() && session.good()) {
+            const OperandRow item = operand(session, row, at);
+            if (item.role() == role) {
+                return item;
+            }
+            at = at + 1;
+        }
+        session.fail_storage(compiler_resolver::StorageStatus::invalid);
+        return scalar(OperandRole::invalid, -1);
+    }
+    auto record_signed(compiler_resolver::Session& session, i64 row, OperandRole role) -> i64 {
+        const OperandRow item = record_slice(session, row, role);
+        return item.signed_value();
+    }
+    auto list_value(compiler_resolver::Session& session, OperandRow list, i64 index) -> i64 {
+        if (index < 0 || index >= list.count() || list.begin() < 0 || list.begin() > session.operand_count()
+            || list.count() > session.operand_count() - list.begin()) {
+            return session.fail_storage(compiler_resolver::StorageStatus::invalid);
+        }
+        const OperandRow item = session.view_operand(list.begin() + index);
+        return item.signed_value();
+    }
+    auto replace_scalar(compiler_resolver::Session& session, i64 row, OperandRole role, i64 new_value) -> bool {
+        const OutputRow output = session.view_output(row);
+        i64 at = 0;
+        while (at < output.operand_count() && session.good()) {
+            const OperandRow item = operand(session, row, at);
+            if (item.role() == role) {
+                return session.set_operand(output.operand_begin() + at, scalar(role, new_value));
+            }
+            at = at + 1;
+        }
+        session.fail_storage(compiler_resolver::StorageStatus::invalid);
+        return false;
+    }
+    auto fail_pair(compiler_resolver::Session& session, LoweringError reason, i64 source, OperandRow first,
+        OperandRow second) -> bool {
+        OperandRole origin = OperandRole::DiagnosticSourceRef;
+        if (source < 0) {
+            origin = OperandRole::NoDiagnosticSource;
+        } else {
+            const compiler_resolver::MetaRow location = session.view_meta(source);
+            if (location.kind() == compiler_resolver::MetaTag::source_reference && location.word(0) < 0) {
+                origin = OperandRole::DiagnosticSyntheticRef;
+            }
+        }
+        session.reject_lowering(reason, scalar(origin, source), first, second);
+        return false;
+    }
+    auto fail(compiler_resolver::Session& session, LoweringError reason, i64 source) -> bool {
+        return fail_pair(session, reason, source, scalar(OperandRole::NoDiagnosticValue, 0),
+            scalar(OperandRole::NoDiagnosticValue, 0));
+    }
+    auto fail_type(compiler_resolver::Session& session, LoweringError reason, i64 source, i64 type) -> bool {
+        return fail_pair(session, reason, source, scalar(OperandRole::DiagnosticTypeId, type),
+            scalar(OperandRole::NoDiagnosticValue, 0));
+    }
+    auto fail_synthetic(compiler_resolver::Session& session, LoweringError reason, i64 source, OperandRow first,
+        OperandRow second) -> bool {
+        session.reject_lowering(reason, scalar(OperandRole::DiagnosticSyntheticRef, source), first, second);
+        return false;
+    }
+    auto error(compiler_resolver::Session& session, LoweringError reason, i64 source) -> i64 {
+        fail(session, reason, source);
+        return -1;
+    }
+    auto error_type(compiler_resolver::Session& session, LoweringError reason, i64 source, i64 type) -> i64 {
+        fail_type(session, reason, source, type);
+        return -1;
+    }
+    // Read projected reverse-linked declaration lists without new ownership.
+    // Syntax links always point backwards, so malformed cycles are rejected.
+    auto syntax_list_count(compiler_resolver::Session& session, i64 last) -> i64 {
+        i64 count = 0;
+        i64 at = last;
+        while (at >= 0 && session.good()) {
+            const i64 previous = compiler_resolver::sw(session, at, 2);
+            if (previous >= at) {
+                return session.fail_storage(compiler_resolver::StorageStatus::invalid);
+            }
+            count = count + 1;
+            at = previous;
+        }
+        return count;
+    }
+    auto syntax_list_at(compiler_resolver::Session& session, i64 last, i64 index) -> i64 {
+        const i64 count = syntax_list_count(session, last);
+        if (index < 0 || index >= count) {
+            return session.fail_storage(compiler_resolver::StorageStatus::invalid);
+        }
+        i64 remaining = count - index - 1;
+        i64 at = last;
+        while (remaining > 0 && session.good()) {
+            at = compiler_resolver::sw(session, at, 2);
+            remaining = remaining - 1;
+        }
+        return at;
+    }
+}
+export namespace compiler_lowering {
+    // In-order traversal uses the arena's existing checked AVL links. The caller
+    // bounds one domain by its producer count; no scratch owner is required.
+    auto next_index(compiler_resolver::Session& session, i64 node) -> i64 {
+        const compiler_resolver::IndexRow row = session.index_row(node);
+        i64 next = row.right_child();
+        if (next >= 0) {
+            bool done = false;
+            while (!done && session.good()) {
+                const compiler_resolver::IndexRow item = session.index_row(next);
+                if (item.left_child() < 0) {
+                    done = true;
+                } else {
+                    next = item.left_child();
+                }
+            }
+            return next;
+        }
+        i64 current = node;
+        i64 parent = row.parent_node();
+        while (parent >= 0 && session.good()) {
+            const compiler_resolver::IndexRow item = session.index_row(parent);
+            if (item.left_child() == current) {
+                return parent;
+            }
+            if (item.right_child() != current) {
+                return session.fail_storage(compiler_resolver::StorageStatus::invalid);
+            }
+            current = parent;
+            parent = item.parent_node();
+        }
+        return -1;
+    }
+}
