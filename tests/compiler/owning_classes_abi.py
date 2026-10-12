@@ -142,7 +142,8 @@ int main(int argc, char **argv) {
     const auto input_before = input;
     const auto answer = __au_runtime_bytes_test_entry(record,result);
     if (mode.starts_with("construct"))
-        check(answer == ((mode == "construct" || mode == "construct-produced") ? 8 : 42),"constructor lengths and cleanup preserve result");
+        check(answer == ((mode == "construct" || mode == "construct-produced") ? 8 : 42),
+              "constructor lengths and cleanup preserve result");
     else if (mode == "copied") check(answer == 42,"owning receiver with copied args and result");
     else if (copied_resource) {
         consumed(record+8,0); consumed(record+96,1);
