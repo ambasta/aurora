@@ -136,10 +136,14 @@ checkpoint under `bootstrap-copied-arguments-v1` at source commit
 `c0ef02cc105de2b7699d8565f6a53f1dea9e1205`, then the owner-field checkpoint under
 `bootstrap-owner-field-initializers-v1` at source commit
 `bbf18f40d73b0f7b862a4b23d77b03dfb3f3d0e4`. These add two source-build hops after
-the facts stage before the current compiler can build its adopted frontend.
+the facts stage before the current compiler can build its adopted frontend. The
+register-carry checkpoint under `bootstrap-register-carry-v1` at source commit
+`f89e0c9eb199ba482fcce20f1783a52ceae8b1b8` adds a third, so that the backend which
+emits the frontend is the one that keeps operands in registers.
 Advance the predecessor only
-when it cannot build the current frontend, or to shorten the source-bootstrap
-chain after reproducible source rebuild, current-stage convergence and full
+when it cannot build the current frontend, to shorten the source-bootstrap
+chain, or for a measured compile-speed gain recorded below, each after
+reproducible source rebuild, current-stage convergence and full
 qualification. Preserve earlier source refs; ordinary features do not require a
 predecessor hop. No generated binary or layout snapshot is checked
 in. Focused conversion/ABI and multi-stage corpus checks do not replace the final
@@ -279,7 +283,8 @@ generated code differs.
 
 | Change | Measured | CPU ratio |
 |---|---|---|
-| x86 backend keeps a pushed operand in `%rcx` before a plain load and copies a returned element straight into the result | not yet in `aurorac` (see above): `aurorac-stage2` against `aurorac` from the same build, `compiler/frontend.au` 0.78x, library inputs 0.86-0.95x, identical output | 0.87x once a predecessor carries it |
+| `bootstrap-register-carry-v1` predecessor, whose backend emits the frontend | `scripts/compiler-speed.py`, `aurorac` built with it against the owner-field predecessor: `compiler/frontend.au` 0.83x, library inputs 0.88-0.94x, identical output | 0.90x |
+| x86 backend keeps a pushed operand in `%rcx` before a plain load and copies a returned element straight into the result | `aurorac-stage2` against `aurorac` from the same build (see above): `compiler/frontend.au` 0.78x, library inputs 0.86-0.95x, identical output | 0.87x for a frontend it emits |
 | Hosted runtime moves a looked-up allocation to the front of its region's list | `scripts/compiler-speed.py` against the previous build: `compiler/frontend.au` 0.85x, library inputs 0.87-0.93x, identical output | 0.90x |
 | Enum cases named once, one copy per heap child, index values from the lookup loop | `scripts/compiler-speed.py` against the Session split: `compiler/frontend.au` 0.88x, library inputs 0.95-1.00x, identical output | 0.95x |
 | `resolution_arena.au` split into Session, rows, names and ingest; shared pool growth | `scripts/compiler-speed.py` against the `lowering_body.au` split: 0.98-1.03x per input, identical output | 1.01x |
