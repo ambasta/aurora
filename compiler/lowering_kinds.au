@@ -124,6 +124,10 @@ export namespace compiler_lowering {
         Instruction,
         DiscardedInstruction,
         DiagnosticPayload,
+        Configuration,
+        ScalarContract,
+        ServiceContract,
+        InitialLayoutOrder,
         Module,
         Function,
         ScalarSlot,
@@ -233,7 +237,16 @@ export namespace compiler_lowering {
         DiagnosticNameId,
         DiagnosticTypeId,
         DiagnosticInteger,
-        NoDiagnosticValue
+        NoDiagnosticValue,
+        MaximumCopiedByteLeaves,
+        MaximumCopiedNonByteLeaves,
+        MaximumCopiedLeaves,
+        MaximumCopiedBytes,
+        MaximumByteArrayLength,
+        MaximumScalarArrayLength,
+        AnalysisMode,
+        SupportedServiceGroups,
+        InitialLayoutSymbols
     };
     // Origin identity is frozen before a Local is published.
     enum class SpanOriginKind {

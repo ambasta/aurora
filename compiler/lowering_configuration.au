@@ -1,0 +1,248 @@
+export module aurora.compiler.lowering_configuration;
+import aurora.compiler.resolver;
+import aurora.compiler.resolution_arena;
+import aurora.compiler.resolution_kinds;
+import aurora.compiler.lowering_kinds;
+import aurora.compiler.lowering_errors;
+import aurora.compiler.lowering_storage;
+import aurora.compiler.lowering_common;
+
+// A bounded immutable setup contract. It is not a semantic query surface.
+// Row0 reserves diagnostics; row1 has limits/mode; rows2..8 have scalar
+// descriptors; rows9..13 have the canonical service catalog; row14 seals the
+// initial native-name class permutation. Semantic output starts at row15.
+export namespace compiler_lowering {
+    class LoweringConfig {
+        i64 byteLeaves;
+        i64 nonByteLeaves;
+        i64 totalLeaves;
+        i64 copiedBytes;
+        i64 byteArrayLength;
+        i64 scalarArrayLength;
+        i64 analysisMode;
+        i64 serviceGroups;
+    public:
+        LoweringConfig(i64 bytes, i64 non_bytes, i64 total, i64 storage, i64 byte_array, i64 scalar_array)
+            : byteLeaves(bytes), nonByteLeaves(non_bytes), totalLeaves(total), copiedBytes(storage),
+              byteArrayLength(byte_array), scalarArrayLength(scalar_array), analysisMode(0), serviceGroups(0) {
+        }
+        auto byte_leaves() const -> i64 { return byteLeaves; }
+        auto non_byte_leaves() const -> i64 { return nonByteLeaves; }
+        auto total_leaves() const -> i64 { return totalLeaves; }
+        auto copied_bytes() const -> i64 { return copiedBytes; }
+        auto byte_array_length() const -> i64 { return byteArrayLength; }
+        auto scalar_array_length() const -> i64 { return scalarArrayLength; }
+        auto mode() const -> i64 { return analysisMode; }
+        auto service_groups() const -> i64 { return serviceGroups; }
+        auto set_policy(i64 mode, i64 groups) -> bool {
+            if (mode < 0 || mode > 1 || groups < 0 || groups > 255) { return false; }
+            analysisMode = mode;
+            serviceGroups = groups;
+            return true;
+        }
+    };
+    class ScalarSeed {
+        compiler_resolver::ResolvedTypeKind concreteKind;
+        i64 publicId;
+        i64 byteSize;
+    public:
+        ScalarSeed(compiler_resolver::ResolvedTypeKind kind, i64 id, i64 size)
+            : concreteKind(kind), publicId(id), byteSize(size) { }
+        auto concrete_kind() const -> compiler_resolver::ResolvedTypeKind { return concreteKind; }
+        auto public_id() const -> i64 { return publicId; }
+        auto byte_size() const -> i64 { return byteSize; }
+    };
+    class ServiceParameters {
+        i64 parameterCount;
+        compiler_resolver::ResolvedTypeKind firstType;
+        compiler_resolver::ResolvedTypeKind secondType;
+        compiler_resolver::ResolvedTypeKind thirdType;
+        compiler_resolver::ResolvedTypeKind fourthType;
+        compiler_resolver::ResolvedTypeKind fifthType;
+    public:
+        ServiceParameters(i64 count, compiler_resolver::ResolvedTypeKind first,
+            compiler_resolver::ResolvedTypeKind second, compiler_resolver::ResolvedTypeKind third,
+            compiler_resolver::ResolvedTypeKind fourth, compiler_resolver::ResolvedTypeKind fifth)
+            : parameterCount(count), firstType(first), secondType(second), thirdType(third), fourthType(fourth),
+              fifthType(fifth) { }
+        auto count() const -> i64 { return parameterCount; }
+        auto type_at(i64 index) const -> compiler_resolver::ResolvedTypeKind {
+            if (index == 0) { return firstType; }
+            if (index == 1) { return secondType; }
+            if (index == 2) { return thirdType; }
+            if (index == 3) { return fourthType; }
+            if (index == 4) { return fifthType; }
+            return compiler_resolver::ResolvedTypeKind::invalid;
+        }
+    };
+    class ServiceSeed {
+        compiler_resolver::ResolvedTypeKind receiverKind;
+        i64 kindId;
+        i64 operationId;
+        i64 spellingSource;
+        i64 resultType;
+        ServiceParameters parameterTypes;
+    public:
+        ServiceSeed(compiler_resolver::ResolvedTypeKind receiver, i64 kind, i64 operation,
+            i64 spelling, i64 result, ServiceParameters parameters)
+            : receiverKind(receiver), kindId(kind), operationId(operation), spellingSource(spelling),
+              resultType(result), parameterTypes(parameters) { }
+        auto receiver_kind() const -> compiler_resolver::ResolvedTypeKind { return receiverKind; }
+        auto kind_id() const -> i64 { return kindId; }
+        auto operation_id() const -> i64 { return operationId; }
+        auto spelling_source() const -> i64 { return spellingSource; }
+        auto result_type() const -> i64 { return resultType; }
+        auto parameters() const -> ServiceParameters {
+            const ServiceParameters result = parameterTypes;
+            return result;
+        }
+    };
+    auto setup_invalid(compiler_resolver::Session& session) -> i64 {
+        return session.fail_storage(compiler_resolver::StorageStatus::invalid);
+    }
+    auto begin_lowering(compiler_resolver::Session& session, LoweringConfig config) -> i64 {
+        if (!session.reserve_diagnostic_payload()) { return -1; }
+        if (config.byte_leaves() < 1 || config.non_byte_leaves() < 1 || config.total_leaves() < 1
+            || config.copied_bytes() < 1 || config.byte_array_length() < 1 || config.scalar_array_length() < 1
+            || config.byte_leaves() > 8192 || config.non_byte_leaves() > 8192 || config.total_leaves() > 8192
+            || config.copied_bytes() > 65536 || config.byte_array_length() > 8192 || config.scalar_array_length() > 8192
+            || config.mode() < 0 || config.mode() > 1 || config.service_groups() < 0 || config.service_groups() > 255) {
+            return setup_invalid(session);
+        }
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::MaximumCopiedByteLeaves, config.byte_leaves());
+        put(session, OperandRole::MaximumCopiedNonByteLeaves, config.non_byte_leaves());
+        put(session, OperandRole::MaximumCopiedLeaves, config.total_leaves());
+        put(session, OperandRole::MaximumCopiedBytes, config.copied_bytes());
+        put(session, OperandRole::MaximumByteArrayLength, config.byte_array_length());
+        put(session, OperandRole::MaximumScalarArrayLength, config.scalar_array_length());
+        put(session, OperandRole::AnalysisMode, config.mode());
+        put(session, OperandRole::SupportedServiceGroups, config.service_groups());
+        return record(session, RecordKind::Configuration, begin, 8);
+    }
+    auto scalar_seed_kind(i64 ordinal) -> compiler_resolver::ResolvedTypeKind {
+        if (ordinal == 0) { return compiler_resolver::ResolvedTypeKind::i64_value; }
+        if (ordinal == 1) { return compiler_resolver::ResolvedTypeKind::bool_value; }
+        if (ordinal == 2) { return compiler_resolver::ResolvedTypeKind::owner; }
+        if (ordinal == 3) { return compiler_resolver::ResolvedTypeKind::reference; }
+        if (ordinal == 4) { return compiler_resolver::ResolvedTypeKind::mutable_reference; }
+        if (ordinal == 5) { return compiler_resolver::ResolvedTypeKind::u64_value; }
+        if (ordinal == 6) { return compiler_resolver::ResolvedTypeKind::u8_value; }
+        return compiler_resolver::ResolvedTypeKind::invalid;
+    }
+    auto seed_scalar(compiler_resolver::Session& session, ScalarSeed seed) -> i64 {
+        const i64 next = session.output_count();
+        if (next < 2 || next >= 9 || seed.concrete_kind() != scalar_seed_kind(next - 2)
+            || seed.public_id() < 1 || seed.public_id() >= 100 || seed.byte_size() < 1 || seed.byte_size() > 65536) { return setup_invalid(session); }
+        const i64 type = compiler_resolver::scalar_type(session, seed.concrete_kind());
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::TypeId, type);
+        put(session, OperandRole::PublicDescriptorId, seed.public_id());
+        put(session, OperandRole::Size, seed.byte_size());
+        return record(session, RecordKind::ScalarContract, begin, 3);
+    }
+    auto seed_service(compiler_resolver::Session& session, ServiceSeed seed) -> i64 {
+        const i64 next = session.output_count();
+        const ServiceParameters parameters = seed.parameters();
+        if (next < 9 || next >= 14 || !compiler_resolver::service_kind(seed.receiver_kind())
+            || seed.kind_id() < 0 || seed.kind_id() > 2 || seed.operation_id() < 0 || seed.operation_id() > 4
+            || seed.spelling_source() < 0 || seed.result_type() < 0 || parameters.count() < 0
+            || parameters.count() > 5) { return setup_invalid(session); }
+        const compiler_resolver::MetaRow spelling = session.meta(seed.spelling_source());
+        const compiler_resolver::MetaRow result = session.meta(seed.result_type());
+        if (spelling.kind() != compiler_resolver::MetaTag::source_reference
+            || result.kind() != compiler_resolver::MetaTag::concrete_type) { return setup_invalid(session); }
+        const i64 receiver = compiler_resolver::scalar_type(session, seed.receiver_kind());
+        const i64 arguments = session.operand_count();
+        i64 at = 0;
+        while (at < parameters.count() && session.good()) {
+            const compiler_resolver::ResolvedTypeKind kind = parameters.type_at(at);
+            if (!compiler_resolver::scalar_kind(kind)) { return setup_invalid(session); }
+            put(session, OperandRole::TypeId, compiler_resolver::scalar_type(session, kind));
+            at = at + 1;
+        }
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::TypeId, receiver);
+        put(session, OperandRole::ServiceKindId, seed.kind_id());
+        put(session, OperandRole::ServiceOperationId, seed.operation_id());
+        put(session, OperandRole::IdentifierSourceRef, seed.spelling_source());
+        put(session, OperandRole::ResultTypeId, seed.result_type());
+        put_slice(session, OperandRole::ParameterTypes, arguments, parameters.count());
+        return record(session, RecordKind::ServiceContract, begin, 6);
+    }
+    auto seed_layout_symbol(compiler_resolver::Session& session, i64 symbol) -> i64 {
+        if (session.output_count() != 14 || symbol < 0) { return setup_invalid(session); }
+        const compiler_resolver::MetaRow value = session.meta(symbol);
+        if (value.kind() != compiler_resolver::MetaTag::symbol
+            || value.declaration_kind() != compiler_resolver::DeclarationKind::class_value) {
+            return setup_invalid(session);
+        }
+        return put(session, OperandRole::ClassNominalId, symbol);
+    }
+    auto seal_lowering_configuration(compiler_resolver::Session& session) -> bool {
+        if (!session.good() || session.output_count() != 14) { setup_invalid(session); return false; }
+        const OutputRow last = session.view_output(13);
+        if (last.kind() != RecordKind::ServiceContract || last.operand_count() != 6) {
+            setup_invalid(session); return false;
+        }
+        const i64 begin = last.operand_begin() + last.operand_count();
+        const i64 count = session.operand_count() - begin;
+        if (count < 0 || count > session.meta_count()) { setup_invalid(session); return false; }
+        i64 at = 0;
+        while (at < count && session.good()) {
+            const OperandRow value = session.view_operand(begin + at);
+            if (value.role() != OperandRole::ClassNominalId || value.signed_value() < 0) {
+                setup_invalid(session); return false;
+            }
+            at = at + 1;
+        }
+        const i64 prefix = session.operand_count();
+        put_slice(session, OperandRole::InitialLayoutSymbols, begin, count);
+        return record(session, RecordKind::InitialLayoutOrder, prefix, 1) == 14;
+    }
+    auto configured_limit(compiler_resolver::Session& session, OperandRole role) -> i64 {
+        const OutputRow row = session.view_output(1);
+        if (row.kind() != RecordKind::Configuration || row.operand_count() != 8) { return setup_invalid(session); }
+        return record_signed(session, 1, role);
+    }
+    auto scalar_descriptor(compiler_resolver::Session& session, compiler_resolver::ResolvedTypeKind kind) -> i64 {
+        i64 at = 0;
+        while (at < 7) {
+            if (kind == scalar_seed_kind(at)) { return record_signed(session, at + 2, OperandRole::PublicDescriptorId); }
+            at = at + 1;
+        }
+        return setup_invalid(session);
+    }
+    auto scalar_descriptor_size(compiler_resolver::Session& session, compiler_resolver::ResolvedTypeKind kind) -> i64 {
+        i64 at = 0;
+        while (at < 7) {
+            if (kind == scalar_seed_kind(at)) { return record_signed(session, at + 2, OperandRole::Size); }
+            at = at + 1;
+        }
+        return setup_invalid(session);
+    }
+    auto service_contract_count() -> i64 { return 5; }
+    auto service_contract(compiler_resolver::Session& session, i64 ordinal) -> i64 {
+        if (ordinal < 0 || ordinal >= 5 || session.output_count() < 15) { return setup_invalid(session); }
+        return ordinal + 9;
+    }
+    auto service_group_supported(compiler_resolver::Session& session, i64 first, i64 second) -> bool {
+        if (first < 0 || first > 2 || second < -1 || second > 2) { setup_invalid(session); return false; }
+        u64 group = 1u64 << first;
+        if (second >= 0) { group = group | (1u64 << second); }
+        const i64 allowed = configured_limit(session, OperandRole::SupportedServiceGroups);
+        if (allowed < 0 || allowed > 255) { setup_invalid(session); return false; }
+        return (u64(allowed) & (1u64 << i64(group))) != 0u64;
+    }
+    auto initial_layout_count(compiler_resolver::Session& session) -> i64 {
+        const OperandRow order = record_slice(session, 14, OperandRole::InitialLayoutSymbols);
+        return order.count();
+    }
+    auto initial_layout_symbol(compiler_resolver::Session& session, i64 ordinal) -> i64 {
+        const OperandRow order = record_slice(session, 14, OperandRole::InitialLayoutSymbols);
+        if (ordinal < 0 || ordinal >= order.count()) { return setup_invalid(session); }
+        const OperandRow entry = session.view_operand(order.begin() + ordinal);
+        if (entry.role() != OperandRole::ClassNominalId || entry.signed_value() < 0) { return setup_invalid(session); }
+        return entry.signed_value();
+    }
+}

@@ -1173,6 +1173,43 @@ export namespace compiler_resolver {
             operand_used = operand_used + 1;
             return result;
         }
+        // Only lowering's unpublished rows may be completed between its ordered
+        // logical and physical layout phases. The diagnostic reservation is fixed.
+        auto set_output(i64 index, compiler_lowering::OutputRow row) -> bool {
+            if (!good()) {
+                return false;
+            }
+            if (index <= 0 || index >= output_used || index >= outputRows.size()
+                || row.kind() == compiler_lowering::RecordKind::invalid
+                || row.kind() == compiler_lowering::RecordKind::DiagnosticPayload
+                || row.kind() == compiler_lowering::RecordKind::DiscardedInstruction
+                || row.operand_begin() < 3 || row.operand_count() < 0
+                || row.operand_begin() > operand_used
+                || row.operand_count() > operand_used - row.operand_begin()) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            if (!outputRows.set(index, row)) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            return true;
+        }
+        auto set_operand(i64 index, compiler_lowering::OperandRow row) -> bool {
+            if (!good()) {
+                return false;
+            }
+            if (index < 3 || index >= operand_used || index >= outputOperands.size()
+                || row.role() == compiler_lowering::OperandRole::invalid) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            if (!outputOperands.set(index, row)) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            return true;
+        }
         auto discard_instruction(i64 index) -> bool {
             if (!good()) {
                 return false;
@@ -2414,6 +2451,29 @@ export namespace compiler_resolver {
                 }
             }
             truncate_work(base);
+            return result;
+        }
+        // Decoded literal payload has no new module/source-reference identity.
+        // Existing graph offsets stay fixed while the same owner grows safely.
+        auto append_literal_byte(u8 value) -> i64 {
+            if (!good()) {
+                return -1;
+            }
+            if (source_used == 9223372036854775807) {
+                return fail_storage(StorageStatus::limit);
+            }
+            const i64 required = source_used + 1;
+            if (required > sources.size()) {
+                const i64 capacity = next_capacity(sources.size(), required);
+                if (capacity < required || !sources.try_resize(capacity)) {
+                    return fail_storage(StorageStatus::allocation);
+                }
+            }
+            const i64 result = source_used;
+            if (!sources.set(result, value)) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            source_used = required;
             return result;
         }
         auto append_text(builtin::span<const u8> text) -> i64 {

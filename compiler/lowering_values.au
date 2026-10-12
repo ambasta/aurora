@@ -1,0 +1,1304 @@
+export module aurora.compiler.lowering_values;
+import aurora.compiler.lowering_common;
+import aurora.compiler.lowering_types;
+import aurora.compiler.lowering_storage;
+import aurora.compiler.lowering_errors;
+import aurora.compiler.lowering_kinds;
+import aurora.compiler.resolver;
+import aurora.compiler.resolution_arena;
+
+// Source-semantic value, frame, lifetime and snapshot primitives. The function
+// root is continuation zero. Its frame reservation and loan counter are
+// monotonic; its label counter is carried between functions by the caller.
+export namespace compiler_lowering {
+    auto emit_BindServiceParameter(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Index, a0);
+        put(session, OperandRole::Offset, a1);
+        put(session, OperandRole::ServiceKindId, a2);
+        return emit(session, InstructionForm::BindServiceParameter, begin);
+    }
+    auto emit_AcquireServiceLoan(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::LoanId, a0);
+        put(session, OperandRole::Offset, a1);
+        put(session, OperandRole::ServiceKindId, a2);
+        return emit(session, InstructionForm::AcquireServiceLoan, begin);
+    }
+    auto emit_ReleaseServiceLoan(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::LoanId, a0);
+        put(session, OperandRole::ServiceKindId, a1);
+        return emit(session, InstructionForm::ReleaseServiceLoan, begin);
+    }
+    auto emit_ServiceOperation(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2, i64 a3) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        put(session, OperandRole::ServiceOperationId, a1);
+        put(session, OperandRole::ResultOffset, a2);
+        put(session, OperandRole::ServiceKindId, a3);
+        return emit(session, InstructionForm::ServiceOperation, begin);
+    }
+    auto emit_EnumConstant(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::TypeId, a0);
+        put(session, OperandRole::CaseIndex, a1);
+        return emit(session, InstructionForm::EnumConstant, begin);
+    }
+    auto emit_Load(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        put(session, OperandRole::TypeId, a1);
+        return emit(session, InstructionForm::Load, begin);
+    }
+    auto emit_Store(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        put(session, OperandRole::TypeId, a1);
+        return emit(session, InstructionForm::Store, begin);
+    }
+    auto emit_Push(compiler_resolver::Session& session) -> i64 {
+        const i64 begin = session.operand_count();
+        return emit(session, InstructionForm::Push, begin);
+    }
+    auto emit_Pop(compiler_resolver::Session& session) -> i64 {
+        const i64 begin = session.operand_count();
+        return emit(session, InstructionForm::Pop, begin);
+    }
+    auto emit_Convert(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::SourceTypeId, a0);
+        put(session, OperandRole::ResultTypeId, a1);
+        return emit(session, InstructionForm::Convert, begin);
+    }
+    auto emit_BoundsGuard(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        put(session, OperandRole::Length, a1);
+        put(session, OperandRole::ElementTypeId, a2);
+        return emit(session, InstructionForm::BoundsGuard, begin);
+    }
+    auto emit_IndexLoad(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        put(session, OperandRole::Length, a1);
+        put(session, OperandRole::ElementTypeId, a2);
+        return emit(session, InstructionForm::IndexLoad, begin);
+    }
+    auto emit_IndexStore(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        put(session, OperandRole::Length, a1);
+        put(session, OperandRole::ElementTypeId, a2);
+        return emit(session, InstructionForm::IndexStore, begin);
+    }
+    auto emit_BorrowHandle(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::OwnerOffset, a0);
+        put(session, OperandRole::ReferenceTypeId, a1);
+        return emit(session, InstructionForm::BorrowHandle, begin);
+    }
+    auto emit_Call(compiler_resolver::Session& session, i64 a0) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::CalleeSymbolId, a0);
+        return emit(session, InstructionForm::Call, begin);
+    }
+    auto emit_AggregateCall(compiler_resolver::Session& session, i64 a0, OperandRow a1, i64 a2, OperandRow a3) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::CalleeSymbolId, a0);
+        session.append_operand(a1);
+        put(session, OperandRole::ResultOffset, a2);
+        session.append_operand(a3);
+        return emit(session, InstructionForm::AggregateCall, begin);
+    }
+    auto emit_BeginObject(compiler_resolver::Session& session, i64 a0) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        return emit(session, InstructionForm::BeginObject, begin);
+    }
+    auto emit_InitializeEmptyObject(compiler_resolver::Session& session, i64 a0) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        return emit(session, InstructionForm::InitializeEmptyObject, begin);
+    }
+    auto emit_EndObject(compiler_resolver::Session& session, i64 a0) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        return emit(session, InstructionForm::EndObject, begin);
+    }
+    auto emit_CopyObject(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::SourceOffset, a0);
+        put(session, OperandRole::ResultOffset, a1);
+        return emit(session, InstructionForm::CopyObject, begin);
+    }
+    auto emit_ObjectFieldCopy(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::SourceOffset, a0);
+        put(session, OperandRole::FieldIndex, a1);
+        put(session, OperandRole::ResultOffset, a2);
+        return emit(session, InstructionForm::ObjectFieldCopy, begin);
+    }
+    auto emit_AssignObjectField(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::ObjectOffset, a0);
+        put(session, OperandRole::FieldIndex, a1);
+        put(session, OperandRole::SourceOffset, a2);
+        return emit(session, InstructionForm::AssignObjectField, begin);
+    }
+    auto emit_InitializeObjectField(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::ObjectOffset, a0);
+        put(session, OperandRole::FieldIndex, a1);
+        put(session, OperandRole::SourceOffset, a2);
+        return emit(session, InstructionForm::InitializeObjectField, begin);
+    }
+    auto emit_InitializeClassArray(compiler_resolver::Session& session, i64 a0, i64 a1, OperandRow a2) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::ObjectOffset, a0);
+        put(session, OperandRole::FieldIndex, a1);
+        session.append_operand(a2);
+        return emit(session, InstructionForm::InitializeClassArray, begin);
+    }
+    auto emit_ClassArrayBoundsGuard(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::ObjectOffset, a0);
+        put(session, OperandRole::FieldIndex, a1);
+        return emit(session, InstructionForm::ClassArrayBoundsGuard, begin);
+    }
+    auto emit_ClassArrayCopy(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::ObjectOffset, a0);
+        put(session, OperandRole::FieldIndex, a1);
+        put(session, OperandRole::ResultOffset, a2);
+        return emit(session, InstructionForm::ClassArrayCopy, begin);
+    }
+    auto emit_ClassArrayAssign(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::ObjectOffset, a0);
+        put(session, OperandRole::FieldIndex, a1);
+        put(session, OperandRole::SourceOffset, a2);
+        return emit(session, InstructionForm::ClassArrayAssign, begin);
+    }
+    auto emit_ReceiverLoad(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::FieldIndex, a0);
+        put(session, OperandRole::TypeId, a1);
+        return emit(session, InstructionForm::ReceiverLoad, begin);
+    }
+    auto emit_ReceiverStore(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::FieldIndex, a0);
+        put(session, OperandRole::TypeId, a1);
+        return emit(session, InstructionForm::ReceiverStore, begin);
+    }
+    auto emit_ReceiverArrayZero(compiler_resolver::Session& session, i64 a0) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::FieldIndex, a0);
+        return emit(session, InstructionForm::ReceiverArrayZero, begin);
+    }
+    auto emit_ReceiverBoundsGuard(compiler_resolver::Session& session, i64 a0) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::FieldIndex, a0);
+        return emit(session, InstructionForm::ReceiverBoundsGuard, begin);
+    }
+    auto emit_ReceiverIndexLoad(compiler_resolver::Session& session, i64 a0) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::FieldIndex, a0);
+        return emit(session, InstructionForm::ReceiverIndexLoad, begin);
+    }
+    auto emit_ReceiverIndexStore(compiler_resolver::Session& session, i64 a0) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::FieldIndex, a0);
+        return emit(session, InstructionForm::ReceiverIndexStore, begin);
+    }
+    auto emit_Label(compiler_resolver::Session& session, i64 a0) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::LabelId, a0);
+        return emit(session, InstructionForm::Label, begin);
+    }
+    auto emit_Jump(compiler_resolver::Session& session, i64 a0) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Target, a0);
+        return emit(session, InstructionForm::Jump, begin);
+    }
+    auto emit_BranchFalse(compiler_resolver::Session& session, i64 a0) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Target, a0);
+        return emit(session, InstructionForm::BranchFalse, begin);
+    }
+    auto emit_Return(compiler_resolver::Session& session) -> i64 {
+        const i64 begin = session.operand_count();
+        return emit(session, InstructionForm::Return, begin);
+    }
+    auto emit_ReturnObject(compiler_resolver::Session& session, i64 a0) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        return emit(session, InstructionForm::ReturnObject, begin);
+    }
+    auto emit_BindParameter(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Index, a0);
+        put(session, OperandRole::Offset, a1);
+        put(session, OperandRole::TypeId, a2);
+        return emit(session, InstructionForm::BindParameter, begin);
+    }
+    auto emit_BindObjectParameter(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Index, a0);
+        put(session, OperandRole::Offset, a1);
+        put(session, OperandRole::ClassNominalId, a2);
+        return emit(session, InstructionForm::BindObjectParameter, begin);
+    }
+    auto emit_BeginArray(compiler_resolver::Session& session, i64 a0) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        return emit(session, InstructionForm::BeginArray, begin);
+    }
+    auto emit_EndArray(compiler_resolver::Session& session, i64 a0) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        return emit(session, InstructionForm::EndArray, begin);
+    }
+    auto emit_BorrowSpan(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::ArrayOffset, a0);
+        put(session, OperandRole::ResultOffset, a1);
+        return emit(session, InstructionForm::BorrowSpan, begin);
+    }
+    auto emit_BorrowReceiverArraySpan(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::FieldIndex, a0);
+        put(session, OperandRole::ResultOffset, a1);
+        return emit(session, InstructionForm::BorrowReceiverArraySpan, begin);
+    }
+    auto emit_BorrowLiteralSpan(compiler_resolver::Session& session, OperandRow a0, i64 a1) -> i64 {
+        const i64 begin = session.operand_count();
+        session.append_operand(a0);
+        put(session, OperandRole::ResultOffset, a1);
+        return emit(session, InstructionForm::BorrowLiteralSpan, begin);
+    }
+    auto emit_BorrowOwnedSpan(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        put(session, OperandRole::FieldIndex, a1);
+        put(session, OperandRole::ResultOffset, a2);
+        return emit(session, InstructionForm::BorrowOwnedSpan, begin);
+    }
+    auto emit_ReturnSpan(compiler_resolver::Session& session, i64 a0) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        return emit(session, InstructionForm::ReturnSpan, begin);
+    }
+    auto emit_ReborrowSpan(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::SourceOffset, a0);
+        put(session, OperandRole::ResultOffset, a1);
+        return emit(session, InstructionForm::ReborrowSpan, begin);
+    }
+    auto emit_Subspan(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::SourceOffset, a0);
+        put(session, OperandRole::ResultOffset, a1);
+        return emit(session, InstructionForm::Subspan, begin);
+    }
+    auto emit_EndSpan(compiler_resolver::Session& session, i64 a0) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        return emit(session, InstructionForm::EndSpan, begin);
+    }
+    auto emit_SpanLength(compiler_resolver::Session& session, i64 a0) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        return emit(session, InstructionForm::SpanLength, begin);
+    }
+    auto emit_SpanLoad(compiler_resolver::Session& session, i64 a0) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        return emit(session, InstructionForm::SpanLoad, begin);
+    }
+    auto emit_BindSpanParameter(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Index, a0);
+        put(session, OperandRole::Offset, a1);
+        return emit(session, InstructionForm::BindSpanParameter, begin);
+    }
+    auto emit_BeginBytes(compiler_resolver::Session& session, i64 a0) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        return emit(session, InstructionForm::BeginBytes, begin);
+    }
+    auto emit_AllocateBytes(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::RegionOffset, a0);
+        put(session, OperandRole::ResultOffset, a1);
+        return emit(session, InstructionForm::AllocateBytes, begin);
+    }
+    auto emit_AllocateValues(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::RegionOffset, a0);
+        put(session, OperandRole::ResultOffset, a1);
+        put(session, OperandRole::FillOffset, a2);
+        return emit(session, InstructionForm::AllocateValues, begin);
+    }
+    auto emit_ValuesLoad(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        put(session, OperandRole::FieldIndex, a1);
+        put(session, OperandRole::ResultOffset, a2);
+        return emit(session, InstructionForm::ValuesLoad, begin);
+    }
+    auto emit_ValuesStore(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        put(session, OperandRole::FieldIndex, a1);
+        put(session, OperandRole::ValueOffset, a2);
+        return emit(session, InstructionForm::ValuesStore, begin);
+    }
+    auto emit_ValuesResize(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        put(session, OperandRole::FieldIndex, a1);
+        put(session, OperandRole::FillOffset, a2);
+        return emit(session, InstructionForm::ValuesResize, begin);
+    }
+    auto emit_MoveBytes(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::SourceOffset, a0);
+        put(session, OperandRole::ResultOffset, a1);
+        return emit(session, InstructionForm::MoveBytes, begin);
+    }
+    auto emit_BytesOk(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        put(session, OperandRole::FieldIndex, a1);
+        return emit(session, InstructionForm::BytesOk, begin);
+    }
+    auto emit_BytesLength(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        put(session, OperandRole::FieldIndex, a1);
+        return emit(session, InstructionForm::BytesLength, begin);
+    }
+    auto emit_BytesLoad(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        put(session, OperandRole::FieldIndex, a1);
+        return emit(session, InstructionForm::BytesLoad, begin);
+    }
+    auto emit_BytesStore(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        put(session, OperandRole::FieldIndex, a1);
+        return emit(session, InstructionForm::BytesStore, begin);
+    }
+    auto emit_BytesResize(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        put(session, OperandRole::FieldIndex, a1);
+        return emit(session, InstructionForm::BytesResize, begin);
+    }
+    auto emit_EndBytes(compiler_resolver::Session& session, i64 a0) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        return emit(session, InstructionForm::EndBytes, begin);
+    }
+    auto emit_BindRegionParameter(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Index, a0);
+        put(session, OperandRole::Offset, a1);
+        return emit(session, InstructionForm::BindRegionParameter, begin);
+    }
+    auto emit_BindBytesParameter(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Index, a0);
+        put(session, OperandRole::Offset, a1);
+        return emit(session, InstructionForm::BindBytesParameter, begin);
+    }
+    auto emit_ResourceCall(compiler_resolver::Session& session, i64 a0, i64 a1, OperandRow a2, i64 a3, i64 a4) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::CalleeSymbolId, a0);
+        put(session, OperandRole::RegionOffset, a1);
+        session.append_operand(a2);
+        put(session, OperandRole::ResultOffset, a3);
+        put(session, OperandRole::ReceiverOffset, a4);
+        return emit(session, InstructionForm::ResourceCall, begin);
+    }
+    auto emit_ReturnBytes(compiler_resolver::Session& session, i64 a0) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        return emit(session, InstructionForm::ReturnBytes, begin);
+    }
+    auto emit_InitializeBytesField(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::ObjectOffset, a0);
+        put(session, OperandRole::FieldIndex, a1);
+        put(session, OperandRole::SourceOffset, a2);
+        return emit(session, InstructionForm::InitializeBytesField, begin);
+    }
+    auto emit_MoveObject(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::SourceOffset, a0);
+        put(session, OperandRole::ResultOffset, a1);
+        return emit(session, InstructionForm::MoveObject, begin);
+    }
+    auto emit_BindOwnedObjectParameter(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Index, a0);
+        put(session, OperandRole::Offset, a1);
+        put(session, OperandRole::ClassNominalId, a2);
+        return emit(session, InstructionForm::BindOwnedObjectParameter, begin);
+    }
+    auto emit_ReturnOwnedObject(compiler_resolver::Session& session, i64 a0) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        return emit(session, InstructionForm::ReturnOwnedObject, begin);
+    }
+    auto emit_AcquireObjectLoan(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::LoanId, a0);
+        put(session, OperandRole::Root, a1);
+        put(session, OperandRole::MutableValue, a2);
+        return emit(session, InstructionForm::AcquireObjectLoan, begin);
+    }
+    auto emit_ReleaseObjectLoan(compiler_resolver::Session& session, i64 a0) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::LoanId, a0);
+        return emit(session, InstructionForm::ReleaseObjectLoan, begin);
+    }
+
+    auto value_kind(compiler_resolver::Session& session, i64 type) -> compiler_resolver::ResolvedTypeKind {
+        return compiler_resolver::type_kind(session, type);
+    }
+    auto scalar_id(compiler_resolver::Session& session, compiler_resolver::ResolvedTypeKind kind) -> i64 {
+        return compiler_resolver::scalar_type(session, kind);
+    }
+    auto is_owner_storage(compiler_resolver::Session& session, i64 type) -> bool {
+        const compiler_resolver::ResolvedTypeKind kind = value_kind(session, type);
+        return kind == compiler_resolver::ResolvedTypeKind::owned_bytes || kind == compiler_resolver::ResolvedTypeKind::owned_values;
+    }
+    auto is_class_array(compiler_resolver::Session& session, i64 type) -> bool {
+        if (value_kind(session, type) != compiler_resolver::ResolvedTypeKind::array_value) {
+            return false;
+        }
+        return value_kind(session, compiler_resolver::mw(session, type, 2)) == compiler_resolver::ResolvedTypeKind::class_value;
+    }
+    auto is_byte_array(compiler_resolver::Session& session, i64 type) -> bool {
+        if (value_kind(session, type) != compiler_resolver::ResolvedTypeKind::array_value) {
+            return false;
+        }
+        return value_kind(session, compiler_resolver::mw(session, type, 2)) == compiler_resolver::ResolvedTypeKind::u8_value;
+    }
+    auto is_resource_owner(compiler_resolver::Session& session, i64 type) -> bool {
+        return is_owner_storage(session, type) || owning_type(session, type);
+    }
+    auto scalar_width(compiler_resolver::Session& session, i64 type) -> i64 {
+        const compiler_resolver::ResolvedTypeKind kind = value_kind(session, type);
+        if (kind == compiler_resolver::ResolvedTypeKind::bool_value || kind == compiler_resolver::ResolvedTypeKind::u8_value) {
+            return 1;
+        }
+        return 8;
+    }
+    auto payload_type(compiler_resolver::Session& session, i64 type) -> i64 {
+        if (value_kind(session, type) == compiler_resolver::ResolvedTypeKind::owner) {
+            return scalar_id(session, compiler_resolver::ResolvedTypeKind::i64_value);
+        }
+        return type;
+    }
+    auto source_ref(compiler_resolver::Session& session, i64 syntax) -> i64 {
+        const compiler_resolver::SyntaxRow row = session.syntax(syntax);
+        if (row.expression_kind() == compiler_parser::NodeKind::index) {
+            return compiler_resolver::sw(session, row.word(1), 0);
+        }
+        return row.word(0);
+    }
+    auto spelling(compiler_resolver::Session& session, i64 reference, builtin::span<const u8> text) -> bool {
+        return session.source_equal(reference, text);
+    }
+    auto expression_spelling(compiler_resolver::Session& session, i64 node, builtin::span<const u8> text) -> bool {
+        return spelling(session, source_ref(session, node), text);
+    }
+    auto match_type(compiler_resolver::Session& session, i64 got, i64 want, i64 source) -> bool {
+        if (got == want) {
+            return session.good();
+        }
+        const OperandRow expected = scalar(OperandRole::DiagnosticTypeId, want);
+        const OperandRow actual = scalar(OperandRole::DiagnosticTypeId, got);
+        return fail_pair(session, LoweringError::type_mismatch, source, expected, actual);
+    }
+    auto emit_signed(compiler_resolver::Session& session, i64 number, i64 type) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::SignedConstant, number);
+        put(session, OperandRole::TypeId, type);
+        return emit(session, InstructionForm::Constant, begin);
+    }
+    auto emit_unsigned(compiler_resolver::Session& session, u64 number, i64 type) -> i64 {
+        const i64 begin = session.operand_count();
+        const OperandRow number_operand = unsigned_operand(OperandRole::UnsignedConstant, number);
+        session.append_operand(number_operand);
+        put(session, OperandRole::TypeId, type);
+        return emit(session, InstructionForm::Constant, begin);
+    }
+    auto body_function(compiler_resolver::Session& session) -> i64 {
+        const ContinuationRow root = session.continuation(0);
+        return root.syntax_node();
+    }
+    auto body_result_type(compiler_resolver::Session& session) -> i64 {
+        const ContinuationRow root = session.continuation(0);
+        return root.then_snapshot_base();
+    }
+    auto body_fresh_label(compiler_resolver::Session& session) -> i64 {
+        ContinuationRow root = session.continuation(0);
+        const i64 result = root.first_label();
+        root.set_labels(result + 1, root.second_label());
+        session.set_continuation(0, root);
+        return result;
+    }
+    auto body_fresh_loan(compiler_resolver::Session& session) -> i64 {
+        ContinuationRow root = session.continuation(0);
+        const i64 result = root.incoming_snapshot_base();
+        root.set_snapshots(result + 1, root.then_snapshot_base());
+        session.set_continuation(0, root);
+        return result;
+    }
+    auto active_scope(compiler_resolver::Session& session) -> i64 {
+        i64 at = session.continuation_count();
+        while (at > 0) {
+            at = at - 1;
+            const ContinuationRow frame = session.continuation(at);
+            if (frame.kind() == ContinuationKind::block || frame.kind() == ContinuationKind::function) {
+                return at;
+            }
+        }
+        return session.fail_storage(compiler_resolver::StorageStatus::invalid);
+    }
+    auto scope_identity(ContinuationRow scope) -> i64 {
+        if (scope.kind() == ContinuationKind::function) {
+            return 0;
+        }
+        return scope.syntax_node() + 1;
+    }
+    auto lookup_local(compiler_resolver::Session& session, i64 name) -> i64 {
+        const i64 atom = session.intern_atom(name);
+        const i64 function = body_function(session);
+        i64 at = session.continuation_count();
+        while (at > 0 && session.good()) {
+            at = at - 1;
+            const ContinuationRow scope = session.continuation(at);
+            if (scope.kind() == ContinuationKind::block || scope.kind() == ContinuationKind::function) {
+                const i64 found = session.index(110, function, scope_identity(scope), atom, 0);
+                if (found >= 0) {
+                    return found;
+                }
+            }
+        }
+        return -1;
+    }
+    auto find_local(compiler_resolver::Session& session, i64 name) -> i64 {
+        const i64 result = lookup_local(session, name);
+        if (result < 0) {
+            const OperandRow value = scalar(OperandRole::DiagnosticNameId, name);
+            const OperandRow absent = scalar(OperandRole::NoDiagnosticValue, 0);
+            fail_pair(session, LoweringError::unknown_local, name, value, absent);
+        }
+        return result;
+    }
+    auto named_source(compiler_resolver::Session& session, i64 expression) -> i64 {
+        const compiler_resolver::SyntaxRow syntax = session.syntax(expression);
+        if (syntax.expression_kind() != compiler_parser::NodeKind::name) {
+            return error(session, LoweringError::ownership_operation_requires_local, source_ref(session, expression));
+        }
+        const i64 reference = source_ref(session, expression);
+        const i64 id = find_local(session, reference);
+        if (!session.good()) {
+            return -1;
+        }
+        const LocalRow row = session.local(id);
+        const SnapshotRow state = row.state();
+        if (!state.live()) {
+            const OperandRow value = scalar(OperandRole::DiagnosticNameId, reference);
+            const OperandRow absent = scalar(OperandRole::NoDiagnosticValue, 0);
+            fail_pair(session, LoweringError::use_after_move, reference, value, absent);
+            return -1;
+        }
+        if (state.object_exclusive()) {
+            return error(session, LoweringError::owning_object_exclusively_borrowed, reference);
+        }
+        session.mark_local_read(id);
+        return id;
+    }
+    auto local_offset(compiler_resolver::Session& session, i64 id) -> i64 {
+        const LocalRow row = session.local(id);
+        return row.offset();
+    }
+    auto local_type(compiler_resolver::Session& session, i64 id) -> i64 {
+        const LocalRow row = session.local(id);
+        return row.concrete_type_id();
+    }
+    auto set_live(compiler_resolver::Session& session, i64 id, bool live, bool active) -> bool {
+        const LocalRow row = session.local(id);
+        const SnapshotRow old = row.state();
+        const SnapshotRow changed = SnapshotRow(old.shared_count(), old.object_shared_count(), live, old.exclusive(), active, old.object_exclusive());
+        return session.set_local_state(id, changed);
+    }
+    auto change_shared(compiler_resolver::Session& session, i64 id, i64 difference) -> bool {
+        const LocalRow row = session.local(id);
+        const SnapshotRow old = row.state();
+        const SnapshotRow changed = SnapshotRow(old.shared_count() + difference, old.object_shared_count(), old.live(), old.exclusive(), old.resource_active(), old.object_exclusive());
+        return session.set_local_state(id, changed);
+    }
+    auto set_exclusive(compiler_resolver::Session& session, i64 id, bool exclusive) -> bool {
+        const LocalRow row = session.local(id);
+        const SnapshotRow old = row.state();
+        const SnapshotRow changed = SnapshotRow(old.shared_count(), old.object_shared_count(), old.live(), exclusive, old.resource_active(), old.object_exclusive());
+        return session.set_local_state(id, changed);
+    }
+    auto change_object_loan(compiler_resolver::Session& session, i64 id, i64 shared, bool exclusive) -> bool {
+        const LocalRow row = session.local(id);
+        const SnapshotRow old = row.state();
+        const SnapshotRow changed = SnapshotRow(old.shared_count(), old.object_shared_count() + shared, old.live(), old.exclusive(), old.resource_active(), exclusive);
+        return session.set_local_state(id, changed);
+    }
+    auto no_object_loan(compiler_resolver::Session& session, i64 root, i64 source) -> bool {
+        if (root >= 0) {
+            const LocalRow local = session.local(root);
+            const SnapshotRow state = local.state();
+            if (state.object_shared_count() != 0 || state.object_exclusive()) {
+                return fail(session, LoweringError::owning_object_mutation_while_borrowed, source);
+            }
+        }
+        return session.good();
+    }
+    auto no_span_borrow(compiler_resolver::Session& session, i64 root, i64 field, i64 source) -> bool {
+        if (!no_object_loan(session, root, source)) {
+            return false;
+        }
+        i64 at = 0;
+        while (at < session.local_count()) {
+            const LocalRow local = session.local(at);
+            const SnapshotRow state = local.state();
+            const bool same_root = (root == -2 && local.span_origin_kind() == SpanOriginKind::receiver)
+                || (root >= 0 && local.span_origin_kind() == SpanOriginKind::local && local.origin_local_id() == root);
+            if (state.live() && value_kind(session, local.concrete_type_id()) == compiler_resolver::ResolvedTypeKind::byte_span
+                && same_root && (field < 0 || local.span_field_index() == field)) {
+                return fail(session, LoweringError::owner_mutation_while_span_live, source);
+            }
+            at = at + 1;
+        }
+        return session.good();
+    }
+    // Each request freezes origin and lint facts before append_local publishes
+    // the row. In particular a branch capture cannot see a half-set origin.
+    class LocalRequest {
+        i64 nameRef;
+        i64 typeId;
+        i64 sourceRef;
+        bool mutableValue;
+        bool bindValue;
+        bool beginValue;
+        i64 ownerId;
+        SpanOriginKind originKind;
+        i64 originId;
+        i64 fieldId;
+        bool temporaryParent;
+        bool borrowedValue;
+        bool lintValue;
+    public:
+        LocalRequest(i64 name, i64 type, i64 source, bool mutable_value, bool bind, bool begin) : nameRef(name), typeId(type), sourceRef(source), mutableValue(mutable_value), bindValue(bind), beginValue(begin), ownerId(-1), originKind(SpanOriginKind::none), originId(-1), fieldId(-1), temporaryParent(false), borrowedValue(false), lintValue(false) {
+        }
+        auto name() const -> i64 { return nameRef; }
+        auto type() const -> i64 { return typeId; }
+        auto source() const -> i64 { return sourceRef; }
+        auto mutable_value() const -> bool { return mutableValue; }
+        auto bind() const -> bool { return bindValue; }
+        auto begin() const -> bool { return beginValue; }
+        auto owner() const -> i64 { return ownerId; }
+        auto origin() const -> SpanOriginKind { return originKind; }
+        auto origin_id() const -> i64 { return originId; }
+        auto field() const -> i64 { return fieldId; }
+        auto temporary() const -> bool { return temporaryParent; }
+        auto borrowed() const -> bool { return borrowedValue; }
+        auto lint() const -> bool { return lintValue; }
+        auto set_origin(i64 owner, SpanOriginKind kind, i64 origin, i64 field, bool temporary) -> bool {
+            ownerId = owner;
+            originKind = kind;
+            originId = origin;
+            fieldId = field;
+            temporaryParent = temporary;
+            return true;
+        }
+        auto set_flags(bool borrowed, bool lint) -> bool {
+            borrowedValue = borrowed;
+            lintValue = lint;
+            return true;
+        }
+    };
+    auto scalar_slot(compiler_resolver::Session& session, i64 offset, i64 type) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, offset);
+        put(session, OperandRole::TypeId, type);
+        return emit_record(session, RecordKind::ScalarSlot, begin);
+    }
+    auto local_slot(compiler_resolver::Session& session, RecordKind kind, i64 offset) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, offset);
+        return emit_record(session, kind, begin);
+    }
+    auto add_local(compiler_resolver::Session& session, LocalRequest request) -> i64 {
+        const i64 scope_index = active_scope(session);
+        ContinuationRow scope = session.continuation(scope_index);
+        const i64 scope_id = scope_identity(scope);
+        i64 atom = -1;
+        if (request.bind()) {
+            atom = session.intern_atom(request.name());
+            if (session.index(110, body_function(session), scope_id, atom, 0) >= 0) {
+                const OperandRow name = scalar(OperandRole::DiagnosticNameId, request.name());
+                const OperandRow absent = scalar(OperandRole::NoDiagnosticValue, 0);
+                fail_pair(session, LoweringError::duplicate_local, request.source(), name, absent);
+                return -1;
+            }
+        }
+        const i64 type = request.type();
+        const compiler_resolver::ResolvedTypeKind kind = value_kind(session, type);
+        i64 words = 1;
+        if (request.borrowed()) {
+            words = 0;
+        } else if (compiler_resolver::service_kind(kind)) {
+            words = 2;
+        } else if (is_owner_storage(session, type)) {
+            words = 4;
+        } else if (kind == compiler_resolver::ResolvedTypeKind::byte_span) {
+            words = 7;
+        } else if (kind == compiler_resolver::ResolvedTypeKind::class_value || kind == compiler_resolver::ResolvedTypeKind::array_value) {
+            i64 bytes = type_size(session, type, request.source());
+            if (bytes < 1) { bytes = 1; }
+            words = (bytes + 7) / 8;
+        }
+        ContinuationRow root = session.continuation(0);
+        if (words > 8192 || root.local_prefix_length() > 8192 - words) {
+            return error(session, LoweringError::function_frame_limit, request.source());
+        }
+        const i64 frame_words = root.local_prefix_length() + words;
+        root.set_scope(root.scope_head(), frame_words);
+        session.set_continuation(0, root);
+        i64 offset = frame_words * 8;
+        if (request.borrowed()) { offset = 0; }
+        const bool active = is_resource_owner(session, type) && !request.borrowed();
+        i64 name = -1;
+        i64 scope_key = -1;
+        i64 previous = -1;
+        if (request.bind()) {
+            name = request.name();
+            scope_key = scope_id;
+            previous = scope.scope_head();
+        }
+        LocalRow local = LocalRow(name, type, offset, scope_key, previous, request.mutable_value());
+        local.set_binding_flags(request.borrowed(), request.lint());
+        local.set_origin(request.owner(), request.origin(), request.origin_id(), request.field(), request.temporary());
+        const SnapshotRow state = SnapshotRow(0, 0, true, false, active, false);
+        local.set_state(state);
+        if (!request.borrowed()) {
+            if (compiler_resolver::service_kind(kind)) {
+                local_slot(session, RecordKind::ServiceSlot, offset);
+            } else if (kind == compiler_resolver::ResolvedTypeKind::byte_region) {
+                local_slot(session, RecordKind::RegionSlot, offset);
+            } else if (is_owner_storage(session, type)) {
+                const i64 begin = session.operand_count();
+                put(session, OperandRole::Offset, offset);
+                i64 mutable_value = 0;
+                if (request.mutable_value()) { mutable_value = 1; }
+                put(session, OperandRole::MutableValue, mutable_value);
+                emit_record(session, RecordKind::ByteSlot, begin);
+                if (kind == compiler_resolver::ResolvedTypeKind::owned_values) {
+                    owned_element(session, type, request.source());
+                    const i64 element = compiler_resolver::mw(session, type, 2);
+                    const i64 owned_begin = session.operand_count();
+                    put(session, OperandRole::Offset, offset);
+                    put(session, OperandRole::ClassNominalId, compiler_resolver::mw(session, element, 1));
+                    emit_record(session, RecordKind::OwnedValueType, owned_begin);
+                }
+                if (request.begin()) { emit_BeginBytes(session, offset); }
+            } else if (kind == compiler_resolver::ResolvedTypeKind::byte_span) {
+                local_slot(session, RecordKind::SpanSlot, offset);
+            } else if (kind == compiler_resolver::ResolvedTypeKind::class_value || is_class_array(session, type)) {
+                i64 layout = class_row(session, type);
+                i64 carrier = -1;
+                if (is_class_array(session, type)) {
+                    carrier = class_carrier(session, type, request.source());
+                    layout = carrier_class_row(session, carrier);
+                }
+                const i64 begin = session.operand_count();
+                put(session, OperandRole::Offset, offset);
+                if (carrier >= 0) {
+                    put(session, OperandRole::CarrierId, carrier);
+                } else {
+                    put(session, OperandRole::ClassNominalId, compiler_resolver::mw(session, type, 1));
+                }
+                i64 mutable_value = 0;
+                if (request.mutable_value()) { mutable_value = 1; }
+                put(session, OperandRole::MutableValue, mutable_value);
+                emit_record(session, RecordKind::ObjectSlot, begin);
+                if (request.begin()) { emit_BeginObject(session, offset); }
+                const OperandRow leaves = record_slice(session, layout, OperandRole::LeafTypes);
+                const i64 storage = record_signed(session, layout, OperandRole::StorageRef);
+                const OperandRow offsets = record_slice(session, storage, OperandRole::LeafOffsets);
+                i64 at = 0;
+                while (at < leaves.count() && session.good()) {
+                    const OperandRow leaf = session.view_operand(leaves.begin() + at);
+                    const OperandRow displacement = session.view_operand(offsets.begin() + at);
+                    scalar_slot(session, offset - displacement.signed_value(), leaf.signed_value());
+                    at = at + 1;
+                }
+            } else if (kind == compiler_resolver::ResolvedTypeKind::array_value) {
+                const i64 element = compiler_resolver::mw(session, type, 2);
+                const i64 length = compiler_resolver::mw(session, type, 3);
+                if (is_byte_array(session, type)) {
+                    const i64 begin = session.operand_count();
+                    put(session, OperandRole::Offset, offset);
+                    put(session, OperandRole::Length, length);
+                    emit_record(session, RecordKind::ArraySlot, begin);
+                    emit_BeginArray(session, offset);
+                }
+                i64 at = 0;
+                while (at < length && session.good()) {
+                    scalar_slot(session, offset - at * scalar_width(session, element), element);
+                    at = at + 1;
+                }
+            } else {
+                scalar_slot(session, offset, payload_type(session, type));
+            }
+        }
+        const i64 result = session.append_local(local);
+        if (request.bind() && session.good()) {
+            session.index_insert(110, body_function(session), scope_id, atom, 0, result);
+            scope = session.continuation(scope_index);
+            scope.set_scope(result, scope.local_prefix_length());
+            session.set_continuation(scope_index, scope);
+        }
+        return result;
+    }
+    auto end_owner(compiler_resolver::Session& session, i64 id) -> bool {
+        const LocalRow local = session.local(id);
+        if (is_owner_storage(session, local.concrete_type_id())) {
+            emit_EndBytes(session, local.offset());
+        } else {
+            emit_EndObject(session, local.offset());
+        }
+        return session.good();
+    }
+    auto release_span(compiler_resolver::Session& session, i64 id, bool instructions) -> bool {
+        // Parent identities decrease strictly. This loop is bounded by Local
+        // producers, not expression depth; named chains may exceed 128 spans.
+        i64 current = id;
+        while (current >= 0 && session.good()) {
+            const LocalRow span = session.local(current);
+            const SnapshotRow state = span.state();
+            if (state.shared_count() != 0) {
+                return fail(session, LoweringError::dependent_reborrow_lifetime, -1);
+            }
+            if (instructions) { emit_EndSpan(session, span.offset()); }
+            if (span.owner_id() >= 0) { change_shared(session, span.owner_id(), -1); }
+            if (span.span_origin_kind() == SpanOriginKind::local) {
+                change_shared(session, span.origin_local_id(), -1);
+            }
+            set_live(session, current, false, state.resource_active());
+            if (!span.temporary_parent()) { return session.good(); }
+            if (span.owner_id() < 0 || span.owner_id() >= current) {
+                session.fail_storage(compiler_resolver::StorageStatus::invalid);
+                return false;
+            }
+            current = span.owner_id();
+        }
+        return session.good();
+    }
+    auto copied_snapshot(compiler_resolver::Session& session, i64 original, i64 source) -> i64 {
+        const LocalRow local = session.local(original);
+        if (owning_type(session, local.concrete_type_id())) {
+            return error(session, LoweringError::owning_class_copy, source);
+        }
+        const LocalRequest request = LocalRequest(-1, local.concrete_type_id(), source, false, false, true);
+        const i64 destination = add_local(session, request);
+        emit_CopyObject(session, local.offset(), local_offset(session, destination));
+        return destination;
+    }
+    auto moved_source(compiler_resolver::Session& session, i64 expression, i64 expected) -> i64 {
+        const compiler_resolver::SyntaxRow syntax = session.syntax(expression);
+        const i64 source = source_ref(session, expression);
+        if (syntax.expression_kind() != compiler_parser::NodeKind::call || !expression_spelling(session, expression, "move")) {
+            return error(session, LoweringError::owning_transfer_requires_move, source);
+        }
+        if (syntax.word(2) != 1) {
+            const OperandRow name = scalar(OperandRole::DiagnosticNameId, source);
+            const OperandRow absent = scalar(OperandRole::NoDiagnosticValue, 0);
+            fail_pair(session, LoweringError::call_argument_count, source, name, absent);
+            return -1;
+        }
+        const i64 target = compiler_resolver::sw(session, syntax.word(1), 0);
+        const i64 id = named_source(session, target);
+        if (!session.good()) { return -1; }
+        const LocalRow local = session.local(id);
+        match_type(session, local.concrete_type_id(), expected, source);
+        if (!is_resource_owner(session, expected)) {
+            return error(session, LoweringError::move_requires_owner, source);
+        }
+        if (local.borrowed_object()) {
+            return error(session, LoweringError::borrowed_object_ownership_transfer, source);
+        }
+        if (!local.mutable_value()) {
+            return error(session, LoweringError::move_const_owner, source);
+        }
+        no_span_borrow(session, id, -1, source);
+        return id;
+    }
+    auto emit_move(compiler_resolver::Session& session, i64 original, i64 destination) -> bool {
+        const LocalRow local = session.local(original);
+        const SnapshotRow state = local.state();
+        if (is_owner_storage(session, local.concrete_type_id())) {
+            emit_MoveBytes(session, local.offset(), local_offset(session, destination));
+        } else {
+            emit_MoveObject(session, local.offset(), local_offset(session, destination));
+        }
+        return set_live(session, original, false, state.resource_active());
+    }
+    auto same_borrows(SnapshotRow first, SnapshotRow second) -> bool {
+        return first.shared_count() == second.shared_count() && first.object_shared_count() == second.object_shared_count()
+            && first.exclusive() == second.exclusive() && first.object_exclusive() == second.object_exclusive();
+    }
+    auto join_prefix(compiler_resolver::Session& session, i64 base, i64 count, i64 source, bool logical) -> bool {
+        i64 at = 0;
+        while (at < count && session.good()) {
+            const LocalRow local = session.local(at);
+            const SnapshotRow current = local.state();
+            const SnapshotRow saved = session.snapshot(base + at);
+            if (!same_borrows(current, saved)) {
+                if (logical) { return fail(session, LoweringError::logical_borrow_state_mismatch, source); }
+                return fail(session, LoweringError::branch_borrow_state_mismatch, source);
+            }
+            if (is_resource_owner(session, local.concrete_type_id()) && current.live() != saved.live()) {
+                if (logical) { return fail(session, LoweringError::logical_byte_ownership_state_mismatch, source); }
+                return fail(session, LoweringError::branch_byte_ownership_state_mismatch, source);
+            }
+            set_live(session, at, current.live() && saved.live(), current.resource_active());
+            at = at + 1;
+        }
+        return session.good();
+    }
+    auto cleanup_scope(compiler_resolver::Session& session, i64 frame_id, bool terminal) -> bool {
+        const ContinuationRow scope = session.continuation(frame_id);
+        i64 at = scope.scope_head();
+        while (at >= 0 && session.good()) {
+            const LocalRow local = session.local(at);
+            const SnapshotRow state = local.state();
+            const i64 type = local.concrete_type_id();
+            const compiler_resolver::ResolvedTypeKind kind = value_kind(session, type);
+            if (!local.borrowed_object()) {
+                if (is_resource_owner(session, type)) {
+                    if (!terminal) { end_owner(session, at); }
+                    set_live(session, at, false, false);
+                } else if (kind == compiler_resolver::ResolvedTypeKind::byte_span) {
+                    if (state.live()) { release_span(session, at, !terminal); }
+                } else {
+                    if (is_byte_array(session, type)) {
+                        if (state.shared_count() != 0) {
+                            return fail_synthetic(session, LoweringError::byte_array_lifetime_while_borrowed, local.name_source_id(), scalar(OperandRole::NoDiagnosticValue, 0), scalar(OperandRole::NoDiagnosticValue, 0));
+                        }
+                        if (!terminal) { emit_EndArray(session, local.offset()); }
+                        set_live(session, at, false, state.resource_active());
+                    }
+                    if (kind == compiler_resolver::ResolvedTypeKind::reference) {
+                        change_shared(session, local.owner_id(), -1);
+                    }
+                    if (kind == compiler_resolver::ResolvedTypeKind::mutable_reference) {
+                        set_exclusive(session, local.owner_id(), false);
+                    }
+                    if (!terminal && (kind == compiler_resolver::ResolvedTypeKind::class_value || is_class_array(session, type))) {
+                        emit_EndObject(session, local.offset());
+                    }
+                }
+            }
+            at = local.previous_binding();
+        }
+        return session.good();
+    }
+    auto return_borrows(compiler_resolver::Session& session, i64 returned) -> bool {
+        i64 at = session.local_count();
+        while (at > 0 && session.good()) {
+            at = at - 1;
+            const LocalRow local = session.local(at);
+            const SnapshotRow state = local.state();
+            if (state.live() && value_kind(session, local.concrete_type_id()) == compiler_resolver::ResolvedTypeKind::byte_span) {
+                i64 retained = returned;
+                while (retained >= 0 && retained != at) {
+                    const LocalRow parent = session.local(retained);
+                    retained = parent.owner_id();
+                }
+                if (retained != at) { emit_EndSpan(session, local.offset()); }
+            }
+        }
+        at = session.local_count();
+        while (at > 0 && session.good()) {
+            at = at - 1;
+            const LocalRow local = session.local(at);
+            const SnapshotRow state = local.state();
+            if (state.live() && is_byte_array(session, local.concrete_type_id())) { emit_EndArray(session, local.offset()); }
+        }
+        return session.good();
+    }
+    auto return_owners(compiler_resolver::Session& session, i64 returned) -> bool {
+        i64 at = session.local_count();
+        while (at > 0 && session.good()) {
+            at = at - 1;
+            const LocalRow local = session.local(at);
+            const SnapshotRow state = local.state();
+            if (at != returned && state.resource_active()) { end_owner(session, at); }
+        }
+        return session.good();
+    }
+    // A source list is reversed once, using the existing balanced index. The
+    // source syntax is immutable; each distinct list contributes one head entry
+    // and one next entry per producer. Traversal thereafter is forward-only.
+    auto ordered_first(compiler_resolver::Session& session, i64 last, i64 link_slot) -> i64 {
+        if (last < 0) { return -1; }
+        const i64 found = session.index(111, last, link_slot, 0, 0);
+        if (found >= 0) { return found - 1; }
+        i64 next = -1;
+        i64 at = last;
+        while (at >= 0 && session.good()) {
+            session.index_insert(112, last, at, link_slot, 0, next + 1);
+            next = at;
+            at = compiler_resolver::sw(session, at, link_slot);
+        }
+        session.index_insert(111, last, link_slot, 0, 0, next + 1);
+        return next;
+    }
+    auto ordered_next(compiler_resolver::Session& session, i64 last, i64 current, i64 link_slot) -> i64 {
+        const i64 result = session.index(112, last, current, link_slot, 0);
+        if (result < 0) { return session.fail_storage(compiler_resolver::StorageStatus::invalid); }
+        return result - 1;
+    }
+    auto expression_argument(compiler_resolver::Session& session, i64 expression, i64 ordinal) -> i64 {
+        const i64 last = compiler_resolver::sw(session, expression, 1);
+        i64 edge = ordered_first(session, last, 1);
+        i64 at = 0;
+        while (at < ordinal && edge >= 0 && session.good()) {
+            edge = ordered_next(session, last, edge, 1);
+            at = at + 1;
+        }
+        if (edge < 0) { return session.fail_storage(compiler_resolver::StorageStatus::invalid); }
+        return compiler_resolver::sw(session, edge, 0);
+    }
+    auto require_arity(compiler_resolver::Session& session, i64 expression, i64 expected) -> bool {
+        if (compiler_resolver::sw(session, expression, 2) == expected) { return session.good(); }
+        const i64 source = source_ref(session, expression);
+        const OperandRow name = scalar(OperandRole::DiagnosticNameId, source);
+        const OperandRow absent = scalar(OperandRole::NoDiagnosticValue, 0);
+        return fail_pair(session, LoweringError::call_argument_count, source, name, absent);
+    }
+    class LiteralValue {
+        i64 typeId;
+        i64 signedValue;
+        u64 unsignedValue;
+        bool validValue;
+    public:
+        LiteralValue(i64 type, i64 signed_value, u64 unsigned_value, bool valid) : typeId(type), signedValue(signed_value), unsignedValue(unsigned_value), validValue(valid) {
+        }
+        auto type() const -> i64 { return typeId; }
+        auto signed_value() const -> i64 { return signedValue; }
+        auto unsigned_value() const -> u64 { return unsignedValue; }
+        auto valid() const -> bool { return validValue; }
+    };
+    auto hex_digit(u8 byte) -> i64 {
+        if (byte >= '0' && byte <= '9') { return i64(byte) - 48; }
+        if (byte >= 'a' && byte <= 'f') { return i64(byte) - 87; }
+        if (byte >= 'A' && byte <= 'F') { return i64(byte) - 55; }
+        return -1;
+    }
+    auto escape_byte(u8 byte) -> i64 {
+        if (byte == '\'') { return 39; }
+        if (byte == '\\') { return 92; }
+        if (byte == '0') { return 0; }
+        if (byte == 'a') { return 7; }
+        if (byte == 'b') { return 8; }
+        if (byte == 'f') { return 12; }
+        if (byte == 'n') { return 10; }
+        if (byte == 'r') { return 13; }
+        if (byte == 't') { return 9; }
+        if (byte == 'v') { return 11; }
+        return -1;
+    }
+    auto byte_literal(compiler_resolver::Session& session, i64 begin, i64 end) -> i64 {
+        const i64 length = end - begin;
+        if (length < 3 || session.source_byte(begin) != '\'' || session.source_byte(end - 1) != '\'') { return -1; }
+        const u8 first = session.source_byte(begin + 1);
+        if (length == 3) {
+            if (first >= 32u8 && first <= 126u8 && first != '\'' && first != '\\') { return i64(first); }
+            return -1;
+        }
+        if (first != '\\') { return -1; }
+        if (length == 4) { return escape_byte(session.source_byte(begin + 2)); }
+        if (length != 6 || session.source_byte(begin + 2) != 'x') { return -1; }
+        const i64 high = hex_digit(session.source_byte(begin + 3));
+        const i64 low = hex_digit(session.source_byte(begin + 4));
+        if (high < 0 || low < 0) { return -1; }
+        return high * 16 + low;
+    }
+    auto integer_magnitude(compiler_resolver::Session& session, i64 begin, i64 end) -> LiteralValue {
+        i64 at = begin;
+        u64 radix = 10u64;
+        if (end - begin >= 2 && session.source_byte(begin) == '0' && (session.source_byte(begin + 1) == 'b' || session.source_byte(begin + 1) == 'B')) {
+            radix = 2u64;
+            at = at + 2;
+        }
+        u64 magnitude = 0u64;
+        bool previous_digit = false;
+        while (at < end && session.good()) {
+            const u8 byte = session.source_byte(at);
+            if (radix == 2u64 && byte == '\'') {
+                if (!previous_digit) {
+                    const LiteralValue invalid = LiteralValue(-1, 0, 0u64, false);
+                    return invalid;
+                }
+                previous_digit = false;
+            } else {
+                if (byte < '0' || byte > '9' || (radix == 2u64 && byte > '1')) {
+                    const LiteralValue invalid = LiteralValue(-1, 0, 0u64, false);
+                    return invalid;
+                }
+                const u64 digit = u64(byte) - 48u64;
+                if (magnitude > (18446744073709551615u64 - digit) / radix) {
+                    const LiteralValue invalid = LiteralValue(-1, 0, 0u64, false);
+                    return invalid;
+                }
+                magnitude = magnitude * radix + digit;
+                previous_digit = true;
+            }
+            at = at + 1;
+        }
+        const LiteralValue result = LiteralValue(-1, 0, magnitude, previous_digit);
+        return result;
+    }
+    auto decode_literal(compiler_resolver::Session& session, i64 expression) -> LiteralValue {
+        const i64 reference = source_ref(session, expression);
+        const compiler_resolver::MetaRow source = session.meta(reference);
+        const i64 begin = source.word(1);
+        const i64 end = source.word(2);
+        const compiler_resolver::ResolvedRow resolved = session.resolved(expression);
+        i64 type = scalar_id(session, compiler_resolver::ResolvedTypeKind::i64_value);
+        if (resolved.operation() == compiler_resolver::ResolvedOperation::capacity_constant) {
+            const LiteralValue result = LiteralValue(type, resolved.word(3), 0u64, true);
+            return result;
+        }
+        if (session.source_equal(reference, "true") || session.source_equal(reference, "false")) {
+            type = scalar_id(session, compiler_resolver::ResolvedTypeKind::bool_value);
+            i64 value = 0;
+            if (session.source_equal(reference, "true")) { value = 1; }
+            const LiteralValue result = LiteralValue(type, value, 0u64, true);
+            return result;
+        }
+        if (session.source_byte(begin) == '\'') {
+            type = scalar_id(session, compiler_resolver::ResolvedTypeKind::u8_value);
+            const i64 number = byte_literal(session, begin, end);
+            if (number < 0) { fail(session, LoweringError::invalid_byte_literal, reference); }
+            const LiteralValue result = LiteralValue(type, number, 0u64, number >= 0);
+            return result;
+        }
+        i64 digits_end = end;
+        bool unsigned_value = false;
+        bool byte_value = false;
+        if (end - begin >= 2 && session.source_byte(end - 2) == 'u' && session.source_byte(end - 1) == '8') {
+            digits_end = end - 2;
+            unsigned_value = true;
+            byte_value = true;
+            type = scalar_id(session, compiler_resolver::ResolvedTypeKind::u8_value);
+        } else if (end - begin >= 3 && session.source_byte(end - 3) == 'u' && session.source_byte(end - 2) == '6' && session.source_byte(end - 1) == '4') {
+            digits_end = end - 3;
+            unsigned_value = true;
+            type = scalar_id(session, compiler_resolver::ResolvedTypeKind::u64_value);
+        }
+        const LiteralValue magnitude = integer_magnitude(session, begin, digits_end);
+        if (!magnitude.valid() || (byte_value && magnitude.unsigned_value() > 255u64) || (!unsigned_value && magnitude.unsigned_value() > 9223372036854775807u64)) {
+            fail(session, LoweringError::invalid_integer_literal_or_suffix, reference);
+            const LiteralValue invalid = LiteralValue(type, 0, 0u64, false);
+            return invalid;
+        }
+        i64 signed_value = 0;
+        if (!unsigned_value || byte_value) { signed_value = i64(magnitude.unsigned_value()); }
+        const LiteralValue result = LiteralValue(type, signed_value, magnitude.unsigned_value(), true);
+        return result;
+    }
+    auto emit_literal(compiler_resolver::Session& session, LiteralValue literal) -> i64 {
+        if (value_kind(session, literal.type()) == compiler_resolver::ResolvedTypeKind::u64_value) {
+            return emit_unsigned(session, literal.unsigned_value(), literal.type());
+        }
+        return emit_signed(session, literal.signed_value(), literal.type());
+    }
+    // Three decoder passes share one bounded decoder: measure and validate,
+    // retain literal-span bytes, or emit array constants. Array initialization
+    // never allocates decoded payload in the source owner.
+    auto decode_string(compiler_resolver::Session& session, i64 reference, bool retain, bool array_values) -> i64 {
+        const compiler_resolver::MetaRow source = session.meta(reference);
+        const i64 begin = source.word(1);
+        const i64 end = source.word(2);
+        if (end - begin < 2 || session.source_byte(begin) != '"' || session.source_byte(end - 1) != '"') {
+            return error(session, LoweringError::invalid_byte_string_literal, reference);
+        }
+        i64 at = begin + 1;
+        i64 count = 0;
+        while (at < end - 1 && session.good()) {
+            const u8 first = session.source_byte(at);
+            i64 width = 1;
+            i64 value = i64(first);
+            if (first == '\\') {
+                if (at + 1 >= end - 1) { return error(session, LoweringError::invalid_byte_string_literal, reference); }
+                const u8 second = session.source_byte(at + 1);
+                width = 2;
+                value = escape_byte(second);
+                if (second == '"') { value = 34; }
+                if (second == 'x') {
+                    width = 4;
+                    if (at + width > end - 1) { return error(session, LoweringError::invalid_byte_string_literal, reference); }
+                    const i64 high = hex_digit(session.source_byte(at + 2));
+                    const i64 low = hex_digit(session.source_byte(at + 3));
+                    if (high >= 0 && low >= 0) { value = high * 16 + low; }
+                }
+                if (value < 0) { return error(session, LoweringError::invalid_byte_string_literal, reference); }
+            } else if (first < 128u8) {
+                if (first < 32u8 || first == 127u8 || first == '"') { return error(session, LoweringError::invalid_byte_string_literal, reference); }
+            } else {
+                u64 scalar = 0u64;
+                if (first >= 194u8 && first <= 223u8) { width = 2; scalar = u64(first) & 31u64; }
+                else if (first >= 224u8 && first <= 239u8) { width = 3; scalar = u64(first) & 15u64; }
+                else if (first >= 240u8 && first <= 244u8) { width = 4; scalar = u64(first) & 7u64; }
+                else { return error(session, LoweringError::invalid_byte_string_literal, reference); }
+                if (at + width > end - 1) { return error(session, LoweringError::invalid_byte_string_literal, reference); }
+                i64 continuation = 1;
+                while (continuation < width) {
+                    const u8 byte = session.source_byte(at + continuation);
+                    if (byte < 128u8 || byte > 191u8) { return error(session, LoweringError::invalid_byte_string_literal, reference); }
+                    scalar = (scalar << 6) | (u64(byte) & 63u64);
+                    continuation = continuation + 1;
+                }
+                if ((width == 3 && scalar < 2048u64) || (width == 4 && scalar < 65536u64) || scalar > 1114111u64 || (scalar >= 55296u64 && scalar <= 57343u64)) {
+                    return error(session, LoweringError::invalid_byte_string_literal, reference);
+                }
+            }
+            i64 produced = 1;
+            if (first >= 128u8) { produced = width; }
+            if (count > 4096 - produced) { return error(session, LoweringError::invalid_byte_string_literal, reference); }
+            i64 byte_index = 0;
+            while (byte_index < produced && session.good()) {
+                i64 decoded = value;
+                if (first >= 128u8) { decoded = i64(session.source_byte(at + byte_index)); }
+                if (retain) { session.append_literal_byte(u8(decoded)); }
+                if (array_values) {
+                    emit_signed(session, decoded, scalar_id(session, compiler_resolver::ResolvedTypeKind::u8_value));
+                    emit_Push(session);
+                }
+                byte_index = byte_index + 1;
+            }
+            count = count + produced;
+            at = at + width;
+        }
+        return count;
+    }
+}
