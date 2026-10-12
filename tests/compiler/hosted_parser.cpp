@@ -19,6 +19,7 @@
 #include <limits>
 #include <map>
 #include <optional>
+#include <regex>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -117,6 +118,146 @@ void sameToken(const aurora::Token &a, const aurora::Token &b) {
     require(a.text == b.text && a.line == b.line, "token spelling/line differs");
     sameSpan(a.span, b.span);
 }
+// Canonical expected-AST text. An expression prints as
+//   (op@first[-last] .field... <template-args> :reflected-type child...)
+// where first/last are token ordinals relative to `base`; a statement prints as
+//   (kind@token [#binding|$name] [.field] [:type] [mut] [expr] [-> target] [{body}] [else {other}])
+// The printer also checks each node's depth and that its token spans exactly
+// the named ordinals, so a string comparison covers every compared field.
+std::string kindText(aurora::TypeKind kind) {
+    static const char *const names[] = {"i64",
+                                        "bool",
+                                        "own",
+                                        "ref",
+                                        "mutref",
+                                        "class",
+                                        "array",
+                                        "u64",
+                                        "param",
+                                        "enum",
+                                        "u8",
+                                        "span",
+                                        "region",
+                                        "bytes",
+                                        "console",
+                                        "display",
+                                        "event",
+                                        "values"};
+    return names[static_cast<std::size_t>(kind)];
+}
+std::string argumentsText(const std::vector<aurora::TemplateArgument> &arguments);
+std::string argumentText(const aurora::TemplateArgument &argument) {
+    if (argument.kind == aurora::TemplateArgumentKind::Value)
+        return std::to_string(argument.value);
+    std::string text = argument.type == aurora::TypeKind::Class       ? argument.className
+                       : argument.type == aurora::TypeKind::Parameter ? "'" + argument.className
+                       : argument.className.empty() ? kindText(argument.type)
+                                                    : kindText(argument.type) + " " + argument.className;
+    text += argumentsText(argument.templateArguments);
+    if (!argument.displayName.empty())
+        text += "=" + argument.displayName;
+    return argument.resolvedClass ? text + "!" : text;
+}
+std::string argumentsText(const std::vector<aurora::TemplateArgument> &arguments) {
+    if (arguments.empty())
+        return {};
+    std::string text = "<";
+    for (std::size_t index = 0; index < arguments.size(); ++index)
+        text += (index ? "," : "") + argumentText(arguments[index]);
+    return text + ">";
+}
+std::string typeText(const aurora::Type &type) {
+    using K = aurora::TypeKind;
+    if (type.kind == K::Array) {
+        const auto element = !type.elementParameter.empty() ? "'" + type.elementParameter
+                             : type.elementKind == K::Class ? type.className + argumentsText(type.templateArguments)
+                                                            : kindText(type.elementKind);
+        return "array<" + element + "," +
+               (type.lengthParameter.empty() ? std::to_string(type.length) : "'" + type.lengthParameter) + ">";
+    }
+    const auto base = type.kind == K::Class       ? type.className
+                      : type.kind == K::Parameter ? "'" + type.className
+                      : type.className.empty()    ? kindText(type.kind)
+                                                  : kindText(type.kind) + " " + type.className;
+    return base + argumentsText(type.templateArguments);
+}
+std::size_t ordinal(const std::vector<aurora::Token> &tokens, std::size_t offset, bool end) {
+    for (std::size_t index = 0; index < tokens.size(); ++index)
+        if ((end ? tokens[index].span.end.offset : tokens[index].span.begin.offset) == offset)
+            return index;
+    return std::string::npos;
+}
+bool spans(const aurora::Token &token, const std::vector<aurora::Token> &tokens, std::size_t first, std::size_t last) {
+    if (first == std::string::npos || last == std::string::npos || last < first)
+        return false;
+    std::string text;
+    for (auto index = first; index <= last; ++index)
+        text += tokens[index].text;
+    const auto &a = token.span, &b = tokens[first].span, &e = tokens[last].span;
+    return token.text == text && token.line == tokens[first].line && a.source == b.source &&
+           a.begin.offset == b.begin.offset && a.begin.line == b.begin.line && a.begin.column == b.begin.column &&
+           a.end.offset == e.end.offset && a.end.line == e.end.line && a.end.column == e.end.column;
+}
+std::string position(const aurora::Token &token, const std::vector<aurora::Token> &tokens, std::size_t base) {
+    const auto first = ordinal(tokens, token.span.begin.offset, false);
+    const auto last = ordinal(tokens, token.span.end.offset, true);
+    if (!spans(token, tokens, first, last) || first < base)
+        return "@?" + token.text;
+    return "@" + std::to_string(first - base) + (last == first ? "" : "-" + std::to_string(last - base));
+}
+std::string
+text(const aurora::ExpressionPtr &expression, const std::vector<aurora::Token> &tokens, std::size_t base = 0) {
+    if (!expression)
+        return "()";
+    std::string result = "(" + expression->op + position(expression->token, tokens, base);
+    for (const auto &field : expression->fieldNames)
+        result += " ." + field;
+    if (!expression->templateArguments.empty())
+        result += " " + argumentsText(expression->templateArguments);
+    if (!(expression->reflectedType == aurora::Type()))
+        result += " :" + typeText(expression->reflectedType);
+    int depth = 1;
+    for (const auto &child : expression->args) {
+        result += " " + text(child, tokens, base);
+        depth = std::max(depth, child->depth + 1);
+    }
+    return result + (expression->depth == depth ? ")" : " depth=" + std::to_string(expression->depth) + ")");
+}
+std::string
+text(const std::vector<aurora::StatementPtr> &body, const std::vector<aurora::Token> &tokens, std::size_t base = 0);
+std::string text(const aurora::StatementPtr &statement, const std::vector<aurora::Token> &tokens, std::size_t base) {
+    std::string result = "(" + statement->kind + position(statement->token, tokens, base);
+    if (statement->bindingSpan.source) {
+        const auto binding = ordinal(tokens, statement->bindingSpan.begin.offset, false);
+        const bool exact = binding != std::string::npos && binding >= base && tokens[binding].text == statement->name &&
+                           tokens[binding].span.end.offset == statement->bindingSpan.end.offset;
+        result += exact ? " #" + std::to_string(binding - base) : " #?" + statement->name;
+    } else if (!statement->name.empty()) {
+        result += " $" + statement->name;
+    }
+    if (!statement->fieldName.empty())
+        result += " ." + statement->fieldName;
+    if (statement->kind == "let" || !(statement->type == aurora::Type::I64))
+        result += " :" + typeText(statement->type);
+    if (statement->mutableValue)
+        result += " mut";
+    if (statement->expr)
+        result += " " + text(statement->expr, tokens, base);
+    if (statement->target)
+        result += " -> " + text(statement->target, tokens, base);
+    if (!statement->body.empty())
+        result += " " + text(statement->body, tokens, base);
+    if (!statement->other.empty())
+        result += " else " + text(statement->other, tokens, base);
+    return result + ")";
+}
+std::string
+text(const std::vector<aurora::StatementPtr> &body, const std::vector<aurora::Token> &tokens, std::size_t base) {
+    std::string result = "{";
+    for (const auto &statement : body)
+        result += (result.size() > 1 ? " " : "") + text(statement, tokens, base);
+    return result + "}";
+}
 void sameExpression(const aurora::ExpressionPtr &a, const aurora::ExpressionPtr &b) {
     require(bool(a) == bool(b), "expression presence differs");
     if (!a)
@@ -136,59 +277,6 @@ std::size_t nodes(const aurora::ExpressionPtr &expression) {
         count += nodes(child);
     return count;
 }
-// These builders describe expected trees, never parse source. Token ordinals and
-// qualified-token ranges are supplied by each fixture; depth follows that stated
-// tree. All other Expression fields retain their independent default values.
-struct Ast {
-    std::string op;
-    std::size_t first, last;
-    std::vector<Ast> args;
-    std::vector<std::string> fields;
-    std::vector<aurora::TemplateArgument> types;
-    aurora::Type reflected;
-};
-Ast tree(std::string op, std::size_t token, std::vector<Ast> args = {}) {
-    return {std::move(op), token, token, std::move(args), {}, {}, {}};
-}
-Ast number(std::size_t token) {
-    return tree("number", token);
-}
-Ast name(std::size_t token, std::size_t last) {
-    auto result = tree("name", token);
-    result.last = last;
-    return result;
-}
-Ast name(std::size_t token) {
-    return name(token, token);
-}
-Ast binary(std::size_t token, Ast left, Ast right) {
-    return tree("binary", token, {std::move(left), std::move(right)});
-}
-Ast call(std::size_t token, std::vector<Ast> args = {}, std::size_t last = std::string::npos) {
-    auto result = tree("call", token, std::move(args));
-    result.last = last == std::string::npos ? token : last;
-    return result;
-}
-Ast index(Ast base, Ast subscript) {
-    auto result = tree("index", base.first, {base, std::move(subscript)});
-    result.last = base.last;
-    return result;
-}
-Ast typed(Ast expression, std::vector<aurora::TemplateArgument> types) {
-    expression.types = std::move(types);
-    return expression;
-}
-Ast reflected(std::size_t token, aurora::Type type) {
-    auto result = call(token);
-    result.reflected = std::move(type);
-    return result;
-}
-Ast construct(std::size_t first, std::size_t last, std::vector<std::string> fields = {}, std::vector<Ast> args = {}) {
-    auto result = tree("construct", first, std::move(args));
-    result.last = last;
-    result.fields = std::move(fields);
-    return result;
-}
 aurora::TemplateArgument namedArgument(std::string name, std::vector<aurora::TemplateArgument> args = {}) {
     aurora::TemplateArgument result(std::move(name));
     result.templateArguments = std::move(args);
@@ -199,27 +287,45 @@ aurora::Type namedType(std::string name, std::vector<aurora::TemplateArgument> a
     result.templateArguments = std::move(args);
     return result;
 }
-// Compare the declarative expectation directly; never construct it with the
-// parser or the production AST constructors. Depth follows only the stated tree.
-int sameTree(const aurora::ExpressionPtr &actual,
-             const std::vector<aurora::Token> &tokens,
-             const Ast &expected,
-             std::size_t base = 0) {
+// Expected ASTs are written in the canonical text produced by text() above.
+void sameTree(const aurora::ExpressionPtr &actual,
+              const std::vector<aurora::Token> &tokens,
+              const std::string &expected,
+              std::size_t base = 0) {
     require(bool(actual), "expected expression is missing");
-    auto token = tokens.at(base + expected.first);
-    for (auto ordinal = expected.first + 1; ordinal <= expected.last; ++ordinal)
-        token.text += tokens.at(base + ordinal).text;
-    token.span.end = tokens.at(base + expected.last).span.end;
-    require(actual->op == expected.op && actual->args.size() == expected.args.size() &&
-                actual->fieldNames == expected.fields && actual->templateArguments == expected.types &&
-                actual->reflectedType == expected.reflected,
-            "expression shape/spelling differs at " + actual->op + ":" + actual->token.text);
-    sameToken(actual->token, token);
-    int depth = 1;
-    for (std::size_t index = 0; index < expected.args.size(); ++index)
-        depth = std::max(depth, sameTree(actual->args[index], tokens, expected.args[index], base) + 1);
-    require(actual->depth == depth, "expression depth differs");
-    return depth;
+    const auto observed = text(actual, tokens, base);
+    require(observed == expected, "expression AST differs\n  got      " + observed + "\n  expected " + expected);
+}
+void sameBody(const std::vector<aurora::StatementPtr> &actual,
+              const std::vector<aurora::Token> &tokens,
+              const std::string &expected,
+              std::size_t base = 0) {
+    const auto observed = text(actual, tokens, base);
+    require(observed == expected, "body AST differs\n  got      " + observed + "\n  expected " + expected);
+}
+// Move every token ordinal (@first, @first-last, #binding) of an expected text.
+std::string shifted(const std::string &value, std::size_t offset) {
+    static const std::regex ordinals(R"(([@#])(\d+)(-(\d+))?)");
+    const auto moved = [offset](const std::string &number) {
+        return std::to_string(std::stoul(number) + offset);
+    };
+    std::string result;
+    auto last = value.cbegin();
+    for (std::sregex_iterator match(value.begin(), value.end(), ordinals), end; match != end; ++match) {
+        result.append(last, (*match)[0].first);
+        result += (*match)[1].str() + moved((*match)[2].str());
+        if ((*match)[4].matched)
+            result += "-" + moved((*match)[4].str());
+        last = (*match)[0].second;
+    }
+    return result.append(last, value.cend());
+}
+// One expected node for generated fixtures; written tables use literal text.
+std::string node(const std::string &op, std::size_t first, const std::vector<std::string> &children = {}) {
+    std::string result = "(" + op + "@" + std::to_string(first);
+    for (const auto &child : children)
+        result += " " + child;
+    return result + ")";
 }
 // Body AST contracts compare every ordered statement field, including the
 // declaration binding span rather than inferring it from the initializer.
@@ -240,49 +346,6 @@ void sameStatements(const std::vector<aurora::StatementPtr> &actual,
         sameStatements(a->other, b->other);
     }
 }
-struct StatementAst {
-    std::size_t token;
-    std::string kind;
-    std::optional<Ast> expr = {};
-    std::vector<StatementAst> body = {}, other = {};
-    std::string name = {}, fieldName = {};
-    std::optional<Ast> target = {};
-    aurora::Type type = aurora::Type::I64;
-    bool mutableValue = false;
-    std::size_t binding = std::string::npos;
-};
-StatementAst local(std::size_t token, std::size_t binding, aurora::Type type, bool mutableValue, Ast expression) {
-    return {.token = token,
-            .kind = "let",
-            .expr = std::move(expression),
-            .type = std::move(type),
-            .mutableValue = mutableValue,
-            .binding = binding};
-}
-void sameBody(const std::vector<aurora::StatementPtr> &actual,
-              const std::vector<aurora::Token> &tokens,
-              const std::vector<StatementAst> &expected,
-              std::size_t base = 0) {
-    require(actual.size() == expected.size(), "statement list size/order differs");
-    for (std::size_t index = 0; index < expected.size(); ++index) {
-        const auto &a = actual[index];
-        const auto &b = expected[index];
-        const bool binding = b.binding != std::string::npos;
-        require(a && a->kind == b.kind && a->name == (binding ? tokens.at(base + b.binding).text : b.name) &&
-                    a->fieldName == b.fieldName && a->type == b.type && a->mutableValue == b.mutableValue,
-                "statement kind/binding/type/field/mutability differs");
-        sameToken(a->token, tokens.at(base + b.token));
-        sameSpan(a->bindingSpan, binding ? tokens.at(base + b.binding).span : aurora::SourceSpan{});
-        require(bool(a->expr) == bool(b.expr) && bool(a->target) == bool(b.target),
-                "statement expression presence differs");
-        if (b.expr)
-            sameTree(a->expr, tokens, *b.expr, base);
-        if (b.target)
-            sameTree(a->target, tokens, *b.target, base);
-        sameBody(a->body, tokens, b.body, base);
-        sameBody(a->other, tokens, b.other, base);
-    }
-}
 std::string fixtureKey(const std::vector<aurora::Token> &tokens) {
     std::string result;
     for (const auto &token : tokens)
@@ -290,16 +353,16 @@ std::string fixtureKey(const std::vector<aurora::Token> &tokens) {
     return result;
 }
 struct ExpectedExpression {
-    Ast tree;
+    std::string tree;
     std::size_t next;
 };
-std::vector<std::pair<std::string, Ast>> aggregateExpressions, typedExpressions;
+std::vector<std::pair<std::string, std::string>> aggregateExpressions, typedExpressions;
 std::map<std::string, ExpectedExpression> expressionExpectations;
-void pinExact(const std::string &source, Ast expected, std::size_t next) {
+void pinExact(const std::string &source, const std::string &expected, std::size_t next) {
     expressionExpectations.insert_or_assign(fixtureKey(aurora::lex(source, "expectation.au")),
-                                            ExpectedExpression{std::move(expected), next});
+                                            ExpectedExpression{expected, next});
 }
-void pin(const std::string &source, const Ast &expected) {
+void pin(const std::string &source, const std::string &expected) {
     const auto next = aurora::lex(source, "expectation.au").size() - 1;
     pinExact(source + ";", expected, next);
     pinExact(source + ")", expected, next);
@@ -382,7 +445,7 @@ void functionRoots(const std::vector<aurora::Function> &functions, std::vector<a
         statementRoots(function.body, roots);
     }
 }
-void checkedProgram(const std::string &source, const std::vector<Ast> &expected) {
+void checkedProgram(const std::string &source, const std::vector<std::string> &expected) {
     context = source;
     const auto tokens = aurora::lex(source, "program-roots.au");
     const auto program = checkedProgram(tokens);
@@ -423,10 +486,10 @@ std::string chain(std::size_t count) {
         result += "+1";
     return result;
 }
-Ast sum(std::size_t count, std::size_t first = 0) {
-    auto result = number(first);
+std::string sum(std::size_t count, std::size_t first = 0) {
+    auto result = node("number", first);
     for (std::size_t index = 1; index < count; ++index)
-        result = binary(first + 2 * index - 1, std::move(result), number(first + 2 * index));
+        result = node("binary", first + 2 * index - 1, {result, node("number", first + 2 * index)});
     return result;
 }
 void supported(const std::string &text, Stop stop = Stop::semicolon) {
@@ -461,51 +524,32 @@ void rejected(const std::string &text, Stop stop = Stop::semicolon) {
 void bodySyntax() {
     const auto inner = namedArgument("Box", {aurora::TypeKind::I64});
     const auto box = namedType("Box", {inner});
-    const std::vector<std::pair<std::string, std::vector<StatementAst>>> fixtures{
-        {"{}", {}},
-        {"{{}}", {{1, "block"}}},
+    const std::vector<std::pair<std::string, std::string>> fixtures{
+        {"{}", "{}"},
+        {"{{}}", "{(block@1)}"},
         {"{i64 x=1;const u8 y=2u8;return x;}",
-         {local(1, 2, aurora::Type::I64, true, number(4)),
-          local(6, 8, aurora::Type::U8, false, number(10)),
-          {12, "return", name(13)}}},
+         "{(let@1 #2 :i64 mut (number@4)) (let@6 #8 :u8 (number@10)) (return@12 (name@13))}"},
         {"{x=1;obj.field=2;a[0]=3;f();}",
-         {{.token = 1, .kind = "assign", .expr = number(3), .name = "x"},
-          {.token = 5, .kind = "field_assign", .expr = number(9), .name = "obj", .fieldName = "field"},
-          {.token = 11, .kind = "index_assign", .expr = number(16), .target = index(name(11), number(13))},
-          {18, "expression", call(18)}}},
+         "{(assign@1 $x (number@3)) (field_assign@5 $obj .field (number@9)) (index_assign@11 (number@16) -> (index@11 "
+         "(name@11) (number@13))) (expression@18 (call@18))}"},
         {"{if(true){return 1;}else{while(false){return 2;}}}",
-         {{1,
-           "if",
-           tree("bool", 3),
-           {{6, "return", number(7)}},
-           {{12, "while", tree("bool", 14), {{17, "return", number(18)}}}}}}},
-        {"{static_assert(1);{return (2);}}",
-         {{1, "static_assert", number(3)}, {6, "block", {}, {{7, "return", number(9)}}}}},
+         "{(if@1 (bool@3) {(return@6 (number@7))} else {(while@12 (bool@14) {(return@17 (number@18))})})}"},
+        {"{static_assert(1);{return (2);}}", "{(static_assert@1 (number@3)) (block@6 {(return@7 (number@9))})}"},
         {"{array<u8,2> bytes={1u8,2u8};return bytes[0];}",
-         {local(1,
-                7,
-                aurora::Type::array(aurora::TypeKind::U8, 2),
-                true,
-                tree("array_literal", 9, {number(10), number(12)})),
-          {15, "return", index(name(16), number(18))}}},
+         "{(let@1 #7 :array<u8,2> mut (array_literal@9 (number@10) (number@12))) (return@15 (index@16 (name@16) "
+         "(number@18)))}"},
         {"{Box<Box<i64>> value=Box<Box<i64>>{};return size_of(Box<Box<i64>>);}",
-         {local(1, 7, box, true, typed(construct(9, 9), {inner})), {18, "return", reflected(19, box)}}},
+         "{(let@1 #7 :Box<Box<i64>> mut (construct@9 <Box<i64>>)) (return@18 (call@19 :Box<Box<i64>>))}"},
         {"{1;if(true){2;}else{}3;while(false){}4;}",
-         {{1, "expression", number(1)},
-          {3, "if", tree("bool", 5), {{8, "expression", number(8)}}},
-          {14, "expression", number(14)},
-          {16, "while", tree("bool", 18)},
-          {22, "expression", number(22)}}},
-        {"{return values[indices[0]];}", {{1, "return", index(name(2), index(name(4), number(6)))}}},
-        {"{\n const i64 binding = 1;\n return binding;\n}",
-         {local(1, 3, aurora::Type::I64, false, number(5)), {7, "return", name(8)}}},
+         "{(expression@1 (number@1)) (if@3 (bool@5) {(expression@8 (number@8))}) (expression@14 (number@14)) (while@16 "
+         "(bool@18)) (expression@22 (number@22))}"},
+        {"{return values[indices[0]];}", "{(return@1 (index@2 (name@2) (index@4 (name@4) (number@6))))}"},
+        {"{\n const i64 binding = 1;\n return binding;\n}", "{(let@1 #3 :i64 (number@5)) (return@7 (name@8))}"},
         // These spellings remain unresolved named types after const. The same
         // first-token control words cannot be reclassified as locals.
         {"{const return x=1;const if y=2;const while z=3;static_assert a=4;}",
-         {local(1, 3, aurora::Type("return"), false, number(5)),
-          local(7, 9, aurora::Type("if"), false, number(11)),
-          local(13, 15, aurora::Type("while"), false, number(17)),
-          local(19, 20, aurora::Type("static_assert"), true, number(22))}}};
+         "{(let@1 #3 :return (number@5)) (let@7 #9 :if (number@11)) (let@13 #15 :while (number@17)) (let@19 #20 "
+         ":static_assert mut (number@22))}"}};
     for (const auto &[source, expected] : fixtures) {
         context = "explicit body AST " + source;
         const auto tokens = aurora::lex(source, "body-contract.au"), before = tokens;
@@ -522,7 +566,7 @@ void bodySyntax() {
     require(aurora::parseHostedBody(tokens, position).empty() && position == 2,
             "empty body consumed the following body");
     const auto second = aurora::parseHostedBody(tokens, position);
-    sameBody(second, tokens, {{3, "return", number(4)}});
+    sameBody(second, tokens, "{(return@3 (number@4))}");
     require(position == 7, "second body did not stop at EOF");
     ++cases;
     // Root block counts once. If/while wrappers must not halve the block limit.
@@ -547,15 +591,6 @@ void bodySyntax() {
     }
 }
 void bodyContexts() {
-    using T = aurora::Type;
-    using K = aurora::TypeKind;
-    auto parameter = T(K::Parameter), otherParameter = T(K::Parameter);
-    parameter.className = "T";
-    otherParameter.className = "U";
-    auto typeArgument = namedArgument("T"), otherArgument = namedArgument("U");
-    typeArgument.type = otherArgument.type = K::Parameter;
-    auto dependentArray = T::array(parameter, 0);
-    dependentArray.lengthParameter = "N";
     for (const bool function : {false, true}) {
         const std::string prefix =
             function ? "export module body_context;template<Value T,Value U>auto f(T x,U y)->i64"
@@ -574,21 +609,11 @@ void bodyContexts() {
         else
             captured.capacityParameters.push_back(tokens.at(10));
         captured.functionTemplate = function;
-        std::vector<StatementAst> expected;
-        if (function) {
-            expected = {
-                local(begin + 1,
-                      begin + 8,
-                      namedType("Pair", {typeArgument, otherArgument}),
-                      false,
-                      typed(call(begin + 10, {name(begin + 17), name(begin + 19)}), {typeArgument, otherArgument})),
-                {begin + 22,
-                 "return",
-                 binary(begin + 27, reflected(begin + 23, parameter), reflected(begin + 28, otherParameter))}};
-        } else {
-            expected = {local(begin + 1, begin + 7, dependentArray, true, tree("array_literal", begin + 9)),
-                        {begin + 12, "return", reflected(begin + 13, parameter)}};
-        }
+        const auto expected =
+            shifted(function ? "{(let@1 #8 :Pair<'T,'U> (call@10 <'T,'U> (name@17) (name@19))) "
+                               "(return@22 (binary@27 (call@23 :'T) (call@28 :'U)))}"
+                             : "{(let@1 #7 :array<'T,'N> mut (array_literal@9)) (return@12 (call@13 :'T))}",
+                    begin);
         auto position = begin;
         sameBody(aurora::parseHostedBody(tokens, position, captured), tokens, expected);
         require(position == begin + aurora::lex(body).size() - 1, "context body consumed a declaration delimiter");
@@ -774,15 +799,14 @@ void diagnosticExpectations() {
         "size_of(A<B<C<D<E<i64>>>>>);", "template-id nesting exceeds 4", 11, 0, aurora::DiagnosticCode::NestingLimit);
 }
 
-Ast shifted(Ast value, std::size_t offset) {
-    value.first += offset;
-    value.last += offset;
-    for (auto &child : value.args)
-        child = shifted(std::move(child), offset);
-    return value;
-}
-Ast pinned(const std::string &source) {
+std::string pinned(const std::string &source) {
     return expressionExpectations.at(fixtureKey(aurora::lex(source + ";", "expectation.au"))).tree;
+}
+// A braced field initializer roots its aggregate at the field-name token.
+std::string fieldRoot(const std::string &contents, std::size_t field) {
+    const auto children = shifted(contents, field + 1);
+    const auto rest = children.substr(children.find_first_of(" )", 1));
+    return (rest == ")" ? "(array_zero@" : "(array_literal@") + std::to_string(field) + rest;
 }
 void checkedRootProgram(const std::string &prefix,
                         const std::string &expression,
@@ -801,7 +825,7 @@ void checkedRootProgram(const std::string &prefix,
                     program.classes[0].methods[0].initializers[0].first.text == "value",
                 "constructor initializer declaration/order differs");
         sameTree(program.classes[0].methods[0].initializers[0].second, tokens, expected);
-        sameTree(program.classes[0].methods[1].body.at(0)->expr, tokens, name(tokens.size() - 6));
+        sameTree(program.classes[0].methods[1].body.at(0)->expr, tokens, node("name", tokens.size() - 6));
     } else {
         require(program.functions.size() == 1 && program.functions[0].body.size() == 1 &&
                     program.functions[0].body[0]->kind == "return",
@@ -811,216 +835,160 @@ void checkedRootProgram(const std::string &prefix,
 }
 void checkedBracedProgram(const std::string &prefix, const std::string &contents, const std::string &suffix) {
     const auto field = aurora::lex(prefix, "prefix.au").size() - 2;
-    auto expected = shifted(pinned(contents), 1);
-    expected.first = expected.last = 0;
-    if (expected.args.empty())
-        expected.op = "array_zero";
-    checkedProgram(prefix + contents + suffix, {shifted(expected, field)});
+    checkedProgram(prefix + contents + suffix, {fieldRoot(pinned(contents), field)});
 }
 void grammarExpectations() {
-    using K = aurora::TypeKind;
-    using T = aurora::Type;
-    const auto capacity = aurora::TemplateArgument::capacity;
-    const auto array = [](std::size_t token, std::vector<Ast> children = {}) {
-        return tree("array_literal", token, std::move(children));
-    };
-    const auto unary = [](std::size_t token, Ast child) {
-        return tree("unary", token, {std::move(child)});
-    };
-    const auto member = [](std::size_t token, Ast child) {
-        return tree("member", token, {std::move(child)});
-    };
-    const auto method = [](std::size_t token, std::vector<Ast> children) {
-        return tree("method_call", token, std::move(children));
-    };
-    auto precedence = binary(35, binary(33, binary(31, name(30), name(32)), name(34)), name(36));
-    precedence = binary(29, binary(27, name(26), name(28)), precedence);
-    precedence = binary(25, binary(23, name(22), name(24)), precedence);
-    precedence = binary(21, binary(19, binary(17, binary(15, name(14), name(16)), name(18)), name(20)), precedence);
-    precedence = binary(13, binary(11, name(10), name(12)), precedence);
-    for (const std::size_t op : {9, 7, 5, 3, 1})
-        precedence = binary(op, name(op - 1), precedence);
-    auto negatives = number(127);
-    for (std::size_t token = 127; token-- > 0;)
-        negatives = unary(token, negatives);
-
-    const auto deep = namedArgument("A", {namedArgument("B", {namedArgument("C", {namedArgument("D", {K::I64})})})});
-    const auto comparison = binary(3, binary(1, tree("bool", 0), name(2)), name(5));
-    const auto shiftComparison = binary(1, name(0), binary(3, name(2), name(5)));
-    const auto indexedArray = index(array(0, {number(1), number(3)}), number(6));
     // Each independent source/tree pair is exercised directly and retained for
     // the separate program-dispatch contracts below. Token ordinals and source spans stay explicit.
-    std::vector<std::pair<std::string, Ast>> fixtures{
-        {"1", number(0)},
-        {"123u64", number(0)},
-        {"255u8", number(0)},
-        {"false", tree("bool", 0)},
-        {"true", tree("bool", 0)},
-        {"name", name(0)},
-        {"_value", name(0)},
-        {"fn", name(0)},
-        {"__au_name", name(0)},
-        {"x", name(0)},
-        {"'x'", tree("byte", 0)},
-        {"'\\n'", tree("byte", 0)},
-        {"-1 + ~2 * !false", binary(2, unary(0, number(1)), binary(5, unary(3, number(4)), unary(6, tree("bool", 7))))},
-        {"a || b && c | d ^ e & f == g != h < i <= j > k >= l << m >> n + o - p * q / r % s", precedence},
-        {"(a + b) * (c - d)", binary(5, binary(2, name(1), name(3)), binary(8, name(7), name(9)))},
-        {"(a)", name(1)},
-        {"1 + 2", binary(1, number(0), number(2))},
-        {"f()", call(0)},
-        {"f(1, 2)", call(0, {number(2), number(4)})},
-        {"name.member", member(2, name(0))},
-        {"name.at(1)", method(2, {name(0), number(4)})},
-        {"one::two", name(0, 2)},
-        {"a[1]", index(name(0), number(2))},
+    std::vector<std::pair<std::string, std::string>> fixtures{
+        {"1", "(number@0)"},
+        {"123u64", "(number@0)"},
+        {"255u8", "(number@0)"},
+        {"false", "(bool@0)"},
+        {"true", "(bool@0)"},
+        {"name", "(name@0)"},
+        {"_value", "(name@0)"},
+        {"fn", "(name@0)"},
+        {"__au_name", "(name@0)"},
+        {"x", "(name@0)"},
+        {"'x'", "(byte@0)"},
+        {"'\\n'", "(byte@0)"},
+        {"-1 + ~2 * !false", "(binary@2 (unary@0 (number@1)) (binary@5 (unary@3 (number@4)) (unary@6 (bool@7))))"},
+        {"a || b && c | d ^ e & f == g != h < i <= j > k >= l << m >> n + o - p * q / r % s",
+         "(binary@1 (name@0) (binary@3 (name@2) (binary@5 (name@4) (binary@7 (name@6) (binary@9 (name@8) (binary@13 "
+         "(binary@11 (name@10) (name@12)) (binary@21 (binary@19 (binary@17 (binary@15 (name@14) (name@16)) (name@18)) "
+         "(name@20)) (binary@25 (binary@23 (name@22) (name@24)) (binary@29 (binary@27 (name@26) (name@28)) (binary@35 "
+         "(binary@33 (binary@31 (name@30) (name@32)) (name@34)) (name@36)))))))))))"},
+        {"(a + b) * (c - d)", "(binary@5 (binary@2 (name@1) (name@3)) (binary@8 (name@7) (name@9)))"},
+        {"(a)", "(name@1)"},
+        {"1 + 2", "(binary@1 (number@0) (number@2))"},
+        {"f()", "(call@0)"},
+        {"f(1, 2)", "(call@0 (number@2) (number@4))"},
+        {"name.member", "(member@2 (name@0))"},
+        {"name.at(1)", "(method_call@2 (name@0) (number@4))"},
+        {"one::two", "(name@0-2)"},
+        {"a[1]", "(index@0 (name@0) (number@2))"},
         {"f(g(1), h(2, 3)) + object.at(index + 1)",
-         binary(14,
-                call(0, {call(2, {number(4)}), call(7, {number(9), number(11)})}),
-                method(17, {name(15), binary(20, name(19), number(21))}))},
-        {"Box(42)", call(0, {number(2)})},
-        {"move(value)", call(0, {name(2)})},
+         "(binary@14 (call@0 (call@2 (number@4)) (call@7 (number@9) (number@11))) (method_call@17 (name@15) (binary@20 "
+         "(name@19) (number@21))))"},
+        {"Box(42)", "(call@0 (number@2))"},
+        {"move(value)", "(call@0 (name@2))"},
         {"one :: two(1, other.run()).field[2].at(3)",
-         method(18, {index(member(13, call(0, {number(4), method(8, {name(6)})}, 2)), number(15)), number(20)})},
-        {"((a)).field", member(6, name(2))},
-        {"(a + b)[(i)]", index(binary(2, name(1), name(3)), name(7))},
+         "(method_call@18 (index@13 (member@13 (call@0-2 (number@4) (method_call@8 (name@6)))) (number@15)) "
+         "(number@20))"},
+        {"((a)).field", "(member@6 (name@2))"},
+        {"(a + b)[(i)]", "(index@2 (binary@2 (name@1) (name@3)) (name@7))"},
         {"a[one::index(f(1))].method().field",
-         member(17, method(13, {index(name(0), call(2, {call(6, {number(8)})}, 4))}))},
-        {"builtin::borrow_bytes(value)", call(0, {name(4)}, 2)},
-        {"one::array(1)", call(0, {number(4)}, 2)},
-        {"object.size_of()", method(2, {name(0)})},
-        {"ns::size_of(i64)", call(0, {name(4)}, 2)},
-        {"-object.at(1) + f(2)", binary(7, unary(0, method(3, {name(1), number(5)})), call(8, {number(10)}))},
-        {"f(a[1], b.member)", call(0, {index(name(2), number(4)), member(9, name(7))})},
-        {"size_of(i64)", reflected(0, T::I64)},
-        {"type_id(array<u8,2>)", reflected(0, T::array(K::U8, 2))},
-        {"field_count(Box)", reflected(0, T("Box"))},
-        {"f(size_of(i64))", call(0, {reflected(2, T::I64)})},
-        {R"(f("text"))", call(0, {tree("byte_string", 2)})},
-        {R"(ns::f("", "é😀", "\0\xff"))",
-         call(0, {tree("byte_string", 4), tree("byte_string", 6), tree("byte_string", 8)}, 2)},
-        {R"(object.write("\"\\\n"))", method(2, {name(0), tree("byte_string", 4)})},
-        {R"("left" == "right")", binary(1, tree("byte_string", 0), tree("byte_string", 2))},
-        {R"(("text")[0])", index(tree("byte_string", 1), number(4))},
-        {"(x + 1) * 2", binary(5, binary(2, name(1), number(3)), number(6))},
-        {"-x + ns::value", binary(2, unary(0, name(1)), name(3, 5))},
-        {"ns::Mode::ready", name(0, 4)},
-        {"ns::make(x, a[2]).field", member(12, call(0, {name(4), index(name(6), number(8))}, 2))},
-        {"object.at(index + 1)", method(2, {name(0), binary(5, name(4), number(6))})},
+         "(member@17 (method_call@13 (index@0 (name@0) (call@2-4 (call@6 (number@8))))))"},
+        {"builtin::borrow_bytes(value)", "(call@0-2 (name@4))"},
+        {"one::array(1)", "(call@0-2 (number@4))"},
+        {"object.size_of()", "(method_call@2 (name@0))"},
+        {"ns::size_of(i64)", "(call@0-2 (name@4))"},
+        {"-object.at(1) + f(2)", "(binary@7 (unary@0 (method_call@3 (name@1) (number@5))) (call@8 (number@10)))"},
+        {"f(a[1], b.member)", "(call@0 (index@2 (name@2) (number@4)) (member@9 (name@7)))"},
+        {"size_of(i64)", "(call@0)"},
+        {"type_id(array<u8,2>)", "(call@0 :array<u8,2>)"},
+        {"field_count(Box)", "(call@0 :Box)"},
+        {"f(size_of(i64))", "(call@0 (call@2))"},
+        {R"(f("text"))", "(call@0 (byte_string@2))"},
+        {R"(ns::f("", "é😀", "\0\xff"))", "(call@0-2 (byte_string@4) (byte_string@6) (byte_string@8))"},
+        {R"(object.write("\"\\\n"))", "(method_call@2 (name@0) (byte_string@4))"},
+        {R"("left" == "right")", "(binary@1 (byte_string@0) (byte_string@2))"},
+        {R"(("text")[0])", "(index@1 (byte_string@1) (number@4))"},
+        {"(x + 1) * 2", "(binary@5 (binary@2 (name@1) (number@3)) (number@6))"},
+        {"-x + ns::value", "(binary@2 (unary@0 (name@1)) (name@3-5))"},
+        {"ns::Mode::ready", "(name@0-4)"},
+        {"ns::make(x, a[2]).field", "(member@12 (call@0-2 (name@4) (index@6 (name@6) (number@8))))"},
+        {"object.at(index + 1)", "(method_call@2 (name@0) (binary@5 (name@4) (number@6)))"},
         {R"(f("a\0\xff", a[one::index(f(1))]))",
-         call(0, {tree("byte_string", 2), index(name(4), call(6, {call(10, {number(12)})}, 8))})},
-        {"{1,2}", array(0, {number(1), number(3)})},
-        {"{{1,2},{3,4}}", array(0, {array(1, {number(2), number(4)}), array(7, {number(8), number(10)})})},
+         "(call@0 (byte_string@2) (index@4 (name@4) (call@6-8 (call@10 (number@12)))))"},
+        {"{1,2}", "(array_literal@0 (number@1) (number@3))"},
+        {"{{1,2},{3,4}}",
+         "(array_literal@0 (array_literal@1 (number@2) (number@4)) (array_literal@7 (number@8) (number@10)))"},
         {"{f(), object.at(2), a[0]}",
-         array(0, {call(1), method(7, {name(5), number(9)}), index(name(12), number(14))})},
+         "(array_literal@0 (call@1) (method_call@7 (name@5) (number@9)) (index@12 (name@12) (number@14)))"},
         {"{Box{.value=1}, ns::Box{}, {}}",
-         array(0, {construct(1, 1, {"value"}, {number(6)}), construct(9, 11), array(15)})},
-        {"{Box{.value=type_id(array<u8,2>)}}",
-         array(0, {construct(1, 1, {"value"}, {reflected(6, T::array(K::U8, 2))})})},
+         "(array_literal@0 (construct@1 .value (number@6)) (construct@9-11) (array_literal@15))"},
+        {"{Box{.value=type_id(array<u8,2>)}}", "(array_literal@0 (construct@1 .value (call@6 :array<u8,2>)))"},
         {"one :: two::Box{.last=3,.first=1,.middle=2}",
-         construct(0, 4, {"last", "first", "middle"}, {number(9), number(14), number(19)})},
-        {"Box{.value={1,2}[0]}", construct(0, 0, {"value"}, {shifted(indexedArray, 5)})},
-        {"{1,size_of(i64)}", array(0, {number(1), reflected(3, T::I64)})},
+         "(construct@0-4 .last .first .middle (number@9) (number@14) (number@19))"},
+        {"Box{.value={1,2}[0]}", "(construct@0 .value (index@5 (array_literal@5 (number@6) (number@8)) (number@11)))"},
+        {"{1,size_of(i64)}", "(array_literal@0 (number@1) (call@3))"},
         {"Box{.first=1,.second=type_id(array<u8,2>)}",
-         construct(0, 0, {"first", "second"}, {number(5), reflected(10, T::array(K::U8, 2))})},
-        {"f({1,field_count(Box)})", call(0, {array(2, {number(3), reflected(5, T("Box"))})})},
-        {"{Box{.value=f(size_of(i64))}}", array(0, {construct(1, 1, {"value"}, {call(6, {reflected(8, T::I64)})})})},
-        {"f<i64>(1)", typed(call(0, {number(5)}), {K::I64})},
-        {"x<y<z>>(a)", typed(call(0, {name(7)}), {namedArgument("y", {namedArgument("z")})})},
-        {"f<a<b<c>>>(0)",
-         typed(call(0, {number(10)}), {namedArgument("a", {namedArgument("b", {namedArgument("c")})})})},
-        {"ns :: make<Pair<i64, u8>>(1)", typed(call(0, {number(11)}, 2), {namedArgument("Pair", {K::I64, K::U8})})},
-        {"{f<i64>(1),2}", array(0, {typed(call(1, {number(6)}), {K::I64}), number(9)})},
+         "(construct@0 .first .second (number@5) (call@10 :array<u8,2>))"},
+        {"f({1,field_count(Box)})", "(call@0 (array_literal@2 (number@3) (call@5 :Box)))"},
+        {"{Box{.value=f(size_of(i64))}}", "(array_literal@0 (construct@1 .value (call@6 (call@8))))"},
+        {"f<i64>(1)", "(call@0 <i64> (number@5))"},
+        {"x<y<z>>(a)", "(call@0 <y<z>> (name@7))"},
+        {"f<a<b<c>>>(0)", "(call@0 <a<b<c>>> (number@10))"},
+        {"ns :: make<Pair<i64, u8>>(1)", "(call@0-2 <Pair<i64,u8>> (number@11))"},
+        {"{f<i64>(1),2}", "(array_literal@0 (call@1 <i64> (number@6)) (number@9))"},
         {"Box{.first=f<a<b<c>>>(0),.second={x<y<z>>(a)}}",
-         construct(
-             0,
-             0,
-             {"first", "second"},
-             {typed(call(5, {number(15)}), {namedArgument("a", {namedArgument("b", {namedArgument("c")})})}),
-              array(21, {typed(call(22, {name(29)}), {namedArgument("y", {namedArgument("z")})})})})},
-        {"f({Box<i64>{.value=1},2})",
-         call(0, {array(2, {typed(construct(3, 3, {"value"}, {number(11)}), {K::I64}), number(14)})})},
-        {"{1,f<a<b<c>>(0)}",
-         array(0,
-               {number(1),
-                binary(4, name(3), typed(call(5, {number(12)}), {namedArgument("b", {namedArgument("c")})}))})},
-        {"f<A<B<C<D<i64>>>>>()", typed(call(0), {deep})},
-        {"size_of(A<B<C<D<i64>>>>)", reflected(0, namedType("A", deep.templateArguments))},
-        {"A<B<C<D<E<i64>>>>>{}",
-         typed(construct(0, 0),
-               {namedArgument("B", {namedArgument("C", {namedArgument("D", {namedArgument("E", {K::I64})})})})})}};
+         "(construct@0 .first .second (call@5 <a<b<c>>> (number@15)) (array_literal@21 (call@22 <y<z>> (name@29))))"},
+        {"f({Box<i64>{.value=1},2})", "(call@0 (array_literal@2 (construct@3 .value <i64> (number@11)) (number@14)))"},
+        {"{1,f<a<b<c>>(0)}", "(array_literal@0 (number@1) (binary@4 (name@3) (call@5 <b<c>> (number@12))))"},
+        {"f<A<B<C<D<i64>>>>>()", "(call@0 <A<B<C<D<i64>>>>>)"},
+        {"size_of(A<B<C<D<i64>>>>)", "(call@0 :A<B<C<D<i64>>>>)"},
+        {"A<B<C<D<E<i64>>>>>{}", "(construct@0 <B<C<D<E<i64>>>>>)"}};
     aggregateExpressions = {
-        {"{}", array(0)},
-        {"{1}", array(0, {number(1)})},
-        {"{1,2,3}", array(0, {number(1), number(3), number(5)})},
+        {"{}", "(array_literal@0)"},
+        {"{1}", "(array_literal@0 (number@1))"},
+        {"{1,2,3}", "(array_literal@0 (number@1) (number@3) (number@5))"},
         {"{{}, {1, {2}}, f(3, {4,5})}",
-         array(0,
-               {array(1),
-                array(4, {number(5), array(7, {number(8)})}),
-                call(12, {number(14), array(16, {number(17), number(19)})})})},
-        {"{1,2}[0]", indexedArray},
-        {"({1,2}).field", member(8, array(1, {number(2), number(4)}))},
-        {"{}.size()", method(3, {array(0)})},
-        {"ns::Box{}", construct(0, 2)},
+         "(array_literal@0 (array_literal@1) (array_literal@4 (number@5) (array_literal@7 (number@8))) (call@12 "
+         "(number@14) (array_literal@16 (number@17) (number@19))))"},
+        {"{1,2}[0]", "(index@0 (array_literal@0 (number@1) (number@3)) (number@6))"},
+        {"({1,2}).field", "(member@8 (array_literal@1 (number@2) (number@4)))"},
+        {"{}.size()", "(method_call@3 (array_literal@0))"},
+        {"ns::Box{}", "(construct@0-2)"},
         {"one // qualified trivia\n :: two::Box{.last=3,.first=1,.middle=2}",
-         construct(0, 4, {"last", "first", "middle"}, {number(9), number(14), number(19)})},
+         "(construct@0-4 .last .first .middle (number@9) (number@14) (number@19))"},
         {"Box{.first=f(1,{2}),.last=Other{.items={3,4}}}",
-         construct(0,
-                   0,
-                   {"first", "last"},
-                   {call(5, {number(7), array(9, {number(10)})}),
-                    construct(17, 17, {"items"}, {array(22, {number(23), number(25)})})})},
-        {"Box{.value=1}.value", member(8, construct(0, 0, {"value"}, {number(5)}))},
+         "(construct@0 .first .last (call@5 (number@7) (array_literal@9 (number@10))) (construct@17 .items "
+         "(array_literal@22 (number@23) (number@25))))"},
+        {"Box{.value=1}.value", "(member@8 (construct@0 .value (number@5)))"},
         {"Box{.items={1,2}}.items[0]",
-         index(member(12, construct(0, 0, {"items"}, {array(5, {number(6), number(8)})})), number(14))},
+         "(index@12 (member@12 (construct@0 .items (array_literal@5 (number@6) (number@8)))) (number@14))"},
         {"Box{.items={1,2}}.at({3,4}[0])",
-         method(12,
-                {construct(0, 0, {"items"}, {array(5, {number(6), number(8)})}),
-                 index(array(14, {number(15), number(17)}), number(20))})},
+         "(method_call@12 (construct@0 .items (array_literal@5 (number@6) (number@8))) (index@14 (array_literal@14 "
+         "(number@15) (number@17)) (number@20)))"},
         {"f({}, Box{.value=1}, {f(2),object.at(3)})",
-         call(0,
-              {array(2),
-               construct(5, 5, {"value"}, {number(10)}),
-               array(13, {call(14, {number(16)}), method(21, {name(19), number(23)})})})},
-        {"f(\"text\", Box{.value=1})", call(0, {tree("byte_string", 2), construct(4, 4, {"value"}, {number(9)})})},
-        {"{true < x > (y), a < b >> (c)}", array(0, {shifted(comparison, 1), shifted(shiftComparison, 9)})},
-        {"{1,f<T}>(0)", binary(7, array(0, {number(1), binary(4, name(3), name(5))}), number(9))},
+         "(call@0 (array_literal@2) (construct@5 .value (number@10)) (array_literal@13 (call@14 (number@16)) "
+         "(method_call@21 (name@19) (number@23))))"},
+        {"f(\"text\", Box{.value=1})", "(call@0 (byte_string@2) (construct@4 .value (number@9)))"},
+        {"{true < x > (y), a < b >> (c)}",
+         "(array_literal@0 (binary@4 (binary@2 (bool@1) (name@3)) (name@6)) (binary@10 (name@9) (binary@12 (name@11) "
+         "(name@14))))"},
+        {"{1,f<T}>(0)", "(binary@7 (array_literal@0 (number@1) (binary@4 (name@3) (name@5))) (number@9))"},
         {"Box{.first=true < x > (y),.last=a < b >> (c)}",
-         construct(0, 0, {"first", "last"}, {shifted(comparison, 5), shifted(shiftComparison, 16)})},
+         "(construct@0 .first .last (binary@8 (binary@6 (bool@5) (name@7)) (name@10)) (binary@17 (name@16) (binary@19 "
+         "(name@18) (name@21))))"},
         {"{Box{}, ns::array{}, object.size_of()}",
-         array(0, {construct(1, 1), construct(5, 7), method(13, {name(11)})})}};
+         "(array_literal@0 (construct@1) (construct@5-7) (method_call@13 (name@11)))"}};
     typedExpressions = {
-        {"f<i64>()", typed(call(0), {K::I64})},
-        {"f<u64,u8>(1,2)", typed(call(0, {number(7), number(9)}), {K::U64, K::U8})},
-        {"ns::make<bool,64>(true)", typed(call(0, {tree("bool", 9)}, 2), {K::Bool, capacity(64)})},
-        {"f<Box<i64>>()", typed(call(0), {namedArgument("Box", {K::I64})})},
-        {"f<Pair<i64,u8>,Box<64>>(1)",
-         typed(call(0, {number(14)}), {namedArgument("Pair", {K::I64, K::U8}), namedArgument("Box", {capacity(64)})})},
+        {"f<i64>()", "(call@0 <i64>)"},
+        {"f<u64,u8>(1,2)", "(call@0 <u64,u8> (number@7) (number@9))"},
+        {"ns::make<bool,64>(true)", "(call@0-2 <bool,64> (bool@9))"},
+        {"f<Box<i64>>()", "(call@0 <Box<i64>>)"},
+        {"f<Pair<i64,u8>,Box<64>>(1)", "(call@0 <Pair<i64,u8>,Box<64>> (number@14))"},
         {"ns // callee trivia\n :: make<Pair<i64, // argument trivia\n u8>>(1)",
-         typed(call(0, {number(11)}, 2), {namedArgument("Pair", {K::I64, K::U8})})},
-        {"f<ns::array<u8,16>>(value)", typed(call(0, {name(11)}), {namedArgument("ns::array", {K::U8, capacity(16)})})},
+         "(call@0-2 <Pair<i64,u8>> (number@11))"},
+        {"f<ns::array<u8,16>>(value)", "(call@0 <ns::array<u8,16>> (name@11))"},
         {"one::two::Box<Pair<u8,16>,Other>{.last=2,.first=1}",
-         typed(construct(0, 4, {"last", "first"}, {number(19), number(24)}),
-               {namedArgument("Pair", {K::U8, capacity(16)}), namedArgument("Other")})},
+         "(construct@0-4 .last .first <Pair<u8,16>,Other> (number@19) (number@24))"},
         {"f<i64>(type_id(Pair<Box<u8>,i64>)).member[0]",
-         index(member(19,
-                      typed(call(0, {reflected(5, namedType("Pair", {namedArgument("Box", {K::U8}), K::I64}))}),
-                            {K::I64})),
-               number(21))},
+         "(index@19 (member@19 (call@0 <i64> (call@5 :Pair<Box<u8>,i64>))) (number@21))"},
         {"{f<i64>(1),size_of(array<u8,4096>),Box<u64>{.value=2}}",
-         array(0,
-               {typed(call(1, {number(6)}), {K::I64}),
-                reflected(9, T::array(K::U8, 4096)),
-                typed(construct(19, 19, {"value"}, {number(27)}), {K::U64})})},
-        {"Box<i64>{.value=field_count(Other)}.value",
-         member(14, typed(construct(0, 0, {"value"}, {reflected(8, T("Other"))}), {K::I64}))},
-        {"size_of<i64>(u8)", typed(reflected(0, T::U8), {K::I64})},
-        {"type_id<8>(Box)", typed(reflected(0, T("Box")), {capacity(8)})},
-        {"a < b >> (c)", shiftComparison},
-        {"(a) < b > (c)", binary(5, binary(3, name(1), name(4)), name(7))},
-        {"true < x > (y)", comparison},
-        {"f<a<b<c>>(0)", binary(1, name(0), typed(call(2, {number(9)}), {namedArgument("b", {namedArgument("c")})}))},
-        {"{1,f<T}>(0)", binary(7, array(0, {number(1), binary(4, name(3), name(5))}), number(9))}};
+         "(array_literal@0 (call@1 <i64> (number@6)) (call@9 :array<u8,4096>) (construct@19 .value <u64> "
+         "(number@27)))"},
+        {"Box<i64>{.value=field_count(Other)}.value", "(member@14 (construct@0 .value <i64> (call@8 :Other)))"},
+        {"size_of<i64>(u8)", "(call@0 <i64> :u8)"},
+        {"type_id<8>(Box)", "(call@0 <8> :Box)"},
+        {"a < b >> (c)", "(binary@1 (name@0) (binary@3 (name@2) (name@5)))"},
+        {"(a) < b > (c)", "(binary@5 (binary@3 (name@1) (name@4)) (name@7))"},
+        {"true < x > (y)", "(binary@3 (binary@1 (bool@0) (name@2)) (name@5))"},
+        {"f<a<b<c>>(0)", "(binary@1 (name@0) (call@2 <b<c>> (number@9)))"},
+        {"{1,f<T}>(0)", "(binary@7 (array_literal@0 (number@1) (binary@4 (name@3) (name@5))) (number@9))"}};
     for (const auto *group : {&fixtures, &aggregateExpressions, &typedExpressions})
         for (const auto &[source, expected] : *group) {
             pin(source, expected);
@@ -1028,11 +996,14 @@ void grammarExpectations() {
         }
     for (const auto count : {100, 128})
         pin(chain(count), sum(count));
-    pin(std::string(127, '(') + "1" + std::string(127, ')'), number(127));
+    pin(std::string(127, '(') + "1" + std::string(127, ')'), "(number@127)");
+    auto negatives = node("number", 127);
+    for (std::size_t token = 127; token-- > 0;)
+        negatives = node("unary", token, {negatives});
     pin(std::string(127, '-') + "1", negatives);
-    pinExact("target = 2;", name(0), 1);
-    pinExact("a[1] = 2;", index(name(0), number(2)), 4);
-    pinExact("{1,2}[0] = 3;", indexedArray, 8);
+    pinExact("target = 2;", "(name@0)", 1);
+    pinExact("a[1] = 2;", "(index@0 (name@0) (number@2))", 4);
+    pinExact("{1,2}[0] = 3;", "(index@0 (array_literal@0 (number@1) (number@3)) (number@6))", 8);
 }
 
 std::size_t tokenAt(const std::vector<aurora::Token> &tokens, const aurora::Token &token) {
@@ -2000,8 +1971,8 @@ struct CallableAst {
     std::size_t name = 1;
     aurora::Type result = aurora::Type::I64;
     std::vector<ParameterAst> parameters = {};
-    std::vector<StatementAst> body = {};
-    std::vector<std::pair<std::size_t, Ast>> initializers = {};
+    std::string body = "{}";
+    std::vector<std::pair<std::size_t, std::string>> initializers = {};
     bool constant = false;
 };
 void sameCallableTree(const aurora::ParsedCallable &parsed,
@@ -2066,49 +2037,49 @@ void callableSyntax() {
               Stop::function,
               {.result = T::Bool,
                .parameters = {{4, T::I64}, {7, T::U8}, {10, T::Bool}, {13, T::U64}},
-               .body = {{18, "return", name(19)}}}},
+               .body = "{(return@18 (name@19))}"}},
              {"auto inspect(const Owner& owner,i64 amount)->i64{return amount;}",
               Stop::function,
-              {.parameters = {{6, T("Owner"), true, 5}, {9, T::I64}}, .body = {{14, "return", name(15)}}}},
+              {.parameters = {{6, T("Owner"), true, 5}, {9, T::I64}}, .body = "{(return@14 (name@15))}"}},
              {"auto touch(Owner& owner)->Owner{return owner;}",
               Stop::function,
-              {.result = T("Owner"), .parameters = {{5, T("Owner"), false, 4}}, .body = {{10, "return", name(11)}}}},
+              {.result = T("Owner"), .parameters = {{5, T("Owner"), false, 4}}, .body = "{(return@10 (name@11))}"}},
              {"auto events(builtin::ConsoleSession& console,builtin::DisplaySession& display)->i64{return 0;}",
               Stop::function,
               {.parameters = {{7, T::ConsoleSession, false, 6}, {13, T::DisplaySession, false, 12}},
-               .body = {{18, "return", number(19)}}}},
+               .body = "{(return@18 (number@19))}"}},
              {"auto read(i64 key)const->u8{const u8 byte=2u8;return byte;}",
               Stop::method,
               {.result = T::U8,
                .parameters = {{4, T::I64}},
-               .body = {local(10, 12, T::U8, false, number(14)), {16, "return", name(17)}},
+               .body = "{(let@10 #12 :u8 (number@14)) (return@16 (name@17))}",
                .constant = true}},
              {"auto transfer(builtin::ByteRegion region,builtin::OwnedBytes bytes)->builtin::OwnedBytes{return "
               "move(bytes);}",
               Stop::function,
               {.result = T::OwnedBytes,
                .parameters = {{6, T::ByteRegion}, {11, T::OwnedBytes}},
-               .body = {{18, "return", call(19, {name(21)})}}}},
+               .body = "{(return@18 (call@19 (name@21)))}"}},
              {"auto view(builtin::span<const u8> input)const->builtin::span<const u8>{return input;}",
               Stop::method,
               {.result = T::ByteSpan,
                .parameters = {{10, T::ByteSpan}},
-               .body = {{22, "return", name(23)}},
+               .body = "{(return@22 (name@23))}",
                .constant = true}},
              {"Box(){}", Stop::constructor, {.name = 0}},
              {"Box(i64 value):first(value),bytes{},last{1u8,2u8}{}",
               Stop::constructor,
               {.name = 0,
                .parameters = {{3, T::I64}},
-               .initializers = {{6, name(8)},
-                                {11, tree("array_zero", 11)},
-                                {15, tree("array_literal", 15, {number(17), number(19)})}}}},
+               .initializers = {{6, "(name@8)"},
+                                {11, "(array_zero@11)"},
+                                {15, "(array_literal@15 (number@17) (number@19))"}}}},
              {"auto nested(Box<Box<i64>> value)->Box<Box<i64>>{return value;}",
               Stop::function,
-              {.result = nested, .parameters = {{9, nested}}, .body = {{19, "return", name(20)}}}},
+              {.result = nested, .parameters = {{9, nested}}, .body = "{(return@19 (name@20))}"}},
              {"auto nested(Box<Box<i64>> value)->Box<Box<i64>>{return value;}",
               Stop::method,
-              {.result = nested, .parameters = {{9, nested}}, .body = {{19, "return", name(20)}}}}})
+              {.result = nested, .parameters = {{9, nested}}, .body = "{(return@19 (name@20))}"}}})
         for (const bool wrapped : {false, true}) {
             const bool function = fixture.stop == Stop::function;
             const std::string prefix = function ? "export module callable_contract;namespace ns{"
@@ -2399,21 +2370,20 @@ void declarationContexts() {
         Stop stop;
         CallableAst expected;
     };
-    const std::vector<Fixture> functions = {
-        {"auto pair(T first,U second)->Pair<T,U>{return Pair<T,U>(first,second);}",
-         Stop::function,
-         {.result = namedType("Pair", {ta, ua}),
-          .parameters = {{4, t}, {7, u}},
-          .body = {{17, "return", typed(call(18, {name(25), name(27)}), {ta, ua})}}}}};
+    const std::vector<Fixture> functions = {{"auto pair(T first,U second)->Pair<T,U>{return Pair<T,U>(first,second);}",
+                                             Stop::function,
+                                             {.result = namedType("Pair", {ta, ua}),
+                                              .parameters = {{4, t}, {7, u}},
+                                              .body = "{(return@17 (call@18 <'T,'U> (name@25) (name@27)))}"}}};
     const std::vector<Fixture> methods = {
         {"auto get(T value)->T{array<T,N> items={};return value;}",
          Stop::method,
          {.result = t,
           .parameters = {{4, t}},
-          .body = {local(9, 15, array, true, tree("array_literal", 17)), {20, "return", name(21)}}}},
+          .body = "{(let@9 #15 :array<'T,'N> mut (array_literal@17)) (return@20 (name@21))}"}},
         {"Buffer(T value):items{}{}",
          Stop::constructor,
-         {.name = 0, .parameters = {{3, t}}, .initializers = {{6, tree("array_zero", 6)}}}}};
+         {.name = 0, .parameters = {{3, t}}, .initializers = {{6, "(array_zero@6)"}}}}};
     for (const bool function : {true, false}) {
         const std::string prefix = function
                                        ? "export module callable_context;template<Value T,Value U>"
@@ -4886,7 +4856,7 @@ void rawCallableGrowth() {
             if (constructor) {
                 const auto &initializer = direct.function.initializers[static_cast<std::size_t>(index)];
                 require(initializer.first.text == "f" + std::to_string(index), "wide initializer field order differs");
-                sameTree(initializer.second, tokens, call(8 + 8 * index, {name(10 + 8 * index)}));
+                sameTree(initializer.second, tokens, node("call", 8 + 8 * index, {node("name", 10 + 8 * index)}));
             } else {
                 const auto &parameter = direct.function.params[static_cast<std::size_t>(index)];
                 require(parameter.name == "p" + std::to_string(index) && parameter.type == aurora::Type::I64 &&
@@ -4917,7 +4887,7 @@ void byteStrings() {
         arena.finish();
         require(allocations.released == allocations.successful, "byte-string cleanup mismatch");
         ++cases;
-        pin(spelling, tree("byte_string", 0));
+        pin(spelling, "(byte_string@0)");
         supported("// preceding trivia\r\n\t" + spelling + ";");
         supported(spelling + ")", Stop::close_parenthesis);
         const auto source = "module strings; class Text { array<u8,512> bytes; public: Text():bytes(" + spelling +
@@ -4928,10 +4898,10 @@ void byteStrings() {
         const auto program = checkedProgram(tokens);
         require(program.classes.size() == 1 && program.classes[0].methods.size() == 2 && program.functions.size() == 1,
                 "byte-string declaration inventory differs");
-        sameTree(program.classes[0].methods[0].initializers.at(0).second, tokens, tree("byte_string", 22));
-        sameTree(program.classes[0].methods[1].body.at(0)->expr, tokens, index(name(35), number(37)));
-        sameTree(program.functions[0].body.at(0)->expr, tokens, tree("byte_string", 59));
-        sameTree(program.functions[0].body.at(1)->expr, tokens, number(62));
+        sameTree(program.classes[0].methods[0].initializers.at(0).second, tokens, "(byte_string@22)");
+        sameTree(program.classes[0].methods[1].body.at(0)->expr, tokens, "(index@35 (name@35) (number@37))");
+        sameTree(program.functions[0].body.at(0)->expr, tokens, "(byte_string@59)");
+        sameTree(program.functions[0].body.at(1)->expr, tokens, "(number@62)");
     }
     for (const auto &expression : {R"(f("text");)",
                                    R"(ns::f("", "é😀", "\0\xff");)",
@@ -4959,12 +4929,12 @@ void constructors() {
     checkedProgram("export module constructors; namespace ns { class Pair { i64 first; i64 second; public: "
                    "Pair(i64 x):second // initializer order and field-token trivia\n (ns::value),\n"
                    "first(f(\"text\", a[x + 1])){} auto get() const->i64 {return first + second;} }; }",
-                   {name(26, 28),
-                    call(33, {tree("byte_string", 35), index(name(37), binary(40, name(39), number(41)))}),
-                    binary(57, name(56), name(58))});
+                   {"(name@26-28)",
+                    "(call@33 (byte_string@35) (index@37 (name@37) (binary@40 (name@39) (number@41))))",
+                    "(binary@57 (name@56) (name@58))"});
     checkedProgram("export module constructors; template<Scalar T> class Box { T value; public: "
                    "Box(T x):value(x){} auto read() const->T {return value;} };",
-                   {name(25), name(38)});
+                   {"(name@25)", "(name@38)"});
     // Reflection and template roots must reach Aurora, including within an
     // otherwise ordinary call or parenthesized constructor initializer.
     for (const auto &expression : {"size_of(i64)", "type_id(array<u8,2>)", "field_count(Box)", "f(size_of(i64))"}) {
@@ -5011,12 +4981,8 @@ void constructorBraces(const std::string &contents) {
     const auto &initializers = program.classes[0].methods[0].initializers;
     require(initializers.size() == 2 && initializers[0].first.text == "value" && initializers[1].first.text == "other",
             "constructor-brace field order differs");
-    auto expected = shifted(pinned(contents), 1);
-    expected.first = expected.last = 0;
-    if (expected.args.empty())
-        expected.op = "array_zero";
-    sameTree(initializers[0].second, tokens, shifted(expected, tokenAt(tokens, initializers[0].first)));
-    sameTree(initializers[1].second, tokens, tree("array_zero", tokenAt(tokens, initializers[1].first)));
+    sameTree(initializers[0].second, tokens, fieldRoot(pinned(contents), tokenAt(tokens, initializers[0].first)));
+    sameTree(initializers[1].second, tokens, node("array_zero", tokenAt(tokens, initializers[1].first)));
     for (const auto &[field, expression] : initializers)
         hostedBraces(tokens, field, expression);
 }
@@ -5034,23 +5000,23 @@ void aggregateSyntax() {
         constructorBraces(contents);
     const auto grouped = std::string(127, '(') + "1" + std::string(127, ')');
     // The constructor list adds AST depth but does not consume a primary level.
-    pin("{" + grouped + "}", tree("array_literal", 0, {number(128)}));
+    pin("{" + grouped + "}", "(array_literal@0 (number@128))");
     constructorBraces("{" + grouped + "}");
     rejectedProgram("module depth; auto f()->i64{return ",
                     "{" + grouped + "};",
                     "}",
                     {"expression parser nesting exceeds 128", 128, 0, aurora::DiagnosticCode::NestingLimit});
     const auto nested = std::string(127, '{') + "1" + std::string(127, '}');
-    auto nestedTree = number(127);
+    auto nestedTree = node("number", 127);
     for (std::size_t token = 127; token-- > 0;)
-        nestedTree = tree("array_literal", token, {nestedTree});
+        nestedTree = node("array_literal", token, {nestedTree});
     pin(nested, nestedTree);
     supported(nested + ";");
     rejectedProgram("module depth; auto f()->i64{return ",
                     "{" + nested + "};",
                     "}",
                     {"expression parser nesting exceeds 128", 128, 0, aurora::DiagnosticCode::NestingLimit});
-    pin("{" + chain(127) + "}", tree("array_literal", 0, {sum(127, 1)}));
+    pin("{" + chain(127) + "}", node("array_literal", 0, {sum(127, 1)}));
     constructorBraces("{" + chain(127) + "}");
     rejectedProgram("export module depth; class Box { array<i64,1> value; public: Box():value{",
                     chain(128),
@@ -5077,7 +5043,7 @@ void aggregateSyntax() {
                                    "f({Box<i64>{.value=1},2})",
                                    "{1,f<a<b<c>>(0)}"}) {
         checkedRootProgram("module templates; auto f()->i64{return ", expression, ";}");
-        pin("{" + std::string(expression) + "}", tree("array_literal", 0, {shifted(pinned(expression), 1)}));
+        pin("{" + std::string(expression) + "}", node("array_literal", 0, {shifted(pinned(expression), 1)}));
         checkedBracedProgram("export module templates; class Box { array<i64,2> value; public: Box():value",
                              "{" + std::string(expression) + "}",
                              "{} };");
@@ -5101,7 +5067,8 @@ void typedSyntax() {
     for (const auto &[type, expected] : typeExpectations())
         for (const auto &query : {"size_of", "type_id", "field_count"}) {
             const auto source = std::string(query) + "(" + type + ")";
-            pin(source, reflected(0, expected));
+            // A reflected i64 equals the default type, so it prints like a plain call.
+            pin(source, expected == T() ? "(call@0)" : "(call@0 :" + typeText(expected) + ")");
             supported(source + ";");
         }
     for (const auto &group : typedErrors)
@@ -5143,17 +5110,16 @@ void typedSyntax() {
     typeArgument.type = otherTypeArgument.type = K::Parameter;
     auto dependentArray = T::array(parameter, 0);
     dependentArray.lengthParameter = "N";
-    const std::array<std::vector<Ast>, 4> contextRoots{
-        {{typed(call(33, {name(40), name(42)}), {typeArgument, otherTypeArgument}),
-          binary(50, reflected(46, parameter), reflected(51, otherParameter))},
-         {tree("array_literal", 29, {reflected(31, parameter)}), reflected(46, dependentArray)},
-         {reflected(23, parameter), reflected(38, parameter)},
-         {reflected(20, parameter),
-          typed(call(27, {name(32)}), {typeArgument}),
-          reflected(38, parameter),
-          typed(call(46, {name(51)}), {typeArgument}),
-          binary(61, reflected(57, parameter), number(62)),
-          number(66)}}};
+    const std::array<std::vector<std::string>, 4> contextRoots{
+        {{"(call@33 <'T,'U> (name@40) (name@42))", "(binary@50 (call@46 :'T) (call@51 :'U))"},
+         {"(array_literal@29 (call@31 :'T))", "(call@46 :array<'T,'N>)"},
+         {"(call@23 :'T)", "(call@38 :'T)"},
+         {"(call@20 :'T)",
+          "(call@27 <'T> (name@32))",
+          "(call@38 :'T)",
+          "(call@46 <'T> (name@51))",
+          "(binary@61 (call@57 :'T) (number@62))",
+          "(number@66)"}}};
     std::size_t acceptedContext = 0;
     for (const auto &source :
          {"export module context; template<Value T,Value U> auto f(T x,U y)->i64 {"
@@ -5380,13 +5346,13 @@ void rawTypeGrowth() {
         arena.finish();
         require(allocations.successful == allocations.released, "partial type/candidate graph leaked an owner");
     }
-    std::vector<Ast> children;
+    std::vector<std::string> children;
     for (std::size_t index = 0; index < count; ++index) {
         const auto token = 1 + 16 * index;
-        children.push_back(typed(call(token, {reflected(token + 5, aurora::Type::array(aurora::TypeKind::U8, 4))}),
-                                 {aurora::TypeKind::I64}));
+        children.push_back("(call@" + std::to_string(token) + " <i64> (call@" + std::to_string(token + 5) +
+                           " :array<u8,4>))");
     }
-    pin(source.substr(0, source.size() - 1), tree("array_literal", 0, std::move(children)));
+    pin(source.substr(0, source.size() - 1), node("array_literal", 0, children));
     supported(source);
     ++cases;
 }
@@ -5881,10 +5847,10 @@ void rawArguments() {
                 "postfix generated-code node ABI differs");
         arena.finish();
     }
-    std::vector<Ast> children;
+    std::vector<std::string> children;
     for (std::size_t index = 0; index < count; ++index)
-        children.push_back(number(2 + 2 * index));
-    pin(source.substr(0, source.size() - 1), call(0, std::move(children)));
+        children.push_back(node("number", 2 + 2 * index));
+    pin(source.substr(0, source.size() - 1), node("call", 0, children));
     supported(source);
     ++cases;
 }
@@ -6052,20 +6018,22 @@ void rawAggregates() {
             arena.finish();
             require(allocations.successful == allocations.released, "partial aggregate graph leaked an owner");
         }
-        std::vector<Ast> children;
-        std::vector<std::string> fields;
+        std::vector<std::string> children;
+        std::string designators;
         for (std::size_t index = 0; index < count; ++index) {
-            children.push_back(number((constructor ? 1 : first) + step * index));
+            children.push_back(node("number", (constructor ? 1 : first) + step * index));
             if (designated)
-                fields.push_back("f" + std::to_string(index));
+                designators += " .f" + std::to_string(index);
         }
         if (constructor) {
             const auto contents = source.substr(6, source.size() - 7);
-            pin(contents, tree("array_literal", 0, std::move(children)));
+            pin(contents, node("array_literal", 0, children));
             constructorBraces(contents);
         } else {
-            pin(source.substr(0, source.size() - 1),
-                designated ? construct(0, 2, fields, children) : tree("array_literal", 0, children));
+            auto expected = designated ? "(construct@0-2" + designators : std::string("(array_literal@0");
+            for (const auto &child : children)
+                expected += " " + child;
+            pin(source.substr(0, source.size() - 1), expected + ")");
             supported(source);
         }
         ++cases;
@@ -6103,27 +6071,27 @@ int main(int argc, char **argv) {
             rejectedProgram("module errors; auto f()->i64{return ", expression, ";}");
         checkedProgram("module hooks; auto f()->i64 { i64 x = 1+2; const i64 y = 3; x = x+y; x+1; "
                        "static_assert(true && !false); if(x>0){x=x-1;}else{x=0;} while(x<4){x=x+1;} return x*2; }",
-                       {binary(14, number(13), number(15)),
-                        number(21),
-                        binary(26, name(25), name(27)),
-                        binary(30, name(29), number(31)),
-                        binary(36, tree("bool", 35), tree("unary", 37, {tree("bool", 38)})),
-                        binary(44, name(43), number(45)),
-                        binary(51, name(50), number(52)),
-                        number(59),
-                        binary(65, name(64), number(66)),
-                        binary(72, name(71), number(73)),
-                        binary(78, name(77), number(79))});
+                       {"(binary@14 (number@13) (number@15))",
+                        "(number@21)",
+                        "(binary@26 (name@25) (name@27))",
+                        "(binary@30 (name@29) (number@31))",
+                        "(binary@36 (bool@35) (unary@37 (bool@38)))",
+                        "(binary@44 (name@43) (number@45))",
+                        "(binary@51 (name@50) (number@52))",
+                        "(number@59)",
+                        "(binary@65 (name@64) (number@66))",
+                        "(binary@72 (name@71) (number@73))",
+                        "(binary@78 (name@77) (number@79))"});
         checkedProgram("module fallback; auto f()->i64 { i64 x=f(1); x=f(2); if(f(1)){return f(2);} "
                        "while(f(0)){x=f(3);} static_assert(f(1)); return x<y<z>>(a); }",
-                       {call(13, {number(15)}),
-                        call(20, {number(22)}),
-                        call(27, {number(29)}),
-                        call(34, {number(36)}),
-                        call(42, {number(44)}),
-                        call(50, {number(52)}),
-                        call(58, {number(60)}),
-                        typed(call(65, {name(72)}), {namedArgument("y", {namedArgument("z")})})});
+                       {"(call@13 (number@15))",
+                        "(call@20 (number@22))",
+                        "(call@27 (number@29))",
+                        "(call@34 (number@36))",
+                        "(call@42 (number@44))",
+                        "(call@50 (number@52))",
+                        "(call@58 (number@60))",
+                        "(call@65 <y<z>> (name@72))"});
         for (const auto &group : returnedErrors)
             for (const auto &expression : group.sources)
                 rejectedProgram("module errors; auto f()->i64{return ", expression, "}");
@@ -6143,11 +6111,11 @@ int main(int argc, char **argv) {
             indices += "[0]";
             calls = "f(" + calls + ")";
         }
-        auto memberTree = name(0), indexTree = name(0), callTree = number(254);
+        auto memberTree = node("name", 0), indexTree = node("name", 0), callTree = node("number", 254);
         for (std::size_t ordinal = 0; ordinal < 127; ++ordinal) {
-            memberTree = tree("member", 2 + 2 * ordinal, {memberTree});
-            indexTree = index(indexTree, number(2 + 3 * ordinal));
-            callTree = call(252 - 2 * ordinal, {callTree});
+            memberTree = node("member", 2 + 2 * ordinal, {memberTree});
+            indexTree = node("index", 0, {indexTree, node("number", 2 + 3 * ordinal)});
+            callTree = node("call", 252 - 2 * ordinal, {callTree});
         }
         pin(members, memberTree);
         pin(indices, indexTree);
