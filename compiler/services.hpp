@@ -113,4 +113,35 @@ inline bool copiedType(const Type &type) {
            type == displayPutResultType() || type == displayCompletionType() || type == eventSampleType() ||
            type == eventPollResultType() || type == eventAckResultType() || type == eventIntakeCompletionType();
 }
+// Canonical copied service data, shared by descriptor seeding and existing
+// semantic helpers. The source type helpers above retain identity authority.
+class CopiedDefinition {
+public:
+    Type type;
+    std::vector<std::pair<std::string, Type>> fields;
+    std::vector<std::string> cases;
+};
+inline std::array<CopiedDefinition, 9> copiedDefinitions() {
+    return {
+        CopiedDefinition{sampleType(), {{"byte_present", Type::Bool}, {"byte", Type::U8}, {"damaged", Type::Bool}}, {}},
+        CopiedDefinition{putResultType(), {}, {"success", "timeout"}},
+        CopiedDefinition{completionType(), {}, {"requested_exit", "output_failure"}},
+        CopiedDefinition{displayPutResultType(), {}, {"success", "out_of_bounds"}},
+        CopiedDefinition{displayCompletionType(), {}, {"rendered", "output_failure"}},
+        CopiedDefinition{
+            eventSampleType(),
+            {{"result", eventPollResultType()}, {"word0", Type::U64}, {"word1", Type::U64}, {"status_low", Type::U64}},
+            {}},
+        CopiedDefinition{eventPollResultType(), {}, {"empty", "record", "overflow", "transport_failure"}},
+        CopiedDefinition{eventAckResultType(), {}, {"committed", "overflow", "transport_failure"}},
+        CopiedDefinition{eventIntakeCompletionType(),
+                         {},
+                         {"drained",
+                          "budget_exhausted",
+                          "loss_detected",
+                          "unsupported_event",
+                          "command_error",
+                          "transport_failure",
+                          "output_failure"}}};
+}
 } // namespace aurora::service

@@ -33,8 +33,7 @@ inline CheckedSource checkSource(const std::filesystem::path &input,
         ModuleLoader loader(roots, overlays);
         auto graph = loader.load(input);
         auto identities = graph.sourceIdentities;
-        ModuleResolver resolver(std::move(graph));
-        auto resolved = resolver.resolve();
+        auto resolved = graph.resolve();
         AbiDeclarations declarations;
         if (collectAbiDeclarations) {
             const auto name = [](const auto &definition) {

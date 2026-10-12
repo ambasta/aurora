@@ -30,9 +30,10 @@ The public dependency image pinned in `ci/image` is the supported reproducible
 development environment, with the exact tools and firmware. With Docker or
 Podman installed, start from the repository root.
 
-Open the pinned shell with `./scripts/container.sh bash`, then complete the
-[source-bootstrap recipe](compiler/README.md#source-bootstrap) once. It builds a
-reviewed historical compiler from source and configures both current Meson graphs. Then run:
+Follow the [source-bootstrap recipe](compiler/README.md#source-bootstrap) once: prepare
+its Git worktrees on the host, then enter the pinned shell with
+`./scripts/container.sh bash` for the compilation steps. The recipe builds the
+reviewed predecessors from source and configures both current Meson graphs. Then run:
 
 ```sh
 make

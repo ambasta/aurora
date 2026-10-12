@@ -17,7 +17,18 @@ def stage_modules(root, destination):
     sys.path.insert(0, str(root / "scripts"))
     from bootstrap_frontend import stage_modules as stage
 
-    stage(destination, root / "compiler/lexer.au", root / "compiler/syntax_arena.au")
+    stage(destination, *(root / "compiler" / name for name in COMPILER_MODULES))
+
+
+COMPILER_MODULES = (
+    "lexer.au",
+    "syntax_arena.au",
+    "parser.au",
+    "resolution_kinds.au",
+    "resolution_arena.au",
+    "resolver.au",
+    "frontend.au",
+)
 
 
 def require(value, message):
@@ -39,11 +50,10 @@ def run(command):
 def frontend_arguments(compiler, root, output):
     return [
         str(compiler),
-        str(root / "compiler/lexer.au"),
-        str(root / "compiler/syntax_arena.au"),
-        str(root / "compiler/parser.au"),
+        *(str(root / "compiler" / name) for name in COMPILER_MODULES),
         str(root / "compiler/hosted_lexer.S"),
         str(root / "compiler/hosted_parser.S"),
+        str(root / "compiler/hosted_resolver.S"),
         str(output),
     ]
 
@@ -82,6 +92,27 @@ def abi_generation(facts):
         and "aurora::hosted_abi::compiler_parser::AdmissionStatus result{};" in generated,
         "declaration admission input/configuration/result was flattened or omitted",
     )
+    require(
+        all(
+            f"struct alignas(8) {name} {{" in generated
+            for name in (
+                "ResolverCreate",
+                "ResolverIngest",
+                "ResolverRelease",
+                "ResolverReleasePair",
+                "ResolverSourceInput",
+                "ResolverTextInput",
+                "ResolverOrderInput",
+                "ResolverImportInput",
+                "ResolverSeedBuiltinInput",
+                "ResolverSeedMemberInput",
+            )
+        )
+        and "aurora::hosted_abi::compiler_resolver::Session session{};" in generated
+        and "aurora::hosted_abi::compiler_parser::AstArena parsed{};" in generated
+        and "static_assert(sizeof(ResolverReleasePair) == offsetof(ResolverIngest, module));" in generated,
+        "resolution argument records or checked consuming-owner prefixes were omitted",
+    )
     for kind in (
         "result_extent",
         "field_extent",
@@ -90,13 +121,45 @@ def abi_generation(facts):
         "admission_result_extent",
         "admission_configuration_extent",
         "admission_parameter_offset",
+        "resolver_receiver",
+        "resolver_ingest_result",
+        "resolver_ingest_session",
+        "resolver_ingest_parsed",
+        "resolver_release_prefix",
+        "resolver_release_pair_prefix",
+        "resolver_source_shape",
+        "resolver_order_shape",
+        "resolver_seed_shape",
     ):
         changed = deepcopy(facts)
         if kind == "result_extent":
-            _, entry = abi_declaration(changed, "functions", "compiler_parser::read_node")
+            _, entry = abi_declaration(changed, "functions", "compiler_frontend::parser_read_node")
             entry["result"]["bytes"] += 8
+        elif kind.startswith("resolver_"):
+            source = {
+                "resolver_receiver": "compiler_frontend::resolver_append_source",
+                "resolver_ingest_result": "compiler_frontend::resolver_ingest",
+                "resolver_ingest_session": "compiler_frontend::resolver_ingest",
+                "resolver_ingest_parsed": "compiler_frontend::resolver_ingest",
+                "resolver_release_prefix": "compiler_frontend::resolver_release",
+                "resolver_release_pair_prefix": "compiler_frontend::resolver_release_pair",
+                "resolver_source_shape": "compiler_frontend::resolver_append_source",
+                "resolver_order_shape": "compiler_frontend::resolver_order_module",
+                "resolver_seed_shape": "compiler_frontend::resolver_seed_member",
+            }[kind]
+            _, entry = abi_declaration(changed, "functions", source)
+            if kind == "resolver_receiver":
+                entry["receiver"] = None
+            elif kind == "resolver_ingest_result":
+                entry["result"]["bytes"] += 8
+            elif kind in ("resolver_ingest_session", "resolver_ingest_parsed"):
+                entry["parameters"][1 if kind == "resolver_ingest_session" else 2]["type_name"] = "wrong-owner"
+            elif kind.endswith("prefix"):
+                entry["parameters"][-1]["offset"] += 8
+            else:
+                entry["parameters"][-1]["bytes"] += 8
         elif kind.startswith("admission_"):
-            _, entry = abi_declaration(changed, "functions", "compiler_parser::admit")
+            _, entry = abi_declaration(changed, "functions", "compiler_frontend::parser_admit")
             if kind == "admission_receiver":
                 entry["receiver"] = None
             elif kind == "admission_result_extent":
@@ -133,6 +196,28 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
         "aurora_hosted_parser_syntax",
         "aurora_hosted_parser_release",
     }
+    entries.update(
+        "aurora_hosted_resolver_" + operation
+        for operation in (
+            "create",
+            "ingest",
+            "release",
+            "release_pair",
+            "append_source",
+            "append_text",
+            "order_module",
+            "bind_import",
+            "count",
+            "read_source",
+            "read_syntax",
+            "read_meta",
+            "read_resolved",
+            "status",
+            "seed_builtin",
+            "seed_member",
+            "run",
+        )
+    )
     # A is predecessor-generated and need not equal B. Both actual build
     # objects must expose exactly the private host shim contract.
     for unit in (built_a, built_b):
@@ -163,7 +248,7 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
         obj = output.with_suffix(".o")
         run(["as", "--64", str(output), "-o", str(obj)])
         require(set(symbols(obj, globals_only=True)) == entries, "frontend leaked a generated symbol or lost a shim")
-        for name in ("lexer.au", "syntax_arena.au"):
+        for name in COMPILER_MODULES:
             require(
                 (work / "compiler-modules/aurora/compiler" / name).read_bytes()
                 == (root / "compiler" / name).read_bytes(),
@@ -220,7 +305,9 @@ def main():
         records = []
         corpus = sources(root)
         require(root / "compiler/lexer.au" in corpus, "lexer self-rebuild input is missing")
-        require(root / "compiler/parser.au" in corpus, "whole frontend self-rebuild input is missing")
+        require(root / "compiler/frontend.au" in corpus, "whole frontend self-rebuild input is missing")
+        compiler_sources = {root / "compiler" / name for name in COMPILER_MODULES}
+        require(compiler_sources.issubset(corpus), "a real compiler module is missing from self-rebuild coverage")
         for source in corpus:
             runs = []
             for compiler, output in zip((current1, current2), outputs, strict=True):
@@ -230,7 +317,7 @@ def main():
                         [
                             str(compiler),
                             "--module-root",
-                            str(module_root if source == root / "compiler/parser.au" else root / "library"),
+                            str(module_root if source in compiler_sources else root / "library"),
                             str(source),
                             "-o",
                             str(output),
@@ -263,7 +350,11 @@ def main():
             if source == root / "compiler/lexer.au":
                 require(runs[0].returncode == 0, "lexer self-rebuild failed")
                 print("PASS current C2 lexer rebuild SHA256 " + hashlib.sha256(outputs[1].read_bytes()).hexdigest())
-            if source == root / "compiler/parser.au":
+            # The vocabulary-only module has no concrete function by design;
+            # the complete resolver graph below compiles and covers its enums.
+            if source in compiler_sources and source.name != "resolution_kinds.au":
+                require(runs[0].returncode == 0, f"compiler module self-rebuild failed: {source.name}")
+            if source == root / "compiler/frontend.au":
                 require(runs[0].returncode == 0, "whole frontend self-rebuild failed")
                 frontend_bootstrap(current1, current2, root, work, built_a, built_b)
             records.append({"source": str(source.relative_to(root)), "status": runs[0].returncode})

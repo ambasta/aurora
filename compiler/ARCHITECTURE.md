@@ -4,10 +4,10 @@ The typed-IR milestone established behavior-preserving compiler phase boundaries
 
 ## Pipeline and ownership of checks
 
-1. `host_sources.hpp` owns the trusted Linux descriptor-relative source reader and atomic artifact writer. `modules.hpp` loads explicit-root module graphs and resolves names/exports in defining-module contexts; MODULES.md specifies that boundary.
+1. `host_sources.hpp` owns the trusted Linux descriptor-relative source reader and atomic artifact writer. `modules.hpp` loads explicit-root module graphs; `resolver.au` resolves module names/exports, nominal identities and templates in defining-module contexts. MODULES.md specifies that boundary.
 2. `types.hpp` defines source types and common tokens/errors.
 3. The hosted Aurora lexer turns bytes into tokens; `syntax.hpp` defines the untyped source AST. `parser.hpp` is a compatibility entrypoint for one complete hosted Aurora module parse; all declaration/container grammar lives in `parser.au`.
-4. `semantics.hpp` performs source-level name resolution, scalar/aggregate type checking, initialization rules, const/private access checking, ownership moves, lexical borrow checks and conservative branch/loop joins. It emits typed instructions, not assembly strings.
+4. `semantics.hpp` performs local/member resolution and exact argument-type overload selection, scalar/aggregate type checking, initialization rules, const/private access checking, ownership moves, lexical borrow checks and conservative branch/loop joins. It emits typed instructions, not assembly strings.
 5. `ir.hpp` defines a target-independent accumulator/value-stack instruction model. Its operations include checked integer arithmetic, typed loads/stores, explicit control flow, metadata queries and array guard/access operations.
 6. `ir_verify.hpp` validates a complete module and creates an immutable `ValidatedModule`. Only this validated wrapper can be passed to the emitter. It checks lower-level type, initialization, control-flow, operand-stack, frame and bounds-token invariants.
 7. `x86.hpp` lowers validated operations to GNU x86-64 assembly. It has no source AST, scope lookup, const policy, owner-liveness state or borrow-state checker. Target registers, ABI argument placement, stack alignment and machine trap sequences exist only here.
@@ -89,8 +89,8 @@ The host supplies one copied configuration derived from the canonical array limi
 and service-group helper still shared with later semantic/IR checks. Aurora selects
 the admission failure; the host renders its bounded token range and, when needed,
 formats the converted type. Host conversion reconstructs declarations, scopes,
-access and export spelling. Module loading and export/name resolution remain
-separate host phases.
+access and export spelling for formatter and syntax fixtures. Production transfers
+the forest into the Aurora resolution session; module file loading remains host-side.
 Complete-module grammar errors precede admission errors. Besides the existing
 within-declaration rule, a syntax error in a later member/declaration or an enclosing
 container ending can now precede an earlier admission error in a multiply-invalid
@@ -103,7 +103,9 @@ and a consumed-half flag for `>>`. It never rewrites caller tokens. Whole-declar
 success consumes its delimiters and leaves a whole-token cursor; extra closers
 reject in Aurora. Source snapshots and caller cursors remain unchanged on failure.
 
-`hosted_parser.cpp` converts the Aurora syntax records into the existing C++ AST.
+The formatter and syntax fixtures use `hosted_parser.cpp` to convert Aurora
+syntax records into the existing C++ AST. Production loading instead retains the
+parsed forest and uses `hosted_resolver.cpp` for one resolved-program projection.
 It checks bounded counts, valid tags and indices, backward child references,
 non-sharing ownership and bounded construction depth so malformed records cannot
 cause unsafe indexing, cycles or exponential copies. Aurora owns grammar and
@@ -116,7 +118,7 @@ This conversion adapter is temporary: as semantic analysis moves into Aurora,
 it should consume these syntax records directly and delete the corresponding
 C++ AST conversion, rather than maintain two semantic representations.
 
-The selected predecessor emits the lexer/arena/parser graph with `--local-symbols`
+The selected predecessor emits the lexer/parser/resolver graph with `--local-symbols`
 and `--abi-facts`. The latter describes the same validated module's physical class
 layouts, resolved enum values, function symbols and argument/result extents.
 The bootstrap driver generates the private C++ records/enums and opaque arena
@@ -144,6 +146,34 @@ predecessor hop. No generated binary or layout snapshot is checked
 in. Focused conversion/ABI and multi-stage corpus checks do not replace the final
 integrated GCC 16 full/image/guest qualification.
 
+### Resolved module boundary
+
+`frontend.au` is the explicit root bridge surface. Its forwarding entries retain
+the imported parser and resolver implementations under ordinary dead-code rules;
+the bridge selects their compiler-produced symbols and layouts directly.
+
+`resolution_arena.au` owns one flat session: source bytes, syntax, metadata,
+resolved decorations and reusable work rows. Loading transfers each parsed arena
+once, preserving immutable host snapshots for diagnostics. Aurora registers module
+and nominal identities, checks direct-import/export visibility, interns and
+substitutes concrete templates, resolves signatures/bodies, and publishes explicit
+reflection views in the existing phase order. The old C++ module resolver and
+template expansion helpers are removed; there is no production fallback or query bridge.
+
+The host converter checks tags, bounds and finite construction, then spells the
+already-chosen native identity and constructs the existing lowering input. It
+cannot select declarations or grant visibility. Canonical service data and shared
+limits are seeded from the existing host helpers. Generated argument layouts govern
+owner transfer: two alternating records hold the live Session and optional parser
+arena, with explicit paired cleanup before transfer and Session cleanup afterward.
+All allocation and conversion failures release owners before the region closes.
+
+Pool growth is checked and on demand. The arithmetic quota includes existing graph,
+source and instance bounds plus geometric spare capacity; it is deliberately loose,
+not a usable RSS reservation. Qualification also applies external memory/disk limits.
+Semantic lowering and formatter traversal must eventually consume the indexed graph
+directly to retire the remaining host AST conversion.
+
 ### C++ expression parser retirement
 
 Current source has removed `expr`, `primary`, `postfix`, precedence parsing,
@@ -154,8 +184,8 @@ initializers enter Aurora directly. Declaration `type`, `templateArguments`,
 parameter-list and constructor-initializer grammar is also removed. The complete
 module/container migration removes the remaining namespace/class/template grammar
 and context sets; `parser.hpp` only forwards the module entry. Unresolved
-declaration admission also lives in Aurora; name resolution, full type/lifetime
-analysis and typed lowering remain host responsibilities.
+declaration admission and complete module resolution also live in Aurora. Local/member
+resolution, resolved type/lifetime analysis and typed lowering remain host responsibilities.
 
 Targeted fixtures state expected ASTs, token spans, child/designator order and
 exact diagnostics directly. The independent raw ABI, bounded-conversion, depth and

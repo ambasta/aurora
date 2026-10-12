@@ -5,9 +5,9 @@ C header/macro layer, raw-pointer escape, unsafe block or C ABI. The hosted buil
 uses an Aurora-written [lexer](LEXER.md) and a bounded
 [syntax parser](ARCHITECTURE.md#hosted-aurora-parser),
 bootstrapped with an explicitly selected predecessor compiler.
-Complete module syntax and unresolved declaration admission run in Aurora.
-Name resolution, full type/lifetime analysis, module loading, typed-IR verification
-and x86-64 emission remain C++23.
+Complete module syntax, unresolved declaration admission, module resolution and
+template instantiation run in Aurora. Module file loading, local/member resolution,
+resolved type/lifetime analysis, typed-IR verification and x86-64 emission remain C++23.
 GNU assembler/linker and Linux host I/O remain bootstrap dependencies.
 
 ## Build and check
@@ -107,7 +107,7 @@ those facts; this is not a general exported ABI. Both stages generate their own
 facts and header. The existing bootstrap test checks current C1/C2 assembly, object,
 facts and header convergence, binds B to the frontend actually linked into C2, and compares current
 C1/C2 corpus diagnostics/output. No compiler binary or generated frontend is
-committed. Module loading/resolution, semantics, IR and backend remain C++.
+committed. Module file loading, local/lifetime analysis, IR and backend remain C++.
 
 ## Supported source
 
@@ -205,7 +205,7 @@ ordinal/half cursor. Grammar errors precede semantic admission for multiply-inva
 files, including cross-declaration cases, as
 specified in [architecture](ARCHITECTURE.md#hosted-aurora-parser).
 The replaced C++ grammar is removed, including module/container headers. Unresolved
-declaration admission runs in Aurora; resolved type, lifetime and visibility
-policies remain in C++. The
+declaration admission, module visibility and template resolution run in Aurora.
+Local/member access, resolved type/lifetime analysis and lowering remain in C++. The
 historical predecessor remains the source-bootstrap starting point; this does not
 establish whole-compiler self-hosting.

@@ -44,23 +44,28 @@ using Edge = hosted_abi::compiler_parser::ChildEdge;
 using TypeSyntax = hosted_abi::compiler_parser::TypeSyntax;
 using SyntaxNode = hosted_abi::compiler_parser::SyntaxNode;
 class Arena {
-    hosted::bytes::Region region;
+    std::optional<hosted::bytes::Region> region;
     hosted_abi::ParserRelease record;
+    void *external = nullptr;
 
 public:
-    explicit Arena(std::uint64_t quota) : region(quota) {
-        record.region = region.id();
+    explicit Arena(std::uint64_t quota, void *externalStorage = nullptr) : external(externalStorage) {
+        if (external)
+            return;
+        region.emplace(quota);
+        record.region = region->id();
         hosted_abi::ParserCreate input;
-        input.region = region.id();
+        input.region = region->id();
         aurora_hosted_parser_create(&input, data());
     }
     ~Arena() {
-        aurora_hosted_parser_release(&record);
+        if (!external)
+            aurora_hosted_parser_release(&record);
     }
     Arena(const Arena &) = delete;
     Arena &operator=(const Arena &) = delete;
     void *data() {
-        return record.arena.storage.data();
+        return external ? external : record.arena.storage.data();
     }
 };
 
@@ -116,15 +121,19 @@ public:
     std::optional<Program> preamble;
     std::optional<EnumDefinition> enumeration;
     std::optional<Program> program;
+    std::optional<ParsedModuleSyntax> moduleSyntax;
 };
 
 ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
                                  hosted_parser::Cursor cursor,
                                  Stop stop,
                                  const hosted_parser::Context &context,
-                                 std::size_t enumCount = 0) {
+                                 std::size_t enumCount = 0,
+                                 void *externalArena = nullptr) {
     const auto position = cursor.ordinal;
     const bool module = stop == Stop::module_definition;
+    if (externalArena && !module)
+        invalid();
     const bool preamble = stop == Stop::preamble;
     const bool enumeration = stop == Stop::enum_definition;
     const bool header = preamble || enumeration;
@@ -187,7 +196,7 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
     constexpr std::uint64_t fixedBytes = 8 * recordBytes + (2 * 1939 + 8) * hosted_abi::frameBytes;
     if (source->text.size() > (std::numeric_limits<std::uint64_t>::max() - fixedBytes) / perToken)
         invalid();
-    Arena arena(static_cast<std::uint64_t>(source->text.size()) * perToken + fixedBytes);
+    Arena arena(static_cast<std::uint64_t>(source->text.size()) * perToken + fixedBytes, externalArena);
     Result result;
     aurora_hosted_parser_parse(arena.data(), &input, &result);
     const auto actualCount = aurora_hosted_parser_count(arena.data());
@@ -386,6 +395,59 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
             value += text(ordinal);
         return value;
     };
+    // The production resolver consumes the Aurora forest directly. On success
+    // only import/header metadata crosses here; no unresolved host AST is built.
+    // Errors reuse the existing checked type/diagnostic conversion below.
+    std::optional<hosted_abi::compiler_parser::AdmissionResult> earlyAdmission;
+    if (externalArena) {
+        hosted_abi::AdmissionInput admissionInput;
+        admissionInput.source = input.source;
+        admissionInput.root = result.root_node;
+        admissionInput.configuration = admissionConfiguration();
+        earlyAdmission.emplace();
+        aurora_hosted_parser_admit(arena.data(), &admissionInput, &*earlyAdmission);
+        const auto &admission = *earlyAdmission;
+        if (admission.result == AdmissionStatus::success) {
+            if (admission.token_index != -1 || admission.end_token != -1 || admission.type_node != -1 ||
+                admission.detail != 0 || end + 1 != tokens.size())
+                invalid();
+            SyntaxNode root;
+            aurora_hosted_parser_syntax(arena.data(), result.root_node, &root);
+            if (root.tag != SyntaxKind::module_definition || root.body_node < 0 || root.body_node >= result.root_node)
+                invalid();
+            SyntaxNode preamble;
+            aurora_hosted_parser_syntax(arena.data(), root.body_node, &preamble);
+            if (preamble.tag != SyntaxKind::preamble || preamble.qualifier < 0 || preamble.qualifier > 1)
+                invalid();
+            ParsedModuleSyntax parsed;
+            parsed.root = result.root_node;
+            parsed.moduleName = name(preamble.token_index, preamble.binding_token);
+            parsed.interfaceUnit = preamble.qualifier != 0;
+            auto limit = root.body_node;
+            for (auto child = preamble.body_node; child != -1;) {
+                if (child < 0 || child >= limit)
+                    invalid();
+                SyntaxNode imported;
+                aurora_hosted_parser_syntax(arena.data(), child, &imported);
+                if (imported.tag != SyntaxKind::import_name || imported.end_token <= imported.token_index)
+                    invalid();
+                auto spelling = name(imported.token_index, imported.end_token - 1);
+                auto token = tokens[position + static_cast<std::size_t>(imported.token_index)];
+                token.text = std::move(spelling);
+                token.span.end = tokens[position + static_cast<std::size_t>(imported.end_token - 1)].span.end;
+                parsed.imports.push_back(std::move(token));
+                parsed.importSyntax.push_back(child);
+                limit = child;
+                child = imported.previous_node;
+            }
+            std::reverse(parsed.imports.begin(), parsed.imports.end());
+            std::reverse(parsed.importSyntax.begin(), parsed.importSyntax.end());
+            ImportedSyntax imported;
+            imported.next = {end, half};
+            imported.moduleSyntax.emplace(std::move(parsed));
+            return imported;
+        }
+    }
     if (header) {
         if (result.node_count != 0 || edgeCount != 0 || typeCount != 0)
             invalid();
@@ -829,7 +891,10 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
         admissionInput.root = result.root_node;
         admissionInput.configuration = admissionConfiguration();
         hosted_abi::compiler_parser::AdmissionResult admission;
-        aurora_hosted_parser_admit(arena.data(), &admissionInput, &admission);
+        if (earlyAdmission)
+            admission = *earlyAdmission;
+        else
+            aurora_hosted_parser_admit(arena.data(), &admissionInput, &admission);
         if (admission.result < AdmissionStatus::success || admission.result >= AdmissionStatus::invalid)
             invalid();
         if (admission.result == AdmissionStatus::success || admission.result == AdmissionStatus::allocation_failure) {
@@ -1318,6 +1383,14 @@ ParsedField parseHostedField(const std::vector<Token> &tokens,
 ParsedPreamble parseHostedPreamble(const std::vector<Token> &tokens, hosted_parser::Cursor cursor) {
     auto imported = parseHostedSyntax(tokens, cursor, Stop::preamble, {});
     return {std::move(*imported.preamble), imported.next};
+}
+ParsedModuleSyntax parseHostedModuleSyntax(const std::vector<Token> &tokens, void *arena) {
+    if (!arena)
+        invalid();
+    auto imported = parseHostedSyntax(tokens, {}, Stop::module_definition, {}, 0, arena);
+    if (!imported.moduleSyntax)
+        invalid();
+    return std::move(*imported.moduleSyntax);
 }
 Program parseHostedProgram(const std::vector<Token> &tokens) {
     auto imported = parseHostedSyntax(tokens, {}, Stop::module_definition, {});

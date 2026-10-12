@@ -76,20 +76,15 @@ concurrency models, TypeScript-like type transformations and richer reflection
 remain open. See the [compiler reference](../compiler/README.md) and
 [library dependency plan](library-stack.md), rather than historical exclusions.
 
-The hosted compiler has an [Aurora lexical phase](../compiler/LEXER.md) and a
-[bounded expression and body parser](../compiler/ARCHITECTURE.md#hosted-aurora-expression-parser).
-An explicitly selected, source-built predecessor emits the imported
-lexer/arena/parser graph; current C1/C2 stages verify frontend convergence.
-Aurora owns all existing expression grammar, including templates, reflected
-types and constructor initializers, plus complete ordinary function/method bodies
-and declaration types.
-Current source no longer contains the replaced C++ expression, statement, block or type
-parser. Copied node/frame/argument/type/statement owners and the bounded host
-converter reject invalid representations and resource failures.
-The next frontend migration is declaration structure and signatures, followed by the
-remaining C++ semantic/ownership, IR and backend responsibilities. Building the
-whole compiler from Aurora source is distinct from replacing the native assembler,
-linker and host runtime/file/process services; these remain separate dependencies.
+The hosted compiler has an [Aurora lexical phase](../compiler/LEXER.md) and
+[complete bounded module parsing](../compiler/ARCHITECTURE.md#hosted-aurora-parser).
+An explicitly selected, source-built predecessor emits the imported frontend;
+current C1/C2 stages verify convergence. Aurora owns existing module grammar,
+unresolved declaration admission, module resolution and template substitution.
+The next boundary is resolved semantic/ownership analysis and typed lowering
+from the indexed graph, followed by backend responsibilities. Temporary host conversion
+remains while those consumers use C++ AST values. Native assembler/linker and
+host runtime/file/process services are separate self-hosting dependencies.
 
 Gate: positive, rejection, adversarial, resource and ABI tests with independent
 review; no unchecked assertion, visibility bypass or resource duplication. Then
