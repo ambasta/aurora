@@ -89,7 +89,8 @@ class StringSuite(BorrowSuite):
                 "return nullptr;\n    }"
             ),
         )
-        marker = "trace.remaining = argc == 5 ? std::strtoll(argv[4], nullptr, 10) : -1;"
+        marker = "trace.remaining = argc >= 5 ? std::strtoll(argv[4], nullptr, 10) : -1;"
+        require(driver.count(marker) == 1, "driver allocation-argument marker must occur exactly once")
         driver = driver.replace(
             marker,
             marker + "\n    if (argc == 5 && argv[4][0] == 'o') {\n"

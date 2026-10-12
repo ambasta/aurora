@@ -161,6 +161,58 @@ Module constructed(int savedDepth = 0) {
     module.functions = {function, constructor()};
     return module;
 }
+// The constructor owns both produced temporaries until field transfer. A nested
+// resource factory exercises receiver/result preservation across allocation.
+Module constructedProducers(int savedDepth = 0) {
+    auto module = constructed(savedDepth);
+    auto &caller = module.functions[0];
+    const auto call = at<ResourceCall>(caller);
+    const auto begin = at<BeginBytes>(caller);
+    caller.code.erase(caller.code.begin() + begin, caller.code.begin() + call);
+    caller.code.insert(caller.code.begin() + begin, BeginObject{96});
+    op<ResourceCall>(module).ownerArguments = {0};
+    remove<EndBytes>(caller);
+    remove<EndBytes>(caller);
+    auto &ctor = module.functions[1];
+    ctor.parameters = {Type::ByteRegion};
+    ctor.slots.clear();
+    ctor.code = {BindRegionParameter{0, 8},
+                 Constant{197, Type::U8},
+                 ReceiverStore{0, Type::U8},
+                 BeginBytes{40},
+                 Constant{3, Type::I64},
+                 AllocateBytes{8, 40},
+                 InitializeBytesField{0, 1, 40},
+                 Constant{123456789, Type::U64},
+                 ReceiverStore{2, Type::U64},
+                 BeginBytes{80},
+                 Constant{5, Type::I64},
+                 Push{},
+                 ResourceCall{"owner_factory", 8, {0, 0}, 80},
+                 InitializeBytesField{0, 3, 80},
+                 Constant{223, Type::U8},
+                 ReceiverStore{4, Type::U8},
+                 EndBytes{80},
+                 EndBytes{40},
+                 Constant{0, Type::I64},
+                 Return{}};
+    IRFunction factory;
+    factory.name = "owner_factory";
+    factory.result = Type::OwnedBytes;
+    factory.parameters = {Type::ByteRegion, Type::I64};
+    factory.regionSlots = {8};
+    factory.slots = {{16, Type::I64}};
+    factory.byteSlots = {{48, true}};
+    factory.frameBytes = 48;
+    factory.code = {BindRegionParameter{0, 8},
+                    BindParameter{1, 16, Type::I64},
+                    BeginBytes{48},
+                    Load{16, Type::I64},
+                    AllocateBytes{8, 48},
+                    ReturnBytes{48}};
+    module.functions.push_back(factory);
+    return module;
+}
 Module called(bool result = true) {
     auto module = shapes();
     auto caller = ordinary("owning_entry", result ? Type("Parcel") : Type::I64);
@@ -1029,6 +1081,32 @@ void resizeFieldTests() {
 }
 
 void constructorTests() {
+    for (int depth : {0, 1, 2})
+        accept("producing constructor with saved operands " + std::to_string(depth), constructedProducers(depth));
+    auto produced = constructedProducers();
+    reject("produced field retains temporary binding", produced, [](Module &m) {
+        remove<EndBytes>(m.functions[1]);
+    });
+    reject("produced temporary closes twice", produced, [](Module &m) {
+        before<Return>(m.functions[1], {EndBytes{80}});
+    });
+    reject("produced owner cannot initialize two fields", produced, [](Module &m) {
+        auto &f = m.functions[1];
+        std::get<InitializeBytesField>(f.code[at<InitializeBytesField>(f, 1)]).sourceOffset = 40;
+    });
+    reject("factory cannot observe partially initialized receiver", produced, [](Module &m) {
+        before<ResourceCall>(m.functions[1], {BytesLength{0, 1}});
+    });
+    reject("produced field requires mutable temporary", produced, [](Module &m) {
+        m.functions[1].byteSlots[40] = false;
+    });
+    reject("produced field cannot omit transfer", produced, [](Module &m) {
+        remove<InitializeBytesField>(m.functions[1]);
+    });
+    reject("factory owner result cannot reuse consumed first temporary", produced, [](Module &m) {
+        auto &f = m.functions[1];
+        std::get<ResourceCall>(f.code[at<ResourceCall>(f)]).resultOffset = 40;
+    });
     accept("six-position owning constructor", constructed());
     accept("constructor calls and cleanup preserve odd operand depth", constructed(1));
     accept("constructor calls and cleanup preserve even operand depth", constructed(2));
@@ -1114,23 +1192,28 @@ int main(int argc, char **argv) {
             require(mode == "construct" || mode == "six" || mode == "method" || mode == "copied" || mode == "move" ||
                         mode == "construct-odd" || mode == "construct-even" || mode == "resize-first" ||
                         mode == "resize-odd" || mode == "resize-even" || mode == "resize-failed" ||
-                        mode == "resize-move" || mode == "copied-resource",
+                        mode == "resize-move" || mode == "copied-resource" || mode == "construct-produced" ||
+                        mode == "construct-produced-odd" || mode == "construct-produced-even",
                     "unknown ABI fixture mode");
-            auto module = mode == "copied-resource"     ? copiedResource()
-                          : mode.starts_with("resize-") ? resizeBoundary(mode)
-                          : mode == "construct-odd"     ? constructed(1)
-                          : mode == "construct-even"    ? constructed(2)
-                          : mode == "construct"         ? constructed()
-                          : mode == "six"               ? called()
-                          : mode == "method"            ? method(true)
-                          : mode == "copied"            ? copiedChild()
-                                                        : moving(true);
+            auto module = mode == "construct-produced"        ? constructedProducers()
+                          : mode == "construct-produced-odd"  ? constructedProducers(1)
+                          : mode == "construct-produced-even" ? constructedProducers(2)
+                          : mode == "copied-resource"         ? copiedResource()
+                          : mode.starts_with("resize-")       ? resizeBoundary(mode)
+                          : mode == "construct-odd"           ? constructed(1)
+                          : mode == "construct-even"          ? constructed(2)
+                          : mode == "construct"               ? constructed()
+                          : mode == "six"                     ? called()
+                          : mode == "method"                  ? method(true)
+                          : mode == "copied"                  ? copiedChild()
+                                                              : moving(true);
             std::cout << X86Emitter{}.emit(validate(std::move(module)));
             return 0;
         }
         require(argc == 1,
                 "usage: owning_classes_ir [--emit-abi construct|construct-odd|construct-even|six|method|copied|move|"
-                "resize-first|resize-odd|resize-even|resize-failed|resize-move|copied-resource]");
+                "resize-first|resize-odd|resize-even|resize-failed|resize-move|copied-resource|"
+                "construct-produced|construct-produced-odd|construct-produced-even]");
         layoutTests();
         ownershipTests();
         resizeFieldTests();
