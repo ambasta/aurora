@@ -153,7 +153,10 @@ def frontend_abi_entries(facts):
     _, ingest = abi_declaration(facts, "functions", "compiler_resolver::ingest")
     for source, count in (("compiler_resolver::release", 2), ("compiler_resolver::release_pair", 3)):
         _, release = abi_declaration(facts, "functions", source)
-        if release["parameters"] != ingest["parameters"][:count] or release["parameter_bytes"] != ingest["parameters"][count]["offset"]:
+        if (
+            release["parameters"] != ingest["parameters"][:count]
+            or release["parameter_bytes"] != ingest["parameters"][count]["offset"]
+        ):
             raise ValueError(f"private resolver owner prefix changed: {source}")
     return entries
 
@@ -376,12 +379,32 @@ def emit(compiler, source, bridges, output, module_root, compatible_header=None)
 
 
 def main():
-    compiler, lexer, arena, parser, kinds, resolution, resolver, lexer_bridge, parser_bridge, resolver_bridge, output, *headers = map(Path, sys.argv[1:])
+    (
+        compiler,
+        lexer,
+        arena,
+        parser,
+        kinds,
+        resolution,
+        resolver,
+        lexer_bridge,
+        parser_bridge,
+        resolver_bridge,
+        output,
+        *headers,
+    ) = map(Path, sys.argv[1:])
     if len(headers) > 1:
         raise ValueError("expected at most one shared-host ABI header")
     module_root = output.parent / "compiler-modules"
     stage_modules(module_root, lexer, arena, parser, kinds, resolution, resolver)
-    emit(compiler, resolver, [lexer_bridge, parser_bridge, resolver_bridge], output, module_root, headers[0] if headers else None)
+    emit(
+        compiler,
+        resolver,
+        [lexer_bridge, parser_bridge, resolver_bridge],
+        output,
+        module_root,
+        headers[0] if headers else None,
+    )
 
 
 if __name__ == "__main__":

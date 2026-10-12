@@ -79,10 +79,10 @@ remain open. See the [compiler reference](../compiler/README.md) and
 The hosted compiler has an [Aurora lexical phase](../compiler/LEXER.md) and
 [complete bounded module parsing](../compiler/ARCHITECTURE.md#hosted-aurora-parser).
 An explicitly selected, source-built predecessor emits the imported frontend;
-current C1/C2 stages verify convergence. Aurora owns existing module grammar and
-unresolved declaration admission. The next boundary is complete module/name/type
-resolution and template substitution, followed by resolved semantic/ownership
-analysis, IR lowering and backend responsibilities. Temporary host conversion
+current C1/C2 stages verify convergence. Aurora owns existing module grammar,
+unresolved declaration admission, module resolution and template substitution.
+The next boundary is resolved semantic/ownership analysis and typed lowering
+from the indexed graph, followed by backend responsibilities. Temporary host conversion
 remains while those consumers use C++ AST values. Native assembler/linker and
 host runtime/file/process services are separate self-hosting dependencies.
 

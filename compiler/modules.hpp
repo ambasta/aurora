@@ -31,7 +31,8 @@ public:
         Program resolve() {
             std::vector<std::size_t> modules;
             modules.reserve(order.size());
-            for (const auto &name : order) modules.push_back(units.at(name)->program.id);
+            for (const auto &name : order)
+                modules.push_back(units.at(name)->program.id);
             return resolution->resolve(modules, units.at(root)->program.id);
         }
     };

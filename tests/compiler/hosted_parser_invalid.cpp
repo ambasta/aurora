@@ -3,6 +3,7 @@
 #include "lexer.hpp"
 #include "hosted_parser.hpp"
 #include "hosted_resolver.hpp"
+#include "../../runtime/bytes_abi.hpp"
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -72,6 +73,10 @@ std::vector<Resolution::ResolvedRow> resolutionDecorations;
 Resolution::SessionStatus resolutionStatus;
 void *sessionAddress = nullptr;
 std::uint64_t sessionRegion = 0;
+// Charge copied fixture rows to the real host region so Projection's payload
+// bound is exercised. This owner is the stub's own runtime allocation, never an
+// interpretation or a copy of the generated opaque Session descriptor.
+aurora::hosted::bytes::NativeOwner sessionPayload;
 constexpr std::uint64_t sessionCanary = 0x7265736f6c766564ULL;
 int sessionsCreated = 0, sessionsReleased = 0, transferred = 0, pairsReleased = 0, projectionThrow = 0;
 bool resolverRunning = false, allocationOnIngest = false;
@@ -1825,9 +1830,10 @@ Resolution::SyntaxRow resolutionNode(Resolution::SyntaxTag tag) {
     return value;
 }
 std::shared_ptr<const aurora::SourceText> resolutionFixture() {
+    require(!sessionAddress && sessionPayload.allocation == 0, "previous forged resolution retained its payload owner");
     reset();
-    auto source = std::make_shared<const aurora::SourceText>(
-        "resolved-record.au", "module forged;auto f()->i64{return 1;}");
+    auto source =
+        std::make_shared<const aurora::SourceText>("resolved-record.au", "module forged;auto f()->i64{return 1;}");
     const auto tokens = aurora::lex(source);
     records = {{wire(NodeKind::literal), 11, -1, -1, 1, 11, 11}};
     types = {{wire(TypeKind::i64_type), 8, 8, 16, -1, -1, 4, 3}};
@@ -1934,8 +1940,10 @@ void resolutionControls() {
                 program.functions[0].body.size() == 1 && program.functions[0].body[0]->expr->op == "number" &&
                 program.functions[0].body[0]->expr->token.text == "1" &&
                 program.functions[0].body[0]->expr->token.span.source == source &&
-                program.reflectionAccess == std::map<int, std::set<std::string>>{{0, {}}} &&
-                sessionsCreated == 1 && sessionsReleased == 1 && transferred == 1 && pairsReleased == 0 && released == 1,
+                program.reflectionAccess == std::map<int, std::set<std::string>>{{0, {}}} && sessionsCreated == 1 &&
+                sessionsReleased == 1 && transferred == 1 && pairsReleased == 0 && created == 1 && parsed == 1 &&
+                admitted == 1 && released == 1 && statementRead == 2 && read == 0 && edgeRead == 0 && typeRead == 0 &&
+                sessionPayload.allocation == 0,
             "valid resolved projection lost source, empty authority view or exact consuming cleanup");
     ++cases;
     const auto reject = [&](const char *label, const std::function<void()> &mutate, bool injected = false) {
@@ -1951,35 +1959,120 @@ void resolutionControls() {
         } catch (const std::runtime_error &error) {
             rejected = injected && std::string(error.what()) == "injected resolved read failure";
         }
-        require(rejected && sessionsCreated == 1 && sessionsReleased == 1 && transferred == 1 &&
-                    pairsReleased == 0 && released == 1,
+        require(rejected && sessionsCreated == 1 && sessionsReleased == 1 && transferred == 1 && pairsReleased == 0 &&
+                    released == 1 && sessionPayload.allocation == 0,
                 std::string(label) + ": unsafe projection escaped or released a consumed owner twice");
         ++cases;
     };
-    reject("negative resolved syntax count", [] { reportedSyntax = -1; });
-    reject("mismatched decoration count", [] { --reportedDecorations; });
-    reject("unknown resolved syntax tag", [] { resolutionSyntax[0].tag = static_cast<Resolution::SyntaxTag>(99); });
-    reject("unknown resolved expression tag", [] { resolutionSyntax[0].expression_tag = static_cast<NodeKind>(99); });
-    reject("wrong resolved function tag", [] { resolutionSyntax[5].declaration_tag = SyntaxKind::parameter; });
-    reject("expression outside source lane", [] { resolutionSyntax[3].value3 = 8; });
-    reject("statement ownership cycle", [] { resolutionSyntax[3].value2 = 3; });
-    reject("wrong concrete type tag", [] { resolutionMetadata[4].tag = Resolution::MetaTag::symbol; });
-    reject("concrete type outside metadata", [] { resolutionDecorations[1].value2 = 8; });
-    reject("unknown concrete type kind", [] { resolutionMetadata[4].concrete_tag = static_cast<Resolution::ResolvedTypeKind>(99); });
-    reject("unknown native identity mode", [] { resolutionMetadata[5].native_tag = static_cast<Resolution::NativeMode>(99); });
-    reject("symbol defining module outside graph", [] { resolutionMetadata[5].value1 = 1; });
-    reject("output list cycle", [] { resolutionMetadata[6].value1 = 6; });
-    reject("wrong output list tag", [] { resolutionMetadata[6].tag = Resolution::MetaTag::signature; });
-    reject("output symbol outside metadata", [] { resolutionMetadata[6].value0 = 8; });
-    reject("reversed sparse source span", [] { resolutionMetadata[3].value2 = resolutionMetadata[3].value1 - 1; });
-    reject("sparse span outside source", [] { resolutionMetadata[3].value2 = sourceBytes + 1; });
-    reject("sparse span wrong source", [] { resolutionMetadata[3].value0 = 1; });
-    reject("sparse span invalid column", [] { resolutionMetadata[3].value4 = 0; });
-    reject("unknown operation override", [] { resolutionDecorations[0].operation_tag = static_cast<Resolution::ResolvedOperation>(99); });
-    reject("resolved target outside metadata", [] { resolutionDecorations[0].value1 = 8; });
-    reject("resolved type outside metadata", [] { resolutionDecorations[0].value2 = 8; });
+    reject("negative source byte count", [] {
+        sourceBytes = -1;
+    });
+    reject("source byte count exceeds payload", [] {
+        sourceBytes = std::numeric_limits<std::int64_t>::max();
+    });
+    reject("negative resolved syntax count", [] {
+        reportedSyntax = -1;
+    });
+    reject("negative resolved metadata count", [] {
+        reportedMetadata = -1;
+    });
+    reject("negative resolved decoration count", [] {
+        reportedDecorations = -1;
+    });
+    reject("resolved syntax count exceeds payload", [] {
+        reportedSyntax = std::numeric_limits<std::int64_t>::max();
+    });
+    reject("resolved metadata count exceeds payload", [] {
+        reportedMetadata = std::numeric_limits<std::int64_t>::max();
+    });
+    reject("resolved decoration count exceeds payload", [] {
+        reportedDecorations = std::numeric_limits<std::int64_t>::max();
+    });
+    reject("unknown storage status", [] {
+        resolutionStatus.storage = static_cast<Resolution::StorageStatus>(99);
+    });
+    reject("unknown semantic diagnostic", [] {
+        resolutionStatus.diagnostic = static_cast<Resolution::SemanticError>(999);
+    });
+    reject("successful status carries a node", [] {
+        resolutionStatus.node = 0;
+    });
+    reject("successful status carries first detail", [] {
+        resolutionStatus.first = 0;
+    });
+    reject("successful status carries second detail", [] {
+        resolutionStatus.second = 0;
+    });
+    reject("mismatched decoration count", [] {
+        --reportedDecorations;
+    });
+    reject("unknown resolved syntax tag", [] {
+        resolutionSyntax[0].tag = static_cast<Resolution::SyntaxTag>(99);
+    });
+    reject("unknown resolved expression tag", [] {
+        resolutionSyntax[0].expression_tag = static_cast<NodeKind>(99);
+    });
+    reject("wrong resolved function tag", [] {
+        resolutionSyntax[5].declaration_tag = SyntaxKind::parameter;
+    });
+    reject("expression outside source lane", [] {
+        resolutionSyntax[3].value3 = 8;
+    });
+    reject("statement ownership cycle", [] {
+        resolutionSyntax[3].value2 = 3;
+    });
+    reject("wrong concrete type tag", [] {
+        resolutionMetadata[4].tag = Resolution::MetaTag::symbol;
+    });
+    reject("concrete type outside metadata", [] {
+        resolutionDecorations[1].value2 = 8;
+    });
+    reject("unknown concrete type kind", [] {
+        resolutionMetadata[4].concrete_tag = static_cast<Resolution::ResolvedTypeKind>(99);
+    });
+    reject("unknown native identity mode", [] {
+        resolutionMetadata[5].native_tag = static_cast<Resolution::NativeMode>(99);
+    });
+    reject("symbol defining module outside graph", [] {
+        resolutionMetadata[5].value1 = 1;
+    });
+    reject("output list cycle", [] {
+        resolutionMetadata[6].value1 = 6;
+    });
+    reject("wrong output list tag", [] {
+        resolutionMetadata[6].tag = Resolution::MetaTag::signature;
+    });
+    reject("output symbol outside metadata", [] {
+        resolutionMetadata[6].value0 = 8;
+    });
+    reject("reversed sparse source span", [] {
+        resolutionMetadata[3].value2 = resolutionMetadata[3].value1 - 1;
+    });
+    reject("sparse span outside source", [] {
+        resolutionMetadata[3].value2 = sourceBytes + 1;
+    });
+    reject("sparse span wrong source", [] {
+        resolutionMetadata[3].value0 = 1;
+    });
+    reject("sparse span invalid column", [] {
+        resolutionMetadata[3].value4 = 0;
+    });
+    reject("unknown operation override", [] {
+        resolutionDecorations[0].operation_tag = static_cast<Resolution::ResolvedOperation>(99);
+    });
+    reject("resolved target outside metadata", [] {
+        resolutionDecorations[0].value1 = 8;
+    });
+    reject("resolved type outside metadata", [] {
+        resolutionDecorations[0].value2 = 8;
+    });
     for (const int read : {1, 2, 3})
-        reject("resolved copied-row read exception", [=] { projectionThrow = read; }, true);
+        reject(
+            "resolved copied-row read exception",
+            [=] {
+                projectionThrow = read;
+            },
+            true);
     for (const bool afterTransfer : {false, true}) {
         source = resolutionFixture();
         allocationOnIngest = afterTransfer;
@@ -1995,7 +2088,7 @@ void resolutionControls() {
             rejected = !afterTransfer && std::string(error.what()) == "injected admission failure";
         }
         require(rejected && sessionsReleased == 1 && released == 1 && transferred == int(afterTransfer) &&
-                    pairsReleased == int(!afterTransfer),
+                    pairsReleased == int(!afterTransfer) && sessionPayload.allocation == 0,
                 "failure on either side of owner consumption selected the wrong cleanup prefix");
         ++cases;
     }
@@ -2090,7 +2183,8 @@ void checkSession(const void *address) {
     require(address == sessionAddress && sessionsCreated == sessionsReleased + 1,
             "resolver used an inactive or copied Session slot");
     std::uint64_t value = 0;
-    std::memcpy(&value, static_cast<const unsigned char *>(address) + aurora::hosted_abi::sessionBytes - sizeof(value),
+    std::memcpy(&value,
+                static_cast<const unsigned char *>(address) + aurora::hosted_abi::sessionBytes - sizeof(value),
                 sizeof(value));
     require(value == sessionCanary, "Session owner boundary was corrupted");
 }
@@ -2098,13 +2192,15 @@ void armSession(void *address) {
     sessionAddress = address;
     static_assert(aurora::hosted_abi::sessionBytes >= sizeof(sessionCanary));
     std::memcpy(static_cast<unsigned char *>(address) + aurora::hosted_abi::sessionBytes - sizeof(sessionCanary),
-                &sessionCanary, sizeof(sessionCanary));
+                &sessionCanary,
+                sizeof(sessionCanary));
 }
 void consumeParsed(const void *address, std::uint64_t region) {
     require(address == arenaAddress && region == arenaRegion && created == released + 1,
             "resolver consumed an inactive parser or crossed its region");
     std::uint64_t value = 0;
-    std::memcpy(&value, static_cast<const unsigned char *>(address) + aurora::hosted_abi::arenaBytes - sizeof(value),
+    std::memcpy(&value,
+                static_cast<const unsigned char *>(address) + aurora::hosted_abi::arenaBytes - sizeof(value),
                 sizeof(value));
     require(value == arenaCanary, "paired parser owner boundary was corrupted");
     ++released;
@@ -2123,6 +2219,13 @@ extern "C" void aurora_hosted_resolver_create(const void *input, void *output) {
     const auto &record = *static_cast<const aurora::hosted_abi::ResolverCreate *>(input);
     require(record.region != 0 && !sessionAddress, "resolver create did not receive a fresh same-region slot");
     sessionRegion = record.region;
+    const auto bytes = resolutionSyntax.size() * sizeof(Resolution::SyntaxRow) +
+                       resolutionMetadata.size() * sizeof(Resolution::MetaRow) +
+                       resolutionDecorations.size() * sizeof(Resolution::ResolvedRow) +
+                       static_cast<std::size_t>(sourceBytes);
+    aurora::hosted::bytes::__au_runtime_bytes_allocate(
+        record.region, static_cast<std::int64_t>(bytes), &sessionPayload);
+    require(sessionPayload.success == 1, "forged resolution payload allocation failed");
     ++sessionsCreated;
     armSession(output);
 }
@@ -2147,6 +2250,7 @@ extern "C" void aurora_hosted_resolver_release(void *input) {
     checkSession(record.session.storage.data());
     require(record.region == sessionRegion && created == released,
             "Session-only release retained a live parsed owner or lost its region");
+    aurora::hosted::bytes::__au_runtime_bytes_drop(&sessionPayload);
     ++sessionsReleased;
     sessionAddress = nullptr;
 }
@@ -2155,6 +2259,7 @@ extern "C" void aurora_hosted_resolver_release_pair(void *input) {
     checkSession(record.session.storage.data());
     require(record.region == sessionRegion, "paired release changed its Session region");
     consumeParsed(record.parsed.storage.data(), record.region);
+    aurora::hosted::bytes::__au_runtime_bytes_drop(&sessionPayload);
     ++pairsReleased;
     ++sessionsReleased;
     sessionAddress = nullptr;
@@ -2199,12 +2304,18 @@ extern "C" std::int64_t aurora_hosted_resolver_run(void *session) {
 }
 extern "C" std::int64_t aurora_hosted_resolver_count(const void *session, std::int64_t pool) {
     checkSession(session);
-    if (pool == 0) return sourceBytes;
-    if (pool == 1) return reportedSyntax;
-    if (pool == 2) return reportedMetadata;
-    if (pool == 3) return reportedDecorations;
-    if (pool == 4) return 0;
-    if (pool == 5) return 1;
+    if (pool == 0)
+        return sourceBytes;
+    if (pool == 1)
+        return reportedSyntax;
+    if (pool == 2)
+        return reportedMetadata;
+    if (pool == 3)
+        return reportedDecorations;
+    if (pool == 4)
+        return 0;
+    if (pool == 5)
+        return 1;
     return -1;
 }
 extern "C" std::int64_t aurora_hosted_resolver_read_source(const void *session, std::int64_t) {

@@ -41,12 +41,39 @@ import aurora.compiler.syntax_arena;
 // Count publication always follows successful set; all five allocation results,
 // including inert failures, remain owned until ordinary consuming cleanup.
 export namespace compiler_resolver {
-    enum class StorageStatus { none, allocation, invalid, limit };
-    enum class SyntaxTag { invalid, expression, edge, type, declaration };
+    enum class StorageStatus {
+        none,
+        allocation,
+        invalid,
+        limit
+    };
+    enum class SyntaxTag {
+        invalid,
+        expression,
+        edge,
+        type,
+        declaration
+    };
     enum class MetaTag {
-        invalid, module_source, module_unit, source_reference, atom, prefix, index,
-        import_name, symbol, overload, concrete_type, instance, signature,
-        public_type, authority, visibility, request, link, context
+        invalid,
+        module_source,
+        module_unit,
+        source_reference,
+        atom,
+        prefix,
+        index,
+        import_name,
+        symbol,
+        overload,
+        concrete_type,
+        instance,
+        signature,
+        public_type,
+        authority,
+        visibility,
+        request,
+        link,
+        context
     };
     class SyntaxRow {
         SyntaxTag tag;
@@ -66,43 +93,127 @@ export namespace compiler_resolver {
         i64 value10;
         i64 value11;
     public:
-        SyntaxRow(SyntaxTag kind) : tag(kind), expression_tag(compiler_parser::NodeKind::invalid), type_tag(compiler_parser::TypeKind::invalid), declaration_tag(compiler_parser::SyntaxKind::invalid), value0(-1), value1(-1), value2(-1), value3(-1), value4(-1), value5(-1), value6(-1), value7(-1), value8(-1), value9(-1), value10(-1), value11(-1) {}
-        auto kind() const -> SyntaxTag { return tag; }
-        auto set_kind(SyntaxTag kind) -> bool { tag = kind; return true; }
-        auto expression_kind() const -> compiler_parser::NodeKind { return expression_tag; }
-        auto set_expression_kind(compiler_parser::NodeKind kind) -> bool { expression_tag = kind; return true; }
-        auto type_kind() const -> compiler_parser::TypeKind { return type_tag; }
-        auto set_type_kind(compiler_parser::TypeKind kind) -> bool { type_tag = kind; return true; }
-        auto declaration_kind() const -> compiler_parser::SyntaxKind { return declaration_tag; }
-        auto set_declaration_kind(compiler_parser::SyntaxKind kind) -> bool { declaration_tag = kind; return true; }
+        SyntaxRow(SyntaxTag kind) : tag(kind), expression_tag(compiler_parser::NodeKind::invalid),
+            type_tag(compiler_parser::TypeKind::invalid), declaration_tag(compiler_parser::SyntaxKind::invalid),
+            value0(-1), value1(-1), value2(-1), value3(-1), value4(-1), value5(-1), value6(-1), value7(-1), value8(-1),
+            value9(-1), value10(-1), value11(-1) {
+        }
+        auto kind() const -> SyntaxTag {
+            return tag;
+        }
+        auto set_kind(SyntaxTag kind) -> bool {
+            tag = kind;
+            return true;
+        }
+        auto expression_kind() const -> compiler_parser::NodeKind {
+            return expression_tag;
+        }
+        auto set_expression_kind(compiler_parser::NodeKind kind) -> bool {
+            expression_tag = kind;
+            return true;
+        }
+        auto type_kind() const -> compiler_parser::TypeKind {
+            return type_tag;
+        }
+        auto set_type_kind(compiler_parser::TypeKind kind) -> bool {
+            type_tag = kind;
+            return true;
+        }
+        auto declaration_kind() const -> compiler_parser::SyntaxKind {
+            return declaration_tag;
+        }
+        auto set_declaration_kind(compiler_parser::SyntaxKind kind) -> bool {
+            declaration_tag = kind;
+            return true;
+        }
         auto word(i64 slot) const -> i64 {
-            if (slot == 0) { return value0; }
-            if (slot == 1) { return value1; }
-            if (slot == 2) { return value2; }
-            if (slot == 3) { return value3; }
-            if (slot == 4) { return value4; }
-            if (slot == 5) { return value5; }
-            if (slot == 6) { return value6; }
-            if (slot == 7) { return value7; }
-            if (slot == 8) { return value8; }
-            if (slot == 9) { return value9; }
-            if (slot == 10) { return value10; }
-            if (slot == 11) { return value11; }
+            if (slot == 0) {
+                return value0;
+            }
+            if (slot == 1) {
+                return value1;
+            }
+            if (slot == 2) {
+                return value2;
+            }
+            if (slot == 3) {
+                return value3;
+            }
+            if (slot == 4) {
+                return value4;
+            }
+            if (slot == 5) {
+                return value5;
+            }
+            if (slot == 6) {
+                return value6;
+            }
+            if (slot == 7) {
+                return value7;
+            }
+            if (slot == 8) {
+                return value8;
+            }
+            if (slot == 9) {
+                return value9;
+            }
+            if (slot == 10) {
+                return value10;
+            }
+            if (slot == 11) {
+                return value11;
+            }
             return -1;
         }
         auto set_word(i64 slot, i64 value) -> bool {
-            if (slot == 0) { value0 = value; return true; }
-            if (slot == 1) { value1 = value; return true; }
-            if (slot == 2) { value2 = value; return true; }
-            if (slot == 3) { value3 = value; return true; }
-            if (slot == 4) { value4 = value; return true; }
-            if (slot == 5) { value5 = value; return true; }
-            if (slot == 6) { value6 = value; return true; }
-            if (slot == 7) { value7 = value; return true; }
-            if (slot == 8) { value8 = value; return true; }
-            if (slot == 9) { value9 = value; return true; }
-            if (slot == 10) { value10 = value; return true; }
-            if (slot == 11) { value11 = value; return true; }
+            if (slot == 0) {
+                value0 = value;
+                return true;
+            }
+            if (slot == 1) {
+                value1 = value;
+                return true;
+            }
+            if (slot == 2) {
+                value2 = value;
+                return true;
+            }
+            if (slot == 3) {
+                value3 = value;
+                return true;
+            }
+            if (slot == 4) {
+                value4 = value;
+                return true;
+            }
+            if (slot == 5) {
+                value5 = value;
+                return true;
+            }
+            if (slot == 6) {
+                value6 = value;
+                return true;
+            }
+            if (slot == 7) {
+                value7 = value;
+                return true;
+            }
+            if (slot == 8) {
+                value8 = value;
+                return true;
+            }
+            if (slot == 9) {
+                value9 = value;
+                return true;
+            }
+            if (slot == 10) {
+                value10 = value;
+                return true;
+            }
+            if (slot == 11) {
+                value11 = value;
+                return true;
+            }
             return false;
         }
     };
@@ -127,49 +238,148 @@ export namespace compiler_resolver {
         i64 value13;
         i64 value14;
     public:
-        MetaRow(MetaTag kind) : tag(kind), concrete_tag(ResolvedTypeKind::invalid), declaration_tag(DeclarationKind::invalid), native_tag(NativeMode::invalid), value0(-1), value1(-1), value2(-1), value3(-1), value4(-1), value5(-1), value6(-1), value7(-1), value8(-1), value9(-1), value10(-1), value11(-1), value12(-1), value13(-1), value14(-1) {}
-        auto kind() const -> MetaTag { return tag; }
-        auto type_kind() const -> ResolvedTypeKind { return concrete_tag; }
-        auto set_type_kind(ResolvedTypeKind kind) -> bool { concrete_tag = kind; return true; }
-        auto declaration_kind() const -> DeclarationKind { return declaration_tag; }
-        auto set_declaration_kind(DeclarationKind kind) -> bool { declaration_tag = kind; return true; }
-        auto native_mode() const -> NativeMode { return native_tag; }
-        auto set_native_mode(NativeMode kind) -> bool { native_tag = kind; return true; }
-        auto set_kind(MetaTag kind) -> bool { tag = kind; return true; }
+        MetaRow(MetaTag kind) : tag(kind), concrete_tag(ResolvedTypeKind::invalid),
+            declaration_tag(DeclarationKind::invalid), native_tag(NativeMode::invalid), value0(-1), value1(-1),
+            value2(-1), value3(-1), value4(-1), value5(-1), value6(-1), value7(-1), value8(-1), value9(-1), value10(-1),
+            value11(-1), value12(-1), value13(-1), value14(-1) {
+        }
+        auto kind() const -> MetaTag {
+            return tag;
+        }
+        auto type_kind() const -> ResolvedTypeKind {
+            return concrete_tag;
+        }
+        auto set_type_kind(ResolvedTypeKind kind) -> bool {
+            concrete_tag = kind;
+            return true;
+        }
+        auto declaration_kind() const -> DeclarationKind {
+            return declaration_tag;
+        }
+        auto set_declaration_kind(DeclarationKind kind) -> bool {
+            declaration_tag = kind;
+            return true;
+        }
+        auto native_mode() const -> NativeMode {
+            return native_tag;
+        }
+        auto set_native_mode(NativeMode kind) -> bool {
+            native_tag = kind;
+            return true;
+        }
+        auto set_kind(MetaTag kind) -> bool {
+            tag = kind;
+            return true;
+        }
         auto word(i64 slot) const -> i64 {
-            if (slot == 0) { return value0; }
-            if (slot == 1) { return value1; }
-            if (slot == 2) { return value2; }
-            if (slot == 3) { return value3; }
-            if (slot == 4) { return value4; }
-            if (slot == 5) { return value5; }
-            if (slot == 6) { return value6; }
-            if (slot == 7) { return value7; }
-            if (slot == 8) { return value8; }
-            if (slot == 9) { return value9; }
-            if (slot == 10) { return value10; }
-            if (slot == 11) { return value11; }
-            if (slot == 12) { return value12; }
-            if (slot == 13) { return value13; }
-            if (slot == 14) { return value14; }
+            if (slot == 0) {
+                return value0;
+            }
+            if (slot == 1) {
+                return value1;
+            }
+            if (slot == 2) {
+                return value2;
+            }
+            if (slot == 3) {
+                return value3;
+            }
+            if (slot == 4) {
+                return value4;
+            }
+            if (slot == 5) {
+                return value5;
+            }
+            if (slot == 6) {
+                return value6;
+            }
+            if (slot == 7) {
+                return value7;
+            }
+            if (slot == 8) {
+                return value8;
+            }
+            if (slot == 9) {
+                return value9;
+            }
+            if (slot == 10) {
+                return value10;
+            }
+            if (slot == 11) {
+                return value11;
+            }
+            if (slot == 12) {
+                return value12;
+            }
+            if (slot == 13) {
+                return value13;
+            }
+            if (slot == 14) {
+                return value14;
+            }
             return -1;
         }
         auto set_word(i64 slot, i64 value) -> bool {
-            if (slot == 0) { value0 = value; return true; }
-            if (slot == 1) { value1 = value; return true; }
-            if (slot == 2) { value2 = value; return true; }
-            if (slot == 3) { value3 = value; return true; }
-            if (slot == 4) { value4 = value; return true; }
-            if (slot == 5) { value5 = value; return true; }
-            if (slot == 6) { value6 = value; return true; }
-            if (slot == 7) { value7 = value; return true; }
-            if (slot == 8) { value8 = value; return true; }
-            if (slot == 9) { value9 = value; return true; }
-            if (slot == 10) { value10 = value; return true; }
-            if (slot == 11) { value11 = value; return true; }
-            if (slot == 12) { value12 = value; return true; }
-            if (slot == 13) { value13 = value; return true; }
-            if (slot == 14) { value14 = value; return true; }
+            if (slot == 0) {
+                value0 = value;
+                return true;
+            }
+            if (slot == 1) {
+                value1 = value;
+                return true;
+            }
+            if (slot == 2) {
+                value2 = value;
+                return true;
+            }
+            if (slot == 3) {
+                value3 = value;
+                return true;
+            }
+            if (slot == 4) {
+                value4 = value;
+                return true;
+            }
+            if (slot == 5) {
+                value5 = value;
+                return true;
+            }
+            if (slot == 6) {
+                value6 = value;
+                return true;
+            }
+            if (slot == 7) {
+                value7 = value;
+                return true;
+            }
+            if (slot == 8) {
+                value8 = value;
+                return true;
+            }
+            if (slot == 9) {
+                value9 = value;
+                return true;
+            }
+            if (slot == 10) {
+                value10 = value;
+                return true;
+            }
+            if (slot == 11) {
+                value11 = value;
+                return true;
+            }
+            if (slot == 12) {
+                value12 = value;
+                return true;
+            }
+            if (slot == 13) {
+                value13 = value;
+                return true;
+            }
+            if (slot == 14) {
+                value14 = value;
+                return true;
+            }
             return false;
         }
     };
@@ -184,29 +394,76 @@ export namespace compiler_resolver {
         i64 value6;
         i64 value7;
     public:
-        ResolvedRow() : operation_tag(ResolvedOperation::unchanged), value0(-1), value1(-1), value2(-1), value3(-1), value4(-1), value5(-1), value6(-1), value7(-1) {}
-        auto operation() const -> ResolvedOperation { return operation_tag; }
-        auto set_operation(ResolvedOperation operation) -> bool { operation_tag = operation; return true; }
+        ResolvedRow() : operation_tag(ResolvedOperation::unchanged), value0(-1), value1(-1), value2(-1), value3(-1),
+            value4(-1), value5(-1), value6(-1), value7(-1) {
+        }
+        auto operation() const -> ResolvedOperation {
+            return operation_tag;
+        }
+        auto set_operation(ResolvedOperation operation) -> bool {
+            operation_tag = operation;
+            return true;
+        }
         auto word(i64 slot) const -> i64 {
-            if (slot == 0) { return value0; }
-            if (slot == 1) { return value1; }
-            if (slot == 2) { return value2; }
-            if (slot == 3) { return value3; }
-            if (slot == 4) { return value4; }
-            if (slot == 5) { return value5; }
-            if (slot == 6) { return value6; }
-            if (slot == 7) { return value7; }
+            if (slot == 0) {
+                return value0;
+            }
+            if (slot == 1) {
+                return value1;
+            }
+            if (slot == 2) {
+                return value2;
+            }
+            if (slot == 3) {
+                return value3;
+            }
+            if (slot == 4) {
+                return value4;
+            }
+            if (slot == 5) {
+                return value5;
+            }
+            if (slot == 6) {
+                return value6;
+            }
+            if (slot == 7) {
+                return value7;
+            }
             return -1;
         }
         auto set_word(i64 slot, i64 value) -> bool {
-            if (slot == 0) { value0 = value; return true; }
-            if (slot == 1) { value1 = value; return true; }
-            if (slot == 2) { value2 = value; return true; }
-            if (slot == 3) { value3 = value; return true; }
-            if (slot == 4) { value4 = value; return true; }
-            if (slot == 5) { value5 = value; return true; }
-            if (slot == 6) { value6 = value; return true; }
-            if (slot == 7) { value7 = value; return true; }
+            if (slot == 0) {
+                value0 = value;
+                return true;
+            }
+            if (slot == 1) {
+                value1 = value;
+                return true;
+            }
+            if (slot == 2) {
+                value2 = value;
+                return true;
+            }
+            if (slot == 3) {
+                value3 = value;
+                return true;
+            }
+            if (slot == 4) {
+                value4 = value;
+                return true;
+            }
+            if (slot == 5) {
+                value5 = value;
+                return true;
+            }
+            if (slot == 6) {
+                value6 = value;
+                return true;
+            }
+            if (slot == 7) {
+                value7 = value;
+                return true;
+            }
             return false;
         }
     };
@@ -218,23 +475,55 @@ export namespace compiler_resolver {
         i64 value4;
         i64 value5;
     public:
-        WorkRow(i64 a0, i64 a1, i64 a2, i64 a3, i64 a4, i64 a5) : value0(a0), value1(a1), value2(a2), value3(a3), value4(a4), value5(a5) {}
+        WorkRow(i64 a0, i64 a1, i64 a2, i64 a3, i64 a4, i64 a5) : value0(a0), value1(a1), value2(a2), value3(a3),
+            value4(a4), value5(a5) {
+        }
         auto word(i64 slot) const -> i64 {
-            if (slot == 0) { return value0; }
-            if (slot == 1) { return value1; }
-            if (slot == 2) { return value2; }
-            if (slot == 3) { return value3; }
-            if (slot == 4) { return value4; }
-            if (slot == 5) { return value5; }
+            if (slot == 0) {
+                return value0;
+            }
+            if (slot == 1) {
+                return value1;
+            }
+            if (slot == 2) {
+                return value2;
+            }
+            if (slot == 3) {
+                return value3;
+            }
+            if (slot == 4) {
+                return value4;
+            }
+            if (slot == 5) {
+                return value5;
+            }
             return -1;
         }
         auto set_word(i64 slot, i64 value) -> bool {
-            if (slot == 0) { value0 = value; return true; }
-            if (slot == 1) { value1 = value; return true; }
-            if (slot == 2) { value2 = value; return true; }
-            if (slot == 3) { value3 = value; return true; }
-            if (slot == 4) { value4 = value; return true; }
-            if (slot == 5) { value5 = value; return true; }
+            if (slot == 0) {
+                value0 = value;
+                return true;
+            }
+            if (slot == 1) {
+                value1 = value;
+                return true;
+            }
+            if (slot == 2) {
+                value2 = value;
+                return true;
+            }
+            if (slot == 3) {
+                value3 = value;
+                return true;
+            }
+            if (slot == 4) {
+                value4 = value;
+                return true;
+            }
+            if (slot == 5) {
+                value5 = value;
+                return true;
+            }
             return false;
         }
     };
@@ -246,12 +535,23 @@ export namespace compiler_resolver {
         i64 second;
     public:
         SessionStatus(StorageStatus state, SemanticError code, i64 at, i64 a, i64 b) : storage(state), diagnostic(code),
-            node(at), first(a), second(b) {}
-        auto storage_status() const -> StorageStatus { return storage; }
-        auto error_code() const -> SemanticError { return diagnostic; }
-        auto error_node() const -> i64 { return node; }
-        auto error_first() const -> i64 { return first; }
-        auto error_second() const -> i64 { return second; }
+            node(at), first(a), second(b) {
+        }
+        auto storage_status() const -> StorageStatus {
+            return storage;
+        }
+        auto error_code() const -> SemanticError {
+            return diagnostic;
+        }
+        auto error_node() const -> i64 {
+            return node;
+        }
+        auto error_first() const -> i64 {
+            return first;
+        }
+        auto error_second() const -> i64 {
+            return second;
+        }
     };
 
     class Session {
@@ -275,215 +575,358 @@ export namespace compiler_resolver {
         i64 diagnostic_second;
 
         auto next_capacity(i64 current, i64 required) -> i64 {
-            if (current < 0 || required < 0) { fail_storage(StorageStatus::invalid); return -1; }
+            if (current < 0 || required < 0) {
+                fail_storage(StorageStatus::invalid);
+                return -1;
+            }
             i64 target = 8;
             if (current > 4) {
-                if (current > 4611686018427387903) { target = required; }
-                else { target = current * 2; }
+                if (current > 4611686018427387903) {
+                    target = required;
+                } else {
+                    target = current * 2;
+                }
             }
-            if (target < required) { target = required; }
+            if (target < required) {
+                target = required;
+            }
             return target;
         }
         auto reserve_forest(i64 count) -> bool {
-            if (!good() || count < 0) { return false; }
-            if (count <= forest.size()) { return true; }
+            if (!good() || count < 0) {
+                return false;
+            }
+            if (count <= forest.size()) {
+                return true;
+            }
             const i64 next = next_capacity(forest.size(), count);
-            if (next < count) { fail_storage(StorageStatus::invalid); return false; }
+            if (next < count) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
             const SyntaxRow fill = SyntaxRow(SyntaxTag::invalid);
-            if (!forest.try_resize(next, fill)) { fail_storage(StorageStatus::allocation); return false; }
+            if (!forest.try_resize(next, fill)) {
+                fail_storage(StorageStatus::allocation);
+                return false;
+            }
             return true;
         }
         auto reserve_metadata(i64 count) -> bool {
-            if (!good() || count < 0) { return false; }
-            if (count <= metadata.size()) { return true; }
+            if (!good() || count < 0) {
+                return false;
+            }
+            if (count <= metadata.size()) {
+                return true;
+            }
             const i64 next = next_capacity(metadata.size(), count);
-            if (next < count) { fail_storage(StorageStatus::invalid); return false; }
+            if (next < count) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
             const MetaRow fill = MetaRow(MetaTag::invalid);
-            if (!metadata.try_resize(next, fill)) { fail_storage(StorageStatus::allocation); return false; }
+            if (!metadata.try_resize(next, fill)) {
+                fail_storage(StorageStatus::allocation);
+                return false;
+            }
             return true;
         }
         auto reserve_resolutions(i64 count) -> bool {
-            if (!good() || count < 0) { return false; }
-            if (count <= resolutions.size()) { return true; }
+            if (!good() || count < 0) {
+                return false;
+            }
+            if (count <= resolutions.size()) {
+                return true;
+            }
             const i64 next = next_capacity(resolutions.size(), count);
-            if (next < count) { fail_storage(StorageStatus::invalid); return false; }
+            if (next < count) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
             const ResolvedRow fill = ResolvedRow();
-            if (!resolutions.try_resize(next, fill)) { fail_storage(StorageStatus::allocation); return false; }
+            if (!resolutions.try_resize(next, fill)) {
+                fail_storage(StorageStatus::allocation);
+                return false;
+            }
             return true;
         }
         auto reserve_scratch(i64 count) -> bool {
-            if (!good() || count < 0) { return false; }
-            if (count <= scratch.size()) { return true; }
+            if (!good() || count < 0) {
+                return false;
+            }
+            if (count <= scratch.size()) {
+                return true;
+            }
             const i64 next = next_capacity(scratch.size(), count);
-            if (next < count) { fail_storage(StorageStatus::invalid); return false; }
+            if (next < count) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
             const WorkRow fill = WorkRow(-1, -1, -1, -1, -1, -1);
-            if (!scratch.try_resize(next, fill)) { fail_storage(StorageStatus::allocation); return false; }
+            if (!scratch.try_resize(next, fill)) {
+                fail_storage(StorageStatus::allocation);
+                return false;
+            }
             return true;
         }
     public:
         Session(builtin::ByteRegion region, builtin::OwnedBytes bytes, builtin::OwnedValues<SyntaxRow> syntax,
             builtin::OwnedValues<MetaRow> meta, builtin::OwnedValues<ResolvedRow> resolved,
             builtin::OwnedValues<WorkRow> work) : sources(move(bytes)), forest(move(syntax)), metadata(move(meta)),
-            resolutions(move(resolved)), scratch(move(work)), source_used(0), graph_source_used(0), syntax_used(0), meta_used(64),
-            resolved_used(0), work_used(0), modules(0), index_root(-1), failure(StorageStatus::none), diagnostic(SemanticError::none),
-            diagnostic_node(-1), diagnostic_first(-1), diagnostic_second(-1) {}
+            resolutions(move(resolved)), scratch(move(work)), source_used(0), graph_source_used(0), syntax_used(0),
+            meta_used(64), resolved_used(0), work_used(0), modules(0), index_root(-1), failure(StorageStatus::none),
+            diagnostic(SemanticError::none), diagnostic_node(-1), diagnostic_first(-1), diagnostic_second(-1) {
+        }
         auto good() const -> bool {
-            return failure == StorageStatus::none && diagnostic == SemanticError::none && sources.ok() && forest.ok() && metadata.ok()
-                && metadata.size() >= 64 && resolutions.ok() && scratch.ok();
+            return failure == StorageStatus::none && diagnostic == SemanticError::none && sources.ok() && forest.ok()
+                && metadata.ok() && metadata.size() >= 64 && resolutions.ok() && scratch.ok();
         }
         auto storage_status() const -> StorageStatus {
-            if (failure == StorageStatus::none && (!sources.ok() || !forest.ok() || !metadata.ok()
-                || metadata.size() < 64 || !resolutions.ok() || !scratch.ok())) { return StorageStatus::allocation; }
+            if (failure == StorageStatus::none && (!sources.ok() || !forest.ok() || !metadata.ok() || metadata.size()
+                < 64 || !resolutions.ok() || !scratch.ok())) {
+                return StorageStatus::allocation;
+            }
             return failure;
         }
         auto fail_storage(StorageStatus code) -> i64 {
-            if (failure == StorageStatus::none && diagnostic == SemanticError::none) { failure = code; }
+            if (failure == StorageStatus::none && diagnostic == SemanticError::none) {
+                failure = code;
+            }
             return -1;
         }
         auto reject(SemanticError code, i64 node, i64 first, i64 second) -> i64 {
             if (diagnostic == SemanticError::none && failure == StorageStatus::none) {
-                if (code == SemanticError::none) { failure = StorageStatus::invalid; }
-                else { diagnostic = code; diagnostic_node = node; diagnostic_first = first; diagnostic_second = second; }
+                if (code == SemanticError::none) {
+                    failure = StorageStatus::invalid;
+                } else {
+                    diagnostic = code;
+                    diagnostic_node = node;
+                    diagnostic_first = first;
+                    diagnostic_second = second;
+                }
             }
             return -1;
         }
-        auto error_code() const -> SemanticError { return diagnostic; }
-        auto error_node() const -> i64 { return diagnostic_node; }
-        auto error_first() const -> i64 { return diagnostic_first; }
-        auto error_second() const -> i64 { return diagnostic_second; }
-        auto source_size() const -> i64 { return source_used; }
-        auto syntax_count() const -> i64 { return syntax_used; }
-        auto meta_count() const -> i64 { if (!metadata.ok()) { return 0; } return meta_used; }
-        auto resolved_count() const -> i64 { return resolved_used; }
-        auto work_count() const -> i64 { return work_used; }
-        auto module_count() const -> i64 { return modules; }
+        auto error_code() const -> SemanticError {
+            return diagnostic;
+        }
+        auto error_node() const -> i64 {
+            return diagnostic_node;
+        }
+        auto error_first() const -> i64 {
+            return diagnostic_first;
+        }
+        auto error_second() const -> i64 {
+            return diagnostic_second;
+        }
+        auto source_size() const -> i64 {
+            return source_used;
+        }
+        auto syntax_count() const -> i64 {
+            return syntax_used;
+        }
+        auto meta_count() const -> i64 {
+            if (!metadata.ok()) {
+                return 0;
+            }
+            return meta_used;
+        }
+        auto resolved_count() const -> i64 {
+            return resolved_used;
+        }
+        auto work_count() const -> i64 {
+            return work_used;
+        }
+        auto module_count() const -> i64 {
+            return modules;
+        }
         auto view_source(i64 index) const -> i64 {
-            if (!sources.ok() || index < 0 || index >= source_used || index >= sources.size()) { return -1; }
+            if (!sources.ok() || index < 0 || index >= source_used || index >= sources.size()) {
+                return -1;
+            }
             return i64(sources.at(index));
         }
         auto source_byte(i64 index) -> u8 {
-            if (!good() || index < 0 || index >= source_used) { fail_storage(StorageStatus::invalid); return 0u8; }
+            if (!good() || index < 0 || index >= source_used) {
+                fail_storage(StorageStatus::invalid);
+                return 0u8;
+            }
             return sources.at(index);
         }
         auto view_syntax(i64 index) const -> SyntaxRow {
             if (!forest.ok() || index < 0 || index >= syntax_used || index >= forest.size()) {
-                const SyntaxRow empty = SyntaxRow(SyntaxTag::invalid); return empty;
+                const SyntaxRow empty = SyntaxRow(SyntaxTag::invalid);
+                return empty;
             }
-            const SyntaxRow row = forest.at(index); return row;
+            const SyntaxRow row = forest.at(index);
+            return row;
         }
         auto syntax(i64 index) -> SyntaxRow {
             if (!good() || index < 0 || index >= syntax_used || index >= forest.size()) {
-                fail_storage(StorageStatus::invalid); const SyntaxRow empty = SyntaxRow(SyntaxTag::invalid); return empty;
+                fail_storage(StorageStatus::invalid);
+                const SyntaxRow empty = SyntaxRow(SyntaxTag::invalid);
+                return empty;
             }
-            const SyntaxRow row = forest.at(index); return row;
+            const SyntaxRow row = forest.at(index);
+            return row;
         }
         auto set_syntax(i64 index, SyntaxRow row) -> bool {
             if (!good() || index < 0 || index >= syntax_used || !forest.set(index, row)) {
-                fail_storage(StorageStatus::invalid); return false;
+                fail_storage(StorageStatus::invalid);
+                return false;
             }
             return true;
         }
         auto view_meta(i64 index) const -> MetaRow {
             if (!metadata.ok() || index < 0 || index >= meta_used || index >= metadata.size()) {
-                const MetaRow empty = MetaRow(MetaTag::invalid); return empty;
+                const MetaRow empty = MetaRow(MetaTag::invalid);
+                return empty;
             }
-            const MetaRow row = metadata.at(index); return row;
+            const MetaRow row = metadata.at(index);
+            return row;
         }
         auto meta(i64 index) -> MetaRow {
             if (!good() || index < 0 || index >= meta_used || index >= metadata.size()) {
-                fail_storage(StorageStatus::invalid); const MetaRow empty = MetaRow(MetaTag::invalid); return empty;
+                fail_storage(StorageStatus::invalid);
+                const MetaRow empty = MetaRow(MetaTag::invalid);
+                return empty;
             }
-            const MetaRow row = metadata.at(index); return row;
+            const MetaRow row = metadata.at(index);
+            return row;
         }
         auto set_meta(i64 index, MetaRow row) -> bool {
             if (!good() || index < 0 || index >= meta_used || !metadata.set(index, row)) {
-                fail_storage(StorageStatus::invalid); return false;
+                fail_storage(StorageStatus::invalid);
+                return false;
             }
             return true;
         }
         auto append_meta(MetaRow row) -> i64 {
-            if (!good()) { return -1; }
-            if (meta_used == 9223372036854775807) { return fail_storage(StorageStatus::invalid); }
-            if (!reserve_metadata(meta_used + 1)) { return -1; }
+            if (!good()) {
+                return -1;
+            }
+            if (meta_used == 9223372036854775807) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            if (!reserve_metadata(meta_used + 1)) {
+                return -1;
+            }
             const i64 result = meta_used;
-            if (!metadata.set(result, row)) { return fail_storage(StorageStatus::invalid); }
+            if (!metadata.set(result, row)) {
+                return fail_storage(StorageStatus::invalid);
+            }
             meta_used = meta_used + 1;
             return result;
         }
         auto view_resolved(i64 index) const -> ResolvedRow {
             if (!resolutions.ok() || index < 0 || index >= resolved_used || index >= resolutions.size()) {
-                const ResolvedRow empty = ResolvedRow(); return empty;
+                const ResolvedRow empty = ResolvedRow();
+                return empty;
             }
-            const ResolvedRow row = resolutions.at(index); return row;
+            const ResolvedRow row = resolutions.at(index);
+            return row;
         }
         auto resolved(i64 index) -> ResolvedRow {
             if (!good() || index < 0 || index >= resolved_used || index >= resolutions.size()) {
-                fail_storage(StorageStatus::invalid); const ResolvedRow empty = ResolvedRow(); return empty;
+                fail_storage(StorageStatus::invalid);
+                const ResolvedRow empty = ResolvedRow();
+                return empty;
             }
-            const ResolvedRow row = resolutions.at(index); return row;
+            const ResolvedRow row = resolutions.at(index);
+            return row;
         }
         auto set_resolved(i64 index, ResolvedRow row) -> bool {
             if (!good() || index < 0 || index >= resolved_used || !resolutions.set(index, row)) {
-                fail_storage(StorageStatus::invalid); return false;
+                fail_storage(StorageStatus::invalid);
+                return false;
             }
             return true;
         }
         auto view_work(i64 index) const -> WorkRow {
             if (!scratch.ok() || index < 0 || index >= work_used || index >= scratch.size()) {
-                const WorkRow empty = WorkRow(-1, -1, -1, -1, -1, -1); return empty;
+                const WorkRow empty = WorkRow(-1, -1, -1, -1, -1, -1);
+                return empty;
             }
-            const WorkRow row = scratch.at(index); return row;
+            const WorkRow row = scratch.at(index);
+            return row;
         }
         auto work(i64 index) -> WorkRow {
             if (!good() || index < 0 || index >= work_used || index >= scratch.size()) {
-                fail_storage(StorageStatus::invalid); const WorkRow empty = WorkRow(-1, -1, -1, -1, -1, -1); return empty;
+                fail_storage(StorageStatus::invalid);
+                const WorkRow empty = WorkRow(-1, -1, -1, -1, -1, -1);
+                return empty;
             }
-            const WorkRow row = scratch.at(index); return row;
+            const WorkRow row = scratch.at(index);
+            return row;
         }
         auto set_work(i64 index, WorkRow row) -> bool {
             if (!good() || index < 0 || index >= work_used || !scratch.set(index, row)) {
-                fail_storage(StorageStatus::invalid); return false;
+                fail_storage(StorageStatus::invalid);
+                return false;
             }
             return true;
         }
         auto append_work(WorkRow row) -> i64 {
-            if (!good()) { return -1; }
-            if (work_used == 9223372036854775807) { return fail_storage(StorageStatus::invalid); }
-            if (!reserve_scratch(work_used + 1)) { return -1; }
+            if (!good()) {
+                return -1;
+            }
+            if (work_used == 9223372036854775807) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            if (!reserve_scratch(work_used + 1)) {
+                return -1;
+            }
             const i64 result = work_used;
-            if (!scratch.set(result, row)) { return fail_storage(StorageStatus::invalid); }
+            if (!scratch.set(result, row)) {
+                return fail_storage(StorageStatus::invalid);
+            }
             work_used = work_used + 1;
             return result;
         }
         auto append_syntax(SyntaxRow row) -> i64 {
-            if (!good()) { return -1; }
-            if (row.kind() == SyntaxTag::invalid || syntax_used == 9223372036854775807
-                || resolved_used != syntax_used) { return fail_storage(StorageStatus::invalid); }
-            if (!reserve_forest(syntax_used + 1) || !reserve_resolutions(syntax_used + 1)) { return -1; }
+            if (!good()) {
+                return -1;
+            }
+            if (row.kind() == SyntaxTag::invalid || syntax_used == 9223372036854775807 || resolved_used
+                != syntax_used) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            if (!reserve_forest(syntax_used + 1) || !reserve_resolutions(syntax_used + 1)) {
+                return -1;
+            }
             const ResolvedRow blank = ResolvedRow();
             if (!forest.set(syntax_used, row) || !resolutions.set(syntax_used, blank)) {
                 return fail_storage(StorageStatus::invalid);
             }
             const i64 result = syntax_used;
-            syntax_used = syntax_used + 1; resolved_used = resolved_used + 1;
+            syntax_used = syntax_used + 1;
+            resolved_used = resolved_used + 1;
             return result;
         }
         auto truncate_work(i64 count) -> bool {
-            if (count < 0 || count > work_used) { fail_storage(StorageStatus::invalid); return false; }
+            if (count < 0 || count > work_used) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
             work_used = count;
             return true;
         }
         auto append_source(builtin::span<const u8> source) -> i64 {
-            if (!good()) { return -1; }
+            if (!good()) {
+                return -1;
+            }
             const i64 count = source.size();
             if (modules >= 64 || count < 0 || count > 1048576 || count > 4194304 - graph_source_used) {
                 return fail_storage(StorageStatus::limit);
             }
             if (modules > 0) {
                 const MetaRow previous = metadata.at(modules - 1);
-                if (previous.kind() != MetaTag::module_unit) { return fail_storage(StorageStatus::invalid); }
+                if (previous.kind() != MetaTag::module_unit) {
+                    return fail_storage(StorageStatus::invalid);
+                }
             }
-            if (count > 9223372036854775807 - source_used) { return fail_storage(StorageStatus::invalid); }
+            if (count > 9223372036854775807 - source_used) {
+                return fail_storage(StorageStatus::invalid);
+            }
             const i64 required = source_used + count;
             if (required > sources.size()) {
                 const i64 capacity = next_capacity(sources.size(), required);
@@ -493,14 +936,22 @@ export namespace compiler_resolver {
             }
             i64 index = 0;
             while (index < count) {
-                if (!sources.set(source_used + index, source.at(index))) { return fail_storage(StorageStatus::invalid); }
+                if (!sources.set(source_used + index, source.at(index))) {
+                    return fail_storage(StorageStatus::invalid);
+                }
                 index = index + 1;
             }
             MetaRow row = MetaRow(MetaTag::module_source);
-            row.set_word(0, source_used); row.set_word(1, count); row.set_word(11, modules);
-            if (!metadata.set(modules, row)) { return fail_storage(StorageStatus::invalid); }
+            row.set_word(0, source_used);
+            row.set_word(1, count);
+            row.set_word(11, modules);
+            if (!metadata.set(modules, row)) {
+                return fail_storage(StorageStatus::invalid);
+            }
             const i64 result = modules;
-            modules = modules + 1; source_used = required; graph_source_used = graph_source_used + count;
+            modules = modules + 1;
+            source_used = required;
+            graph_source_used = graph_source_used + count;
             return result;
         }
         // A returned Lexeme is copied. The private source-field view ends before
@@ -510,7 +961,8 @@ export namespace compiler_resolver {
                 return compiler_lexer::Lexeme(compiler_lexer::Event::invalid_cursor, 0, 1, 0);
             }
             const MetaRow row = metadata.at(module_id);
-            const i64 begin = row.word(0); const i64 length = row.word(1);
+            const i64 begin = row.word(0);
+            const i64 length = row.word(1);
             if (begin < 0 || length < 0 || begin > source_used || length > source_used - begin) {
                 return compiler_lexer::Lexeme(compiler_lexer::Event::invalid_cursor, 0, 1, 0);
             }
@@ -522,82 +974,161 @@ export namespace compiler_resolver {
         // One AVL index serves the small set of resolver key domains. Atom keys
         // compare their checked source bytes; all other domains compare integers.
         auto compare_key(MetaRow row, i64 domain, i64 first, i64 second, i64 third, i64 fourth) -> i64 {
-            if (row.kind() != MetaTag::index || domain < 1) { fail_storage(StorageStatus::invalid); return 0; }
-            if (domain < row.word(0)) { return -1; }
-            if (domain > row.word(0)) { return 1; }
+            if (row.kind() != MetaTag::index || domain < 1) {
+                fail_storage(StorageStatus::invalid);
+                return 0;
+            }
+            if (domain < row.word(0)) {
+                return -1;
+            }
+            if (domain > row.word(0)) {
+                return 1;
+            }
             if (domain == 1) {
-                const i64 old_begin = row.word(1); const i64 old_length = row.word(2);
+                const i64 old_begin = row.word(1);
+                const i64 old_length = row.word(2);
                 if (first < 0 || second < 0 || first > source_used || second > source_used - first || old_begin < 0
                     || old_length < 0 || old_begin > source_used || old_length > source_used - old_begin) {
-                    fail_storage(StorageStatus::invalid); return 0;
+                    fail_storage(StorageStatus::invalid);
+                    return 0;
                 }
                 i64 at = 0;
                 while (at < second && at < old_length) {
-                    const u8 left = sources.at(first + at); const u8 right = sources.at(old_begin + at);
-                    if (left < right) { return -1; }
-                    if (left > right) { return 1; }
+                    const u8 left = sources.at(first + at);
+                    const u8 right = sources.at(old_begin + at);
+                    if (left < right) {
+                        return -1;
+                    }
+                    if (left > right) {
+                        return 1;
+                    }
                     at = at + 1;
                 }
-                if (second < old_length) { return -1; }
-                if (second > old_length) { return 1; }
+                if (second < old_length) {
+                    return -1;
+                }
+                if (second > old_length) {
+                    return 1;
+                }
                 return 0;
             }
-            if (first < row.word(1)) { return -1; }
-            if (first > row.word(1)) { return 1; }
-            if (second < row.word(2)) { return -1; }
-            if (second > row.word(2)) { return 1; }
-            if (third < row.word(3)) { return -1; }
-            if (third > row.word(3)) { return 1; }
-            if (fourth < row.word(4)) { return -1; }
-            if (fourth > row.word(4)) { return 1; }
+            if (first < row.word(1)) {
+                return -1;
+            }
+            if (first > row.word(1)) {
+                return 1;
+            }
+            if (second < row.word(2)) {
+                return -1;
+            }
+            if (second > row.word(2)) {
+                return 1;
+            }
+            if (third < row.word(3)) {
+                return -1;
+            }
+            if (third > row.word(3)) {
+                return 1;
+            }
+            if (fourth < row.word(4)) {
+                return -1;
+            }
+            if (fourth > row.word(4)) {
+                return 1;
+            }
             return 0;
         }
         auto index_node(i64 domain, i64 first, i64 second, i64 third, i64 fourth) -> i64 {
-            if (!good()) { return -1; }
-            if (domain < 1) { return fail_storage(StorageStatus::invalid); }
-            i64 node = index_root; i64 steps = 0;
+            if (!good()) {
+                return -1;
+            }
+            if (domain < 1) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            i64 node = index_root;
+            i64 steps = 0;
             while (node >= 0 && good()) {
-                if (steps >= meta_used) { return fail_storage(StorageStatus::invalid); }
+                if (steps >= meta_used) {
+                    return fail_storage(StorageStatus::invalid);
+                }
                 steps = steps + 1;
                 const MetaRow row = meta(node);
                 const i64 order = compare_key(row, domain, first, second, third, fourth);
-                if (!good()) { return -1; }
-                if (order == 0) { return node; }
-                if (order < 0) { node = row.word(6); } else { node = row.word(7); }
-                if (node < -1) { return fail_storage(StorageStatus::invalid); }
+                if (!good()) {
+                    return -1;
+                }
+                if (order == 0) {
+                    return node;
+                }
+                if (order < 0) {
+                    node = row.word(6);
+                } else {
+                    node = row.word(7);
+                }
+                if (node < -1) {
+                    return fail_storage(StorageStatus::invalid);
+                }
             }
             return -1;
         }
         auto index(i64 domain, i64 first, i64 second, i64 third, i64 fourth) -> i64 {
             const i64 found = index_node(domain, first, second, third, fourth);
-            if (found < 0) { return -1; }
-            const MetaRow row = meta(found); return row.word(5);
+            if (found < 0) {
+                return -1;
+            }
+            const MetaRow row = meta(found);
+            return row.word(5);
         }
         auto index_height(i64 node) -> i64 {
-            if (node == -1) { return 0; }
+            if (node == -1) {
+                return 0;
+            }
             const MetaRow row = meta(node);
-            if (row.kind() != MetaTag::index || row.word(9) < 1) { return fail_storage(StorageStatus::invalid); }
+            if (row.kind() != MetaTag::index || row.word(9) < 1) {
+                return fail_storage(StorageStatus::invalid);
+            }
             return row.word(9);
         }
         auto update_height(i64 node) -> bool {
             MetaRow row = meta(node);
-            if (row.kind() != MetaTag::index) { fail_storage(StorageStatus::invalid); return false; }
-            const i64 left = index_height(row.word(6)); const i64 right = index_height(row.word(7));
+            if (row.kind() != MetaTag::index) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            const i64 left = index_height(row.word(6));
+            const i64 right = index_height(row.word(7));
             i64 height = left;
-            if (right > height) { height = right; }
-            if (!good() || height == 9223372036854775807) { fail_storage(StorageStatus::invalid); return false; }
-            row.set_word(9, height + 1); return set_meta(node, row);
+            if (right > height) {
+                height = right;
+            }
+            if (!good() || height == 9223372036854775807) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            row.set_word(9, height + 1);
+            return set_meta(node, row);
         }
         auto replace_child(i64 parent, i64 previous, i64 next) -> bool {
             if (parent == -1) {
-                if (index_root != previous) { fail_storage(StorageStatus::invalid); return false; }
-                index_root = next; return true;
+                if (index_root != previous) {
+                    fail_storage(StorageStatus::invalid);
+                    return false;
+                }
+                index_root = next;
+                return true;
             }
             MetaRow row = meta(parent);
-            if (row.kind() != MetaTag::index) { fail_storage(StorageStatus::invalid); return false; }
-            if (row.word(6) == previous) { row.set_word(6, next); }
-            else {
-                if (row.word(7) != previous) { fail_storage(StorageStatus::invalid); return false; }
+            if (row.kind() != MetaTag::index) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            if (row.word(6) == previous) {
+                row.set_word(6, next);
+            } else {
+                if (row.word(7) != previous) {
+                    fail_storage(StorageStatus::invalid);
+                    return false;
+                }
                 row.set_word(7, next);
             }
             return set_meta(parent, row);
@@ -609,18 +1140,26 @@ export namespace compiler_resolver {
             if (root.kind() != MetaTag::index || child.kind() != MetaTag::index || child.word(8) != node) {
                 return fail_storage(StorageStatus::invalid);
             }
-            const i64 parent = root.word(8); const i64 middle = child.word(6);
+            const i64 parent = root.word(8);
+            const i64 middle = child.word(6);
             if (middle >= 0) {
                 MetaRow branch = meta(middle);
                 if (branch.kind() != MetaTag::index || branch.word(8) != child_id) {
                     return fail_storage(StorageStatus::invalid);
                 }
-                branch.set_word(8, node); if (!set_meta(middle, branch)) { return -1; }
+                branch.set_word(8, node);
+                if (!set_meta(middle, branch)) {
+                    return -1;
+                }
             }
-            root.set_word(7, middle); root.set_word(8, child_id);
-            child.set_word(6, node); child.set_word(8, parent);
+            root.set_word(7, middle);
+            root.set_word(8, child_id);
+            child.set_word(6, node);
+            child.set_word(8, parent);
             if (!set_meta(node, root) || !set_meta(child_id, child) || !replace_child(parent, node, child_id)
-                || !update_height(node) || !update_height(child_id)) { return -1; }
+                || !update_height(node) || !update_height(child_id)) {
+                return -1;
+            }
             return child_id;
         }
         auto rotate_right(i64 node) -> i64 {
@@ -630,116 +1169,205 @@ export namespace compiler_resolver {
             if (root.kind() != MetaTag::index || child.kind() != MetaTag::index || child.word(8) != node) {
                 return fail_storage(StorageStatus::invalid);
             }
-            const i64 parent = root.word(8); const i64 middle = child.word(7);
+            const i64 parent = root.word(8);
+            const i64 middle = child.word(7);
             if (middle >= 0) {
                 MetaRow branch = meta(middle);
                 if (branch.kind() != MetaTag::index || branch.word(8) != child_id) {
                     return fail_storage(StorageStatus::invalid);
                 }
-                branch.set_word(8, node); if (!set_meta(middle, branch)) { return -1; }
+                branch.set_word(8, node);
+                if (!set_meta(middle, branch)) {
+                    return -1;
+                }
             }
-            root.set_word(6, middle); root.set_word(8, child_id);
-            child.set_word(7, node); child.set_word(8, parent);
+            root.set_word(6, middle);
+            root.set_word(8, child_id);
+            child.set_word(7, node);
+            child.set_word(8, parent);
             if (!set_meta(node, root) || !set_meta(child_id, child) || !replace_child(parent, node, child_id)
-                || !update_height(node) || !update_height(child_id)) { return -1; }
+                || !update_height(node) || !update_height(child_id)) {
+                return -1;
+            }
             return child_id;
         }
         auto index_insert(i64 domain, i64 first, i64 second, i64 third, i64 fourth, i64 value) -> i64 {
-            if (!good() || domain < 1 || value < 0) { return fail_storage(StorageStatus::invalid); }
-            i64 parent = -1; i64 node = index_root; i64 direction = 0; i64 steps = 0;
+            if (!good() || domain < 1 || value < 0) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            i64 parent = -1;
+            i64 node = index_root;
+            i64 direction = 0;
+            i64 steps = 0;
             while (node >= 0 && good()) {
-                if (steps >= meta_used) { return fail_storage(StorageStatus::invalid); }
+                if (steps >= meta_used) {
+                    return fail_storage(StorageStatus::invalid);
+                }
                 steps = steps + 1;
                 const MetaRow row = meta(node);
                 direction = compare_key(row, domain, first, second, third, fourth);
-                if (!good()) { return -1; }
-                if (direction == 0) { return row.word(5); }
+                if (!good()) {
+                    return -1;
+                }
+                if (direction == 0) {
+                    return row.word(5);
+                }
                 parent = node;
-                if (direction < 0) { node = row.word(6); } else { node = row.word(7); }
-                if (node < -1) { return fail_storage(StorageStatus::invalid); }
+                if (direction < 0) {
+                    node = row.word(6);
+                } else {
+                    node = row.word(7);
+                }
+                if (node < -1) {
+                    return fail_storage(StorageStatus::invalid);
+                }
             }
             MetaRow inserted = MetaRow(MetaTag::index);
-            inserted.set_word(0, domain); inserted.set_word(1, first); inserted.set_word(2, second);
-            inserted.set_word(3, third); inserted.set_word(4, fourth); inserted.set_word(5, value);
-            inserted.set_word(8, parent); inserted.set_word(9, 1);
+            inserted.set_word(0, domain);
+            inserted.set_word(1, first);
+            inserted.set_word(2, second);
+            inserted.set_word(3, third);
+            inserted.set_word(4, fourth);
+            inserted.set_word(5, value);
+            inserted.set_word(8, parent);
+            inserted.set_word(9, 1);
             const i64 new_id = append_meta(inserted);
-            if (new_id < 0) { return -1; }
-            if (parent == -1) { index_root = new_id; }
-            else {
-                MetaRow ancestor = meta(parent);
-                if (direction < 0) { ancestor.set_word(6, new_id); } else { ancestor.set_word(7, new_id); }
-                if (!set_meta(parent, ancestor)) { return -1; }
+            if (new_id < 0) {
+                return -1;
             }
-            node = parent; steps = 0;
+            if (parent == -1) {
+                index_root = new_id;
+            } else {
+                MetaRow ancestor = meta(parent);
+                if (direction < 0) {
+                    ancestor.set_word(6, new_id);
+                } else {
+                    ancestor.set_word(7, new_id);
+                }
+                if (!set_meta(parent, ancestor)) {
+                    return -1;
+                }
+            }
+            node = parent;
+            steps = 0;
             while (node >= 0 && good()) {
-                if (steps >= meta_used || !update_height(node)) { return fail_storage(StorageStatus::invalid); }
+                if (steps >= meta_used || !update_height(node)) {
+                    return fail_storage(StorageStatus::invalid);
+                }
                 steps = steps + 1;
                 const MetaRow root = meta(node);
-                const i64 left = index_height(root.word(6)); const i64 right = index_height(root.word(7));
+                const i64 left = index_height(root.word(6));
+                const i64 right = index_height(root.word(7));
                 i64 top = node;
                 if (left - right > 1) {
                     const MetaRow branch = meta(root.word(6));
-                    const i64 outer = index_height(branch.word(6)); const i64 inner = index_height(branch.word(7));
-                    if (inner > outer) { rotate_left(root.word(6)); }
-                    if (!good()) { return -1; }
+                    const i64 outer = index_height(branch.word(6));
+                    const i64 inner = index_height(branch.word(7));
+                    if (inner > outer) {
+                        rotate_left(root.word(6));
+                    }
+                    if (!good()) {
+                        return -1;
+                    }
                     top = rotate_right(node);
                 } else {
                     if (right - left > 1) {
                         const MetaRow branch = meta(root.word(7));
-                        const i64 outer = index_height(branch.word(7)); const i64 inner = index_height(branch.word(6));
-                        if (inner > outer) { rotate_right(root.word(7)); }
-                        if (!good()) { return -1; }
+                        const i64 outer = index_height(branch.word(7));
+                        const i64 inner = index_height(branch.word(6));
+                        if (inner > outer) {
+                            rotate_right(root.word(7));
+                        }
+                        if (!good()) {
+                            return -1;
+                        }
                         top = rotate_left(node);
                     }
                 }
-                if (!good()) { return -1; }
-                const MetaRow changed = meta(top); node = changed.word(8);
+                if (!good()) {
+                    return -1;
+                }
+                const MetaRow changed = meta(top);
+                node = changed.word(8);
             }
             return value;
         }
         auto index_replace(i64 domain, i64 first, i64 second, i64 third, i64 fourth, i64 value) -> bool {
-            if (!good() || value < 0) { fail_storage(StorageStatus::invalid); return false; }
+            if (!good() || value < 0) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
             const i64 found = index_node(domain, first, second, third, fourth);
-            if (found < 0) { fail_storage(StorageStatus::invalid); return false; }
-            MetaRow row = meta(found); row.set_word(5, value); return set_meta(found, row);
+            if (found < 0) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            MetaRow row = meta(found);
+            row.set_word(5, value);
+            return set_meta(found, row);
         }
         auto source_equal(i64 reference, builtin::span<const u8> text) -> bool {
             const MetaRow row = meta(reference);
-            if (row.kind() != MetaTag::source_reference || row.word(1) < 0 || row.word(2) < row.word(1)
-                || row.word(2) > source_used) { fail_storage(StorageStatus::invalid); return false; }
+            if (row.kind() != MetaTag::source_reference || row.word(1) < 0 || row.word(2) < row.word(1) || row.word(2)
+                > source_used) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
             const i64 count = row.word(2) - row.word(1);
-            if (count != text.size()) { return false; }
+            if (count != text.size()) {
+                return false;
+            }
             i64 at = 0;
             while (at < count) {
-                if (sources.at(row.word(1) + at) != text.at(at)) { return false; }
+                if (sources.at(row.word(1) + at) != text.at(at)) {
+                    return false;
+                }
                 at = at + 1;
             }
             return true;
         }
         auto source_prefix(i64 reference, builtin::span<const u8> text) -> bool {
             const MetaRow row = meta(reference);
-            if (row.kind() != MetaTag::source_reference || row.word(1) < 0 || row.word(2) < row.word(1)
-                || row.word(2) > source_used) { fail_storage(StorageStatus::invalid); return false; }
-            if (text.size() > row.word(2) - row.word(1)) { return false; }
+            if (row.kind() != MetaTag::source_reference || row.word(1) < 0 || row.word(2) < row.word(1) || row.word(2)
+                > source_used) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            if (text.size() > row.word(2) - row.word(1)) {
+                return false;
+            }
             i64 at = 0;
             while (at < text.size()) {
-                if (sources.at(row.word(1) + at) != text.at(at)) { return false; }
+                if (sources.at(row.word(1) + at) != text.at(at)) {
+                    return false;
+                }
                 at = at + 1;
             }
             return true;
         }
         auto name_range(i64 first, i64 last) -> i64 {
-            if (first == last) { return first; }
-            const MetaRow begin = meta(first); const MetaRow end = meta(last);
-            if (begin.kind() != MetaTag::source_reference || end.kind() != MetaTag::source_reference
-                || begin.word(0) != end.word(0) || begin.word(9) != end.word(9) || begin.word(1) < 0 || end.word(2) < begin.word(2)
-                || end.word(2) > source_used) { return fail_storage(StorageStatus::invalid); }
+            if (first == last) {
+                return first;
+            }
+            const MetaRow begin = meta(first);
+            const MetaRow end = meta(last);
+            if (begin.kind() != MetaTag::source_reference || end.kind() != MetaTag::source_reference || begin.word(0)
+                != end.word(0) || begin.word(9) != end.word(9) || begin.word(1) < 0 || end.word(2) < begin.word(2)
+                || end.word(2) > source_used) {
+                return fail_storage(StorageStatus::invalid);
+            }
             const i64 existing = index(7, first, last, 0, 0);
-            if (existing >= 0 || !good()) { return existing; }
+            if (existing >= 0 || !good()) {
+                return existing;
+            }
             MetaRow combined = begin;
-            combined.set_word(2, end.word(2)); combined.set_word(7, end.word(7)); combined.set_word(8, end.word(8));
+            combined.set_word(2, end.word(2));
+            combined.set_word(7, end.word(7));
+            combined.set_word(8, end.word(8));
             const i64 result = append_meta(combined);
-            if (result < 0) { return -1; }
+            if (result < 0) {
+                return -1;
+            }
             return index_insert(7, first, last, 0, 0, result);
         }
         auto scan_range(i64 begin, i64 length, compiler_lexer::Cursor cursor) const -> compiler_lexer::Lexeme {
@@ -752,79 +1380,120 @@ export namespace compiler_resolver {
             return result;
         }
         auto component_ref(MetaRow base, WorkRow location) -> i64 {
-            const i64 begin = location.word(0); const i64 end = location.word(1);
-            const i64 line = location.word(2); const i64 start = location.word(3);
-            if (base.kind() != MetaTag::source_reference || begin < 0 || end <= begin
-                || end > base.word(2) - base.word(1) || line < 1 || start < 0 || start > begin) {
+            const i64 begin = location.word(0);
+            const i64 end = location.word(1);
+            const i64 line = location.word(2);
+            const i64 start = location.word(3);
+            if (base.kind() != MetaTag::source_reference || begin < 0 || end <= begin || end > base.word(2)
+                - base.word(1) || line < 1 || start < 0 || start > begin) {
                 return fail_storage(StorageStatus::invalid);
             }
             const i64 ordinal = base.word(5) + location.word(4);
             const i64 existing = index(9, base.word(0), ordinal, 0, base.word(9));
-            if (existing >= 0 || !good()) { return existing; }
+            if (existing >= 0 || !good()) {
+                return existing;
+            }
             MetaRow row = MetaRow(MetaTag::source_reference);
             i64 column = begin - start + 1;
-            if (line == 1) { column = column + base.word(4) - 1; }
-            row.set_word(0, base.word(0)); row.set_word(1, base.word(1) + begin);
-            row.set_word(2, base.word(1) + end); row.set_word(3, base.word(3) + line - 1);
-            row.set_word(4, column); row.set_word(5, ordinal); row.set_word(6, 0);
-            row.set_word(7, base.word(3) + line - 1); row.set_word(8, column + end - begin);
+            if (line == 1) {
+                column = column + base.word(4) - 1;
+            }
+            row.set_word(0, base.word(0));
+            row.set_word(1, base.word(1) + begin);
+            row.set_word(2, base.word(1) + end);
+            row.set_word(3, base.word(3) + line - 1);
+            row.set_word(4, column);
+            row.set_word(5, ordinal);
+            row.set_word(6, 0);
+            row.set_word(7, base.word(3) + line - 1);
+            row.set_word(8, column + end - begin);
             row.set_word(9, base.word(9));
             const i64 result = append_meta(row);
-            if (result < 0) { return -1; }
+            if (result < 0) {
+                return -1;
+            }
             return index_insert(9, base.word(0), ordinal, 0, base.word(9), result);
         }
         auto intern_atom(i64 reference) -> i64 {
             const MetaRow source = meta(reference);
-            if (source.kind() != MetaTag::source_reference || source.word(1) < 0
-                || source.word(2) <= source.word(1) || source.word(2) > source_used) {
+            if (source.kind() != MetaTag::source_reference || source.word(1) < 0 || source.word(2) <= source.word(1)
+                || source.word(2) > source_used) {
                 return fail_storage(StorageStatus::invalid);
             }
-            const i64 begin = source.word(1); const i64 count = source.word(2) - begin;
+            const i64 begin = source.word(1);
+            const i64 count = source.word(2) - begin;
             const i64 existing = index(1, begin, count, 0, 0);
-            if (existing >= 0 || !good()) { return existing; }
+            if (existing >= 0 || !good()) {
+                return existing;
+            }
             MetaRow atom = MetaRow(MetaTag::atom);
-            atom.set_word(0, begin); atom.set_word(1, count); atom.set_word(2, reference);
+            atom.set_word(0, begin);
+            atom.set_word(1, count);
+            atom.set_word(2, reference);
             const i64 result = append_meta(atom);
-            if (result < 0) { return -1; }
+            if (result < 0) {
+                return -1;
+            }
             return index_insert(1, begin, count, 0, 0, result);
         }
         auto atom_source(i64 atom) -> i64 {
             const MetaRow row = meta(atom);
-            if (row.kind() != MetaTag::atom) { return fail_storage(StorageStatus::invalid); }
+            if (row.kind() != MetaTag::atom) {
+                return fail_storage(StorageStatus::invalid);
+            }
             return row.word(2);
         }
         auto intern_prefix(i64 parent, i64 atom) -> i64 {
             const MetaRow leaf = meta(atom);
-            if (leaf.kind() != MetaTag::atom || parent < -1) { return fail_storage(StorageStatus::invalid); }
+            if (leaf.kind() != MetaTag::atom || parent < -1) {
+                return fail_storage(StorageStatus::invalid);
+            }
             i64 depth = 1;
             if (parent >= 0) {
                 const MetaRow prefix = meta(parent);
-                if (prefix.kind() != MetaTag::prefix || prefix.word(2) < 1
-                    || prefix.word(2) == 9223372036854775807) { return fail_storage(StorageStatus::invalid); }
+                if (prefix.kind() != MetaTag::prefix || prefix.word(2) < 1 || prefix.word(2) == 9223372036854775807) {
+                    return fail_storage(StorageStatus::invalid);
+                }
                 depth = prefix.word(2) + 1;
             }
             const i64 existing = index(2, parent, atom, 0, 0);
-            if (existing >= 0 || !good()) { return existing; }
+            if (existing >= 0 || !good()) {
+                return existing;
+            }
             MetaRow row = MetaRow(MetaTag::prefix);
-            row.set_word(0, parent); row.set_word(1, atom); row.set_word(2, depth);
+            row.set_word(0, parent);
+            row.set_word(1, atom);
+            row.set_word(2, depth);
             const i64 result = append_meta(row);
-            if (result < 0) { return -1; }
+            if (result < 0) {
+                return -1;
+            }
             return index_insert(2, parent, atom, 0, 0, result);
         }
         auto source_name(i64 reference) -> i64 {
             const i64 cached = index(6, reference, 0, 0, 0);
-            if (cached >= 0 || !good()) { return cached; }
+            if (cached >= 0 || !good()) {
+                return cached;
+            }
             const MetaRow source = meta(reference);
             if (source.kind() != MetaTag::source_reference || source.word(1) < 0 || source.word(2) <= source.word(1)
-                || source.word(2) > source_used) { return fail_storage(StorageStatus::invalid); }
+                || source.word(2) > source_used) {
+                return fail_storage(StorageStatus::invalid);
+            }
             const i64 count = source.word(2) - source.word(1);
-            i64 offset = 0; i64 line = 1; i64 start = 0; i64 ordinal = 0; i64 prefix = -1;
-            bool identifier = true; bool done = false;
+            i64 offset = 0;
+            i64 line = 1;
+            i64 start = 0;
+            i64 ordinal = 0;
+            i64 prefix = -1;
+            bool identifier = true;
+            bool done = false;
             while (!done && good()) {
                 const compiler_lexer::Cursor cursor = compiler_lexer::Cursor(offset, line, start);
                 const compiler_lexer::Lexeme token = scan_range(source.word(1), count, cursor);
-                if (token.kind() == compiler_lexer::Event::end_of_input) { done = true; }
-                else {
+                if (token.kind() == compiler_lexer::Event::end_of_input) {
+                    done = true;
+                } else {
                     if (token.kind() == compiler_lexer::Event::token) {
                         const i64 length = token.next_offset() - offset;
                         if (identifier) {
@@ -843,9 +1512,13 @@ export namespace compiler_resolver {
                                 const WorkRow position = WorkRow(offset, token.next_offset(), line, start, ordinal, 0);
                                 part = component_ref(source, position);
                             }
-                            if (!good()) { return -1; }
+                            if (!good()) {
+                                return -1;
+                            }
                             const i64 atom = intern_atom(part);
-                            if (atom < 0) { return -1; }
+                            if (atom < 0) {
+                                return -1;
+                            }
                             prefix = intern_prefix(prefix, atom);
                             identifier = false;
                         } else {
@@ -858,199 +1531,325 @@ export namespace compiler_resolver {
                         }
                         ordinal = ordinal + 1;
                     } else {
-                        if (token.kind() != compiler_lexer::Event::whitespace
-                            && token.kind() != compiler_lexer::Event::line_comment) {
+                        if (token.kind() != compiler_lexer::Event::whitespace && token.kind()
+                            != compiler_lexer::Event::line_comment) {
                             return fail_storage(StorageStatus::invalid);
                         }
                     }
                     if (token.next_offset() <= offset || token.next_offset() > count) {
                         return fail_storage(StorageStatus::invalid);
                     }
-                    offset = token.next_offset(); line = token.next_line(); start = token.next_line_start();
+                    offset = token.next_offset();
+                    line = token.next_line();
+                    start = token.next_line_start();
                 }
             }
-            if (!good()) { return -1; }
-            if (identifier || prefix < 0) { return fail_storage(StorageStatus::invalid); }
+            if (!good()) {
+                return -1;
+            }
+            if (identifier || prefix < 0) {
+                return fail_storage(StorageStatus::invalid);
+            }
             return index_insert(6, reference, 0, 0, 0, prefix);
         }
         auto prefix_parent(i64 prefix) -> i64 {
-            if (prefix == -1) { return -1; }
+            if (prefix == -1) {
+                return -1;
+            }
             const MetaRow row = meta(prefix);
-            if (row.kind() != MetaTag::prefix) { return fail_storage(StorageStatus::invalid); }
+            if (row.kind() != MetaTag::prefix) {
+                return fail_storage(StorageStatus::invalid);
+            }
             return row.word(0);
         }
         auto name_atom(i64 prefix) -> i64 {
             const MetaRow row = meta(prefix);
-            if (row.kind() != MetaTag::prefix) { return fail_storage(StorageStatus::invalid); }
+            if (row.kind() != MetaTag::prefix) {
+                return fail_storage(StorageStatus::invalid);
+            }
             return row.word(1);
         }
         auto prefix_join(i64 scope, i64 name) -> i64 {
-            if (name < -1 || scope < -1) { return fail_storage(StorageStatus::invalid); }
+            if (name < -1 || scope < -1) {
+                return fail_storage(StorageStatus::invalid);
+            }
             if (name >= 0) {
                 const MetaRow named = meta(name);
-                if (named.kind() != MetaTag::prefix) { return fail_storage(StorageStatus::invalid); }
+                if (named.kind() != MetaTag::prefix) {
+                    return fail_storage(StorageStatus::invalid);
+                }
             }
             if (scope >= 0) {
                 const MetaRow parent = meta(scope);
-                if (parent.kind() != MetaTag::prefix) { return fail_storage(StorageStatus::invalid); }
+                if (parent.kind() != MetaTag::prefix) {
+                    return fail_storage(StorageStatus::invalid);
+                }
             }
-            if (name == -1) { return scope; }
-            if (scope == -1) { return name; }
+            if (name == -1) {
+                return scope;
+            }
+            if (scope == -1) {
+                return name;
+            }
             const i64 base = work_used;
-            i64 part = name; i64 steps = 0;
+            i64 part = name;
+            i64 steps = 0;
             while (part >= 0 && good()) {
-                if (steps >= meta_used) { truncate_work(base); return fail_storage(StorageStatus::invalid); }
+                if (steps >= meta_used) {
+                    truncate_work(base);
+                    return fail_storage(StorageStatus::invalid);
+                }
                 steps = steps + 1;
                 const MetaRow row = meta(part);
-                if (row.kind() != MetaTag::prefix) { truncate_work(base); return fail_storage(StorageStatus::invalid); }
+                if (row.kind() != MetaTag::prefix) {
+                    truncate_work(base);
+                    return fail_storage(StorageStatus::invalid);
+                }
                 const WorkRow item = WorkRow(row.word(1), -1, -1, -1, -1, -1);
-                if (append_work(item) < 0) { truncate_work(base); return -1; }
+                if (append_work(item) < 0) {
+                    truncate_work(base);
+                    return -1;
+                }
                 part = row.word(0);
             }
-            i64 result = scope; i64 at = work_used;
+            i64 result = scope;
+            i64 at = work_used;
             while (at > base && good()) {
-                at = at - 1; const WorkRow item = work(at);
+                at = at - 1;
+                const WorkRow item = work(at);
                 result = intern_prefix(result, item.word(0));
             }
-            truncate_work(base); return result;
+            truncate_work(base);
+            return result;
         }
         auto compare_components(i64 first, i64 second, bool left_more, bool right_more) -> i64 {
-            if (first == second) { return 0; }
-            const MetaRow left = meta(first); const MetaRow right = meta(second);
-            if (left.kind() != MetaTag::atom || right.kind() != MetaTag::atom || left.word(0) < 0
-                || right.word(0) < 0 || left.word(1) < 1 || right.word(1) < 1 || left.word(0) > source_used
-                || right.word(0) > source_used || left.word(1) > source_used - left.word(0)
-                || right.word(1) > source_used - right.word(0)) { fail_storage(StorageStatus::invalid); return 0; }
+            if (first == second) {
+                return 0;
+            }
+            const MetaRow left = meta(first);
+            const MetaRow right = meta(second);
+            if (left.kind() != MetaTag::atom || right.kind() != MetaTag::atom || left.word(0) < 0 || right.word(0) < 0
+                || left.word(1) < 1 || right.word(1) < 1 || left.word(0) > source_used || right.word(0) > source_used
+                || left.word(1) > source_used - left.word(0) || right.word(1) > source_used - right.word(0)) {
+                fail_storage(StorageStatus::invalid);
+                return 0;
+            }
             i64 at = 0;
             while (at < left.word(1) && at < right.word(1)) {
-                const u8 a = sources.at(left.word(0) + at); const u8 b = sources.at(right.word(0) + at);
-                if (a < b) { return -1; }
-                if (a > b) { return 1; }
+                const u8 a = sources.at(left.word(0) + at);
+                const u8 b = sources.at(right.word(0) + at);
+                if (a < b) {
+                    return -1;
+                }
+                if (a > b) {
+                    return 1;
+                }
                 at = at + 1;
             }
             if (left.word(1) < right.word(1)) {
-                if (left_more && ':' > sources.at(right.word(0) + at)) { return 1; }
+                if (left_more && ':' > sources.at(right.word(0) + at)) {
+                    return 1;
+                }
                 return -1;
             }
             if (left.word(1) > right.word(1)) {
-                if (right_more && sources.at(left.word(0) + at) < ':') { return -1; }
+                if (right_more && sources.at(left.word(0) + at) < ':') {
+                    return -1;
+                }
                 return 1;
             }
             return 0;
         }
         auto prefix_compare(i64 first, i64 second) -> i64 {
-            if (first == second) { return 0; }
+            if (first == second) {
+                return 0;
+            }
             const i64 base = work_used;
-            i64 part = first; i64 steps = 0;
+            i64 part = first;
+            i64 steps = 0;
             while (part >= 0 && good()) {
-                if (steps >= meta_used) { truncate_work(base); return fail_storage(StorageStatus::invalid); }
+                if (steps >= meta_used) {
+                    truncate_work(base);
+                    return fail_storage(StorageStatus::invalid);
+                }
                 steps = steps + 1;
                 const MetaRow row = meta(part);
-                if (row.kind() != MetaTag::prefix) { truncate_work(base); return fail_storage(StorageStatus::invalid); }
+                if (row.kind() != MetaTag::prefix) {
+                    truncate_work(base);
+                    return fail_storage(StorageStatus::invalid);
+                }
                 const WorkRow item = WorkRow(row.word(1), -1, -1, -1, -1, -1);
-                if (append_work(item) < 0) { truncate_work(base); return 0; }
+                if (append_work(item) < 0) {
+                    truncate_work(base);
+                    return 0;
+                }
                 part = row.word(0);
             }
             const i64 middle = work_used;
-            part = second; steps = 0;
+            part = second;
+            steps = 0;
             while (part >= 0 && good()) {
-                if (steps >= meta_used) { truncate_work(base); return fail_storage(StorageStatus::invalid); }
+                if (steps >= meta_used) {
+                    truncate_work(base);
+                    return fail_storage(StorageStatus::invalid);
+                }
                 steps = steps + 1;
                 const MetaRow row = meta(part);
-                if (row.kind() != MetaTag::prefix) { truncate_work(base); return fail_storage(StorageStatus::invalid); }
+                if (row.kind() != MetaTag::prefix) {
+                    truncate_work(base);
+                    return fail_storage(StorageStatus::invalid);
+                }
                 const WorkRow item = WorkRow(row.word(1), -1, -1, -1, -1, -1);
-                if (append_work(item) < 0) { truncate_work(base); return 0; }
+                if (append_work(item) < 0) {
+                    truncate_work(base);
+                    return 0;
+                }
                 part = row.word(0);
             }
-            i64 left = middle; i64 right = work_used; i64 result = 0;
+            i64 left = middle;
+            i64 right = work_used;
+            i64 result = 0;
             while (left > base && right > middle && result == 0 && good()) {
-                left = left - 1; right = right - 1;
-                const WorkRow a = work(left); const WorkRow b = work(right);
+                left = left - 1;
+                right = right - 1;
+                const WorkRow a = work(left);
+                const WorkRow b = work(right);
                 result = compare_components(a.word(0), b.word(0), left > base, right > middle);
             }
             if (result == 0) {
-                if (left > base) { result = 1; }
-                if (right > middle) { result = -1; }
+                if (left > base) {
+                    result = 1;
+                }
+                if (right > middle) {
+                    result = -1;
+                }
             }
-            truncate_work(base); return result;
+            truncate_work(base);
+            return result;
         }
         auto append_text(builtin::span<const u8> text) -> i64 {
-            if (!good()) { return -1; }
+            if (!good()) {
+                return -1;
+            }
             const i64 count = text.size();
-            if (count < 0 || count > 2147483646 || count > 9223372036854775807 - source_used) { return fail_storage(StorageStatus::invalid); }
+            if (count < 0 || count > 2147483646 || count > 9223372036854775807 - source_used) {
+                return fail_storage(StorageStatus::invalid);
+            }
             const i64 required = source_used + count;
             if (required > sources.size()) {
                 const i64 capacity = next_capacity(sources.size(), required);
-                if (capacity < required || !sources.try_resize(capacity)) { return fail_storage(StorageStatus::allocation); }
+                if (capacity < required || !sources.try_resize(capacity)) {
+                    return fail_storage(StorageStatus::allocation);
+                }
             }
-            i64 at = 0; i64 line = 1; i64 column = 1;
+            i64 at = 0;
+            i64 line = 1;
+            i64 column = 1;
             while (at < count) {
                 const u8 byte = text.at(at);
-                if (!sources.set(source_used + at, byte)) { return fail_storage(StorageStatus::invalid); }
-                if (byte == '\n') { line = line + 1; column = 1; } else { column = column + 1; }
+                if (!sources.set(source_used + at, byte)) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+                if (byte == '\n') {
+                    line = line + 1;
+                    column = 1;
+                } else {
+                    column = column + 1;
+                }
                 at = at + 1;
             }
             MetaRow row = MetaRow(MetaTag::source_reference);
-            row.set_word(0, -1); row.set_word(1, source_used); row.set_word(2, required);
-            row.set_word(3, 1); row.set_word(4, 1); row.set_word(5, 0); row.set_word(6, 0);
-            row.set_word(7, line); row.set_word(8, column); row.set_word(9, meta_used);
+            row.set_word(0, -1);
+            row.set_word(1, source_used);
+            row.set_word(2, required);
+            row.set_word(3, 1);
+            row.set_word(4, 1);
+            row.set_word(5, 0);
+            row.set_word(6, 0);
+            row.set_word(7, line);
+            row.set_word(8, column);
+            row.set_word(9, meta_used);
             source_used = required;
             return append_meta(row);
         }
         auto order_module(i64 module_id, i64 order, i64 scope, bool root) -> bool {
-            if (!good() || module_id < 0 || module_id >= modules || order < 0 || order >= modules || scope < 0
-                || scope >= modules || (root && scope != 0) || (!root && scope == 0)) {
-                fail_storage(StorageStatus::invalid); return false;
+            if (!good() || module_id < 0 || module_id >= modules || order < 0 || order >= modules || scope < 0 || scope
+                >= modules || (root && scope != 0) || (!root && scope == 0)) {
+                fail_storage(StorageStatus::invalid);
+                return false;
             }
             MetaRow row = meta(module_id);
-            if (row.kind() != MetaTag::module_unit || row.word(12) != -1) { fail_storage(StorageStatus::invalid); return false; }
+            if (row.kind() != MetaTag::module_unit || row.word(12) != -1) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
             i64 at = 0;
             while (at < modules) {
                 const MetaRow existing = meta(at);
-                if (existing.kind() == MetaTag::module_unit && existing.word(12) >= 0
-                    && (existing.word(12) == order || existing.word(13) == scope)) {
-                    fail_storage(StorageStatus::invalid); return false;
+                if (existing.kind() == MetaTag::module_unit && existing.word(12) >= 0 && (existing.word(12) == order
+                    || existing.word(13) == scope)) {
+                    fail_storage(StorageStatus::invalid);
+                    return false;
                 }
                 at = at + 1;
             }
-            row.set_word(12, order); row.set_word(13, scope);
-            if (root) { row.set_word(14, 1); } else { row.set_word(14, 0); }
+            row.set_word(12, order);
+            row.set_word(13, scope);
+            if (root) {
+                row.set_word(14, 1);
+            } else {
+                row.set_word(14, 0);
+            }
             return set_meta(module_id, row);
         }
-        auto import_head(i64 module_id) -> i64 { return index(3, module_id, 0, 0, 0); }
+        auto import_head(i64 module_id) -> i64 {
+            return index(3, module_id, 0, 0, 0);
+        }
         auto bind_import(i64 module_id, i64 import_node, i64 target) -> bool {
             if (!good() || module_id < 0 || module_id >= modules || target < 0 || target >= modules) {
-                fail_storage(StorageStatus::invalid); return false;
+                fail_storage(StorageStatus::invalid);
+                return false;
             }
-            const MetaRow from = meta(module_id); const MetaRow to = meta(target);
+            const MetaRow from = meta(module_id);
+            const MetaRow to = meta(target);
             const SyntaxRow declaration = syntax(import_node);
-            if (from.kind() != MetaTag::module_unit || to.kind() != MetaTag::module_unit
-                || declaration.kind() != SyntaxTag::declaration || declaration.word(11) != module_id
-                || declaration.declaration_kind() != compiler_parser::SyntaxKind::import_name
-                || index(5, module_id, import_node, 0, 0) >= 0) {
-                fail_storage(StorageStatus::invalid); return false;
+            if (from.kind() != MetaTag::module_unit || to.kind() != MetaTag::module_unit || declaration.kind()
+                != SyntaxTag::declaration || declaration.word(11) != module_id || declaration.declaration_kind()
+                != compiler_parser::SyntaxKind::import_name || index(5, module_id, import_node, 0, 0) >= 0) {
+                fail_storage(StorageStatus::invalid);
+                return false;
             }
             // Ingestion projects the final identifier into the otherwise unused
             // import binding slot, so trailing trivia never widens its name span.
             const i64 reference = name_range(declaration.word(0), declaration.word(6));
-            if (reference < 0) { return false; }
+            if (reference < 0) {
+                return false;
+            }
             MetaRow row = MetaRow(MetaTag::import_name);
-            row.set_word(0, module_id); row.set_word(1, target); row.set_word(2, import_node);
+            row.set_word(0, module_id);
+            row.set_word(1, target);
+            row.set_word(2, import_node);
             row.set_word(3, reference);
             const i64 result = append_meta(row);
-            if (result < 0) { return false; }
+            if (result < 0) {
+                return false;
+            }
             const i64 tail = index(4, module_id, 0, 0, 0);
             if (tail < 0) {
-                if (index_insert(3, module_id, 0, 0, 0, result) < 0 || index_insert(4, module_id, 0, 0, 0, result) < 0) {
+                if (index_insert(3, module_id, 0, 0, 0, result) < 0 || index_insert(4, module_id, 0, 0, 0, result)
+                    < 0) {
                     return false;
                 }
             } else {
                 MetaRow previous = meta(tail);
                 if (previous.kind() != MetaTag::import_name || previous.word(4) != -1) {
-                    fail_storage(StorageStatus::invalid); return false;
+                    fail_storage(StorageStatus::invalid);
+                    return false;
                 }
                 previous.set_word(4, result);
-                if (!set_meta(tail, previous) || !index_replace(4, module_id, 0, 0, 0, result)) { return false; }
+                if (!set_meta(tail, previous) || !index_replace(4, module_id, 0, 0, 0, result)) {
+                    return false;
+                }
             }
             return index_insert(5, module_id, import_node, 0, 0, result) == result;
         }
@@ -1069,13 +1868,17 @@ export namespace compiler_resolver {
         const WorkRow work_fill = WorkRow(-1, -1, -1, -1, -1, -1);
         builtin::OwnedValues<WorkRow> work = region.try_allocate(0, work_fill);
         Session session = Session(region, move(bytes), move(syntax), move(meta), move(resolved), move(work));
-        if (!session.good()) { session.fail_storage(StorageStatus::allocation); }
+        if (!session.good()) {
+            session.fail_storage(StorageStatus::allocation);
+        }
         return move(session);
     }
     auto append_source(Session& session, builtin::span<const u8> source) -> i64 {
         return session.append_source(source);
     }
-    auto append_text(Session& session, builtin::span<const u8> text) -> i64 { return session.append_text(text); }
+    auto append_text(Session& session, builtin::span<const u8> text) -> i64 {
+        return session.append_text(text);
+    }
     auto order_module(Session& session, i64 module_id, i64 order, i64 scope, bool root) -> bool {
         return session.order_module(module_id, order, scope, root);
     }
@@ -1083,52 +1886,79 @@ export namespace compiler_resolver {
         return session.bind_import(module_id, node, target);
     }
     auto count(const Session& session, i64 pool) -> i64 {
-        if (pool == 0) { return session.source_size(); }
-        if (pool == 1) { return session.syntax_count(); }
-        if (pool == 2) { return session.meta_count(); }
-        if (pool == 3) { return session.resolved_count(); }
-        if (pool == 4) { return session.work_count(); }
-        if (pool == 5) { return session.module_count(); }
+        if (pool == 0) {
+            return session.source_size();
+        }
+        if (pool == 1) {
+            return session.syntax_count();
+        }
+        if (pool == 2) {
+            return session.meta_count();
+        }
+        if (pool == 3) {
+            return session.resolved_count();
+        }
+        if (pool == 4) {
+            return session.work_count();
+        }
+        if (pool == 5) {
+            return session.module_count();
+        }
         return -1;
     }
-    auto read_source(const Session& session, i64 index) -> i64 { return session.view_source(index); }
+    auto read_source(const Session& session, i64 index) -> i64 {
+        return session.view_source(index);
+    }
     auto read_syntax(const Session& session, i64 index) -> SyntaxRow {
-        const SyntaxRow row = session.view_syntax(index); return row;
+        const SyntaxRow row = session.view_syntax(index);
+        return row;
     }
     auto read_meta(const Session& session, i64 index) -> MetaRow {
-        const MetaRow row = session.view_meta(index); return row;
+        const MetaRow row = session.view_meta(index);
+        return row;
     }
     auto read_resolved(const Session& session, i64 index) -> ResolvedRow {
-        const ResolvedRow row = session.view_resolved(index); return row;
+        const ResolvedRow row = session.view_resolved(index);
+        return row;
     }
     auto status(const Session& session) -> SessionStatus {
         const SessionStatus result = SessionStatus(session.storage_status(), session.error_code(), session.error_node(),
             session.error_first(), session.error_second());
         return result;
     }
-    auto release(builtin::ByteRegion region, Session session) -> i64 { return 0; }
-    auto release_pair(builtin::ByteRegion region, Session session, compiler_parser::AstArena parsed) -> i64 { return 0; }
+    auto release(builtin::ByteRegion region, Session session) -> i64 {
+        return 0;
+    }
+    auto release_pair(builtin::ByteRegion region, Session session, compiler_parser::AstArena parsed) -> i64 {
+        return 0;
+    }
 }
 
 namespace compiler_resolver {
     auto translate_index(Session& session, i64 base, i64 count, i64 index) -> i64 {
-        if (index == -1) { return -1; }
+        if (index == -1) {
+            return -1;
+        }
         if (base < 0 || count < 0 || index < 0 || index >= count || index > 9223372036854775807 - base) {
             return session.fail_storage(StorageStatus::invalid);
         }
         return base + index;
     }
     auto request_source(Session& session, i64 row, i64 slot, i64 ordinal, i64 half) -> bool {
-        if (ordinal == -1 && half == 0) { return true; }
+        if (ordinal == -1 && half == 0) {
+            return true;
+        }
         if (ordinal < 0 || (half != 0 && half != 1)) {
-            session.fail_storage(StorageStatus::invalid); return false;
+            session.fail_storage(StorageStatus::invalid);
+            return false;
         }
         const WorkRow request = WorkRow(ordinal, row, slot, half, -1, -1);
         return session.append_work(request) >= 0;
     }
     auto source_requests(Session& session, i64 begin, i64 end) -> bool {
         if (session.work_count() != 0 || begin < 0 || end < begin || end > session.syntax_count()) {
-            session.fail_storage(StorageStatus::invalid); return false;
+            session.fail_storage(StorageStatus::invalid);
+            return false;
         }
         i64 at = begin;
         while (at < end && session.good()) {
@@ -1138,17 +1968,22 @@ namespace compiler_resolver {
                 request_source(session, at, 4, row.word(4), 0);
                 request_source(session, at, 5, row.word(5), 0);
             } else {
-                if (row.kind() == SyntaxTag::edge) { request_source(session, at, 4, row.word(4), 0); }
-                else {
+                if (row.kind() == SyntaxTag::edge) {
+                    request_source(session, at, 4, row.word(4), 0);
+                } else {
                     if (row.kind() == SyntaxTag::type) {
                         request_source(session, at, 0, row.word(0), 0);
                         request_source(session, at, 1, row.word(1), 0);
-                        if (row.word(2) < 0) { session.fail_storage(StorageStatus::invalid); }
-                        else { request_source(session, at, 2, row.word(2) / 2, row.word(2) % 2); }
+                        if (row.word(2) < 0) {
+                            session.fail_storage(StorageStatus::invalid);
+                        } else {
+                            request_source(session, at, 2, row.word(2) / 2, row.word(2) % 2);
+                        }
                         request_source(session, at, 5, row.word(5), 0);
                     } else {
-                        if (row.kind() != SyntaxTag::declaration) { session.fail_storage(StorageStatus::invalid); }
-                        else {
+                        if (row.kind() != SyntaxTag::declaration) {
+                            session.fail_storage(StorageStatus::invalid);
+                        } else {
                             request_source(session, at, 0, row.word(0), 0);
                             request_source(session, at, 1, row.word(1), 0);
                             request_source(session, at, 6, row.word(6), 0);
@@ -1162,27 +1997,45 @@ namespace compiler_resolver {
         return session.good();
     }
     auto request_less(Session& session, i64 first, i64 second) -> bool {
-        const WorkRow left = session.work(first); const WorkRow right = session.work(second);
-        if (left.word(0) != right.word(0)) { return left.word(0) < right.word(0); }
-        if (left.word(3) != right.word(3)) { return left.word(3) < right.word(3); }
-        if (left.word(1) != right.word(1)) { return left.word(1) < right.word(1); }
+        const WorkRow left = session.work(first);
+        const WorkRow right = session.work(second);
+        if (left.word(0) != right.word(0)) {
+            return left.word(0) < right.word(0);
+        }
+        if (left.word(3) != right.word(3)) {
+            return left.word(3) < right.word(3);
+        }
+        if (left.word(1) != right.word(1)) {
+            return left.word(1) < right.word(1);
+        }
         return left.word(2) < right.word(2);
     }
     auto swap_requests(Session& session, i64 first, i64 second) -> bool {
-        const WorkRow left = session.work(first); const WorkRow right = session.work(second);
+        const WorkRow left = session.work(first);
+        const WorkRow right = session.work(second);
         return session.set_work(first, right) && session.set_work(second, left);
     }
     auto sift_requests(Session& session, i64 initial, i64 end) -> bool {
-        i64 root = initial; bool finished = false;
+        i64 root = initial;
+        bool finished = false;
         while (!finished && session.good()) {
-            if (end < 2 || root > (end - 2) / 2) { finished = true; }
-            else {
-                const i64 left = root * 2 + 1; i64 largest = root;
-                if (request_less(session, largest, left)) { largest = left; }
-                if (left + 1 < end && request_less(session, largest, left + 1)) { largest = left + 1; }
-                if (largest == root) { finished = true; }
-                else {
-                    if (!swap_requests(session, root, largest)) { return false; }
+            if (end <= 1 || root > (end - 2) / 2) {
+                finished = true;
+            } else {
+                const i64 left = root * 2 + 1;
+                i64 largest = root;
+                if (request_less(session, largest, left)) {
+                    largest = left;
+                }
+                if (left + 1 < end && request_less(session, largest, left + 1)) {
+                    largest = left + 1;
+                }
+                if (largest == root) {
+                    finished = true;
+                } else {
+                    if (!swap_requests(session, root, largest)) {
+                        return false;
+                    }
                     root = largest;
                 }
             }
@@ -1190,50 +2043,75 @@ namespace compiler_resolver {
         return session.good();
     }
     auto sort_requests(Session& session) -> bool {
-        const i64 count = session.work_count(); i64 root = count / 2;
-        while (root > 0 && session.good()) { root = root - 1; sift_requests(session, root, count); }
+        const i64 count = session.work_count();
+        i64 root = count / 2;
+        while (root > 0 && session.good()) {
+            root = root - 1;
+            sift_requests(session, root, count);
+        }
         i64 end = count;
         while (end > 1 && session.good()) {
             end = end - 1;
-            if (!swap_requests(session, 0, end) || !sift_requests(session, 0, end)) { return false; }
+            if (!swap_requests(session, 0, end) || !sift_requests(session, 0, end)) {
+                return false;
+            }
         }
         return session.good();
     }
     auto project_sources(Session& session, i64 module_id) -> bool {
-        if (!sort_requests(session)) { session.truncate_work(0); return false; }
+        if (!sort_requests(session)) {
+            session.truncate_work(0);
+            return false;
+        }
         const MetaRow source = session.meta(module_id);
         if (source.kind() != MetaTag::module_source) {
-            session.fail_storage(StorageStatus::invalid); session.truncate_work(0); return false;
+            session.fail_storage(StorageStatus::invalid);
+            session.truncate_work(0);
+            return false;
         }
-        i64 request = 0; i64 offset = 0; i64 line = 1; i64 line_start = 0; i64 ordinal = 0;
+        i64 request = 0;
+        i64 offset = 0;
+        i64 line = 1;
+        i64 line_start = 0;
+        i64 ordinal = 0;
         while (request < session.work_count() && session.good()) {
             const compiler_lexer::Cursor cursor = compiler_lexer::Cursor(offset, line, line_start);
             const compiler_lexer::Lexeme token = session.scan(module_id, cursor);
             if (token.kind() == compiler_lexer::Event::token || token.kind() == compiler_lexer::Event::end_of_input) {
                 const WorkRow pending = session.work(request);
-                if (pending.word(0) < ordinal || (token.kind() == compiler_lexer::Event::end_of_input
-                    && pending.word(0) != ordinal)) { session.fail_storage(StorageStatus::invalid); }
-                i64 previous_half = -1; i64 reference = -1; bool complete = false;
+                if (pending.word(0) < ordinal || (token.kind() == compiler_lexer::Event::end_of_input && pending.word(0)
+                    != ordinal)) {
+                    session.fail_storage(StorageStatus::invalid);
+                }
+                i64 previous_half = -1;
+                i64 reference = -1;
+                bool complete = false;
                 while (!complete && request < session.work_count() && session.good()) {
                     const WorkRow item = session.work(request);
-                    if (item.word(0) != ordinal) { complete = true; }
-                    else {
+                    if (item.word(0) != ordinal) {
+                        complete = true;
+                    } else {
                         const i64 half = item.word(3);
                         if (half < 0 || half > 1 || (half == 1 && (token.kind() != compiler_lexer::Event::token
-                            || token.next_offset() - offset != 2
-                            || session.source_byte(source.word(0) + offset) != '>'
+                            || token.next_offset() - offset != 2 || session.source_byte(source.word(0) + offset) != '>'
                             || session.source_byte(source.word(0) + offset + 1) != '>'))) {
                             session.fail_storage(StorageStatus::invalid);
                         } else {
                             if (half != previous_half) {
                                 MetaRow row = MetaRow(MetaTag::source_reference);
-                                row.set_word(0, module_id); row.set_word(1, source.word(0) + offset + half);
-                                row.set_word(2, source.word(0) + token.next_offset()); row.set_word(3, line);
-                                row.set_word(4, offset - line_start + 1 + half); row.set_word(5, ordinal);
-                                row.set_word(6, half); row.set_word(7, token.next_line());
-                                row.set_word(8, token.next_offset() - token.next_line_start() + 1); row.set_word(9, 0);
+                                row.set_word(0, module_id);
+                                row.set_word(1, source.word(0) + offset + half);
+                                row.set_word(2, source.word(0) + token.next_offset());
+                                row.set_word(3, line);
+                                row.set_word(4, offset - line_start + 1 + half);
+                                row.set_word(5, ordinal);
+                                row.set_word(6, half);
+                                row.set_word(7, token.next_line());
+                                row.set_word(8, token.next_offset() - token.next_line_start() + 1);
+                                row.set_word(9, 0);
                                 reference = session.append_meta(row);
-                                if (reference >= 0 && session.index_insert(9, module_id, ordinal, half, 0, reference) != reference) {
+                                if (reference >= 0 && session.index_insert(9, module_id, ordinal, half, 0, reference)
+                                    != reference) {
                                     session.fail_storage(StorageStatus::invalid);
                                 }
                                 previous_half = half;
@@ -1250,93 +2128,129 @@ namespace compiler_resolver {
                     }
                 }
                 if (token.kind() == compiler_lexer::Event::end_of_input) {
-                    if (request != session.work_count()) { session.fail_storage(StorageStatus::invalid); }
-                } else { ordinal = ordinal + 1; }
+                    if (request != session.work_count()) {
+                        session.fail_storage(StorageStatus::invalid);
+                    }
+                } else {
+                    ordinal = ordinal + 1;
+                }
             } else {
-                if (token.kind() != compiler_lexer::Event::whitespace && token.kind() != compiler_lexer::Event::line_comment) {
+                if (token.kind() != compiler_lexer::Event::whitespace && token.kind()
+                    != compiler_lexer::Event::line_comment) {
                     session.fail_storage(StorageStatus::invalid);
                 }
             }
-            if (session.good() && token.kind() != compiler_lexer::Event::end_of_input
-                && (token.next_offset() <= offset || token.next_offset() > source.word(1))) {
+            if (session.good() && token.kind() != compiler_lexer::Event::end_of_input && (token.next_offset() <= offset
+                || token.next_offset() > source.word(1))) {
                 session.fail_storage(StorageStatus::invalid);
             }
-            offset = token.next_offset(); line = token.next_line(); line_start = token.next_line_start();
+            offset = token.next_offset();
+            line = token.next_line();
+            line_start = token.next_line_start();
         }
-        session.truncate_work(0); return session.good();
+        session.truncate_work(0);
+        return session.good();
     }
 }
 
 export namespace compiler_resolver {
     // Both owning inputs are transferred into distinct generated argument slots.
     // Every return transfers Session and normally drops parsed, including failure.
-    auto ingest(builtin::ByteRegion region, Session session, compiler_parser::AstArena parsed,
-        i64 module_id, i64 root) -> Session {
-        if (!session.good()) { return move(session); }
+    auto ingest(builtin::ByteRegion region, Session session, compiler_parser::AstArena parsed, i64 module_id,
+        i64 root) -> Session {
+        if (!session.good()) {
+            return move(session);
+        }
         if (module_id < 0 || module_id >= session.module_count() || module_id != session.module_count() - 1
             || !parsed.ok() || parsed.stack_size() != 0 || session.work_count() != 0) {
-            session.fail_storage(StorageStatus::invalid); return move(session);
+            session.fail_storage(StorageStatus::invalid);
+            return move(session);
         }
         MetaRow module_row = session.meta(module_id);
-        const i64 expressions = parsed.size(); const i64 edges = parsed.arguments();
-        const i64 types = parsed.types(); const i64 declarations = parsed.syntax_size();
+        const i64 expressions = parsed.size();
+        const i64 edges = parsed.arguments();
+        const i64 types = parsed.types();
+        const i64 declarations = parsed.syntax_size();
         const i64 bytes = module_row.word(1);
         if (module_row.kind() != MetaTag::module_source || module_row.word(10) != -1 || bytes < 0 || bytes > 1048576
-            || module_row.word(0) < 0 || module_row.word(0) > session.source_size()
-            || bytes > session.source_size() - module_row.word(0) || expressions < 0 || edges < 0
-            || types < 0 || declarations < 1 || expressions > bytes || edges > bytes || types > bytes
-            || declarations > bytes || root < 0 || root >= declarations) {
-            session.fail_storage(StorageStatus::invalid); return move(session);
+            || module_row.word(0) < 0 || module_row.word(0) > session.source_size() || bytes > session.source_size()
+            - module_row.word(0) || expressions < 0 || edges < 0 || types < 0 || declarations < 1 || expressions > bytes
+            || edges > bytes || types > bytes || declarations > bytes || root < 0 || root >= declarations) {
+            session.fail_storage(StorageStatus::invalid);
+            return move(session);
         }
         const compiler_parser::SyntaxNode parsed_root = parsed.syntax_at(root);
         if (parsed_root.kind() != compiler_parser::SyntaxKind::module_definition || parsed_root.previous() != -1) {
-            session.fail_storage(StorageStatus::invalid); return move(session);
+            session.fail_storage(StorageStatus::invalid);
+            return move(session);
         }
         const i64 total = expressions + edges + types + declarations;
         const i64 first = session.syntax_count();
         if (total > 9223372036854775807 - first) {
-            session.fail_storage(StorageStatus::invalid); return move(session);
+            session.fail_storage(StorageStatus::invalid);
+            return move(session);
         }
-        const i64 expression_base = first; const i64 edge_base = first + expressions;
-        const i64 type_base = edge_base + edges; const i64 declaration_base = type_base + types;
-        module_row.set_word(2, expression_base); module_row.set_word(3, expressions);
-        module_row.set_word(4, edge_base); module_row.set_word(5, edges);
-        module_row.set_word(6, type_base); module_row.set_word(7, types);
-        module_row.set_word(8, declaration_base); module_row.set_word(9, declarations);
-        if (!session.set_meta(module_id, module_row)) { return move(session); }
+        const i64 expression_base = first;
+        const i64 edge_base = first + expressions;
+        const i64 type_base = edge_base + edges;
+        const i64 declaration_base = type_base + types;
+        module_row.set_word(2, expression_base);
+        module_row.set_word(3, expressions);
+        module_row.set_word(4, edge_base);
+        module_row.set_word(5, edges);
+        module_row.set_word(6, type_base);
+        module_row.set_word(7, types);
+        module_row.set_word(8, declaration_base);
+        module_row.set_word(9, declarations);
+        if (!session.set_meta(module_id, module_row)) {
+            return move(session);
+        }
         i64 at = 0;
         while (at < expressions && session.good()) {
             const compiler_parser::AstNode node = parsed.at(at);
             SyntaxRow row = SyntaxRow(SyntaxTag::expression);
-            row.set_expression_kind(node.kind()); row.set_word(0, node.token()); row.set_word(3, node.depth());
-            row.set_word(4, node.last()); row.set_word(5, node.close()); row.set_word(11, module_id);
+            row.set_expression_kind(node.kind());
+            row.set_word(0, node.token());
+            row.set_word(3, node.depth());
+            row.set_word(4, node.last());
+            row.set_word(5, node.close());
+            row.set_word(11, module_id);
             if (node.token() < 0 || node.last() < node.token() || node.close() < node.last() || node.depth() < 1
                 || node.depth() > 128 || node.kind() == compiler_parser::NodeKind::invalid) {
                 session.fail_storage(StorageStatus::invalid);
             } else {
-                if (node.kind() == compiler_parser::NodeKind::literal || node.kind() == compiler_parser::NodeKind::name) {
-                    if (node.first() != -1 || node.second() != -1) { session.fail_storage(StorageStatus::invalid); }
+                if (node.kind() == compiler_parser::NodeKind::literal || node.kind()
+                    == compiler_parser::NodeKind::name) {
+                    if (node.first() != -1 || node.second() != -1) {
+                        session.fail_storage(StorageStatus::invalid);
+                    }
                 } else {
-                    if (node.kind() == compiler_parser::NodeKind::unary || node.kind() == compiler_parser::NodeKind::member) {
+                    if (node.kind() == compiler_parser::NodeKind::unary || node.kind()
+                        == compiler_parser::NodeKind::member) {
                         if (node.first() < 0 || node.first() >= at || node.second() != -1) {
                             session.fail_storage(StorageStatus::invalid);
                         }
                         row.set_word(1, translate_index(session, expression_base, expressions, node.first()));
                     } else {
-                        if (node.kind() == compiler_parser::NodeKind::binary || node.kind() == compiler_parser::NodeKind::index) {
+                        if (node.kind() == compiler_parser::NodeKind::binary || node.kind()
+                            == compiler_parser::NodeKind::index) {
                             if (node.first() < 0 || node.first() >= at || node.second() < 0 || node.second() >= at) {
                                 session.fail_storage(StorageStatus::invalid);
                             }
                             row.set_word(1, translate_index(session, expression_base, expressions, node.first()));
                             row.set_word(2, translate_index(session, expression_base, expressions, node.second()));
                         } else {
-                            if (node.kind() != compiler_parser::NodeKind::call && node.kind() != compiler_parser::NodeKind::method_call
-                                && node.kind() != compiler_parser::NodeKind::array_literal
-                                && node.kind() != compiler_parser::NodeKind::construct && node.kind() != compiler_parser::NodeKind::array_zero) {
+                            if (node.kind() != compiler_parser::NodeKind::call && node.kind()
+                                != compiler_parser::NodeKind::method_call && node.kind()
+                                != compiler_parser::NodeKind::array_literal && node.kind()
+                                != compiler_parser::NodeKind::construct && node.kind()
+                                != compiler_parser::NodeKind::array_zero) {
                                 session.fail_storage(StorageStatus::invalid);
                             }
                             if (node.second() < 0 || node.second() > edges || (node.first() == -1 && node.second() != 0)
-                                || (node.first() >= 0 && node.second() == 0)) { session.fail_storage(StorageStatus::invalid); }
+                                || (node.first() >= 0 && node.second() == 0)) {
+                                session.fail_storage(StorageStatus::invalid);
+                            }
                             row.set_word(1, translate_index(session, edge_base, edges, node.first()));
                             row.set_word(2, node.second());
                         }
@@ -1353,14 +2267,19 @@ export namespace compiler_resolver {
             const compiler_parser::ChildEdge node = parsed.edge(at);
             SyntaxRow row = SyntaxRow(SyntaxTag::edge);
             if (node.child() < 0 || node.child() >= expressions || node.previous() < -1 || node.previous() >= at
-                || node.count() < 1 || node.count() > edges || node.depth() < 1 || node.depth() > 128 || node.field() < -1
-                || (node.previous() == -1 && node.count() != 1)) {
+                || node.count() < 1 || node.count() > edges || node.depth() < 1 || node.depth() > 128 || node.field()
+                < -1 || (node.previous() == -1 && node.count() != 1)) {
                 session.fail_storage(StorageStatus::invalid);
             }
             row.set_word(0, translate_index(session, expression_base, expressions, node.child()));
             row.set_word(1, translate_index(session, edge_base, edges, node.previous()));
-            row.set_word(2, node.count()); row.set_word(3, node.depth()); row.set_word(4, node.field()); row.set_word(11, module_id);
-            if (session.good() && session.append_syntax(row) != edge_base + at) { session.fail_storage(StorageStatus::invalid); }
+            row.set_word(2, node.count());
+            row.set_word(3, node.depth());
+            row.set_word(4, node.field());
+            row.set_word(11, module_id);
+            if (session.good() && session.append_syntax(row) != edge_base + at) {
+                session.fail_storage(StorageStatus::invalid);
+            }
             at = at + 1;
         }
         at = 0;
@@ -1369,16 +2288,24 @@ export namespace compiler_resolver {
             SyntaxRow row = SyntaxRow(SyntaxTag::type);
             if (node.kind() == compiler_parser::TypeKind::invalid || node.token() < 0 || node.last() < node.token()
                 || node.last() > 4611686018427387903 || node.close() < node.last() * 2 || node.first() < -1
-                || node.first() >= at || node.second() < -1 || node.second() >= at
-                || (node.first() == -1 && node.second() != -1) || (node.first() >= 0 && node.first() == node.second())
-                || node.owner() < -1
-                || node.role() < 0 || node.role() > 3 || (node.owner() == -1 && node.role() != 0)
-                || (node.owner() >= 0 && node.role() == 0)) { session.fail_storage(StorageStatus::invalid); }
-            row.set_type_kind(node.kind()); row.set_word(0, node.token()); row.set_word(1, node.last());
-            row.set_word(2, node.close()); row.set_word(3, translate_index(session, type_base, types, node.first()));
-            row.set_word(4, translate_index(session, type_base, types, node.second())); row.set_word(5, node.owner());
-            row.set_word(6, node.role()); row.set_word(11, module_id);
-            if (session.good() && session.append_syntax(row) != type_base + at) { session.fail_storage(StorageStatus::invalid); }
+                || node.first() >= at || node.second() < -1 || node.second() >= at || (node.first() == -1
+                && node.second() != -1) || (node.first() >= 0 && node.first() == node.second()) || node.owner() < -1
+                || node.role() < 0 || node.role() > 3 || (node.owner() == -1 && node.role() != 0) || (node.owner() >= 0
+                && node.role() == 0)) {
+                session.fail_storage(StorageStatus::invalid);
+            }
+            row.set_type_kind(node.kind());
+            row.set_word(0, node.token());
+            row.set_word(1, node.last());
+            row.set_word(2, node.close());
+            row.set_word(3, translate_index(session, type_base, types, node.first()));
+            row.set_word(4, translate_index(session, type_base, types, node.second()));
+            row.set_word(5, node.owner());
+            row.set_word(6, node.role());
+            row.set_word(11, module_id);
+            if (session.good() && session.append_syntax(row) != type_base + at) {
+                session.fail_storage(StorageStatus::invalid);
+            }
             at = at + 1;
         }
         at = 0;
@@ -1388,24 +2315,37 @@ export namespace compiler_resolver {
             if (node.kind() == compiler_parser::SyntaxKind::invalid || node.token() < 0 || node.end() <= node.token()
                 || node.previous() < -1 || node.previous() >= at || node.body() < -1 || node.body() >= at
                 || node.other() < -1 || node.other() >= at || node.binding() < -1 || node.borrow_site() < -1
-                || node.mutable_binding() < 0 || node.mutable_binding() > 1) { session.fail_storage(StorageStatus::invalid); }
-            row.set_declaration_kind(node.kind()); row.set_word(0, node.token()); row.set_word(1, node.end());
+                || node.mutable_binding() < 0 || node.mutable_binding() > 1) {
+                session.fail_storage(StorageStatus::invalid);
+            }
+            row.set_declaration_kind(node.kind());
+            row.set_word(0, node.token());
+            row.set_word(1, node.end());
             row.set_word(2, translate_index(session, declaration_base, declarations, node.previous()));
             row.set_word(3, translate_index(session, expression_base, expressions, node.expression()));
             row.set_word(4, translate_index(session, expression_base, expressions, node.target()));
-            row.set_word(5, translate_index(session, type_base, types, node.type())); row.set_word(6, node.binding());
-            if (node.kind() == compiler_parser::SyntaxKind::import_name) { row.set_word(6, node.end() - 1); }
+            row.set_word(5, translate_index(session, type_base, types, node.type()));
+            row.set_word(6, node.binding());
+            if (node.kind() == compiler_parser::SyntaxKind::import_name) {
+                row.set_word(6, node.end() - 1);
+            }
             row.set_word(7, translate_index(session, declaration_base, declarations, node.body()));
             row.set_word(8, translate_index(session, declaration_base, declarations, node.other()));
-            row.set_word(9, node.mutable_binding()); row.set_word(10, node.borrow_site()); row.set_word(11, module_id);
-            if (session.good() && session.append_syntax(row) != declaration_base + at) { session.fail_storage(StorageStatus::invalid); }
+            row.set_word(9, node.mutable_binding());
+            row.set_word(10, node.borrow_site());
+            row.set_word(11, module_id);
+            if (session.good() && session.append_syntax(row) != declaration_base + at) {
+                session.fail_storage(StorageStatus::invalid);
+            }
             at = at + 1;
         }
-        if (!session.good() || session.syntax_count() != first + total || !source_requests(session, first, first + total)
-            || !project_sources(session, module_id)) {
-            session.truncate_work(0); return move(session);
+        if (!session.good() || session.syntax_count() != first + total || !source_requests(session, first, first
+            + total) || !project_sources(session, module_id)) {
+            session.truncate_work(0);
+            return move(session);
         }
-        module_row.set_word(10, declaration_base + root); module_row.set_kind(MetaTag::module_unit);
+        module_row.set_word(10, declaration_base + root);
+        module_row.set_kind(MetaTag::module_unit);
         session.set_meta(module_id, module_row);
         return move(session);
     }

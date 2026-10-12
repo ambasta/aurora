@@ -92,11 +92,21 @@ def abi_generation(facts):
         "declaration admission input/configuration/result was flattened or omitted",
     )
     require(
-        all(f"struct alignas(8) {name} {{" in generated for name in (
-            "ResolverCreate", "ResolverIngest", "ResolverRelease", "ResolverReleasePair",
-            "ResolverSourceInput", "ResolverTextInput", "ResolverOrderInput", "ResolverImportInput",
-            "ResolverSeedBuiltinInput", "ResolverSeedMemberInput",
-        ))
+        all(
+            f"struct alignas(8) {name} {{" in generated
+            for name in (
+                "ResolverCreate",
+                "ResolverIngest",
+                "ResolverRelease",
+                "ResolverReleasePair",
+                "ResolverSourceInput",
+                "ResolverTextInput",
+                "ResolverOrderInput",
+                "ResolverImportInput",
+                "ResolverSeedBuiltinInput",
+                "ResolverSeedMemberInput",
+            )
+        )
         and "aurora::hosted_abi::compiler_resolver::Session session{};" in generated
         and "aurora::hosted_abi::compiler_parser::AstArena parsed{};" in generated
         and "static_assert(sizeof(ResolverReleasePair) == offsetof(ResolverIngest, module));" in generated,
@@ -185,11 +195,28 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
         "aurora_hosted_parser_syntax",
         "aurora_hosted_parser_release",
     }
-    entries.update("aurora_hosted_resolver_" + operation for operation in (
-        "create", "ingest", "release", "release_pair", "append_source", "append_text", "order_module",
-        "bind_import", "count", "read_source", "read_syntax", "read_meta", "read_resolved", "status",
-        "seed_builtin", "seed_member", "run",
-    ))
+    entries.update(
+        "aurora_hosted_resolver_" + operation
+        for operation in (
+            "create",
+            "ingest",
+            "release",
+            "release_pair",
+            "append_source",
+            "append_text",
+            "order_module",
+            "bind_import",
+            "count",
+            "read_source",
+            "read_syntax",
+            "read_meta",
+            "read_resolved",
+            "status",
+            "seed_builtin",
+            "seed_member",
+            "run",
+        )
+    )
     # A is predecessor-generated and need not equal B. Both actual build
     # objects must expose exactly the private host shim contract.
     for unit in (built_a, built_b):
