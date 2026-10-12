@@ -1,0 +1,532 @@
+export module aurora.compiler.lowering_storage;
+import aurora.compiler.lowering_kinds;
+
+// Pointer-free copied records for the Session-owned lowering pools. Sizes here
+// are source-layout expectations; generated facts must establish their ABI.
+export namespace compiler_lowering {
+    // Eight eight-byte leaves: 64 bytes. Inactive operator fields are ignored.
+    class OutputRow {
+        RecordKind recordKind;
+        InstructionForm instructionForm;
+        Unary unaryOperation;
+        Binary binaryOperation;
+        Comparison comparisonOperation;
+        Query queryOperation;
+        i64 operandBegin;
+        i64 operandCount;
+    public:
+        OutputRow(RecordKind kind, InstructionForm form, i64 begin, i64 count) : recordKind(kind),
+            instructionForm(form), unaryOperation(Unary::CheckedNegate), binaryOperation(Binary::CheckedAdd),
+            comparisonOperation(Comparison::Equal), queryOperation(Query::Size), operandBegin(begin),
+            operandCount(count) {
+        }
+        auto kind() const -> RecordKind {
+            return recordKind;
+        }
+        auto form() const -> InstructionForm {
+            return instructionForm;
+        }
+        auto unary_operation() const -> Unary {
+            return unaryOperation;
+        }
+        auto binary_operation() const -> Binary {
+            return binaryOperation;
+        }
+        auto comparison_operation() const -> Comparison {
+            return comparisonOperation;
+        }
+        auto query() const -> Query {
+            return queryOperation;
+        }
+        auto operand_begin() const -> i64 {
+            return operandBegin;
+        }
+        auto operand_count() const -> i64 {
+            return operandCount;
+        }
+        auto set_unary(Unary value) -> bool {
+            if (recordKind != RecordKind::Instruction || instructionForm != InstructionForm::UnaryValue) {
+                return false;
+            }
+            unaryOperation = value;
+            return true;
+        }
+        auto set_binary(Binary value) -> bool {
+            if (recordKind != RecordKind::Instruction || instructionForm != InstructionForm::BinaryValue) {
+                return false;
+            }
+            binaryOperation = value;
+            return true;
+        }
+        auto set_comparison(Comparison value) -> bool {
+            if (recordKind != RecordKind::Instruction || instructionForm != InstructionForm::Compare) {
+                return false;
+            }
+            comparisonOperation = value;
+            return true;
+        }
+        auto set_query(Query value) -> bool {
+            if (recordKind != RecordKind::Instruction || instructionForm != InstructionForm::MetadataQuery) {
+                return false;
+            }
+            queryOperation = value;
+            return true;
+        }
+        auto discard_instruction() -> bool {
+            if (recordKind != RecordKind::Instruction) {
+                return false;
+            }
+            recordKind = RecordKind::DiscardedInstruction;
+            return true;
+        }
+    };
+
+    // Five eight-byte leaves: 40 bytes. A role selects exactly one payload domain.
+    class OperandRow {
+        OperandRole operandRole;
+        i64 signedValue;
+        u64 unsignedValue;
+        i64 sliceBegin;
+        i64 sliceCount;
+    public:
+        OperandRow(OperandRole role, i64 value, u64 unsigned_value, i64 begin, i64 count) : operandRole(role),
+            signedValue(value), unsignedValue(unsigned_value), sliceBegin(begin), sliceCount(count) {
+        }
+        auto role() const -> OperandRole {
+            return operandRole;
+        }
+        auto signed_value() const -> i64 {
+            return signedValue;
+        }
+        auto unsigned_value() const -> u64 {
+            return unsignedValue;
+        }
+        auto begin() const -> i64 {
+            return sliceBegin;
+        }
+        auto count() const -> i64 {
+            return sliceCount;
+        }
+    };
+
+    // Exactly the six mutable Local facts, in this order: 48 bytes. Identity,
+    // origin and lint reads stay in LocalRow and are never rolled back.
+    class SnapshotRow {
+        i64 sharedCount;
+        i64 objectSharedCount;
+        bool liveValue;
+        bool exclusiveValue;
+        bool resourceActiveValue;
+        bool objectExclusiveValue;
+    public:
+        SnapshotRow(i64 shared, i64 object_shared, bool live, bool exclusive, bool resource_active,
+            bool object_exclusive) : sharedCount(shared), objectSharedCount(object_shared), liveValue(live),
+            exclusiveValue(exclusive), resourceActiveValue(resource_active), objectExclusiveValue(object_exclusive) {
+        }
+        auto shared_count() const -> i64 {
+            return sharedCount;
+        }
+        auto object_shared_count() const -> i64 {
+            return objectSharedCount;
+        }
+        auto live() const -> bool {
+            return liveValue;
+        }
+        auto exclusive() const -> bool {
+            return exclusiveValue;
+        }
+        auto resource_active() const -> bool {
+            return resourceActiveValue;
+        }
+        auto object_exclusive() const -> bool {
+            return objectExclusiveValue;
+        }
+    };
+
+    // Nine identity/scope/lint, five frozen origin, six mutable state fields:
+    // twenty eight-byte leaves, 160 bytes. Configure fresh copies before append.
+    class LocalRow {
+        i64 nameSourceId;
+        i64 concreteTypeId;
+        i64 storageOffset;
+        i64 scopeId;
+        i64 previousBinding;
+        bool mutableValue;
+        bool borrowedObject;
+        bool lintEligible;
+        bool readValue;
+        i64 ownerId;
+        SpanOriginKind spanOriginKind;
+        i64 originLocalId;
+        i64 spanFieldIndex;
+        bool temporaryParent;
+        i64 sharedCount;
+        i64 objectSharedCount;
+        bool liveValue;
+        bool exclusiveValue;
+        bool resourceActiveValue;
+        bool objectExclusiveValue;
+    public:
+        LocalRow(i64 name, i64 type, i64 offset, i64 scope, i64 previous, bool mutable_value) : nameSourceId(name),
+            concreteTypeId(type), storageOffset(offset), scopeId(scope), previousBinding(previous),
+            mutableValue(mutable_value), borrowedObject(false), lintEligible(false), readValue(false), ownerId(-1),
+            spanOriginKind(SpanOriginKind::none), originLocalId(-1), spanFieldIndex(-1), temporaryParent(false),
+            sharedCount(0), objectSharedCount(0), liveValue(true), exclusiveValue(false), resourceActiveValue(false),
+            objectExclusiveValue(false) {
+        }
+        auto name_source_id() const -> i64 {
+            return nameSourceId;
+        }
+        auto concrete_type_id() const -> i64 {
+            return concreteTypeId;
+        }
+        auto offset() const -> i64 {
+            return storageOffset;
+        }
+        auto scope_id() const -> i64 {
+            return scopeId;
+        }
+        auto previous_binding() const -> i64 {
+            return previousBinding;
+        }
+        auto mutable_value() const -> bool {
+            return mutableValue;
+        }
+        auto borrowed_object() const -> bool {
+            return borrowedObject;
+        }
+        auto lint_eligible() const -> bool {
+            return lintEligible;
+        }
+        auto was_read() const -> bool {
+            return readValue;
+        }
+        auto owner_id() const -> i64 {
+            return ownerId;
+        }
+        auto span_origin_kind() const -> SpanOriginKind {
+            return spanOriginKind;
+        }
+        auto origin_local_id() const -> i64 {
+            return originLocalId;
+        }
+        auto span_field_index() const -> i64 {
+            return spanFieldIndex;
+        }
+        auto temporary_parent() const -> bool {
+            return temporaryParent;
+        }
+        auto set_binding_flags(bool borrowed, bool lint) -> bool {
+            borrowedObject = borrowed;
+            lintEligible = lint;
+            return true;
+        }
+        auto set_origin(i64 owner, SpanOriginKind kind, i64 origin, i64 field, bool temporary) -> bool {
+            ownerId = owner;
+            spanOriginKind = kind;
+            originLocalId = origin;
+            spanFieldIndex = field;
+            temporaryParent = temporary;
+            return true;
+        }
+        auto mark_read() -> bool {
+            readValue = true;
+            return true;
+        }
+        auto state() const -> SnapshotRow {
+            const SnapshotRow result = SnapshotRow(sharedCount, objectSharedCount, liveValue, exclusiveValue,
+                resourceActiveValue, objectExclusiveValue);
+            return result;
+        }
+        auto set_state(SnapshotRow value) -> bool {
+            sharedCount = value.shared_count();
+            objectSharedCount = value.object_shared_count();
+            liveValue = value.live();
+            exclusiveValue = value.exclusive();
+            resourceActiveValue = value.resource_active();
+            objectExclusiveValue = value.object_exclusive();
+            return true;
+        }
+    };
+
+    // One argument has one staged Local and one typed cleanup disposition.
+    // Seven eight-byte leaves: 56 bytes; cleanup is configured after construction.
+    class ArgumentLane {
+        i64 argumentIndex;
+        ArgumentKind argumentKind;
+        i64 concreteTypeId;
+        i64 localId;
+        i64 loanId;
+        i64 serviceKindId;
+        CleanupKind cleanupKind;
+    public:
+        ArgumentLane(i64 index, ArgumentKind kind, i64 type, i64 local, i64 loan, i64 service) : argumentIndex(index),
+            argumentKind(kind), concreteTypeId(type), localId(local), loanId(loan), serviceKindId(service),
+            cleanupKind(CleanupKind::none) {
+        }
+        auto index() const -> i64 {
+            return argumentIndex;
+        }
+        auto kind() const -> ArgumentKind {
+            return argumentKind;
+        }
+        auto concrete_type_id() const -> i64 {
+            return concreteTypeId;
+        }
+        auto local_id() const -> i64 {
+            return localId;
+        }
+        auto loan_id() const -> i64 {
+            return loanId;
+        }
+        auto service_kind_id() const -> i64 {
+            return serviceKindId;
+        }
+        auto cleanup_kind() const -> CleanupKind {
+            return cleanupKind;
+        }
+        auto set_cleanup(CleanupKind kind) -> bool {
+            cleanupKind = kind;
+            return true;
+        }
+    };
+
+    // Twenty eight-byte header fields plus six complete 56-byte lanes = 496.
+    // This is 62 non-byte leaves; argument indices never select arbitrary words.
+    class ContinuationRow {
+        ContinuationKind continuationKind;
+        ContinuationPhase continuationPhase;
+        i64 syntaxNode;
+        i64 childCursor;
+        i64 scopeHead;
+        i64 localPrefixLength;
+        i64 incomingSnapshotBase;
+        i64 thenSnapshotBase;
+        i64 firstLabel;
+        i64 secondLabel;
+        i64 childTypeId;
+        i64 childLocalId;
+        i64 callTarget;
+        i64 capabilityRootLocal;
+        i64 receiverFieldIndex;
+        i64 nextArgument;
+        i64 argumentCount;
+        i64 outputMark;
+        i64 operandMark;
+        i64 cleanupCursor;
+        ArgumentLane firstArgument;
+        ArgumentLane secondArgument;
+        ArgumentLane thirdArgument;
+        ArgumentLane fourthArgument;
+        ArgumentLane fifthArgument;
+        ArgumentLane sixthArgument;
+    public:
+        ContinuationRow(ContinuationKind kind, i64 node, i64 cursor, ArgumentLane empty_argument) : continuationKind(kind),
+            continuationPhase(ContinuationPhase::start), syntaxNode(node), childCursor(cursor), scopeHead(-1),
+            localPrefixLength(0), incomingSnapshotBase(-1), thenSnapshotBase(-1), firstLabel(-1), secondLabel(-1),
+            childTypeId(-1), childLocalId(-1), callTarget(-1), capabilityRootLocal(-1), receiverFieldIndex(-1),
+            nextArgument(0), argumentCount(0), outputMark(0), operandMark(0), cleanupCursor(-1),
+            firstArgument(empty_argument), secondArgument(empty_argument), thirdArgument(empty_argument),
+            fourthArgument(empty_argument), fifthArgument(empty_argument), sixthArgument(empty_argument) {
+        }
+        auto kind() const -> ContinuationKind {
+            return continuationKind;
+        }
+        auto phase() const -> ContinuationPhase {
+            return continuationPhase;
+        }
+        auto syntax_node() const -> i64 {
+            return syntaxNode;
+        }
+        auto cursor() const -> i64 {
+            return childCursor;
+        }
+        auto scope_head() const -> i64 {
+            return scopeHead;
+        }
+        auto local_prefix_length() const -> i64 {
+            return localPrefixLength;
+        }
+        auto incoming_snapshot_base() const -> i64 {
+            return incomingSnapshotBase;
+        }
+        auto then_snapshot_base() const -> i64 {
+            return thenSnapshotBase;
+        }
+        auto first_label() const -> i64 {
+            return firstLabel;
+        }
+        auto second_label() const -> i64 {
+            return secondLabel;
+        }
+        auto child_type_id() const -> i64 {
+            return childTypeId;
+        }
+        auto child_local_id() const -> i64 {
+            return childLocalId;
+        }
+        auto call_target() const -> i64 {
+            return callTarget;
+        }
+        auto capability_root_local() const -> i64 {
+            return capabilityRootLocal;
+        }
+        auto receiver_field_index() const -> i64 {
+            return receiverFieldIndex;
+        }
+        auto next_argument() const -> i64 {
+            return nextArgument;
+        }
+        auto argument_count() const -> i64 {
+            return argumentCount;
+        }
+        auto output_mark() const -> i64 {
+            return outputMark;
+        }
+        auto operand_mark() const -> i64 {
+            return operandMark;
+        }
+        auto cleanup_cursor() const -> i64 {
+            return cleanupCursor;
+        }
+        auto set_phase(ContinuationPhase phase) -> bool {
+            continuationPhase = phase;
+            return true;
+        }
+        auto set_cursor(i64 cursor) -> bool {
+            childCursor = cursor;
+            return true;
+        }
+        auto set_scope(i64 head, i64 prefix_length) -> bool {
+            scopeHead = head;
+            localPrefixLength = prefix_length;
+            return true;
+        }
+        auto set_snapshots(i64 incoming, i64 then_base) -> bool {
+            incomingSnapshotBase = incoming;
+            thenSnapshotBase = then_base;
+            return true;
+        }
+        auto set_labels(i64 first, i64 second) -> bool {
+            firstLabel = first;
+            secondLabel = second;
+            return true;
+        }
+        auto set_child(i64 type, i64 local) -> bool {
+            childTypeId = type;
+            childLocalId = local;
+            return true;
+        }
+        auto set_call(i64 target, i64 root, i64 field, i64 count) -> bool {
+            if (count < 0 || count > 6) {
+                return false;
+            }
+            callTarget = target;
+            capabilityRootLocal = root;
+            receiverFieldIndex = field;
+            argumentCount = count;
+            return true;
+        }
+        auto set_next_argument(i64 next) -> bool {
+            if (next < 0 || next > argumentCount) {
+                return false;
+            }
+            nextArgument = next;
+            return true;
+        }
+        auto set_marks(i64 output, i64 operands) -> bool {
+            outputMark = output;
+            operandMark = operands;
+            return true;
+        }
+        auto set_cleanup_cursor(i64 cursor) -> bool {
+            cleanupCursor = cursor;
+            return true;
+        }
+        auto argument(i64 index) const -> ArgumentLane {
+            if (index == 0) {
+                const ArgumentLane result = firstArgument;
+                return result;
+            }
+            if (index == 1) {
+                const ArgumentLane result = secondArgument;
+                return result;
+            }
+            if (index == 2) {
+                const ArgumentLane result = thirdArgument;
+                return result;
+            }
+            if (index == 3) {
+                const ArgumentLane result = fourthArgument;
+                return result;
+            }
+            if (index == 4) {
+                const ArgumentLane result = fifthArgument;
+                return result;
+            }
+            if (index == 5) {
+                const ArgumentLane result = sixthArgument;
+                return result;
+            }
+            const ArgumentLane empty = ArgumentLane(-1, ArgumentKind::absent, -1, -1, -1, -1);
+            return empty;
+        }
+        auto set_argument(i64 index, ArgumentLane value) -> bool {
+            if (index < 0 || index >= argumentCount || value.index() != index) {
+                return false;
+            }
+            if (index == 0) {
+                firstArgument = value;
+                return true;
+            }
+            if (index == 1) {
+                secondArgument = value;
+                return true;
+            }
+            if (index == 2) {
+                thirdArgument = value;
+                return true;
+            }
+            if (index == 3) {
+                fourthArgument = value;
+                return true;
+            }
+            if (index == 4) {
+                fifthArgument = value;
+                return true;
+            }
+            if (index == 5) {
+                sixthArgument = value;
+                return true;
+            }
+            return false;
+        }
+    };
+
+    auto make_output_pool(builtin::ByteRegion region) -> builtin::OwnedValues<OutputRow> {
+        const OutputRow fill = OutputRow(RecordKind::invalid, InstructionForm::BindServiceParameter, 0, 0);
+        builtin::OwnedValues<OutputRow> result = region.try_allocate(0, fill);
+        return move(result);
+    }
+    auto make_operand_pool(builtin::ByteRegion region) -> builtin::OwnedValues<OperandRow> {
+        const OperandRow fill = OperandRow(OperandRole::invalid, 0, 0u64, 0, 0);
+        builtin::OwnedValues<OperandRow> result = region.try_allocate(0, fill);
+        return move(result);
+    }
+    auto make_local_pool(builtin::ByteRegion region) -> builtin::OwnedValues<LocalRow> {
+        const LocalRow fill = LocalRow(-1, -1, 0, -1, -1, false);
+        builtin::OwnedValues<LocalRow> result = region.try_allocate(0, fill);
+        return move(result);
+    }
+    auto make_snapshot_pool(builtin::ByteRegion region) -> builtin::OwnedValues<SnapshotRow> {
+        const SnapshotRow fill = SnapshotRow(0, 0, false, false, false, false);
+        builtin::OwnedValues<SnapshotRow> result = region.try_allocate(0, fill);
+        return move(result);
+    }
+    auto make_continuation_pool(builtin::ByteRegion region) -> builtin::OwnedValues<ContinuationRow> {
+        const ArgumentLane empty_argument = ArgumentLane(-1, ArgumentKind::absent, -1, -1, -1, -1);
+        const ContinuationRow fill = ContinuationRow(ContinuationKind::invalid, -1, -1, empty_argument);
+        builtin::OwnedValues<ContinuationRow> result = region.try_allocate(0, fill);
+        return move(result);
+    }
+}

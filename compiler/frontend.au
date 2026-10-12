@@ -4,6 +4,9 @@ import aurora.compiler.syntax_arena;
 import aurora.compiler.parser;
 import aurora.compiler.resolution_kinds;
 import aurora.compiler.resolution_arena;
+import aurora.compiler.lowering_kinds;
+import aurora.compiler.lowering_errors;
+import aurora.compiler.lowering_storage;
 import aurora.compiler.resolver;
 
 // The host bridge enters this root module. Ordinary imported-function retention

@@ -371,16 +371,21 @@ def frontend_bridge(bridge, facts):
     return bridge
 
 
-def stage_modules(module_root, lexer, arena, parser, kinds, resolution, resolver, frontend):
+def stage_modules(
+    module_root, lexer, arena, parser, kinds, lowering_errors, lowering_kinds, lowering_storage, resolution, resolver, frontend
+):
     destination = module_root / "aurora" / "compiler"
     destination.mkdir(parents=True, exist_ok=True)
     for source, name in zip(
-        (lexer, arena, parser, kinds, resolution, resolver, frontend),
+        (lexer, arena, parser, kinds, lowering_errors, lowering_kinds, lowering_storage, resolution, resolver, frontend),
         (
             "lexer.au",
             "syntax_arena.au",
             "parser.au",
             "resolution_kinds.au",
+            "lowering_errors.au",
+            "lowering_kinds.au",
+            "lowering_storage.au",
             "resolution_arena.au",
             "resolver.au",
             "frontend.au",
@@ -417,6 +422,9 @@ def main():
         arena,
         parser,
         kinds,
+        lowering_errors,
+        lowering_kinds,
+        lowering_storage,
         resolution,
         resolver,
         frontend,
@@ -429,7 +437,9 @@ def main():
     if len(headers) > 1:
         raise ValueError("expected at most one shared-host ABI header")
     module_root = output.parent / "compiler-modules"
-    stage_modules(module_root, lexer, arena, parser, kinds, resolution, resolver, frontend)
+    stage_modules(
+        module_root, lexer, arena, parser, kinds, lowering_errors, lowering_kinds, lowering_storage, resolution, resolver, frontend
+    )
     emit(
         compiler,
         frontend,

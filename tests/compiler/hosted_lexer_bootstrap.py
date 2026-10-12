@@ -25,6 +25,9 @@ COMPILER_MODULES = (
     "syntax_arena.au",
     "parser.au",
     "resolution_kinds.au",
+    "lowering_errors.au",
+    "lowering_kinds.au",
+    "lowering_storage.au",
     "resolution_arena.au",
     "resolver.au",
     "frontend.au",
@@ -350,9 +353,10 @@ def main():
             if source == root / "compiler/lexer.au":
                 require(runs[0].returncode == 0, "lexer self-rebuild failed")
                 print("PASS current C2 lexer rebuild SHA256 " + hashlib.sha256(outputs[1].read_bytes()).hexdigest())
-            # The vocabulary-only module has no concrete function by design;
-            # the complete resolver graph below compiles and covers its enums.
-            if source in compiler_sources and source.name != "resolution_kinds.au":
+            # Vocabulary/result-only modules have no concrete free function;
+            # the complete frontend graph compiles and covers their declarations.
+            vocabulary_modules = {"resolution_kinds.au", "lowering_kinds.au", "lowering_errors.au"}
+            if source in compiler_sources and source.name not in vocabulary_modules:
                 require(runs[0].returncode == 0, f"compiler module self-rebuild failed: {source.name}")
             if source == root / "compiler/frontend.au":
                 require(runs[0].returncode == 0, "whole frontend self-rebuild failed")

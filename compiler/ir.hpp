@@ -1,5 +1,6 @@
 #pragma once
 #include "types.hpp"
+#include "hosted_frontend_abi.hpp"
 #include "services.hpp"
 #include <map>
 #include <optional>
@@ -10,35 +11,10 @@
 namespace aurora::ir {
 inline constexpr int spanBytes = 56;
 // Operations describe language semantics, never target-register names or assembly text.
-enum class Unary {
-    CheckedNegate,
-    LogicalNot,
-    BitNot
-};
-enum class Binary {
-    CheckedAdd,
-    CheckedSubtract,
-    CheckedMultiply,
-    CheckedDivide,
-    CheckedRemainder,
-    BitAnd,
-    BitOr,
-    BitXor,
-    ShiftLeft,
-    ShiftRight
-};
-enum class Comparison {
-    Equal,
-    NotEqual,
-    Less,
-    Greater,
-    LessEqual,
-    GreaterEqual
-};
-enum class Query {
-    Size,
-    PublicFieldCount
-};
+using hosted_abi::compiler_lowering::Unary;
+using hosted_abi::compiler_lowering::Binary;
+using hosted_abi::compiler_lowering::Comparison;
+using hosted_abi::compiler_lowering::Query;
 class Constant {
 public:
     // U64 payloads preserve all 64 bits via std::bit_cast<std::int64_t>.
