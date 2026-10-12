@@ -18,15 +18,20 @@ endif
 bootstrap_compiler = find_program(bootstrap_compiler_path, native: true)
 bootstrap_depend_files = files(bootstrap_compiler_path)
 frontend_inputs = files('compiler/lexer.au', 'compiler/syntax_arena.au', 'compiler/parser.au',
-                        'compiler/resolution_kinds.au', 'compiler/resolution_arena.au', 'compiler/resolver.au',
-                        'compiler/frontend.au',
+                        'compiler/resolution_kinds.au', 'compiler/lowering_errors.au', 'compiler/lowering_kinds.au',
+                        'compiler/lowering_storage.au', 'compiler/resolution_arena.au', 'compiler/resolver.au',
+                        'compiler/frontend.au', 'compiler/lowering_common.au', 'compiler/lowering_configuration.au',
+                        'compiler/lowering_types.au', 'compiler/lowering_values.au', 'compiler/lowering_body.au',
+                        'compiler/lowering.au',
                         'compiler/hosted_lexer.S', 'compiler/hosted_parser.S', 'compiler/hosted_resolver.S')
 frontend_assembly = custom_target(
   'hosted-frontend-assembly', input: frontend_inputs,
   output: ['hosted-frontend.s', 'hosted-frontend.generated.s', 'hosted-frontend.abi.json', 'hosted_frontend_abi.hpp'],
   command: [python, '-B', files('scripts/bootstrap_frontend.py'), bootstrap_compiler,
             '@INPUT0@', '@INPUT1@', '@INPUT2@', '@INPUT3@', '@INPUT4@', '@INPUT5@',
-            '@INPUT6@', '@INPUT7@', '@INPUT8@', '@INPUT9@', '@OUTPUT0@'],
+            '@INPUT6@', '@INPUT7@', '@INPUT8@', '@INPUT9@', '@INPUT10@', '@INPUT11@',
+            '@INPUT12@', '@INPUT13@', '@INPUT14@', '@INPUT15@', '@INPUT16@', '@INPUT17@',
+            '@INPUT18@', '@OUTPUT0@'],
   depend_files: bootstrap_depend_files,
 )
 frontend_object = custom_target(
@@ -35,13 +40,17 @@ frontend_object = custom_target(
 )
 frontend_args = ['-DAURORA_HOSTED_LEXER', '-DAURORA_HOSTED_PARSER']
 frontend_host_sources = files('compiler/hosted_lexer.cpp', 'compiler/hosted_parser.cpp',
-                              'compiler/hosted_resolver.cpp', 'runtime/hosted_bytes.cpp')
+                              'compiler/hosted_resolver.cpp', 'compiler/hosted_lowering.cpp',
+                              'compiler/hosted_lowering_diagnostics.cpp', 'runtime/hosted_bytes.cpp')
 frontend_library = static_library(
   'hosted-frontend', [frontend_host_sources, frontend_object, frontend_assembly[3]],
   cpp_args: frontend_args, native: true, install: false,
 )
-hosted_frontend = declare_dependency(link_with: frontend_library, sources: frontend_assembly[3],
-                                   include_directories: include_directories('.'),
+# Operator enums are source-defined. Standalone IR/verifier fixtures need only
+# the predecessor-generated header, not the hosted frontend library.
+frontend_headers = declare_dependency(sources: frontend_assembly[3],
+                                     include_directories: include_directories('.'))
+hosted_frontend = declare_dependency(link_with: frontend_library, dependencies: frontend_headers,
                                    compile_args: frontend_args)
 aurorac = executable('aurorac', 'compiler/main.cpp', dependencies: hosted_frontend, native: true, install: false)
 aurora_fmt = executable('aurora-fmt', 'compiler/format_main.cpp', dependencies: hosted_frontend,
@@ -56,7 +65,9 @@ frontend_stage2_assembly = custom_target(
            'hosted-frontend-stage2.abi.json', 'hosted_frontend_stage2_abi.hpp'],
   command: [python, '-B', files('scripts/bootstrap_frontend.py'), aurorac,
             '@INPUT0@', '@INPUT1@', '@INPUT2@', '@INPUT3@', '@INPUT4@', '@INPUT5@',
-            '@INPUT6@', '@INPUT7@', '@INPUT8@', '@INPUT9@', '@OUTPUT0@', '@INPUT10@'],
+            '@INPUT6@', '@INPUT7@', '@INPUT8@', '@INPUT9@', '@INPUT10@', '@INPUT11@',
+            '@INPUT12@', '@INPUT13@', '@INPUT14@', '@INPUT15@', '@INPUT16@', '@INPUT17@',
+            '@INPUT18@', '@OUTPUT0@', '@INPUT19@'],
   build_by_default: false,
 )
 frontend_stage2_object = custom_target(

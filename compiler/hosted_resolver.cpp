@@ -2,6 +2,8 @@
 // retains source snapshots and file-opening authority, never semantic lookup.
 #include "hosted_resolver.hpp"
 #include "hosted_parser.hpp"
+#include "hosted_lowering_diagnostics.hpp"
+#include "ir_verify.hpp"
 #include "lexer.hpp"
 #include "services.hpp"
 #include "../runtime/hosted_bytes.hpp"
@@ -9,6 +11,7 @@
 #include <array>
 #include <charconv>
 #include <limits>
+#include <iterator>
 #include <optional>
 #include <set>
 #include <utility>
@@ -33,17 +36,24 @@ void aurora_hosted_resolver_read_syntax(const void *, std::int64_t, void *);
 void aurora_hosted_resolver_read_meta(const void *, std::int64_t, void *);
 void aurora_hosted_resolver_read_resolved(const void *, std::int64_t, void *);
 void aurora_hosted_resolver_status(const void *, void *);
+std::int64_t aurora_hosted_lowering_begin(void *, const void *) noexcept;
+std::int64_t aurora_hosted_lowering_seed_scalar(void *, const void *) noexcept;
+std::int64_t aurora_hosted_lowering_seed_service(void *, const void *) noexcept;
+std::int64_t aurora_hosted_lowering_seed_layout_symbol(void *, std::int64_t) noexcept;
+void aurora_hosted_lowering_run(void *, void *) noexcept;
+std::int64_t aurora_hosted_lowering_count(const void *, std::int64_t) noexcept;
+void aurora_hosted_lowering_read_output(const void *, std::int64_t, void *) noexcept;
+void aurora_hosted_lowering_read_operand(const void *, std::int64_t, void *) noexcept;
 }
 
 namespace aurora {
 namespace {
 namespace wire = hosted_abi::compiler_resolver;
-using hosted_parser::NodeKind;
+namespace lowering = hosted_abi::compiler_lowering;
 using hosted_parser::SyntaxKind;
 using wire::DeclarationKind;
 using wire::MetaTag;
 using wire::NativeMode;
-using wire::ResolvedOperation;
 using wire::ResolvedTypeKind;
 using wire::SemanticError;
 using wire::StorageStatus;
@@ -113,14 +123,11 @@ class Projection {
     const void *session;
     const std::vector<ModuleSource> &sources;
     std::int64_t sourceBytes;
-    std::vector<wire::SyntaxRow> syntax;
+    std::int64_t syntaxCount = 0;
     std::vector<wire::MetaRow> metadata;
-    std::vector<wire::ResolvedRow> resolved;
-    std::vector<bool> used;
     std::vector<std::optional<Type>> types;
     std::vector<std::optional<std::string>> natives;
     std::vector<bool> activeType, activeNative;
-    std::map<std::int64_t, std::vector<std::int64_t>> authorities;
     int constructionDepth = 0;
     class Depth {
         int &count;
@@ -139,20 +146,25 @@ class Projection {
             invalidResolution();
         return metadata[sizeValue(index)];
     }
-    const wire::SyntaxRow &node(std::int64_t index, SyntaxTag tag) const {
-        if (index < 0 || sizeValue(index) >= syntax.size() || syntax[sizeValue(index)].tag != tag)
+    wire::SyntaxRow syntaxRow(std::int64_t index) const {
+        if (index < 0 || index >= syntaxCount)
             invalidResolution();
-        return syntax[sizeValue(index)];
+        wire::SyntaxRow result;
+        aurora_hosted_resolver_read_syntax(session, index, &result);
+        return result;
     }
-    const wire::ResolvedRow &decoration(std::int64_t index) const {
-        if (index < 0 || sizeValue(index) >= resolved.size())
+    wire::SyntaxRow node(std::int64_t index, SyntaxTag tag) const {
+        const auto result = syntaxRow(index);
+        if (result.tag != tag)
             invalidResolution();
-        return resolved[sizeValue(index)];
+        return result;
     }
-    void take(std::int64_t index, std::int64_t parent) {
-        if (index < 0 || sizeValue(index) >= syntax.size() || index >= parent || used[sizeValue(index)])
+    wire::ResolvedRow decoration(std::int64_t index) const {
+        if (index < 0 || index >= syntaxCount)
             invalidResolution();
-        used[sizeValue(index)] = true;
+        wire::ResolvedRow result;
+        aurora_hosted_resolver_read_resolved(session, index, &result);
+        return result;
     }
     const ModuleSource &module(std::int64_t index) const {
         if (index < 0 || sizeValue(index) >= sources.size())
@@ -342,9 +354,7 @@ class Projection {
     }
     std::string specializationSpelling(std::int64_t prototype, std::int64_t request) {
         const auto &identity = meta(prototype, MetaTag::symbol);
-        if (request < 0 || sizeValue(request) >= syntax.size())
-            invalidResolution();
-        const auto &value = syntax[sizeValue(request)];
+        const auto value = syntaxRow(request);
         const auto root = value.tag == SyntaxTag::expression ? value.value6 : request;
         const auto &syntaxType = node(root, SyntaxTag::type);
         std::vector<TemplateArgument> values;
@@ -517,6 +527,11 @@ class Projection {
                     invalidResolution();
                 result = Type(prefix(-value.value1 - 2));
             } else {
+                const auto expected = value.concrete_tag == ResolvedTypeKind::class_value
+                                          ? DeclarationKind::class_value
+                                          : DeclarationKind::enumeration;
+                if (meta(value.value1, MetaTag::symbol).declaration_tag != expected)
+                    invalidResolution();
                 result = value.concrete_tag == ResolvedTypeKind::class_value ? Type(native(value.value1))
                                                                              : Type::enumeration(native(value.value1));
                 result.displayName = display(value.value1);
@@ -536,328 +551,6 @@ class Projection {
         cached = result;
         return result;
     }
-    Type declaredType(std::int64_t syntaxRoot) {
-        node(syntaxRoot, SyntaxTag::type);
-        return type(decoration(syntaxRoot).value2);
-    }
-    ExpressionPtr expression(std::int64_t root, std::int64_t parent, int depth = 0) {
-        if (depth >= 128)
-            invalidResolution();
-        const auto &value = node(root, SyntaxTag::expression);
-        take(root, parent);
-        const auto &resolvedValue = decoration(root);
-        auto token = sourceToken(value.value0);
-        std::string op;
-        const auto tag = value.expression_tag;
-        if (tag == NodeKind::name || tag == NodeKind::call || tag == NodeKind::construct) {
-            op = tag == NodeKind::name ? "name" : tag == NodeKind::call ? "call" : "construct";
-            if (resolvedValue.value0 < 0)
-                invalidResolution();
-            token.text = prefix(resolvedValue.value0);
-            const auto last = sourceToken(value.value4);
-            if (token.span.source != last.span.source)
-                invalidResolution();
-            token.span.end = last.span.end;
-        } else if (tag == NodeKind::literal) {
-            if (token.text.empty())
-                invalidResolution();
-            op = token.text == "true" || token.text == "false" ? "bool"
-                 : token.text.front() == '"'                   ? "byte_string"
-                 : token.text.front() == '\''                  ? "byte"
-                                                               : "number";
-        } else {
-            switch (tag) {
-            case NodeKind::unary:
-                op = "unary";
-                break;
-            case NodeKind::binary:
-                op = "binary";
-                break;
-            case NodeKind::member:
-                op = "member";
-                break;
-            case NodeKind::method_call:
-                op = "method_call";
-                break;
-            case NodeKind::index:
-                op = "index";
-                break;
-            case NodeKind::array_literal:
-                op = "array_literal";
-                break;
-            case NodeKind::array_zero:
-                op = "array_zero";
-                break;
-            default:
-                invalidResolution();
-            }
-        }
-        auto result = std::make_shared<Expression>(op, std::move(token));
-        const auto append = [&](std::int64_t child) {
-            auto argument = expression(child, root, depth + 1);
-            result->depth = std::max(result->depth, argument->depth + 1);
-            result->args.push_back(std::move(argument));
-        };
-        if (tag == NodeKind::call || tag == NodeKind::method_call || tag == NodeKind::construct ||
-            tag == NodeKind::array_literal || tag == NodeKind::array_zero) {
-            const auto edges = list(value.value1, static_cast<std::int64_t>(syntax.size()), SyntaxTag::edge);
-            if (edges.size() != sizeValue(value.value2))
-                invalidResolution();
-            for (const auto edge : edges) {
-                const auto &argument = node(edge, SyntaxTag::edge);
-                take(edge, static_cast<std::int64_t>(syntax.size()));
-                append(argument.value0);
-                if (argument.value4 >= 0)
-                    result->fieldNames.push_back(sourceToken(argument.value4).text);
-            }
-        } else if (tag == NodeKind::unary || tag == NodeKind::member)
-            append(value.value1);
-        else if (tag == NodeKind::binary || tag == NodeKind::index) {
-            append(value.value1);
-            append(value.value2);
-            if (tag == NodeKind::index)
-                result->token = result->args.front()->token;
-        }
-        if (result->depth > 128)
-            invalidResolution();
-        switch (resolvedValue.operation_tag) {
-        case ResolvedOperation::unchanged:
-            break;
-        case ResolvedOperation::constructor_call:
-            result->op = "constructor_call";
-            break;
-        case ResolvedOperation::implicit_method_call:
-            result->op = "implicit_method_call";
-            break;
-        case ResolvedOperation::enum_case:
-            result->op = "enum_case";
-            result->enumOrdinal = intValue(resolvedValue.value3);
-            break;
-        case ResolvedOperation::capacity_constant:
-            result->op = "number";
-            result->token.text = std::to_string(resolvedValue.value3);
-            break;
-        default:
-            invalidResolution();
-        }
-        if (resolvedValue.value1 >= 0)
-            result->resolvedName = native(resolvedValue.value1);
-        if (resolvedValue.value2 >= 0)
-            result->reflectedType = type(resolvedValue.value2);
-        if (resolvedValue.value4 >= 0) {
-            const auto &group = meta(resolvedValue.value4, MetaTag::overload);
-            const auto candidates = links(group.value0, MetaTag::link, 1);
-            if (candidates.size() > 32 || candidates.size() != sizeValue(group.value2) || resolvedValue.value5 < 0 ||
-                resolvedValue.value6 < 0)
-                invalidResolution();
-            const auto visible = static_cast<std::uint64_t>(resolvedValue.value5);
-            const auto inaccessible = static_cast<std::uint64_t>(resolvedValue.value6);
-            if ((visible >> candidates.size()) != 0 || (inaccessible & ~visible) != 0)
-                invalidResolution();
-            for (std::size_t i = 0; i < candidates.size(); ++i) {
-                if ((visible & (std::uint64_t{1} << i)) == 0)
-                    continue;
-                auto spelling = native(meta(candidates[i], MetaTag::link).value0);
-                if ((inaccessible & (std::uint64_t{1} << i)) != 0)
-                    result->inaccessibleOverloads.insert(spelling);
-                result->overloadCandidates.push_back(std::move(spelling));
-            }
-            const auto &first = meta(group.value4, MetaTag::symbol);
-            result->resolvedName = mangle(
-                'v', module(first.value1).header.moduleName, prefix(first.value2), sourceToken(first.value4).text);
-        }
-        return result;
-    }
-    std::vector<StatementPtr> block(std::int64_t root, std::int64_t parent, int depth = 0) {
-        if (depth >= 128)
-            invalidResolution();
-        const auto &value = node(root, SyntaxTag::declaration);
-        if (value.declaration_tag != SyntaxKind::block)
-            invalidResolution();
-        take(root, parent);
-        std::vector<StatementPtr> result;
-        for (const auto child : list(value.value7, root, SyntaxTag::declaration))
-            result.push_back(statement(child, root, depth));
-        return result;
-    }
-    StatementPtr statement(std::int64_t root, std::int64_t parent, int depth) {
-        const auto &value = node(root, SyntaxTag::declaration);
-        const auto tag = value.declaration_tag;
-        auto result = std::make_shared<Statement>(sourceToken(value.value0));
-        if (tag == SyntaxKind::block) {
-            result->kind = "block";
-            result->body = block(root, parent, depth + 1);
-            return result;
-        }
-        take(root, parent);
-        result->expr = expression(value.value3, root);
-        if (tag == SyntaxKind::conditional || tag == SyntaxKind::loop) {
-            result->kind = tag == SyntaxKind::conditional ? "if" : "while";
-            result->body = block(value.value7, root, depth + 1);
-            if (value.value8 >= 0)
-                result->other = block(value.value8, root, depth + 1);
-        } else if (tag == SyntaxKind::local) {
-            const auto binding = sourceToken(value.value6);
-            result->kind = "let";
-            result->type = declaredType(value.value5);
-            result->name = binding.text;
-            result->bindingSpan = binding.span;
-            result->mutableValue = value.value9 == 1;
-        } else if (tag == SyntaxKind::return_value)
-            result->kind = "return";
-        else if (tag == SyntaxKind::static_assertion)
-            result->kind = "static_assert";
-        else if (tag == SyntaxKind::expression)
-            result->kind = "expression";
-        else {
-            auto target = expression(value.value4, root);
-            if (tag == SyntaxKind::assign) {
-                if (target->op != "name" || !target->args.empty())
-                    invalidResolution();
-                result->kind = "assign";
-                result->name = target->token.text;
-            } else if (tag == SyntaxKind::field_assign) {
-                if (target->op != "member" || target->args.size() != 1 || target->args[0]->op != "name" ||
-                    !target->args[0]->args.empty())
-                    invalidResolution();
-                result->kind = "field_assign";
-                result->name = target->args[0]->token.text;
-                result->fieldName = target->token.text;
-            } else if (tag == SyntaxKind::index_assign && target->op == "index" && target->args.size() == 2) {
-                result->kind = "index_assign";
-                result->target = std::move(target);
-            } else
-                invalidResolution();
-        }
-        return result;
-    }
-    Function function(std::int64_t symbol) {
-        const auto &identity = meta(symbol, MetaTag::symbol);
-        const auto root = identity.value5;
-        const auto &value = node(root, SyntaxTag::declaration);
-        const auto tag = value.declaration_tag;
-        if (tag != SyntaxKind::function && tag != SyntaxKind::method && tag != SyntaxKind::constructor)
-            invalidResolution();
-        take(root, static_cast<std::int64_t>(syntax.size()));
-        Function result(sourceToken(value.value0));
-        result.name = native(symbol);
-        result.scope = prefix(identity.value2);
-        result.exported = identity.value6 != 0;
-        result.moduleScope = module(identity.value1).scope;
-        result.constructor = tag == SyntaxKind::constructor;
-        result.receiverConst = value.value9 == 1;
-        if (identity.value7 >= 0)
-            result.receiverClass = native(identity.value7);
-        result.templateArguments = arguments(identity.value9);
-        for (const auto child : list(value.value8, root, SyntaxTag::declaration)) {
-            const auto &parameter = node(child, SyntaxTag::declaration);
-            if (parameter.declaration_tag != SyntaxKind::parameter)
-                invalidResolution();
-            take(child, root);
-            Param converted;
-            converted.type = declaredType(parameter.value5);
-            converted.name = sourceToken(parameter.value6).text;
-            converted.borrowed = parameter.value10 >= 0;
-            converted.borrowConst = parameter.value9 == 1;
-            if (converted.borrowed)
-                converted.borrowSpan = sourceToken(parameter.value10).span;
-            result.params.push_back(std::move(converted));
-        }
-        if (result.constructor) {
-            for (const auto child : list(value.value7, root, SyntaxTag::declaration)) {
-                const auto &initializer = node(child, SyntaxTag::declaration);
-                if (initializer.declaration_tag != SyntaxKind::initializer)
-                    invalidResolution();
-                take(child, root);
-                result.initializers.emplace_back(sourceToken(initializer.value0),
-                                                 expression(initializer.value3, child));
-            }
-        } else {
-            result.result = declaredType(value.value5);
-            result.body = block(value.value7, root);
-        }
-        // Exact compile-time authority is published by the resolver, never
-        // inferred here from parameter spellings or the runtime visibility view.
-        for (const auto nominal : authorities[symbol])
-            result.templateTypeAuthority.insert(native(nominal));
-        return result;
-    }
-    ClassDefinition classDefinition(std::int64_t symbol) {
-        const auto &identity = meta(symbol, MetaTag::symbol);
-        if (identity.native_tag == NativeMode::sealed_builtin)
-            return builtinClass(symbol);
-        const auto root = identity.value5;
-        const auto &value = node(root, SyntaxTag::declaration);
-        if (value.declaration_tag != SyntaxKind::class_definition)
-            invalidResolution();
-        take(root, static_cast<std::int64_t>(syntax.size()));
-        ClassDefinition result(sourceToken(value.value0));
-        result.name = native(symbol);
-        result.scope = prefix(identity.value2);
-        result.exported = identity.value6 != 0;
-        result.templateArguments = arguments(identity.value9);
-        for (const auto wrapper : list(value.value7, root, SyntaxTag::declaration)) {
-            const auto &member = node(wrapper, SyntaxTag::declaration);
-            if (member.declaration_tag != SyntaxKind::declaration)
-                invalidResolution();
-            take(wrapper, root);
-            const auto child = member.value7;
-            const auto &declaration = node(child, SyntaxTag::declaration);
-            if (child >= wrapper)
-                invalidResolution();
-            if (declaration.declaration_tag == SyntaxKind::field) {
-                take(child, wrapper);
-                Field field(sourceToken(declaration.value6), declaredType(declaration.value5));
-                field.publicAccess = member.value9 != 0;
-                result.fields.push_back(std::move(field));
-            } else {
-                auto method = function(decoration(child).value1);
-                method.publicAccess = member.value9 != 0;
-                result.methods.push_back(std::move(method));
-            }
-        }
-        return result;
-    }
-    EnumDefinition enumeration(std::int64_t symbol) {
-        const auto &identity = meta(symbol, MetaTag::symbol);
-        if (identity.native_tag == NativeMode::sealed_builtin)
-            return builtinEnum(symbol);
-        const auto root = identity.value5;
-        const auto &value = node(root, SyntaxTag::declaration);
-        if (value.declaration_tag != SyntaxKind::enum_definition)
-            invalidResolution();
-        take(root, static_cast<std::int64_t>(syntax.size()));
-        EnumDefinition result(sourceToken(value.value0));
-        result.name = native(symbol);
-        result.scope = prefix(identity.value2);
-        result.exported = identity.value6 != 0;
-        for (const auto child : list(value.value7, root, SyntaxTag::declaration)) {
-            const auto &item = node(child, SyntaxTag::declaration);
-            if (item.declaration_tag != SyntaxKind::enum_case)
-                invalidResolution();
-            take(child, root);
-            result.cases.push_back(sourceToken(item.value0));
-        }
-        return result;
-    }
-    ClassDefinition builtinClass(std::int64_t symbol) {
-        const auto &descriptor = meta(meta(symbol, MetaTag::symbol).value8, MetaTag::context);
-        ClassDefinition result(Token(native(symbol), 0));
-        for (const auto child : links(descriptor.value4, MetaTag::context, 3)) {
-            const auto &member = meta(child, MetaTag::context);
-            Field field(sourceToken(member.value1), type(member.value2));
-            field.publicAccess = true;
-            result.fields.push_back(std::move(field));
-        }
-        return result;
-    }
-    EnumDefinition builtinEnum(std::int64_t symbol) {
-        const auto &descriptor = meta(meta(symbol, MetaTag::symbol).value8, MetaTag::context);
-        EnumDefinition result(Token(native(symbol), 0));
-        for (const auto child : links(descriptor.value4, MetaTag::context, 3))
-            result.cases.push_back(sourceToken(meta(child, MetaTag::context).value1));
-        return result;
-    }
 
 public:
     Projection(const void *session, const std::vector<ModuleSource> &sources, std::uint64_t payloadBytes)
@@ -874,27 +567,19 @@ public:
             for (std::size_t i = 0; i < count; ++i)
                 read(session, static_cast<std::int64_t>(i), &values[i]);
         };
-        load(syntax, 1, aurora_hosted_resolver_read_syntax);
-        load(metadata, 2, aurora_hosted_resolver_read_meta);
-        load(resolved, 3, aurora_hosted_resolver_read_resolved);
-        if (resolved.size() != syntax.size())
+        syntaxCount = aurora_hosted_resolver_count(session, 1);
+        if (syntaxCount < 0 || syntaxCount != aurora_hosted_resolver_count(session, 3) ||
+            static_cast<std::uint64_t>(syntaxCount) > payloadBytes / sizeof(wire::SyntaxRow) ||
+            static_cast<std::uint64_t>(syntaxCount) > payloadBytes / sizeof(wire::ResolvedRow))
             invalidResolution();
-        used.resize(syntax.size());
+        load(metadata, 2, aurora_hosted_resolver_read_meta);
         types.resize(metadata.size());
         natives.resize(metadata.size());
         activeType.resize(metadata.size());
         activeNative.resize(metadata.size());
-        for (const auto &value : metadata)
-            if (value.tag == MetaTag::authority) {
-                meta(value.value0, MetaTag::symbol);
-                meta(value.value1, MetaTag::symbol);
-                authorities[value.value0].push_back(value.value1);
-            }
     }
     [[noreturn]] void diagnostic(const wire::SessionStatus &status);
-    Program program(std::size_t root) {
-        if (root >= sources.size())
-            invalidResolution();
+    std::vector<std::int64_t> declarations(std::size_t field) const {
         const wire::MetaRow *output = nullptr;
         for (const auto &value : metadata)
             if (value.tag == MetaTag::context && value.value0 == 1) {
@@ -902,30 +587,187 @@ public:
                     invalidResolution();
                 output = &value;
             }
-        if (!output)
+        if (!output || field < 1 || field > 3)
             invalidResolution();
-        Program result;
-        result.moduleName = sources[root].header.moduleName;
-        for (const auto &source : sources)
-            result.reflectionAccess[source.scope];
-        for (const auto link : links(output->value1, MetaTag::link, 1))
-            result.functions.push_back(function(meta(link, MetaTag::link).value0));
-        for (const auto link : links(output->value2, MetaTag::link, 1))
-            result.classes.push_back(classDefinition(meta(link, MetaTag::link).value0));
-        for (const auto link : links(output->value3, MetaTag::link, 1))
-            result.enums.push_back(enumeration(meta(link, MetaTag::link).value0));
-        for (const auto link : links(output->value4, MetaTag::visibility, 3)) {
-            const auto &view = meta(link, MetaTag::visibility);
-            if (view.value1 < 0 || view.value1 > UINT32_MAX || view.value2 < 0 || view.value2 > UINT32_MAX)
-                invalidResolution();
-            const auto bits = static_cast<std::uint64_t>(view.value1) | (static_cast<std::uint64_t>(view.value2) << 32);
-            const auto name = native(view.value0);
-            // Aurora publishes module-scope bits, not ingestion-order indices.
-            for (const auto &source : sources)
-                if (bits & (std::uint64_t{1} << source.scope))
-                    result.reflectionAccess[source.scope].insert(name);
+        std::vector<std::int64_t> result;
+        for (const auto link : links(words(*output)[field], MetaTag::link, 1))
+            result.push_back(meta(link, MetaTag::link).value0);
+        return result;
+    }
+    std::string callableName(std::int64_t symbol) {
+        const auto &identity = meta(symbol, MetaTag::symbol);
+        if (identity.declaration_tag != DeclarationKind::function &&
+            identity.declaration_tag != DeclarationKind::method &&
+            identity.declaration_tag != DeclarationKind::constructor)
+            invalidResolution();
+        return native(symbol);
+    }
+    std::string nominalName(std::int64_t symbol, DeclarationKind kind) {
+        if (meta(symbol, MetaTag::symbol).declaration_tag != kind)
+            invalidResolution();
+        return native(symbol);
+    }
+    std::vector<std::int64_t> layoutSymbols() {
+        auto result = declarations(2);
+        // Match the former ordered native-name map's traversal. This is the
+        // complete original class permutation, with no host legality filtering.
+        std::sort(result.begin(), result.end(), [&](auto left, auto right) {
+            return nominalName(left, DeclarationKind::class_value) < nominalName(right, DeclarationKind::class_value);
+        });
+        return result;
+    }
+    AbiDeclarations abiDeclarations() {
+        AbiDeclarations result;
+        const auto sourceName = [&](std::int64_t symbol) {
+            const auto &identity = meta(symbol, MetaTag::symbol);
+            if (identity.native_tag == NativeMode::sealed_builtin)
+                return native(symbol);
+            const auto scope = prefix(identity.value2);
+            const auto name = sourceToken(node(identity.value5, SyntaxTag::declaration).value0).text;
+            return scope.empty() ? name : scope + "::" + name;
+        };
+        const auto function = [&](std::int64_t symbol) {
+            result.functions.emplace(callableName(symbol), AbiDeclaration{sourceName(symbol), {}});
+        };
+        for (const auto symbol : declarations(1))
+            function(symbol);
+        for (const auto symbol : declarations(2)) {
+            const auto &identity = meta(symbol, MetaTag::symbol);
+            AbiDeclaration record{sourceName(symbol), {}};
+            if (identity.native_tag == NativeMode::sealed_builtin) {
+                const auto &descriptor = meta(identity.value8, MetaTag::context);
+                for (const auto child : links(descriptor.value4, MetaTag::context, 3))
+                    record.members.push_back(sourceToken(meta(child, MetaTag::context).value1).text);
+            } else {
+                const auto root = identity.value5;
+                const auto value = node(root, SyntaxTag::declaration);
+                if (value.declaration_tag != SyntaxKind::class_definition)
+                    invalidResolution();
+                for (const auto wrapper : list(value.value7, root, SyntaxTag::declaration)) {
+                    const auto member = node(wrapper, SyntaxTag::declaration);
+                    if (member.declaration_tag != SyntaxKind::declaration || member.value7 >= wrapper)
+                        invalidResolution();
+                    const auto declaration = node(member.value7, SyntaxTag::declaration);
+                    if (declaration.declaration_tag == SyntaxKind::field)
+                        record.members.push_back(sourceToken(declaration.value6).text);
+                    else
+                        function(decoration(member.value7).value1);
+                }
+            }
+            result.records.emplace(nominalName(symbol, DeclarationKind::class_value), std::move(record));
+        }
+        for (const auto symbol : declarations(3)) {
+            const auto &identity = meta(symbol, MetaTag::symbol);
+            AbiDeclaration enumeration{sourceName(symbol), {}};
+            if (identity.native_tag == NativeMode::sealed_builtin) {
+                const auto &descriptor = meta(identity.value8, MetaTag::context);
+                for (const auto child : links(descriptor.value4, MetaTag::context, 3))
+                    enumeration.members.push_back(sourceToken(meta(child, MetaTag::context).value1).text);
+            } else {
+                const auto root = identity.value5;
+                const auto value = node(root, SyntaxTag::declaration);
+                if (value.declaration_tag != SyntaxKind::enum_definition)
+                    invalidResolution();
+                for (const auto child : list(value.value7, root, SyntaxTag::declaration)) {
+                    const auto item = node(child, SyntaxTag::declaration);
+                    if (item.declaration_tag != SyntaxKind::enum_case)
+                        invalidResolution();
+                    enumeration.members.push_back(sourceToken(item.value0).text);
+                }
+            }
+            result.enums.emplace(nominalName(symbol, DeclarationKind::enumeration), std::move(enumeration));
         }
         return result;
+    }
+    HostedLoweringDiagnosticServices diagnosticServices() {
+        return {[&](auto reference) {
+                    return sourceToken(reference);
+                },
+                [&](auto identity) {
+                    return typeName(type(identity));
+                },
+                [&](auto reason, auto identity) {
+                    return diagnosticName(reason, identity);
+                }};
+    }
+    std::string diagnosticName(lowering::LoweringError reason, std::int64_t identity) {
+        using lowering::LoweringError;
+        if (reason == LoweringError::unknown_nested_class_type)
+            return prefix(identity);
+        if (identity < 0 || sizeValue(identity) >= metadata.size())
+            invalidResolution();
+        const auto &value = metadata[sizeValue(identity)];
+        switch (reason) {
+        case LoweringError::unknown_class_field:
+        case LoweringError::unknown_local:
+        case LoweringError::use_after_move:
+        case LoweringError::duplicate_local:
+            if (value.tag == MetaTag::atom)
+                return sourceToken(value.value2).text;
+            return sourceToken(identity).text;
+        case LoweringError::call_argument_count:
+        case LoweringError::no_exact_overload:
+            return prefix(identity);
+        case LoweringError::unknown_function:
+            if (value.tag == MetaTag::symbol)
+                return callableName(identity);
+            return prefix(identity);
+        default:
+            invalidResolution();
+        }
+    }
+    HostedLoweringServices loweringServices(const std::vector<service::Kind> &kinds) {
+        HostedLoweringServices result;
+        result.type = [&](auto identity) {
+            return type(identity);
+        };
+        result.functionName = [&](auto identity) {
+            return callableName(identity);
+        };
+        result.className = [&](auto identity) {
+            return nominalName(identity, DeclarationKind::class_value);
+        };
+        result.enumName = [&](auto identity) {
+            return nominalName(identity, DeclarationKind::enumeration);
+        };
+        result.identifier = [&](auto identity) {
+            return sourceToken(identity);
+        };
+        result.checkModuleScope = [&](auto scope) {
+            if (std::none_of(sources.begin(), sources.end(), [&](const auto &source) {
+                    return source.scope == scope;
+                }))
+                invalidResolution();
+        };
+        result.serviceKind = [&kinds](auto identity) {
+            if (identity < 0 || sizeValue(identity) >= kinds.size())
+                invalidResolution();
+            return kinds[sizeValue(identity)];
+        };
+        result.serviceOperation = [](auto identity) {
+            if (identity < 0 || sizeValue(identity) >= service::operations.size())
+                invalidResolution();
+            return service::operations[sizeValue(identity)].operation;
+        };
+        result.literalBytes = [&](auto begin, auto count) {
+            if (begin < 0 || count < 0 || begin > sourceBytes || count > sourceBytes - begin)
+                invalidResolution();
+            std::vector<std::uint8_t> bytes;
+            if (sizeValue(count) > bytes.max_size())
+                invalidResolution();
+            bytes.reserve(sizeValue(count));
+            for (std::int64_t at = begin; at < begin + count; ++at) {
+                const auto byte = aurora_hosted_resolver_read_source(session, at);
+                if (byte < 0 || byte > 255)
+                    invalidResolution();
+                bytes.push_back(static_cast<std::uint8_t>(byte));
+            }
+            return bytes;
+        };
+        return result;
+    }
+    std::int64_t sourceByteCount() const {
+        return sourceBytes;
     }
 };
 [[noreturn]] void Projection::diagnostic(const wire::SessionStatus &status) {
@@ -1325,6 +1167,12 @@ std::uint64_t resolutionQuota() {
             members = add(members, 1);
         }
     }
+    std::uint64_t serviceParameters = 0;
+    for (const auto &operation : service::operations) {
+        text(std::string(operation.spelling));
+        serviceParameters = add(serviceParameters, operation.parameterTypes().size());
+    }
+    text("array"); // the lowerer's retained synthetic reflection diagnostic name
     // Existing language/file limits only. This loose ceiling is not allocated
     // eagerly. Each pool grows on demand and reports ordinary allocation failure.
     // Counts charge source projection, interned names/indexes, concrete clones,
@@ -1358,18 +1206,128 @@ std::uint64_t resolutionQuota() {
                                members});
     const auto indexes = sum({types,     S,  categories, 1,  S, authority, mul(32, S),         Sx,       S, S, I,
                               mul(2, K), Sx, Sx,         Sx, S, mul(M, S), mul(mul(32, M), S), nominals, 1, Sx});
-    const auto records = add(storage, semantic);
-    const auto indexRecords = add(storageIndexes, indexes);
-    const auto work = std::max(mul(12, b), sum({mul(3, Sx), types, mul(2, D), 128}));
+    // Shape-only upper bounds for the complete lowering producer ledger.
+    // X includes expanded syntax, every discarded static_assert occurrence and
+    // failed prefixes. F/fields/carriers/returns are separately named producer
+    // substitutions, not new source limits or eagerly reserved storage.
+    const auto X = Sx, F = X, fields = add(X, members), carriers = X, returns = add(X, F);
+    constexpr std::uint64_t localHigh = 8193, frameBytes = 65536, frameWords = 8192;
+    const auto allLocals = mul(F, localHigh);
+    // Primitive producers: literal/load/store/operator/index/control/receiver,
+    // service/resource operations and <=6 scalar pushes fit 16 per syntax row.
+    // Array copy/literal/byte-string expansion is <=4*4096 per occurrence;
+    // designated/constructor fields <=3 per field/edge; parameter binding <=6/F.
+    // Lifetime begins/staging consume <=2/allocation. Every explicit/synthetic
+    // return may repeat a full Local prefix; non-return cleanup <=allLocals.
+    const auto instructions = sum(
+        {mul(16, X), mul(4 * 4096, X), mul(3, X), mul(6, F), mul(2, allLocals), allLocals, mul(returns, localHigh)});
+    const auto instructionLists = add(mul(12, X), mul(64, X));
+    const auto literalBytes = mul(4096, X);
+    // Packed u8 leaves make scalar slot count byte-bounded, not word-bounded.
+    // Each other durable slot family has its own producer charge, including
+    // the OwnedValues subset of owner slots; none is folded into Local scratch.
+    const auto scalarSlots = mul(frameBytes, F), objectSlots = mul(frameWords, F);
+    const auto arraySlots = mul(frameWords, F), spanSlots = mul(frameWords / 7, F);
+    const auto serviceSlots = mul(2, F), regionSlots = F, byteSlots = mul(frameWords / 4, F);
+    const auto ownedTypes = byteSlots;
+    const auto slots =
+        sum({scalarSlots, objectSlots, arraySlots, spanSlots, serviceSlots, regionSlots, byteSlots, ownedTypes});
+    const auto receiverRows = F, classRows = add(nominals, carriers), fieldRows = add(fields, carriers);
+    const auto descriptors = sum({7, nominals, X}), views = M, enums = nominals, lint = X;
+    const auto outputRows = sum({hostedLoweringPreludeRows,
+                                 1,
+                                 instructions,
+                                 slots,
+                                 F,
+                                 receiverRows,
+                                 mul(2, classRows),
+                                 fieldRows,
+                                 carriers,
+                                 descriptors,
+                                 views,
+                                 enums,
+                                 lint});
+    // Every fixed role and owning-list item costs a real OperandRow. Code refs
+    // charge all generated instructions conservatively, including discarded
+    // occurrences. Logical leafless fields retain both Fields and FieldOffsets.
+    const auto slotOperands = sum({mul(2, scalarSlots),
+                                   mul(3, objectSlots),
+                                   mul(2, arraySlots),
+                                   spanSlots,
+                                   serviceSlots,
+                                   regionSlots,
+                                   mul(2, byteSlots),
+                                   mul(2, ownedTypes)});
+    const auto setupOperands = sum({3, 8, 7 * 3, mul(6, service::operations.size()), serviceParameters, nominals, 1});
+    const auto metadataOperands = sum({7,
+                                       mul(10, F),
+                                       mul(6, F),
+                                       slots,
+                                       mul(4, receiverRows),
+                                       mul(4, classRows),
+                                       mul(5, classRows),
+                                       mul(5, fieldRows),
+                                       mul(2, carriers),
+                                       mul(3, descriptors),
+                                       mul(2, views),
+                                       mul(2, enums),
+                                       lint,
+                                       mul(2 * 8192, classRows),
+                                       mul(2, fieldRows),
+                                       mul(views, descriptors),
+                                       F,
+                                       classRows,
+                                       carriers,
+                                       descriptors,
+                                       views,
+                                       enums,
+                                       lint});
+    const auto operandRows =
+        sum({setupOperands, mul(6, instructions), instructions, instructionLists, slotOperands, metadataOperands});
+    // Shared resolution owners remain live. Additional type/name/source rows
+    // have distinct charges; lowering lookup domains retain nominal/layout,
+    // field, function, lexical-binding, forward-list and reflection indexes.
+    // Interned spelling/prefix bytes retain the original source-derived P/L/N
+    // grants above; no new source-sized coordinate or token array is introduced.
+    const auto loweringTypes = sum({nominals, X, primitiveKinds});
+    const auto loweringMetadata = sum({loweringTypes, mul(2, X), 1});
+    const auto loweringIndexes = sum({loweringTypes,
+                                      mul(2, X),
+                                      mul(12, nominals),
+                                      mul(8, fieldRows),
+                                      mul(3, F),
+                                      X,
+                                      mul(3, X),
+                                      mul(3, carriers),
+                                      mul(2, descriptors),
+                                      32});
+    const auto records = sum({storage, semantic, loweringMetadata});
+    const auto indexRecords = sum({storageIndexes, indexes, loweringIndexes});
+    // Lowering layout DFS uses at most eight WorkRows (two per depth-four
+    // logical frame; physical frames use four). Name helpers retain their
+    // existing <=2*D scratch above that saved base. The initial class-order
+    // permutation is a separate phase with at most one mark per nominal.
+    const auto loweringWork = std::max(nominals, add(8, mul(2, D)));
+    const auto work = std::max({mul(12, b), sum({mul(3, Sx), types, mul(2, D), 128}), loweringWork});
     const auto capacity = [&](std::uint64_t count) {
         return add(mul(2, count), 8);
     };
-    const auto session = sum({capacity(add(B, textBytes)),
+    // Snapshot high-water retains incoming + then prefixes at each if and
+    // incoming prefixes at while/short-circuit frames: (2*128+128)*8193.
+    // Continuations are one function + block/control + expression path (384),
+    // with all six argument lanes embedded in the generated copied row.
+    const auto snapshots = mul(384, localHigh);
+    const auto session = sum({capacity(sum({B, textBytes, literalBytes})),
                               mul(sizeof(wire::SyntaxRow), capacity(Sx)),
                               mul(sizeof(wire::MetaRow), capacity(records)),
                               mul(sizeof(wire::IndexRow), capacity(indexRecords)),
                               mul(sizeof(wire::ResolvedRow), capacity(Sx)),
-                              mul(sizeof(wire::WorkRow), capacity(work))});
+                              mul(sizeof(wire::WorkRow), capacity(work)),
+                              mul(sizeof(lowering::OutputRow), capacity(outputRows)),
+                              mul(sizeof(lowering::OperandRow), capacity(operandRows)),
+                              mul(sizeof(lowering::LocalRow), capacity(localHigh)),
+                              mul(sizeof(lowering::SnapshotRow), capacity(snapshots)),
+                              mul(sizeof(lowering::ContinuationRow), capacity(384))});
     const auto parserWidths = sum({sizeof(hosted_abi::compiler_parser::AstNode),
                                    sizeof(hosted_abi::compiler_parser::ChildEdge),
                                    sizeof(hosted_abi::compiler_parser::TypeSyntax),
@@ -1398,10 +1356,15 @@ public:
         sessionLive = true;
     }
     ~SessionOwner() {
+        release();
+    }
+    void release() noexcept {
         if (arenaLive)
             aurora_hosted_resolver_release_pair(&slots[active]);
         else if (sessionLive)
             aurora_hosted_resolver_release(&slots[active]);
+        arenaLive = false;
+        sessionLive = false;
     }
     SessionOwner(const SessionOwner &) = delete;
     SessionOwner &operator=(const SessionOwner &) = delete;
@@ -1465,6 +1428,12 @@ ResolvedTypeKind wireKind(const Type &type) {
         return ResolvedTypeKind::u8_value;
     case TypeKind::Bool:
         return ResolvedTypeKind::bool_value;
+    case TypeKind::Own:
+        return ResolvedTypeKind::owner;
+    case TypeKind::Ref:
+        return ResolvedTypeKind::reference;
+    case TypeKind::MutRef:
+        return ResolvedTypeKind::mutable_reference;
     case TypeKind::ByteRegion:
         return ResolvedTypeKind::byte_region;
     case TypeKind::OwnedBytes:
@@ -1489,6 +1458,9 @@ class HostedResolution::Impl {
     SessionOwner owner;
     std::vector<ModuleSource> sources;
     bool finished = false, failed = false;
+    std::map<std::string, std::int64_t> builtinIdentities;
+    std::vector<std::int64_t> serviceSpellings;
+    std::vector<service::Kind> serviceKinds;
     wire::SessionStatus status() {
         wire::SessionStatus result;
         aurora_hosted_resolver_status(owner.data(), &result);
@@ -1511,7 +1483,6 @@ class HostedResolution::Impl {
         return result;
     }
     void seed() {
-        std::map<std::string, std::int64_t> identities;
         const auto add = [&](const Type &type) {
             hosted_abi::ResolverSeedBuiltinInput input;
             input.definition = blankMeta();
@@ -1521,7 +1492,7 @@ class HostedResolution::Impl {
                 input.definition.value3 = text(type.className);
             const auto result = aurora_hosted_resolver_seed_builtin(owner.data(), &input);
             storage();
-            if (result < 0 || !identities.emplace(typeName(type), result).second)
+            if (result < 0 || !builtinIdentities.emplace(typeName(type), result).second)
                 invalidResolution();
         };
         const auto &catalog = builtinCatalog();
@@ -1539,12 +1510,166 @@ class HostedResolution::Impl {
                 invalidResolution();
         };
         for (const auto &definition : catalog.definitions) {
-            const auto parent = identities.at(typeName(definition.type));
+            const auto parent = builtinIdentities.at(typeName(definition.type));
             for (const auto &[name, type] : definition.fields)
-                member(parent, name, identities.at(typeName(type)));
+                member(parent, name, builtinIdentities.at(typeName(type)));
             for (std::size_t ordinal = 0; ordinal < definition.cases.size(); ++ordinal)
                 member(parent, definition.cases[ordinal], static_cast<std::int64_t>(ordinal));
         }
+        for (const auto &[kind, type] : service::capabilityTypes) {
+            (void)type;
+            serviceKinds.push_back(kind);
+        }
+        for (const auto &operation : service::operations)
+            serviceSpellings.push_back(text(std::string(operation.spelling)));
+    }
+
+    void lowerStorage() {
+        const auto value = status().storage;
+        if (value == StorageStatus::allocation)
+            throw Error(DiagnosticCode::Internal, "hosted lowering allocation failed");
+        if (value != StorageStatus::none)
+            invalidResolution();
+    }
+    void configureLowering(AnalysisMode mode, const std::vector<std::int64_t> &layoutSymbols) {
+        hosted_abi::LoweringBeginInput configuration{};
+        auto &limits = configuration.configuration;
+        limits.byteLeaves = maximumCopiedByteLeaves;
+        limits.nonByteLeaves = maximumCopiedNonByteLeaves;
+        limits.totalLeaves = maximumCopiedClassLeaves;
+        limits.copiedBytes = maximumCopiedClassBytes;
+        limits.byteArrayLength = maximumClassByteArrayLength;
+        limits.scalarArrayLength = maximumClassScalarArrayLength;
+        switch (mode) {
+        case AnalysisMode::Check:
+            limits.analysisMode = 0;
+            break;
+        case AnalysisMode::Lint:
+            limits.analysisMode = 1;
+            break;
+        default:
+            invalidResolution();
+        }
+        limits.serviceGroups = service::supportedGroupBitmap();
+        if (aurora_hosted_lowering_begin(owner.data(), &configuration) != 1) {
+            lowerStorage();
+            invalidResolution();
+        }
+        // These are the existing public scalar descriptor identities. The
+        // ordinal is never an Aurora enum conversion or a service identity.
+        const std::array scalars{Type::I64, Type::Bool, Type::Own, Type::Ref, Type::MutRef, Type::U64, Type::U8};
+        for (std::size_t index = 0; index < scalars.size(); ++index) {
+            const auto &type = scalars[index];
+            hosted_abi::LoweringScalarInput input{};
+            input.seed.concreteKind = wireKind(type);
+            input.seed.publicId = static_cast<int>(type.kind) + 1;
+            input.seed.byteSize = type == Type::Bool || type == Type::U8 ? 1 : 8;
+            if (aurora_hosted_lowering_seed_scalar(owner.data(), &input) != static_cast<std::int64_t>(index) + 2) {
+                lowerStorage();
+                invalidResolution();
+            }
+        }
+        if (service::operations.size() != 5 || serviceKinds.size() != 3 ||
+            serviceSpellings.size() != service::operations.size())
+            invalidResolution();
+        for (std::size_t index = 0; index < service::operations.size(); ++index) {
+            const auto &operation = service::operations[index];
+            const auto kind = std::find(serviceKinds.begin(), serviceKinds.end(), operation.kind);
+            if (kind == serviceKinds.end())
+                invalidResolution();
+            const auto parameters = operation.parameterTypes();
+            if (parameters.size() > 5)
+                invalidResolution();
+            hosted_abi::LoweringServiceInput input{};
+            input.seed.receiverKind = wireKind(service::capabilityType(operation.kind));
+            input.seed.kindId = std::distance(serviceKinds.begin(), kind);
+            input.seed.operationId = static_cast<std::int64_t>(index);
+            input.seed.spellingSource = serviceSpellings[index];
+            const auto result = builtinIdentities.find(typeName(operation.resultType()));
+            if (result == builtinIdentities.end())
+                invalidResolution();
+            input.seed.resultType = result->second;
+            auto &types = input.seed.parameterTypes;
+            types.parameterCount = static_cast<std::int64_t>(parameters.size());
+            const std::array fields{
+                &types.firstType, &types.secondType, &types.thirdType, &types.fourthType, &types.fifthType};
+            for (std::size_t parameter = 0; parameter < fields.size(); ++parameter)
+                *fields[parameter] =
+                    parameter < parameters.size() ? wireKind(parameters[parameter]) : ResolvedTypeKind::invalid;
+            if (aurora_hosted_lowering_seed_service(owner.data(), &input) != static_cast<std::int64_t>(index) + 9) {
+                lowerStorage();
+                invalidResolution();
+            }
+        }
+        for (const auto symbol : layoutSymbols)
+            if (aurora_hosted_lowering_seed_layout_symbol(owner.data(), symbol) < 0) {
+                lowerStorage();
+                invalidResolution();
+            }
+        lowerStorage();
+    }
+    HostedResolvedSource lower(AnalysisMode mode, bool collectAbi) {
+        AbiDeclarations declarations;
+        std::vector<std::int64_t> layoutSymbols;
+        {
+            Projection resolved(owner.data(), sources, owner.usedBytes());
+            if (collectAbi)
+                declarations = resolved.abiDeclarations();
+            layoutSymbols = resolved.layoutSymbols();
+        }
+        configureLowering(mode, layoutSymbols);
+        lowering::LoweringResult result;
+        // Borrowed Session stays armed through execution, private projection
+        // and diagnostic rendering, including their exceptional exits.
+        aurora_hosted_lowering_run(owner.data(), &result);
+        const auto storageStatus = status().storage;
+        if (result.result_status == lowering::LoweringStatus::storage_failure) {
+            if (storageStatus != StorageStatus::allocation)
+                invalidResolution();
+            throw Error(DiagnosticCode::Internal, "hosted lowering allocation failed");
+        }
+        if (storageStatus != StorageStatus::none)
+            invalidResolution();
+        const bool success = result.result_status == lowering::LoweringStatus::success;
+        if (success) {
+            lowerStorage();
+            if (result.result_reason != lowering::LoweringError::none || result.root_row < hostedLoweringPreludeRows ||
+                result.diagnostic_row != 0)
+                invalidResolution();
+        } else if ((result.result_status != lowering::LoweringStatus::semantic_failure &&
+                    result.result_status != lowering::LoweringStatus::invalid) ||
+                   result.result_reason == lowering::LoweringError::none) {
+            invalidResolution();
+        }
+        auto output = [&] {
+            // Lowering interns additional concrete types/source references. The
+            // resolver-era cache is gone; load one fresh shared metadata snapshot.
+            Projection projection(owner.data(), sources, owner.usedBytes());
+            std::vector<lowering::OutputRow> rows;
+            std::vector<lowering::OperandRow> operands;
+            const auto load = [&](auto &values, std::int64_t pool, std::size_t reportCount, auto read) {
+                const auto published = sizeValue(aurora_hosted_lowering_count(owner.data(), pool));
+                const auto count = success ? published : reportCount;
+                using Value = typename std::remove_reference_t<decltype(values)>::value_type;
+                if (count > published || published > owner.usedBytes() / sizeof(Value) || count > values.max_size())
+                    invalidResolution();
+                values.resize(count);
+                for (std::size_t index = 0; index < count; ++index)
+                    read(owner.data(), static_cast<std::int64_t>(index), &values[index]);
+            };
+            load(rows, 0, 1, aurora_hosted_lowering_read_output);
+            load(operands, 1, 3, aurora_hosted_lowering_read_operand);
+            HostedLoweringInput input{
+                rows, operands, projection.sourceByteCount(), result.root_row, result.diagnostic_row};
+            if (!success)
+                throw Error(renderHostedLoweringDiagnostic(result, input, projection.diagnosticServices()));
+            return projectHostedLowering(input, projection.loweringServices(serviceKinds));
+        }();
+        // The result owns its values and shared source snapshots. Destroy all
+        // native-backed views above, then free Session before verification.
+        owner.release();
+        auto verified = ir::validate(std::move(output.module));
+        return {std::move(verified), std::move(output.diagnostics), std::move(declarations)};
     }
 
 public:
@@ -1584,10 +1709,20 @@ public:
             throw;
         }
     }
-    Program resolve(const std::vector<std::size_t> &order, std::size_t root) {
+    HostedResolvedSource
+    resolve(const std::vector<std::size_t> &order, std::size_t root, AnalysisMode mode, bool collectAbi) {
         if (finished || failed || root >= sources.size() || order.size() != sources.size())
             invalidResolution();
         finished = true;
+        // The direct API may outlive this call. Release its sole armed native
+        // owner on earlier failures; successful projection releases it before
+        // independent validation. Releasing an inactive owner is harmless.
+        struct Release {
+            SessionOwner &owner;
+            ~Release() {
+                owner.release();
+            }
+        } release{owner};
         std::vector<bool> seen(sources.size());
         std::map<std::string, std::size_t> names;
         for (std::size_t i = 0; i < sources.size(); ++i)
@@ -1634,12 +1769,17 @@ public:
         const auto result = aurora_hosted_resolver_run(owner.data());
         storage();
         const auto final = status();
-        Projection projection(owner.data(), sources, owner.usedBytes());
-        if (final.diagnostic != SemanticError::none)
+        if (final.diagnostic != SemanticError::none) {
+            Projection projection(owner.data(), sources, owner.usedBytes());
             projection.diagnostic(final);
+        }
         if (result != 0 || final.node != -1 || final.first != -1 || final.second != -1)
             invalidResolution();
-        return projection.program(root);
+        try {
+            return lower(mode, collectAbi);
+        } catch (const Error &error) {
+            throw error.withDefaultCode(DiagnosticCode::Semantic);
+        }
     }
 };
 HostedResolution::HostedResolution() : implementation(std::make_unique<Impl>()) {
@@ -1648,7 +1788,10 @@ HostedResolution::~HostedResolution() = default;
 HostedModule HostedResolution::add(std::shared_ptr<const SourceText> source) {
     return implementation->add(std::move(source));
 }
-Program HostedResolution::resolve(const std::vector<std::size_t> &order, std::size_t root) {
-    return implementation->resolve(order, root);
+HostedResolvedSource HostedResolution::resolve(const std::vector<std::size_t> &order,
+                                               std::size_t root,
+                                               AnalysisMode mode,
+                                               bool collectAbiDeclarations) {
+    return implementation->resolve(order, root, mode, collectAbiDeclarations);
 }
 } // namespace aurora

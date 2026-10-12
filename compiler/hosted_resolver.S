@@ -112,3 +112,47 @@ aurora_hosted_resolver_run:
     movq %rdi, %r10
     jmp __aurora_frontend_resolver_run
 .size aurora_hosted_resolver_run, .-aurora_hosted_resolver_run
+
+# Lowering borrows the same live Session. Inputs and copied results use the
+# compiler-described argument/result records; no owner or row bytes are copied.
+.macro lowering_record operation, target
+.globl aurora_hosted_lowering_\operation
+.hidden aurora_hosted_lowering_\operation
+.type aurora_hosted_lowering_\operation, @function
+aurora_hosted_lowering_\operation:
+    movq %rdi, %r10
+    movq %rsi, %r11
+    jmp \target
+.size aurora_hosted_lowering_\operation, .-aurora_hosted_lowering_\operation
+.endm
+lowering_record begin, __aurora_frontend_lowering_begin
+lowering_record seed_scalar, __aurora_frontend_lowering_seed_scalar
+lowering_record seed_service, __aurora_frontend_lowering_seed_service
+lowering_record run, __aurora_frontend_lowering_run
+
+.macro lowering_index operation, target
+.globl aurora_hosted_lowering_\operation
+.hidden aurora_hosted_lowering_\operation
+.type aurora_hosted_lowering_\operation, @function
+aurora_hosted_lowering_\operation:
+    movq %rdi, %r10
+    movq %rsi, %rdi
+    jmp \target
+.size aurora_hosted_lowering_\operation, .-aurora_hosted_lowering_\operation
+.endm
+lowering_index seed_layout_symbol, __aurora_frontend_lowering_seed_layout_symbol
+lowering_index count, __aurora_frontend_lowering_count
+
+.macro lowering_read operation, target
+.globl aurora_hosted_lowering_\operation
+.hidden aurora_hosted_lowering_\operation
+.type aurora_hosted_lowering_\operation, @function
+aurora_hosted_lowering_\operation:
+    movq %rdi, %r10
+    movq %rsi, %rdi
+    movq %rdx, %r11
+    jmp \target
+.size aurora_hosted_lowering_\operation, .-aurora_hosted_lowering_\operation
+.endm
+lowering_read read_output, __aurora_frontend_lowering_read_output
+lowering_read read_operand, __aurora_frontend_lowering_read_operand

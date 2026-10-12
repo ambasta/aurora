@@ -121,13 +121,16 @@ class ProfileMetadata(unittest.TestCase):
 
     def test_isolated_compiler_header_staging_is_closed(self):
         headers = literal("tests/compiler/ir_exhaustive.py", "HEADERS")
+        generated = literal("tests/compiler/ir_exhaustive.py", "GENERATED_HEADERS")
+        self.assertEqual(generated, ("hosted_frontend_abi.hpp",))
+        self.assertTrue(set(headers).isdisjoint(generated))
         self.assertEqual(len(headers), len(set(headers)))
         self.assertIn("services.hpp", headers)
         for header in headers:
             path = ROOT / "compiler" / header
             self.assertTrue(path.is_file(), header)
             for dependency in re.findall(r'^\s*#include\s+"([^"]+)"', path.read_text(), re.MULTILINE):
-                self.assertIn(dependency, headers, header + " requires " + dependency)
+                self.assertIn(dependency, headers + generated, header + " requires " + dependency)
 
     def test_hosted_source_closure_and_identity_selection(self):
         runner = load("graphical_metadata_runner", "tests/kernel-graphical-console.py")

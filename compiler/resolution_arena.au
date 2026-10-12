@@ -2,6 +2,9 @@ export module aurora.compiler.resolution_arena;
 import aurora.compiler.lexer;
 import aurora.compiler.resolution_kinds;
 import aurora.compiler.syntax_arena;
+import aurora.compiler.lowering_kinds;
+import aurora.compiler.lowering_errors;
+import aurora.compiler.lowering_storage;
 
 // The host owns the granting region. Every pointer-free row and every source
 // byte below belongs to this single move-only Session until explicit release.
@@ -39,7 +42,7 @@ import aurora.compiler.syntax_arena;
 // Scratch projection uses in-place heapsort and at most 12*one-file bytes.
 // Prefix helpers add name depth (or two depths for comparison) to their caller's
 // saved scratch base, then restore it; AVL balancing uses parent links, no stack.
-// Count publication always follows successful set; all six allocation results,
+// Count publication always follows successful set; all eleven allocation results,
 // including inert failures, remain owned until ordinary consuming cleanup.
 export namespace compiler_resolver {
     enum class StorageStatus {
@@ -689,6 +692,21 @@ export namespace compiler_resolver {
         i64 diagnostic_node;
         i64 diagnostic_first;
         i64 diagnostic_second;
+        // Keep the six resolver owners and all their fields in their existing order.
+        // Five typed owners plus five counts add 200 bytes; the two final report
+        // words bring the predicted Session extent from 304 to 520 bytes.
+        builtin::OwnedValues<compiler_lowering::OutputRow> outputRows;
+        builtin::OwnedValues<compiler_lowering::OperandRow> outputOperands;
+        builtin::OwnedValues<compiler_lowering::LocalRow> loweringLocals;
+        builtin::OwnedValues<compiler_lowering::SnapshotRow> loweringSnapshots;
+        builtin::OwnedValues<compiler_lowering::ContinuationRow> loweringContinuations;
+        i64 output_used;
+        i64 operand_used;
+        i64 local_used;
+        i64 snapshot_used;
+        i64 continuation_used;
+        compiler_lowering::LoweringError loweringError;
+        i64 diagnosticPayloadRow;
 
         auto next_capacity(i64 current, i64 required) -> i64 {
             if (current < 0 || required < 0) {
@@ -803,6 +821,140 @@ export namespace compiler_resolver {
             }
             return true;
         }
+        // These widths must agree with generated ABI facts before execution.
+        // Geometric spare capacity may shrink to the exact request at i64's byte
+        // boundary. Arithmetic failure is distinct from allocation exhaustion.
+        auto next_lowering_capacity(i64 current, i64 required, i64 width) -> i64 {
+            if (current < 0 || required < 0 || width < 1 || required > 9223372036854775807 / width) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            i64 target = next_capacity(current, required);
+            if (target > 9223372036854775807 / width) {
+                target = required;
+            }
+            return target;
+        }
+        auto reserve_output_rows(i64 count) -> bool {
+            if (!good()) {
+                return false;
+            }
+            if (count < 0 || count > 9223372036854775807 / 64) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            if (count <= outputRows.size()) {
+                return true;
+            }
+            const i64 next = next_lowering_capacity(outputRows.size(), count, 64);
+            if (next < count) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            const compiler_lowering::OutputRow fill = compiler_lowering::OutputRow(
+                compiler_lowering::RecordKind::invalid, compiler_lowering::InstructionForm::BindServiceParameter, 0, 0);
+            if (!outputRows.try_resize(next, fill)) {
+                fail_storage(StorageStatus::allocation);
+                return false;
+            }
+            return true;
+        }
+        auto reserve_output_operands(i64 count) -> bool {
+            if (!good()) {
+                return false;
+            }
+            if (count < 0 || count > 9223372036854775807 / 40) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            if (count <= outputOperands.size()) {
+                return true;
+            }
+            const i64 next = next_lowering_capacity(outputOperands.size(), count, 40);
+            if (next < count) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            const compiler_lowering::OperandRow fill = compiler_lowering::OperandRow(
+                compiler_lowering::OperandRole::invalid, 0, 0u64, 0, 0);
+            if (!outputOperands.try_resize(next, fill)) {
+                fail_storage(StorageStatus::allocation);
+                return false;
+            }
+            return true;
+        }
+        auto reserve_lowering_locals(i64 count) -> bool {
+            if (!good()) {
+                return false;
+            }
+            if (count < 0 || count > 9223372036854775807 / 160) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            if (count <= loweringLocals.size()) {
+                return true;
+            }
+            const i64 next = next_lowering_capacity(loweringLocals.size(), count, 160);
+            if (next < count) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            const compiler_lowering::LocalRow fill = compiler_lowering::LocalRow(-1, -1, 0, -1, -1, false);
+            if (!loweringLocals.try_resize(next, fill)) {
+                fail_storage(StorageStatus::allocation);
+                return false;
+            }
+            return true;
+        }
+        auto reserve_lowering_snapshots(i64 count) -> bool {
+            if (!good()) {
+                return false;
+            }
+            if (count < 0 || count > 9223372036854775807 / 48) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            if (count <= loweringSnapshots.size()) {
+                return true;
+            }
+            const i64 next = next_lowering_capacity(loweringSnapshots.size(), count, 48);
+            if (next < count) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            const compiler_lowering::SnapshotRow fill = compiler_lowering::SnapshotRow(0, 0, false, false, false,
+                false);
+            if (!loweringSnapshots.try_resize(next, fill)) {
+                fail_storage(StorageStatus::allocation);
+                return false;
+            }
+            return true;
+        }
+        auto reserve_lowering_continuations(i64 count) -> bool {
+            if (!good()) {
+                return false;
+            }
+            if (count < 0 || count > 9223372036854775807 / 496) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            if (count <= loweringContinuations.size()) {
+                return true;
+            }
+            const i64 next = next_lowering_capacity(loweringContinuations.size(), count, 496);
+            if (next < count) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            const compiler_lowering::ArgumentLane empty_argument = compiler_lowering::ArgumentLane(-1,
+                compiler_lowering::ArgumentKind::absent, -1, -1, -1, -1);
+            const compiler_lowering::ContinuationRow fill = compiler_lowering::ContinuationRow(
+                compiler_lowering::ContinuationKind::invalid, -1, -1, empty_argument);
+            if (!loweringContinuations.try_resize(next, fill)) {
+                fail_storage(StorageStatus::allocation);
+                return false;
+            }
+            return true;
+        }
     public:
         Session(builtin::ByteRegion region, builtin::OwnedBytes bytes, builtin::OwnedValues<SyntaxRow> syntax,
             builtin::OwnedValues<MetaRow> meta, builtin::OwnedValues<ResolvedRow> resolved,
@@ -810,28 +962,39 @@ export namespace compiler_resolver {
             resolutions(move(resolved)), scratch(move(work)), indexes(make_index_pool(region)), source_used(0),
             graph_source_used(0), syntax_used(0), meta_used(64), resolved_used(0), work_used(0), index_used(0),
             modules(0), index_root(-1), failure(StorageStatus::none), diagnostic(SemanticError::none),
-            diagnostic_node(-1), diagnostic_first(-1), diagnostic_second(-1) {
+            diagnostic_node(-1), diagnostic_first(-1), diagnostic_second(-1),
+            outputRows(compiler_lowering::make_output_pool(region)),
+            outputOperands(compiler_lowering::make_operand_pool(region)),
+            loweringLocals(compiler_lowering::make_local_pool(region)),
+            loweringSnapshots(compiler_lowering::make_snapshot_pool(region)),
+            loweringContinuations(compiler_lowering::make_continuation_pool(region)), output_used(0), operand_used(0),
+            local_used(0), snapshot_used(0), continuation_used(0),
+            loweringError(compiler_lowering::LoweringError::none), diagnosticPayloadRow(-1) {
         }
         // create() checks every owner before publication; every failed resize latches failure.
         // New owner mutation or construction paths must preserve this invariant.
         auto good() const -> bool {
-            return failure == StorageStatus::none && diagnostic == SemanticError::none;
+            return failure == StorageStatus::none && diagnostic == SemanticError::none && loweringError
+                == compiler_lowering::LoweringError::none;
         }
         auto storage_status() const -> StorageStatus {
             if (failure == StorageStatus::none && (!sources.ok() || !forest.ok() || !metadata.ok() || metadata.size()
-                < 64 || !resolutions.ok() || !scratch.ok() || !indexes.ok())) {
+                < 64 || !resolutions.ok() || !scratch.ok() || !indexes.ok() || !outputRows.ok() || !outputOperands.ok()
+                || !loweringLocals.ok() || !loweringSnapshots.ok() || !loweringContinuations.ok())) {
                 return StorageStatus::allocation;
             }
             return failure;
         }
         auto fail_storage(StorageStatus code) -> i64 {
-            if (failure == StorageStatus::none && diagnostic == SemanticError::none) {
+            if (failure == StorageStatus::none && diagnostic == SemanticError::none && loweringError
+                == compiler_lowering::LoweringError::none) {
                 failure = code;
             }
             return -1;
         }
         auto reject(SemanticError code, i64 node, i64 first, i64 second) -> i64 {
-            if (diagnostic == SemanticError::none && failure == StorageStatus::none) {
+            if (diagnostic == SemanticError::none && failure == StorageStatus::none && loweringError
+                == compiler_lowering::LoweringError::none) {
                 if (code == SemanticError::none) {
                     failure = StorageStatus::invalid;
                 } else {
@@ -854,6 +1017,386 @@ export namespace compiler_resolver {
         }
         auto error_second() const -> i64 {
             return diagnostic_second;
+        }
+        auto lowering_error() const -> compiler_lowering::LoweringError {
+            return loweringError;
+        }
+        auto diagnostic_payload_row() const -> i64 {
+            return diagnosticPayloadRow;
+        }
+        auto output_count() const -> i64 {
+            return output_used;
+        }
+        auto operand_count() const -> i64 {
+            return operand_used;
+        }
+        auto local_count() const -> i64 {
+            return local_used;
+        }
+        auto snapshot_count() const -> i64 {
+            return snapshot_used;
+        }
+        auto continuation_count() const -> i64 {
+            return continuation_used;
+        }
+        // A fixed reservation is the one-shot lowering entry marker. Reserve both
+        // owners, initialize all four rows, then publish counts and the marker.
+        // No source-semantic pass or success root is implemented by this operation.
+        auto reserve_diagnostic_payload() -> bool {
+            if (!good()) {
+                return false;
+            }
+            if (diagnosticPayloadRow != -1 || work_used != 0 || output_used != 0 || operand_used != 0 || local_used != 0
+                || snapshot_used != 0 || continuation_used != 0) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            if (!reserve_output_rows(1) || !reserve_output_operands(3)) {
+                return false;
+            }
+            const compiler_lowering::OperandRow source = compiler_lowering::OperandRow(
+                compiler_lowering::OperandRole::NoDiagnosticSource, 0, 0u64, 0, 0);
+            const compiler_lowering::OperandRow value = compiler_lowering::OperandRow(
+                compiler_lowering::OperandRole::NoDiagnosticValue, 0, 0u64, 0, 0);
+            const compiler_lowering::OutputRow row = compiler_lowering::OutputRow(
+                compiler_lowering::RecordKind::DiagnosticPayload,
+                compiler_lowering::InstructionForm::BindServiceParameter, 0, 3);
+            if (!outputOperands.set(0, source) || !outputOperands.set(1, value) || !outputOperands.set(2, value)
+                || !outputRows.set(0, row)) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            operand_used = 3;
+            output_used = 1;
+            diagnosticPayloadRow = 0;
+            return true;
+        }
+        // Payload IDs already exist at the decision site. This path never grows a
+        // pool. An impossible write latches storage failure before the reason.
+        auto reject_lowering(compiler_lowering::LoweringError reason, compiler_lowering::OperandRow source,
+            compiler_lowering::OperandRow first, compiler_lowering::OperandRow second) -> i64 {
+            if (!good()) {
+                return -1;
+            }
+            if (reason == compiler_lowering::LoweringError::none || diagnosticPayloadRow != 0 || output_used < 1
+                || operand_used < 3 || outputRows.size() < output_used || outputOperands.size() < operand_used) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            const compiler_lowering::OutputRow report = outputRows.at(0);
+            if (report.kind() != compiler_lowering::RecordKind::DiagnosticPayload || report.operand_begin() != 0
+                || report.operand_count() != 3) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            if (source.role() != compiler_lowering::OperandRole::NoDiagnosticSource && source.role()
+                != compiler_lowering::OperandRole::DiagnosticSourceRef && source.role()
+                != compiler_lowering::OperandRole::DiagnosticSyntheticRef) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            if (first.role() != compiler_lowering::OperandRole::NoDiagnosticValue && first.role()
+                != compiler_lowering::OperandRole::DiagnosticNameId && first.role()
+                != compiler_lowering::OperandRole::DiagnosticTypeId && first.role()
+                != compiler_lowering::OperandRole::DiagnosticInteger) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            if (second.role() != compiler_lowering::OperandRole::NoDiagnosticValue && second.role()
+                != compiler_lowering::OperandRole::DiagnosticNameId && second.role()
+                != compiler_lowering::OperandRole::DiagnosticTypeId && second.role()
+                != compiler_lowering::OperandRole::DiagnosticInteger) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            if ((source.role() != compiler_lowering::OperandRole::NoDiagnosticSource && source.signed_value() < 0)
+                || (first.role() != compiler_lowering::OperandRole::NoDiagnosticValue && first.signed_value() < 0)
+                || (second.role() != compiler_lowering::OperandRole::NoDiagnosticValue && second.signed_value() < 0)) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            if (!outputOperands.set(0, source) || !outputOperands.set(1, first) || !outputOperands.set(2, second)) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            loweringError = reason;
+            return -1;
+        }
+        // Copied result views remain readable after a selected failure. Mutating
+        // access below stops on the first storage, resolver, or lowering failure.
+        auto view_output(i64 index) const -> compiler_lowering::OutputRow {
+            if (!outputRows.ok() || index < 0 || index >= output_used || index >= outputRows.size()) {
+                const compiler_lowering::OutputRow empty = compiler_lowering::OutputRow(
+                    compiler_lowering::RecordKind::invalid, compiler_lowering::InstructionForm::BindServiceParameter, 0,
+                    0);
+                return empty;
+            }
+            const compiler_lowering::OutputRow row = outputRows.at(index);
+            return row;
+        }
+        auto view_operand(i64 index) const -> compiler_lowering::OperandRow {
+            if (!outputOperands.ok() || index < 0 || index >= operand_used || index >= outputOperands.size()) {
+                const compiler_lowering::OperandRow empty = compiler_lowering::OperandRow(
+                    compiler_lowering::OperandRole::invalid, 0, 0u64, 0, 0);
+                return empty;
+            }
+            const compiler_lowering::OperandRow row = outputOperands.at(index);
+            return row;
+        }
+        auto append_output(compiler_lowering::OutputRow row) -> i64 {
+            if (!good()) {
+                return -1;
+            }
+            if (diagnosticPayloadRow != 0 || row.kind() == compiler_lowering::RecordKind::invalid || row.kind()
+                == compiler_lowering::RecordKind::DiagnosticPayload || row.kind()
+                == compiler_lowering::RecordKind::DiscardedInstruction || row.operand_begin() < 0 || row.operand_count()
+                < 0 || row.operand_begin() > operand_used || row.operand_count() > operand_used - row.operand_begin()
+                || output_used == 9223372036854775807) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            if (!reserve_output_rows(output_used + 1)) {
+                return -1;
+            }
+            const i64 result = output_used;
+            if (!outputRows.set(result, row)) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            output_used = output_used + 1;
+            return result;
+        }
+        auto append_operand(compiler_lowering::OperandRow row) -> i64 {
+            if (!good()) {
+                return -1;
+            }
+            if (diagnosticPayloadRow != 0 || row.role() == compiler_lowering::OperandRole::invalid || operand_used
+                == 9223372036854775807) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            if (!reserve_output_operands(operand_used + 1)) {
+                return -1;
+            }
+            const i64 result = operand_used;
+            if (!outputOperands.set(result, row)) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            operand_used = operand_used + 1;
+            return result;
+        }
+        // Only lowering's unpublished rows may be completed between its ordered
+        // logical and physical layout phases. The diagnostic reservation is fixed.
+        auto set_output(i64 index, compiler_lowering::OutputRow row) -> bool {
+            if (!good()) {
+                return false;
+            }
+            if (index <= 0 || index >= output_used || index >= outputRows.size() || row.kind()
+                == compiler_lowering::RecordKind::invalid || row.kind()
+                == compiler_lowering::RecordKind::DiagnosticPayload || row.kind()
+                == compiler_lowering::RecordKind::DiscardedInstruction || row.operand_begin() < 3 || row.operand_count()
+                < 0 || row.operand_begin() > operand_used || row.operand_count() > operand_used - row.operand_begin()) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            if (!outputRows.set(index, row)) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            return true;
+        }
+        auto set_operand(i64 index, compiler_lowering::OperandRow row) -> bool {
+            if (!good()) {
+                return false;
+            }
+            if (index < 3 || index >= operand_used || index >= outputOperands.size() || row.role()
+                == compiler_lowering::OperandRole::invalid) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            if (!outputOperands.set(index, row)) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            return true;
+        }
+        auto discard_instruction(i64 index) -> bool {
+            if (!good()) {
+                return false;
+            }
+            if (index < 0 || index >= output_used) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            compiler_lowering::OutputRow row = outputRows.at(index);
+            if (!row.discard_instruction() || !outputRows.set(index, row)) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            return true;
+        }
+        auto local(i64 index) -> compiler_lowering::LocalRow {
+            if (!good() || index < 0 || index >= local_used || index >= loweringLocals.size()) {
+                fail_storage(StorageStatus::invalid);
+                const compiler_lowering::LocalRow empty = compiler_lowering::LocalRow(-1, -1, 0, -1, -1, false);
+                return empty;
+            }
+            const compiler_lowering::LocalRow row = loweringLocals.at(index);
+            return row;
+        }
+        auto append_local(compiler_lowering::LocalRow row) -> i64 {
+            if (!good()) {
+                return -1;
+            }
+            const compiler_lowering::SnapshotRow state = row.state();
+            if (diagnosticPayloadRow != 0 || row.concrete_type_id() < 0 || row.offset() < 0 || row.name_source_id() < -1
+                || row.scope_id() < -1 || row.previous_binding() < -1 || row.previous_binding() >= local_used
+                || state.shared_count() < 0 || state.object_shared_count() < 0 || local_used == 9223372036854775807) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            if (!reserve_lowering_locals(local_used + 1)) {
+                return -1;
+            }
+            const i64 result = local_used;
+            if (!loweringLocals.set(result, row)) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            local_used = local_used + 1;
+            return result;
+        }
+        auto set_local_state(i64 index, compiler_lowering::SnapshotRow state) -> bool {
+            compiler_lowering::LocalRow row = local(index);
+            if (!good() || state.shared_count() < 0 || state.object_shared_count() < 0) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            row.set_state(state);
+            if (!loweringLocals.set(index, row)) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            return true;
+        }
+        auto mark_local_read(i64 index) -> bool {
+            compiler_lowering::LocalRow row = local(index);
+            if (!good()) {
+                return false;
+            }
+            row.mark_read();
+            if (!loweringLocals.set(index, row)) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            return true;
+        }
+        auto snapshot(i64 index) -> compiler_lowering::SnapshotRow {
+            if (!good() || index < 0 || index >= snapshot_used || index >= loweringSnapshots.size()) {
+                fail_storage(StorageStatus::invalid);
+                const compiler_lowering::SnapshotRow empty = compiler_lowering::SnapshotRow(0, 0, false, false, false,
+                    false);
+                return empty;
+            }
+            const compiler_lowering::SnapshotRow row = loweringSnapshots.at(index);
+            return row;
+        }
+        // Capture only an existing prefix. Local identity and frame allocation
+        // stay monotonic even when branches add more Locals after this capture.
+        auto capture_locals(i64 prefix_length) -> i64 {
+            if (!good()) {
+                return -1;
+            }
+            if (diagnosticPayloadRow != 0 || prefix_length < 0 || prefix_length > local_used || prefix_length
+                > 9223372036854775807 - snapshot_used) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            const i64 required = snapshot_used + prefix_length;
+            if (!reserve_lowering_snapshots(required)) {
+                return -1;
+            }
+            i64 at = 0;
+            while (at < prefix_length) {
+                const compiler_lowering::LocalRow row = loweringLocals.at(at);
+                const compiler_lowering::SnapshotRow state = row.state();
+                if (!loweringSnapshots.set(snapshot_used + at, state)) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+                at = at + 1;
+            }
+            const i64 result = snapshot_used;
+            snapshot_used = required;
+            return result;
+        }
+        auto restore_locals(i64 base, i64 prefix_length) -> bool {
+            if (!good()) {
+                return false;
+            }
+            if (base < 0 || prefix_length < 0 || prefix_length > local_used || base > snapshot_used || prefix_length
+                > snapshot_used - base) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            i64 at = 0;
+            while (at < prefix_length) {
+                const compiler_lowering::SnapshotRow state = loweringSnapshots.at(base + at);
+                if (!set_local_state(at, state)) {
+                    return false;
+                }
+                at = at + 1;
+            }
+            return true;
+        }
+        auto truncate_snapshots(i64 count) -> bool {
+            if (count < 0 || count > snapshot_used) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            snapshot_used = count;
+            return true;
+        }
+        auto continuation(i64 index) -> compiler_lowering::ContinuationRow {
+            if (!good() || index < 0 || index >= continuation_used || index >= loweringContinuations.size()) {
+                fail_storage(StorageStatus::invalid);
+                const compiler_lowering::ArgumentLane empty_argument = compiler_lowering::ArgumentLane(-1,
+                    compiler_lowering::ArgumentKind::absent, -1, -1, -1, -1);
+                const compiler_lowering::ContinuationRow empty = compiler_lowering::ContinuationRow(
+                    compiler_lowering::ContinuationKind::invalid, -1, -1, empty_argument);
+                return empty;
+            }
+            const compiler_lowering::ContinuationRow row = loweringContinuations.at(index);
+            return row;
+        }
+        auto append_continuation(compiler_lowering::ContinuationRow row) -> i64 {
+            if (!good()) {
+                return -1;
+            }
+            if (diagnosticPayloadRow != 0 || row.kind() == compiler_lowering::ContinuationKind::invalid
+                || continuation_used == 9223372036854775807) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            if (!reserve_lowering_continuations(continuation_used + 1)) {
+                return -1;
+            }
+            const i64 result = continuation_used;
+            if (!loweringContinuations.set(result, row)) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            continuation_used = continuation_used + 1;
+            return result;
+        }
+        auto set_continuation(i64 index, compiler_lowering::ContinuationRow row) -> bool {
+            if (!good() || index < 0 || index >= continuation_used || row.kind()
+                == compiler_lowering::ContinuationKind::invalid || !loweringContinuations.set(index, row)) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            return true;
+        }
+        auto truncate_continuations(i64 count) -> bool {
+            if (count < 0 || count > continuation_used) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            continuation_used = count;
+            return true;
+        }
+        // Function retirement only; branch restoration must never erase Locals.
+        auto reset_lowering_locals() -> bool {
+            if (!good() || snapshot_used != 0 || continuation_used != 0) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            local_used = 0;
+            return true;
         }
         auto source_size() const -> i64 {
             return source_used;
@@ -1193,23 +1736,25 @@ export namespace compiler_resolver {
             }
             i64 node = index_root;
             i64 steps = 0;
-            while (node >= 0 && good()) {
-                if (steps >= index_used) {
+            // Between checked row reads, only atom comparison can change sticky status.
+            // Keep each node checked before its direct read, without replaying status guards.
+            while (node >= 0) {
+                if (steps >= index_used || node >= index_used || node >= indexes.size()) {
                     return fail_storage(StorageStatus::invalid);
                 }
                 steps = steps + 1;
-                const IndexRow row = index_row(node);
-                if (!good()) {
+                const IndexRow row = indexes.at(node);
+                if (row.key_domain() < 1) {
                     return fail_storage(StorageStatus::invalid);
                 }
                 i64 order = 0;
                 if (domain == 1 && row.key_domain() == 1) {
                     order = compare_atom(first, second, row.first_key(), row.second_key());
+                    if (!good()) {
+                        return -1;
+                    }
                 } else {
                     order = row.key_order(domain, first, second, third, fourth);
-                }
-                if (!good()) {
-                    return -1;
                 }
                 if (order == 0) {
                     return node;
@@ -1908,6 +2453,29 @@ export namespace compiler_resolver {
                 }
             }
             truncate_work(base);
+            return result;
+        }
+        // Decoded literal payload has no new module/source-reference identity.
+        // Existing graph offsets stay fixed while the same owner grows safely.
+        auto append_literal_byte(u8 value) -> i64 {
+            if (!good()) {
+                return -1;
+            }
+            if (source_used == 9223372036854775807) {
+                return fail_storage(StorageStatus::limit);
+            }
+            const i64 required = source_used + 1;
+            if (required > sources.size()) {
+                const i64 capacity = next_capacity(sources.size(), required);
+                if (capacity < required || !sources.try_resize(capacity)) {
+                    return fail_storage(StorageStatus::allocation);
+                }
+            }
+            const i64 result = source_used;
+            if (!sources.set(result, value)) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            source_used = required;
             return result;
         }
         auto append_text(builtin::span<const u8> text) -> i64 {

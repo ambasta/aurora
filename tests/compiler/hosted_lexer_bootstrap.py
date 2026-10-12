@@ -25,9 +25,18 @@ COMPILER_MODULES = (
     "syntax_arena.au",
     "parser.au",
     "resolution_kinds.au",
+    "lowering_errors.au",
+    "lowering_kinds.au",
+    "lowering_storage.au",
     "resolution_arena.au",
     "resolver.au",
     "frontend.au",
+    "lowering_common.au",
+    "lowering_configuration.au",
+    "lowering_types.au",
+    "lowering_values.au",
+    "lowering_body.au",
+    "lowering.au",
 )
 
 
@@ -113,6 +122,64 @@ def abi_generation(facts):
         and "static_assert(sizeof(ResolverReleasePair) == offsetof(ResolverIngest, module));" in generated,
         "resolution argument records or checked consuming-owner prefixes were omitted",
     )
+    require(
+        all(
+            f"struct alignas(8) {name} {{" in generated
+            for name in (
+                "LoweringBeginInput",
+                "LoweringScalarInput",
+                "LoweringServiceInput",
+            )
+        )
+        and "aurora::hosted_abi::compiler_lowering::LoweringConfig configuration{};" in generated
+        and "aurora::hosted_abi::compiler_lowering::ScalarSeed seed{};" in generated
+        and "aurora::hosted_abi::compiler_lowering::ServiceSeed seed{};" in generated
+        and "aurora::hosted_abi::compiler_lowering::ServiceParameters parameterTypes{};" in generated,
+        "lowering input/configuration/catalog records were flattened or omitted",
+    )
+    for source, extent in (
+        ("compiler_resolver::Session", 520),
+        ("compiler_lowering::OutputRow", 64),
+        ("compiler_lowering::OperandRow", 40),
+        ("compiler_lowering::LoweringResult", 32),
+        ("compiler_lowering::LocalRow", 160),
+        ("compiler_lowering::SnapshotRow", 48),
+        ("compiler_lowering::ContinuationRow", 496),
+    ):
+        _, entry = abi_declaration(facts, "records", source)
+        require(entry["reserved"] == extent and entry["alignment"] == 8, f"lowering layout changed: {source}")
+    # Exact root signatures are the only native entry authority. An imported
+    # implementation must not become a fallback when its forwarding root is lost.
+    for operation in (
+        "begin",
+        "seed_scalar",
+        "seed_service",
+        "seed_layout_symbol",
+        "run",
+        "count",
+        "read_output",
+        "read_operand",
+    ):
+        for mutation in ("receiver", "result", "parameters", "root"):
+            changed = deepcopy(facts)
+            source = "compiler_frontend::lowering_" + operation
+            _, entry = abi_declaration(changed, "functions", source)
+            if mutation == "receiver":
+                entry["receiver"] = None
+            elif mutation == "result":
+                entry["result"]["bytes"] += 8
+            elif mutation == "parameters":
+                if entry["parameters"]:
+                    entry["parameters"][0]["type_name"] = "wrong-lowering-parameter"
+                else:
+                    entry["parameter_bytes"] += 8
+            else:
+                entry["source_name"] = "fixture::removed_lowering_" + operation
+            try:
+                frontend_abi_header(changed)
+            except ValueError:
+                continue
+            raise AssertionError(f"unsafe lowering bridge accepted: {operation}/{mutation}")
     for kind in (
         "result_extent",
         "field_extent",
@@ -176,7 +243,7 @@ def abi_generation(facts):
         except ValueError:
             continue
         raise AssertionError(f"unsupported or unsafe ABI facts accepted: {kind}")
-    print("PASS generic source-spelled ABI records/enums, nested layout and bridge extent rejection")
+    print("PASS generic source-spelled ABI records/enums, nested layout and exact lowering bridge rejection")
 
 
 def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
@@ -216,6 +283,19 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
             "seed_builtin",
             "seed_member",
             "run",
+        )
+    )
+    entries.update(
+        "aurora_hosted_lowering_" + operation
+        for operation in (
+            "begin",
+            "seed_scalar",
+            "seed_service",
+            "seed_layout_symbol",
+            "run",
+            "count",
+            "read_output",
+            "read_operand",
         )
     )
     # A is predecessor-generated and need not equal B. Both actual build
@@ -350,9 +430,10 @@ def main():
             if source == root / "compiler/lexer.au":
                 require(runs[0].returncode == 0, "lexer self-rebuild failed")
                 print("PASS current C2 lexer rebuild SHA256 " + hashlib.sha256(outputs[1].read_bytes()).hexdigest())
-            # The vocabulary-only module has no concrete function by design;
-            # the complete resolver graph below compiles and covers its enums.
-            if source in compiler_sources and source.name != "resolution_kinds.au":
+            # Vocabulary/result-only modules have no concrete free function;
+            # the complete frontend graph compiles and covers their declarations.
+            vocabulary_modules = {"resolution_kinds.au", "lowering_kinds.au", "lowering_errors.au"}
+            if source in compiler_sources and source.name not in vocabulary_modules:
                 require(runs[0].returncode == 0, f"compiler module self-rebuild failed: {source.name}")
             if source == root / "compiler/frontend.au":
                 require(runs[0].returncode == 0, "whole frontend self-rebuild failed")
