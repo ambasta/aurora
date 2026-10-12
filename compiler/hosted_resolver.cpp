@@ -1659,7 +1659,8 @@ class HostedResolution::Impl {
             };
             load(rows, 0, 1, aurora_hosted_lowering_read_output);
             load(operands, 1, 3, aurora_hosted_lowering_read_operand);
-            HostedLoweringInput input{rows, operands, projection.sourceByteCount(), result.root_row, result.diagnostic_row};
+            HostedLoweringInput input{
+                rows, operands, projection.sourceByteCount(), result.root_row, result.diagnostic_row};
             if (!success)
                 throw Error(renderHostedLoweringDiagnostic(result, input, projection.diagnosticServices()));
             return projectHostedLowering(input, projection.loweringServices(serviceKinds));
