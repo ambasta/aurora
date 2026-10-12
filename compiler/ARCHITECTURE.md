@@ -273,6 +273,7 @@ varies too much for a stable threshold.
 
 | Change | Measured | CPU ratio |
 |---|---|---|
+| `resolution_arena.au` split into Session, rows, names and ingest; shared pool growth | `scripts/compiler-speed.py` against the `lowering_body.au` split: 0.98-1.03x per input, identical output | 1.01x |
 | Generated lowering messages and the `lowering_body.au` split | `scripts/compiler-speed.py` against #162: 0.96-1.03x per input, identical output | 1.00x |
 | #162, typed lowering in Aurora | five library/example inputs 1.24-1.48x wall; `std/json.au` 125 -> 184 ms; peak RSS 22 -> 22-27 MiB; full suite +16.8% (commit message) | about 1.44x |
 | Parser and resolver migrations before #162 | not recorded per step; `std/json.au` went from about 40 ms at the expression-parser stage to 125 ms before #162, on loaded hosts | - |

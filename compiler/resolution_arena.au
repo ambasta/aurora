@@ -88,234 +88,121 @@ export namespace compiler_resolver {
             }
             return target;
         }
-        auto reserve_forest(i64 count) -> bool {
-            if (!good() || count < 0) {
-                return false;
+        // The capacity a pool must grow to before it holds count elements of width
+        // bytes; 0 when they fit already, or -1 after latching failure. Lowering
+        // widths must agree with generated ABI facts before execution; resolver
+        // pools pass 1. Geometric spare capacity may shrink to the exact request at
+        // i64's byte boundary. Arithmetic failure is distinct from allocation exhaustion.
+        auto growth(i64 size, i64 count, i64 width) -> i64 {
+            if (!good()) {
+                return -1;
             }
-            if (count <= forest.size()) {
-                return true;
-            }
-            const i64 next = next_capacity(forest.size(), count);
-            if (next < count) {
-                fail_storage(StorageStatus::invalid);
-                return false;
-            }
-            const SyntaxRow fill = SyntaxRow(SyntaxTag::invalid);
-            if (!forest.try_resize(next, fill)) {
-                fail_storage(StorageStatus::allocation);
-                return false;
-            }
-            return true;
-        }
-        auto reserve_metadata(i64 count) -> bool {
-            if (!good() || count < 0) {
-                return false;
-            }
-            if (count <= metadata.size()) {
-                return true;
-            }
-            const i64 next = next_capacity(metadata.size(), count);
-            if (next < count) {
-                fail_storage(StorageStatus::invalid);
-                return false;
-            }
-            const MetaRow fill = MetaRow(MetaTag::invalid);
-            if (!metadata.try_resize(next, fill)) {
-                fail_storage(StorageStatus::allocation);
-                return false;
-            }
-            return true;
-        }
-        auto reserve_indexes(i64 count) -> bool {
-            if (!good() || count < 0) {
-                return false;
-            }
-            if (count <= indexes.size()) {
-                return true;
-            }
-            const i64 next = next_capacity(indexes.size(), count);
-            if (next < count) {
-                fail_storage(StorageStatus::invalid);
-                return false;
-            }
-            const IndexRow fill = IndexRow(0, -1, -1, -1, -1, -1);
-            if (!indexes.try_resize(next, fill)) {
-                fail_storage(StorageStatus::allocation);
-                return false;
-            }
-            return true;
-        }
-        auto reserve_resolutions(i64 count) -> bool {
-            if (!good() || count < 0) {
-                return false;
-            }
-            if (count <= resolutions.size()) {
-                return true;
-            }
-            const i64 next = next_capacity(resolutions.size(), count);
-            if (next < count) {
-                fail_storage(StorageStatus::invalid);
-                return false;
-            }
-            const ResolvedRow fill = ResolvedRow();
-            if (!resolutions.try_resize(next, fill)) {
-                fail_storage(StorageStatus::allocation);
-                return false;
-            }
-            return true;
-        }
-        auto reserve_scratch(i64 count) -> bool {
-            if (!good() || count < 0) {
-                return false;
-            }
-            if (count <= scratch.size()) {
-                return true;
-            }
-            const i64 next = next_capacity(scratch.size(), count);
-            if (next < count) {
-                fail_storage(StorageStatus::invalid);
-                return false;
-            }
-            const WorkRow fill = WorkRow(-1, -1, -1, -1, -1, -1);
-            if (!scratch.try_resize(next, fill)) {
-                fail_storage(StorageStatus::allocation);
-                return false;
-            }
-            return true;
-        }
-        // These widths must agree with generated ABI facts before execution.
-        // Geometric spare capacity may shrink to the exact request at i64's byte
-        // boundary. Arithmetic failure is distinct from allocation exhaustion.
-        auto next_lowering_capacity(i64 current, i64 required, i64 width) -> i64 {
-            if (current < 0 || required < 0 || width < 1 || required > 9223372036854775807 / width) {
+            if (count < 0 || count > 9223372036854775807 / width) {
                 return fail_storage(StorageStatus::invalid);
             }
-            i64 target = next_capacity(current, required);
-            if (target > 9223372036854775807 / width) {
-                target = required;
+            if (count <= size) {
+                return 0;
             }
-            return target;
+            i64 next = next_capacity(size, count);
+            if (next > 9223372036854775807 / width) {
+                next = count;
+            }
+            if (next < count) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            return next;
+        }
+        auto grown(bool resized) -> bool {
+            if (!resized) {
+                fail_storage(StorageStatus::allocation);
+            }
+            return resized;
+        }
+        auto reserve_forest(i64 count) -> bool {
+            const i64 next = growth(forest.size(), count, 1);
+            if (next <= 0) {
+                return next == 0;
+            }
+            const SyntaxRow fill = SyntaxRow(SyntaxTag::invalid);
+            return grown(forest.try_resize(next, fill));
+        }
+        auto reserve_metadata(i64 count) -> bool {
+            const i64 next = growth(metadata.size(), count, 1);
+            if (next <= 0) {
+                return next == 0;
+            }
+            const MetaRow fill = MetaRow(MetaTag::invalid);
+            return grown(metadata.try_resize(next, fill));
+        }
+        auto reserve_indexes(i64 count) -> bool {
+            const i64 next = growth(indexes.size(), count, 1);
+            if (next <= 0) {
+                return next == 0;
+            }
+            const IndexRow fill = IndexRow(0, -1, -1, -1, -1, -1);
+            return grown(indexes.try_resize(next, fill));
+        }
+        auto reserve_resolutions(i64 count) -> bool {
+            const i64 next = growth(resolutions.size(), count, 1);
+            if (next <= 0) {
+                return next == 0;
+            }
+            const ResolvedRow fill = ResolvedRow();
+            return grown(resolutions.try_resize(next, fill));
+        }
+        auto reserve_scratch(i64 count) -> bool {
+            const i64 next = growth(scratch.size(), count, 1);
+            if (next <= 0) {
+                return next == 0;
+            }
+            const WorkRow fill = WorkRow(-1, -1, -1, -1, -1, -1);
+            return grown(scratch.try_resize(next, fill));
         }
         auto reserve_output_rows(i64 count) -> bool {
-            if (!good()) {
-                return false;
-            }
-            if (count < 0 || count > 9223372036854775807 / 64) {
-                fail_storage(StorageStatus::invalid);
-                return false;
-            }
-            if (count <= outputRows.size()) {
-                return true;
-            }
-            const i64 next = next_lowering_capacity(outputRows.size(), count, 64);
-            if (next < count) {
-                fail_storage(StorageStatus::invalid);
-                return false;
+            const i64 next = growth(outputRows.size(), count, 64);
+            if (next <= 0) {
+                return next == 0;
             }
             const compiler_lowering::OutputRow fill = compiler_lowering::OutputRow(
                 compiler_lowering::RecordKind::invalid, compiler_lowering::InstructionForm::BindServiceParameter, 0, 0);
-            if (!outputRows.try_resize(next, fill)) {
-                fail_storage(StorageStatus::allocation);
-                return false;
-            }
-            return true;
+            return grown(outputRows.try_resize(next, fill));
         }
         auto reserve_output_operands(i64 count) -> bool {
-            if (!good()) {
-                return false;
-            }
-            if (count < 0 || count > 9223372036854775807 / 40) {
-                fail_storage(StorageStatus::invalid);
-                return false;
-            }
-            if (count <= outputOperands.size()) {
-                return true;
-            }
-            const i64 next = next_lowering_capacity(outputOperands.size(), count, 40);
-            if (next < count) {
-                fail_storage(StorageStatus::invalid);
-                return false;
+            const i64 next = growth(outputOperands.size(), count, 40);
+            if (next <= 0) {
+                return next == 0;
             }
             const compiler_lowering::OperandRow fill = compiler_lowering::OperandRow(
                 compiler_lowering::OperandRole::invalid, 0, 0u64, 0, 0);
-            if (!outputOperands.try_resize(next, fill)) {
-                fail_storage(StorageStatus::allocation);
-                return false;
-            }
-            return true;
+            return grown(outputOperands.try_resize(next, fill));
         }
         auto reserve_lowering_locals(i64 count) -> bool {
-            if (!good()) {
-                return false;
-            }
-            if (count < 0 || count > 9223372036854775807 / 160) {
-                fail_storage(StorageStatus::invalid);
-                return false;
-            }
-            if (count <= loweringLocals.size()) {
-                return true;
-            }
-            const i64 next = next_lowering_capacity(loweringLocals.size(), count, 160);
-            if (next < count) {
-                fail_storage(StorageStatus::invalid);
-                return false;
+            const i64 next = growth(loweringLocals.size(), count, 160);
+            if (next <= 0) {
+                return next == 0;
             }
             const compiler_lowering::LocalRow fill = compiler_lowering::LocalRow(-1, -1, 0, -1, -1, false);
-            if (!loweringLocals.try_resize(next, fill)) {
-                fail_storage(StorageStatus::allocation);
-                return false;
-            }
-            return true;
+            return grown(loweringLocals.try_resize(next, fill));
         }
         auto reserve_lowering_snapshots(i64 count) -> bool {
-            if (!good()) {
-                return false;
-            }
-            if (count < 0 || count > 9223372036854775807 / 48) {
-                fail_storage(StorageStatus::invalid);
-                return false;
-            }
-            if (count <= loweringSnapshots.size()) {
-                return true;
-            }
-            const i64 next = next_lowering_capacity(loweringSnapshots.size(), count, 48);
-            if (next < count) {
-                fail_storage(StorageStatus::invalid);
-                return false;
+            const i64 next = growth(loweringSnapshots.size(), count, 48);
+            if (next <= 0) {
+                return next == 0;
             }
             const compiler_lowering::SnapshotRow fill = compiler_lowering::SnapshotRow(0, 0, false, false, false,
                 false);
-            if (!loweringSnapshots.try_resize(next, fill)) {
-                fail_storage(StorageStatus::allocation);
-                return false;
-            }
-            return true;
+            return grown(loweringSnapshots.try_resize(next, fill));
         }
         auto reserve_lowering_continuations(i64 count) -> bool {
-            if (!good()) {
-                return false;
-            }
-            if (count < 0 || count > 9223372036854775807 / 496) {
-                fail_storage(StorageStatus::invalid);
-                return false;
-            }
-            if (count <= loweringContinuations.size()) {
-                return true;
-            }
-            const i64 next = next_lowering_capacity(loweringContinuations.size(), count, 496);
-            if (next < count) {
-                fail_storage(StorageStatus::invalid);
-                return false;
+            const i64 next = growth(loweringContinuations.size(), count, 496);
+            if (next <= 0) {
+                return next == 0;
             }
             const compiler_lowering::ArgumentLane empty_argument = compiler_lowering::ArgumentLane(-1,
                 compiler_lowering::ArgumentKind::absent, -1, -1, -1, -1);
             const compiler_lowering::ContinuationRow fill = compiler_lowering::ContinuationRow(
                 compiler_lowering::ContinuationKind::invalid, -1, -1, empty_argument);
-            if (!loweringContinuations.try_resize(next, fill)) {
-                fail_storage(StorageStatus::allocation);
-                return false;
-            }
-            return true;
+            return grown(loweringContinuations.try_resize(next, fill));
         }
         // One AVL index serves the small set of resolver key domains. Atom keys
         // compare their checked source bytes; all other domains compare integers.
