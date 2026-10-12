@@ -353,8 +353,7 @@ namespace compiler_parser {
         if (token.kind() == compiler_lexer::Event::end_of_input) {
             return token;
         }
-        const compiler_lexer::Cursor cursor = compiler_lexer::Cursor(token.last(), token.row(), token.start());
-        return read_token(source, cursor, token.index() + 1);
+        return read_token(source, compiler_lexer::Cursor(token.last(), token.row(), token.start()), token.index() + 1);
     }
     auto single(builtin::span<const u8> source, ParseToken token, u8 value) -> bool {
         return token.last() - token.first() == 1 && source.at(token.first()) == value;
@@ -689,8 +688,7 @@ namespace compiler_parser {
                 if (!single(source, token, '<')) {
                     return TypeResult(ParseStatus::expected_angle_open, -1, token);
                 }
-                const ParseToken next = advance(source, token);
-                token.update(next);
+                token.update(advance(source, token));
                 ParseFrame parent = ParseFrame(FrameState::type_argument_first, frame.min(), -1, frame.token());
                 parent.designate(frame.field());
                 const ParseFrame child = ParseFrame(FrameState::type_start, 1, -1, -1);
@@ -702,8 +700,7 @@ namespace compiler_parser {
                 if (frame.state() == FrameState::type_argument_first || frame.state()
                     == FrameState::type_argument_second) {
                     if (single(source, token, ',')) {
-                        const ParseToken next = advance(source, token);
-                        token.update(next);
+                        token.update(advance(source, token));
                         if (frame.state() == FrameState::type_argument_second) {
                             return TypeResult(ParseStatus::template_arity, -1, token);
                         }
@@ -720,8 +717,7 @@ namespace compiler_parser {
                             return TypeResult(ParseStatus::expected_angle_close, -1, token);
                         }
                         const i64 close = token.index() * 2 + token.half();
-                        const ParseToken next = type_close(source, token);
-                        token.update(next);
+                        token.update(type_close(source, token));
                         i64 left = value;
                         i64 right = -1;
                         if (frame.state() == FrameState::type_argument_second) {
@@ -764,8 +760,7 @@ namespace compiler_parser {
                                 return TypeResult(ParseStatus::expected_comma, -1, token);
                             }
                             const ParseToken count = advance(source, token);
-                            const ParseToken next = advance(source, count);
-                            token.update(next);
+                            token.update(advance(source, count));
                             TypeKind count_kind = TypeKind::capacity;
                             if (parameter(source, count, context, true)) {
                                 count_kind = TypeKind::length_parameter;
@@ -786,8 +781,7 @@ namespace compiler_parser {
                             return TypeResult(ParseStatus::expected_angle_close, -1, token);
                         }
                         const i64 close = token.index() * 2 + token.half();
-                        const ParseToken next = type_close(source, token);
-                        token.update(next);
+                        token.update(type_close(source, token));
                         if (kind == TypeKind::array_type && (element.kind() == TypeKind::named || element.kind()
                             == TypeKind::builtin_class) && length > 64) {
                             return TypeResult(ParseStatus::class_array_length, -1, token);
@@ -830,8 +824,7 @@ namespace compiler_parser {
                         }
                         if (argument && token.kind() == compiler_lexer::Event::token
                             && compiler_lexer::digit(source.at(token.first()))) {
-                            const ParseToken next = advance(source, token);
-                            token.update(next);
+                            token.update(advance(source, token));
                             if (decimal_capacity(source, original, 64) < 0) {
                                 return TypeResult(ParseStatus::capacity_argument, -1, token);
                             }
@@ -848,8 +841,7 @@ namespace compiler_parser {
                                     return TypeResult(status, -1, token);
                                 }
                             }
-                            const ParseToken next = advance(source, token);
-                            token.update(next);
+                            token.update(advance(source, token));
                         }
                         if (kind != TypeKind::invalid) {
                             value = arena.append_type(kind, original.index(), original.index(), original.index() * 2,
@@ -872,8 +864,7 @@ namespace compiler_parser {
                                 if (!pair(source, token, ':')) {
                                     return TypeResult(ParseStatus::expected_scope, -1, token);
                                 }
-                                const ParseToken member = advance(source, token);
-                                token.update(member);
+                                token.update(advance(source, token));
                                 name_last = token.index();
                                 if ((type_word(source, token) == TypeWord::span_type)) {
                                     kind = TypeKind::byte_span;
@@ -897,8 +888,7 @@ namespace compiler_parser {
                                         }
                                     }
                                 }
-                                const ParseToken next = advance(source, token);
-                                token.update(next);
+                                token.update(advance(source, token));
                             } else {
                                 if (!argument && parameter(source, original, context, false)) {
                                     kind = TypeKind::parameter;
@@ -918,8 +908,7 @@ namespace compiler_parser {
                                 if (!single(source, token, '<')) {
                                     return TypeResult(ParseStatus::expected_angle_open, -1, token);
                                 }
-                                const ParseToken next = advance(source, token);
-                                token.update(next);
+                                token.update(advance(source, token));
                                 FrameState state = FrameState::type_array_element;
                                 if (owned) {
                                     state = FrameState::type_owned_element;
@@ -937,14 +926,12 @@ namespace compiler_parser {
                                     if (!single(source, token, '<')) {
                                         return TypeResult(ParseStatus::expected_angle_open, -1, token);
                                     }
-                                    const ParseToken next = advance(source, token);
-                                    token.update(next);
+                                    token.update(advance(source, token));
                                     if (kind == TypeKind::byte_span) {
                                         if (!(type_word(source, token) == TypeWord::const_type)) {
                                             return TypeResult(ParseStatus::expected_const, -1, token);
                                         }
-                                        const ParseToken after_const = advance(source, token);
-                                        token.update(after_const);
+                                        token.update(advance(source, token));
                                         if (!(type_word(source, token) == TypeWord::u8_type)) {
                                             return TypeResult(ParseStatus::expected_u8, -1, token);
                                         }
@@ -953,14 +940,12 @@ namespace compiler_parser {
                                             return TypeResult(ParseStatus::expected_i64, -1, token);
                                         }
                                     }
-                                    const ParseToken after_element = advance(source, token);
-                                    token.update(after_element);
+                                    token.update(advance(source, token));
                                     if (!single(source, token, '>')) {
                                         return TypeResult(ParseStatus::expected_angle_close, -1, token);
                                     }
                                     const i64 close = token.index() * 2 + token.half();
-                                    const ParseToken after_close = advance(source, token);
-                                    token.update(after_close);
+                                    token.update(advance(source, token));
                                     value = arena.append_type(kind, original.index(), name_last, close, -1, -1);
                                     if (value < 0) {
                                         const TypeResult error = type_error(arena, token);
@@ -975,15 +960,13 @@ namespace compiler_parser {
                                             return TypeResult(ParseStatus::expected_type, -1, token);
                                         }
                                         while (pair(source, token, ':')) {
-                                            const ParseToken component = advance(source, token);
-                                            token.update(component);
+                                            token.update(advance(source, token));
                                             const ParseStatus status = identifier_status(source, token, true);
                                             if (status != ParseStatus::success) {
                                                 return TypeResult(status, -1, token);
                                             }
                                             name_last = token.index();
-                                            const ParseToken next = advance(source, token);
-                                            token.update(next);
+                                            token.update(advance(source, token));
                                         }
                                         kind = TypeKind::named;
                                         if (argument && name_last == original.index() && parameter(source, original,
@@ -1185,14 +1168,12 @@ namespace compiler_parser {
                 const TypeResult result = finish_parse(arena, status, -1, token, base);
                 return result;
             }
-            const ParseToken opening = advance(source, token);
-            token.update(opening);
+            token.update(advance(source, token));
             if (!single(source, token, '{')) {
                 const TypeResult result = finish_parse(arena, ParseStatus::expected_brace_open, -1, token, base);
                 return result;
             }
-            const ParseToken first = advance(source, token);
-            token.update(first);
+            token.update(advance(source, token));
             if (single(source, token, '}')) {
                 const i64 root = arena.append_list(NodeKind::array_zero, begin.index(), begin.index(), token.index(),
                     -1);
@@ -1246,8 +1227,7 @@ namespace compiler_parser {
                 if (priority >= frame.min()) {
                     const ParseFrame next = ParseFrame(FrameState::expression_right, frame.min(), value, token.index());
                     const ParseFrame child = ParseFrame(FrameState::expression_start, priority + 1, -1, -1);
-                    const ParseToken next_token = advance(source, token);
-                    token.update(next_token);
+                    token.update(advance(source, token));
                     const AstNode left = arena.at(value);
                     if (left.depth() >= 128) {
                         const TypeResult result = finish_parse(arena, ParseStatus::depth_limit, -1, token, base);
@@ -1267,8 +1247,7 @@ namespace compiler_parser {
                     const TypeResult result = finish_parse(arena, ParseStatus::expected_close, -1, token, base);
                     return result;
                 }
-                const ParseToken next_token = advance(source, token);
-                token.update(next_token);
+                token.update(advance(source, token));
                 const ParseFrame next = ParseFrame(FrameState::primary_postfix, 0, value, -1);
                 if (!arena.replace(next)) {
                     const TypeResult error = failure(arena, token, base);
@@ -1291,22 +1270,19 @@ namespace compiler_parser {
                     const TypeResult result = finish_parse(arena, ParseStatus::expected_dot, -1, token, base);
                     return result;
                 }
-                const ParseToken field = advance(source, token);
-                token.update(field);
+                token.update(advance(source, token));
                 const ParseStatus status = identifier_status(source, token, false);
                 if (status != ParseStatus::success) {
                     const TypeResult result = finish_parse(arena, status, -1, token, base);
                     return result;
                 }
                 const i64 label = token.index();
-                const ParseToken equals = advance(source, token);
-                token.update(equals);
+                token.update(advance(source, token));
                 if (!single(source, token, '=')) {
                     const TypeResult result = finish_parse(arena, ParseStatus::expected_equal, -1, token, base);
                     return result;
                 }
-                const ParseToken child_token = advance(source, token);
-                token.update(child_token);
+                token.update(advance(source, token));
                 ParseFrame next = ParseFrame(FrameState::construct_arguments, frame.min(), frame.lhs(), frame.token());
                 next.designate(label);
                 const ParseFrame child = ParseFrame(FrameState::expression_start, 1, -1, -1);
@@ -1325,8 +1301,7 @@ namespace compiler_parser {
                     return error;
                 }
                 if (single(source, token, ',')) {
-                    const ParseToken next_token = advance(source, token);
-                    token.update(next_token);
+                    token.update(advance(source, token));
                     FrameState state = frame.state();
                     if (state == FrameState::construct_arguments) {
                         state = FrameState::construct_field;
@@ -1371,8 +1346,7 @@ namespace compiler_parser {
                         const TypeResult error = failure(arena, token, base);
                         return error;
                     }
-                    const ParseToken next_token = advance(source, token);
-                    token.update(next_token);
+                    token.update(advance(source, token));
                     if (frame.state() == FrameState::constructor_arguments) {
                         arena.pop();
                     } else {
@@ -1400,8 +1374,7 @@ namespace compiler_parser {
                     const TypeResult error = failure(arena, token, base);
                     return error;
                 }
-                const ParseToken next_token = advance(source, token);
-                token.update(next_token);
+                token.update(advance(source, token));
                 const ParseFrame next = ParseFrame(FrameState::primary_postfix, 0, value, -1);
                 if (!arena.replace(next)) {
                     const TypeResult error = failure(arena, token, base);
@@ -1412,16 +1385,14 @@ namespace compiler_parser {
                 handled = true;
                 value = frame.lhs();
                 if (single(source, token, '.')) {
-                    const ParseToken member_token = advance(source, token);
-                    token.update(member_token);
+                    token.update(advance(source, token));
                     const ParseStatus status = identifier_status(source, token, false);
                     if (status != ParseStatus::success) {
                         const TypeResult result = finish_parse(arena, status, -1, token, base);
                         return result;
                     }
                     const i64 member = token.index();
-                    const ParseToken next_token = advance(source, token);
-                    token.update(next_token);
+                    token.update(advance(source, token));
                     const AstNode receiver = arena.at(value);
                     if (receiver.depth() >= 128) {
                         const TypeResult result = finish_parse(arena, ParseStatus::depth_limit, -1, token, base);
@@ -1433,16 +1404,14 @@ namespace compiler_parser {
                             const TypeResult error = failure(arena, token, base);
                             return error;
                         }
-                        const ParseToken argument_token = advance(source, token);
-                        token.update(argument_token);
+                        token.update(advance(source, token));
                         if (single(source, token, ')')) {
                             value = arena.append_list(NodeKind::method_call, member, member, token.index(), head);
                             if (value < 0) {
                                 const TypeResult error = failure(arena, token, base);
                                 return error;
                             }
-                            const ParseToken after_call = advance(source, token);
-                            token.update(after_call);
+                            token.update(advance(source, token));
                             const ParseFrame next = ParseFrame(FrameState::primary_postfix, 0, value, -1);
                             if (!arena.replace(next)) {
                                 const TypeResult error = failure(arena, token, base);
@@ -1471,8 +1440,7 @@ namespace compiler_parser {
                 } else {
                     if (single(source, token, '[')) {
                         const i64 opening = token.index();
-                        const ParseToken next_token = advance(source, token);
-                        token.update(next_token);
+                        token.update(advance(source, token));
                         const AstNode index_base = arena.at(value);
                         if (index_base.depth() >= 128) {
                             const TypeResult result = finish_parse(arena, ParseStatus::depth_limit, -1, token, base);
@@ -1498,8 +1466,7 @@ namespace compiler_parser {
                 }
                 nesting = nesting + 1;
                 const ParseToken original = token;
-                const ParseToken next_token = advance(source, token);
-                token.update(next_token);
+                token.update(advance(source, token));
                 if (single(source, original, '(')) {
                     const ParseFrame next = ParseFrame(FrameState::primary_group, 0, -1, -1);
                     const ParseFrame child = ParseFrame(FrameState::expression_start, 1, -1, -1);
@@ -1516,8 +1483,7 @@ namespace compiler_parser {
                                 const TypeResult error = failure(arena, token, base);
                                 return error;
                             }
-                            const ParseToken after = advance(source, token);
-                            token.update(after);
+                            token.update(advance(source, token));
                             const ParseFrame next = ParseFrame(FrameState::primary_postfix, 0, value, -1);
                             if (!arena.replace(next)) {
                                 const TypeResult error = failure(arena, token, base);
@@ -1569,16 +1535,14 @@ namespace compiler_parser {
                             } else {
                                 i64 last = original.index();
                                 while (pair(source, token, ':')) {
-                                    const ParseToken component = advance(source, token);
-                                    token.update(component);
+                                    token.update(advance(source, token));
                                     const ParseStatus status = identifier_status(source, token, true);
                                     if (status != ParseStatus::success) {
                                         const TypeResult result = finish_parse(arena, status, -1, token, base);
                                         return result;
                                     }
                                     last = token.index();
-                                    const ParseToken after_name = advance(source, token);
-                                    token.update(after_name);
+                                    token.update(advance(source, token));
                                 }
                                 bool seeking = true;
                                 while (candidate_index < scratch_count && seeking) {
@@ -1597,8 +1561,7 @@ namespace compiler_parser {
                                             original.index());
                                         type_start.designate(last);
                                         const TypeResult typed = parse_type(arena, source, token, context, type_start);
-                                        const ParseToken after_type = typed.token();
-                                        token.update(after_type);
+                                        token.update(typed.token());
                                         if (typed.status() != ParseStatus::success) {
                                             const TypeResult result = finish_parse(arena, typed.status(), -1, token,
                                                 base);
@@ -1611,14 +1574,12 @@ namespace compiler_parser {
                                     }
                                 }
                                 if (single(source, token, '(')) {
-                                    const ParseToken argument_token = advance(source, token);
-                                    token.update(argument_token);
+                                    token.update(advance(source, token));
                                     if (last == original.index() && type_query(source, original)) {
                                         const ParseFrame type_start = ParseFrame(FrameState::type_start, 0, -1, -1);
                                         const TypeResult reflected = parse_type(arena, source, token, context,
                                             type_start);
-                                        const ParseToken after_type = reflected.token();
-                                        token.update(after_type);
+                                        token.update(reflected.token());
                                         if (reflected.status() != ParseStatus::success) {
                                             const TypeResult result = finish_parse(arena, reflected.status(), -1, token,
                                                 base);
@@ -1641,8 +1602,7 @@ namespace compiler_parser {
                                             const TypeResult error = failure(arena, token, base);
                                             return error;
                                         }
-                                        const ParseToken after_call = advance(source, token);
-                                        token.update(after_call);
+                                        token.update(advance(source, token));
                                         const ParseFrame next = ParseFrame(FrameState::primary_postfix, 0, value, -1);
                                         if (!arena.replace(next)) {
                                             const TypeResult error = failure(arena, token, base);
@@ -1659,8 +1619,7 @@ namespace compiler_parser {
                                     }
                                 } else {
                                     if (single(source, token, '{')) {
-                                        const ParseToken first = advance(source, token);
-                                        token.update(first);
+                                        token.update(advance(source, token));
                                         if (single(source, token, '}')) {
                                             value = arena.append_list(NodeKind::construct, original.index(), last,
                                                 token.index(), -1);
@@ -1668,8 +1627,7 @@ namespace compiler_parser {
                                                 const TypeResult error = failure(arena, token, base);
                                                 return error;
                                             }
-                                            const ParseToken after = advance(source, token);
-                                            token.update(after);
+                                            token.update(advance(source, token));
                                             const ParseFrame next = ParseFrame(FrameState::primary_postfix, 0, value,
                                                 -1);
                                             if (!arena.replace(next)) {
@@ -1754,8 +1712,7 @@ namespace compiler_parser {
         ParseToken look = advance(source, begin);
         while (pair(source, look, ':')) {
             const ParseToken component = advance(source, look);
-            const ParseToken next = advance(source, component);
-            look.update(next);
+            look.update(advance(source, component));
         }
         if (single(source, look, '<')) {
             i64 depth = 0;
@@ -1783,8 +1740,7 @@ namespace compiler_parser {
                         }
                     }
                 }
-                const ParseToken next = advance(source, look);
-                look.update(next);
+                look.update(advance(source, look));
             }
         }
         return look.kind() == compiler_lexer::Event::token && compiler_lexer::letter(source.at(look.first()));
@@ -1820,8 +1776,7 @@ namespace compiler_parser {
             i64 mutable_binding = 1;
             if (type_word(source, token) == TypeWord::const_type) {
                 mutable_binding = 0;
-                const ParseToken after_const = advance(source, token);
-                token.update(after_const);
+                token.update(advance(source, token));
             }
             const ParseFrame type_start = ParseFrame(FrameState::type_start, 0, -1, -1);
             const TypeResult typed = parse_type(arena, source, token, context, type_start);
@@ -1840,16 +1795,14 @@ namespace compiler_parser {
                 const TypeResult error = finish_parse(arena, binding_status, -1, token, base);
                 return error;
             }
-            const ParseToken equals = advance(source, token);
-            token.update(equals);
+            token.update(advance(source, token));
             if (!single(source, token, '=')) {
                 const TypeResult error = finish_parse(arena, ParseStatus::expected_equal, -1, token, base);
                 return error;
             }
             const ParseToken initializer = advance(source, token);
             const TypeResult expression = body_expression(arena, source, initializer, Stop::semicolon, context);
-            const ParseToken end = expression.token();
-            token.update(end);
+            token.update(expression.token());
             if (expression.status() != ParseStatus::success) {
                 const TypeResult error = finish_parse(arena, expression.status(), -1, token, base);
                 return error;
@@ -1867,21 +1820,18 @@ namespace compiler_parser {
         }
         SyntaxKind kind = body_word(source, begin);
         if (kind == SyntaxKind::return_value || kind == SyntaxKind::static_assertion) {
-            const ParseToken next = advance(source, token);
-            token.update(next);
+            token.update(advance(source, token));
             Stop stop = Stop::semicolon;
             if (kind == SyntaxKind::static_assertion) {
                 if (!single(source, token, '(')) {
                     const TypeResult error = finish_parse(arena, ParseStatus::expected_open, -1, token, base);
                     return error;
                 }
-                const ParseToken argument = advance(source, token);
-                token.update(argument);
+                token.update(advance(source, token));
                 stop = Stop::close_parenthesis;
             }
             const TypeResult expression = body_expression(arena, source, token, stop, context);
-            const ParseToken end = expression.token();
-            token.update(end);
+            token.update(expression.token());
             if (expression.status() != ParseStatus::success) {
                 const TypeResult error = finish_parse(arena, expression.status(), -1, token, base);
                 return error;
@@ -1891,8 +1841,7 @@ namespace compiler_parser {
                     const TypeResult error = finish_parse(arena, ParseStatus::expected_close, -1, token, base);
                     return error;
                 }
-                const ParseToken after_close = advance(source, token);
-                token.update(after_close);
+                token.update(advance(source, token));
             }
             if (!single(source, token, ';')) {
                 const TypeResult error = finish_parse(arena, ParseStatus::expected_semicolon, -1, token, base);
@@ -1906,8 +1855,7 @@ namespace compiler_parser {
         }
         kind = SyntaxKind::expression;
         const TypeResult left = body_expression(arena, source, token, Stop::assignment, context);
-        const ParseToken delimiter = left.token();
-        token.update(delimiter);
+        token.update(left.token());
         if (left.status() != ParseStatus::success) {
             const TypeResult error = finish_parse(arena, left.status(), -1, token, base);
             return error;
@@ -1915,8 +1863,7 @@ namespace compiler_parser {
         i64 expression = left.root();
         i64 target = -1;
         if (single(source, token, '=')) {
-            const ParseToken right = advance(source, token);
-            token.update(right);
+            token.update(advance(source, token));
             target = left.root();
             const AstNode node = arena.at(target);
             if (node.kind() == NodeKind::index) {
@@ -1939,8 +1886,7 @@ namespace compiler_parser {
                 return error;
             }
             const TypeResult value = body_expression(arena, source, token, Stop::semicolon, context);
-            const ParseToken end = value.token();
-            token.update(end);
+            token.update(value.token());
             if (value.status() != ParseStatus::success) {
                 const TypeResult error = finish_parse(arena, value.status(), -1, token, base);
                 return error;
@@ -2010,8 +1956,7 @@ namespace compiler_parser {
                         arena.pop();
                         nesting = nesting - 1;
                         completed = true;
-                        const ParseToken after = advance(source, token);
-                        token.update(after);
+                        token.update(advance(source, token));
                     } else {
                         if (token.kind() == compiler_lexer::Event::end_of_input) {
                             const TypeResult error = finish_parse(arena, ParseStatus::unterminated_block, -1, token,
@@ -2024,8 +1969,7 @@ namespace compiler_parser {
                         }
                         if (single(source, token, '{')) {
                             const TypeResult child = open_body(arena, source, token, frame.lhs(), nesting);
-                            const ParseToken next = child.token();
-                            token.update(next);
+                            token.update(child.token());
                             if (child.status() != ParseStatus::success) {
                                 const TypeResult error = finish_parse(arena, child.status(), -1, token, base);
                                 return error;
@@ -2035,8 +1979,7 @@ namespace compiler_parser {
                             const SyntaxKind kind = body_word(source, token);
                             if (kind == SyntaxKind::conditional || kind == SyntaxKind::loop) {
                                 const i64 first = token.index();
-                                const ParseToken after_keyword = advance(source, token);
-                                token.update(after_keyword);
+                                token.update(advance(source, token));
                                 if (!single(source, token, '(')) {
                                     const TypeResult error = finish_parse(arena, ParseStatus::expected_open, -1, token,
                                         base);
@@ -2045,8 +1988,7 @@ namespace compiler_parser {
                                 const ParseToken condition = advance(source, token);
                                 const TypeResult expression = body_expression(arena, source, condition,
                                     Stop::close_parenthesis, context);
-                                const ParseToken end = expression.token();
-                                token.update(end);
+                                token.update(expression.token());
                                 if (expression.status() != ParseStatus::success) {
                                     const TypeResult error = finish_parse(arena, expression.status(), -1, token, base);
                                     return error;
@@ -2056,8 +1998,7 @@ namespace compiler_parser {
                                         base);
                                     return error;
                                 }
-                                const ParseToken after_close = advance(source, token);
-                                token.update(after_close);
+                                token.update(advance(source, token));
                                 FrameState state = FrameState::body_if_then;
                                 if (kind == SyntaxKind::loop) {
                                     state = FrameState::body_while;
@@ -2068,8 +2009,7 @@ namespace compiler_parser {
                                     return error;
                                 }
                                 const TypeResult child = open_body(arena, source, token, -1, nesting);
-                                const ParseToken next = child.token();
-                                token.update(next);
+                                token.update(child.token());
                                 if (child.status() != ParseStatus::success) {
                                     const TypeResult error = finish_parse(arena, child.status(), -1, token, base);
                                     return error;
@@ -2077,8 +2017,7 @@ namespace compiler_parser {
                                 nesting = nesting + 1;
                             } else {
                                 const TypeResult statement = body_statement(arena, source, token, context, frame.lhs());
-                                const ParseToken next = statement.token();
-                                token.update(next);
+                                token.update(statement.token());
                                 if (statement.status() != ParseStatus::success) {
                                     const TypeResult error = finish_parse(arena, statement.status(), -1, token, base);
                                     return error;
@@ -2106,11 +2045,9 @@ namespace compiler_parser {
                         const TypeResult error = failure(arena, token, base);
                         return error;
                     }
-                    const ParseToken after_else = advance(source, token);
-                    token.update(after_else);
+                    token.update(advance(source, token));
                     const TypeResult child = open_body(arena, source, token, -1, nesting);
-                    const ParseToken next = child.token();
-                    token.update(next);
+                    token.update(child.token());
                     if (child.status() != ParseStatus::success) {
                         const TypeResult error = finish_parse(arena, child.status(), -1, token, base);
                         return error;
@@ -2153,19 +2090,16 @@ namespace compiler_parser {
         }
         i64 bytes = token.last() - token.first();
         i64 last = token.index();
-        const ParseToken first = advance(source, token);
-        token.update(first);
+        token.update(advance(source, token));
         while (single(source, token, '.')) {
-            const ParseToken component = advance(source, token);
-            token.update(component);
+            token.update(advance(source, token));
             const ParseStatus status = identifier_status(source, token, true);
             if (status != ParseStatus::success) {
                 return TypeResult(status, -1, token);
             }
             bytes = bytes + (token.last() - token.first()) + 1;
             last = token.index();
-            const ParseToken after = advance(source, token);
-            token.update(after);
+            token.update(advance(source, token));
         }
         if (limited && bytes > 4096) {
             return TypeResult(ParseStatus::module_name_limit, -1, token);
@@ -2180,38 +2114,33 @@ namespace compiler_parser {
         i64 interface_unit = 0;
         if (word_matches(source, token, words, 0, 6)) {
             interface_unit = 1;
-            const ParseToken after = advance(source, token);
-            token.update(after);
+            token.update(advance(source, token));
         }
         if (!word_matches(source, token, words, 7, 13)) {
             return TypeResult(ParseStatus::expected_module, -1, token);
         }
         const ParseToken first = advance(source, token);
         const TypeResult module_name_result = module_name(source, first, true);
-        const ParseToken after_name = module_name_result.token();
-        token.update(after_name);
+        token.update(module_name_result.token());
         if (module_name_result.status() != ParseStatus::success) {
             return TypeResult(module_name_result.status(), -1, token);
         }
         if (!single(source, token, ';')) {
             return TypeResult(ParseStatus::expected_semicolon, -1, token);
         }
-        const ParseToken after_module = advance(source, token);
-        token.update(after_module);
+        token.update(advance(source, token));
         i64 tail = -1;
         while (word_matches(source, token, words, 14, 20)) {
             const ParseToken name = advance(source, token);
             const TypeResult imported = module_name(source, name, false);
-            const ParseToken after_import = imported.token();
-            token.update(after_import);
+            token.update(imported.token());
             if (imported.status() != ParseStatus::success) {
                 return TypeResult(imported.status(), -1, token);
             }
             if (!single(source, token, ';')) {
                 return TypeResult(ParseStatus::expected_semicolon, -1, token);
             }
-            const ParseToken after = advance(source, token);
-            token.update(after);
+            token.update(advance(source, token));
             SyntaxNode import_node = SyntaxNode(SyntaxKind::import_name, name.index(), imported.root() + 1, tail);
             tail = arena.append_syntax(import_node);
             if (tail < 0) {
@@ -2234,8 +2163,7 @@ namespace compiler_parser {
             const TypeResult error = finish_parse(arena, ParseStatus::expected_enum, -1, token, base);
             return error;
         }
-        const ParseToken class_token = advance(source, token);
-        token.update(class_token);
+        token.update(advance(source, token));
         if (!word_matches(source, token, words, 5, 10)) {
             const TypeResult error = finish_parse(arena, ParseStatus::expected_class, -1, token, base);
             return error;
@@ -2247,8 +2175,7 @@ namespace compiler_parser {
             const TypeResult error = finish_parse(arena, identifier, -1, token, base);
             return error;
         }
-        const ParseToken open = advance(source, token);
-        token.update(open);
+        token.update(advance(source, token));
         if (enum_count >= 64) {
             const TypeResult error = finish_parse(arena, ParseStatus::module_enum_limit, -1, token, base);
             return error;
@@ -2257,8 +2184,7 @@ namespace compiler_parser {
             const TypeResult error = finish_parse(arena, ParseStatus::expected_brace_open, -1, token, base);
             return error;
         }
-        const ParseToken first = advance(source, token);
-        token.update(first);
+        token.update(advance(source, token));
         if (single(source, token, '}')) {
             const TypeResult error = finish_parse(arena, ParseStatus::empty_enum, -1, token, base);
             return error;
@@ -2276,8 +2202,7 @@ namespace compiler_parser {
                 const TypeResult error = finish_parse(arena, status, -1, token, base);
                 return error;
             }
-            const ParseToken after_name = advance(source, token);
-            token.update(after_name);
+            token.update(advance(source, token));
             i64 previous = base;
             while (previous < arena.stack_size()) {
                 const ParseFrame seen = arena.scratch_at(previous);
@@ -2305,8 +2230,7 @@ namespace compiler_parser {
             }
             more = single(source, token, ',');
             if (more) {
-                const ParseToken after = advance(source, token);
-                token.update(after);
+                token.update(advance(source, token));
                 more = !single(source, token, '}');
             }
         }
@@ -2314,8 +2238,7 @@ namespace compiler_parser {
             const TypeResult error = finish_parse(arena, ParseStatus::expected_brace_close, -1, token, base);
             return error;
         }
-        const ParseToken semicolon = advance(source, token);
-        token.update(semicolon);
+        token.update(advance(source, token));
         if (!single(source, token, ';')) {
             const TypeResult error = finish_parse(arena, ParseStatus::expected_semicolon, -1, token, base);
             return error;
@@ -2368,8 +2291,7 @@ namespace compiler_parser {
         if (!single(source, token, '(')) {
             return TypeResult(ParseStatus::expected_open, -1, token);
         }
-        const ParseToken first = advance(source, token);
-        token.update(first);
+        token.update(advance(source, token));
         if (!single(source, token, ')')) {
             bool more = true;
             while (more) {
@@ -2377,13 +2299,11 @@ namespace compiler_parser {
                 i64 readonly = 0;
                 if (type_word(source, token) == TypeWord::const_type) {
                     readonly = 1;
-                    const ParseToken after = advance(source, token);
-                    token.update(after);
+                    token.update(advance(source, token));
                 }
                 const ParseFrame type_start = ParseFrame(FrameState::type_start, 0, -1, -1);
                 const TypeResult typed = parse_type(arena, source, token, context, type_start);
-                const ParseToken after_type = typed.token();
-                token.update(after_type);
+                token.update(typed.token());
                 if (typed.status() != ParseStatus::success) {
                     return TypeResult(typed.status(), -1, token);
                 }
@@ -2393,16 +2313,14 @@ namespace compiler_parser {
                 i64 borrowed = -1;
                 if (single(source, token, '&')) {
                     borrowed = token.index();
-                    const ParseToken after = advance(source, token);
-                    token.update(after);
+                    token.update(advance(source, token));
                 }
                 const ParseStatus identifier = identifier_status(source, token, false);
                 if (identifier != ParseStatus::success) {
                     return TypeResult(identifier, -1, token);
                 }
                 const i64 binding = token.index();
-                const ParseToken after_name = advance(source, token);
-                token.update(after_name);
+                token.update(advance(source, token));
                 SyntaxNode parameter = SyntaxNode(SyntaxKind::parameter, start, token.index(), tail);
                 parameter.bind_declaration(typed.root(), binding, readonly);
                 parameter.bind_borrow(borrowed);
@@ -2413,8 +2331,7 @@ namespace compiler_parser {
                 }
                 more = single(source, token, ',');
                 if (more) {
-                    const ParseToken after = advance(source, token);
-                    token.update(after);
+                    token.update(advance(source, token));
                 }
             }
         }
@@ -2430,8 +2347,7 @@ namespace compiler_parser {
         ParseToken token = begin;
         i64 tail = -1;
         if (single(source, token, ':')) {
-            const ParseToken first = advance(source, token);
-            token.update(first);
+            token.update(advance(source, token));
             bool more = true;
             while (more) {
                 const ParseToken field = token;
@@ -2439,13 +2355,11 @@ namespace compiler_parser {
                 if (identifier != ParseStatus::success) {
                     return TypeResult(identifier, -1, field);
                 }
-                const ParseToken after_field = advance(source, field);
-                token.update(after_field);
+                token.update(advance(source, field));
                 i64 expression = -1;
                 if (single(source, token, '{')) {
                     const TypeResult parsed = parse_into(arena, source, field, Stop::constructor_braces, context);
-                    const ParseToken after = parsed.token();
-                    token.update(after);
+                    token.update(parsed.token());
                     if (parsed.status() != ParseStatus::success) {
                         return TypeResult(parsed.status(), -1, token);
                     }
@@ -2457,8 +2371,7 @@ namespace compiler_parser {
                     const ParseToken first_value = advance(source, token);
                     const TypeResult parsed = body_expression(arena, source, first_value, Stop::close_parenthesis,
                         context);
-                    const ParseToken after = parsed.token();
-                    token.update(after);
+                    token.update(parsed.token());
                     if (parsed.status() != ParseStatus::success) {
                         return TypeResult(parsed.status(), -1, token);
                     }
@@ -2466,8 +2379,7 @@ namespace compiler_parser {
                     if (!single(source, token, ')')) {
                         return TypeResult(ParseStatus::expected_close, -1, token);
                     }
-                    const ParseToken close = advance(source, token);
-                    token.update(close);
+                    token.update(advance(source, token));
                 }
                 SyntaxNode initializer = SyntaxNode(SyntaxKind::initializer, field.index(), token.index(), tail);
                 initializer.bind_expression(expression, -1);
@@ -2478,8 +2390,7 @@ namespace compiler_parser {
                 }
                 more = single(source, token, ',');
                 if (more) {
-                    const ParseToken after = advance(source, token);
-                    token.update(after);
+                    token.update(advance(source, token));
                 }
             }
         }
@@ -2503,8 +2414,7 @@ namespace compiler_parser {
             if (!word_matches(source, token, word, 0, 4)) {
                 return TypeResult(ParseStatus::expected_auto, -1, token);
             }
-            const ParseToken after = advance(source, token);
-            token.update(after);
+            token.update(advance(source, token));
         }
         const ParseStatus identifier = identifier_status(source, token, stop == Stop::constructor);
         if (identifier != ParseStatus::success) {
@@ -2513,8 +2423,7 @@ namespace compiler_parser {
         const i64 name = token.index();
         const ParseToken first = advance(source, token);
         const TypeResult parameters = callable_parameters(arena, source, first, context);
-        const ParseToken after_parameters = parameters.token();
-        token.update(after_parameters);
+        token.update(parameters.token());
         if (parameters.status() != ParseStatus::success) {
             return TypeResult(parameters.status(), -1, token);
         }
@@ -2524,8 +2433,7 @@ namespace compiler_parser {
         SyntaxKind kind = SyntaxKind::constructor;
         if (stop == Stop::constructor) {
             const TypeResult initializers = constructor_initializers(arena, source, token, context);
-            const ParseToken after = initializers.token();
-            token.update(after);
+            token.update(initializers.token());
             if (initializers.status() != ParseStatus::success) {
                 return TypeResult(initializers.status(), -1, token);
             }
@@ -2536,8 +2444,7 @@ namespace compiler_parser {
                 kind = SyntaxKind::method;
                 if (type_word(source, token) == TypeWord::const_type) {
                     readonly = 1;
-                    const ParseToken after = advance(source, token);
-                    token.update(after);
+                    token.update(advance(source, token));
                 }
             }
             if (token.last() - token.first() != 2 || source.at(token.first()) != '-' || source.at(token.first() + 1)
@@ -2547,8 +2454,7 @@ namespace compiler_parser {
             const ParseToken first_type = advance(source, token);
             const ParseFrame type_start = ParseFrame(FrameState::type_start, 0, -1, -1);
             const TypeResult typed = parse_type(arena, source, first_type, context, type_start);
-            const ParseToken after_type = typed.token();
-            token.update(after_type);
+            token.update(typed.token());
             if (typed.status() != ParseStatus::success) {
                 return TypeResult(typed.status(), -1, token);
             }
@@ -2557,8 +2463,7 @@ namespace compiler_parser {
                 return TypeResult(ParseStatus::invalid, -1, token);
             }
             const TypeResult parsed = parse_body(arena, source, token, context);
-            const ParseToken after_body = parsed.token();
-            token.update(after_body);
+            token.update(parsed.token());
             if (parsed.status() != ParseStatus::success) {
                 return TypeResult(parsed.status(), -1, token);
             }
@@ -2664,16 +2569,13 @@ namespace compiler_parser {
         const i64 base = arena.stack_size();
         TypeContext context = TypeContext();
         if (declaration_word(source, begin) != DeclarationWord::template_declaration) {
-            const TypeResult parsed = TypeResult(ParseStatus::success, -1, begin);
-            return HeaderResult(parsed, context);
+            return HeaderResult(TypeResult(ParseStatus::success, -1, begin), context);
         }
         ParseToken token = advance(source, begin);
         if (!single(source, token, '<')) {
-            const TypeResult parsed = TypeResult(ParseStatus::expected_angle_open, -1, token);
-            return HeaderResult(parsed, context);
+            return HeaderResult(TypeResult(ParseStatus::expected_angle_open, -1, token), context);
         }
-        const ParseToken first = advance(source, token);
-        token.update(first);
+        token.update(advance(source, token));
         i64 count = 0;
         i64 types = 0;
         i64 tail = -1;
@@ -2682,8 +2584,7 @@ namespace compiler_parser {
         bool more = true;
         while (more) {
             if (count >= 2) {
-                const TypeResult parsed = TypeResult(ParseStatus::template_parameter_limit, -1, token);
-                return HeaderResult(parsed, context);
+                return HeaderResult(TypeResult(ParseStatus::template_parameter_limit, -1, token), context);
             }
             const DeclarationWord word = declaration_word(source, token);
             SyntaxKind kind = SyntaxKind::invalid;
@@ -2697,23 +2598,19 @@ namespace compiler_parser {
                 kind = SyntaxKind::template_capacity;
             }
             if (kind == SyntaxKind::invalid) {
-                const TypeResult parsed = TypeResult(ParseStatus::template_parameter_kind, -1, token);
-                return HeaderResult(parsed, context);
+                return HeaderResult(TypeResult(ParseStatus::template_parameter_kind, -1, token), context);
             }
             const ParseToken name = advance(source, token);
             const ParseStatus identifier = identifier_status(source, name, false);
             if (identifier != ParseStatus::success) {
-                const TypeResult parsed = TypeResult(identifier, -1, name);
-                return HeaderResult(parsed, context);
+                return HeaderResult(TypeResult(identifier, -1, name), context);
             }
-            const ParseToken after_name = advance(source, name);
-            token.update(after_name);
+            token.update(advance(source, name));
             const array<u8, 31> reserved = "i64;u64;u8;bool;own;ref;mutref;";
             const builtin::span<const u8> reserved_words = borrow_bytes(reserved);
             if (word_list_matches(source, name, reserved_words) || parameter(source, name, context, false)
                 || parameter(source, name, context, true)) {
-                const TypeResult parsed = TypeResult(ParseStatus::template_parameter_name, -1, token);
-                return HeaderResult(parsed, context);
+                return HeaderResult(TypeResult(ParseStatus::template_parameter_name, -1, token), context);
             }
             if (kind == SyntaxKind::template_capacity) {
                 context.bind_parameter(2, name.first(), name.last());
@@ -2726,44 +2623,36 @@ namespace compiler_parser {
             }
             last_kind = kind;
             count = count + 1;
-            const SyntaxNode parameter_node = SyntaxNode(kind, name.index(), name.index() + 1, tail);
-            tail = arena.append_syntax(parameter_node);
+            tail = arena.append_syntax(SyntaxNode(kind, name.index(), name.index() + 1, tail));
             if (tail < 0) {
                 const TypeResult error = failure(arena, token, base);
                 return HeaderResult(error, context);
             }
             more = single(source, token, ',');
             if (more) {
-                const ParseToken after = advance(source, token);
-                token.update(after);
+                token.update(advance(source, token));
             }
         }
         if (!single(source, token, '>')) {
-            const TypeResult parsed = TypeResult(ParseStatus::expected_angle_close, -1, token);
-            return HeaderResult(parsed, context);
+            return HeaderResult(TypeResult(ParseStatus::expected_angle_close, -1, token), context);
         }
-        const ParseToken after_header = advance(source, token);
-        token.update(after_header);
+        token.update(advance(source, token));
         if (context.end(2) != 0 && (count != 2 || first_kind != SyntaxKind::template_scalar || last_kind
             != SyntaxKind::template_capacity)) {
-            const TypeResult parsed = TypeResult(ParseStatus::template_capacity_order, -1, token);
-            return HeaderResult(parsed, context);
+            return HeaderResult(TypeResult(ParseStatus::template_capacity_order, -1, token), context);
         }
         const DeclarationWord declaration = declaration_word(source, token);
         if (declaration != DeclarationWord::class_declaration && declaration != DeclarationWord::auto_declaration) {
-            const TypeResult parsed = TypeResult(ParseStatus::template_declaration_kind, -1, token);
-            return HeaderResult(parsed, context);
+            return HeaderResult(TypeResult(ParseStatus::template_declaration_kind, -1, token), context);
         }
         context.set_mode(1);
         if (declaration == DeclarationWord::auto_declaration) {
             if (context.end(2) != 0) {
-                const TypeResult parsed = TypeResult(ParseStatus::function_template_capacity, -1, token);
-                return HeaderResult(parsed, context);
+                return HeaderResult(TypeResult(ParseStatus::function_template_capacity, -1, token), context);
             }
             context.set_mode(2);
         }
-        const TypeResult parsed = TypeResult(ParseStatus::success, tail, token);
-        return HeaderResult(parsed, context);
+        return HeaderResult(TypeResult(ParseStatus::success, tail, token), context);
     }
     auto parse_class(AstArena& arena, builtin::span<const u8> source, ParseToken begin, TypeContext context,
         bool allow_array) -> TypeResult {
@@ -2780,15 +2669,13 @@ namespace compiler_parser {
         if (!single(source, token, '{')) {
             return TypeResult(ParseStatus::expected_brace_open, -1, token);
         }
-        const ParseToken first = advance(source, token);
-        token.update(first);
+        token.update(advance(source, token));
         i64 public_access = 0;
         i64 tail = -1;
         while (!single(source, token, '}')) {
             const DeclarationWord word = declaration_word(source, token);
             if (word == DeclarationWord::public_access || word == DeclarationWord::private_access) {
-                const ParseToken colon = advance(source, token);
-                token.update(colon);
+                token.update(advance(source, token));
                 if (!single(source, token, ':')) {
                     const TypeResult error = finish_parse(arena, ParseStatus::expected_colon, -1, token, base);
                     return error;
@@ -2797,8 +2684,7 @@ namespace compiler_parser {
                 if (word == DeclarationWord::public_access) {
                     public_access = 1;
                 }
-                const ParseToken after = advance(source, token);
-                token.update(after);
+                token.update(advance(source, token));
             } else {
                 // Constructor recognition is exactly the class spelling followed
                 // by '('. Other names retain the field parser's old diagnostics.
@@ -2812,8 +2698,7 @@ namespace compiler_parser {
                         stop = Stop::method;
                     }
                     const TypeResult parsed = parse_callable(arena, source, token, stop, context);
-                    const ParseToken after = parsed.token();
-                    token.update(after);
+                    token.update(parsed.token());
                     if (parsed.status() != ParseStatus::success) {
                         const TypeResult error = finish_parse(arena, parsed.status(), -1, token, base);
                         return error;
@@ -2821,8 +2706,7 @@ namespace compiler_parser {
                     root = parsed.root();
                 } else {
                     const TypeResult parsed = parse_field(arena, source, token, context);
-                    const ParseToken after = parsed.token();
-                    token.update(after);
+                    token.update(parsed.token());
                     if (parsed.status() != ParseStatus::success) {
                         const TypeResult error = finish_parse(arena, parsed.status(), -1, token, base);
                         return error;
@@ -2836,8 +2720,7 @@ namespace compiler_parser {
                 }
             }
         }
-        const ParseToken semicolon = advance(source, token);
-        token.update(semicolon);
+        token.update(advance(source, token));
         if (!single(source, token, ';')) {
             const TypeResult error = finish_parse(arena, ParseStatus::expected_semicolon, -1, token, base);
             return error;
@@ -2870,8 +2753,7 @@ namespace compiler_parser {
                 arena.pop();
                 const ParseFrame parent = arena.frame();
                 arena.pop();
-                const ParseToken after = advance(source, token);
-                token.update(after);
+                token.update(advance(source, token));
                 SyntaxNode definition = SyntaxNode(SyntaxKind::namespace_definition, header.lhs(), token.index(), -1);
                 definition.bind_declaration(-1, header.token(), 0);
                 definition.bind_body(tail, -1);
@@ -2891,8 +2773,7 @@ namespace compiler_parser {
                 i64 exported = 0;
                 if (declaration_word(source, token) == DeclarationWord::export_declaration) {
                     exported = 1;
-                    const ParseToken after = advance(source, token);
-                    token.update(after);
+                    token.update(advance(source, token));
                     if (preamble.mutable_binding() == 0) {
                         const TypeResult error = finish_parse(arena, ParseStatus::export_interface_required, -1, token,
                             base);
@@ -2922,20 +2803,17 @@ namespace compiler_parser {
                         }
                         last_name = token.index();
                         added = added + 1;
-                        const ParseToken after_name = advance(source, token);
-                        token.update(after_name);
+                        token.update(advance(source, token));
                         more = pair(source, token, ':');
                         if (more) {
-                            const ParseToken next_name = advance(source, token);
-                            token.update(next_name);
+                            token.update(advance(source, token));
                         }
                     }
                     if (!single(source, token, '{')) {
                         const TypeResult error = finish_parse(arena, ParseStatus::expected_brace_open, -1, token, base);
                         return error;
                     }
-                    const ParseToken first = advance(source, token);
-                    token.update(first);
+                    token.update(advance(source, token));
                     // The old recursive entry checks the limit after '{'.
                     if (components + added > 32) {
                         const TypeResult error = finish_parse(arena, ParseStatus::namespace_nesting_limit, -1, token,
@@ -2962,8 +2840,7 @@ namespace compiler_parser {
                     i64 templates = -1;
                     if (word == DeclarationWord::enum_declaration) {
                         const TypeResult parsed = parse_enum(arena, source, token, enum_count);
-                        const ParseToken after = parsed.token();
-                        token.update(after);
+                        token.update(parsed.token());
                         if (parsed.status() != ParseStatus::success) {
                             const TypeResult error = finish_parse(arena, parsed.status(), -1, token, base);
                             return error;
@@ -2973,8 +2850,7 @@ namespace compiler_parser {
                     } else {
                         const HeaderResult header = parse_template(arena, source, token);
                         const TypeResult parameters = header.parsed();
-                        const ParseToken after_header = parameters.token();
-                        token.update(after_header);
+                        token.update(parameters.token());
                         if (parameters.status() != ParseStatus::success) {
                             const TypeResult error = finish_parse(arena, parameters.status(), -1, token, base);
                             return error;
@@ -2983,8 +2859,7 @@ namespace compiler_parser {
                         const TypeContext context = header.context();
                         if (declaration_word(source, token) == DeclarationWord::class_declaration) {
                             const TypeResult parsed = parse_class(arena, source, token, context, exact_std == 1);
-                            const ParseToken after = parsed.token();
-                            token.update(after);
+                            token.update(parsed.token());
                             if (parsed.status() != ParseStatus::success) {
                                 const TypeResult error = finish_parse(arena, parsed.status(), -1, token, base);
                                 return error;
@@ -2992,8 +2867,7 @@ namespace compiler_parser {
                             root = parsed.root();
                         } else {
                             const TypeResult parsed = parse_callable(arena, source, token, Stop::function, context);
-                            const ParseToken after = parsed.token();
-                            token.update(after);
+                            token.update(parsed.token());
                             if (parsed.status() != ParseStatus::success) {
                                 const TypeResult error = finish_parse(arena, parsed.status(), -1, token, base);
                                 return error;
@@ -3033,8 +2907,7 @@ namespace compiler_parser {
             if (token.kind() == compiler_lexer::Event::end_of_input) {
                 return ParseToken(compiler_lexer::Event::invalid_cursor, 0, 0, 1, 0, 0);
             }
-            const ParseToken next = advance(source, token);
-            token.update(next);
+            token.update(advance(source, token));
         }
         return token;
     }
@@ -3066,12 +2939,10 @@ namespace compiler_parser {
         }
     };
     auto admission_done(AdmissionStatus status, ParseToken token) -> AdmissionProgress {
-        const AdmissionResult result = admission_result(status);
-        return AdmissionProgress(result, token);
+        return AdmissionProgress(admission_result(status), token);
     }
     auto admission_reject(AdmissionStatus status, i64 ordinal, ParseToken token) -> AdmissionProgress {
-        const AdmissionResult result = admission_at(status, ordinal);
-        return AdmissionProgress(result, token);
+        return AdmissionProgress(admission_at(status, ordinal), token);
     }
     enum class AdmissionKind {
         invalid,
@@ -3198,8 +3069,7 @@ namespace compiler_parser {
             if (node.kind() != kind || node.previous() < -1 || node.previous() >= index) {
                 return AdmissionStatus::invalid;
             }
-            const ParseFrame frame = ParseFrame(state, 0, index, node.token());
-            if (!arena.push(frame)) {
+            if (!arena.push(ParseFrame(state, 0, index, node.token()))) {
                 return admission_failure(arena);
             }
             index = node.previous();
@@ -3214,14 +3084,12 @@ namespace compiler_parser {
         i64 second = -1;
         if (tail != -1) {
             if (tail < 0 || tail >= arena.syntax_size()) {
-                const TypeResult result = TypeResult(ParseStatus::invalid, -1, token);
-                return HeaderResult(result, context);
+                return HeaderResult(TypeResult(ParseStatus::invalid, -1, token), context);
             }
             const SyntaxNode last = arena.syntax_at(tail);
             if (last.previous() != -1) {
                 if (last.previous() < 0 || last.previous() >= tail) {
-                    const TypeResult result = TypeResult(ParseStatus::invalid, -1, token);
-                    return HeaderResult(result, context);
+                    return HeaderResult(TypeResult(ParseStatus::invalid, -1, token), context);
                 }
                 first = last.previous();
                 second = tail;
@@ -3232,19 +3100,15 @@ namespace compiler_parser {
             const SyntaxNode name = arena.syntax_at(first);
             if ((count == 0 && name.previous() != -1) || (name.kind() != SyntaxKind::template_scalar && name.kind()
                 != SyntaxKind::template_value && name.kind() != SyntaxKind::template_capacity)) {
-                const TypeResult result = TypeResult(ParseStatus::invalid, -1, token);
-                return HeaderResult(result, context);
+                return HeaderResult(TypeResult(ParseStatus::invalid, -1, token), context);
             }
-            const ParseToken at = admission_seek(source, token, name.token());
-            token.update(at);
+            token.update(admission_seek(source, token, name.token()));
             if (token.kind() == compiler_lexer::Event::invalid_cursor) {
-                const TypeResult result = TypeResult(ParseStatus::invalid, -1, token);
-                return HeaderResult(result, context);
+                return HeaderResult(TypeResult(ParseStatus::invalid, -1, token), context);
             }
             if (name.kind() == SyntaxKind::template_capacity) {
                 if (count != 1) {
-                    const TypeResult result = TypeResult(ParseStatus::invalid, -1, token);
-                    return HeaderResult(result, context);
+                    return HeaderResult(TypeResult(ParseStatus::invalid, -1, token), context);
                 }
                 context.bind_parameter(2, token.first(), token.last());
             } else {
@@ -3255,8 +3119,7 @@ namespace compiler_parser {
             second = -1;
             count = count + 1;
         }
-        const TypeResult result = TypeResult(ParseStatus::success, -1, token);
-        return HeaderResult(result, context);
+        return HeaderResult(TypeResult(ParseStatus::success, -1, token), context);
     }
     auto admission_callable(AstArena& arena, builtin::span<const u8> source, ParseToken start, SyntaxNode callable,
         AdmissionScope scope, AdmissionConfig configuration) -> AdmissionProgress {
@@ -3269,8 +3132,7 @@ namespace compiler_parser {
             return admission_done(AdmissionStatus::invalid, token);
         }
         if ((function && context.end(0) != 0) || method) {
-            const ParseToken name = admission_seek(source, token, callable.token());
-            token.update(name);
+            token.update(admission_seek(source, token, callable.token()));
             if (token.kind() == compiler_lexer::Event::invalid_cursor) {
                 return admission_done(AdmissionStatus::invalid, token);
             }
@@ -3295,8 +3157,7 @@ namespace compiler_parser {
             arena.pop();
             const SyntaxNode parameter_node = arena.syntax_at(frame.lhs());
             const AdmissionType type = admission_type(arena, source, token, parameter_node.type(), configuration);
-            const ParseToken after = type.token();
-            token.update(after);
+            token.update(type.token());
             if (type.kind() == AdmissionKind::invalid) {
                 return admission_done(AdmissionStatus::invalid, token);
             }
@@ -3333,8 +3194,7 @@ namespace compiler_parser {
         }
         if (function || method) {
             const AdmissionType type = admission_type(arena, source, token, callable.type(), configuration);
-            const ParseToken after = type.token();
-            token.update(after);
+            token.update(type.token());
             if (type.kind() == AdmissionKind::invalid || callable.body() < 0 || callable.body()
                 >= arena.syntax_size()) {
                 return admission_done(AdmissionStatus::invalid, token);
@@ -3376,23 +3236,20 @@ namespace compiler_parser {
                 if (capacity.kind() != TypeKind::capacity) {
                     return admission_done(AdmissionStatus::invalid, token);
                 }
-                const ParseToken count = admission_seek(source, token, capacity.token());
-                token.update(count);
+                token.update(admission_seek(source, token, capacity.token()));
                 if (token.kind() == compiler_lexer::Event::invalid_cursor) {
                     return admission_done(AdmissionStatus::invalid, token);
                 }
                 const i64 value = decimal_capacity(source, token, 4096);
                 const i64 limit = configuration.array_limit(element.kind() == TypeKind::u8_type);
                 if (value < 1 || value > limit) {
-                    const AdmissionResult result = AdmissionResult(AdmissionStatus::array_capacity, at, at + 1, -1,
-                        limit);
-                    return AdmissionProgress(result, token);
+                    return AdmissionProgress(AdmissionResult(AdmissionStatus::array_capacity, at, at + 1, -1, limit),
+                        token);
                 }
             }
         } else {
             const AdmissionType type = admission_type(arena, source, token, field.type(), configuration);
-            const ParseToken after = type.token();
-            token.update(after);
+            token.update(type.token());
             if (type.kind() == AdmissionKind::invalid) {
                 return admission_done(AdmissionStatus::invalid, token);
             }
@@ -3406,9 +3263,8 @@ namespace compiler_parser {
                 }
             } else {
                 if (!admission_copied(type.kind())) {
-                    const AdmissionResult result = AdmissionResult(AdmissionStatus::unsupported_field, syntax.token(),
-                        field.binding(), field.type(), 0);
-                    return AdmissionProgress(result, token);
+                    return AdmissionProgress(AdmissionResult(AdmissionStatus::unsupported_field, syntax.token(),
+                        field.binding(), field.type(), 0), token);
                 }
             }
         }
@@ -3449,8 +3305,7 @@ namespace compiler_parser {
         if (pushed != AdmissionStatus::success) {
             return admission_result(pushed);
         }
-        const compiler_lexer::Cursor begin = compiler_lexer::Cursor(0, 1, 0);
-        ParseToken token = read_token(source, begin, 0);
+        ParseToken token = read_token(source, compiler_lexer::Cursor(0, 1, 0), 0);
         TypeContext context = TypeContext();
         i64 class_begin = 0;
         i64 class_end = 0;
@@ -3465,8 +3320,7 @@ namespace compiler_parser {
             if (frame.state() == FrameState::admission_class_end) {
                 class_begin = 0;
                 class_end = 0;
-                const TypeContext empty = TypeContext();
-                context.update(empty);
+                context.update(TypeContext());
             } else {
                 if (frame.state() != FrameState::admission_declaration) {
                     return admission_result(AdmissionStatus::invalid);
@@ -3479,13 +3333,11 @@ namespace compiler_parser {
                 if (class_end == 0) {
                     const HeaderResult header = admission_templates(arena, source, token, wrapper.other());
                     const TypeResult parsed = header.parsed();
-                    const ParseToken after = parsed.token();
-                    token.update(after);
+                    token.update(parsed.token());
                     if (parsed.status() != ParseStatus::success) {
                         return admission_result(AdmissionStatus::invalid);
                     }
-                    const TypeContext names = header.context();
-                    context.update(names);
+                    context.update(header.context());
                 } else {
                     if (wrapper.other() != -1) {
                         return admission_result(AdmissionStatus::invalid);
@@ -3505,15 +3357,13 @@ namespace compiler_parser {
                         if (class_end != 0) {
                             return admission_result(AdmissionStatus::invalid);
                         }
-                        const ParseToken name = admission_seek(source, token, declaration.token());
-                        token.update(name);
+                        token.update(admission_seek(source, token, declaration.token()));
                         if (token.kind() == compiler_lexer::Event::invalid_cursor) {
                             return admission_result(AdmissionStatus::invalid);
                         }
                         class_begin = token.first();
                         class_end = token.last();
-                        const ParseFrame end = ParseFrame(FrameState::admission_class_end, 0, wrapper.body(), 0);
-                        if (!arena.push(end)) {
+                        if (!arena.push(ParseFrame(FrameState::admission_class_end, 0, wrapper.body(), 0))) {
                             return admission_result(admission_failure(arena));
                         }
                         const AdmissionStatus children = admission_push(arena, declaration.body(),
@@ -3531,8 +3381,7 @@ namespace compiler_parser {
                             const AdmissionProgress progress = admission_field(arena, source, token, declaration, scope,
                                 configuration);
                             const AdmissionResult outcome = progress.outcome();
-                            const ParseToken after = progress.token();
-                            token.update(after);
+                            token.update(progress.token());
                             if (outcome.status() != AdmissionStatus::success) {
                                 return outcome;
                             }
@@ -3547,8 +3396,7 @@ namespace compiler_parser {
                                 const AdmissionProgress progress = admission_callable(arena, source, token, declaration,
                                     scope, configuration);
                                 const AdmissionResult outcome = progress.outcome();
-                                const ParseToken after = progress.token();
-                                token.update(after);
+                                token.update(progress.token());
                                 if (!arena.truncate_stack(pending)) {
                                     return admission_result(AdmissionStatus::invalid);
                                 }
@@ -3636,8 +3484,8 @@ export namespace compiler_parser {
             return ParseResult(result.status(), result.root(), arena.size(), at.index(), at.first(), at.half());
         }
         if (stop == Stop::type) {
-            const ParseFrame first = ParseFrame(FrameState::type_start, 0, -1, -1);
-            const TypeResult result = parse_type(arena, source, token, context, first);
+            const TypeResult result = parse_type(arena, source, token, context, ParseFrame(FrameState::type_start, 0,
+                -1, -1));
             const ParseToken at = result.token();
             if (result.status() == ParseStatus::success && !arena.own_type(result.root(), 0, 3)) {
                 return ParseResult(ParseStatus::invalid, -1, 0, at.index(), at.first(), at.half());

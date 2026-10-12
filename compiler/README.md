@@ -38,14 +38,19 @@ compares the actual generated frontend and current compiler stages.
 Start from a normal Git checkout containing the historical seed source
 `bdf646f09d5e14c88124c4bc9e4f998beda16183` and the reviewed ABI-facts precursor
 [`17f4f1440e6faa9cdaf8711c04400854bdb60d9e`](https://github.com/ambasta/aurora/commit/17f4f1440e6faa9cdaf8711c04400854bdb60d9e)
-(retained by the annotated tag `bootstrap-abi-facts-v1`). Prepare the source worktrees on the host,
+(retained by the annotated tag `bootstrap-abi-facts-v1`), plus the copied-argument
+checkpoint [`c0ef02cc105de2b7699d8565f6a53f1dea9e1205`](https://github.com/ambasta/aurora/commit/c0ef02cc105de2b7699d8565f6a53f1dea9e1205)
+(retained by `bootstrap-copied-arguments-v1`). Prepare the source worktrees on the host,
 where Git is installed; the pinned development image does not include Git:
 
 ```sh
 git fetch origin tag bootstrap-abi-facts-v1
+git fetch origin tag bootstrap-copied-arguments-v1
 git worktree add --detach build/predecessor-source bdf646f09d5e14c88124c4bc9e4f998beda16183
 git worktree add --detach build/abi-facts-source 17f4f1440e6faa9cdaf8711c04400854bdb60d9e
 test "$(git -C build/abi-facts-source rev-parse HEAD)" = 17f4f1440e6faa9cdaf8711c04400854bdb60d9e
+git worktree add --detach build/copied-argument-source c0ef02cc105de2b7699d8565f6a53f1dea9e1205
+test "$(git -C build/copied-argument-source rev-parse HEAD)" = c0ef02cc105de2b7699d8565f6a53f1dea9e1205
 ```
 
 Then enter the [pinned development environment](../docs/local-development.md)
@@ -60,7 +65,11 @@ meson setup build/abi-facts-compiler build/abi-facts-source -Dkernel_images=fals
   "-Dbootstrap_compiler=$SEED" \
   "-Dbootstrap_compiler_sha256=$(sha256sum "$SEED" | cut -d ' ' -f 1)"
 meson compile -C build/abi-facts-compiler -j 2 aurorac
-P=$(realpath build/abi-facts-compiler/aurorac)
+FACTS=$(realpath build/abi-facts-compiler/aurorac)
+meson setup build/copied-argument-compiler build/copied-argument-source -Dkernel_images=false \
+  "-Dbootstrap_compiler=$FACTS"
+meson compile -C build/copied-argument-compiler -j 2 aurorac
+P=$(realpath build/copied-argument-compiler/aurorac)
 meson setup build/meson . \
   "-Dbootstrap_compiler=$P"
 meson setup build/meson-compiler . -Dkernel_images=false \
@@ -71,7 +80,9 @@ meson test -C build/meson-compiler --no-rebuild --num-processes 1 \
 ```
 
 The digest option above belongs only to the unchanged historical precursor graph.
-Current setup selects the resulting fact-capable predecessor by path; its deprecated
+The copied-argument stage adds one source compiler build after the ABI-facts stage;
+the frontend now uses direct copied constructor/call arguments that the earlier
+compiler rejects. Current setup selects the resulting predecessor by path; its deprecated
 digest option is ignored and retained solely for existing-directory compatibility.
 
 Both ordinary default directories are now configured: `make`/`make test` use the
