@@ -59,9 +59,8 @@ qualification uses the selected source/tool/compiler identities, standard Meson
 logs and independent review.
 
 `CXX` selects one supported GNU executable. `CXXFLAGS` and `IR_TEST_CXXFLAGS`
-retain their explicit allowlist: user header/search/forced-header options,
-response files, specs, plugins, PCH, LTO, profile/module and alternate-subtool
-controls reject. Parsed flags are data, never evaluated as commands. Focused,
+are split as data with shell quoting; expansions and line breaks reject, and the
+flags are never evaluated as commands. Focused,
 cap-only, representative and self-test selections remain partial regardless of
 exit status. Native tests do not imply guests, physical hardware or a general
 safety proof.
