@@ -228,7 +228,6 @@ class MesonEntrypointTests(unittest.TestCase):
         self.kernel_compiler = ""
         self.bootstrap_compiler = str(self.root / "reviewed-predecessor")
         self.missing_options = set()
-        self.test_names = {"short-circuit", "short-circuit-ir", "short-circuit-ir-native", "console-session"}
         self.preflight = unittest.mock.Mock()
         for patcher in (
             patch.dict(os.environ, {}, clear=True),
@@ -267,8 +266,6 @@ class MesonEntrypointTests(unittest.TestCase):
         self.queries.append(command)
         if command[-1] == "--compilers":
             return json.dumps({"build": {"cpp": {"exelist": [self.configured_compiler]}}}).encode()
-        if command[-1] == "--tests":
-            return json.dumps([{"name": name} for name in sorted(self.test_names)]).encode()
         self.assertEqual(command[-1], "--buildoptions")
         options = [
             {"name": "cpp_args", "value": self.flags},
@@ -414,31 +411,10 @@ class MesonEntrypointTests(unittest.TestCase):
             self.assertEqual(meson_test.execute(self.root, "compiler", [target], build_only=True), build)
             self.assertEqual(self.calls, [["/synthetic/meson", "compile", "-C", str(build), "-j", "3", target]])
 
-    def test_named_tests_preserve_all_names_without_compiler_suite_filter(self):
-        self.configured("compiler")
-        names = ["short-circuit", "short-circuit-ir", "short-circuit-ir-native", "console-session"]
-        meson_test.execute(self.root, "compiler", tests=names)
-        self.assertEqual([command[1] for command in self.calls], ["compile", "test"])
-        self.assertEqual(self.calls[1][-len(names) :], names)
-        self.assertNotIn("--suite", self.calls[1])
-        self.assertIn("--no-rebuild", self.calls[1])
-
-    def test_unknown_or_pattern_test_names_reject_before_compile(self):
-        self.configured("compiler")
-        for names in (["absent"], ["short-*"], ["--list"], [""]):
-            with self.subTest(names=names), self.assertRaises(contract.ContractError):
-                meson_test.execute(self.root, "compiler", tests=names)
-            self.assertEqual(self.calls, [])
-
-    def test_invalid_build_target_or_mixed_selection_rejects_before_artifacts(self):
-        for targets, scope, tests in (
-            ([], "compiler", ()),
-            (["aurorac-stage0"], "compiler", ()),
-            (["aurorac"], "full", ()),
-            (["aurorac"], "compiler", ["frontend"]),
-        ):
+    def test_invalid_build_target_rejects_before_artifacts(self):
+        for targets, scope in (([], "compiler"), (["aurorac-stage0"], "compiler"), (["aurorac"], "full")):
             with self.subTest(targets=targets, scope=scope), self.assertRaises(contract.ContractError):
-                meson_test.execute(self.root, scope, targets, build_only=True, tests=tests)
+                meson_test.execute(self.root, scope, targets, build_only=True)
         self.assertEqual(self.calls, [])
         self.assertEqual(list(self.root.iterdir()), [])
 
@@ -640,7 +616,7 @@ class MesonEntrypointTests(unittest.TestCase):
             meson_test.execute(self.root, "full")
         self.assertEqual(self.calls, [])
 
-    def test_cli_build_and_named_selections_and_publication(self):
+    def test_cli_build_selections_and_publication(self):
         build = self.root / "configured"
         for arguments, expected in (
             (["--build-only", "aurorac", "--publish-compiler"], "aurorac"),
@@ -652,14 +628,8 @@ class MesonEntrypointTests(unittest.TestCase):
                 patch.object(meson_test, "publish_compatibility_output") as publish,
             ):
                 meson_test.main()
-                execute.assert_called_once_with(self.root, "compiler", [expected], build_only=True, tests=())
+                execute.assert_called_once_with(self.root, "compiler", [expected], build_only=True)
                 publish.assert_called_once_with(self.root, build / expected, expected)
-        with (
-            patch.object(sys, "argv", ["meson_test.py", "--repo-root", str(self.root), "--tests", "console-session"]),
-            patch.object(meson_test, "execute", return_value=build) as execute,
-        ):
-            meson_test.main()
-            execute.assert_called_once_with(self.root, "compiler", (), build_only=False, tests=["console-session"])
 
     def test_cli_invalid_publication_cannot_build(self):
         for arguments in (

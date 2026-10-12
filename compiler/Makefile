@@ -1,4 +1,5 @@
 # Convenience routes use the configured predecessor-backed Meson graph.
+# Run a focused test directly: meson test -C ../build/meson-compiler NAME
 .DEFAULT_GOAL := all
 
 .PHONY: all formatter test

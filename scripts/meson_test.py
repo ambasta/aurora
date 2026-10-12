@@ -5,7 +5,6 @@ import argparse
 import fcntl
 import json
 import os
-import re
 from pathlib import Path
 import subprocess
 import shlex
@@ -19,18 +18,13 @@ import kernel_profiles
 import compiler_contract as contract
 
 
-def execute(root, scope, targets=(), output=None, *, build_only=False, tests=()):
+def execute(root, scope, targets=(), output=None, *, build_only=False):
     root = root.resolve(strict=True)
     env = os.environ.copy()
-    contract.require(not (build_only and tests), "Choose build-only targets or named tests")
     contract.require(not build_only or scope == "compiler", "Build-only targets require compiler scope")
     contract.require(
         not build_only or bool(targets) and set(targets) <= {"aurorac", "aurora-fmt"},
         "Build-only targets are aurorac and aurora-fmt",
-    )
-    contract.require(
-        all(isinstance(name, str) and re.fullmatch(r"[a-z0-9][a-z0-9-]*", name) for name in tests),
-        "Named tests require exact Meson names; patterns and options are unsupported",
     )
     selected_compiler = None
     if scope is None:
@@ -221,17 +215,6 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
             "Configured bootstrap_compiler must select an absolute predecessor; "
             "see compiler/README.md#source-bootstrap",
         )
-        if tests:
-            registered = {item["name"] for item in introspect("--tests")}
-            unknown = sorted(set(tests) - registered)
-            contract.require(
-                not unknown,
-                "Unregistered Meson tests: "
-                + ", ".join(unknown)
-                + "; inspect meson test -C "
-                + shlex.quote(str(build))
-                + " --list",
-            )
         # Meson's generated aggregate covers declared test dependencies, including
         # non-default fixtures. Build it with our explicit jobs bound before tests.
         build_targets = list(targets) if scope is None or build_only else ["--ninja-args=meson-test-prereq"]
@@ -242,12 +225,12 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
             "test",
             "-C",
             build,
-            *([] if tests else ["--suite", scope]),
+            "--suite",
+            scope,
             "--no-rebuild",
             "--num-processes",
             test_jobs,
             "--print-errorlogs",
-            *tests,
         )
         return build
 
@@ -316,7 +299,6 @@ def main():
         choices=["full", "compiler", "dev", "slow", "integration", "boot"],
     )
     selection.add_argument("--build-only", nargs="+", choices=["aurorac", "aurora-fmt"])
-    selection.add_argument("--tests", nargs="+", help="Run exact registered names in the hosted-only build")
     parser.add_argument("--publish-formatter", action="store_true", help="Retain build/aurora-fmt after its build")
     args = parser.parse_args()
     try:
@@ -356,10 +338,9 @@ def main():
             )
             build = execute(
                 args.repo_root,
-                "compiler" if args.build_only or args.tests else args.suite or "full",
+                "compiler" if args.build_only else args.suite or "full",
                 args.build_only or (),
                 build_only=bool(args.build_only),
-                tests=args.tests or (),
             )
             if args.publish_compiler:
                 publish_compatibility_output(args.repo_root, build / "aurorac", "aurorac")

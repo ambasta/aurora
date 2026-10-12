@@ -20,6 +20,7 @@ make -C compiler
 build/aurorac --module-root library examples/core_math.au -o build/core_math.s
 build/aurorac --check --diagnostics=json examples/core_math.au --module-root library
 make -C compiler test
+meson test -C build/meson-compiler short-circuit json-codecs   # focused tests by name
 ```
 
 Compiler-only testing uses the canonical Meson graph and is not root `full`.
