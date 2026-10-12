@@ -69,9 +69,23 @@ Two scratch frames per active namespace preserve its parent list and header; the
 32-component namespace guard bounds these to 64 additional frames during leaf
 parsing. No extra arena owner or host grammar fallback is needed.
 
-Host conversion reconstructs source-ordered declarations, scopes, access and export
-spelling, then applies existing service, borrowing and category admission in lexical
-order. Module loading and export/name resolution remain separate host phases.
+After complete grammar, Aurora visits declarations in source order and admits
+unresolved callable signatures, borrowed parameters, field storage and required
+module contents. One forward lexer cursor reads the few needed spellings; existing
+token ordinals locate diagnostics without a coordinate table. Pending declaration
+and parameter frames reuse the syntax arena scratch after grammar continuations
+finish. Each frame is charged to its unique syntax record, including a class-end
+marker charged to the class, so this phase fits the existing per-token scratch bound.
+The current six-parameter ceiling requires a small copied scope value; copied
+field getters return through named locals. These are concrete language-ergonomics
+dependencies, not a permanent semantic protocol.
+
+The host supplies one copied configuration derived from the canonical array limits
+and service-group helper still shared with later semantic/IR checks. Aurora selects
+the admission failure; the host renders its bounded token range and, when needed,
+formats the converted type. Host conversion reconstructs declarations, scopes,
+access and export spelling. Module loading and export/name resolution remain
+separate host phases.
 Complete-module grammar errors precede admission errors. Besides the existing
 within-declaration rule, a syntax error in a later member/declaration or an enclosing
 container ending can now precede an earlier admission error in a multiply-invalid
@@ -131,8 +145,9 @@ selection switch. Current source also removes C++ `block`, `statement`,
 initializers enter Aurora directly. Declaration `type`, `templateArguments`,
 parameter-list and constructor-initializer grammar is also removed. The complete
 module/container migration removes the remaining namespace/class/template grammar
-and context sets; `parser.hpp` only forwards the module entry. Temporary semantic
-admission retires with the corresponding Aurora semantic analysis.
+and context sets; `parser.hpp` only forwards the module entry. Unresolved
+declaration admission also lives in Aurora; name resolution, full type/lifetime
+analysis and typed lowering remain host responsibilities.
 
 Targeted fixtures state expected ASTs, token spans, child/designator order and
 exact diagnostics directly. The independent raw ABI, bounded-conversion, depth and

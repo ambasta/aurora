@@ -53,7 +53,10 @@ export namespace compiler_parser {
         body_while,
         enum_case,
         namespace_parent,
-        namespace_header
+        namespace_header,
+        admission_declaration,
+        admission_parameter,
+        admission_class_end
     };
 
     class ParseFrame {

@@ -32,6 +32,7 @@
 extern "C" {
 void checked_hosted_parser_create(const void *, void *);
 void checked_hosted_parser_parse(void *, const void *, void *);
+void checked_hosted_parser_admit(void *, const void *, void *);
 std::int64_t checked_hosted_parser_count(const void *);
 void checked_hosted_parser_read(const void *, std::int64_t, void *);
 std::int64_t checked_hosted_parser_edges(const void *);
@@ -58,12 +59,16 @@ void hosted_parser_misaligned_call(const void *, const void *, void *, AbiEntry)
 }
 
 namespace {
+using aurora::hosted_parser::AdmissionStatus;
 using aurora::hosted_parser::Context;
 using aurora::hosted_parser::Cursor;
 using aurora::hosted_parser::NodeKind;
 using aurora::hosted_parser::Status;
 using aurora::hosted_parser::Stop;
 using Words = std::array<std::int64_t, 6>;
+using AdmissionWords = std::array<std::int64_t, 5>;
+using AdmissionConfigWords = std::array<std::int64_t, 6>;
+constexpr AdmissionConfigWords admissionConfiguration{64, 512, 62, 1, 2, 4};
 using NodeWords = std::array<std::int64_t, 7>;
 using EdgeWords = std::array<std::int64_t, 5>;
 using TypeWords = std::array<std::int64_t, 8>;
@@ -77,6 +82,9 @@ constexpr std::int64_t wire(SyntaxKind value) {
     return static_cast<std::int64_t>(value);
 }
 constexpr std::int64_t wire(Status value) {
+    return static_cast<std::int64_t>(value);
+}
+constexpr std::int64_t wire(AdmissionStatus value) {
     return static_cast<std::int64_t>(value);
 }
 constexpr std::uint64_t canary = 0xa3159f274c86be02ULL;
@@ -1978,7 +1986,7 @@ struct ParameterAst {
     std::size_t borrow = std::string::npos;
 };
 struct CallableAst {
-    std::size_t name = 1, opening = 0;
+    std::size_t name = 1;
     aurora::Type result = aurora::Type::I64;
     std::vector<ParameterAst> parameters = {};
     std::vector<StatementAst> body = {};
@@ -1998,10 +2006,6 @@ void sameCallableTree(const aurora::ParsedCallable &parsed,
             "callable shape/order differs");
     sameToken(actual.token, name);
     sameType(actual.result, expected.result);
-    sameToken(parsed.nameAdmission, tokens.at(base + expected.name + 1));
-    require(parsed.borrowAdmissions.size() == expected.parameters.size() &&
-                parsed.nameAdmissions.size() == expected.parameters.size(),
-            "callable admission count differs");
     for (std::size_t index = 0; index < expected.parameters.size(); ++index) {
         const auto &a = actual.params[index];
         const auto &b = expected.parameters[index];
@@ -2010,15 +2014,11 @@ void sameCallableTree(const aurora::ParsedCallable &parsed,
                 "ordered parameter binding/reference/const differs");
         sameType(a.type, b.type);
         sameSpan(a.borrowSpan, borrowed ? tokens.at(base + b.borrow).span : aurora::SourceSpan{});
-        sameToken(parsed.borrowAdmissions[index], tokens.at(base + b.binding));
-        sameToken(parsed.nameAdmissions[index], tokens.at(base + b.binding + 1));
     }
     for (std::size_t index = 0; index < expected.initializers.size(); ++index) {
         sameToken(actual.initializers[index].first, tokens.at(base + expected.initializers[index].first));
         sameTree(actual.initializers[index].second, tokens, expected.initializers[index].second, base);
     }
-    if (!actual.constructor)
-        sameToken(parsed.resultAdmission, tokens.at(base + expected.opening));
     sameBody(actual.body, tokens, expected.body, base);
 }
 // Whole/direct equality is dispatch evidence, separate from the literal trees.
@@ -2050,65 +2050,54 @@ void callableSyntax() {
         CallableAst expected;
     };
     for (const auto &fixture : std::vector<Fixture>{
-             {"auto empty()->i64{}", Stop::function, {.opening = 6}},
+             {"auto empty()->i64{}", Stop::function, {}},
              {"auto mix(i64 first,u8 second,bool third,u64 fourth)->bool{return third;}",
               Stop::function,
-              {.opening = 17,
-               .result = T::Bool,
+              {.result = T::Bool,
                .parameters = {{4, T::I64}, {7, T::U8}, {10, T::Bool}, {13, T::U64}},
                .body = {{18, "return", name(19)}}}},
              {"auto inspect(const Owner& owner,i64 amount)->i64{return amount;}",
               Stop::function,
-              {.opening = 13,
-               .parameters = {{6, T("Owner"), true, 5}, {9, T::I64}},
-               .body = {{14, "return", name(15)}}}},
+              {.parameters = {{6, T("Owner"), true, 5}, {9, T::I64}}, .body = {{14, "return", name(15)}}}},
              {"auto touch(Owner& owner)->Owner{return owner;}",
               Stop::function,
-              {.opening = 9,
-               .result = T("Owner"),
-               .parameters = {{5, T("Owner"), false, 4}},
-               .body = {{10, "return", name(11)}}}},
+              {.result = T("Owner"), .parameters = {{5, T("Owner"), false, 4}}, .body = {{10, "return", name(11)}}}},
              {"auto events(builtin::ConsoleSession& console,builtin::DisplaySession& display)->i64{return 0;}",
               Stop::function,
-              {.opening = 17,
-               .parameters = {{7, T::ConsoleSession, false, 6}, {13, T::DisplaySession, false, 12}},
+              {.parameters = {{7, T::ConsoleSession, false, 6}, {13, T::DisplaySession, false, 12}},
                .body = {{18, "return", number(19)}}}},
              {"auto read(i64 key)const->u8{const u8 byte=2u8;return byte;}",
               Stop::method,
-              {.opening = 9,
-               .result = T::U8,
+              {.result = T::U8,
                .parameters = {{4, T::I64}},
                .body = {local(10, 12, T::U8, false, number(14)), {16, "return", name(17)}},
                .constant = true}},
              {"auto transfer(builtin::ByteRegion region,builtin::OwnedBytes bytes)->builtin::OwnedBytes{return "
               "move(bytes);}",
               Stop::function,
-              {.opening = 17,
-               .result = T::OwnedBytes,
+              {.result = T::OwnedBytes,
                .parameters = {{6, T::ByteRegion}, {11, T::OwnedBytes}},
                .body = {{18, "return", call(19, {name(21)})}}}},
              {"auto view(builtin::span<const u8> input)const->builtin::span<const u8>{return input;}",
               Stop::method,
-              {.opening = 21,
-               .result = T::ByteSpan,
+              {.result = T::ByteSpan,
                .parameters = {{10, T::ByteSpan}},
                .body = {{22, "return", name(23)}},
                .constant = true}},
-             {"Box(){}", Stop::constructor, {.name = 0, .opening = 3}},
+             {"Box(){}", Stop::constructor, {.name = 0}},
              {"Box(i64 value):first(value),bytes{},last{1u8,2u8}{}",
               Stop::constructor,
               {.name = 0,
-               .opening = 21,
                .parameters = {{3, T::I64}},
                .initializers = {{6, name(8)},
                                 {11, tree("array_zero", 11)},
                                 {15, tree("array_literal", 15, {number(17), number(19)})}}}},
              {"auto nested(Box<Box<i64>> value)->Box<Box<i64>>{return value;}",
               Stop::function,
-              {.opening = 18, .result = nested, .parameters = {{9, nested}}, .body = {{19, "return", name(20)}}}},
+              {.result = nested, .parameters = {{9, nested}}, .body = {{19, "return", name(20)}}}},
              {"auto nested(Box<Box<i64>> value)->Box<Box<i64>>{return value;}",
               Stop::method,
-              {.opening = 18, .result = nested, .parameters = {{9, nested}}, .body = {{19, "return", name(20)}}}}})
+              {.result = nested, .parameters = {{9, nested}}, .body = {{19, "return", name(20)}}}}})
         for (const bool wrapped : {false, true}) {
             const bool function = fixture.stop == Stop::function;
             const std::string prefix = function ? "export module callable_contract;namespace ns{"
@@ -2123,7 +2112,6 @@ void callableSyntax() {
             require(direct.next.ordinal == begin + aurora::lex(fixture.source).size() - 1 && direct.next.half == 0,
                     "callable consumed the wrong closing delimiter");
             sameCallableTree(direct, tokens, fixture.expected, fixture.stop, begin);
-            aurora::admitHostedCallable(direct, fixture.stop, {}, function ? "" : "Box");
             require(direct.function.scope.empty() && !direct.function.exported && !direct.function.publicAccess &&
                         direct.function.templateParameters.empty() && direct.function.receiverClass.empty(),
                     "grammar adapter acquired declaration-context authority");
@@ -2149,13 +2137,14 @@ void callableSyntax() {
 void callableRejection(const std::string &source, Stop stop, const ExpectedError &expected, bool admission = false) {
     context = "explicit callable diagnostic " + source;
     const auto tokens = aurora::lex(source, "callable-error.au"), before = tokens;
-    bool parsed = false;
-    expectError(tokens, expected, [&] {
+    if (admission) {
         const auto syntax = aurora::parseHostedCallable(tokens, Cursor{}, stop);
-        parsed = true;
-        aurora::admitHostedCallable(syntax, stop, {}, stop == Stop::function ? "" : "Box");
-    });
-    require(parsed == admission, "callable rejection crossed its grammar/admission boundary");
+        require(syntax.next.ordinal == tokens.size() - 1 && syntax.next.half == 0,
+                "standalone callable syntax acquired whole-module admission");
+    } else
+        expectError(tokens, expected, [&] {
+            static_cast<void>(aurora::parseHostedCallable(tokens, Cursor{}, stop));
+        });
     unchangedTokens(tokens, before);
     ++cases;
     // Admission fixtures need a complete class so unrelated EOF syntax cannot
@@ -2253,12 +2242,55 @@ void callableDiagnostics() {
                                 {"auto Box()->i64{}", Stop::method, {"constructor cannot have a return type", 2}}})
         callableRejection(test.source, test.stop, test.error, true);
     // Intentionally multiply-invalid declarations pin the approved ordering:
-    // complete syntax first, then existing host admission in its original order.
+    // complete syntax first, then Aurora declaration admission in its original order.
     callableRejection("auto f(i64& true)->i64{}", Stop::function, {"reserved identifier", 5});
     callableRejection("auto f(i64& value)->i64{return 1}", Stop::function, {"expected ';'", 12});
     callableRejection("auto f(array<i64,2> value)->i64{return 1}", Stop::function, {"expected ';'", 16});
     callableRejection("auto Box()->i64{return 1}", Stop::method, {"expected ';'", 9});
     callableRejection("Box(Owner& value){return 1;}", Stop::constructor, {"expected '}'", 7});
+}
+void serviceAdmission() {
+    // Console/display, duplicate-console and display/event already have literal
+    // callable fixtures. These are the other ordered two-service combinations.
+    struct Fixture {
+        const char *first, *second;
+        aurora::Type firstType, secondType;
+        bool accepted;
+    };
+    for (const auto &fixture : std::vector<Fixture>{
+             {"ConsoleSession",
+              "IommuEventSession",
+              aurora::Type::ConsoleSession,
+              aurora::Type::IommuEventSession,
+              true},
+             {"IommuEventSession",
+              "ConsoleSession",
+              aurora::Type::IommuEventSession,
+              aurora::Type::ConsoleSession,
+              true},
+             {"DisplaySession", "ConsoleSession", aurora::Type::DisplaySession, aurora::Type::ConsoleSession, true},
+             {"IommuEventSession",
+              "DisplaySession",
+              aurora::Type::IommuEventSession,
+              aurora::Type::DisplaySession,
+              false}}) {
+        const std::string source =
+            "auto f(builtin::" + std::string(fixture.first) + "& first,builtin::" + fixture.second + "& second)->i64{}";
+        const std::string prefix = "module service_admission;";
+        if (fixture.accepted) {
+            const auto program = checkedProgram(aurora::lex(prefix + source, "service-admission.au"));
+            require(program.functions.size() == 1 && program.functions[0].params.size() == 2 &&
+                        program.functions[0].params[0].borrowed && program.functions[0].params[1].borrowed &&
+                        program.functions[0].params[0].type == fixture.firstType &&
+                        program.functions[0].params[1].type == fixture.secondType,
+                    "two-service admission changed ordered capability types or borrowing");
+        } else
+            rejectedProgram(
+                prefix,
+                source,
+                "",
+                {"borrowed parameters require one leading concrete owning class on an ordinary function", 13});
+    }
 }
 void callableParameterLimit() {
     // Six is a semantic ABI bound, not a callable-grammar or admission bound.
@@ -2275,7 +2307,6 @@ void callableParameterLimit() {
         context = "callable semantic parameter limit " + std::to_string(count);
         const auto tokens = aurora::lex(source, "callable-limit.au");
         const auto direct = aurora::parseHostedCallable(tokens, Cursor{3}, Stop::function);
-        aurora::admitHostedCallable(direct, Stop::function);
         require(direct.function.params.size() == count && direct.next.ordinal == tokens.size() - 1 &&
                     direct.next.half == 0,
                 "callable parser imposed the semantic six-parameter limit");
@@ -2326,14 +2357,9 @@ void fieldSyntax() {
             const auto parsed = aurora::parseHostedField(tokens, Cursor{begin});
             sameType(parsed.field.type, fixture.type);
             sameToken(parsed.field.token, tokens.at(begin + fixture.binding));
-            sameToken(parsed.admission, tokens.at(begin + fixture.binding + 1));
-            auto span = tokens.at(begin).span;
-            span.end = tokens.at(begin + fixture.binding - 1).span.end;
-            sameSpan(parsed.typeSpan, span);
             require(parsed.next.ordinal == begin + fixture.binding + 2 && parsed.next.half == 0 &&
                         !parsed.field.publicAccess && parsed.field.offset == 0 && parsed.field.index == 0,
                     "field cursor or host-owned metadata differs");
-            aurora::admitHostedField(parsed, fixture.publicAccess, false);
             if (wrapped) {
                 const auto program = checkedProgram(tokens);
                 require(program.classes.size() == 1 && program.classes[0].fields.size() == 1 &&
@@ -2365,20 +2391,18 @@ void declarationContexts() {
     const std::vector<Fixture> functions = {
         {"auto pair(T first,U second)->Pair<T,U>{return Pair<T,U>(first,second);}",
          Stop::function,
-         {.opening = 16,
-          .result = namedType("Pair", {ta, ua}),
+         {.result = namedType("Pair", {ta, ua}),
           .parameters = {{4, t}, {7, u}},
           .body = {{17, "return", typed(call(18, {name(25), name(27)}), {ta, ua})}}}}};
     const std::vector<Fixture> methods = {
         {"auto get(T value)->T{array<T,N> items={};return value;}",
          Stop::method,
-         {.opening = 8,
-          .result = t,
+         {.result = t,
           .parameters = {{4, t}},
           .body = {local(9, 15, array, true, tree("array_literal", 17)), {20, "return", name(21)}}}},
         {"Buffer(T value):items{}{}",
          Stop::constructor,
-         {.name = 0, .opening = 9, .parameters = {{3, t}}, .initializers = {{6, tree("array_zero", 6)}}}}};
+         {.name = 0, .parameters = {{3, t}}, .initializers = {{6, tree("array_zero", 6)}}}}};
     for (const bool function : {true, false}) {
         const std::string prefix = function
                                        ? "export module callable_context;template<Value T,Value U>"
@@ -2406,7 +2430,6 @@ void declarationContexts() {
             const auto &fixture = fixtures[index];
             const auto direct = aurora::parseHostedCallable(tokens, Cursor{begin}, fixture.stop, captured);
             sameCallableTree(direct, tokens, fixture.expected, fixture.stop, begin);
-            aurora::admitHostedCallable(direct, fixture.stop, captured, function ? "" : "Buffer");
             sameCallable(imported[index], direct.function);
             begin += aurora::lex(fixture.source).size() - 1;
             require(direct.next.ordinal == begin && direct.next.half == 0, "template callable consumed its neighbor");
@@ -2424,7 +2447,6 @@ void declarationContexts() {
     sameType(field.field.type, array);
     sameToken(field.field.token, tokens.at(begin + 6));
     require(field.next.ordinal == begin + 8 && field.next.half == 0, "dependent field consumed its class terminator");
-    aurora::admitHostedField(field, false, true);
     sameType(checkedProgram(tokens).templates.at(0).fields.at(0).type, array);
     unchangedTokens(tokens, before);
     ++cases;
@@ -2440,14 +2462,19 @@ void declarationContexts() {
         typeContext.typeParameters = {input.at(7)};
         typeContext.functionTemplate = true;
         const auto start = aurora::lex(shadowPrefix).size() - 1;
-        expectError(
-            input,
-            expected,
-            [&] {
-                const auto parsed = aurora::parseHostedCallable(input, Cursor{start}, Stop::function, typeContext);
-                aurora::admitHostedCallable(parsed, Stop::function, typeContext);
-            },
-            start);
+        if (expected.message == "expected ';'")
+            expectError(
+                input,
+                expected,
+                [&] {
+                    static_cast<void>(aurora::parseHostedCallable(input, Cursor{start}, Stop::function, typeContext));
+                },
+                start);
+        else {
+            const auto parsed = aurora::parseHostedCallable(input, Cursor{start}, Stop::function, typeContext);
+            require(parsed.next.ordinal == input.size() - 1 && parsed.next.half == 0,
+                    "standalone callable context acquired whole-module admission");
+        }
         unchangedTokens(input, saved);
         rejectedProgram(shadowPrefix, source, "", expected);
         ++cases;
@@ -2457,8 +2484,7 @@ void declarationContexts() {
     const auto arrayTokens = aurora::lex(arrayPrefix + "array(){}};}", "array-constructor.au");
     const auto start = aurora::lex(arrayPrefix).size() - 1;
     const auto constructor = aurora::parseHostedCallable(arrayTokens, Cursor{start}, Stop::constructor);
-    sameCallableTree(constructor, arrayTokens, {.name = 0, .opening = 3}, Stop::constructor, start);
-    aurora::admitHostedCallable(constructor, Stop::constructor, {}, "array");
+    sameCallableTree(constructor, arrayTokens, {.name = 0}, Stop::constructor, start);
     require(constructor.next.ordinal == start + 5 && constructor.next.half == 0, "array constructor escaped its class");
     sameCallable(checkedProgram(arrayTokens).classes.at(0).methods.at(0), constructor.function);
     ++cases;
@@ -2476,19 +2502,23 @@ void fieldDiagnostics() {
              {"i64 value=1;", {"expected ';'", 2}},
              {"Box<i64>> value;", {"expected identifier", 3, 1}},
              {"array<u8,2> bytes;", {"array fields must be private", 7}, true, true},
+             {"array<i64,65> values;", {"array fields must be private", 7}, true, true},
+             {"array<i64,65> values;", {"class array field capacity must be between 1 and 64", 7}, true},
+             {"array<u8,513> bytes;", {"class array field capacity must be between 1 and 512", 7}, true},
              {"builtin::OwnedBytes bytes;", {"owned byte fields must be private", 4}, true, true},
              {"builtin::OwnedBytes bytes;", {"owning class templates are unsupported", 4}, true, false, true},
              // Grammar wins before private-field admission in malformed declarations.
              {"array<u8,2> bytes=1;", {"expected ';'", 7}, false, true}}) {
         context = "independent field diagnostic " + fixture.source;
         const auto tokens = aurora::lex(fixture.source, "field-error.au"), before = tokens;
-        bool parsed = false;
-        expectError(tokens, fixture.expected, [&] {
+        if (fixture.admission) {
             const auto field = aurora::parseHostedField(tokens, Cursor{});
-            parsed = true;
-            aurora::admitHostedField(field, fixture.publicAccess, fixture.templated);
-        });
-        require(parsed == fixture.admission, "field rejection crossed its grammar/admission boundary");
+            require(field.next.ordinal == tokens.size() - 1 && field.next.half == 0,
+                    "standalone field syntax acquired whole-module admission");
+        } else
+            expectError(tokens, fixture.expected, [&] {
+                static_cast<void>(aurora::parseHostedField(tokens, Cursor{}));
+            });
         unchangedTokens(tokens, before);
         const std::string prefix = "module field_errors;" + std::string(fixture.templated ? "template<Scalar T>" : "") +
                                    "class Holder{" + (fixture.publicAccess ? "public:" : "");
@@ -2528,6 +2558,13 @@ std::map<std::string, aurora::Type> compilerDeclarationTypes() {
                              "TypeContext",
                              "ParseResult",
                              "ParseStatus",
+                             "AdmissionStatus",
+                             "AdmissionConfig",
+                             "AdmissionResult",
+                             "AdmissionProgress",
+                             "AdmissionKind",
+                             "AdmissionType",
+                             "AdmissionScope",
                              "ParseToken",
                              "TypeResult",
                              "TypeWord",
@@ -2579,7 +2616,6 @@ void bootstrapDeclarationTypes(const std::vector<aurora::Token> &tokens,
             const auto direct =
                 aurora::parseHostedCallable(tokens, Cursor{function.constructor ? name : name - 1}, stop, captured);
             sameCallable(direct.function, function);
-            aurora::admitHostedCallable(direct, stop, captured, className);
             // Current bootstrap constructors use parenthesized initializers;
             // this independent lexical scan must not mistake one for the body.
             for (const auto &[field, expression] : function.initializers) {
@@ -2667,14 +2703,9 @@ void bootstrapDeclarationTypes(const std::vector<aurora::Token> &tokens,
                 const auto direct = aurora::parseHostedField(tokens, Cursor{first}, captured);
                 sameToken(direct.field.token, field.token);
                 sameType(direct.field.type, field.type);
-                sameToken(direct.admission, tokens.at(binding + 1));
-                auto span = tokens.at(first).span;
-                span.end = tokens.at(binding - 1).span.end;
-                sameSpan(direct.typeSpan, span);
                 require(direct.next.ordinal == binding + 2 && direct.next.half == 0 &&
                             tokens.at(binding + 1).text == ";",
                         "whole field dispatch consumed a neighboring declaration");
-                aurora::admitHostedField(direct, field.publicAccess, !definition.templateParameters.empty());
                 ++wholeFields;
                 ++fields;
             }
@@ -2786,10 +2817,18 @@ void bootstrapContainers(const std::vector<aurora::Token> &tokens, const aurora:
           "+types +type_at +append_type +own_type +syntax_size +syntax_at +append_syntax +frame +pop +replace +push "
           "+at +append_at +append +append_name +append_index +arguments +edge +append_field +append_argument "
           "+append_list"}},
-        {{"TypeContext",
+        {{"AdmissionConfig",
+          true,
+          "-scalar_array_limit -byte_array_limit -service_groups -console_mask -display_mask -event_mask",
+          "+AdmissionConfig +array_limit +groups +service_mask"},
+         {"AdmissionResult",
+          true,
+          "-result -token_index -end_token -type_node -detail",
+          "+AdmissionResult +status +token +end +type +value"},
+         {"TypeContext",
           true,
           "-first_begin -first_end -second_begin -second_end -capacity_begin -capacity_end -template_mode",
-          "+TypeContext +begin +end +mode +bind_parameter +set_mode"},
+          "+TypeContext +update +begin +end +mode +bind_parameter +set_mode"},
          {"ParseResult",
           true,
           "-result -root_node -node_count -token_count -source_offset -token_half",
@@ -2799,7 +2838,13 @@ void bootstrapContainers(const std::vector<aurora::Token> &tokens, const aurora:
           "-event -begin -end -line -line_start -ordinal -token_half",
           "+ParseToken +update +kind +first +last +row +start +index +half +split"},
          {"TypeResult", false, "-result -root_type -next_token", "+TypeResult +status +root +token"},
-         {"HeaderResult", false, "-parsed_header -type_context", "+HeaderResult +parsed +context"}},
+         {"HeaderResult", false, "-parsed_header -type_context", "+HeaderResult +parsed +context"},
+         {"AdmissionProgress", false, "-result -next_token", "+AdmissionProgress +outcome +token"},
+         {"AdmissionType", false, "-category -service_bit -next_token", "+AdmissionType +kind +service +token"},
+         {"AdmissionScope",
+          false,
+          "-type_context -class_begin -class_end -public_access",
+          "+AdmissionScope +context +begin +end +access"}},
     }};
     const std::string scope = module == 0 ? "compiler_lexer" : "compiler_parser";
     require(program.classes.size() == expected.at(module).size() && program.templates.empty() &&
@@ -2809,7 +2854,8 @@ void bootstrapContainers(const std::vector<aurora::Token> &tokens, const aurora:
         sameContainer(program.classes[index], tokens, scope, expected[module][index]);
         sameTemplateParameters(program.classes[index].templateParameters, {});
     }
-    const std::vector<bool> exports = module == 2 ? std::vector<bool>{true, false, true} : std::vector<bool>{true};
+    const std::vector<bool> exports =
+        module == 2 ? std::vector<bool>{true, false, false, true} : std::vector<bool>{true};
     std::vector<std::size_t> starts;
     for (std::size_t index = 0; index + 1 < tokens.size(); ++index)
         if (tokens[index].text == "namespace") {
@@ -2818,7 +2864,7 @@ void bootstrapContainers(const std::vector<aurora::Token> &tokens, const aurora:
                     "compiler namespace block name/export/order differs");
             starts.push_back(index);
         }
-    require(starts.size() == exports.size(), "compiler omitted one of its five namespace blocks");
+    require(starts.size() == exports.size(), "compiler omitted one of its six namespace blocks");
     for (const auto &function : program.functions) {
         const auto token = tokenAt(tokens, function.token);
         const auto block = std::upper_bound(starts.begin(), starts.end(), token);
@@ -2893,15 +2939,18 @@ void moduleSyntax() {
     const auto reset = checkedProgram(
         aurora::lex("export module contexts;template<Scalar T,i64 N>class Box{builtin::array<T,N> values;};"
                     "class T{i64 value;};class N{};template<Value U>auto make(U item)->U{return item;}"
-                    "auto U(T item)->T{return item;}auto N()->i64{return 1;}",
+                    "auto U(T item)->T{return item;}auto N()->i64{return 1;}"
+                    "auto inspect(Owner& owner)->i64{return 0;}",
                     "reset-context.au"));
     require(reset.templates.size() == 1 && reset.classes.size() == 2 && reset.classes[0].name == "T" &&
                 reset.classes[1].name == "N" && reset.classes[0].templateParameters.empty() &&
                 reset.classes[1].templateParameters.empty() && reset.functionTemplates.size() == 1 &&
                 reset.functionTemplates[0].params[0].type.kind == aurora::TypeKind::Parameter &&
-                reset.functions.size() == 2 && reset.functions[0].name == "U" && reset.functions[1].name == "N" &&
+                reset.functions.size() == 3 && reset.functions[0].name == "U" && reset.functions[1].name == "N" &&
                 reset.functions[0].params[0].type == namedType("T") && reset.functions[0].result == namedType("T") &&
-                reset.functions[0].templateParameters.empty() && reset.functions[1].templateParameters.empty(),
+                reset.functions[0].templateParameters.empty() && reset.functions[1].templateParameters.empty() &&
+                reset.functions[2].name == "inspect" && reset.functions[2].templateParameters.empty() &&
+                reset.functions[2].params[0].borrowed && reset.functions[2].params[0].type == namedType("Owner"),
             "class/function template names or capacity context leaked into a later declaration");
     // The compatibility facade still forwards one complete program parse.
     const auto facade = aurora::Parser(aurora::lex("export module facade;class Empty{};", "facade.au")).parse();
@@ -3014,7 +3063,8 @@ void bootstrapPreambleEnums(const std::vector<aurora::Token> &tokens,
              "primary_postfix call_arguments method_arguments index_expression array_arguments construct_field "
              "construct_arguments constructor_arguments template_opening template_candidate type_start "
              "type_arguments type_argument_first type_argument_second type_array_element type_owned_element "
-             "body_block body_if_then body_if_else body_while enum_case namespace_parent namespace_header"},
+             "body_block body_if_then body_if_else body_while enum_case namespace_parent namespace_header "
+             "admission_declaration admission_parameter admission_class_end"},
             {"TypeKind",
              true,
              "invalid i64_type u64_type u8_type bool_type named parameter capacity length_parameter array_type "
@@ -3043,6 +3093,11 @@ void bootstrapPreambleEnums(const std::vector<aurora::Token> &tokens,
              "export_interface_required module_reexport imports_after_declarations template_parameter_limit "
              "template_parameter_kind template_parameter_name template_capacity_order template_declaration_kind "
              "function_template_capacity class_template_shadow invalid"},
+            {"AdmissionStatus",
+             true,
+             "success allocation_failure function_shadow typed_constructor borrowed_parameter const_parameter "
+             "function_parameter method_parameter function_result method_result public_array array_capacity "
+             "public_owner templated_owner unsupported_field missing_function invalid"},
             {"Stop",
              true,
              "semicolon close_parenthesis assignment constructor_braces body type function method constructor "
@@ -3056,6 +3111,7 @@ void bootstrapPreambleEnums(const std::vector<aurora::Token> &tokens,
              "invalid export_declaration import_declaration namespace_declaration enum_declaration "
              "template_declaration class_declaration auto_declaration public_access private_access "
              "scalar_parameter value_parameter capacity_parameter"},
+            {"AdmissionKind", false, "invalid copied class_value span region owner service unsupported"},
         },
     }};
     const std::array<std::string, 3> modules{
@@ -3101,7 +3157,7 @@ void bootstrapPreambleEnums(const std::vector<aurora::Token> &tokens,
         caseCount += names.size();
         ++cases;
     }
-    const std::array<std::size_t, 3> counts{8, 90, 107};
+    const std::array<std::size_t, 3> counts{8, 93, 132};
     require(caseCount == counts.at(module), "actual compiler enum case inventory differs");
     unchangedTokens(tokens, before);
     ++cases;
@@ -3242,6 +3298,12 @@ static_assert(sizeof(Words) == 48 && sizeof(GuardedWords<6>) == 64 && sizeof(Gua
               sizeof(GuardedWords<7>) == 72 && sizeof(EdgeWords) == 40 && sizeof(TypeWords) == 64 &&
               sizeof(GuardedWords<8>) == 80 && sizeof(ContextWords) == 56 && sizeof(GuardedWords<19>) == 168 &&
               sizeof(SyntaxWords) == 96 && sizeof(GuardedWords<12>) == 112);
+static_assert(sizeof(AdmissionWords) == sizeof(aurora::hosted_abi::compiler_parser::AdmissionResult) &&
+              sizeof(AdmissionConfigWords) == sizeof(aurora::hosted_abi::compiler_parser::AdmissionConfig) &&
+              sizeof(std::array<std::int64_t, 14>) == sizeof(aurora::hosted_abi::AdmissionInput) &&
+              sizeof(AdmissionWords) == 40 && sizeof(AdmissionConfigWords) == 48);
+static_assert(offsetof(aurora::hosted_abi::AdmissionInput, root) == 56 &&
+              offsetof(aurora::hosted_abi::AdmissionInput, configuration) == 64);
 static_assert(sizeof(Words) == sizeof(aurora::hosted_abi::compiler_parser::ParseResult) &&
               sizeof(NodeWords) == sizeof(aurora::hosted_abi::compiler_parser::AstNode) &&
               sizeof(EdgeWords) == sizeof(aurora::hosted_abi::compiler_parser::ChildEdge) &&
@@ -3318,6 +3380,30 @@ public:
             require(syntaxCount() == 0, "expression/type profile acquired syntax records");
         if (stop == Stop::type)
             require(output.value[2] == 0 && edges() == 0, "type-only profile acquired expression/edge records");
+        return output.value;
+    }
+    AdmissionWords admit(const std::string &source,
+                         std::int64_t root,
+                         const AdmissionConfigWords &configuration = admissionConfiguration) {
+        GuardedWords<14> input;
+        input.value = {0,
+                       static_cast<std::int64_t>(reinterpret_cast<std::uintptr_t>(source.data())),
+                       0,
+                       0,
+                       0,
+                       0,
+                       static_cast<std::int64_t>(source.size()),
+                       root};
+        std::copy(configuration.begin(), configuration.end(), input.value.begin() + 8);
+        const auto beforeInput = input.value;
+        const auto beforeSource = source;
+        GuardedWords<5> output;
+        checked_hosted_parser_admit(data(), input.value.data(), output.value.data());
+        input.check();
+        output.check();
+        guards();
+        require(input.value == beforeInput && source == beforeSource,
+                "admission changed its copied source/root/configuration record");
         return output.value;
     }
     NodeWords read(std::int64_t index) {
@@ -3575,11 +3661,13 @@ void rawModules() {
             require(arena.syntax(index) == expected[index], "container/template copied record differs");
         require(arena.type(0) == TypeWords{6, 18, 18, 36, -1, -1, 18, 3},
                 "class template context lost its source-backed parameter type");
+        require(arena.admit(small, 9) == AdmissionWords{wire(AdmissionStatus::success), -1, -1, -1, 0},
+                "interface module admission rejected a class-only declaration");
         arena.finish();
         require(allocations.successful == allocations.released, "whole-module records leaked an owner");
         ++cases;
     }
-    // Module-function presence remains host admission, after Aurora syntax.
+    // Module-function presence belongs to the separate admission stage, after grammar.
     {
         const std::string source = "module declarations;class C{};";
         Allocations allocations;
@@ -3587,7 +3675,9 @@ void rawModules() {
         const auto result = arena.parse(source, Stop::module_definition);
         require(result[0] == wire(Status::success) && result[3] == 8 &&
                     arena.syntax(result[1])[0] == wire(SyntaxKind::module_definition),
-                "module syntax acquired the host function-presence admission policy");
+                "raw module grammar acquired function-presence admission");
+        require(arena.admit(source, result[1]) == AdmissionWords{wire(AdmissionStatus::missing_function), 8, 9, -1, 0},
+                "post-grammar module admission lost its EOF diagnostic");
         arena.finish();
         require(allocations.successful == allocations.released, "class-only module leaked an owner");
         ++cases;
@@ -3648,6 +3738,97 @@ void rawModules() {
         arena.finish();
         require(allocations.successful == allocations.released, "failed module parse leaked an owner");
         ++cases;
+    }
+}
+
+void rawAdmission() {
+    // Independent copied configuration controls exercise the private entry,
+    // while production policy messages stay in the existing whole-module tables.
+    struct Fixture {
+        const char *source;
+        AdmissionConfigWords configuration;
+        AdmissionWords expected;
+    };
+    for (const auto &fixture : std::vector<Fixture>{
+             {"export module admitted;class C{array<i64,65> values;};",
+              admissionConfiguration,
+              {wire(AdmissionStatus::array_capacity), 14, 15, -1, 64}},
+             {"export module admitted;class C{array<i64,65> values;};",
+              {65, 512, 62, 1, 2, 4},
+              {wire(AdmissionStatus::success), -1, -1, -1, 0}},
+             {"module admitted;auto f(builtin::ConsoleSession& first,builtin::DisplaySession& second)->i64{}",
+              admissionConfiguration,
+              {wire(AdmissionStatus::success), -1, -1, -1, 0}},
+             {"module admitted;auto f(builtin::ConsoleSession& first,builtin::DisplaySession& second)->i64{}",
+              {64, 512, 54, 1, 2, 4},
+              {wire(AdmissionStatus::borrowed_parameter), 16, 17, -1, 0}}}) {
+        context = "copied declaration admission configuration";
+        Allocations allocations;
+        RawArena arena(allocations);
+        const auto parsed = arena.parse(fixture.source, Stop::module_definition);
+        require(parsed[0] == wire(Status::success), "configuration fixture failed grammar before admission");
+        require(arena.admit(fixture.source, parsed[1], fixture.configuration) == fixture.expected,
+                "admission ignored its copied scalar limit or supported service-group mask");
+        arena.finish();
+        require(allocations.successful == allocations.released, "configuration admission leaked an owner");
+        ++cases;
+    }
+    context = "post-grammar admission scratch growth and every allocation failure";
+    constexpr std::size_t width = 513;
+    std::string source = "module admitted;auto wide(";
+    for (std::size_t index = 0; index < width; ++index)
+        source += (index ? "," : "") + std::string("i64 p") + std::to_string(index);
+    source += ")->i64{return p0;}auto later()->i64{return 0;}";
+    // The later declaration remains pending while wide parameter scratch grows.
+    // Only admission allocations are denied. Every iteration first establishes
+    // a complete valid grammar forest and then checks that all records survive.
+    for (std::size_t budget = 0;; ++budget) {
+        Allocations allocations;
+        RawArena arena(allocations);
+        const auto parsed = arena.parse(source, Stop::module_definition);
+        require(parsed[0] == wire(Status::success), "wide admission fixture did not complete grammar");
+        std::vector<NodeWords> nodes;
+        std::vector<TypeWords> types;
+        std::vector<SyntaxWords> syntax;
+        for (std::int64_t index = 0; index < parsed[2]; ++index)
+            nodes.push_back(arena.read(index));
+        for (std::int64_t index = 0; index < arena.types(); ++index)
+            types.push_back(arena.type(index));
+        for (std::int64_t index = 0; index < arena.syntaxCount(); ++index)
+            syntax.push_back(arena.syntax(index));
+        const auto grammarAllocations = allocations.successful;
+        allocations.allowed = grammarAllocations + budget;
+        const auto admitted = arena.admit(source, parsed[1]);
+        const bool success = admitted[0] == wire(AdmissionStatus::success);
+        require(admitted ==
+                    AdmissionWords{
+                        wire(success ? AdmissionStatus::success : AdmissionStatus::allocation_failure), -1, -1, -1, 0},
+                "admission allocation failure published policy metadata or imposed a parameter limit");
+        require(checked_hosted_parser_count(arena.data()) == parsed[2] &&
+                    arena.types() == static_cast<std::int64_t>(types.size()) &&
+                    arena.syntaxCount() == static_cast<std::int64_t>(syntax.size()) && arena.edges() == 0,
+                "admission changed grammar forest counts");
+        for (std::size_t index = 0; index < nodes.size(); ++index)
+            require(arena.read(index) == nodes[index], "admission changed a committed expression");
+        for (std::size_t index = 0; index < types.size(); ++index)
+            require(arena.type(index) == types[index], "admission changed a committed type");
+        for (std::size_t index = 0; index < syntax.size(); ++index)
+            require(arena.syntax(index) == syntax[index], "admission changed a committed declaration");
+        const auto metrics = arena.metrics();
+        require(metrics.live_allocations == 5 && metrics.peak_live_allocations == 5,
+                "admission acquired a sixth owner or lost an existing owner");
+        if (success) {
+            require(budget > 0 && allocations.successful - grammarAllocations == budget,
+                    "admission sweep skipped a failing scratch allocation or never grew scratch");
+            const auto beforeRepeat = allocations.successful;
+            require(arena.admit(source, parsed[1]) == admitted && allocations.successful == beforeRepeat,
+                    "repeated admission retained stale scratch context or regrew completed storage");
+        }
+        arena.finish();
+        require(allocations.successful == allocations.released, "admission scratch failure leaked an existing owner");
+        ++cases;
+        if (success)
+            break;
     }
 }
 
@@ -4075,8 +4256,6 @@ void rawCallableGrowth() {
                 require(parameter.name == "p" + std::to_string(index) && parameter.type == aurora::Type::I64 &&
                             !parameter.borrowed && !parameter.borrowConst,
                         "wide parameter name/type/qualifier order differs");
-                sameToken(direct.borrowAdmissions[index], tokens.at(4 + 3 * index));
-                sameToken(direct.nameAdmissions[index], tokens.at(5 + 3 * index));
             }
         }
         ++cases;
@@ -5373,6 +5552,7 @@ int main(int argc, char **argv) {
         typedSyntax();
         callableSyntax();
         callableDiagnostics();
+        serviceAdmission();
         callableParameterLimit();
         fieldSyntax();
         fieldDiagnostics();
@@ -5384,6 +5564,7 @@ int main(int argc, char **argv) {
         rawDeclarations();
         rawPreambleEnums();
         rawModules();
+        rawAdmission();
         rawCallableGrowth();
         rawFields();
         declarationTypeSyntax();
@@ -5421,9 +5602,9 @@ int main(int argc, char **argv) {
                "independent declaration types and diagnostics, all 490 historical and new compiler declaration "
                "type occurrences, 31-record standalone type growth with existing-owner cleanup; "
                "whole callable/field boundaries, 513-entry callable and 31-type field failure sweeps; "
-               "three compiler preambles, two imports, ten enums/205 cases, 513-import and 256-case failure sweeps; "
-               "13 compiler classes/five namespace blocks, std::array/pair/make_pair template inventories, "
-               "whole-module container/depth/header contracts\n";
+               "three compiler preambles, two imports, twelve enums/233 cases, 513-import and 256-case failure sweeps; "
+               "18 compiler classes/six namespace blocks, std::array/pair/make_pair template inventories, "
+               "whole-module container/depth/header contracts and post-grammar admission scratch-failure controls\n";
     } catch (const std::exception &error) {
         std::cerr << "FAIL " << error.what() << '\n';
         return 1;

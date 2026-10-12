@@ -17,6 +17,8 @@
 
 namespace {
 using ResultWords = std::array<std::int64_t, 6>;
+using AdmissionWords = std::array<std::int64_t, 5>;
+using AdmissionInputWords = std::array<std::uint64_t, 14>;
 using NodeWords = std::array<std::int64_t, 7>;
 using EdgeWords = std::array<std::int64_t, 5>;
 using TypeWords = std::array<std::int64_t, 8>;
@@ -29,10 +31,16 @@ static_assert(sizeof(ResultWords) == sizeof(aurora::hosted_abi::compiler_parser:
               sizeof(SyntaxWords) == sizeof(aurora::hosted_abi::compiler_parser::SyntaxNode) &&
               sizeof(InputWords) == sizeof(aurora::hosted_abi::ParserInput));
 static_assert(sizeof(ResultWords) == 48 && sizeof(SyntaxWords) == 96 && sizeof(InputWords) == 152);
+static_assert(sizeof(AdmissionWords) == sizeof(aurora::hosted_abi::compiler_parser::AdmissionResult) &&
+              sizeof(AdmissionInputWords) == sizeof(aurora::hosted_abi::AdmissionInput) &&
+              sizeof(AdmissionWords) == 40 && sizeof(AdmissionInputWords) == 112);
+static_assert(offsetof(aurora::hosted_abi::AdmissionInput, root) == 56 &&
+              offsetof(aurora::hosted_abi::AdmissionInput, configuration) == 64);
 static_assert(offsetof(aurora::hosted_abi::ParserInput, enum_count) == 144);
 static_assert(offsetof(aurora::hosted_abi::compiler_parser::ParseResult, token_half) == 40 &&
               offsetof(aurora::hosted_abi::compiler_parser::SyntaxNode, borrow_token) == 88);
 using aurora::DiagnosticCode;
+using aurora::hosted_parser::AdmissionStatus;
 using aurora::hosted_parser::NodeKind;
 using aurora::hosted_parser::Status;
 using aurora::hosted_parser::Stop;
@@ -42,6 +50,8 @@ template <class T> constexpr std::int64_t wire(T value) {
     return static_cast<std::int64_t>(value);
 }
 ResultWords result;
+AdmissionWords admissionResult;
+AdmissionInputWords capturedAdmissionInput{};
 std::vector<NodeWords> records;
 std::vector<EdgeWords> edges;
 std::vector<TypeWords> types;
@@ -51,7 +61,8 @@ void *arenaAddress = nullptr;
 std::uint64_t arenaRegion = 0;
 constexpr std::uint64_t arenaCanary = 0x746970656172656eULL;
 std::int64_t count = 0, edgeCount = 0, typeCount = 0, statementCount = 0;
-int created = 0, parsed = 0, released = 0, read = 0, edgeRead = 0, typeRead = 0;
+int created = 0, parsed = 0, admitted = 0, released = 0, read = 0, edgeRead = 0, typeRead = 0;
+bool throwingAdmission = false;
 int throwingRead = 0, statementRead = 0;
 std::size_t cases = 0;
 void require(bool value, const std::string &message) {
@@ -60,6 +71,9 @@ void require(bool value, const std::string &message) {
 }
 void reset() {
     result = {wire(Status::success), 2, 3, 3, 3};
+    admissionResult = {wire(AdmissionStatus::success), -1, -1, -1, 0};
+    capturedAdmissionInput = {};
+    throwingAdmission = false;
     records = {{wire(NodeKind::literal), 0, -1, -1, 1, 0, 0},
                {wire(NodeKind::literal), 2, -1, -1, 1, 2, 2},
                {wire(NodeKind::binary), 1, 0, 1, 2, 1, 1}};
@@ -68,7 +82,7 @@ void reset() {
     edges.clear();
     types.clear();
     statements.clear();
-    created = parsed = released = read = edgeRead = typeRead = statementRead = throwingRead = 0;
+    created = parsed = admitted = released = read = edgeRead = typeRead = statementRead = throwingRead = 0;
     capturedInput = {};
     arenaAddress = nullptr;
 }
@@ -997,13 +1011,11 @@ void fieldControls() {
     const auto value = aurora::parseHostedField(tokens, cursor);
     require(value.field.token.text == "value" && value.field.type.className == "Box" &&
                 value.field.type.templateArguments.size() == 1 &&
-                value.field.type.templateArguments[0].type == aurora::TypeKind::I64 &&
-                value.typeSpan.source == tokens[0].span.source && value.typeSpan.begin.offset == 0 &&
-                value.typeSpan.end.offset == 8 && value.next.ordinal == 6 && value.next.half == 0 &&
-                value.admission.text == ";" && cursor.ordinal == 0 && cursor.half == 0 && unchanged(original, tokens) &&
+                value.field.type.templateArguments[0].type == aurora::TypeKind::I64 && value.next.ordinal == 6 &&
+                value.next.half == 0 && cursor.ordinal == 0 && cursor.half == 0 && unchanged(original, tokens) &&
                 read == 0 && edgeRead == 0 && typeRead == 2 && statementRead == 1 &&
-                capturedInput[10] == static_cast<std::uint64_t>(Stop::field) && released == 1,
-            "whole field conversion lost its owned type, range, cursor or cleanup");
+                capturedInput[10] == static_cast<std::uint64_t>(Stop::field) && admitted == 0 && released == 1,
+            "whole field conversion lost its owned type, cursor or cleanup");
     ++cases;
     const auto reject = [&](const std::string &label, const std::function<void()> &mutate, bool readFailure = false) {
         configure();
@@ -1225,8 +1237,8 @@ void moduleControls() {
                 program.templates[0].token.span.begin.offset == tokens[16].span.begin.offset &&
                 program.templates[0].fields[0].token.span.begin.offset == tokens[19].span.begin.offset,
             "whole-module copied conversion lost container/template/member metadata");
-    require(unchanged(original, tokens) && created == 1 && parsed == 1 && released == 1 && read == 0 && edgeRead == 0 &&
-                typeRead == 1 && statementRead == 10 &&
+    require(unchanged(original, tokens) && created == 1 && parsed == 1 && admitted == 1 && released == 1 && read == 0 &&
+                edgeRead == 0 && typeRead == 1 && statementRead == 10 &&
                 capturedInput[10] == static_cast<std::uint64_t>(Stop::module_definition) &&
                 std::all_of(capturedInput.begin() + 11,
                             capturedInput.end(),
@@ -1328,6 +1340,60 @@ void moduleControls() {
             throwingRead = 4;
         },
         true);
+    // Admission is a private post-grammar result, with no policy replay here.
+    // Every malformed tag/range/detail must fail before a Program is published.
+    for (const auto &[label, forged] : std::vector<std::pair<const char *, AdmissionWords>>{
+             {"negative admission status", {-1, -1, -1, -1, 0}},
+             {"invalid admission status", {wire(AdmissionStatus::invalid), -1, -1, -1, 0}},
+             {"unknown admission status", {99, -1, -1, -1, 0}},
+             {"success has token", {wire(AdmissionStatus::success), 0, -1, -1, 0}},
+             {"success has end", {wire(AdmissionStatus::success), -1, 0, -1, 0}},
+             {"success has type", {wire(AdmissionStatus::success), -1, -1, 0, 0}},
+             {"success has detail", {wire(AdmissionStatus::success), -1, -1, -1, 1}},
+             {"failure has metadata", {wire(AdmissionStatus::allocation_failure), 0, -1, -1, 0}},
+             {"negative admission token", {wire(AdmissionStatus::public_array), -1, 1, -1, 0}},
+             {"admission token outside input", {wire(AdmissionStatus::public_array), 25, 26, -1, 0}},
+             {"admission end outside input", {wire(AdmissionStatus::public_array), 24, 26, -1, 0}},
+             {"reversed admission range", {wire(AdmissionStatus::public_array), 20, 19, -1, 0}},
+             {"ordinary admission spans multiple tokens", {wire(AdmissionStatus::public_array), 19, 21, -1, 0}},
+             {"ordinary admission carries type", {wire(AdmissionStatus::public_array), 20, 21, 0, 0}},
+             {"ordinary admission carries detail", {wire(AdmissionStatus::public_array), 20, 21, -1, 1}},
+             {"unsupported field lacks type", {wire(AdmissionStatus::unsupported_field), 18, 19, -1, 0}},
+             {"unsupported field type outside forest", {wire(AdmissionStatus::unsupported_field), 18, 19, 1, 0}},
+             {"unsupported field carries detail", {wire(AdmissionStatus::unsupported_field), 18, 19, 0, 1}},
+             {"array limit outside configuration", {wire(AdmissionStatus::array_capacity), 20, 21, -1, 65}}}) {
+        configure();
+        admissionResult = forged;
+        bool rejected = false;
+        try {
+            static_cast<void>(aurora::parseHostedProgram(tokens));
+        } catch (const aurora::Error &error) {
+            rejected = error.diagnostic.code == DiagnosticCode::Internal &&
+                       error.diagnostic.message == "hosted parser returned an invalid result";
+        }
+        require(rejected && unchanged(original, tokens) && created == 1 && parsed == 1 && admitted == 1 &&
+                    released == 1,
+                std::string(label) + ": unsafe admission result escaped or changed input/cleanup");
+        ++cases;
+    }
+    for (const bool throws : {false, true}) {
+        configure();
+        throwingAdmission = throws;
+        admissionResult = {wire(AdmissionStatus::allocation_failure), -1, -1, -1, 0};
+        bool rejected = false;
+        try {
+            static_cast<void>(aurora::parseHostedProgram(tokens));
+        } catch (const aurora::Error &error) {
+            rejected = !throws && error.diagnostic.code == DiagnosticCode::Internal &&
+                       error.diagnostic.message == "hosted declaration admission allocation failed";
+        } catch (const std::runtime_error &error) {
+            rejected = throws && std::string(error.what()) == "injected admission failure";
+        }
+        require(rejected && unchanged(original, tokens) && created == 1 && parsed == 1 && admitted == 1 &&
+                    released == 1,
+                "admission allocation/bridge failure leaked the existing arena or published a program");
+        ++cases;
+    }
     // This copied forest checks the independent host construction bound, not
     // namespace grammar acceptance. All links are backward and singly owned.
     for (const int depth : {63, 64}) {
@@ -1588,7 +1654,7 @@ void callableControls() {
                 parsedCallable.function.params.front().name == "x" && parsedCallable.function.body.size() == 1 &&
                 parsedCallable.function.body.front()->expr->token.text == "x" && parsedCallable.next.ordinal == 13 &&
                 parsedCallable.next.half == 0 && cursor.ordinal == 0 && cursor.half == 0 &&
-                unchanged(original, tokens) && released == 1 && statementRead == 4 && typeRead == 2,
+                unchanged(original, tokens) && admitted == 0 && released == 1 && statementRead == 4 && typeRead == 2,
             "complete callable conversion, immutable caller state or cleanup changed");
     ++cases;
     const auto reject = [&](const std::string &label, const std::function<void()> &mutate) {
@@ -1751,6 +1817,19 @@ extern "C" void aurora_hosted_parser_parse(void *arena, const void *input, void 
             "copied Input152 changed the borrowed source descriptor");
     ++parsed;
     std::memcpy(output, result.data(), sizeof(result));
+}
+extern "C" void aurora_hosted_parser_admit(void *arena, const void *input, void *output) {
+    require(arena == arenaAddress, "admission changed the existing arena address");
+    std::memcpy(capturedAdmissionInput.data(), input, sizeof(capturedAdmissionInput));
+    require(std::equal(capturedAdmissionInput.begin(), capturedAdmissionInput.begin() + 7, capturedInput.begin()) &&
+                capturedAdmissionInput[7] == static_cast<std::uint64_t>(result[1]) && capturedAdmissionInput[8] == 64 &&
+                capturedAdmissionInput[9] == 512 && capturedAdmissionInput[10] == 62 &&
+                capturedAdmissionInput[11] == 1 && capturedAdmissionInput[12] == 2 && capturedAdmissionInput[13] == 4,
+            "admission changed its copied source/root or canonical layout/service configuration");
+    ++admitted;
+    if (throwingAdmission)
+        throw std::runtime_error("injected admission failure");
+    std::memcpy(output, admissionResult.data(), sizeof(admissionResult));
 }
 extern "C" std::int64_t aurora_hosted_parser_count(const void *) {
     return count;
