@@ -107,7 +107,7 @@ allocated blocks before/after each command, including each hardlink name and the
 symlink itself, without traversing child directory symlinks. `scandir` preserves
 stable-tree totals; enumeration/stat errors fail closed with no partial total or
 retry. It does not cache totals or weaken reserve/free-space checks.
-`make test-artifact-budget` has ordinary/optimized compiler-free controls;
+`make test-artifact-budget` runs the compiler-free controls;
 those checks are not native qualification or full-suite speed measurements.
 
 ## Partial package profiles and host-tool identity

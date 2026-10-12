@@ -533,76 +533,74 @@ def main():
         spec.loader.exec_module(module)
         module.cap_self_test()
         accounting(module, native)
-        for optimized in (False, True):
-            # Invalid caps are tested both through configuration-only mode and
-            # normal startup. Neither may touch outputs or read/run a compiler.
-            cases = [(value, True, True) for value in (None, minimum, 512, 513, 1023, 1024)]
-            cases += [(value, only, False) for value in (-1, 0, minimum - 1, 1025, 1 << 30) for only in (False, True)]
-            for value, only, valid in cases:
-                folder = out / str(len(rows))
-                folder.mkdir()
-                requested = folder / "requested"
-                requested.mkdir()
-                sentinel = requested / "sentinel"
-                sentinel.write_bytes(b"preserve configuration-only evidence\n")
-                compiler = folder / "not-a-compiler"
-                compiler.write_bytes(b"never execute this input\n")
-                command = [sys.executable, "-B"] + (["-O"] if optimized else []) + [str(ROOT / name)]
-                command += ["--compiler", str(compiler)] if native else [str(compiler)]
-                command += ["--compiler-sha256", "0" * 64]
-                command += ["--output" if native else "--artifact-root", str(requested)]
-                if value is not None:
-                    command += ["--candidate-cap-mib", str(value)]
-                if only:
-                    command += ["--check-cap-only"]
-                result = subprocess.run(command, cwd=ROOT, stdin=subprocess.DEVNULL, capture_output=True, timeout=20)
-                (folder / "stdout").write_bytes(result.stdout)
-                (folder / "stderr").write_bytes(result.stderr)
-                row = dict(
-                    consumer=name,
-                    optimized=optimized,
-                    cap_mib=value,
-                    configuration_only=only,
-                    expected_valid=valid,
-                    command=command,
-                    returncode=result.returncode,
+        # Invalid caps are tested both through configuration-only mode and
+        # normal startup. Neither may touch outputs or read/run a compiler.
+        cases = [(value, True, True) for value in (None, minimum, 512, 513, 1023, 1024)]
+        cases += [(value, only, False) for value in (-1, 0, minimum - 1, 1025, 1 << 30) for only in (False, True)]
+        for value, only, valid in cases:
+            folder = out / str(len(rows))
+            folder.mkdir()
+            requested = folder / "requested"
+            requested.mkdir()
+            sentinel = requested / "sentinel"
+            sentinel.write_bytes(b"preserve configuration-only evidence\n")
+            compiler = folder / "not-a-compiler"
+            compiler.write_bytes(b"never execute this input\n")
+            command = [sys.executable, "-B", str(ROOT / name)]
+            command += ["--compiler", str(compiler)] if native else [str(compiler)]
+            command += ["--compiler-sha256", "0" * 64]
+            command += ["--output" if native else "--artifact-root", str(requested)]
+            if value is not None:
+                command += ["--candidate-cap-mib", str(value)]
+            if only:
+                command += ["--check-cap-only"]
+            result = subprocess.run(command, cwd=ROOT, stdin=subprocess.DEVNULL, capture_output=True, timeout=20)
+            (folder / "stdout").write_bytes(result.stdout)
+            (folder / "stderr").write_bytes(result.stderr)
+            row = dict(
+                consumer=name,
+                cap_mib=value,
+                configuration_only=only,
+                expected_valid=valid,
+                command=command,
+                returncode=result.returncode,
+            )
+            (folder / "receipt.json").write_text(json.dumps(row, indent=2) + "\n")
+            require(
+                list(requested.iterdir()) == [sentinel]
+                and sentinel.read_bytes() == b"preserve configuration-only evidence\n",
+                "resource configuration changed requested output",
+            )
+            if valid:
+                require(result.returncode == 0, "valid cap rejected: " + result.stderr.decode())
+                selected = minimum if value is None else value
+                observed = json.loads(result.stdout)
+                expected = dict(
+                    status="configuration-only",
+                    native_executed=False,
+                    candidate_cap_mib=selected,
+                    cap_bytes=selected << 20,
+                    focused_default_mib=minimum,
+                    maximum_cap_mib=1024,
                 )
-                (folder / "receipt.json").write_text(json.dumps(row, indent=2) + "\n")
+                require(observed == expected, "configuration result changed")
                 require(
-                    list(requested.iterdir()) == [sentinel]
-                    and sentinel.read_bytes() == b"preserve configuration-only evidence\n",
-                    "resource configuration changed requested output",
+                    observed["native_executed"] is False
+                    and observed["status"] != "passed"
+                    and not set(observed) & {"cases", "compiler_sha256", "source_pins"},
+                    "configuration-only result resembles native acceptance",
                 )
-                if valid:
-                    require(result.returncode == 0, "valid cap rejected: " + result.stderr.decode())
-                    selected = minimum if value is None else value
-                    observed = json.loads(result.stdout)
-                    expected = dict(
-                        status="configuration-only",
-                        native_executed=False,
-                        candidate_cap_mib=selected,
-                        cap_bytes=selected << 20,
-                        focused_default_mib=minimum,
-                        maximum_cap_mib=1024,
-                    )
-                    require(observed == expected, "configuration result changed")
-                    require(
-                        observed["native_executed"] is False
-                        and observed["status"] != "passed"
-                        and not set(observed) & {"cases", "compiler_sha256", "source_pins"},
-                        "configuration-only result resembles native acceptance",
-                    )
-                else:
-                    require(
-                        result.returncode != 0 and b"candidate cap" in result.stderr,
-                        "invalid cap was not rejected before compiler/output processing",
-                    )
-                rows.append(row)
+            else:
                 require(
-                    sum(p.stat().st_blocks * 512 for p in out.rglob("*") if p.is_file()) < 4 << 20,
-                    "configuration evidence exceeds four MiB",
+                    result.returncode != 0 and b"candidate cap" in result.stderr,
+                    "invalid cap was not rejected before compiler/output processing",
                 )
-                require(shutil.disk_usage(out).free >= 1 << 30, "one GiB free floor")
+            rows.append(row)
+            require(
+                sum(p.stat().st_blocks * 512 for p in out.rglob("*") if p.is_file()) < 4 << 20,
+                "configuration evidence exceeds four MiB",
+            )
+            require(shutil.disk_usage(out).free >= 1 << 30, "one GiB free floor")
     require(
         pins == {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sources},
         "configuration sources changed during checks",
@@ -614,7 +612,6 @@ def main():
         host_scope_controls=host_scope_controls,
         package_time_controls=package_time_controls,
         consumers=len(CONSUMERS),
-        optimization_modes=[0, 1],
         owned_scope_consumers=owned_scope_consumers,
         accounting="mocked boundaries and real owned-root/link/sparse/overflow/archive/cleanup controls",
         configuration_source_pins=pins,

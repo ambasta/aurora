@@ -209,16 +209,15 @@ Full package Identity/Manifest/Graph retain respectively 5,503/20, 20,022/29 and
 5,548/30 native/rejection cases; dev selections remain 183/20, 157/29 and 187/30.
 Both retain output-preservation and native negative controls. Full profiles use
 fresh build-local artifacts and the existing 1,024 MiB candidate caps. Native Meson registrations preserve
-ordinary/optimized Python controls, fault/capacity checks and complex negative
-compilation sweeps. See `tests/native/inventory.json` for exact mappings and the
+Python controls, fault/capacity checks and complex negative compilation sweeps. See `tests/native/inventory.json` for exact mappings and the
 few byte-identical repeated commands deduplicated within a full invocation.
 
 Canonical Meson uses its checked-libstdc++ configuration (`_GLIBCXX_ASSERTIONS`
 and large-file definitions); historical Make compiler bytes need not match.
 Special native `-O1`, debug, no-PIE, exception/RTTI and testing macros remain where
 required; the existing `-O2` framebuffer variants remain distinct. Existing
-compiler Python runners use explicit optimized checks rather than Python assert;
-ordinary/optimized harness controls remain separate where they test mode behavior.
+Python runners and controls execute once, with or without `-O`. They use explicit
+checks that raise, and the `python-assertions` test rejects any `assert` statement.
 `tests/test-inventory.py` checks runner/source membership, exact profiles/arguments,
 suites, fixtures and native registration contracts. New unaccounted runners fail.
 

@@ -142,13 +142,7 @@ class ProfileMetadata(unittest.TestCase):
             for line in recipes["test-developer-commands"]
             if "kernel-graphical-profile-metadata.py" in line
         ]
-        self.assertEqual(
-            commands,
-            [
-                "python3 -B tests/kernel-graphical-profile-metadata.py",
-                "python3 -B -O tests/kernel-graphical-profile-metadata.py",
-            ],
-        )
+        self.assertEqual(commands, ["python3 -B tests/kernel-graphical-profile-metadata.py"])
         manifest = json.loads((ROOT / "tests/compiler-test-inventory.json").read_text())
         # Direct registration is separate from the Display runner's mandatory
         # composed child. Do not hide the two new borrow runners as unknown gaps.
@@ -178,10 +172,9 @@ class ProfileMetadata(unittest.TestCase):
             root_runners=root_runners,
         )
         meson = (ROOT / "tests/meson.build").read_text()
-        for name in ("graphical-profile-metadata", "graphical-profile-metadata-optimized"):
-            self.assertEqual(meson.count("test('" + name + "',"), 1)
-            declaration = meson.split("test('" + name + "',", 1)[1].split("\n", 2)[:2]
-            self.assertIn("suite: ['full', 'dev']", "\n".join(declaration))
+        self.assertEqual(meson.count("test('graphical-profile-metadata',"), 1)
+        declaration = meson.split("test('graphical-profile-metadata',", 1)[1].split("\n", 2)[:2]
+        self.assertIn("suite: ['full', 'dev']", "\n".join(declaration))
 
     def test_hosted_source_closure_and_identity_selection(self):
         runner = load("graphical_metadata_runner", "tests/kernel-graphical-console.py")

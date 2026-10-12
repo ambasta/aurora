@@ -110,13 +110,9 @@ def check(manifest, files, make_runners, registered=None, root_runners=None):
 GRAPHICAL_PYTHON_TESTS = {
     "graphical-console-native": ("kernel-graphical-console.py", "slow", True),
     "graphical-admission-controls": ("kernel-graphical-admission-controls.py", "dev", False),
-    "graphical-admission-controls-optimized": ("kernel-graphical-admission-controls.py", "dev", True),
     "graphical-image-policy": ("kernel-graphical-image-policy.py", "dev", False),
-    "graphical-image-policy-optimized": ("kernel-graphical-image-policy.py", "dev", True),
     "graphical-profile-metadata": ("kernel-graphical-profile-metadata.py", "dev", False),
-    "graphical-profile-metadata-optimized": ("kernel-graphical-profile-metadata.py", "dev", True),
     "graphical-smoke-controls": ("kernel-graphical-smoke.py", "dev", False),
-    "graphical-smoke-controls-optimized": ("kernel-graphical-smoke.py", "dev", True),
 }
 
 

@@ -285,8 +285,7 @@ Select the hosted/paging/admission checks from the configured Meson build:
 
 ```sh
 meson test -C BUILD graphical-console-native graphical-paging \
-    graphical-admission-controls graphical-admission-controls-optimized \
-    graphical-smoke-controls graphical-smoke-controls-optimized
+    graphical-admission-controls graphical-smoke-controls
 ```
 
 Meson `slow`/`full` includes the hosted runner; `dev`/`full` includes paging,

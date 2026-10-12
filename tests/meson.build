@@ -363,8 +363,6 @@ iommu_event_backing = executable('iommu-event-backing', 'kernel-uefi-event-backi
 test('iommu-event-backing', iommu_event_backing, suite: ['full', 'dev'], timeout: 120)
 test('iommu-event-admission-controls', python,
      args: ['-B', files('kernel-uefi-event-admission.py')], suite: ['full', 'dev'], timeout: 120)
-test('iommu-event-admission-controls-optimized', python,
-     args: ['-B', '-O', files('kernel-uefi-event-admission.py')], suite: ['full', 'dev'], timeout: 120)
 
 
 
@@ -401,15 +399,9 @@ test('graphical-paging', graphical_paging, suite: ['full', 'dev'], timeout: 120)
 test('graphical-admission-controls', python,
      args: ['-B', files('kernel-graphical-admission-controls.py')],
      suite: ['full', 'dev'], env: oracle_env, timeout: 120)
-test('graphical-admission-controls-optimized', python,
-     args: ['-B', '-O', files('kernel-graphical-admission-controls.py')],
-     suite: ['full', 'dev'], env: oracle_env, timeout: 120)
 
 test('graphical-smoke-controls', python,
      args: ['-B', files('kernel-graphical-smoke.py')],
-     suite: ['full', 'dev'], env: oracle_env, timeout: 120)
-test('graphical-smoke-controls-optimized', python,
-     args: ['-B', '-O', files('kernel-graphical-smoke.py')],
      suite: ['full', 'dev'], env: oracle_env, timeout: 120)
 
 # Previously Make-only complete source oracles. Keep exhaustive sweeps in slow.
@@ -430,23 +422,17 @@ foreach runner : [
 endforeach
 
 # Public Make routing must be exercised by the required developer suite.
-# Runners execute once; this keeps them independent of python -O.
-test('python-assertions', python, args: ['-B', files('python-assertions.py')],
-     suite: ['full', 'dev'], env: oracle_env, timeout: 30)
 test('graphical-image-policy', python, args: ['-B', files('kernel-graphical-image-policy.py')],
-     suite: ['full', 'dev'], env: oracle_env, timeout: 30)
-test('graphical-image-policy-optimized', python, args: ['-B', '-O', files('kernel-graphical-image-policy.py')],
      suite: ['full', 'dev'], env: oracle_env, timeout: 30)
 test('graphical-profile-metadata', python, args: ['-B', files('kernel-graphical-profile-metadata.py')],
      suite: ['full', 'dev'], env: oracle_env, timeout: 30)
-test('graphical-profile-metadata-optimized', python, args: ['-B', '-O', files('kernel-graphical-profile-metadata.py')],
-     suite: ['full', 'dev'], env: oracle_env, timeout: 30)
 test('developer-commands', python, args: ['-B', files('developer-commands.py')],
-     suite: ['full', 'dev'], env: oracle_env, timeout: 120)
-test('developer-commands-optimized', python, args: ['-B', '-O', files('developer-commands.py')],
      suite: ['full', 'dev'], env: oracle_env, timeout: 120)
 test('console-routing', python, args: ['-B', files('kernel-console-routing.py')],
      suite: ['full', 'dev'], env: oracle_env, timeout: 120)
+# Runners execute once; this keeps them independent of python -O.
+test('python-assertions', python, args: ['-B', files('python-assertions.py')],
+     suite: ['full', 'dev'], env: oracle_env, timeout: 30)
 
 test('compiler-test-inventory', python,
      args: ['-B', files('test-inventory.py'), '--meson-info',
@@ -458,26 +444,12 @@ test('program-console-entrypoints', python,
      suite: ['full', 'dev'], env: oracle_env, timeout: 60)
 
 # Compiler-free model-fixture integrity/mocks. No emulator or hardware acceptance.
-foreach mode : ['ordinary', 'optimized']
-    diagnostic_args = ['-B']
-    if mode == 'optimized'
-        diagnostic_args += ['-O']
-    endif
-    diagnostic_args += [files('iommu-diagnostics.py')]
-    test('iommu-diagnostics-' + mode, python, args: diagnostic_args,
-         suite: ['full', 'dev'], env: oracle_env, timeout: 30)
-endforeach
+test('iommu-diagnostics', python, args: ['-B', files('iommu-diagnostics.py')],
+     suite: ['full', 'dev'], env: oracle_env, timeout: 30)
 
 # Compiler-free controls for complete per-command artifact accounting.
-foreach mode : ['ordinary', 'optimized']
-    budget_args = ['-B']
-    if mode == 'optimized'
-        budget_args += ['-O']
-    endif
-    budget_args += [files('test_artifact_budget.py')]
-    test('artifact-budget-' + mode, python, args: budget_args,
-         suite: ['full', 'dev'], env: oracle_env, timeout: 30)
-endforeach
+test('artifact-budget', python, args: ['-B', files('test_artifact_budget.py')],
+     suite: ['full', 'dev'], env: oracle_env, timeout: 30)
 
 # Remaining compiler-native coverage. Fixtures are build targets, not commands
 # hidden inside each test invocation; Ninja tracks C++ header dependencies.
@@ -581,15 +553,8 @@ foreach family : ['identity', 'manifest', 'graph']
          depends: aurorac, suite: ['full', 'slow', 'integration', 'packages'],
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 900)
 endforeach
-foreach mode : ['ordinary', 'optimized']
-    identity_args = ['-B']
-    if mode == 'optimized'
-        identity_args += ['-O']
-    endif
-    test('meson-identity-' + mode, python,
-         args: identity_args + [files('test_meson_identity.py')],
-         suite: ['full', 'dev'], env: oracle_env, timeout: 30)
-endforeach
+test('meson-identity', python, args: ['-B', files('test_meson_identity.py')],
+     suite: ['full', 'dev'], env: oracle_env, timeout: 30)
 
 test('clean-controls', python,
      args: ['-B', files('test_clean.py')],
@@ -600,16 +565,12 @@ subdir('native')
 # Raw ESP preparation is filesystem-only; these controls never launch a guest.
 test('iommu-event-esp-controls', python,
      args: ['-B', files('kernel-uefi-event-esp.py')], suite: ['full', 'dev'], timeout: 120)
-test('iommu-event-esp-controls-optimized', python,
-     args: ['-B', '-O', files('kernel-uefi-event-esp.py')], suite: ['full', 'dev'], timeout: 120)
 
 # Developer Event controls use synthetic bytes and owned fake children, never QEMU.
-foreach mode : ['', '-O']
-  foreach test_name : ['oracle', 'smoke']
-    test('iommu-event-' + test_name + '-controls' + (mode == '' ? '' : '-optimized'), python,
-         args: ['-B'] + (mode == '' ? [] : [mode]) + files('kernel-iommu-event-' + test_name + '.py'),
-         suite: ['full', 'dev'], timeout: 120)
-  endforeach
+foreach test_name : ['oracle', 'smoke']
+  test('iommu-event-' + test_name + '-controls', python,
+       args: ['-B', files('kernel-iommu-event-' + test_name + '.py')],
+       suite: ['full', 'dev'], timeout: 120)
 endforeach
 
 # This fixture always links the Aurora phase; the C++ scanner is only its oracle.
