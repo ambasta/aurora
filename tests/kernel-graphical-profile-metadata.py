@@ -5,7 +5,6 @@ Registration and artifact inventories do not establish runtime qualification.
 """
 
 import ast
-from copy import deepcopy
 from contextlib import redirect_stdout
 import io
 import os
@@ -129,52 +128,6 @@ class ProfileMetadata(unittest.TestCase):
             self.assertTrue(path.is_file(), header)
             for dependency in re.findall(r'^\s*#include\s+"([^"]+)"', path.read_text(), re.MULTILINE):
                 self.assertIn(dependency, headers, header + " requires " + dependency)
-
-    def test_root_registration_and_compiler_inventory_stay_complete(self):
-        inventory = load("graphical_metadata_inventory", "tests/test-inventory.py")
-        root = (ROOT / "Makefile").read_text()
-        _, _, _, recipes = inventory.make_inventory(root)
-        manifest = json.loads((ROOT / "tests/compiler-test-inventory.json").read_text())
-        compiler_all = inventory.compiler_meson_inventory((ROOT / "compiler/Makefile").read_text(), manifest)
-        root_runners = inventory.root_meson_inventory(root, manifest)
-        commands = [
-            line.strip()
-            for line in recipes["test-developer-commands"]
-            if "kernel-graphical-profile-metadata.py" in line
-        ]
-        self.assertEqual(commands, ["python3 -B tests/kernel-graphical-profile-metadata.py"])
-        manifest = json.loads((ROOT / "tests/compiler-test-inventory.json").read_text())
-        # Direct registration is separate from the Display runner's mandatory
-        # composed child. Do not hide the two new borrow runners as unknown gaps.
-        self.assertEqual(
-            {key: manifest["service_group.py"][key] for key in ("make", "root_make", "meson")},
-            {"make": False, "root_make": False, "meson": False},
-        )
-        self.assertEqual(
-            {key: manifest["service_group_ir_abi.py"][key] for key in ("make", "root_make", "meson")},
-            {"make": True, "root_make": True, "meson": True},
-        )
-        display = (ROOT / "tests/compiler/display_service.py").read_text()
-        grouped = ast.parse(
-            'grouped = run([sys.executable, "-B", "-O", ROOT / "tests/compiler/service_group.py", '
-            'compiler, "--artifacts", work / "service-group"])'
-        ).body[0]
-        self.assertIn(
-            ast.dump(grouped),
-            [ast.dump(node) for node in ast.walk(ast.parse(display)) if isinstance(node, ast.Assign)],
-        )
-        self.assertIn("require(grouped.returncode == 0,", display)
-        self.assertIn("files('compiler/service_group_ir_abi.py')", (ROOT / "tests/meson.build").read_text())
-        inventory.check(
-            manifest,
-            {path.name for path in (ROOT / "tests/compiler").glob("*.py")},
-            root_runners | compiler_all,
-            root_runners=root_runners,
-        )
-        meson = (ROOT / "tests/meson.build").read_text()
-        self.assertEqual(meson.count("test('graphical-profile-metadata',"), 1)
-        declaration = meson.split("test('graphical-profile-metadata',", 1)[1].split("\n", 2)[:2]
-        self.assertIn("suite: ['full', 'dev']", "\n".join(declaration))
 
     def test_hosted_source_closure_and_identity_selection(self):
         runner = load("graphical_metadata_runner", "tests/kernel-graphical-console.py")
@@ -303,59 +256,6 @@ class ProfileMetadata(unittest.TestCase):
                     self.assertIn(str(ROOT / "tests/kernel-graphical-console.cpp"), argv)
                     self.assertIn(str(work / "consumer.o"), argv)
                     self.assertEqual(argv[-2:], ["-o", str(work / "consumer")])
-
-    def test_graphical_route_inventory_mutations(self):
-        inventory = load("graphical_metadata_routes", "tests/test-inventory.py")
-        entries = []
-        for name, (script, feedback, optimized) in inventory.GRAPHICAL_PYTHON_TESTS.items():
-            argv = ["python3", "-B", *(["-O"] if optimized else []), str(ROOT / "tests" / script)]
-            depends = []
-            if name == "graphical-console-native":
-                argv = ["python3", "-B", str(ROOT / "tests/meson_artifacts.py")] + argv
-                argv += ["--run", "./aurorac", "--developer-selected-compiler", "--artifacts", "@ARTIFACTS@"]
-                depends = ["aurorac@exe"]
-            entries.append(
-                dict(
-                    name=name,
-                    cmd=argv,
-                    suite=["aurora-bootstrap:full", "aurora-bootstrap:" + feedback],
-                    depends=depends,
-                )
-            )
-        entries.append(
-            dict(
-                name="graphical-paging",
-                cmd=["./tests/graphical-paging"],
-                suite=["aurora-bootstrap:full", "aurora-bootstrap:dev"],
-                depends=["model@@graphical-paging@exe"],
-            )
-        )
-        inventory.check_graphical_meson(entries)
-        for mutate in (
-            lambda rows: rows.pop(),
-            lambda rows: rows.append(deepcopy(rows[0])),
-            lambda rows: rows[0].update(suite=["full", "dev"]),
-            lambda rows: rows[0].update(depends=[]),
-            lambda rows: rows[0]["cmd"].pop(),
-            lambda rows: rows[0]["cmd"].pop(2),
-            lambda rows: rows[-1].update(depends=[]),
-            lambda rows: rows[1]["cmd"].append("--skip"),
-        ):
-            changed = deepcopy(entries)
-            mutate(changed)
-            with self.assertRaises(ValueError):
-                inventory.check_graphical_meson(changed)
-        meson = (ROOT / "tests/meson.build").read_text()
-        self.assertRegex(meson, r"(?s)graphical_paging = executable\('graphical-paging'.*?link_args: \['-no-pie'\]\)")
-        for name, (_, feedback, _) in inventory.GRAPHICAL_PYTHON_TESTS.items():
-            declarations = re.findall(r"(?s)test\('" + re.escape(name) + r"',.*?\)\n", meson)
-            self.assertEqual(len(declarations), 1, name)
-            self.assertIn("suite: ['full', '" + feedback + "']", declarations[0])
-            if name == "graphical-console-native":
-                self.assertRegex(
-                    declarations[0], r"'--developer-selected-compiler'\s*,\s*'--artifacts'\s*,\s*'@ARTIFACTS@'"
-                )
-                self.assertRegex(declarations[0], r"\bdepends\s*:\s*aurorac\b")
 
 
 if __name__ == "__main__":

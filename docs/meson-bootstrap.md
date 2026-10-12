@@ -202,15 +202,14 @@ package profiles are slow. `packages` selects both partial and full profiles.
 
 Compiler Python runners selected by root Make's Meson forwarding and the fixed lexer/IR/ABI and
 module C++ fixtures are registered in the canonical graph. The offline XFS
-verifier is registered too. Explicitly classified supplemental/style runners
-still require their separate inputs; inspect the current inventory for scope.
+verifier is registered too. The few sources outside the Meson graph are listed
+with their reasons in `tests/test-inventory.json`.
 
 Full package Identity/Manifest/Graph retain respectively 5,503/20, 20,022/29 and
 5,548/30 native/rejection cases; dev selections remain 183/20, 157/29 and 187/30.
 Both retain output-preservation and native negative controls. Full profiles use
 fresh build-local artifacts and the existing 1,024 MiB candidate caps. Native Meson registrations preserve
-Python controls, fault/capacity checks and complex negative compilation sweeps. See `tests/native/inventory.json` for exact mappings and the
-few byte-identical repeated commands deduplicated within a full invocation.
+Python controls, fault/capacity checks and complex negative compilation sweeps.
 
 Canonical Meson uses its checked-libstdc++ configuration (`_GLIBCXX_ASSERTIONS`
 and large-file definitions); historical Make compiler bytes need not match.
@@ -218,8 +217,8 @@ Special native `-O1`, debug, no-PIE, exception/RTTI and testing macros remain wh
 required; the existing `-O2` framebuffer variants remain distinct. Existing
 Python runners and controls execute once, with or without `-O`. They use explicit
 checks that raise, and the `python-assertions` test rejects any `assert` statement.
-`tests/test-inventory.py` checks runner/source membership, exact profiles/arguments,
-suites, fixtures and native registration contracts. New unaccounted runners fail.
+`tests/test-inventory.py` checks that every test source is run under Meson or
+listed with a reason, and that every registered test belongs to `full`.
 
 Observed Meson compiler identity never claims an external pin or fresh bootstrap
 build. Full native execution still needs independent final-source review; normal

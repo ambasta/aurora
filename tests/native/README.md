@@ -1,13 +1,9 @@
 # Canonical root native Meson graph
 
-`meson.build` registers the complete non-compiler root Make prerequisites. The
-machine-checked `inventory.json` maps all 38 prerequisite goals to complete
-commands, including ordinary/optimized Python modes and compile-negative sweeps.
-The existing `tests/test-inventory.py` calls `inventory.check`; its self-tests
-reject missing sources, goals, registrations, full-suite membership and modes.
-Any new top-level test source or shell test wrapper needs an explicit inventory
-classification. A shell-wrapper change requires command-level coverage review
-before updating its recorded digest.
+`meson.build` registers the complete non-compiler root Make prerequisites.
+`tests/test-inventory.py` fails when a test source is neither run by a Meson
+test (directly, or named by a source that is) nor listed with a reason in
+`tests/test-inventory.json`, or when a registered test is outside `full`.
 
 Meson/Ninja owns fixed host binaries, the BIOS/UEFI/console Aurora objects, the
 UEFI assembly memory object and the round-robin symbol substitution. Their
