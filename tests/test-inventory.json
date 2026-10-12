@@ -1,25 +1,114 @@
 {
-  "Make shortcut or documented SANITIZE=1 route over sources that Meson also runs": [
-    "scripts/kernel-acpi-tests.sh",
-    "scripts/kernel-console-tests.sh",
-    "scripts/kernel-framebuffer-tests.sh",
-    "scripts/kernel-owned-bytes-tests.sh",
-    "scripts/kernel-pci-tests.sh",
-    "scripts/kernel-tests.sh",
-    "scripts/kernel-uefi-ivrs-tests.sh",
-    "scripts/kernel-uefi-memory-tests.sh",
-    "scripts/kernel-uefi-runtime-tests.sh",
-    "scripts/kernel-uefi-tests.sh"
-  ],
-  "Focused owned-view replay with an explicitly selected AURORAC (docs/kernel-owned-bytes.md)": [
-    "scripts/kernel-owned-views-tests.sh",
-    "tests/kernel-uefi-owned-views.cpp"
-  ],
-  "Owned-bytes link rejection gate; needs a built UEFI owned-bytes profile via --build-dir and has no current route": [
-    "tests/kernel-uefi-owned-bytes-link.py"
-  ],
-  "Optional language-server suite, registered only with -Dlsp=true": [
-    "tests/lsp-protocol.py",
-    "tests/lsp-units.cpp"
-  ]
+  "exceptions": {
+    "Make shortcut or documented SANITIZE=1 route over sources that Meson also runs": [
+      "scripts/kernel-acpi-tests.sh",
+      "scripts/kernel-console-tests.sh",
+      "scripts/kernel-framebuffer-tests.sh",
+      "scripts/kernel-owned-bytes-tests.sh",
+      "scripts/kernel-pci-tests.sh",
+      "scripts/kernel-tests.sh",
+      "scripts/kernel-uefi-ivrs-tests.sh",
+      "scripts/kernel-uefi-memory-tests.sh",
+      "scripts/kernel-uefi-runtime-tests.sh",
+      "scripts/kernel-uefi-tests.sh"
+    ],
+    "Focused owned-view replay with an explicitly selected AURORAC (docs/kernel-owned-bytes.md)": [
+      "scripts/kernel-owned-views-tests.sh",
+      "tests/kernel-uefi-owned-views.cpp"
+    ],
+    "Owned-bytes link rejection gate; needs a built UEFI owned-bytes profile via --build-dir and has no current route": [
+      "tests/kernel-uefi-owned-bytes-link.py"
+    ],
+    "Make shortcuts over Meson-covered sources; Makefile test-program-stream/test-uefi-bar/test-uefi-pins/test-uefi-tables, routing-only controls in developer-commands.py": [
+      "scripts/kernel-program-tests.sh",
+      "scripts/kernel-uefi-bar-tests.sh",
+      "scripts/kernel-uefi-pin-tests.sh",
+      "scripts/kernel-uefi-tables-tests.sh"
+    ],
+    "Supplemental saved-baseline differential gate; run equivalence.py BASELINE CANDIDATE (docs/developer-test-contract.md)": [
+      "tests/compiler/equivalence.py"
+    ],
+    "Guest-only BAR serial oracle invoked by scripts/kernel-uefi-smoke.sh bar-state; native controls do not run the guest": [
+      "tests/kernel-uefi-bar-state.py"
+    ]
+  },
+  "optional": {
+    "lsp": {
+      "lsp-units": "tests/lsp-units.cpp",
+      "lsp-protocol": "tests/lsp-protocol.py"
+    }
+  },
+  "executed": {
+    "tests/developer-commands.py": ["scripts/compiler-test.sh"],
+    "tests/compiler/console_service.py": ["tests/compiler/console_service_host.cpp"],
+    "tests/compiler/display_service.py": ["tests/compiler/display_service_host.cpp", "tests/compiler/service_group.py"],
+    "tests/compiler/integer_oracle.py": ["tests/compiler/integer_signal.cpp"],
+    "tests/compiler/iommu_event_service.py": ["tests/compiler/iommu_event_service_host.cpp", "tests/kernel-iommu-event-composition.cpp"],
+    "tests/compiler/owned_spans_kernel.py": ["tests/compiler/owned_spans_kernel_host.cpp"],
+    "tests/compiler/service_group.py": ["tests/compiler/service_group_host.cpp"],
+    "tests/compiler/service_group_ir_abi.py": ["tests/compiler/service_group_ir_host.cpp"],
+    "tests/compiler/token_scan.py": ["tests/compiler/token_scan_host.cpp"],
+    "tests/kernel-budget-native.py": ["tests/kernel-budget-native.cpp"],
+    "tests/kernel-client-disposal-native.py": ["tests/kernel-client-disposal-native.cpp", "tests/kernel-client-disposal-copy.cpp", "tests/kernel-client-disposal-adapter.cpp"],
+    "tests/kernel-display-renderer.py": ["tests/kernel-display-renderer.cpp"],
+    "tests/kernel-graphical-console.py": ["tests/kernel-graphical-console.cpp"],
+    "tests/kernel-ipc-transition-native.py": ["tests/kernel-ipc-transition-native.cpp", "tests/kernel-ipc-transition-copy.cpp", "tests/kernel-ipc-transition-adapter.cpp"],
+    "tests/kernel-round-robin-native.py": ["tests/kernel-round-robin-native.cpp", "tests/kernel-round-robin-copy.cpp"],
+    "tests/kernel-terminal-event-native.py": ["tests/kernel-terminal-event-native.cpp"],
+    "scripts/kernel-dormant-tests.sh": ["scripts/kernel-dormant-tests.py"],
+    "scripts/kernel-dormant-tests.py": ["tests/kernel-dormant-api.cpp", "tests/kernel-dormant-decoder.cpp", "tests/kernel-dormant-generation.cpp", "tests/kernel-dormant-oracle.cpp", "tests/kernel-dormant-tables.cpp", "tests/kernel-iommu-event-completion.cpp", "tests/kernel-iommu-oracle.cpp"],
+    "scripts/kernel-nvme-queue-tests.sh": ["tests/kernel-nvme-queues.cpp", "tests/kernel-uefi-nvme-stack.py"],
+    "scripts/kernel-pin-tests.sh": ["tests/kernel-pin-ledger.cpp"],
+    "scripts/kernel-program-note-tests.sh": ["tests/kernel-program-note.cpp", "tests/kernel-snapshot-abi.py"],
+    "scripts/kernel-snapshot-tests.sh": ["tests/kernel-snapshot.cpp", "tests/kernel-snapshot-abi.py"]
+  },
+  "helpers": {
+    "tests/compiler/service_group_ir.cpp": ["tests/compiler/display_service_ir.cpp"],
+    "tests/kernel-boot-capacity.py": ["tests/kernel-image.py"],
+    "tests/kernel-console-routing.py": ["tests/kernel-console-pty.py", "tests/kernel-console-service-qualification.py"],
+    "tests/kernel-display-renderer.py": ["tests/kernel_display_oracle.py"],
+    "tests/kernel-graphical-console.py": ["tests/kernel_graphical_oracle.py"],
+    "tests/kernel-program-console-transcript.py": ["tests/kernel-program-console-pty.py"],
+    "tests/kernel-unsigned-source.py": ["tests/kernel-user-image.py"]
+  },
+  "variants": {
+    "package-identity": ["tests/compiler/package_identity.py", ["--profile", "dev"]],
+    "package-identity-full": ["tests/compiler/package_identity.py", ["--profile", "full"]],
+    "package-manifest": ["tests/compiler/package_manifest.py", ["--profile", "dev"]],
+    "package-manifest-full": ["tests/compiler/package_manifest.py", ["--profile", "full"]],
+    "package-graph": ["tests/compiler/package_graph.py", ["--profile", "dev"]],
+    "package-graph-full": ["tests/compiler/package_graph.py", ["--profile", "full"]],
+    "borrowed-objects": ["tests/compiler/borrowed_objects.py", []],
+    "borrowed-objects-smoke": ["tests/compiler/borrowed_objects.py", ["--smoke"]],
+    "json-string-write": ["tests/compiler/json_string_write.py", []],
+    "json-string-write-smoke": ["tests/compiler/json_string_write.py", ["--smoke"]],
+    "owned-spans-kernel-standalone": ["tests/compiler/owned_spans_kernel.py", []],
+    "owned-spans-kernel-receiver": ["tests/compiler/owned_spans_kernel.py", ["--receiver-bound"]],
+    "sector-values-abi": ["tests/compiler/sector_values_abi.py", []],
+    "stack-guards": ["tests/compiler/sector_values_abi.py", ["--stack-guards"]],
+    "xfs-geometry": ["tests/compiler/xfs_geometry.py", ["--mutation-controls"]],
+    "native-kernel-smoke-controls": ["tests/kernel-smoke.py", ["--self-test"]],
+    "native-kernel-schedule-controls": ["tests/kernel-schedule-smoke.py", ["--self-test"]],
+    "native-uefi-smoke-controls": ["tests/kernel-uefi-smoke.py", ["--self-test"]],
+    "native-acpi-smoke-controls": ["tests/kernel-acpi-smoke.py", ["--self-test"]],
+    "native-pci-smoke-controls": ["tests/kernel-pci-smoke.py", ["--self-test"]],
+    "native-uefi-runtime-smoke-controls": ["tests/kernel-uefi-runtime-smoke.py", ["--self-test"]],
+    "native-uefi-ipc-smoke-controls": ["tests/kernel-uefi-ipc-smoke.py", ["--self-test"]],
+    "native-uefi-budget-smoke-controls": ["tests/kernel-uefi-budget-smoke.py", ["--self-test"]],
+    "native-uefi-dispatch-smoke-controls": ["tests/kernel-uefi-dispatch-smoke.py", ["--self-test"]],
+    "native-uefi-user-phases-smoke-controls": ["tests/kernel-uefi-user-phases-smoke.py", ["--self-test"]],
+    "native-division-smoke-controls": ["tests/kernel-division-smoke.py", ["--self-test"]],
+    "native-unsigned-smoke-controls": ["tests/kernel-unsigned-smoke.py", ["--self-test"]],
+    "native-uefi-bar-smoke-controls": ["tests/kernel-uefi-bar-smoke.py", ["--self-test"]],
+    "native-uefi-bar-trace-controls": ["tests/kernel-uefi-bar-trace.py", ["--self-test"]],
+    "native-uefi-bar-provenance-controls": ["tests/kernel-uefi-bar-provenance.py", ["--self-test"]],
+    "native-uefi-ivrs-stack-controls": ["tests/kernel-uefi-ivrs-stack.py", ["--self-test"]],
+    "native-uefi-ivrs-smoke-controls": ["tests/kernel-uefi-ivrs-smoke.py", ["--self-test"]],
+    "native-uefi-ivrs-trace-controls": ["tests/kernel-uefi-ivrs-trace.py", ["--self-test"]],
+    "native-uefi-ivrs-provenance-controls": ["tests/kernel-uefi-ivrs-provenance.py", ["--self-test"]],
+    "native-uefi-owned-bytes-admission": ["tests/kernel-uefi-owned-bytes-admission.py", ["--self-test"]],
+    "native-uefi-owned-bytes-stack": ["tests/kernel-uefi-owned-bytes-stack.py", ["--self-test"]],
+    "native-uefi-tables-stack-controls": ["tests/kernel-uefi-tables-stack.py", ["--self-test"]],
+    "native-snapshot-smoke-controls": ["tests/kernel-snapshot-smoke.py", ["--self-test"]]
+  }
 }

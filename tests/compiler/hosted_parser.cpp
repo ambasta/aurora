@@ -121,8 +121,8 @@ void sameToken(const aurora::Token &a, const aurora::Token &b) {
 //   (op@first[-last] .field... <template-args> :reflected-type child...)
 // where first/last are token ordinals relative to `base`; a statement prints as
 //   (kind@token [#binding|$name] [.field] [:type] [mut] [expr] [-> target] [{body}] [else {other}])
-// The printer also checks each node's depth and that its token spans exactly
-// the named ordinals, so a string comparison covers every compared field.
+// The printer checks depth, exact source spans and inactive type payloads.
+// Named classes carry an explicit kind, distinct from builtin type spellings.
 std::string kindText(aurora::TypeKind kind) {
     static const char *const names[] = {"i64",
                                         "bool",
@@ -142,16 +142,25 @@ std::string kindText(aurora::TypeKind kind) {
                                         "display",
                                         "event",
                                         "values"};
-    return names[static_cast<std::size_t>(kind)];
+    const auto index = static_cast<std::size_t>(kind);
+    require(index < std::size(names), "unknown type kind");
+    return names[index];
+}
+std::string namedText(aurora::TypeKind kind, const std::string &name) {
+    return kind == aurora::TypeKind::Parameter ? "'" + name
+           : name.empty()                      ? kindText(kind)
+                                               : kindText(kind) + " " + name;
 }
 std::string argumentsText(const std::vector<aurora::TemplateArgument> &arguments);
 std::string argumentText(const aurora::TemplateArgument &argument) {
-    if (argument.kind == aurora::TemplateArgumentKind::Value)
+    if (argument.kind == aurora::TemplateArgumentKind::Value) {
+        require(argument == aurora::TemplateArgument::capacity(argument.value),
+                "value argument has inactive type payload");
         return std::to_string(argument.value);
-    std::string text = argument.type == aurora::TypeKind::Class       ? argument.className
-                       : argument.type == aurora::TypeKind::Parameter ? "'" + argument.className
-                       : argument.className.empty() ? kindText(argument.type)
-                                                    : kindText(argument.type) + " " + argument.className;
+    }
+    require(argument.kind == aurora::TemplateArgumentKind::Type && argument.value == 0,
+            "type argument has an invalid kind/value payload");
+    std::string text = namedText(argument.type, argument.className);
     text += argumentsText(argument.templateArguments);
     if (!argument.displayName.empty())
         text += "=" + argument.displayName;
@@ -168,17 +177,22 @@ std::string argumentsText(const std::vector<aurora::TemplateArgument> &arguments
 std::string typeText(const aurora::Type &type) {
     using K = aurora::TypeKind;
     if (type.kind == K::Array) {
-        const auto element = !type.elementParameter.empty() ? "'" + type.elementParameter
-                             : type.elementKind == K::Class ? type.className + argumentsText(type.templateArguments)
-                                                            : kindText(type.elementKind);
+        require(type.elementParameter.empty()
+                    ? type.elementKind != K::Parameter
+                    : type.elementKind == K::Parameter && type.className.empty() && type.templateArguments.empty(),
+                "dependent array element has conflicting type payload");
+        require(type.lengthParameter.empty() || type.length == 0, "dependent array length has a concrete value");
+        const auto element = !type.elementParameter.empty()
+                                 ? "'" + type.elementParameter
+                                 : namedText(type.elementKind, type.className) + argumentsText(type.templateArguments);
         return "array<" + element + "," +
                (type.lengthParameter.empty() ? std::to_string(type.length) : "'" + type.lengthParameter) + ">";
     }
-    const auto base = type.kind == K::Class       ? type.className
-                      : type.kind == K::Parameter ? "'" + type.className
-                      : type.className.empty()    ? kindText(type.kind)
-                                                  : kindText(type.kind) + " " + type.className;
-    return base + argumentsText(type.templateArguments);
+    require(type.elementKind == K::I64 && type.length == 0 && type.elementParameter.empty() &&
+                type.lengthParameter.empty(),
+            "non-array type has inactive array payload");
+    // Type equality intentionally excludes its display/provenance metadata.
+    return namedText(type.kind, type.className) + argumentsText(type.templateArguments);
 }
 std::size_t ordinal(const std::vector<aurora::Token> &tokens, std::size_t offset, bool end) {
     for (std::size_t index = 0; index < tokens.size(); ++index)
@@ -217,6 +231,7 @@ text(const aurora::ExpressionPtr &expression, const std::vector<aurora::Token> &
         result += " :" + typeText(expression->reflectedType);
     int depth = 1;
     for (const auto &child : expression->args) {
+        require(bool(child), "expression child is missing");
         result += " " + text(child, tokens, base);
         depth = std::max(depth, child->depth + 1);
     }
@@ -225,14 +240,18 @@ text(const aurora::ExpressionPtr &expression, const std::vector<aurora::Token> &
 std::string
 text(const std::vector<aurora::StatementPtr> &body, const std::vector<aurora::Token> &tokens, std::size_t base = 0);
 std::string text(const aurora::StatementPtr &statement, const std::vector<aurora::Token> &tokens, std::size_t base) {
+    require(bool(statement), "statement is missing");
     std::string result = "(" + statement->kind + position(statement->token, tokens, base);
     if (statement->bindingSpan.source) {
         const auto binding = ordinal(tokens, statement->bindingSpan.begin.offset, false);
-        const bool exact = binding != std::string::npos && binding >= base && tokens[binding].text == statement->name &&
-                           tokens[binding].span.end.offset == statement->bindingSpan.end.offset;
-        result += exact ? " #" + std::to_string(binding - base) : " #?" + statement->name;
-    } else if (!statement->name.empty()) {
-        result += " $" + statement->name;
+        require(binding != std::string::npos && binding >= base && tokens[binding].text == statement->name,
+                "binding has no matching source token");
+        sameSpan(statement->bindingSpan, tokens[binding].span);
+        result += " #" + std::to_string(binding - base);
+    } else {
+        sameSpan(statement->bindingSpan, aurora::SourceSpan{});
+        if (!statement->name.empty())
+            result += " $" + statement->name;
     }
     if (!statement->fieldName.empty())
         result += " ." + statement->fieldName;
@@ -520,6 +539,80 @@ void rejected(const std::string &text, Stop stop = Stop::semicolon) {
     ++cases;
 }
 
+// Reuse the multiline body to check the printer's otherwise invisible fields.
+// These mutations exercise the oracle, not additional parser inputs.
+void textControls(const std::vector<aurora::StatementPtr> &body,
+                  const std::vector<aurora::Token> &tokens,
+                  const std::string &expected) {
+    const auto rejects = [](auto action) {
+        try {
+            action();
+        } catch (const std::runtime_error &) {
+            return;
+        }
+        require(false, "AST text accepted a deliberately changed payload");
+    };
+    for (const auto &statement : body) {
+        const auto saved = statement->bindingSpan;
+        const auto changedSpan = [&](auto change) {
+            auto span = saved;
+            change(span);
+            statement->bindingSpan = std::move(span);
+            rejects([&] {
+                sameBody(body, tokens, expected);
+            });
+            statement->bindingSpan = saved;
+        };
+        // Identical source contents are not the same snapshot.
+        changedSpan([&](auto &span) {
+            span.source = std::make_shared<aurora::SourceText>(*tokens.front().span.source);
+        });
+        for (const auto endpoint : {&aurora::SourceSpan::begin, &aurora::SourceSpan::end}) {
+            changedSpan([=](auto &span) {
+                ++(span.*endpoint).offset;
+            });
+            changedSpan([=](auto &span) {
+                ++(span.*endpoint).line;
+            });
+            changedSpan([=](auto &span) {
+                ++(span.*endpoint).column;
+            });
+        }
+    }
+    using K = aurora::TypeKind;
+    using T = aurora::Type;
+    require(typeText(T("i64")) == "class i64" && argumentText(aurora::TemplateArgument("i64")) == "class i64" &&
+                typeText(T::array(T("u8"), 2)) == "array<class u8,2>",
+            "type text erased a named class kind");
+    auto type = T::I64;
+    type.length = 2;
+    rejects([&] {
+        typeText(type);
+    });
+    type = T::array(K::Parameter, 0);
+    type.elementParameter = "T";
+    type.lengthParameter = "N";
+    require(typeText(type) == "array<'T,'N>", "dependent array text differs");
+    type.elementKind = K::I64;
+    rejects([&] {
+        typeText(type);
+    });
+    type.elementKind = K::Parameter;
+    type.length = 2;
+    rejects([&] {
+        typeText(type);
+    });
+    auto argument = aurora::TemplateArgument(K::I64);
+    argument.value = 1;
+    rejects([&] {
+        argumentText(argument);
+    });
+    argument = aurora::TemplateArgument::capacity(2);
+    argument.templateArguments = {K::I64};
+    rejects([&] {
+        argumentText(argument);
+    });
+}
 void bodySyntax() {
     const auto inner = namedArgument("Box", {aurora::TypeKind::I64});
     const auto box = namedType("Box", {inner});
@@ -538,7 +631,8 @@ void bodySyntax() {
          "{(let@1 #7 :array<u8,2> mut (array_literal@9 (number@10) (number@12))) (return@15 (index@16 (name@16) "
          "(number@18)))}"},
         {"{Box<Box<i64>> value=Box<Box<i64>>{};return size_of(Box<Box<i64>>);}",
-         "{(let@1 #7 :Box<Box<i64>> mut (construct@9 <Box<i64>>)) (return@18 (call@19 :Box<Box<i64>>))}"},
+         "{(let@1 #7 :class Box<class Box<i64>> mut (construct@9 <class Box<i64>>)) "
+         "(return@18 (call@19 :class Box<class Box<i64>>))}"},
         {"{1;if(true){2;}else{}3;while(false){}4;}",
          "{(expression@1 (number@1)) (if@3 (bool@5) {(expression@8 (number@8))}) (expression@14 (number@14)) (while@16 "
          "(bool@18)) (expression@22 (number@22))}"},
@@ -547,13 +641,17 @@ void bodySyntax() {
         // These spellings remain unresolved named types after const. The same
         // first-token control words cannot be reclassified as locals.
         {"{const return x=1;const if y=2;const while z=3;static_assert a=4;}",
-         "{(let@1 #3 :return (number@5)) (let@7 #9 :if (number@11)) (let@13 #15 :while (number@17)) (let@19 #20 "
-         ":static_assert mut (number@22))}"}};
+         "{(let@1 #3 :class return (number@5)) (let@7 #9 :class if (number@11)) "
+         "(let@13 #15 :class while (number@17)) (let@19 #20 "
+         ":class static_assert mut (number@22))}"}};
     for (const auto &[source, expected] : fixtures) {
         context = "explicit body AST " + source;
         const auto tokens = aurora::lex(source, "body-contract.au"), before = tokens;
         std::size_t position = 0;
-        sameBody(aurora::parseHostedBody(tokens, position), tokens, expected);
+        const auto body = aurora::parseHostedBody(tokens, position);
+        sameBody(body, tokens, expected);
+        if (source.find('\n') != std::string::npos)
+            textControls(body, tokens, expected);
         require(position == tokens.size() - 1, "body did not consume its exact closing brace");
         for (std::size_t index = 0; index < tokens.size(); ++index)
             sameToken(tokens[index], before[index]);
@@ -609,7 +707,7 @@ void bodyContexts() {
             captured.capacityParameters.push_back(tokens.at(10));
         captured.functionTemplate = function;
         const auto expected =
-            shifted(function ? "{(let@1 #8 :Pair<'T,'U> (call@10 <'T,'U> (name@17) (name@19))) "
+            shifted(function ? "{(let@1 #8 :class Pair<'T,'U> (call@10 <'T,'U> (name@17) (name@19))) "
                                "(return@22 (binary@27 (call@23 :'T) (call@28 :'U)))}"
                              : "{(let@1 #7 :array<'T,'N> mut (array_literal@9)) (return@12 (call@13 :'T))}",
                     begin);
@@ -887,7 +985,7 @@ void grammarExpectations() {
         {"f(a[1], b.member)", "(call@0 (index@2 (name@2) (number@4)) (member@9 (name@7)))"},
         {"size_of(i64)", "(call@0)"},
         {"type_id(array<u8,2>)", "(call@0 :array<u8,2>)"},
-        {"field_count(Box)", "(call@0 :Box)"},
+        {"field_count(Box)", "(call@0 :class Box)"},
         {"f(size_of(i64))", "(call@0 (call@2))"},
         {R"(f("text"))", "(call@0 (byte_string@2))"},
         {R"(ns::f("", "é😀", "\0\xff"))", "(call@0-2 (byte_string@4) (byte_string@6) (byte_string@8))"},
@@ -915,20 +1013,22 @@ void grammarExpectations() {
         {"{1,size_of(i64)}", "(array_literal@0 (number@1) (call@3))"},
         {"Box{.first=1,.second=type_id(array<u8,2>)}",
          "(construct@0 .first .second (number@5) (call@10 :array<u8,2>))"},
-        {"f({1,field_count(Box)})", "(call@0 (array_literal@2 (number@3) (call@5 :Box)))"},
+        {"f({1,field_count(Box)})", "(call@0 (array_literal@2 (number@3) (call@5 :class Box)))"},
         {"{Box{.value=f(size_of(i64))}}", "(array_literal@0 (construct@1 .value (call@6 (call@8))))"},
         {"f<i64>(1)", "(call@0 <i64> (number@5))"},
-        {"x<y<z>>(a)", "(call@0 <y<z>> (name@7))"},
-        {"f<a<b<c>>>(0)", "(call@0 <a<b<c>>> (number@10))"},
-        {"ns :: make<Pair<i64, u8>>(1)", "(call@0-2 <Pair<i64,u8>> (number@11))"},
+        {"x<y<z>>(a)", "(call@0 <class y<class z>> (name@7))"},
+        {"f<a<b<c>>>(0)", "(call@0 <class a<class b<class c>>> (number@10))"},
+        {"ns :: make<Pair<i64, u8>>(1)", "(call@0-2 <class Pair<i64,u8>> (number@11))"},
         {"{f<i64>(1),2}", "(array_literal@0 (call@1 <i64> (number@6)) (number@9))"},
         {"Box{.first=f<a<b<c>>>(0),.second={x<y<z>>(a)}}",
-         "(construct@0 .first .second (call@5 <a<b<c>>> (number@15)) (array_literal@21 (call@22 <y<z>> (name@29))))"},
+         "(construct@0 .first .second (call@5 <class a<class b<class c>>> (number@15)) "
+         "(array_literal@21 (call@22 <class y<class z>> (name@29))))"},
         {"f({Box<i64>{.value=1},2})", "(call@0 (array_literal@2 (construct@3 .value <i64> (number@11)) (number@14)))"},
-        {"{1,f<a<b<c>>(0)}", "(array_literal@0 (number@1) (binary@4 (name@3) (call@5 <b<c>> (number@12))))"},
-        {"f<A<B<C<D<i64>>>>>()", "(call@0 <A<B<C<D<i64>>>>>)"},
-        {"size_of(A<B<C<D<i64>>>>)", "(call@0 :A<B<C<D<i64>>>>)"},
-        {"A<B<C<D<E<i64>>>>>{}", "(construct@0 <B<C<D<E<i64>>>>>)"}};
+        {"{1,f<a<b<c>>(0)}",
+         "(array_literal@0 (number@1) (binary@4 (name@3) (call@5 <class b<class c>> (number@12))))"},
+        {"f<A<B<C<D<i64>>>>>()", "(call@0 <class A<class B<class C<class D<i64>>>>>)"},
+        {"size_of(A<B<C<D<i64>>>>)", "(call@0 :class A<class B<class C<class D<i64>>>>)"},
+        {"A<B<C<D<E<i64>>>>>{}", "(construct@0 <class B<class C<class D<class E<i64>>>>>)"}};
     aggregateExpressions = {
         {"{}", "(array_literal@0)"},
         {"{1}", "(array_literal@0 (number@1))"},
@@ -968,25 +1068,25 @@ void grammarExpectations() {
         {"f<i64>()", "(call@0 <i64>)"},
         {"f<u64,u8>(1,2)", "(call@0 <u64,u8> (number@7) (number@9))"},
         {"ns::make<bool,64>(true)", "(call@0-2 <bool,64> (bool@9))"},
-        {"f<Box<i64>>()", "(call@0 <Box<i64>>)"},
-        {"f<Pair<i64,u8>,Box<64>>(1)", "(call@0 <Pair<i64,u8>,Box<64>> (number@14))"},
+        {"f<Box<i64>>()", "(call@0 <class Box<i64>>)"},
+        {"f<Pair<i64,u8>,Box<64>>(1)", "(call@0 <class Pair<i64,u8>,class Box<64>> (number@14))"},
         {"ns // callee trivia\n :: make<Pair<i64, // argument trivia\n u8>>(1)",
-         "(call@0-2 <Pair<i64,u8>> (number@11))"},
-        {"f<ns::array<u8,16>>(value)", "(call@0 <ns::array<u8,16>> (name@11))"},
+         "(call@0-2 <class Pair<i64,u8>> (number@11))"},
+        {"f<ns::array<u8,16>>(value)", "(call@0 <class ns::array<u8,16>> (name@11))"},
         {"one::two::Box<Pair<u8,16>,Other>{.last=2,.first=1}",
-         "(construct@0-4 .last .first <Pair<u8,16>,Other> (number@19) (number@24))"},
+         "(construct@0-4 .last .first <class Pair<u8,16>,class Other> (number@19) (number@24))"},
         {"f<i64>(type_id(Pair<Box<u8>,i64>)).member[0]",
-         "(index@19 (member@19 (call@0 <i64> (call@5 :Pair<Box<u8>,i64>))) (number@21))"},
+         "(index@19 (member@19 (call@0 <i64> (call@5 :class Pair<class Box<u8>,i64>))) (number@21))"},
         {"{f<i64>(1),size_of(array<u8,4096>),Box<u64>{.value=2}}",
          "(array_literal@0 (call@1 <i64> (number@6)) (call@9 :array<u8,4096>) (construct@19 .value <u64> "
          "(number@27)))"},
-        {"Box<i64>{.value=field_count(Other)}.value", "(member@14 (construct@0 .value <i64> (call@8 :Other)))"},
+        {"Box<i64>{.value=field_count(Other)}.value", "(member@14 (construct@0 .value <i64> (call@8 :class Other)))"},
         {"size_of<i64>(u8)", "(call@0 <i64> :u8)"},
-        {"type_id<8>(Box)", "(call@0 <8> :Box)"},
+        {"type_id<8>(Box)", "(call@0 <8> :class Box)"},
         {"a < b >> (c)", "(binary@1 (name@0) (binary@3 (name@2) (name@5)))"},
         {"(a) < b > (c)", "(binary@5 (binary@3 (name@1) (name@4)) (name@7))"},
         {"true < x > (y)", "(binary@3 (binary@1 (bool@0) (name@2)) (name@5))"},
-        {"f<a<b<c>>(0)", "(binary@1 (name@0) (call@2 <b<c>> (number@9)))"},
+        {"f<a<b<c>>(0)", "(binary@1 (name@0) (call@2 <class b<class c>> (number@9)))"},
         {"{1,f<T}>(0)", "(binary@7 (array_literal@0 (number@1) (binary@4 (name@3) (name@5))) (number@9))"}};
     for (const auto *group : {&fixtures, &aggregateExpressions, &typedExpressions})
         for (const auto &[source, expected] : *group) {
@@ -6509,7 +6609,7 @@ int main(int argc, char **argv) {
                         "(call@42 (number@44))",
                         "(call@50 (number@52))",
                         "(call@58 (number@60))",
-                        "(call@65 <y<z>> (name@72))"});
+                        "(call@65 <class y<class z>> (name@72))"});
         for (const auto &group : returnedErrors)
             for (const auto &expression : group.sources)
                 rejectedProgram("module errors; auto f()->i64{return ", expression, "}");

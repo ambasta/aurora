@@ -217,8 +217,10 @@ Special native `-O1`, debug, no-PIE, exception/RTTI and testing macros remain wh
 required; the existing `-O2` framebuffer variants remain distinct. Existing
 Python runners and controls execute once, with or without `-O`. They use explicit
 checks that raise, and the `python-assertions` test rejects any `assert` statement.
-`tests/test-inventory.py` checks that every test source is run under Meson or
-listed with a reason, and that every registered test belongs to `full`.
+`tests/test-inventory.py` follows registered targets and explicit child/helper
+edges, checks the required semantic selections, and accounts for supplemental
+sources. Every non-LSP registration belongs to `full`; the optional LSP suite
+is checked separately when enabled. Registration alone is not execution evidence.
 
 Observed Meson compiler identity never claims an external pin or fresh bootstrap
 build. Full native execution still needs independent final-source review; normal

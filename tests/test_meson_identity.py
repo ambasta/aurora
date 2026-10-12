@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Compiler-free controls for explicitly observed Meson artifact identity."""
+"""Compiler-free controls for Meson artifact identity and test execution routing."""
 
 import argparse
+import importlib.util
 import json
 from pathlib import Path
 import os
@@ -17,6 +18,145 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import compiler_contract as contract
 import meson_toolchain
 import meson_test
+
+
+class MesonInventoryTests(unittest.TestCase):
+    """Independent synthetic registration mutations; no compiler or Meson setup."""
+
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location("test_inventory", Path(__file__).with_name("test-inventory.py"))
+        self.inventory = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.inventory)
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.build = self.root / "build"
+        self.build.mkdir()
+        (self.root / "tests/compiler").mkdir(parents=True)
+        for path in (
+            "tests/test_artifact_budget.py",
+            "tests/kernel-program.cpp",
+            "tests/compiler/package_graph.py",
+            "tests/compiler/equivalence.py",
+        ):
+            (self.root / path).write_text("")
+        (self.root / "tests/test_artifact_budget.py").write_text(
+            '"""equivalence controls; tests/compiler/equivalence.py is a separate gate."""\n'
+        )
+        self.manifest = dict(
+            exceptions={"Requires a separately selected baseline": ["tests/compiler/equivalence.py"]},
+            executed={},
+            helpers={},
+            optional={},
+            variants={"package-graph-full": ["tests/compiler/package_graph.py", ["--profile", "full"]]},
+        )
+        self.tests = [
+            self.entry("artifact-budget", "tests/test_artifact_budget.py"),
+            dict(
+                name="native-kernel-program",
+                cmd=[str(self.build / "native-kernel-program")],
+                depends=["program@exe"],
+                suite=["p:full"],
+            ),
+            self.entry("package-graph", "tests/compiler/package_graph.py", "--profile", "dev"),
+            self.entry("package-graph-full", "tests/compiler/package_graph.py", "--profile", "full"),
+        ]
+        self.targets = [
+            dict(
+                id="program@exe",
+                filename=[str(self.build / "native-kernel-program")],
+                target_sources=[dict(sources=[str(self.root / "tests/kernel-program.cpp")])],
+            )
+        ]
+        self.assertEqual(self.check()["direct"], 3)
+
+    def entry(self, name, source, *arguments):
+        return dict(name=name, cmd=["python3", str(self.root / source), *arguments], suite=["p:full"])
+
+    def check(self):
+        (self.root / "tests/test-inventory.json").write_text(json.dumps(self.manifest))
+        return self.inventory.check(self.root, self.tests, self.targets, self.build)
+
+    def test_equivalence_docstring_does_not_execute_saved_baseline_gate(self):
+        self.manifest["exceptions"] = {}
+        with self.assertRaisesRegex(ValueError, "no registered execution/helper route:.*equivalence.py"):
+            self.check()
+
+    def test_built_fixture_without_registered_test_is_uncovered(self):
+        self.tests = [test for test in self.tests if test["name"] != "native-kernel-program"]
+        with self.assertRaisesRegex(ValueError, "no registered execution/helper route:.*kernel-program.cpp"):
+            self.check()
+
+    def test_full_graph_removal_or_dev_substitution_cannot_borrow_dev_coverage(self):
+        original = self.tests[-1]
+        mutations = [
+            None,
+            dict(original, cmd=original["cmd"][:-1] + ["dev"]),
+            dict(original, cmd=original["cmd"] + ["--profile", "dev"]),
+            dict(original, cmd=original["cmd"] + ["--smoke"]),
+        ]
+        for changed in mutations:
+            with self.subTest(changed=changed):
+                self.tests = self.tests[:3] + ([] if changed is None else [changed])
+                with self.assertRaisesRegex(ValueError, "semantic variant|duplicate semantic selection"):
+                    self.check()
+
+    def test_registered_output_dependency_and_generated_edges_are_followed(self):
+        self.tests[1].pop("depends")
+        self.assertEqual(self.check()["direct"], 3)
+        program = self.targets[0]
+        for edge in (dict(depends=["program@exe"]), dict(target_sources=[dict(generated_sources=program["filename"])])):
+            with self.subTest(edge=edge):
+                self.targets = [program, dict(id="wrapper@exe", filename=[str(self.build / "wrapper")], **edge)]
+                self.tests[1]["cmd"] = [str(self.build / "wrapper")]
+                self.assertEqual(self.check()["direct"], 3)
+
+    def test_new_source_needs_explicit_edge_and_stale_exception_rejects(self):
+        (self.root / "tests/fixture.cpp").write_text("")
+        with self.assertRaisesRegex(ValueError, "no registered execution/helper route:.*fixture.cpp"):
+            self.check()
+        self.manifest["executed"] = {"tests/compiler/package_graph.py": ["tests/fixture.cpp"]}
+        self.assertEqual(self.check()["indirect"], 1)
+        (self.root / "tests/compiler/equivalence.py").unlink()
+        with self.assertRaisesRegex(ValueError, "exceptions no longer exist"):
+            self.check()
+
+    def test_optional_lsp_routes_are_separate_and_fail_closed(self):
+        self.manifest["optional"] = {
+            "lsp": {"lsp-units": "tests/lsp-units.cpp", "lsp-protocol": "tests/lsp-protocol.py"}
+        }
+        for path in self.manifest["optional"]["lsp"].values():
+            (self.root / path).write_text("")
+        disabled = self.check()
+        self.assertEqual((disabled["direct"], disabled["optional_sources"], disabled["optional_tests"]), (3, 2, 0))
+        units = dict(name="lsp-units", cmd=[str(self.build / "lsp-units")], suite=["p:lsp"], depends=["lsp@exe"])
+        protocol = dict(self.entry("lsp-protocol", "tests/lsp-protocol.py"), suite=["p:lsp"])
+        self.targets.append(
+            dict(
+                id="lsp@exe",
+                filename=[str(self.build / "lsp-units")],
+                target_sources=[dict(sources=[str(self.root / "tests/lsp-units.cpp")])],
+            )
+        )
+        full = list(self.tests)
+        self.tests = full + [units, protocol]
+        enabled = self.check()
+        self.assertEqual((enabled["direct"], enabled["optional_sources"], enabled["optional_tests"]), (3, 2, 2))
+        for optional, diagnostic in (
+            ([units], "incomplete optional suite"),
+            ([units, dict(protocol, suite=["p:full"])], "optional test in wrong suite"),
+            ([units, dict(protocol, cmd=["python3"])], "missing optional execution route"),
+            ([units, protocol, dict(protocol, name="unknown-optional")], "outside the full suite"),
+        ):
+            with self.subTest(diagnostic=diagnostic):
+                self.tests = full + optional
+                with self.assertRaisesRegex(ValueError, diagnostic):
+                    self.check()
+
+    def test_partial_registration_rejects(self):
+        self.tests[0]["suite"] = ["p:dev"]
+        with self.assertRaisesRegex(ValueError, "registered tests outside the full suite"):
+            self.check()
 
 
 class MesonIdentityTests(unittest.TestCase):

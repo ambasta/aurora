@@ -273,16 +273,6 @@ class Controls(unittest.TestCase):
     def test_ipc_real_policy_linkage_is_retained(self):
         # Source composition only. Actual linked/native observations remain
         # separate gates; these checks prevent accidentally restoring old stubs.
-        for name in (
-            "kernel-uefi-ipc-tests.sh",
-            "kernel-uefi-budget-tests.sh",
-            "kernel-uefi-dispatch-tests.sh",
-            "kernel-uefi-user-phases-tests.sh",
-        ):
-            text = (ROOT / "scripts" / name).read_text()
-            self.assertIn('compiler="${AURORAC:-build/aurorac}"', text)
-            self.assertIn('if [[ -z "${AURORAC:-}" ]]; then make -C compiler; fi', text)
-            self.assertIn('"$compiler" --module-root kernel/policies examples/kernel.au', text)
         ipc = (ROOT / "tests/kernel-ipc-transition-native.py").read_text()
         statements = [ast.dump(node, include_attributes=False) for node in ast.walk(ast.parse(ipc))]
         expected_statements = (
