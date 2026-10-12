@@ -80,11 +80,11 @@ The hosted compiler has an [Aurora lexical phase](../compiler/LEXER.md) and
 [complete bounded module parsing](../compiler/ARCHITECTURE.md#hosted-aurora-parser).
 An explicitly selected, source-built predecessor emits the imported frontend;
 current C1/C2 stages verify convergence. Aurora owns existing module grammar,
-unresolved declaration admission, module resolution and template substitution.
-The next boundary is resolved semantic/ownership analysis and typed lowering
-from the indexed graph, followed by backend responsibilities. Temporary host conversion
-remains while those consumers use C++ AST values. Native assembler/linker and
-host runtime/file/process services are separate self-hosting dependencies.
+unresolved declaration admission, module/template resolution and resolved semantic/
+ownership analysis through typed IR. The remaining compiler boundary is independent
+IR verification and native emission, with mechanical host record projection and
+source loading. Native assembler/linker and host runtime/file/process services
+remain separate self-hosting dependencies.
 
 Gate: positive, rejection, adversarial, resource and ABI tests with independent
 review; no unchecked assertion, visibility bypass or resource duplication. Then

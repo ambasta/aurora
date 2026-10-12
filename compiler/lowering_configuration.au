@@ -181,6 +181,40 @@ export namespace compiler_lowering {
     }
     auto seal_lowering_configuration(compiler_resolver::Session& session) -> bool {
         if (!session.good() || session.output_count() != 14) { setup_invalid(session); return false; }
+        // The bounded canonical catalog is submitted exactly once. Check its
+        // identity domains before any source-semantic decision can consume it.
+        i64 scalar_at = 2;
+        while (scalar_at < 9 && session.good()) {
+            const OutputRow row = session.view_output(scalar_at);
+            if (row.kind() != RecordKind::ScalarContract || row.operand_count() != 3) {
+                setup_invalid(session); return false;
+            }
+            const i64 identity = record_signed(session, scalar_at, OperandRole::PublicDescriptorId);
+            i64 prior = 2;
+            while (prior < scalar_at && session.good()) {
+                if (identity == record_signed(session, prior, OperandRole::PublicDescriptorId)) {
+                    setup_invalid(session); return false;
+                }
+                prior = prior + 1;
+            }
+            scalar_at = scalar_at + 1;
+        }
+        i64 service_at = 9;
+        while (service_at < 14 && session.good()) {
+            const OutputRow row = session.view_output(service_at);
+            if (row.kind() != RecordKind::ServiceContract || row.operand_count() != 6) {
+                setup_invalid(session); return false;
+            }
+            const i64 identity = record_signed(session, service_at, OperandRole::ServiceOperationId);
+            i64 prior = 9;
+            while (prior < service_at && session.good()) {
+                if (identity == record_signed(session, prior, OperandRole::ServiceOperationId)) {
+                    setup_invalid(session); return false;
+                }
+                prior = prior + 1;
+            }
+            service_at = service_at + 1;
+        }
         const OutputRow last = session.view_output(13);
         if (last.kind() != RecordKind::ServiceContract || last.operand_count() != 6) {
             setup_invalid(session); return false;

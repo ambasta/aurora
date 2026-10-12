@@ -97,17 +97,7 @@ hosted_abi::compiler_parser::AdmissionConfig admissionConfiguration() {
     configuration.console_mask = 1;
     configuration.display_mask = 2;
     configuration.event_mask = 4;
-    const std::array kinds{service::kind(Type::ConsoleSession),
-                           service::kind(Type::DisplaySession),
-                           service::kind(Type::IommuEventSession)};
-    for (unsigned mask = 0; mask < (1U << kinds.size()); ++mask) {
-        std::set<service::Kind> group;
-        for (std::size_t index = 0; index < kinds.size(); ++index)
-            if (mask & (1U << index))
-                group.insert(kinds[index]);
-        if (service::supportedGroup(group))
-            configuration.service_groups |= std::int64_t{1} << mask;
-    }
+    configuration.service_groups = service::supportedGroupBitmap();
     return configuration;
 }
 class ImportedSyntax {

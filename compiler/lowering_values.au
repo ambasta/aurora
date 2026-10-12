@@ -506,9 +506,15 @@ export namespace compiler_lowering {
         return type;
     }
     auto source_ref(compiler_resolver::Session& session, i64 syntax) -> i64 {
-        const compiler_resolver::SyntaxRow row = session.syntax(syntax);
-        if (row.expression_kind() == compiler_parser::NodeKind::index) {
-            return compiler_resolver::sw(session, row.word(1), 0);
+        i64 current = syntax;
+        compiler_resolver::SyntaxRow row = session.syntax(current);
+        while (row.expression_kind() == compiler_parser::NodeKind::index) {
+            current = row.word(1);
+            row = session.syntax(current);
+        }
+        if ((row.expression_kind() == compiler_parser::NodeKind::name || row.expression_kind() == compiler_parser::NodeKind::call
+            || row.expression_kind() == compiler_parser::NodeKind::construct) && row.word(4) >= 0 && row.word(4) != row.word(0)) {
+            return session.name_range(row.word(0), row.word(4));
         }
         return row.word(0);
     }
@@ -821,12 +827,12 @@ export namespace compiler_lowering {
             } else if (kind == compiler_resolver::ResolvedTypeKind::byte_span) {
                 local_slot(session, RecordKind::SpanSlot, offset);
             } else if (kind == compiler_resolver::ResolvedTypeKind::class_value || is_class_array(session, type)) {
-                i64 layout = class_row(session, type);
+                i64 layout = -1;
                 i64 carrier = -1;
                 if (is_class_array(session, type)) {
                     carrier = class_carrier(session, type, request.source());
                     layout = carrier_class_row(session, carrier);
-                }
+                } else { layout = class_row(session, type); }
                 const i64 begin = session.operand_count();
                 put(session, OperandRole::Offset, offset);
                 if (carrier >= 0) {
@@ -927,12 +933,7 @@ export namespace compiler_lowering {
         if (syntax.expression_kind() != compiler_parser::NodeKind::call || !expression_spelling(session, expression, "move")) {
             return error(session, LoweringError::owning_transfer_requires_move, source);
         }
-        if (syntax.word(2) != 1) {
-            const OperandRow name = scalar(OperandRole::DiagnosticNameId, source);
-            const OperandRow absent = scalar(OperandRole::NoDiagnosticValue, 0);
-            fail_pair(session, LoweringError::call_argument_count, source, name, absent);
-            return -1;
-        }
+        if (!require_arity(session, expression, 1)) { return -1; }
         const i64 target = compiler_resolver::sw(session, syntax.word(1), 0);
         const i64 id = named_source(session, target);
         if (!session.good()) { return -1; }
@@ -1021,18 +1022,15 @@ export namespace compiler_lowering {
         return session.good();
     }
     auto return_borrows(compiler_resolver::Session& session, i64 returned) -> bool {
+        i64 retained = returned;
         i64 at = session.local_count();
         while (at > 0 && session.good()) {
             at = at - 1;
             const LocalRow local = session.local(at);
             const SnapshotRow state = local.state();
             if (state.live() && value_kind(session, local.concrete_type_id()) == compiler_resolver::ResolvedTypeKind::byte_span) {
-                i64 retained = returned;
-                while (retained >= 0 && retained != at) {
-                    const LocalRow parent = session.local(retained);
-                    retained = parent.owner_id();
-                }
-                if (retained != at) { emit_EndSpan(session, local.offset()); }
+                if (retained == at) { retained = local.owner_id(); }
+                else { emit_EndSpan(session, local.offset()); }
             }
         }
         at = session.local_count();
@@ -1090,7 +1088,9 @@ export namespace compiler_lowering {
     auto require_arity(compiler_resolver::Session& session, i64 expression, i64 expected) -> bool {
         if (compiler_resolver::sw(session, expression, 2) == expected) { return session.good(); }
         const i64 source = source_ref(session, expression);
-        const OperandRow name = scalar(OperandRole::DiagnosticNameId, source);
+        i64 name_id = compiler_resolver::rw(session, expression, 0);
+        if (name_id < 0) { name_id = source; }
+        const OperandRow name = scalar(OperandRole::DiagnosticNameId, name_id);
         const OperandRow absent = scalar(OperandRole::NoDiagnosticValue, 0);
         return fail_pair(session, LoweringError::call_argument_count, source, name, absent);
     }
@@ -1175,6 +1175,38 @@ export namespace compiler_lowering {
             at = at + 1;
         }
         const LiteralValue result = LiteralValue(-1, 0, magnitude, previous_digit);
+        return result;
+    }
+    auto negative_literal_magnitude(compiler_resolver::Session& session, i64 node, i64 unary_source) -> LiteralValue {
+        const i64 reference = source_ref(session, node);
+        const compiler_resolver::MetaRow token = session.meta(reference);
+        const i64 begin = token.word(1);
+        const i64 end = token.word(2);
+        const LiteralValue absent = LiteralValue(-1, 0, 0u64, false);
+        if (end <= begin || session.source_byte(begin) < '0' || session.source_byte(begin) > '9') { return absent; }
+        if ((end - begin >= 2 && session.source_byte(end - 2) == 'u' && session.source_byte(end - 1) == '8')
+            || (end - begin >= 3 && session.source_byte(end - 3) == 'u' && session.source_byte(end - 2) == '6' && session.source_byte(end - 1) == '4')) { return absent; }
+        if (end - begin >= 2 && session.source_byte(begin) == '0' && (session.source_byte(begin + 1) == 'b' || session.source_byte(begin + 1) == 'B')) {
+            const LiteralValue result = integer_magnitude(session, begin, end);
+            if (!result.valid()) { fail(session, LoweringError::integer_literal_range, unary_source); }
+            return result;
+        }
+        // Legacy decimal stoull checks prefix overflow before deciding whether
+        // trailing suffix bytes force the full-token diagnostic instead.
+        i64 cursor = begin;
+        u64 magnitude = 0u64;
+        while (cursor < end && session.good()) {
+            const u8 byte = session.source_byte(cursor);
+            if (byte < '0' || byte > '9') { return absent; }
+            const u64 digit = u64(byte) - 48u64;
+            if (magnitude > (18446744073709551615u64 - digit) / 10u64) {
+                fail(session, LoweringError::integer_literal_range, unary_source);
+                return absent;
+            }
+            magnitude = magnitude * 10u64 + digit;
+            cursor = cursor + 1;
+        }
+        const LiteralValue result = LiteralValue(-1, 0, magnitude, true);
         return result;
     }
     auto decode_literal(compiler_resolver::Session& session, i64 expression) -> LiteralValue {

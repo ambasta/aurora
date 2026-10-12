@@ -3,6 +3,7 @@
 #include "lexer.hpp"
 #include "hosted_parser.hpp"
 #include "hosted_resolver.hpp"
+#include "services.hpp"
 #include "../../runtime/bytes_abi.hpp"
 #include <algorithm>
 #include <array>
@@ -12,6 +13,7 @@
 #include <functional>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <utility>
@@ -81,6 +83,14 @@ constexpr std::uint64_t sessionCanary = 0x7265736f6c766564ULL;
 int sessionsCreated = 0, sessionsReleased = 0, transferred = 0, pairsReleased = 0, projectionThrow = 0;
 bool resolverRunning = false, allocationOnIngest = false;
 std::int64_t reportedSyntax = 0, reportedMetadata = 0, reportedDecorations = 0, sourceBytes = 0, seedIdentity = 0;
+namespace Lowering = aurora::hosted_abi::compiler_lowering;
+Lowering::LoweringResult loweringResult{};
+Lowering::OutputRow loweringReport{};
+std::array<Lowering::OperandRow, 3> loweringOperands{};
+std::int64_t reportedOutputs = 1, reportedOperands = 3;
+int loweringBegun = 0, loweringRun = 0, loweringOutputReads = 0, loweringOperandReads = 0;
+int scalarSeeds = 0, serviceSeeds = 0;
+bool loweringAllocation = false;
 std::size_t cases = 0;
 void require(bool value, const std::string &message) {
     if (!value)
@@ -1924,27 +1934,49 @@ std::shared_ptr<const aurora::SourceText> resolutionFixture() {
     reportedDecorations = 8;
     sourceBytes = static_cast<std::int64_t>(source->text.size());
     seedIdentity = 0;
+    loweringResult = {Lowering::LoweringStatus::semantic_failure, Lowering::LoweringError::function_parameter_limit, 0, -1};
+    loweringReport = {};
+    loweringReport.recordKind = Lowering::RecordKind::DiagnosticPayload;
+    loweringReport.operandBegin = 0;
+    loweringReport.operandCount = 3;
+    loweringOperands = {};
+    loweringOperands[0].operandRole = Lowering::OperandRole::DiagnosticSourceRef;
+    loweringOperands[0].signedValue = 1;
+    loweringOperands[1].operandRole = loweringOperands[2].operandRole = Lowering::OperandRole::NoDiagnosticValue;
+    reportedOutputs = 1;
+    reportedOperands = 3;
+    loweringBegun = loweringRun = loweringOutputReads = loweringOperandReads = scalarSeeds = serviceSeeds = 0;
+    loweringAllocation = false;
     return source;
 }
 void resolutionControls() {
     auto source = resolutionFixture();
-    aurora::Program program;
+    // This host-only fixture publishes a deliberately forged failure report.
+    // It never claims that stubbed native lowering produced a valid module.
+    std::optional<aurora::Diagnostic> diagnostic;
     {
         aurora::HostedResolution resolution;
         const auto module = resolution.add(source);
         require(module.id == 0 && module.moduleName == "forged" && !module.interfaceUnit && module.imports.empty(),
                 "session ingestion lost copied parser header metadata");
-        program = resolution.resolve({module.id}, module.id);
+        try {
+            static_cast<void>(resolution.resolve({module.id}, module.id, aurora::AnalysisMode::Check, true));
+        } catch (const aurora::Error &error) {
+            diagnostic = error.diagnostic;
+        }
+        require(sessionsReleased == 1 && sessionPayload.allocation == 0,
+                "failed lowering retained its Session until adapter destruction");
     }
-    require(program.functions.size() == 1 && program.functions[0].name == "f" &&
-                program.functions[0].body.size() == 1 && program.functions[0].body[0]->expr->op == "number" &&
-                program.functions[0].body[0]->expr->token.text == "1" &&
-                program.functions[0].body[0]->expr->token.span.source == source &&
-                program.reflectionAccess == std::map<int, std::set<std::string>>{{0, {}}} && sessionsCreated == 1 &&
-                sessionsReleased == 1 && transferred == 1 && pairsReleased == 0 && created == 1 && parsed == 1 &&
-                admitted == 1 && released == 1 && statementRead == 2 && read == 0 && edgeRead == 0 && typeRead == 0 &&
+    require(diagnostic && diagnostic->code == DiagnosticCode::Semantic &&
+                diagnostic->message == "at most six parameters supported" && diagnostic->span.source == source &&
+                diagnostic->span.begin.offset == source->text.find("f()") &&
+                diagnostic->span.end.offset == diagnostic->span.begin.offset + 1 &&
+                sessionsCreated == 1 && sessionsReleased == 1 && transferred == 1 && pairsReleased == 0 &&
+                created == 1 && parsed == 1 && admitted == 1 && released == 1 && statementRead == 2 &&
+                read == 0 && edgeRead == 0 && typeRead == 0 && loweringBegun == 1 && loweringRun == 1 &&
+                scalarSeeds == 7 && serviceSeeds == 5 && loweringOutputReads == 1 && loweringOperandReads == 3 &&
                 sessionPayload.allocation == 0,
-            "valid resolved projection lost source, empty authority view or exact consuming cleanup");
+            "typed failure report lost source, bounded reads, configuration or exact consuming cleanup");
     ++cases;
     const auto reject = [&](const char *label, const std::function<void()> &mutate, bool injected = false) {
         source = resolutionFixture();
@@ -1953,7 +1985,7 @@ void resolutionControls() {
             aurora::HostedResolution resolution;
             const auto module = resolution.add(source);
             mutate();
-            static_cast<void>(resolution.resolve({module.id}, module.id));
+            static_cast<void>(resolution.resolve({module.id}, module.id, aurora::AnalysisMode::Check, true));
         } catch (const aurora::Error &error) {
             rejected = !injected && error.diagnostic.code == DiagnosticCode::Internal;
         } catch (const std::runtime_error &error) {
@@ -1961,118 +1993,86 @@ void resolutionControls() {
         }
         require(rejected && sessionsCreated == 1 && sessionsReleased == 1 && transferred == 1 && pairsReleased == 0 &&
                     released == 1 && sessionPayload.allocation == 0,
-                std::string(label) + ": unsafe projection escaped or released a consumed owner twice");
+                std::string(label) + ": unsafe typed projection escaped or released a consumed owner twice");
         ++cases;
     };
-    reject("negative source byte count", [] {
-        sourceBytes = -1;
-    });
-    reject("source byte count exceeds payload", [] {
-        sourceBytes = std::numeric_limits<std::int64_t>::max();
-    });
-    reject("negative resolved syntax count", [] {
-        reportedSyntax = -1;
-    });
-    reject("negative resolved metadata count", [] {
-        reportedMetadata = -1;
-    });
-    reject("negative resolved decoration count", [] {
-        reportedDecorations = -1;
-    });
-    reject("resolved syntax count exceeds payload", [] {
-        reportedSyntax = std::numeric_limits<std::int64_t>::max();
-    });
-    reject("resolved metadata count exceeds payload", [] {
-        reportedMetadata = std::numeric_limits<std::int64_t>::max();
-    });
-    reject("resolved decoration count exceeds payload", [] {
-        reportedDecorations = std::numeric_limits<std::int64_t>::max();
-    });
-    reject("unknown storage status", [] {
-        resolutionStatus.storage = static_cast<Resolution::StorageStatus>(99);
-    });
-    reject("unknown semantic diagnostic", [] {
-        resolutionStatus.diagnostic = static_cast<Resolution::SemanticError>(999);
-    });
-    reject("successful status carries a node", [] {
-        resolutionStatus.node = 0;
-    });
-    reject("successful status carries first detail", [] {
-        resolutionStatus.first = 0;
-    });
-    reject("successful status carries second detail", [] {
-        resolutionStatus.second = 0;
-    });
-    reject("mismatched decoration count", [] {
-        --reportedDecorations;
-    });
-    reject("unknown resolved syntax tag", [] {
-        resolutionSyntax[0].tag = static_cast<Resolution::SyntaxTag>(99);
-    });
-    reject("unknown resolved expression tag", [] {
-        resolutionSyntax[0].expression_tag = static_cast<NodeKind>(99);
-    });
-    reject("wrong resolved function tag", [] {
-        resolutionSyntax[5].declaration_tag = SyntaxKind::parameter;
-    });
-    reject("expression outside source lane", [] {
-        resolutionSyntax[3].value3 = 8;
-    });
-    reject("statement ownership cycle", [] {
-        resolutionSyntax[3].value2 = 3;
-    });
-    reject("wrong concrete type tag", [] {
+    reject("negative source byte count", [] { sourceBytes = -1; });
+    reject("source byte count exceeds payload", [] { sourceBytes = std::numeric_limits<std::int64_t>::max(); });
+    reject("negative resolved syntax count", [] { reportedSyntax = -1; });
+    reject("negative resolved metadata count", [] { reportedMetadata = -1; });
+    reject("negative resolved decoration count", [] { reportedDecorations = -1; });
+    reject("resolved syntax count exceeds payload", [] { reportedSyntax = std::numeric_limits<std::int64_t>::max(); });
+    reject("resolved metadata count exceeds payload", [] { reportedMetadata = std::numeric_limits<std::int64_t>::max(); });
+    reject("resolved decoration count exceeds payload", [] { reportedDecorations = std::numeric_limits<std::int64_t>::max(); });
+    reject("unknown storage status", [] { resolutionStatus.storage = static_cast<Resolution::StorageStatus>(99); });
+    reject("unknown semantic diagnostic", [] { resolutionStatus.diagnostic = static_cast<Resolution::SemanticError>(999); });
+    reject("successful resolver status carries a node", [] { resolutionStatus.node = 0; });
+    reject("successful resolver status carries first detail", [] { resolutionStatus.first = 0; });
+    reject("successful resolver status carries second detail", [] { resolutionStatus.second = 0; });
+    reject("mismatched decoration count", [] { --reportedDecorations; });
+    reject("ABI declaration has wrong syntax domain", [] { resolutionSyntax[5].tag = Resolution::SyntaxTag::expression; });
+    reject("unknown native identity mode", [] { resolutionMetadata[5].native_tag = static_cast<Resolution::NativeMode>(99); });
+    reject("symbol defining module outside graph", [] { resolutionMetadata[5].value1 = 1; });
+    reject("output list cycle", [] { resolutionMetadata[6].value1 = 6; });
+    reject("wrong output list tag", [] { resolutionMetadata[6].tag = Resolution::MetaTag::signature; });
+    reject("output symbol outside metadata", [] { resolutionMetadata[6].value0 = 8; });
+    reject("reversed sparse source span", [] { resolutionMetadata[1].value2 = resolutionMetadata[1].value1 - 1; });
+    reject("sparse span outside source", [] { resolutionMetadata[1].value2 = sourceBytes + 1; });
+    reject("sparse span wrong source", [] { resolutionMetadata[1].value0 = 1; });
+    reject("sparse span invalid column", [] { resolutionMetadata[1].value4 = 0; });
+    const auto typeReport = [] {
+        loweringResult.result_reason = Lowering::LoweringError::type_mismatch;
+        loweringOperands[1].operandRole = loweringOperands[2].operandRole = Lowering::OperandRole::DiagnosticTypeId;
+        loweringOperands[1].signedValue = loweringOperands[2].signedValue = 4;
+    };
+    reject("diagnostic concrete type has wrong metadata domain", [&] {
+        typeReport();
         resolutionMetadata[4].tag = Resolution::MetaTag::symbol;
     });
-    reject("concrete type outside metadata", [] {
-        resolutionDecorations[1].value2 = 8;
+    reject("diagnostic concrete type outside metadata", [&] {
+        typeReport();
+        loweringOperands[1].signedValue = 8;
     });
-    reject("unknown concrete type kind", [] {
+    reject("diagnostic concrete type has unknown kind", [&] {
+        typeReport();
         resolutionMetadata[4].concrete_tag = static_cast<Resolution::ResolvedTypeKind>(99);
     });
-    reject("unknown native identity mode", [] {
-        resolutionMetadata[5].native_tag = static_cast<Resolution::NativeMode>(99);
+    // The projection no longer reads every syntax/decoration row to build an
+    // AST. Exceptions are injected only on source views it still consumes.
+    for (const int read : {1, 2})
+        reject("resolved copied-row read exception", [=] { projectionThrow = read; }, true);
+
+    reject("unknown lowering status", [] { loweringResult.result_status = static_cast<Lowering::LoweringStatus>(99); });
+    reject("unknown lowering reason", [] { loweringResult.result_reason = static_cast<Lowering::LoweringError>(999); });
+    reject("failure lacks a reason", [] { loweringResult.result_reason = Lowering::LoweringError::none; });
+    reject("failure publishes a module root", [] { loweringResult.root_row = 15; });
+    reject("failure omits its diagnostic root", [] { loweringResult.diagnostic_row = -1; });
+    reject("success carries a failure reason", [] { loweringResult.result_status = Lowering::LoweringStatus::success; });
+    reject("success publishes no module root", [] {
+        loweringResult.result_status = Lowering::LoweringStatus::success;
+        loweringResult.result_reason = Lowering::LoweringError::none;
     });
-    reject("symbol defining module outside graph", [] {
-        resolutionMetadata[5].value1 = 1;
+    reject("success publishes a prelude row", [] {
+        loweringResult.result_status = Lowering::LoweringStatus::success;
+        loweringResult.result_reason = Lowering::LoweringError::none;
+        loweringResult.root_row = 14;
     });
-    reject("output list cycle", [] {
-        resolutionMetadata[6].value1 = 6;
-    });
-    reject("wrong output list tag", [] {
-        resolutionMetadata[6].tag = Resolution::MetaTag::signature;
-    });
-    reject("output symbol outside metadata", [] {
-        resolutionMetadata[6].value0 = 8;
-    });
-    reject("reversed sparse source span", [] {
-        resolutionMetadata[3].value2 = resolutionMetadata[3].value1 - 1;
-    });
-    reject("sparse span outside source", [] {
-        resolutionMetadata[3].value2 = sourceBytes + 1;
-    });
-    reject("sparse span wrong source", [] {
-        resolutionMetadata[3].value0 = 1;
-    });
-    reject("sparse span invalid column", [] {
-        resolutionMetadata[3].value4 = 0;
-    });
-    reject("unknown operation override", [] {
-        resolutionDecorations[0].operation_tag = static_cast<Resolution::ResolvedOperation>(99);
-    });
-    reject("resolved target outside metadata", [] {
-        resolutionDecorations[0].value1 = 8;
-    });
-    reject("resolved type outside metadata", [] {
-        resolutionDecorations[0].value2 = 8;
-    });
-    for (const int read : {1, 2, 3})
-        reject(
-            "resolved copied-row read exception",
-            [=] {
-                projectionThrow = read;
-            },
-            true);
+    reject("storage failure lacks an allocation status", [] { loweringResult.result_status = Lowering::LoweringStatus::storage_failure; });
+    reject("negative typed output count", [] { reportedOutputs = -1; });
+    reject("negative typed operand count", [] { reportedOperands = -1; });
+    reject("typed output count exceeds payload", [] { reportedOutputs = std::numeric_limits<std::int64_t>::max(); });
+    reject("typed operand count exceeds payload", [] { reportedOperands = std::numeric_limits<std::int64_t>::max(); });
+    reject("truncated failure output row", [] { reportedOutputs = 0; });
+    reject("truncated failure operand prefix", [] { reportedOperands = 2; });
+    reject("failure row has wrong record kind", [] { loweringReport.recordKind = Lowering::RecordKind::Module; });
+    reject("failure row has wrong prefix begin", [] { loweringReport.operandBegin = 1; });
+    reject("failure row has wrong prefix length", [] { loweringReport.operandCount = 2; });
+    reject("failure source has wrong operand domain", [] { loweringOperands[0].operandRole = Lowering::OperandRole::TypeId; });
+    reject("failure source escapes metadata", [] { loweringOperands[0].signedValue = 8; });
+    reject("failure detail has wrong operand domain", [] { loweringOperands[1].operandRole = Lowering::OperandRole::DiagnosticInteger; });
+    reject("negative active diagnostic type", [&] { typeReport(); loweringOperands[2].signedValue = -1; });
+    reject("native lowering allocation preserves owner cleanup", [] { loweringAllocation = true; });
+
     for (const bool afterTransfer : {false, true}) {
         source = resolutionFixture();
         allocationOnIngest = afterTransfer;
@@ -2088,11 +2088,12 @@ void resolutionControls() {
             rejected = !afterTransfer && std::string(error.what()) == "injected admission failure";
         }
         require(rejected && sessionsReleased == 1 && released == 1 && transferred == int(afterTransfer) &&
-                    pairsReleased == int(!afterTransfer) && sessionPayload.allocation == 0,
+                    pairsReleased == int(!afterTransfer) && sessionPayload.allocation == 0 && loweringRun == 0,
                 "failure on either side of owner consumption selected the wrong cleanup prefix");
         ++cases;
     }
 }
+
 } // namespace
 extern "C" void aurora_hosted_parser_create(const void *input, void *output) {
     const auto &value = *static_cast<const aurora::hosted_abi::ParserCreate *>(input);
@@ -2222,7 +2223,7 @@ extern "C" void aurora_hosted_resolver_create(const void *input, void *output) {
     const auto bytes = resolutionSyntax.size() * sizeof(Resolution::SyntaxRow) +
                        resolutionMetadata.size() * sizeof(Resolution::MetaRow) +
                        resolutionDecorations.size() * sizeof(Resolution::ResolvedRow) +
-                       static_cast<std::size_t>(sourceBytes);
+                       static_cast<std::size_t>(sourceBytes) + sizeof(loweringReport) + sizeof(loweringOperands);
     aurora::hosted::bytes::__au_runtime_bytes_allocate(
         record.region, static_cast<std::int64_t>(bytes), &sessionPayload);
     require(sessionPayload.success == 1, "forged resolution payload allocation failed");
@@ -2334,6 +2335,68 @@ extern "C" void aurora_hosted_resolver_read_meta(const void *session, std::int64
 }
 extern "C" void aurora_hosted_resolver_read_resolved(const void *session, std::int64_t index, void *output) {
     resolvedRead(session, index, output, resolutionDecorations, 3);
+}
+
+// Eight copied lowering endpoints. Only the fixed failure report above is
+// supplied; valid typed modules must come from the real native fixture.
+extern "C" std::int64_t aurora_hosted_lowering_begin(void *session, const void *input) noexcept {
+    checkSession(session);
+    const auto &configuration = static_cast<const aurora::hosted_abi::LoweringBeginInput *>(input)->configuration;
+    require(configuration.byteLeaves == aurora::maximumCopiedByteLeaves &&
+                configuration.nonByteLeaves == aurora::maximumCopiedNonByteLeaves &&
+                configuration.totalLeaves == aurora::maximumCopiedClassLeaves &&
+                configuration.copiedBytes == aurora::maximumCopiedClassBytes &&
+                configuration.byteArrayLength == aurora::maximumClassByteArrayLength &&
+                configuration.scalarArrayLength == aurora::maximumClassScalarArrayLength &&
+                configuration.analysisMode == 0 && configuration.serviceGroups == aurora::service::supportedGroupBitmap(),
+            "lowering received a changed copied configuration");
+    ++loweringBegun;
+    return 1;
+}
+extern "C" std::int64_t aurora_hosted_lowering_seed_scalar(void *session, const void *input) noexcept {
+    checkSession(session);
+    const auto &seed = static_cast<const aurora::hosted_abi::LoweringScalarInput *>(input)->seed;
+    require(seed.publicId > 0 && (seed.byteSize == 1 || seed.byteSize == 8), "invalid copied scalar seed");
+    return ++scalarSeeds + 1;
+}
+extern "C" std::int64_t aurora_hosted_lowering_seed_service(void *session, const void *input) noexcept {
+    checkSession(session);
+    const auto &seed = static_cast<const aurora::hosted_abi::LoweringServiceInput *>(input)->seed;
+    require(seed.operationId == serviceSeeds && seed.kindId >= 0 && seed.kindId < 3 &&
+                seed.parameterTypes.parameterCount >= 0 && seed.parameterTypes.parameterCount <= 5,
+            "invalid copied service seed");
+    return ++serviceSeeds + 8;
+}
+extern "C" std::int64_t aurora_hosted_lowering_seed_layout_symbol(void *session, std::int64_t) noexcept {
+    checkSession(session);
+    // This fixture has no nominal layout. An unexpected seed must fail closed.
+    return -1;
+}
+extern "C" void aurora_hosted_lowering_run(void *session, void *output) noexcept {
+    checkSession(session);
+    ++loweringRun;
+    auto result = loweringResult;
+    if (loweringAllocation) {
+        resolutionStatus.storage = Resolution::StorageStatus::allocation;
+        result = {Lowering::LoweringStatus::storage_failure, Lowering::LoweringError::none, -1, -1};
+    }
+    std::memcpy(output, &result, sizeof(result));
+}
+extern "C" std::int64_t aurora_hosted_lowering_count(const void *session, std::int64_t pool) noexcept {
+    checkSession(session);
+    return pool == 0 ? reportedOutputs : pool == 1 ? reportedOperands : -1;
+}
+extern "C" void aurora_hosted_lowering_read_output(const void *session, std::int64_t index, void *output) noexcept {
+    checkSession(session);
+    require(index == 0, "failure conversion read beyond its reserved output row");
+    ++loweringOutputReads;
+    std::memcpy(output, &loweringReport, sizeof(loweringReport));
+}
+extern "C" void aurora_hosted_lowering_read_operand(const void *session, std::int64_t index, void *output) noexcept {
+    checkSession(session);
+    require(index >= 0 && index < 3, "failure conversion read beyond its reserved operand prefix");
+    ++loweringOperandReads;
+    std::memcpy(output, &loweringOperands[static_cast<std::size_t>(index)], sizeof(loweringOperands[0]));
 }
 
 int main() {

@@ -19,19 +19,38 @@ enum class Operation {
     IommuPoll,
     IommuAcknowledge
 };
+inline const std::array capabilityTypes{
+    std::pair{Kind::Console, Type::ConsoleSession},
+    std::pair{Kind::Display, Type::DisplaySession},
+    std::pair{Kind::IommuEvent, Type::IommuEventSession}};
 inline Kind kind(const Type &type) {
-    if (type == Type::ConsoleSession)
-        return Kind::Console;
-    if (type == Type::DisplaySession)
-        return Kind::Display;
-    if (type == Type::IommuEventSession)
-        return Kind::IommuEvent;
+    for (const auto &[identity, candidate] : capabilityTypes)
+        if (candidate == type)
+            return identity;
     throw Error("not a sealed service capability type");
+}
+inline Type capabilityType(Kind kind) {
+    for (const auto &[identity, type] : capabilityTypes)
+        if (identity == kind)
+            return type;
+    throw Error("unknown sealed service capability kind");
 }
 inline bool supportedGroup(const std::set<Kind> &kinds) {
     return kinds == std::set<Kind>{Kind::Console} || kinds == std::set<Kind>{Kind::Display} ||
            kinds == std::set<Kind>{Kind::IommuEvent} || kinds == std::set<Kind>{Kind::Console, Kind::Display} ||
            kinds == std::set<Kind>{Kind::Console, Kind::IommuEvent};
+}
+inline std::int64_t supportedGroupBitmap() {
+    std::int64_t result = 0;
+    for (unsigned mask = 0; mask < (1U << capabilityTypes.size()); ++mask) {
+        std::set<Kind> group;
+        for (std::size_t index = 0; index < capabilityTypes.size(); ++index)
+            if (mask & (1U << index))
+                group.insert(capabilityTypes[index].first);
+        if (supportedGroup(group))
+            result |= std::int64_t{1} << mask;
+    }
+    return result;
 }
 inline constexpr int capabilityBytes = 16; // opaque host grant plus invocation generation
 inline constexpr std::string_view sampleName = "__au_console_sample";
@@ -43,20 +62,40 @@ inline constexpr std::string_view eventSampleName = "__au_iommu_event_sample";
 inline constexpr std::string_view eventPollResultName = "__au_event_poll_result";
 inline constexpr std::string_view eventAckResultName = "__au_event_ack_result";
 inline constexpr std::string_view eventIntakeCompletionName = "__au_event_intake_completion";
+inline Type sampleType();
+inline Type putResultType();
+inline Type displayPutResultType();
+inline Type eventSampleType();
+inline Type eventAckResultType();
 class OperationDescription {
 public:
     Kind kind;
     Operation operation;
     std::string_view spelling;
     std::string_view hostSymbol;
+    Type (*result)();
+    std::array<TypeKind, 5> parameters;
+    unsigned parameterCount;
+    Type resultType() const { return result(); }
+    std::vector<Type> parameterTypes() const {
+        if (parameterCount > parameters.size())
+            throw Error("invalid sealed service signature");
+        std::vector<Type> values;
+        for (unsigned index = 0; index < parameterCount; ++index)
+            values.emplace_back(parameters[index]);
+        return values;
+    }
 };
 inline constexpr std::array operations{
-    OperationDescription{Kind::Console, Operation::Next, "next", "__au_runtime_console_next"},
-    OperationDescription{Kind::Console, Operation::Put, "put", "__au_runtime_console_put"},
-    OperationDescription{Kind::Display, Operation::Pixel, "pixel", "__au_runtime_display_pixel"},
-    OperationDescription{Kind::IommuEvent, Operation::IommuPoll, "poll", "__au_runtime_iommu_event_poll"},
-    OperationDescription{
-        Kind::IommuEvent, Operation::IommuAcknowledge, "acknowledge", "__au_runtime_iommu_event_acknowledge"}};
+    OperationDescription{Kind::Console, Operation::Next, "next", "__au_runtime_console_next", sampleType, {}, 0},
+    OperationDescription{Kind::Console, Operation::Put, "put", "__au_runtime_console_put", putResultType,
+                         {TypeKind::U8}, 1},
+    OperationDescription{Kind::Display, Operation::Pixel, "pixel", "__au_runtime_display_pixel", displayPutResultType,
+                         {TypeKind::U64, TypeKind::U64, TypeKind::U8, TypeKind::U8, TypeKind::U8}, 5},
+    OperationDescription{Kind::IommuEvent, Operation::IommuPoll, "poll", "__au_runtime_iommu_event_poll",
+                         eventSampleType, {}, 0},
+    OperationDescription{Kind::IommuEvent, Operation::IommuAcknowledge, "acknowledge", "__au_runtime_iommu_event_acknowledge",
+                         eventAckResultType, {}, 0}};
 inline const OperationDescription &description(Operation operation) {
     for (const auto &entry : operations)
         if (entry.operation == operation)

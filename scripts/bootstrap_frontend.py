@@ -30,6 +30,9 @@ ARGUMENT_RECORDS = (
     ("ResolverImportInput", "compiler_frontend::resolver_bind_import", ("module", "node", "target")),
     ("ResolverSeedBuiltinInput", "compiler_frontend::resolver_seed_builtin", ("definition",)),
     ("ResolverSeedMemberInput", "compiler_frontend::resolver_seed_member", ("member",)),
+    ("LoweringBeginInput", "compiler_frontend::lowering_begin", ("configuration",)),
+    ("LoweringScalarInput", "compiler_frontend::lowering_seed_scalar", ("seed",)),
+    ("LoweringServiceInput", "compiler_frontend::lowering_seed_service", ("seed",)),
 )
 
 
@@ -137,6 +140,44 @@ def frontend_abi_entries(facts):
             "i64",
         ),
         ("resolver_run", "compiler_frontend::resolver_run", session, [], "i64"),
+        (
+            "lowering_begin",
+            "compiler_frontend::lowering_begin",
+            session,
+            ["compiler_lowering::LoweringConfig"],
+            "i64",
+        ),
+        (
+            "lowering_seed_scalar",
+            "compiler_frontend::lowering_seed_scalar",
+            session,
+            ["compiler_lowering::ScalarSeed"],
+            "i64",
+        ),
+        (
+            "lowering_seed_service",
+            "compiler_frontend::lowering_seed_service",
+            session,
+            ["compiler_lowering::ServiceSeed"],
+            "i64",
+        ),
+        ("lowering_seed_layout_symbol", "compiler_frontend::lowering_seed_layout_symbol", session, ["i64"], "i64"),
+        ("lowering_run", "compiler_frontend::lowering_run", session, [], "compiler_lowering::LoweringResult"),
+        ("lowering_count", "compiler_frontend::lowering_count", session, ["i64"], "i64"),
+        (
+            "lowering_read_output",
+            "compiler_frontend::lowering_read_output",
+            session,
+            ["i64"],
+            "compiler_lowering::OutputRow",
+        ),
+        (
+            "lowering_read_operand",
+            "compiler_frontend::lowering_read_operand",
+            session,
+            ["i64"],
+            "compiler_lowering::OperandRow",
+        ),
     ]
     checks += [
         ("parser_" + name, "compiler_frontend::parser_" + name, arena, [], "i64")
@@ -372,12 +413,18 @@ def frontend_bridge(bridge, facts):
 
 
 def stage_modules(
-    module_root, lexer, arena, parser, kinds, lowering_errors, lowering_kinds, lowering_storage, resolution, resolver, frontend
+    module_root, lexer, arena, parser, kinds, lowering_errors, lowering_kinds, lowering_storage,
+    resolution, resolver, frontend, lowering_common, lowering_configuration, lowering_types,
+    lowering_values, lowering_body, lowering,
 ):
     destination = module_root / "aurora" / "compiler"
     destination.mkdir(parents=True, exist_ok=True)
     for source, name in zip(
-        (lexer, arena, parser, kinds, lowering_errors, lowering_kinds, lowering_storage, resolution, resolver, frontend),
+        (
+            lexer, arena, parser, kinds, lowering_errors, lowering_kinds, lowering_storage,
+            resolution, resolver, frontend, lowering_common, lowering_configuration, lowering_types,
+            lowering_values, lowering_body, lowering,
+        ),
         (
             "lexer.au",
             "syntax_arena.au",
@@ -389,6 +436,12 @@ def stage_modules(
             "resolution_arena.au",
             "resolver.au",
             "frontend.au",
+            "lowering_common.au",
+            "lowering_configuration.au",
+            "lowering_types.au",
+            "lowering_values.au",
+            "lowering_body.au",
+            "lowering.au",
         ),
         strict=True,
     ):
@@ -428,6 +481,12 @@ def main():
         resolution,
         resolver,
         frontend,
+        lowering_common,
+        lowering_configuration,
+        lowering_types,
+        lowering_values,
+        lowering_body,
+        lowering,
         lexer_bridge,
         parser_bridge,
         resolver_bridge,
@@ -438,7 +497,9 @@ def main():
         raise ValueError("expected at most one shared-host ABI header")
     module_root = output.parent / "compiler-modules"
     stage_modules(
-        module_root, lexer, arena, parser, kinds, lowering_errors, lowering_kinds, lowering_storage, resolution, resolver, frontend
+        module_root, lexer, arena, parser, kinds, lowering_errors, lowering_kinds, lowering_storage,
+        resolution, resolver, frontend, lowering_common, lowering_configuration, lowering_types,
+        lowering_values, lowering_body, lowering,
     )
     emit(
         compiler,

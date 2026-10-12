@@ -7,10 +7,12 @@ import aurora.compiler.resolution_arena;
 import aurora.compiler.lowering_kinds;
 import aurora.compiler.lowering_errors;
 import aurora.compiler.lowering_storage;
+import aurora.compiler.lowering_configuration;
+import aurora.compiler.lowering;
 import aurora.compiler.resolver;
 
 // The host bridge enters this root module. Ordinary imported-function retention
-// then keeps exactly the parser and resolver entry implementations they call.
+// then keeps exactly the parser, resolver and lowering implementations they call.
 // These forwards add no state, policy or owner: each moved input is consumed once.
 export namespace compiler_frontend {
     auto lexer_next(builtin::span<const u8> source, compiler_lexer::Cursor cursor) -> compiler_lexer::Lexeme {
@@ -124,6 +126,35 @@ export namespace compiler_frontend {
     auto resolver_read_resolved(const compiler_resolver::Session& session,
         i64 index) -> compiler_resolver::ResolvedRow {
         const compiler_resolver::ResolvedRow result = compiler_resolver::read_resolved(session, index);
+        return result;
+    }
+    auto lowering_begin(compiler_resolver::Session& session, compiler_lowering::LoweringConfig configuration) -> i64 {
+        return compiler_lowering::begin_lowering(session, configuration);
+    }
+    auto lowering_seed_scalar(compiler_resolver::Session& session, compiler_lowering::ScalarSeed seed) -> i64 {
+        return compiler_lowering::seed_scalar(session, seed);
+    }
+    auto lowering_seed_service(compiler_resolver::Session& session, compiler_lowering::ServiceSeed seed) -> i64 {
+        return compiler_lowering::seed_service(session, seed);
+    }
+    auto lowering_seed_layout_symbol(compiler_resolver::Session& session, i64 symbol) -> i64 {
+        return compiler_lowering::seed_layout_symbol(session, symbol);
+    }
+    auto lowering_run(compiler_resolver::Session& session) -> compiler_lowering::LoweringResult {
+        const compiler_lowering::LoweringResult result = compiler_lowering::run_lowering(session);
+        return result;
+    }
+    auto lowering_count(const compiler_resolver::Session& session, i64 pool) -> i64 {
+        if (pool == 0) { return session.output_count(); }
+        if (pool == 1) { return session.operand_count(); }
+        return -1;
+    }
+    auto lowering_read_output(const compiler_resolver::Session& session, i64 index) -> compiler_lowering::OutputRow {
+        const compiler_lowering::OutputRow result = session.view_output(index);
+        return result;
+    }
+    auto lowering_read_operand(const compiler_resolver::Session& session, i64 index) -> compiler_lowering::OperandRow {
+        const compiler_lowering::OperandRow result = session.view_operand(index);
         return result;
     }
 }

@@ -522,8 +522,9 @@ foreach fixture : ['ir_tests', 'stack_probes', 'method_values_ir', 'readonly_win
          suite: ['full', 'slow', 'compiler'], env: oracle_env, timeout: 180)
 endforeach
 test('ir-exhaustive', python,
-     args: ['-B', files('compiler/ir_exhaustive.py'), compiler_fixtures['ir_tests']],
-     depends: compiler_fixtures['ir_tests'], suite: ['full', 'slow', 'compiler'],
+     args: ['-B', files('compiler/ir_exhaustive.py'), compiler_fixtures['ir_tests'],
+            '--abi-header', frontend_assembly[3]],
+     depends: [compiler_fixtures['ir_tests'], frontend_assembly], suite: ['full', 'slow', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 600)
 test('stack-guards', python,
      args: ['-B', '-O', files('compiler/sector_values_abi.py'), compiler_fixtures['stack_probes'], '--stack-guards'],
@@ -677,11 +678,14 @@ test('hosted-parser', hosted_parser_test,
                  '../library/std/json.au', '../library/package/graph.au', '../examples/function_token_values.au',
                  '../examples/class_values.au', '../examples/kernel-bios.au', '../compiler/resolution_kinds.au',
                  '../compiler/resolution_arena.au', '../compiler/resolver.au', '../compiler/frontend.au',
-                 '../compiler/lowering_kinds.au', '../compiler/lowering_errors.au', '../compiler/lowering_storage.au'),
+                 '../compiler/lowering_kinds.au', '../compiler/lowering_errors.au', '../compiler/lowering_storage.au',
+                 '../compiler/lowering_common.au', '../compiler/lowering_configuration.au', '../compiler/lowering_types.au',
+                 '../compiler/lowering_values.au', '../compiler/lowering_body.au', '../compiler/lowering.au'),
      suite: ['full', 'dev', 'core', 'compiler'], timeout: 120)
 hosted_parser_invalid = executable(
     'hosted-parser-invalid', ['compiler/hosted_parser_invalid.cpp', '../compiler/hosted_parser.cpp',
-                              '../compiler/hosted_resolver.cpp',
+                              '../compiler/hosted_resolver.cpp', '../compiler/hosted_lowering.cpp',
+                              '../compiler/hosted_lowering_diagnostics.cpp',
                               '../runtime/hosted_bytes.cpp', frontend_assembly[3]],
     cpp_args: ['-DAURORA_HOSTED_PARSER'], include_directories: include_directories('../compiler', '..'),
     native: true, install: false,

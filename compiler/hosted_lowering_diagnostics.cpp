@@ -9,7 +9,11 @@ using wire::LoweringError;
 using wire::LoweringStatus;
 using wire::OperandRole;
 
-enum class Origin { sourceOrSynthetic, synthetic, none };
+enum class Origin {
+    sourceOrSynthetic,
+    synthetic,
+    none
+};
 
 [[noreturn]] void invalidDiagnostic() {
     throw Error(DiagnosticCode::Internal, "invalid hosted lowering diagnostic");
@@ -145,7 +149,8 @@ Diagnostic renderHostedLoweringDiagnostic(const wire::LoweringResult &result,
     case LoweringError::owning_class_template:
         return render.fixed("owning class templates are unsupported");
     case LoweringError::class_array_field_storage:
-        return render.fixed("class array fields require private concrete scalar or copied class storage of length 1 to 64, or 1 to 512 for u8");
+        return render.fixed("class array fields require private concrete scalar or copied class "
+                            "storage of length 1 to 64, or 1 to 512 for u8");
     case LoweringError::owning_class_array:
         return render.fixed("arrays of owning classes are unsupported");
     case LoweringError::class_field_requires_concrete_type:
@@ -153,7 +158,8 @@ Diagnostic renderHostedLoweringDiagnostic(const wire::LoweringResult &result,
     case LoweringError::class_layout_frame_limit:
         return render.fixed("class layout exceeds 65536 bytes");
     case LoweringError::composed_class_leaf_limit:
-        return render.fixed("composed classes are limited to 64 non-byte scalar leaves, 512 u8 leaves and 513 total leaves");
+        return render.fixed("composed classes are limited to 64 non-byte scalar leaves, "
+                            "512 u8 leaves and 513 total leaves");
     case LoweringError::composed_class_depth:
         return render.fixed("composed class exceeds depth four");
     case LoweringError::aggregate_field_requires_constructor:
@@ -203,11 +209,13 @@ Diagnostic renderHostedLoweringDiagnostic(const wire::LoweringResult &result,
     case LoweringError::subspan_requires_live_readonly_view:
         return render.fixed("subspan requires a named live readonly span or a directly derived temporary view");
     case LoweringError::temporary_subspan_requires_owned_origin:
-        return render.fixed("temporary subspan chains require an owned-byte origin; array and parameter views require a named parent span");
+        return render.fixed("temporary subspan chains require an owned-byte origin; "
+                            "array and parameter views require a named parent span");
     case LoweringError::borrowed_object_field_access:
         return render.fixed("borrowed object parameters support public methods, not field access");
     case LoweringError::borrow_bytes_requires_named_storage_or_private_field:
-        return render.fixed("borrow_bytes requires a named local byte array, a named owned-byte value or a direct private owned-byte field");
+        return render.fixed("borrow_bytes requires a named local byte array, "
+                            "a named owned-byte value or a direct private owned-byte field");
     case LoweringError::borrow_bytes_field_storage:
         return render.fixed("borrow_bytes fields require private owned bytes or an implicit receiver u8 array");
     case LoweringError::borrow_bytes_requires_named_storage:
@@ -435,7 +443,8 @@ Diagnostic renderHostedLoweringDiagnostic(const wire::LoweringResult &result,
     case LoweringError::constructor_class_designated_initialization:
         return render.fixed("constructor-bearing class rejects designated initialization");
     case LoweringError::private_class_construction_requires_constructor:
-        return render.fixed("class construction requires public fields; private construction requires a declared constructor");
+        return render.fixed("class construction requires public fields; "
+                            "private construction requires a declared constructor");
     case LoweringError::class_initializer_requires_fields_or_copy:
         return render.fixed("class local requires named-field construction or same-type class copy");
     case LoweringError::duplicate_field_initializer:
@@ -450,7 +459,8 @@ Diagnostic renderHostedLoweringDiagnostic(const wire::LoweringResult &result,
         return render.fixed("byte-string initializers require u8 array elements");
     case LoweringError::byte_array_initializer_length:
         render.dynamic(Origin::sourceOrSynthetic, OperandRole::DiagnosticInteger, OperandRole::DiagnosticInteger);
-        return render.finish("array initializer length does not match its declared type: expected " + render.integer(0) + " bytes, got " + render.integer(1) + " decoded bytes");
+        return render.finish("array initializer length does not match its declared type: expected " + render.integer(0) +
+                             " bytes, got " + render.integer(1) + " decoded bytes");
     case LoweringError::array_initializer_requires_literal_or_copy:
         return render.fixed("array local requires an array literal or same-type array copy");
     case LoweringError::array_initializer_length:
@@ -460,7 +470,8 @@ Diagnostic renderHostedLoweringDiagnostic(const wire::LoweringResult &result,
     case LoweringError::returned_span_field_mismatch:
         return render.fixed("all returned spans must derive from the same receiver byte-storage field");
     case LoweringError::class_return_requires_local_constructor_or_call:
-        return render.fixed("class return requires a complete local name, direct copied-class constructor or ordinary call");
+        return render.fixed("class return requires a complete local name, "
+                            "direct copied-class constructor or ordinary call");
     case LoweringError::static_assertion_failed:
         return render.fixed("static assertion failed");
     case LoweringError::local_service_capability:
@@ -532,7 +543,8 @@ Diagnostic renderHostedLoweringDiagnostic(const wire::LoweringResult &result,
     case LoweringError::service_capability_result:
         return render.fixed("service capabilities cannot be returned");
     case LoweringError::service_function_leading_parameter_or_result:
-        return render.fixed("service functions require one leading exclusive sealed service reference and copied result");
+        return render.fixed("service functions require one leading exclusive sealed service reference "
+                            "and copied result");
     case LoweringError::service_group_requires_distinct_leading_references:
         return render.fixed("service group requires distinct leading exclusive sealed references");
     case LoweringError::service_function_group_or_result:
@@ -542,7 +554,8 @@ Diagnostic renderHostedLoweringDiagnostic(const wire::LoweringResult &result,
     case LoweringError::service_capability_parameter_position:
         return render.fixed("service capability must be the leading exclusive parameter");
     case LoweringError::borrowed_function_boundary:
-        return render.fixed("borrowed functions require one leading concrete owning-class reference and a scalar or copied result");
+        return render.fixed("borrowed functions require one leading concrete owning-class reference "
+                            "and a scalar or copied result");
     case LoweringError::borrowed_class_template_parameter:
         return render.fixed("borrowed parameters cannot name a class template");
     case LoweringError::borrowed_function_later_parameter_type:
@@ -550,7 +563,8 @@ Diagnostic renderHostedLoweringDiagnostic(const wire::LoweringResult &result,
     case LoweringError::const_permission_requires_borrowed_parameter:
         return render.fixed("const borrowed permission requires a borrowed parameter");
     case LoweringError::resource_function_region_or_result:
-        return render.fixed("resource functions and owning constructors require one first region parameter and scalar, copied class or owning result");
+        return render.fixed("resource functions and owning constructors require one first region parameter "
+                            "and scalar, copied class or owning result");
     case LoweringError::resource_argument_type:
         return render.fixed("resource arguments require scalar values or moved owners");
     case LoweringError::owning_constructor_result:
@@ -562,7 +576,8 @@ Diagnostic renderHostedLoweringDiagnostic(const wire::LoweringResult &result,
     case LoweringError::method_parameter_type:
         return render.fixed("methods require scalar, enum or copyable class parameters");
     case LoweringError::function_class_leaf_limit:
-        return render.fixed("function-boundary classes are limited to 64 scalar fields excluding u8, 512 u8 leaves and 513 total leaves");
+        return render.fixed("function-boundary classes are limited to 64 scalar fields excluding u8, "
+                            "512 u8 leaves and 513 total leaves");
     case LoweringError::function_class_storage_limit:
         return render.fixed("function-boundary class storage exceeds 520 bytes");
     case LoweringError::unknown_constructor_field_initializer:
