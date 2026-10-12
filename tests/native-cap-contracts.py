@@ -512,6 +512,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--artifacts", type=Path)
     args = parser.parse_args()
+    # Direct runs keep their default evidence only on failure or when asked to.
+    owned = args.artifacts is None
     out = artifact_root(args.artifacts or ROOT / "build" / ("native-cap-contracts-" + str(time.time_ns())))
     require(not out.exists(), "fresh evidence directory required")
     require(shutil.disk_usage(ROOT).free >= 1 << 30, "one GiB free floor before outputs")
@@ -619,6 +621,11 @@ def main():
     )
     (out / "configuration-results.json").write_text(json.dumps(report, indent=2) + "\n")
     print(f"CONFIGURATION CONTRACTS VERIFIED: {len(rows)} real entrypoint cases; no native acceptance claimed")
+    if owned and os.environ.get("AURORA_MESON_KEEP_ARTIFACTS") != "1":
+        shutil.rmtree(out)
+        print("Removed artifacts: " + str(out))
+    else:
+        print("Retained artifacts: " + str(out))
 
 
 if __name__ == "__main__":
