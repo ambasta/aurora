@@ -376,7 +376,14 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
 
 
 def main():
-    current1, current2, root, built_a, built_b = (Path(value).resolve() for value in sys.argv[1:])
+    # The default selection checks stage convergence through the lexer and the
+    # whole frontend, which imports every compiler module. --corpus compares
+    # every other checked-in source across the two stages; slow suites run it.
+    arguments = sys.argv[1:]
+    whole_corpus = arguments[-1:] == ["--corpus"]
+    if whole_corpus:
+        arguments = arguments[:-1]
+    current1, current2, root, built_a, built_b = (Path(value).resolve() for value in arguments)
     with tempfile.TemporaryDirectory(prefix="hosted-lexer-bootstrap-") as temporary:
         work = Path(temporary)
         outputs = [work / "current-c1.s", work / "current-c2.s"]
@@ -388,6 +395,8 @@ def main():
         require(root / "compiler/frontend.au" in corpus, "whole frontend self-rebuild input is missing")
         compiler_sources = {root / "compiler" / name for name in COMPILER_MODULES}
         require(compiler_sources.issubset(corpus), "a real compiler module is missing from self-rebuild coverage")
+        convergence = {root / "compiler/lexer.au", root / "compiler/frontend.au"}
+        corpus = [source for source in corpus if (source in convergence) != whole_corpus]
         for source in corpus:
             runs = []
             for compiler, output in zip((current1, current2), outputs, strict=True):
@@ -441,7 +450,8 @@ def main():
             records.append({"source": str(source.relative_to(root)), "status": runs[0].returncode})
         require(len(records) > 1, "source corpus is empty")
         print(
-            "PASS current C1/C2 diagnostics, assembly and output preservation: "
+            ("PASS current C1/C2 corpus" if whole_corpus else "PASS current C1/C2 lexer and frontend")
+            + " diagnostics, assembly and output preservation: "
             + json.dumps(
                 {
                     "sources": len(records),

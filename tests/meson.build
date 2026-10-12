@@ -637,11 +637,15 @@ hosted_lexer_test = executable(
 test('hosted-lexer', python,
      args: ['-B', files('meson_lexer_inputs.py'), hosted_lexer_test, meson.project_source_root(), '--all'],
      depends: hosted_lexer_test, suite: ['full', 'dev', 'core', 'compiler'], env: oracle_env, timeout: 180)
-test('hosted-lexer-bootstrap', python,
-     args: ['-B', '-O', files('compiler/hosted_lexer_bootstrap.py'), aurorac, aurorac_stage2,
-            meson.project_source_root(), frontend_assembly[0], frontend_stage2_assembly[0]],
+bootstrap_args = ['-B', '-O', files('compiler/hosted_lexer_bootstrap.py'), aurorac, aurorac_stage2,
+                  meson.project_source_root(), frontend_assembly[0], frontend_stage2_assembly[0]]
+test('hosted-lexer-bootstrap', python, args: bootstrap_args,
      depends: [aurorac, aurorac_stage2], suite: ['full', 'dev', 'core', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
+# Comparing every other source across both stages compiles the whole corpus twice.
+test('hosted-lexer-bootstrap-corpus', python, args: bootstrap_args + ['--corpus'],
+     depends: [aurorac, aurorac_stage2], suite: ['full', 'slow', 'compiler'],
+     env: oracle_env, workdir: meson.current_build_dir(), timeout: 600)
 
 format_fixture = executable('format-fixture', 'compiler/format.cpp', dependencies: hosted_frontend,
                             include_directories: include_directories('../compiler'), native: true, install: false)

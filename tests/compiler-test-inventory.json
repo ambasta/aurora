@@ -540,6 +540,24 @@
           "dev",
           "full"
         ]
+      },
+      "hosted-lexer-bootstrap-corpus": {
+        "arguments": [
+          "-B",
+          "-O",
+          "@SOURCE@/tests/compiler/hosted_lexer_bootstrap.py",
+          "@BUILD@/aurorac",
+          "@BUILD@/aurorac-stage2",
+          "@SOURCE@",
+          "@BUILD@/hosted-frontend.s",
+          "@BUILD@/hosted-frontend-stage2.s",
+          "--corpus"
+        ],
+        "suites": [
+          "compiler",
+          "full",
+          "slow"
+        ]
       }
     },
     "reason": "Canonical hosted bootstrap runner compares current C1/C2 diagnostics and frontend convergence, including the frontend actually linked into C2.",
