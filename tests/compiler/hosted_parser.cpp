@@ -5,6 +5,7 @@
 #include "parser.hpp"
 #include "semantics.hpp"
 #include "hosted_parser.hpp"
+#include "hosted_resolver.hpp"
 #include "../../runtime/hosted_bytes.hpp"
 #include <algorithm>
 #include <array>
@@ -3630,6 +3631,263 @@ void preambleEnumDiagnostics() {
     }
 }
 
+// The syntax-only checks above deliberately keep original template bodies.
+// These contracts instead cross the production resolution entry once and pin
+// its concrete output; no retired resolver or semantic query supplies an oracle.
+void resolvedModules() {
+    context = "resolved module order, instances, authority and source ownership";
+    auto dependency = std::make_shared<const aurora::SourceText>(
+        "definitions.au",
+        "// unused trivia keeps sparse source requests apart\n"
+        "export module dep;\n"
+        "export namespace lib {\n"
+        "enum class Flag {cold,hot};\n"
+        "class Leaf {public:i64 value;};\n"
+        "template<Scalar T,i64 N> class Buffer {\n"
+        "  builtin::array<T,N> data;\n"
+        "public:Buffer():data{}{}\n"
+        "  auto size()const->i64 {return N;}\n"
+        "  auto own_size()const->i64 {return size_of(Buffer);}\n"
+        "};\n"
+        "template<Value T> auto measure()->i64 {return size_of(T);}\n"
+        "}\n");
+    auto root = std::make_shared<const aurora::SourceText>(
+        "requests.au",
+        "module root;import dep;\n"
+        "class Hidden {public:i64 value;};\n"
+        "enum class State {zero,one};\n"
+        "auto answer()->i64 {\n"
+        "  const lib::Buffer<u8,3> first=lib // call gap\n :: Buffer<u8,3>();\n"
+        "  const lib::Buffer<u8,4> second=lib::Buffer<u8,4>();\n"
+        "  const lib::Buffer<u8,3> again=lib::Buffer<u8,3>();\n"
+        "  const State state=State::one;\n"
+        "  return lib::measure<Hidden>()+lib::measure<State>()+lib::measure<Hidden>();\n"
+        "}\n");
+    auto definitionTokens = aurora::lex(dependency), rootTokens = aurora::lex(root);
+    aurora::Program program;
+    {
+        aurora::HostedResolution resolution;
+        // Arrival order deliberately differs from dependency/output order.
+        const auto main = resolution.add(root), imported = resolution.add(dependency);
+        require(main.id != imported.id && main.moduleName == "root" && !main.interfaceUnit &&
+                    main.imports.size() == 1 && main.imports.front().text == "dep" &&
+                    imported.moduleName == "dep" && imported.interfaceUnit && imported.imports.empty(),
+                "copied module header/import identity differs");
+        sameToken(main.imports.front(), rootTokens.at(4));
+        program = resolution.resolve({imported.id, main.id}, main.id);
+    }
+    require(program.moduleName == "root" && program.templates.empty() && program.functionTemplates.empty() &&
+                program.functions.size() == 3 && program.classes.size() == 4 && program.enums.size() == 2,
+            "concrete output retained templates, duplicated instances or lost definitions");
+    const std::string hidden = "__au_c_m1_4root_n0__d6Hidden", state = "__au_e_m1_4root_n0__d5State";
+    const std::string leaf = "__au_c_m1_3dep_n1_3lib_d4Leaf", flag = "__au_e_m1_3dep_n1_3lib_d4Flag";
+    const std::array<std::string, 2> buffers{
+        "__au_c_m1_3dep_n1_3lib_d6Buffer_t2_u8_v3", "__au_c_m1_3dep_n1_3lib_d6Buffer_t2_u8_v4"};
+    const std::array<std::string, 2> measures{
+        "__au_g_m1_3dep_n1_3lib_d7measure_t1_c28__au_c_m1_4root_n0__d6Hidden",
+        "__au_g_m1_3dep_n1_3lib_d7measure_t1_e27__au_e_m1_4root_n0__d5State"};
+    const std::array<std::string, 4> classes{leaf, buffers[0], buffers[1], hidden};
+    const std::array<std::string, 2> enums{flag, state};
+    for (std::size_t index = 0; index < classes.size(); ++index) {
+        const auto &definition = program.classes[index];
+        require(definition.name == classes[index] && definition.id == 0 && definition.templateParameters.empty(),
+                "class order/native identity or deferred physical layout differs");
+        for (const auto &field : definition.fields)
+            require(field.offset == 0 && field.index == 0, "resolver assigned physical field layout");
+    }
+    for (std::size_t index = 0; index < enums.size(); ++index) {
+        const auto &definition = program.enums[index];
+        require(definition.name == enums[index] && definition.id == 0 && definition.cases.size() == 2 &&
+                    definition.cases[0].text == (index ? "zero" : "cold") &&
+                    definition.cases[1].text == (index ? "one" : "hot"),
+                "enum identity/source order or deferred physical ID differs");
+    }
+    const auto nominal = [](const std::string &name, const std::string &display, bool enumeration = false) {
+        auto type = enumeration ? aurora::Type::enumeration(name) : aurora::Type(name);
+        type.displayName = display;
+        type.resolvedClass = true;
+        return type;
+    };
+    for (std::size_t index = 0; index < measures.size(); ++index) {
+        const auto &function = program.functions[index];
+        const auto type = nominal(index ? state : hidden, index ? "State" : "Hidden", index != 0);
+        require(function.name == measures[index] && function.scope == "lib" && function.moduleScope == 1 &&
+                    !function.exported && function.templateParameters.empty() && function.templateArguments.size() == 1 &&
+                    function.templateTypeAuthority == std::set<std::string>{type.className} &&
+                    function.body.size() == 1 && function.body[0]->expr->op == "call" &&
+                    function.body[0]->expr->token.text == "size_of",
+                "function instance identity, exact nominal authority, export or concrete body differs");
+        const auto &argument = function.templateArguments.front();
+        require(argument.kind == aurora::TemplateArgumentKind::Type && argument.type == type.kind &&
+                    argument.className == type.className && argument.displayName == type.displayName &&
+                    argument.resolvedClass && argument.templateArguments.empty(),
+                "function instance lost its concrete argument tuple");
+        sameType(function.body[0]->expr->reflectedType, type);
+        sameToken(function.token, definitionTokens.at(tokenAt(definitionTokens, function.token)));
+        sameToken(function.body[0]->expr->token,
+                  definitionTokens.at(tokenAt(definitionTokens, function.body[0]->expr->token)));
+    }
+    require(program.functions[0].body[0] != program.functions[1].body[0] &&
+                program.functions[0].body[0]->expr != program.functions[1].body[0]->expr,
+            "function instances share mutable statement/expression owners");
+    for (std::size_t index = 0; index < buffers.size(); ++index) {
+        const auto &definition = program.classes[index + 1];
+        const auto capacity = static_cast<std::int64_t>(index + 3);
+        const auto display = "lib::Buffer<u8," + std::to_string(capacity) + ">";
+        require(definition.scope == "lib" && definition.exported && definition.fields.size() == 1 &&
+                    definition.methods.size() == 3 &&
+                    definition.templateArguments == std::vector<aurora::TemplateArgument>{
+                                                        aurora::TypeKind::U8,
+                                                        aurora::TemplateArgument::capacity(capacity)},
+                "class instance concrete tuple, export or ordered members differ");
+        sameType(definition.fields[0].type, aurora::Type::array(aurora::TypeKind::U8, capacity));
+        const std::array<std::string, 3> methodNames{
+            "__au_k_m1_3dep_n2_3lib6Buffer_d6Buffer_t2_u8_v" + std::to_string(capacity),
+            "__au_m_m1_3dep_n2_3lib6Buffer_d4size_t2_u8_v" + std::to_string(capacity),
+            "__au_m_m1_3dep_n2_3lib6Buffer_d8own_size_t2_u8_v" + std::to_string(capacity)};
+        for (std::size_t method = 0; method < methodNames.size(); ++method)
+            require(definition.methods[method].name == methodNames[method] &&
+                        definition.methods[method].receiverClass == buffers[index] &&
+                        definition.methods[method].moduleScope == 1 &&
+                        definition.methods[method].constructor == (method == 0) &&
+                        definition.methods[method].receiverConst == (method != 0),
+                    "method/constructor identity, receiver or defining module differs");
+        const auto &number = definition.methods[1].body.at(0)->expr;
+        require(number->op == "number" && number->token.text == std::to_string(capacity) &&
+                    number->resolvedName.empty() && number->token.span.source == dependency,
+                "capacity substitution lost its value or definition source");
+        const auto position = dependency->text.find("return N;") + 7;
+        const auto original = std::find_if(definitionTokens.begin(), definitionTokens.end(), [&](const auto &token) {
+            return token.span.begin.offset == position;
+        });
+        require(original != definitionTokens.end() && original->text == "N",
+                "capacity definition token is missing");
+        auto expected = *original;
+        expected.text = std::to_string(capacity);
+        sameToken(number->token, expected);
+        sameType(definition.methods[2].body.at(0)->expr->reflectedType, nominal(buffers[index], display));
+        require(definition.methods[0].initializers.size() == 1 &&
+                    definition.methods[0].initializers[0].second->op == "array_zero",
+                "class instance lost its empty-array initializer");
+    }
+    require(program.classes[1].methods[0].initializers[0].second !=
+                    program.classes[2].methods[0].initializers[0].second &&
+                program.classes[1].methods[1].body[0] != program.classes[2].methods[1].body[0] &&
+                program.classes[1].methods[1].body[0]->expr != program.classes[2].methods[1].body[0]->expr,
+            "class instances share mutable initializer/body owners");
+    const auto &answer = program.functions.back();
+    require(answer.name == "answer" && answer.scope.empty() && answer.moduleScope == 0 && answer.body.size() == 5 &&
+                answer.templateTypeAuthority.empty(),
+            "root entrypoint identity, order or authority differs");
+    for (std::size_t index = 0; index < 3; ++index) {
+        const auto instance = index == 1 ? 1U : 0U;
+        const auto &statement = answer.body[index];
+        const auto type = nominal(buffers[instance], instance ? "lib::Buffer<u8,4>" : "lib::Buffer<u8,3>");
+        sameType(statement->type, type);
+        sameType(statement->expr->reflectedType, type);
+        require(statement->expr->op == "constructor_call" && statement->expr->resolvedName == buffers[instance] &&
+                    statement->expr->templateArguments.empty(),
+                "repeated construction lost its interned target or retained unresolved arguments");
+        sameToken(statement->token, rootTokens.at(tokenAt(rootTokens, statement->token)));
+    }
+    const auto qualifiedOffset = root->text.find("lib // call gap");
+    const auto qualified = std::find_if(rootTokens.begin(), rootTokens.end(), [&](const auto &token) {
+        return token.span.begin.offset == qualifiedOffset;
+    });
+    require(qualified != rootTokens.end() && std::distance(qualified, rootTokens.end()) > 2,
+            "qualified construction source token is missing");
+    auto qualifiedToken = *qualified;
+    qualifiedToken.text = "lib::Buffer";
+    qualifiedToken.span.end = (qualified + 2)->span.end;
+    sameToken(answer.body[0]->expr->token, qualifiedToken);
+    const auto &enumCase = answer.body[3]->expr;
+    require(enumCase->op == "enum_case" && enumCase->resolvedName == state && enumCase->enumOrdinal == 1,
+            "enum expression lost its nominal identity or declaration ordinal");
+    sameType(enumCase->reflectedType, nominal(state, "State", true));
+    const auto &sum = answer.body[4]->expr;
+    const std::array<aurora::ExpressionPtr, 3> calls{sum->args.at(0)->args.at(0),
+                                                   sum->args.at(0)->args.at(1),
+                                                   sum->args.at(1)};
+    for (std::size_t index = 0; index < calls.size(); ++index)
+        require(calls[index]->resolvedName == measures[index == 1 ? 1 : 0] && calls[index]->templateArguments.empty(),
+                "function calls lost repeated-instance identity or concrete argument consumption");
+    require(program.reflectionAccess ==
+                std::map<int, std::set<std::string>>{{0, {leaf, flag, buffers[0], buffers[1], hidden, state}},
+                                                      {1, {leaf, flag, buffers[0], buffers[1]}}},
+            "compile-time argument authority leaked into runtime reflection views");
+    program.classes[1].methods[1].body[0]->expr->token.text = "changed";
+    require(program.classes[2].methods[1].body[0]->expr->token.text == "4" &&
+                dependency->text.find("return N;") != std::string::npos,
+            "mutating a concrete projection changed another instance or immutable source");
+    const std::weak_ptr<const aurora::SourceText> retainedDefinition = dependency, retainedRoot = root;
+    dependency.reset();
+    root.reset();
+    definitionTokens.clear();
+    rootTokens.clear();
+    require(!retainedDefinition.expired() && !retainedRoot.expired() &&
+                program.classes[2].methods[1].body[0]->expr->token.span.source == retainedDefinition.lock() &&
+                program.functions[0].body[0]->expr->token.span.source == retainedDefinition.lock() &&
+                answer.body[0]->expr->token.span.source == retainedRoot.lock() &&
+                program.functions[0].token.span.source->path == "definitions.au",
+            "projected template definition or invocation lost snapshot ownership after session cleanup");
+    ++cases;
+}
+
+void resolvedVisibility() {
+    context = "resolved overload order and signature-inaccessible candidates";
+    aurora::Program program;
+    {
+        aurora::HostedResolution resolution;
+        const auto root = resolution.add(std::make_shared<const aurora::SourceText>(
+            "call.au", "module caller;import functions;auto answer()->i64{return choose(42);}"));
+        const auto functions = resolution.add(std::make_shared<const aurora::SourceText>(
+            "functions.au",
+            "export module functions;import types;"
+            "export auto choose(Leaf value)->i64{return 1;}"
+            "export auto choose(i64 value)->i64{return value;}"
+            "auto choose(bool value)->i64{return 2;}"));
+        const auto types = resolution.add(std::make_shared<const aurora::SourceText>(
+            "types.au", "export module types;export class Leaf{public:i64 value;};"));
+        program = resolution.resolve({types.id, functions.id, root.id}, root.id);
+    }
+    const std::array<std::string, 3> overloads{
+        "__au_o_m1_9functions_n0__d6choose_p1_295___au_c_m1_5types_n0__d4Leaf",
+        "__au_o_m1_9functions_n0__d6choose_p1_20_",
+        "__au_o_m1_9functions_n0__d6choose_p1_21_"};
+    require(program.functions.size() == 4, "ordinary overload declarations were discarded");
+    for (std::size_t index = 0; index < overloads.size(); ++index)
+        require(program.functions[index].name == overloads[index] && program.functions[index].moduleScope == 2 &&
+                    program.functions[index].exported == (index < 2),
+                "overload parameter-tuple identity, export or declaration order differs");
+    const auto &call = program.functions.back().body.at(0)->expr;
+    require(call->resolvedName == "__au_v_m1_9functions_n0__d6choose" &&
+                call->overloadCandidates == std::vector<std::string>{overloads[0], overloads[1]} &&
+                call->inaccessibleOverloads == std::set<std::string>{overloads[0]},
+            "overload visibility erased or reordered an inaccessible exact-match candidate");
+    require(program.reflectionAccess.at(0).empty() && program.reflectionAccess.size() == 3,
+            "empty caller reflection view was omitted or gained a transitive nominal type");
+    ++cases;
+
+    context = "explicit empty module reflection views and returned source lifetime";
+    std::weak_ptr<const aurora::SourceText> retained;
+    {
+        aurora::HostedResolution resolution;
+        auto source = std::make_shared<const aurora::SourceText>(
+            "empty-view-root.au", "module caller;import empty;auto answer()->i64{return 42;}");
+        retained = source;
+        const auto root = resolution.add(source);
+        const auto empty = resolution.add(std::make_shared<const aurora::SourceText>(
+            "empty.au", "export module empty;"));
+        program = resolution.resolve({empty.id, root.id}, root.id);
+    }
+    require(program.reflectionAccess == std::map<int, std::set<std::string>>{{0, {}}, {1, {}}} &&
+                !retained.expired() && program.functions.at(0).token.span.source == retained.lock() &&
+                program.functions[0].body.at(0)->expr->token.span.source == retained.lock() &&
+                program.functions[0].body[0]->expr->token.span.source->path == "empty-view-root.au",
+            "resolution cleanup omitted empty views or invalidated projected source ownership");
+    ++cases;
+}
+
 void rawModules() {
     static_assert(static_cast<std::int64_t>(Stop::module_definition) == 12 &&
                   wire(SyntaxKind::module_definition) == 21 && wire(SyntaxKind::namespace_definition) == 22 &&
@@ -5586,6 +5844,8 @@ int main(int argc, char **argv) {
         rawFrameGrowth();
         rawArguments();
         rawAggregates();
+        resolvedModules();
+        resolvedVisibility();
         bootstrapSources(argv + 1);
         consumerSources(argv + 4);
         typedConsumerSources(argv + 9);
@@ -5604,7 +5864,9 @@ int main(int argc, char **argv) {
                "whole callable/field boundaries, 513-entry callable and 31-type field failure sweeps; "
                "three compiler preambles, two imports, twelve enums/233 cases, 513-import and 256-case failure sweeps; "
                "18 compiler classes/six namespace blocks, std::array/pair/make_pair template inventories, "
-               "whole-module container/depth/header contracts and post-grammar admission scratch-failure controls\n";
+               "whole-module container/depth/header contracts and post-grammar admission scratch-failure controls; "
+               "resolved native identities, dependency/instance order, exact nominal authority, overload masks, "
+               "independent instance forests and retained definition-source spans\n";
     } catch (const std::exception &error) {
         std::cerr << "FAIL " << error.what() << '\n';
         return 1;

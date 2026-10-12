@@ -24,6 +24,18 @@ namespace aurora {
 // Aurora owns module syntax and unresolved declaration admission; the adapter
 // checks representation safety and renders the selected diagnostics.
 Program parseHostedProgram(const std::vector<Token> &tokens);
+// Private graph-loader handoff. The caller owns an already constructed arena;
+// success returns only source-backed header metadata and its untouched forest.
+class ParsedModuleSyntax {
+public:
+    std::int64_t root = -1;
+    std::string moduleName;
+    bool interfaceUnit = false;
+    std::vector<Token> imports;
+    std::vector<std::int64_t> importSyntax;
+};
+ParsedModuleSyntax parseHostedModuleSyntax(const std::vector<Token> &tokens, void *arena);
+
 // Unsupported is an invalid result; no entry has a host grammar fallback.
 ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens,
                                     std::size_t &position,

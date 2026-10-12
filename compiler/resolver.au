@@ -1,0 +1,675 @@
+export module aurora.compiler.resolver;
+import aurora.compiler.resolution_kinds;
+import aurora.compiler.resolution_arena;
+import aurora.compiler.syntax_arena;
+
+export namespace compiler_resolver {
+    // Metadata indices are identities, never addresses. These private index
+    // domains are separate from the arena's source/atom/prefix indices.
+    // Symbol words: unused,module,scope,qualified,source,syntax,exported,
+    // receiver,parameters,instance,overload,signature,public-types,visit,next.
+    // Type words: unused,nominal,element,length,unresolved-source.
+    // Instance words: prototype,count,arg0,arg1,nominal-depth,symbol.
+    // Signature words: owner,type,parameter-syntax,next.
+    // Public edge words: type,next. Authority words: function,nominal,next.
+    // Output link words: symbol,next. Category list words: first,last,count.
+    // The typed enum fields are the sole host-visible kind authority.
+    class BindContext {
+        i64 defining_module;
+        i64 lexical_scope;
+        i64 callable_symbol;
+        i64 receiver_symbol;
+        bool receiver_initializer;
+        bool allow_expansion;
+    public:
+        BindContext(i64 module, i64 scope, i64 function, i64 receiver, bool initializer, bool expand)
+            : defining_module(module), lexical_scope(scope), callable_symbol(function), receiver_symbol(receiver),
+              receiver_initializer(initializer), allow_expansion(expand) {
+        }
+        auto module() const -> i64 { return defining_module; }
+        auto scope() const -> i64 { return lexical_scope; }
+        auto function() const -> i64 { return callable_symbol; }
+        auto receiver() const -> i64 { return receiver_symbol; }
+        auto initializer() const -> bool { return receiver_initializer; }
+        auto expand() const -> bool { return allow_expansion; }
+    };
+
+    auto mw(Session& session, i64 row, i64 word) -> i64 {
+        const MetaRow value = session.meta(row);
+        return value.word(word);
+    }
+    auto sw(Session& session, i64 row, i64 word) -> i64 {
+        const SyntaxRow value = session.syntax(row);
+        return value.word(word);
+    }
+    auto rw(Session& session, i64 row, i64 word) -> i64 {
+        const ResolvedRow value = session.resolved(row);
+        return value.word(word);
+    }
+    auto set_mw(Session& session, i64 row, i64 word, i64 value) -> i64 {
+        MetaRow record = session.meta(row);
+        record.set_word(word, value);
+        session.set_meta(row, record);
+        return value;
+    }
+    auto set_sw(Session& session, i64 row, i64 word, i64 value) -> i64 {
+        SyntaxRow record = session.syntax(row);
+        record.set_word(word, value);
+        session.set_syntax(row, record);
+        return value;
+    }
+    auto set_rw(Session& session, i64 row, i64 word, i64 value) -> i64 {
+        ResolvedRow record = session.resolved(row);
+        record.set_word(word, value);
+        session.set_resolved(row, record);
+        return value;
+    }
+    auto reject(Session& session, SemanticError code, i64 node, i64 first, i64 second) -> i64 {
+        session.reject(code, node, first, second);
+        return -1;
+    }
+    auto declaration_kind(Session& session, i64 symbol) -> DeclarationKind {
+        const MetaRow value = session.meta(symbol);
+        return value.declaration_kind();
+    }
+    auto type_kind(Session& session, i64 type) -> ResolvedTypeKind {
+        const MetaRow value = session.meta(type);
+        return value.type_kind();
+    }
+    auto scalar_kind(ResolvedTypeKind kind) -> bool {
+        return kind == ResolvedTypeKind::i64_value || kind == ResolvedTypeKind::u64_value
+            || kind == ResolvedTypeKind::u8_value || kind == ResolvedTypeKind::bool_value;
+    }
+    auto nominal_kind(ResolvedTypeKind kind) -> bool {
+        return kind == ResolvedTypeKind::class_value || kind == ResolvedTypeKind::enum_value;
+    }
+    auto scalar_value_kind(ResolvedTypeKind kind) -> bool {
+        return scalar_kind(kind) || kind == ResolvedTypeKind::enum_value;
+    }
+    auto service_kind(ResolvedTypeKind kind) -> bool {
+        return kind == ResolvedTypeKind::console_session || kind == ResolvedTypeKind::display_session
+            || kind == ResolvedTypeKind::event_session;
+    }
+    auto resource_kind(ResolvedTypeKind kind) -> bool {
+        return kind == ResolvedTypeKind::byte_region || kind == ResolvedTypeKind::owned_bytes
+            || kind == ResolvedTypeKind::owned_values;
+    }
+    // These numbers are index ordering only. They are never exported as type
+    // kinds, native signature components, or a foreign enum representation.
+    auto type_rank(ResolvedTypeKind kind) -> i64 {
+        if (kind == ResolvedTypeKind::i64_value) { return 1; }
+        if (kind == ResolvedTypeKind::u64_value) { return 2; }
+        if (kind == ResolvedTypeKind::u8_value) { return 3; }
+        if (kind == ResolvedTypeKind::bool_value) { return 4; }
+        if (kind == ResolvedTypeKind::owner) { return 5; }
+        if (kind == ResolvedTypeKind::reference) { return 6; }
+        if (kind == ResolvedTypeKind::mutable_reference) { return 7; }
+        if (kind == ResolvedTypeKind::class_value) { return 8; }
+        if (kind == ResolvedTypeKind::enum_value) { return 9; }
+        if (kind == ResolvedTypeKind::array_value) { return 10; }
+        if (kind == ResolvedTypeKind::parameter) { return 11; }
+        if (kind == ResolvedTypeKind::byte_span) { return 12; }
+        if (kind == ResolvedTypeKind::byte_region) { return 13; }
+        if (kind == ResolvedTypeKind::owned_bytes) { return 14; }
+        if (kind == ResolvedTypeKind::console_session) { return 15; }
+        if (kind == ResolvedTypeKind::display_session) { return 16; }
+        if (kind == ResolvedTypeKind::event_session) { return 17; }
+        if (kind == ResolvedTypeKind::owned_values) { return 18; }
+        return 0;
+    }
+    auto category(DeclarationKind kind) -> i64 {
+        if (kind == DeclarationKind::enumeration) { return 1; }
+        if (kind == DeclarationKind::class_value) { return 2; }
+        if (kind == DeclarationKind::class_template) { return 3; }
+        if (kind == DeclarationKind::function_template) { return 4; }
+        if (kind == DeclarationKind::function) { return 5; }
+        if (kind == DeclarationKind::method) { return 6; }
+        if (kind == DeclarationKind::constructor) { return 7; }
+        return 0;
+    }
+    auto state(Session& session) -> i64 {
+        i64 found = session.index(42, 0, 0, 0, 0);
+        if (found < 0) {
+            MetaRow value = MetaRow(MetaTag::context);
+            i64 at = 0;
+            while (at < 15) {
+                value.set_word(at, 0);
+                at = at + 1;
+            }
+            value.set_word(5, session.syntax_count());
+            found = session.append_meta(value);
+            session.index_insert(42, 0, 0, 0, 0, found);
+        }
+        return found;
+    }
+    auto source_name(Session& session, i64 first, i64 last) -> i64 {
+        if (first < 0) { return -1; }
+        if (last < 0 || last == first) { return session.source_name(first); }
+        const i64 reference = session.name_range(first, last);
+        return session.source_name(reference);
+    }
+    auto leaf_is(Session& session, i64 name, builtin::span<const u8> text) -> bool {
+        if (name < 0) { return false; }
+        const i64 atom = session.name_atom(name);
+        const i64 reference = session.atom_source(atom);
+        return session.source_equal(reference, text);
+    }
+    auto plain_is(Session& session, i64 name, builtin::span<const u8> text) -> bool {
+        return name >= 0 && session.prefix_parent(name) < 0 && leaf_is(session, name, text);
+    }
+    auto builtin_name(Session& session, i64 name) -> bool {
+        if (name < 0) { return false; }
+        const i64 parent = session.prefix_parent(name);
+        return plain_is(session, parent, "builtin");
+    }
+    auto source_identifier(Session& session, i64 name, i64 node) -> bool {
+        i64 current = name;
+        while (current >= 0 && session.good()) {
+            const i64 atom = session.name_atom(current);
+            const i64 reference = session.atom_source(atom);
+            if (session.source_prefix(reference, "__au_")) {
+                reject(session, SemanticError::reserved_prefix, node, reference, -1);
+            } else if (session.source_equal(reference, "builtin")) {
+                reject(session, SemanticError::reserved_builtin, node, reference, -1);
+            }
+            current = session.prefix_parent(current);
+        }
+        return session.good();
+    }
+    auto intrinsic(Session& session, i64 name) -> bool {
+        if (name < 0 || session.prefix_parent(name) >= 0) { return false; }
+        return leaf_is(session, name, "i64") || leaf_is(session, name, "u64") || leaf_is(session, name, "u8")
+            || leaf_is(session, name, "own") || leaf_is(session, name, "move") || leaf_is(session, name, "borrow")
+            || leaf_is(session, name, "borrow_mut") || leaf_is(session, name, "borrow_bytes")
+            || leaf_is(session, name, "read") || leaf_is(session, name, "write")
+            || leaf_is(session, name, "size_of") || leaf_is(session, name, "type_id")
+            || leaf_is(session, name, "field_count") || leaf_is(session, name, "len")
+            || leaf_is(session, name, "reflect_size") || leaf_is(session, name, "reflect_field_count")
+            || leaf_is(session, name, "aurora_reflect_size") || leaf_is(session, name, "aurora_reflect_field_count");
+    }
+    auto concrete_type(Session& session, ResolvedTypeKind kind, i64 nominal, i64 element, i64 length) -> i64 {
+        const i64 rank = type_rank(kind);
+        i64 found = session.index(34, rank, nominal, element, length);
+        if (found >= 0) { return found; }
+        MetaRow value = MetaRow(MetaTag::concrete_type);
+        value.set_type_kind(kind);
+        value.set_word(1, nominal);
+        value.set_word(2, element);
+        value.set_word(3, length);
+        found = session.append_meta(value);
+        session.index_insert(34, rank, nominal, element, length, found);
+        return found;
+    }
+    auto scalar_type(Session& session, ResolvedTypeKind kind) -> i64 {
+        return concrete_type(session, kind, -1, -1, 0);
+    }
+    auto category_list(Session& session, i64 module, DeclarationKind kind) -> i64 {
+        const i64 tag = category(kind);
+        i64 found = session.index(33, module, tag, 0, 0);
+        if (found < 0) {
+            MetaRow list = MetaRow(MetaTag::link);
+            list.set_word(2, 0);
+            found = session.append_meta(list);
+            session.index_insert(33, module, tag, 0, 0, found);
+        }
+        return found;
+    }
+    auto first_symbol(Session& session, i64 module, DeclarationKind kind) -> i64 {
+        const i64 list = category_list(session, module, kind);
+        return mw(session, list, 0);
+    }
+    auto append_symbol(Session& session, i64 symbol) -> i64 {
+        const DeclarationKind kind = declaration_kind(session, symbol);
+        const i64 list = category_list(session, mw(session, symbol, 1), kind);
+        const i64 tail = mw(session, list, 1);
+        if (tail >= 0) { set_mw(session, tail, 14, symbol); }
+        else { set_mw(session, list, 0, symbol); }
+        set_mw(session, list, 1, symbol);
+        set_mw(session, list, 2, mw(session, list, 2) + 1);
+        return symbol;
+    }
+    auto module_at_order(Session& session, i64 order) -> i64 {
+        i64 at = 0;
+        while (at < session.module_count()) {
+            if (mw(session, at, 12) == order) { return at; }
+            at = at + 1;
+        }
+        return -1;
+    }
+    auto direct_import(Session& session, i64 module, i64 target) -> bool {
+        i64 edge = session.import_head(module);
+        while (edge >= 0 && session.good()) {
+            if (mw(session, edge, 1) == target) { return true; }
+            edge = mw(session, edge, 4);
+        }
+        return false;
+    }
+    auto exported(Session& session, i64 symbol) -> bool {
+        const i64 group = mw(session, symbol, 10);
+        if (group >= 0) { return mw(session, group, 3) != 0; }
+        return mw(session, symbol, 6) != 0;
+    }
+    auto visible_name(Session& session, i64 module, i64 name, i64 node) -> i64 {
+        i64 found = session.index(32, module, name, 0, 0);
+        i64 edge = session.import_head(module);
+        while (edge >= 0 && session.good()) {
+            const i64 candidate = session.index(32, mw(session, edge, 1), name, 0, 0);
+            if (candidate >= 0 && exported(session, candidate)) {
+                if (found >= 0) { return reject(session, SemanticError::ambiguous_visible, node, name, module); }
+                found = candidate;
+            }
+            edge = mw(session, edge, 4);
+        }
+        return found;
+    }
+    auto lookup(Session& session, BindContext context, i64 name, DeclarationKind required, i64 node) -> i64 {
+        if (!source_identifier(session, name, node)) { return -1; }
+        i64 parent = context.scope();
+        bool finished = false;
+        while (!finished && session.good()) {
+            const i64 qualified = session.prefix_join(parent, name);
+            const i64 found = visible_name(session, context.module(), qualified, node);
+            if (found >= 0) {
+                if (required != DeclarationKind::invalid && declaration_kind(session, found) != required) {
+                    return reject(session, SemanticError::wrong_kind, node, qualified, -1);
+                }
+                return found;
+            }
+            if (parent < 0) { finished = true; }
+            else { parent = session.prefix_parent(parent); }
+        }
+        parent = context.scope();
+        finished = false;
+        while (!finished && session.good()) {
+            const i64 qualified = session.prefix_join(parent, name);
+            i64 edge = session.import_head(context.module());
+            while (edge >= 0 && session.good()) {
+                const i64 candidate = session.index(32, mw(session, edge, 1), qualified, 0, 0);
+                if (candidate >= 0 && !exported(session, candidate)) {
+                    if (declaration_kind(session, candidate) == DeclarationKind::function) {
+                        return reject(session, SemanticError::private_function, node, qualified, -1);
+                    }
+                    return reject(session, SemanticError::private_type, node, qualified, -1);
+                }
+                edge = mw(session, edge, 4);
+            }
+            if (parent < 0) { finished = true; }
+            else { parent = session.prefix_parent(parent); }
+        }
+        return -1;
+    }
+    auto instance_argument(Session& session, i64 symbol, i64 index) -> i64 {
+        const i64 instance = mw(session, symbol, 9);
+        if (instance < 0 || index < 0 || index >= mw(session, instance, 1)) { return -1; }
+        return mw(session, instance, 2 + index);
+    }
+    auto exact_argument(Session& session, i64 symbol, i64 type) -> bool {
+        if (symbol < 0) { return false; }
+        return instance_argument(session, symbol, 0) == type || instance_argument(session, symbol, 1) == type;
+    }
+    auto type_accessible(Session& session, i64 type, i64 module, i64 authority) -> bool {
+        const i64 base = session.work_count();
+        const i64 status = state(session);
+        const i64 generation = mw(session, status, 6) + 1;
+        set_mw(session, status, 6, generation);
+        session.append_work(WorkRow(type, 0, 0, 0, 0, 0));
+        i64 position = base;
+        bool accessible = true;
+        while (position < session.work_count() && accessible && session.good()) {
+            const WorkRow item = session.work(position);
+            position = position + 1;
+            const i64 current = item.word(0);
+            const ResolvedTypeKind kind = type_kind(session, current);
+            if (kind == ResolvedTypeKind::array_value || kind == ResolvedTypeKind::owned_values) {
+                session.append_work(WorkRow(mw(session, current, 2), 0, 0, 0, 0, 0));
+            } else if (nominal_kind(kind)) {
+                const i64 symbol = mw(session, current, 1);
+                if (symbol < 0) { accessible = false; }
+                else if (mw(session, symbol, 13) != generation) {
+                    set_mw(session, symbol, 13, generation);
+                    const MetaRow declaration = session.meta(symbol);
+                    if (declaration.native_mode() != NativeMode::sealed_builtin && !exact_argument(session, authority, current)) {
+                        if (module < 0) { accessible = mw(session, symbol, 6) != 0; }
+                        else if (mw(session, symbol, 1) != module) {
+                            accessible = mw(session, symbol, 6) != 0 && direct_import(session, module, mw(session, symbol, 1));
+                        }
+                        const i64 instance = mw(session, symbol, 9);
+                        if (instance >= 0) {
+                            i64 index = 0;
+                            while (index < mw(session, instance, 1)) {
+                                const i64 argument = mw(session, instance, 2 + index);
+                                if (argument >= 0) { session.append_work(WorkRow(argument, 0, 0, 0, 0, 0)); }
+                                index = index + 1;
+                            }
+                        }
+                        i64 edge = mw(session, symbol, 12);
+                        while (edge >= 0 && session.good()) {
+                            session.append_work(WorkRow(mw(session, edge, 0), 0, 0, 0, 0, 0));
+                            edge = mw(session, edge, 1);
+                        }
+                    }
+                }
+            }
+        }
+        session.truncate_work(base);
+        return accessible && session.good();
+    }
+    auto body_visible(Session& session, i64 type, BindContext context) -> bool {
+        const ResolvedTypeKind kind = type_kind(session, type);
+        if (context.receiver() >= 0 && mw(session, context.receiver(), 9) >= 0) {
+            if (kind == ResolvedTypeKind::class_value && mw(session, type, 1) == context.receiver()) { return true; }
+            if (exact_argument(session, context.receiver(), type)) { return true; }
+        }
+        return type_accessible(session, type, context.module(), context.function());
+    }
+    auto record_authority(Session& session, i64 type, BindContext context) -> i64 {
+        if (context.function() < 0 || mw(session, context.function(), 9) < 0
+            || !nominal_kind(type_kind(session, type)) || !body_visible(session, type, context)) { return 0; }
+        const i64 nominal = mw(session, type, 1);
+        if (session.index(37, context.function(), nominal, 0, 0) >= 0) { return 0; }
+        MetaRow edge = MetaRow(MetaTag::authority);
+        edge.set_word(0, context.function());
+        edge.set_word(1, nominal);
+        const i64 result = session.append_meta(edge);
+        session.index_insert(37, context.function(), nominal, 0, 0, result);
+        return 0;
+    }
+
+    auto push_declarations(Session& session, i64 last, i64 scope, i64 exported_scope, i64 receiver) -> i64 {
+        i64 current = last;
+        while (current >= 0 && session.good()) {
+            session.append_work(WorkRow(current, scope, exported_scope, receiver, 0, 0));
+            current = sw(session, current, 2);
+        }
+        return 0;
+    }
+    auto declaration_name(Session& session, i64 node) -> i64 {
+        const i64 reference = sw(session, node, 0);
+        return session.source_name(reference);
+    }
+    auto make_symbol(Session& session, DeclarationKind kind, i64 module, i64 scope, i64 node) -> i64 {
+        const i64 leaf = declaration_name(session, node);
+        const i64 qualified = session.prefix_join(scope, leaf);
+        const i64 reference = sw(session, node, 0);
+        MetaRow value = MetaRow(MetaTag::symbol);
+        value.set_declaration_kind(kind);
+        value.set_word(1, module);
+        value.set_word(2, scope);
+        value.set_word(3, qualified);
+        value.set_word(4, reference);
+        value.set_word(5, node);
+        value.set_word(6, 0);
+        value.set_word(13, 0);
+        const i64 symbol = session.append_meta(value);
+        return append_symbol(session, symbol);
+    }
+    auto add_namespace(Session& session, i64 module, i64 name, i64 node) -> i64 {
+        i64 at = name;
+        while (at >= 0 && session.good()) {
+            if (session.index(38, module, at, 0, 0) < 0) {
+                MetaRow value = MetaRow(MetaTag::context);
+                value.set_word(0, 2);
+                value.set_word(1, module);
+                value.set_word(2, at);
+                value.set_word(3, node);
+                const i64 row = session.append_meta(value);
+                session.index_insert(38, module, at, 0, 0, row);
+            }
+            at = session.prefix_parent(at);
+        }
+        return 0;
+    }
+    auto gather_module(Session& session, i64 module) -> i64 {
+        const i64 base = session.work_count();
+        const i64 root = mw(session, module, 10);
+        const i64 declarations = sw(session, root, 8);
+        push_declarations(session, declarations, -1, 0, -1);
+        while (session.work_count() > base && session.good()) {
+            const i64 top = session.work_count() - 1;
+            const WorkRow item = session.work(top);
+            session.truncate_work(top);
+            const i64 wrapper = item.word(0);
+            const i64 node = sw(session, wrapper, 7);
+            const SyntaxRow syntax = session.syntax(node);
+            const i64 scope = item.word(1);
+            bool is_exported = item.word(2) != 0 || sw(session, wrapper, 9) != 0;
+            i64 export_value = 0;
+            if (is_exported) { export_value = 1; }
+            if (syntax.declaration_kind() == compiler_parser::SyntaxKind::namespace_definition) {
+                const i64 relative = source_name(session, syntax.word(0), syntax.word(6));
+                const i64 full = session.prefix_join(scope, relative);
+                add_namespace(session, module, full, node);
+                push_declarations(session, syntax.word(7), full, export_value, -1);
+            } else {
+                DeclarationKind kind = DeclarationKind::function;
+                const i64 parameters = sw(session, wrapper, 8);
+                if (syntax.declaration_kind() == compiler_parser::SyntaxKind::enum_definition) {
+                    kind = DeclarationKind::enumeration;
+                } else if (syntax.declaration_kind() == compiler_parser::SyntaxKind::class_definition) {
+                    kind = DeclarationKind::class_value;
+                    if (parameters >= 0) { kind = DeclarationKind::class_template; }
+                } else if (parameters >= 0) { kind = DeclarationKind::function_template; }
+                const i64 symbol = make_symbol(session, kind, module, scope, node);
+                set_mw(session, symbol, 6, export_value);
+                set_mw(session, symbol, 8, parameters);
+                if (kind == DeclarationKind::function) {
+                    const i64 qualified = mw(session, symbol, 3);
+                    i64 group = session.index(47, module, qualified, 0, 0);
+                    if (group < 0) {
+                        MetaRow value = MetaRow(MetaTag::overload);
+                        value.set_word(2, 0);
+                        value.set_word(3, 0);
+                        value.set_word(4, symbol);
+                        group = session.append_meta(value);
+                        session.index_insert(47, module, qualified, 0, 0, group);
+                    }
+                    MetaRow edge = MetaRow(MetaTag::link);
+                    edge.set_word(0, symbol);
+                    const i64 linked = session.append_meta(edge);
+                    const i64 last = mw(session, group, 1);
+                    if (last >= 0) { set_mw(session, last, 1, linked); }
+                    else { set_mw(session, group, 0, linked); }
+                    set_mw(session, group, 1, linked);
+                    const i64 count = mw(session, group, 2) + 1;
+                    set_mw(session, group, 2, count);
+                    if (is_exported) { set_mw(session, group, 3, 1); }
+                    set_mw(session, symbol, 10, group);
+                }
+            }
+        }
+        session.truncate_work(base);
+        return 0;
+    }
+    auto list_count(Session& session, i64 last) -> i64 {
+        i64 count = 0;
+        i64 current = last;
+        while (current >= 0 && session.good()) {
+            count = count + 1;
+            current = sw(session, current, 2);
+        }
+        return count;
+    }
+    // Only bounded parameter/case/member searches use reverse-list indexing.
+    // Arbitrarily long declaration and body lists use worklist reversal instead.
+    auto list_item(Session& session, i64 last, i64 index) -> i64 {
+        const i64 count = list_count(session, last);
+        i64 steps = count - index - 1;
+        i64 current = last;
+        while (current >= 0 && steps > 0 && session.good()) {
+            current = sw(session, current, 2);
+            steps = steps - 1;
+        }
+        if (index < 0 || index >= count) { return -1; }
+        return current;
+    }
+    auto raw_value_boundary(Session& session, i64 type, bool parameter) -> bool {
+        if (type < 0) { return false; }
+        const SyntaxRow syntax = session.syntax(type);
+        if (syntax.type_kind() == compiler_parser::TypeKind::named
+            || syntax.type_kind() == compiler_parser::TypeKind::owned_values) { return true; }
+        if (parameter && syntax.type_kind() == compiler_parser::TypeKind::byte_span) { return true; }
+        if (syntax.type_kind() == compiler_parser::TypeKind::builtin_class) { return true; }
+        if (syntax.type_kind() == compiler_parser::TypeKind::builtin_type) {
+            const i64 name = source_name(session, syntax.word(0), syntax.word(1));
+            const i64 seeded = session.index(48, name, 0, 0, 0);
+            if (seeded >= 0) {
+                const MetaRow descriptor = session.meta(seeded);
+                return resource_kind(descriptor.type_kind()) || (parameter && service_kind(descriptor.type_kind()));
+            }
+        }
+        return false;
+    }
+    auto function_boundary(Session& session, i64 node) -> bool {
+        const i64 result = sw(session, node, 5);
+        if (raw_value_boundary(session, result, false)) { return true; }
+        i64 parameter = sw(session, node, 8);
+        while (parameter >= 0 && session.good()) {
+            const i64 type = sw(session, parameter, 5);
+            if (raw_value_boundary(session, type, true)) { return true; }
+            parameter = sw(session, parameter, 2);
+        }
+        return false;
+    }
+    auto reserved_leaf(Session& session, i64 leaf, DeclarationKind kind, i64 scope) -> bool {
+        if (intrinsic(session, leaf)) { return true; }
+        if (plain_is(session, leaf, "array")) {
+            return kind != DeclarationKind::class_template || !plain_is(session, scope, "std");
+        }
+        return kind != DeclarationKind::function && (plain_is(session, leaf, "bool")
+            || plain_is(session, leaf, "ref") || plain_is(session, leaf, "mutref"));
+    }
+    auto register_symbol(Session& session, i64 symbol) -> i64 {
+        MetaRow declaration = session.meta(symbol);
+        const DeclarationKind kind = declaration.declaration_kind();
+        const i64 module = declaration.word(1);
+        const i64 scope = declaration.word(2);
+        const i64 qualified = declaration.word(3);
+        const i64 node = declaration.word(5);
+        const i64 leaf = declaration_name(session, node);
+        if (!source_identifier(session, scope, node) || !source_identifier(session, leaf, node)) { return -1; }
+        if (session.index(38, module, qualified, 0, 0) >= 0) {
+            return reject(session, SemanticError::namespace_collision, node, qualified, -1);
+        }
+        if (reserved_leaf(session, leaf, kind, scope)) {
+            if (kind == DeclarationKind::function) { return reject(session, SemanticError::reserved_function, node, -1, -1); }
+            return reject(session, SemanticError::reserved_class, node, -1, -1);
+        }
+        const i64 previous = session.index(32, module, qualified, 0, 0);
+        const i64 group = declaration.word(10);
+        bool overloaded = false;
+        if (kind == DeclarationKind::function && group >= 0) { overloaded = mw(session, group, 2) > 1; }
+        if (previous >= 0 && !(overloaded && declaration_kind(session, previous) == DeclarationKind::function)) {
+            if (kind == DeclarationKind::function) { return reject(session, SemanticError::duplicate_function, node, module, qualified); }
+            return reject(session, SemanticError::duplicate_class, node, module, qualified);
+        }
+        if (previous < 0) { session.index_insert(32, module, qualified, 0, 0, symbol); }
+        NativeMode native = NativeMode::class_value;
+        if (kind == DeclarationKind::enumeration) { native = NativeMode::enumeration; }
+        if (kind == DeclarationKind::class_template) { native = NativeMode::class_template; }
+        if (kind == DeclarationKind::function_template) { native = NativeMode::function_template; }
+        if (kind == DeclarationKind::function) {
+            if (overloaded) {
+                if (mw(session, group, 2) > 32) { return reject(session, SemanticError::overload_count, node, qualified, -1); }
+                if (mw(session, module, 14) != 0 && scope < 0 && plain_is(session, leaf, "answer")) {
+                    return reject(session, SemanticError::answer_overload, node, -1, -1);
+                }
+                i64 parameter = sw(session, node, 8);
+                while (parameter >= 0 && session.good()) {
+                    if (sw(session, parameter, 10) >= 0) { return reject(session, SemanticError::borrowed_overload, node, qualified, -1); }
+                    parameter = sw(session, parameter, 2);
+                }
+                native = NativeMode::ordinary_overload;
+            } else {
+                declaration.set_word(10, -1);
+                native = NativeMode::function;
+                if (function_boundary(session, node)) { native = NativeMode::value_function; }
+                else if (mw(session, module, 14) != 0 && scope < 0) { native = NativeMode::root_entry; }
+            }
+        }
+        declaration.set_native_mode(native);
+        session.set_meta(symbol, declaration);
+        return symbol;
+    }
+    auto register_members(Session& session, i64 symbol) -> i64 {
+        const i64 node = mw(session, symbol, 5);
+        const i64 scope = mw(session, symbol, 2);
+        const i64 module = mw(session, symbol, 1);
+        const i64 body = sw(session, node, 7);
+        i64 wrapper = body;
+        while (wrapper >= 0 && session.good()) {
+            const i64 member = sw(session, wrapper, 7);
+            const SyntaxRow syntax = session.syntax(member);
+            if (syntax.declaration_kind() == compiler_parser::SyntaxKind::field) {
+                const i64 reference = syntax.word(6);
+                const i64 name = session.source_name(reference);
+                if (session.index(46, symbol, name, 0, 0) < 0) {
+                    session.index_insert(46, symbol, name, 0, 0, member);
+                }
+            }
+            wrapper = sw(session, wrapper, 2);
+        }
+        const i64 base = session.work_count();
+        push_declarations(session, body, scope, 0, symbol);
+        while (session.work_count() > base && session.good()) {
+            const i64 top = session.work_count() - 1;
+            const WorkRow item = session.work(top);
+            session.truncate_work(top);
+            const i64 declaration = item.word(0);
+            const i64 member = sw(session, declaration, 7);
+            const SyntaxRow syntax = session.syntax(member);
+            if (syntax.declaration_kind() != compiler_parser::SyntaxKind::field) {
+                const i64 name = declaration_name(session, member);
+                const bool constructor = syntax.declaration_kind() == compiler_parser::SyntaxKind::constructor;
+                if (source_identifier(session, name, member)) {
+                    if (intrinsic(session, name) || (!constructor && plain_is(session, name, "array"))
+                        || session.index(46, symbol, name, 0, 0) >= 0) {
+                        reject(session, SemanticError::duplicate_member, member, name, -1);
+                    } else {
+                        DeclarationKind kind = DeclarationKind::method;
+                        NativeMode native = NativeMode::method;
+                        if (constructor) { kind = DeclarationKind::constructor; native = NativeMode::constructor; }
+                        const i64 method = make_symbol(session, kind, module, scope, member);
+                        MetaRow value = session.meta(method);
+                        value.set_word(7, symbol);
+                        value.set_word(6, sw(session, declaration, 9));
+                        value.set_native_mode(native);
+                        session.set_meta(method, value);
+                        session.index_insert(46, symbol, name, 0, 0, method);
+                        set_rw(session, member, 1, method);
+                    }
+                }
+            }
+        }
+        session.truncate_work(base);
+        return 0;
+    }
+    auto register_enum(Session& session, i64 symbol) -> i64 {
+        const i64 status = state(session);
+        const i64 count = mw(session, status, 2) + 1;
+        set_mw(session, status, 2, count);
+        const i64 node = mw(session, symbol, 5);
+        if (count > 64) { return reject(session, SemanticError::enum_count, node, -1, -1); }
+        const i64 cases = sw(session, node, 7);
+        const i64 size = list_count(session, cases);
+        if (size < 1 || size > 256) { return reject(session, SemanticError::enum_cases, node, -1, -1); }
+        i64 ordinal = 0;
+        while (ordinal < size && session.good()) {
+            const i64 value = list_item(session, cases, ordinal);
+            const i64 name = declaration_name(session, value);
+            if (source_identifier(session, name, value)) {
+                if (session.index(49, symbol, name, 0, 0) >= 0) {
+                    reject(session, SemanticError::duplicate_enum_case, value, name, -1);
+                } else {
+                    MetaRow record = MetaRow(MetaTag::link);
+                    record.set_word(0, value);
+                    record.set_word(1, ordinal);
+                    const i64 edge = session.append_meta(record);
+                    session.index_insert(49, symbol, name, 0, 0, edge);
+                }
+            }
+            ordinal = ordinal + 1;
+        }
+        if (session.good()) { register_symbol(session, symbol); }
+        return 0;
+    }
+}
