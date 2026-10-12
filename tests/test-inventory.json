@@ -21,9 +21,5 @@
   "Optional language-server suite, registered only with -Dlsp=true": [
     "tests/lsp-protocol.py",
     "tests/lsp-units.cpp"
-  ],
-  "Unreachable wrapper; its checks already run under Meson": [
-    "scripts/kernel-division-tests.sh",
-    "scripts/kernel-unsigned-tests.sh"
   ]
 }

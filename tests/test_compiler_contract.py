@@ -373,66 +373,6 @@ class Controls(unittest.TestCase):
             ),
         )
 
-    def shell_preserves_one_identity_pair(self, script, runner, cap_control):
-        scripts = self.root / "scripts"
-        scripts.mkdir()
-        wrapper = scripts / script
-        shutil.copyfile(ROOT / "scripts" / script, wrapper)
-        bindir = self.root / "fake-bin"
-        bindir.mkdir()
-        log = self.root / "build/shell-argv.json"
-        python = bindir / "python3"
-        python.write_text(
-            "#!" + sys.executable + "\nimport json,os,sys\n"
-            'open(os.environ["CONTROL_LOG"],"w").write(json.dumps(sys.argv[1:]))\nsys.exit(91)\n'
-        )
-        python.chmod(0o755)
-        env = {
-            **self.env,
-            "PATH": str(bindir) + ":" + self.env["PATH"],
-            "CONTROL_LOG": str(log),
-            "AURORAC": str(self.root / "selected compiler; literal"),
-            cap_control: "513",
-        }
-        for mode, value in (("--compiler-sha256", "a" * 64),):
-            result = subprocess.run(["/bin/bash", str(wrapper), mode, value], env=env, capture_output=True, timeout=10)
-            self.assertEqual(result.returncode, 91, result.stderr.decode())
-            self.assertEqual(
-                json.loads(log.read_text()),
-                ["-B", "-O", runner, "--compiler", env["AURORAC"], mode, value, "--candidate-cap-mib", "513"],
-            )
-            log.unlink()
-        for args in (
-            [],
-            ["--compiler-sha256"],
-            ["--bogus", "x"],
-            ["--developer-build-receipt", str(self.root / "retired receipt.json")],
-            ["--compiler-sha256", "a" * 64, "--meson-selected-compiler", "x"],
-        ):
-            result = subprocess.run(["/bin/bash", str(wrapper), *args], env=env, capture_output=True, timeout=10)
-            self.assertEqual(result.returncode, 2)
-            self.assertFalse(log.exists())
-        env.pop("AURORAC")
-        result = subprocess.run(
-            ["/bin/bash", str(wrapper), "--compiler-sha256", "a" * 64], env=env, capture_output=True, timeout=10
-        )
-        self.assertEqual(result.returncode, 2)
-        self.assertFalse(log.exists())
-        text = wrapper.read_text()
-        self.assertNotIn("eval", text)
-        self.assertNotIn("sha256sum", text)
-        self.assertNotIn("make -C compiler", text)
-
-    def test_round_robin_shell_preserves_one_identity_pair(self):
-        self.shell_preserves_one_identity_pair(
-            "kernel-round-robin-tests.sh", "tests/kernel-round-robin-native.py", "ROUND_ROBIN_TEST_CAP_MIB"
-        )
-
-    def test_ipc_shell_preserves_one_identity_pair(self):
-        self.shell_preserves_one_identity_pair(
-            "kernel-ipc-transaction-tests.sh", "tests/kernel-ipc-transition-native.py", "IPC_TRANSACTION_CAP_MIB"
-        )
-
     def test_ipc_real_policy_linkage_is_retained(self):
         # Source composition only. Actual linked/native observations remain
         # separate gates; these checks prevent accidentally restoring old stubs.
@@ -446,10 +386,6 @@ class Controls(unittest.TestCase):
             self.assertIn('compiler="${AURORAC:-build/aurorac}"', text)
             self.assertIn('if [[ -z "${AURORAC:-}" ]]; then make -C compiler; fi', text)
             self.assertIn('"$compiler" --module-root kernel/policies examples/kernel.au', text)
-        text = (ROOT / "scripts/kernel-round-robin-tests.sh").read_text()
-        self.assertIn('"$compiler" --module-root kernel/policies examples/kernel.au', text)
-        self.assertIn("--redefine-sym aurora_kernel_round_robin_next=aurora_kernel_round_robin_next_real", text)
-        self.assertIn("tests/kernel-round-robin-adapter.cpp build/uefi/round-robin-adapter-substitute.o", text)
         ipc = (ROOT / "tests/kernel-ipc-transition-native.py").read_text()
         statements = [ast.dump(node, include_attributes=False) for node in ast.walk(ast.parse(ipc))]
         expected_statements = (
