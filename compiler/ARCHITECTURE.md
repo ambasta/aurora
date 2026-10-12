@@ -255,6 +255,20 @@ The verifier follows all statically reachable successors, including both sides o
 
 Given those invariants, the backend's expression-stack depth agrees with reachable execution. It aligns the machine stack at each nested call. The semantic analyzer and verifier cap local frame storage at 65536 bytes; that bound does not eliminate target-stack exhaustion from call depth or expression temporaries.
 
+## Compile speed
+
+Each frontend migration so far has cost compile time. Record it with the change
+instead of letting it compound unseen: for a compiler change, run
+`scripts/compiler-speed.py OLD_AURORAC NEW_AURORAC` on one host, at one time, and
+add a row here. The script fails if the two builds compile any input differently.
+There is no automated time budget, because host load on development machines
+varies too much for a stable threshold.
+
+| Change | Measured | CPU ratio |
+|---|---|---|
+| #162, typed lowering in Aurora | five library/example inputs 1.24-1.48x wall; `std/json.au` 125 -> 184 ms; peak RSS 22 -> 22-27 MiB; full suite +16.8% (commit message) | about 1.44x |
+| Parser and resolver migrations before #162 | not recorded per step; `std/json.au` went from about 40 ms at the expression-parser stage to 125 ms before #162, on loaded hosts | - |
+
 ## Trusted boundaries and limits
 
 The semantic/lifetime analyzer remains trusted for ownership, const, visibility, source scope and restrictions on unsupported syntax. Those policies are discharged before lowering; slot-level IR verification does not independently re-prove them. Mutating arbitrary internal C++ objects using casts or undefined host behavior is outside this interface's threat model.

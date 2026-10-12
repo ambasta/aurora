@@ -90,7 +90,9 @@ Gate: positive, rejection, adversarial, resource and ABI tests with independent
 review; no unchecked assertion, visibility bypass or resource duplication. Then
 build native assembler/linker/runtime/graphics components and self-host the
 compiler/system with differential and multi-stage reproducibility checks.
-Measure equivalent-C workloads before making performance claims. Self-hosting
+Measure equivalent-C workloads before making performance claims. Compiler speed has
+dropped with each frontend migration; record every change with
+[scripts/compiler-speed.py](../compiler/ARCHITECTURE.md#compile-speed). Self-hosting
 alone is not a compiler safety proof or a complete binutils/glibc/Mesa alternative.
 
 ## 5. Physical qualification and production readiness
