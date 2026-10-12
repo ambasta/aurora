@@ -9,6 +9,8 @@ import aurora.compiler.lowering_kinds;
 import aurora.compiler.lowering_errors;
 import aurora.compiler.resolver;
 import aurora.compiler.resolution_arena;
+import aurora.compiler.resolution_rows;
+import aurora.compiler.resolution_names;
 import aurora.compiler.resolution_kinds;
 import aurora.compiler.syntax_arena;
 import aurora.compiler.lowering_frames;
@@ -455,7 +457,8 @@ export namespace compiler_lowering {
             const i64 row = service_contract(session, at);
             if (record_signed(session, row, OperandRole::TypeId) == type) {
                 const i64 name = record_signed(session, row, OperandRole::IdentifierSourceRef);
-                if (session.intern_atom(name) == session.intern_atom(reference)) {
+                if (compiler_resolver::intern_atom(session, name) == compiler_resolver::intern_atom(session,
+                    reference)) {
                     return row;
                 }
             }

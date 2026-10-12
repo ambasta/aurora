@@ -8,6 +8,8 @@ import aurora.compiler.lowering_errors;
 import aurora.compiler.resolver;
 import aurora.compiler.resolution_kinds;
 import aurora.compiler.resolution_arena;
+import aurora.compiler.resolution_rows;
+import aurora.compiler.resolution_names;
 import aurora.compiler.syntax_arena;
 
 export namespace compiler_lowering {
@@ -357,7 +359,7 @@ export namespace compiler_lowering {
         bool is_array = pending.word(2) == 2;
         if (pending.word(2) == 0) {
             const compiler_resolver::ResolvedTypeKind kind = tk(session, type);
-            const i64 name = session.source_name(token);
+            const i64 name = compiler_resolver::source_name(session, token);
             if (session.index(90, nominal, name, 0, 0) >= 0) {
                 return fail(session, LoweringError::duplicate_class_field, token);
             }
@@ -1245,11 +1247,12 @@ export namespace compiler_lowering {
             while (at < count && session.good()) {
                 const i64 item = syntax_list_at(session, last, at);
                 const i64 source = sm(session, item, 0);
-                const i64 name = session.source_name(source);
+                const i64 name = compiler_resolver::source_name(session, source);
                 i64 before = 0;
                 while (before < at && session.good()) {
                     const i64 old = syntax_list_at(session, last, before);
-                    if (session.source_name(sm(session, old, 0)) == name) {
+                    const i64 old_source = sm(session, old, 0);
+                    if (compiler_resolver::source_name(session, old_source) == name) {
                         return fail(session, LoweringError::duplicate_enum_case, source);
                     }
                     before = before + 1;

@@ -4,7 +4,7 @@ The typed-IR milestone established behavior-preserving compiler phase boundaries
 
 ## Pipeline and ownership of checks
 
-1. `host_sources.hpp` owns the trusted Linux descriptor-relative source reader and atomic artifact writer. `modules.hpp` loads explicit-root module graphs; `resolver.au` resolves module names/exports, nominal identities and templates in defining-module contexts. MODULES.md specifies that boundary.
+1. `host_sources.hpp` owns the trusted Linux descriptor-relative source reader and atomic artifact writer. `modules.hpp` loads explicit-root module graphs; `resolver.au`, over the `resolution_*` Session modules, resolves module names/exports, nominal identities and templates in defining-module contexts. MODULES.md specifies that boundary.
 2. `types.hpp` defines source types and common tokens/errors.
 3. The hosted Aurora lexer turns bytes into tokens; `syntax.hpp` defines the untyped source AST. `parser.hpp` is a compatibility entrypoint for one complete hosted Aurora module parse; all declaration/container grammar lives in `parser.au`.
 4. `lowering_types.au`, `lowering_values.au` and the `lowering_frames`, `lowering_calls`, `lowering_expressions`, `lowering_statements` and `lowering_body` modules perform resolved layout/signature analysis, local/member resolution, exact argument-type overload selection, initialization and const/private checks, ownership moves, lexical borrow checks and conservative branch/loop joins. `lowering.au` publishes typed instructions and metadata from the same resolved Session.
@@ -153,6 +153,13 @@ the bridge selects their compiler-produced symbols and layouts directly.
 
 `resolution_arena.au` owns one flat session: source bytes, syntax, metadata,
 resolved decorations, reusable work rows and a compact typed AVL index pool.
+Session keeps only storage (including the five lowering pools and the lowering
+diagnostic), sticky failure, checked row access, source appends, byte comparisons
+and the index; tree mutation stays private. An owning class cannot nest in
+another, so the code built on those primitives lives in free functions over
+`Session&`: `resolution_names.au` interns names, atoms and prefixes, orders
+modules and binds imports, and `resolution_ingest.au` copies parsed modules in.
+The copied row classes are in `resolution_rows.au`.
 The ten-i64 index rows keep private node IDs separate from heterogeneous payload
 IDs; metadata retains its original append order. The sixth owner is created by a
 region-backed field factory, and generated facts govern its layout and transfers.

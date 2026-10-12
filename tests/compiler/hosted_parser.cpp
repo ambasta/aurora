@@ -4516,17 +4516,20 @@ void loweringImplementationSources(const std::vector<aurora::Token> &tokens,
 }
 
 void resolvedCompilerSources(char **paths) {
-    context = "all twenty real compiler modules through production typed lowering";
-    const std::array<std::size_t, 20> arguments{0,  1,  2,  15, 19, 20, 21, 16, 17, 22,
-                                                23, 24, 25, 28, 29, 30, 31, 26, 27, 18};
-    const std::array<std::string, 20> modules{"lexer",
+    context = "all twenty-three real compiler modules through production typed lowering";
+    const std::array<std::size_t, 23> arguments{0,  1,  2,  15, 19, 20, 21, 32, 16, 33, 34, 17,
+                                                22, 23, 24, 25, 28, 29, 30, 31, 26, 27, 18};
+    const std::array<std::string, 23> modules{"lexer",
                                               "syntax_arena",
                                               "parser",
                                               "resolution_kinds",
                                               "lowering_kinds",
                                               "lowering_errors",
                                               "lowering_storage",
+                                              "resolution_rows",
                                               "resolution_arena",
+                                              "resolution_names",
+                                              "resolution_ingest",
                                               "resolver",
                                               "lowering_common",
                                               "lowering_configuration",
@@ -4539,7 +4542,7 @@ void resolvedCompilerSources(char **paths) {
                                               "lowering_body",
                                               "lowering",
                                               "frontend"};
-    const std::array<std::vector<std::string>, 20> classNames{{
+    const std::array<std::vector<std::string>, 23> classNames{{
         {"Cursor", "Lexeme"},
         {"ParseFrame", "AstNode", "ChildEdge", "TypeSyntax", "SyntaxNode", "AstArena"},
         {"AdmissionConfig",
@@ -4556,7 +4559,10 @@ void resolvedCompilerSources(char **paths) {
         {},
         {"LoweringResult"},
         {"OutputRow", "OperandRow", "SnapshotRow", "LocalRow", "ArgumentLane", "ContinuationRow"},
-        {"SyntaxRow", "MetaRow", "IndexRow", "ResolvedRow", "WorkRow", "SessionStatus", "Session"},
+        {"SyntaxRow", "MetaRow", "IndexRow", "ResolvedRow", "WorkRow", "SessionStatus"},
+        {"Session"},
+        {},
+        {},
         {"BindContext", "Arguments"},
         {},
         {"LoweringConfig", "ScalarSeed", "ServiceParameters", "ServiceSeed"},
@@ -4571,8 +4577,8 @@ void resolvedCompilerSources(char **paths) {
         {},
     }};
     // Frontend's direct imports give this DFS postorder, independent of file argv.
-    std::array<aurora::Program, 20> syntax;
-    std::array<aurora::HostedModule, 20> headers;
+    std::array<aurora::Program, 23> syntax;
+    std::array<aurora::HostedModule, 23> headers;
     const auto resolved = [&] {
         aurora::HostedResolution resolution;
         for (std::size_t index = 0; index < modules.size(); ++index) {
@@ -4587,8 +4593,8 @@ void resolvedCompilerSources(char **paths) {
                 bootstrapDeclarationTypes(tokens, syntax[index], index - 1);
                 loweringSchemaSources(tokens, syntax[index], index - 4);
             }
-            if (index >= 9 && index <= 18)
-                loweringImplementationSources(tokens, syntax[index], index - 9);
+            if (index >= 12 && index <= 21)
+                loweringImplementationSources(tokens, syntax[index], index - 12);
             headers[index] = resolution.add(source);
             require(headers[index].moduleName == "aurora.compiler." + modules[index] && headers[index].interfaceUnit &&
                         syntax[index].classes.size() == classNames[index].size(),
@@ -6515,7 +6521,7 @@ void rawAggregates() {
 int main(int argc, char **argv) {
     try {
         context = "fixture arguments";
-        require(argc == 33, "expected twenty compiler, five aggregate and seven typed consumer source paths");
+        require(argc == 36, "expected twenty-three compiler, five aggregate and seven typed consumer source paths");
         grammarExpectations();
         diagnosticExpectations();
         // Table rows cover ordinary semicolon inputs. Keep distinct trivia,
@@ -6686,7 +6692,7 @@ int main(int argc, char **argv) {
                "typed native identities, dependency/instance order, exact nominal reflection views, selected "
                "overloads, "
                "independent concrete layouts and retained lint/template-error source spans; "
-               "twenty-module compiler graph, fifteen typed classes/14 enums/513 cases, all implementation "
+               "twenty-three-module compiler graph, fifteen typed classes/14 enums/513 cases, all implementation "
                "declaration boundaries, generated typed-row extents and eleven-owner Session failure/release "
                "prefixes\n";
     } catch (const std::exception &error) {

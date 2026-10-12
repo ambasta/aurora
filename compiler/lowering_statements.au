@@ -9,6 +9,7 @@ import aurora.compiler.lowering_kinds;
 import aurora.compiler.lowering_errors;
 import aurora.compiler.resolver;
 import aurora.compiler.resolution_arena;
+import aurora.compiler.resolution_rows;
 import aurora.compiler.resolution_kinds;
 import aurora.compiler.syntax_arena;
 import aurora.compiler.lowering_frames;

@@ -19,7 +19,8 @@ bootstrap_compiler = find_program(bootstrap_compiler_path, native: true)
 bootstrap_depend_files = files(bootstrap_compiler_path)
 frontend_inputs = files('compiler/lexer.au', 'compiler/syntax_arena.au', 'compiler/parser.au',
                         'compiler/resolution_kinds.au', 'compiler/lowering_errors.au', 'compiler/lowering_kinds.au',
-                        'compiler/lowering_storage.au', 'compiler/resolution_arena.au', 'compiler/resolver.au',
+                        'compiler/lowering_storage.au', 'compiler/resolution_rows.au', 'compiler/resolution_arena.au',
+                        'compiler/resolution_names.au', 'compiler/resolution_ingest.au', 'compiler/resolver.au',
                         'compiler/frontend.au', 'compiler/lowering_common.au', 'compiler/lowering_configuration.au',
                         'compiler/lowering_types.au', 'compiler/lowering_values.au', 'compiler/lowering_frames.au',
                         'compiler/lowering_calls.au', 'compiler/lowering_expressions.au',
