@@ -4058,16 +4058,12 @@ void rawResolutionOwnership() {
                   offsetof(Index, key2) == 24 && offsetof(Index, key3) == 32 && offsetof(Index, payload) == 40 &&
                   offsetof(Index, left) == 48 && offsetof(Index, right) == 56 && offsetof(Index, parent) == 64 &&
                   offsetof(Index, height) == 72);
-    static_assert(std::is_same_v<decltype(Index::domain), std::int64_t> &&
-                  std::is_same_v<decltype(Index::key0), std::int64_t> &&
-                  std::is_same_v<decltype(Index::key1), std::int64_t> &&
-                  std::is_same_v<decltype(Index::key2), std::int64_t> &&
-                  std::is_same_v<decltype(Index::key3), std::int64_t> &&
-                  std::is_same_v<decltype(Index::payload), std::int64_t> &&
-                  std::is_same_v<decltype(Index::left), std::int64_t> &&
-                  std::is_same_v<decltype(Index::right), std::int64_t> &&
-                  std::is_same_v<decltype(Index::parent), std::int64_t> &&
-                  std::is_same_v<decltype(Index::height), std::int64_t>);
+    static_assert(
+        std::is_same_v<decltype(Index::domain), std::int64_t> && std::is_same_v<decltype(Index::key0), std::int64_t> &&
+        std::is_same_v<decltype(Index::key1), std::int64_t> && std::is_same_v<decltype(Index::key2), std::int64_t> &&
+        std::is_same_v<decltype(Index::key3), std::int64_t> && std::is_same_v<decltype(Index::payload), std::int64_t> &&
+        std::is_same_v<decltype(Index::left), std::int64_t> && std::is_same_v<decltype(Index::right), std::int64_t> &&
+        std::is_same_v<decltype(Index::parent), std::int64_t> && std::is_same_v<decltype(Index::height), std::int64_t>);
     context = "resolved transfer allocation prefixes and generated cleanup records";
     std::string source = "export module raw;";
     for (std::size_t index = 0; index < 32; ++index)
@@ -4081,11 +4077,11 @@ void rawResolutionOwnership() {
         const auto emptyOwner = initialBytes[0];
         require(allocations.attempted == 6 && allocations.successful == 6 &&
                     initialBytes == std::array<std::size_t, 6>{emptyOwner,
-                                                             emptyOwner,
-                                                             emptyOwner + 64 * sizeof(Wire::MetaRow),
-                                                             emptyOwner,
-                                                             emptyOwner,
-                                                             emptyOwner} &&
+                                                               emptyOwner,
+                                                               emptyOwner + 64 * sizeof(Wire::MetaRow),
+                                                               emptyOwner,
+                                                               emptyOwner,
+                                                               emptyOwner} &&
                     resolution.status().storage == Wire::StorageStatus::none,
                 "Session creation did not retain the five-owner order and sixth empty index owner");
         require(resolution.ingest(source) && resolution.transferred && allocations.observed > 0 &&

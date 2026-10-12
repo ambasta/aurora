@@ -396,9 +396,8 @@ export namespace compiler_resolver {
         i64 parent;
         i64 height;
     public:
-        IndexRow(i64 kind, i64 first, i64 second, i64 third, i64 fourth, i64 value)
-            : domain(kind), key0(first), key1(second), key2(third), key3(fourth), payload(value),
-              left(-1), right(-1), parent(-1), height(1) {
+        IndexRow(i64 kind, i64 first, i64 second, i64 third, i64 fourth, i64 value) : domain(kind), key0(first),
+            key1(second), key2(third), key3(fourth), payload(value), left(-1), right(-1), parent(-1), height(1) {
         }
         auto key_domain() const -> i64 {
             return domain;
@@ -795,9 +794,10 @@ export namespace compiler_resolver {
         Session(builtin::ByteRegion region, builtin::OwnedBytes bytes, builtin::OwnedValues<SyntaxRow> syntax,
             builtin::OwnedValues<MetaRow> meta, builtin::OwnedValues<ResolvedRow> resolved,
             builtin::OwnedValues<WorkRow> work) : sources(move(bytes)), forest(move(syntax)), metadata(move(meta)),
-            resolutions(move(resolved)), scratch(move(work)), indexes(make_index_pool(region)), source_used(0), graph_source_used(0), syntax_used(0),
-            meta_used(64), resolved_used(0), work_used(0), index_used(0), modules(0), index_root(-1), failure(StorageStatus::none),
-            diagnostic(SemanticError::none), diagnostic_node(-1), diagnostic_first(-1), diagnostic_second(-1) {
+            resolutions(move(resolved)), scratch(move(work)), indexes(make_index_pool(region)), source_used(0),
+            graph_source_used(0), syntax_used(0), meta_used(64), resolved_used(0), work_used(0), index_used(0),
+            modules(0), index_root(-1), failure(StorageStatus::none), diagnostic(SemanticError::none),
+            diagnostic_node(-1), diagnostic_first(-1), diagnostic_second(-1) {
         }
         // create() checks every owner before publication; every failed resize latches failure.
         // New owner mutation or construction paths must preserve this invariant.
