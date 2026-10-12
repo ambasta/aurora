@@ -573,6 +573,19 @@ export namespace compiler_resolver {
         WorkRow(i64 a0, i64 a1, i64 a2, i64 a3, i64 a4, i64 a5) : value0(a0), value1(a1), value2(a2), value3(a3),
             value4(a4), value5(a5) {
         }
+        // Source requests compare ordinal, residual half, row, then field.
+        auto before_request(i64 ordinal, i64 half, i64 row, i64 slot) const -> bool {
+            if (value0 != ordinal) {
+                return value0 < ordinal;
+            }
+            if (value3 != half) {
+                return value3 < half;
+            }
+            if (value1 != row) {
+                return value1 < row;
+            }
+            return value2 < slot;
+        }
         auto word(i64 slot) const -> i64 {
             if (slot == 0) {
                 return value0;
@@ -2169,16 +2182,7 @@ namespace compiler_resolver {
     auto request_less(Session& session, i64 first, i64 second) -> bool {
         const WorkRow left = session.work(first);
         const WorkRow right = session.work(second);
-        if (left.word(0) != right.word(0)) {
-            return left.word(0) < right.word(0);
-        }
-        if (left.word(3) != right.word(3)) {
-            return left.word(3) < right.word(3);
-        }
-        if (left.word(1) != right.word(1)) {
-            return left.word(1) < right.word(1);
-        }
-        return left.word(2) < right.word(2);
+        return left.before_request(right.word(0), right.word(3), right.word(1), right.word(2));
     }
     auto swap_requests(Session& session, i64 first, i64 second) -> bool {
         const WorkRow left = session.work(first);
@@ -2186,31 +2190,40 @@ namespace compiler_resolver {
         return session.set_work(first, right) && session.set_work(second, left);
     }
     auto sift_requests(Session& session, i64 initial, i64 end) -> bool {
+        if (end <= 1 || initial > (end - 2) / 2) {
+            return session.good();
+        }
+        // Keep one independent snapshot while larger children fill its hole.
+        const WorkRow held = session.work(initial);
         i64 root = initial;
         bool finished = false;
         while (!finished && session.good()) {
-            if (end <= 1 || root > (end - 2) / 2) {
+            if (root > (end - 2) / 2) {
                 finished = true;
             } else {
                 const i64 left = root * 2 + 1;
-                i64 largest = root;
-                if (request_less(session, largest, left)) {
-                    largest = left;
-                }
-                if (left + 1 < end && request_less(session, largest, left + 1)) {
+                i64 largest = left;
+                if (left + 1 < end && request_less(session, left, left + 1)) {
                     largest = left + 1;
                 }
-                if (largest == root) {
+                const WorkRow selected = session.work(largest);
+                if (!session.good()) {
+                    return false;
+                }
+                if (!held.before_request(selected.word(0), selected.word(3), selected.word(1), selected.word(2))) {
                     finished = true;
                 } else {
-                    if (!swap_requests(session, root, largest)) {
+                    if (!session.set_work(root, selected)) {
                         return false;
                     }
                     root = largest;
                 }
             }
         }
-        return session.good();
+        if (root == initial) {
+            return session.good();
+        }
+        return session.good() && session.set_work(root, held);
     }
     auto sort_requests(Session& session) -> bool {
         const i64 count = session.work_count();

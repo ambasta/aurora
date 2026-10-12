@@ -160,6 +160,9 @@ resolved decorations, reusable work rows and a compact typed AVL index pool.
 The ten-i64 index rows keep private node IDs separate from heterogeneous payload
 IDs; metadata retains its original append order. The sixth owner is created by a
 region-backed field factory, and generated facts govern its layout and transfers.
+Source requests use a held-root heap sift: larger children move upward and the
+original copied row fills the final hole. The exact source-coordinate ordering
+and sticky failure cleanup remain unchanged.
 Host projection reads metadata, not the index pool. Loading transfers each parsed arena
 once, preserving immutable host snapshots for diagnostics. Aurora registers module
 and nominal identities, checks direct-import/export visibility, interns and
