@@ -20,6 +20,16 @@ aurora_hosted_parser_parse:
     jmp __aurora_frontend_parser_parse
 .size aurora_hosted_parser_parse, .-aurora_hosted_parser_parse
 
+.globl aurora_hosted_parser_admit
+.hidden aurora_hosted_parser_admit
+.type aurora_hosted_parser_admit, @function
+aurora_hosted_parser_admit:
+    movq %rdi, %r10
+    movq %rsi, %r11
+    movq %rdx, %rax
+    jmp __aurora_frontend_parser_admit
+.size aurora_hosted_parser_admit, .-aurora_hosted_parser_admit
+
 .globl aurora_hosted_parser_count
 .hidden aurora_hosted_parser_count
 .type aurora_hosted_parser_count, @function

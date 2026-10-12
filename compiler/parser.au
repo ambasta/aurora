@@ -74,6 +74,84 @@ export namespace compiler_parser {
         class_template_shadow,
         invalid
     };
+    // Post-grammar declaration admission shares the parsed arena. The host
+    // supplies its existing limits/service-set policy through this copied input.
+    enum class AdmissionStatus {
+        success,
+        allocation_failure,
+        function_shadow,
+        typed_constructor,
+        borrowed_parameter,
+        const_parameter,
+        function_parameter,
+        method_parameter,
+        function_result,
+        method_result,
+        public_array,
+        array_capacity,
+        public_owner,
+        templated_owner,
+        unsupported_field,
+        missing_function,
+        invalid
+    };
+    class AdmissionConfig {
+        i64 scalar_array_limit;
+        i64 byte_array_limit;
+        i64 service_groups;
+        i64 console_mask;
+        i64 display_mask;
+        i64 event_mask;
+    public:
+        AdmissionConfig(i64 scalar_limit, i64 byte_limit, i64 groups, i64 console, i64 display,
+            i64 event) : scalar_array_limit(scalar_limit), byte_array_limit(byte_limit), service_groups(groups),
+            console_mask(console), display_mask(display), event_mask(event) {
+        }
+        auto array_limit(bool bytes) const -> i64 {
+            if (bytes) {
+                return byte_array_limit;
+            }
+            return scalar_array_limit;
+        }
+        auto groups() const -> i64 {
+            return service_groups;
+        }
+        auto service_mask(i64 service) const -> i64 {
+            if (service == 0) {
+                return console_mask;
+            }
+            if (service == 1) {
+                return display_mask;
+            }
+            return event_mask;
+        }
+    };
+    class AdmissionResult {
+        AdmissionStatus result;
+        i64 token_index;
+        i64 end_token;
+        i64 type_node;
+        i64 detail;
+    public:
+        AdmissionResult(AdmissionStatus status, i64 token, i64 end, i64 type, i64 value) : result(status),
+            token_index(token), end_token(end), type_node(type), detail(value) {
+        }
+        auto status() const -> AdmissionStatus {
+            return result;
+        }
+        auto token() const -> i64 {
+            return token_index;
+        }
+        auto end() const -> i64 {
+            return end_token;
+        }
+        auto type() const -> i64 {
+            return type_node;
+        }
+        auto value() const -> i64 {
+            return detail;
+        }
+    };
     enum class Stop {
         semicolon,
         close_parenthesis,
@@ -102,6 +180,12 @@ export namespace compiler_parser {
     public:
         TypeContext() : first_begin(0), first_end(0), second_begin(0), second_end(0), capacity_begin(0),
             capacity_end(0), template_mode(0) {
+        }
+        auto update(TypeContext next) -> i64 {
+            bind_parameter(0, next.begin(0), next.end(0));
+            bind_parameter(1, next.begin(1), next.end(1));
+            bind_parameter(2, next.begin(2), next.end(2));
+            return set_mode(next.mode());
         }
         auto begin(i64 index) const -> i64 {
             if (index == 0) {
@@ -240,14 +324,10 @@ namespace compiler_parser {
             return root_type;
         }
         auto token() const -> ParseToken {
-            // Rebuild the copied field through its scalar accessors, retaining a split closer.
-            const i64 half = next_token.half();
-            ParseToken next = ParseToken(next_token.kind(), next_token.first() - half, next_token.last(),
-                next_token.row(), next_token.start(), next_token.index());
-            if (half == 1) {
-                next.split();
-            }
-            return next;
+            // Typed copied-field projection preserves all fields, including a
+            // split closer. Direct nested-field return is not a language feature.
+            const ParseToken value = next_token;
+            return value;
         }
     };
     auto read_token(builtin::span<const u8> source, compiler_lexer::Cursor cursor, i64 ordinal) -> ParseToken {
@@ -2279,7 +2359,7 @@ namespace compiler_parser {
     }
     // Parameters and initializer lists are flat reverse-linked syntax lists.
     // Admission is deliberately deferred until the complete callable grammar
-    // succeeds; no service or resolved ownership policy lives in this parser.
+    // succeeds; no service or resolved ownership policy lives in these grammar routines.
     auto callable_parameters(AstArena& arena, builtin::span<const u8> source, ParseToken begin,
         TypeContext context) -> TypeResult {
         const i64 base = arena.stack_size();
@@ -2569,15 +2649,11 @@ namespace compiler_parser {
         HeaderResult(TypeResult parsed, TypeContext context) : parsed_header(parsed), type_context(context) {
         }
         auto parsed() const -> TypeResult {
-            const ParseToken next = parsed_header.token();
-            return TypeResult(parsed_header.status(), parsed_header.root(), next);
+            const TypeResult value = parsed_header;
+            return value;
         }
         auto context() const -> TypeContext {
-            TypeContext value = TypeContext();
-            value.bind_parameter(0, type_context.begin(0), type_context.end(0));
-            value.bind_parameter(1, type_context.begin(1), type_context.end(1));
-            value.bind_parameter(2, type_context.begin(2), type_context.end(2));
-            value.set_mode(type_context.mode());
+            const TypeContext value = type_context;
             return value;
         }
     };
@@ -2944,7 +3020,579 @@ namespace compiler_parser {
     }
 }
 
+namespace compiler_parser {
+    // Admission reads only spellings absent from syntax tags. One forward cursor
+    // skips bodies without retaining tokens or replaying child-before-parent type
+    // storage as source order. Diagnostic ordinals never move this cursor back.
+    auto admission_seek(builtin::span<const u8> source, ParseToken start, i64 ordinal) -> ParseToken {
+        ParseToken token = start;
+        if (ordinal < token.index() || token.kind() == compiler_lexer::Event::invalid_cursor) {
+            return ParseToken(compiler_lexer::Event::invalid_cursor, 0, 0, 1, 0, 0);
+        }
+        while (token.index() < ordinal) {
+            if (token.kind() == compiler_lexer::Event::end_of_input) {
+                return ParseToken(compiler_lexer::Event::invalid_cursor, 0, 0, 1, 0, 0);
+            }
+            const ParseToken next = advance(source, token);
+            token.update(next);
+        }
+        return token;
+    }
+    auto admission_result(AdmissionStatus status) -> AdmissionResult {
+        return AdmissionResult(status, -1, -1, -1, 0);
+    }
+    auto admission_at(AdmissionStatus status, i64 ordinal) -> AdmissionResult {
+        return AdmissionResult(status, ordinal, ordinal + 1, -1, 0);
+    }
+    auto admission_failure(const AstArena& arena) -> AdmissionStatus {
+        if (arena.failure() == ArenaFailure::allocation) {
+            return AdmissionStatus::allocation_failure;
+        }
+        return AdmissionStatus::invalid;
+    }
+    class AdmissionProgress {
+        AdmissionResult result;
+        ParseToken next_token;
+    public:
+        AdmissionProgress(AdmissionResult value, ParseToken next) : result(value), next_token(next) {
+        }
+        auto outcome() const -> AdmissionResult {
+            const AdmissionResult value = result;
+            return value;
+        }
+        auto token() const -> ParseToken {
+            const ParseToken value = next_token;
+            return value;
+        }
+    };
+    auto admission_done(AdmissionStatus status, ParseToken token) -> AdmissionProgress {
+        const AdmissionResult result = admission_result(status);
+        return AdmissionProgress(result, token);
+    }
+    auto admission_reject(AdmissionStatus status, i64 ordinal, ParseToken token) -> AdmissionProgress {
+        const AdmissionResult result = admission_at(status, ordinal);
+        return AdmissionProgress(result, token);
+    }
+    enum class AdmissionKind {
+        invalid,
+        copied,
+        class_value,
+        span,
+        region,
+        owner,
+        service,
+        unsupported
+    };
+    class AdmissionType {
+        AdmissionKind category;
+        i64 service_bit;
+        ParseToken next_token;
+    public:
+        AdmissionType(AdmissionKind kind, i64 service, ParseToken next) : category(kind), service_bit(service),
+            next_token(next) {
+        }
+        auto kind() const -> AdmissionKind {
+            return category;
+        }
+        auto service() const -> i64 {
+            return service_bit;
+        }
+        auto token() const -> ParseToken {
+            const ParseToken value = next_token;
+            return value;
+        }
+    };
+    class AdmissionScope {
+        TypeContext type_context;
+        i64 class_begin;
+        i64 class_end;
+        i64 public_access;
+    public:
+        AdmissionScope(TypeContext context, i64 begin, i64 end, i64 access) : type_context(context), class_begin(begin),
+            class_end(end), public_access(access) {
+        }
+        auto context() const -> TypeContext {
+            const TypeContext value = type_context;
+            return value;
+        }
+        auto begin() const -> i64 {
+            return class_begin;
+        }
+        auto end() const -> i64 {
+            return class_end;
+        }
+        auto access() const -> i64 {
+            return public_access;
+        }
+    };
+    auto admission_type(const AstArena& arena, builtin::span<const u8> source, ParseToken start, i64 root,
+        AdmissionConfig configuration) -> AdmissionType {
+        if (root < 0 || root >= arena.types()) {
+            return AdmissionType(AdmissionKind::invalid, 0, start);
+        }
+        const TypeSyntax type = arena.type_at(root);
+        const TypeKind kind = type.kind();
+        if (kind == TypeKind::i64_type || kind == TypeKind::u64_type || kind == TypeKind::u8_type || kind
+            == TypeKind::bool_type || kind == TypeKind::parameter) {
+            return AdmissionType(AdmissionKind::copied, 0, start);
+        }
+        // Named types remain unresolved classes. Grammar tags only the two
+        // sample classes as builtin_class; builtin result enums remain below.
+        // Resolver identity and owning-class eligibility stay outside admission.
+        if (kind == TypeKind::named || kind == TypeKind::builtin_class) {
+            return AdmissionType(AdmissionKind::class_value, 0, start);
+        }
+        if (kind == TypeKind::byte_span) {
+            return AdmissionType(AdmissionKind::span, 0, start);
+        }
+        if (kind == TypeKind::owned_values) {
+            return AdmissionType(AdmissionKind::owner, 0, start);
+        }
+        if (kind == TypeKind::array_type || kind == TypeKind::own_type || kind == TypeKind::ref_type || kind
+            == TypeKind::mutref_type) {
+            return AdmissionType(AdmissionKind::unsupported, 0, start);
+        }
+        if (kind != TypeKind::builtin_type) {
+            return AdmissionType(AdmissionKind::invalid, 0, start);
+        }
+        const ParseToken token = admission_seek(source, start, type.last());
+        if (token.kind() == compiler_lexer::Event::invalid_cursor) {
+            return AdmissionType(AdmissionKind::invalid, 0, token);
+        }
+        const array<u8, 70> names = "ByteRegion;OwnedBytes;ConsoleSession;DisplaySession;IommuEventSession;";
+        const builtin::span<const u8> words = borrow_bytes(names);
+        if (word_matches(source, token, words, 0, 10)) {
+            return AdmissionType(AdmissionKind::region, 0, token);
+        }
+        if (word_matches(source, token, words, 11, 21)) {
+            return AdmissionType(AdmissionKind::owner, 0, token);
+        }
+        if (word_matches(source, token, words, 22, 36)) {
+            return AdmissionType(AdmissionKind::service, configuration.service_mask(0), token);
+        }
+        if (word_matches(source, token, words, 37, 51)) {
+            return AdmissionType(AdmissionKind::service, configuration.service_mask(1), token);
+        }
+        if (word_matches(source, token, words, 52, 69)) {
+            return AdmissionType(AdmissionKind::service, configuration.service_mask(2), token);
+        }
+        const array<u8, 70> enums = "ConsolePutResult;ConsoleCompletion;DisplayPutResult;DisplayCompletion;";
+        const array<u8, 53> event_enums = "EventPollResult;EventAckResult;EventIntakeCompletion;";
+        const builtin::span<const u8> enum_words = borrow_bytes(enums);
+        const builtin::span<const u8> event_words = borrow_bytes(event_enums);
+        if (word_list_matches(source, token, enum_words) || word_list_matches(source, token, event_words)) {
+            return AdmissionType(AdmissionKind::copied, 0, token);
+        }
+        return AdmissionType(AdmissionKind::invalid, 0, token);
+    }
+    auto admission_copied(AdmissionKind kind) -> bool {
+        return kind == AdmissionKind::copied || kind == AdmissionKind::class_value;
+    }
+    auto admission_push(AstArena& arena, i64 tail, SyntaxKind kind, FrameState state, i64 base) -> AdmissionStatus {
+        i64 index = tail;
+        while (index != -1) {
+            if (index < 0 || index >= arena.syntax_size() || arena.stack_size() - base >= arena.syntax_size()) {
+                return AdmissionStatus::invalid;
+            }
+            const SyntaxNode node = arena.syntax_at(index);
+            if (node.kind() != kind || node.previous() < -1 || node.previous() >= index) {
+                return AdmissionStatus::invalid;
+            }
+            const ParseFrame frame = ParseFrame(state, 0, index, node.token());
+            if (!arena.push(frame)) {
+                return admission_failure(arena);
+            }
+            index = node.previous();
+        }
+        return AdmissionStatus::success;
+    }
+    auto admission_templates(const AstArena& arena, builtin::span<const u8> source, ParseToken start,
+        i64 tail) -> HeaderResult {
+        TypeContext context = TypeContext();
+        ParseToken token = start;
+        i64 first = tail;
+        i64 second = -1;
+        if (tail != -1) {
+            if (tail < 0 || tail >= arena.syntax_size()) {
+                const TypeResult result = TypeResult(ParseStatus::invalid, -1, token);
+                return HeaderResult(result, context);
+            }
+            const SyntaxNode last = arena.syntax_at(tail);
+            if (last.previous() != -1) {
+                if (last.previous() < 0 || last.previous() >= tail) {
+                    const TypeResult result = TypeResult(ParseStatus::invalid, -1, token);
+                    return HeaderResult(result, context);
+                }
+                first = last.previous();
+                second = tail;
+            }
+        }
+        i64 count = 0;
+        while (first != -1) {
+            const SyntaxNode name = arena.syntax_at(first);
+            if ((count == 0 && name.previous() != -1) || (name.kind() != SyntaxKind::template_scalar && name.kind()
+                != SyntaxKind::template_value && name.kind() != SyntaxKind::template_capacity)) {
+                const TypeResult result = TypeResult(ParseStatus::invalid, -1, token);
+                return HeaderResult(result, context);
+            }
+            const ParseToken at = admission_seek(source, token, name.token());
+            token.update(at);
+            if (token.kind() == compiler_lexer::Event::invalid_cursor) {
+                const TypeResult result = TypeResult(ParseStatus::invalid, -1, token);
+                return HeaderResult(result, context);
+            }
+            if (name.kind() == SyntaxKind::template_capacity) {
+                if (count != 1) {
+                    const TypeResult result = TypeResult(ParseStatus::invalid, -1, token);
+                    return HeaderResult(result, context);
+                }
+                context.bind_parameter(2, token.first(), token.last());
+            } else {
+                context.bind_parameter(count, token.first(), token.last());
+            }
+            context.set_mode(1);
+            first = second;
+            second = -1;
+            count = count + 1;
+        }
+        const TypeResult result = TypeResult(ParseStatus::success, -1, token);
+        return HeaderResult(result, context);
+    }
+    auto admission_callable(AstArena& arena, builtin::span<const u8> source, ParseToken start, SyntaxNode callable,
+        AdmissionScope scope, AdmissionConfig configuration) -> AdmissionProgress {
+        ParseToken token = start;
+        const SyntaxKind kind = callable.kind();
+        const bool function = kind == SyntaxKind::function;
+        const bool method = kind == SyntaxKind::method;
+        const TypeContext context = scope.context();
+        if (!function && !method && kind != SyntaxKind::constructor) {
+            return admission_done(AdmissionStatus::invalid, token);
+        }
+        if ((function && context.end(0) != 0) || method) {
+            const ParseToken name = admission_seek(source, token, callable.token());
+            token.update(name);
+            if (token.kind() == compiler_lexer::Event::invalid_cursor) {
+                return admission_done(AdmissionStatus::invalid, token);
+            }
+            if (function && parameter(source, token, context, false)) {
+                return admission_reject(AdmissionStatus::function_shadow, callable.token() + 1, token);
+            }
+            if (method && word_matches(source, token, source, scope.begin(), scope.end())) {
+                return admission_reject(AdmissionStatus::typed_constructor, callable.token() + 1, token);
+            }
+        }
+        const i64 base = arena.stack_size();
+        const AdmissionStatus pushed = admission_push(arena, callable.other(), SyntaxKind::parameter,
+            FrameState::admission_parameter, base);
+        if (pushed != AdmissionStatus::success) {
+            return admission_done(pushed, token);
+        }
+        i64 index = 0;
+        i64 first_service = 0;
+        bool first_borrowed = false;
+        while (arena.stack_size() > base) {
+            const ParseFrame frame = arena.frame();
+            arena.pop();
+            const SyntaxNode parameter_node = arena.syntax_at(frame.lhs());
+            const AdmissionType type = admission_type(arena, source, token, parameter_node.type(), configuration);
+            const ParseToken after = type.token();
+            token.update(after);
+            if (type.kind() == AdmissionKind::invalid) {
+                return admission_done(AdmissionStatus::invalid, token);
+            }
+            const TypeSyntax syntax = arena.type_at(parameter_node.type());
+            const bool borrowed = parameter_node.borrow_site() >= 0;
+            if (borrowed) {
+                const u64 group = u64(first_service) | u64(type.service());
+                const bool continuation = type.kind() == AdmissionKind::service && index == 1 && first_borrowed
+                    && first_service != 0 && first_service != type.service() && (u64(configuration.groups()) & (1u64
+                    << i64(group))) != 0u64;
+                if (!function || (index != 0 && !continuation) || context.end(0) != 0 || (type.kind()
+                    != AdmissionKind::class_value && type.kind() != AdmissionKind::service) || syntax.first() != -1) {
+                    return admission_reject(AdmissionStatus::borrowed_parameter, parameter_node.binding(), token);
+                }
+            } else {
+                if (parameter_node.mutable_binding() != 0) {
+                    return admission_reject(AdmissionStatus::const_parameter, parameter_node.binding(), token);
+                }
+            }
+            if (!admission_copied(type.kind()) && type.kind() != AdmissionKind::span && type.kind()
+                != AdmissionKind::service && (method || (type.kind() != AdmissionKind::region && type.kind()
+                != AdmissionKind::owner))) {
+                AdmissionStatus status = AdmissionStatus::function_parameter;
+                if (method) {
+                    status = AdmissionStatus::method_parameter;
+                }
+                return admission_reject(status, parameter_node.end(), token);
+            }
+            if (index == 0) {
+                first_service = type.service();
+                first_borrowed = borrowed;
+            }
+            index = index + 1;
+        }
+        if (function || method) {
+            const AdmissionType type = admission_type(arena, source, token, callable.type(), configuration);
+            const ParseToken after = type.token();
+            token.update(after);
+            if (type.kind() == AdmissionKind::invalid || callable.body() < 0 || callable.body()
+                >= arena.syntax_size()) {
+                return admission_done(AdmissionStatus::invalid, token);
+            }
+            const SyntaxNode body = arena.syntax_at(callable.body());
+            if (body.kind() != SyntaxKind::block) {
+                return admission_done(AdmissionStatus::invalid, token);
+            }
+            if (!admission_copied(type.kind()) && ((function && type.kind() != AdmissionKind::owner) || (method
+                && type.kind() != AdmissionKind::span))) {
+                AdmissionStatus status = AdmissionStatus::function_result;
+                if (method) {
+                    status = AdmissionStatus::method_result;
+                }
+                return admission_reject(status, body.token(), token);
+            }
+        }
+        return admission_done(AdmissionStatus::success, token);
+    }
+    auto admission_field(const AstArena& arena, builtin::span<const u8> source, ParseToken start, SyntaxNode field,
+        AdmissionScope scope, AdmissionConfig configuration) -> AdmissionProgress {
+        ParseToken token = start;
+        if (field.type() < 0 || field.type() >= arena.types()) {
+            return admission_done(AdmissionStatus::invalid, token);
+        }
+        const TypeSyntax syntax = arena.type_at(field.type());
+        const i64 at = field.end() - 1;
+        if (syntax.kind() == TypeKind::array_type) {
+            if (scope.access() != 0) {
+                return admission_reject(AdmissionStatus::public_array, at, token);
+            }
+            if (syntax.first() < 0 || syntax.second() < 0 || syntax.first() >= field.type() || syntax.second()
+                >= field.type()) {
+                return admission_done(AdmissionStatus::invalid, token);
+            }
+            const TypeSyntax element = arena.type_at(syntax.first());
+            const TypeSyntax capacity = arena.type_at(syntax.second());
+            if (capacity.kind() != TypeKind::length_parameter) {
+                if (capacity.kind() != TypeKind::capacity) {
+                    return admission_done(AdmissionStatus::invalid, token);
+                }
+                const ParseToken count = admission_seek(source, token, capacity.token());
+                token.update(count);
+                if (token.kind() == compiler_lexer::Event::invalid_cursor) {
+                    return admission_done(AdmissionStatus::invalid, token);
+                }
+                const i64 value = decimal_capacity(source, token, 4096);
+                const i64 limit = configuration.array_limit(element.kind() == TypeKind::u8_type);
+                if (value < 1 || value > limit) {
+                    const AdmissionResult result = AdmissionResult(AdmissionStatus::array_capacity, at, at + 1, -1,
+                        limit);
+                    return AdmissionProgress(result, token);
+                }
+            }
+        } else {
+            const AdmissionType type = admission_type(arena, source, token, field.type(), configuration);
+            const ParseToken after = type.token();
+            token.update(after);
+            if (type.kind() == AdmissionKind::invalid) {
+                return admission_done(AdmissionStatus::invalid, token);
+            }
+            if (type.kind() == AdmissionKind::owner) {
+                if (scope.access() != 0) {
+                    return admission_reject(AdmissionStatus::public_owner, at, token);
+                }
+                const TypeContext context = scope.context();
+                if (context.mode() != 0) {
+                    return admission_reject(AdmissionStatus::templated_owner, at, token);
+                }
+            } else {
+                if (!admission_copied(type.kind())) {
+                    const AdmissionResult result = AdmissionResult(AdmissionStatus::unsupported_field, syntax.token(),
+                        field.binding(), field.type(), 0);
+                    return AdmissionProgress(result, token);
+                }
+            }
+        }
+        return admission_done(AdmissionStatus::success, token);
+    }
+    auto admission_module(AstArena& arena, builtin::span<const u8> source, i64 root,
+        AdmissionConfig configuration) -> AdmissionResult {
+        if (!arena.ok()) {
+            return admission_result(AdmissionStatus::allocation_failure);
+        }
+        if (root < 0 || root != arena.syntax_size() - 1 || configuration.array_limit(false) < 1
+            || configuration.array_limit(true) < 1 || configuration.groups() < 0 || configuration.groups() > 255) {
+            return admission_result(AdmissionStatus::invalid);
+        }
+        u64 masks = 0u64;
+        i64 service = 0;
+        while (service < 3) {
+            const i64 mask = configuration.service_mask(service);
+            if ((mask != 1 && mask != 2 && mask != 4) || (masks & u64(mask)) != 0u64) {
+                return admission_result(AdmissionStatus::invalid);
+            }
+            masks = masks | u64(mask);
+            service = service + 1;
+        }
+        const SyntaxNode module_node = arena.syntax_at(root);
+        if (module_node.kind() != SyntaxKind::module_definition || module_node.body() < 0 || module_node.body()
+            >= root) {
+            return admission_result(AdmissionStatus::invalid);
+        }
+        const SyntaxNode preamble = arena.syntax_at(module_node.body());
+        if (preamble.kind() != SyntaxKind::preamble) {
+            return admission_result(AdmissionStatus::invalid);
+        }
+        bool present = preamble.body() >= 0 || preamble.mutable_binding() != 0;
+        const i64 base = arena.stack_size();
+        const AdmissionStatus pushed = admission_push(arena, module_node.other(), SyntaxKind::declaration,
+            FrameState::admission_declaration, base);
+        if (pushed != AdmissionStatus::success) {
+            return admission_result(pushed);
+        }
+        const compiler_lexer::Cursor begin = compiler_lexer::Cursor(0, 1, 0);
+        ParseToken token = read_token(source, begin, 0);
+        TypeContext context = TypeContext();
+        i64 class_begin = 0;
+        i64 class_end = 0;
+        i64 visited = 0;
+        while (arena.stack_size() > base) {
+            const ParseFrame frame = arena.frame();
+            arena.pop();
+            visited = visited + 1;
+            if (visited > arena.syntax_size()) {
+                return admission_result(AdmissionStatus::invalid);
+            }
+            if (frame.state() == FrameState::admission_class_end) {
+                class_begin = 0;
+                class_end = 0;
+                const TypeContext empty = TypeContext();
+                context.update(empty);
+            } else {
+                if (frame.state() != FrameState::admission_declaration) {
+                    return admission_result(AdmissionStatus::invalid);
+                }
+                const SyntaxNode wrapper = arena.syntax_at(frame.lhs());
+                if (wrapper.body() < 0 || wrapper.body() >= frame.lhs()) {
+                    return admission_result(AdmissionStatus::invalid);
+                }
+                const SyntaxNode declaration = arena.syntax_at(wrapper.body());
+                if (class_end == 0) {
+                    const HeaderResult header = admission_templates(arena, source, token, wrapper.other());
+                    const TypeResult parsed = header.parsed();
+                    const ParseToken after = parsed.token();
+                    token.update(after);
+                    if (parsed.status() != ParseStatus::success) {
+                        return admission_result(AdmissionStatus::invalid);
+                    }
+                    const TypeContext names = header.context();
+                    context.update(names);
+                } else {
+                    if (wrapper.other() != -1) {
+                        return admission_result(AdmissionStatus::invalid);
+                    }
+                }
+                if (declaration.kind() == SyntaxKind::namespace_definition) {
+                    if (class_end != 0 || wrapper.other() != -1) {
+                        return admission_result(AdmissionStatus::invalid);
+                    }
+                    const AdmissionStatus children = admission_push(arena, declaration.body(), SyntaxKind::declaration,
+                        FrameState::admission_declaration, base);
+                    if (children != AdmissionStatus::success) {
+                        return admission_result(children);
+                    }
+                } else {
+                    if (declaration.kind() == SyntaxKind::class_definition) {
+                        if (class_end != 0) {
+                            return admission_result(AdmissionStatus::invalid);
+                        }
+                        const ParseToken name = admission_seek(source, token, declaration.token());
+                        token.update(name);
+                        if (token.kind() == compiler_lexer::Event::invalid_cursor) {
+                            return admission_result(AdmissionStatus::invalid);
+                        }
+                        class_begin = token.first();
+                        class_end = token.last();
+                        const ParseFrame end = ParseFrame(FrameState::admission_class_end, 0, wrapper.body(), 0);
+                        if (!arena.push(end)) {
+                            return admission_result(admission_failure(arena));
+                        }
+                        const AdmissionStatus children = admission_push(arena, declaration.body(),
+                            SyntaxKind::declaration, FrameState::admission_declaration, base);
+                        if (children != AdmissionStatus::success) {
+                            return admission_result(children);
+                        }
+                    } else {
+                        const AdmissionScope scope = AdmissionScope(context, class_begin, class_end,
+                            wrapper.mutable_binding());
+                        if (declaration.kind() == SyntaxKind::field) {
+                            if (class_end == 0) {
+                                return admission_result(AdmissionStatus::invalid);
+                            }
+                            const AdmissionProgress progress = admission_field(arena, source, token, declaration, scope,
+                                configuration);
+                            const AdmissionResult outcome = progress.outcome();
+                            const ParseToken after = progress.token();
+                            token.update(after);
+                            if (outcome.status() != AdmissionStatus::success) {
+                                return outcome;
+                            }
+                        } else {
+                            if (declaration.kind() == SyntaxKind::function || declaration.kind() == SyntaxKind::method
+                                || declaration.kind() == SyntaxKind::constructor) {
+                                const bool function = declaration.kind() == SyntaxKind::function;
+                                if (function != (class_end == 0)) {
+                                    return admission_result(AdmissionStatus::invalid);
+                                }
+                                const i64 pending = arena.stack_size();
+                                const AdmissionProgress progress = admission_callable(arena, source, token, declaration,
+                                    scope, configuration);
+                                const AdmissionResult outcome = progress.outcome();
+                                const ParseToken after = progress.token();
+                                token.update(after);
+                                if (!arena.truncate_stack(pending)) {
+                                    return admission_result(AdmissionStatus::invalid);
+                                }
+                                if (outcome.status() != AdmissionStatus::success) {
+                                    return outcome;
+                                }
+                                if (function && wrapper.other() == -1) {
+                                    present = true;
+                                }
+                            } else {
+                                if (declaration.kind() != SyntaxKind::enum_definition || class_end != 0
+                                    || wrapper.other() != -1) {
+                                    return admission_result(AdmissionStatus::invalid);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (!present) {
+            return admission_at(AdmissionStatus::missing_function, module_node.end());
+        }
+        return admission_result(AdmissionStatus::success);
+    }
+}
+
 export namespace compiler_parser {
+    auto admit(AstArena& arena, builtin::span<const u8> source, i64 root,
+        AdmissionConfig configuration) -> AdmissionResult {
+        // Production admission starts after grammar leaves scratch at zero.
+        // New frames above the saved base charge unique declaration wrappers,
+        // parameter nodes and one class node per class-end marker, at most
+        // syntax_size() in total. Namespace children replace their popped wrapper;
+        // callable parameters temporarily share this owner. No sixth owner or
+        // source-sized index is needed. The existing geometric quota covers the
+        // production phase peak; arbitrary preexisting scratch is only preserved.
+        const i64 base = arena.stack_size();
+        const AdmissionResult result = admission_module(arena, source, root, configuration);
+        if (!arena.truncate_stack(base)) {
+            return admission_result(AdmissionStatus::invalid);
+        }
+        return result;
+    }
     auto parse(AstArena& arena, builtin::span<const u8> source, compiler_lexer::Cursor cursor, Stop stop,
         TypeContext context, i64 enum_count) -> ParseResult {
         const ParseToken token = read_token(source, cursor, 0);

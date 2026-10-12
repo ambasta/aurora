@@ -5,8 +5,9 @@ C header/macro layer, raw-pointer escape, unsafe block or C ABI. The hosted buil
 uses an Aurora-written [lexer](LEXER.md) and a bounded
 [syntax parser](ARCHITECTURE.md#hosted-aurora-parser),
 bootstrapped with an explicitly selected predecessor compiler.
-Complete module syntax is parsed in Aurora. Semantic/lifetime analysis, module
-loading/resolution, typed-IR verification and x86-64 emission remain C++23.
+Complete module syntax and unresolved declaration admission run in Aurora.
+Name resolution, full type/lifetime analysis, module loading, typed-IR verification
+and x86-64 emission remain C++23.
 GNU assembler/linker and Linux host I/O remain bootstrap dependencies.
 
 ## Build and check

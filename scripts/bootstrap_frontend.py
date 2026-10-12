@@ -58,6 +58,13 @@ def frontend_abi_entries(facts):
             ["span", "compiler_lexer::Cursor", "compiler_parser::Stop", "compiler_parser::TypeContext", "i64"],
             "compiler_parser::ParseResult",
         ),
+        (
+            "parser_admit",
+            "compiler_parser::admit",
+            arena,
+            ["span", "i64", "compiler_parser::AdmissionConfig"],
+            "compiler_parser::AdmissionResult",
+        ),
         ("parser_release", "compiler_parser::release", None, ["region", "compiler_parser::AstArena"], "i64"),
     ]
     checks += [
@@ -244,6 +251,7 @@ def frontend_abi_header(facts):
     for name, source, fields in (
         ("LexerInput", "compiler_lexer::next_lexeme", ("source", "cursor")),
         ("ParserInput", "compiler_parser::parse", ("source", "cursor", "stop", "context", "enum_count")),
+        ("AdmissionInput", "compiler_parser::admit", ("source", "root", "configuration")),
         ("ParserCreate", "compiler_parser::create", ("region", "capacity")),
         ("ParserRelease", "compiler_parser::release", ("region", "arena")),
     ):

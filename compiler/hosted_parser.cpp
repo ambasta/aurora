@@ -5,9 +5,11 @@
 #include "services.hpp"
 #include "../runtime/hosted_bytes.hpp"
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <limits>
 #include <optional>
+#include <set>
 #include <utility>
 
 #ifndef AURORA_HOSTED_PARSER
@@ -16,6 +18,7 @@
 extern "C" {
 void aurora_hosted_parser_create(const void *, void *);
 void aurora_hosted_parser_parse(void *, const void *, void *);
+void aurora_hosted_parser_admit(void *, const void *, void *);
 std::int64_t aurora_hosted_parser_count(const void *);
 void aurora_hosted_parser_read(const void *, std::int64_t, void *);
 std::int64_t aurora_hosted_parser_edges(const void *);
@@ -29,6 +32,7 @@ void aurora_hosted_parser_release(void *);
 
 namespace aurora {
 namespace {
+using hosted_parser::AdmissionStatus;
 using hosted_parser::NodeKind;
 using hosted_parser::Status;
 using hosted_parser::Stop;
@@ -78,6 +82,28 @@ Token cursorToken(const std::vector<Token> &tokens, hosted_parser::Cursor cursor
         ++token.span.begin.column;
     }
     return token;
+}
+// Shared layout/service policy remains authoritative in the existing compiler
+// helpers. Aurora performs declaration admission using this copied configuration.
+hosted_abi::compiler_parser::AdmissionConfig admissionConfiguration() {
+    hosted_abi::compiler_parser::AdmissionConfig configuration;
+    configuration.scalar_array_limit = maximumClassScalarArrayLength;
+    configuration.byte_array_limit = maximumClassByteArrayLength;
+    configuration.console_mask = 1;
+    configuration.display_mask = 2;
+    configuration.event_mask = 4;
+    const std::array kinds{service::kind(Type::ConsoleSession),
+                           service::kind(Type::DisplaySession),
+                           service::kind(Type::IommuEventSession)};
+    for (unsigned mask = 0; mask < (1U << kinds.size()); ++mask) {
+        std::set<service::Kind> group;
+        for (std::size_t index = 0; index < kinds.size(); ++index)
+            if (mask & (1U << index))
+                group.insert(kinds[index]);
+        if (service::supportedGroup(group))
+            configuration.service_groups |= std::int64_t{1} << mask;
+    }
+    return configuration;
 }
 class ImportedSyntax {
 public:
@@ -153,6 +179,8 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
     // minimum allocations. Live fixed frames are body256 + expression1549 +
     // type70 + namespace64 = 1939. Namespace frames remain during leaf parsing.
     // Enum duplicate scratch (256) replaces, rather than overlaps, body/type work.
+    // Post-grammar admission reuses at most one pending frame per syntax node;
+    // parsing continuations are gone, so this fits the existing N-frame term.
     // The region charges replacement payload, not metadata or old+new resize bytes.
     constexpr std::uint64_t recordBytes = sizeof(Node) + sizeof(Edge) + sizeof(TypeSyntax) + sizeof(SyntaxNode);
     constexpr std::uint64_t perToken = 2 * (recordBytes + hosted_abi::frameBytes);
@@ -795,6 +823,91 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
         } else
             invalid();
     }
+    if (module) {
+        hosted_abi::AdmissionInput admissionInput;
+        admissionInput.source = input.source;
+        admissionInput.root = result.root_node;
+        admissionInput.configuration = admissionConfiguration();
+        hosted_abi::compiler_parser::AdmissionResult admission;
+        aurora_hosted_parser_admit(arena.data(), &admissionInput, &admission);
+        if (admission.result < AdmissionStatus::success || admission.result >= AdmissionStatus::invalid)
+            invalid();
+        if (admission.result == AdmissionStatus::success || admission.result == AdmissionStatus::allocation_failure) {
+            if (admission.token_index != -1 || admission.end_token != -1 || admission.type_node != -1 ||
+                admission.detail != 0)
+                invalid();
+            if (admission.result == AdmissionStatus::allocation_failure)
+                throw Error(DiagnosticCode::Internal, "hosted declaration admission allocation failed", begin);
+        } else {
+            if (admission.token_index < 0 || admission.token_index > result.token_count ||
+                admission.end_token <= admission.token_index || admission.end_token > result.token_count + 1)
+                invalid();
+            const auto &at = tokens[position + static_cast<std::size_t>(admission.token_index)];
+            auto span = at.span;
+            span.end = tokens[position + static_cast<std::size_t>(admission.end_token) - 1].span.end;
+            if (admission.result == AdmissionStatus::unsupported_field) {
+                if (admission.type_node < 0 || admission.type_node >= typeCount || admission.detail != 0)
+                    invalid();
+                throw Error(
+                    DiagnosticCode::UnsupportedFieldType,
+                    "unsupported class field type '" +
+                        typeName(typeValues[static_cast<std::size_t>(admission.type_node)]) +
+                        "': class fields require scalar, class, private fixed-array or private owned-byte storage",
+                    span);
+            }
+            if (admission.type_node != -1 || admission.end_token != admission.token_index + 1 ||
+                (admission.result != AdmissionStatus::array_capacity && admission.detail != 0))
+                invalid();
+            std::string message;
+            switch (admission.result) {
+            case AdmissionStatus::function_shadow:
+                message = "function name cannot shadow a template parameter";
+                break;
+            case AdmissionStatus::typed_constructor:
+                message = "constructor cannot have a return type";
+                break;
+            case AdmissionStatus::borrowed_parameter:
+                message = "borrowed parameters require one leading concrete owning class on an ordinary function";
+                break;
+            case AdmissionStatus::const_parameter:
+                message = "const parameter spelling requires a leading owning-class reference";
+                break;
+            case AdmissionStatus::function_parameter:
+                message = "only scalar function parameters or scalar-field class values are supported";
+                break;
+            case AdmissionStatus::method_parameter:
+                message = "only scalar or enum method parameters are supported";
+                break;
+            case AdmissionStatus::function_result:
+                message = "only scalar function results or scalar-field class values are supported";
+                break;
+            case AdmissionStatus::method_result:
+                message = "only scalar, enum, class or readonly span method results are supported";
+                break;
+            case AdmissionStatus::public_array:
+                message = "array fields must be private";
+                break;
+            case AdmissionStatus::array_capacity:
+                if (admission.detail != admissionInput.configuration.scalar_array_limit &&
+                    admission.detail != admissionInput.configuration.byte_array_limit)
+                    invalid();
+                message = "class array field capacity must be between 1 and " + std::to_string(admission.detail);
+                break;
+            case AdmissionStatus::public_owner:
+                message = "owned byte fields must be private";
+                break;
+            case AdmissionStatus::templated_owner:
+                message = "owning class templates are unsupported";
+                break;
+            case AdmissionStatus::missing_function:
+                message = "module must contain a function";
+                break;
+            default:
+                invalid();
+            }
+            throw Error(DiagnosticCode::UnexpectedToken, message + " (found '" + at.text + "')", span);
+        }
+    }
     std::vector<Edge> edges(static_cast<std::size_t>(edgeCount));
     for (std::int64_t index = 0; index < edgeCount; ++index) {
         auto &edge = edges[static_cast<std::size_t>(index)];
@@ -1004,7 +1117,6 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
         ParsedCallable parsed(tokenAt(syntax.token_index));
         auto &function = parsed.function;
         parsed.next = {end, half};
-        parsed.nameAdmission = tokenAt(syntax.token_index + 1);
         function.constructor = stop == Stop::constructor;
         function.receiverConst = syntax.qualifier == 1;
         for (const auto child : parameterLists[root]) {
@@ -1017,8 +1129,6 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
             if (parameter.borrowed)
                 parameter.borrowSpan = tokenAt(parameterSyntax.borrow_token).span;
             function.params.push_back(std::move(parameter));
-            parsed.borrowAdmissions.push_back(tokenAt(parameterSyntax.binding_token));
-            parsed.nameAdmissions.push_back(tokenAt(parameterSyntax.end_token));
         }
         if (function.constructor) {
             for (const auto child : statementLists[root]) {
@@ -1029,7 +1139,6 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
         } else {
             function.result = takeDeclarationType(syntax);
             const auto block = static_cast<std::size_t>(syntax.body_node);
-            parsed.resultAdmission = tokenAt(statements[block].token_index);
             function.body = std::move(statementValues[block]->body);
         }
         return parsed;
@@ -1039,9 +1148,6 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
         const auto binding = position + static_cast<std::size_t>(syntax.binding_token);
         ParsedField parsed(tokens[binding], takeDeclarationType(syntax));
         parsed.next = {end, half};
-        parsed.admission = tokens[position + static_cast<std::size_t>(syntax.end_token) - 1];
-        parsed.typeSpan = tokens[position + static_cast<std::size_t>(syntax.token_index)].span;
-        parsed.typeSpan.end = tokens[binding - 1].span.end;
         return parsed;
     };
     ImportedSyntax imported;
@@ -1074,17 +1180,6 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
             token.span.end = tokenAt(syntax.end_token - 1).span.end;
             program.imports.push_back(std::move(token));
         }
-        const auto templateContext = [&](std::size_t wrapper, bool function) {
-            hosted_parser::Context context;
-            for (const auto child : parameterLists[wrapper]) {
-                const auto &parameter = statements[static_cast<std::size_t>(child)];
-                auto &names = parameter.tag == SyntaxKind::template_capacity ? context.capacityParameters
-                                                                             : context.typeParameters;
-                names.push_back(tokenAt(parameter.token_index));
-            }
-            context.functionTemplate = function && !context.typeParameters.empty();
-            return context;
-        };
         const auto templateParameters = [&](std::size_t wrapper) {
             std::vector<TemplateParameter> parameters;
             for (const auto child : parameterLists[wrapper]) {
@@ -1127,7 +1222,6 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
                     definition.scope = scope;
                     definition.exported = exported;
                     definition.templateParameters = templateParameters(wrapper);
-                    const auto context = templateContext(wrapper, false);
                     for (const auto memberEntry : statementLists[child]) {
                         const auto &member = statements[static_cast<std::size_t>(memberEntry)];
                         const auto memberRoot = static_cast<std::size_t>(member.body_node);
@@ -1135,7 +1229,6 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
                         const bool publicAccess = member.qualifier != 0;
                         if (kind == SyntaxKind::field) {
                             auto parsed = fieldValue(memberRoot);
-                            admitHostedField(parsed, publicAccess, !definition.templateParameters.empty());
                             parsed.field.publicAccess = publicAccess;
                             definition.fields.push_back(std::move(parsed.field));
                         } else {
@@ -1143,7 +1236,6 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
                                 invalid();
                             const auto stop = kind == SyntaxKind::method ? Stop::method : Stop::constructor;
                             auto parsed = callableValue(memberRoot, stop);
-                            admitHostedCallable(parsed, stop, context, definition.name);
                             parsed.function.scope = scope;
                             parsed.function.publicAccess = publicAccess;
                             definition.methods.push_back(std::move(parsed.function));
@@ -1155,8 +1247,6 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
                     if (syntax.tag != SyntaxKind::function)
                         invalid();
                     auto parsed = callableValue(child, Stop::function);
-                    const auto context = templateContext(wrapper, true);
-                    admitHostedCallable(parsed, Stop::function, context);
                     parsed.function.scope = scope;
                     parsed.function.exported = exported;
                     parsed.function.templateParameters = templateParameters(wrapper);
@@ -1167,11 +1257,7 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
             }
         };
         declarations(declarations, root, "", false);
-        if (program.functions.empty() && program.imports.empty() && !program.interfaceUnit) {
-            const auto &at = tokenAt(result.token_count);
-            throw Error(
-                DiagnosticCode::UnexpectedToken, "module must contain a function (found '" + at.text + "')", at.span);
-        }
+
     } else
         imported.expression = takeExpression(result.root_node);
     if (std::find(used.begin(), used.end(), false) != used.end() ||
@@ -1244,88 +1330,4 @@ ParsedEnum parseHostedEnum(const std::vector<Token> &tokens, hosted_parser::Curs
     return {std::move(*imported.enumeration), imported.next};
 }
 
-void admitHostedCallable(const ParsedCallable &parsed,
-                         Stop stop,
-                         const hosted_parser::Context &context,
-                         const std::string &className) {
-    if ((stop != Stop::function && stop != Stop::method && stop != Stop::constructor) ||
-        parsed.borrowAdmissions.size() != parsed.function.params.size() ||
-        parsed.nameAdmissions.size() != parsed.function.params.size())
-        invalid();
-    const auto failAt = [](const Token &token, const std::string &message) {
-        throw Error(DiagnosticCode::UnexpectedToken, message + " (found '" + token.text + "')", token.span);
-    };
-    const auto &function = parsed.function;
-    // These temporary host language-admission policies retain their original order
-    // until semantic analysis itself migrates; they are not a second grammar.
-    // Name resolution and visibility remain with the declaration/resolver path.
-    if (stop == Stop::function) {
-        for (const auto &parameter : context.typeParameters)
-            if (parameter.text == function.token.text)
-                failAt(parsed.nameAdmission, "function name cannot shadow a template parameter");
-    } else if (stop == Stop::method && function.token.text == className)
-        failAt(parsed.nameAdmission, "constructor cannot have a return type");
-    const bool allowClass = stop != Stop::method;
-    const bool allowBorrow = stop == Stop::function;
-    const auto scalarOrParameter = [](const Type &value) {
-        return scalar(value) || value.kind == TypeKind::Parameter;
-    };
-    for (std::size_t index = 0; index < function.params.size(); ++index) {
-        const auto &parameter = function.params[index];
-        if (parameter.borrowed) {
-            const bool distinctServiceContinuation =
-                parameter.type.isService() && index == 1 && function.params.front().borrowed &&
-                function.params.front().type.isService() && function.params.front().type != parameter.type &&
-                service::supportedGroup({service::kind(function.params.front().type), service::kind(parameter.type)});
-            if (!allowBorrow || (index != 0 && !distinctServiceContinuation) || !context.typeParameters.empty() ||
-                (!parameter.type.isClass() && !parameter.type.isService()) || !parameter.type.templateArguments.empty())
-                failAt(parsed.borrowAdmissions[index],
-                       "borrowed parameters require one leading concrete owning class on an ordinary function");
-        } else if (parameter.borrowConst)
-            failAt(parsed.borrowAdmissions[index],
-                   "const parameter spelling requires a leading owning-class reference");
-        // Nominal names are unresolved here; module resolution permits enum
-        // method arguments and class constructor/function arguments.
-        if (!scalarOrParameter(parameter.type) && !parameter.type.isClass() && !parameter.type.isSpan() &&
-            !(allowClass && parameter.type.isResource()) && !parameter.type.isService() && !parameter.type.isEnum())
-            failAt(parsed.nameAdmissions[index],
-                   allowClass ? "only scalar function parameters or scalar-field class values are supported"
-                              : "only scalar or enum method parameters are supported");
-    }
-    if (stop == Stop::function) {
-        if (!scalarOrParameter(function.result) && !function.result.isClass() && !function.result.isOwnerStorage() &&
-            !function.result.isEnum())
-            failAt(parsed.resultAdmission, "only scalar function results or scalar-field class values are supported");
-    } else if (stop == Stop::method) {
-        if (!scalarOrParameter(function.result) && !function.result.isClass() && !function.result.isSpan() &&
-            !function.result.isEnum())
-            failAt(parsed.resultAdmission, "only scalar, enum, class or readonly span method results are supported");
-    }
-}
-void admitHostedField(const ParsedField &parsed, bool publicAccess, bool templated) {
-    const auto &fieldType = parsed.field.type;
-    const auto fail = [&](const std::string &message) {
-        throw Error(DiagnosticCode::UnexpectedToken,
-                    message + " (found '" + parsed.admission.text + "')",
-                    parsed.admission.span);
-    };
-    if (fieldType.isArray()) {
-        if (publicAccess)
-            fail("array fields must be private");
-        if (fieldType.lengthParameter.empty() &&
-            (fieldType.length < 1 || fieldType.length > maximumClassArrayLength(fieldType.arrayElement())))
-            fail("class array field capacity must be between 1 and " +
-                 std::to_string(maximumClassArrayLength(fieldType.arrayElement())));
-    } else if (fieldType.isOwnerStorage()) {
-        if (publicAccess)
-            fail("owned byte fields must be private");
-        if (templated)
-            fail("owning class templates are unsupported");
-    } else if (!scalar(fieldType) && fieldType.kind != TypeKind::Parameter && !fieldType.isClass() &&
-               !fieldType.isEnum())
-        throw Error(DiagnosticCode::UnsupportedFieldType,
-                    "unsupported class field type '" + typeName(fieldType) +
-                        "': class fields require scalar, class, private fixed-array or private owned-byte storage",
-                    parsed.typeSpan);
-}
 } // namespace aurora

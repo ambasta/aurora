@@ -76,11 +76,35 @@ def abi_generation(facts):
         and nested["fields"][-1]["kind"] == "class",
         "nested copied record was flattened or omitted",
     )
-    for kind in ("result_extent", "field_extent", "unsupported_array"):
+    require(
+        "struct alignas(8) AdmissionInput {" in generated
+        and "aurora::hosted_abi::compiler_parser::AdmissionConfig configuration{};" in generated
+        and "aurora::hosted_abi::compiler_parser::AdmissionStatus result{};" in generated,
+        "declaration admission input/configuration/result was flattened or omitted",
+    )
+    for kind in (
+        "result_extent",
+        "field_extent",
+        "unsupported_array",
+        "admission_receiver",
+        "admission_result_extent",
+        "admission_configuration_extent",
+        "admission_parameter_offset",
+    ):
         changed = deepcopy(facts)
         if kind == "result_extent":
             _, entry = abi_declaration(changed, "functions", "compiler_parser::read_node")
             entry["result"]["bytes"] += 8
+        elif kind.startswith("admission_"):
+            _, entry = abi_declaration(changed, "functions", "compiler_parser::admit")
+            if kind == "admission_receiver":
+                entry["receiver"] = None
+            elif kind == "admission_result_extent":
+                entry["result"]["bytes"] += 8
+            elif kind == "admission_configuration_extent":
+                entry["parameters"][-1]["bytes"] += 8
+            else:
+                entry["parameters"][-1]["offset"] += 8
         else:
             _, entry = abi_declaration(changed, "records", "compiler_parser::AstNode")
             entry["fields"][1]["bytes" if kind == "field_extent" else "array_length"] += 1
@@ -98,6 +122,7 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
         "aurora_hosted_lexer_invoke",
         "aurora_hosted_parser_create",
         "aurora_hosted_parser_parse",
+        "aurora_hosted_parser_admit",
         "aurora_hosted_parser_count",
         "aurora_hosted_parser_read",
         "aurora_hosted_parser_edges",

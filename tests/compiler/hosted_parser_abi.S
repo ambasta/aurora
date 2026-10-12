@@ -114,6 +114,7 @@ checked_hosted_parser_\operation:
 .endm
 checked_entry create
 checked_entry parse
+checked_entry admit
 checked_entry count
 checked_entry read
 checked_entry edges

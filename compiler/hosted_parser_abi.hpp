@@ -2,6 +2,7 @@
 #include "hosted_frontend_abi.hpp"
 
 namespace aurora::hosted_parser {
+using hosted_abi::compiler_parser::AdmissionStatus;
 using hosted_abi::compiler_parser::NodeKind;
 using hosted_abi::compiler_parser::Stop;
 using hosted_abi::compiler_parser::SyntaxKind;
