@@ -2,7 +2,7 @@
 """Emit the private hosted frontend and its compiler-described ABI.
 
 The compiler-module root contains exact exported source copies. Generated Aurora
-bindings remain local; only the two trusted assembly bridges expose host entries.
+bindings remain local; only trusted register bridges expose host entries.
 """
 
 from pathlib import Path
@@ -11,6 +11,26 @@ import json
 import shutil
 import subprocess
 import sys
+
+
+# Names only: every physical field extent and offset comes from emitted facts.
+ARGUMENT_RECORDS = (
+    ("LexerInput", "compiler_lexer::next_lexeme", ("source", "cursor")),
+    ("ParserInput", "compiler_parser::parse", ("source", "cursor", "stop", "context", "enum_count")),
+    ("AdmissionInput", "compiler_parser::admit", ("source", "root", "configuration")),
+    ("ParserCreate", "compiler_parser::create", ("region", "capacity")),
+    ("ParserRelease", "compiler_parser::release", ("region", "arena")),
+    ("ResolverCreate", "compiler_resolver::create", ("region",)),
+    ("ResolverIngest", "compiler_resolver::ingest", ("region", "session", "parsed", "module", "root")),
+    ("ResolverRelease", "compiler_resolver::release", ("region", "session")),
+    ("ResolverReleasePair", "compiler_resolver::release_pair", ("region", "session", "parsed")),
+    ("ResolverSourceInput", "compiler_resolver::append_source", ("source",)),
+    ("ResolverTextInput", "compiler_resolver::append_text", ("text",)),
+    ("ResolverOrderInput", "compiler_resolver::order_module", ("module", "order", "scope", "root")),
+    ("ResolverImportInput", "compiler_resolver::bind_import", ("module", "node", "target")),
+    ("ResolverSeedBuiltinInput", "compiler_resolver::seed_builtin", ("definition",)),
+    ("ResolverSeedMemberInput", "compiler_resolver::seed_member", ("member",)),
+)
 
 
 def abi_declaration(facts, group, source_name):
@@ -31,9 +51,9 @@ def frontend_abi_entries(facts):
     """Check the fixed register bridges before allowing generated record writes."""
 
     def shape(source):
-        if source in ("i64", "region", "span"):
+        if source in ("i64", "u64", "u8", "bool", "region", "span"):
             return source, None, facts["span_bytes"] if source == "span" else 8
-        group = "enums" if source == "compiler_parser::Stop" else "records"
+        group = "enums" if any(value["source_name"] == source for value in facts["enums"].values()) else "records"
         symbol, record = abi_declaration(facts, group, source)
         return "enum" if group == "enums" else "class", symbol, 8 if group == "enums" else record["reserved"]
 
@@ -42,6 +62,7 @@ def frontend_abi_entries(facts):
         return actual["kind"] == kind and actual.get("type_name") == symbol and actual["bytes"] == width
 
     arena, _ = abi_declaration(facts, "records", "compiler_parser::AstArena")
+    session, _ = abi_declaration(facts, "records", "compiler_resolver::Session")
     checks = [
         (
             "lexer_next",
@@ -66,10 +87,40 @@ def frontend_abi_entries(facts):
             "compiler_parser::AdmissionResult",
         ),
         ("parser_release", "compiler_parser::release", None, ["region", "compiler_parser::AstArena"], "i64"),
+        ("resolver_create", "compiler_resolver::create", None, ["region"], "compiler_resolver::Session"),
+        (
+            "resolver_ingest",
+            "compiler_resolver::ingest",
+            None,
+            ["region", "compiler_resolver::Session", "compiler_parser::AstArena", "i64", "i64"],
+            "compiler_resolver::Session",
+        ),
+        ("resolver_release", "compiler_resolver::release", None, ["region", "compiler_resolver::Session"], "i64"),
+        (
+            "resolver_release_pair",
+            "compiler_resolver::release_pair",
+            None,
+            ["region", "compiler_resolver::Session", "compiler_parser::AstArena"],
+            "i64",
+        ),
+        ("resolver_append_source", "compiler_resolver::append_source", session, ["span"], "i64"),
+        ("resolver_append_text", "compiler_resolver::append_text", session, ["span"], "i64"),
+        ("resolver_order_module", "compiler_resolver::order_module", session, ["i64", "i64", "i64", "bool"], "bool"),
+        ("resolver_bind_import", "compiler_resolver::bind_import", session, ["i64", "i64", "i64"], "bool"),
+        ("resolver_count", "compiler_resolver::count", session, ["i64"], "i64"),
+        ("resolver_read_source", "compiler_resolver::read_source", session, ["i64"], "i64"),
+        ("resolver_status", "compiler_resolver::status", session, [], "compiler_resolver::SessionStatus"),
+        ("resolver_seed_builtin", "compiler_resolver::seed_builtin", session, ["compiler_resolver::MetaRow"], "i64"),
+        ("resolver_seed_member", "compiler_resolver::seed_member", session, ["compiler_resolver::MetaRow"], "i64"),
+        ("resolver_run", "compiler_resolver::run", session, [], "i64"),
     ]
     checks += [
         ("parser_" + name, "compiler_parser::" + name, arena, [], "i64")
         for name in ("node_count", "edge_count", "type_count", "syntax_count")
+    ]
+    checks += [
+        ("resolver_" + name, "compiler_resolver::" + name, session, ["i64"], "compiler_resolver::" + result)
+        for name, result in (("read_syntax", "SyntaxRow"), ("read_meta", "MetaRow"), ("read_resolved", "ResolvedRow"))
     ]
     checks += [
         ("parser_" + name, "compiler_parser::" + name, arena, ["i64"], "compiler_parser::" + result)
@@ -97,6 +148,13 @@ def frontend_abi_entries(facts):
         if function["parameter_bytes"] != offset:
             raise ValueError(f"private bridge record changed: {source}")
         entries[alias] = symbol
+    # Cleanup receives a generated prefix of the live transfer record. Refuse
+    # layout drift before any host code can reinterpret that enclosing prefix.
+    _, ingest = abi_declaration(facts, "functions", "compiler_resolver::ingest")
+    for source, count in (("compiler_resolver::release", 2), ("compiler_resolver::release_pair", 3)):
+        _, release = abi_declaration(facts, "functions", source)
+        if release["parameters"] != ingest["parameters"][:count] or release["parameter_bytes"] != ingest["parameters"][count]["offset"]:
+            raise ValueError(f"private resolver owner prefix changed: {source}")
     return entries
 
 
@@ -248,14 +306,10 @@ def frontend_abi_header(facts):
             (48, 8, "std::int64_t", "length"),
         ],
     )
-    for name, source, fields in (
-        ("LexerInput", "compiler_lexer::next_lexeme", ("source", "cursor")),
-        ("ParserInput", "compiler_parser::parse", ("source", "cursor", "stop", "context", "enum_count")),
-        ("AdmissionInput", "compiler_parser::admit", ("source", "root", "configuration")),
-        ("ParserCreate", "compiler_parser::create", ("region", "capacity")),
-        ("ParserRelease", "compiler_parser::release", ("region", "arena")),
-    ):
+    for name, source, fields in ARGUMENT_RECORDS:
         _, function = abi_declaration(facts, "functions", source)
+        if len(fields) != len(function["parameters"]):
+            raise ValueError(f"private ABI argument names changed: {source}")
         members = []
         for field, parameter in zip(fields, function["parameters"]):
             kind = parameter["kind"]
@@ -266,6 +320,13 @@ def frontend_abi_header(facts):
         "inline constexpr std::size_t frameBytes = sizeof(compiler_parser::ParseFrame);",
         "inline constexpr std::size_t arenaBytes = sizeof(compiler_parser::AstArena);",
         "inline constexpr std::size_t arenaAlignment = alignof(compiler_parser::AstArena);",
+        "inline constexpr std::size_t sessionBytes = sizeof(compiler_resolver::Session);",
+        "inline constexpr std::size_t sessionAlignment = alignof(compiler_resolver::Session);",
+        "static_assert(offsetof(ResolverRelease, session) == offsetof(ResolverIngest, session));",
+        "static_assert(sizeof(ResolverRelease) == offsetof(ResolverIngest, parsed));",
+        "static_assert(offsetof(ResolverReleasePair, session) == offsetof(ResolverIngest, session));",
+        "static_assert(offsetof(ResolverReleasePair, parsed) == offsetof(ResolverIngest, parsed));",
+        "static_assert(sizeof(ResolverReleasePair) == offsetof(ResolverIngest, module));",
         "static_assert(sizeof(void *) == 8);",
         "}",
     ]
@@ -273,17 +334,24 @@ def frontend_abi_header(facts):
 
 
 def frontend_bridge(bridge, facts):
-    for alias, symbol in frontend_abi_entries(facts).items():
+    for alias, symbol in sorted(frontend_abi_entries(facts).items(), key=lambda item: len(item[0]), reverse=True):
+        function = facts["functions"][symbol]
+        for index, parameter in enumerate(function["parameters"]):
+            bridge = bridge.replace(f"__aurora_parameter_{alias}_{index}", str(parameter["offset"]))
         bridge = bridge.replace("__aurora_frontend_" + alias, symbol)
-    if "__aurora_frontend_" in bridge:
+    if "__aurora_frontend_" in bridge or "__aurora_parameter_" in bridge:
         raise ValueError("unknown private frontend bridge entry")
     return bridge
 
 
-def stage_modules(module_root, lexer, arena):
+def stage_modules(module_root, lexer, arena, parser, kinds, resolution, resolver):
     destination = module_root / "aurora" / "compiler"
     destination.mkdir(parents=True, exist_ok=True)
-    for source, name in ((lexer, "lexer.au"), (arena, "syntax_arena.au")):
+    for source, name in zip(
+        (lexer, arena, parser, kinds, resolution, resolver),
+        ("lexer.au", "syntax_arena.au", "parser.au", "resolution_kinds.au", "resolution_arena.au", "resolver.au"),
+        strict=True,
+    ):
         shutil.copyfile(source, destination / name)
 
 
@@ -308,12 +376,12 @@ def emit(compiler, source, bridges, output, module_root, compatible_header=None)
 
 
 def main():
-    compiler, lexer, arena, parser, lexer_bridge, parser_bridge, output, *headers = map(Path, sys.argv[1:])
+    compiler, lexer, arena, parser, kinds, resolution, resolver, lexer_bridge, parser_bridge, resolver_bridge, output, *headers = map(Path, sys.argv[1:])
     if len(headers) > 1:
         raise ValueError("expected at most one shared-host ABI header")
     module_root = output.parent / "compiler-modules"
-    stage_modules(module_root, lexer, arena)
-    emit(compiler, parser, [lexer_bridge, parser_bridge], output, module_root, headers[0] if headers else None)
+    stage_modules(module_root, lexer, arena, parser, kinds, resolution, resolver)
+    emit(compiler, resolver, [lexer_bridge, parser_bridge, resolver_bridge], output, module_root, headers[0] if headers else None)
 
 
 if __name__ == "__main__":

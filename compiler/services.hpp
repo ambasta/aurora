@@ -1,5 +1,5 @@
 #pragma once
-#include "types.hpp"
+#include "syntax.hpp"
 #include <array>
 #include <string_view>
 #include <set>
@@ -112,5 +112,63 @@ inline bool copiedType(const Type &type) {
     return type == sampleType() || type == putResultType() || type == completionType() ||
            type == displayPutResultType() || type == displayCompletionType() || type == eventSampleType() ||
            type == eventPollResultType() || type == eventAckResultType() || type == eventIntakeCompletionType();
+}
+// Canonical copied service data used by the resolver descriptor seed and by
+// existing semantic/lowering helpers. No source declaration grants a capability.
+inline std::array<Type, 9> copiedTypes() {
+    return {sampleType(), putResultType(), completionType(), displayPutResultType(),
+            displayCompletionType(), eventSampleType(), eventPollResultType(), eventAckResultType(),
+            eventIntakeCompletionType()};
+}
+inline Program copiedDefinitions() {
+    Program result;
+    ClassDefinition sample(Token(std::string(service::sampleName), 0));
+    for (const auto &[name, type] : std::vector<std::pair<std::string, Type>>{
+             {"byte_present", Type::Bool}, {"byte", Type::U8}, {"damaged", Type::Bool}}) {
+        Field field(Token(name, 0), type);
+        field.publicAccess = true;
+        sample.fields.push_back(std::move(field));
+    }
+    result.classes.push_back(std::move(sample));
+    EnumDefinition put(Token(std::string(service::putResultName), 0));
+    put.cases = {Token("success", 0), Token("timeout", 0)};
+    result.enums.push_back(std::move(put));
+    EnumDefinition completion(Token(std::string(service::completionName), 0));
+    completion.cases = {Token("requested_exit", 0), Token("output_failure", 0)};
+    result.enums.push_back(std::move(completion));
+    EnumDefinition displayPut(Token(std::string(service::displayPutResultName), 0));
+    displayPut.cases = {Token("success", 0), Token("out_of_bounds", 0)};
+    result.enums.push_back(std::move(displayPut));
+    EnumDefinition displayCompletion(Token(std::string(service::displayCompletionName), 0));
+    displayCompletion.cases = {Token("rendered", 0), Token("output_failure", 0)};
+    result.enums.push_back(std::move(displayCompletion));
+    ClassDefinition eventSample(Token(std::string(service::eventSampleName), 0));
+    for (const auto &[name, type] :
+         std::vector<std::pair<std::string, Type>>{{"result", service::eventPollResultType()},
+                                                   {"word0", Type::U64},
+                                                   {"word1", Type::U64},
+                                                   {"status_low", Type::U64}}) {
+        Field field(Token(name, 0), type);
+        field.publicAccess = true;
+        eventSample.fields.push_back(std::move(field));
+    }
+    result.classes.push_back(std::move(eventSample));
+    EnumDefinition eventPoll(Token(std::string(service::eventPollResultName), 0));
+    eventPoll.cases = {
+        Token("empty", 0), Token("record", 0), Token("overflow", 0), Token("transport_failure", 0)};
+    result.enums.push_back(std::move(eventPoll));
+    EnumDefinition eventAck(Token(std::string(service::eventAckResultName), 0));
+    eventAck.cases = {Token("committed", 0), Token("overflow", 0), Token("transport_failure", 0)};
+    result.enums.push_back(std::move(eventAck));
+    EnumDefinition eventCompletion(Token(std::string(service::eventIntakeCompletionName), 0));
+    eventCompletion.cases = {Token("drained", 0),
+                             Token("budget_exhausted", 0),
+                             Token("loss_detected", 0),
+                             Token("unsupported_event", 0),
+                             Token("command_error", 0),
+                             Token("transport_failure", 0),
+                             Token("output_failure", 0)};
+    result.enums.push_back(std::move(eventCompletion));
+    return result;
 }
 } // namespace aurora::service

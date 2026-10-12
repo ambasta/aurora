@@ -43,6 +43,15 @@ void checked_hosted_parser_type(const void *, std::int64_t, void *);
 std::int64_t checked_hosted_parser_syntax_count(const void *);
 void checked_hosted_parser_syntax(const void *, std::int64_t, void *);
 void checked_hosted_parser_release(void *);
+void checked_hosted_resolver_create(const void *, void *);
+void checked_hosted_resolver_ingest(void *, void *);
+void checked_hosted_resolver_release(void *);
+void checked_hosted_resolver_release_pair(void *);
+std::int64_t checked_hosted_resolver_append_source(void *, const void *);
+std::int64_t checked_hosted_resolver_count(const void *, std::int64_t);
+std::int64_t checked_hosted_resolver_read_source(const void *, std::int64_t);
+void checked_hosted_resolver_read_meta(const void *, std::int64_t, void *);
+void checked_hosted_resolver_status(const void *, void *);
 }
 
 using AbiEntry = void (*)(const void *, const void *, void *);
@@ -3653,7 +3662,7 @@ void resolvedModules() {
         "}\n");
     auto root = std::make_shared<const aurora::SourceText>(
         "requests.au",
-        "module root;import dep;\n"
+        "module root;import dep // import gap\n ;\n"
         "class Hidden {public:i64 value;};\n"
         "enum class State {zero,one};\n"
         "auto answer()->i64 {\n"
@@ -3885,6 +3894,299 @@ void resolvedVisibility() {
                 program.functions[0].body.at(0)->expr->token.span.source == retained.lock() &&
                 program.functions[0].body[0]->expr->token.span.source->path == "empty-view-root.au",
             "resolution cleanup omitted empty views or invalidated projected source ownership");
+    ++cases;
+}
+
+template <class Record> class GuardedRecord {
+public:
+    std::uint64_t before = canary;
+    Record value;
+    std::uint64_t after = canary;
+    void check() const {
+        require(before == canary && after == canary, "generated record write escaped its ABI extent");
+    }
+};
+
+// Both owning inputs are constructed directly in their final transfer slots.
+// Only generated scalar fields and copied readbacks are inspected by the host.
+class RawResolution {
+    aurora::hosted::bytes::Region region;
+    std::array<GuardedRecord<aurora::hosted_abi::ResolverIngest>, 2> slots;
+    std::size_t active = 0;
+    bool owner = false, pair = false;
+
+public:
+    bool transferred = false, failedTransfer = false;
+    explicit RawResolution(Allocations &allocations) : region(32 * 1024 * 1024, allocations.allocator()) {
+        static_assert(offsetof(aurora::hosted_abi::ResolverRelease, session) ==
+                          offsetof(aurora::hosted_abi::ResolverIngest, session) &&
+                      sizeof(aurora::hosted_abi::ResolverRelease) ==
+                          offsetof(aurora::hosted_abi::ResolverIngest, parsed) &&
+                      offsetof(aurora::hosted_abi::ResolverReleasePair, parsed) ==
+                          offsetof(aurora::hosted_abi::ResolverIngest, parsed) &&
+                      sizeof(aurora::hosted_abi::ResolverReleasePair) ==
+                          offsetof(aurora::hosted_abi::ResolverIngest, module));
+        for (auto &slot : slots)
+            slot.value.region = region.id();
+        aurora::hosted_abi::ResolverCreate input;
+        input.region = region.id();
+        checked_hosted_resolver_create(&input, data());
+        owner = true;
+        guards();
+    }
+    ~RawResolution() {
+        if (owner) {
+            if (pair)
+                checked_hosted_resolver_release_pair(&slots[active].value);
+            else
+                checked_hosted_resolver_release(&slots[active].value);
+        }
+    }
+    RawResolution(const RawResolution &) = delete;
+    RawResolution &operator=(const RawResolution &) = delete;
+    void *data() {
+        return slots[active].value.session.storage.data();
+    }
+    void guards() const {
+        for (const auto &slot : slots)
+            slot.check();
+    }
+    aurora::hosted_abi::compiler_resolver::SessionStatus status() {
+        GuardedRecord<aurora::hosted_abi::compiler_resolver::SessionStatus> output;
+        checked_hosted_resolver_status(data(), &output.value);
+        output.check();
+        guards();
+        return output.value;
+    }
+    aurora::hosted_abi::compiler_resolver::MetaRow meta(std::int64_t index) {
+        GuardedRecord<aurora::hosted_abi::compiler_resolver::MetaRow> output;
+        checked_hosted_resolver_read_meta(data(), index, &output.value);
+        output.check();
+        guards();
+        return output.value;
+    }
+    bool ingest(const std::string &source, bool invalidModule = false, bool invalidRoot = false) {
+        using Storage = aurora::hosted_abi::compiler_resolver::StorageStatus;
+        if (status().storage != Storage::none)
+            return false;
+        aurora::hosted_abi::ResolverSourceInput sourceInput;
+        sourceInput.source.backing = source.data();
+        sourceInput.source.length = static_cast<std::int64_t>(source.size());
+        const auto module = checked_hosted_resolver_append_source(data(), &sourceInput);
+        if (module < 0)
+            return false;
+        auto &record = slots[active].value;
+        aurora::hosted_abi::ParserCreate create;
+        create.region = region.id();
+        create.capacity = 0;
+        checked_hosted_parser_create(&create, record.parsed.storage.data());
+        pair = true;
+        aurora::hosted_abi::ParserInput input;
+        input.source = sourceInput.source;
+        input.cursor.line = 1;
+        input.stop = Stop::module_definition;
+        GuardedWords<6> parsed;
+        checked_hosted_parser_parse(record.parsed.storage.data(), &input, parsed.value.data());
+        parsed.check();
+        guards();
+        if (parsed.value[0] != wire(Status::success))
+            return false;
+        GuardedWords<14> admission;
+        admission.value = {0, static_cast<std::int64_t>(reinterpret_cast<std::uintptr_t>(source.data())),
+                           0, 0, 0, 0, static_cast<std::int64_t>(source.size()), parsed.value[1]};
+        std::copy(admissionConfiguration.begin(), admissionConfiguration.end(), admission.value.begin() + 8);
+        GuardedWords<5> admitted;
+        checked_hosted_parser_admit(record.parsed.storage.data(), admission.value.data(), admitted.value.data());
+        admission.check();
+        admitted.check();
+        if (admitted.value[0] != wire(AdmissionStatus::success))
+            return false;
+        record.module = invalidModule ? module + 1 : module;
+        record.root = invalidRoot ? -1 : parsed.value[1];
+        const auto next = active ^ 1U;
+        // A consuming call never has an armed input after transfer begins.
+        owner = pair = false;
+        checked_hosted_resolver_ingest(&record, slots[next].value.session.storage.data());
+        active = next;
+        owner = true;
+        transferred = true;
+        guards();
+        failedTransfer = status().storage != Storage::none;
+        return !failedTransfer;
+    }
+    void finish() {
+        require(owner, "resolution cleanup had no active returned owner");
+        if (pair)
+            checked_hosted_resolver_release_pair(&slots[active].value);
+        else
+            checked_hosted_resolver_release(&slots[active].value);
+        owner = pair = false;
+        guards();
+        const auto final = region.metrics();
+        require(final.used == 0 && final.live_allocations == 0 && final.releases == final.successful_allocations,
+                "resolution transfer or pair cleanup leaked payload or owner metadata");
+        require(region.close(), "released resolution region did not close");
+    }
+};
+
+void rawResolutionOwnership() {
+    namespace Wire = aurora::hosted_abi::compiler_resolver;
+    context = "resolved transfer allocation prefixes and generated cleanup records";
+    std::string source = "export module raw;";
+    for (std::size_t index = 0; index < 32; ++index)
+        source += "auto f" + std::to_string(index) + "()->i64{return 1+2;}";
+    std::size_t successful = 0;
+    {
+        Allocations allocations;
+        RawResolution resolution(allocations);
+        require(resolution.ingest(source) && resolution.transferred, "valid parser/session transfer failed");
+        const auto first = resolution.meta(0);
+        require(first.tag == Wire::MetaTag::module_unit && first.value10 >= 0,
+                "successful transfer did not publish exactly one module root");
+        require(resolution.ingest("export module second;auto next()->i64{return 3;}") &&
+                    resolution.meta(0).value10 == first.value10 && resolution.meta(1).tag == Wire::MetaTag::module_unit &&
+                    checked_hosted_resolver_count(resolution.data(), 5) == 2,
+                "alternating owner slots lost an earlier module or the second transfer");
+        require(checked_hosted_resolver_read_source(resolution.data(), 0) == 'e' &&
+                    checked_hosted_resolver_read_source(resolution.data(), -1) == -1 &&
+                    checked_hosted_resolver_read_source(resolution.data(),
+                        checked_hosted_resolver_count(resolution.data(), 0)) == -1,
+                "copied source bytes lost their checked bounds");
+        successful = allocations.successful;
+        resolution.finish();
+        require(allocations.successful == allocations.released, "successful two-owner transfer leaked allocations");
+    }
+    bool beforeTransfer = false, afterTransfer = false;
+    for (std::size_t prefix = 0; prefix < successful; ++prefix) {
+        Allocations allocations;
+        allocations.allowed = prefix;
+        RawResolution resolution(allocations);
+        bool complete = resolution.ingest(source);
+        if (complete)
+            complete = resolution.ingest("export module second;auto next()->i64{return 3;}");
+        require(!complete, "reachable resolution allocation prefix did not fail");
+        beforeTransfer = beforeTransfer || !resolution.transferred;
+        afterTransfer = afterTransfer || resolution.failedTransfer;
+        resolution.finish();
+        require(allocations.successful == allocations.released, "failed transfer retained a consumed owner");
+    }
+    require(beforeTransfer && afterTransfer, "failure sweep missed a live pair or returned Session boundary");
+    for (const auto &[badModule, badRoot] : {std::pair{true, false}, std::pair{false, true}}) {
+        Allocations allocations;
+        RawResolution resolution(allocations);
+        require(!resolution.ingest(source, badModule, badRoot) && resolution.transferred &&
+                    resolution.status().storage == Wire::StorageStatus::invalid &&
+                    resolution.meta(0).tag == Wire::MetaTag::module_source && resolution.meta(0).value10 == -1,
+                "invalid consumed transfer published a root or lost its returned owner");
+        resolution.finish();
+        require(allocations.successful == allocations.released, "invalid transfer leaked one of its owning inputs");
+    }
+    {
+        Allocations allocations;
+        RawResolution resolution(allocations);
+        require(!resolution.ingest("module broken;auto f()->i64{") && !resolution.transferred,
+                "parser failure crossed the consuming transfer boundary");
+        resolution.finish();
+        require(allocations.successful == allocations.released, "parse failure did not release the live owner pair");
+    }
+    ++cases;
+}
+
+void resolvedCompilerSources(char **paths) {
+    context = "all six real compiler modules through production resolution";
+    const std::array<std::size_t, 6> arguments{0, 1, 2, 15, 16, 17};
+    const std::array<std::string, 6> modules{
+        "lexer", "syntax_arena", "parser", "resolution_kinds", "resolution_arena", "resolver"};
+    const std::array<std::vector<std::string>, 6> classNames{{
+        {"Cursor", "Lexeme"},
+        {"ParseFrame", "AstNode", "ChildEdge", "TypeSyntax", "SyntaxNode", "AstArena"},
+        {"AdmissionConfig", "AdmissionResult", "TypeContext", "ParseResult", "ParseToken", "TypeResult",
+         "HeaderResult", "AdmissionProgress", "AdmissionType", "AdmissionScope"},
+        {},
+        {"SyntaxRow", "MetaRow", "ResolvedRow", "WorkRow", "SessionStatus", "Session"},
+        {"BindContext", "Arguments"},
+    }};
+    // Resolver's direct import order gives this exact DFS postorder.
+    const std::array<std::size_t, 6> order{3, 0, 1, 4, 2, 5};
+    std::array<aurora::Program, 6> syntax;
+    std::array<aurora::HostedModule, 6> headers;
+    aurora::Program program;
+    {
+        aurora::HostedResolution resolution;
+        for (std::size_t index = 0; index < modules.size(); ++index) {
+            std::ifstream input(paths[arguments[index]], std::ios::binary);
+            require(bool(input), "cannot read real resolution/compiler source");
+            std::string text((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+            require(!input.bad(), "cannot finish reading real resolution/compiler source");
+            const auto source = std::make_shared<const aurora::SourceText>(paths[arguments[index]], std::move(text));
+            syntax[index] = checkedProgram(aurora::lex(source));
+            headers[index] = resolution.add(source);
+            require(headers[index].moduleName == "aurora.compiler." + modules[index] && headers[index].interfaceUnit &&
+                        syntax[index].classes.size() == classNames[index].size(),
+                    "actual compiler module/header/class inventory changed");
+            for (std::size_t declaration = 0; declaration < classNames[index].size(); ++declaration)
+                require(syntax[index].classes[declaration].token.text == classNames[index][declaration],
+                        "actual compiler class declaration order changed");
+        }
+        std::vector<std::size_t> dependencyOrder;
+        for (const auto index : order)
+            dependencyOrder.push_back(headers[index].id);
+        program = resolution.resolve(dependencyOrder, headers.back().id);
+    }
+    require(program.templates.empty() && program.functionTemplates.empty() && program.reflectionAccess.size() == 6,
+            "actual compiler graph retained unresolved templates or omitted a module reflection view");
+    std::size_t functionIndex = 0, classIndex = 0, enumIndex = 0, methods = 0, fields = 0;
+    std::set<std::string> identities;
+    // Syntax comparisons establish dispatch/retention consistency. The compact
+    // literal inventory above and resolvedModules supply independent contracts.
+    for (std::size_t position = 0; position < order.size(); ++position) {
+        const auto module = order[position];
+        const auto scope = module == 5 ? 0 : static_cast<int>(position + 1);
+        for (const auto &expected : syntax[module].functions) {
+            const auto &actual = program.functions.at(functionIndex++);
+            require(identities.insert(actual.name).second && actual.moduleScope == scope &&
+                        actual.scope == expected.scope && actual.exported == expected.exported &&
+                        actual.params.size() == expected.params.size() && actual.body.size() == expected.body.size() &&
+                        actual.templateParameters.empty() && actual.templateArguments.empty(),
+                    "compiler function identity, defining module or source-order retention differs");
+            sameToken(actual.token, expected.token);
+        }
+        for (const auto &expected : syntax[module].classes) {
+            const auto &actual = program.classes.at(classIndex++);
+            require(identities.insert(actual.name).second && actual.scope == expected.scope &&
+                        actual.exported == expected.exported && actual.id == 0 &&
+                        actual.fields.size() == expected.fields.size() && actual.methods.size() == expected.methods.size(),
+                    "compiler class identity, member inventory or deferred layout differs");
+            sameToken(actual.token, expected.token);
+            for (std::size_t field = 0; field < actual.fields.size(); ++field) {
+                sameToken(actual.fields[field].token, expected.fields[field].token);
+                require(actual.fields[field].index == 0 && actual.fields[field].offset == 0 &&
+                            actual.fields[field].publicAccess == expected.fields[field].publicAccess,
+                        "compiler copied field access or deferred physical layout differs");
+                ++fields;
+            }
+            for (std::size_t method = 0; method < actual.methods.size(); ++method) {
+                const auto &value = actual.methods[method];
+                require(identities.insert(value.name).second && value.receiverClass == actual.name &&
+                            value.moduleScope == scope && value.constructor == expected.methods[method].constructor &&
+                            value.receiverConst == expected.methods[method].receiverConst,
+                        "compiler method receiver, constructor mode or source order differs");
+                sameToken(value.token, expected.methods[method].token);
+                ++methods;
+            }
+        }
+        for (const auto &expected : syntax[module].enums) {
+            const auto &actual = program.enums.at(enumIndex++);
+            require(identities.insert(actual.name).second && actual.id == 0 && actual.cases.size() == expected.cases.size(),
+                    "compiler enum identity, case inventory or deferred physical ID differs");
+            sameToken(actual.token, expected.token);
+            for (std::size_t value = 0; value < actual.cases.size(); ++value)
+                sameToken(actual.cases[value], expected.cases[value]);
+        }
+    }
+    require(functionIndex == program.functions.size() && classIndex == program.classes.size() &&
+                enumIndex == program.enums.size() && classIndex == 26 && fields > 76 && methods > 125,
+            "real compiler output omitted or appended an unaccounted declaration");
     ++cases;
 }
 
@@ -5699,7 +6001,7 @@ void rawAggregates() {
 int main(int argc, char **argv) {
     try {
         context = "fixture arguments";
-        require(argc == 16, "expected three bootstrap, five aggregate and seven typed consumer source paths");
+        require(argc == 19, "expected six compiler, five aggregate and seven typed consumer source paths");
         grammarExpectations();
         diagnosticExpectations();
         // Table rows cover ordinary semicolon inputs. Keep distinct trivia,
@@ -5846,6 +6148,8 @@ int main(int argc, char **argv) {
         rawAggregates();
         resolvedModules();
         resolvedVisibility();
+        rawResolutionOwnership();
+        resolvedCompilerSources(argv + 1);
         bootstrapSources(argv + 1);
         consumerSources(argv + 4);
         typedConsumerSources(argv + 9);

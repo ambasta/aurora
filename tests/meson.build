@@ -661,10 +661,12 @@ test('hosted-parser', hosted_parser_test,
                  '../examples/kernel-graphical-console.au', '../library/fs/xfs_sector.au',
                  '../examples/class_values.au', '../library/std/utility.au', '../library/std/decimal.au',
                  '../library/std/json.au', '../library/package/graph.au', '../examples/function_token_values.au',
-                 '../examples/class_values.au', '../examples/kernel-bios.au'),
+                 '../examples/class_values.au', '../examples/kernel-bios.au', '../compiler/resolution_kinds.au',
+                 '../compiler/resolution_arena.au', '../compiler/resolver.au'),
      suite: ['full', 'dev', 'core', 'compiler'], timeout: 120)
 hosted_parser_invalid = executable(
     'hosted-parser-invalid', ['compiler/hosted_parser_invalid.cpp', '../compiler/hosted_parser.cpp',
+                              '../compiler/hosted_resolver.cpp',
                               '../runtime/hosted_bytes.cpp', frontend_assembly[3]],
     cpp_args: ['-DAURORA_HOSTED_PARSER'], include_directories: include_directories('../compiler', '..'),
     native: true, install: false,

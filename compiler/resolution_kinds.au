@@ -113,6 +113,8 @@ export namespace compiler_resolver {
         function_signature_concrete,
         function_signature_import,
         export_function_private,
+        function_template_signature_import,
+        export_function_template_private,
         unknown_signature,
         overload_parameters,
         duplicate_overload,

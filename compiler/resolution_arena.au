@@ -5,11 +5,46 @@ import aurora.compiler.syntax_arena;
 
 // The host owns the granting region. Every pointer-free row and every source
 // byte below belongs to this single move-only Session until explicit release.
+//
+// Source-row words (all optional indices use -1):
+// expression: token, first, second, depth, last, close, attached-type, role, ..., source-module.
+// edge: child, previous, count, depth, field-token, ..., source-module.
+// type: token, last, half-close, first, second, owner-token, role, ..., source-module.
+// declaration: token, end, previous, expression, target, type, binding, body,
+//              other, qualifier, borrow-token, source-module.
+// Import binding additionally projects its final name token. Ingest translates
+// every child/list index to a Session row and each token to a source-reference.
+//
+// Metadata words owned here:
+// module slot 0..63: source-start/length, four base/count pairs, root, module-id,
+//                   graph-order, module-scope, root-flag.
+// source-reference: module-id, begin/end bytes, begin line/column, ordinal/half,
+//                   end line/column, synthetic-origin (zero for real modules).
+// atom: source-start/length/reference. prefix: parent/atom/depth.
+// index: domain, four keys, value, left/right/parent/height.
+// import: defining-module, target-module, syntax, exact-name-reference, next.
+// Remaining metadata variants belong to resolver.au's semantic ledger.
+//
+// Storage charge ledger, before semantic rows and semantic index entries:
+// 64 + 2U + X + 2Q + 2A + 2P + N + 2L + 2H + 2G metadata rows.
+// U is sparse projected coordinates; X seeded text references; Q new identifier
+// coordinates (interned against U); A atoms; P prefixes; N name-cache entries;
+// L inclusive name ranges; H import bindings; G nonempty import lists.
+// U <= 3*expressions + edges + 4*types + 4*declarations <= 12*source bytes.
+// Q and A are bounded by source plus seed byte counts. Each index entry and
+// every referenced range has an explicit producer charge; nothing charges a
+// guessed number of rows per declaration. Namespace/name candidate bounds and
+// semantic metadata/worklist counts are supplied by the resolver producer.
+// Scratch projection uses in-place heapsort and at most 12*one-file bytes.
+// Prefix helpers add name depth (or two depths for comparison) to their caller's
+// saved scratch base, then restore it; AVL balancing uses parent links, no stack.
+// Count publication always follows successful set; all five allocation results,
+// including inert failures, remain owned until ordinary consuming cleanup.
 export namespace compiler_resolver {
     enum class StorageStatus { none, allocation, invalid, limit };
     enum class SyntaxTag { invalid, expression, edge, type, declaration };
     enum class MetaTag {
-        invalid, module_source, module, source_reference, atom, prefix, index,
+        invalid, module_source, module_unit, source_reference, atom, prefix, index,
         import_name, symbol, overload, concrete_type, instance, signature,
         public_type, authority, visibility, request, link, context
     };
@@ -302,7 +337,7 @@ export namespace compiler_resolver {
             return failure;
         }
         auto fail_storage(StorageStatus code) -> i64 {
-            if (failure == StorageStatus::none) { failure = code; }
+            if (failure == StorageStatus::none && diagnostic == SemanticError::none) { failure = code; }
             return -1;
         }
         auto reject(SemanticError code, i64 node, i64 first, i64 second) -> i64 {
@@ -322,6 +357,10 @@ export namespace compiler_resolver {
         auto resolved_count() const -> i64 { return resolved_used; }
         auto work_count() const -> i64 { return work_used; }
         auto module_count() const -> i64 { return modules; }
+        auto view_source(i64 index) const -> i64 {
+            if (!sources.ok() || index < 0 || index >= source_used || index >= sources.size()) { return -1; }
+            return i64(sources.at(index));
+        }
         auto source_byte(i64 index) -> u8 {
             if (!good() || index < 0 || index >= source_used) { fail_storage(StorageStatus::invalid); return 0u8; }
             return sources.at(index);
@@ -442,7 +481,7 @@ export namespace compiler_resolver {
             }
             if (modules > 0) {
                 const MetaRow previous = metadata.at(modules - 1);
-                if (previous.kind() != MetaTag::module) { return fail_storage(StorageStatus::invalid); }
+                if (previous.kind() != MetaTag::module_unit) { return fail_storage(StorageStatus::invalid); }
             }
             if (count > 9223372036854775807 - source_used) { return fail_storage(StorageStatus::invalid); }
             const i64 required = source_used + count;
@@ -466,11 +505,11 @@ export namespace compiler_resolver {
         }
         // A returned Lexeme is copied. The private source-field view ends before
         // its caller changes metadata, so there is no self-view/mutable-call loan.
-        auto scan(i64 module, compiler_lexer::Cursor cursor) const -> compiler_lexer::Lexeme {
-            if (!sources.ok() || !metadata.ok() || module < 0 || module >= modules) {
+        auto scan(i64 module_id, compiler_lexer::Cursor cursor) const -> compiler_lexer::Lexeme {
+            if (!sources.ok() || !metadata.ok() || module_id < 0 || module_id >= modules) {
                 return compiler_lexer::Lexeme(compiler_lexer::Event::invalid_cursor, 0, 1, 0);
             }
-            const MetaRow row = metadata.at(module);
+            const MetaRow row = metadata.at(module_id);
             const i64 begin = row.word(0); const i64 length = row.word(1);
             if (begin < 0 || length < 0 || begin > source_used || length > source_used - begin) {
                 return compiler_lexer::Lexeme(compiler_lexer::Event::invalid_cursor, 0, 1, 0);
@@ -514,7 +553,8 @@ export namespace compiler_resolver {
             return 0;
         }
         auto index_node(i64 domain, i64 first, i64 second, i64 third, i64 fourth) -> i64 {
-            if (!good() || domain < 1) { return -1; }
+            if (!good()) { return -1; }
+            if (domain < 1) { return fail_storage(StorageStatus::invalid); }
             i64 node = index_root; i64 steps = 0;
             while (node >= 0 && good()) {
                 if (steps >= meta_used) { return fail_storage(StorageStatus::invalid); }
@@ -692,7 +732,7 @@ export namespace compiler_resolver {
             if (first == last) { return first; }
             const MetaRow begin = meta(first); const MetaRow end = meta(last);
             if (begin.kind() != MetaTag::source_reference || end.kind() != MetaTag::source_reference
-                || begin.word(0) != end.word(0) || begin.word(1) < 0 || end.word(2) < begin.word(2)
+                || begin.word(0) != end.word(0) || begin.word(9) != end.word(9) || begin.word(1) < 0 || end.word(2) < begin.word(2)
                 || end.word(2) > source_used) { return fail_storage(StorageStatus::invalid); }
             const i64 existing = index(7, first, last, 0, 0);
             if (existing >= 0 || !good()) { return existing; }
@@ -718,14 +758,20 @@ export namespace compiler_resolver {
                 || end > base.word(2) - base.word(1) || line < 1 || start < 0 || start > begin) {
                 return fail_storage(StorageStatus::invalid);
             }
+            const i64 ordinal = base.word(5) + location.word(4);
+            const i64 existing = index(9, base.word(0), ordinal, 0, base.word(9));
+            if (existing >= 0 || !good()) { return existing; }
             MetaRow row = MetaRow(MetaTag::source_reference);
             i64 column = begin - start + 1;
             if (line == 1) { column = column + base.word(4) - 1; }
             row.set_word(0, base.word(0)); row.set_word(1, base.word(1) + begin);
             row.set_word(2, base.word(1) + end); row.set_word(3, base.word(3) + line - 1);
-            row.set_word(4, column); row.set_word(5, base.word(5) + location.word(4)); row.set_word(6, 0);
+            row.set_word(4, column); row.set_word(5, ordinal); row.set_word(6, 0);
             row.set_word(7, base.word(3) + line - 1); row.set_word(8, column + end - begin);
-            return append_meta(row);
+            row.set_word(9, base.word(9));
+            const i64 result = append_meta(row);
+            if (result < 0) { return -1; }
+            return index_insert(9, base.word(0), ordinal, 0, base.word(9), result);
         }
         auto intern_atom(i64 reference) -> i64 {
             const MetaRow source = meta(reference);
@@ -839,6 +885,15 @@ export namespace compiler_resolver {
             return row.word(1);
         }
         auto prefix_join(i64 scope, i64 name) -> i64 {
+            if (name < -1 || scope < -1) { return fail_storage(StorageStatus::invalid); }
+            if (name >= 0) {
+                const MetaRow named = meta(name);
+                if (named.kind() != MetaTag::prefix) { return fail_storage(StorageStatus::invalid); }
+            }
+            if (scope >= 0) {
+                const MetaRow parent = meta(scope);
+                if (parent.kind() != MetaTag::prefix) { return fail_storage(StorageStatus::invalid); }
+            }
             if (name == -1) { return scope; }
             if (scope == -1) { return name; }
             const i64 base = work_used;
@@ -859,7 +914,7 @@ export namespace compiler_resolver {
             }
             truncate_work(base); return result;
         }
-        auto compare_atoms(i64 first, i64 second) -> i64 {
+        auto compare_components(i64 first, i64 second, bool left_more, bool right_more) -> i64 {
             if (first == second) { return 0; }
             const MetaRow left = meta(first); const MetaRow right = meta(second);
             if (left.kind() != MetaTag::atom || right.kind() != MetaTag::atom || left.word(0) < 0
@@ -873,8 +928,14 @@ export namespace compiler_resolver {
                 if (a > b) { return 1; }
                 at = at + 1;
             }
-            if (left.word(1) < right.word(1)) { return -1; }
-            if (left.word(1) > right.word(1)) { return 1; }
+            if (left.word(1) < right.word(1)) {
+                if (left_more && ':' > sources.at(right.word(0) + at)) { return 1; }
+                return -1;
+            }
+            if (left.word(1) > right.word(1)) {
+                if (right_more && sources.at(left.word(0) + at) < ':') { return -1; }
+                return 1;
+            }
             return 0;
         }
         auto prefix_compare(i64 first, i64 second) -> i64 {
@@ -905,7 +966,7 @@ export namespace compiler_resolver {
             while (left > base && right > middle && result == 0 && good()) {
                 left = left - 1; right = right - 1;
                 const WorkRow a = work(left); const WorkRow b = work(right);
-                result = compare_atoms(a.word(0), b.word(0));
+                result = compare_components(a.word(0), b.word(0), left > base, right > middle);
             }
             if (result == 0) {
                 if (left > base) { result = 1; }
@@ -916,7 +977,7 @@ export namespace compiler_resolver {
         auto append_text(builtin::span<const u8> text) -> i64 {
             if (!good()) { return -1; }
             const i64 count = text.size();
-            if (count < 0 || count > 9223372036854775807 - source_used) { return fail_storage(StorageStatus::invalid); }
+            if (count < 0 || count > 2147483646 || count > 9223372036854775807 - source_used) { return fail_storage(StorageStatus::invalid); }
             const i64 required = source_used + count;
             if (required > sources.size()) {
                 const i64 capacity = next_capacity(sources.size(), required);
@@ -932,21 +993,21 @@ export namespace compiler_resolver {
             MetaRow row = MetaRow(MetaTag::source_reference);
             row.set_word(0, -1); row.set_word(1, source_used); row.set_word(2, required);
             row.set_word(3, 1); row.set_word(4, 1); row.set_word(5, 0); row.set_word(6, 0);
-            row.set_word(7, line); row.set_word(8, column);
+            row.set_word(7, line); row.set_word(8, column); row.set_word(9, meta_used);
             source_used = required;
             return append_meta(row);
         }
-        auto order_module(i64 module, i64 order, i64 scope, bool root) -> bool {
-            if (!good() || module < 0 || module >= modules || order < 0 || order >= modules || scope < 0
+        auto order_module(i64 module_id, i64 order, i64 scope, bool root) -> bool {
+            if (!good() || module_id < 0 || module_id >= modules || order < 0 || order >= modules || scope < 0
                 || scope >= modules || (root && scope != 0) || (!root && scope == 0)) {
                 fail_storage(StorageStatus::invalid); return false;
             }
-            MetaRow row = meta(module);
-            if (row.kind() != MetaTag::module || row.word(12) != -1) { fail_storage(StorageStatus::invalid); return false; }
+            MetaRow row = meta(module_id);
+            if (row.kind() != MetaTag::module_unit || row.word(12) != -1) { fail_storage(StorageStatus::invalid); return false; }
             i64 at = 0;
             while (at < modules) {
                 const MetaRow existing = meta(at);
-                if (existing.kind() == MetaTag::module && existing.word(12) >= 0
+                if (existing.kind() == MetaTag::module_unit && existing.word(12) >= 0
                     && (existing.word(12) == order || existing.word(13) == scope)) {
                     fail_storage(StorageStatus::invalid); return false;
                 }
@@ -954,31 +1015,33 @@ export namespace compiler_resolver {
             }
             row.set_word(12, order); row.set_word(13, scope);
             if (root) { row.set_word(14, 1); } else { row.set_word(14, 0); }
-            return set_meta(module, row);
+            return set_meta(module_id, row);
         }
-        auto import_head(i64 module) -> i64 { return index(3, module, 0, 0, 0); }
-        auto bind_import(i64 module, i64 import_node, i64 target) -> bool {
-            if (!good() || module < 0 || module >= modules || target < 0 || target >= modules) {
+        auto import_head(i64 module_id) -> i64 { return index(3, module_id, 0, 0, 0); }
+        auto bind_import(i64 module_id, i64 import_node, i64 target) -> bool {
+            if (!good() || module_id < 0 || module_id >= modules || target < 0 || target >= modules) {
                 fail_storage(StorageStatus::invalid); return false;
             }
-            const MetaRow from = meta(module); const MetaRow to = meta(target);
+            const MetaRow from = meta(module_id); const MetaRow to = meta(target);
             const SyntaxRow declaration = syntax(import_node);
-            if (from.kind() != MetaTag::module || to.kind() != MetaTag::module
-                || declaration.kind() != SyntaxTag::declaration || declaration.word(11) != module
+            if (from.kind() != MetaTag::module_unit || to.kind() != MetaTag::module_unit
+                || declaration.kind() != SyntaxTag::declaration || declaration.word(11) != module_id
                 || declaration.declaration_kind() != compiler_parser::SyntaxKind::import_name
-                || index(5, module, import_node, 0, 0) >= 0) {
+                || index(5, module_id, import_node, 0, 0) >= 0) {
                 fail_storage(StorageStatus::invalid); return false;
             }
-            // import.end is the one-past-last name token. The defining parser
-            // retains its first name and the token immediately following it.
+            // Ingestion projects the final identifier into the otherwise unused
+            // import binding slot, so trailing trivia never widens its name span.
+            const i64 reference = name_range(declaration.word(0), declaration.word(6));
+            if (reference < 0) { return false; }
             MetaRow row = MetaRow(MetaTag::import_name);
-            row.set_word(0, module); row.set_word(1, target); row.set_word(2, import_node);
-            row.set_word(3, declaration.word(0));
+            row.set_word(0, module_id); row.set_word(1, target); row.set_word(2, import_node);
+            row.set_word(3, reference);
             const i64 result = append_meta(row);
             if (result < 0) { return false; }
-            const i64 tail = index(4, module, 0, 0, 0);
+            const i64 tail = index(4, module_id, 0, 0, 0);
             if (tail < 0) {
-                if (index_insert(3, module, 0, 0, 0, result) < 0 || index_insert(4, module, 0, 0, 0, result) < 0) {
+                if (index_insert(3, module_id, 0, 0, 0, result) < 0 || index_insert(4, module_id, 0, 0, 0, result) < 0) {
                     return false;
                 }
             } else {
@@ -987,9 +1050,9 @@ export namespace compiler_resolver {
                     fail_storage(StorageStatus::invalid); return false;
                 }
                 previous.set_word(4, result);
-                if (!set_meta(tail, previous) || !index_replace(4, module, 0, 0, 0, result)) { return false; }
+                if (!set_meta(tail, previous) || !index_replace(4, module_id, 0, 0, 0, result)) { return false; }
             }
-            return index_insert(5, module, import_node, 0, 0, result) == result;
+            return index_insert(5, module_id, import_node, 0, 0, result) == result;
         }
     };
 }
@@ -1006,17 +1069,18 @@ export namespace compiler_resolver {
         const WorkRow work_fill = WorkRow(-1, -1, -1, -1, -1, -1);
         builtin::OwnedValues<WorkRow> work = region.try_allocate(0, work_fill);
         Session session = Session(region, move(bytes), move(syntax), move(meta), move(resolved), move(work));
+        if (!session.good()) { session.fail_storage(StorageStatus::allocation); }
         return move(session);
     }
     auto append_source(Session& session, builtin::span<const u8> source) -> i64 {
         return session.append_source(source);
     }
     auto append_text(Session& session, builtin::span<const u8> text) -> i64 { return session.append_text(text); }
-    auto order_module(Session& session, i64 module, i64 order, i64 scope, bool root) -> bool {
-        return session.order_module(module, order, scope, root);
+    auto order_module(Session& session, i64 module_id, i64 order, i64 scope, bool root) -> bool {
+        return session.order_module(module_id, order, scope, root);
     }
-    auto bind_import(Session& session, i64 module, i64 node, i64 target) -> bool {
-        return session.bind_import(module, node, target);
+    auto bind_import(Session& session, i64 module_id, i64 node, i64 target) -> bool {
+        return session.bind_import(module_id, node, target);
     }
     auto count(const Session& session, i64 pool) -> i64 {
         if (pool == 0) { return session.source_size(); }
@@ -1027,6 +1091,7 @@ export namespace compiler_resolver {
         if (pool == 5) { return session.module_count(); }
         return -1;
     }
+    auto read_source(const Session& session, i64 index) -> i64 { return session.view_source(index); }
     auto read_syntax(const Session& session, i64 index) -> SyntaxRow {
         const SyntaxRow row = session.view_syntax(index); return row;
     }
@@ -1134,16 +1199,16 @@ namespace compiler_resolver {
         }
         return session.good();
     }
-    auto project_sources(Session& session, i64 module) -> bool {
+    auto project_sources(Session& session, i64 module_id) -> bool {
         if (!sort_requests(session)) { session.truncate_work(0); return false; }
-        const MetaRow source = session.meta(module);
+        const MetaRow source = session.meta(module_id);
         if (source.kind() != MetaTag::module_source) {
             session.fail_storage(StorageStatus::invalid); session.truncate_work(0); return false;
         }
         i64 request = 0; i64 offset = 0; i64 line = 1; i64 line_start = 0; i64 ordinal = 0;
         while (request < session.work_count() && session.good()) {
             const compiler_lexer::Cursor cursor = compiler_lexer::Cursor(offset, line, line_start);
-            const compiler_lexer::Lexeme token = session.scan(module, cursor);
+            const compiler_lexer::Lexeme token = session.scan(module_id, cursor);
             if (token.kind() == compiler_lexer::Event::token || token.kind() == compiler_lexer::Event::end_of_input) {
                 const WorkRow pending = session.work(request);
                 if (pending.word(0) < ordinal || (token.kind() == compiler_lexer::Event::end_of_input
@@ -1162,16 +1227,20 @@ namespace compiler_resolver {
                         } else {
                             if (half != previous_half) {
                                 MetaRow row = MetaRow(MetaTag::source_reference);
-                                row.set_word(0, module); row.set_word(1, source.word(0) + offset + half);
+                                row.set_word(0, module_id); row.set_word(1, source.word(0) + offset + half);
                                 row.set_word(2, source.word(0) + token.next_offset()); row.set_word(3, line);
                                 row.set_word(4, offset - line_start + 1 + half); row.set_word(5, ordinal);
                                 row.set_word(6, half); row.set_word(7, token.next_line());
-                                row.set_word(8, token.next_offset() - token.next_line_start() + 1);
-                                reference = session.append_meta(row); previous_half = half;
+                                row.set_word(8, token.next_offset() - token.next_line_start() + 1); row.set_word(9, 0);
+                                reference = session.append_meta(row);
+                                if (reference >= 0 && session.index_insert(9, module_id, ordinal, half, 0, reference) != reference) {
+                                    session.fail_storage(StorageStatus::invalid);
+                                }
+                                previous_half = half;
                             }
                             if (session.good()) {
                                 SyntaxRow row = session.syntax(item.word(1));
-                                if (row.word(11) != module || !row.set_word(item.word(2), reference)
+                                if (row.word(11) != module_id || !row.set_word(item.word(2), reference)
                                     || !session.set_syntax(item.word(1), row)) {
                                     session.fail_storage(StorageStatus::invalid);
                                 }
@@ -1202,17 +1271,19 @@ export namespace compiler_resolver {
     // Both owning inputs are transferred into distinct generated argument slots.
     // Every return transfers Session and normally drops parsed, including failure.
     auto ingest(builtin::ByteRegion region, Session session, compiler_parser::AstArena parsed,
-        i64 module, i64 root) -> Session {
+        i64 module_id, i64 root) -> Session {
         if (!session.good()) { return move(session); }
-        if (module < 0 || module >= session.module_count() || module != session.module_count() - 1
+        if (module_id < 0 || module_id >= session.module_count() || module_id != session.module_count() - 1
             || !parsed.ok() || parsed.stack_size() != 0 || session.work_count() != 0) {
             session.fail_storage(StorageStatus::invalid); return move(session);
         }
-        MetaRow module_row = session.meta(module);
+        MetaRow module_row = session.meta(module_id);
         const i64 expressions = parsed.size(); const i64 edges = parsed.arguments();
         const i64 types = parsed.types(); const i64 declarations = parsed.syntax_size();
         const i64 bytes = module_row.word(1);
-        if (module_row.kind() != MetaTag::module_source || module_row.word(10) != -1 || expressions < 0 || edges < 0
+        if (module_row.kind() != MetaTag::module_source || module_row.word(10) != -1 || bytes < 0 || bytes > 1048576
+            || module_row.word(0) < 0 || module_row.word(0) > session.source_size()
+            || bytes > session.source_size() - module_row.word(0) || expressions < 0 || edges < 0
             || types < 0 || declarations < 1 || expressions > bytes || edges > bytes || types > bytes
             || declarations > bytes || root < 0 || root >= declarations) {
             session.fail_storage(StorageStatus::invalid); return move(session);
@@ -1232,13 +1303,13 @@ export namespace compiler_resolver {
         module_row.set_word(4, edge_base); module_row.set_word(5, edges);
         module_row.set_word(6, type_base); module_row.set_word(7, types);
         module_row.set_word(8, declaration_base); module_row.set_word(9, declarations);
-        if (!session.set_meta(module, module_row)) { return move(session); }
+        if (!session.set_meta(module_id, module_row)) { return move(session); }
         i64 at = 0;
         while (at < expressions && session.good()) {
             const compiler_parser::AstNode node = parsed.at(at);
             SyntaxRow row = SyntaxRow(SyntaxTag::expression);
             row.set_expression_kind(node.kind()); row.set_word(0, node.token()); row.set_word(3, node.depth());
-            row.set_word(4, node.last()); row.set_word(5, node.close()); row.set_word(11, module);
+            row.set_word(4, node.last()); row.set_word(5, node.close()); row.set_word(11, module_id);
             if (node.token() < 0 || node.last() < node.token() || node.close() < node.last() || node.depth() < 1
                 || node.depth() > 128 || node.kind() == compiler_parser::NodeKind::invalid) {
                 session.fail_storage(StorageStatus::invalid);
@@ -1264,7 +1335,7 @@ export namespace compiler_resolver {
                                 && node.kind() != compiler_parser::NodeKind::construct && node.kind() != compiler_parser::NodeKind::array_zero) {
                                 session.fail_storage(StorageStatus::invalid);
                             }
-                            if (node.second() < 0 || (node.first() == -1 && node.second() != 0)
+                            if (node.second() < 0 || node.second() > edges || (node.first() == -1 && node.second() != 0)
                                 || (node.first() >= 0 && node.second() == 0)) { session.fail_storage(StorageStatus::invalid); }
                             row.set_word(1, translate_index(session, edge_base, edges, node.first()));
                             row.set_word(2, node.second());
@@ -1282,12 +1353,13 @@ export namespace compiler_resolver {
             const compiler_parser::ChildEdge node = parsed.edge(at);
             SyntaxRow row = SyntaxRow(SyntaxTag::edge);
             if (node.child() < 0 || node.child() >= expressions || node.previous() < -1 || node.previous() >= at
-                || node.count() < 1 || node.depth() < 1 || node.depth() > 128 || node.field() < -1) {
+                || node.count() < 1 || node.count() > edges || node.depth() < 1 || node.depth() > 128 || node.field() < -1
+                || (node.previous() == -1 && node.count() != 1)) {
                 session.fail_storage(StorageStatus::invalid);
             }
             row.set_word(0, translate_index(session, expression_base, expressions, node.child()));
             row.set_word(1, translate_index(session, edge_base, edges, node.previous()));
-            row.set_word(2, node.count()); row.set_word(3, node.depth()); row.set_word(4, node.field()); row.set_word(11, module);
+            row.set_word(2, node.count()); row.set_word(3, node.depth()); row.set_word(4, node.field()); row.set_word(11, module_id);
             if (session.good() && session.append_syntax(row) != edge_base + at) { session.fail_storage(StorageStatus::invalid); }
             at = at + 1;
         }
@@ -1297,13 +1369,15 @@ export namespace compiler_resolver {
             SyntaxRow row = SyntaxRow(SyntaxTag::type);
             if (node.kind() == compiler_parser::TypeKind::invalid || node.token() < 0 || node.last() < node.token()
                 || node.last() > 4611686018427387903 || node.close() < node.last() * 2 || node.first() < -1
-                || node.first() >= at || node.second() < -1 || node.second() >= at || node.owner() < -1
+                || node.first() >= at || node.second() < -1 || node.second() >= at
+                || (node.first() == -1 && node.second() != -1) || (node.first() >= 0 && node.first() == node.second())
+                || node.owner() < -1
                 || node.role() < 0 || node.role() > 3 || (node.owner() == -1 && node.role() != 0)
                 || (node.owner() >= 0 && node.role() == 0)) { session.fail_storage(StorageStatus::invalid); }
             row.set_type_kind(node.kind()); row.set_word(0, node.token()); row.set_word(1, node.last());
             row.set_word(2, node.close()); row.set_word(3, translate_index(session, type_base, types, node.first()));
             row.set_word(4, translate_index(session, type_base, types, node.second())); row.set_word(5, node.owner());
-            row.set_word(6, node.role()); row.set_word(11, module);
+            row.set_word(6, node.role()); row.set_word(11, module_id);
             if (session.good() && session.append_syntax(row) != type_base + at) { session.fail_storage(StorageStatus::invalid); }
             at = at + 1;
         }
@@ -1320,18 +1394,19 @@ export namespace compiler_resolver {
             row.set_word(3, translate_index(session, expression_base, expressions, node.expression()));
             row.set_word(4, translate_index(session, expression_base, expressions, node.target()));
             row.set_word(5, translate_index(session, type_base, types, node.type())); row.set_word(6, node.binding());
+            if (node.kind() == compiler_parser::SyntaxKind::import_name) { row.set_word(6, node.end() - 1); }
             row.set_word(7, translate_index(session, declaration_base, declarations, node.body()));
             row.set_word(8, translate_index(session, declaration_base, declarations, node.other()));
-            row.set_word(9, node.mutable_binding()); row.set_word(10, node.borrow_site()); row.set_word(11, module);
+            row.set_word(9, node.mutable_binding()); row.set_word(10, node.borrow_site()); row.set_word(11, module_id);
             if (session.good() && session.append_syntax(row) != declaration_base + at) { session.fail_storage(StorageStatus::invalid); }
             at = at + 1;
         }
         if (!session.good() || session.syntax_count() != first + total || !source_requests(session, first, first + total)
-            || !project_sources(session, module)) {
+            || !project_sources(session, module_id)) {
             session.truncate_work(0); return move(session);
         }
-        module_row.set_word(10, declaration_base + root); module_row.set_kind(MetaTag::module);
-        session.set_meta(module, module_row);
+        module_row.set_word(10, declaration_base + root); module_row.set_kind(MetaTag::module_unit);
+        session.set_meta(module_id, module_row);
         return move(session);
     }
 }
