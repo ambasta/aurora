@@ -23,6 +23,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <sys/resource.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -2580,10 +2581,11 @@ std::map<std::string, aurora::Type> compilerDeclarationTypes() {
                              "TypeWord",
                              "DeclarationWord",
                              "HeaderResult",
+                             "IndexRow",
                              "compiler_lexer::Cursor",
                              "compiler_lexer::Event"})
         result.emplace(name, T(name));
-    for (const auto &name : {"AstNode", "ParseFrame", "ChildEdge", "TypeSyntax", "SyntaxNode"})
+    for (const auto &name : {"AstNode", "ParseFrame", "ChildEdge", "TypeSyntax", "SyntaxNode", "IndexRow"})
         result.emplace(std::string("builtin::OwnedValues<") + name + ">", T::ownedValues(T(name)));
     return result;
 }
@@ -3278,13 +3280,20 @@ std::string enumSource(std::size_t width) {
 class Allocations {
 public:
     std::size_t allowed = std::numeric_limits<std::size_t>::max(), successful = 0, released = 0;
+    std::size_t attempted = 0, watchedBytes = 0, observed = 0, failedObserved = 0;
+    std::array<std::size_t, 6> initialBytes{};
     static void *allocate(void *context, std::size_t bytes) noexcept {
         auto &state = *static_cast<Allocations *>(context);
-        if (state.successful >= state.allowed)
-            return nullptr;
-        auto *result = std::malloc(bytes);
+        if (state.attempted < state.initialBytes.size())
+            state.initialBytes[state.attempted] = bytes;
+        ++state.attempted;
+        const bool watched = state.watchedBytes != 0 && bytes == state.watchedBytes;
+        state.observed += watched;
+        auto *result = state.successful < state.allowed ? std::malloc(bytes) : nullptr;
         if (result)
             ++state.successful;
+        else
+            state.failedObserved += watched;
         return result;
     }
     static void deallocate(void *context, void *address) noexcept {
@@ -3910,6 +3919,7 @@ public:
 // Both owning inputs are constructed directly in their final transfer slots.
 // Only generated scalar fields and copied readbacks are inspected by the host.
 class RawResolution {
+    Allocations &allocations;
     aurora::hosted::bytes::Region region;
     std::array<GuardedRecord<aurora::hosted_abi::ResolverIngest>, 2> slots;
     std::size_t active = 0;
@@ -3917,7 +3927,8 @@ class RawResolution {
 
 public:
     bool transferred = false, failedTransfer = false;
-    explicit RawResolution(Allocations &allocations) : region(32 * 1024 * 1024, allocations.allocator()) {
+    explicit RawResolution(Allocations &allocations)
+        : allocations(allocations), region(32 * 1024 * 1024, allocations.allocator()) {
         static_assert(
             offsetof(aurora::hosted_abi::ResolverRelease, session) ==
                 offsetof(aurora::hosted_abi::ResolverIngest, session) &&
@@ -4011,7 +4022,12 @@ public:
         const auto next = active ^ 1U;
         // A consuming call never has an armed input after transfer begins.
         owner = pair = false;
+        // Only the index pool requests eight 80-byte rows during this transfer.
+        // Infer the runtime's allocation header from the first empty owner.
+        allocations.watchedBytes =
+            allocations.initialBytes[0] + 8 * sizeof(aurora::hosted_abi::compiler_resolver::IndexRow);
         checked_hosted_resolver_ingest(&record, slots[next].value.session.storage.data());
+        allocations.watchedBytes = 0;
         active = next;
         owner = true;
         transferred = true;
@@ -4036,15 +4052,45 @@ public:
 
 void rawResolutionOwnership() {
     namespace Wire = aurora::hosted_abi::compiler_resolver;
+    using Index = Wire::IndexRow;
+    static_assert(sizeof(Index) == 80 && alignof(Index) == 8);
+    static_assert(offsetof(Index, domain) == 0 && offsetof(Index, key0) == 8 && offsetof(Index, key1) == 16 &&
+                  offsetof(Index, key2) == 24 && offsetof(Index, key3) == 32 && offsetof(Index, payload) == 40 &&
+                  offsetof(Index, left) == 48 && offsetof(Index, right) == 56 && offsetof(Index, parent) == 64 &&
+                  offsetof(Index, height) == 72);
+    static_assert(std::is_same_v<decltype(Index::domain), std::int64_t> &&
+                  std::is_same_v<decltype(Index::key0), std::int64_t> &&
+                  std::is_same_v<decltype(Index::key1), std::int64_t> &&
+                  std::is_same_v<decltype(Index::key2), std::int64_t> &&
+                  std::is_same_v<decltype(Index::key3), std::int64_t> &&
+                  std::is_same_v<decltype(Index::payload), std::int64_t> &&
+                  std::is_same_v<decltype(Index::left), std::int64_t> &&
+                  std::is_same_v<decltype(Index::right), std::int64_t> &&
+                  std::is_same_v<decltype(Index::parent), std::int64_t> &&
+                  std::is_same_v<decltype(Index::height), std::int64_t>);
     context = "resolved transfer allocation prefixes and generated cleanup records";
     std::string source = "export module raw;";
     for (std::size_t index = 0; index < 32; ++index)
         source += "auto f" + std::to_string(index) + "()->i64{return 1+2;}";
     std::size_t successful = 0;
+    std::array<std::size_t, 6> initialBytes{};
     {
         Allocations allocations;
         RawResolution resolution(allocations);
-        require(resolution.ingest(source) && resolution.transferred, "valid parser/session transfer failed");
+        initialBytes = allocations.initialBytes;
+        const auto emptyOwner = initialBytes[0];
+        require(allocations.attempted == 6 && allocations.successful == 6 &&
+                    initialBytes == std::array<std::size_t, 6>{emptyOwner,
+                                                             emptyOwner,
+                                                             emptyOwner + 64 * sizeof(Wire::MetaRow),
+                                                             emptyOwner,
+                                                             emptyOwner,
+                                                             emptyOwner} &&
+                    resolution.status().storage == Wire::StorageStatus::none,
+                "Session creation did not retain the five-owner order and sixth empty index owner");
+        require(resolution.ingest(source) && resolution.transferred && allocations.observed > 0 &&
+                    allocations.failedObserved == 0,
+                "valid parser/session transfer did not populate the compact index owner");
         const auto first = resolution.meta(0);
         require(first.tag == Wire::MetaTag::module_unit && first.value10 >= 0,
                 "successful transfer did not publish exactly one module root");
@@ -4062,21 +4108,38 @@ void rawResolutionOwnership() {
         resolution.finish();
         require(allocations.successful == allocations.released, "successful two-owner transfer leaked allocations");
     }
-    bool beforeTransfer = false, afterTransfer = false;
+    bool beforeTransfer = false, afterTransfer = false, indexFailure = false;
+    std::size_t initialFailures = 0;
     for (std::size_t prefix = 0; prefix < successful; ++prefix) {
         Allocations allocations;
         allocations.allowed = prefix;
         RawResolution resolution(allocations);
+        if (prefix < initialBytes.size()) {
+            require(allocations.attempted == 6 && allocations.successful == prefix &&
+                        allocations.initialBytes == initialBytes &&
+                        resolution.status().storage == Wire::StorageStatus::allocation,
+                    "initial owner failure skipped the sixth allocation or published a usable Session");
+            ++initialFailures;
+        }
         bool complete = resolution.ingest(source);
         if (complete)
             complete = resolution.ingest("export module second;auto next()->i64{return 3;}");
         require(!complete, "reachable resolution allocation prefix did not fail");
         beforeTransfer = beforeTransfer || !resolution.transferred;
         afterTransfer = afterTransfer || resolution.failedTransfer;
+        if (allocations.failedObserved != 0) {
+            const auto attempts = allocations.attempted;
+            require(resolution.failedTransfer && resolution.status().storage == Wire::StorageStatus::allocation &&
+                        !resolution.ingest(source) && allocations.attempted == attempts &&
+                        resolution.meta(0).tag == Wire::MetaTag::module_source && resolution.meta(0).value10 == -1,
+                    "compact index growth failure was not sticky or published a module root");
+            indexFailure = true;
+        }
         resolution.finish();
         require(allocations.successful == allocations.released, "failed transfer retained a consumed owner");
     }
-    require(beforeTransfer && afterTransfer, "failure sweep missed a live pair or returned Session boundary");
+    require(beforeTransfer && afterTransfer && indexFailure && initialFailures == 6,
+            "failure sweep missed an initial owner, compact index growth, live pair or returned Session boundary");
     for (const auto &[badModule, badRoot] : {std::pair{true, false}, std::pair{false, true}}) {
         Allocations allocations;
         RawResolution resolution(allocations);
@@ -4117,7 +4180,7 @@ void resolvedCompilerSources(char **paths) {
          "AdmissionType",
          "AdmissionScope"},
         {},
-        {"SyntaxRow", "MetaRow", "ResolvedRow", "WorkRow", "SessionStatus", "Session"},
+        {"SyntaxRow", "MetaRow", "IndexRow", "ResolvedRow", "WorkRow", "SessionStatus", "Session"},
         {"BindContext", "Arguments"},
         {},
     }};
@@ -4202,7 +4265,7 @@ void resolvedCompilerSources(char **paths) {
         }
     }
     require(functionIndex == program.functions.size() && classIndex == program.classes.size() &&
-                enumIndex == program.enums.size() && classIndex == 26 && fields > 76 && methods > 125,
+                enumIndex == program.enums.size() && classIndex == 27 && fields > 76 && methods > 125,
             "real compiler output omitted or appended an unaccounted declaration");
     ++cases;
 }
