@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Complete hosted graphical consumer gate, shared by root Make and Meson slow.
 
---run selects an existing compiler; this runner never builds aurorac. Direct and
-Make runs require an explicit compiler pin or controlled developer-build receipt.
+--run selects an existing compiler; this runner never builds aurorac. Direct runs
+require an explicit compiler pin.
 Meson uses --developer-selected-compiler, recording observed stability only.
 The earlier 67-case hosted result remains scoped to its historical source. A new
 run retains compact comparisons and generated artifacts, not guest qualification.
@@ -74,8 +74,8 @@ def arguments(argv=None):
     args = parser.parse_args(argv)
     if args.developer_selected_compiler:
         require(
-            args.compiler_sha256 is None and args.developer_build_receipt is None,
-            "developer-selected compiler cannot claim a pin or fresh-build receipt",
+            args.compiler_sha256 is None,
+            "developer-selected compiler cannot claim a pin",
         )
         require(
             not os.environ.get("AURORA_TEST_CONTEXT"), "developer-selected compiler cannot enter an aggregate context"

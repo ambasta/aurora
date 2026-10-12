@@ -207,12 +207,12 @@ class ProfileMetadata(unittest.TestCase):
                 [],
                 ["--compiler-sha256", "invalid"],
                 ["--developer-selected-compiler", "--compiler-sha256", "0" * 64],
-                ["--developer-selected-compiler", "--developer-build-receipt", "receipt"],
             ):
                 with self.subTest(extra=extra), self.assertRaises(RuntimeError):
                     runner.arguments(["--run", "compiler", *extra])
-            for extra in (["--compiler-sha256", "0" * 64], ["--developer-build-receipt", "receipt"]):
-                self.assertFalse(runner.arguments(["--run", "compiler", *extra]).developer_selected_compiler)
+            self.assertFalse(
+                runner.arguments(["--run", "compiler", "--compiler-sha256", "0" * 64]).developer_selected_compiler
+            )
         with patch.dict(os.environ, {"AURORA_TEST_CONTEXT": "active"}), self.assertRaises(RuntimeError):
             runner.arguments(["--run", "compiler", "--developer-selected-compiler"])
 

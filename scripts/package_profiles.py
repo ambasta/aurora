@@ -42,8 +42,8 @@ def validate_identity_selection(args, preflight=False):
         require(not getattr(args, "meson_selected_compiler", False), "choose one observed compiler mode")
         require(args.profile == "dev", "developer-selected compiler requires --profile dev")
         require(
-            args.compiler_sha256 is None and args.developer_build_receipt is None,
-            "developer-selected compiler cannot claim a pin or fresh-build receipt",
+            args.compiler_sha256 is None,
+            "developer-selected compiler cannot claim a pin",
         )
     else:
         validate_contract_selection(args, preflight=preflight)

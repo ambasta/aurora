@@ -2,11 +2,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 if [[ -z "${AURORAC:-}" || $# != 2 ]]; then
-    printf '%s\n' 'Supply AURORAC and exactly one --compiler-sha256 DIGEST or --developer-build-receipt FILE pair; use meson test -C BUILD native-policy-ipc-transition for the Meson-built compiler.' >&2
+    printf '%s\n' 'Supply AURORAC and --compiler-sha256 DIGEST; Meson runs native-policy-ipc-transition with its selected compiler.' >&2
     exit 2
 fi
 case "$1" in
-    --compiler-sha256|--developer-build-receipt) identity=("$1" "$2") ;;
+    --compiler-sha256) identity=("$1" "$2") ;;
     *) printf '%s\n' 'Invalid compiler identity mode' >&2; exit 2 ;;
 esac
 compiler="$AURORAC"

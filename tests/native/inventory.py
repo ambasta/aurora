@@ -177,7 +177,7 @@ def check_manifest(manifest, actual_files, tests=None, kernel_images=True):
             if argument not in argv:
                 raise ValueError("missing native runner argument: " + name + ": " + argument)
         if "--meson-selected-compiler" in expected.get("arguments", []):
-            if "--compiler-sha256" in argv or "--developer-build-receipt" in argv:
+            if "--compiler-sha256" in argv:
                 raise ValueError("native developer gate mislabels compiler provenance: " + name)
 
 

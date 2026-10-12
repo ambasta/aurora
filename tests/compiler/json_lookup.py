@@ -1066,8 +1066,8 @@ def main():
     args.compiler = args.compiler or args.compiler_pos
     if args.developer_selected_compiler:
         require(
-            args.compiler_sha256 is None and args.developer_build_receipt is None,
-            "developer-selected compiler cannot claim pin or build receipt",
+            args.compiler_sha256 is None,
+            "developer-selected compiler cannot claim a pin",
         )
         require(not os.environ.get("AURORA_TEST_CONTEXT"), "developer-selected compiler cannot enter aggregate")
     else:

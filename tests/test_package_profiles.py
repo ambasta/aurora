@@ -140,7 +140,6 @@ class Profiles(unittest.TestCase):
         for values in (
             ("--developer-selected-compiler",),
             ("--profile", "dev", "--developer-selected-compiler", "--compiler-sha256", "a" * 64),
-            ("--profile", "dev", "--developer-selected-compiler", "--developer-build-receipt", "build.json"),
             ("--profile", "dev", "--developer-selected-compiler", "--smoke"),
             ("--profile", "dev", "--developer-selected-compiler", "--freeze-reference", "frozen"),
         ):

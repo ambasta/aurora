@@ -37,76 +37,18 @@ class Controls(unittest.TestCase):
         self.addCleanup(self.patchenv.stop)
         (self.root / "compiler").mkdir()
         (self.root / "build").mkdir()
-        for name in (".gitignore", "AGENTS.md", "Makefile", "README.md"):
-            (self.root / name).write_text("synthetic contract control\n")
-        (self.root / "compiler/main.cpp").write_text("// synthetic source, never compiled\n")
         self.compiler = self.root / "build/compiler"
         self.compiler.write_text("#!/bin/sh\nexit 0\n")
         self.compiler.chmod(0o555)
         self.tool = self.root / "build/tool"
         self.tool.write_text("synthetic tool identity")
         self.tool.chmod(0o555)
-        self.depfile = self.root / "build/compiler.d"
-        self.depfile.write_text("aurora-contract: main.cpp\n")
-        self.receipt = self.root / "build/receipt.json"
-        tool = c.file_record(self.tool)
-        self.context = dict(
-            schema=c.SCHEMA,
-            status="built",
-            mode="developer",
-            root=str(self.root),
-            origin="fresh-source-build",
-            source_inputs=c.source_inventory(self.root),
-            tools={
-                name: tool
-                for name in (
-                    *c.TOOLS,
-                    "python-supervisor",
-                    "shell",
-                    "cxx",
-                    "cxx-cc1plus",
-                    "cxx-collect2",
-                    "cxx-as",
-                    "cxx-ld",
-                )
-            },
-            build_environment={name: os.environ.get(name) for name in c.BUILD_ENV},
-            compiler=c.file_record(self.compiler),
-            external_expected_sha256=None,
-            host_test_flags=c.selected_flag_vectors(os.environ),
-            build_returncode=0,
-            build_recipe="gnu-cxx-main-v1",
-            flags=c.parse_flags(c.DEFAULT_FLAGS),
-            build_cwd=str(self.root / "compiler"),
-            dependency_file=str(self.depfile),
-            header_inputs={str(self.root / "compiler/main.cpp"): c.file_record(self.root / "compiler/main.cpp")},
-        )
-        self.context["build_command"] = c.build_argv(
-            str(self.tool), self.context["flags"], str(self.compiler), str(self.depfile)
-        )
-        self.write()
-        mocked = patch.object(c, "tool_record", return_value=tool)
-        mocked.start()
-        self.addCleanup(mocked.stop)
-
-    def write(self):
-        self.receipt.write_text(json.dumps(self.context, indent=2, sort_keys=True) + "\n")
-
-    def checked(self):
-        return c.read_context(self.receipt, self.root, self.compiler, developer=True)
 
     def args(self, **kwargs):
-        return argparse.Namespace(compiler_sha256=kwargs.get("pin"), developer_build_receipt=kwargs.get("receipt"))
-
-    def test_valid_synthetic_receipt(self):
-        self.assertEqual(self.checked()["origin"], "fresh-source-build")
-        identity = c.resolve_identity(self.args(receipt=self.receipt), self.compiler, self.root)
-        self.assertEqual(identity.record()["mode"], "developer")
-        self.assertIsNone(identity.record()["external_expected_sha256"])
-        identity.verify()
+        return argparse.Namespace(compiler_sha256=kwargs.get("pin"), meson_selected_compiler=kwargs.get("meson", False))
 
     def test_identity_requires_exactly_one(self):
-        for args in (self.args(), self.args(pin="0" * 64, receipt=self.receipt)):
+        for args in (self.args(), self.args(pin="0" * 64, meson=True)):
             with self.subTest(args=args), self.assertRaises(c.ContractError):
                 c.validate_identity_selection(args)
         c.validate_identity_selection(self.args(), preflight=True)
@@ -120,136 +62,17 @@ class Controls(unittest.TestCase):
         identity = c.resolve_identity(self.args(pin=c.digest(self.compiler)), self.compiler, self.root)
         self.assertEqual(identity.record()["mode"], "explicit-pin")
         self.assertEqual(identity.expected, c.digest(self.compiler))
-        self.assertIsNone(identity.record()["developer_build_receipt"])
+        self.assertEqual(identity.record()["external_expected_sha256"], c.digest(self.compiler))
+        identity.verify()
+        meson = c.resolve_identity(self.args(meson=True), self.compiler, self.root)
+        self.assertEqual(meson.record()["mode"], "meson-selected")
+        self.assertIsNone(meson.expected)
 
     def test_wrong_pin_before_artifacts(self):
         before = set(self.root.rglob("*"))
         with self.assertRaises(c.ContractError):
             c.resolve_identity(self.args(pin="0" * 64), self.compiler, self.root)
         self.assertEqual(before, set(self.root.rglob("*")))
-
-    def test_source_bytes_with_preserved_mtime(self):
-        source = self.root / "compiler/main.cpp"
-        prior = source.stat()
-        source.write_text("// changed source\n")
-        os.utime(source, ns=(prior.st_atime_ns, prior.st_mtime_ns))
-        with self.assertRaises(c.ContractError):
-            self.checked()
-
-    def test_source_input_addition(self):
-        (self.root / "compiler/new.hpp").write_text("// newly relevant input\n")
-        with self.assertRaises(c.ContractError):
-            self.checked()
-
-    def test_source_input_removal(self):
-        (self.root / "compiler/main.cpp").unlink()
-        with self.assertRaises((c.ContractError, OSError)):
-            self.checked()
-
-    def test_newer_stale_executable_rejected(self):
-        self.compiler.chmod(0o755)
-        self.compiler.write_text("#!/bin/sh\nexit 1\n")
-        os.utime(self.compiler, ns=(2_000_000_000_000_000_000,) * 2)
-        with self.assertRaises(c.ContractError):
-            self.checked()
-
-    def test_same_bytes_replacement_detected(self):
-        contents = self.compiler.read_bytes()
-        self.compiler.unlink()
-        self.compiler.write_bytes(contents)
-        self.compiler.chmod(0o555)
-        with self.assertRaises(c.ContractError):
-            self.checked()
-
-    def test_current_flags_change_rejected(self):
-        os.environ["CXXFLAGS"] = "-std=c++23 -O0"
-        with self.assertRaises(c.ContractError):
-            self.checked()
-
-    def test_build_recipe_change_rejected(self):
-        self.context["build_command"].append("-different-recipe")
-        self.write()
-        with self.assertRaises(c.ContractError):
-            self.checked()
-
-    def test_tool_change_rejected(self):
-        self.tool.chmod(0o755)
-        self.tool.write_text("changed tool")
-        with self.assertRaises(c.ContractError):
-            self.checked()
-
-    def test_build_environment_change_rejected(self):
-        os.environ["CPATH"] = "/different/header/root"
-        with self.assertRaises(c.ContractError):
-            self.checked()
-
-    def test_wrong_root_rejected(self):
-        other = self.root / "other"
-        other.mkdir()
-        with self.assertRaises(c.ContractError):
-            c.read_context(self.receipt, other, self.compiler)
-
-    def test_wrong_output_path_rejected(self):
-        other = self.root / "build/other"
-        other.write_bytes(self.compiler.read_bytes())
-        with self.assertRaises(c.ContractError):
-            c.read_context(self.receipt, self.root, other)
-
-    def test_missing_receipt_rejected(self):
-        self.receipt.unlink()
-        with self.assertRaises(OSError):
-            c.resolve_identity(self.args(receipt=self.receipt), self.compiler, self.root)
-
-    def test_missing_success_record_rejected(self):
-        for field in (
-            "schema",
-            "status",
-            "build_returncode",
-            "build_recipe",
-            "build_command",
-            "header_inputs",
-            "host_test_flags",
-        ):
-            saved = self.context.pop(field)
-            self.write()
-            with self.subTest(field=field), self.assertRaises((c.ContractError, KeyError)):
-                self.checked()
-            self.context[field] = saved
-        self.write()
-
-    def test_receipt_modification_during_run(self):
-        identity = c.resolve_identity(self.args(receipt=self.receipt), self.compiler, self.root)
-        self.context["extra"] = "changed"
-        self.write()
-        with self.assertRaises(c.ContractError):
-            identity.verify()
-
-    def test_developer_cannot_claim_external_pin(self):
-        self.context["external_expected_sha256"] = c.digest(self.compiler)
-        self.write()
-        with self.assertRaises(c.ContractError):
-            self.checked()
-
-    def test_acceptance_context_cannot_be_developer_receipt(self):
-        self.context["mode"] = "acceptance"
-        self.context["external_expected_sha256"] = c.digest(self.compiler)
-        self.write()
-        with self.assertRaises(c.ContractError):
-            self.checked()
-
-    def test_prebuilt_acceptance_is_not_source_build(self):
-        self.context.update(
-            mode="acceptance",
-            origin="externally-pinned-prebuilt",
-            external_expected_sha256=c.digest(self.compiler),
-            prebuilt_input=c.file_record(self.compiler),
-        )
-        for field in ("build_command", "build_returncode", "header_inputs", "build_recipe"):
-            self.context.pop(field)
-        self.write()
-        self.assertEqual(c.read_context(self.receipt, self.root)["origin"], "externally-pinned-prebuilt")
-        with self.assertRaises(c.ContractError):
-            self.checked()
 
     def test_opaque_build_inputs_rejected(self):
         for value in (
@@ -273,22 +96,6 @@ class Controls(unittest.TestCase):
                 c.parse_flags(value)
         with self.assertRaises(c.ContractError):
             c.parse_flags("-std=c++23 -include forced.hpp")
-
-    def test_live_oracle_is_in_inventory(self):
-        relative = "evidence/package-graph/oracle/reference-v1/reference.py"
-        path = self.root / relative
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("synthetic inventory input")
-        self.assertIn(relative, c.source_inventory(self.root))
-
-    def test_historical_header_pch_rejection(self):
-        header = self.root / "system header.hpp"
-        header.write_text("// synthetic system header")
-        inputs = {str(header): c.file_record(header)}
-        c.reject_pch(inputs)
-        Path(str(header) + ".gch").write_text("opaque PCH")
-        with self.assertRaises(c.ContractError):
-            c.reject_pch(inputs)
 
     def test_native_runner_identity_rejections_precede_artifacts(self):
         output = self.root / "build/forbidden-artifacts"
@@ -325,7 +132,7 @@ class Controls(unittest.TestCase):
             for identity in (
                 [],
                 ["--compiler-sha256", "bad"],
-                ["--compiler-sha256", "0" * 64, "--developer-build-receipt", str(self.receipt)],
+                ["--compiler-sha256", "0" * 64, "--meson-selected-compiler"],
             ):
                 with self.subTest(runner=name, identity=identity):
                     command = (
@@ -471,54 +278,6 @@ class Controls(unittest.TestCase):
             with self.subTest(name=name), self.assertRaises(c.ContractError):
                 c.selected_flag_vectors({name: ""})
 
-    def test_historical_receipt_retains_exact_both_flag_vectors(self):
-        raw_build = '-std=c++23  -O2 "-DCOUNT=7" -D WORD=token'
-        raw_ir = "-std=c++23 -O1 -g '-DTRACE=1' -U DROP"
-        expected = {"CXXFLAGS": shlex.split(raw_build), "IR_TEST_CXXFLAGS": shlex.split(raw_ir)}
-        self.context["host_test_flags"] = expected
-        self.context["flags"] = expected["CXXFLAGS"]
-        self.context["build_command"] = c.build_argv(
-            str(self.tool), expected["CXXFLAGS"], str(self.compiler), str(self.depfile)
-        )
-        self.write()
-        with patch.dict(os.environ, {"CXXFLAGS": raw_build, "IR_TEST_CXXFLAGS": raw_ir}):
-            self.assertEqual(self.checked()["host_test_flags"], expected)
-        for name, vector in expected.items():
-            self.assertEqual(shlex.split(shlex.join(vector)), vector)
-
-    def test_ir_receipt_vector_mismatch_or_omission_rejects(self):
-        for vectors in (
-            {"CXXFLAGS": c.parse_flags(c.DEFAULT_FLAGS)},
-            {"CXXFLAGS": c.parse_flags(c.DEFAULT_FLAGS), "IR_TEST_CXXFLAGS": ["-O0"]},
-            None,
-        ):
-            self.context["host_test_flags"] = vectors
-            self.write()
-            with self.subTest(vectors=vectors), self.assertRaises(c.ContractError):
-                self.checked()
-        self.context["host_test_flags"] = c.selected_flag_vectors({})
-        self.write()
-        with patch.dict(os.environ, {"IR_TEST_CXXFLAGS": "-O0"}), self.assertRaises(c.ContractError):
-            self.checked()
-
-    def test_historical_prebuilt_receipt_retains_host_vectors_without_fresh_build_claim(self):
-        self.context.update(
-            mode="acceptance",
-            origin="externally-pinned-prebuilt",
-            external_expected_sha256=c.digest(self.compiler),
-            prebuilt_input=c.file_record(self.compiler),
-            host_test_flags=c.selected_flag_vectors({"IR_TEST_CXXFLAGS": "-std=c++23 -O0 -g"}),
-        )
-        for field in ("build_command", "build_returncode", "header_inputs", "build_recipe"):
-            self.context.pop(field)
-        self.write()
-        with patch.dict(os.environ, {"IR_TEST_CXXFLAGS": "-std=c++23 -O0 -g"}):
-            context = c.read_context(self.receipt, self.root)
-            self.assertEqual(context["origin"], "externally-pinned-prebuilt")
-            self.assertNotIn("build_command", context)
-            self.assertEqual(context["host_test_flags"]["IR_TEST_CXXFLAGS"], ["-std=c++23", "-O0", "-g"])
-        with patch.dict(os.environ, {"IR_TEST_CXXFLAGS": "-O1"}), self.assertRaises(c.ContractError):
-            c.read_context(self.receipt, self.root)
 
     def test_supervised_header_option_forms_reject_in_both_vectors(self):
         forms = (
@@ -635,10 +394,7 @@ class Controls(unittest.TestCase):
             "AURORAC": str(self.root / "selected compiler; literal"),
             cap_control: "513",
         }
-        for mode, value in (
-            ("--compiler-sha256", "a" * 64),
-            ("--developer-build-receipt", str(self.root / "receipt with spaces; $(false).json")),
-        ):
+        for mode, value in (("--compiler-sha256", "a" * 64),):
             result = subprocess.run(["/bin/bash", str(wrapper), mode, value], env=env, capture_output=True, timeout=10)
             self.assertEqual(result.returncode, 91, result.stderr.decode())
             self.assertEqual(
@@ -650,7 +406,8 @@ class Controls(unittest.TestCase):
             [],
             ["--compiler-sha256"],
             ["--bogus", "x"],
-            ["--compiler-sha256", "a" * 64, "--developer-build-receipt", str(self.receipt)],
+            ["--developer-build-receipt", str(self.root / "retired receipt.json")],
+            ["--compiler-sha256", "a" * 64, "--meson-selected-compiler", "x"],
         ):
             result = subprocess.run(["/bin/bash", str(wrapper), *args], env=env, capture_output=True, timeout=10)
             self.assertEqual(result.returncode, 2)
@@ -713,7 +470,9 @@ class Controls(unittest.TestCase):
         output = self.root / "build/ipc-synthetic"
         identity = Mock(sha256=c.digest(self.compiler))
         identity.record.return_value = dict(
-            mode="developer", observed_compiler_sha256=c.digest(self.compiler), external_expected_sha256=None
+            mode="explicit-pin",
+            observed_compiler_sha256=c.digest(self.compiler),
+            external_expected_sha256=c.digest(self.compiler),
         )
         if fail_final:
             identity.verify.side_effect = RuntimeError("synthetic final identity failure")
@@ -723,8 +482,8 @@ class Controls(unittest.TestCase):
             str(self.compiler),
             "--output",
             str(output),
-            "--developer-build-receipt",
-            str(self.receipt),
+            "--compiler-sha256",
+            c.digest(self.compiler),
         ]
 
         def observed_run(command, folder, name, cap, **kwargs):
@@ -795,7 +554,9 @@ class Controls(unittest.TestCase):
         output = self.root / "build/rr-synthetic"
         identity = Mock(sha256=c.digest(self.compiler))
         identity.record.return_value = dict(
-            mode="developer", observed_compiler_sha256=c.digest(self.compiler), external_expected_sha256=None
+            mode="explicit-pin",
+            observed_compiler_sha256=c.digest(self.compiler),
+            external_expected_sha256=c.digest(self.compiler),
         )
         if fail_final:
             identity.verify.side_effect = RuntimeError("synthetic final identity failure")
@@ -805,8 +566,8 @@ class Controls(unittest.TestCase):
             str(self.compiler),
             "--output",
             str(output),
-            "--developer-build-receipt",
-            str(self.receipt),
+            "--compiler-sha256",
+            c.digest(self.compiler),
         ]
         # Only adapter ordering/metadata are exercised; all native work is mocked.
         with (

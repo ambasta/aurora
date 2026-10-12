@@ -23,7 +23,6 @@ class MesonIdentityTests(unittest.TestCase):
     def args(self, **changes):
         values = dict(
             compiler_sha256=None,
-            developer_build_receipt=None,
             meson_selected_compiler=True,
         )
         values.update(changes)
@@ -49,8 +48,6 @@ class MesonIdentityTests(unittest.TestCase):
     def test_conflicting_identity_modes_rejected(self):
         with self.assertRaises(contract.ContractError):
             contract.validate_identity_selection(self.args(compiler_sha256="0" * 64))
-        with self.assertRaises(contract.ContractError):
-            contract.validate_identity_selection(self.args(developer_build_receipt=Path("/not-read")))
 
     def test_missing_identity_still_rejected(self):
         with self.assertRaises(contract.ContractError):
@@ -464,12 +461,8 @@ class MesonEntrypointTests(unittest.TestCase):
             self.assertNotIn("CXXFLAGS", kwargs["env"])
             return self.run_command(command, **kwargs)
 
-        with (
-            patch.object(contract, "read_context") as receipt,
-            patch.object(meson_test.subprocess, "run", side_effect=fixed_kernel_flags),
-        ):
+        with patch.object(meson_test.subprocess, "run", side_effect=fixed_kernel_flags):
             meson_test.execute(self.root, None, ["kernel-uefi-normal"])
-        receipt.assert_not_called()
         self.assertEqual(self.flags, [])
         self.assertEqual([command[1] for command in self.calls], ["compile"])
 
