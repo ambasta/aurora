@@ -2623,6 +2623,7 @@ std::map<std::string, aurora::Type> compilerDeclarationTypes() {
                              "MetaRow",
                              "SyntaxRow",
                              "ResolvedRow",
+                             "WorkRow",
                              "ResolvedTypeKind",
                              "NativeMode",
                              "DeclarationKind",
@@ -3803,10 +3804,23 @@ void resolvedModules() {
                                              "__au_c_m1_3dep_n1_3lib_d6Buffer_t2_u8_v4"};
     const std::array<std::string, 2> measures{"__au_g_m1_3dep_n1_3lib_d7measure_t1_c28__au_c_m1_4root_n0__d6Hidden",
                                               "__au_g_m1_3dep_n1_3lib_d7measure_t1_e27__au_e_m1_4root_n0__d5State"};
-    require(module.functions.size() == 9 && module.classLayouts.size() == 4 && module.enumCases.size() == 2 &&
-                abi.records.size() == 4 && abi.enums.size() == 2 && abi.functions.size() == 9 &&
-                module.classArrayCarriers.empty(),
+    // Validated IR prunes unused imported implementations; source ABI metadata
+    // retains every resolved declaration. The preserved PR161 probe pins these
+    // five retained identities/order independently of the candidate lowerer.
+    const std::array<std::string, 5> retained{measures[0],
+                                              measures[1],
+                                              "answer",
+                                              "__au_k_m1_3dep_n2_3lib6Buffer_d6Buffer_t2_u8_v3",
+                                              "__au_k_m1_3dep_n2_3lib6Buffer_d6Buffer_t2_u8_v4"};
+    require(module.functions.size() == retained.size() && module.classLayouts.size() == 4 &&
+                module.enumCases.size() == 2 && abi.records.size() == 4 && abi.enums.size() == 2 &&
+                abi.functions.size() == 9 && module.classArrayCarriers.empty(),
             "typed output duplicated concrete instances or lost declarations");
+    for (std::size_t index = 0; index < retained.size(); ++index)
+        require(module.functions[index].name == retained[index], "retained concrete function order differs");
+    const auto definitionSyntax = checkedProgram(aurora::lex(dependency));
+    const auto &bufferSyntax = definitionSyntax.templates.at(0);
+    require(bufferSyntax.methods.size() == 3, "source Buffer method inventory differs");
     require(abi.records.at(leaf).sourceName == "lib::Leaf" && abi.records.at(hidden).sourceName == "Hidden" &&
                 abi.records.at(leaf).members == std::vector<std::string>{"value"} &&
                 abi.records.at(hidden).members == std::vector<std::string>{"value"} &&
@@ -3837,17 +3851,28 @@ void resolvedModules() {
             "__au_k_m1_3dep_n2_3lib6Buffer_d6Buffer_t2_u8_v" + std::to_string(capacity),
             "__au_m_m1_3dep_n2_3lib6Buffer_d4size_t2_u8_v" + std::to_string(capacity),
             "__au_m_m1_3dep_n2_3lib6Buffer_d8own_size_t2_u8_v" + std::to_string(capacity)};
+        const std::array<std::string, 3> sourceNames{"lib::Buffer", "lib::size", "lib::own_size"};
         for (std::size_t method = 0; method < names.size(); ++method) {
-            const auto &function = typedFunction(module, names[method]);
-            require(function.moduleScope == 1 && function.receiver && function.receiver->className == buffers[index] &&
-                        function.receiver->constructor == (method == 0) &&
-                        function.receiver->mutableValue == (method == 0) && function.receiver->publicAccess,
-                    "method/constructor identity, receiver mode or defining module differs");
+            const auto &source = bufferSyntax.methods[method];
+            require(abi.functions.at(names[method]).sourceName == sourceNames[method] &&
+                        abi.functions.at(names[method]).members.empty() && source.params.empty() &&
+                        source.result == aurora::Type::I64 && source.constructor == (method == 0) &&
+                        source.receiverConst == (method != 0) && source.publicAccess,
+                    "method/constructor ABI identity or original source signature differs");
             if (method)
-                constantReturn(function, capacity);
+                require(std::none_of(module.functions.begin(),
+                                     module.functions.end(),
+                                     [&](const auto &function) {
+                                         return function.name == names[method];
+                                     }),
+                        "unused imported getter escaped validated-IR pruning");
         }
         const auto &constructor = typedFunction(module, names[0]);
-        require(constructor.code.size() == 3 &&
+        require(constructor.moduleScope == 1 && constructor.receiver &&
+                    constructor.receiver->className == buffers[index] && constructor.receiver->constructor &&
+                    constructor.receiver->mutableValue && constructor.receiver->publicAccess &&
+                    constructor.parameters.empty() && constructor.result == aurora::Type::I64 &&
+                    constructor.code.size() == 3 &&
                     std::holds_alternative<aurora::ir::ReceiverArrayZero>(constructor.code[0]) &&
                     std::get<aurora::ir::ReceiverArrayZero>(constructor.code[0]).fieldIndex == 0 &&
                     std::holds_alternative<aurora::ir::Constant>(constructor.code[1]) &&
@@ -3909,12 +3934,24 @@ void resolvedVisibility() {
     const std::array<std::string, 3> overloads{"__au_o_m1_9functions_n0__d6choose_p1_295___au_c_m1_5types_n0__d4Leaf",
                                                "__au_o_m1_9functions_n0__d6choose_p1_20_",
                                                "__au_o_m1_9functions_n0__d6choose_p1_21_"};
-    require(module.functions.size() == 4 && resolved.abiDeclarations.functions.size() == 4,
-            "ordinary overload declarations were discarded");
-    for (std::size_t index = 0; index < overloads.size(); ++index)
-        require(module.functions[index].name == overloads[index] && module.functions[index].moduleScope == 2 &&
-                    resolved.abiDeclarations.functions.at(overloads[index]).sourceName == "choose",
-                "overload parameter-tuple identity or declaration order differs");
+    require(module.functions.size() == 2 && module.functions[0].name == overloads[1] &&
+                module.functions[0].moduleScope == 2 &&
+                module.functions[0].parameters == std::vector<aurora::Type>{aurora::Type::I64} &&
+                module.functions[1].name == "answer" && module.functions[1].moduleScope == 0 &&
+                resolved.abiDeclarations.functions.size() == 4 &&
+                resolved.abiDeclarations.functions.at("answer").sourceName == "answer",
+            "selected overload/root order or pre-pruning ABI inventory differs");
+    for (std::size_t index = 0; index < overloads.size(); ++index) {
+        require(resolved.abiDeclarations.functions.at(overloads[index]).sourceName == "choose",
+                "overload parameter-tuple ABI identity differs");
+        if (index != 1)
+            require(std::none_of(module.functions.begin(),
+                                 module.functions.end(),
+                                 [&](const auto &function) {
+                                     return function.name == overloads[index];
+                                 }),
+                    "unselected imported overload escaped validated-IR pruning");
+    }
     const auto calls = typedInstructions<aurora::ir::Call>(module.functions.back());
     require(calls.size() == 1 && calls[0].callee == overloads[1],
             "typed overload selection chose a hidden or signature-inaccessible candidate");
@@ -4564,8 +4601,13 @@ void resolvedCompilerSources(char **paths) {
     const auto qualified = [](const std::string &scope, const std::string &name) {
         return scope.empty() ? name : scope + "::" + name;
     };
-    std::size_t functions = 0, classes = 0, enums = 0, methods = 0, fields = 0;
+    std::size_t functions = 0, retainedFunctions = 0, classes = 0, enums = 0, methods = 0, fields = 0;
     std::set<std::string> identities;
+    std::multiset<std::string> sourceFunctionNames, abiFunctionNames;
+    for (const auto &[name, declaration] : abi.functions) {
+        static_cast<void>(name);
+        abiFunctionNames.insert(declaration.sourceName);
+    }
     for (std::size_t index = 0; index < syntax.size(); ++index) {
         const auto scope = index + 1 == syntax.size() ? 0 : static_cast<int>(index + 1);
         const auto function = [&](const aurora::Function &source,
@@ -4578,12 +4620,18 @@ void resolvedCompilerSources(char **paths) {
                 return declaration != abi.functions.end() && declaration->second.sourceName == sourceName &&
                        candidate.moduleScope == scope &&
                        (receiver.empty() ? !candidate.receiver || candidate.borrowedParameter
-                                         : candidate.receiver && candidate.receiver->className == receiver);
+                                         : candidate.receiver && !candidate.borrowedParameter &&
+                                               candidate.receiver->className == receiver);
             };
+            ++functions;
+            sourceFunctionNames.insert(sourceName);
             const auto found = std::find_if(module.functions.begin(), module.functions.end(), matches);
-            require(found != module.functions.end() &&
-                        std::count_if(module.functions.begin(), module.functions.end(), matches) == 1,
-                    "compiler typed callable/source identity was omitted or duplicated: " + sourceName);
+            if (found == module.functions.end()) {
+                require(scope != 0, "compiler root callable was discarded: " + sourceName);
+                return;
+            }
+            require(std::count_if(module.functions.begin(), module.functions.end(), matches) == 1,
+                    "compiler retained callable/source identity was duplicated: " + sourceName);
             const auto &actual = *found;
             require(identities.insert(actual.name).second && actual.moduleScope == scope &&
                         actual.borrowedParameter == (!source.params.empty() && source.params.front().borrowed &&
@@ -4596,7 +4644,7 @@ void resolvedCompilerSources(char **paths) {
                             actual.receiver->mutableValue == !source.receiverConst &&
                             actual.receiver->publicAccess == source.publicAccess,
                         "compiler typed method receiver, constructor or visibility differs");
-            ++functions;
+            ++retainedFunctions;
         };
         for (const auto &source : syntax[index].functions)
             function(source, qualified(source.scope, source.token.text), {});
@@ -4629,8 +4677,9 @@ void resolvedCompilerSources(char **paths) {
             ++enums;
         }
     }
-    require(enums == 34 && classes == 42 && fields > 228 && methods > 307 && functions == module.functions.size() &&
-                functions == abi.functions.size(),
+    require(enums == 34 && classes == 42 && fields > 228 && methods > 307 &&
+                retainedFunctions == module.functions.size() && functions == abi.functions.size() &&
+                sourceFunctionNames == abiFunctionNames,
             "real compiler typed graph omitted or appended an unaccounted declaration");
     ++cases;
 }

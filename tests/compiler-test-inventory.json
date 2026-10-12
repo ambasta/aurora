@@ -628,7 +628,9 @@
         "arguments": [
           "-B",
           "@SOURCE@/tests/compiler/ir_exhaustive.py",
-          "ir-tests-fixture"
+          "ir-tests-fixture",
+          "--abi-header",
+          "@BUILD@/hosted_frontend_abi.hpp"
         ],
         "suites": [
           "compiler",

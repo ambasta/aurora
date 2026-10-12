@@ -500,8 +500,7 @@ export namespace compiler_lowering {
     }
     auto scalar_width(compiler_resolver::Session& session, i64 type) -> i64 {
         const compiler_resolver::ResolvedTypeKind kind = value_kind(session, type);
-        if (kind == compiler_resolver::ResolvedTypeKind::bool_value || kind
-            == compiler_resolver::ResolvedTypeKind::u8_value) {
+        if (kind == compiler_resolver::ResolvedTypeKind::u8_value) {
             return 1;
         }
         return 8;

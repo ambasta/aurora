@@ -274,10 +274,10 @@ if args.ir_tests is not None:
             validate_values(
                 observed, [value for _, _, value in batch], [f"{target}{args}" for target, args, _ in batch]
             )
-        for target, args, trap in traps:
-            wrapper = byte_wrapper("byte_trap_probe", target, args)
+        for target, arguments, trap in traps:
+            wrapper = byte_wrapper("byte_trap_probe", target, arguments)
             observed, symbols = runner.assemble(assembly + wrapper, ["byte_trap_probe"])
-            validate_trap(observed, trap, symbols, f"{target}{args}")
+            validate_trap(observed, trap, symbols, f"{target}{arguments}")
         print(
             f"{len(cases)} native u8 numerical IR checks passed "
             f"({len(traps)} exact-site traps; every complement/conversion byte, "

@@ -2099,6 +2099,10 @@ export namespace compiler_lowering {
         ContinuationRow frame = session.continuation(frame_id);
         const i64 node = frame.syntax_node();
         const i64 type = frame.output_mark();
+        const i64 definition = class_row(session, type);
+        if (definition < 0) {
+            return fail_type(session, LoweringError::unknown_class_type, frame.operand_mark(), type);
+        }
         const i64 reference = source_ref(session, node);
         const compiler_resolver::SyntaxRow syntax = session.syntax(node);
         const bool argument = argument_use(session, frame_id);
