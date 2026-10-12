@@ -205,7 +205,7 @@ ordinal/half cursor. Grammar errors precede semantic admission for multiply-inva
 files, including cross-declaration cases, as
 specified in [architecture](ARCHITECTURE.md#hosted-aurora-parser).
 The replaced C++ grammar is removed, including module/container headers. Unresolved
-declaration admission runs in Aurora; resolved type, lifetime and visibility
-policies remain in C++. The
+declaration admission, module visibility and template resolution run in Aurora.
+Local/member access, resolved type/lifetime analysis and lowering remain in C++. The
 historical predecessor remains the source-bootstrap starting point; this does not
 establish whole-compiler self-hosting.
