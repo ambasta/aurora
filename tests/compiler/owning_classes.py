@@ -120,12 +120,21 @@ class OwningSuite(Suite):
                   d(keep(region, incoming.set(0, 42u8), incoming.set(0, 99u8), move(incoming))),
                   c(fixed(region)), b(region.try_allocate(2)), a(move(first)) {{}}
             auto status() const -> i64 {{
-                if (a.size() != i64(a.ok()) || b.size() != 2 * i64(b.ok()) ||
-                    c.size() != 3 * i64(c.ok()) || d.size() != 4 * i64(d.ok()) ||
-                    e.size() != 5 * i64(e.ok()) || f.size() != 0) {{ return -1; }}
+                i64 state = 0;
+                if (a.ok()) {{ if (a.size() != 1) {{ return -1; }} state = state + 1; }}
+                else {{ if (a.size() != 0) {{ return -1; }} }}
+                if (b.ok()) {{ if (b.size() != 2) {{ return -1; }} state = state + 2; }}
+                else {{ if (b.size() != 0) {{ return -1; }} }}
+                if (c.ok()) {{ if (c.size() != 3) {{ return -1; }} state = state + 4; }}
+                else {{ if (c.size() != 0) {{ return -1; }} }}
+                if (d.ok()) {{ if (d.size() != 4) {{ return -1; }} state = state + 8; }}
+                else {{ if (d.size() != 0) {{ return -1; }} }}
+                if (e.ok()) {{ if (e.size() != 5) {{ return -1; }} state = state + 16; }}
+                else {{ if (e.size() != 0) {{ return -1; }} }}
+                if (f.ok()) {{ state = state + 32; }}
+                if (f.size() != 0) {{ return -1; }}
                 if (d.ok() && d.at(0) != 99u8) {{ return -2; }}
-                return i64(a.ok()) + 2 * i64(b.ok()) + 4 * i64(c.ok()) +
-                    8 * i64(d.ok()) + 16 * i64(e.ok()) + 32 * i64(f.ok());
+                return state;
             }}
         }};
         auto forward({REGION} region, Six input) -> Six {{ return move(input); }}
