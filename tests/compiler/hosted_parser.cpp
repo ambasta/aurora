@@ -1250,20 +1250,24 @@ void consumerReflection(const std::vector<aurora::Token> &tokens,
         consumerReflection(tokens, statement->other, roots);
     }
 }
-void consumerSources(char **paths) {
-    const std::array<std::string, 5> modules{
-        "std.array", "console.session_files", "kernel_graphical_console", "fs.xfs_sector", "examples.class_values"};
-    const std::array<AggregateRoots, 5> expectedAggregates{
+void consumerSources(const std::array<const char *, 6> &paths) {
+    const std::array<std::string, 6> modules{
+        "std.array", "console.session_files", "kernel_graphical_console",
+        "fs.xfs_sector", "examples.class_values", "console.line"};
+    const std::array<AggregateRoots, 6> expectedAggregates{
         AggregateRoots{},
         AggregateRoots{},
         AggregateRoots{{"text", 61}, {"text", 27}, {"text", 63}, {"text", 19}, {"blank", 1}, {"text", 22}},
         AggregateRoots{{"bytes", 512}},
-        AggregateRoots{{"current", 2}}};
-    const std::array<AggregateRoots, 5> expectedBraces{AggregateRoots{{"elements", 0}},
-                                                       AggregateRoots{{"bytes", 0}, {"records", 4}},
-                                                       AggregateRoots{{"bytes", 0}, {"desired", 0}, {"committed", 0}},
-                                                       AggregateRoots{},
-                                                       AggregateRoots{}};
+        AggregateRoots{{"current", 2}},
+        AggregateRoots{}};
+    const std::array<AggregateRoots, 6> expectedBraces{
+        AggregateRoots{{"elements", 0}},
+        AggregateRoots{{"bytes", 0}, {"records", 4}},
+        AggregateRoots{{"desired", 0}, {"committed", 0}},
+        AggregateRoots{},
+        AggregateRoots{},
+        AggregateRoots{{"bytes", 0}}};
     std::size_t roots = 0;
     for (std::size_t index = 0; index < modules.size(); ++index) {
         context = paths[index];
@@ -4519,10 +4523,10 @@ void loweringImplementationSources(const std::vector<aurora::Token> &tokens,
 }
 
 void resolvedCompilerSources(char **paths) {
-    context = "all twenty-three real compiler modules through production typed lowering";
-    const std::array<std::size_t, 23> arguments{0,  1,  2,  15, 19, 20, 21, 32, 16, 33, 34, 17,
-                                                22, 23, 24, 25, 28, 29, 30, 31, 26, 27, 18};
-    const std::array<std::string, 23> modules{"lexer",
+    context = "all twenty-four real compiler modules through production typed lowering";
+    const std::array<std::size_t, 24> arguments{0,  1,  2,  15, 19, 20, 21, 32, 16, 33, 34, 17,
+                                                22, 23, 24, 25, 28, 29, 30, 31, 26, 27, 35, 18};
+    const std::array<std::string, 24> modules{"lexer",
                                               "syntax_arena",
                                               "parser",
                                               "resolution_kinds",
@@ -4544,8 +4548,9 @@ void resolvedCompilerSources(char **paths) {
                                               "lowering_statements",
                                               "lowering_body",
                                               "lowering",
+                                              "ir_graph",
                                               "frontend"};
-    const std::array<std::vector<std::string>, 23> classNames{{
+    const std::array<std::vector<std::string>, 24> classNames{{
         {"Cursor", "Lexeme"},
         {"ParseFrame", "AstNode", "ChildEdge", "TypeSyntax", "SyntaxNode", "AstArena"},
         {"AdmissionConfig",
@@ -4577,11 +4582,12 @@ void resolvedCompilerSources(char **paths) {
         {},
         {"FunctionBodyResult"},
         {},
+        {"FunctionRow", "IndexRow", "StateRow", "ReverseEdge", "FrameRow", "Input", "Workspace"},
         {},
     }};
     // Frontend's direct imports give this DFS postorder, independent of file argv.
-    std::array<aurora::Program, 23> syntax;
-    std::array<aurora::HostedModule, 23> headers;
+    std::array<aurora::Program, 24> syntax;
+    std::array<aurora::HostedModule, 24> headers;
     const auto resolved = [&] {
         aurora::HostedResolution resolution;
         for (std::size_t index = 0; index < modules.size(); ++index) {
@@ -4709,7 +4715,7 @@ void resolvedCompilerSources(char **paths) {
             ++enums;
         }
     }
-    require(enums == 34 && classes == 42 && fields > 228 && methods > 307 &&
+    require(enums == 35 && classes == 49 && fields > 228 && methods > 307 &&
                 retainedFunctions == module.functions.size() && functions == abi.functions.size() &&
                 sourceFunctionNames == abiFunctionNames,
             "real compiler typed graph omitted or appended an unaccounted declaration");
@@ -6527,7 +6533,7 @@ void rawAggregates() {
 int main(int argc, char **argv) {
     try {
         context = "fixture arguments";
-        require(argc == 36, "expected twenty-three compiler, five aggregate and seven typed consumer source paths");
+        require(argc == 38, "expected twenty-four compiler, six aggregate and seven typed consumer source paths");
         grammarExpectations();
         diagnosticExpectations();
         // Table rows cover ordinary semicolon inputs. Keep distinct trivia,
@@ -6677,7 +6683,7 @@ int main(int argc, char **argv) {
         rawResolutionOwnership();
         resolvedCompilerSources(argv + 1);
         bootstrapSources(argv + 1);
-        consumerSources(argv + 4);
+        consumerSources({argv[4], argv[5], argv[6], argv[7], argv[8], argv[37]});
         typedConsumerSources(argv + 9);
         require(wholeCallables >= 172 && wholeFields >= 76,
                 "whole-declaration coverage omitted historical bootstrap callables/fields");
@@ -6698,7 +6704,7 @@ int main(int argc, char **argv) {
                "typed native identities, dependency/instance order, exact nominal reflection views, selected "
                "overloads, "
                "independent concrete layouts and retained lint/template-error source spans; "
-               "twenty-three-module compiler graph, fifteen typed classes/14 enums/513 cases, all implementation "
+               "twenty-four-module compiler graph, fifteen typed classes/14 enums/513 cases, all implementation "
                "declaration boundaries, generated typed-row extents and eleven-owner Session failure/release "
                "prefixes\n";
     } catch (const std::exception &error) {

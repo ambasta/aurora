@@ -31,9 +31,9 @@ SOURCE_INPUTS = (
     "tests/kernel-graphical-console.cpp",
     "tests/kernel_graphical_oracle.py",
     "examples/kernel-graphical-console.au",
-    "examples/kernel-console-service.au",
     "examples/kernel-display-service.au",
     "library/graphics/font5x7.au",
+    "library/console/line.au",
     "library/console/session_note.au",
     "library/console/session_files.au",
     "library/std/binary.au",
@@ -122,23 +122,9 @@ def require(condition, message):
         raise RuntimeError(str(message))
 
 
-def source_block(text, marker):
-    start = text.index(marker)
-    opening = text.index("{", start)
-    depth = 1
-    end = opening + 1
-    while depth:
-        depth += (text[end] == "{") - (text[end] == "}")
-        end += 1
-    return text[start:end]
-
-
 def drift_checks():
     graphical = (ROOT / "examples/kernel-graphical-console.au").read_text()
-    console = (ROOT / "examples/kernel-console-service.au").read_text()
     display = (ROOT / "examples/kernel-display-service.au").read_text()
-    for marker in ("enum class ConsoleEvent", "class Line64"):
-        require(source_block(graphical, marker) == source_block(console, marker), f"copied {marker} drift")
     for consumer in (graphical, display):
         require("import graphics.font5x7;" in consumer, "shared font import missing")
         require("auto glyph_bits(" not in consumer, "duplicated base font")

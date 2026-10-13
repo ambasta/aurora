@@ -1,0 +1,120 @@
+export module console.line;
+
+export namespace console {
+    // Bounded ASCII editing and command recognition; no transport authority.
+    enum class ConsoleEvent {
+        ignored,
+        echo,
+        erased,
+        empty,
+        unknown,
+        help,
+        status,
+        exit,
+        rejected
+    };
+
+    class Line64 {
+        array<u8, 64> bytes;
+        i64 length;
+        bool rejected;
+        bool after_cr;
+        bool submitted;
+
+        auto finish() -> ConsoleEvent {
+            ConsoleEvent event = ConsoleEvent::unknown;
+            if (rejected) {
+                event = ConsoleEvent::rejected;
+            } else {
+                if (length == 0) {
+                    event = ConsoleEvent::empty;
+                } else {
+                    if (length == 4) {
+                        if (bytes[0] == 'h' && bytes[1] == 'e' && bytes[2] == 'l' && bytes[3] == 'p') {
+                            event = ConsoleEvent::help;
+                        } else {
+                            if (bytes[0] == 'e' && bytes[1] == 'x' && bytes[2] == 'i' && bytes[3] == 't') {
+                                event = ConsoleEvent::exit;
+                            }
+                        }
+                    } else {
+                        if (length == 6) {
+                            if (bytes[0] == 's' && bytes[1] == 't' && bytes[2] == 'a' && bytes[3] == 't' && bytes[4] == 'u'
+                                && bytes[5] == 's') {
+                                event = ConsoleEvent::status;
+                            }
+                        }
+                    }
+                }
+            }
+            submitted = true;
+            return event;
+        }
+
+        auto clear_submission() -> bool {
+            if (submitted) {
+                i64 index = 0;
+                while (index < 64) {
+                    bytes[index] = '\0';
+                    index = index + 1;
+                }
+                length = 0;
+                rejected = false;
+                submitted = false;
+            }
+            return true;
+        }
+    public:
+        Line64() : bytes{}, length(0), rejected(false), after_cr(false), submitted(false) {
+        }
+
+        // A completed line is readable only until the next byte or damage sample.
+        // Copies own their bytes; no view of the editor's fields can escape.
+        auto submission_size() const -> i64 {
+            if (!submitted || rejected) {
+                return -1;
+            }
+            return length;
+        }
+        auto submission_byte(i64 index) const -> u8 {
+            if (!submitted || rejected || index < 0 || index >= length) {
+                return '\0';
+            }
+            return bytes[index];
+        }
+        auto reject() -> bool {
+            clear_submission();
+            rejected = true;
+            return true;
+        }
+        auto consume(u8 byte) -> ConsoleEvent {
+            clear_submission();
+            const bool suppressed_lf = after_cr && byte == '\n';
+            after_cr = byte == '\r';
+            if (suppressed_lf) {
+                return ConsoleEvent::ignored;
+            }
+            if (byte == '\n' || byte == '\r') {
+                return finish();
+            }
+            if (rejected) {
+                return ConsoleEvent::ignored;
+            }
+            if (byte == '\b' || byte == '\x7f') {
+                if (length == 0) {
+                    return ConsoleEvent::ignored;
+                }
+                length = length - 1;
+                bytes[length] = '\0';
+                return ConsoleEvent::erased;
+            }
+            if (byte < ' ' || byte > '~' || length == 64) {
+                rejected = true;
+                return ConsoleEvent::ignored;
+            }
+            bytes[length] = byte;
+            length = length + 1;
+            return ConsoleEvent::echo;
+        }
+    };
+}
