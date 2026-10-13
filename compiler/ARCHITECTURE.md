@@ -9,7 +9,7 @@ The typed-IR milestone established behavior-preserving compiler phase boundaries
 3. The hosted Aurora lexer turns bytes into tokens; `syntax.hpp` defines the untyped source AST. `parser.hpp` is a compatibility entrypoint for one complete hosted Aurora module parse; all declaration/container grammar lives in `parser.au`.
 4. `lowering_types.au`, `lowering_values.au` and the `lowering_frames`, `lowering_calls`, `lowering_expressions`, `lowering_statements` and `lowering_body` modules perform resolved layout/signature analysis, local/member resolution, exact argument-type overload selection, initialization and const/private checks, ownership moves, lexical borrow checks and conservative branch/loop joins. `lowering.au` publishes typed instructions and metadata from the same resolved Session.
 5. `hosted_lowering.cpp` mechanically projects the generated typed records into the target-independent accumulator/value-stack model in `ir.hpp`. Its operations include checked arithmetic, typed loads/stores, explicit control flow, metadata queries and array guard/access operations. Instruction/operator enums come from predecessor-generated Aurora facts.
-6. `ir_metadata.au` independently validates module metadata and derives physical class layouts in one retained Aurora owner. `ir_verify.hpp` checks every function's lower-level type, initialization, control-flow, operand-stack, frame and bounds-token invariants against that owner. After native function normalization, `ir_graph.au` independently checks the complete call graph and selects retained functions. Only the resulting immutable `ValidatedModule` can be passed to the emitter.
+6. `ir_metadata.au` independently validates module metadata, callable signatures and frame declarations, deriving physical class layouts in one retained Aurora owner. `ir_verify.hpp` checks every function's instruction types, initialization, control-flow, operand-stack and bounds-token invariants against that owner. After native function normalization, `ir_graph.au` independently checks the complete call graph and selects retained functions. Only the resulting immutable `ValidatedModule` can be passed to the emitter.
 7. `x86.hpp` lowers validated operations to GNU x86-64 assembly. It has no source AST, scope lookup, const policy, owner-liveness state or borrow-state checker. Target registers, ABI argument placement, stack alignment and machine trap sequences exist only here. Two local forms avoid stack and copy traffic without changing any check: a pushed left operand followed directly by a constant, local or receiver-field load stays in `%rcx` for the arithmetic or comparison that would pop it, and an element read that the next instruction returns is copied straight into the caller's result storage.
 8. `main.cpp` coordinates file I/O and those stages. GNU assembler/linker remain the bootstrap native toolchain.
 
@@ -276,43 +276,46 @@ owner cleanup precedes region closure.
 Function CFG/provenance checks remain C++. They reject missing/malformed calls and
 unreachable semantic instructions before graph processing.
 
-## Durable metadata and callable signatures
+## Durable metadata, callables and frames
 
-`ir_metadata_storage.au` owns raw metadata and callable signatures, plus appended
-canonical fields, offsets and layouts. `ir_metadata.au` admits symbol names, module
-metadata/layouts and then every callable header before publication. Native body,
-frame, provenance and CFG checks follow. A later bad signature can therefore precede
-an earlier bad body; receiver-header errors precede frame errors. This explicit
-phase order replaces the old interleaving of header and body checks. Noncanonical
-service Type names/tails are rejected before any canonical Type observation.
+`ir_metadata_storage.au` owns metadata, callable signatures and frame declarations,
+plus canonical class fields, offsets and layouts. `ir_metadata.au` admits names,
+module layouts, every callable header and every frame before publication. Native
+instruction/provenance/CFG checks follow. A later bad signature or frame may thus
+precede an earlier bad body; this explicit phase order replaces per-function
+interleaving. Malformed raw Type tails reject before canonical Type observation.
 
-Production lowering fills one move-only pending ingress without native metadata
-maps or retained native signature values. `FunctionBody` holds a stable callable ID
-and the still-native slots/frame/instructions. Raw `Function` values remain only in
-hostile `Module` ingress; their signatures enter the same owner once and are released
-before body verification. Session is released before admission. `ValidatedModule`,
-the verifier, graph processing, x86 emission and ABI facts read the same immutable
-capsule. Callable IDs remain stable when graph processing removes function bodies.
+Production lowering fills one move-only pending ingress directly from typed
+records. `FunctionBody` contains only a stable callable ID and instructions.
+Raw `Function` maps remain for hostile `Module` fixtures; their declarations enter
+the same owner and are destroyed before body checking. Session is released before
+admission. The verifier, graph pass, x86 emitter and ABI facts borrow the same
+immutable metadata. Graph pruning never renumbers callable IDs.
 
-The host binds named pools to generated row shapes and descriptor offsets. Private
-Region observation returns readonly bytes inside the capsule; reads copy records,
-and views die before consuming owner cleanup. The closed pool-to-row binding is
-source-reviewed because predecessor facts do not encode owned element identity.
-Raw Type tail counts preserve rejection without serializing malformed template trees.
-Callable views are unavailable until all signature types have been admitted.
+Each callable owns a sorted range of eight existing slot-record kinds. Aurora
+checks frame bounds/alignment, types, exact object/array leaves, padding and
+cross-category overlap, including capability spills and owner annotations.
+Native instruction analysis retains only derived leaf-origin/initialization
+indexes; it does not reserve frame storage or re-admit declarations.
 
-One callable pool brings the declared owning layout to the 520-byte limit; its
-allocation length supplies the count without another root counter. Types contain
-class leaves, supplied field types, then each callable result and parameters.
-The raw index prefix ends in a sorted callable-ID lookup suffix. Supplied physical
-layouts still undergo independent recomputation; no native fallback or signature
-cache is retained. Further slot/instruction ownership needs an explicit storage or
-ownership-composition design rather than another per-pass serializer.
+Pool lengths replace six redundant stored counts. Four raw-prefix counts remain
+because field/storage/index pools also hold normalization tails. Adding the slot
+owner after that compaction predicts a 504-byte MetadataStore, below the previous
+520-byte layout; emitted facts still need qualification. Types contain class
+leaves and supplied field types, then each callable's signature followed by its
+typed slots. Every slot/type range has exact coverage; the raw index suffix holds
+sorted callable IDs for lookup.
 
-This migration does not claim a net source-line, peak-memory or speed reduction.
-Destination allocation overlaps Session lifetime. Sorting/counting may reorder
-Internal errors among multiply-malformed transport records. Current generated ABI,
-source-bootstrap, convergence and runtime gates remain unexecuted.
+The host binds named pools to generated row shapes and descriptor offsets.
+Readonly Region observations stay inside the capsule; record reads copy values,
+and borrowed views die before owner cleanup. The closed pool-to-row binding is
+source-reviewed because predecessor facts lack owned element identity. No native
+metadata/signature/frame cache or per-pass summary serializer is retained.
+
+This migration claims no net source-line, peak-memory or speed reduction.
+Destination allocation overlaps Session lifetime; sorting may reorder Internal
+errors among multiply-malformed transport records. Generated ABI, source-bootstrap,
+convergence and runtime qualification remain unexecuted.
 
 ## CFG and frame invariants
 

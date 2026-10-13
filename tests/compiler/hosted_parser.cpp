@@ -52,6 +52,9 @@ std::int64_t checked_hosted_resolver_count(const void *, std::int64_t);
 std::int64_t checked_hosted_resolver_read_source(const void *, std::int64_t);
 void checked_hosted_resolver_read_meta(const void *, std::int64_t, void *);
 void checked_hosted_resolver_status(const void *, void *);
+void aurora_hosted_metadata_create(const void *, void *) noexcept;
+void aurora_hosted_metadata_release(void *) noexcept;
+std::int64_t aurora_hosted_metadata_allocated(const void *) noexcept;
 }
 
 using AbiEntry = void (*)(const void *, const void *, void *);
@@ -4390,6 +4393,54 @@ void rawResolutionOwnership() {
     ++cases;
 }
 
+void rawMetadataOwnership() {
+    namespace Wire = aurora::hosted_abi::compiler_ir_metadata;
+    context = "metadata frame owner allocation prefixes and consuming cleanup";
+    std::size_t successful = 0;
+    const auto exercise = [&](std::size_t allowed, std::uint64_t quota, bool expected) {
+        Allocations allocations;
+        allocations.allowed = allowed;
+        aurora::hosted::bytes::Region region(quota, allocations.allocator());
+        struct GuardedOwner {
+            std::uint64_t before = canary;
+            aurora::hosted_abi::MetadataRelease value{};
+            std::uint64_t after = canary;
+        } record;
+        record.value.region = region.id();
+        aurora::hosted_abi::MetadataCreate input{};
+        input.region = region.id();
+        input.counts.coreCounts.bytes = 1;
+        input.counts.coreCounts.types = 3;
+        input.counts.mapCounts.indices = 1;
+        input.counts.mapCounts.views = 1;
+        input.callableCount = 1;
+        input.slotCount = 2;
+        aurora_hosted_metadata_create(&input, record.value.store.storage.data());
+        const bool allocated = aurora_hosted_metadata_allocated(record.value.store.storage.data()) != 0;
+        require(allocated == expected, "metadata owner allocation status differs");
+        if (expected) {
+            successful = allocations.successful;
+            require(successful == 13 && allocations.attempted == 13 &&
+                        allocations.initialBytes[10] == allocations.initialBytes[2] + 2 * sizeof(Wire::SlotRow),
+                    "frame declarations were not allocated as one exact SlotRow owner");
+        }
+        aurora_hosted_metadata_release(&record.value);
+        const auto metrics = region.metrics();
+        require(record.before == canary && record.after == canary,
+                "metadata creation or release escaped its generated owner extent");
+        require(allocations.successful == allocations.released && metrics.used == 0 &&
+                    metrics.live_allocations == 0 && metrics.releases == metrics.successful_allocations && region.close(),
+                "metadata allocation failure or release leaked a frame owner");
+        ++cases;
+    };
+    exercise(std::numeric_limits<std::size_t>::max(), 1048576, true);
+    // Refuse every owner allocation, including the slot pool and the later
+    // normalization/workspace owners. No forged owner descriptors are copied.
+    for (std::size_t allowed = 0; allowed < successful; ++allowed)
+        exercise(allowed, 1048576, false);
+    exercise(std::numeric_limits<std::size_t>::max(), 0, false);
+}
+
 // Keep a compact independent declaration inventory for the typed transport.
 // Production lowering and its actual implementation sources are exercised below.
 void loweringSchemaSources(const std::vector<aurora::Token> &tokens,
@@ -4616,6 +4667,7 @@ void resolvedCompilerSources(char **paths) {
          "ReceiverShape",
          "CallableOptions",
          "CallableRow",
+         "SlotRow",
          "ClassRow",
          "FieldRow",
          "PhysicalExtent",
@@ -4767,7 +4819,7 @@ void resolvedCompilerSources(char **paths) {
             ++enums;
         }
     }
-    require(enums == 38 && classes == 70 && fields > 228 && methods > 307 &&
+    require(enums == 38 && classes == 71 && fields > 228 && methods > 307 &&
                 retainedFunctions == module.functions.size() && functions == abi.functions.size() &&
                 sourceFunctionNames == abiFunctionNames,
             "real compiler typed graph omitted or appended an unaccounted declaration");
@@ -6733,6 +6785,7 @@ int main(int argc, char **argv) {
         resolvedModules();
         resolvedVisibility();
         rawResolutionOwnership();
+        rawMetadataOwnership();
         resolvedCompilerSources(argv + 1);
         bootstrapSources(argv + 1);
         consumerSources({argv[4], argv[5], argv[6], argv[7], argv[8], argv[37]});

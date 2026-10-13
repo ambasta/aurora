@@ -19,6 +19,7 @@ std::int64_t aurora_hosted_metadata_error(const void *) noexcept;
 namespace aurora::ir {
 namespace {
 namespace wire = hosted_abi::compiler_ir_metadata;
+using SlotKind = hosted_abi::compiler_lowering::RecordKind;
 namespace bytes = hosted::bytes;
 [[noreturn]] void invalidTransport() {
     throw Error(DiagnosticCode::Internal, "invalid hosted IR metadata transport");
@@ -73,6 +74,7 @@ enum class Pool : std::size_t {
     views,
     enums,
     callables,
+    slots,
     results,
     frames,
     count
@@ -109,6 +111,9 @@ constexpr std::array bindings{
     Binding{hosted_abi::metadataStore_callablesOffset,
             hosted_abi::metadataStore_callablesBytes,
             hosted_abi::metadataCallableRowPhysicalBytes},
+    Binding{hosted_abi::metadataStore_slotsOffset,
+            hosted_abi::metadataStore_slotsBytes,
+            hosted_abi::metadataSlotRowPhysicalBytes},
     Binding{hosted_abi::metadataStore_resultsOffset,
             hosted_abi::metadataStore_resultsBytes,
             hosted_abi::metadataClassResultRowPhysicalBytes},
@@ -144,6 +149,9 @@ template <> struct Row<Pool::enums> {
 template <> struct Row<Pool::callables> {
     using Type = wire::CallableRow;
 };
+template <> struct Row<Pool::slots> {
+    using Type = wire::SlotRow;
+};
 template <> struct Row<Pool::results> {
     using Type = wire::ClassResultRow;
 };
@@ -174,7 +182,21 @@ template <Pool pool> constexpr bool exactRow =
 static_assert(exactRow<Pool::types> && exactRow<Pool::classes> && exactRow<Pool::fields> &&
               exactRow<Pool::storage> && exactRow<Pool::indices> && exactRow<Pool::descriptors> &&
               exactRow<Pool::views> && exactRow<Pool::enums> && exactRow<Pool::callables> &&
-              exactRow<Pool::results> && exactRow<Pool::frames>);
+              exactRow<Pool::slots> && exactRow<Pool::results> && exactRow<Pool::frames>);
+
+// Source admission reuses the lowering declaration tags. Guard that closed
+// correspondence against the predecessor's generated enum facts.
+static_assert(static_cast<std::int64_t>(SlotKind::ScalarSlot) == 10);
+static_assert(static_cast<std::int64_t>(SlotKind::ObjectSlot) == 11);
+static_assert(static_cast<std::int64_t>(SlotKind::ArraySlot) == 12);
+static_assert(static_cast<std::int64_t>(SlotKind::SpanSlot) == 13);
+static_assert(static_cast<std::int64_t>(SlotKind::ServiceSlot) == 14);
+static_assert(static_cast<std::int64_t>(SlotKind::RegionSlot) == 15);
+static_assert(static_cast<std::int64_t>(SlotKind::ByteSlot) == 16);
+static_assert(static_cast<std::int64_t>(SlotKind::OwnedValueType) == 17);
+static_assert(spanBytes == 56);
+static_assert(service::capabilityBytes == 16);
+static_assert(sizeof(bytes::NativeOwner) == 32);
 
 static_assert(static_cast<std::int64_t>(TypeKind::I64) ==
               static_cast<std::int64_t>(wire::MetadataTypeKind::I64));
@@ -214,7 +236,7 @@ static_assert(static_cast<std::int64_t>(TypeKind::OwnedValues) ==
               static_cast<std::int64_t>(wire::MetadataTypeKind::OwnedValues));
 
 using Capacities = std::array<std::int64_t, static_cast<std::size_t>(Pool::count)>;
-Capacities capacities(const wire::InputCounts &counts, std::int64_t callableCount) {
+Capacities capacities(const wire::InputCounts &counts, std::int64_t callableCount, std::int64_t slotCount) {
     const auto &core = counts.coreCounts;
     const auto &maps = counts.mapCounts;
     return {core.bytes,
@@ -227,6 +249,7 @@ Capacities capacities(const wire::InputCounts &counts, std::int64_t callableCoun
             maps.views,
             maps.enums,
             callableCount,
+            slotCount,
             core.classes,
             4};
 }
@@ -247,12 +270,14 @@ class SourceOwner {
     hosted_abi::MetadataRelease release_;
 
 public:
-    SourceOwner(std::uint64_t region, const wire::InputCounts &counts, std::int64_t callableCount) {
+    SourceOwner(std::uint64_t region, const wire::InputCounts &counts, std::int64_t callableCount,
+                std::int64_t slotCount) {
         release_.region = region;
         hosted_abi::MetadataCreate create;
         create.region = region;
         create.counts = counts;
         create.callableCount = callableCount;
+        create.slotCount = slotCount;
         aurora_hosted_metadata_create(&create, data());
     }
     ~SourceOwner() {
@@ -285,8 +310,9 @@ public:
     Capacities capacities;
     std::array<std::span<const std::byte>, static_cast<std::size_t>(Pool::count)> pools;
 
-    State(const wire::InputCounts &input, std::int64_t callableCount, const Capacities &limits)
-        : region(quota(limits)), owner(region.id(), input, callableCount), counts(input), capacities(limits) {
+    State(const wire::InputCounts &input, std::int64_t callableCount, std::int64_t slotCount,
+          const Capacities &limits)
+        : region(quota(limits)), owner(region.id(), input, callableCount, slotCount), counts(input), capacities(limits) {
     }
     template <Pool pool> void set(std::int64_t position, const RowType<pool> &value) {
         // Runtime set borrows this descriptor observation; it only changes the
@@ -338,8 +364,8 @@ std::unique_ptr<Metadata> MetadataIngress::finish() && {
 void detail::MetadataWriter::allocate() {
     if (allocated_)
         invalidTransport();
-    pending_.state_ =
-        std::make_unique<Metadata::State>(position_, callableCount_, capacities(position_, callableCount_));
+    pending_.state_ = std::make_unique<Metadata::State>(position_, callableCount_, slotCount_,
+                                                       capacities(position_, callableCount_, slotCount_));
     const auto allocated = aurora_hosted_metadata_allocated(pending_.state_->owner.data());
     if (allocated == 0)
         allocationFailure();
@@ -348,6 +374,7 @@ void detail::MetadataWriter::allocate() {
     allocated_ = true;
     position_ = {};
     callableCount_ = 0;
+    slotCount_ = 0;
 }
 wire::ByteRange detail::MetadataWriter::text(std::string_view value) {
     wire::ByteRange range;
@@ -380,6 +407,11 @@ void detail::MetadataWriter::type(std::int64_t position, const Type &value) {
 }
 void detail::MetadataWriter::callableType(const Type &value) {
     type(position_.coreCounts.types, value);
+}
+std::int64_t detail::MetadataWriter::slotType(const Type &value) {
+    const auto position = position_.coreCounts.types;
+    type(position, value);
+    return position;
 }
 void detail::MetadataWriter::leaf(const Type &value) {
     type(position_.coreCounts.leaves, value);
@@ -457,11 +489,19 @@ void detail::MetadataWriter::append(const wire::CallableRow &value) {
     }
     callableCount_ = add(callableCount_, 1);
 }
+void detail::MetadataWriter::append(const wire::SlotRow &value) {
+    if (allocated_) {
+        if (!pending_.state_)
+            invalidTransport();
+        pending_.state_->set<Pool::slots>(slotCount_, value);
+    }
+    slotCount_ = add(slotCount_, 1);
+}
 MetadataIngress detail::MetadataWriter::take() && {
     if (!allocated_ || !pending_.state_)
         invalidTransport();
     const auto &expected = pending_.state_->counts;
-    if (capacities(position_, callableCount_) != pending_.state_->capacities ||
+    if (capacities(position_, callableCount_, slotCount_) != pending_.state_->capacities ||
         position_.coreCounts.fields != expected.coreCounts.fields ||
         position_.coreCounts.leaves != expected.coreCounts.leaves ||
         position_.mapCounts.indices != expected.mapCounts.indices)
@@ -551,8 +591,8 @@ std::unique_ptr<Metadata> Metadata::import(const Module &module) {
             row.caseCount = cases;
             writer.append(row);
         }
-        // Signatures remain raw until the source verifier admits the complete
-        // capsule. Their types occupy one packed result-first range per ID.
+        // Signatures and frames stay raw until source admission. Each signature
+        // has one result-first range, followed by that callable's typed slots.
         for (const auto &function : module.functions) {
             wire::CallableRow row;
             row.nameRange = writer.text(function.name);
@@ -562,6 +602,37 @@ std::unique_ptr<Metadata> Metadata::import(const Module &module) {
             writer.callableType(function.result);
             for (const auto &parameter : function.parameters)
                 writer.callableType(parameter);
+            row.frameBytes = function.frameBytes;
+            row.slotRange.firstIndex = writer.slotCount();
+            const auto slot = [&](SlotKind kind, int offset, std::int64_t typeIndex = 0,
+                                  std::int64_t length = 0, bool mutableValue = false) {
+                wire::SlotRow declaration;
+                declaration.recordKind = static_cast<std::int64_t>(kind);
+                declaration.slotOffset = offset;
+                declaration.typeIndex = typeIndex;
+                declaration.slotLength = length;
+                declaration.mutableValue = mutableValue;
+                writer.append(declaration);
+            };
+            // Maps are already ordered by offset. Preserve every declaration,
+            // including annotations without owners, for source admission.
+            for (const auto &[offset, value] : function.slots)
+                slot(SlotKind::ScalarSlot, offset, writer.slotType(value));
+            for (const auto &[offset, value] : function.objectSlots)
+                slot(SlotKind::ObjectSlot, offset, writer.slotType(Type(value.className)), 0, value.mutableValue);
+            for (const auto &[offset, length] : function.arraySlots)
+                slot(SlotKind::ArraySlot, offset, 0, length);
+            for (const auto offset : function.spanSlots)
+                slot(SlotKind::SpanSlot, offset);
+            for (const auto offset : function.serviceSlots)
+                slot(SlotKind::ServiceSlot, offset);
+            for (const auto offset : function.regionSlots)
+                slot(SlotKind::RegionSlot, offset);
+            for (const auto &[offset, mutableValue] : function.byteSlots)
+                slot(SlotKind::ByteSlot, offset, 0, 0, mutableValue);
+            for (const auto &[offset, name] : function.ownedValueTypes)
+                slot(SlotKind::OwnedValueType, offset, writer.slotType(Type::ownedValues(Type(name))));
+            row.slotRange.indexCount = writer.slotCount() - row.slotRange.firstIndex;
             const auto receiver = [&](const Receiver &value) {
                 wire::ReceiverShape shape;
                 shape.nameRange = writer.text(value.className);
@@ -681,11 +752,23 @@ void Metadata::publish() {
                    index(counts.coreCounts.types));
         if (row.typeRange.indexCount == 0)
             invalidTransport();
+        state_->range(row.slotRange, Pool::slots);
+        (void)integer(row.frameBytes);
         (void)integer(row.moduleScope);
         for (const auto shape : {row.receiver, row.secondReceiver})
             (void)state_->text(shape.nameRange);
         if ((row.flags & 8) != 0)
             (void)integer(row.receiverSpanField);
+    }
+    for (std::size_t i = 0; i < index(state_->capacities[static_cast<std::size_t>(Pool::slots)]); ++i) {
+        const auto row = state_->row<Pool::slots>(i);
+        (void)integer(row.slotOffset);
+        (void)integer(row.slotLength);
+        if (row.mutableValue != 0 && row.mutableValue != 1)
+            invalidTransport();
+        const auto kind = static_cast<SlotKind>(row.recordKind);
+        if (kind == SlotKind::ScalarSlot || kind == SlotKind::ObjectSlot || kind == SlotKind::OwnedValueType)
+            checkIndex(index(row.typeIndex), index(counts.coreCounts.types));
     }
     if (counts.mapCounts.indices < count(callableCount()))
         invalidTransport();
@@ -794,6 +877,10 @@ CallableView Metadata::callable(CallableId id) const {
     checkIndex(id, callableCount());
     return {*this, id};
 }
+FrameView Metadata::frame(CallableId id) const {
+    checkIndex(id, callableCount());
+    return {*this, id};
+}
 std::optional<Metadata::CallableId> Metadata::findCallable(std::string_view name) const {
     const auto begin = index(state_->counts.mapCounts.indices - count(callableCount()));
     const auto callableId = [&](std::size_t at) {
@@ -857,6 +944,82 @@ std::optional<int> CallableView::receiverSpanField() const {
     if ((row.flags & 8) == 0)
         return std::nullopt;
     return integer(row.receiverSpanField);
+}
+FrameView CallableView::frame() const {
+    return metadata_->frame(id_);
+}
+
+int FrameView::frameBytes() const {
+    return integer(metadata_->state_->row<Pool::callables>(id_).frameBytes);
+}
+SlotRange FrameView::range(std::int64_t kind) const {
+    const auto slots = metadata_->state_->row<Pool::callables>(id_).slotRange;
+    const auto begin = index(slots.firstIndex), size = index(slots.indexCount);
+    const auto bound = [&](bool upper) {
+        std::size_t first = 0, last = size;
+        while (first < last) {
+            const auto middle = first + (last - first) / 2;
+            const auto value = metadata_->state_->row<Pool::slots>(begin + middle).recordKind;
+            if (value < kind || (upper && value == kind))
+                first = middle + 1;
+            else
+                last = middle;
+        }
+        return first;
+    };
+    const auto first = bound(false), last = bound(true);
+    return {*metadata_, begin + first, last - first};
+}
+SlotMapRange<Type> FrameView::scalarSlots() const {
+    return SlotMapRange<Type>(range(static_cast<std::int64_t>(SlotKind::ScalarSlot)));
+}
+SlotMapRange<ObjectSlot> FrameView::objectSlots() const {
+    return SlotMapRange<ObjectSlot>(range(static_cast<std::int64_t>(SlotKind::ObjectSlot)));
+}
+SlotMapRange<int> FrameView::arraySlots() const {
+    return SlotMapRange<int>(range(static_cast<std::int64_t>(SlotKind::ArraySlot)));
+}
+SlotSetRange FrameView::spanSlots() const {
+    return SlotSetRange(range(static_cast<std::int64_t>(SlotKind::SpanSlot)));
+}
+SlotSetRange FrameView::serviceSlots() const {
+    return SlotSetRange(range(static_cast<std::int64_t>(SlotKind::ServiceSlot)));
+}
+SlotSetRange FrameView::regionSlots() const {
+    return SlotSetRange(range(static_cast<std::int64_t>(SlotKind::RegionSlot)));
+}
+SlotMapRange<bool> FrameView::byteSlots() const {
+    return SlotMapRange<bool>(range(static_cast<std::int64_t>(SlotKind::ByteSlot)));
+}
+SlotMapRange<std::string> FrameView::ownedValueTypes() const {
+    return SlotMapRange<std::string>(range(static_cast<std::int64_t>(SlotKind::OwnedValueType)));
+}
+int SlotRange::offsetAt(std::size_t position) const {
+    checkIndex(position, count_);
+    return integer(metadata_->state_->row<Pool::slots>(begin_ + position).slotOffset);
+}
+Type SlotRange::typeAt(std::size_t position) const {
+    checkIndex(position, count_);
+    return metadata_->typeAt(index(metadata_->state_->row<Pool::slots>(begin_ + position).typeIndex));
+}
+int SlotRange::lengthAt(std::size_t position) const {
+    checkIndex(position, count_);
+    return integer(metadata_->state_->row<Pool::slots>(begin_ + position).slotLength);
+}
+bool SlotRange::mutableAt(std::size_t position) const {
+    checkIndex(position, count_);
+    return metadata_->state_->row<Pool::slots>(begin_ + position).mutableValue != 0;
+}
+std::size_t SlotRange::position(int offset) const {
+    std::size_t first = 0, last = count_;
+    while (first < last) {
+        const auto middle = first + (last - first) / 2;
+        if (offsetAt(middle) < offset)
+            first = middle + 1;
+        else
+            last = middle;
+    }
+    return first < count_ && offsetAt(first) == offset ? first : count_;
 }
 
 std::size_t Metadata::scopeCount() const noexcept {

@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 namespace aurora::ir {
@@ -16,7 +17,9 @@ class Descriptor;
 class Metadata;
 class FunctionBody;
 class Receiver;
+class ObjectSlot;
 class CallableView;
+class FrameView;
 namespace verification {
 class Metrics;
 }
@@ -42,7 +45,11 @@ public:
     MetadataIterator(Range range, std::size_t index) : range_(range), index_(index) {
     }
     value_type operator*() const {
-        return range_.at(index_);
+        // Map-like slot views reserve at() for keyed lookup.
+        if constexpr (requires { range_.itemAt(index_); })
+            return range_.itemAt(index_);
+        else
+            return range_.at(index_);
     }
     MetadataIterator &operator++() {
         ++index_;
@@ -171,6 +178,115 @@ public:
     int reservedBytes = 0;
 };
 
+// Frame declarations are sorted source-owned rows. These small views borrow
+// their admitted range; lookup and iteration copy only the requested value.
+class SlotRange {
+    const Metadata *metadata_ = nullptr;
+    std::size_t begin_ = 0, count_ = 0;
+    SlotRange(const Metadata &metadata, std::size_t begin, std::size_t count)
+        : metadata_(&metadata), begin_(begin), count_(count) {
+    }
+    friend class FrameView;
+
+protected:
+    int offsetAt(std::size_t index) const;
+    Type typeAt(std::size_t index) const;
+    int lengthAt(std::size_t index) const;
+    bool mutableAt(std::size_t index) const;
+    std::size_t position(int offset) const;
+
+public:
+    SlotRange() = default;
+    std::size_t size() const noexcept {
+        return count_;
+    }
+    bool empty() const noexcept {
+        return count_ == 0;
+    }
+    bool contains(int offset) const {
+        return position(offset) != size();
+    }
+    bool operator==(const SlotRange &) const = default;
+};
+
+template <class Value> class SlotMapRange : public SlotRange {
+    explicit SlotMapRange(SlotRange range) : SlotRange(range) {
+    }
+    friend class FrameView;
+    Value valueAt(std::size_t index) const {
+        if constexpr (std::is_same_v<Value, Type>)
+            return typeAt(index);
+        else if constexpr (std::is_same_v<Value, int>)
+            return lengthAt(index);
+        else if constexpr (std::is_same_v<Value, bool>)
+            return mutableAt(index);
+        else if constexpr (std::is_same_v<Value, std::string>)
+            return typeAt(index).className;
+        else
+            return Value{typeAt(index).className, mutableAt(index)};
+    }
+
+public:
+    using value_type = std::pair<int, Value>;
+    SlotMapRange() = default;
+    Value at(int offset) const {
+        const auto found = position(offset);
+        if (found == size())
+            throw std::out_of_range("IR frame slot");
+        return valueAt(found);
+    }
+    value_type itemAt(std::size_t index) const {
+        return {offsetAt(index), valueAt(index)};
+    }
+    auto begin() const {
+        return MetadataIterator<SlotMapRange>(*this, 0);
+    }
+    auto end() const {
+        return MetadataIterator<SlotMapRange>(*this, size());
+    }
+    bool operator==(const SlotMapRange &) const = default;
+};
+
+class SlotSetRange : public SlotRange {
+    explicit SlotSetRange(SlotRange range) : SlotRange(range) {
+    }
+    friend class FrameView;
+
+public:
+    using value_type = int;
+    SlotSetRange() = default;
+    int itemAt(std::size_t index) const {
+        return offsetAt(index);
+    }
+    auto begin() const {
+        return MetadataIterator<SlotSetRange>(*this, 0);
+    }
+    auto end() const {
+        return MetadataIterator<SlotSetRange>(*this, size());
+    }
+    bool operator==(const SlotSetRange &) const = default;
+};
+
+class FrameView {
+    const Metadata *metadata_ = nullptr;
+    std::size_t id_ = 0;
+    FrameView(const Metadata &metadata, std::size_t id) : metadata_(&metadata), id_(id) {
+    }
+    SlotRange range(std::int64_t kind) const;
+    friend class Metadata;
+
+public:
+    int frameBytes() const;
+    SlotMapRange<Type> scalarSlots() const;
+    SlotMapRange<ObjectSlot> objectSlots() const;
+    SlotMapRange<int> arraySlots() const;
+    SlotSetRange spanSlots() const;
+    SlotSetRange serviceSlots() const;
+    SlotSetRange regionSlots() const;
+    SlotMapRange<bool> byteSlots() const;
+    SlotMapRange<std::string> ownedValueTypes() const;
+};
+
 // A borrowed callable identity. Every accessor reads the admitted owner; no
 // signature payload is retained in native function bodies.
 class CallableView {
@@ -189,6 +305,7 @@ public:
     bool borrowedParameter() const;
     std::optional<Receiver> secondBorrowedParameter() const;
     std::optional<int> receiverSpanField() const;
+    FrameView frame() const;
 };
 
 class Metadata final {
@@ -223,6 +340,7 @@ public:
 
     std::size_t callableCount() const noexcept;
     CallableView callable(CallableId id) const;
+    FrameView frame(CallableId id) const;
     std::optional<CallableId> findCallable(std::string_view name) const;
 
     std::size_t scopeCount() const noexcept;
@@ -250,9 +368,11 @@ private:
     friend class FieldRange;
     friend class IndexRange;
     friend class CallableView;
+    friend class FrameView;
+    friend class SlotRange;
 };
 // An opaque, move-only raw owner. Only validate can consume it to run the
-// independent symbol, module and callable checks before publishing any view.
+// independent symbol, module, callable and frame checks before publishing views.
 class MetadataIngress final {
     std::unique_ptr<Metadata::State> state_;
     std::unique_ptr<Metadata> finish() &&;

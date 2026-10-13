@@ -682,6 +682,10 @@ void metadataLifetimeTests() {
     const auto fields = checked.metadata().fields(parcelId);
     const auto offsets = checked.metadata().storage(parcelId).fieldOffsets;
     const auto visible = checked.metadata().visibleDescriptors(0);
+    const auto frame = checked.metadata().frame(0);
+    const auto regions = frame.regionSlots();
+    const auto owners = frame.byteSlots();
+    const auto objects = frame.objectSlots();
     AbiDeclarations declarations;
     declarations.records["Parcel"] = {"Parcel", {"tag", "first", "value", "second", "tail"}};
     declarations.enums["Phase"] = {"Phase", {"ready", "done"}};
@@ -706,6 +710,10 @@ void metadataLifetimeTests() {
                 leaves[2] == Type::U8 && fields.size() == 5 && fields[1].elementType == Type::OwnedBytes &&
                 offsets.size() == 5 && offsets[1] == 8 && offsets[3] == 48 && visible.size() == 1 && visible[0] == 7,
             "metadata views did not survive ingress destruction and validated move");
+    require(frame.frameBytes() == 416 && regions.size() == 2 && regions.contains(8) && regions.contains(416) &&
+                owners.size() == 2 && owners.at(304) && owners.at(336) && objects.size() == 3 &&
+                objects.at(96).className == "Parcel" && objects.at(96).mutableValue,
+            "resource frame views did not survive ingress destruction and validated move");
     auto copiedField = fields[1];
     copiedField.elementType = Type::U64;
     require(copiedField.elementType == Type::U64 && fields[1].elementType == Type::OwnedBytes,

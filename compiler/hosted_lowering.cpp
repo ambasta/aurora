@@ -512,7 +512,7 @@ class Projection {
         values.finish();
         return result;
     }
-    void slot(ir::FunctionBody *function, std::int64_t id) {
+    void slot(MetadataWriter &writer, std::int64_t id) {
         const auto kind = row(id).recordKind;
         switch (kind) {
         case RecordKind::ScalarSlot:
@@ -528,55 +528,40 @@ class Projection {
             invalidLowering();
         }
         Operands values(*this, own(id, kind));
-        const auto offset = values.integer(OperandRole::Offset);
+        metadata::SlotRow declaration;
+        declaration.recordKind = static_cast<std::int64_t>(kind);
+        declaration.slotOffset = values.integer(OperandRole::Offset);
         switch (kind) {
         case RecordKind::ScalarSlot: {
-            auto value = type(values, OperandRole::TypeId);
-            if (function)
-                insertUnique(function->slots, offset, std::move(value));
+            declaration.typeIndex = writer.slotType(type(values, OperandRole::TypeId));
             break;
         }
         case RecordKind::ObjectSlot: {
-            auto name = classOrCarrier(values);
-            const auto mutableValue = values.boolean(OperandRole::MutableValue);
-            if (function)
-                insertUnique(function->objectSlots, offset, ir::ObjectSlot{std::move(name), mutableValue});
+            declaration.typeIndex = writer.slotType(Type(classOrCarrier(values)));
+            declaration.mutableValue = values.boolean(OperandRole::MutableValue);
             break;
         }
         case RecordKind::ArraySlot: {
-            const auto length = values.integer(OperandRole::Length);
-            if (function)
-                insertUnique(function->arraySlots, offset, length);
+            declaration.slotLength = values.integer(OperandRole::Length);
             break;
         }
         case RecordKind::SpanSlot:
-            if (function)
-                insertUnique(function->spanSlots, offset);
-            break;
         case RecordKind::ServiceSlot:
-            if (function)
-                insertUnique(function->serviceSlots, offset);
-            break;
         case RecordKind::RegionSlot:
-            if (function)
-                insertUnique(function->regionSlots, offset);
             break;
         case RecordKind::ByteSlot: {
-            const auto mutableValue = values.boolean(OperandRole::MutableValue);
-            if (function)
-                insertUnique(function->byteSlots, offset, mutableValue);
+            declaration.mutableValue = values.boolean(OperandRole::MutableValue);
             break;
         }
         case RecordKind::OwnedValueType: {
-            auto name = className(values);
-            if (function)
-                insertUnique(function->ownedValueTypes, offset, std::move(name));
+            declaration.typeIndex = writer.slotType(Type::ownedValues(Type(className(values))));
             break;
         }
         default:
             invalidLowering();
         }
         values.finish();
+        writer.append(declaration);
     }
     metadata::ReceiverShape receiver(MetadataWriter &writer, std::int64_t id) {
         Operands values(*this, own(id, RecordKind::Receiver));
@@ -604,9 +589,28 @@ class Projection {
         for (const auto &parameter : parameters)
             writer.callableType(services.type(identity(parameter.signedValue)));
         const auto slots = rows(values, OperandRole::Slots);
-        if (body)
-            for (const auto &item : slots)
-                slot(body, item.signedValue);
+        callable.slotRange.firstIndex = writer.slotCount();
+        charge(slots.size(), sizeof(std::int64_t));
+        std::vector<std::int64_t> slotIds;
+        slotIds.reserve(slots.size());
+        for (const auto &item : slots)
+            slotIds.push_back(item.signedValue);
+        // Sort only source-row identities. Declarations are copied directly
+        // into the one source owner, in both the counting and filling walks.
+        const auto slotKey = [&](std::int64_t slotId) {
+            const auto kind = row(slotId).recordKind;
+            const auto &offset = key(slotId, kind);
+            if (offset.operandRole != OperandRole::Offset)
+                invalidLowering();
+            return std::pair{static_cast<std::int64_t>(kind), offset.signedValue};
+        };
+        std::sort(slotIds.begin(), slotIds.end(), [&](auto left, auto right) {
+            const auto a = slotKey(left), b = slotKey(right);
+            return a < b || (a == b && left < right);
+        });
+        for (const auto slotId : slotIds)
+            slot(writer, slotId);
+        callable.slotRange.indexCount = writer.slotCount() - callable.slotRange.firstIndex;
         const auto &receiverOperand = values.take();
         if (receiverOperand.operandRole == OperandRole::ReceiverRef) {
             callable.flags |= 1;
@@ -630,12 +634,11 @@ class Projection {
         } else if (spanOperand.operandRole != OperandRole::NoReceiverSpan) {
             invalidLowering();
         }
-        const auto frameBytes = values.integer(OperandRole::FrameBytes);
+        callable.frameBytes = values.integer(OperandRole::FrameBytes);
         const auto code = rows(values, OperandRole::Code);
         values.finish();
         if (body) {
             body->callableId = static_cast<ir::Metadata::CallableId>(writer.callableCount());
-            body->frameBytes = frameBytes;
             charge(code.size(), sizeof(ir::Instruction));
             body->code.reserve(code.size());
         }

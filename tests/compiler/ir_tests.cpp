@@ -3255,6 +3255,19 @@ Module spanCallModule() {
 }
 void spanTests() {
     accept("readonly local byte span and reborrow", spanBaseline());
+    {
+        auto checked = validate(spanBaseline());
+        const auto frame = checked.metadata().frame(0);
+        const auto arrays = frame.arraySlots();
+        const auto spans = frame.spanSlots();
+        auto moved = std::move(checked);
+        if (frame.frameBytes() != 640 || arrays.size() != 1 || arrays.at(8) != 3 ||
+            spans.size() != 2 || !spans.contains(256) || !spans.contains(320) || spans.contains(264) ||
+            frame.scalarSlots().at(6) != Type::U8 || !frame.byteSlots().empty() ||
+            moved.metadata().frame(0).arraySlots().at(8) != 3)
+            throw Error("frame array/span observations lost source ownership or exact declaration offsets");
+        ++passed;
+    }
     accept("readonly span forwarding and six mixed argument positions", spanCallModule());
     const auto rejectSpan = [&](const std::string &name,
                                 const std::function<void(aurora::ir::Function &)> &mutate,
@@ -4130,6 +4143,67 @@ void callableOwnerTests() {
         module.functions[0].frameBytes = 1;
         module.functions.push_back(std::move(later));
     }, "invalid value boundary type");
+    reject("later frame admission precedes earlier malformed body", [](Module &module) {
+        auto later = module.functions[0];
+        later.name = "later";
+        later.frameBytes = 1;
+        module.functions[0].code = {Pop{}, Return{}};
+        module.functions.push_back(std::move(later));
+    }, "invalid frame size");
+    reject("frame admission remains declaration order", [](Module &module) {
+        auto later = module.functions[0];
+        later.name = "alphabetically_first";
+        later.frameBytes = 1;
+        module.functions[0].slots[7] = Type::I64;
+        module.functions.push_back(std::move(later));
+    }, "invalid slot offset");
+    reject("orphan owner annotation precedes frame and body failures", [](Module &module) {
+        module.functions[0].ownedValueTypes[40] = "Missing";
+        module.functions[0].frameBytes = 1;
+        module.functions[0].code = {Pop{}, Return{}};
+    }, "owned value metadata requires exact owner spill");
+    reject("service declaration admission precedes frame and body failures", [](Module &module) {
+        module.functions[0].serviceSlots.insert(16);
+        module.functions[0].frameBytes = 1;
+        module.functions[0].code = {Pop{}, Return{}};
+    }, "service spills without a service signature");
+    for (const auto &[name, mutate, diagnostic] :
+         std::vector<std::tuple<const char *, std::function<void(aurora::ir::Function &)>, const char *>>{
+             {"service overlaps span", [](auto &function) {
+                  function.parameters = {Type::ConsoleSession};
+                  function.serviceSlots = {16};
+                  function.spanSlots = {64};
+              }, "service spill overlaps"},
+             {"region overlaps span", [](auto &function) {
+                  function.regionSlots = {16};
+                  function.spanSlots = {64};
+              }, "region spill overlaps"},
+             {"owner overlaps span", [](auto &function) {
+                  function.byteSlots = {{40, true}};
+                  function.spanSlots = {64};
+              }, "owned byte spill overlaps"},
+             {"region overlaps service", [](auto &function) {
+                  function.parameters = {Type::ConsoleSession};
+                  function.serviceSlots = {16};
+                  function.regionSlots = {16};
+              }, "overlapping region or owned byte spills"},
+             {"owner overlaps service", [](auto &function) {
+                  function.parameters = {Type::ConsoleSession};
+                  function.serviceSlots = {16};
+                  function.byteSlots = {{32, true}};
+              }, "overlapping region or owned byte spills"},
+             {"owner overlaps region", [](auto &function) {
+                  function.regionSlots = {16};
+                  function.byteSlots = {{40, true}};
+              }, "overlapping region or owned byte spills"}}) {
+        reject(name, [&](Module &module) {
+            auto &function = module.functions[0];
+            function.frameBytes = 64;
+            function.slots.clear();
+            function.code = {Pop{}, Return{}};
+            mutate(function);
+        }, diagnostic);
+    }
     reject("receiver header precedes frame layout", [](Module &module) {
         module.functions[0].receiver = Receiver{"Missing", false, false};
         module.functions[0].frameBytes = 1;
@@ -4161,6 +4235,11 @@ void callableOwnerTests() {
     const auto id = checked.metadata().findCallable("construct_pair").value();
     const auto callable = checked.metadata().callable(id);
     const auto parameters = callable.parameters();
+    const auto frame = callable.frame();
+    const auto scalars = frame.scalarSlots();
+    const auto objects = checked.metadata().frame(0).objectSlots();
+    auto copiedObject = objects.at(16);
+    copiedObject.className = "changed frame observation";
     auto receiver = callable.receiver().value();
     receiver.className = "changed observation";
     input = Module{};
@@ -4171,10 +4250,12 @@ void callableOwnerTests() {
         receiver.className != "changed observation" ||
         !callable.receiver()->constructor || !callable.receiver()->mutableValue ||
         callable.borrowedParameter() || callable.secondBorrowedParameter() || callable.receiverSpanField() ||
-        moved.get().functions[id].callableId != id)
+        frame.frameBytes() != 16 || scalars.size() != 2 || scalars.at(8) != Type::I64 || scalars.at(16) != Type::Bool ||
+        objects.size() != 1 || objects.at(16).className != "Pair" || objects.at(16).mutableValue ||
+        copiedObject.className != "changed frame observation" || moved.get().functions[id].callableId != id)
         throw Error("callable observations lost independent ingress lifetime, owner move or immutable receiver");
     ++passed;
-    std::cout << "PASS IR callable views survive raw ingress destruction and validated owner move\n";
+    std::cout << "PASS IR callable and frame views survive raw ingress destruction and validated owner move\n";
 }
 
 void metadataOwnerTests() {
@@ -4227,6 +4308,9 @@ void metadataOwnerTests() {
             module.classLayouts["Leaf"] = {Type::I64};
             mutate(module.classLayouts["Leaf"][0]);
         }, "non-scalar class layout field");
+        reject("metadata raw scalar slot " + name, [&](Module &module) {
+            mutate(module.functions[0].slots[8]);
+        }, "invalid slot payload type");
         reject("metadata raw logical field " + name, [&](Module &module) {
             module.classLayouts["Leaf"] = {Type::I64};
             module.classFields["Leaf"] = {{Type::I64, 0, 1, false}};
@@ -4304,8 +4388,6 @@ std::vector<FunctionBody> pendingBodies(std::size_t count = 1) {
     for (std::size_t id = 0; id < functions.size(); ++id) {
         auto &function = functions[id];
         function.callableId = id;
-        function.frameBytes = 16;
-        function.slots[8] = Type::I64;
         function.code = {Constant{42, Type::I64}, Store{8, Type::I64}, Load{8, Type::I64}, Return{}};
     }
     return functions;
@@ -4319,7 +4401,27 @@ enum class CallableMutation {
     RangeCount,
     IndexOverflow,
     IndexDuplicate,
-    IndexOrder
+    IndexOrder,
+    SlotRangeBegin,
+    SlotRangeCount,
+    SlotKind,
+    SlotTypePrefix,
+    SlotTypeGap,
+    SlotLength,
+    SlotMutable,
+    SlotDuplicate,
+    SlotOrder,
+    SlotUncovered,
+    TypeUncovered,
+    ScalarTail,
+    ObjectTail,
+    OwnerTail,
+    OrphanOwner,
+    FrameSize,
+    SlotKindOrder,
+    SlotUnusedType,
+    NegativeSingleSlot,
+    NegativePairedSlot
 };
 
 void pendingCallables(detail::MetadataWriter &writer, const std::vector<std::string> &names,
@@ -4329,7 +4431,10 @@ void pendingCallables(detail::MetadataWriter &writer, const std::vector<std::str
         wire::CallableRow callable{};
         callable.nameRange = writer.text(name);
         callable.typeRange = {writer.position().coreCounts.types, 1};
-        if (writer.callableCount() == 0) {
+        callable.frameBytes = 16;
+        callable.slotRange = {writer.slotCount(), 2};
+        const bool first = writer.callableCount() == 0;
+        if (first) {
             if (mutation == CallableMutation::AbsentReceiver)
                 callable.receiver.flags = 1;
             else if (mutation == CallableMutation::UnknownFlag)
@@ -4338,10 +4443,93 @@ void pendingCallables(detail::MetadataWriter &writer, const std::vector<std::str
                 ++callable.typeRange.firstIndex;
             else if (mutation == CallableMutation::RangeCount)
                 ++callable.typeRange.indexCount;
+            else if (mutation == CallableMutation::SlotRangeBegin)
+                ++callable.slotRange.firstIndex;
+            else if (mutation == CallableMutation::SlotRangeCount)
+                ++callable.slotRange.indexCount;
+            else if (mutation == CallableMutation::FrameSize)
+                callable.frameBytes = 8;
         }
         writer.callableType(Type::I64);
+        const int slotCount = first && mutation == CallableMutation::NegativeSingleSlot ? 1 : 2;
+        if (slotCount == 1)
+            callable.slotRange.indexCount = 1;
+        for (int ordinal = 0; ordinal < slotCount; ++ordinal) {
+            wire::SlotRow slot{};
+            slot.recordKind = static_cast<std::int64_t>(aurora::hosted_abi::compiler_lowering::RecordKind::ScalarSlot);
+            slot.slotOffset = (ordinal + 1) * 8;
+            auto type = Type::I64;
+            if (first && ordinal == 0 && mutation == CallableMutation::ScalarTail)
+                type.lengthParameter = "N";
+            slot.typeIndex = writer.slotType(type);
+            if (first) {
+                if (ordinal == 0) {
+                    if (mutation == CallableMutation::SlotKind)
+                        slot.recordKind = 9;
+                    else if (mutation == CallableMutation::SlotKindOrder)
+                        slot.recordKind = 11;
+                    else if (mutation == CallableMutation::SlotUnusedType)
+                        slot.recordKind = 13;
+                    else if (mutation == CallableMutation::NegativeSingleSlot ||
+                             mutation == CallableMutation::NegativePairedSlot)
+                        slot.slotOffset = -8;
+                    else if (mutation == CallableMutation::SlotTypePrefix)
+                        slot.typeIndex = callable.typeRange.firstIndex;
+                    else if (mutation == CallableMutation::SlotTypeGap)
+                        ++slot.typeIndex;
+                    else if (mutation == CallableMutation::SlotLength)
+                        slot.slotLength = 1;
+                    else if (mutation == CallableMutation::SlotMutable)
+                        slot.mutableValue = 1;
+                }
+                if (mutation == CallableMutation::SlotDuplicate)
+                    slot.slotOffset = 8;
+                else if (mutation == CallableMutation::SlotOrder)
+                    slot.slotOffset = (2 - ordinal) * 8;
+            }
+            writer.append(slot);
+        }
+        if (first && (mutation == CallableMutation::ObjectTail || mutation == CallableMutation::OwnerTail ||
+                      mutation == CallableMutation::OrphanOwner)) {
+            wire::SlotRow extra{};
+            const auto nominal = Type(std::string("A\0\xff", 3));
+            if (mutation == CallableMutation::ObjectTail) {
+                extra.recordKind = 11;
+                extra.slotOffset = 16;
+                auto type = nominal;
+                type.elementParameter = "T";
+                extra.typeIndex = writer.slotType(type);
+            } else {
+                callable.frameBytes = 64;
+                if (mutation == CallableMutation::OwnerTail) {
+                    wire::SlotRow owner{};
+                    owner.recordKind = 16;
+                    owner.slotOffset = 64;
+                    owner.mutableValue = 1;
+                    writer.append(owner);
+                    ++callable.slotRange.indexCount;
+                }
+                extra.recordKind = 17;
+                extra.slotOffset = 64;
+                auto type = Type::ownedValues(nominal);
+                if (mutation == CallableMutation::OwnerTail)
+                    type.lengthParameter = "N";
+                extra.typeIndex = writer.slotType(type);
+            }
+            writer.append(extra);
+            ++callable.slotRange.indexCount;
+        }
         writer.append(callable);
     }
+    if (mutation == CallableMutation::SlotUncovered) {
+        wire::SlotRow extra{};
+        extra.recordKind = static_cast<std::int64_t>(aurora::hosted_abi::compiler_lowering::RecordKind::ArraySlot);
+        extra.slotOffset = 1;
+        extra.slotLength = 1;
+        writer.append(extra);
+    }
+    if (mutation == CallableMutation::TypeUncovered)
+        writer.slotType(Type::I64);
     std::vector<std::size_t> ids(names.size());
     for (std::size_t id = 0; id < ids.size(); ++id)
         ids[id] = id;
@@ -4426,8 +4614,10 @@ void metadataIngressTests() {
         !storageMatches(metadata.storage(*id), ClassStorage{{0, 8}, {0, 8}, 16, 8, 16}) ||
         metadata.visibleDescriptors(0).size() != 1 || metadata.visibleDescriptors(0).front() != 7 ||
         metadata.callableCount() != 1 || metadata.findCallable("test") != 0 ||
-        metadata.callable(0).result() != Type::I64 || !metadata.callable(0).parameters().empty())
-        throw Error("pending metadata moves lost copied names, fields, storage or callable headers");
+        metadata.callable(0).result() != Type::I64 || !metadata.callable(0).parameters().empty() ||
+        metadata.frame(0).frameBytes() != 16 || metadata.frame(0).scalarSlots().size() != 2 ||
+        metadata.frame(0).scalarSlots().at(8) != Type::I64 || metadata.frame(0).scalarSlots().at(16) != Type::I64)
+        throw Error("pending metadata moves lost copied names, fields, storage, callable headers or frame declarations");
     ++passed;
     std::cout << "PASS IR pending metadata move construction, replacement and publication\n";
     rejects("pending metadata cannot publish twice", [&] {
@@ -4485,11 +4675,46 @@ void metadataIngressTests() {
              {"overlapping callable type range", CallableMutation::RangeCount},
              {"callable name index overflow", CallableMutation::IndexOverflow},
              {"duplicate callable index and missing ID", CallableMutation::IndexDuplicate},
-             {"unsorted callable name index", CallableMutation::IndexOrder}}) {
+             {"unsorted callable name index", CallableMutation::IndexOrder},
+             {"nonpacked callable slot begin", CallableMutation::SlotRangeBegin},
+             {"overlapping callable slot ranges", CallableMutation::SlotRangeCount},
+             {"unknown frame record kind", CallableMutation::SlotKind},
+             {"reversed frame declaration kinds", CallableMutation::SlotKindOrder},
+             {"untyped spill has a type index", CallableMutation::SlotUnusedType},
+             {"slot type aliases signature prefix", CallableMutation::SlotTypePrefix},
+             {"slot type skips packed prefix", CallableMutation::SlotTypeGap},
+             {"scalar slot has unused length payload", CallableMutation::SlotLength},
+             {"scalar slot has unused mutable payload", CallableMutation::SlotMutable},
+             {"duplicate scalar declaration rows", CallableMutation::SlotDuplicate},
+             {"reversed scalar declaration rows", CallableMutation::SlotOrder},
+             {"uncovered frame declaration suffix", CallableMutation::SlotUncovered},
+             {"uncovered frame type suffix", CallableMutation::TypeUncovered}}) {
         rejects(name, [=] {
             static_cast<void>(validate(pendingBodies(2), pendingMetadata(false, false, {"alpha", "omega"}, mutation)));
         }, "invalid hosted IR metadata transport");
     }
+    // These exercise source admission for both row counts. They do not
+    // substitute for a successful hosted-lowering projection/sort fixture.
+    for (const auto mutation : {CallableMutation::NegativeSingleSlot, CallableMutation::NegativePairedSlot}) {
+        rejects("negative slot offset is independent of declaration count", [=] {
+            static_cast<void>(validate(pendingBodies(), pendingMetadata(false, false, {"test"}, mutation)));
+        }, "invalid typed IR: invalid slot offset");
+    }
+    rejects("pending scalar declaration preserves malformed raw tail", [] {
+        static_cast<void>(validate(pendingBodies(), pendingMetadata(false, false, {"test"}, CallableMutation::ScalarTail)));
+    }, "invalid slot payload type");
+    rejects("pending object declaration preserves malformed nominal tail", [] {
+        static_cast<void>(validate(pendingBodies(), pendingMetadata(false, false, {"test"}, CallableMutation::ObjectTail)));
+    }, "unknown object class");
+    rejects("pending typed owner preserves malformed raw tail", [] {
+        static_cast<void>(validate(pendingBodies(), pendingMetadata(false, false, {"test"}, CallableMutation::OwnerTail)));
+    }, "invalid canonical owned value type");
+    rejects("pending owner annotation cannot omit owner declaration", [] {
+        static_cast<void>(validate(pendingBodies(), pendingMetadata(false, false, {"test"}, CallableMutation::OrphanOwner)));
+    }, "owned value metadata requires exact owner spill");
+    rejects("pending frame extent receives independent validation", [] {
+        static_cast<void>(validate(pendingBodies(), pendingMetadata(false, false, {"test"}, CallableMutation::FrameSize)));
+    }, "invalid frame size");
     rejects("pending descriptor still receives independent validation", [] {
         static_cast<void>(validate(pendingBodies(), pendingMetadata(false, true)));
     }, "invalid metadata descriptor");

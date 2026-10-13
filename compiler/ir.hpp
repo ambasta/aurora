@@ -606,6 +606,13 @@ public:
 class FunctionBody {
 public:
     Metadata::CallableId callableId = 0;
+    std::vector<Instruction> code;
+};
+// Raw signatures and frame declarations exist only on the hostile Module
+// construction route. Validation ingests them into the Aurora owner, moves the
+// executable bases into production bodies and destroys these raw rows.
+class Function : public FunctionBody {
+public:
     std::map<int, Type> slots;
     // Scalar leaves live at base minus their canonical byte offset and have
     // matching typed slots. Resource descriptors are non-scalar subranges.
@@ -622,12 +629,6 @@ public:
     // OwnedValues of the named canonical copied class. Never grants a lifetime.
     std::map<int, std::string> ownedValueTypes;
     int frameBytes = 0;
-    std::vector<Instruction> code;
-};
-// Raw signatures exist only on the hostile Module construction route. Validation
-// ingests them, moves these bases into production bodies and destroys the raw rows.
-class Function : public FunctionBody {
-public:
     std::string name;
     int moduleScope = 0;
     Type result;
