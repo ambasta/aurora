@@ -76,8 +76,8 @@ public:
         }
         return PutResult::timeout;
     }
-    // Legacy BIOS/protected-console adapters remain explicit. The native
-    // simple-UEFI service uses next()/try_put(), never these editor wrappers.
+    // Legacy BIOS editor adapters remain explicit. Simple UEFI and protected
+    // console services use next()/try_put(), never these editor wrappers.
     template <class Editor> [[nodiscard]] static auto poll(Editor &line) -> std::optional<std::uint8_t> {
         const auto sample = next();
         if (sample.damaged) {

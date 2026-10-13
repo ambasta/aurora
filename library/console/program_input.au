@@ -1,0 +1,124 @@
+export module console.program_input;
+import console.io;
+import console.line;
+import std.binary_buffer;
+
+export namespace console {
+    enum class ProgramInputAction {
+        command,
+        upper_payload,
+        requested_exit,
+        output_failure
+    };
+
+    // Ordinary copied data. No editor view, service loan or command authority
+    // escapes the input turn; the native boundary validates the closed result.
+    class ProgramSubmission {
+        std::BinaryBuffer64 bytes;
+        i64 count;
+        ProgramInputAction action;
+        u64 after_cr;
+    public:
+        ProgramSubmission(std::BinaryBuffer64 value, i64 length, ProgramInputAction outcome, u64 carry)
+            : bytes(value), count(length), action(outcome), after_cr(carry) {
+        }
+    };
+}
+
+namespace console {
+    auto program_text(builtin::ConsoleSession& session, builtin::span<const u8> text) -> bool {
+        const WriteResult result = write(session, text);
+        return result.complete();
+    }
+}
+
+export namespace console {
+    // Local commands remain inside this invocation. Exactly one accepted
+    // command or upper payload returns before its native result/newline path.
+    auto read_program_input(builtin::ConsoleSession& session, bool after_cr) -> ProgramSubmission {
+        Line64 line = Line64(after_cr);
+        bool text_input = false;
+        while (true) {
+            const builtin::ConsoleSample sample = session.next();
+            if (sample.damaged) {
+                line.reject();
+            }
+            if (sample.byte_present) {
+                const ConsoleEvent event = line.consume(sample.byte);
+                u64 carry = 0u64;
+                if (line.after_cr_pending()) {
+                    carry = 1u64;
+                }
+                bool okay = true;
+                if (event == ConsoleEvent::echo) {
+                    okay = session.put(sample.byte) == builtin::ConsolePutResult::success;
+                } else {
+                    if (event == ConsoleEvent::erased) {
+                        okay = program_text(session, "\b \b");
+                    } else {
+                        if (event != ConsoleEvent::ignored) {
+                            if (event == ConsoleEvent::rejected) {
+                                text_input = false;
+                                okay = program_text(session,
+                                    "\r\nLine rejected: too long, non-ASCII/control byte, or UART error.\r\naurora> ");
+                            } else {
+                                // In upper mode every accepted line is payload,
+                                // including empty input and help/status/exit.
+                                if (text_input || event == ConsoleEvent::unknown) {
+                                    const i64 count = line.submission_size();
+                                    const bool upper = !text_input && count == 5
+                                        && line.submission_byte(0) == 'u' && line.submission_byte(1) == 'p'
+                                        && line.submission_byte(2) == 'p' && line.submission_byte(3) == 'e'
+                                        && line.submission_byte(4) == 'r';
+                                    if (upper) {
+                                        text_input = true;
+                                        okay = program_text(session, "\r\ntext> ");
+                                    } else {
+                                        std::BinaryBuffer64 bytes = std::BinaryBuffer64();
+                                        i64 index = 0;
+                                        while (index < count) {
+                                            bytes.write_u8(index, line.submission_byte(index));
+                                            index = index + 1;
+                                        }
+                                        ProgramInputAction action = ProgramInputAction::command;
+                                        if (text_input) {
+                                            action = ProgramInputAction::upper_payload;
+                                        }
+                                        return ProgramSubmission(bytes, count, action, carry);
+                                    }
+                                } else {
+                                    if (event == ConsoleEvent::help) {
+                                        // Preserve this exact terminal transcript as one byte-string token.
+                                        okay = program_text(session,
+                                            "\r\nupper   Uppercase a line in a protected Aurora program\r\nwrite note <text>  Replace the RAM note (53 ASCII bytes)\r\ncat note          Read the note in protected Aurora\r\nupper note        Replace the note with protected uppercase output\r\nwrite <name> <text>  Write one of four RAM files (8-byte name, 49-byte content)\r\ncat <name> / upper <name>  Protected read / atomic uppercase replacement\r\nls / rm <name>     List / remove RAM files\r\nhelp    Show commands\r\nstatus  Show console state\r\nexit    Close this QEMU session\r\naurora> ");
+                                    } else {
+                                        if (event == ConsoleEvent::status) {
+                                            okay = program_text(session,
+                                                "\r\nstatus: protected Aurora upper; two-domain copied stream; timer budgets; capacity=64\r\naurora> ");
+                                        } else {
+                                            if (event == ConsoleEvent::exit) {
+                                                okay = program_text(session, "\r\nAURORA_CONSOLE_EXIT\r\n");
+                                                if (okay) {
+                                                    return ProgramSubmission(std::BinaryBuffer64(), 0,
+                                                        ProgramInputAction::requested_exit, carry);
+                                                }
+                                            } else {
+                                                okay = program_text(session, "\r\naurora> ");
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (!okay) {
+                    return ProgramSubmission(std::BinaryBuffer64(), 0,
+                        ProgramInputAction::output_failure, carry);
+                }
+            }
+        }
+        return ProgramSubmission(std::BinaryBuffer64(), 0,
+            ProgramInputAction::output_failure, 0u64);
+    }
+}

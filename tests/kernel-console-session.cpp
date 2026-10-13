@@ -8,7 +8,7 @@
 namespace {
 using namespace aurora::console;
 unsigned effects{}, expected_effects{}, waits{};
-bool quiescent = true, reenter{};
+bool quiescent = true, reenter{}, release_during_operation{};
 Sample sample{};
 ServiceArgument argument{};
 class Ports {
@@ -37,6 +37,9 @@ auto Platform::wait() -> void {
     ++waits;
     if (reenter) {
         static_cast<void>(Service::put(argument.grant, argument.generation, 65));
+    }
+    if (release_during_operation) {
+        Service::release(argument);
     }
     sample = {false, 0, true};
 }
@@ -109,6 +112,12 @@ int main() {
     rejects([&] {
         static_cast<void>(Service::close(argument, 2));
     });
+    rejects([&] {
+        sample = {};
+        release_during_operation = true;
+        expected_effects = 1;
+        static_cast<void>(Service::next(argument.grant, argument.generation));
+    });
     need(Service::close(argument, 1) == Completion::output_failure);
     rejects([&] {
         static_cast<void>(Service::close(argument, 0));
@@ -116,6 +125,27 @@ int main() {
     rejects([&] {
         static_cast<void>(Service::put(argument.grant, argument.generation, 1));
     });
-    std::puts(
-        "PASS console session grant: canonical reports, generations, kind, active lifetime, reentry and quiescence");
+    argument = Service::open();
+    const auto released = argument;
+    Service::release(argument);
+    rejects([&] {
+        Service::release(released);
+    });
+    rejects([&] {
+        Service::preflight(released.grant, released.generation);
+    });
+    rejects([&] {
+        static_cast<void>(Service::next(released.grant, released.generation));
+    });
+    rejects([&] {
+        static_cast<void>(Service::put(released.grant, released.generation, 65));
+    });
+    argument = Service::open();
+    need(argument.grant == released.grant && argument.generation == released.generation + 1);
+    rejects([&] {
+        Service::release(released);
+    });
+    Service::release(argument);
+    std::puts("PASS console session grant: canonical reports, generations, kind, release, active lifetime, "
+              "reentry and quiescence");
 }

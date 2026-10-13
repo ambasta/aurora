@@ -1,10 +1,16 @@
 #include "../kernel/program-stream.hpp"
+#include "../kernel/program-input.hpp"
 #include <array>
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <limits>
+#include <string>
 #include <string_view>
 #include <type_traits>
+#include <vector>
+
+extern "C" void __au_runtime_program_input(const void *, void *);
 
 namespace {
 using aurora::program::Stream;
@@ -17,6 +23,221 @@ auto need(bool condition, std::string_view message) -> void {
         std::exit(1);
     }
 }
+
+// Reuse the linked production reader and grant implementation with scripted I/O.
+using aurora::program::Submission;
+using Action = Submission::Action;
+std::vector<aurora::console::Sample> samples;
+std::size_t sample_index{}, output_attempts{}, output_limit = std::numeric_limits<std::size_t>::max();
+std::string transcript;
+class InputPorts final {
+public:
+    static auto next() -> aurora::console::Sample {
+        need(output_attempts <= output_limit, "reader consumed input after output failure");
+        need(sample_index < samples.size(), "reader consumed beyond supplied input");
+        return samples[sample_index++];
+    }
+    static auto try_put(std::uint8_t byte) -> aurora::console::PutResult {
+        need(output_attempts <= output_limit, "reader retried after output failure");
+        if (output_attempts++ == output_limit)
+            return aurora::console::PutResult::timeout;
+        transcript += static_cast<char>(byte);
+        return aurora::console::PutResult::success;
+    }
+};
+class InputPlatform final {
+public:
+    static auto quiet() -> bool {
+        return true;
+    }
+    static auto wait() -> void {
+    }
+    [[noreturn]] static auto fail() -> void {
+        std::abort();
+    }
+};
+using InputSession = aurora::console::Session<InputPorts, InputPlatform>;
+auto script(std::string_view text, std::size_t limit = std::numeric_limits<std::size_t>::max()) -> void {
+    samples.clear();
+    for (const auto byte : text)
+        samples.push_back({true, static_cast<std::uint8_t>(byte), false});
+    sample_index = output_attempts = 0;
+    output_limit = limit;
+    transcript.clear();
+}
+auto read_input(std::uint64_t after_cr = 0) -> Submission {
+    const aurora::program::SubmissionArgument argument{InputSession::open(), after_cr};
+    const auto before = argument;
+    alignas(16) std::array<std::byte, 120> storage;
+    storage.fill(std::byte{0xa5});
+    __au_runtime_program_input(&argument, storage.data() + 16);
+    InputSession::release(argument.console);
+    need(std::memcmp(&argument, &before, sizeof(argument)) == 0, "reader changed its borrowed argument");
+    for (std::size_t index = 0; index < 16; ++index)
+        need(storage[index] == std::byte{0xa5} && storage[104 + index] == std::byte{0xa5},
+             "reader result exceeded its copied record");
+    Submission result;
+    std::memcpy(result.data(), storage.data() + 16, sizeof(result));
+    need(result.valid(), "reader returned a noncanonical submission");
+    return result;
+}
+auto expect_input(const Submission &result, std::string_view expected, Action action, std::uint64_t carry) -> void {
+    need(result.length() == expected.size() && result.action() == action && result.after_cr() == carry,
+         "reader count/action/CR carry");
+    for (std::size_t index = 0; index < result.bytes().size(); ++index)
+        need(result.bytes()[index] == (index < expected.size() ? static_cast<std::uint8_t>(expected[index]) : 0),
+             "reader copied bytes and zero suffix");
+}
+auto program_input() -> void {
+    const std::string rejected =
+        "\r\nLine rejected: too long, non-ASCII/control byte, or UART error.\r\naurora> ";
+    struct Case {
+        std::string text, expected;
+        Action action;
+        std::uint64_t carry;
+        std::string output;
+    };
+    const Case cases[] = {
+        {"write a x\n", "write a x", Action::command, 0, "write a x"},
+        {"upperx\n", "upperx", Action::command, 0, "upperx"},
+        {"\nq\n", "q", Action::command, 0, "\r\naurora> q"},
+        {"upper\nhelp\n", "help", Action::upper_payload, 0, "upper\r\ntext> help"},
+        {"upper\nstatus\n", "status", Action::upper_payload, 0, "upper\r\ntext> status"},
+        {"upper\nexit\n", "exit", Action::upper_payload, 0, "upper\r\ntext> exit"},
+        {"upper\r\n\n", "", Action::upper_payload, 0, "upper\r\ntext> "},
+        {"upper\n\b\x7f" "abx\bcZ!\r", "abcZ!", Action::upper_payload, 1,
+         "upper\r\ntext> abx\b \bcZ!"},
+        {"upper\nabx\x7fZ\n", "abZ", Action::upper_payload, 0, "upper\r\ntext> abx\b \bZ"},
+        {"upper\n" + std::string(64, 'a') + "\n", std::string(64, 'a'), Action::upper_payload, 0,
+         "upper\r\ntext> " + std::string(64, 'a')},
+        {"upper\n" + std::string(65, 'a') + "\b\nq\n", "q", Action::command, 0,
+         "upper\r\ntext> " + std::string(64, 'a') + rejected + "q"},
+        {"exit\r", "", Action::requested_exit, 1, "exit\r\nAURORA_CONSOLE_EXIT\r\n"},
+    };
+    for (const auto &test : cases) {
+        script(test.text);
+        expect_input(read_input(), test.expected, test.action, test.carry);
+        need(sample_index == samples.size() && transcript == test.output, "reader exact input/output boundary");
+        // Fail each actual output operation, including erase, prompts and exit.
+        for (std::size_t position = 0; position < test.output.size(); ++position) {
+            script(test.text, position);
+            const auto failed = read_input();
+            need(sample_index != 0, "reader emitted output before reading input");
+            expect_input(failed, "", Action::output_failure, samples[sample_index - 1].byte == '\r' ? 1 : 0);
+            need(transcript == test.output.substr(0, position) && output_attempts == position + 1,
+                 "reader output failure changed prefix or performed extra output");
+        }
+    }
+    script("help\r\nstatus\nq\n");
+    expect_input(read_input(), "q", Action::command, 0);
+    const std::string local_output =
+        "help\r\nupper   Uppercase a line in a protected Aurora program\r\n"
+        "write note <text>  Replace the RAM note (53 ASCII bytes)\r\n"
+        "cat note          Read the note in protected Aurora\r\n"
+        "upper note        Replace the note with protected uppercase output\r\n"
+        "write <name> <text>  Write one of four RAM files (8-byte name, 49-byte content)\r\n"
+        "cat <name> / upper <name>  Protected read / atomic uppercase replacement\r\n"
+        "ls / rm <name>     List / remove RAM files\r\nhelp    Show commands\r\n"
+        "status  Show console state\r\nexit    Close this QEMU session\r\naurora> "
+        "status\r\nstatus: protected Aurora upper; two-domain copied stream; timer budgets; capacity=64\r\naurora> q";
+    need(transcript == local_output, "help/status must finish locally with exactly one prompt per command");
+    for (std::size_t position = 0; position < local_output.size(); ++position) {
+        script("help\r\nstatus\nq\n", position);
+        const auto failed = read_input();
+        need(sample_index != 0, "local reader emitted output before reading input");
+        expect_input(failed, "", Action::output_failure, samples[sample_index - 1].byte == '\r' ? 1 : 0);
+        need(transcript == local_output.substr(0, position), "local presentation output failure prefix");
+    }
+
+    script("one\r\nupper\r\nexit\r\nexit\n");
+    const auto first = read_input();
+    expect_input(first, "one", Action::command, 1);
+    const auto second = read_input(first.after_cr());
+    expect_input(second, "exit", Action::upper_payload, 1);
+    expect_input(read_input(second.after_cr()), "", Action::requested_exit, 0);
+    expect_input(first, "one", Action::command, 1);
+    need(sample_index == samples.size() && transcript == "oneupper\r\ntext> exitexit\r\nAURORA_CONSOLE_EXIT\r\n",
+         "CRLF carry or copied submission changed across invocations");
+
+    for (const auto damaged : {aurora::console::Sample{false, 0, true}, {true, 'x', true}, {true, '\r', true}}) {
+        script("upper\nbad");
+        samples.push_back(damaged);
+        for (const auto byte : std::string_view{"\nq\n"})
+            samples.push_back({true, static_cast<std::uint8_t>(byte), false});
+        expect_input(read_input(), "q", Action::command, 0);
+        need(transcript == "upper\r\ntext> bad" + rejected + "q", "damage must reject and clear upper mode");
+    }
+    script("one\r\nupper\nq\n");
+    samples[4].damaged = true;
+    const auto before_damage = read_input();
+    expect_input(before_damage, "one", Action::command, 1);
+    expect_input(read_input(before_damage.after_cr()), "q", Action::command, 0);
+    need(transcript == "one" + rejected + "q", "damaged suppressed LF must poison the next invocation");
+    for (const unsigned byte : {0U, 1U, 27U, 128U, 255U}) {
+        script("upper\nbad");
+        samples.push_back({true, static_cast<std::uint8_t>(byte), false});
+        for (const auto tail : std::string_view{"\b\nq\n"})
+            samples.push_back({true, static_cast<std::uint8_t>(tail), false});
+        expect_input(read_input(), "q", Action::command, 0);
+        need(transcript == "upper\r\ntext> bad" + rejected + "q", "unsafe byte cannot be repaired by backspace");
+    }
+}
+auto submission_records() -> void {
+    const auto accepts = [](const Submission::Record &record) {
+        Submission submission;
+        std::memcpy(submission.data(), &record, sizeof(record));
+        return submission.valid();
+    };
+    Submission::Record record{};
+    for (std::uint64_t action = 0; action < 4; ++action) {
+        record.action = action;
+        for (std::uint64_t carry = 0; carry < 2; ++carry) {
+            record.after_cr = carry;
+            need(accepts(record) == (action != 0), "empty command/payload/terminal distinction");
+        }
+    }
+    record = {};
+    record.count = 1;
+    record.bytes[0] = 'q';
+    need(accepts(record), "ordinary copied command record");
+    for (const auto count : {std::int64_t{-1},
+                             std::int64_t{65},
+                             std::numeric_limits<std::int64_t>::min(),
+                             std::numeric_limits<std::int64_t>::max()}) {
+        auto bad = record;
+        bad.count = count;
+        need(!accepts(bad), "copied submission signed count bounds");
+    }
+    for (const auto action : {std::uint64_t{2}, std::uint64_t{3}, std::uint64_t{4}, maximum}) {
+        auto bad = record;
+        bad.action = action;
+        need(!accepts(bad), "terminal payload and unknown actions reject");
+    }
+    for (const auto carry : {std::uint64_t{2}, maximum}) {
+        auto bad = record;
+        bad.after_cr = carry;
+        need(!accepts(bad), "noncanonical CR carry rejects");
+    }
+    for (const unsigned byte : {0U, 31U, 127U, 255U}) {
+        auto bad = record;
+        bad.bytes[0] = static_cast<std::uint8_t>(byte);
+        need(!accepts(bad), "nonprintable copied prefix rejects");
+    }
+    for (const auto index : {1U, 63U}) {
+        auto bad = record;
+        bad.bytes[index] = 'x';
+        need(!accepts(bad), "copied suffix must be all zero");
+    }
+    record.count = 64;
+    record.bytes.fill('~');
+    need(accepts(record), "exact maximum copied command");
+    Submission submission;
+    std::memcpy(submission.data(), &record, sizeof(record));
+    submission.scrub();
+    record = {};
+    need(std::memcmp(submission.data(), &record, sizeof(record)) == 0, "complete submission scrub");
+}
+
 auto input(std::string_view text) -> StreamBytes {
     StreamBytes bytes{};
     need(text.size() <= bytes.size(), "test input capacity");
@@ -359,7 +580,18 @@ auto generated_model() -> void {
 }
 } // namespace
 
+extern "C" void __au_runtime_console_next(const void *grant,
+                                          std::uint64_t generation,
+                                          aurora::console::RawSample *sample) {
+    *sample = InputSession::next(grant, generation);
+}
+extern "C" std::uint64_t __au_runtime_console_put(const void *grant, std::uint64_t generation, std::uint64_t byte) {
+    return InputSession::put(grant, generation, byte);
+}
+
 auto main() -> int {
+    program_input();
+    submission_records();
     Stream bounded{1};
     need(bounded.run() == 0 && bounded.begin({}, 0) && bounded.run() == 1, "first ledger identity minted");
     need(bounded.finish().has_value() && !bounded.begin({}, 0) && bounded.run() == 1 && bounded.scrubbed(),
@@ -431,6 +663,7 @@ auto main() -> int {
     }
     read_streams();
     generated_model();
-    std::cout << "PASS: copied-byte and authenticated read/transform streams, ordered one-shot request/reply/ack, "
-                 "output staging and scrub; 40000 scalar model steps\n";
+    std::cout << "PASS: source reader, copied submission validation, copied-byte and authenticated "
+                 "read/transform streams, ordered one-shot request/reply/ack, output staging and scrub; "
+                 "40000 scalar model steps\n";
 }

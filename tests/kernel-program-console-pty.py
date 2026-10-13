@@ -691,6 +691,8 @@ def main():
                 note_read("RECOVER THIS NOTE")
             command_upper(b"Hello, Aurora 42!\n", "HELLO, AURORA 42!")
             command_upper(b"next command\n", "NEXT COMMAND")
+            for payload in (b"help", b"status", b"exit"):
+                command_upper(payload + b"\r\n", payload.decode("ascii").upper())
             command_upper(b"\n", "")
             command_upper(b"abx\x08cZ!\r\n", "ABCZ!")
             command_upper(b"a" * 64 + b"\n", "A" * 64)

@@ -2,12 +2,12 @@
 // One shared timer mapping and one IDT gate; ownership is selected only at a
 // fully quiescent private-kernel boundary. No source-language pointer ABI.
 using ProgramSerial=Serial; // One shared sticky receive-error latch, including runtime traces.
-using ProgramDisplay=console::Presentation<ProgramSerial>;
 program::Stream command_stream;
 program::Note command_note;
 program::Files command_files;
 bool command_file{},command_transform{};
 bool command_reading{};
+extern "C" void __au_runtime_program_input(const void*, void*);
 extern "C" void __au_runtime_note_update(const void*, void*);
 extern "C" void __au_runtime_note_project(const void*, void*);
 extern "C" void __au_runtime_files_update(const void*, void*);
@@ -56,6 +56,30 @@ __attribute__((noinline)) auto program_wait_sample() -> void {
         ".global uefi_program_poll_end\nuefi_program_poll_end:":::"memory");
     console_waiting=false; console_wait_stack=0;
     require(console_wakes==console_expected_wake && program_boundary(),"program poll completion");
+}
+class ProgramInputPlatform final {
+public:
+    [[nodiscard]] static auto quiet() -> bool {
+        return !command_owned && !mailbox && frames.used()==0 && !command_note.bound() && program_boundary();
+    }
+    static auto wait() -> void {
+        program_wait_sample();
+    }
+    [[noreturn]] static auto fail() -> void {
+        stop("program console input authority");
+    }
+};
+using ProgramInputSession=console::Session<ProgramSerial,ProgramInputPlatform>;
+// The only native submission storage is the caller's result. Revoke the grant
+// before returning it to any command mutation or protected execution path.
+__attribute__((noinline)) auto program_read_input(program::Submission& input,U64 after_cr) -> void {
+    require(ProgramInputPlatform::quiet() && after_cr<=1,"program input entry boundary");
+    input.scrub();
+    const program::SubmissionArgument argument{ProgramInputSession::open(),after_cr};
+    __au_runtime_program_input(&argument,input.data());
+    require(input.valid(),"program closed input submission");
+    ProgramInputSession::release(argument.console);
+    require(ProgramInputPlatform::quiet(),"program released input boundary");
 }
 [[nodiscard]] auto recoverable_program_event() -> bool {
     const auto event=program.event();
@@ -210,7 +234,7 @@ __attribute__((noinline)) auto program_save_file() -> void {
     __au_runtime_files_replace(copied.data(),result.data());
     require(command_files.publish(result),"file Aurora replacement accepted");
 }
-auto program_command(console::Snapshot& input, bool reading=false, bool saving=false, bool file=false) -> void {
+auto program_command(program::Submission& input, bool reading=false, bool saving=false, bool file=false) -> void {
     require(!command_owned && program_boundary() && !mailbox && frames.used()==0 && !(reading && saving),
         "program command boundary");
     command_file=file;
@@ -218,7 +242,7 @@ auto program_command(console::Snapshot& input, bool reading=false, bool saving=f
     const auto input_length=file ? input.length() : saving ? program_begin_upper_note() : input.length();
     require(saving || (reading ? command_stream.begin_read(command_transform) : command_stream.begin(input.bytes(),input.length())),
         "program command admission");
-    input={}; // The stream now owns the only retained command-input copy.
+    input.scrub(); // The stream now owns the only retained command-input copy.
     command_owned=true; command_reading=reading; selected_client=0;
     mailbox.emplace(registry);
     require(create(0)==0 && create(1)==1 && mailbox->bind(*domains[0].handle,*domains[1].handle),"program participants");
@@ -286,13 +310,7 @@ auto program_command(console::Snapshot& input, bool reading=false, bool saving=f
     }
     ProgramSerial::text("aurora> ");
 }
-[[nodiscard]] auto is_upper(const console::Snapshot& input) -> bool {
-    constexpr std::array<std::uint8_t,5> command{'u','p','p','e','r'};
-    if (!input.submitted() || input.length()!=command.size()) return false;
-    for (std::size_t i=0;i<command.size();++i) if (input.bytes()[i]!=command[i]) return false;
-    return true;
-}
-[[nodiscard]] auto program_note_update(const console::Snapshot& input) -> U64 {
+[[nodiscard]] auto program_note_update(const program::Submission& input) -> U64 {
     program::Note::UpdateInput copied{};
     const auto& saved=command_note.saved();
     for (std::size_t index=0;index<saved.size();++index) {
@@ -306,7 +324,7 @@ auto program_command(console::Snapshot& input, bool reading=false, bool saving=f
     }
     return program_note_apply(copied);
 }
-[[nodiscard]] __attribute__((noinline)) auto program_files_update(const console::Snapshot& input) -> U64 {
+[[nodiscard]] __attribute__((noinline)) auto program_files_update(const program::Submission& input) -> U64 {
     program::Files::UpdateInput copied{};
     const auto& saved=command_files.saved();
     for (std::size_t i=0;i<saved.size();++i) copied[i]=saved[i];
@@ -333,42 +351,40 @@ __attribute__((noinline)) auto run_program_console() -> void {
     hardware::Io::write(0x3f9,0); require(hardware::Io::read(0x3f9)==0,"program UART IRQ disabled");
     ProgramSerial::initialize_input();
     ProgramSerial::text("AURORA_PROGRAM_CONSOLE_READY: UEFI CPL3 upper/note, ASCII, 64-byte lines\r\naurora> ");
-    console::Line line; console::Snapshot copied; bool text_input=false;
+    program::Submission copied; U64 after_cr=0;
     for (;;) {
-        require(!command_owned && program_boundary(),"program console receive boundary");
-        const auto byte=ProgramSerial::poll(line);
-        if (!byte) { program_wait_sample(); continue; }
-        const auto event=line.consume(*byte,&copied);
-        if (copied.submitted()) {
-            if (text_input) {
-                text_input=false; ProgramSerial::text("\r\n"); program_command(copied); copied={}; continue;
-            }
-            const auto note_event=program_note_update(copied);
-            if (note_event!=0) {
-                ProgramSerial::text("\r\n");
-                if (note_event==1) ProgramSerial::text("Note saved.\r\naurora> ");
-                else program_command(copied,note_event!=4,note_event==4);
-                copied={}; continue;
-            }
-            const auto file_event=program_files_update(copied);
-            if (file_event!=0) {
-                if (file_event>=2) { ProgramSerial::text("\r\n"); program_command(copied,true,false,true); }
-                copied={}; continue;
-            }
-            if (is_upper(copied)) {
-                copied={}; text_input=true; ProgramSerial::text("\r\ntext> "); continue;
-            }
+        program_read_input(copied,after_cr);
+        after_cr=copied.after_cr(); // Carry a submitted CR across protected execution.
+        const auto action=copied.action();
+        if (action==program::Submission::Action::upper_payload) {
+            ProgramSerial::text("\r\n"); program_command(copied); continue;
         }
-        if (event==console::Event::rejected) text_input=false;
-        if (event==console::Event::help) {
-            ProgramSerial::text("\r\nupper   Uppercase a line in a protected Aurora program\r\nwrite note <text>  Replace the RAM note (53 ASCII bytes)\r\ncat note          Read the note in protected Aurora\r\nupper note        Replace the note with protected uppercase output\r\nwrite <name> <text>  Write one of four RAM files (8-byte name, 49-byte content)\r\ncat <name> / upper <name>  Protected read / atomic uppercase replacement\r\nls / rm <name>     List / remove RAM files\r\nhelp    Show commands\r\nstatus  Show console state\r\nexit    Close this QEMU session\r\naurora> ");
-        } else if (event==console::Event::status) {
-            ProgramSerial::text("\r\nstatus: protected Aurora upper; two-domain copied stream; timer budgets; capacity=64\r\naurora> ");
-        } else if (!ProgramDisplay::render(event,*byte,console::Platform::uefi)) {
+        if (action==program::Submission::Action::requested_exit || action==program::Submission::Action::output_failure) {
+            copied.scrub();
             require(program_boundary() && frames.used()==0 && !mailbox,"program console exit boundary");
             command_note.clear(); command_files.clear();
+            if (action==program::Submission::Action::output_failure) {
+                // A partial response cannot be rolled back or replayed. Leave
+                // through the failure device without using the failed channel.
+                hardware::Io::write(0xf4,0x11);
+                for (;;) asm volatile("cli; hlt");
+            }
             ProgramSerial::text("AURORA_PROGRAM_CONSOLE_QUIET: timer=masked isr=0 irr=0 domains=0\r\n");
             return;
         }
+        const auto note_event=program_note_update(copied);
+        if (note_event!=0) {
+            ProgramSerial::text("\r\n");
+            if (note_event==1) ProgramSerial::text("Note saved.\r\naurora> ");
+            else program_command(copied,note_event!=4,note_event==4);
+            copied.scrub(); continue;
+        }
+        const auto file_event=program_files_update(copied);
+        if (file_event!=0) {
+            if (file_event>=2) { ProgramSerial::text("\r\n"); program_command(copied,true,false,true); }
+            copied.scrub(); continue;
+        }
+        copied.scrub();
+        ProgramSerial::text("\r\nUnknown command. Type help.\r\naurora> ");
     }
 }

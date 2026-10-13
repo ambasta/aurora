@@ -52,6 +52,10 @@ template <class Transport, class Platform> class Session final {
         validate(grant, generation, true);
         grant_.operation = false;
     }
+    static auto finish(ServiceArgument argument) -> void {
+        leave(argument.grant, argument.generation);
+        grant_.active = false;
+    }
 
 public:
     // Trusted host entry validation only; no source-visible operation or effects.
@@ -92,11 +96,16 @@ public:
         leave(grant, generation);
         return result == PutResult::success ? 0 : 1;
     }
+    // A supervisor reader turn may return copied input without closing the
+    // console. Revoke its grant before native mutation or protected execution.
+    static auto release(ServiceArgument argument) -> void {
+        enter(argument.grant, argument.generation);
+        finish(argument);
+    }
     [[nodiscard]] static auto close(ServiceArgument argument, std::uint64_t result) -> Completion {
         enter(argument.grant, argument.generation);
         require(result <= 1);
-        leave(argument.grant, argument.generation);
-        grant_.active = false;
+        finish(argument);
         return static_cast<Completion>(result);
     }
 };

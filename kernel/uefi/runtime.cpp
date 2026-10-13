@@ -34,8 +34,9 @@
 #include <optional>
 #ifdef AURORA_UEFI_PROGRAM_CONSOLE
 #include "console-context.hpp"
-#include "../console-presentation.hpp"
+#include "../console-session.hpp"
 #include "../console-uart.hpp"
+#include "../program-input.hpp"
 #include "../program-stream.hpp"
 #include "../program-note.hpp"
 #include "../program-files.hpp"
@@ -75,8 +76,11 @@ public:
     static void initialize_input() {
         Uart::initialize_input();
     }
-    template <class Editor> static auto poll(Editor &line) {
-        return Uart::poll(line);
+    static auto next() -> console::Sample {
+        return Uart::next();
+    }
+    static auto try_put(std::uint8_t byte) -> console::PutResult {
+        return Uart::try_put(byte);
     }
     static void put(std::uint8_t byte) {
         Uart::put(byte);
@@ -478,6 +482,18 @@ auto execute(unsigned index, ProgramEvent wanted) -> void {
 #endif
 #endif
 } // namespace
+#ifdef AURORA_UEFI_PROGRAM_CONSOLE
+auto program_console_next(const void *, U64, console::RawSample *) -> void asm("__au_runtime_console_next")
+    __attribute__((visibility("hidden")));
+auto program_console_next(const void *grant, U64 generation, console::RawSample *output) -> void {
+    *output = ProgramInputSession::next(grant, generation);
+}
+auto program_console_put(const void *, U64, U64) -> U64 asm("__au_runtime_console_put")
+    __attribute__((visibility("hidden")));
+auto program_console_put(const void *grant, U64 generation, U64 byte) -> U64 {
+    return ProgramInputSession::put(grant, generation, byte);
+}
+#endif
 #ifdef AURORA_UEFI_SNAPSHOT
 extern "C" [[noreturn]] void __au_runtime_bytes_kernel_fault(U64) noexcept {
     stop("snapshot producer ownership fault");

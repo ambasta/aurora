@@ -79,7 +79,7 @@ auto show_exit(builtin::ConsoleSession& session) -> bool {
 // The editor, command policy and presentation live for one Aurora invocation.
 // Only the leading sealed borrow can perform console transport operations.
 auto console_service(builtin::ConsoleSession& session) -> builtin::ConsoleCompletion {
-    console::Line64 line = console::Line64();
+    console::Line64 line = console::Line64(false);
     const std::BinaryBuffer64 empty = std::BinaryBuffer64();
     console::SessionNote note = console::SessionNote(empty);
     console::SessionFiles files = console::SessionFiles(empty);

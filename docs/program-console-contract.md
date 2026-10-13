@@ -14,6 +14,27 @@ A separate CPL3 stream service validates and returns its requested output byte.
 This is an embedded bounded application demonstration, not a general process or
 syscall ABI, filesystem, terminal emulator, or hardware qualification.
 
+## Aurora-owned input turns
+
+`console.program_input` uses the existing sealed `ConsoleSession` to own one
+command-reading turn: the shared `Line64` editor, echo, rejection, help/status,
+`upper`'s `text>` prompt and exit presentation. It returns a copied
+`ProgramSubmission`; commands typed after `text>` are payload, including empty
+input and the words `help`, `status` and `exit`. The one-bit CR carry crosses
+turns so a queued LF after a protected command does not submit another line.
+
+The native adapter validates the copied result and releases the console grant
+before note/file mutation or protected execution. It retains command dispatch,
+authenticated lifecycle/publication, result presentation and the following prompt.
+Every turn gets a fresh grant; UART initialization happens only once, preserving
+damage latched by runtime diagnostics. No new service kind, pointer-bearing
+source interface or execution authority is added to `ConsoleSession`.
+
+The private entry uses existing compiler ABI facts for its capability/bool input
+and copied result, alongside the existing linked-image stack checks. This input
+migration is source-only; generated ABI, stack limits and actual boots still
+need final-source qualification.
+
 ## Session-local protected note
 
 The current source also accepts `write note <text>`, `cat note` and `upper note`. One RAM-only
@@ -160,7 +181,10 @@ unverified.
 ## Authority and data
 
 Exactly two real domains use `ipc::Mailbox`, not the three-domain dispatcher.
-A checked input snapshot is copied before the 64-byte ASCII editor scrubs itself.
+The Aurora reader returns checked copied input after its invocation-local editor
+finishes. The native submission is cleared at the existing command handoff. This retires
+live input state; it does not promise physical erasure of every temporary copy in
+ended supervisor stack frames. Those frames are not mapped into protected domains.
 For each byte, a kernel-owned ordinal selects the copied input. The client request
 returns a transformed byte; a mailbox request contains that byte and its ordinal.
 The service validates the scalar values and returns the approved byte. A consumed
