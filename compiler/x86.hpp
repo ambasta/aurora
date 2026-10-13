@@ -69,6 +69,9 @@ class X86Emitter {
     ir::CallableView currentCallable() const {
         return metadata->callable(currentFunction->callableId);
     }
+    ir::FrameView currentFrame() const {
+        return metadata->frame(currentFunction->callableId);
+    }
     ir::TypeRange classLeaves(const std::string &name) const {
         return metadata->leaves(metadata->findClass(name).value());
     }
@@ -162,7 +165,7 @@ class X86Emitter {
              (type == Type::U8 ? byteArgumentRegisters[index] : argumentRegisters[index]) + ", " + destination);
     }
     int objectLeaf(int base, std::size_t leaf) const {
-        return base - physicalStorage(currentFunction->objectSlots.at(base).className).leafOffsets.at(leaf);
+        return base - physicalStorage(currentFrame().objectSlots().at(base).className).leafOffsets.at(leaf);
     }
     template <class Address> void clearBytes(int begin, int end, const Address &destination) {
         while (begin < end) {
@@ -464,12 +467,11 @@ class X86Emitter {
     }
     Type ownerStorageType(int offset, int fieldIndex) const {
         if (fieldIndex < 0) {
-            const auto found = currentFunction->ownedValueTypes.find(offset);
-            return found == currentFunction->ownedValueTypes.end() ? Type::OwnedBytes
-                                                                   : Type::ownedValues(Type(found->second));
+            const auto ownerTypes = currentFrame().ownedValueTypes();
+            return ownerTypes.contains(offset) ? Type::ownedValues(Type(ownerTypes.at(offset))) : Type::OwnedBytes;
         }
         const auto receiver = currentCallable().receiver();
-        const auto &name = offset == 0 ? receiver->className : currentFunction->objectSlots.at(offset).className;
+        const auto &name = offset == 0 ? receiver->className : currentFrame().objectSlots().at(offset).className;
         return logicalFields(name).at(fieldIndex).elementType;
     }
     int ownerElementStride(int offset, int fieldIndex) const {
@@ -479,7 +481,7 @@ class X86Emitter {
         if (fieldIndex < 0)
             return address(offset - byte);
         const auto receiver = currentCallable().receiver();
-        const auto &name = offset == 0 ? receiver->className : currentFunction->objectSlots.at(offset).className;
+        const auto &name = offset == 0 ? receiver->className : currentFrame().objectSlots().at(offset).className;
         const int fieldOffset = physicalStorage(name).fieldOffsets[fieldIndex];
         if (offset != 0)
             return address(offset - fieldOffset - byte);
@@ -997,7 +999,7 @@ class X86Emitter {
                     line("movq %rcx, " + address(operation.resultOffset - 8));
                     for (int byte = 16; byte <= 40; byte += 8)
                         line("movq $0, " + address(operation.resultOffset - byte));
-                    line("movq $" + std::to_string(currentFunction->arraySlots.at(operation.arrayOffset)) + ", " +
+                    line("movq $" + std::to_string(currentFrame().arraySlots().at(operation.arrayOffset)) + ", " +
                          address(operation.resultOffset - 48));
                 } else if constexpr (std::is_same_v<Op, ir::BorrowReceiverArraySpan>) {
                     const auto receiver = currentCallable().receiver();
@@ -1091,14 +1093,14 @@ class X86Emitter {
                     line("xorq %rax, %rax");
                     line("jmp " + returnLabel());
                 } else if constexpr (std::is_same_v<Op, ir::BeginObject>) {
-                    clearObject(operation.offset, currentFunction->objectSlots.at(operation.offset).className);
+                    clearObject(operation.offset, currentFrame().objectSlots().at(operation.offset).className);
                 } else if constexpr (std::is_same_v<Op, ir::InitializeEmptyObject>) {
                     // Verified explicit empty value completion; BeginObject
                     // already initialized all canonical representation padding.
                 } else if constexpr (std::is_same_v<Op, ir::EndObject>) {
-                    dropObject(operation.offset, currentFunction->objectSlots.at(operation.offset).className);
+                    dropObject(operation.offset, currentFrame().objectSlots().at(operation.offset).className);
                 } else if constexpr (std::is_same_v<Op, ir::MoveObject>) {
-                    const auto &name = currentFunction->objectSlots.at(operation.sourceOffset).className;
+                    const auto &name = currentFrame().objectSlots().at(operation.sourceOffset).className;
                     transferObject(
                         name,
                         [&](int byte) {
@@ -1108,7 +1110,7 @@ class X86Emitter {
                             return address(operation.resultOffset - byte);
                         });
                 } else if constexpr (std::is_same_v<Op, ir::CopyObject>) {
-                    const auto &name = currentFunction->objectSlots.at(operation.sourceOffset).className;
+                    const auto &name = currentFrame().objectSlots().at(operation.sourceOffset).className;
                     const auto layout = classLeaves(name);
                     const auto offsets = physicalStorage(name).leafOffsets;
                     copyLeaves(
@@ -1130,7 +1132,7 @@ class X86Emitter {
                         source = receiverStorage();
                         line("movq " + address(receiverSaveOffset) + ", %r10");
                     } else {
-                        const auto &name = currentFunction->objectSlots.at(operation.sourceOffset).className;
+                        const auto &name = currentFrame().objectSlots().at(operation.sourceOffset).className;
                         field = logicalFields(name)[operation.fieldIndex];
                         source = physicalStorage(name);
                         line("leaq " + address(operation.sourceOffset) + ", %r10");
@@ -1151,7 +1153,7 @@ class X86Emitter {
                     const auto receiver = currentCallable().receiver();
                     const auto &name = operation.objectOffset == 0
                                            ? receiver->className
-                                           : currentFunction->objectSlots.at(operation.objectOffset).className;
+                                           : currentFrame().objectSlots().at(operation.objectOffset).className;
                     const auto field = logicalFields(name)[operation.fieldIndex];
                     const auto sourceLayout = classLeaves(field.elementType.className);
                     const auto destinationStorage = physicalStorage(name);
@@ -1174,7 +1176,7 @@ class X86Emitter {
                     const auto receiver = currentCallable().receiver();
                     const auto &name = operation.objectOffset == 0
                                            ? receiver->className
-                                           : currentFunction->objectSlots.at(operation.objectOffset).className;
+                                           : currentFrame().objectSlots().at(operation.objectOffset).className;
                     const auto field = logicalFields(name)[operation.fieldIndex];
                     const auto layout = classLeaves(field.elementType.className);
                     const auto child = physicalStorage(field.elementType.className);
@@ -1200,7 +1202,7 @@ class X86Emitter {
                     const auto receiver = currentCallable().receiver();
                     const auto &name = operation.objectOffset == 0
                                            ? receiver->className
-                                           : currentFunction->objectSlots.at(operation.objectOffset).className;
+                                           : currentFrame().objectSlots().at(operation.objectOffset).className;
                     const auto field = logicalFields(name)[operation.fieldIndex];
                     // Reject signed-negative and upper bounds before multiplying.
                     line("cmpq $" + std::to_string(field.elementCount) + ", %rax");
@@ -1210,7 +1212,7 @@ class X86Emitter {
                     const auto receiver = currentCallable().receiver();
                     const auto &name = operation.objectOffset == 0
                                            ? receiver->className
-                                           : currentFunction->objectSlots.at(operation.objectOffset).className;
+                                           : currentFrame().objectSlots().at(operation.objectOffset).className;
                     const auto field = logicalFields(name)[operation.fieldIndex];
                     const auto layout = classLeaves(field.elementType.className);
                     const auto child = physicalStorage(field.elementType.className);
@@ -1332,7 +1334,7 @@ class X86Emitter {
                         const auto receiver = currentCallable().receiver();
                         const auto &name = operation.receiverOffset == 0
                                                ? receiver->className
-                                               : currentFunction->objectSlots.at(operation.receiverOffset).className;
+                                               : currentFrame().objectSlots().at(operation.receiverOffset).className;
                         const int fieldOffset = physicalStorage(name).fieldOffsets[operation.receiverFieldIndex];
                         if (fieldOffset != 0)
                             line("addq $" + std::to_string(fieldOffset) + ", %r10");
@@ -1693,6 +1695,7 @@ public:
         output << "# Aurora compiler output: validated typed IR, x86-64 bootstrap\n.text\n";
         for (const auto &body : module.functions) {
             const auto function = metadata->callable(body.callableId);
+            const int declaredFrameBytes = metadata->frame(body.callableId).frameBytes();
             const auto receiver = function.receiver();
             const auto secondReceiver = function.secondBorrowedParameter();
             stackDepth = 0;
@@ -1715,8 +1718,8 @@ public:
             line("pushq %rbp");
             growStack(8);
             line("movq %rsp, %rbp");
-            receiverSaveOffset = receiver ? body.frameBytes + 8 : 0;
-            secondReceiverSaveOffset = secondReceiver ? body.frameBytes + 16 : 0;
+            receiverSaveOffset = receiver ? declaredFrameBytes + 8 : 0;
+            secondReceiverSaveOffset = secondReceiver ? declaredFrameBytes + 16 : 0;
             // Resource constructors always receive a packed record, even when
             // their explicit parameters contain no class values. Borrowed
             // ordinary methods retain their existing hidden-register modes.
@@ -1728,18 +1731,18 @@ public:
             }
             const bool combinedMethod =
                 receiver && packedArguments && (function.result().isClass() || function.result().isSpan());
-            callRecordSaveOffset = packedArguments ? body.frameBytes + (receiver ? 16 : 8) : 0;
+            callRecordSaveOffset = packedArguments ? declaredFrameBytes + (receiver ? 16 : 8) : 0;
             resultSaveOffset =
                 (function.result().isClass() || function.result().isOwnerStorage() || function.result().isSpan())
-                    ? body.frameBytes + (combinedMethod ? 24 : 16)
+                    ? declaredFrameBytes + (combinedMethod ? 24 : 16)
                     : 0;
             // Hidden capabilities never occupy source-addressable slots. The
             // combined mode needs three distinct saves, rounded to 16-byte
             // alignment. Scalar-only paired helpers use both words of the
             // existing 16-byte hidden area; historical layouts are unchanged.
-            const int frameBytes = body.frameBytes + (combinedMethod           ? 32
-                                                      : receiver || aggregate ? 16
-                                                                              : 0);
+            const int frameBytes = declaredFrameBytes + (combinedMethod           ? 32
+                                                         : receiver || aggregate ? 16
+                                                                                 : 0);
             reserveStack(frameBytes);
             if (secondReceiver) {
                 // Paired calls pass a two-pointer record in R10. Copy both

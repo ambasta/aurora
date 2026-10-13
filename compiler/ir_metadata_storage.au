@@ -198,7 +198,57 @@ export namespace compiler_ir_metadata {
         //: invalid typed IR: invalid constructor receiver signature
         constructor_signature,
         //: invalid typed IR: receiver span field summary requires exact direct byte-storage field
-        receiver_span
+        receiver_span,
+        //: invalid typed IR: owned value metadata requires exact owner spill
+        owner_spill,
+        //: invalid typed IR: service spills without a service signature
+        service_spills,
+        //: invalid typed IR: invalid frame size
+        frame_size,
+        //: invalid typed IR: invalid slot offset
+        slot_offset,
+        //: invalid typed IR: invalid slot payload type
+        slot_type,
+        //: invalid typed IR: overlapping scalar slot storage
+        slot_overlap,
+        //: invalid typed IR: unknown object class
+        object_class,
+        //: invalid typed IR: invalid object layout offset
+        object_offset,
+        //: invalid typed IR: overlapping object layouts
+        object_overlap,
+        //: invalid typed IR: object field slot type/layout mismatch
+        object_leaf,
+        //: invalid typed IR: scalar slot overlaps empty object or padding
+        object_padding,
+        //: invalid typed IR: invalid byte array origin extent
+        array_extent,
+        //: invalid typed IR: byte array origin requires exact u8 element slots
+        array_leaf,
+        //: invalid typed IR: byte array origin overlaps object storage
+        array_object,
+        //: invalid typed IR: overlapping byte array origins
+        array_overlap,
+        //: invalid typed IR: invalid span spill extent or alignment
+        span_extent,
+        //: invalid typed IR: span spill overlaps scalar, object or array storage
+        span_overlap,
+        //: invalid typed IR: overlapping span spills
+        span_spills,
+        //: invalid typed IR: invalid service spill extent or alignment
+        service_extent,
+        //: invalid typed IR: service spill overlaps scalar, object, array or span storage
+        service_overlap,
+        //: invalid typed IR: invalid region spill extent or alignment
+        region_extent,
+        //: invalid typed IR: region spill overlaps scalar, object, array or span storage
+        region_overlap,
+        //: invalid typed IR: invalid owned byte spill extent or alignment
+        byte_extent,
+        //: invalid typed IR: owned byte spill overlaps scalar, object, array or span storage
+        byte_overlap,
+        //: invalid typed IR: overlapping region or owned byte spills
+        resource_overlap
     };
     class ByteRange {
         i64 firstByte;
@@ -251,14 +301,19 @@ export namespace compiler_ir_metadata {
         auto attributes() const -> i64 { return flags; }
     };
     // A copied argument keeps construction within the six-parameter boundary;
-    // CallableRow still stores these two scalars directly, without another pool.
+    // CallableRow stores these values directly, without another owner.
     class CallableOptions {
         i64 flags;
         i64 receiverSpanField;
+        i64 frameBytes;
+        IndexRange slotRange;
     public:
-        CallableOptions(i64 attributes, i64 span) : flags(attributes), receiverSpanField(span) {}
+        CallableOptions(i64 attributes, i64 span, i64 frame, IndexRange slots) :
+            flags(attributes), receiverSpanField(span), frameBytes(frame), slotRange(slots) {}
         auto attributes() const -> i64 { return flags; }
         auto receiver_span_field() const -> i64 { return receiverSpanField; }
+        auto frame_bytes() const -> i64 { return frameBytes; }
+        auto slots() const -> IndexRange { const IndexRange result = slotRange; return result; }
     };
     class CallableRow {
         ByteRange nameRange;
@@ -268,11 +323,13 @@ export namespace compiler_ir_metadata {
         ReceiverShape secondReceiver;
         i64 flags; // receiver=1, borrowed formal=2, second receiver=4, span summary=8
         i64 receiverSpanField;
+        i64 frameBytes;
+        IndexRange slotRange;
     public:
         CallableRow(ByteRange name, IndexRange types, i64 scope, ReceiverShape first, ReceiverShape second,
                     CallableOptions options) : nameRange(name), typeRange(types), moduleScope(scope),
             receiver(first), secondReceiver(second), flags(options.attributes()),
-            receiverSpanField(options.receiver_span_field()) {}
+            receiverSpanField(options.receiver_span_field()), frameBytes(options.frame_bytes()), slotRange(options.slots()) {}
         auto name() const -> ByteRange { const ByteRange result = nameRange; return result; }
         auto types() const -> IndexRange { const IndexRange result = typeRange; return result; }
         auto scope() const -> i64 { return moduleScope; }
@@ -280,6 +337,26 @@ export namespace compiler_ir_metadata {
         auto second_receiver() const -> ReceiverShape { const ReceiverShape result = secondReceiver; return result; }
         auto attributes() const -> i64 { return flags; }
         auto receiver_span_field() const -> i64 { return receiverSpanField; }
+        auto frame_bytes() const -> i64 { return frameBytes; }
+        auto slots() const -> IndexRange { const IndexRange result = slotRange; return result; }
+    };
+    // Raw record kinds use the existing lowering RecordKind identities 10..17,
+    // pinned against its generated enum facts by the host boundary. No second
+    // slot-kind enum or caller-supplied canonicality proof is retained.
+    class SlotRow {
+        i64 recordKind;
+        i64 slotOffset;
+        i64 typeIndex;
+        i64 slotLength;
+        i64 mutableValue;
+    public:
+        SlotRow(i64 kind, i64 offset, i64 type, i64 length, i64 mutable_value) :
+            recordKind(kind), slotOffset(offset), typeIndex(type), slotLength(length), mutableValue(mutable_value) {}
+        auto kind() const -> i64 { return recordKind; }
+        auto offset() const -> i64 { return slotOffset; }
+        auto type() const -> i64 { return typeIndex; }
+        auto length() const -> i64 { return slotLength; }
+        auto mutable_value() const -> i64 { return mutableValue; }
     };
     class ClassRow {
         ByteRange nameRange;
@@ -461,7 +538,7 @@ export namespace compiler_ir_metadata {
     }
     auto invalid_callable() -> CallableRow {
         return CallableRow(ByteRange(-1, -1), IndexRange(-1, -1), -1, ReceiverShape(ByteRange(-1, -1), -1),
-                           ReceiverShape(ByteRange(-1, -1), -1), CallableOptions(-1, -1));
+                           ReceiverShape(ByteRange(-1, -1), -1), CallableOptions(-1, -1, -1, IndexRange(-1, -1)));
     }
     auto invalid_class() -> ClassRow {
         return ClassRow(ByteRange(-1, -1), IndexRange(-1, -1), IndexRange(-1, -1), -1, -1);
@@ -516,6 +593,11 @@ export namespace compiler_ir_metadata {
         builtin::OwnedValues<CallableRow> result = region.try_allocate(count, fill);
         return move(result);
     }
+    auto slot_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<SlotRow> {
+        const SlotRow fill = SlotRow(-1, -1, -1, -1, -1);
+        builtin::OwnedValues<SlotRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
     auto result_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<ClassResultRow> {
         const ClassResultRow fill = invalid_result();
         builtin::OwnedValues<ClassResultRow> result = region.try_allocate(count, fill);
@@ -537,9 +619,15 @@ export namespace compiler_ir_metadata {
         builtin::OwnedValues<ViewRow> views;
         builtin::OwnedValues<EnumRow> enums;
         builtin::OwnedValues<CallableRow> callables;
+        builtin::OwnedValues<SlotRow> slots;
         builtin::OwnedValues<ClassResultRow> results;
         builtin::OwnedValues<FrameRow> frames;
-        InputCounts inputCounts;
+        // Only appendable pools need their original prefix ends retained.
+        // All immutable input counts are their checked allocation lengths.
+        i64 inputLeaves;
+        i64 inputFields;
+        i64 inputStorage;
+        i64 inputIndices;
         i64 fieldEnd;
         i64 storageEnd;
         i64 indexEnd;
@@ -548,36 +636,43 @@ export namespace compiler_ir_metadata {
         MetadataError errorValue;
         bool started;
     public:
-        MetadataStore(builtin::ByteRegion region, InputCounts counts, i64 callableCount) :
+        MetadataStore(builtin::ByteRegion region, InputCounts counts, i64 callableCount, i64 slotCount) :
             bytes(region.try_allocate(counts.byte_count())),
             types(type_pool(region, counts.type_count())), classes(class_pool(region, counts.class_count())),
             fields(field_pool(region, field_capacity(counts))), storage(storage_pool(region, storage_capacity(counts))),
             indices(index_pool(region, index_capacity(counts))), descriptors(descriptor_pool(region, counts.descriptor_count())),
             views(view_pool(region, counts.view_count())), enums(enum_pool(region, counts.enum_count())),
-            callables(callable_pool(region, callableCount)), results(result_pool(region, counts.class_count())),
-            frames(frame_pool(region)), inputCounts(counts),
+            callables(callable_pool(region, callableCount)), slots(slot_pool(region, slotCount)),
+            results(result_pool(region, counts.class_count())), frames(frame_pool(region)),
+            inputLeaves(counts.leaf_count()), inputFields(counts.field_count()),
+            inputStorage(counts.storage_count()), inputIndices(counts.index_count()),
             fieldEnd(counts.field_count()), storageEnd(counts.storage_count()), indexEnd(counts.index_count()),
             frameCount(0), statusValue(MetadataStatus::pending), errorValue(MetadataError::none), started(false) {}
-        auto initialize() -> bool {
+        auto initialize(InputCounts counts, i64 callableCount, i64 slotCount) -> bool {
             if (started || statusValue != MetadataStatus::pending) { return false; }
-            const InputCounts counts = inputCounts;
-            if (!valid_counts(counts)) {
+            if (!valid_counts(counts) || callableCount < 0 || slotCount < 0) {
                 statusValue = MetadataStatus::invalid;
                 errorValue = MetadataError::integrity;
             } else {
-                if (!allocated()) { statusValue = MetadataStatus::allocation; }
+                if (!allocated() || bytes.size() != counts.byte_count() || types.size() != counts.type_count()
+                    || classes.size() != counts.class_count() || descriptors.size() != counts.descriptor_count()
+                    || views.size() != counts.view_count() || enums.size() != counts.enum_count()
+                    || callables.size() != callableCount || slots.size() != slotCount) {
+                    statusValue = MetadataStatus::allocation;
+                }
             }
             return statusValue == MetadataStatus::pending;
         }
         auto allocated() const -> bool {
-            const InputCounts counts = inputCounts;
-            return valid_counts(counts) && bytes.ok() && types.ok() && classes.ok() && fields.ok() && storage.ok()
-                && indices.ok() && descriptors.ok() && views.ok() && enums.ok() && callables.ok() && results.ok() && frames.ok()
-                && bytes.size() == counts.byte_count() && types.size() == counts.type_count()
-                && classes.size() == counts.class_count() && fields.size() == field_capacity(counts)
-                && storage.size() == storage_capacity(counts) && indices.size() == index_capacity(counts)
-                && descriptors.size() == counts.descriptor_count() && views.size() == counts.view_count()
-                && enums.size() == counts.enum_count() && results.size() == counts.class_count() && frames.size() == 4;
+            const i64 field_limit = count_sum(inputFields, inputLeaves);
+            const i64 storage_limit = count_sum(inputStorage, classes.size());
+            const i64 index_limit = count_sum(count_sum(inputIndices, inputLeaves), field_limit);
+            return inputLeaves >= 0 && inputFields >= 0 && inputStorage >= 0 && inputIndices >= 0
+                && field_limit >= 0 && field_limit <= types.size() && storage_limit >= 0 && index_limit >= 0
+                && bytes.ok() && types.ok() && classes.ok() && fields.ok() && storage.ok()
+                && indices.ok() && descriptors.ok() && views.ok() && enums.ok() && callables.ok() && slots.ok()
+                && results.ok() && frames.ok() && fields.size() == field_limit && storage.size() == storage_limit
+                && indices.size() == index_limit && results.size() == classes.size() && frames.size() == 4;
         }
         auto status() const -> MetadataStatus { return statusValue; }
         auto error() const -> MetadataError { return errorValue; }
@@ -600,17 +695,18 @@ export namespace compiler_ir_metadata {
             statusValue = MetadataStatus::success;
             return true;
         }
-        auto byte_count() const -> i64 { const InputCounts counts = inputCounts; return counts.byte_count(); }
-        auto type_count() const -> i64 { const InputCounts counts = inputCounts; return counts.type_count(); }
-        auto class_count() const -> i64 { const InputCounts counts = inputCounts; return counts.class_count(); }
-        auto leaf_count() const -> i64 { const InputCounts counts = inputCounts; return counts.leaf_count(); }
-        auto input_field_count() const -> i64 { const InputCounts counts = inputCounts; return counts.field_count(); }
-        auto input_storage_count() const -> i64 { const InputCounts counts = inputCounts; return counts.storage_count(); }
-        auto input_index_count() const -> i64 { const InputCounts counts = inputCounts; return counts.index_count(); }
-        auto descriptor_count() const -> i64 { const InputCounts counts = inputCounts; return counts.descriptor_count(); }
-        auto view_count() const -> i64 { const InputCounts counts = inputCounts; return counts.view_count(); }
-        auto enum_count() const -> i64 { const InputCounts counts = inputCounts; return counts.enum_count(); }
+        auto byte_count() const -> i64 { return bytes.size(); }
+        auto type_count() const -> i64 { return types.size(); }
+        auto class_count() const -> i64 { return classes.size(); }
+        auto leaf_count() const -> i64 { return inputLeaves; }
+        auto input_field_count() const -> i64 { return inputFields; }
+        auto input_storage_count() const -> i64 { return inputStorage; }
+        auto input_index_count() const -> i64 { return inputIndices; }
+        auto descriptor_count() const -> i64 { return descriptors.size(); }
+        auto view_count() const -> i64 { return views.size(); }
+        auto enum_count() const -> i64 { return enums.size(); }
         auto callable_count() const -> i64 { return callables.size(); }
+        auto slot_count() const -> i64 { return slots.size(); }
         auto field_count() const -> i64 { return fieldEnd; }
         auto storage_count() const -> i64 { return storageEnd; }
         auto index_count() const -> i64 { return indexEnd; }
@@ -677,6 +773,11 @@ export namespace compiler_ir_metadata {
                 return invalid;
             }
             const CallableRow result = callables.at(index);
+            return result;
+        }
+        auto slot_at(i64 index) const -> SlotRow {
+            if (index < 0 || index >= slot_count() || !slots.ok()) { return SlotRow(-1, -1, -1, -1, -1); }
+            const SlotRow result = slots.at(index);
             return result;
         }
         auto result_at(i64 index) const -> ClassResultRow {
@@ -755,9 +856,9 @@ export namespace compiler_ir_metadata {
             return true;
         }
     };
-    auto create(builtin::ByteRegion region, InputCounts counts, i64 callableCount) -> MetadataStore {
-        MetadataStore result = MetadataStore(region, counts, callableCount);
-        result.initialize();
+    auto create(builtin::ByteRegion region, InputCounts counts, i64 callableCount, i64 slotCount) -> MetadataStore {
+        MetadataStore result = MetadataStore(region, counts, callableCount, slotCount);
+        result.initialize(counts, callableCount, slotCount);
         return move(result);
     }
     auto release(builtin::ByteRegion region, MetadataStore store) -> i64 { return 0; }

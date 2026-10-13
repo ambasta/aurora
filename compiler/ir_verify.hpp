@@ -236,6 +236,15 @@ inline void verifyFunction(FunctionBody &function,
                            const Metadata &metadata,
                            Metrics *metrics = nullptr) {
     const auto signature = metadata.callable(function.callableId);
+    const auto frame = metadata.frame(function.callableId);
+    const auto slots = frame.scalarSlots();
+    const auto objectSlots = frame.objectSlots();
+    const auto arraySlots = frame.arraySlots();
+    const auto spanSlots = frame.spanSlots();
+    const auto serviceSlots = frame.serviceSlots();
+    const auto regionSlots = frame.regionSlots();
+    const auto byteSlots = frame.byteSlots();
+    const auto ownedValueTypes = frame.ownedValueTypes();
     const auto parameters = signature.parameters();
     // Receiver observations are copied values. Keep them alive for boundRoot's
     // reference result throughout this body verification.
@@ -255,16 +264,11 @@ inline void verifyFunction(FunctionBody &function,
         return id && metadata.isCarrier(*id);
     };
     auto ownerType = [&](int base) {
-        require(function.byteSlots.contains(base), "owner type requires exact typed spill");
-        return function.ownedValueTypes.contains(base) ? Type::ownedValues(Type(function.ownedValueTypes.at(base)))
-                                                       : Type::OwnedBytes;
+        require(byteSlots.contains(base), "owner type requires exact typed spill");
+        return ownedValueTypes.contains(base) ? Type::ownedValues(Type(ownedValueTypes.at(base))) : Type::OwnedBytes;
     };
-    for (const auto &[base, name] : function.ownedValueTypes) {
-        require(function.byteSlots.contains(base), "owned value metadata requires exact owner spill");
-        verifyOwnerType(Type::ownedValues(Type(name)), metadata);
-    }
     auto objectLeaf = [&](int base, std::size_t leaf) {
-        return base - physicalStorage(function.objectSlots.at(base).className).leafOffsets.at(leaf);
+        return base - physicalStorage(objectSlots.at(base).className).leafOffsets.at(leaf);
     };
     const auto owningType = [&](const Type &type) {
         return type.isClass() && owningClass(metadata, type.className);
@@ -276,111 +280,40 @@ inline void verifyFunction(FunctionBody &function,
     std::size_t serviceParameterCount = 0;
     while (serviceParameterCount < parameters.size() && parameters[serviceParameterCount].isService())
         ++serviceParameterCount;
-    require(serviceFunction || function.serviceSlots.empty(), "service spills without a service signature");
-    require(function.frameBytes >= 0 && function.frameBytes <= 65536 && function.frameBytes % 16 == 0,
-            "invalid frame size");
-    std::set<int> occupiedSlotBytes;
-    for (const auto &[offset, type] : function.slots) {
-        require(offset >= storageWidth(type) && offset <= function.frameBytes && offset % storageAlignment(type) == 0,
-                "invalid slot offset");
-        require(scalarValueType(type, metadata) || type == Type::Ref || type == Type::MutRef,
-                "invalid slot payload type");
-        for (int byte = offset - storageWidth(type) + 1; byte <= offset; ++byte)
-            require(occupiedSlotBytes.insert(byte).second, "overlapping scalar slot storage");
-    }
     std::optional<TypeRange> receiverLayout;
     std::optional<FieldRange> receiverFields;
     if (functionReceiver) {
         receiverLayout = classLeaves(functionReceiver->className);
         receiverFields = logicalFields(functionReceiver->className);
     }
-    // Physical reservation and logical completion are separate. Every occupied
-    // scalar byte is disjoint; object padding (including empty storage) has no slot.
-    std::map<int, const ObjectSlot *> objectFields;
+    // Declaration admission belongs to the Aurora metadata owner. These indexes
+    // associate instruction addresses with already-admitted object/array origins;
+    // they neither reserve storage nor recheck declaration validity.
     std::map<int, int> objectBases;
-    std::set<int> objectStorage;
     std::set<int> nestedObjectLeaves;
-    for (const auto &[base, object] : function.objectSlots) {
-        require(metadata.findClass(object.className).has_value(), "unknown object class");
+    for (const auto &[base, object] : objectSlots) {
         const auto layout = classLeaves(object.className);
-        const auto physical = physicalStorage(object.className);
-        require(base > 0 && base <= function.frameBytes && base % 8 == 0 && base >= physical.reservedBytes,
-                "invalid object layout offset");
-        if (metadata.findClass(object.className))
-            for (const auto &field : logicalFields(object.className))
-                if (field.elementType.isClass())
-                    for (int leaf = 0; leaf < field.length; ++leaf)
-                        nestedObjectLeaves.insert(objectLeaf(base, field.firstLeaf + leaf));
-        for (int byte = base - physical.reservedBytes + 1; byte <= base; ++byte)
-            require(objectStorage.insert(byte).second, "overlapping object layouts");
-        for (std::size_t index = 0; index < layout.size(); ++index) {
-            const int offset = objectLeaf(base, index);
-            require(function.slots.contains(offset) && function.slots.at(offset) == layout[index],
-                    "object field slot type/layout mismatch");
-            objectFields.emplace(offset, &object);
-            objectBases.emplace(offset, base);
-        }
+        for (const auto &field : logicalFields(object.className))
+            if (field.elementType.isClass())
+                for (int leaf = 0; leaf < field.length; ++leaf)
+                    nestedObjectLeaves.insert(objectLeaf(base, field.firstLeaf + leaf));
+        for (std::size_t index = 0; index < layout.size(); ++index)
+            objectBases.emplace(objectLeaf(base, index), base);
     }
-    for (const auto &[offset, type] : function.slots)
-        for (int byte = offset - storageWidth(type) + 1; byte <= offset; ++byte)
-            require(!objectStorage.contains(byte) || objectFields.contains(offset),
-                    "scalar slot overlaps empty object or padding");
-    // Array declarations are exact standalone u8 origins, not object projections
-    // or arbitrarily overlapping scalar reservations. Their scalar leaves are
-    // still addressed by ordinary typed loads/stores during initialization.
     std::map<int, int> arrayBases;
-    std::set<int> arrayStorage;
-    for (const auto &[base, length] : function.arraySlots) {
-        require(length >= 1 && length <= 4096 && base >= length && base <= function.frameBytes,
-                "invalid byte array origin extent");
-        for (int element = 0; element < length; ++element) {
-            const int offset = base - element;
-            require(function.slots.contains(offset) && function.slots.at(offset) == Type::U8,
-                    "byte array origin requires exact u8 element slots");
-            require(!objectStorage.contains(offset), "byte array origin overlaps object storage");
-            require(arrayStorage.insert(offset).second, "overlapping byte array origins");
-            arrayBases.emplace(offset, base);
-        }
-    }
-    std::set<int> spanStorage;
-    for (int base : function.spanSlots) {
-        require(base >= spanBytes && base <= function.frameBytes && base % 8 == 0,
-                "invalid span spill extent or alignment");
-        for (int byte = base - spanBytes + 1; byte <= base; ++byte) {
-            require(!occupiedSlotBytes.contains(byte) && !objectStorage.contains(byte) && !arrayStorage.contains(byte),
-                    "span spill overlaps scalar, object or array storage");
-            require(spanStorage.insert(byte).second, "overlapping span spills");
-        }
-    }
-    std::set<int> resourceStorage;
-    auto reserveResource = [&](int base, int width, const std::string &name) {
-        require(base >= width && base <= function.frameBytes && base % 8 == 0,
-                "invalid " + name + " spill extent or alignment");
-        for (int byte = base - width + 1; byte <= base; ++byte) {
-            require(!occupiedSlotBytes.contains(byte) && !objectStorage.contains(byte) &&
-                        !arrayStorage.contains(byte) && !spanStorage.contains(byte),
-                    name + " spill overlaps scalar, object, array or span storage");
-            require(resourceStorage.insert(byte).second, "overlapping region or owned byte spills");
-        }
-    };
-    for (int base : function.serviceSlots)
-        reserveResource(base, service::capabilityBytes, "service");
-    for (int base : function.regionSlots)
-        reserveResource(base, 8, "region");
-    for (const auto &[base, mutableValue] : function.byteSlots) {
-        (void)mutableValue;
-        reserveResource(base, 32, "owned byte");
-    }
-    // Physical offset/layout validation above proves every slot belongs to the
-    // existing bounded frame. Share this immutable dense domain across snapshots.
+    for (const auto &[base, length] : arraySlots)
+        for (int element = 0; element < length; ++element)
+            arrayBases.emplace(base - element, base);
+    // The admitted scalar offsets form the immutable initialization domain shared
+    // by this function's CFG snapshots. This contains no declaration payloads.
     std::vector<int> initializationOffsets;
-    initializationOffsets.reserve(function.slots.size());
-    for (const auto &[offset, type] : function.slots) {
+    initializationOffsets.reserve(slots.size());
+    for (const auto &[offset, type] : slots) {
         (void)type;
         initializationOffsets.push_back(offset);
     }
     const auto initializationUniverse =
-        std::make_shared<const InitializationSlotUniverse>(std::move(initializationOffsets), function.frameBytes);
+        std::make_shared<const InitializationSlotUniverse>(std::move(initializationOffsets), frame.frameBytes());
     require(!function.code.empty(), "empty function body");
     std::set<int> scalarParameterSlots;
     std::set<int> objectParameterSlots;
@@ -392,7 +325,7 @@ inline void verifyFunction(FunctionBody &function,
     for (std::size_t index = 0; index < function.code.size(); ++index) {
         if (const auto *literal = std::get_if<BorrowLiteralSpan>(&function.code[index])) {
             require(literal->bytes.size() <= maxByteStringBytes, "literal span exceeds byte-string bound");
-            require(function.spanSlots.contains(literal->resultOffset), "literal span requires exact typed spill");
+            require(spanSlots.contains(literal->resultOffset), "literal span requires exact typed spill");
         }
         const auto *serviceBinding = std::get_if<BindServiceParameter>(&function.code[index]);
         const auto *binding = std::get_if<BindParameter>(&function.code[index]);
@@ -528,8 +461,7 @@ inline void verifyFunction(FunctionBody &function,
         metrics->snapshots = 1;
     }
     auto slot = [&](int offset, const Type &type) {
-        const auto found = function.slots.find(offset);
-        require(found != function.slots.end() && found->second == type, "slot type/layout mismatch");
+        require(slots.contains(offset) && slots.at(offset) == type, "slot type/layout mismatch");
     };
     auto facts = [](const State &state) {
         std::size_t ownedFields = 0;
@@ -667,7 +599,7 @@ inline void verifyFunction(FunctionBody &function,
             auto arrayWritable = [&](int offset) {
                 if (objectBases.contains(offset)) {
                     const int root = objectBases.at(offset);
-                    const auto &name = function.objectSlots.at(root).className;
+                    const auto &name = objectSlots.at(root).className;
                     for (const auto &[unused, capability] : state.activeSpans) {
                         (void)unused;
                         if (capability.arrayField < 0 || capability.origin != root)
@@ -689,7 +621,7 @@ inline void verifyFunction(FunctionBody &function,
                 }
             };
             auto span = [&](int base) -> const SpanCapability & {
-                require(function.spanSlots.contains(base), "span requires exact typed spill");
+                require(spanSlots.contains(base), "span requires exact typed spill");
                 require(state.activeSpans.contains(base), "span capability is not active");
                 const auto &capability = state.activeSpans.at(base);
                 if (capability.literalOrigin) {
@@ -713,7 +645,7 @@ inline void verifyFunction(FunctionBody &function,
                                 "fixed array span object lifetime is not active");
                     }
                     const auto &name = capability.origin == 0 ? functionReceiver->className
-                                                              : function.objectSlots.at(capability.origin).className;
+                                                              : objectSlots.at(capability.origin).className;
                     const auto fields = logicalFields(name);
                     require(static_cast<std::size_t>(capability.arrayField) < fields.size() &&
                                 fields[capability.arrayField].array &&
@@ -774,7 +706,7 @@ inline void verifyFunction(FunctionBody &function,
                 return capability;
             };
             auto spanTarget = [&](int base) {
-                require(function.spanSlots.contains(base), "span requires exact typed spill");
+                require(spanSlots.contains(base), "span requires exact typed spill");
                 require(!spanParameterSlots.contains(base), "span parameter cannot be rebound");
                 require(!state.activeSpans.contains(base), "span spill is already active");
             };
@@ -789,12 +721,12 @@ inline void verifyFunction(FunctionBody &function,
                 }
             };
             auto region = [&](int base) -> RegionIdentity {
-                require(function.regionSlots.contains(base), "region requires exact typed spill");
+                require(regionSlots.contains(base), "region requires exact typed spill");
                 require(state.activeRegions.contains(base), "region authority is not active");
                 return state.activeRegions.at(base);
             };
             auto byteBinding = [&](int base) -> ByteBinding & {
-                require(function.byteSlots.contains(base), "owned byte operation requires exact typed spill");
+                require(byteSlots.contains(base), "owned byte operation requires exact typed spill");
                 require(state.activeBytes.contains(base), "owned byte lifetime is not active");
                 return state.activeBytes.at(base);
             };
@@ -804,7 +736,7 @@ inline void verifyFunction(FunctionBody &function,
                         "owned byte binding does not hold live ownership");
                 require(region(binding.token->region.offset) == binding.token->region,
                         "owned byte region identity does not match active authority");
-                require(!mutableAccess || function.byteSlots.at(base),
+                require(!mutableAccess || byteSlots.at(base),
                         "const owned byte binding cannot be mutated or moved");
                 if (mutableAccess)
                     ownerWritable(base, -1);
@@ -857,8 +789,7 @@ inline void verifyFunction(FunctionBody &function,
                 require(!nestedObjectLeaves.contains(offset), "scalar store cannot write nested class field");
                 require(!scalarParameterSlots.contains(offset) || !state.maybeInitialized.contains(offset),
                         "write to immutable scalar parameter");
-                const auto object = objectFields.find(offset);
-                require(object == objectFields.end() || object->second->mutableValue ||
+                require(!objectBases.contains(offset) || objectSlots.at(objectBases.at(offset)).mutableValue ||
                             !state.maybeInitialized.contains(offset),
                         "write to initialized const object field");
                 state.initialized.insert(offset);
@@ -932,7 +863,7 @@ inline void verifyFunction(FunctionBody &function,
                                 "owning object field lacks live region ownership");
                     }
                 }
-                const auto &name = function.objectSlots.at(base).className;
+                const auto &name = objectSlots.at(base).className;
                 if (metadata.findClass(name))
                     for (std::size_t field = 0; field < logicalFields(name).size(); ++field)
                         if (logicalFields(name)[field].elementType.isClass())
@@ -943,7 +874,7 @@ inline void verifyFunction(FunctionBody &function,
                             "empty object not completely initialized");
             };
             auto markObject = [&](int base) {
-                const auto &name = function.objectSlots.at(base).className;
+                const auto &name = objectSlots.at(base).className;
                 const auto layout = classLeaves(name);
                 state.maybeConstructedObjects.insert(base);
                 state.objectClassesInitialized.insert({base, -1});
@@ -957,11 +888,11 @@ inline void verifyFunction(FunctionBody &function,
                         if (logicalFields(name)[field].elementType.isClass())
                             state.objectClassesInitialized.insert({base, static_cast<int>(field)});
             };
-            auto completeObject = [&](int base) -> const ObjectSlot & {
+            auto completeObject = [&](int base) -> ObjectSlot {
                 loanAccess(base, false);
-                require(function.objectSlots.contains(base), "copy requires exact object slot");
+                require(objectSlots.contains(base), "copy requires exact object slot");
                 require(state.activeObjects.contains(base), "copy object outside active lifetime");
-                const auto &object = function.objectSlots.at(base);
+                auto object = objectSlots.at(base);
                 const auto layout = classLeaves(object.className);
                 for (std::size_t leaf = 0; leaf < layout.size(); ++leaf)
                     require(state.initialized.contains(objectLeaf(base, leaf)),
@@ -1048,7 +979,7 @@ inline void verifyFunction(FunctionBody &function,
             auto classArrayEvidence = [&](int base, int fieldIndex, const ClassField &field) {
                 return ClassArrayGuard{base,
                                        base == 0 ? functionReceiver->className
-                                                 : function.objectSlots.at(base).className,
+                                                 : objectSlots.at(base).className,
                                        fieldIndex,
                                        field.elementType,
                                        field.elementCount};
@@ -1059,9 +990,9 @@ inline void verifyFunction(FunctionBody &function,
                         "class array access lacks matching dominating bounds token");
             };
             auto copyTarget = [&](int base, const std::string &name) {
-                require(function.objectSlots.contains(base), "copy requires exact object slot");
+                require(objectSlots.contains(base), "copy requires exact object slot");
                 require(state.activeObjects.contains(base), "copy object outside active lifetime");
-                require(function.objectSlots.at(base).className == name, "copy nominal class mismatch");
+                require(objectSlots.at(base).className == name, "copy nominal class mismatch");
                 require(!state.maybeConstructedObjects.contains(base), "copy result object already initialized");
                 const auto layout = classLeaves(name);
                 for (std::size_t leaf = 0; leaf < layout.size(); ++leaf)
@@ -1172,7 +1103,7 @@ inline void verifyFunction(FunctionBody &function,
                 if (ordinal == -1)
                     return ownerType(base);
                 require(ordinal >= 0 && base >= 0, "invalid owned storage field selector");
-                const auto &name = base == 0 ? functionReceiver->className : function.objectSlots.at(base).className;
+                const auto &name = base == 0 ? functionReceiver->className : objectSlots.at(base).className;
                 const auto type = logicalFields(name).at(ordinal).elementType;
                 verifyOwnerType(type, metadata);
                 return type;
@@ -1374,12 +1305,12 @@ inline void verifyFunction(FunctionBody &function,
                                     "indexed store cannot write nested class field");
                             require(!scalarParameterSlots.contains(offset),
                                     "indexed write to immutable scalar parameter");
-                            require(!objectFields.contains(offset) || objectFields.at(offset)->mutableValue,
+                            require(!objectBases.contains(offset) || objectSlots.at(objectBases.at(offset)).mutableValue,
                                     "indexed write to const object field");
                         }
                     } else if constexpr (std::is_same_v<Op, BorrowHandle>) {
                         slot(operation.ownerOffset, Type::I64);
-                        require(!objectFields.contains(operation.ownerOffset),
+                        require(!objectBases.contains(operation.ownerOffset),
                                 "object field cannot become a scalar borrow handle");
                         require(state.initialized.contains(operation.ownerOffset), "borrow of uninitialized payload");
                         require(operation.referenceType == Type::Ref || operation.referenceType == Type::MutRef,
@@ -1447,11 +1378,11 @@ inline void verifyFunction(FunctionBody &function,
                             }
                             require(type.isClass() && metadata.findClass(type.className),
                                     "invalid aggregate parameter type");
-                            require(function.objectSlots.contains(base),
+                            require(objectSlots.contains(base),
                                     "aggregate argument requires exact object slot");
                             require(argumentStorage.insert(base).second,
                                     "aggregate argument snapshots must be distinct");
-                            const auto &object = function.objectSlots.at(base);
+                            const auto &object = objectSlots.at(base);
                             require(object.className == type.className, "aggregate argument nominal class mismatch");
                             require(!object.mutableValue, "aggregate argument snapshot must be readonly");
                             require(state.activeObjects.contains(base),
@@ -1464,9 +1395,9 @@ inline void verifyFunction(FunctionBody &function,
                         }
                         if (target.result().isClass()) {
                             const int base = operation.resultOffset;
-                            require(function.objectSlots.contains(base), "aggregate result requires exact object slot");
+                            require(objectSlots.contains(base), "aggregate result requires exact object slot");
                             require(!argumentStorage.contains(base), "aggregate result aliases argument snapshot");
-                            const auto &object = function.objectSlots.at(base);
+                            const auto &object = objectSlots.at(base);
                             require(object.className == target.result().className,
                                     "aggregate result nominal class mismatch");
                             require(state.activeObjects.contains(base),
@@ -1544,8 +1475,8 @@ inline void verifyFunction(FunctionBody &function,
                         if (constructor) {
                             require(target.result() == Type::I64 && operation.resultOffset == 0,
                                     "owning constructor requires scalar result and no result storage");
-                            require(function.objectSlots.contains(operation.receiverOffset) &&
-                                        function.objectSlots.at(operation.receiverOffset).className ==
+                            require(objectSlots.contains(operation.receiverOffset) &&
+                                        objectSlots.at(operation.receiverOffset).className ==
                                             target.receiver()->className,
                                     "owning constructor requires exact nominal receiver root");
                         } else if (target.result().isOwnerStorage() || owningType(target.result())) {
@@ -1558,10 +1489,10 @@ inline void verifyFunction(FunctionBody &function,
                             }
                         } else if (target.result().isClass()) {
                             const int base = operation.resultOffset;
-                            require(function.objectSlots.contains(base),
+                            require(objectSlots.contains(base),
                                     "resource copied result requires exact object slot");
                             require(!argumentStorage.contains(base), "resource copied result aliases argument storage");
-                            const auto &object = function.objectSlots.at(base);
+                            const auto &object = objectSlots.at(base);
                             require(object.className == target.result().className,
                                     "resource copied result nominal class mismatch");
                             require(state.activeObjects.contains(base),
@@ -1599,7 +1530,7 @@ inline void verifyFunction(FunctionBody &function,
                         } else
                             state.current = Value{target.result(), {}};
                     } else if constexpr (std::is_same_v<Op, BeginBytes>) {
-                        require(function.byteSlots.contains(operation.offset),
+                        require(byteSlots.contains(operation.offset),
                                 "owned byte lifetime requires exact typed spill");
                         require(!byteParameterSlots.contains(operation.offset),
                                 "owned byte parameter lifetime cannot restart");
@@ -1673,7 +1604,7 @@ inline void verifyFunction(FunctionBody &function,
                         ownerWritable(operation.offset, -1);
                         state.activeBytes.erase(operation.offset);
                     } else if constexpr (std::is_same_v<Op, BeginArray> || std::is_same_v<Op, EndArray>) {
-                        require(function.arraySlots.contains(operation.offset),
+                        require(arraySlots.contains(operation.offset),
                                 "array lifetime requires exact byte array origin");
                         if constexpr (std::is_same_v<Op, BeginArray>) {
                             require(!state.activeArrays.contains(operation.offset), "array lifetime already active");
@@ -1688,16 +1619,16 @@ inline void verifyFunction(FunctionBody &function,
                             }
                             state.activeArrays.erase(operation.offset);
                         }
-                        for (int element = 0; element < function.arraySlots.at(operation.offset); ++element) {
+                        for (int element = 0; element < arraySlots.at(operation.offset); ++element) {
                             state.initialized.erase(operation.offset - element);
                             state.maybeInitialized.erase(operation.offset - element);
                         }
                     } else if constexpr (std::is_same_v<Op, BorrowSpan>) {
-                        require(function.arraySlots.contains(operation.arrayOffset),
+                        require(arraySlots.contains(operation.arrayOffset),
                                 "span borrow requires exact local byte array origin");
                         require(state.activeArrays.contains(operation.arrayOffset),
                                 "span borrow requires active byte array origin");
-                        array(operation.arrayOffset, function.arraySlots.at(operation.arrayOffset), Type::U8);
+                        array(operation.arrayOffset, arraySlots.at(operation.arrayOffset), Type::U8);
                         spanTarget(operation.resultOffset);
                         state.activeSpans.emplace(operation.resultOffset,
                                                   SpanCapability{false,
@@ -1745,14 +1676,14 @@ inline void verifyFunction(FunctionBody &function,
                         current(Type::I64);
                         state.current = Value{Type::U8, {}};
                     } else if constexpr (std::is_same_v<Op, BeginObject> || std::is_same_v<Op, EndObject>) {
-                        require(function.objectSlots.contains(operation.offset),
+                        require(objectSlots.contains(operation.offset),
                                 "lifetime operation requires exact object slot");
                         if constexpr (std::is_same_v<Op, BeginObject>) {
                             require(!objectParameterSlots.contains(operation.offset),
                                     "object parameter lifetime cannot restart");
                             require(!state.activeObjects.contains(operation.offset), "object lifetime already active");
                             state.activeObjects.emplace(operation.offset, index);
-                            const auto &name = function.objectSlots.at(operation.offset).className;
+                            const auto &name = objectSlots.at(operation.offset).className;
                             if (owningClass(metadata, name))
                                 beginOwnedObject(operation.offset, name);
                         } else {
@@ -1773,7 +1704,7 @@ inline void verifyFunction(FunctionBody &function,
                             invalidate(*state.current);
                         for (auto &value : state.stack)
                             invalidate(value);
-                        const auto &object = function.objectSlots.at(operation.offset);
+                        const auto &object = objectSlots.at(operation.offset);
                         const auto layout = classLeaves(object.className);
                         for (std::size_t field = 0; field < layout.size(); ++field) {
                             const int offset = objectLeaf(operation.offset, field);
@@ -1789,9 +1720,9 @@ inline void verifyFunction(FunctionBody &function,
                                 ++field;
                         }
                     } else if constexpr (std::is_same_v<Op, InitializeEmptyObject>) {
-                        require(function.objectSlots.contains(operation.offset),
+                        require(objectSlots.contains(operation.offset),
                                 "empty initialization requires exact object slot");
-                        const auto &name = function.objectSlots.at(operation.offset).className;
+                        const auto &name = objectSlots.at(operation.offset).className;
                         require(classLeaves(name).empty() && logicalFields(name).empty() &&
                                     !owningClass(metadata, name) && !carrier(name),
                                 "empty initialization requires zero logical fields and leaves");
@@ -1905,9 +1836,9 @@ inline void verifyFunction(FunctionBody &function,
                             require(functionReceiver->constructor && functionReceiver->mutableValue,
                                     "class array initialization requires constructor receiver");
                         } else {
-                            require(function.objectSlots.contains(operation.objectOffset),
+                            require(objectSlots.contains(operation.objectOffset),
                                     "class array initialization requires exact object slot");
-                            const auto &name = function.objectSlots.at(operation.objectOffset).className;
+                            const auto &name = objectSlots.at(operation.objectOffset).className;
                             require(carrier(name) && operation.fieldIndex == 0,
                                     "local class array initialization requires declared carrier field");
                             field = logicalFields(name).front();
@@ -1937,7 +1868,7 @@ inline void verifyFunction(FunctionBody &function,
                             state.receiverClassesMaybeInitialized.insert(operation.fieldIndex);
                         } else {
                             copyTarget(operation.objectOffset,
-                                       function.objectSlots.at(operation.objectOffset).className);
+                                       objectSlots.at(operation.objectOffset).className);
                         }
                         state.current.reset();
                     } else if constexpr (std::is_same_v<Op, ClassArrayBoundsGuard>) {
@@ -2159,9 +2090,9 @@ inline void verifyFunction(FunctionBody &function,
                             require(!receiver.mutableValue || formal.mutableValue,
                                     "const receiver cannot forward mutable capability");
                         } else {
-                            require(function.objectSlots.contains(operation.receiverOffset),
+                            require(objectSlots.contains(operation.receiverOffset),
                                     "method receiver is not an object slot");
-                            const auto &object = function.objectSlots.at(operation.receiverOffset);
+                            const auto &object = objectSlots.at(operation.receiverOffset);
                             require(state.activeObjects.contains(operation.receiverOffset),
                                     "method receiver outside active object lifetime");
                             require(object.className == receiver.className, "method receiver nominal class mismatch");
@@ -2200,8 +2131,8 @@ inline void verifyFunction(FunctionBody &function,
                             const int base = operation.resultOffset;
                             require(base != operation.receiverOffset, "method result aliases receiver");
                             require(!argumentStorage.contains(base), "method result aliases argument snapshot");
-                            require(function.objectSlots.contains(base), "method result requires exact object slot");
-                            const auto &object = function.objectSlots.at(base);
+                            require(objectSlots.contains(base), "method result requires exact object slot");
+                            const auto &object = objectSlots.at(base);
                             require(object.className == target.result().className,
                                     "method result nominal class mismatch");
                             require(state.activeObjects.contains(base), "method result outside active object lifetime");
@@ -2295,9 +2226,9 @@ inline void verifyFunction(FunctionBody &function,
                     } else if constexpr (std::is_same_v<Op, ReturnObject>) {
                         require(signature.result().isClass() && !owningType(signature.result()),
                                 "object return requires class result; owning classes require an explicit move return");
-                        require(function.objectSlots.contains(operation.offset),
+                        require(objectSlots.contains(operation.offset),
                                 "object return requires exact object slot");
-                        const auto &object = function.objectSlots.at(operation.offset);
+                        const auto &object = objectSlots.at(operation.offset);
                         require(object.className == signature.result().className, "object return nominal class mismatch");
                         require(state.activeObjects.contains(operation.offset),
                                 "object return outside active lifetime");
@@ -2345,7 +2276,7 @@ inline void verifyFunction(FunctionBody &function,
                                     operation.index == static_cast<int>(index) &&
                                     operation.kind == service::kind(parameters[index]) &&
                                     serviceParameterSlots.at(operation.index) == operation.offset &&
-                                    function.serviceSlots.contains(operation.offset) &&
+                                    serviceSlots.contains(operation.offset) &&
                                     !state.activeServices.contains(operation.offset),
                                 "service binding requires exact authorized leading parameter");
                         state.activeServices.emplace(operation.offset, ServiceIdentity{index, operation.kind});
@@ -2403,8 +2334,8 @@ inline void verifyFunction(FunctionBody &function,
                             const bool event = operation.operation == service::Operation::IommuPoll;
                             const auto reportName = event ? service::eventSampleName : service::sampleName;
                             const int base = operation.resultOffset;
-                            require(function.objectSlots.contains(base) &&
-                                        function.objectSlots.at(base).className == reportName &&
+                            require(objectSlots.contains(base) &&
+                                        objectSlots.at(base).className == reportName &&
                                         state.activeObjects.contains(base) &&
                                         !state.maybeConstructedObjects.contains(base),
                                     "service observation requires exact pristine active copied sample object");
@@ -2476,7 +2407,7 @@ inline void verifyFunction(FunctionBody &function,
                         require(resourceFunction && operation.index == 0 &&
                                     parameters.front() == Type::ByteRegion,
                                 "region parameter type or index mismatch");
-                        require(function.regionSlots.contains(operation.offset),
+                        require(regionSlots.contains(operation.offset),
                                 "region parameter requires exact typed spill");
                         require(state.activeRegions.empty(), "region parameter authority already active");
                         state.activeRegions.emplace(operation.offset, RegionIdentity{operation.offset, index});
@@ -2488,9 +2419,9 @@ inline void verifyFunction(FunctionBody &function,
                                     ownerType(operation.offset) == parameters[operation.index],
                                 "owned byte parameter type mismatch");
                         require(regionParameterSlot.has_value(), "owned byte parameter requires bound region");
-                        require(function.byteSlots.contains(operation.offset),
+                        require(byteSlots.contains(operation.offset),
                                 "owned byte parameter requires exact typed spill");
-                        require(function.byteSlots.at(operation.offset), "owned byte parameter must be mutable");
+                        require(byteSlots.at(operation.offset), "owned byte parameter must be mutable");
                         require(!state.activeBytes.contains(operation.offset),
                                 "owned byte parameter lifetime already active");
                         state.activeBytes.emplace(operation.offset, ByteBinding{index, ByteDisposition::Pristine, {}});
@@ -2502,7 +2433,7 @@ inline void verifyFunction(FunctionBody &function,
                         require(parameters[operation.index] == Type::ByteSpan &&
                                     (!functionReceiver || !functionReceiver->constructor),
                                 "span parameter type mismatch");
-                        require(function.spanSlots.contains(operation.offset),
+                        require(spanSlots.contains(operation.offset),
                                 "span parameter requires exact typed spill");
                         require(!state.activeSpans.contains(operation.offset),
                                 "span parameter lifetime already active");
@@ -2516,10 +2447,10 @@ inline void verifyFunction(FunctionBody &function,
                                     owningClass(metadata, operation.className),
                                 "owning class parameter type mismatch");
                         require(regionParameterSlot.has_value(), "owning class parameter requires bound region");
-                        require(function.objectSlots.contains(operation.offset) &&
-                                    function.objectSlots.at(operation.offset).className == operation.className,
+                        require(objectSlots.contains(operation.offset) &&
+                                    objectSlots.at(operation.offset).className == operation.className,
                                 "owning class parameter requires exact nominal object slot");
-                        require(function.objectSlots.at(operation.offset).mutableValue,
+                        require(objectSlots.at(operation.offset).mutableValue,
                                 "owning class parameter must be mutable");
                         require(!state.activeObjects.contains(operation.offset),
                                 "owning class parameter lifetime already active");
@@ -2534,9 +2465,9 @@ inline void verifyFunction(FunctionBody &function,
                                 "copied parameter cannot bind owning class");
                         require(parameters[operation.index] == Type(operation.className),
                                 "object parameter type mismatch");
-                        require(function.objectSlots.contains(operation.offset),
+                        require(objectSlots.contains(operation.offset),
                                 "object parameter requires exact object slot");
-                        const auto &object = function.objectSlots.at(operation.offset);
+                        const auto &object = objectSlots.at(operation.offset);
                         require(object.className == operation.className, "object parameter nominal class mismatch");
                         require(!object.mutableValue, "object parameter must be readonly");
                         require(!state.activeObjects.contains(operation.offset),
@@ -2548,7 +2479,7 @@ inline void verifyFunction(FunctionBody &function,
                                     static_cast<std::size_t>(operation.index) < parameters.size(),
                                 "invalid parameter index");
                         require(parameters[operation.index] == operation.type, "parameter type mismatch");
-                        require(!objectFields.contains(operation.offset), "parameter cannot bind object field storage");
+                        require(!objectBases.contains(operation.offset), "parameter cannot bind object field storage");
                         require(!arrayBases.contains(operation.offset),
                                 "parameter cannot bind byte array origin storage");
                         store(operation.offset, operation.type);
@@ -2601,8 +2532,9 @@ inline void verifyFunctions(std::vector<FunctionBody> &input, const Metadata &me
 } // namespace verification
 inline ValidatedModule validate(Module module, verification::Metrics *metrics) {
     auto metadata = Metadata::import(module);
-    // Every signature has been admitted before any native body work. Retire
-    // hostile signature rows as well as metadata maps before checking the bodies.
+    // Every signature and frame has been admitted before any native body work.
+    // A later invalid frame can therefore precede an earlier body diagnostic.
+    // Retire all hostile declaration rows before checking the executable bodies.
     std::vector<FunctionBody> functions;
     functions.reserve(module.functions.size());
     for (std::size_t index = 0; index < module.functions.size(); ++index) {
@@ -2610,7 +2542,8 @@ inline ValidatedModule validate(Module module, verification::Metrics *metrics) {
         function.callableId = index;
         functions.push_back(std::move(static_cast<FunctionBody &>(function)));
     }
-    module.functions.clear();
+    // Destroy raw declaration containers and release their outer allocation too.
+    std::vector<Function>().swap(module.functions);
     module.classLayouts.clear();
     module.classFields.clear();
     module.classStorage.clear();

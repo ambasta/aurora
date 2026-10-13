@@ -153,8 +153,9 @@ facts and header convergence, binds B to the frontend actually linked into C2, a
 C1/C2 corpus diagnostics/output. No compiler binary or generated frontend is
 committed. The candidate's independent module graph pass runs in Aurora after all
 native function checks and before import pruning, without a C++ graph fallback.
-Module file loading, mechanical IR projection, layout and function verification,
-and the native backend remain C++.
+Module file loading, mechanical IR projection, instruction/CFG verification and
+the native backend remain C++. Aurora owns independent metadata/layout, callable
+and frame admission; these recent migrations still await execution qualification.
 
 ## Supported source
 

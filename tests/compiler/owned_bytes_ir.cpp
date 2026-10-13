@@ -1789,6 +1789,20 @@ void explicitEmptyTests() {
 }
 void typedValueTests() {
     explicitEmptyTests();
+    {
+        auto checked = validate(values());
+        const auto frame = checked.metadata().frame(0);
+        const auto owners = frame.byteSlots();
+        const auto elements = frame.ownedValueTypes();
+        auto copiedName = elements.at(40);
+        copiedName = "changed observation";
+        auto moved = std::move(checked);
+        require(frame.frameBytes() == 208 && owners.size() == 4 && owners.at(40) && owners.at(72) &&
+                    elements.size() == 2 && elements.at(40) == "Record" && elements.at(72) == "Record" &&
+                    copiedName == "changed observation" && moved.metadata().frame(0).regionSlots().contains(8),
+                "typed owner frame views lost copied values or owner lifetime");
+        ++accepted;
+    }
     accept("typed allocate copy load store resize and cleanup", values());
     accept("typed empty elements retain copied completion", emptyValues());
     accept("typed nested get establishes all logical fields", nestedValues());

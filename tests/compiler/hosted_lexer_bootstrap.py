@@ -124,6 +124,8 @@ def abi_generation(facts):
         and "aurora::hosted_abi::compiler_lowering::ServiceParameters parameterTypes{};" in generated,
         "lowering input/configuration/catalog records were flattened or omitted",
     )
+    # Candidate source expectations; this check must compare fresh compiler facts
+    # before these sizes are qualification evidence.
     for source, extent in (
         ("compiler_resolver::Session", 520),
         ("compiler_lowering::OutputRow", 64),
@@ -133,10 +135,11 @@ def abi_generation(facts):
         ("compiler_lowering::SnapshotRow", 48),
         ("compiler_lowering::ContinuationRow", 496),
         ("compiler_ir_metadata::ReceiverShape", 24),
-        ("compiler_ir_metadata::CallableOptions", 16),
-        ("compiler_ir_metadata::CallableRow", 104),
+        ("compiler_ir_metadata::CallableOptions", 40),
+        ("compiler_ir_metadata::CallableRow", 128),
+        ("compiler_ir_metadata::SlotRow", 40),
         ("compiler_ir_metadata::InputCounts", 80),
-        ("compiler_ir_metadata::MetadataStore", 520),
+        ("compiler_ir_metadata::MetadataStore", 504),
     ):
         _, entry = abi_declaration(facts, "records", source)
         require(entry["reserved"] == extent and entry["alignment"] == 8, f"frontend layout changed: {source}")
@@ -145,10 +148,13 @@ def abi_generation(facts):
         and "struct alignas(8) MetadataRelease {" in generated
         and "aurora::hosted_abi::compiler_ir_metadata::InputCounts counts{};" in generated
         and "std::int64_t callableCount{};" in generated
+        and "std::int64_t slotCount{};" in generated
         and "metadataStore_typesBytes = 32;" in generated
         and "metadataStore_callablesBytes = 32;" in generated
-        and "metadataCallableRowPhysicalBytes = 104;" in generated
-        and "metadataRawTypeRowPhysicalBytes = 64;" in generated,
+        and "metadataStore_slotsBytes = 32;" in generated
+        and "metadataCallableRowPhysicalBytes = 128;" in generated
+        and "metadataRawTypeRowPhysicalBytes = 64;" in generated
+        and "metadataSlotRowPhysicalBytes = 40;" in generated,
         "metadata arguments or closed owner/row physical bindings were omitted",
     )
     # Exact root signatures are the only native entry authority. An imported
@@ -208,20 +214,21 @@ def abi_generation(facts):
             continue
         raise AssertionError(f"unsafe graph paired bridge accepted: {field}={value}")
     metadata_store, _ = abi_declaration(facts, "records", "compiler_ir_metadata::MetadataStore")
-    for mutation in ("missing", "type", "offset"):
-        changed = deepcopy(facts)
-        _, entry = abi_declaration(changed, "functions", "compiler_frontend::metadata_create")
-        if mutation == "missing":
-            entry["parameters"].pop()
-        elif mutation == "type":
-            entry["parameters"][2]["kind"] = "u64"
-        else:
-            entry["parameters"][2]["offset"] += 8
-        try:
-            frontend_abi_header(changed)
-        except ValueError:
-            continue
-        raise AssertionError(f"unsafe metadata callable-count argument accepted: {mutation}")
+    for parameter, name in ((2, "callable-count"), (3, "slot-count")):
+        for mutation in ("missing", "type", "offset"):
+            changed = deepcopy(facts)
+            _, entry = abi_declaration(changed, "functions", "compiler_frontend::metadata_create")
+            if mutation == "missing":
+                entry["parameters"].pop(parameter)
+            elif mutation == "type":
+                entry["parameters"][parameter]["kind"] = "u64"
+            else:
+                entry["parameters"][parameter]["offset"] += 8
+            try:
+                frontend_abi_header(changed)
+            except ValueError:
+                continue
+            raise AssertionError(f"unsafe metadata {name} argument accepted: {mutation}")
     for operation in ("create", "release", "allocated", "run", "error"):
         for mutation in ("receiver", "result", "parameters", "root"):
             changed = deepcopy(facts)
@@ -256,6 +263,9 @@ def abi_generation(facts):
         "metadata_owner_extent",
         "metadata_row_stride",
         "metadata_narrow_leaf",
+        "metadata_slot_owner_extent",
+        "metadata_slot_stride",
+        "metadata_slot_narrow_leaf",
         "unexpected_second_root",
         "unexpected_root_count",
         "unexpected_root_tuple",
@@ -280,12 +290,16 @@ def abi_generation(facts):
         if kind == "metadata_second_root":
             _, entry = abi_declaration(changed, "functions", "compiler_frontend::metadata_run")
             entry["second_receiver"] = {"type_name": metadata_store, "mutable": False}
-        elif kind == "metadata_owner_extent":
+        elif kind in ("metadata_owner_extent", "metadata_slot_owner_extent"):
             _, entry = abi_declaration(changed, "records", "compiler_ir_metadata::MetadataStore")
-            next(field for field in entry["fields"] if field["name"] == "types")["bytes"] += 8
-        elif kind in ("metadata_row_stride", "metadata_narrow_leaf"):
-            _, entry = abi_declaration(changed, "records", "compiler_ir_metadata::IndexRow")
-            if kind == "metadata_row_stride":
+            pool = "slots" if kind == "metadata_slot_owner_extent" else "types"
+            next(field for field in entry["fields"] if field["name"] == pool)["bytes"] += 8
+        elif kind in (
+            "metadata_row_stride", "metadata_narrow_leaf", "metadata_slot_stride", "metadata_slot_narrow_leaf"
+        ):
+            row = "SlotRow" if kind.startswith("metadata_slot_") else "IndexRow"
+            _, entry = abi_declaration(changed, "records", "compiler_ir_metadata::" + row)
+            if kind in ("metadata_row_stride", "metadata_slot_stride"):
                 entry["size"] -= 1
             else:
                 entry["fields"][0]["kind"] = "bool"
