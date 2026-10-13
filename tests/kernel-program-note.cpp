@@ -15,6 +15,14 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+// The supervisor graph contains the reader; note-policy calls must never use it.
+extern "C" void __au_runtime_console_next(const void *, std::uint64_t, void *) {
+    std::abort();
+}
+extern "C" std::uint64_t __au_runtime_console_put(const void *, std::uint64_t, std::uint64_t) {
+    std::abort();
+}
+
 using U64 = std::uint64_t;
 using I64 = std::int64_t;
 using namespace aurora;

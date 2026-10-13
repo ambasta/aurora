@@ -4,6 +4,14 @@
 #include <iostream>
 #include <string_view>
 
+// This linked source graph includes the reader, but Mailbox checks grant no I/O.
+extern "C" void __au_runtime_console_next(const void *, std::uint64_t, void *) {
+    std::abort();
+}
+extern "C" std::uint64_t __au_runtime_console_put(const void *, std::uint64_t, std::uint64_t) {
+    std::abort();
+}
+
 namespace {
 using namespace aurora;
 auto need(bool value, std::string_view message) -> void {

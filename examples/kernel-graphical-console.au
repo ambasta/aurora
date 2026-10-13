@@ -614,7 +614,7 @@ auto graphical_console(builtin::ConsoleSession& input, builtin::DisplaySession& 
     if (width < 440u64 || width > 1024u64 || height < 146u64 || height > 768u64) {
         return GraphicalCompletion::invalid_geometry;
     }
-    console::Line64 line = console::Line64();
+    console::Line64 line = console::Line64(false);
     const std::BinaryBuffer64 empty = std::BinaryBuffer64();
     console::SessionNote note = console::SessionNote(empty);
     console::SessionFiles files = console::SessionFiles(empty);

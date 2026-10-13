@@ -6,5 +6,3 @@
 .global aurora_kernel_ipc_transition
 .global aurora_kernel_client_disposal
 .global aurora_kernel_terminal_event
-.global aurora_console_byte
-.global aurora_console_command

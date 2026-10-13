@@ -11,7 +11,7 @@ qualification. Do not write these images to a physical disk or change a bootload
 | BIOS | `help`, `status`, `exit`; IRQ4-woken serial editor | Aurora byte/command policy, trusted C++ storage/presentation and PIC/UART adapter |
 | Simple UEFI | Aurora-owned editor, commands, RAM note and four named RAM files | Sealed ConsoleSession; trusted boot, UART, LAPIC and wake-frame checks |
 | [Graphical](framebuffer-console.md) | Same RAM commands, two text rows and dirty-cell drawing; serial input | Separate ConsoleSession/DisplaySession grants; bounded emulator fixture |
-| [Protected commands](program-console-contract.md) | `upper`, protected note read and uppercase replacement | Two CPL3 domains, authenticated copied IPC; retained legacy editor |
+| [Protected commands](program-console-contract.md) | `upper`, protected note read and uppercase replacement | Aurora input turns through ConsoleSession; native dispatch and authenticated two-domain IPC |
 
 ## Developer commands
 
@@ -43,7 +43,7 @@ whole line. Rejection stays latched through edits and suffixes until a delimiter
 Unsupported bytes are never echoed as terminal escapes. Commands are exact and
 case-sensitive; BIOS supports only the three lowercase words in the table.
 
-Simple UEFI and the graphical console import `console.line`; each invocation
+Simple UEFI, graphical and protected input import `console.line`; each invocation
 owns a `console::Line64` with private bytes, length, rejection and CRLF state.
 Accepted submissions expose copied bytes only until the next byte or damage
 sample. The consumers keep their own prompts, echo, erase and responses.

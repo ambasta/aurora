@@ -32,7 +32,9 @@ def verify(runtime, program, timer):
         r"class ProgramSerialAdapter final\s*\{\s*"
         r"using Uart\s*=\s*console::Uart<hardware::Io,\s*console::FifoTrigger::fourteen>;\s*public:\s*"
         r"static void initialize_input\(\)\s*\{\s*Uart::initialize_input\(\);\s*\}\s*"
-        r"template\s*<class Editor> static auto poll\(Editor\s*&\s*line\)\s*\{\s*return Uart::poll\(line\);\s*\}\s*"
+        r"static auto next\(\)\s*->\s*console::Sample\s*\{\s*return Uart::next\(\);\s*\}\s*"
+        r"static auto try_put\(std::uint8_t byte\)\s*->\s*console::PutResult\s*\{\s*"
+        r"return Uart::try_put\(byte\);\s*\}\s*"
         r"static void put\(std::uint8_t byte\)\s*\{\s*Uart::put\(byte\);\s*\}\s*"
         r"\[\[gnu::noinline\]\] static void text\(std::string_view value\)\s*\{\s*Uart::text\(value\);\s*\}\s*"
         r"\[\[gnu::noinline\]\] static void number\(U64 value\)\s*\{\s*Uart::number\(value\);\s*\}\s*\};\s*"
@@ -90,7 +92,8 @@ class ProgramSerialAdapter final {
     using Uart = console::Uart<hardware::Io, console::FifoTrigger::fourteen>;
 public:
     static void initialize_input() { Uart::initialize_input(); }
-    template<class Editor> static auto poll(Editor& line) { return Uart::poll(line); }
+    static auto next() -> console::Sample { return Uart::next(); }
+    static auto try_put(std::uint8_t byte) -> console::PutResult { return Uart::try_put(byte); }
     static void put(std::uint8_t byte) { Uart::put(byte); }
     [[gnu::noinline]] static void text(std::string_view value) { Uart::text(value); }
     [[gnu::noinline]] static void number(U64 value) { Uart::number(value); }
@@ -102,7 +105,8 @@ using Serial = ProgramSerialAdapter;
     invalid = (
         (factored.replace("Uart::text(value)", "hardware::Serial::text(value)"), alias, ""),
         (factored.replace("Uart::number(value)", "hardware::Serial::number(value)"), alias, ""),
-        (factored.replace("return Uart::poll(line)", "return Other::poll(line)"), alias, ""),
+        (factored.replace("return Uart::next()", "return Other::next()"), alias, ""),
+        (factored.replace("return Uart::try_put(byte)", "return Other::try_put(byte)"), alias, ""),
         (factored.replace("Uart::put(byte)", "read(0x3fd)"), alias, ""),
         (factored.replace("FifoTrigger::fourteen", "FifoTrigger::one"), alias, ""),
         (formatted.replace("FifoTrigger::fourteen", "FifoTrigger::one"), alias, ""),
@@ -126,7 +130,7 @@ using Serial = ProgramSerialAdapter;
         except ValueError:
             continue
         raise ValueError("Accepted changed UART routing contract")
-    print("PASS: program UART routing, formatting variants, shared noinline adapter and nineteen negative controls")
+    print("PASS: program UART routing, formatting variants, shared sticky Console adapter and negative controls")
 
 
 if __name__ == "__main__":

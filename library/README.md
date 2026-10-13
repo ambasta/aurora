@@ -55,7 +55,9 @@ There is no normalization or textual meaning assigned to NUL/non-ASCII bytes.
 ## Console input and output
 
 `console.line` supplies the shared `Line64` editor and `ConsoleEvent` values for
-simple UEFI and graphical sessions. Its private 64-byte ASCII state owns no
+simple UEFI, graphical and protected sessions. Its constructor accepts the initial
+CR carry; protected readers preserve that bit across command execution. Its
+private 64-byte ASCII state owns no
 transport authority; [input and submission behavior](../docs/native-console-service.md#input-behavior)
 is shared while each consumer handles its own output.
 
@@ -66,6 +68,10 @@ The first timeout stops output, preserving the emitted prefix and excluding the
 failed byte from the count; nothing is retried or rolled back. Results are ordinary
 forgeable data with no authority or retained span. Console and IOMMU consumers use
 the helper while keeping their existing failure/acknowledgement policy.
+
+`console.program_input` reads one protected-console submission through a sealed
+ConsoleSession and returns copied bytes, an action and CR carry. Native command
+execution and publication remain outside that input capability.
 
 ## Living component references
 

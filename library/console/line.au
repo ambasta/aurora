@@ -65,7 +65,14 @@ export namespace console {
             return true;
         }
     public:
-        Line64() : bytes{}, length(0), rejected(false), after_cr(false), submitted(false) {
+        Line64(bool initial_after_cr)
+            : bytes{}, length(0), rejected(false), after_cr(initial_after_cr), submitted(false) {
+        }
+
+        // Preserve a submitted CR across copied input turns without retaining
+        // any editor storage or authority in the caller.
+        auto after_cr_pending() const -> bool {
+            return after_cr;
         }
 
         // A completed line is readable only until the next byte or damage sample.

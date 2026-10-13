@@ -7,6 +7,14 @@
 #include <string_view>
 #include <type_traits>
 
+// The direct program-console source link imports I/O; this IPC fixture grants none.
+extern "C" void __au_runtime_console_next(const void *, std::uint64_t, void *) {
+    std::abort();
+}
+extern "C" std::uint64_t __au_runtime_console_put(const void *, std::uint64_t, std::uint64_t) {
+    std::abort();
+}
+
 using namespace aurora::ipc;
 using aurora::user::DomainHandle;
 using aurora::user::DomainRegistry;

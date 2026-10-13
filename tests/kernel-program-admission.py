@@ -66,6 +66,120 @@ def main():
 
     instruction = namedtuple("Instruction", "address size op args")
 
+    # The class-returning service uses the existing full ABI, without pretending
+    # its capability is an ordinary copied_record or extending stack facts.
+    input_abi = {
+        "version": 1,
+        "records": {
+            "buffer_type": dict(
+                source_name="std::BinaryBuffer64", size=64, alignment=1, reserved=64,
+                fields=[dict(name="elements", offset=0, bytes=64, array_length=64, kind="u8")],
+            ),
+            "submission_type": dict(
+                source_name="console::ProgramSubmission", size=88, alignment=8, reserved=88,
+                fields=[
+                    dict(name="bytes", offset=0, bytes=64, array_length=0, kind="class", type_name="buffer_type"),
+                    dict(name="count", offset=64, bytes=8, array_length=0, kind="i64"),
+                    dict(name="action", offset=72, bytes=8, array_length=0, kind="enum", type_name="action_type"),
+                    dict(name="after_cr", offset=80, bytes=8, array_length=0, kind="u64"),
+                ],
+            ),
+        },
+        "enums": {
+            "action_type": dict(
+                source_name="console::ProgramInputAction",
+                cases=dict(command=0, upper_payload=1, requested_exit=2, output_failure=3),
+            ),
+        },
+        "functions": {
+            "selected_reader": dict(
+                source_name="read_program_input", receiver=None, receiver_mutable=None,
+                borrowed_parameter=False, second_receiver=None, root_count=0, root_tuple_bytes=0,
+                root_order=[], parameter_bytes=24,
+                parameters=[dict(offset=0, bytes=16, kind="service"), dict(offset=16, bytes=8, kind="bool")],
+                result=dict(bytes=88, kind="class", type_name="submission_type"),
+            ),
+        },
+    }
+    need(admission.check_program_input_abi(input_abi) == "selected_reader", "Source-selected input ABI")
+    for path, value in (
+        (("records", "submission_type", "size"), 80),
+        (("records", "submission_type", "reserved"), 96),
+        (("records", "submission_type", "fields", 0, "type_name"), "other_buffer"),
+        (("records", "submission_type", "fields", 1, "kind"), "u64"),
+        (("records", "submission_type", "fields", 2, "offset"), 80),
+        (("records", "submission_type", "fields", 2, "type_name"), "other_enum"),
+        (("records", "submission_type", "fields", 3, "kind"), "bool"),
+        (("records", "buffer_type", "fields", 0, "array_length"), 63),
+        (("records", "buffer_type", "fields", 0, "kind"), "service"),
+        (("enums", "action_type", "cases", "command"), False),
+        (("enums", "action_type", "cases", "output_failure"), 2),
+        (("functions", "selected_reader", "parameter_bytes"), 16),
+        (("functions", "selected_reader", "parameters", 0, "bytes"), 8),
+        (("functions", "selected_reader", "parameters", 0, "kind"), "u64"),
+        (("functions", "selected_reader", "parameters", 1, "offset"), 8),
+        (("functions", "selected_reader", "parameters", 1, "kind"), "u64"),
+        (("functions", "selected_reader", "result", "bytes"), 80),
+        (("functions", "selected_reader", "result", "type_name"), "other_result"),
+        (("functions", "selected_reader", "root_count"), 1),
+    ):
+        changed = deepcopy(input_abi)
+        selected = changed
+        for key in path[:-1]:
+            selected = selected[key]
+        selected[path[-1]] = value
+        reject(lambda: admission.check_program_input_abi(changed), "program input full ABI mismatch")
+
+    bridge_name = admission.PROGRAM_INPUT_BRIDGE
+    console_next, console_put = "__au_runtime_console_next", "__au_runtime_console_put"
+    input_graph = {
+        bridge_name: body(16, ("reader", 16)),
+        "reader": body(16, ("reader_body", 16)),
+        "reader_body": body(16, (console_next, 16), ("writer", 16), ("__au_reflect_s1_size", 16)),
+        "writer": body(16, (console_put, 16)),
+        "policy": body(16),
+        "__au_reflect_s1_size": body(8),
+    }
+    input_graph["writer"]["service_abi"] = dict(
+        record=None, calls={console_put: dict(sysv_arguments=3, result_max=1)}
+    )
+    for function in input_graph.values():
+        for index, call in enumerate(function["calls"]):
+            call["address"] = index
+    public = {bridge_name, "policy", "__au_reflect_s1_size"}
+    need(
+        len(admission.check_program_input_calls(input_graph, set(input_graph), public, "reader")) == 2,
+        "Reader follows generated helpers to the two closed Console operations",
+    )
+    for changed in (
+        dict(input_graph, policy=body(16, ("writer", 16))),
+        dict(input_graph, rogue=body(16, (console_next, 16))),
+        dict(input_graph, reader_body=body(16, ("foreign_host", 16))),
+        dict(input_graph, writer=body(16, (console_put, 16))),
+        dict(input_graph, writer=dict(input_graph["writer"], calls=[dict(target=console_put, live_bytes=8, address=0)])),
+    ):
+        reject(
+            lambda: admission.check_program_input_calls(changed, set(changed), public, "reader"),
+            "Console authority escaped reader or changed its host operation contract",
+        )
+
+    wait_graph = {
+        "uefi_payload_entry": body(16, (bridge_name, 16)),
+        bridge_name: body(16, ("reader", 16)),
+        "reader": body(16, ("helper", 16)),
+        "helper": body(16, (console_next, 16)),
+        console_next: body(16, ("wait", 16)),
+        "wait": body(16),
+    }
+    admission.check_program_input_wait(wait_graph, "wait", "reader")
+    for changed in (
+        dict(wait_graph, uefi_payload_entry=body(16, (bridge_name, 16), ("wait", 16))),
+        dict(wait_graph, helper=body(16, ("wait", 16))),
+        dict(wait_graph, **{bridge_name: body(16, (console_next, 16))}),
+        dict(wait_graph, uefi_payload_entry=body(16)),
+    ):
+        reject(lambda: admission.check_program_input_wait(changed, "wait", "reader"), "retained reader wait bypass")
+
     closed = {"root": body(16)}
     admission.check_referenced_reflection(closed, {"root"})
     closed = {"root": body(16, ("__au_reflect_s1_size", 16)), "__au_reflect_s1_size": body(8)}
