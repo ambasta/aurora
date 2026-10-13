@@ -1,0 +1,628 @@
+export module aurora.compiler.ir_metadata_storage;
+
+// Durable metadata storage. Native ingress fills the exact raw prefixes once;
+// independent verification only appends normalization tails and writes results.
+// No source accessor exposes a descriptor, payload address or mutable raw row.
+export namespace compiler_ir_metadata {
+    enum class MetadataStatus { pending, success, allocation, invalid };
+    // Generated facts pin these ordinals to native TypeKind. Raw rows retain
+    // integers, including unknown kinds, rather than accepting unchecked enums.
+    enum class MetadataTypeKind {
+        I64, Bool, Own, Ref, MutRef, Class, Array, U64, Parameter, Enum, U8, ByteSpan, ByteRegion,
+        OwnedBytes, ConsoleSession, DisplaySession, IommuEventSession, OwnedValues
+    };
+    enum class MetadataError {
+        none,
+        //: invalid hosted IR metadata transport
+        integrity,
+        //: invalid typed IR: invalid metadata descriptor
+        descriptor,
+        //: invalid typed IR: missing root reflection scope
+        root_scope,
+        //: invalid typed IR: invalid reflection scope
+        scope,
+        //: invalid typed IR: reflection view references missing descriptor
+        view_descriptor,
+        //: invalid typed IR: too many enum declarations
+        enum_count,
+        //: invalid typed IR: invalid nominal enum declaration
+        enum_declaration,
+        //: invalid typed IR: class and enum nominal names overlap
+        nominal_overlap,
+        //: invalid typed IR: invalid nominal class layout
+        class_layout,
+        //: invalid typed IR: non-scalar class layout field
+        class_leaf,
+        //: invalid typed IR: logical fields reference unknown class layout
+        unknown_fields,
+        //: invalid typed IR: noncanonical class array element count
+        field_element_count,
+        //: invalid typed IR: class array carrier cannot be nested element type
+        nested_carrier,
+        //: invalid typed IR: invalid logical class field shape
+        field_shape,
+        //: invalid typed IR: owned storage field requires zero scalar leaves
+        owner_leaves,
+        //: invalid typed IR: invalid canonical owned value field type
+        owner_field_type,
+        //: invalid typed IR: nested owning class field is unsupported
+        nested_owner,
+        //: invalid typed IR: invalid nominal nested class field
+        nested_type,
+        //: invalid typed IR: class array element count exceeds 1..64
+        class_array_count,
+        //: invalid typed IR: nested class field length mismatch
+        nested_length,
+        //: invalid typed IR: logical class field range exceeds layout
+        field_range,
+        //: invalid typed IR: nested class field leaf type mismatch
+        nested_leaf,
+        //: invalid typed IR: logical class field leaf type mismatch
+        field_leaf,
+        //: invalid typed IR: logical class fields do not cover complete layout
+        leaf_coverage,
+        //: invalid typed IR: composed or owning class exceeds 64 scalar leaves excluding u8, 512 u8 leaves or 513 total leaves
+        class_leaf_limit,
+        //: invalid typed IR: unknown class array carrier
+        unknown_carrier,
+        //: invalid typed IR: class array carrier requires exactly one class array field
+        carrier_shape,
+        //: invalid typed IR: cyclic nested class layout
+        cycle,
+        //: invalid typed IR: nested class layout exceeds depth 4
+        depth,
+        //: invalid typed IR: noncanonical sealed ConsoleSample layout
+        console_layout,
+        //: invalid typed IR: noncanonical sealed ConsoleSample fields
+        console_fields,
+        //: invalid typed IR: noncanonical sealed ConsoleSample field shape
+        console_field_shape,
+        //: invalid typed IR: noncanonical sealed IommuEventSample layout
+        event_layout,
+        //: invalid typed IR: noncanonical sealed IommuEventSample fields
+        event_fields,
+        //: invalid typed IR: noncanonical sealed IommuEventSample field shape
+        event_field_shape,
+        //: invalid typed IR: noncanonical sealed event service enum
+        event_enum,
+        //: invalid typed IR: noncanonical sealed service enum
+        service_enum,
+        //: IR: storage extent exceeds 65536 bytes
+        storage_extent,
+        //: IR: cyclic or excessive class storage depth
+        storage_depth,
+        //: IR: missing logical class storage shape
+        storage_shape,
+        //: IR: invalid class storage alignment
+        storage_alignment,
+        //: IR: invalid logical field range for storage
+        storage_field_range,
+        //: IR: owned byte field requires one non-scalar descriptor
+        storage_owner_shape,
+        //: IR: nested owning class fields are unsupported
+        storage_nested_owner,
+        //: IR: invalid nested field storage shape
+        storage_nested_shape,
+        //: IR: invalid scalar field storage shape
+        storage_scalar_shape,
+        //: IR: class storage exceeds 65536 bytes
+        storage_limit,
+        //: IR: class storage does not cover logical leaves
+        storage_coverage,
+        //: invalid typed IR: invalid canonical owned value type
+        owner_type,
+        //: invalid typed IR: owned value element requires known canonical class layout
+        owner_element_unknown,
+        //: invalid typed IR: owned value element must be a copied class, not an owner or carrier
+        owner_element_kind,
+        //: invalid typed IR: owned value element exceeds copied class leaf limits
+        owner_element_leaves,
+        //: invalid typed IR: owned value element storage exceeds 520 bytes
+        owner_element_storage,
+        //: invalid typed IR: composed or owning class storage exceeds 520 bytes
+        class_storage_limit,
+        //: invalid typed IR: noncanonical class storage metadata
+        supplied_storage
+    };
+    class ByteRange {
+        i64 firstByte;
+        i64 byteCount;
+    public:
+        ByteRange(i64 first, i64 count) : firstByte(first), byteCount(count) {}
+        auto begin() const -> i64 { return firstByte; }
+        auto count() const -> i64 { return byteCount; }
+    };
+    class IndexRange {
+        i64 firstIndex;
+        i64 indexCount;
+    public:
+        IndexRange(i64 first, i64 count) : firstIndex(first), indexCount(count) {}
+        auto begin() const -> i64 { return firstIndex; }
+        auto count() const -> i64 { return indexCount; }
+    };
+    class RawTypeTail {
+        i64 elementKind;
+        i64 arrayLength;
+        u64 elementParameterBytes;
+        u64 lengthParameterBytes;
+        u64 templateArgumentCount;
+    public:
+        RawTypeTail(i64 element, i64 length, u64 element_parameter, u64 length_parameter, u64 arguments) :
+            elementKind(element), arrayLength(length), elementParameterBytes(element_parameter),
+            lengthParameterBytes(length_parameter), templateArgumentCount(arguments) {}
+        auto element_kind() const -> i64 { return elementKind; }
+        auto length() const -> i64 { return arrayLength; }
+        auto element_parameter_bytes() const -> u64 { return elementParameterBytes; }
+        auto length_parameter_bytes() const -> u64 { return lengthParameterBytes; }
+        auto template_argument_count() const -> u64 { return templateArgumentCount; }
+    };
+    class RawTypeRow {
+        i64 typeKind;
+        ByteRange nameRange;
+        RawTypeTail rawTail;
+    public:
+        RawTypeRow(i64 kind, ByteRange name, RawTypeTail tail) : typeKind(kind), nameRange(name), rawTail(tail) {}
+        auto kind() const -> i64 { return typeKind; }
+        auto name() const -> ByteRange { const ByteRange result = nameRange; return result; }
+        auto tail() const -> RawTypeTail { const RawTypeTail result = rawTail; return result; }
+    };
+    class ClassRow {
+        ByteRange nameRange;
+        IndexRange leafRange;
+        IndexRange fieldRange;
+        i64 suppliedStorage;
+        i64 membershipBits;
+    public:
+        ClassRow(ByteRange name, IndexRange leaves, IndexRange fields, i64 supplied, i64 membership) :
+            nameRange(name), leafRange(leaves), fieldRange(fields), suppliedStorage(supplied),
+            membershipBits(membership) {}
+        auto name() const -> ByteRange { const ByteRange result = nameRange; return result; }
+        auto leaves() const -> IndexRange { const IndexRange result = leafRange; return result; }
+        auto fields() const -> IndexRange { const IndexRange result = fieldRange; return result; }
+        auto supplied_storage() const -> i64 { return suppliedStorage; }
+        auto membership() const -> i64 { return membershipBits; }
+    };
+    class FieldRow {
+        i64 typeIndex;
+        i64 firstLeaf;
+        i64 leafCount;
+        i64 arrayFlag;
+        i64 elementCount;
+    public:
+        FieldRow(i64 type, i64 first, i64 length, i64 array, i64 elements) : typeIndex(type), firstLeaf(first),
+            leafCount(length), arrayFlag(array), elementCount(elements) {}
+        auto type() const -> i64 { return typeIndex; }
+        auto first_leaf() const -> i64 { return firstLeaf; }
+        auto length() const -> i64 { return leafCount; }
+        auto array() const -> i64 { return arrayFlag; }
+        auto element_count() const -> i64 { return elementCount; }
+    };
+    class PhysicalExtent {
+        i64 sizeBytes;
+        i64 alignmentBytes;
+        i64 reservedBytes;
+    public:
+        PhysicalExtent(i64 size, i64 alignment, i64 reserved) : sizeBytes(size), alignmentBytes(alignment),
+            reservedBytes(reserved) {}
+        auto size_bytes() const -> i64 { return sizeBytes; }
+        auto alignment() const -> i64 { return alignmentBytes; }
+        auto reserved_bytes() const -> i64 { return reservedBytes; }
+    };
+    class StorageRow {
+        IndexRange leafOffsetRange;
+        IndexRange fieldOffsetRange;
+        PhysicalExtent physicalExtent;
+    public:
+        StorageRow(IndexRange leaves, IndexRange fields, PhysicalExtent extent) : leafOffsetRange(leaves),
+            fieldOffsetRange(fields), physicalExtent(extent) {}
+        auto leaf_offsets() const -> IndexRange { const IndexRange result = leafOffsetRange; return result; }
+        auto field_offsets() const -> IndexRange { const IndexRange result = fieldOffsetRange; return result; }
+        auto extent() const -> PhysicalExtent { const PhysicalExtent result = physicalExtent; return result; }
+    };
+    class IndexRow {
+        i64 indexValue;
+    public:
+        IndexRow(i64 value) : indexValue(value) {}
+        auto value() const -> i64 { return indexValue; }
+    };
+    class DescriptorRow {
+        i64 descriptorId;
+        i64 sizeValue;
+        i64 publicFieldCount;
+    public:
+        DescriptorRow(i64 id, i64 size, i64 fields) : descriptorId(id), sizeValue(size), publicFieldCount(fields) {}
+        auto id() const -> i64 { return descriptorId; }
+        auto size() const -> i64 { return sizeValue; }
+        auto public_fields() const -> i64 { return publicFieldCount; }
+    };
+    class ViewRow {
+        i64 moduleScope;
+        IndexRange descriptorRange;
+    public:
+        ViewRow(i64 scope, IndexRange descriptors) : moduleScope(scope), descriptorRange(descriptors) {}
+        auto scope() const -> i64 { return moduleScope; }
+        auto descriptors() const -> IndexRange { const IndexRange result = descriptorRange; return result; }
+    };
+    class EnumRow {
+        ByteRange nameRange;
+        i64 caseCount;
+    public:
+        EnumRow(ByteRange name, i64 cases) : nameRange(name), caseCount(cases) {}
+        auto name() const -> ByteRange { const ByteRange result = nameRange; return result; }
+        auto cases() const -> i64 { return caseCount; }
+    };
+    class ClassResultRow {
+        IndexRange fieldRange;
+        i64 canonicalStorage;
+        i64 nestingDepth;
+        i64 markValue;
+    public:
+        ClassResultRow(IndexRange fields, i64 storage, i64 depth, i64 mark) : fieldRange(fields),
+            canonicalStorage(storage), nestingDepth(depth), markValue(mark) {}
+        auto fields() const -> IndexRange { const IndexRange result = fieldRange; return result; }
+        auto canonical_storage() const -> i64 { return canonicalStorage; }
+        auto depth() const -> i64 { return nestingDepth; }
+        auto mark() const -> i64 { return markValue; }
+    };
+    class FrameRow {
+        i64 classIndex;
+        i64 nextField;
+        i64 pathDepth;
+    public:
+        FrameRow(i64 index, i64 next, i64 depth) : classIndex(index), nextField(next), pathDepth(depth) {}
+        auto class_index() const -> i64 { return classIndex; }
+        auto next_field() const -> i64 { return nextField; }
+        auto path_depth() const -> i64 { return pathDepth; }
+    };
+    class CoreCounts {
+        i64 bytes;
+        i64 types;
+        i64 classes;
+        i64 fields;
+        i64 leaves;
+    public:
+        CoreCounts(i64 byte_count, i64 type_count, i64 class_count, i64 field_count, i64 leaf_count) :
+            bytes(byte_count), types(type_count), classes(class_count), fields(field_count), leaves(leaf_count) {}
+        auto byte_count() const -> i64 { return bytes; }
+        auto type_count() const -> i64 { return types; }
+        auto class_count() const -> i64 { return classes; }
+        auto field_count() const -> i64 { return fields; }
+        auto leaf_count() const -> i64 { return leaves; }
+    };
+    class MapCounts {
+        i64 storage;
+        i64 indices;
+        i64 descriptors;
+        i64 views;
+        i64 enums;
+    public:
+        MapCounts(i64 storage_count, i64 index_count, i64 descriptor_count, i64 view_count, i64 enum_count) :
+            storage(storage_count), indices(index_count), descriptors(descriptor_count), views(view_count),
+            enums(enum_count) {}
+        auto storage_count() const -> i64 { return storage; }
+        auto index_count() const -> i64 { return indices; }
+        auto descriptor_count() const -> i64 { return descriptors; }
+        auto view_count() const -> i64 { return views; }
+        auto enum_count() const -> i64 { return enums; }
+    };
+    class InputCounts {
+        CoreCounts coreCounts;
+        MapCounts mapCounts;
+    public:
+        InputCounts(CoreCounts core, MapCounts maps) : coreCounts(core), mapCounts(maps) {}
+        auto byte_count() const -> i64 { const CoreCounts value = coreCounts; return value.byte_count(); }
+        auto type_count() const -> i64 { const CoreCounts value = coreCounts; return value.type_count(); }
+        auto class_count() const -> i64 { const CoreCounts value = coreCounts; return value.class_count(); }
+        auto field_count() const -> i64 { const CoreCounts value = coreCounts; return value.field_count(); }
+        auto leaf_count() const -> i64 { const CoreCounts value = coreCounts; return value.leaf_count(); }
+        auto storage_count() const -> i64 { const MapCounts value = mapCounts; return value.storage_count(); }
+        auto index_count() const -> i64 { const MapCounts value = mapCounts; return value.index_count(); }
+        auto descriptor_count() const -> i64 { const MapCounts value = mapCounts; return value.descriptor_count(); }
+        auto view_count() const -> i64 { const MapCounts value = mapCounts; return value.view_count(); }
+        auto enum_count() const -> i64 { const MapCounts value = mapCounts; return value.enum_count(); }
+    };
+    auto count_sum(i64 left, i64 right) -> i64 {
+        if (left < 0 || right < 0 || left > 9223372036854775807 - right) { return -1; }
+        return left + right;
+    }
+    auto field_capacity(InputCounts counts) -> i64 {
+        return count_sum(counts.field_count(), counts.leaf_count());
+    }
+    auto storage_capacity(InputCounts counts) -> i64 {
+        return count_sum(counts.storage_count(), counts.class_count());
+    }
+    auto index_capacity(InputCounts counts) -> i64 {
+        return count_sum(count_sum(counts.index_count(), counts.leaf_count()), field_capacity(counts));
+    }
+    auto valid_counts(InputCounts counts) -> bool {
+        return counts.byte_count() >= 0 && counts.type_count() >= 0 && counts.class_count() >= 0
+            && counts.field_count() >= 0 && counts.leaf_count() >= 0 && counts.storage_count() >= 0
+            && counts.index_count() >= 0 && counts.descriptor_count() >= 0 && counts.view_count() >= 0
+            && counts.enum_count() >= 0 && field_capacity(counts) == counts.type_count()
+            && storage_capacity(counts) >= 0 && index_capacity(counts) >= 0;
+    }
+    auto invalid_type() -> RawTypeRow {
+        return RawTypeRow(-1, ByteRange(-1, -1), RawTypeTail(-1, -1, 1u64, 1u64, 1u64));
+    }
+    auto invalid_class() -> ClassRow {
+        return ClassRow(ByteRange(-1, -1), IndexRange(-1, -1), IndexRange(-1, -1), -1, -1);
+    }
+    auto invalid_field() -> FieldRow { return FieldRow(-1, -1, -1, -1, -1); }
+    auto invalid_storage() -> StorageRow {
+        return StorageRow(IndexRange(-1, -1), IndexRange(-1, -1), PhysicalExtent(-1, -1, -1));
+    }
+    auto invalid_result() -> ClassResultRow { return ClassResultRow(IndexRange(-1, -1), -1, 0, 0); }
+    auto type_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<RawTypeRow> {
+        const RawTypeRow fill = invalid_type();
+        builtin::OwnedValues<RawTypeRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
+    auto class_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<ClassRow> {
+        const ClassRow fill = invalid_class();
+        builtin::OwnedValues<ClassRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
+    auto field_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<FieldRow> {
+        const FieldRow fill = invalid_field();
+        builtin::OwnedValues<FieldRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
+    auto storage_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<StorageRow> {
+        const StorageRow fill = invalid_storage();
+        builtin::OwnedValues<StorageRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
+    auto index_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<IndexRow> {
+        const IndexRow fill = IndexRow(-1);
+        builtin::OwnedValues<IndexRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
+    auto descriptor_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<DescriptorRow> {
+        const DescriptorRow fill = DescriptorRow(-1, -1, -1);
+        builtin::OwnedValues<DescriptorRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
+    auto view_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<ViewRow> {
+        const ViewRow fill = ViewRow(-1, IndexRange(-1, -1));
+        builtin::OwnedValues<ViewRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
+    auto enum_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<EnumRow> {
+        const EnumRow fill = EnumRow(ByteRange(-1, -1), -1);
+        builtin::OwnedValues<EnumRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
+    auto result_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<ClassResultRow> {
+        const ClassResultRow fill = invalid_result();
+        builtin::OwnedValues<ClassResultRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
+    auto frame_pool(builtin::ByteRegion region) -> builtin::OwnedValues<FrameRow> {
+        const FrameRow fill = FrameRow(-1, -1, -1);
+        builtin::OwnedValues<FrameRow> result = region.try_allocate(4, fill);
+        return move(result);
+    }
+    class MetadataStore {
+        builtin::OwnedBytes bytes;
+        builtin::OwnedValues<RawTypeRow> types;
+        builtin::OwnedValues<ClassRow> classes;
+        builtin::OwnedValues<FieldRow> fields;
+        builtin::OwnedValues<StorageRow> storage;
+        builtin::OwnedValues<IndexRow> indices;
+        builtin::OwnedValues<DescriptorRow> descriptors;
+        builtin::OwnedValues<ViewRow> views;
+        builtin::OwnedValues<EnumRow> enums;
+        builtin::OwnedValues<ClassResultRow> results;
+        builtin::OwnedValues<FrameRow> frames;
+        InputCounts inputCounts;
+        i64 fieldEnd;
+        i64 storageEnd;
+        i64 indexEnd;
+        i64 frameCount;
+        MetadataStatus statusValue;
+        MetadataError errorValue;
+        bool started;
+    public:
+        MetadataStore(builtin::ByteRegion region, InputCounts counts) : bytes(region.try_allocate(counts.byte_count())),
+            types(type_pool(region, counts.type_count())), classes(class_pool(region, counts.class_count())),
+            fields(field_pool(region, field_capacity(counts))), storage(storage_pool(region, storage_capacity(counts))),
+            indices(index_pool(region, index_capacity(counts))), descriptors(descriptor_pool(region, counts.descriptor_count())),
+            views(view_pool(region, counts.view_count())), enums(enum_pool(region, counts.enum_count())),
+            results(result_pool(region, counts.class_count())), frames(frame_pool(region)), inputCounts(counts),
+            fieldEnd(counts.field_count()), storageEnd(counts.storage_count()), indexEnd(counts.index_count()),
+            frameCount(0), statusValue(MetadataStatus::pending), errorValue(MetadataError::none), started(false) {}
+        auto initialize() -> bool {
+            if (started || statusValue != MetadataStatus::pending) { return false; }
+            const InputCounts counts = inputCounts;
+            if (!valid_counts(counts)) {
+                statusValue = MetadataStatus::invalid;
+                errorValue = MetadataError::integrity;
+            } else {
+                if (!allocated()) { statusValue = MetadataStatus::allocation; }
+            }
+            return statusValue == MetadataStatus::pending;
+        }
+        auto allocated() const -> bool {
+            const InputCounts counts = inputCounts;
+            return valid_counts(counts) && bytes.ok() && types.ok() && classes.ok() && fields.ok() && storage.ok()
+                && indices.ok() && descriptors.ok() && views.ok() && enums.ok() && results.ok() && frames.ok()
+                && bytes.size() == counts.byte_count() && types.size() == counts.type_count()
+                && classes.size() == counts.class_count() && fields.size() == field_capacity(counts)
+                && storage.size() == storage_capacity(counts) && indices.size() == index_capacity(counts)
+                && descriptors.size() == counts.descriptor_count() && views.size() == counts.view_count()
+                && enums.size() == counts.enum_count() && results.size() == counts.class_count() && frames.size() == 4;
+        }
+        auto status() const -> MetadataStatus { return statusValue; }
+        auto error() const -> MetadataError { return errorValue; }
+        auto writable() const -> bool { return started && statusValue == MetadataStatus::pending; }
+        auto begin() -> bool {
+            if (started || statusValue != MetadataStatus::pending || !allocated()) { return false; }
+            started = true;
+            return true;
+        }
+        auto reject(MetadataError reason) -> bool {
+            if (statusValue == MetadataStatus::pending) {
+                statusValue = MetadataStatus::invalid;
+                errorValue = reason;
+                if (reason == MetadataError::none) { errorValue = MetadataError::integrity; }
+            }
+            return false;
+        }
+        auto complete() -> bool {
+            if (!writable() || frameCount != 0) { return reject(MetadataError::integrity); }
+            statusValue = MetadataStatus::success;
+            return true;
+        }
+        auto byte_count() const -> i64 { const InputCounts counts = inputCounts; return counts.byte_count(); }
+        auto type_count() const -> i64 { const InputCounts counts = inputCounts; return counts.type_count(); }
+        auto class_count() const -> i64 { const InputCounts counts = inputCounts; return counts.class_count(); }
+        auto leaf_count() const -> i64 { const InputCounts counts = inputCounts; return counts.leaf_count(); }
+        auto input_field_count() const -> i64 { const InputCounts counts = inputCounts; return counts.field_count(); }
+        auto input_storage_count() const -> i64 { const InputCounts counts = inputCounts; return counts.storage_count(); }
+        auto input_index_count() const -> i64 { const InputCounts counts = inputCounts; return counts.index_count(); }
+        auto descriptor_count() const -> i64 { const InputCounts counts = inputCounts; return counts.descriptor_count(); }
+        auto view_count() const -> i64 { const InputCounts counts = inputCounts; return counts.view_count(); }
+        auto enum_count() const -> i64 { const InputCounts counts = inputCounts; return counts.enum_count(); }
+        auto field_count() const -> i64 { return fieldEnd; }
+        auto storage_count() const -> i64 { return storageEnd; }
+        auto index_count() const -> i64 { return indexEnd; }
+        auto frame_count() const -> i64 { return frameCount; }
+        auto byte_at(i64 index) const -> i64 {
+            if (index < 0 || index >= byte_count() || !bytes.ok()) { return -1; }
+            return i64(bytes.at(index));
+        }
+        auto type_at(i64 index) const -> RawTypeRow {
+            if (index < 0 || index >= type_count() || !types.ok()) {
+                const RawTypeRow invalid = invalid_type();
+                return invalid;
+            }
+            const RawTypeRow result = types.at(index);
+            return result;
+        }
+        auto class_at(i64 index) const -> ClassRow {
+            if (index < 0 || index >= class_count() || !classes.ok()) {
+                const ClassRow invalid = invalid_class();
+                return invalid;
+            }
+            const ClassRow result = classes.at(index);
+            return result;
+        }
+        auto field_at(i64 index) const -> FieldRow {
+            if (index < 0 || index >= fieldEnd || !fields.ok()) {
+                const FieldRow invalid = invalid_field();
+                return invalid;
+            }
+            const FieldRow result = fields.at(index);
+            return result;
+        }
+        auto storage_at(i64 index) const -> StorageRow {
+            if (index < 0 || index >= storageEnd || !storage.ok()) {
+                const StorageRow invalid = invalid_storage();
+                return invalid;
+            }
+            const StorageRow result = storage.at(index);
+            return result;
+        }
+        auto index_at(i64 index) const -> IndexRow {
+            if (index < 0 || index >= indexEnd || !indices.ok()) { return IndexRow(-1); }
+            const IndexRow result = indices.at(index);
+            return result;
+        }
+        auto descriptor_at(i64 index) const -> DescriptorRow {
+            if (index < 0 || index >= descriptor_count() || !descriptors.ok()) { return DescriptorRow(-1, -1, -1); }
+            const DescriptorRow result = descriptors.at(index);
+            return result;
+        }
+        auto view_at(i64 index) const -> ViewRow {
+            if (index < 0 || index >= view_count() || !views.ok()) { return ViewRow(-1, IndexRange(-1, -1)); }
+            const ViewRow result = views.at(index);
+            return result;
+        }
+        auto enum_at(i64 index) const -> EnumRow {
+            if (index < 0 || index >= enum_count() || !enums.ok()) { return EnumRow(ByteRange(-1, -1), -1); }
+            const EnumRow result = enums.at(index);
+            return result;
+        }
+        auto result_at(i64 index) const -> ClassResultRow {
+            if (index < 0 || index >= class_count() || !results.ok()) {
+                const ClassResultRow invalid = invalid_result();
+                return invalid;
+            }
+            const ClassResultRow result = results.at(index);
+            return result;
+        }
+        auto append_field(FieldRow value) -> i64 {
+            if (!writable() || fieldEnd < input_field_count() || fieldEnd >= fields.size()) {
+                reject(MetadataError::integrity);
+                return -1;
+            }
+            const i64 index = fieldEnd;
+            if (!fields.set(index, value)) { reject(MetadataError::integrity); return -1; }
+            fieldEnd = fieldEnd + 1;
+            return index;
+        }
+        auto append_storage(StorageRow value) -> i64 {
+            if (!writable() || storageEnd < input_storage_count() || storageEnd >= storage.size()) {
+                reject(MetadataError::integrity);
+                return -1;
+            }
+            const i64 index = storageEnd;
+            if (!storage.set(index, value)) { reject(MetadataError::integrity); return -1; }
+            storageEnd = storageEnd + 1;
+            return index;
+        }
+        auto reserve_indices(i64 count) -> i64 {
+            if (!writable() || count < 0 || indexEnd < input_index_count() || indexEnd > indices.size()
+                || count > indices.size() - indexEnd) { reject(MetadataError::integrity); return -1; }
+            const i64 first = indexEnd;
+            indexEnd = indexEnd + count;
+            return first;
+        }
+        auto set_index(i64 index, IndexRow value) -> bool {
+            if (!writable() || index < input_index_count() || index >= indexEnd || !indices.set(index, value)) {
+                return reject(MetadataError::integrity);
+            }
+            return true;
+        }
+        auto append_index(IndexRow value) -> i64 {
+            const i64 index = reserve_indices(1);
+            if (index < 0 || !set_index(index, value)) { return -1; }
+            return index;
+        }
+        auto set_result(i64 index, ClassResultRow value) -> bool {
+            if (!writable() || index < 0 || index >= class_count() || !results.set(index, value)) {
+                return reject(MetadataError::integrity);
+            }
+            return true;
+        }
+        auto frame_at(i64 index) const -> FrameRow {
+            if (index < 0 || index >= frameCount || !frames.ok()) { return FrameRow(-1, -1, -1); }
+            const FrameRow result = frames.at(index);
+            return result;
+        }
+        auto push_frame(FrameRow value) -> bool {
+            if (!writable() || frameCount < 0 || frameCount >= 4 || !frames.set(frameCount, value)) {
+                return reject(MetadataError::integrity);
+            }
+            frameCount = frameCount + 1;
+            return true;
+        }
+        auto set_frame(i64 index, FrameRow value) -> bool {
+            if (!writable() || index < 0 || index >= frameCount || !frames.set(index, value)) {
+                return reject(MetadataError::integrity);
+            }
+            return true;
+        }
+        auto pop_frame() -> bool {
+            if (!writable() || frameCount <= 0) { return reject(MetadataError::integrity); }
+            frameCount = frameCount - 1;
+            return true;
+        }
+    };
+    auto create(builtin::ByteRegion region, InputCounts counts) -> MetadataStore {
+        MetadataStore result = MetadataStore(region, counts);
+        result.initialize();
+        return move(result);
+    }
+    auto release(builtin::ByteRegion region, MetadataStore store) -> i64 { return 0; }
+}

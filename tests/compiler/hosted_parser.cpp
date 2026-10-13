@@ -3725,7 +3725,8 @@ void preambleEnumDiagnostics() {
 // Unresolved syntax comparisons stay above. The production boundary below is
 // independently checked typed IR, optional ABI observations and source-backed
 // diagnostics; no fixture reconstructs a resolved Program.
-const aurora::ir::Function &typedFunction(const aurora::ir::Module &module, const std::string &name) {
+template <class Module>
+const aurora::ir::Function &typedFunction(const Module &module, const std::string &name) {
     const auto found = std::find_if(module.functions.begin(), module.functions.end(), [&](const auto &function) {
         return function.name == name;
     });
@@ -3744,15 +3745,24 @@ std::string spanText(const aurora::SourceSpan &span) {
             "diagnostic source span escaped its immutable source");
     return span.source->text.substr(span.begin.offset, span.end.offset - span.begin.offset);
 }
-std::map<int, std::set<int>> nominalViews(const aurora::ir::Module &module) {
-    std::map<int, std::set<int>> result;
-    for (const auto &[scope, descriptors] : module.descriptorViews) {
-        auto &view = result[scope];
-        for (const auto id : descriptors)
-            if (id >= 100 && id < 1000000)
-                view.insert(id);
+bool nominalViews(const aurora::ir::Metadata &metadata, const std::map<int, std::set<int>> &expected) {
+    if (metadata.scopeCount() != expected.size())
+        return false;
+    auto scope = expected.begin();
+    for (std::size_t index = 0; index < metadata.scopeCount(); ++index, ++scope) {
+        if (metadata.scopeAt(index) != scope->first)
+            return false;
+        auto descriptor = scope->second.begin();
+        for (const auto id : metadata.visibleDescriptors(scope->first))
+            if (id >= 100 && id < 1000000) {
+                if (descriptor == scope->second.end() || *descriptor != id)
+                    return false;
+                ++descriptor;
+            }
+        if (descriptor != scope->second.end())
+            return false;
     }
-    return result;
+    return true;
 }
 void constantReturn(const aurora::ir::Function &function, std::int64_t value) {
     require(function.result == aurora::Type::I64 && function.parameters.empty() && function.code.size() == 2 &&
@@ -3804,6 +3814,7 @@ void resolvedModules() {
         return resolution.resolve({imported.id, main.id}, main.id, aurora::AnalysisMode::Lint, true);
     }();
     const auto &module = resolved.module.get();
+    const auto &metadata = resolved.module.metadata();
     const auto &abi = resolved.abiDeclarations;
     const std::string hidden = "__au_c_m1_4root_n0__d6Hidden", state = "__au_e_m1_4root_n0__d5State";
     const std::string leaf = "__au_c_m1_3dep_n1_3lib_d4Leaf", flag = "__au_e_m1_3dep_n1_3lib_d4Flag";
@@ -3819,12 +3830,14 @@ void resolvedModules() {
                                               "answer",
                                               "__au_k_m1_3dep_n2_3lib6Buffer_d6Buffer_t2_u8_v3",
                                               "__au_k_m1_3dep_n2_3lib6Buffer_d6Buffer_t2_u8_v4"};
-    require(module.functions.size() == retained.size() && module.classLayouts.size() == 4 &&
-                module.enumCases.size() == 2 && abi.records.size() == 4 && abi.enums.size() == 2 &&
-                abi.functions.size() == 9 && module.classArrayCarriers.empty(),
+    require(module.functions.size() == retained.size() && metadata.classCount() == 4 &&
+                metadata.enumCount() == 2 && abi.records.size() == 4 && abi.enums.size() == 2 &&
+                abi.functions.size() == 9,
             "typed output duplicated concrete instances or lost declarations");
     for (std::size_t index = 0; index < retained.size(); ++index)
         require(module.functions[index].name == retained[index], "retained concrete function order differs");
+    for (std::size_t index = 0; index < metadata.classCount(); ++index)
+        require(!metadata.isCarrier(metadata.classAt(index)), "typed output added an array carrier");
     const auto definitionSyntax = checkedProgram(aurora::lex(dependency));
     const auto &bufferSyntax = definitionSyntax.templates.at(0);
     require(bufferSyntax.methods.size() == 3, "source Buffer method inventory differs");
@@ -3833,7 +3846,8 @@ void resolvedModules() {
                 abi.records.at(hidden).members == std::vector<std::string>{"value"} &&
                 abi.enums.at(flag).members == std::vector<std::string>{"cold", "hot"} &&
                 abi.enums.at(state).members == std::vector<std::string>{"zero", "one"} &&
-                module.enumCases.at(flag) == 2 && module.enumCases.at(state) == 2,
+                metadata.enumCases(metadata.findEnum(flag).value()) == 2 &&
+                metadata.enumCases(metadata.findEnum(state).value()) == 2,
             "source ABI field/case order or concrete enum identity differs");
     for (std::size_t index = 0; index < measures.size(); ++index) {
         const auto &function = module.functions.at(index);
@@ -3844,15 +3858,18 @@ void resolvedModules() {
     }
     for (std::size_t index = 0; index < buffers.size(); ++index) {
         const auto capacity = static_cast<int>(index + 3);
-        const auto &fields = module.classFields.at(buffers[index]);
-        const auto &storage = module.classStorage.at(buffers[index]);
+        const auto id = metadata.findClass(buffers[index]).value();
+        const auto fields = metadata.fields(id);
+        const auto leaves = metadata.leaves(id);
+        const auto storage = metadata.storage(id);
         require(abi.records.at(buffers[index]).sourceName == "lib::Buffer" &&
                     abi.records.at(buffers[index]).members == std::vector<std::string>{"data"} &&
-                    module.classLayouts.at(buffers[index]) == std::vector<aurora::Type>(capacity, aurora::Type::U8) &&
+                    leaves.size() == static_cast<std::size_t>(capacity) &&
+                    std::all_of(leaves.begin(), leaves.end(), [](const auto &type) { return type == aurora::Type::U8; }) &&
                     fields.size() == 1 && fields[0].elementType == aurora::Type::U8 && fields[0].firstLeaf == 0 &&
                     fields[0].length == capacity && fields[0].array && fields[0].elementCount == 1 &&
                     storage.sizeBytes == capacity && storage.alignment == 1 && storage.reservedBytes == 8 &&
-                    storage.fieldOffsets == std::vector<int>{0},
+                    storage.fieldOffsets.size() == 1 && storage.fieldOffsets.at(0) == 0,
                 "concrete array instance lost its packed byte layout or ordered field metadata");
         const std::array<std::string, 3> names{
             "__au_k_m1_3dep_n2_3lib6Buffer_d6Buffer_t2_u8_v" + std::to_string(capacity),
@@ -3904,8 +3921,7 @@ void resolvedModules() {
     require(enumValues.size() == 1 && enumValues[0].type.isEnum() && enumValues[0].type.className == state &&
                 enumValues[0].caseIndex == 1,
             "typed enum expression lost its nominal identity or declaration ordinal");
-    require(nominalViews(module) ==
-                std::map<int, std::set<int>>{{0, {100, 101, 102, 103, 104, 105}}, {1, {100, 101, 102, 104}}},
+    require(nominalViews(metadata, {{0, {100, 101, 102, 103, 104, 105}}, {1, {100, 101, 102, 104}}}),
             "template argument authority leaked into runtime reflection views");
     require(resolved.lintDiagnostics.size() == 1 &&
                 resolved.lintDiagnostics[0].code == aurora::DiagnosticCode::UnreadLocal &&
@@ -3938,6 +3954,7 @@ void resolvedVisibility() {
         return resolution.resolve({types.id, functions.id, root.id}, root.id, aurora::AnalysisMode::Check, true);
     }();
     const auto &module = resolved.module.get();
+    const auto &metadata = resolved.module.metadata();
     const std::array<std::string, 3> overloads{"__au_o_m1_9functions_n0__d6choose_p1_295___au_c_m1_5types_n0__d4Leaf",
                                                "__au_o_m1_9functions_n0__d6choose_p1_20_",
                                                "__au_o_m1_9functions_n0__d6choose_p1_21_"};
@@ -3962,7 +3979,7 @@ void resolvedVisibility() {
     const auto calls = typedInstructions<aurora::ir::Call>(module.functions.back());
     require(calls.size() == 1 && calls[0].callee == overloads[1],
             "typed overload selection chose a hidden or signature-inaccessible candidate");
-    require(nominalViews(module) == std::map<int, std::set<int>>{{0, {}}, {1, {100, 101}}, {2, {100}}},
+    require(nominalViews(metadata, {{0, {}}, {1, {100, 101}}, {2, {100}}}),
             "reflection views lost an empty scope or granted private/transitive nominal types");
     ++cases;
 
@@ -3999,7 +4016,7 @@ void resolvedVisibility() {
             resolution.add(std::make_shared<const aurora::SourceText>("empty.au", "export module empty;"));
         return resolution.resolve({imported.id, root.id}, root.id, aurora::AnalysisMode::Lint);
     }();
-    require(nominalViews(empty.module.get()) == std::map<int, std::set<int>>{{0, {}}, {1, {}}} &&
+    require(nominalViews(empty.module.metadata(), {{0, {}}, {1, {}}}) &&
                 empty.abiDeclarations.records.empty() && empty.abiDeclarations.enums.empty() &&
                 empty.abiDeclarations.functions.empty() && empty.lintDiagnostics.size() == 1 && !retained.expired() &&
                 empty.lintDiagnostics[0].span.source == retained.lock() &&
@@ -4523,10 +4540,10 @@ void loweringImplementationSources(const std::vector<aurora::Token> &tokens,
 }
 
 void resolvedCompilerSources(char **paths) {
-    context = "all twenty-four real compiler modules through production typed lowering";
-    const std::array<std::size_t, 24> arguments{0,  1,  2,  15, 19, 20, 21, 32, 16, 33, 34, 17,
-                                                22, 23, 24, 25, 28, 29, 30, 31, 26, 27, 35, 18};
-    const std::array<std::string, 24> modules{"lexer",
+    context = "all twenty-six real compiler modules through production typed lowering";
+    const std::array<std::size_t, 26> arguments{0,  1,  2,  15, 19, 20, 21, 32, 16, 33, 34, 17, 22,
+                                                23, 24, 25, 28, 29, 30, 31, 26, 27, 35, 37, 38, 18};
+    const std::array<std::string, 26> modules{"lexer",
                                               "syntax_arena",
                                               "parser",
                                               "resolution_kinds",
@@ -4549,8 +4566,10 @@ void resolvedCompilerSources(char **paths) {
                                               "lowering_body",
                                               "lowering",
                                               "ir_graph",
+                                              "ir_metadata_storage",
+                                              "ir_metadata",
                                               "frontend"};
-    const std::array<std::vector<std::string>, 24> classNames{{
+    const std::array<std::vector<std::string>, 26> classNames{{
         {"Cursor", "Lexeme"},
         {"ParseFrame", "AstNode", "ChildEdge", "TypeSyntax", "SyntaxNode", "AstArena"},
         {"AdmissionConfig",
@@ -4583,11 +4602,30 @@ void resolvedCompilerSources(char **paths) {
         {"FunctionBodyResult"},
         {},
         {"FunctionRow", "IndexRow", "StateRow", "ReverseEdge", "FrameRow", "Input", "Workspace"},
+        {"ByteRange",
+         "IndexRange",
+         "RawTypeTail",
+         "RawTypeRow",
+         "ClassRow",
+         "FieldRow",
+         "PhysicalExtent",
+         "StorageRow",
+         "IndexRow",
+         "DescriptorRow",
+         "ViewRow",
+         "EnumRow",
+         "ClassResultRow",
+         "FrameRow",
+         "CoreCounts",
+         "MapCounts",
+         "InputCounts",
+         "MetadataStore"},
+        {},
         {},
     }};
     // Frontend's direct imports give this DFS postorder, independent of file argv.
-    std::array<aurora::Program, 24> syntax;
-    std::array<aurora::HostedModule, 24> headers;
+    std::array<aurora::Program, 26> syntax;
+    std::array<aurora::HostedModule, 26> headers;
     const auto resolved = [&] {
         aurora::HostedResolution resolution;
         for (std::size_t index = 0; index < modules.size(); ++index) {
@@ -4618,8 +4656,9 @@ void resolvedCompilerSources(char **paths) {
         return resolution.resolve(dependencyOrder, headers.back().id, aurora::AnalysisMode::Check, true);
     }();
     const auto &module = resolved.module.get();
+    const auto &metadata = resolved.module.metadata();
     const auto &abi = resolved.abiDeclarations;
-    require(module.descriptorViews.size() == modules.size() && resolved.lintDiagnostics.empty(),
+    require(metadata.scopeCount() == modules.size() && resolved.lintDiagnostics.empty(),
             "actual compiler typed graph omitted a scope or emitted lint in check mode");
     const auto native = [&](const auto &declarations, const std::string &name) -> const std::string & {
         const auto found = std::find_if(declarations.begin(), declarations.end(), [&](const auto &entry) {
@@ -4689,9 +4728,11 @@ void resolvedCompilerSources(char **paths) {
         for (const auto &source : syntax[index].classes) {
             const auto sourceName = qualified(source.scope, source.token.text);
             const auto &name = native(abi.records, sourceName);
-            const auto &shape = module.classFields.at(name);
+            const auto classId = metadata.findClass(name).value();
+            const auto shape = metadata.fields(classId);
+            const auto storage = metadata.storage(classId);
             require(identities.insert(name).second && shape.size() == source.fields.size() &&
-                        module.classStorage.contains(name),
+                        storage.fieldOffsets.size() == shape.size(),
                     "compiler class lost its nominal layout or logical field inventory");
             std::vector<std::string> names;
             for (const auto &field : source.fields)
@@ -4710,12 +4751,12 @@ void resolvedCompilerSources(char **paths) {
             for (const auto &value : source.cases)
                 names.push_back(value.text);
             require(identities.insert(name).second && abi.enums.at(name).members == names &&
-                        module.enumCases.at(name) == static_cast<int>(names.size()),
+                        metadata.enumCases(metadata.findEnum(name).value()) == static_cast<int>(names.size()),
                     "compiler enum source order or typed case count differs");
             ++enums;
         }
     }
-    require(enums == 35 && classes == 49 && fields > 228 && methods > 307 &&
+    require(enums == 38 && classes == 67 && fields > 228 && methods > 307 &&
                 retainedFunctions == module.functions.size() && functions == abi.functions.size() &&
                 sourceFunctionNames == abiFunctionNames,
             "real compiler typed graph omitted or appended an unaccounted declaration");
@@ -6533,7 +6574,7 @@ void rawAggregates() {
 int main(int argc, char **argv) {
     try {
         context = "fixture arguments";
-        require(argc == 38, "expected twenty-four compiler, six aggregate and seven typed consumer source paths");
+        require(argc == 40, "expected twenty-six compiler, six aggregate and seven typed consumer source paths");
         grammarExpectations();
         diagnosticExpectations();
         // Table rows cover ordinary semicolon inputs. Keep distinct trivia,

@@ -1,0 +1,825 @@
+export module aurora.compiler.ir_metadata;
+import aurora.compiler.ir_metadata_storage;
+
+// Independent verification of the actual native Module import. Raw prefixes
+// stay immutable; only normalized fields, offsets, storage and results append.
+// No lowering result, native canonicality bit or caller-supplied offset is proof.
+export namespace compiler_ir_metadata {
+    auto fail(MetadataStore& store, MetadataError reason) -> bool {
+        store.reject(reason);
+        return false;
+    }
+    auto index_range(IndexRange range, i64 limit) -> bool {
+        return range.begin() >= 0 && range.count() >= 0 && range.begin() <= limit
+            && range.count() <= limit - range.begin();
+    }
+    auto byte_range(ByteRange range, i64 limit) -> bool {
+        return range.begin() >= 0 && range.count() >= 0 && range.begin() <= limit
+            && range.count() <= limit - range.begin();
+    }
+    // Getter results cross a copied-argument boundary, never a temporary method
+    // receiver. The bootstrap language deliberately does not admit the latter.
+    auto range_begin(IndexRange range) -> i64 { return range.begin(); }
+    auto range_count(IndexRange range) -> i64 { return range.count(); }
+    auto name_length(ByteRange name) -> i64 { return name.count(); }
+    auto member(ClassRow row, i64 bit) -> bool { return (row.membership() & bit) != 0; }
+    // Byte-lexicographic order matches std::map<std::string, ...>, including
+    // embedded NUL and bytes above ASCII. Names are never C strings.
+    auto compare_names(const MetadataStore& store, ByteRange left, ByteRange right) -> i64 {
+        i64 at = 0;
+        while (at < left.count() && at < right.count()) {
+            const i64 a = store.byte_at(left.begin() + at);
+            const i64 b = store.byte_at(right.begin() + at);
+            if (a < b) { return -1; }
+            if (a > b) { return 1; }
+            at = at + 1;
+        }
+        if (left.count() < right.count()) { return -1; }
+        if (left.count() > right.count()) { return 1; }
+        return 0;
+    }
+    auto named(const MetadataStore& store, ByteRange name, builtin::span<const u8> expected) -> bool {
+        if (name.count() != expected.size()) { return false; }
+        i64 at = 0;
+        while (at < name.count()) {
+            if (store.byte_at(name.begin() + at) != i64(expected.at(at))) { return false; }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto find_class(const MetadataStore& store, ByteRange name) -> i64 {
+        i64 begin = 0;
+        i64 end = store.class_count();
+        while (begin < end) {
+            const i64 middle = begin + (end - begin) / 2;
+            const ClassRow row = store.class_at(middle);
+            const i64 order = compare_names(store, row.name(), name);
+            if (order == 0) { return middle; }
+            if (order < 0) { begin = middle + 1; } else { end = middle; }
+        }
+        return -1;
+    }
+    auto find_enum(const MetadataStore& store, ByteRange name) -> i64 {
+        i64 begin = 0;
+        i64 end = store.enum_count();
+        while (begin < end) {
+            const i64 middle = begin + (end - begin) / 2;
+            const EnumRow row = store.enum_at(middle);
+            const i64 order = compare_names(store, row.name(), name);
+            if (order == 0) { return middle; }
+            if (order < 0) { begin = middle + 1; } else { end = middle; }
+        }
+        return -1;
+    }
+    auto has_descriptor(const MetadataStore& store, i64 id) -> bool {
+        i64 begin = 0;
+        i64 end = store.descriptor_count();
+        while (begin < end) {
+            const i64 middle = begin + (end - begin) / 2;
+            const DescriptorRow row = store.descriptor_at(middle);
+            if (row.id() == id) { return true; }
+            if (row.id() < id) { begin = middle + 1; } else { end = middle; }
+        }
+        return false;
+    }
+    // Ordinals are pinned to the generated MetadataTypeKind facts at the host
+    // boundary. Keeping raw integers lets an unknown native TypeKind reject at
+    // the same predicate as any other noncanonical type, without enum traps.
+    auto canonical_tail(RawTypeRow type) -> bool {
+        const RawTypeTail tail = type.tail();
+        return tail.element_kind() == 0 && tail.length() == 0 && tail.element_parameter_bytes() == 0u64
+            && tail.length_parameter_bytes() == 0u64 && tail.template_argument_count() == 0u64;
+    }
+    auto scalar_type(RawTypeRow type) -> bool {
+        return (type.kind() == 0 || type.kind() == 1 || type.kind() == 7 || type.kind() == 10)
+            && name_length(type.name()) == 0 && canonical_tail(type);
+    }
+    auto scalar_value(const MetadataStore& store, RawTypeRow type) -> bool {
+        return scalar_type(type) || (type.kind() == 9 && canonical_tail(type) && find_enum(store, type.name()) >= 0);
+    }
+    auto owner_kind(RawTypeRow type) -> bool { return type.kind() == 13 || type.kind() == 17; }
+    auto owner_type(RawTypeRow type) -> bool {
+        return canonical_tail(type) && ((type.kind() == 13 && name_length(type.name()) == 0) || type.kind() == 17);
+    }
+    auto same_type(const MetadataStore& store, RawTypeRow left, RawTypeRow right) -> bool {
+        // Both operands were checked canonically before any use of this helper.
+        return left.kind() == right.kind() && compare_names(store, left.name(), right.name()) == 0;
+    }
+    auto owning_class(const MetadataStore& store, i64 class_index) -> bool {
+        if (class_index < 0) { return false; }
+        const ClassResultRow result = store.result_at(class_index);
+        const IndexRange fields = result.fields();
+        i64 at = 0;
+        while (at < fields.count()) {
+            const FieldRow field = store.field_at(fields.begin() + at);
+            const RawTypeRow type = store.type_at(field.type());
+            if (owner_kind(type)) { return true; }
+            at = at + 1;
+        }
+        return false;
+    }
+    auto copied_leaves(const MetadataStore& store, ClassRow row) -> bool {
+        const IndexRange leaves = row.leaves();
+        if (leaves.count() > 513) { return false; }
+        i64 bytes = 0;
+        i64 at = 0;
+        while (at < leaves.count()) {
+            const RawTypeRow type = store.type_at(leaves.begin() + at);
+            if (type.kind() == 10) { bytes = bytes + 1; }
+            at = at + 1;
+        }
+        return bytes <= 512 && leaves.count() - bytes <= 64;
+    }
+    auto scalar_array_limit(RawTypeRow type) -> i64 {
+        if (type.kind() == 10) { return 512; }
+        return 64;
+    }
+
+    // Check only transport here. In particular raw Type tails, nominal names,
+    // physical extents and semantic counts stay untouched until their original
+    // diagnostic position. All ranges are checked before their first read.
+    auto input_integrity(MetadataStore& store) -> bool {
+        if (store.leaf_count() < 0 || store.input_field_count() < 0
+            || store.type_count() - store.leaf_count() != store.input_field_count()) {
+            return fail(store, MetadataError::integrity);
+        }
+        i64 at = 0;
+        while (at < store.type_count()) {
+            const RawTypeRow type = store.type_at(at);
+            if (!byte_range(type.name(), store.byte_count())) { return fail(store, MetadataError::integrity); }
+            at = at + 1;
+        }
+        i64 next_leaf = 0;
+        i64 next_field = 0;
+        i64 next_storage = 0;
+        i64 next_index = 0;
+        at = 0;
+        while (at < store.class_count()) {
+            const ClassRow row = store.class_at(at);
+            if (!byte_range(row.name(), store.byte_count()) || row.membership() < 1 || row.membership() > 15
+                || !index_range(row.leaves(), store.leaf_count())
+                || !index_range(row.fields(), store.input_field_count()) || range_begin(row.leaves()) != next_leaf
+                || range_begin(row.fields()) != next_field || (!member(row, 1) && range_count(row.leaves()) != 0)
+                || (!member(row, 2) && range_count(row.fields()) != 0)) {
+                return fail(store, MetadataError::integrity);
+            }
+            if (at > 0) {
+                const ClassRow previous = store.class_at(at - 1);
+                if (compare_names(store, previous.name(), row.name()) >= 0) {
+                    return fail(store, MetadataError::integrity);
+                }
+            }
+            next_leaf = next_leaf + range_count(row.leaves());
+            next_field = next_field + range_count(row.fields());
+            if (member(row, 4)) {
+                if (row.supplied_storage() != next_storage || next_storage >= store.input_storage_count()) {
+                    return fail(store, MetadataError::integrity);
+                }
+                const StorageRow storage = store.storage_at(next_storage);
+                if (!index_range(storage.leaf_offsets(), store.input_index_count())
+                    || range_begin(storage.leaf_offsets()) != next_index) { return fail(store, MetadataError::integrity); }
+                next_index = next_index + range_count(storage.leaf_offsets());
+                if (!index_range(storage.field_offsets(), store.input_index_count())
+                    || range_begin(storage.field_offsets()) != next_index) { return fail(store, MetadataError::integrity); }
+                next_index = next_index + range_count(storage.field_offsets());
+                next_storage = next_storage + 1;
+            } else {
+                if (row.supplied_storage() != -1) { return fail(store, MetadataError::integrity); }
+            }
+            at = at + 1;
+        }
+        if (next_leaf != store.leaf_count() || next_field != store.input_field_count()
+            || next_storage != store.input_storage_count()) { return fail(store, MetadataError::integrity); }
+        at = 0;
+        while (at < store.input_field_count()) {
+            const FieldRow field = store.field_at(at);
+            if (field.type() != store.leaf_count() + at || (field.array() != 0 && field.array() != 1)) {
+                return fail(store, MetadataError::integrity);
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < store.descriptor_count()) {
+            if (at > 0) {
+                const DescriptorRow previous = store.descriptor_at(at - 1);
+                const DescriptorRow row = store.descriptor_at(at);
+                if (previous.id() >= row.id()) { return fail(store, MetadataError::integrity); }
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < store.view_count()) {
+            const ViewRow row = store.view_at(at);
+            if (!index_range(row.descriptors(), store.input_index_count()) || range_begin(row.descriptors()) != next_index) {
+                return fail(store, MetadataError::integrity);
+            }
+            if (at > 0) {
+                const ViewRow previous = store.view_at(at - 1);
+                if (previous.scope() >= row.scope()) { return fail(store, MetadataError::integrity); }
+            }
+            i64 entry = 1;
+            while (entry < range_count(row.descriptors())) {
+                const IndexRow previous = store.index_at(next_index + entry - 1);
+                const IndexRow value = store.index_at(next_index + entry);
+                if (previous.value() >= value.value()) { return fail(store, MetadataError::integrity); }
+                entry = entry + 1;
+            }
+            next_index = next_index + range_count(row.descriptors());
+            at = at + 1;
+        }
+        if (next_index != store.input_index_count()) { return fail(store, MetadataError::integrity); }
+        at = 0;
+        while (at < store.enum_count()) {
+            const EnumRow row = store.enum_at(at);
+            if (!byte_range(row.name(), store.byte_count())) { return fail(store, MetadataError::integrity); }
+            if (at > 0) {
+                const EnumRow previous = store.enum_at(at - 1);
+                if (compare_names(store, previous.name(), row.name()) >= 0) {
+                    return fail(store, MetadataError::integrity);
+                }
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+
+    auto verify_headers(MetadataStore& store) -> bool {
+        i64 at = 0;
+        while (at < store.descriptor_count()) {
+            const DescriptorRow row = store.descriptor_at(at);
+            if (row.id() <= 0 || row.size() < 0 || row.public_fields() < 0) {
+                return fail(store, MetadataError::descriptor);
+            }
+            at = at + 1;
+        }
+        bool root = false;
+        at = 0;
+        while (at < store.view_count()) {
+            const ViewRow row = store.view_at(at);
+            root = root || row.scope() == 0;
+            at = at + 1;
+        }
+        if (!root) { return fail(store, MetadataError::root_scope); }
+        at = 0;
+        while (at < store.view_count()) {
+            const ViewRow row = store.view_at(at);
+            if (row.scope() < 0 || row.scope() >= 64) { return fail(store, MetadataError::scope); }
+            i64 entry = 0;
+            while (entry < range_count(row.descriptors())) {
+                const IndexRow id = store.index_at(range_begin(row.descriptors()) + entry);
+                if (!has_descriptor(store, id.value())) { return fail(store, MetadataError::view_descriptor); }
+                entry = entry + 1;
+            }
+            at = at + 1;
+        }
+        if (store.enum_count() > 64) { return fail(store, MetadataError::enum_count); }
+        at = 0;
+        while (at < store.enum_count()) {
+            const EnumRow row = store.enum_at(at);
+            if (name_length(row.name()) == 0 || name_length(row.name()) > 4096 || row.cases() < 1 || row.cases() > 256) {
+                return fail(store, MetadataError::enum_declaration);
+            }
+            const i64 class_index = find_class(store, row.name());
+            if (class_index >= 0) {
+                const ClassRow declaration = store.class_at(class_index);
+                if (member(declaration, 1)) { return fail(store, MetadataError::nominal_overlap); }
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < store.class_count()) {
+            const ClassRow row = store.class_at(at);
+            if (member(row, 1)) {
+                if (name_length(row.name()) == 0 || name_length(row.name()) > 4096 || range_count(row.leaves()) > 8192) {
+                    return fail(store, MetadataError::class_layout);
+                }
+                i64 leaf = 0;
+                while (leaf < range_count(row.leaves())) {
+                    const RawTypeRow type = store.type_at(range_begin(row.leaves()) + leaf);
+                    if (!scalar_value(store, type)) { return fail(store, MetadataError::class_leaf); }
+                    leaf = leaf + 1;
+                }
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto normalize_fields(MetadataStore& store) -> bool {
+        i64 at = 0;
+        while (at < store.class_count()) {
+            const ClassRow row = store.class_at(at);
+            if (member(row, 2) && !member(row, 1)) { return fail(store, MetadataError::unknown_fields); }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < store.class_count()) {
+            const ClassRow row = store.class_at(at);
+            IndexRange fields = row.fields();
+            if (member(row, 1) && !member(row, 2)) {
+                const i64 begin = store.field_count();
+                i64 leaf = 0;
+                while (leaf < range_count(row.leaves())) {
+                    const FieldRow field = FieldRow(range_begin(row.leaves()) + leaf, leaf, 1, 0, 1);
+                    if (store.append_field(field) < 0) { return false; }
+                    leaf = leaf + 1;
+                }
+                const IndexRange synthesized = IndexRange(begin, range_count(row.leaves()));
+                fields = synthesized;
+            }
+            const ClassResultRow result = ClassResultRow(fields, -1, 0, 0);
+            if (!store.set_result(at, result)) { return false; }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto verify_fields(MetadataStore& store) -> bool {
+        i64 at = 0;
+        while (at < store.class_count()) {
+            const ClassRow row = store.class_at(at);
+            if (member(row, 1)) {
+                const ClassResultRow result = store.result_at(at);
+                const IndexRange fields = result.fields();
+                i64 next_leaf = 0;
+                bool composed = false;
+                i64 field_index = 0;
+                while (field_index < fields.count()) {
+                    const FieldRow field = store.field_at(fields.begin() + field_index);
+                    const RawTypeRow type = store.type_at(field.type());
+                    const bool child = type.kind() == 5;
+                    if (!(field.array() != 0 && child) && field.element_count() != 1) {
+                        return fail(store, MetadataError::field_element_count);
+                    }
+                    const i64 child_index = find_class(store, type.name());
+                    if (child && child_index >= 0) {
+                        const ClassRow child_row = store.class_at(child_index);
+                        if (member(child_row, 8)) { return fail(store, MetadataError::nested_carrier); }
+                    }
+                    if (field.first_leaf() < 0 || field.first_leaf() != next_leaf) {
+                        return fail(store, MetadataError::field_shape);
+                    }
+                    if (owner_kind(type)) {
+                        if (field.array() != 0 || field.length() != 0) { return fail(store, MetadataError::owner_leaves); }
+                        if (!owner_type(type)) { return fail(store, MetadataError::owner_field_type); }
+                    } else {
+                        if (child) {
+                            composed = true;
+                            if (owning_class(store, child_index)) { return fail(store, MetadataError::nested_owner); }
+                            if (!canonical_tail(type) || child_index < 0) { return fail(store, MetadataError::nested_type); }
+                            const ClassRow child_row = store.class_at(child_index);
+                            if (!member(child_row, 1)) { return fail(store, MetadataError::nested_type); }
+                            i64 count = 1;
+                            if (field.array() != 0) { count = field.element_count(); }
+                            if (count < 1 || count > 64) { return fail(store, MetadataError::class_array_count); }
+                            if (field.length() < 0 || field.length() > 513 || field.length() != range_count(child_row.leaves()) * count) {
+                                return fail(store, MetadataError::nested_length);
+                            }
+                            if (field.length() > range_count(row.leaves()) - next_leaf) { return fail(store, MetadataError::field_range); }
+                            i64 element = 0;
+                            while (element < count) {
+                                i64 leaf = 0;
+                                while (leaf < range_count(child_row.leaves())) {
+                                    const RawTypeRow left = store.type_at(range_begin(row.leaves()) + next_leaf
+                                        + element * range_count(child_row.leaves()) + leaf);
+                                    const RawTypeRow right = store.type_at(range_begin(child_row.leaves()) + leaf);
+                                    if (!same_type(store, left, right)) { return fail(store, MetadataError::nested_leaf); }
+                                    leaf = leaf + 1;
+                                }
+                                element = element + 1;
+                            }
+                        } else {
+                            bool valid = scalar_value(store, type);
+                            i64 maximum = 1;
+                            if (field.array() != 0) { valid = scalar_type(type); maximum = scalar_array_limit(type); }
+                            if (!valid || field.length() < 1 || field.length() > maximum) {
+                                return fail(store, MetadataError::field_shape);
+                            }
+                            if (field.length() > range_count(row.leaves()) - next_leaf) { return fail(store, MetadataError::field_range); }
+                            i64 leaf = 0;
+                            while (leaf < field.length()) {
+                                const RawTypeRow actual = store.type_at(range_begin(row.leaves()) + next_leaf + leaf);
+                                if (!same_type(store, actual, type)) { return fail(store, MetadataError::field_leaf); }
+                                leaf = leaf + 1;
+                            }
+                        }
+                    }
+                    next_leaf = next_leaf + field.length();
+                    field_index = field_index + 1;
+                }
+                if (next_leaf != range_count(row.leaves())) { return fail(store, MetadataError::leaf_coverage); }
+                if ((composed || owning_class(store, at)) && !copied_leaves(store, row)) {
+                    return fail(store, MetadataError::class_leaf_limit);
+                }
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+
+    auto verify_carriers(MetadataStore& store) -> bool {
+        i64 at = 0;
+        while (at < store.class_count()) {
+            const ClassRow row = store.class_at(at);
+            if (member(row, 8)) {
+                if (!member(row, 1)) { return fail(store, MetadataError::unknown_carrier); }
+                const ClassResultRow result = store.result_at(at);
+                const IndexRange fields = result.fields();
+                if (fields.count() != 1) { return fail(store, MetadataError::carrier_shape); }
+                const FieldRow field = store.field_at(fields.begin());
+                const RawTypeRow type = store.type_at(field.type());
+                if (field.array() == 0 || type.kind() != 5) { return fail(store, MetadataError::carrier_shape); }
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    // The mark and cached depth obey the old DFS order: cycle first, path bound
+    // second, cached-subtree bound third. This includes empty nested cycles.
+    auto enter_depth(MetadataStore& store, i64 class_index, i64 path) -> bool {
+        const ClassResultRow result = store.result_at(class_index);
+        if (result.mark() == 1) { return fail(store, MetadataError::cycle); }
+        if (path > 4) { return fail(store, MetadataError::depth); }
+        if (result.mark() == 2) {
+            if (path + result.depth() - 1 > 4) { return fail(store, MetadataError::depth); }
+            return true;
+        }
+        const ClassResultRow entered = ClassResultRow(result.fields(), -1, 1, 1);
+        const FrameRow frame = FrameRow(class_index, 0, path);
+        return store.set_result(class_index, entered) && store.push_frame(frame);
+    }
+    auto verify_depths(MetadataStore& store) -> bool {
+        i64 at = 0;
+        while (at < store.class_count()) {
+            const ClassRow row = store.class_at(at);
+            if (member(row, 1)) {
+                if (!enter_depth(store, at, 1)) { return false; }
+                while (store.frame_count() > 0) {
+                    const i64 top = store.frame_count() - 1;
+                    const FrameRow frame = store.frame_at(top);
+                    const ClassResultRow result = store.result_at(frame.class_index());
+                    const IndexRange fields = result.fields();
+                    if (frame.next_field() == fields.count()) {
+                        const ClassResultRow finished = ClassResultRow(fields, -1, result.depth(), 2);
+                        if (!store.set_result(frame.class_index(), finished) || !store.pop_frame()) { return false; }
+                    } else {
+                        const FieldRow field = store.field_at(fields.begin() + frame.next_field());
+                        const RawTypeRow type = store.type_at(field.type());
+                        bool advance = true;
+                        if (type.kind() == 5) {
+                            const i64 child = find_class(store, type.name());
+                            if (child < 0) { return fail(store, MetadataError::integrity); }
+                            const ClassResultRow child_result = store.result_at(child);
+                            if (!enter_depth(store, child, frame.path_depth() + 1)) { return false; }
+                            if (child_result.mark() != 2) {
+                                // Resume the same edge once the child has a cached depth.
+                                advance = false;
+                            } else {
+                                i64 depth = result.depth();
+                                if (1 + child_result.depth() > depth) { depth = 1 + child_result.depth(); }
+                                const ClassResultRow updated = ClassResultRow(fields, -1, depth, 1);
+                                if (!store.set_result(frame.class_index(), updated)) { return false; }
+                            }
+                        }
+                        if (advance) {
+                            const FrameRow next = FrameRow(frame.class_index(), frame.next_field() + 1, frame.path_depth());
+                            if (!store.set_frame(top, next)) { return false; }
+                        }
+                    }
+                }
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto sealed_class(MetadataStore& store, i64 class_index, bool event) -> bool {
+        const ClassRow row = store.class_at(class_index);
+        const IndexRange leaves = row.leaves();
+        i64 count = 3;
+        MetadataError layout_error = MetadataError::console_layout;
+        MetadataError fields_error = MetadataError::console_fields;
+        MetadataError shape_error = MetadataError::console_field_shape;
+        if (event) {
+            count = 4;
+            layout_error = MetadataError::event_layout;
+            fields_error = MetadataError::event_fields;
+            shape_error = MetadataError::event_field_shape;
+        }
+        if (leaves.count() != count) { return fail(store, layout_error); }
+        i64 at = 0;
+        while (at < count) {
+            const RawTypeRow type = store.type_at(leaves.begin() + at);
+            i64 expected = 1;
+            if (at == 1) { expected = 10; }
+            if (event) {
+                expected = 7;
+                if (at == 0) { expected = 9; }
+            }
+            if (type.kind() != expected) { return fail(store, layout_error); }
+            if (event && at == 0 && !named(store, type.name(), "__au_event_poll_result")) {
+                return fail(store, layout_error);
+            }
+            at = at + 1;
+        }
+        const ClassResultRow result = store.result_at(class_index);
+        const IndexRange fields = result.fields();
+        if (fields.count() != count) { return fail(store, fields_error); }
+        at = 0;
+        while (at < count) {
+            const FieldRow field = store.field_at(fields.begin() + at);
+            const RawTypeRow type = store.type_at(field.type());
+            const RawTypeRow leaf = store.type_at(leaves.begin() + at);
+            if (field.array() != 0 || field.first_leaf() != at || field.length() != 1 || !same_type(store, type, leaf)) {
+                return fail(store, shape_error);
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto sealed_enum(MetadataStore& store, builtin::span<const u8> name, i64 cases, bool event) -> bool {
+        i64 at = 0;
+        while (at < store.enum_count()) {
+            const EnumRow row = store.enum_at(at);
+            if (named(store, row.name(), name) && row.cases() != cases) {
+                if (event) { return fail(store, MetadataError::event_enum); }
+                return fail(store, MetadataError::service_enum);
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto verify_sealed(MetadataStore& store) -> bool {
+        // Preserve the service-contract order, rather than map-name order.
+        i64 at = 0;
+        while (at < store.class_count()) {
+            const ClassRow row = store.class_at(at);
+            if (member(row, 1) && named(store, row.name(), "__au_console_sample")) {
+                if (!sealed_class(store, at, false)) { return false; }
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < store.class_count()) {
+            const ClassRow row = store.class_at(at);
+            if (member(row, 1) && named(store, row.name(), "__au_iommu_event_sample")) {
+                if (!sealed_class(store, at, true)) { return false; }
+            }
+            at = at + 1;
+        }
+        return sealed_enum(store, "__au_event_poll_result", 4, true)
+            && sealed_enum(store, "__au_event_ack_result", 3, true)
+            && sealed_enum(store, "__au_event_intake_completion", 7, true)
+            && sealed_enum(store, "__au_console_put_result", 2, false)
+            && sealed_enum(store, "__au_console_completion", 2, false)
+            && sealed_enum(store, "__au_display_put_result", 2, false)
+            && sealed_enum(store, "__au_display_completion", 2, false);
+    }
+
+    // Children are complete before this computation starts. Offsets come only
+    // from checked logical fields and independent widths/alignment, never from
+    // the imported storage rows. Reserved index tails have input-derived size.
+    auto build_storage(MetadataStore& store, i64 class_index) -> bool {
+        const ClassRow row = store.class_at(class_index);
+        const ClassResultRow result = store.result_at(class_index);
+        const IndexRange leaves = row.leaves();
+        const IndexRange fields = result.fields();
+        const i64 leaf_begin = store.reserve_indices(leaves.count());
+        if (leaf_begin < 0) { return false; }
+        const i64 field_begin = store.reserve_indices(fields.count());
+        if (field_begin < 0) { return false; }
+        i64 cursor = 0;
+        i64 alignment = 1;
+        i64 leaf_count = 0;
+        i64 at = 0;
+        while (at < fields.count()) {
+            const FieldRow field = store.field_at(fields.begin() + at);
+            const RawTypeRow type = store.type_at(field.type());
+            if (field.first_leaf() != leaf_count || field.length() < 0
+                || (!(field.array() != 0 && type.kind() == 5) && field.element_count() != 1)) {
+                return fail(store, MetadataError::storage_field_range);
+            }
+            i64 field_alignment = 8;
+            i64 width = 8;
+            i64 count = 1;
+            i64 child_storage = -1;
+            bool empty = false;
+            if (owner_kind(type)) {
+                if (field.array() != 0 || field.length() != 0) { return fail(store, MetadataError::storage_owner_shape); }
+            } else {
+                if (type.kind() == 5) {
+                    const i64 child_index = find_class(store, type.name());
+                    if (child_index < 0) { return fail(store, MetadataError::storage_shape); }
+                    if (owning_class(store, child_index)) { return fail(store, MetadataError::storage_nested_owner); }
+                    const ClassResultRow child_result = store.result_at(child_index);
+                    child_storage = child_result.canonical_storage();
+                    if (child_storage < store.input_storage_count() || child_storage >= store.storage_count()) {
+                        return fail(store, MetadataError::storage_shape);
+                    }
+                    const StorageRow child = store.storage_at(child_storage);
+                    const IndexRange child_leaves = child.leaf_offsets();
+                    const PhysicalExtent extent = child.extent();
+                    if (field.array() != 0) { count = field.element_count(); }
+                    if (count < 1 || count > 64 || (field.array() == 0 && field.element_count() != 1)
+                        || field.length() != child_leaves.count() * count) {
+                        return fail(store, MetadataError::storage_nested_shape);
+                    }
+                    empty = child_leaves.count() == 0;
+                    field_alignment = extent.alignment();
+                    if (empty) { field_alignment = 1; }
+                } else {
+                    bool valid = scalar_type(type) || type.kind() == 9;
+                    if (field.array() != 0) { valid = scalar_type(type); }
+                    if (!valid || field.length() < 1 || (field.array() == 0 && field.length() != 1)
+                        || (field.array() != 0 && field.length() > scalar_array_limit(type))) {
+                        return fail(store, MetadataError::storage_scalar_shape);
+                    }
+                    if (type.kind() == 10) { field_alignment = 1; width = 1; }
+                }
+            }
+            if (field_alignment != 1 && field_alignment != 8) { return fail(store, MetadataError::storage_alignment); }
+            cursor = (cursor + field_alignment - 1) / field_alignment * field_alignment;
+            if (field_alignment > alignment) { alignment = field_alignment; }
+            const IndexRow field_offset = IndexRow(cursor);
+            if (!store.set_index(field_begin + at, field_offset)) { return false; }
+            if (owner_kind(type)) {
+                cursor = cursor + 32;
+            } else {
+                if (type.kind() == 5) {
+                    const StorageRow child = store.storage_at(child_storage);
+                    const IndexRange child_leaves = child.leaf_offsets();
+                    const PhysicalExtent extent = child.extent();
+                    i64 element = 0;
+                    while (element < count) {
+                        i64 leaf = 0;
+                        while (leaf < child_leaves.count()) {
+                            const IndexRow offset = store.index_at(child_leaves.begin() + leaf);
+                            const IndexRow value = IndexRow(cursor + element * extent.size_bytes() + offset.value());
+                            if (leaf_count >= leaves.count()) { return fail(store, MetadataError::storage_coverage); }
+                            if (!store.set_index(leaf_begin + leaf_count, value)) { return false; }
+                            leaf_count = leaf_count + 1;
+                            leaf = leaf + 1;
+                        }
+                        element = element + 1;
+                    }
+                    if (!empty) { cursor = cursor + count * extent.size_bytes(); }
+                } else {
+                    i64 leaf = 0;
+                    while (leaf < field.length()) {
+                        const IndexRow value = IndexRow(cursor);
+                        if (leaf_count >= leaves.count()) { return fail(store, MetadataError::storage_coverage); }
+                        if (!store.set_index(leaf_begin + leaf_count, value)) { return false; }
+                        leaf_count = leaf_count + 1;
+                        cursor = cursor + width;
+                        leaf = leaf + 1;
+                    }
+                }
+            }
+            if (cursor > 65536) { return fail(store, MetadataError::storage_limit); }
+            at = at + 1;
+        }
+        if (leaf_count != leaves.count()) { return fail(store, MetadataError::storage_coverage); }
+        if (cursor == 0) {
+            cursor = 8;
+            alignment = 8;
+        } else {
+            cursor = (cursor + alignment - 1) / alignment * alignment;
+        }
+        if (cursor < 0 || cursor > 65536) { return fail(store, MetadataError::storage_extent); }
+        const i64 reserved = (cursor + 7) / 8 * 8;
+        const IndexRange leaf_offsets = IndexRange(leaf_begin, leaf_count);
+        const IndexRange field_offsets = IndexRange(field_begin, fields.count());
+        const PhysicalExtent extent = PhysicalExtent(cursor, alignment, reserved);
+        const StorageRow storage = StorageRow(leaf_offsets, field_offsets, extent);
+        const i64 storage_index = store.append_storage(storage);
+        if (storage_index < 0) { return false; }
+        const ClassResultRow finished = ClassResultRow(fields, storage_index, result.depth(), result.mark());
+        return store.set_result(class_index, finished);
+    }
+    auto compute_storage(MetadataStore& store) -> bool {
+        i64 at = 0;
+        while (at < store.class_count()) {
+            const ClassRow row = store.class_at(at);
+            const ClassResultRow result = store.result_at(at);
+            if (member(row, 1) && result.canonical_storage() < 0) {
+                const FrameRow root = FrameRow(at, 0, 1);
+                if (!store.push_frame(root)) { return false; }
+                while (store.frame_count() > 0) {
+                    const i64 top = store.frame_count() - 1;
+                    const FrameRow frame = store.frame_at(top);
+                    const ClassResultRow current = store.result_at(frame.class_index());
+                    const IndexRange fields = current.fields();
+                    if (frame.next_field() == fields.count()) {
+                        if (!build_storage(store, frame.class_index()) || !store.pop_frame()) { return false; }
+                    } else {
+                        const FieldRow field = store.field_at(fields.begin() + frame.next_field());
+                        const RawTypeRow type = store.type_at(field.type());
+                        const FrameRow next = FrameRow(frame.class_index(), frame.next_field() + 1, frame.path_depth());
+                        if (!store.set_frame(top, next)) { return false; }
+                        if (type.kind() == 5) {
+                            const i64 child_index = find_class(store, type.name());
+                            if (child_index < 0) { return fail(store, MetadataError::storage_shape); }
+                            const ClassResultRow child = store.result_at(child_index);
+                            if (child.canonical_storage() < 0) {
+                                if (frame.path_depth() >= 4) { return fail(store, MetadataError::storage_depth); }
+                                const FrameRow pending = FrameRow(child_index, 0, frame.path_depth() + 1);
+                                if (!store.push_frame(pending)) { return false; }
+                            }
+                        }
+                    }
+                }
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto verify_owner_element(MetadataStore& store, RawTypeRow type) -> bool {
+        if (type.kind() == 13 && owner_type(type)) { return true; }
+        if (type.kind() != 17 || !owner_type(type)) { return fail(store, MetadataError::owner_type); }
+        const i64 class_index = find_class(store, type.name());
+        if (class_index < 0) { return fail(store, MetadataError::owner_element_unknown); }
+        const ClassRow row = store.class_at(class_index);
+        const ClassResultRow result = store.result_at(class_index);
+        if (!member(row, 1) || result.canonical_storage() < 0) { return fail(store, MetadataError::owner_element_unknown); }
+        if (owning_class(store, class_index) || member(row, 8)) { return fail(store, MetadataError::owner_element_kind); }
+        if (!copied_leaves(store, row)) { return fail(store, MetadataError::owner_element_leaves); }
+        const StorageRow storage = store.storage_at(result.canonical_storage());
+        const PhysicalExtent extent = storage.extent();
+        if (extent.size_bytes() < 1 || extent.size_bytes() > 520 || extent.reserved_bytes() > 520) {
+            return fail(store, MetadataError::owner_element_storage);
+        }
+        return true;
+    }
+    auto verify_storage_limits(MetadataStore& store) -> bool {
+        i64 at = 0;
+        while (at < store.class_count()) {
+            const ClassRow row = store.class_at(at);
+            if (member(row, 1)) {
+                const ClassResultRow result = store.result_at(at);
+                const IndexRange fields = result.fields();
+                bool composed = false;
+                i64 index = 0;
+                while (index < fields.count()) {
+                    const FieldRow field = store.field_at(fields.begin() + index);
+                    const RawTypeRow type = store.type_at(field.type());
+                    if (owner_kind(type) && !verify_owner_element(store, type)) { return false; }
+                    composed = composed || type.kind() == 5;
+                    index = index + 1;
+                }
+                const StorageRow storage = store.storage_at(result.canonical_storage());
+                const PhysicalExtent extent = storage.extent();
+                if ((composed || owning_class(store, at)) && extent.reserved_bytes() > 520) {
+                    return fail(store, MetadataError::class_storage_limit);
+                }
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto same_indices(const MetadataStore& store, IndexRange left, IndexRange right) -> bool {
+        if (left.count() != right.count()) { return false; }
+        i64 at = 0;
+        while (at < left.count()) {
+            const IndexRow a = store.index_at(left.begin() + at);
+            const IndexRow b = store.index_at(right.begin() + at);
+            if (a.value() != b.value()) { return false; }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto verify_supplied_storage(MetadataStore& store) -> bool {
+        if (store.input_storage_count() == 0) { return true; }
+        i64 at = 0;
+        while (at < store.class_count()) {
+            const ClassRow row = store.class_at(at);
+            if (member(row, 1) != member(row, 4)) { return fail(store, MetadataError::supplied_storage); }
+            if (member(row, 1)) {
+                const ClassResultRow result = store.result_at(at);
+                const StorageRow supplied = store.storage_at(row.supplied_storage());
+                const StorageRow canonical = store.storage_at(result.canonical_storage());
+                const PhysicalExtent a = supplied.extent();
+                const PhysicalExtent b = canonical.extent();
+                if (a.size_bytes() != b.size_bytes() || a.alignment() != b.alignment()
+                    || a.reserved_bytes() != b.reserved_bytes()
+                    || !same_indices(store, supplied.leaf_offsets(), canonical.leaf_offsets())
+                    || !same_indices(store, supplied.field_offsets(), canonical.field_offsets())) {
+                    return fail(store, MetadataError::supplied_storage);
+                }
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto run(MetadataStore& store) -> MetadataStatus {
+        if (store.status() != MetadataStatus::pending) { return store.status(); }
+        if (!store.allocated()) {
+            store.initialize();
+            return store.status();
+        }
+        if (!store.begin()) { return store.status(); }
+        if (!input_integrity(store) || !verify_headers(store) || !normalize_fields(store) || !verify_fields(store)
+            || !verify_carriers(store) || !verify_depths(store) || !verify_sealed(store) || !compute_storage(store)
+            || !verify_storage_limits(store) || !verify_supplied_storage(store) || !store.complete()) {
+            if (store.status() == MetadataStatus::pending) { store.reject(MetadataError::integrity); }
+            return store.status();
+        }
+        return store.status();
+    }
+}

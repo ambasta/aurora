@@ -1,6 +1,7 @@
 // Independent logical-shape, move-only and resource ABI fixtures. All byte
 // offsets below are literal expectations, not production layout-helper results.
 #include "ir_verify.hpp"
+#include "hosted_resolver.hpp"
 #include "x86.hpp"
 #include <functional>
 #include <iostream>
@@ -665,6 +666,65 @@ void copiedResourceTests() {
     });
 }
 
+void metadataLifetimeTests() {
+    static_assert(!std::is_copy_constructible_v<ValidatedModule>);
+    static_assert(std::is_move_constructible_v<ValidatedModule>);
+    static_assert(!std::is_constructible_v<ValidatedModule, std::vector<IRFunction>, std::unique_ptr<Metadata>>);
+    auto input = moving();
+    input.descriptors = {{7, {88, 5}}};
+    input.descriptorViews = {{0, {7}}};
+    input.enumCases = {{"Phase", 2}};
+    auto checked = validate(input);
+    const auto independent = validate(input);
+    const auto *identity = &checked.metadata();
+    const auto parcelId = checked.metadata().findClass("Parcel").value();
+    const auto leaves = checked.metadata().leaves(parcelId);
+    const auto fields = checked.metadata().fields(parcelId);
+    const auto offsets = checked.metadata().storage(parcelId).fieldOffsets;
+    const auto visible = checked.metadata().visibleDescriptors(0);
+    AbiDeclarations declarations;
+    declarations.records["Parcel"] = {"Parcel", {"tag", "first", "value", "second", "tail"}};
+    declarations.enums["Phase"] = {"Phase", {"ready", "done"}};
+    declarations.functions["owning_entry"] = {"owning_entry", {}};
+    X86Emitter emitter;
+    const auto assembly = emitter.emit(checked);
+    const auto facts = emitter.abiFactsJson(checked, declarations);
+    // Drop every hostile ingress container, then move only the capsule's native
+    // owning handle. Previously acquired views still read that same source owner.
+    input = Module{};
+    auto moved = std::move(checked);
+    bool movedFromRejected = false;
+    try {
+        (void)checked.metadata();
+    } catch (const Error &error) {
+        movedFromRejected = std::string(error.what()) == "metadata access on moved-from validated module";
+    }
+    require(movedFromRejected, "moved-from validated module did not reject metadata access");
+    ++rejected;
+    require(&moved.metadata() == identity, "validated move changed metadata identity");
+    require(leaves.size() == 3 && leaves[0] == Type::U8 && leaves[1] == Type::U64 &&
+                leaves[2] == Type::U8 && fields.size() == 5 && fields[1].elementType == Type::OwnedBytes &&
+                offsets.size() == 5 && offsets[1] == 8 && offsets[3] == 48 && visible.size() == 1 && visible[0] == 7,
+            "metadata views did not survive ingress destruction and validated move");
+    auto copiedField = fields[1];
+    copiedField.elementType = Type::U64;
+    require(copiedField.elementType == Type::U64 && fields[1].elementType == Type::OwnedBytes,
+            "metadata field observation exposed mutable source storage");
+    require(emitter.abiFactsJson(moved, declarations) == facts,
+            "ABI facts lost same-owner identity after validated move");
+    require(X86Emitter{}.emit(moved) == assembly, "validated move changed emitted assembly");
+    ++accepted;
+    try {
+        (void)emitter.abiFactsJson(independent, declarations);
+    } catch (const Error &error) {
+        require(std::string(error.what()) == "ABI facts require the same emitted module",
+                "independent metadata owner produced wrong ABI identity diagnostic");
+        ++rejected;
+        return;
+    }
+    throw Error("independent equal metadata owner passed emitted-module identity guard");
+}
+
 void layoutTests() {
     accept("literal two-descriptor layout", moving());
     accept("descriptor-only class is not empty", descriptorOnly());
@@ -672,7 +732,25 @@ void layoutTests() {
     auto inferred = moving();
     inferred.classStorage.clear();
     const auto verified = validate(std::move(inferred));
-    require(verified.get().classStorage == shapes().classStorage, "inferred layout differs from literal oracle");
+    const auto expected = shapes().classStorage;
+    const auto &metadata = verified.metadata();
+    require(metadata.classCount() == expected.size(), "inferred layout class count differs from literal oracle");
+    for (const auto &[name, layout] : expected) {
+        const auto id = metadata.findClass(name);
+        require(id.has_value(), "inferred layout missing literal oracle class");
+        const auto storage = metadata.storage(*id);
+        require(storage.sizeBytes == layout.sizeBytes && storage.alignment == layout.alignment &&
+                    storage.reservedBytes == layout.reservedBytes &&
+                    storage.leafOffsets.size() == layout.leafOffsets.size() &&
+                    storage.fieldOffsets.size() == layout.fieldOffsets.size(),
+                "inferred layout extent differs from literal oracle");
+        for (std::size_t index = 0; index < layout.leafOffsets.size(); ++index)
+            require(storage.leafOffsets[index] == layout.leafOffsets[index],
+                    "inferred leaf offset differs from literal oracle");
+        for (std::size_t index = 0; index < layout.fieldOffsets.size(); ++index)
+            require(storage.fieldOffsets[index] == layout.fieldOffsets[index],
+                    "inferred field offset differs from literal oracle");
+    }
     ++accepted;
     for (int field : {1, 3}) {
         reject("descriptor overlaps scalar payload", moving(), [=](Module &m) {
@@ -1214,6 +1292,7 @@ int main(int argc, char **argv) {
                 "usage: owning_classes_ir [--emit-abi construct|construct-odd|construct-even|six|method|copied|move|"
                 "resize-first|resize-odd|resize-even|resize-failed|resize-move|copied-resource|"
                 "construct-produced|construct-produced-odd|construct-produced-even]");
+        metadataLifetimeTests();
         layoutTests();
         ownershipTests();
         resizeFieldTests();

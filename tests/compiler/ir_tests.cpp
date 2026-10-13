@@ -2427,7 +2427,10 @@ Module packedMethodModule() {
     module.classLayouts["Outer"][3] = Type::U8;
     module.classFields["Leaf"][1].elementType = Type::U8;
     module.classFields["Empty"] = {};
-    const auto physical = computeClassStorageLayouts(module.classLayouts, module.classFields);
+    // An independent oracle, not the implementation under test.
+    const std::map<std::string, ClassStorage> physical = {{"Empty", {{}, {}, 8, 8, 8}},
+                                                           {"Leaf", {{0, 8, 9, 16}, {0, 8, 16, 24}, 24, 8, 24}},
+                                                           {"Outer", {{0, 8, 16, 17, 24}, {0, 8, 32}, 32, 8, 32}}};
     for (auto &function : module.functions) {
         std::map<int, std::pair<int, Type>> remap;
         for (const auto &[base, object] : function.objectSlots) {
@@ -2539,18 +2542,33 @@ Module packedMethodModule() {
     module.functions.push_back(tiny);
     return module;
 }
+bool storageMatches(StorageView actual, const ClassStorage &expected) {
+    return actual.sizeBytes == expected.sizeBytes && actual.alignment == expected.alignment &&
+           actual.reservedBytes == expected.reservedBytes &&
+           std::equal(actual.leafOffsets.begin(), actual.leafOffsets.end(),
+                      expected.leafOffsets.begin(), expected.leafOffsets.end()) &&
+           std::equal(actual.fieldOffsets.begin(), actual.fieldOffsets.end(),
+                      expected.fieldOffsets.begin(), expected.fieldOffsets.end());
+}
 void packedStorageTests() {
     const auto module = packedMethodModule();
     accept("packed bytes preserve composed receiver/results and tiny aggregate", module);
-    const auto checked = validate(module).get();
+    const auto validated = validate(module);
     const std::map<std::string, ClassStorage> expected = {{"Empty", {{}, {}, 8, 8, 8}},
                                                           {"Leaf", {{0, 8, 9, 16}, {0, 8, 16, 24}, 24, 8, 24}},
                                                           {"Outer", {{0, 8, 16, 17, 24}, {0, 8, 32}, 32, 8, 32}},
                                                           {"Tiny", {{0, 1, 2}, {0}, 3, 1, 8}}};
-    if (checked.classStorage != expected)
-        throw Error("packed class storage does not match explicit byte layout oracle");
+    if (validated.metadata().classCount() != expected.size())
+        throw Error("packed class storage has unexpected class count");
+    for (const auto &[name, storage] : expected) {
+        const auto id = validated.metadata().findClass(name);
+        if (!id || !storageMatches(validated.metadata().storage(*id), storage))
+            throw Error("packed class storage does not match explicit byte layout oracle");
+    }
     ++passed;
     std::cout << "PASS IR canonical mixed/nested/empty/tiny class byte layout\n";
+    auto checked = module;
+    checked.classStorage = expected;
     accept("explicit canonical class storage metadata", checked);
     for (const auto &name : {"Empty", "Leaf", "Outer", "Tiny"}) {
         for (const auto member : {&ClassStorage::sizeBytes, &ClassStorage::alignment, &ClassStorage::reservedBytes})
@@ -2647,8 +2665,10 @@ void packedStorageTests() {
     emptyChild.classLayouts["ByteEmpty"] = {Type::U8, Type::U8};
     emptyChild.classFields["ByteEmpty"] = {
         {Type::U8, 0, 1, false}, {Type("EmptyShell"), 1, 0, false}, {Type::U8, 1, 1, false}};
-    const auto emptyChecked = validate(emptyChild).get();
-    if (emptyChecked.classStorage.at("ByteEmpty") != ClassStorage{{0, 1}, {0, 1, 1}, 2, 1, 8})
+    const auto emptyChecked = validate(emptyChild);
+    const auto byteEmpty = emptyChecked.metadata().findClass("ByteEmpty");
+    if (!byteEmpty || !storageMatches(emptyChecked.metadata().storage(*byteEmpty),
+                                     ClassStorage{{0, 1}, {0, 1, 1}, 2, 1, 8}))
         throw Error("empty descendant introduced physical payload or alignment");
     ++passed;
     std::cout << "PASS IR zero-leaf descendants retain logical shape without byte payload\n";
@@ -4074,7 +4094,8 @@ void initializationPayloadMetricTests() {
         function.code.push_back(Return{});
         std::map<std::string, const aurora::ir::Function *> functions{{function.name, &function}};
         verification::Metrics metrics;
-        verification::verifyFunction(function, functions, &metrics);
+        const auto metadata = Metadata::import(Module{});
+        verification::verifyFunction(function, functions, *metadata, &metrics);
         const auto count = static_cast<std::size_t>(slotCount);
         const auto words = count / 64 + (count % 64 != 0);
         if (metrics.snapshots != 7 || metrics.peakOperandDepth != 0 || metrics.peakRetainedValueFacts != 12 * count ||
@@ -4085,6 +4106,128 @@ void initializationPayloadMetricTests() {
                   << ", retained facts=" << metrics.peakRetainedValueFacts
                   << ", initialization payload bytes=" << metrics.peakRetainedInitializationPayloadBytes << '\n';
     }
+}
+
+void metadataOwnerTests() {
+    auto source = baseline();
+    const std::string binaryName("A\0\xff", 3);
+    const std::string highName("\xff", 1);
+    source.classLayouts[binaryName] = {Type::U8, Type::I64};
+    source.classLayouts[highName] = {};
+    source.classLayouts["Empty"] = {};
+    source.classFields["Empty"] = {};
+    source.enumCases["Mode"] = 2;
+    source.descriptors[7] = Descriptor{16, 2};
+    source.descriptorViews[0] = {7};
+    const auto checked = validate(source);
+    source.classLayouts.clear();
+    source.classFields.clear();
+    source.classStorage.clear();
+    source.enumCases.clear();
+    source.descriptors.clear();
+    source.descriptorViews.clear();
+    const auto &metadata = checked.metadata();
+    const auto binary = metadata.findClass(binaryName);
+    const auto high = metadata.findClass(highName);
+    const auto empty = metadata.findClass("Empty");
+    const auto mode = metadata.findEnum("Mode");
+    const auto descriptor = metadata.findDescriptor(7);
+    if (!binary || !high || !empty || !mode || metadata.className(*binary) != binaryName ||
+        metadata.className(*high) != highName || *high <= *empty ||
+        metadata.leaves(*binary).size() != 2 || metadata.leaves(*binary).at(0) != Type::U8 ||
+        metadata.fields(*binary).size() != 2 || metadata.fields(*binary).at(1).firstLeaf != 1 ||
+        metadata.fields(*binary).at(1).elementType != Type::I64 || !metadata.fields(*empty).empty() ||
+        !storageMatches(metadata.storage(*binary), ClassStorage{{0, 8}, {0, 8}, 16, 8, 16}) ||
+        !storageMatches(metadata.storage(*empty), ClassStorage{{}, {}, 8, 8, 8}) ||
+        metadata.enumCases(*mode) != 2 || !descriptor || descriptor->size != 16 ||
+        metadata.visibleDescriptors(0).size() != 1 || metadata.visibleDescriptors(0).at(0) != 7)
+        throw Error("durable metadata lost normalized fields, byte names or independent input lifetime");
+    ++passed;
+    std::cout << "PASS IR durable metadata preserves normalized fields and exact byte names\n";
+
+    const std::vector<std::pair<std::string, std::function<void(Type &)>>> noncanonical = {
+        {"unknown kind", [](Type &type) { type.kind = static_cast<TypeKind>(99); }},
+        {"unknown element kind", [](Type &type) { type.elementKind = static_cast<TypeKind>(99); }},
+        {"length", [](Type &type) { type.length = 1; }},
+        {"element parameter", [](Type &type) { type.elementParameter = "T"; }},
+        {"length parameter", [](Type &type) { type.lengthParameter = "N"; }},
+        {"template arguments", [](Type &type) { type.templateArguments = {TypeKind::I64}; }},
+        {"scalar nominal tail", [](Type &type) { type.className = "Unexpected"; }}};
+    for (const auto &[name, mutate] : noncanonical) {
+        reject("metadata raw leaf " + name, [&](Module &module) {
+            module.classLayouts["Leaf"] = {Type::I64};
+            mutate(module.classLayouts["Leaf"][0]);
+        }, "non-scalar class layout field");
+        reject("metadata raw logical field " + name, [&](Module &module) {
+            module.classLayouts["Leaf"] = {Type::I64};
+            module.classFields["Leaf"] = {{Type::I64, 0, 1, false}};
+            mutate(module.classFields["Leaf"][0].elementType);
+        }, "invalid logical class field shape");
+    }
+    auto provenance = baseline();
+    auto leaf = Type::U8;
+    leaf.displayName = "diagnostic spelling";
+    leaf.resolvedClass = true;
+    provenance.classLayouts["Leaf"] = {leaf};
+    accept("metadata ignores nonsemantic Type display and provenance", provenance);
+
+    reject("metadata descriptor precedes raw type tail", [](Module &module) {
+        module.descriptors[0] = Descriptor{0, 0};
+        module.classLayouts["Leaf"] = {Type::I64};
+        module.classLayouts["Leaf"][0].lengthParameter = "N";
+    }, "invalid metadata descriptor");
+    reject("metadata root scope precedes invalid enum", [](Module &module) {
+        module.descriptorViews.clear();
+        module.enumCases[""] = 0;
+    }, "missing root reflection scope");
+    reject("metadata enum limit precedes invalid enum shape", [](Module &module) {
+        module.enumCases[""] = 0;
+        for (int index = 0; index < 64; ++index)
+            module.enumCases["E" + std::to_string(index)] = 1;
+    }, "too many enum declarations");
+    reject("metadata unknown logical key precedes field normalization", [](Module &module) {
+        module.classLayouts["A"] = {Type::I64};
+        module.classFields["Z"] = {};
+    }, "logical fields reference unknown class layout");
+    reject("metadata nested carrier precedes field shape and raw tail", [](Module &module) {
+        module.classLayouts["AParent"] = {};
+        module.classLayouts["Empty"] = {};
+        module.classLayouts["ZCarrier"] = {};
+        module.classFields["AParent"] = {{Type("ZCarrier"), 1, 0, false}};
+        module.classFields["AParent"][0].elementType.length = 1;
+        module.classFields["ZCarrier"] = {{Type("Empty"), 0, 0, true, 1}};
+        module.classArrayCarriers.insert("ZCarrier");
+    }, "class array carrier cannot be nested element type");
+    reject("metadata owning child precedes nested canonical type", [](Module &module) {
+        module.classLayouts["AParent"] = {};
+        module.classLayouts["ZOwner"] = {};
+        module.classFields["AParent"] = {{Type("ZOwner"), 0, 0, false}};
+        module.classFields["AParent"][0].elementType.templateArguments = {TypeKind::I64};
+        module.classFields["ZOwner"] = {{Type::OwnedBytes, 0, 0, false}};
+    }, "nested owning class field is unsupported");
+    reject("metadata cycle precedes fifth-level depth error", [](Module &module) {
+        for (const auto &name : {"A", "B", "C", "D"})
+            module.classLayouts[name] = {};
+        module.classFields["A"] = {{Type("B"), 0, 0, false}};
+        module.classFields["B"] = {{Type("C"), 0, 0, false}};
+        module.classFields["C"] = {{Type("D"), 0, 0, false}};
+        module.classFields["D"] = {{Type("A"), 0, 0, false}};
+    }, "cyclic nested class layout");
+    reject("metadata sealed shape precedes supplied physical map", [](Module &module) {
+        const auto name = std::string(service::sampleName);
+        module.classLayouts[name] = {Type::Bool, Type::U8, Type::Bool};
+        module.classFields[name] = {{Type::Bool, 0, 1, true}, {Type::U8, 1, 1, false},
+                                   {Type::Bool, 2, 1, false}};
+        module.classStorage["Unknown"] = ClassStorage{};
+    }, "noncanonical sealed ConsoleSample field shape");
+    reject("metadata owning storage limit precedes supplied physical map", [](Module &module) {
+        module.classLayouts["Owner"] = {};
+        module.classFields["Owner"] = std::vector<ClassField>(17, {Type::OwnedBytes, 0, 0, false});
+        module.classStorage["Unknown"] = ClassStorage{};
+    }, "composed or owning class storage exceeds 520 bytes");
+    reject("metadata standalone supplied key survives union import", [](Module &module) {
+        module.classStorage["Unknown"] = ClassStorage{{}, {}, 8, 8, 8};
+    }, "noncanonical class storage metadata");
 }
 
 } // namespace
@@ -4129,6 +4272,7 @@ int main(int argc, char **argv) {
         unsignedTests();
         byteTests();
         packedStorageTests();
+        metadataOwnerTests();
         initializationPayloadMetricTests();
         callGraphTests();
         reflectionEmissionTests();
@@ -5738,7 +5882,8 @@ int main(int argc, char **argv) {
                                    Return{}});
         std::map<std::string, const aurora::ir::Function *> largeFunctions{{"test", &largeFunction}};
         verification::Metrics metrics;
-        verification::verifyFunction(largeFunction, largeFunctions, &metrics);
+        const auto metadata = Metadata::import(Module{});
+        verification::verifyFunction(largeFunction, largeFunctions, *metadata, &metrics);
         if (metrics.peakOperandDepth != elementCount || metrics.snapshots > 8 ||
             metrics.peakRetainedValueFacts > elementCount * 16 ||
             metrics.peakRetainedInitializationPayloadBytes !=

@@ -39,6 +39,8 @@ ARGUMENT_RECORDS = (
     ("GraphReleaseWorkspace", "compiler_frontend::graph_release_workspace", ("region", "workspace")),
     ("GraphFunctionInput", "compiler_frontend::graph_set_function", ("index", "function")),
     ("GraphEdgeInput", "compiler_frontend::graph_set_edge", ("index", "target")),
+    ("MetadataCreate", "compiler_frontend::metadata_create", ("region", "counts")),
+    ("MetadataRelease", "compiler_frontend::metadata_release", ("region", "store")),
 )
 
 
@@ -74,6 +76,7 @@ def frontend_abi_entries(facts):
     session, _ = abi_declaration(facts, "records", "compiler_resolver::Session")
     graph_input, _ = abi_declaration(facts, "records", "compiler_ir_graph::Input")
     graph_workspace, _ = abi_declaration(facts, "records", "compiler_ir_graph::Workspace")
+    metadata, _ = abi_declaration(facts, "records", "compiler_ir_metadata::MetadataStore")
     checks = [
         (
             "lexer_next",
@@ -201,6 +204,16 @@ def frontend_abi_entries(facts):
         )
     ]
     checks += [
+        ("metadata_" + name, "compiler_frontend::metadata_" + name, receiver, parameters, result)
+        for name, receiver, parameters, result in (
+            ("create", None, ["region", "compiler_ir_metadata::InputCounts"], "compiler_ir_metadata::MetadataStore"),
+            ("release", None, ["region", "compiler_ir_metadata::MetadataStore"], "i64"),
+            ("allocated", metadata, [], "bool"),
+            ("run", metadata, [], "compiler_ir_metadata::MetadataStatus"),
+            ("error", metadata, [], "compiler_ir_metadata::MetadataError"),
+        )
+    ]
+    checks += [
         ("parser_" + name, "compiler_frontend::parser_" + name, arena, [], "i64")
         for name in ("node_count", "edge_count", "type_count", "syntax_count")
     ]
@@ -248,6 +261,9 @@ def frontend_abi_entries(facts):
         if alias in ("graph_set_function", "graph_set_edge", "graph_retained"):
             if function.get("receiver_mutable") is not (alias != "graph_retained"):
                 raise ValueError(f"private graph root authority changed: {source}")
+        if alias in ("metadata_allocated", "metadata_run", "metadata_error"):
+            if function.get("receiver_mutable") is not (alias == "metadata_run"):
+                raise ValueError(f"private metadata root authority changed: {source}")
         offset = 0
         for actual, expected in zip(function["parameters"], parameters):
             if not matches(actual, expected) or actual["offset"] != offset:
@@ -346,7 +362,45 @@ def lowering_messages(source, facts):
     ]
 
 
-def frontend_abi_header(facts, messages=None):
+def metadata_messages(source, facts):
+    """Render constant metadata diagnostics from their source-owned reasons."""
+    start = source.index("enum class MetadataError {")
+    block = source[start : source.index("};", start)].splitlines()[1:]
+    messages, pending = {}, []
+    for line in (raw.strip() for raw in block):
+        if line.startswith("//:"):
+            pending.append(line[3:].strip())
+        elif not line or line.startswith("//"):
+            if pending:
+                raise ValueError("metadata message must directly precede its reason")
+        else:
+            name = line.removesuffix(",")
+            if not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name in messages:
+                raise ValueError("unsupported or repeated metadata reason: " + line)
+            text = " ".join(pending)
+            if (name == "none") != (not text):
+                raise ValueError("metadata reason requires exactly one constant message: " + name)
+            messages[name] = text
+            pending = []
+    _, reasons = abi_declaration(facts, "enums", "compiler_ir_metadata::MetadataError")
+    if pending or list(messages) != list(reasons["cases"]):
+        raise ValueError("metadata messages differ from the compiled reasons")
+    return [
+        "namespace aurora::hosted_abi::compiler_ir_metadata {",
+        "inline constexpr const char *metadataErrorMessage(MetadataError reason) {",
+        "    switch (reason) {",
+        *[
+            f"    case MetadataError::{name}: return {json.dumps(text, ensure_ascii=True) if text else 'nullptr'};"
+            for name, text in messages.items()
+        ],
+        "    }",
+        "    return nullptr;",
+        "}",
+        "}",
+    ]
+
+
+def frontend_abi_header(facts, messages=None, metadata_source=None):
     """Render compiler-described classes and enums without a second field schema."""
     frontend_abi_entries(facts)
     lines = [
@@ -478,6 +532,57 @@ def frontend_abi_header(facts, messages=None):
         emit_record(symbol)
 
     lines.append("namespace aurora::hosted_abi {")
+    # A closed host binding, not general access to owning objects. Source review
+    # binds each pool name to its row type; predecessor facts provide the physical
+    # offsets and copied row shape, but do not claim to encode owner element identity.
+    _, metadata_store = abi_declaration(facts, "records", "compiler_ir_metadata::MetadataStore")
+    metadata_pools = {
+        "bytes": None,
+        "types": "RawTypeRow",
+        "classes": "ClassRow",
+        "fields": "FieldRow",
+        "storage": "StorageRow",
+        "indices": "IndexRow",
+        "descriptors": "DescriptorRow",
+        "views": "ViewRow",
+        "enums": "EnumRow",
+        "results": "ClassResultRow",
+        "frames": "FrameRow",
+    }
+    owners = {field["name"]: field for field in metadata_store["fields"] if field["kind"] == "owner"}
+    if owners.keys() != metadata_pools.keys():
+        raise ValueError("private metadata owner pools changed")
+
+    def qword_row(symbol, ancestors=()):
+        if symbol in ancestors:
+            raise ValueError("cyclic private metadata row")
+        for field in facts["records"][symbol]["fields"]:
+            if field.get("array_length", 0):
+                raise ValueError("array in private metadata row")
+            if field["kind"] == "class":
+                qword_row(field["type_name"], (*ancestors, symbol))
+            elif field["kind"] not in ("i64", "u64") or field["bytes"] != 8:
+                raise ValueError("private metadata row requires integer words")
+
+    for field_name, row_name in metadata_pools.items():
+        field = owners[field_name]
+        offset, width = number(field["offset"]), number(field["bytes"])
+        if width != 32 or field.get("array_length", 0) or offset + width > metadata_store["size"]:
+            raise ValueError("private metadata owner descriptor changed: " + field_name)
+        lines += [
+            f"inline constexpr std::size_t metadataStore_{field_name}Offset = {offset};",
+            f"inline constexpr std::size_t metadataStore_{field_name}Bytes = {width};",
+        ]
+        if row_name is not None:
+            symbol, row = abi_declaration(facts, "records", "compiler_ir_metadata::" + row_name)
+            qword_row(symbol)
+            stride = number(row["size"])
+            if stride == 0 or stride > 520 or stride != row["reserved"] or row["alignment"] != 8:
+                raise ValueError("private metadata row stride changed: " + row_name)
+            lines += [
+                f"inline constexpr std::size_t metadata{row_name}PhysicalBytes = {stride};",
+                f"static_assert(sizeof({cpp_name(symbol)}) == metadata{row_name}PhysicalBytes);",
+            ]
     # The only manual physical shape is the trusted contiguous readonly span.
     # Source records and their nesting use the compiler's names and field facts.
     if facts["span_bytes"] != 56:
@@ -520,6 +625,8 @@ def frontend_abi_header(facts, messages=None):
     ]
     if messages is not None:
         lines += lowering_messages(messages, facts)
+    if metadata_source is not None:
+        lines += metadata_messages(metadata_source, facts)
     return "\n".join(lines) + "\n"
 
 
@@ -542,7 +649,7 @@ def stage_modules(module_root, modules):
         shutil.copyfile(source, destination / source.name)
 
 
-def emit(compiler, source, bridges, output, module_root, messages, compatible_header=None):
+def emit(compiler, source, bridges, output, module_root, messages, metadata_source, compatible_header=None):
     raw = output.with_suffix(".generated.s")
     facts_output = output.with_suffix(".abi.json")
     command = ["--local-symbols", "--abi-facts", str(facts_output.resolve())]
@@ -551,7 +658,7 @@ def emit(compiler, source, bridges, output, module_root, messages, compatible_he
     subprocess.run([str(compiler.resolve()), *command], check=True)
     facts = json.loads(facts_output.read_text())
     header = output.parent / (output.stem.replace("-", "_") + "_abi.hpp")
-    content = frontend_abi_header(facts, messages.read_text()).encode()
+    content = frontend_abi_header(facts, messages.read_text(), metadata_source.read_text()).encode()
     if compatible_header is not None and compatible_header.read_bytes() != content:
         raise ValueError("stage2 ABI header differs from the header used by shared host objects")
     if not header.exists() or header.read_bytes() != content:
@@ -579,7 +686,7 @@ def main():
         len(modules) + len(bridges) + len(headers) != len(inputs)
         or len(headers) > 1
         or len(set(names)) != len(names)
-        or not {"frontend.au", "lowering_errors.au"} <= set(names)
+        or not {"frontend.au", "lowering_errors.au", "ir_metadata_storage.au"} <= set(names)
     ):
         raise ValueError("expected unique .au modules including frontend.au, .S bridges and at most one .hpp header")
     module_root = output.parent / "compiler-modules"
@@ -591,6 +698,7 @@ def main():
         output,
         module_root,
         modules[names.index("lowering_errors.au")],
+        modules[names.index("ir_metadata_storage.au")],
         headers[0] if headers else None,
     )
 

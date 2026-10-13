@@ -1,6 +1,11 @@
 #pragma once
 
 #include "bytes_abi.hpp"
+#include <span>
+
+namespace aurora::ir {
+class Metadata;
+}
 
 // Trusted single-threaded host machinery only. This is not an Aurora source API,
 // a user-process runtime, a kernel allocator, or a public foreign-call boundary.
@@ -34,6 +39,11 @@ struct Metrics {
 };
 
 class RuntimeAccess;
+#if defined(AURORA_HOSTED_BYTES_TESTING)
+namespace testing {
+class MetadataObservation;
+}
+#endif
 
 class Region final {
 public:
@@ -57,6 +67,17 @@ private:
     struct Allocation;
 
     friend class RuntimeAccess;
+    friend class aurora::ir::Metadata;
+#if defined(AURORA_HOSTED_BYTES_TESTING)
+    friend class testing::MetadataObservation;
+#endif
+    // Only sealed compiler Metadata may retain these bytes. Its closed binding
+    // checks generated owner offsets, exact row shape/stride and published counts.
+    // It finishes every mutating Aurora call before observation, exposes copied
+    // rows only, and destroys all views before consuming the owner and Region.
+    // No pin, ownership transfer, type assertion or Aurora pointer is created.
+    std::span<const std::byte> observeMetadataBytes(const NativeOwner &owner) const noexcept;
+
     std::uint64_t id_;
     bool open_;
     Allocator allocator_;

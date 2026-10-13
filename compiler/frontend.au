@@ -14,6 +14,8 @@ import aurora.compiler.lowering_configuration;
 import aurora.compiler.lowering;
 import aurora.compiler.resolver;
 import aurora.compiler.ir_graph;
+import aurora.compiler.ir_metadata_storage;
+import aurora.compiler.ir_metadata;
 
 // The host bridge enters this root module. Ordinary imported-function retention
 // then keeps exactly the parser, resolver, lowering and IR graph implementations they call.
@@ -191,5 +193,22 @@ export namespace compiler_frontend {
     }
     auto graph_retained(const compiler_ir_graph::Workspace& workspace, i64 index) -> bool {
         return compiler_ir_graph::retained(workspace, index);
+    }
+    auto metadata_create(builtin::ByteRegion region, compiler_ir_metadata::InputCounts counts)
+        -> compiler_ir_metadata::MetadataStore {
+        compiler_ir_metadata::MetadataStore result = compiler_ir_metadata::create(region, counts);
+        return move(result);
+    }
+    auto metadata_release(builtin::ByteRegion region, compiler_ir_metadata::MetadataStore store) -> i64 {
+        return compiler_ir_metadata::release(region, move(store));
+    }
+    auto metadata_allocated(const compiler_ir_metadata::MetadataStore& store) -> bool {
+        return store.allocated();
+    }
+    auto metadata_run(compiler_ir_metadata::MetadataStore& store) -> compiler_ir_metadata::MetadataStatus {
+        return compiler_ir_metadata::run(store);
+    }
+    auto metadata_error(const compiler_ir_metadata::MetadataStore& store) -> compiler_ir_metadata::MetadataError {
+        return store.error();
     }
 }

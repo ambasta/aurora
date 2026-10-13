@@ -10,6 +10,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <functional>
 #include <iostream>
@@ -2196,6 +2198,28 @@ void resolutionControls() {
 // A distinct exception prevents the rejection controls from accepting this path.
 void aurora::ir::verifyHostedGraph(Module &) {
     throw std::runtime_error("forged projection unexpectedly reached graph verification");
+}
+// Link the real native capsule without the generated metadata verifier. Every
+// metadata entry rejects: parser conversion failures must precede construction,
+// and this fixture must never manufacture accepted durable metadata.
+[[noreturn]] static void unexpectedMetadataEntry() noexcept {
+    std::fputs("forged projection unexpectedly reached metadata verification\n", stderr);
+    std::abort();
+}
+extern "C" void aurora_hosted_metadata_create(const void *, void *) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" void aurora_hosted_metadata_release(void *) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" std::int64_t aurora_hosted_metadata_allocated(const void *) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" std::int64_t aurora_hosted_metadata_run(void *) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" std::int64_t aurora_hosted_metadata_error(const void *) noexcept {
+    unexpectedMetadataEntry();
 }
 extern "C" void aurora_hosted_parser_create(const void *input, void *output) {
     const auto &value = *static_cast<const aurora::hosted_abi::ParserCreate *>(input);

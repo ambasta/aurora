@@ -9,13 +9,13 @@ The typed-IR milestone established behavior-preserving compiler phase boundaries
 3. The hosted Aurora lexer turns bytes into tokens; `syntax.hpp` defines the untyped source AST. `parser.hpp` is a compatibility entrypoint for one complete hosted Aurora module parse; all declaration/container grammar lives in `parser.au`.
 4. `lowering_types.au`, `lowering_values.au` and the `lowering_frames`, `lowering_calls`, `lowering_expressions`, `lowering_statements` and `lowering_body` modules perform resolved layout/signature analysis, local/member resolution, exact argument-type overload selection, initialization and const/private checks, ownership moves, lexical borrow checks and conservative branch/loop joins. `lowering.au` publishes typed instructions and metadata from the same resolved Session.
 5. `hosted_lowering.cpp` mechanically projects the generated typed records into the target-independent accumulator/value-stack model in `ir.hpp`. Its operations include checked arithmetic, typed loads/stores, explicit control flow, metadata queries and array guard/access operations. Instruction/operator enums come from predecessor-generated Aurora facts.
-6. `ir_verify.hpp` validates layouts and every function's lower-level type, initialization, control-flow, operand-stack, frame and bounds-token invariants. After native function normalization, `ir_graph.au` independently checks the complete call graph and selects retained functions through a mechanical hosted adapter. Only the resulting immutable `ValidatedModule` can be passed to the emitter.
+6. `ir_metadata.au` independently validates module metadata and derives physical class layouts in one retained Aurora owner. `ir_verify.hpp` checks every function's lower-level type, initialization, control-flow, operand-stack, frame and bounds-token invariants against that owner. After native function normalization, `ir_graph.au` independently checks the complete call graph and selects retained functions. Only the resulting immutable `ValidatedModule` can be passed to the emitter.
 7. `x86.hpp` lowers validated operations to GNU x86-64 assembly. It has no source AST, scope lookup, const policy, owner-liveness state or borrow-state checker. Target registers, ABI argument placement, stack alignment and machine trap sequences exist only here. Two local forms avoid stack and copy traffic without changing any check: a pushed left operand followed directly by a constant, local or receiver-field load stays in `%rcx` for the arithmetic or comparison that would pop it, and an element read that the next instruction returns is copied straight into the caller's result storage.
 8. `main.cpp` coordinates file I/O and those stages. GNU assembler/linker remain the bootstrap native toolchain.
 
 The C++ host uses internal header units and one main translation unit, linked with the generated Aurora frontend through Meson. Raw `main.cpp` compilation no longer builds a compiler. These are actual phase boundaries, not a stable external compiler-library API.
 
-The graph-verifier migration is a source-only candidate. Its fixed paired-root
+The graph and metadata migrations are source-only candidates. Their fixed paired-root
 [source-bootstrap dependency](README.md#source-bootstrap), current-stage convergence
 and final-source qualification remain unexecuted.
 
@@ -273,8 +273,30 @@ unrelated scalar recursion remains legal. Host filtering preserves original orde
 with no native graph fallback. Generated row sizes bound O(V + E) storage; paired
 owner cleanup precedes region closure.
 
-Logical/physical layouts and function CFG/provenance checks remain C++. They reject
-missing/malformed calls and unreachable semantic instructions before graph processing.
+Function CFG/provenance checks remain C++. They reject missing/malformed calls and
+unreachable semantic instructions before graph processing.
+
+## Durable module metadata
+
+`ir_metadata_storage.au` owns raw metadata prefixes and appended canonical fields,
+offsets and layouts. `ir_metadata.au` verifies actual input shapes, including absent
+versus empty maps, nominal types, carriers, ownership, depth and sealed service data.
+The native `Module` maps remain an untrusted ingress for lowering and hostile fixtures;
+validation clears them before native function checks. `ValidatedModule` retains one
+immutable metadata capsule used by function verification, emission and ABI facts.
+There is no native layout fallback or reconstructed metadata-map cache.
+
+The host binds named pools to generated row shapes and descriptor offsets. Its private
+Region observation returns readonly bytes only inside the capsule; reads copy records,
+and views are destroyed before consuming owner cleanup. The closed pool-to-row binding
+is source-reviewed because predecessor facts do not encode owned element identity.
+Raw Type tail counts preserve rejection without serializing malformed template trees.
+
+This migration adds bootstrap transport code while removing native metadata policy;
+it does not claim a net line or memory reduction. The next deletion is the intermediate
+lowering-to-native metadata projection. Native instruction objects and their conversion
+retire with Aurora CFG verification and emission, rather than gaining more per-pass
+serializers. The current source-bootstrap, convergence and runtime gates are unexecuted.
 
 ## CFG and frame invariants
 
