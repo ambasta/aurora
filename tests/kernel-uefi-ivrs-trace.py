@@ -310,7 +310,8 @@ def verify_amdvi_control(artifacts):
         need(match is not None, "Malformed native qtest timestamp/record")
         stamp = Decimal(match[2].lstrip("+"))
         need(
-            stamp >= previous_time and (index == 0 and stamp == 0 or index > 0 and match[2].startswith("+")),
+            stamp >= previous_time
+            and (index == 0 and not match[2].startswith("+") or index > 0 and match[2].startswith("+")),
             "Backwards/non-relative native qtest timestamp",
         )
         previous_time = stamp
@@ -888,6 +889,11 @@ def self_test():
         verify_amdvi_control(control)["whole_run_zero_interrupt_activity"] is False,
         "Raw startup interrupt activity lost its limitation",
     )
+    delayed = dict(control)
+    delayed["qtest-native.log"] = (
+        delayed["qtest-native.log"].replace("[I 0]", "[I 0.000001]", 1).replace("+0]", "+0.000001]")
+    )
+    verify_amdvi_control(prior.resign_control(delayed))
     archived = prior.resign_control(
         dict(
             control,
@@ -933,6 +939,8 @@ def self_test():
         ("protocol.jsonl", '"monotonic_ns": 1', '"monotonic_ns": "corrupted"'),
         ("protocol.jsonl", '"monotonic_ns": 2', '"monotonic_ns": 0'),
         ("qtest-native.log", "[R +0]", "[R corrupted]"),
+        ("qtest-native.log", "[I 0]", "[I +0]"),
+        ("qtest-native.log", "[I 0]", "[I 1]"),
         ("protocol.jsonl", "writeq 0xfed80018 0x0", "writeq 0xfed80018 0x1"),
         ("qtest-native.log", "writeq 0xfed80018 0x0", "writeq 0xfed80018 0x1"),
         ("invocation.json", '"-S"', '"-unsafe"'),

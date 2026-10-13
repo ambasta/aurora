@@ -89,7 +89,7 @@ meson setup build/register-carry-compiler build/register-carry-source -Dkernel_i
 meson compile -C build/register-carry-compiler -j 2 aurorac
 P=$(realpath build/register-carry-compiler/aurorac)
 meson setup build/meson . \
-  "-Dbootstrap_compiler=$P"
+  "-Dbootstrap_compiler=$P" "-Duefi_ld=$UEFI_LD"
 meson setup build/meson-compiler . -Dkernel_images=false \
   "-Dbootstrap_compiler=$P"
 meson compile -C build/meson-compiler -j 2 aurorac aurorac-stage2

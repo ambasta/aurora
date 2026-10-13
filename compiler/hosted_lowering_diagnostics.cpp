@@ -88,6 +88,8 @@ public:
             if (open == std::string_view::npos)
                 break;
             const auto close = rest.find('}', open);
+            if (close == std::string_view::npos || value >= message.values.size())
+                invalidDiagnostic();
             const auto hole = rest.substr(open + 1, close - open - 1);
             text += hole == "name" ? name(value) : hole == "type" ? type(value) : integer(value);
             ++value;

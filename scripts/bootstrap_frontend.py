@@ -270,7 +270,14 @@ def lowering_messages(source, facts):
         flag, _, body = text.partition("] ") if text.startswith("[") else ("", "", text)
         flag = flag.removeprefix("[")
         holes = re.findall(r"\{([^}]*)\}", body)
-        if not body or flag not in MESSAGE_ORIGINS or len(holes) > 2 or any(h not in MESSAGE_ROLES for h in holes):
+        if (
+            not body
+            or flag not in MESSAGE_ORIGINS
+            or len(holes) > 2
+            or any(h not in MESSAGE_ROLES for h in holes)
+            or body.count("{") != len(holes)
+            or body.count("}") != len(holes)
+        ):
             raise ValueError("unsupported lowering message for " + name)
         if flag == "integrity" and holes:
             raise ValueError("integrity messages carry no payload values: " + name)

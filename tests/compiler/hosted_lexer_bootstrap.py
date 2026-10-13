@@ -247,6 +247,10 @@ def message_generation(facts, root):
     for changed in (
         source.replace("        //: unknown class type '{type}'\n", "", 1),
         source.replace("unknown class type '{type}'", "unknown class type '{kind}'", 1),
+        source.replace("unknown class type '{type}'", "unknown class type '{type", 1),
+        source.replace("unknown class type '{type}'", "unknown class type '{type}' {", 1),
+        source.replace("unknown class type '{type}'", "unknown class type '{type}' }", 1),
+        source.replace("unknown class type '{type}'", "unknown class type '{{type}'", 1),
         source.replace("unknown class type '{type}'", "[integrity] unknown class type '{type}'", 1),
         source.replace(
             "        ir_class_storage_leaf_coverage\n",
