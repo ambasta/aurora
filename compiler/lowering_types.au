@@ -985,20 +985,14 @@ export namespace compiler_lowering {
         }
         return -1;
     }
-    auto service_result(compiler_resolver::Session& session, i64 first, i64 second, i64 result) -> bool {
+    auto service_result(compiler_resolver::Session& session, i64 result) -> bool {
         if (compiler_resolver::scalar_value_kind(tk(session, result))) {
             return true;
         }
-        i64 at = 0;
-        while (at < service_contract_count() && session.good()) {
-            const i64 row = service_contract(session, at);
-            const i64 kind = record_signed(session, row, OperandRole::ServiceKindId);
-            if ((kind == first || kind == second) && record_signed(session, row, OperandRole::ResultTypeId) == result) {
-                return true;
-            }
-            at = at + 1;
-        }
-        return false;
+        // Copied helper results carry data, independently of service authority.
+        // The ordinary boundary check below enforces the existing layout bounds.
+        return tk(session, result) == compiler_resolver::ResolvedTypeKind::class_value && !owning_type(session,
+            result);
     }
     auto validate_signature(compiler_resolver::Session& session, i64 symbol) -> bool {
         const i64 source = symbol_source(session, symbol);
@@ -1076,7 +1070,7 @@ export namespace compiler_lowering {
                 services = services + 1;
             }
             if (services > 2 || !service_group_supported(session, first, second) || borrowed != services || receiver
-                >= 0 || constructor || instantiated || !service_result(session, first, second, result)) {
+                >= 0 || constructor || instantiated || !service_result(session, result)) {
                 return fail(session, LoweringError::service_function_group_or_result, source);
             }
             at = services;

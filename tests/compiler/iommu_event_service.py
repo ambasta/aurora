@@ -131,7 +131,7 @@ __au_runtime_iommu_event_entry:
 
     def emit(source, name):
         assembly = work / (name + ".s")
-        result = run([compiler, source, "-o", assembly])
+        result = run([compiler, "--module-root", ROOT / "library", source, "-o", assembly])
         need(result.returncode == 0, result.stderr.decode())
         return assembly
 

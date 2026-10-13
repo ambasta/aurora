@@ -1,4 +1,5 @@
 module kernel_iommu_event_service;
+import console.io;
 
 // One finite producer-ready batch. This state belongs to the Aurora invocation;
 // the sealed transport owns backing memory and never conveys reclamation rights.
@@ -37,17 +38,6 @@ auto event_kind(u64 word0, u64 word1) -> u64 {
     return 0u64;
 }
 
-auto event_text(builtin::ConsoleSession& console, builtin::span<const u8> text) -> bool {
-    i64 index = 0;
-    while (index < text.size()) {
-        if (console.put(text.at(index)) != builtin::ConsolePutResult::success) {
-            return false;
-        }
-        index = index + 1;
-    }
-    return true;
-}
-
 auto event_hex(builtin::ConsoleSession& console, u64 word, i64 digits) -> bool {
     const array<u8, 16> hex = "0123456789abcdef";
     i64 index = digits;
@@ -69,7 +59,8 @@ auto event_report(builtin::ConsoleSession& console, u64 kind, u64 word0, u64 wor
     const array<u8, 5> dva = " dva=";
     const array<u8, 8> stat = " status=";
     const array<u8, 2> newline = "\r\n";
-    if (!event_text(console, borrow_bytes(prefix))) {
+    const console::WriteResult prefix_result = console::write(console, borrow_bytes(prefix));
+    if (!prefix_result.complete()) {
         return false;
     }
     u8 tag = 'U';
@@ -82,27 +73,33 @@ auto event_report(builtin::ConsoleSession& console, u64 kind, u64 word0, u64 wor
     if (console.put(tag) != builtin::ConsolePutResult::success) {
         return false;
     }
-    if (!event_text(console, borrow_bytes(raw)) || !event_hex(console, word0, 16)) {
+    const console::WriteResult raw_result = console::write(console, borrow_bytes(raw));
+    if (!raw_result.complete() || !event_hex(console, word0, 16)) {
         return false;
     }
     if (console.put('/') != builtin::ConsolePutResult::success || !event_hex(console, word1, 16)) {
         return false;
     }
     if (kind == 2u64) {
-        if (!event_text(console, borrow_bytes(rid)) || !event_hex(console, word0 & 65535u64, 4)) {
+        const console::WriteResult rid_result = console::write(console, borrow_bytes(rid));
+        if (!rid_result.complete() || !event_hex(console, word0 & 65535u64, 4)) {
             return false;
         }
-        if (!event_text(console, borrow_bytes(dom)) || !event_hex(console,(word0 >> 32) & 65535u64, 4)) {
+        const console::WriteResult dom_result = console::write(console, borrow_bytes(dom));
+        if (!dom_result.complete() || !event_hex(console, (word0 >> 32) & 65535u64, 4)) {
             return false;
         }
-        if (!event_text(console, borrow_bytes(dva)) || !event_hex(console, word1, 16)) {
+        const console::WriteResult dva_result = console::write(console, borrow_bytes(dva));
+        if (!dva_result.complete() || !event_hex(console, word1, 16)) {
             return false;
         }
     }
-    if (!event_text(console, borrow_bytes(stat)) || !event_hex(console, status, 2)) {
+    const console::WriteResult status_result = console::write(console, borrow_bytes(stat));
+    if (!status_result.complete() || !event_hex(console, status, 2)) {
         return false;
     }
-    return event_text(console, borrow_bytes(newline));
+    const console::WriteResult newline_result = console::write(console, borrow_bytes(newline));
+    return newline_result.complete();
 }
 
 auto iommu_event_intake(builtin::IommuEventSession& events, builtin::ConsoleSession& console, u64 poll_budget,
