@@ -40,8 +40,7 @@ export namespace compiler_lowering {
         const i64 source = source_ref(session, node);
         if (target_row.expression_kind() != compiler_parser::NodeKind::name) {
             fail(session, LoweringError::indexing_requires_local_or_private_receiver_field, source);
-            const IndexedStorage invalid = IndexedStorage(-1, -1, -1);
-            return invalid;
+            return IndexedStorage(-1, -1, -1);
         }
         const i64 name = source_ref(session, target);
         i64 root = -2;
@@ -60,8 +59,7 @@ export namespace compiler_lowering {
         if (value_kind(session, type) != compiler_resolver::ResolvedTypeKind::array_value) {
             fail(session, LoweringError::indexing_requires_local_or_receiver_field, source);
         }
-        const IndexedStorage result = IndexedStorage(root, field, type);
-        return result;
+        return IndexedStorage(root, field, type);
     }
     auto index_guard(compiler_resolver::Session& session, IndexedStorage storage) -> bool {
         if (is_class_array(session, storage.type())) {

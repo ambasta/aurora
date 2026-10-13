@@ -467,18 +467,15 @@ export namespace compiler_lowering {
     }
     auto constant_leaf(compiler_resolver::Session& session, i64 type, i64 value) -> LiteralValue {
         if (value_kind(session, type) == compiler_resolver::ResolvedTypeKind::bool_value) {
-            const LiteralValue result = LiteralValue(type, value, 0u64, true);
-            return result;
+            return LiteralValue(type, value, 0u64, true);
         }
         const compiler_resolver::ResolvedRow resolved = session.resolved(value);
         if (resolved.operation() == compiler_resolver::ResolvedOperation::enum_case) {
-            const LiteralValue result = LiteralValue(type, resolved.word(3), 0u64, true);
-            return result;
+            return LiteralValue(type, resolved.word(3), 0u64, true);
         }
         const compiler_resolver::SyntaxRow syntax = session.syntax(value);
         if (syntax.expression_kind() == compiler_parser::NodeKind::call) {
-            const LiteralValue result = LiteralValue(type, reflected_value(session, value), 0u64, true);
-            return result;
+            return LiteralValue(type, reflected_value(session, value), 0u64, true);
         }
         const LiteralValue result = decode_literal(session, value);
         return result;

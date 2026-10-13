@@ -1356,27 +1356,23 @@ export namespace compiler_lowering {
             const u8 byte = session.source_byte(at);
             if (radix == 2u64 && byte == '\'') {
                 if (!previous_digit) {
-                    const LiteralValue invalid = LiteralValue(-1, 0, 0u64, false);
-                    return invalid;
+                    return LiteralValue(-1, 0, 0u64, false);
                 }
                 previous_digit = false;
             } else {
                 if (byte < '0' || byte > '9' || (radix == 2u64 && byte > '1')) {
-                    const LiteralValue invalid = LiteralValue(-1, 0, 0u64, false);
-                    return invalid;
+                    return LiteralValue(-1, 0, 0u64, false);
                 }
                 const u64 digit = u64(byte) - 48u64;
                 if (magnitude > (18446744073709551615u64 - digit) / radix) {
-                    const LiteralValue invalid = LiteralValue(-1, 0, 0u64, false);
-                    return invalid;
+                    return LiteralValue(-1, 0, 0u64, false);
                 }
                 magnitude = magnitude * radix + digit;
                 previous_digit = true;
             }
             at = at + 1;
         }
-        const LiteralValue result = LiteralValue(-1, 0, magnitude, previous_digit);
-        return result;
+        return LiteralValue(-1, 0, magnitude, previous_digit);
     }
     auto negative_literal_magnitude(compiler_resolver::Session& session, i64 node, i64 unary_source) -> LiteralValue {
         const i64 reference = source_ref(session, node);
@@ -1417,8 +1413,7 @@ export namespace compiler_lowering {
             magnitude = magnitude * 10u64 + digit;
             cursor = cursor + 1;
         }
-        const LiteralValue result = LiteralValue(-1, 0, magnitude, true);
-        return result;
+        return LiteralValue(-1, 0, magnitude, true);
     }
     auto decode_literal(compiler_resolver::Session& session, i64 expression) -> LiteralValue {
         const i64 reference = source_ref(session, expression);
@@ -1428,8 +1423,7 @@ export namespace compiler_lowering {
         const compiler_resolver::ResolvedRow resolved = session.resolved(expression);
         i64 type = scalar_id(session, compiler_resolver::ResolvedTypeKind::i64_value);
         if (resolved.operation() == compiler_resolver::ResolvedOperation::capacity_constant) {
-            const LiteralValue result = LiteralValue(type, resolved.word(3), 0u64, true);
-            return result;
+            return LiteralValue(type, resolved.word(3), 0u64, true);
         }
         if (session.source_equal(reference, "true") || session.source_equal(reference, "false")) {
             type = scalar_id(session, compiler_resolver::ResolvedTypeKind::bool_value);
@@ -1437,8 +1431,7 @@ export namespace compiler_lowering {
             if (session.source_equal(reference, "true")) {
                 value = 1;
             }
-            const LiteralValue result = LiteralValue(type, value, 0u64, true);
-            return result;
+            return LiteralValue(type, value, 0u64, true);
         }
         if (session.source_byte(begin) == '\'') {
             type = scalar_id(session, compiler_resolver::ResolvedTypeKind::u8_value);
@@ -1446,8 +1439,7 @@ export namespace compiler_lowering {
             if (number < 0) {
                 fail(session, LoweringError::invalid_byte_literal, reference);
             }
-            const LiteralValue result = LiteralValue(type, number, 0u64, number >= 0);
-            return result;
+            return LiteralValue(type, number, 0u64, number >= 0);
         }
         i64 digits_end = end;
         bool unsigned_value = false;
@@ -1469,15 +1461,13 @@ export namespace compiler_lowering {
         if (!magnitude.valid() || (byte_value && magnitude.unsigned_value() > 255u64) || (!unsigned_value
             && magnitude.unsigned_value() > 9223372036854775807u64)) {
             fail(session, LoweringError::invalid_integer_literal_or_suffix, reference);
-            const LiteralValue invalid = LiteralValue(type, 0, 0u64, false);
-            return invalid;
+            return LiteralValue(type, 0, 0u64, false);
         }
         i64 signed_value = 0;
         if (!unsigned_value || byte_value) {
             signed_value = i64(magnitude.unsigned_value());
         }
-        const LiteralValue result = LiteralValue(type, signed_value, magnitude.unsigned_value(), true);
-        return result;
+        return LiteralValue(type, signed_value, magnitude.unsigned_value(), true);
     }
     auto emit_literal(compiler_resolver::Session& session, LiteralValue literal) -> i64 {
         if (value_kind(session, literal.type()) == compiler_resolver::ResolvedTypeKind::u64_value) {
