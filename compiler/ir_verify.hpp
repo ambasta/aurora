@@ -317,17 +317,6 @@ inline void verifyFunction(FunctionBody &function,
             require(spanSlots.contains(literal->resultOffset), "literal span requires exact typed spill");
         }
     }
-    std::map<int, std::pair<int, service::Kind>> serviceLoanRoots;
-    for (CodePosition index = 0; index < function.code.size(); ++index) {
-        const auto instruction = function.code[index];
-        if (const auto *loan = std::get_if<AcquireServiceLoan>(&instruction)) {
-            const auto root = std::pair{loan->offset, loan->kind};
-            require(loan->loanId > 0 &&
-                        (!serviceLoanRoots.contains(loan->loanId) || serviceLoanRoots.at(loan->loanId) == root),
-                    "service loan identity cannot change static root or kind");
-            serviceLoanRoots.emplace(loan->loanId, root);
-        }
-    }
     // Source normalization already checked every body and fixed its retained
     // order. Native worklist entries use those zero-based positions, never IDs.
     // Only block entries retain snapshots. Saving a full state at every instruction
@@ -1986,7 +1975,7 @@ inline void verifyFunction(FunctionBody &function,
                                 "service parameter authority already active");
                         state.activeServices.emplace(operation.offset, ServiceIdentity{instructionId, operation.kind});
                     } else if constexpr (std::is_same_v<Op, AcquireServiceLoan>) {
-                        require(operation.loanId > 0 && !state.serviceLoans.contains(operation.loanId) &&
+                        require(!state.serviceLoans.contains(operation.loanId) &&
                                     std::none_of(state.serviceLoans.begin(),
                                                  state.serviceLoans.end(),
                                                  [&](const auto &loan) {
@@ -2012,36 +2001,23 @@ inline void verifyFunction(FunctionBody &function,
                                                      return loan.second.offset == operation.offset;
                                                  }),
                                 "service operation requires active unsuspended capability provenance");
-                        require(state.activeServices.at(operation.offset).kind == operation.kind &&
-                                    service::description(operation.operation).kind == operation.kind,
+                        require(state.activeServices.at(operation.offset).kind == operation.kind,
                                 "service operation kind does not match active capability");
                         if (operation.operation == service::Operation::Pixel) {
                             for (int argument = 4; argument >= 0; --argument)
                                 require(pop().type == (argument < 2 ? Type::U64 : Type::U8),
                                         "pixel argument type mismatch");
-                            require(operation.resultOffset == 0 &&
-                                        metadata.findEnum(std::string(service::displayPutResultName)),
-                                    "pixel requires closed enum result and no object storage");
                             state.current = Value{service::displayPutResultType(), {}};
                         } else if (operation.operation == service::Operation::Put) {
                             current(Type::U8);
-                            require(operation.resultOffset == 0 &&
-                                        metadata.findEnum(std::string(service::putResultName)),
-                                    "put requires closed enum result and no object storage");
                             state.current = Value{service::putResultType(), {}};
                         } else if (operation.operation == service::Operation::IommuAcknowledge) {
-                            require(operation.resultOffset == 0 &&
-                                        metadata.findEnum(std::string(service::eventAckResultName)),
-                                    "acknowledge requires closed enum result and no object storage");
                             state.current = Value{service::eventAckResultType(), {}};
                         } else if (operation.operation == service::Operation::Next ||
                                    operation.operation == service::Operation::IommuPoll) {
                             const bool event = operation.operation == service::Operation::IommuPoll;
-                            const auto reportName = event ? service::eventSampleName : service::sampleName;
                             const int base = operation.resultOffset;
-                            require(objectSlots.contains(base) &&
-                                        objectSlots.at(base).className == reportName &&
-                                        state.activeObjects.contains(base) &&
+                            require(state.activeObjects.contains(base) &&
                                         !state.maybeConstructedObjects.contains(base),
                                     "service observation requires exact pristine active copied sample object");
                             for (std::size_t field = 0; field < (event ? 4u : 3u); ++field)

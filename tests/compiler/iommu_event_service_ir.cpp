@@ -160,8 +160,11 @@ int main(int argc, char **argv) {
         m.functions[0].slots[16] = Type::U64;
     });
     bad(eventPoll(), [](auto &m) {
-        m.functions[0].objectSlots[64].className = std::string(service::sampleName);
-    });
+        const auto name = std::string(service::eventSampleName);
+        m.classLayouts["OtherEventSample"] = m.classLayouts.at(name);
+        m.classFields["OtherEventSample"] = m.classFields.at(name);
+        m.functions[0].objectSlots[64].className = "OtherEventSample";
+    }, "service observation requires exact pristine active copied sample object");
     bad(eventPoll(), [](auto &m) {
         m.functions[0].result = service::sampleType();
     });
@@ -213,7 +216,7 @@ int main(int argc, char **argv) {
         bad(eventForwarded(reversed), [](auto &m) {
             auto &code = m.functions.back().code;
             code.insert(code.end() - 1, AcquireServiceLoan{1, 32, service::Kind::Console});
-        });
+        }, "service loan identity cannot change static root or kind"); // Both sites match exact entry bindings.
     }
     for (bool reversed : {false, true}) {
         for (int offset : {64, 56, 48, 40})
@@ -257,7 +260,8 @@ int main(int argc, char **argv) {
     });
     bad(eventAcknowledge(), [](auto &m) {
         m.enumCases.erase(std::string(service::eventAckResultName));
-    });
+        m.functions[0].result = Type::I64; // Preserve the operation-result failure after valid metadata admission.
+    }, "acknowledge requires closed enum result and no object storage");
     bad(eventPoll(true), [](auto &m) {
         std::get<BindServiceParameter>(m.functions[0].code[1]).offset = 16;
     });
@@ -266,7 +270,7 @@ int main(int argc, char **argv) {
     });
     bad(eventAcknowledge(), [](auto &m) {
         std::get<ServiceOperation>(m.functions[0].code[1]).resultOffset = 64;
-    });
+    }, "acknowledge requires closed enum result and no object storage");
     for (std::size_t field = 0; field < 4; ++field) {
         bad(eventPoll(), [=](auto &m) {
             m.classLayouts[std::string(service::eventSampleName)][field] = Type::Bool;

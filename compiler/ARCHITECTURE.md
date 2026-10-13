@@ -293,7 +293,7 @@ plus canonical class fields, offsets and layouts. `ir_metadata.au` admits names,
 module layouts, every callable header and every frame before publication.
 Instruction storage/types and exact codec shapes follow, then all structural CFG
 checks and normalization, source entry-parameter admission, source static call-site
-and local-storage/scalar admission, native dynamic value-state/provenance checks,
+and local-storage/scalar/service admission, native dynamic value-state/provenance checks,
 call-graph checks and publication. A later structural or static admission error can therefore
 precede an earlier dynamic value-state error;
 no per-function diagnostic-order replay is retained. Malformed raw Type tails reject before canonical Type observation.
@@ -362,7 +362,7 @@ The signature has at most six formals, so the existing leading instructions are
 also the binding index. Native queries borrow those rows instead of retaining
 parameter sets/maps or another summary. Native `Bind*` handlers establish dynamic
 initial state; subsequent initialization, lifetime, ownership, loan and CFG-join
-checks remain native. The separate service-loan identity scan is unchanged.
+checks remain native. Static service-loan identity belongs to source admission.
 This migration remains source-only pending generated ABI and execution checks.
 
 All six call forms share a subsequent source pass over those same owners. It
@@ -399,6 +399,18 @@ type checks and result/guard updates. These checks reuse the instruction and
 metadata owners; no new ABI or retained workspace is introduced. A separate
 normalized-instruction traversal preserves module-wide storage-before-scalar
 error ordering. Its cost is unmeasured; execution qualification remains outstanding.
+
+Service admission checks acquisition/release identities and closed kinds, exact
+entry authority roots, operation kinds and result declarations. For each callable,
+positive acquisition IDs must keep one static root/kind. Released IDs may be reused
+for that same identity; active authority and temporal loan state remain native.
+Aurora heap-sorts acquisition references in existing retained CodeRow scratch,
+then clears the borrowed lanes. Executable order, targets and flags never change;
+discarded normalization tails are not workspace. This removes the native
+service-loan identity map without adding a pool or ABI. The pass follows scalar
+admission; later static failures can precede earlier dynamic failures. Native
+checks still enforce suspension, called state, operands, pristine report storage
+and exact join/return loan conditions. Execution qualification remains outstanding.
 
 ## CFG and frame invariants
 
