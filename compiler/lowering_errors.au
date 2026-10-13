@@ -504,7 +504,10 @@ export namespace compiler_lowering {
         //: [integrity] IR: class storage exceeds 65536 bytes
         ir_class_storage_limit,
         //: [integrity] IR: class storage does not cover logical leaves
-        ir_class_storage_leaf_coverage
+        ir_class_storage_leaf_coverage,
+
+        //: paired borrowed roots cannot produce spans
+        paired_borrowed_span_production
     };
 
     // Four eight-byte words in this order. Failure never publishes a module

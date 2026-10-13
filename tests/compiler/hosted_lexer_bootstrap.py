@@ -253,8 +253,8 @@ def message_generation(facts, root):
         source.replace("unknown class type '{type}'", "unknown class type '{{type}'", 1),
         source.replace("unknown class type '{type}'", "[integrity] unknown class type '{type}'", 1),
         source.replace(
-            "        ir_class_storage_leaf_coverage\n",
-            "        ir_class_storage_leaf_coverage\n        //: dangling\n",
+            "        paired_borrowed_span_production\n",
+            "        paired_borrowed_span_production\n        //: dangling\n",
             1,
         ),
         source.replace(first, first + "\n        //: extra reason\n        unlisted_reason,", 1),

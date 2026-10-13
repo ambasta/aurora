@@ -15,6 +15,11 @@ The typed-IR milestone established behavior-preserving compiler phase boundaries
 
 The C++ host uses internal header units and one main translation unit, linked with the generated Aurora frontend through Meson. Raw `main.cpp` compilation no longer builds a compiler. These are actual phase boundaries, not a stable external compiler-library API.
 
+Bounded two-owner helpers allow a mutable verifier workspace beside a readonly
+input owner. They are a language dependency for the next migration, not an Aurora
+IR verifier: `ir_verify.hpp` remains the independent authority until its checks
+over finalized IR and its normalization order have an actual replacement.
+
 ## Hosted Aurora parser
 
 `parser.au` parses complete expressions containing integer, byte,

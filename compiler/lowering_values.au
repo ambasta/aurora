@@ -732,11 +732,12 @@ export namespace compiler_lowering {
         bool temporaryParent;
         bool borrowedValue;
         bool lintValue;
+        i64 borrowedRoot;
     public:
         LocalRequest(i64 name, i64 type, i64 source, bool mutable_value, bool bind, bool begin) : nameRef(name),
             typeId(type), sourceRef(source), mutableValue(mutable_value), bindValue(bind), beginValue(begin),
             ownerId(-1), originKind(SpanOriginKind::none), originId(-1), fieldId(-1), temporaryParent(false),
-            borrowedValue(false), lintValue(false) {
+            borrowedValue(false), lintValue(false), borrowedRoot(0) {
         }
         auto name() const -> i64 {
             return nameRef;
@@ -776,6 +777,13 @@ export namespace compiler_lowering {
         }
         auto lint() const -> bool {
             return lintValue;
+        }
+        auto borrowed_root() const -> i64 {
+            return borrowedRoot;
+        }
+        auto set_borrowed_root(i64 selector) -> bool {
+            borrowedRoot = selector;
+            return true;
         }
         auto set_origin(i64 owner, SpanOriginKind kind, i64 origin, i64 field, bool temporary) -> bool {
             ownerId = owner;
@@ -852,7 +860,12 @@ export namespace compiler_lowering {
         session.set_continuation(0, root);
         i64 offset = frame_words * 8;
         if (request.borrowed()) {
-            offset = 0;
+            // Formal roots are selectors, not stack storage. Each still has
+            // its own LocalRow and snapshot, including same-class formals.
+            offset = request.borrowed_root();
+            if (offset != 0 && offset != -1) {
+                return session.fail_storage(compiler_resolver::StorageStatus::invalid);
+            }
         }
         const bool active = is_resource_owner(session, type) && !request.borrowed();
         i64 name = -1;

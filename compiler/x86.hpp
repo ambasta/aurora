@@ -57,6 +57,7 @@ class X86Emitter {
     int functionIndex = 0;
     int divisionIndex = 0;
     int receiverSaveOffset = 0;
+    int secondReceiverSaveOffset = 0;
     int callRecordSaveOffset = 0;
     int resultSaveOffset = 0;
     bool directResult = false; // the next ValuesLoad writes the function result storage
@@ -197,6 +198,19 @@ class X86Emitter {
     }
     std::string address(int offset) {
         return "-" + std::to_string(offset) + "(%rbp)";
+    }
+    void receiverAddress(int root, const std::string &target) {
+        // Root selectors are never passed through ordinary frame addressing.
+        // Saved pointers survive every nested call, including copied getters
+        // that use R11 for their result and helpers that repack both roots.
+        if (root == 0 && receiverSaveOffset)
+            line("movq " + address(receiverSaveOffset) + ", " + target);
+        else if (root == -1 && secondReceiverSaveOffset)
+            line("movq " + address(secondReceiverSaveOffset) + ", " + target);
+        else if (root > 0)
+            line("leaq " + address(root) + ", " + target);
+        else
+            throw Error("x86 backend received an unbound object root selector");
     }
     std::string label(int id) {
         return ".Lau" + std::to_string(functionIndex) + "_" + std::to_string(id);
@@ -1280,10 +1294,20 @@ class X86Emitter {
                     if (!aggregate)
                         for (std::size_t index = argumentCounts.at(operation.callee); index > 0; --index)
                             pop(argumentRegisters[index - 1]);
-                    if (operation.receiverOffset == 0)
-                        line("movq " + address(receiverSaveOffset) + ", %r10");
-                    else
-                        line("leaq " + address(operation.receiverOffset) + ", %r10");
+                    int borrowedRecordBytes = 0;
+                    if constexpr (std::is_same_v<Op, ir::BorrowedCall>) {
+                        if (target.secondBorrowedParameter) {
+                            borrowedRecordBytes = 16;
+                            reserveStack(borrowedRecordBytes);
+                            receiverAddress(operation.receiverOffset, "%r10");
+                            line("movq %r10, (%rsp)");
+                            receiverAddress(operation.secondReceiverOffset, "%r10");
+                            line("movq %r10, 8(%rsp)");
+                            line("leaq (%rsp), %r10");
+                        }
+                    }
+                    if (!borrowedRecordBytes)
+                        receiverAddress(operation.receiverOffset, "%r10");
                     if (operation.receiverFieldIndex >= 0) {
                         const auto &name = operation.receiverOffset == 0
                                                ? currentFunction->receiver->className
@@ -1295,6 +1319,8 @@ class X86Emitter {
                     if (target.result.isClass() || target.result.isSpan())
                         line("leaq " + address(operation.resultOffset) + (aggregate ? ", %rax" : ", %r11"));
                     call(operation.callee);
+                    if (borrowedRecordBytes)
+                        releaseStack(borrowedRecordBytes);
                     if (recordBytes)
                         releaseStack(recordBytes);
                 } else if constexpr (std::is_same_v<Op, ir::MetadataQuery>) {
@@ -1654,6 +1680,7 @@ public:
             growStack(8);
             line("movq %rsp, %rbp");
             receiverSaveOffset = function.receiver ? function.frameBytes + 8 : 0;
+            secondReceiverSaveOffset = function.secondBorrowedParameter ? function.frameBytes + 16 : 0;
             // Resource constructors always receive a packed record, even when
             // their explicit parameters contain no class values. Borrowed
             // ordinary methods retain their existing hidden-register modes.
@@ -1672,12 +1699,20 @@ public:
                     ? function.frameBytes + (combinedMethod ? 24 : 16)
                     : 0;
             // Hidden capabilities never occupy source-addressable slots. The
-            // new combined mode needs three distinct saves, rounded to 16-byte
-            // alignment; every historical mode retains its original layout.
+            // combined mode needs three distinct saves, rounded to 16-byte
+            // alignment. Scalar-only paired helpers use both words of the
+            // existing 16-byte hidden area; historical layouts are unchanged.
             const int frameBytes = function.frameBytes + (combinedMethod                   ? 32
                                                           : function.receiver || aggregate ? 16
                                                                                            : 0);
             reserveStack(frameBytes);
+            if (function.secondBorrowedParameter) {
+                // Paired calls pass a two-pointer record in R10. Copy both
+                // capabilities before any instruction can reuse R10 or R11.
+                line("movq 8(%r10), %r11");
+                line("movq %r11, " + address(secondReceiverSaveOffset));
+                line("movq (%r10), %r10");
+            }
             if (function.receiver)
                 line("movq %r10, " + address(receiverSaveOffset));
             if (packedArguments)

@@ -431,7 +431,7 @@ public:
 class MethodCall {
 public:
     std::string callee;
-    int receiverOffset;                    // zero forwards this; positive names an ObjectSlot base
+    int receiverOffset;                    // 0: receiver; -1: second borrowed formal; positive: ObjectSlot
     std::vector<int> objectArguments = {}; // readonly copied snapshots; scalar entries are zero
     int resultOffset = 0;                  // pristine class result destination; zero for scalar results
     int receiverFieldIndex = -1;           // -1 selects the root; otherwise one logical owned class field
@@ -442,7 +442,7 @@ public:
 class AcquireObjectLoan {
 public:
     int loanId;
-    int root;
+    int root; // 0/-1 select bound borrowed formals; positive selects an exact ObjectSlot
     bool mutableValue;
 };
 class ReleaseObjectLoan {
@@ -458,6 +458,10 @@ public:
     int resultOffset = 0;
     std::vector<int> spanArguments = {};
     static constexpr int receiverFieldIndex = -1;
+    // Present only for paired targets. The absent tuple is exactly (0, -1).
+    // Selectors are not frame offsets: -1 names the second bound borrowed root.
+    int secondReceiverOffset = 0;
+    int secondLoanId = -1;
 };
 class MetadataQuery {
 public:
@@ -622,6 +626,9 @@ public:
     std::optional<int> receiverSpanField;
     int frameBytes = 0;
     std::vector<Instruction> code;
+    // A paired free helper has a mutable first root and one readonly second
+    // root. Both are invocation-only capabilities; neither grants class privacy.
+    std::optional<Receiver> secondBorrowedParameter;
 };
 class Descriptor {
 public:

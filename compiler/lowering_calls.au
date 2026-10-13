@@ -815,6 +815,13 @@ export namespace compiler_lowering {
             return fail(session, LoweringError::copied_argument_requires_complete_method_receiver, reference);
         }
         if (method && value_kind(session, result) == compiler_resolver::ResolvedTypeKind::byte_span) {
+            const i64 caller = body_function(session);
+            if (paired_borrowed_parameters(session, caller) && frame.capability_root_local() >= 0) {
+                const LocalRow receiver = session.local(frame.capability_root_local());
+                if (receiver.borrowed_object()) {
+                    return fail(session, LoweringError::paired_borrowed_span_production, reference);
+                }
+            }
             if (!binding) {
                 return fail(session, LoweringError::span_method_result_requires_initializer_or_argument, reference);
             }
@@ -985,7 +992,7 @@ export namespace compiler_lowering {
                 lane.set_cleanup(CleanupKind::service_loan);
                 frame.set_argument(index, lane);
             } else {
-                if (index == 0 && parameter_borrowed(session, callee, 0)) {
+                if (parameter_borrowed(session, callee, index)) {
                     const compiler_resolver::SyntaxRow syntax = session.syntax(node);
                     if (syntax.expression_kind() != compiler_parser::NodeKind::name) {
                         return fail(session, LoweringError::borrowed_argument_requires_complete_owner, reference);
@@ -995,7 +1002,7 @@ export namespace compiler_lowering {
                     match_type(session, staged_got_69, type, reference);
                     const LocalRow root = session.local(local);
                     const SnapshotRow state = root.state();
-                    const bool mutable_loan = !parameter_const(session, callee, 0);
+                    const bool mutable_loan = !parameter_const(session, callee, index);
                     if (mutable_loan) {
                         if (!root.mutable_value()) {
                             return fail(session, LoweringError::mutable_borrowed_argument_requires_mutable_owner,
@@ -1015,7 +1022,9 @@ export namespace compiler_lowering {
                     ArgumentLane lane = ArgumentLane(index, ArgumentKind::borrowed_receiver, type, local, loan, -1);
                     lane.set_cleanup(CleanupKind::object_loan);
                     frame.set_argument(index, lane);
-                    frame.set_call(callee, local, frame.receiver_field_index(), frame.argument_count());
+                    if (index == 0) {
+                        frame.set_call(callee, local, frame.receiver_field_index(), frame.argument_count());
+                    }
                 } else {
                     if (is_resource_owner(session, type)) {
                         const i64 original = moved_source(session, node, type);
@@ -1059,8 +1068,7 @@ export namespace compiler_lowering {
             if (!intrinsic && type >= 0) {
                 const compiler_resolver::ResolvedTypeKind kind = value_kind(session, type);
                 if (compiler_resolver::service_kind(kind) || kind == compiler_resolver::ResolvedTypeKind::byte_region
-                    || is_resource_owner(session, type) || (index == 0 && parameter_borrowed(session,
-                    frame.call_target(), 0))) {
+                    || is_resource_owner(session, type) || parameter_borrowed(session, frame.call_target(), index)) {
                     stage_direct_argument(session, frame_id, type, node);
                 } else {
                     bool resource_constructor = kind == compiler_resolver::ResolvedTypeKind::class_value
@@ -1271,7 +1279,7 @@ export namespace compiler_lowering {
             }
             if (lane.cleanup_kind() == CleanupKind::object_loan) {
                 emit_ReleaseObjectLoan(session, lane.loan_id());
-                if (parameter_const(session, frame.call_target(), 0)) {
+                if (parameter_const(session, frame.call_target(), index)) {
                     const LocalRow root = session.local(lane.local_id());
                     const SnapshotRow state = root.state();
                     change_object_loan(session, lane.local_id(), -1, state.object_exclusive());
@@ -1441,10 +1449,19 @@ export namespace compiler_lowering {
                 } else {
                     if (borrowed) {
                         const ArgumentLane first = frame.argument(0);
-                        const OperandRow objects = argument_offsets(session, frame, OperandRole::ObjectArguments, 1,
-                            aggregate);
+                        i64 leading = 1;
+                        i64 second_receiver = 0;
+                        i64 second_loan = -1;
+                        if (paired_borrowed_parameters(session, callee)) {
+                            const ArgumentLane second = frame.argument(1);
+                            leading = 2;
+                            second_receiver = local_offset(session, second.local_id());
+                            second_loan = second.loan_id();
+                        }
+                        const OperandRow objects = argument_offsets(session, frame, OperandRole::ObjectArguments,
+                            leading, aggregate);
                         const OperandRow span_arguments = argument_offsets(session, frame, OperandRole::SpanArguments,
-                            1, spans);
+                            leading, spans);
                         const i64 begin = session.operand_count();
                         put(session, OperandRole::CalleeSymbolId, callee);
                         const i64 staged_value_81 = local_offset(session, first.local_id());
@@ -1453,6 +1470,8 @@ export namespace compiler_lowering {
                         session.append_operand(objects);
                         put(session, OperandRole::ResultOffset, destination_offset);
                         session.append_operand(span_arguments);
+                        put(session, OperandRole::SecondReceiverOffset, second_receiver);
+                        put(session, OperandRole::SecondLoanId, second_loan);
                         emit(session, InstructionForm::BorrowedCall, begin);
                     } else {
                         if (aggregate) {

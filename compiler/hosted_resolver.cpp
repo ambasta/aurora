@@ -1211,7 +1211,8 @@ std::uint64_t resolutionQuota() {
     // failed prefixes. F/fields/carriers/returns are separately named producer
     // substitutions, not new source limits or eagerly reserved storage.
     const auto X = Sx, F = X, fields = add(X, members), carriers = X, returns = add(X, F);
-    constexpr std::uint64_t localHigh = 8193, frameBytes = 65536, frameWords = 8192;
+    // At most two borrowed formal identities supplement the frame-backed locals.
+    constexpr std::uint64_t localHigh = 8194, frameBytes = 65536, frameWords = 8192;
     const auto allLocals = mul(F, localHigh);
     // Primitive producers: literal/load/store/operator/index/control/receiver,
     // service/resource operations and <=6 scalar pushes fit 16 per syntax row.
@@ -1232,7 +1233,7 @@ std::uint64_t resolutionQuota() {
     const auto ownedTypes = byteSlots;
     const auto slots =
         sum({scalarSlots, objectSlots, arraySlots, spanSlots, serviceSlots, regionSlots, byteSlots, ownedTypes});
-    const auto receiverRows = F, classRows = add(nominals, carriers), fieldRows = add(fields, carriers);
+    const auto receiverRows = mul(2, F), classRows = add(nominals, carriers), fieldRows = add(fields, carriers);
     const auto descriptors = sum({7, nominals, X}), views = M, enums = nominals, lint = X;
     const auto outputRows = sum({hostedLoweringPreludeRows,
                                  1,
@@ -1260,7 +1261,7 @@ std::uint64_t resolutionQuota() {
                                    mul(2, ownedTypes)});
     const auto setupOperands = sum({3, 8, 7 * 3, mul(6, service::operations.size()), serviceParameters, nominals, 1});
     const auto metadataOperands = sum({7,
-                                       mul(10, F),
+                                       mul(11, F),
                                        mul(6, F),
                                        slots,
                                        mul(4, receiverRows),
@@ -1282,8 +1283,9 @@ std::uint64_t resolutionQuota() {
                                        views,
                                        enums,
                                        lint});
-    const auto operandRows =
-        sum({setupOperands, mul(6, instructions), instructions, instructionLists, slotOperands, metadataOperands});
+    // A borrowed call adds a second selector/loan pair, at most once per syntax row.
+    const auto operandRows = sum(
+        {setupOperands, mul(6, instructions), mul(2, X), instructions, instructionLists, slotOperands, metadataOperands});
     // Shared resolution owners remain live. Additional type/name/source rows
     // have distinct charges; lowering lookup domains retain nominal/layout,
     // field, function, lexical-binding, forward-list and reflection indexes.
@@ -1313,7 +1315,7 @@ std::uint64_t resolutionQuota() {
         return add(mul(2, count), 8);
     };
     // Snapshot high-water retains incoming + then prefixes at each if and
-    // incoming prefixes at while/short-circuit frames: (2*128+128)*8193.
+    // incoming prefixes at while/short-circuit frames: (2*128+128)*8194.
     // Continuations are one function + block/control + expression path (384),
     // with all six argument lanes embedded in the generated copied row.
     const auto snapshots = mul(384, localHigh);

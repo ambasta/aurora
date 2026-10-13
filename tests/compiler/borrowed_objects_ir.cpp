@@ -233,6 +233,187 @@ Module composed(bool mutableLoan) {
     before<EndObject>(caller, {EndObject{96}});
     return module;
 }
+Module paired(bool sameClass = false) {
+    auto module = shapes();
+    const std::string secondClass = sameClass ? "Buffer" : "Other";
+    auto caller = entry();
+    caller.parameters.push_back(Type(secondClass));
+    caller.objectSlots[88].className = secondClass;
+    caller.code.push_back(BindOwnedObjectParameter{2, 88, secondClass});
+    caller.code.insert(caller.code.end(),
+                       {AcquireObjectLoan{1, 48, true},
+                        AcquireObjectLoan{2, 88, false},
+                        BorrowedCall{"borrow_pair", 48, 1, {}, 0, {}, 88, 2},
+                        ReleaseObjectLoan{2},
+                        ReleaseObjectLoan{1},
+                        EndObject{88},
+                        EndObject{48},
+                        Return{}});
+    auto target = borrowed();
+    target.name = "borrow_pair";
+    target.secondBorrowedParameter = Receiver{secondClass, false, false, true};
+    target.code = {MethodCall{"write_buffer", 0}, MethodCall{"read_second", -1}, Return{}};
+    auto second = method();
+    second.name = "read_second";
+    second.receiver->className = secondClass;
+    module.functions = {caller, target, method(), method(true), second};
+    return module;
+}
+Module pairedForwarded() {
+    auto module = paired();
+    auto leaf = named(module, "borrow_pair");
+    leaf.name = "pair_leaf";
+    named(module, "borrow_pair").code = {AcquireObjectLoan{3, 0, true},
+                                          AcquireObjectLoan{4, -1, false},
+                                          BorrowedCall{"pair_leaf", 0, 3, {}, 0, {}, -1, 4},
+                                          ReleaseObjectLoan{4},
+                                          ReleaseObjectLoan{3},
+                                          Return{}};
+    module.functions.push_back(leaf);
+    return module;
+}
+void pairedTests() {
+    accept("paired distinct nominal roots", paired());
+    accept("paired distinct roots with identical nominal class", paired(true));
+    accept("paired bound roots forward independently", pairedForwarded());
+    auto copied = paired();
+    auto getter = named(copied, "read_second");
+    getter.name = "copy_second";
+    getter.result = Type("Word");
+    getter.frameBytes = 16;
+    getter.slots = {{8, Type::I64}};
+    getter.objectSlots = {{8, {"Word", false}}};
+    getter.code = {BeginObject{8}, ReceiverLoad{1, Type::I64}, Store{8, Type::I64}, ReturnObject{8}};
+    copied.functions.push_back(getter);
+    auto &copyCaller = named(copied, "borrow_pair");
+    copyCaller.frameBytes = 16;
+    copyCaller.slots = {{8, Type::I64}};
+    copyCaller.objectSlots = {{8, {"Word", false}}};
+    copyCaller.code = {BeginObject{8},
+                       MethodCall{"copy_second", -1, {}, 8},
+                       MethodCall{"write_buffer", 0},
+                       Load{8, Type::I64},
+                       EndObject{8},
+                       MethodCall{"read_second", -1},
+                       Return{}};
+    accept("paired second root survives copied getter and first-root call", copied);
+    auto single = paired();
+    auto shared = borrowed(false);
+    shared.name = "shared_second";
+    shared.receiver->className = "Other";
+    shared.code = {MethodCall{"read_second", 0}, Return{}};
+    single.functions.push_back(shared);
+    named(single, "borrow_pair").code = {AcquireObjectLoan{3, -1, false},
+                                          BorrowedCall{"shared_second", -1, 3},
+                                          ReleaseObjectLoan{3},
+                                          Return{}};
+    accept("paired second root forwards through unchanged single-root ABI", single);
+    const auto check =
+        [](const std::string &name, const std::function<void(Module &)> &change, const std::string &diagnostic) {
+            reject(name, paired(), change, diagnostic);
+        };
+    check("pair requires second loan", [](Module &m) { remove<AcquireObjectLoan>(m.functions[0], 1); },
+          "borrowed call requires active loan");
+    check("pair requires distinct loan identities", [](Module &m) {
+        op<BorrowedCall>(m.functions[0]).secondLoanId = 1;
+    }, "borrowed call second root tuple does not match target");
+    check("pair rejects aliased root selectors", [](Module &m) {
+        op<BorrowedCall>(m.functions[0]).secondReceiverOffset = 48;
+    }, "borrowed call second root tuple does not match target");
+    check("pair checks second nominal class", [](Module &m) {
+        named(m, "borrow_pair").secondBorrowedParameter->className = "Buffer";
+    }, "borrowed call root, lifetime, nominal type or authority mismatch");
+    check("pair checks second loan mutability", [](Module &m) {
+        op<AcquireObjectLoan>(m.functions[0], 1).mutableValue = true;
+    }, "borrowed call root, lifetime, nominal type or authority mismatch");
+    check("pair second root cannot end during prepared loan", [](Module &m) {
+        before<BorrowedCall>(m.functions[0], {EndObject{88}});
+    }, "object access conflicts with active synchronous loan");
+    check("pair second root cannot be incomplete", [](Module &m) {
+        m.functions[0].parameters.pop_back();
+        remove<BindOwnedObjectParameter>(m.functions[0], 1);
+        before<AcquireObjectLoan>(m.functions[0], {BeginObject{88}});
+    }, "copy source object not fully initialized");
+    check("pair releases both completed loans", [](Module &m) {
+        m = pairedForwarded();
+        remove<ReleaseObjectLoan>(named(m, "borrow_pair"));
+    }, "return with active synchronous object loan");
+    for (int invalid : {-2, -7})
+        check("pair rejects nonselector negative root " + std::to_string(invalid), [=](Module &m) {
+            op<MethodCall>(named(m, "borrow_pair"), 1).receiverOffset = invalid;
+        }, "invalid method receiver offset");
+    check("pair second cannot obtain mutable method authority", [](Module &m) {
+        auto writeSecond = named(m, "read_second");
+        writeSecond.name = "write_second";
+        writeSecond.receiver->mutableValue = true;
+        m.functions.push_back(writeSecond);
+        op<MethodCall>(named(m, "borrow_pair"), 1).callee = "write_second";
+    }, "const receiver cannot forward mutable capability");
+    check("pair second private method remains inaccessible", [](Module &m) {
+        named(m, "read_second").receiver->publicAccess = false;
+    }, "private method requires lexical class authority");
+    check("pair second cannot expose direct field capability", [](Module &m) {
+        named(m, "borrow_pair").code = {BytesLength{-1, 0}, Return{}};
+    }, "invalid owned byte object root");
+    for (int root : {0, -1})
+        check("paired bound root cannot produce span " + std::to_string(root), [=](Module &m) {
+            auto view = viewMethod();
+            if (root == -1)
+                view.receiver->className = "Other";
+            m.functions.push_back(view);
+            auto &f = named(m, "borrow_pair");
+            f.frameBytes = 64;
+            f.spanSlots = {56};
+            f.code = {MethodCall{"view_buffer", root, {}, 56}, EndSpan{56}, Constant{0, Type::I64}, Return{}};
+        }, "paired borrowed roots cannot produce span results");
+    reject("legacy target rejects nondefault second selector", fixture(), [](Module &m) {
+        op<BorrowedCall>(m.functions[0]).secondReceiverOffset = -1;
+    }, "borrowed call second root tuple does not match target");
+    reject("legacy target rejects extra second loan", fixture(), [](Module &m) {
+        op<BorrowedCall>(m.functions[0]).secondLoanId = 2;
+    }, "borrowed call second root tuple does not match target");
+    const auto metadata = [&](const std::string &name, const std::function<void(F &)> &change,
+                              const std::string &diagnostic) {
+        auto module = paired();
+        module.functions.erase(module.functions.begin());
+        reject(name, module, [&](Module &m) { change(named(m, "borrow_pair")); }, diagnostic);
+    };
+    metadata("pair requires borrowed free function identity", [](F &f) { f.borrowedParameter = false; },
+             "paired borrowed formals require mutable first and readonly second owning roots");
+    metadata("pair leading root must be mutable", [](F &f) { f.receiver->mutableValue = false; },
+             "paired borrowed formals require mutable first and readonly second owning roots");
+    metadata("pair second root must be const", [](F &f) { f.secondBorrowedParameter->mutableValue = true; },
+             "paired borrowed formals require mutable first and readonly second owning roots");
+    metadata("pair second cannot be constructor", [](F &f) { f.secondBorrowedParameter->constructor = true; },
+             "paired borrowed formals require mutable first and readonly second owning roots");
+    metadata("pair second must own resources", [](F &f) { f.secondBorrowedParameter->className = "Word"; },
+             "second borrowed formal requires known owning class");
+    metadata("pair counts both roots toward limit", [](F &f) { f.parameters.assign(5, Type::I64); },
+             "two borrowed formals count toward six parameters");
+    metadata("pair rejects copied parameters", [](F &f) { f.parameters = {Type("Word")}; },
+             "paired borrowed signature requires scalar or enum values");
+    metadata("pair rejects copied result", [](F &f) { f.result = Type("Word"); },
+             "paired borrowed signature requires scalar or enum values");
+    auto joined = pairedForwarded();
+    auto &joinedFunction = named(joined, "borrow_pair");
+    before<BorrowedCall>(joinedFunction, {Constant{1, Type::Bool}, BranchFalse{1}, Jump{2}, Label{1}, Label{2}});
+    accept("both paired loans survive equal CFG join", joined);
+    reject("join tracks second loan independently", joined, [](Module &m) {
+        auto &f = named(m, "borrow_pair");
+        remove<AcquireObjectLoan>(f, 1);
+        before<Jump>(f, {AcquireObjectLoan{4, -1, false}});
+    }, "incompatible object loans at control-flow join");
+    X86Emitter emitter;
+    const auto assembly = emitter.emit(validate(pairedForwarded()));
+    const auto &facts = emitter.stackFacts();
+    require(facts.at("borrow_pair").localBytes == 48 &&
+                facts.at("borrow_pair").calls.at("pair_leaf") == 48,
+            "paired stack facts must include both hidden saves and outgoing pointer record");
+    require(assembly.find("movq 8(%r10), %r11\n    movq %r11, -16(%rbp)") != std::string::npos &&
+                assembly.find("movq -16(%rbp), %r10") != std::string::npos &&
+                assembly.find("--1(%rbp)") == std::string::npos,
+            "paired second selector must use its saved capability, never negative frame addressing");
+}
 void loanTests() {
     accept("mutable local root", fixture());
     accept("shared local root", fixture(false));
@@ -1012,6 +1193,7 @@ int main() {
         authorityTests();
         argumentTests();
         graphTests();
+        pairedTests();
         std::cout << "borrowed object IR: " << accepted << " valid, " << rejected << " rejected\n";
     } catch (const std::exception &error) {
         std::cerr << "FAIL borrowed object IR: " << error.what() << '\n';

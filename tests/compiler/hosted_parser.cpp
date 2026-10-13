@@ -2217,11 +2217,12 @@ void callableDiagnostics() {
              {"Box():value{}", Stop::constructor, {"expected '{'", 7}},
              {"Box():value(1),{}", Stop::constructor, {"expected identifier", 9}}})
         callableRejection(test.source, test.stop, test.error);
-    const std::string borrow = "borrowed parameters require one leading concrete owning class on an ordinary function";
+    const std::string borrow =
+        "borrowed parameters require a supported leading owning-class reference signature on an ordinary function";
     for (const auto &test :
          std::vector<Rejection>{{"auto f(const i64 value)->i64{}",
                                  Stop::function,
-                                 {"const parameter spelling requires a leading owning-class reference", 5}},
+                                 {"const parameter spelling requires a supported owning-class reference", 5}},
                                 {"auto f(i64& value)->i64{}", Stop::function, {borrow, 5}},
                                 {"auto f(Owner& value)->i64{}", Stop::method, {borrow, 5}},
                                 {"Box(Owner& value){}", Stop::constructor, {borrow, 4}},
@@ -2299,7 +2300,8 @@ void serviceAdmission() {
                 prefix,
                 source,
                 "",
-                {"borrowed parameters require one leading concrete owning class on an ordinary function", 13});
+                {"borrowed parameters require a supported leading owning-class reference signature on an ordinary function",
+                 13});
     }
 }
 void callableParameterLimit() {
@@ -2468,7 +2470,8 @@ void declarationContexts() {
              {"auto T()->i64{}", {"function name cannot shadow a template parameter", 2}},
              {"auto T()->i64{return 1}", {"expected ';'", 9}},
              {"auto f(Owner& value)->i64{}",
-              {"borrowed parameters require one leading concrete owning class on an ordinary function", 5}}}) {
+              {"borrowed parameters require a supported leading owning-class reference signature on an ordinary function",
+               5}}}) {
         const auto input = aurora::lex(shadowPrefix + source, "callable-shadow.au"), saved = input;
         Context typeContext;
         typeContext.typeParameters = {input.at(7)};
@@ -4416,13 +4419,13 @@ void loweringSchemaSources(const std::vector<aurora::Token> &tokens,
          {"Comparison", 6},
          {"Query", 2},
          {"RecordKind", 27},
-         {"OperandRole", 96},
+         {"OperandRole", 100},
          {"SpanOriginKind", 5},
          {"ContinuationKind", 7},
          {"ContinuationPhase", 14},
          {"ArgumentKind", 7},
          {"CleanupKind", 6}},
-        {{"LoweringStatus", 4}, {"LoweringError", 242}},
+        {{"LoweringStatus", 4}, {"LoweringError", 243}},
         {},
     }};
     static const std::array<const char *, 3> functions{
@@ -4473,9 +4476,9 @@ void loweringImplementationSources(const std::vector<aurora::Token> &tokens,
         {{"LocalRequest",
           true,
           "-nameRef -typeId -sourceRef -mutableValue -bindValue -beginValue -ownerId -originKind -originId -fieldId "
-          "-temporaryParent -borrowedValue -lintValue",
+          "-temporaryParent -borrowedValue -lintValue -borrowedRoot",
           "+LocalRequest +name +type +source +mutable_value +bind +begin +owner +origin +origin_id +field +temporary "
-          "+borrowed +lint +set_origin +set_flags"},
+          "+borrowed +lint +borrowed_root +set_borrowed_root +set_origin +set_flags"},
          {"LiteralValue",
           true,
           "-typeId -signedValue -unsignedValue -validValue",
@@ -4662,7 +4665,10 @@ void resolvedCompilerSources(char **paths) {
             require(identities.insert(actual.name).second && actual.moduleScope == scope &&
                         actual.borrowedParameter == (!source.params.empty() && source.params.front().borrowed &&
                                                      !source.params.front().type.isService()) &&
-                        actual.parameters.size() == source.params.size() - std::size_t(actual.borrowedParameter) &&
+                        bool(actual.secondBorrowedParameter) ==
+                            (actual.borrowedParameter && source.params.size() > 1 && source.params[1].borrowed) &&
+                        actual.parameters.size() == source.params.size() - std::size_t(actual.borrowedParameter) -
+                                                        std::size_t(bool(actual.secondBorrowedParameter)) &&
                         bool(actual.receiver) == (!receiver.empty() || actual.borrowedParameter),
                     "compiler typed callable identity, module or receiver presence differs");
             if (!receiver.empty())
