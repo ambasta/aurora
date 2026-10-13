@@ -14,6 +14,7 @@ namespace aurora::ir {
 inline constexpr int spanBytes = 56;
 class Instructions;
 class ServiceArgument;
+class BorrowedRootArgument;
 // Payload ranges borrow the immutable Aurora instruction owner. They copy one
 // requested scalar value and never materialize a native payload container.
 template<class Value> class InstructionPayloadRange {
@@ -39,9 +40,11 @@ public:
 };
 using OffsetRange = InstructionPayloadRange<int>;
 using ServiceArgumentRange = InstructionPayloadRange<ServiceArgument>;
+using BorrowedRootArgumentRange = InstructionPayloadRange<BorrowedRootArgument>;
 using LiteralRange = InstructionPayloadRange<unsigned char>;
 template<> int InstructionPayloadRange<int>::at(std::size_t index) const;
 template<> ServiceArgument InstructionPayloadRange<ServiceArgument>::at(std::size_t index) const;
+template<> BorrowedRootArgument InstructionPayloadRange<BorrowedRootArgument>::at(std::size_t index) const;
 template<> unsigned char InstructionPayloadRange<unsigned char>::at(std::size_t index) const;
 
 // Operations describe language semantics, never target-register names or assembly text.
@@ -476,7 +479,7 @@ public:
 template<class Offsets> class BasicMethodCall {
 public:
     std::string callee;
-    int receiverOffset;                    // 0: receiver; -1: second borrowed formal; positive: ObjectSlot
+    int receiverOffset;                    // 0: receiver/root 0; -1..-5: borrowed roots; positive: ObjectSlot
     Offsets objectArguments = {}; // readonly copied snapshots; scalar entries are zero
     int resultOffset = 0;                  // pristine class result destination; zero for scalar results
     int receiverFieldIndex = -1;           // -1 selects the root; otherwise one logical owned class field
@@ -489,29 +492,31 @@ using MethodCallObservation = BasicMethodCall<OffsetRange>;
 class AcquireObjectLoan {
 public:
     int loanId;
-    int root; // 0/-1 select bound borrowed formals; positive selects an exact ObjectSlot
+    int root; // 0..-5 select bound borrowed formals; positive selects an exact ObjectSlot
     bool mutableValue;
 };
 class ReleaseObjectLoan {
 public:
     int loanId;
 };
-template<class Offsets> class BasicBorrowedCall {
+class BorrowedRootArgument {
+public:
+    int root;
+    int loanId;
+};
+// Ordered invocation-only root/loan pairs borrow the same immutable operand
+// owner as other payloads. No parallel first/second authority is retained.
+template<class Offsets, class Roots> class BasicBorrowedCall {
 public:
     std::string callee;
-    int receiverOffset;
-    int loanId;
+    Roots roots;
     Offsets objectArguments = {};
     int resultOffset = 0;
     Offsets spanArguments = {};
     static constexpr int receiverFieldIndex = -1;
-    // Present only for paired targets. The absent tuple is exactly (0, -1).
-    // Selectors are not frame offsets: -1 names the second bound borrowed root.
-    int secondReceiverOffset = 0;
-    int secondLoanId = -1;
 };
-using BorrowedCall = BasicBorrowedCall<std::vector<int>>;
-using BorrowedCallObservation = BasicBorrowedCall<OffsetRange>;
+using BorrowedCall = BasicBorrowedCall<std::vector<int>, std::vector<BorrowedRootArgument>>;
+using BorrowedCallObservation = BasicBorrowedCall<OffsetRange, BorrowedRootArgumentRange>;
 class MetadataQuery {
 public:
     Query query;
@@ -552,10 +557,10 @@ public:
     int offset;
     Type type;
 };
-// One operation inventory: hostile fixtures own their seven variable payloads,
+// One operation inventory: hostile fixtures own their variable payloads,
 // while production observations borrow only immutable owner ranges. All other
 // operation records, including copied Type and name observations, are shared.
-template<class Offsets, class Services, class Literals>
+template<class Offsets, class Services, class Literals, class Roots>
 using BasicInstruction = std::variant<BindServiceParameter,
     AcquireServiceLoan,
     ReleaseServiceLoan,
@@ -639,9 +644,10 @@ using BasicInstruction = std::variant<BindServiceParameter,
     ReturnOwnedObject,
     AcquireObjectLoan,
     ReleaseObjectLoan,
-    BasicBorrowedCall<Offsets>>;
-using Instruction = BasicInstruction<std::vector<int>, std::vector<ServiceArgument>, std::vector<unsigned char>>;
-using InstructionObservation = BasicInstruction<OffsetRange, ServiceArgumentRange, LiteralRange>;
+    BasicBorrowedCall<Offsets, Roots>>;
+using Instruction = BasicInstruction<std::vector<int>, std::vector<ServiceArgument>, std::vector<unsigned char>,
+                                     std::vector<BorrowedRootArgument>>;
+using InstructionObservation = BasicInstruction<OffsetRange, ServiceArgumentRange, LiteralRange, BorrowedRootArgumentRange>;
 class ObjectSlot {
 public:
     std::string className;
@@ -723,12 +729,11 @@ public:
     Type result;
     std::vector<Type> parameters;
     std::optional<Receiver> receiver;
-    // Named free-function formal shares receiver storage, never lexical privileges.
-    bool borrowedParameter = false;
+    // Canonical explicit formals include the leading owning roots. Receiver is
+    // reserved for genuine methods/constructors; raw integers stay hostile.
+    std::int64_t borrowedRootCount = 0;
+    std::int64_t firstBorrowedMutable = 0;
     std::optional<int> receiverSpanField;
-    // A paired free helper has a mutable first root and one readonly second
-    // root. Both are invocation-only capabilities; neither grants class privacy.
-    std::optional<Receiver> secondBorrowedParameter;
 };
 class Descriptor {
 public:

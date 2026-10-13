@@ -169,6 +169,11 @@ static_assert(static_cast<std::int64_t>(Role::LoanId) == 4 && static_cast<std::i
               static_cast<std::int64_t>(Role::RegionOffset) == 34 &&
               static_cast<std::int64_t>(Role::SecondReceiverOffset) == 98 &&
               static_cast<std::int64_t>(Role::SecondLoanId) == 99);
+// Deprecated fixed second-root roles keep their ordinal identity but source
+// integrity rejects them in every active instruction payload.
+static_assert(static_cast<std::int64_t>(Role::SecondReceiverRef) == 96 &&
+              static_cast<std::int64_t>(Role::NoSecondReceiver) == 97 &&
+              static_cast<std::int64_t>(Role::Root) == 38);
 static_assert(static_cast<std::int64_t>(Role::ServiceOperationId) == 5);
 static_assert(static_cast<std::int64_t>(service::Kind::Console) == 0 &&
               static_cast<std::int64_t>(service::Kind::Display) == 1 &&
@@ -196,7 +201,8 @@ static_assert(static_cast<std::int64_t>(Role::TypeId) == 12 && static_cast<std::
               static_cast<std::int64_t>(Role::ElementTypeId) == 18 && static_cast<std::int64_t>(Role::ReferenceTypeId) == 20);
 static_assert(static_cast<std::int64_t>(Role::SpanArguments) == 8 && static_cast<std::int64_t>(Role::AdditionalServices) == 9 &&
               static_cast<std::int64_t>(Role::ObjectArguments) == 21 && static_cast<std::int64_t>(Role::Sources) == 25 &&
-              static_cast<std::int64_t>(Role::OwnerArguments) == 37);
+              static_cast<std::int64_t>(Role::OwnerArguments) == 37 &&
+              static_cast<std::int64_t>(Role::BorrowedRoots) == 102);
 static_assert(static_cast<std::int64_t>(Role::LiteralBytes) == 33 && static_cast<std::int64_t>(Role::UnsignedConstant) == 11 &&
               static_cast<std::int64_t>(Role::CalleeName) == 100 && static_cast<std::int64_t>(Role::ClassName) == 101);
 static_assert(static_cast<std::int64_t>(Role::SignedConstant) == 10 && static_cast<std::int64_t>(Role::CaseIndex) == 13);
@@ -496,6 +502,15 @@ public:
             for (std::size_t i = 0; i < value.size(); ++i)
                 (void)value.at(i);
     }
+    void roots(BorrowedRootArgumentRange &value) {
+        const auto row = take(Role::BorrowedRoots);
+        if (row.sliceCount % 2 != 0)
+            invalidInstructions();
+        value = instructions_.roots(index(row.sliceBegin), index(row.sliceCount) / 2);
+        if (checkPayload_)
+            for (std::size_t i = 0; i < value.size(); ++i)
+                (void)value.at(i);
+    }
     void literal(LiteralRange &value) {
         const auto row = take(Role::LiteralBytes);
         value = instructions_.literals(index(row.sliceBegin), index(row.sliceCount));
@@ -601,6 +616,13 @@ ServiceArgument Instructions::serviceAt(std::size_t at) const {
         invalidInstructions();
     return {integer(loan.signedValue), static_cast<service::Kind>(integer(kind.signedValue))};
 }
+BorrowedRootArgument Instructions::rootAt(std::size_t at) const {
+    const auto root = state_->row<Pool::operands>(at), loan = state_->row<Pool::operands>(at + 1);
+    if (root.operandRole != static_cast<std::int64_t>(Role::Root) ||
+        loan.operandRole != static_cast<std::int64_t>(Role::LoanId))
+        invalidInstructions();
+    return {integer(root.signedValue), integer(loan.signedValue)};
+}
 unsigned char Instructions::literalAt(std::size_t at) const {
     const auto data = state_->pools[static_cast<std::size_t>(Pool::literals)];
     checkIndex(at, data.size());
@@ -611,6 +633,12 @@ OffsetRange Instructions::offsets(std::size_t begin, std::size_t count) const {
     return {*this, begin, count};
 }
 ServiceArgumentRange Instructions::services(std::size_t begin, std::size_t count) const {
+    if (count > std::numeric_limits<std::size_t>::max() / 2)
+        invalidInstructions();
+    checkRange(begin, count * 2, index(state_->counts.operandCount));
+    return {*this, begin, count};
+}
+BorrowedRootArgumentRange Instructions::roots(std::size_t begin, std::size_t count) const {
     if (count > std::numeric_limits<std::size_t>::max() / 2)
         invalidInstructions();
     checkRange(begin, count * 2, index(state_->counts.operandCount));
@@ -627,6 +655,10 @@ template<> int InstructionPayloadRange<int>::at(std::size_t position) const {
 template<> ServiceArgument InstructionPayloadRange<ServiceArgument>::at(std::size_t position) const {
     checkIndex(position, count_);
     return instructions_->serviceAt(begin_ + position * 2);
+}
+template<> BorrowedRootArgument InstructionPayloadRange<BorrowedRootArgument>::at(std::size_t position) const {
+    checkIndex(position, count_);
+    return instructions_->rootAt(begin_ + position * 2);
 }
 template<> unsigned char InstructionPayloadRange<unsigned char>::at(std::size_t position) const {
     checkIndex(position, count_);

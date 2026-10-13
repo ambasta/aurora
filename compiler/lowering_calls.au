@@ -816,10 +816,10 @@ export namespace compiler_lowering {
         }
         if (method && value_kind(session, result) == compiler_resolver::ResolvedTypeKind::byte_span) {
             const i64 caller = body_function(session);
-            if (paired_borrowed_parameters(session, caller) && frame.capability_root_local() >= 0) {
+            if (borrowed_root_count(session, caller) > 1 && frame.capability_root_local() >= 0) {
                 const LocalRow receiver = session.local(frame.capability_root_local());
                 if (receiver.borrowed_object()) {
-                    return fail(session, LoweringError::paired_borrowed_span_production, reference);
+                    return fail(session, LoweringError::multiple_borrowed_span_production, reference);
                 }
             }
             if (!binding) {
@@ -1001,6 +1001,20 @@ export namespace compiler_lowering {
                     const i64 staged_got_69 = local_type(session, local);
                     match_type(session, staged_got_69, type, reference);
                     const LocalRow root = session.local(local);
+                    // Distinctness is explicit even when every loan is readonly.
+                    // Compare root identity, never type, extent or payload contents.
+                    i64 prior = 0;
+                    while (prior < index && session.good()) {
+                        const ArgumentLane earlier = frame.argument(prior);
+                        if (earlier.kind() != ArgumentKind::borrowed_receiver) {
+                            session.fail_storage(compiler_resolver::StorageStatus::invalid);
+                            return false;
+                        }
+                        if (local_offset(session, earlier.local_id()) == root.offset()) {
+                            return fail(session, LoweringError::borrowed_arguments_require_distinct_roots, reference);
+                        }
+                        prior = prior + 1;
+                    }
                     const SnapshotRow state = root.state();
                     const bool mutable_loan = !parameter_const(session, callee, index);
                     if (mutable_loan) {
@@ -1451,30 +1465,28 @@ export namespace compiler_lowering {
                     emit(session, InstructionForm::MethodCall, begin);
                 } else {
                     if (borrowed) {
-                        const ArgumentLane first = frame.argument(0);
-                        i64 leading = 1;
-                        i64 second_receiver = 0;
-                        i64 second_loan = -1;
-                        if (paired_borrowed_parameters(session, callee)) {
-                            const ArgumentLane second = frame.argument(1);
-                            leading = 2;
-                            second_receiver = local_offset(session, second.local_id());
-                            second_loan = second.loan_id();
-                        }
+                        const i64 leading = borrowed_root_count(session, callee);
                         const OperandRow objects = argument_offsets(session, frame, OperandRole::ObjectArguments,
                             leading, aggregate);
                         const OperandRow span_arguments = argument_offsets(session, frame, OperandRole::SpanArguments,
                             leading, spans);
+                        const i64 roots_begin = session.operand_count();
+                        i64 ordinal = 0;
+                        while (ordinal < leading && session.good()) {
+                            const ArgumentLane lane = frame.argument(ordinal);
+                            const i64 selector = local_offset(session, lane.local_id());
+                            put(session, OperandRole::Root, selector);
+                            put(session, OperandRole::LoanId, lane.loan_id());
+                            ordinal = ordinal + 1;
+                        }
+                        const OperandRow roots = slice(OperandRole::BorrowedRoots, roots_begin,
+                            session.operand_count() - roots_begin);
                         const i64 begin = session.operand_count();
                         put(session, OperandRole::CalleeSymbolId, callee);
-                        const i64 staged_value_81 = local_offset(session, first.local_id());
-                        put(session, OperandRole::ReceiverOffset, staged_value_81);
-                        put(session, OperandRole::LoanId, first.loan_id());
+                        session.append_operand(roots);
                         session.append_operand(objects);
                         put(session, OperandRole::ResultOffset, destination_offset);
                         session.append_operand(span_arguments);
-                        put(session, OperandRole::SecondReceiverOffset, second_receiver);
-                        put(session, OperandRole::SecondLoanId, second_loan);
                         emit(session, InstructionForm::BorrowedCall, begin);
                     } else {
                         if (aggregate) {

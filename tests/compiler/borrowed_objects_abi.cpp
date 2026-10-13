@@ -33,8 +33,8 @@ std::vector<Type> parameters(int arity, int mask) {
 }
 std::vector<int> bind(F &f, int &cursor) {
     std::vector<int> out;
-    for (std::size_t i = 0; i < f.parameters.size(); ++i) {
-        auto type = f.parameters[i];
+    for (std::size_t i = 0; i < f.parameters.size() - f.borrowedRootCount; ++i) {
+        auto type = f.parameters[f.borrowedRootCount + i];
         int base = slot(f, cursor, type);
         out.push_back(base);
         if (type.isSpan())
@@ -47,10 +47,10 @@ std::vector<int> bind(F &f, int &cursor) {
     return out;
 }
 void close(F &f, const std::vector<int> &slots) {
-    for (std::size_t i = f.parameters.size(); i > 0; --i) {
-        if (f.parameters[i - 1].isSpan())
+    for (std::size_t i = f.parameters.size() - f.borrowedRootCount; i > 0; --i) {
+        if (f.parameters[f.borrowedRootCount + i - 1].isSpan())
             f.code.push_back(EndSpan{slots[i - 1]});
-        else if (f.parameters[i - 1].isClass())
+        else if (f.parameters[f.borrowedRootCount + i - 1].isClass())
             f.code.push_back(EndObject{slots[i - 1]});
     }
 }
@@ -76,7 +76,9 @@ void pairedBoundaries(Module &module) {
     module.functions.push_back(copied);
     auto shared = second;
     shared.name = "paired_single_second";
-    shared.borrowedParameter = true;
+    shared.receiver.reset();
+    shared.parameters = {Type("Receiver")};
+    shared.borrowedRootCount = 1;
     shared.code = {MethodCall{"paired_read_second", 0}, Return{}};
     module.functions.push_back(shared);
     F clobber;
@@ -87,10 +89,10 @@ void pairedBoundaries(Module &module) {
     for (int arity = 0; arity <= 4; ++arity) {
         F target;
         target.name = "paired_target_" + std::to_string(arity);
-        target.receiver = Receiver{"Receiver", true, false};
-        target.borrowedParameter = true;
-        target.secondBorrowedParameter = Receiver{"Receiver", false, false};
-        target.parameters.assign(arity, Type::I64);
+        target.borrowedRootCount = 2;
+        target.firstBorrowedMutable = 1;
+        target.parameters = {Type("Receiver"), Type("Receiver")};
+        target.parameters.insert(target.parameters.end(), arity, Type::I64);
         target.result = Type::I64;
         int cursor = 0;
         const auto bound = bind(target, cursor);
@@ -109,7 +111,7 @@ void pairedBoundaries(Module &module) {
              Store{total, Type::I64},
              EndObject{result},
              AcquireObjectLoan{7, -1, false},
-             BorrowedCall{"paired_single_second", -1, 7},
+             BorrowedCall{"paired_single_second", {{-1, 7}}},
              ReleaseObjectLoan{7},
              Push{},
              Load{total, Type::I64},
@@ -127,9 +129,8 @@ void pairedBoundaries(Module &module) {
         for (int depth = 0; depth <= 2; ++depth) {
             F forward;
             forward.name = "paired_forward_" + std::to_string(arity) + "_" + std::to_string(depth);
-            forward.receiver = target.receiver;
-            forward.borrowedParameter = true;
-            forward.secondBorrowedParameter = target.secondBorrowedParameter;
+            forward.borrowedRootCount = target.borrowedRootCount;
+            forward.firstBorrowedMutable = target.firstBorrowedMutable;
             forward.parameters = target.parameters;
             forward.result = Type::I64;
             cursor = 0;
@@ -142,7 +143,7 @@ void pairedBoundaries(Module &module) {
             for (int base : forwarded)
                 add(forward, {Load{base, Type::I64}, Push{}});
             add(forward,
-                {BorrowedCall{target.name, 0, 1, {}, 0, {}, -1, 2},
+                {BorrowedCall{target.name, {{0, 1}, {-1, 2}}, {}, 0, {}},
                  ReleaseObjectLoan{2},
                  ReleaseObjectLoan{1},
                  Store{saved, Type::I64},
@@ -160,6 +161,64 @@ void pairedBoundaries(Module &module) {
             module.functions.push_back(forward);
         }
     }
+}
+void boundedBoundaries(Module &module) {
+    for (int roots = 1; roots <= 6; ++roots)
+        for (int mutableFirst = 0; mutableFirst <= 1; ++mutableFirst)
+            for (int tail = 0; tail <= 6 - roots; ++tail) {
+                const auto suffix = std::to_string(roots) + "_" + std::to_string(mutableFirst) + "_" + std::to_string(tail);
+                F target;
+                target.name = "bounded_target_" + suffix;
+                target.borrowedRootCount = roots;
+                target.firstBorrowedMutable = mutableFirst;
+                target.parameters.assign(roots, Type("Receiver"));
+                target.parameters.insert(target.parameters.end(), tail, Type::I64);
+                target.result = Type::I64;
+                int cursor = 0;
+                const auto inputs = bind(target, cursor);
+                const int total = slot(target, cursor, Type::I64);
+                add(target, {Constant{0, Type::I64}, Store{total, Type::I64}});
+                for (int ordinal = 0; ordinal < roots; ++ordinal) {
+                    add(target, {Call{"paired_scalar_clobber"}, MethodCall{"paired_read_second", -ordinal},
+                                 Push{}, Load{total, Type::I64}, BinaryValue{Binary::CheckedAdd}, Store{total, Type::I64}});
+                }
+                for (int input : inputs)
+                    add(target, {Load{input, Type::I64}, Push{}, Load{total, Type::I64},
+                                 BinaryValue{Binary::CheckedAdd}, Store{total, Type::I64}});
+                add(target, {Load{total, Type::I64}, Return{}});
+                module.functions.push_back(target);
+                for (int depth = 0; depth <= 2; ++depth) {
+                    F forward;
+                    forward.name = "bounded_forward_" + suffix + "_" + std::to_string(depth);
+                    forward.borrowedRootCount = roots;
+                    forward.firstBorrowedMutable = mutableFirst;
+                    forward.parameters = target.parameters;
+                    forward.result = Type::I64;
+                    cursor = 0;
+                    const auto arguments = bind(forward, cursor);
+                    const int saved = slot(forward, cursor, Type::I64);
+                    const int copied = slot(forward, cursor, Type("Box"));
+                    std::vector<BorrowedRootArgument> lanes;
+                    for (int ordinal = 0; ordinal < roots; ++ordinal) {
+                        forward.code.push_back(AcquireObjectLoan{ordinal + 1, -ordinal, ordinal == 0 && mutableFirst != 0});
+                        lanes.push_back({-ordinal, ordinal + 1});
+                    }
+                    for (int index = 0; index < depth; ++index)
+                        add(forward, {Constant{4294967313LL + index, Type::I64}, Push{}});
+                    for (int argument : arguments)
+                        add(forward, {Load{argument, Type::I64}, Push{}});
+                    forward.code.push_back(BorrowedCall{target.name, lanes});
+                    for (int ordinal = roots; ordinal > 0; --ordinal)
+                        forward.code.push_back(ReleaseObjectLoan{ordinal});
+                    add(forward, {Store{saved, Type::I64}, Call{"paired_scalar_clobber"}, BeginObject{copied},
+                                  MethodCall{"paired_copy_second", 1 - roots, {}, copied}, Load{saved, Type::I64},
+                                  Push{}, Load{copied, Type::I64}, BinaryValue{Binary::CheckedAdd}, EndObject{copied}});
+                    for (int index = 0; index < depth; ++index)
+                        forward.code.push_back(BinaryValue{Binary::CheckedAdd});
+                    forward.code.push_back(Return{});
+                    module.functions.push_back(forward);
+                }
+            }
 }
 } // namespace
 int main() {
@@ -184,9 +243,10 @@ int main() {
                     std::to_string(n) + "_" + (mask < 0 ? "scalar" : std::to_string(mask)) + "_" + std::to_string(mode);
                 F target;
                 target.name = "borrow_object_target_" + suffix;
-                target.receiver = Receiver{"Receiver", mode == 1, false};
-                target.borrowedParameter = true;
+                target.borrowedRootCount = 1;
+                target.firstBorrowedMutable = mode == 1;
                 target.parameters = parameters(n, mask);
+                target.parameters.insert(target.parameters.begin(), Type("Receiver"));
                 target.result = mode == 0 ? Type::I64 : Type("Box");
                 int cursor = 0;
                 auto bound = bind(target, cursor);
@@ -207,8 +267,8 @@ int main() {
                         F f;
                         f.name = "borrow_object_forward_" + suffix + "_" + std::to_string(depth) + "_" +
                                  std::to_string(transform);
-                        f.receiver = Receiver{"Receiver", mode == 1, false};
-                        f.borrowedParameter = true;
+                        f.borrowedRootCount = 1;
+                        f.firstBorrowedMutable = mode == 1;
                         f.parameters = target.parameters;
                         f.result = Type::I64;
                         cursor = 0;
@@ -218,7 +278,7 @@ int main() {
                         for (int i = 0; i < depth; ++i)
                             add(f, {Constant{4294967313LL + i, Type::I64}, Push{}});
                         for (int i = 0; i < n; ++i) {
-                            if (f.parameters[i].isSpan()) {
+                            if (f.parameters[f.borrowedRootCount + i].isSpan()) {
                                 spans[i] = bound[i];
                                 if (transform) {
                                     int copy = slot(f, cursor, Type::ByteSpan), child = slot(f, cursor, Type::ByteSpan);
@@ -232,21 +292,16 @@ int main() {
                                     children.push_back(copy);
                                     children.push_back(child);
                                 }
-                            } else if (f.parameters[i].isClass())
+                            } else if (f.parameters[f.borrowedRootCount + i].isClass())
                                 objects[i] = bound[i];
                         }
                         int result = mode ? slot(f, cursor, target.result) : 0;
                         if (mode == 1)
                             f.code.push_back(BeginObject{result});
                         for (int i = 0; i < n; ++i)
-                            if (!f.parameters[i].isSpan() && !f.parameters[i].isClass())
-                                add(f, {Load{bound[i], f.parameters[i]}, Push{}});
-                        f.code.push_back(BorrowedCall{target.name,
-                                                      0,
-                                                      1,
-                                                      mask < 0 ? std::vector<int>{} : objects,
-                                                      result,
-                                                      mask < 0 ? std::vector<int>{} : spans});
+                            if (!f.parameters[f.borrowedRootCount + i].isSpan() && !f.parameters[f.borrowedRootCount + i].isClass())
+                                add(f, {Load{bound[i], f.parameters[f.borrowedRootCount + i]}, Push{}});
+                        f.code.push_back(BorrowedCall{target.name, {{0, 1}}, mask < 0 ? std::vector<int>{} : objects, result, mask < 0 ? std::vector<int>{} : spans});
                         f.code.push_back(ReleaseObjectLoan{1});
                         if (mode == 1)
                             add(f, {Load{result, Type::I64}, EndObject{result}});
@@ -260,6 +315,7 @@ int main() {
                     }
             }
         pairedBoundaries(m);
+        boundedBoundaries(m);
         std::cout << X86Emitter{}.emit(validate(std::move(m)));
         return 0;
     } catch (const std::exception &e) {

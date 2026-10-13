@@ -1204,11 +1204,15 @@ std::uint64_t resolutionQuota() {
     // failed prefixes. F/fields/carriers/returns are separately named producer
     // substitutions, not new source limits or eagerly reserved storage.
     const auto X = Sx, F = X, fields = add(X, members), carriers = X, returns = add(X, F);
-    // At most two borrowed formal identities supplement the frame-backed locals.
-    constexpr std::uint64_t localHigh = 8194, frameBytes = 65536, frameWords = 8192;
+    // The existing six-formal limit bounds the non-frame borrowed identities.
+    // All six roots may supplement the complete frame-backed local prefix.
+    constexpr std::uint64_t maximumFormals = 6, frameBytes = 65536, frameWords = 8192;
+    constexpr std::uint64_t localHigh = frameWords + maximumFormals;
     const auto allLocals = mul(F, localHigh);
     // Primitive producers: literal/load/store/operator/index/control/receiver,
     // service/resource operations and <=6 scalar pushes fit 16 per syntax row.
+    // A borrowed call has <=6 acquisitions + <=6 releases + one call; with
+    // tail pushes the bound is 2*N + (6-N) + 1 <=13, inside that same charge.
     // Array copy/literal/byte-string expansion is <=4*4096 per occurrence;
     // designated/constructor fields <=3 per field/edge; parameter binding <=6/F.
     // Lifetime begins/staging consume <=2/allocation. Every explicit/synthetic
@@ -1217,6 +1221,9 @@ std::uint64_t resolutionQuota() {
         {mul(16, X), mul(4 * 4096, X), mul(3, X), mul(6, F), mul(2, allLocals), allLocals, mul(returns, localHigh)});
     // A two-service, six-formal call may carry six span positions, six copied
     // snapshot positions and the additional service's two loan/kind items.
+    // A borrowed call is a disjoint call kind: its ordered pair list costs
+    // 2*N, plus at most two (6-N)-position lists for the one-root copied/span
+    // form, totaling <=12. The existing 14-item per-call charge covers both.
     const auto instructionLists = add(mul(14, X), mul(64, X));
     const auto literalBytes = mul(4096, X);
     // Packed u8 leaves make scalar slot count byte-bounded, not word-bounded.
@@ -1228,7 +1235,9 @@ std::uint64_t resolutionQuota() {
     const auto ownedTypes = byteSlots;
     const auto slots =
         sum({scalarSlots, objectSlots, arraySlots, spanSlots, serviceSlots, regionSlots, byteSlots, ownedTypes});
-    const auto receiverRows = mul(2, F), classRows = add(nominals, carriers), fieldRows = add(fields, carriers);
+    // Only genuine methods/constructors publish Receiver rows; root types are
+    // among the existing <=6 explicit ParameterTypes charged below.
+    const auto receiverRows = F, classRows = add(nominals, carriers), fieldRows = add(fields, carriers);
     const auto descriptors = sum({7, nominals, X}), views = M, enums = nominals, lint = X;
     const auto outputRows = sum({hostedLoweringPreludeRows,
                                  1,
@@ -1278,10 +1287,11 @@ std::uint64_t resolutionQuota() {
                                        views,
                                        enums,
                                        lint});
-    // A borrowed call adds a second selector/loan pair, at most once per syntax row.
+    // BorrowedCall now has five fixed roles; its root pairs are charged only
+    // in instructionLists, never again as retired fixed second-root fields.
     // A service call adds its copied-snapshot slice as a seventh fixed operand.
     const auto operandRows = sum(
-        {setupOperands, mul(6, instructions), mul(2, X), X, instructions, instructionLists, slotOperands, metadataOperands});
+        {setupOperands, mul(6, instructions), X, instructions, instructionLists, slotOperands, metadataOperands});
     // Shared resolution owners remain live. Additional type/name/source rows
     // have distinct charges; lowering lookup domains retain nominal/layout,
     // field, function, lexical-binding, forward-list and reflection indexes.
@@ -1311,7 +1321,7 @@ std::uint64_t resolutionQuota() {
         return add(mul(2, count), 8);
     };
     // Snapshot high-water retains incoming + then prefixes at each if and
-    // incoming prefixes at while/short-circuit frames: (2*128+128)*8194.
+    // incoming prefixes at while/short-circuit frames: (2*128+128)*localHigh.
     // Continuations are one function + block/control + expression path (384),
     // with all six argument lanes embedded in the generated copied row.
     const auto snapshots = mul(384, localHigh);

@@ -696,18 +696,15 @@ template<> struct InstructionCodec<ReleaseObjectLoan> {
     }
 };
 
-template<class Offsets>
-struct InstructionCodec<BasicBorrowedCall<Offsets>> {
+template<class Offsets, class Roots>
+struct InstructionCodec<BasicBorrowedCall<Offsets, Roots>> {
     static constexpr auto form = InstructionForm::BorrowedCall;
     template<class Cursor, class Value> static void fields(Cursor &cursor, Value &value) {
         cursor.callee(value.callee);
-        cursor.integer(OperandRole::ReceiverOffset, value.receiverOffset);
-        cursor.integer(OperandRole::LoanId, value.loanId);
+        cursor.roots(value.roots);
         cursor.offsets(OperandRole::ObjectArguments, value.objectArguments);
         cursor.integer(OperandRole::ResultOffset, value.resultOffset);
         cursor.offsets(OperandRole::SpanArguments, value.spanArguments);
-        cursor.integer(OperandRole::SecondReceiverOffset, value.secondReceiverOffset);
-        cursor.integer(OperandRole::SecondLoanId, value.secondLoanId);
     }
 };
 

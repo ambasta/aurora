@@ -5,6 +5,7 @@
 #include "x86.hpp"
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <string>
 
 using namespace aurora;
@@ -82,8 +83,9 @@ F borrowed(bool mutableValue = true) {
     F function;
     function.name = "borrow_buffer";
     function.result = Type::I64;
-    function.receiver = Receiver{"Buffer", mutableValue, false, true};
-    function.borrowedParameter = true;
+    function.parameters = {Type("Buffer")};
+    function.borrowedRootCount = 1;
+    function.firstBorrowedMutable = mutableValue;
     function.code = {MethodCall{mutableValue ? "write_buffer" : "read_buffer", 0}, Return{}};
     return function;
 }
@@ -107,7 +109,7 @@ Module fixture(bool mutableValue = true) {
     auto caller = entry();
     caller.code.insert(caller.code.end(),
                        {AcquireObjectLoan{1, 48, mutableValue},
-                        BorrowedCall{"borrow_buffer", 48, 1},
+                        BorrowedCall{"borrow_buffer", {{48, 1}}},
                         ReleaseObjectLoan{1},
                         EndObject{48},
                         Return{}});
@@ -120,7 +122,7 @@ Module constLocal(bool mutableLoan = false) {
     caller.objectSlots[88].mutableValue = false;
     before<AcquireObjectLoan>(caller, {BeginObject{88}, MoveObject{48, 88}, EndObject{48}});
     op<AcquireObjectLoan>(caller).root = 88;
-    op<BorrowedCall>(caller).receiverOffset = 88;
+    op<BorrowedCall>(caller).roots[0].root = 88;
     op<EndObject>(caller, 1).offset = 88;
     return module;
 }
@@ -171,7 +173,7 @@ Module forwarded(bool outerMutable, bool innerMutable) {
     auto inner = borrowed(innerMutable);
     inner.name = "borrow_leaf";
     named(module, "borrow_buffer").code = {
-        AcquireObjectLoan{2, 0, innerMutable}, BorrowedCall{"borrow_leaf", 0, 2}, ReleaseObjectLoan{2}, Return{}};
+        AcquireObjectLoan{2, 0, innerMutable}, BorrowedCall{"borrow_leaf", {{0, 2}}}, ReleaseObjectLoan{2}, Return{}};
     module.functions.push_back(inner);
     return module;
 }
@@ -196,7 +198,7 @@ Module mixed() {
     before<EndObject>(caller, {Load{104, Type::I64}, EndSpan{160}, EndObject{88}, EndObject{96}, EndObject{104}});
     auto &target = named(module, "borrow_buffer");
     target.result = Type("Word");
-    target.parameters = {Type::I64, mode, Type("Word"), Type::ByteSpan, Type::U8};
+    target.parameters = {Type("Buffer"), Type::I64, mode, Type("Word"), Type::ByteSpan, Type::U8};
     target.frameBytes = 96;
     target.slots = {{8, Type::I64}, {16, mode}, {24, Type::I64}, {88, Type::U8}};
     target.objectSlots = {{24, {"Word", false}}};
@@ -244,7 +246,7 @@ Module paired(bool sameClass = false) {
     caller.code.insert(caller.code.end(),
                        {AcquireObjectLoan{1, 48, true},
                         AcquireObjectLoan{2, 88, false},
-                        BorrowedCall{"borrow_pair", 48, 1, {}, 0, {}, 88, 2},
+                        BorrowedCall{"borrow_pair", {{48, 1}, {88, 2}}, {}, 0, {}},
                         ReleaseObjectLoan{2},
                         ReleaseObjectLoan{1},
                         EndObject{88},
@@ -252,7 +254,8 @@ Module paired(bool sameClass = false) {
                         Return{}});
     auto target = borrowed();
     target.name = "borrow_pair";
-    target.secondBorrowedParameter = Receiver{secondClass, false, false, true};
+    target.parameters.push_back(Type(secondClass));
+    target.borrowedRootCount = 2;
     target.code = {MethodCall{"write_buffer", 0}, MethodCall{"read_second", -1}, Return{}};
     auto second = method();
     second.name = "read_second";
@@ -266,7 +269,7 @@ Module pairedForwarded() {
     leaf.name = "pair_leaf";
     named(module, "borrow_pair").code = {AcquireObjectLoan{3, 0, true},
                                           AcquireObjectLoan{4, -1, false},
-                                          BorrowedCall{"pair_leaf", 0, 3, {}, 0, {}, -1, 4},
+                                          BorrowedCall{"pair_leaf", {{0, 3}, {-1, 4}}, {}, 0, {}},
                                           ReleaseObjectLoan{4},
                                           ReleaseObjectLoan{3},
                                           Return{}};
@@ -301,11 +304,11 @@ void pairedTests() {
     auto single = paired();
     auto shared = borrowed(false);
     shared.name = "shared_second";
-    shared.receiver->className = "Other";
+    shared.parameters[0] = Type("Other");
     shared.code = {MethodCall{"read_second", 0}, Return{}};
     single.functions.push_back(shared);
     named(single, "borrow_pair").code = {AcquireObjectLoan{3, -1, false},
-                                          BorrowedCall{"shared_second", -1, 3},
+                                          BorrowedCall{"shared_second", {{-1, 3}}},
                                           ReleaseObjectLoan{3},
                                           Return{}};
     accept("paired second root forwards through unchanged single-root ABI", single);
@@ -316,18 +319,18 @@ void pairedTests() {
     check("pair requires second loan", [](Module &m) { remove<AcquireObjectLoan>(m.functions[0], 1); },
           "borrowed call requires active loan");
     check("pair requires distinct loan identities", [](Module &m) {
-        op<BorrowedCall>(m.functions[0]).secondLoanId = 1;
-    }, "borrowed call second root tuple does not match target");
+        op<BorrowedCall>(m.functions[0]).roots[1].loanId = 1;
+    }, "borrowed call root lanes do not match target");
     check("pair rejects aliased root selectors", [](Module &m) {
-        op<BorrowedCall>(m.functions[0]).secondReceiverOffset = 48;
-    }, "borrowed call second root tuple does not match target");
+        op<BorrowedCall>(m.functions[0]).roots[1].root = 48;
+    }, "borrowed call root lanes do not match target");
     check("pair checks second nominal class", [](Module &m) {
-        named(m, "borrow_pair").secondBorrowedParameter->className = "Buffer";
+        named(m, "borrow_pair").parameters[1] = Type("Buffer");
         op<MethodCall>(named(m, "borrow_pair"), 1).callee = "read_buffer";
     }, "borrowed call root, lifetime, nominal type or authority mismatch");
     check("pair checks second loan mutability", [](Module &m) {
         op<AcquireObjectLoan>(m.functions[0], 1).mutableValue = true;
-    }, "borrowed call root, lifetime, nominal type or authority mismatch");
+    }, "borrowed call root, nominal type or authority mismatch");
     check("pair second root cannot end during prepared loan", [](Module &m) {
         before<BorrowedCall>(m.functions[0], {EndObject{88}});
     }, "object access conflicts with active synchronous loan");
@@ -340,9 +343,13 @@ void pairedTests() {
         m = pairedForwarded();
         remove<ReleaseObjectLoan>(named(m, "borrow_pair"));
     }, "return with active synchronous object loan");
-    for (int invalid : {-2, -7})
+    for (int invalid : {-6, std::numeric_limits<int>::min()})
         check("pair rejects nonselector negative root " + std::to_string(invalid), [=](Module &m) {
             op<MethodCall>(named(m, "borrow_pair"), 1).receiverOffset = invalid;
+        }, "invalid method receiver offset");
+    for (int unbound : {-2, -5})
+        check("pair rejects unbound selector " + std::to_string(unbound), [=](Module &m) {
+            op<MethodCall>(named(m, "borrow_pair"), 1).receiverOffset = unbound;
         }, "invalid method receiver offset");
     check("pair second cannot obtain mutable method authority", [](Module &m) {
         auto writeSecond = named(m, "read_second");
@@ -367,35 +374,35 @@ void pairedTests() {
             f.frameBytes = 64;
             f.spanSlots = {56};
             f.code = {MethodCall{"view_buffer", root, {}, 56}, EndSpan{56}, Constant{0, Type::I64}, Return{}};
-        }, "paired borrowed roots cannot produce span results");
+        }, "multiple borrowed roots cannot produce span results");
     reject("legacy target rejects nondefault second selector", fixture(), [](Module &m) {
-        op<BorrowedCall>(m.functions[0]).secondReceiverOffset = -1;
-    }, "borrowed call second root tuple does not match target");
+        op<BorrowedCall>(m.functions[0]).roots.push_back({-1, 2});
+    }, "borrowed call root lanes do not match target");
     reject("legacy target rejects extra second loan", fixture(), [](Module &m) {
-        op<BorrowedCall>(m.functions[0]).secondLoanId = 2;
-    }, "borrowed call second root tuple does not match target");
+        op<BorrowedCall>(m.functions[0]).roots.push_back({88, 2});
+    }, "borrowed call root lanes do not match target");
     const auto metadata = [&](const std::string &name, const std::function<void(F &)> &change,
                               const std::string &diagnostic) {
         auto module = paired();
         module.functions.erase(module.functions.begin());
         reject(name, module, [&](Module &m) { change(named(m, "borrow_pair")); }, diagnostic);
     };
-    metadata("pair requires borrowed free function identity", [](F &f) { f.borrowedParameter = false; },
-             "paired borrowed formals require mutable first and readonly second owning roots");
-    metadata("pair leading root must be mutable", [](F &f) { f.receiver->mutableValue = false; },
-             "paired borrowed formals require mutable first and readonly second owning roots");
-    metadata("pair second root must be const", [](F &f) { f.secondBorrowedParameter->mutableValue = true; },
-             "paired borrowed formals require mutable first and readonly second owning roots");
-    metadata("pair second cannot be constructor", [](F &f) { f.secondBorrowedParameter->constructor = true; },
-             "paired borrowed formals require mutable first and readonly second owning roots");
-    metadata("pair second must own resources", [](F &f) { f.secondBorrowedParameter->className = "Word"; },
-             "second borrowed formal requires known owning class");
-    metadata("pair counts both roots toward limit", [](F &f) { f.parameters.assign(5, Type::I64); },
-             "two borrowed formals count toward six parameters");
-    metadata("pair rejects copied parameters", [](F &f) { f.parameters = {Type("Word")}; },
-             "paired borrowed signature requires scalar or enum values");
+    metadata("pair requires borrowed free function identity", [](F &f) {
+        f.receiver = Receiver{"Buffer", true, false};
+    }, "borrowed roots require a free-function signature");
+    metadata("pair first mutability must be canonical", [](F &f) { f.firstBorrowedMutable = 2; },
+             "invalid hosted IR metadata transport");
+    metadata("pair cannot have constructor receiver", [](F &f) {
+        f.receiver = Receiver{"Buffer", true, true};
+    }, "borrowed roots require a free-function signature");
+    metadata("pair second must own resources", [](F &f) { f.parameters[1] = Type("Word"); },
+             "borrowed root requires a complete concrete owning class");
+    metadata("pair counts both roots toward limit", [](F &f) { f.parameters.insert(f.parameters.end(), 5, Type::I64); },
+             "borrowed roots count toward six parameters");
+    metadata("pair rejects copied parameters", [](F &f) { f.parameters.push_back(Type("Word")); },
+             "multi-root borrowed signature requires scalar or enum values");
     metadata("pair rejects copied result", [](F &f) { f.result = Type("Word"); },
-             "paired borrowed signature requires scalar or enum values");
+             "multi-root borrowed signature requires scalar or enum values");
     auto joined = pairedForwarded();
     auto &joinedFunction = named(joined, "borrow_pair");
     before<BorrowedCall>(joinedFunction, {Constant{1, Type::Bool}, BranchFalse{1}, Jump{2}, Label{1}, Label{2}});
@@ -419,18 +426,143 @@ void pairedTests() {
     AbiDeclarations declarations;
     declarations.functions = {{"borrow_pair", {"fixture::pair", {}}}, {"read_second", {"fixture::single", {}}}};
     const auto abi = emitter.abiFactsJson(validated, declarations);
-    require(abi.find("\"borrow_pair\":{\"source_name\":\"fixture::pair\",\"receiver\":\"Buffer\","
-                     "\"receiver_mutable\":true,\"borrowed_parameter\":true,"
-                     "\"second_receiver\":{\"type_name\":\"Other\",\"mutable\":false},"
-                     "\"root_count\":2,\"root_tuple_bytes\":16,\"root_order\":[\"receiver\",\"second_receiver\"],"
+    require(abi.find("\"borrow_pair\":{\"source_name\":\"fixture::pair\",\"receiver\":null,"
+                     "\"receiver_mutable\":null,\"borrowed_root_count\":2,\"borrowed_roots\":["
+                     "{\"ordinal\":0,\"selector\":0,\"type_name\":\"Buffer\",\"mutable\":true},"
+                     "{\"ordinal\":1,\"selector\":-1,\"type_name\":\"Other\",\"mutable\":false}],"
+                     "\"borrowed_root_abi\":{\"kind\":\"tuple\",\"register\":\"r10\","
+                     "\"tuple_payload_bytes\":16,\"tuple_reserved_bytes\":16,\"saved_root_reserved_bytes\":16},"
                      "\"parameter_bytes\":0,\"parameters\":[],\"result\":{\"bytes\":8,\"kind\":\"i64\"}") !=
                 std::string::npos,
-            "paired ABI facts must preserve nominal roots, authority, pointer order and scalar result");
+            "paired ABI facts preserve ordered nominal roots, authority and unchanged pointer tuple");
     require(abi.find("\"read_second\":{\"source_name\":\"fixture::single\",\"receiver\":\"Other\","
-                     "\"receiver_mutable\":false,\"borrowed_parameter\":false,\"second_receiver\":null,"
-                     "\"root_count\":1,\"root_tuple_bytes\":0,\"root_order\":[\"receiver\"]") != std::string::npos,
-            "single-root ABI facts must retain the receiver spelling and direct-pointer convention");
+                     "\"receiver_mutable\":false,\"borrowed_root_count\":0,\"borrowed_roots\":[],"
+                     "\"borrowed_root_abi\":{\"kind\":\"none\",\"register\":null,"
+                     "\"tuple_payload_bytes\":0,\"tuple_reserved_bytes\":0,\"saved_root_reserved_bytes\":0}") != std::string::npos,
+            "genuine method ABI facts retain receiver identity without borrowing a formal");
 }
+// Compact prefix matrix; no source parser or generated facts manufacture these
+// signatures. Every selector and every independent loan lane is authored here.
+Module bounded(int roots, bool mutableFirst, int tail = 0) {
+    auto module = shapes();
+    module.enumCases["Mode"] = 2;
+    F leaf;
+    leaf.name = "bounded_leaf";
+    leaf.parameters.assign(roots, Type("Buffer"));
+    leaf.borrowedRootCount = roots;
+    leaf.firstBorrowedMutable = mutableFirst;
+    leaf.result = Type::enumeration("Mode");
+    for (int index = 0; index < tail; ++index) {
+        const auto type = index % 2 ? Type::enumeration("Mode") : Type::I64;
+        leaf.parameters.push_back(type);
+        leaf.slots[(index + 1) * 8] = type;
+        leaf.code.push_back(BindParameter{index, (index + 1) * 8, type});
+    }
+    leaf.frameBytes = (tail * 8 + 15) & ~15;
+    for (int ordinal = 0; ordinal < roots; ++ordinal)
+        leaf.code.push_back(MethodCall{ordinal == 0 && mutableFirst ? "write_buffer" : "read_buffer", -ordinal});
+    leaf.code.insert(leaf.code.end(), {EnumConstant{leaf.result, 1}, Return{}});
+    auto forward = leaf;
+    forward.name = "bounded_forward";
+    forward.code.resize(tail);
+    std::vector<BorrowedRootArgument> lanes;
+    for (int ordinal = 0; ordinal < roots; ++ordinal) {
+        forward.code.push_back(AcquireObjectLoan{ordinal + 1, -ordinal, ordinal == 0 && mutableFirst});
+        lanes.push_back({-ordinal, ordinal + 1});
+    }
+    for (int index = 0; index < tail; ++index) {
+        forward.code.push_back(Load{(index + 1) * 8, forward.parameters[roots + index]});
+        forward.code.push_back(Push{});
+    }
+    forward.code.push_back(BorrowedCall{"bounded_leaf", lanes});
+    for (int ordinal = roots; ordinal > 0; --ordinal)
+        forward.code.push_back(ReleaseObjectLoan{ordinal});
+    forward.code.push_back(Return{});
+    module.functions = {forward, leaf, method(), method(true)};
+    return module;
+}
+void boundedTests() {
+    for (int roots = 1; roots <= 6; ++roots) {
+        for (bool mutableFirst : {false, true})
+            for (int tail = 0; tail <= 6 - roots; ++tail)
+                accept("bounded roots " + std::to_string(roots) + " first " + std::to_string(mutableFirst) +
+                           " scalar enum tail " + std::to_string(tail), bounded(roots, mutableFirst, tail));
+        for (int first = 0; first < roots; ++first)
+            for (int second = first + 1; second < roots; ++second) {
+                const auto label = std::to_string(roots) + "/" + std::to_string(first) + "/" + std::to_string(second);
+                reject("readonly alias every pair " + label, bounded(roots, false), [=](Module &m) {
+                    op<BorrowedCall>(m.functions[0]).roots[second].root = -first;
+                }, "borrowed call root lanes do not match target");
+                reject("duplicate loan every pair " + label, bounded(roots, false), [=](Module &m) {
+                    op<BorrowedCall>(m.functions[0]).roots[second].loanId = first + 1;
+                }, "borrowed call root lanes do not match target");
+                reject("distinct swapped loans deny mismatched provenance " + label, bounded(roots, false), [=](Module &m) {
+                    auto &lanes = op<BorrowedCall>(m.functions[0]).roots;
+                    std::swap(lanes[first].loanId, lanes[second].loanId);
+                }, "borrowed call root, nominal type or authority mismatch");
+            }
+        for (int ordinal = 0; ordinal < roots; ++ordinal) {
+            const auto label = std::to_string(roots) + "/" + std::to_string(ordinal);
+            reject("missing acquired loan lane " + label, bounded(roots, false), [=](Module &m) {
+                remove<AcquireObjectLoan>(m.functions[0], ordinal);
+            }, "borrowed call requires active loan");
+            reject("nonpositive loan lane " + label, bounded(roots, false), [=](Module &m) {
+                op<BorrowedCall>(m.functions[0]).roots[ordinal].loanId = -1;
+            }, "borrowed call requires active loan");
+            reject("exact nominal type every lane " + label, bounded(roots, false), [=](Module &m) {
+                auto &target = named(m, "bounded_leaf");
+                target.parameters[ordinal] = Type("Other");
+                target.code = {EnumConstant{target.result, 0}, Return{}};
+            }, "borrowed call root, lifetime, nominal type or authority mismatch");
+            reject("missing root lane " + label, bounded(roots, false), [=](Module &m) {
+                auto &lanes = op<BorrowedCall>(m.functions[0]).roots;
+                lanes.erase(lanes.begin() + ordinal);
+            }, "borrowed call root lanes do not match target");
+            for (int selector : {-6, std::numeric_limits<int>::min()})
+                reject("selector bounded before negation " + label + "/" + std::to_string(selector),
+                       bounded(roots, false), [=](Module &m) {
+                    op<BorrowedCall>(m.functions[0]).roots[ordinal].root = selector;
+                }, "invalid borrowed object root");
+            if (ordinal > 0)
+                reject("later formal cannot acquire mutable loan " + label, bounded(roots, true), [=](Module &m) {
+                    op<AcquireObjectLoan>(m.functions[0], ordinal).mutableValue = true;
+                }, "shared formal cannot supply mutable object loan");
+            if (roots > 1)
+                reject("every bound root denies span production " + label, bounded(roots, false), [=](Module &m) {
+                    m.functions.push_back(viewMethod());
+                    auto &f = named(m, "bounded_leaf");
+                    f.frameBytes = 64;
+                    f.spanSlots = {56};
+                    f.code = {MethodCall{"view_buffer", -ordinal, {}, 56}, EndSpan{56}, EnumConstant{f.result, 0}, Return{}};
+                }, "multiple borrowed roots cannot produce span results");
+        }
+        reject("extra root lane " + std::to_string(roots), bounded(roots, false), [](Module &m) {
+            op<BorrowedCall>(m.functions[0]).roots.push_back({48, 7});
+        }, "borrowed call root lanes do not match target");
+        if (roots > 1) {
+            for (int shape = 0; shape < 3; ++shape)
+                reject("multi-root payload lanes stay canonical " + std::to_string(roots) + "/" + std::to_string(shape),
+                       bounded(roots, false), [=](Module &m) {
+                    auto &call = op<BorrowedCall>(m.functions[0]);
+                    if (shape == 0) call.objectArguments = {0};
+                    if (shape == 1) call.spanArguments = {0};
+                    if (shape == 2) call.resultOffset = 8;
+                }, "borrowed call root lanes do not match target");
+        }
+    }
+    for (std::int64_t count : std::initializer_list<std::int64_t>{-1, 7, std::numeric_limits<std::int64_t>::min()})
+        reject("raw root count stays hostile " + std::to_string(count), bounded(6, false), [=](Module &m) {
+            m.functions[0].borrowedRootCount = count;
+        }, "invalid hosted IR metadata transport");
+    for (std::int64_t flag : {-1LL, 2LL})
+        reject("raw first mutability stays hostile " + std::to_string(flag), bounded(6, false), [=](Module &m) {
+            m.functions[0].firstBorrowedMutable = flag;
+        }, "invalid hosted IR metadata transport");
+    reject("readonly first cannot escalate while forwarding", bounded(6, false), [](Module &m) {
+        named(m, "bounded_leaf").firstBorrowedMutable = 1;
+    }, "borrowed call root, lifetime, nominal type or authority mismatch");
+}
+
 void loanTests() {
     accept("mutable local root", fixture());
     accept("shared local root", fixture(false));
@@ -453,26 +585,26 @@ void loanTests() {
     check(
         "call wrong loan identity",
         [](Module &m) {
-            op<BorrowedCall>(m.functions[0]).loanId = 2;
+            op<BorrowedCall>(m.functions[0]).roots[0].loanId = 2;
         },
         "borrowed call requires active loan");
     for (int identity : {0, -1})
         check(
             "call rejects nonpositive loan identity " + std::to_string(identity),
             [=](Module &m) {
-                op<BorrowedCall>(m.functions[0]).loanId = identity;
+                op<BorrowedCall>(m.functions[0]).roots[0].loanId = identity;
             },
             "borrowed call requires active loan");
     check(
         "call rejects invalid negative root selector",
         [](Module &m) {
-            op<BorrowedCall>(m.functions[0]).receiverOffset = -2;
+            op<BorrowedCall>(m.functions[0]).roots[0].root = -6;
         },
         "invalid borrowed object root");
     check(
         "call rejects unbound second root selector",
         [](Module &m) {
-            op<BorrowedCall>(m.functions[0]).receiverOffset = -1;
+            op<BorrowedCall>(m.functions[0]).roots[0].root = -1;
         },
         "borrowed object root is not bound");
     for (int identity : {0, -1})
@@ -530,7 +662,7 @@ void loanTests() {
         [](Module &m) {
             op<AcquireObjectLoan>(m.functions[0]).root = 0;
         },
-        "root zero loan requires named borrowed formal");
+        "invalid borrowed object root");
     check(
         "inactive root",
         [](Module &m) {
@@ -569,7 +701,7 @@ void loanTests() {
     check(
         "same-layout wrong nominal target",
         [](Module &m) {
-            named(m, "borrow_buffer").receiver->className = "Other";
+            named(m, "borrow_buffer").parameters[0] = Type("Other");
             auto otherMethod = method(true);
             otherMethod.name = "write_other";
             otherMethod.receiver->className = "Other";
@@ -580,29 +712,29 @@ void loanTests() {
     check(
         "call substitutes different root",
         [](Module &m) {
-            op<BorrowedCall>(m.functions[0]).receiverOffset = 88;
+            op<BorrowedCall>(m.functions[0]).roots[0].root = 88;
         },
-        "borrowed call root, lifetime, nominal type or authority mismatch");
+        "borrowed call root, nominal type or authority mismatch");
     check(
         "call substitutes interior root",
         [](Module &m) {
-            op<BorrowedCall>(m.functions[0]).receiverOffset = 40;
+            op<BorrowedCall>(m.functions[0]).roots[0].root = 40;
         },
         "borrowed call root, lifetime, nominal type or authority mismatch");
     check(
         "mutable loan cannot call shared target",
         [](Module &m) {
-            named(m, "borrow_buffer").receiver->mutableValue = false;
+            named(m, "borrow_buffer").firstBorrowedMutable = 0;
             op<MethodCall>(named(m, "borrow_buffer")).callee = "read_buffer";
         },
-        "borrowed call root, lifetime, nominal type or authority mismatch");
+        "borrowed call root, nominal type or authority mismatch");
     reject(
         "shared loan cannot call mutable target",
         fixture(false),
         [](Module &m) {
-            named(m, "borrow_buffer").receiver->mutableValue = true;
+            named(m, "borrow_buffer").firstBorrowedMutable = 1;
         },
-        "borrowed call root, lifetime, nominal type or authority mismatch");
+        "borrowed call root, nominal type or authority mismatch");
     check(
         "release before call",
         [](Module &m) {
@@ -624,13 +756,13 @@ void loanTests() {
     check(
         "loan used twice",
         [](Module &m) {
-            before<ReleaseObjectLoan>(m.functions[0], {BorrowedCall{"borrow_buffer", 48, 1}});
+            before<ReleaseObjectLoan>(m.functions[0], {BorrowedCall{"borrow_buffer", {{48, 1}}}});
         },
         "object loan already used by a call");
     check(
         "stale call after release",
         [](Module &m) {
-            before<EndObject>(m.functions[0], {BorrowedCall{"borrow_buffer", 48, 1}});
+            before<EndObject>(m.functions[0], {BorrowedCall{"borrow_buffer", {{48, 1}}}});
         },
         "borrowed call requires active loan");
     check(
@@ -742,11 +874,11 @@ void aliasTests() {
         "owned byte or root mutation with live readonly span");
     auto twoShared = fixture(false);
     before<BorrowedCall>(twoShared.functions[0], {AcquireObjectLoan{2, 48, false}});
-    before<EndObject>(twoShared.functions[0], {BorrowedCall{"borrow_buffer", 48, 2}, ReleaseObjectLoan{2}});
+    before<EndObject>(twoShared.functions[0], {BorrowedCall{"borrow_buffer", {{48, 2}}}, ReleaseObjectLoan{2}});
     accept("overlapping shared loans each consumed once", twoShared);
     auto sequential = fixture();
     before<EndObject>(sequential.functions[0],
-                      {AcquireObjectLoan{1, 48, true}, BorrowedCall{"borrow_buffer", 48, 1}, ReleaseObjectLoan{1}});
+                      {AcquireObjectLoan{1, 48, true}, BorrowedCall{"borrow_buffer", {{48, 1}}}, ReleaseObjectLoan{1}});
     accept("released identity can name a new synchronous interval", sequential);
     auto nonlexical = fixture();
     const auto ordered = nonlexical.functions[0].code;
@@ -890,28 +1022,28 @@ void authorityTests() {
             auto &method = named(m, "write_buffer");
             method.code.insert(method.code.begin(), AcquireObjectLoan{2, 0, true});
         },
-        "root zero loan requires named borrowed formal");
+        "bound root loan requires named borrowed formal");
     check(
-        "borrowed formal cannot be missing receiver metadata",
+        "borrowed formal cannot be missing root metadata",
         [](Module &m) {
-            named(m, "borrow_buffer").receiver.reset();
+            named(m, "borrow_buffer").parameters.clear();
             m.functions.erase(m.functions.begin());
         },
-        "borrowed formal requires nonconstructor owning receiver shape");
+        "invalid hosted IR metadata transport");
     check(
         "borrowed formal cannot have constructor metadata",
         [](Module &m) {
-            named(m, "borrow_buffer").receiver->constructor = true;
+            named(m, "borrow_buffer").receiver = Receiver{"Buffer", true, true};
             m.functions.erase(m.functions.begin());
         },
-        "borrowed formal requires nonconstructor owning receiver shape");
+        "borrowed roots require a free-function signature");
     check(
         "borrowed formal cannot name copyable class",
         [](Module &m) {
-            named(m, "borrow_buffer").receiver->className = "Word";
+            named(m, "borrow_buffer").parameters[0] = Type("Word");
             m.functions.erase(m.functions.begin());
         },
-        "borrowed formal requires nonconstructor owning receiver shape");
+        "borrowed root requires a complete concrete owning class");
     for (const auto &type : {Type::OwnedBytes, Type("Buffer"), Type::ByteSpan})
         check(
             "borrowed formal cannot return " + typeName(type),
@@ -924,17 +1056,17 @@ void authorityTests() {
         check(
             "borrowed formal cannot take extra " + typeName(type),
             [=](Module &m) {
-                named(m, "borrow_buffer").parameters = {type};
+                named(m, "borrow_buffer").parameters.push_back(type);
                 m.functions.erase(m.functions.begin());
             },
             "borrowed formal cannot have resource or borrowed result");
     check(
         "hidden formal counts toward six-parameter limit",
         [](Module &m) {
-            named(m, "borrow_buffer").parameters.assign(6, Type::I64);
+            named(m, "borrow_buffer").parameters.insert(named(m, "borrow_buffer").parameters.end(), 6, Type::I64);
             m.functions.erase(m.functions.begin());
         },
-        "borrowed formal counts toward six parameters");
+        "borrowed roots count toward six parameters");
     check(
         "borrowed formal cannot claim escaping field summary",
         [](Module &m) {
@@ -1040,7 +1172,7 @@ void graphTests() {
               Label{1},
               Constant{8, Type::I64},
               Label{2},
-              BorrowedCall{"borrow_leaf", 0, 2},
+              BorrowedCall{"borrow_leaf", {{0, 2}}},
               ReleaseObjectLoan{2},
               Return{}};
     accept("unchanged prepared loan survives control-flow join", join);
@@ -1073,7 +1205,7 @@ void graphTests() {
         "join rejects called versus uncalled loan",
         join,
         [](Module &m) {
-            before<Jump>(named(m, "borrow_buffer"), {BorrowedCall{"borrow_leaf", 0, 2}});
+            before<Jump>(named(m, "borrow_buffer"), {BorrowedCall{"borrow_leaf", {{0, 2}}}});
         },
         "incompatible object loans at control-flow join");
     auto loop = fixture();
@@ -1087,7 +1219,7 @@ void graphTests() {
         forwarded(true, true),
         [](Module &m) {
             named(m, "borrow_buffer").code = {
-                Label{1}, AcquireObjectLoan{2, 0, true}, BorrowedCall{"borrow_leaf", 0, 2}, Jump{1}};
+                Label{1}, AcquireObjectLoan{2, 0, true}, BorrowedCall{"borrow_leaf", {{0, 2}}}, Jump{1}};
         },
         "incompatible object loans at control-flow join");
     reject(
@@ -1117,7 +1249,7 @@ void graphTests() {
                       Constant{1, Type::I64},
                       Store{8, Type::I64},
                       AcquireObjectLoan{2, 0, true},
-                      BorrowedCall{"borrow_leaf", 0, 2},
+                      BorrowedCall{"borrow_leaf", {{0, 2}}},
                       ReturnObject{8}};
             m.functions.erase(m.functions.begin());
         },
@@ -1132,7 +1264,7 @@ void graphTests() {
                        ResourceCall{"construct_buffer", 8, {0, 248}, 0, 48},
                        EndBytes{248},
                        AcquireObjectLoan{1, 48, true},
-                       BorrowedCall{"borrow_buffer", 48, 1},
+                       BorrowedCall{"borrow_buffer", {{48, 1}}},
                        ReleaseObjectLoan{1}});
     accept("released loan permits same-slot new lifetime and fresh loan", restarted);
     reject(
@@ -1163,7 +1295,7 @@ void graphTests() {
                            EndBytes{248},
                            AcquireObjectLoan{1, 48, true},
                            Label{2},
-                           BorrowedCall{"borrow_buffer", 48, 1},
+                           BorrowedCall{"borrow_buffer", {{48, 1}}},
                            ReleaseObjectLoan{1},
                            EndObject{48},
                            Return{}});
@@ -1182,7 +1314,7 @@ void graphTests() {
         forwarded(true, true),
         [](Module &m) {
             named(m, "borrow_leaf").code = {
-                AcquireObjectLoan{3, 0, true}, BorrowedCall{"borrow_buffer", 0, 3}, ReleaseObjectLoan{3}, Return{}};
+                AcquireObjectLoan{3, 0, true}, BorrowedCall{"borrow_buffer", {{0, 3}}}, ReleaseObjectLoan{3}, Return{}};
         },
         "recursive receiver call cycle");
     reject(
@@ -1246,6 +1378,7 @@ int main() {
         argumentTests();
         graphTests();
         pairedTests();
+        boundedTests();
         std::cout << "borrowed object IR: " << accepted << " valid, " << rejected << " rejected\n";
     } catch (const std::exception &error) {
         std::cerr << "FAIL borrowed object IR: " << error.what() << '\n';

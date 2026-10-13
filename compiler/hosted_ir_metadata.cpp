@@ -619,12 +619,15 @@ void detail::MetadataWriter::declarations(const Module &module) {
         writer.append(row);
     }
     // Signatures and frames stay raw until source admission. Each signature
-    // has one result-first range, followed by that callable's typed slots.
+    // has one result-first range containing every explicit source formal,
+    // including borrowed roots exactly once, followed by its typed slots.
     for (const auto &function : module.functions) {
         wire::CallableRow row;
         row.nameRange = writer.text(function.name);
         row.typeRange.firstIndex = writer.position().coreCounts.types;
         row.typeRange.indexCount = add(1, count(function.parameters.size()));
+        row.borrowedRootCount = function.borrowedRootCount;
+        row.firstBorrowedMutable = function.firstBorrowedMutable;
         row.moduleScope = function.moduleScope;
         writer.callableType(function.result);
         for (const auto &parameter : function.parameters)
@@ -670,12 +673,6 @@ void detail::MetadataWriter::declarations(const Module &module) {
         if (function.receiver) {
             row.flags |= 1;
             row.receiver = receiver(*function.receiver);
-        }
-        if (function.borrowedParameter)
-            row.flags |= 2;
-        if (function.secondBorrowedParameter) {
-            row.flags |= 4;
-            row.secondReceiver = receiver(*function.secondBorrowedParameter);
         }
         if (function.receiverSpanField) {
             row.flags |= 8;
@@ -787,8 +784,12 @@ void Metadata::publish() {
         state_->range(row.slotRange, Pool::slots);
         (void)integer(row.frameBytes);
         (void)integer(row.moduleScope);
-        for (const auto shape : {row.receiver, row.secondReceiver})
-            (void)state_->text(shape.nameRange);
+        (void)state_->text(row.receiver.nameRange);
+        const auto roots = index(row.borrowedRootCount);
+        if (roots > 6 || roots > index(row.typeRange.indexCount) - 1 ||
+            (row.firstBorrowedMutable != 0 && row.firstBorrowedMutable != 1) ||
+            (roots == 0 && row.firstBorrowedMutable != 0))
+            invalidTransport();
         if ((row.flags & 8) != 0)
             (void)integer(row.receiverSpanField);
     }
@@ -964,9 +965,29 @@ Type CallableView::result() const {
 }
 TypeRange CallableView::parameters() const {
     const auto range = metadata_->state_->row<Pool::callables>(id_).typeRange;
-    return {*metadata_, index(range.firstIndex) + 1, index(range.indexCount) - 1};
+    const auto roots = borrowedRootCount();
+    return {*metadata_, index(range.firstIndex) + 1 + roots, index(range.indexCount) - 1 - roots};
+}
+std::size_t CallableView::borrowedRootCount() const {
+    const auto row = metadata_->state_->row<Pool::callables>(id_);
+    const auto roots = index(row.borrowedRootCount);
+    const auto types = index(row.typeRange.indexCount);
+    if (types == 0 || roots > 6 || roots > types - 1)
+        invalidTransport();
+    return roots;
+}
+Type CallableView::borrowedRootType(std::size_t ordinal) const {
+    checkIndex(ordinal, borrowedRootCount());
+    const auto range = metadata_->state_->row<Pool::callables>(id_).typeRange;
+    return metadata_->typeAt(index(range.firstIndex) + 1 + ordinal);
+}
+bool CallableView::borrowedRootMutable(std::size_t ordinal) const {
+    checkIndex(ordinal, borrowedRootCount());
+    return ordinal == 0 && metadata_->state_->row<Pool::callables>(id_).firstBorrowedMutable == 1;
 }
 std::optional<Receiver> CallableView::receiver() const {
+    if (borrowedRootCount() != 0)
+        return Receiver{borrowedRootType(0).className, borrowedRootMutable(0), false, false};
     const auto row = metadata_->state_->row<Pool::callables>(id_);
     if ((row.flags & 1) == 0)
         return std::nullopt;
@@ -977,17 +998,7 @@ std::optional<Receiver> CallableView::receiver() const {
                     (shape.flags & 4) != 0};
 }
 bool CallableView::borrowedParameter() const {
-    return (metadata_->state_->row<Pool::callables>(id_).flags & 2) != 0;
-}
-std::optional<Receiver> CallableView::secondBorrowedParameter() const {
-    const auto row = metadata_->state_->row<Pool::callables>(id_);
-    if ((row.flags & 4) == 0)
-        return std::nullopt;
-    const auto &shape = row.secondReceiver;
-    return Receiver{std::string(metadata_->state_->text(shape.nameRange)),
-                    (shape.flags & 1) != 0,
-                    (shape.flags & 2) != 0,
-                    (shape.flags & 4) != 0};
+    return borrowedRootCount() != 0;
 }
 std::optional<int> CallableView::receiverSpanField() const {
     const auto row = metadata_->state_->row<Pool::callables>(id_);

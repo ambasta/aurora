@@ -202,6 +202,22 @@ class Projection {
                    renderers == other.renderers;
         }
     };
+    struct SourceRoots {
+        using value_type = ir::BorrowedRootArgument;
+        std::span<const wire::OperandRow> values;
+        std::size_t size() const { return values.size() / 2; }
+        bool empty() const { return values.empty(); }
+        ir::BorrowedRootArgument at(std::size_t index) const {
+            if (index >= size()) invalidLowering();
+            return {intValue(values[index * 2].signedValue), intValue(values[index * 2 + 1].signedValue)};
+        }
+        ir::BorrowedRootArgument operator[](std::size_t index) const { return at(index); }
+        auto begin() const { return ir::MetadataIterator<SourceRoots>(*this, 0); }
+        auto end() const { return ir::MetadataIterator<SourceRoots>(*this, size()); }
+        bool operator==(const SourceRoots &other) const {
+            return values.data() == other.values.data() && values.size() == other.values.size();
+        }
+    };
     struct SourceLiteral {
         using value_type = unsigned char;
         const HostedLoweringServices *renderers = nullptr;
@@ -218,7 +234,7 @@ class Projection {
         auto end() const { return ir::MetadataIterator<SourceLiteral>(*this, size()); }
         bool operator==(const SourceLiteral &) const = default;
     };
-    using SourceInstruction = ir::BasicInstruction<SourceOffsets, SourceServices, SourceLiteral>;
+    using SourceInstruction = ir::BasicInstruction<SourceOffsets, SourceServices, SourceLiteral, SourceRoots>;
     struct SourceBody {
         std::size_t callableId;
         std::span<const wire::OperandRow> code;
@@ -318,6 +334,19 @@ class Projection {
                     invalidLowering();
                 (void)intValue(value.values[index].signedValue);
                 (void)owner.services.serviceKind(identity(value.values[index + 1].signedValue));
+            }
+        }
+        void roots(SourceRoots &value) {
+            const auto &slice = values.take(OperandRole::BorrowedRoots);
+            value.values = owner.takeRange(slice.sliceBegin, slice.sliceCount);
+            if (value.values.empty() || value.values.size() > 12 || value.values.size() % 2 != 0)
+                invalidLowering();
+            for (std::size_t index = 0; index < value.values.size(); index += 2) {
+                if (value.values[index].operandRole != OperandRole::Root ||
+                    value.values[index + 1].operandRole != OperandRole::LoanId)
+                    invalidLowering();
+                (void)intValue(value.values[index].signedValue);
+                (void)intValue(value.values[index + 1].signedValue);
             }
         }
         void literal(SourceLiteral &value) {
@@ -454,15 +483,8 @@ class Projection {
         } else if (receiverOperand.operandRole != OperandRole::NoReceiver) {
             invalidLowering();
         }
-        if (values.boolean(OperandRole::BorrowedParameter))
-            callable.flags |= 2;
-        const auto &secondReceiverOperand = values.take();
-        if (secondReceiverOperand.operandRole == OperandRole::SecondReceiverRef) {
-            callable.flags |= 4;
-            callable.secondReceiver = receiver(writer, secondReceiverOperand.signedValue);
-        } else if (secondReceiverOperand.operandRole != OperandRole::NoSecondReceiver) {
-            invalidLowering();
-        }
+        callable.borrowedRootCount = values.scalar(OperandRole::BorrowedRootCount);
+        callable.firstBorrowedMutable = values.scalar(OperandRole::FirstBorrowedMutable);
         const auto &spanOperand = values.take();
         if (spanOperand.operandRole == OperandRole::ReceiverSpanField) {
             callable.flags |= 8;

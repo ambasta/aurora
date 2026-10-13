@@ -50,7 +50,7 @@ ARGUMENT_RECORDS = (
 
 def abi_declaration(facts, group, source_name):
     """Find a resolved declaration; source spelling is never a mangling recipe."""
-    if facts.get("version") != 1 or not isinstance(facts.get(group), dict):
+    if type(facts.get("version")) is not int or facts["version"] not in (1, 2) or not isinstance(facts.get(group), dict):
         raise ValueError("unsupported compiler ABI facts")
     found = [(symbol, entry) for symbol, entry in facts[group].items() if entry["source_name"] == source_name]
     if len(found) != 1:
@@ -60,6 +60,98 @@ def abi_declaration(facts, group, source_name):
 
 def abi_function_symbol(facts, source_name):
     return abi_declaration(facts, "functions", source_name)[0]
+
+
+def normalize_function_abi(facts, function):
+    """Normalize exactly the selected paired predecessor and current root facts.
+
+    This version-1 branch belongs only to the immutable paired-root source
+    predecessor. Remove it when that predecessor no longer builds this frontend;
+    missing lanes never imply additional roots or a later compatibility version.
+    """
+    version = facts.get("version")
+    if type(version) is not int or version not in (1, 2) or type(function) is not dict:
+        raise ValueError("unsupported compiler ABI root facts")
+    old_fields = {"borrowed_parameter", "second_receiver", "root_count", "root_tuple_bytes", "root_order"}
+    new_fields = {"borrowed_roots", "borrowed_root_count", "borrowed_root_abi"}
+    common_fields = {"source_name", "receiver", "receiver_mutable", "parameter_bytes", "parameters", "result"}
+    if (new_fields if version == 1 else old_fields) & function.keys():
+        raise ValueError("conflicting compiler ABI root representations")
+    if not (old_fields if version == 1 else new_fields) <= function.keys():
+        raise ValueError("incomplete compiler ABI root facts")
+    if function.keys() != common_fields | (old_fields if version == 1 else new_fields):
+        raise ValueError("unknown compiler ABI function facts")
+    receiver, mutable = function.get("receiver"), function.get("receiver_mutable")
+    records = facts.get("records", {})
+    if (
+        "receiver" not in function or "receiver_mutable" not in function
+        or (receiver is None and mutable is not None)
+        or (receiver is not None and (type(receiver) is not str or receiver not in records or type(mutable) is not bool))
+    ):
+        raise ValueError("invalid compiler ABI receiver facts")
+
+    if version == 1:
+        borrowed, second = function["borrowed_parameter"], function["second_receiver"]
+        if type(borrowed) is not bool or (borrowed and receiver is None):
+            raise ValueError("invalid predecessor borrowed root")
+        if second is not None and (
+            not borrowed or mutable is not True or type(second) is not dict
+            or set(second) != {"type_name", "mutable"} or second["mutable"] is not False
+            or type(second["type_name"]) is not str or second["type_name"] not in records
+        ):
+            raise ValueError("invalid predecessor second borrowed root")
+        count = 2 if second is not None else int(receiver is not None)
+        if (
+            type(function["root_count"]) is not int or function["root_count"] != count
+            or type(function["root_tuple_bytes"]) is not int
+            or function["root_tuple_bytes"] != (16 if count == 2 else 0)
+            or function["root_order"] != (["receiver", "second_receiver"] if count == 2 else ["receiver"] if count else [])
+        ):
+            raise ValueError("invalid predecessor root count, order or tuple")
+        roots = []
+        if borrowed:
+            roots.append(dict(ordinal=0, selector=0, type_name=receiver, mutable=mutable))
+            if second is not None:
+                roots.append(dict(ordinal=1, selector=-1, type_name=second["type_name"], mutable=False))
+            receiver, mutable = None, None
+    else:
+        roots = function["borrowed_roots"]
+        count = function["borrowed_root_count"]
+        if type(count) is not int or not 0 <= count <= 6 or type(roots) is not list or len(roots) != count:
+            raise ValueError("invalid compiler ABI borrowed root count")
+        if count and receiver is not None:
+            raise ValueError("borrowed roots cannot also grant a method receiver")
+
+    for ordinal, root in enumerate(roots):
+        if (
+            type(root) is not dict or set(root) != {"ordinal", "selector", "type_name", "mutable"}
+            or type(root["ordinal"]) is not int or root["ordinal"] != ordinal
+            or type(root["selector"]) is not int or root["selector"] != -ordinal
+            or type(root["mutable"]) is not bool or (ordinal > 0 and root["mutable"])
+            or type(root["type_name"]) is not str or root["type_name"] not in records
+            or not any(field.get("kind") == "owner" for field in records[root["type_name"]]["fields"])
+        ):
+            raise ValueError("invalid compiler ABI borrowed root lane")
+    count = len(roots)
+    if count + len(function["parameters"]) > 6 or (count >= 2 and (
+        any(parameter["kind"] not in ("i64", "u64", "u8", "bool", "enum") for parameter in function["parameters"])
+        or function["result"]["kind"] not in ("i64", "u64", "u8", "bool", "enum")
+    )):
+        raise ValueError("invalid compiler ABI borrowed root tail")
+    root_abi = dict(
+        kind="tuple" if count >= 2 else "direct" if count else "none",
+        register="r10" if count else None,
+        tuple_payload_bytes=8 * count if count >= 2 else 0,
+        tuple_reserved_bytes=((8 * count + 15) // 16) * 16 if count >= 2 else 0,
+        saved_root_reserved_bytes=((8 * count + 15) // 16) * 16 if count else 0,
+    )
+    if version == 2 and json.dumps(function["borrowed_root_abi"], sort_keys=True) != json.dumps(root_abi, sort_keys=True):
+        raise ValueError("invalid compiler ABI borrowed root transport")
+    return {
+        **{key: value for key, value in function.items() if key not in old_fields},
+        "receiver": receiver, "receiver_mutable": mutable,
+        "borrowed_roots": roots, "borrowed_root_count": count, "borrowed_root_abi": root_abi,
+    }
 
 
 def frontend_abi_entries(facts):
@@ -296,66 +388,43 @@ def frontend_abi_entries(facts):
     ]
     entries = {}
     for alias, source, receiver, parameters, result in checks:
-        symbol, function = abi_declaration(facts, "functions", source)
+        symbol, raw_function = abi_declaration(facts, "functions", source)
+        function = normalize_function_abi(facts, raw_function)
+        roots = function["borrowed_roots"]
+        expected_roots = [receiver] if receiver is not None else []
+        if alias in ("graph_run", "instructions_admit", "instructions_structure") or alias in initialization_pairs:
+            expected_roots.append(graph_input if alias == "graph_run" else metadata)
         if (
-            function["receiver"] != receiver
+            function["receiver"] is not None
+            or [root["type_name"] for root in roots] != expected_roots
             or len(function["parameters"]) != len(parameters)
             or not matches(function["result"], result)
         ):
             raise ValueError(f"private bridge signature changed: {source}")
-        second = function.get("second_receiver")
-        if alias in ("graph_run", "instructions_admit", "instructions_structure") or alias in initialization_pairs:
-            if (
-                function.get("receiver_mutable") is not True
-                or function.get("borrowed_parameter") is not True
-                or not isinstance(second, dict)
-                or second.get("type_name") != (graph_input if alias == "graph_run" else metadata)
-                or second.get("mutable") is not False
-                or function.get("root_count") != 2
-                or function.get("root_tuple_bytes") != 16
-                or function.get("root_order") != ["receiver", "second_receiver"]
-            ):
-                raise ValueError(f"private paired-root bridge changed: {source}")
-        elif (
-            second is not None
-            or function.get("root_count", int(receiver is not None)) != int(receiver is not None)
-            or function.get("root_tuple_bytes", 0) != 0
-        ):
-            raise ValueError(f"unexpected private bridge second root: {source}")
-        if alias in ("graph_set_function", "graph_set_edge", "graph_retained"):
-            if function.get("receiver_mutable") is not (alias != "graph_retained"):
-                raise ValueError(f"private graph root authority changed: {source}")
-        if alias.startswith("metadata_") and receiver is not None:
-            if function.get("receiver_mutable") is not (alias == "metadata_run"):
-                raise ValueError(f"private metadata root authority changed: {source}")
-        if alias.startswith("instructions_") and receiver is not None:
-            if function.get("receiver_mutable") is not (alias not in ("instructions_allocated", "instructions_error")):
-                raise ValueError(f"private instruction root authority changed: {source}")
-        if alias.startswith("initialization_"):
-            expected_order = (
-                ["receiver", "second_receiver"] if alias in initialization_pairs
-                else ["receiver"] if receiver is not None else []
+        if roots:
+            readonly = (
+                (alias.startswith("parser_") and alias not in ("parser_parse", "parser_admit"))
+                or (alias.startswith("resolver_") and alias in (
+                    "resolver_count", "resolver_read_source", "resolver_status", "resolver_read_syntax",
+                    "resolver_read_meta", "resolver_read_resolved",
+                ))
+                or (alias.startswith("lowering_") and alias in (
+                    "lowering_count", "lowering_read_output", "lowering_read_operand",
+                ))
+                or alias == "graph_retained"
+                or (alias.startswith("metadata_") and alias != "metadata_run")
+                or alias in ("instructions_allocated", "instructions_error")
+                or alias in initialization_readonly
             )
+            if roots[0]["mutable"] is not (not readonly):
+                raise ValueError(f"private bridge root authority changed: {source}")
+        if alias.startswith("initialization_") and receiver is not None:
             if (
-                function.get("root_order") != expected_order
-                or function.get("root_count") != len(expected_order)
-                or function.get("root_tuple_bytes") != (16 if len(expected_order) == 2 else 0)
+                len(parameters) > 4
+                or any(shape(parameter)[0] not in ("i64", "u64", "u8", "bool", "enum") for parameter in parameters)
+                or shape(result)[0] not in ("i64", "u64", "u8", "bool", "enum")
             ):
-                raise ValueError(f"private initialization root order changed: {source}")
-            if receiver is not None:
-                if (
-                    function.get("receiver_mutable") is not (alias not in initialization_readonly)
-                    or function.get("borrowed_parameter") is not True
-                    or len(parameters) > 4
-                    or any(
-                        shape(parameter)[0] not in ("i64", "u64", "u8", "bool", "enum")
-                        for parameter in parameters
-                    )
-                    or shape(result)[0] not in ("i64", "u64", "u8", "bool", "enum")
-                ):
-                    raise ValueError(f"private initialization root authority or register result changed: {source}")
-            elif function.get("receiver_mutable") is not None or function.get("borrowed_parameter") is not False:
-                raise ValueError(f"private initialization owner transfer changed: {source}")
+                raise ValueError(f"private initialization register signature changed: {source}")
         offset = 0
         for actual, expected in zip(function["parameters"], parameters):
             if not matches(actual, expected) or actual["offset"] != offset:

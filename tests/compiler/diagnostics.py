@@ -338,7 +338,7 @@ auto demo() -> i64 { return 42; }
     run([source, "-o", emitted, "--abi-facts", abi_path, "--stack-facts", facts_path], 0, json_mode=False)
     require(emitted.read_bytes() == abi_assembly, "ABI facts changed generated assembly")
     abi = json.loads(abi_path.read_text())
-    require(abi["version"] == 1 and abi["span_bytes"] == 56, "ABI facts schema/span")
+    require(abi["version"] == 2 and abi["span_bytes"] == 56, "ABI facts schema/span")
 
     def declaration(group, name):
         matches = [(symbol, value) for symbol, value in abi[group].items() if value["source_name"] == name]

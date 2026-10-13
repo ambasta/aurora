@@ -863,7 +863,7 @@ export namespace compiler_lowering {
             // Formal roots are selectors, not stack storage. Each still has
             // its own LocalRow and snapshot, including same-class formals.
             offset = request.borrowed_root();
-            if (offset != 0 && offset != -1) {
+            if (offset > 0 || offset < -5) {
                 return session.fail_storage(compiler_resolver::StorageStatus::invalid);
             }
         }

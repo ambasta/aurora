@@ -214,8 +214,8 @@ export namespace compiler_ir_instructions {
         method_receiver,
         //: invalid typed IR: borrowed call requires borrowed formal target
         borrowed_target,
-        //: invalid typed IR: borrowed call second root tuple does not match target
-        borrowed_second,
+        //: invalid typed IR: borrowed call root lanes do not match target
+        borrowed_roots,
         //: invalid typed IR: borrowed call requires active loan
         borrowed_loan,
         //: invalid typed IR: borrowed call root, lifetime, nominal type or authority mismatch
@@ -302,8 +302,8 @@ export namespace compiler_ir_instructions {
         method_receiver_nominal,
         //: invalid typed IR: const object cannot supply mutable receiver
         method_receiver_mutable,
-        //: invalid typed IR: paired borrowed roots cannot produce span results
-        method_span_paired,
+        //: invalid typed IR: multiple borrowed roots cannot produce span results
+        method_span_multiple,
         //: invalid typed IR: span result requires direct receiver root
         method_span_direct,
         //: invalid typed IR: span result lacks receiver field summary

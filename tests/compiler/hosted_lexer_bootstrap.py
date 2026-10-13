@@ -145,8 +145,8 @@ def abi_generation(facts):
         ("compiler_lowering::SnapshotRow", 48),
         ("compiler_lowering::ContinuationRow", 496),
         ("compiler_ir_metadata::ReceiverShape", 24),
-        ("compiler_ir_metadata::CallableOptions", 40),
-        ("compiler_ir_metadata::CallableRow", 128),
+        ("compiler_ir_metadata::CallableOptions", 56),
+        ("compiler_ir_metadata::CallableRow", 120),
         ("compiler_ir_metadata::SlotRow", 40),
         ("compiler_ir_metadata::InputCounts", 80),
         ("compiler_ir_metadata::MetadataStore", 512),
@@ -169,7 +169,7 @@ def abi_generation(facts):
         and "metadataStore_typesBytes = 32;" in generated
         and "metadataStore_callablesBytes = 32;" in generated
         and "metadataStore_slotsBytes = 32;" in generated
-        and "metadataCallableRowPhysicalBytes = 128;" in generated
+        and "metadataCallableRowPhysicalBytes = 120;" in generated
         and "metadataRawTypeRowPhysicalBytes = 64;" in generated
         and "metadataSlotRowPhysicalBytes = 40;" in generated,
         "metadata arguments or closed owner/row physical bindings were omitted",
@@ -210,7 +210,7 @@ def abi_generation(facts):
             source = "compiler_frontend::lowering_" + operation
             _, entry = abi_declaration(changed, "functions", source)
             if mutation == "receiver":
-                entry["receiver"] = None
+                entry["borrowed_roots"] = []
             elif mutation == "result":
                 entry["result"]["bytes"] += 8
             elif mutation == "parameters":
@@ -422,7 +422,7 @@ def abi_generation(facts):
     for operation in ("allocated", "run", "error", "object_leaf_root", "byte_array_element_root"):
         changed = deepcopy(facts)
         _, entry = abi_declaration(changed, "functions", "compiler_frontend::metadata_" + operation)
-        entry["receiver_mutable"] = operation != "run"
+        entry["borrowed_roots"][0]["mutable"] = operation != "run"
         try:
             frontend_abi_header(changed)
         except ValueError:
@@ -498,7 +498,7 @@ def abi_generation(facts):
             }[kind]
             _, entry = abi_declaration(changed, "functions", source)
             if kind == "resolver_receiver":
-                entry["receiver"] = None
+                entry["borrowed_roots"] = []
             elif kind == "resolver_ingest_result":
                 entry["result"]["bytes"] += 8
             elif kind in ("resolver_ingest_session", "resolver_ingest_parsed"):
@@ -510,7 +510,7 @@ def abi_generation(facts):
         elif kind.startswith("admission_"):
             _, entry = abi_declaration(changed, "functions", "compiler_frontend::parser_admit")
             if kind == "admission_receiver":
-                entry["receiver"] = None
+                entry["borrowed_roots"] = []
             elif kind == "admission_result_extent":
                 entry["result"]["bytes"] += 8
             elif kind == "admission_configuration_extent":
@@ -526,6 +526,101 @@ def abi_generation(facts):
             continue
         raise AssertionError(f"unsupported or unsafe ABI facts accepted: {kind}")
     print("PASS generic source-spelled ABI records/enums, nested layout and exact lowering/metadata/instruction bridge rejection")
+
+
+def borrowed_root_generation(facts):
+    from bootstrap_frontend import abi_declaration, frontend_abi_header, frontend_bridge, normalize_function_abi
+
+    require(type(facts["version"]) is int and facts["version"] == 2, "candidate must emit ABI facts v2")
+    header = frontend_abi_header(facts)
+    predecessor = deepcopy(facts)
+    predecessor["version"] = 1
+    for function in predecessor["functions"].values():
+        roots = function.pop("borrowed_roots")
+        count = function.pop("borrowed_root_count")
+        function.pop("borrowed_root_abi")
+        require(count <= 2 and (count != 2 or roots[0]["mutable"]), "frontend exceeded paired source predecessor")
+        if roots:
+            require(function["receiver"] is None, "borrowed roots duplicated in genuine receiver")
+            function["receiver"], function["receiver_mutable"] = roots[0]["type_name"], roots[0]["mutable"]
+        function["borrowed_parameter"] = bool(count)
+        function["second_receiver"] = (
+            dict(type_name=roots[1]["type_name"], mutable=False) if count == 2 else None
+        )
+        function["root_count"] = count if count else int(function["receiver"] is not None)
+        function["root_tuple_bytes"] = 16 if count == 2 else 0
+        function["root_order"] = (["receiver", "second_receiver"] if count == 2 else
+                                  ["receiver"] if function["receiver"] is not None else [])
+    require(frontend_abi_header(predecessor) == header, "paired predecessor/current normalization changed headers")
+    bridge = "call __aurora_frontend_graph_run\ncall __aurora_frontend_lexer_next\n"
+    require(frontend_bridge(bridge, predecessor) == frontend_bridge(bridge, facts), "predecessor/current bridge drift")
+
+    def reject(document, source, mutation):
+        changed = deepcopy(document)
+        _, function = abi_declaration(changed, "functions", source)
+        mutation(function)
+        try:
+            frontend_abi_header(changed)
+        except ValueError:
+            return
+        raise AssertionError("unsafe borrowed-root facts accepted: " + source)
+
+    pair_sources = ("graph_run", "instructions_admit", "instructions_structure", "initialization_initialize")
+    for alias in pair_sources:
+        source = "compiler_frontend::" + alias
+        for lane in (0, 1):
+            for field, value in (("ordinal", 1 - lane), ("ordinal", False), ("selector", -6),
+                                 ("selector", -9223372036854775808), ("selector", False),
+                                 ("type_name", "missing-root"), ("mutable", lane == 1), ("mutable", 1)):
+                reject(facts, source, lambda f, lane=lane, field=field, value=value:
+                       f["borrowed_roots"][lane].__setitem__(field, value))
+        for mutation in (
+            lambda f: f["borrowed_roots"].reverse(),
+            lambda f: f["borrowed_roots"].pop(),
+            lambda f: f["borrowed_roots"].append(dict(f["borrowed_roots"][1])),
+            lambda f: f["borrowed_roots"][1].__setitem__("type_name", f["borrowed_roots"][0]["type_name"]),
+            lambda f: f.__setitem__("borrowed_root_count", True),
+            lambda f: f.__setitem__("borrowed_root_count", 3),
+            lambda f: f["borrowed_root_abi"].__setitem__("tuple_payload_bytes", 24),
+            lambda f: f["borrowed_root_abi"].__setitem__("tuple_reserved_bytes", 8),
+            lambda f: f["borrowed_root_abi"].__setitem__("saved_root_reserved_bytes", 0),
+            lambda f: f.__setitem__("third_receiver", None),
+        ):
+            reject(facts, source, mutation)
+        for mutation in (
+            lambda f: f.__setitem__("root_count", 3),
+            lambda f: f.__setitem__("root_count", True),
+            lambda f: f.__setitem__("root_order", ["receiver", "second_receiver", "third_receiver"]),
+            lambda f: f.__setitem__("receiver_mutable", False),
+            lambda f: f["second_receiver"].__setitem__("mutable", True),
+            lambda f: f.__setitem__("borrowed_roots", []),
+            lambda f: f.__setitem__("third_receiver", None),
+            lambda f: f.pop("root_tuple_bytes"),
+        ):
+            reject(predecessor, source, mutation)
+
+    # The normalizer understands the bounded capability even though this
+    # unchanged frontend deliberately uses only predecessor-compatible helpers.
+    _, pair = abi_declaration(facts, "functions", "compiler_frontend::graph_run")
+    for count in range(1, 7):
+        for mutable in (False, True):
+            for tail in range(7 - count):
+                function = deepcopy(pair)
+                function["borrowed_root_count"] = count
+                function["borrowed_roots"] = [
+                    dict(ordinal=i, selector=-i, type_name=pair["borrowed_roots"][i % 2]["type_name"],
+                         mutable=mutable and i == 0) for i in range(count)
+                ]
+                function["borrowed_root_abi"] = dict(
+                    kind="direct" if count == 1 else "tuple", register="r10",
+                    tuple_payload_bytes=8 * count if count > 1 else 0,
+                    tuple_reserved_bytes=16 * ((count + 1) // 2) if count > 1 else 0,
+                    saved_root_reserved_bytes=16 * ((count + 1) // 2),
+                )
+                function["parameters"] = [dict(offset=8 * i, bytes=8, kind="i64") for i in range(tail)]
+                function["parameter_bytes"] = 8 * tail
+                require(normalize_function_abi(facts, function) == function, "bounded root normalization drift")
+    print("PASS bounded borrowed-root facts and exact paired-predecessor/current header normalization")
 
 
 def message_generation(facts, root):
@@ -550,8 +645,8 @@ def message_generation(facts, root):
         source.replace("unknown class type '{type}'", "unknown class type '{{type}'", 1),
         source.replace("unknown class type '{type}'", "[integrity] unknown class type '{type}'", 1),
         source.replace(
-            "        paired_borrowed_span_production\n",
-            "        paired_borrowed_span_production\n        //: dangling\n",
+            "        borrowed_arguments_require_distinct_roots\n",
+            "        borrowed_arguments_require_distinct_roots\n        //: dangling\n",
             1,
         ),
         source.replace(first, first + "\n        //: extra reason\n        unlisted_reason,", 1),
@@ -603,6 +698,7 @@ def message_generation(facts, root):
 
 def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
     abi_generation(json.loads(built_b.with_suffix(".abi.json").read_text()))
+    borrowed_root_generation(json.loads(built_b.with_suffix(".abi.json").read_text()))
     message_generation(json.loads(built_b.with_suffix(".abi.json").read_text()), root)
     entries = {
         "aurora_hosted_lexer_invoke",

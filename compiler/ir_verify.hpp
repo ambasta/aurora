@@ -265,10 +265,27 @@ inline void verifyFunction(FunctionBody &function,
     const auto ownedValueTypes = frame.ownedValueTypes();
     const auto parameters = signature.parameters();
     const EntryBindings entryBindings(function.code, parameters.size());
-    // Receiver observations are copied values. Keep them alive for boundRoot's
-    // reference result throughout this body verification.
+    // The first borrowed root is a derived receiver-shaped observation, never
+    // lexical receiver authority. The complete prefix stays in source metadata.
     const auto functionReceiver = signature.receiver();
-    const auto secondReceiver = signature.secondBorrowedParameter();
+    const auto borrowedRootCount = signature.borrowedRootCount();
+    require(borrowedRootCount <= 6, "borrowed root prefix exceeds formal bound");
+    const auto hasBoundRoot = [&](int root) {
+        // Bound the signed selector before negating hostile input.
+        return root >= -5 && root <= 0 &&
+               (borrowedRootCount ? static_cast<std::size_t>(-root) < borrowedRootCount
+                                  : root == 0 && functionReceiver.has_value());
+    };
+    const auto boundRoot = [&](int root) -> Receiver {
+        require(hasBoundRoot(root), "borrowed object root is not bound");
+        if (!borrowedRootCount)
+            return *functionReceiver;
+        const auto ordinal = static_cast<std::size_t>(-root);
+        return Receiver{signature.borrowedRootType(ordinal).className,
+                        signature.borrowedRootMutable(ordinal),
+                        false,
+                        false};
+    };
     const auto classLeaves = [&](const std::string &name) {
         return metadata.leaves(metadata.findClass(name).value());
     };
@@ -318,7 +335,7 @@ inline void verifyFunction(FunctionBody &function,
     BlockRetentionBudget retention;
     retention.retain(0);
     State entryState;
-    if (functionReceiver && owningClass(metadata, functionReceiver->className)) {
+    if (!borrowedRootCount && functionReceiver && owningClass(metadata, functionReceiver->className)) {
         OwnedObjectBinding receiver{
             0, functionReceiver->constructor ? ByteDisposition::Pristine : ByteDisposition::Live, {}};
         const RegionIdentity borrowed{0, 0, true};
@@ -331,19 +348,20 @@ inline void verifyFunction(FunctionBody &function,
             }
         entryState.ownedObjects.emplace(0, std::move(receiver));
     }
-    if (secondReceiver) {
-        OwnedObjectBinding second{0, ByteDisposition::Live, {}};
-        // The selector distinguishes symbolic provenance even when both formal
-        // classes and field ordinals match. It is never allocation authority.
-        const RegionIdentity borrowed{-1, 0, true};
-        const auto fields = logicalFields(secondReceiver->className);
+    for (std::size_t ordinal = 0; ordinal < borrowedRootCount; ++ordinal) {
+        const int selector = -static_cast<int>(ordinal);
+        OwnedObjectBinding root{0, ByteDisposition::Live, {}};
+        // Every formal has independent symbolic provenance, including equal
+        // nominal classes and field ordinals. It grants no allocation authority.
+        const RegionIdentity borrowed{selector, 0, true};
+        const auto fields = logicalFields(signature.borrowedRootType(ordinal).className);
         for (std::size_t field = 0; field < fields.size(); ++field)
             if (fields[field].elementType.isOwnerStorage())
-                second.fields.emplace(static_cast<int>(field),
-                                      ByteBinding{0,
-                                                  ByteDisposition::Live,
-                                                  ByteToken{0, borrowed, static_cast<int>(field)}});
-        entryState.ownedObjects.emplace(-1, std::move(second));
+                root.fields.emplace(static_cast<int>(field),
+                                    ByteBinding{0,
+                                                ByteDisposition::Live,
+                                                ByteToken{0, borrowed, static_cast<int>(field)}});
+        entryState.ownedObjects.emplace(selector, std::move(root));
     }
     if (functionReceiver && !functionReceiver->constructor) {
         for (std::size_t field = 0; field < receiverLayout->size(); ++field) {
@@ -482,14 +500,25 @@ inline void verifyFunction(FunctionBody &function,
                 state.stack.pop_back();
                 return value;
             };
-            // Only the validated BorrowedCallObservation may exercise its one or two loans.
+            // A supplied loan ID alone never exempts an access. Install the
+            // borrowed lane range only after every root/loan correspondence and
+            // live field has been checked independently below.
             const auto *borrowedCall = std::get_if<BorrowedCallObservation>(&instruction);
+            bool borrowedLoansValidated = false;
             auto loanAccess = [&](int root, bool writing) {
                 for (const auto &[id, loan] : state.objectLoans) {
-                    if (loan.root != root ||
-                        (borrowedCall && (id == borrowedCall->loanId || id == borrowedCall->secondLoanId)))
+                    if (loan.root != root)
                         continue;
-                    require(!writing && !loan.mutableValue, "object access conflicts with active synchronous loan");
+                    bool exercised = false;
+                    if (borrowedLoansValidated)
+                        for (const auto lane : borrowedCall->roots)
+                            if (lane.root == root && lane.loanId == id) {
+                                exercised = true;
+                                break;
+                            }
+                    if (!exercised)
+                        require(!writing && !loan.mutableValue,
+                                "object access conflicts with active synchronous loan");
                 }
             };
             // Each access borrows exact local origins from the source owner once.
@@ -850,12 +879,6 @@ inline void verifyFunction(FunctionBody &function,
                 require(objectSlots.contains(base), "copy requires exact object slot");
                 return initializedObject(base);
             };
-            auto boundRoot = [&](int root) -> const Receiver & {
-                require(root == 0 || root == -1, "invalid bound object root selector");
-                const auto &formal = root == 0 ? functionReceiver : secondReceiver;
-                require(formal.has_value(), "borrowed object root is not bound");
-                return *formal;
-            };
             auto liveOwnedRoot = [&](int root) -> const OwnedObjectBinding & {
                 require(state.ownedObjects.contains(root),
                         "object loan requires exact owning root");
@@ -876,7 +899,7 @@ inline void verifyFunction(FunctionBody &function,
                 return object;
             };
             auto liveOwningRoot = [&](int root) -> const OwnedObjectBinding & {
-                require(root >= -1, "invalid borrowed object root");
+                require(root > 0 || hasBoundRoot(root), "invalid borrowed object root");
                 const auto &name = root <= 0 ? boundRoot(root).className : completeObject(root).className;
                 require(owningClass(metadata, name), "object loan requires exact owning root");
                 return liveOwnedRoot(root);
@@ -1151,9 +1174,7 @@ inline void verifyFunction(FunctionBody &function,
                 require(state.objectLoans.empty(), "return with active synchronous object loan");
                 for (const auto &[base, unused] : state.ownedObjects) {
                     (void)unused;
-                    require((base == 0 && functionReceiver.has_value()) ||
-                                (base == -1 && secondReceiver.has_value()),
-                            "return with active owning object lifetime");
+                    require(hasBoundRoot(base), "return with active owning object lifetime");
                 }
             };
             std::visit(
@@ -1713,14 +1734,13 @@ inline void verifyFunction(FunctionBody &function,
                     } else if constexpr (std::is_same_v<Op, AcquireObjectLoan>) {
                         require(operation.loanId > 0 && !state.objectLoans.contains(operation.loanId),
                                 "invalid or duplicate object loan identity");
-                        require(operation.root >= 0 ||
-                                    (operation.root == -1 && secondReceiver.has_value()),
+                        require(operation.root > 0 || hasBoundRoot(operation.root),
                                 "invalid borrowed object root");
                         loanAccess(operation.root, operation.mutableValue);
                         std::string name;
                         if (operation.root <= 0) {
                             require(signature.borrowedParameter() && functionReceiver,
-                                    "root zero loan requires named borrowed formal");
+                                    "bound root loan requires named borrowed formal");
                             const auto &formal = boundRoot(operation.root);
                             require(!operation.mutableValue || formal.mutableValue,
                                     "shared formal cannot supply mutable object loan");
@@ -1745,30 +1765,57 @@ inline void verifyFunction(FunctionBody &function,
                     } else if constexpr (std::is_same_v<Op, MethodCallObservation> ||
                                          std::is_same_v<Op, BorrowedCallObservation>) {
                         const auto target = metadata.callable(metadata.findCallable(operation.callee).value());
+                        int receiverOffset;
+                        int receiverFieldIndex = -1;
                         if constexpr (std::is_same_v<Op, BorrowedCallObservation>) {
-                            auto useLoan = [&](int id, int root, const Receiver &formal) {
-                                require(state.objectLoans.contains(id), "borrowed call requires active loan");
-                                auto &loan = state.objectLoans.at(id);
+                            const auto count = target.borrowedRootCount();
+                            require(count > 0 && count <= 6 && operation.roots.size() == count,
+                                    "borrowed call root count mismatch");
+                            for (std::size_t ordinal = 0; ordinal < count; ++ordinal) {
+                                const auto lane = operation.roots[ordinal];
+                                require(lane.loanId > 0 && state.objectLoans.contains(lane.loanId),
+                                        "borrowed call requires active loan");
+                                for (std::size_t prior = 0; prior < ordinal; ++prior)
+                                    require(operation.roots[prior].root != lane.root &&
+                                                operation.roots[prior].loanId != lane.loanId,
+                                            "borrowed call roots and loans must be distinct");
+                                const auto &loan = state.objectLoans.at(lane.loanId);
                                 require(!loan.called, "object loan already used by a call");
-                                require(loan.root == root && loan.className == formal.className &&
-                                            loan.mutableValue == formal.mutableValue &&
-                                            state.ownedObjects.contains(root) &&
-                                            state.ownedObjects.at(root).site == loan.rootSite &&
-                                            state.ownedObjects.at(root).disposition == ByteDisposition::Live,
-                                        "borrowed call root, lifetime, nominal type or authority mismatch");
-                                if (root > 0)
-                                    liveObject(root);
-                                liveOwnedRoot(root);
-                                loanAccess(root, formal.mutableValue);
-                                loan.called = true;
-                            };
-                            useLoan(operation.loanId, operation.receiverOffset, *target.receiver());
-                            if (target.secondBorrowedParameter())
-                                useLoan(operation.secondLoanId,
-                                        operation.secondReceiverOffset,
-                                        *target.secondBorrowedParameter());
+                                const auto formal = target.borrowedRootType(ordinal);
+                                const bool mutableValue = target.borrowedRootMutable(ordinal);
+                                require(loan.root == lane.root && loan.className == formal.className &&
+                                            loan.mutableValue == mutableValue,
+                                        "borrowed call root, nominal type or authority mismatch");
+                                // These checks deliberately do not use loanAccess: no
+                                // lane, including a sibling, grants an exemption yet.
+                                if (lane.root <= 0) {
+                                    require(signature.borrowedParameter() && hasBoundRoot(lane.root),
+                                            "borrowed call requires named bound formal");
+                                    const auto actual = boundRoot(lane.root);
+                                    require(actual.className == formal.className &&
+                                                (!mutableValue || actual.mutableValue) && loan.rootSite == 0,
+                                            "borrowed call formal authority mismatch");
+                                } else {
+                                    require(objectSlots.contains(lane.root),
+                                            "borrowed call requires exact object slot");
+                                    const auto actual = initializedObject(lane.root);
+                                    require(actual.className == formal.className &&
+                                                (!mutableValue || actual.mutableValue) &&
+                                                state.activeObjects.at(lane.root) == loan.rootSite,
+                                            "borrowed call object lifetime or authority mismatch");
+                                }
+                                const auto &object = liveOwnedRoot(lane.root);
+                                require(object.site == loan.rootSite,
+                                        "borrowed call root lifetime mismatch");
+                            }
+                            borrowedLoansValidated = true;
+                            for (std::size_t ordinal = 0; ordinal < count; ++ordinal)
+                                loanAccess(operation.roots[ordinal].root, target.borrowedRootMutable(ordinal));
+                            receiverOffset = operation.roots.front().root;
                         } else {
-                            loanAccess(operation.receiverOffset, target.receiver()->mutableValue);
+                            receiverOffset = operation.receiverOffset;
+                            receiverFieldIndex = operation.receiverFieldIndex;
+                            loanAccess(receiverOffset, target.receiver()->mutableValue);
                         }
                         const auto receiver = *target.receiver();
                         for (std::size_t arg = target.parameters().size(); arg > 0; --arg) {
@@ -1782,32 +1829,34 @@ inline void verifyFunction(FunctionBody &function,
                             }
                         }
                         if (receiver.mutableValue)
-                            ownerWritable(operation.receiverOffset);
-                        if (operation.receiverFieldIndex >= 0) {
-                            liveClassField(operation.receiverOffset, operation.receiverFieldIndex, receiver.mutableValue);
-                        } else if (operation.receiverOffset > 0) {
-                            require(state.activeObjects.contains(operation.receiverOffset),
+                            ownerWritable(receiverOffset);
+                        if (receiverFieldIndex >= 0) {
+                            liveClassField(receiverOffset, receiverFieldIndex, receiver.mutableValue);
+                        } else if (receiverOffset > 0) {
+                            require(state.activeObjects.contains(receiverOffset),
                                     "method receiver outside active object lifetime");
                             if (receiver.constructor) {
-                                require(!state.maybeConstructedObjects.contains(operation.receiverOffset),
+                                require(!state.maybeConstructedObjects.contains(receiverOffset),
                                         "object constructor called more than once");
-                                require(initialization.objectPristine(operation.receiverOffset),
+                                require(initialization.objectPristine(receiverOffset),
                                         "constructor requires uninitialized object");
-                                markObject(operation.receiverOffset);
+                                markObject(receiverOffset);
                             } else {
-                                require(initialization.objectInitialized(operation.receiverOffset),
+                                require(initialization.objectInitialized(receiverOffset),
                                         "method receiver object not fully initialized");
-                                logicalComplete(operation.receiverOffset);
+                                logicalComplete(receiverOffset);
                             }
                         }
                         if (target.result() == Type::ByteSpan) {
+                            require(borrowedRootCount <= 1 || receiverOffset > 0,
+                                    "multiple borrowed formals cannot produce spans");
                             const auto field = logicalFields(receiver.className).at(*target.receiverSpanField());
                             if (field.array)
                                 borrowLiveArrayField(
-                                    operation.receiverOffset, *target.receiverSpanField(), operation.resultOffset);
+                                    receiverOffset, *target.receiverSpanField(), operation.resultOffset);
                             else
                                 borrowLiveOwnedField(
-                                    operation.receiverOffset, *target.receiverSpanField(), operation.resultOffset);
+                                    receiverOffset, *target.receiverSpanField(), operation.resultOffset);
                             state.current.reset();
                         } else if (target.result().isClass()) {
                             const int base = operation.resultOffset;
@@ -1820,6 +1869,9 @@ inline void verifyFunction(FunctionBody &function,
                         } else {
                             state.current = Value{target.result(), {}};
                         }
+                        if constexpr (std::is_same_v<Op, BorrowedCallObservation>)
+                            for (const auto lane : operation.roots)
+                                state.objectLoans.at(lane.loanId).called = true;
                     } else if constexpr (std::is_same_v<Op, MetadataQuery>) {
                         require(operation.query == Query::Size || operation.query == Query::PublicFieldCount,
                                 "unknown metadata query");
