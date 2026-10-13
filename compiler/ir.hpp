@@ -601,12 +601,11 @@ public:
     bool constructor;
     bool publicAccess = true;
 };
-class Function {
+// Production IR carries only executable state and a stable key into the
+// immutable, independently admitted metadata owner. Graph pruning never changes IDs.
+class FunctionBody {
 public:
-    std::string name;
-    int moduleScope = 0;
-    Type result;
-    std::vector<Type> parameters;
+    Metadata::CallableId callableId = 0;
     std::map<int, Type> slots;
     // Scalar leaves live at base minus their canonical byte offset and have
     // matching typed slots. Resource descriptors are non-scalar subranges.
@@ -622,12 +621,21 @@ public:
     // Exact subset of byteSlots: missing means OwnedBytes, present means
     // OwnedValues of the named canonical copied class. Never grants a lifetime.
     std::map<int, std::string> ownedValueTypes;
+    int frameBytes = 0;
+    std::vector<Instruction> code;
+};
+// Raw signatures exist only on the hostile Module construction route. Validation
+// ingests them, moves these bases into production bodies and destroys the raw rows.
+class Function : public FunctionBody {
+public:
+    std::string name;
+    int moduleScope = 0;
+    Type result;
+    std::vector<Type> parameters;
     std::optional<Receiver> receiver;
     // Named free-function formal shares receiver storage, never lexical privileges.
     bool borrowedParameter = false;
     std::optional<int> receiverSpanField;
-    int frameBytes = 0;
-    std::vector<Instruction> code;
     // A paired free helper has a mutable first root and one readonly second
     // root. Both are invocation-only capabilities; neither grants class privacy.
     std::optional<Receiver> secondBorrowedParameter;
@@ -684,21 +692,26 @@ public:
     std::map<int, std::set<int>> descriptorViews{{0, {}}};
     std::map<std::string, int> enumCases;
 };
+namespace verification {
+class Metrics;
+}
 class ValidatedModule;
-ValidatedModule validate(Module module);
-ValidatedModule validate(std::vector<Function> functions, MetadataIngress metadata);
+ValidatedModule validate(Module module, verification::Metrics *metrics = nullptr);
+ValidatedModule validate(std::vector<FunctionBody> functions, MetadataIngress metadata,
+                         verification::Metrics *metrics = nullptr);
 class ValidatedModule {
     class Contents {
     public:
-        std::vector<Function> functions;
+        std::vector<FunctionBody> functions;
     };
     Contents contents;
     std::unique_ptr<Metadata> metadataOwner;
-    explicit ValidatedModule(std::vector<Function> functions, std::unique_ptr<Metadata> metadata)
+    explicit ValidatedModule(std::vector<FunctionBody> functions, std::unique_ptr<Metadata> metadata)
         : contents{std::move(functions)}, metadataOwner(std::move(metadata)) {
     }
-    friend ValidatedModule validate(Module module);
-    friend ValidatedModule validate(std::vector<Function> functions, MetadataIngress metadata);
+    friend ValidatedModule validate(Module module, verification::Metrics *metrics);
+    friend ValidatedModule validate(std::vector<FunctionBody> functions, MetadataIngress metadata,
+                                    verification::Metrics *metrics);
 
 public:
     ValidatedModule(const ValidatedModule &) = delete;

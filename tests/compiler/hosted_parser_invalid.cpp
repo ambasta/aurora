@@ -2196,7 +2196,7 @@ void resolutionControls() {
 } // namespace
 // No forged report in this fixture may reach successful module verification.
 // A distinct exception prevents the rejection controls from accepting this path.
-void aurora::ir::verifyHostedGraph(std::vector<Function> &) {
+void aurora::ir::verifyHostedGraph(std::vector<FunctionBody> &, const Metadata &) {
     throw std::runtime_error("forged projection unexpectedly reached graph verification");
 }
 // Link the real native capsule without the generated metadata verifier. Every

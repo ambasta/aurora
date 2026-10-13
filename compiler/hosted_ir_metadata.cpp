@@ -72,6 +72,7 @@ enum class Pool : std::size_t {
     descriptors,
     views,
     enums,
+    callables,
     results,
     frames,
     count
@@ -105,6 +106,9 @@ constexpr std::array bindings{
     Binding{hosted_abi::metadataStore_enumsOffset,
             hosted_abi::metadataStore_enumsBytes,
             hosted_abi::metadataEnumRowPhysicalBytes},
+    Binding{hosted_abi::metadataStore_callablesOffset,
+            hosted_abi::metadataStore_callablesBytes,
+            hosted_abi::metadataCallableRowPhysicalBytes},
     Binding{hosted_abi::metadataStore_resultsOffset,
             hosted_abi::metadataStore_resultsBytes,
             hosted_abi::metadataClassResultRowPhysicalBytes},
@@ -137,6 +141,9 @@ template <> struct Row<Pool::views> {
 template <> struct Row<Pool::enums> {
     using Type = wire::EnumRow;
 };
+template <> struct Row<Pool::callables> {
+    using Type = wire::CallableRow;
+};
 template <> struct Row<Pool::results> {
     using Type = wire::ClassResultRow;
 };
@@ -166,7 +173,8 @@ template <Pool pool> constexpr bool exactRow =
     sizeof(RowType<pool>) == bindings[static_cast<std::size_t>(pool)].stride;
 static_assert(exactRow<Pool::types> && exactRow<Pool::classes> && exactRow<Pool::fields> &&
               exactRow<Pool::storage> && exactRow<Pool::indices> && exactRow<Pool::descriptors> &&
-              exactRow<Pool::views> && exactRow<Pool::enums> && exactRow<Pool::results> && exactRow<Pool::frames>);
+              exactRow<Pool::views> && exactRow<Pool::enums> && exactRow<Pool::callables> &&
+              exactRow<Pool::results> && exactRow<Pool::frames>);
 
 static_assert(static_cast<std::int64_t>(TypeKind::I64) ==
               static_cast<std::int64_t>(wire::MetadataTypeKind::I64));
@@ -206,7 +214,7 @@ static_assert(static_cast<std::int64_t>(TypeKind::OwnedValues) ==
               static_cast<std::int64_t>(wire::MetadataTypeKind::OwnedValues));
 
 using Capacities = std::array<std::int64_t, static_cast<std::size_t>(Pool::count)>;
-Capacities capacities(const wire::InputCounts &counts) {
+Capacities capacities(const wire::InputCounts &counts, std::int64_t callableCount) {
     const auto &core = counts.coreCounts;
     const auto &maps = counts.mapCounts;
     return {core.bytes,
@@ -218,6 +226,7 @@ Capacities capacities(const wire::InputCounts &counts) {
             maps.descriptors,
             maps.views,
             maps.enums,
+            callableCount,
             core.classes,
             4};
 }
@@ -238,11 +247,12 @@ class SourceOwner {
     hosted_abi::MetadataRelease release_;
 
 public:
-    SourceOwner(std::uint64_t region, const wire::InputCounts &counts) {
+    SourceOwner(std::uint64_t region, const wire::InputCounts &counts, std::int64_t callableCount) {
         release_.region = region;
         hosted_abi::MetadataCreate create;
         create.region = region;
         create.counts = counts;
+        create.callableCount = callableCount;
         aurora_hosted_metadata_create(&create, data());
     }
     ~SourceOwner() {
@@ -275,8 +285,8 @@ public:
     Capacities capacities;
     std::array<std::span<const std::byte>, static_cast<std::size_t>(Pool::count)> pools;
 
-    State(const wire::InputCounts &input, const Capacities &limits)
-        : region(quota(limits)), owner(region.id(), input), counts(input), capacities(limits) {
+    State(const wire::InputCounts &input, std::int64_t callableCount, const Capacities &limits)
+        : region(quota(limits)), owner(region.id(), input, callableCount), counts(input), capacities(limits) {
     }
     template <Pool pool> void set(std::int64_t position, const RowType<pool> &value) {
         // Runtime set borrows this descriptor observation; it only changes the
@@ -328,7 +338,8 @@ std::unique_ptr<Metadata> MetadataIngress::finish() && {
 void detail::MetadataWriter::allocate() {
     if (allocated_)
         invalidTransport();
-    pending_.state_ = std::make_unique<Metadata::State>(position_, capacities(position_));
+    pending_.state_ =
+        std::make_unique<Metadata::State>(position_, callableCount_, capacities(position_, callableCount_));
     const auto allocated = aurora_hosted_metadata_allocated(pending_.state_->owner.data());
     if (allocated == 0)
         allocationFailure();
@@ -336,6 +347,7 @@ void detail::MetadataWriter::allocate() {
         invalidTransport();
     allocated_ = true;
     position_ = {};
+    callableCount_ = 0;
 }
 wire::ByteRange detail::MetadataWriter::text(std::string_view value) {
     wire::ByteRange range;
@@ -365,6 +377,9 @@ void detail::MetadataWriter::type(std::int64_t position, const Type &value) {
     if (allocated_)
         pending_.state_->set<Pool::types>(position, row);
     position_.coreCounts.types = add(position_.coreCounts.types, 1);
+}
+void detail::MetadataWriter::callableType(const Type &value) {
+    type(position_.coreCounts.types, value);
 }
 void detail::MetadataWriter::leaf(const Type &value) {
     type(position_.coreCounts.leaves, value);
@@ -434,11 +449,20 @@ void detail::MetadataWriter::append(const wire::EnumRow &value) {
     }
     position_.mapCounts.enums = add(position_.mapCounts.enums, 1);
 }
+void detail::MetadataWriter::append(const wire::CallableRow &value) {
+    if (allocated_) {
+        if (!pending_.state_)
+            invalidTransport();
+        pending_.state_->set<Pool::callables>(callableCount_, value);
+    }
+    callableCount_ = add(callableCount_, 1);
+}
 MetadataIngress detail::MetadataWriter::take() && {
     if (!allocated_ || !pending_.state_)
         invalidTransport();
     const auto &expected = pending_.state_->counts;
-    if (capacities(position_) != capacities(expected) || position_.coreCounts.fields != expected.coreCounts.fields ||
+    if (capacities(position_, callableCount_) != pending_.state_->capacities ||
+        position_.coreCounts.fields != expected.coreCounts.fields ||
         position_.coreCounts.leaves != expected.coreCounts.leaves ||
         position_.mapCounts.indices != expected.mapCounts.indices)
         invalidTransport();
@@ -527,6 +551,52 @@ std::unique_ptr<Metadata> Metadata::import(const Module &module) {
             row.caseCount = cases;
             writer.append(row);
         }
+        // Signatures remain raw until the source verifier admits the complete
+        // capsule. Their types occupy one packed result-first range per ID.
+        for (const auto &function : module.functions) {
+            wire::CallableRow row;
+            row.nameRange = writer.text(function.name);
+            row.typeRange.firstIndex = writer.position().coreCounts.types;
+            row.typeRange.indexCount = add(1, count(function.parameters.size()));
+            row.moduleScope = function.moduleScope;
+            writer.callableType(function.result);
+            for (const auto &parameter : function.parameters)
+                writer.callableType(parameter);
+            const auto receiver = [&](const Receiver &value) {
+                wire::ReceiverShape shape;
+                shape.nameRange = writer.text(value.className);
+                shape.flags = (value.mutableValue ? 1 : 0) | (value.constructor ? 2 : 0) |
+                              (value.publicAccess ? 4 : 0);
+                return shape;
+            };
+            if (function.receiver) {
+                row.flags |= 1;
+                row.receiver = receiver(*function.receiver);
+            }
+            if (function.borrowedParameter)
+                row.flags |= 2;
+            if (function.secondBorrowedParameter) {
+                row.flags |= 4;
+                row.secondReceiver = receiver(*function.secondBorrowedParameter);
+            }
+            if (function.receiverSpanField) {
+                row.flags |= 8;
+                row.receiverSpanField = *function.receiverSpanField;
+            }
+            writer.append(row);
+        }
+        // Source checks this sorted (name, stable ID) suffix independently.
+        // Sorting never erases duplicate or malformed callable declarations.
+        std::vector<std::size_t> callableIds(module.functions.size());
+        for (std::size_t id = 0; id < callableIds.size(); ++id)
+            callableIds[id] = id;
+        std::sort(callableIds.begin(), callableIds.end(), [&](auto left, auto right) {
+            const auto &a = module.functions[left].name;
+            const auto &b = module.functions[right].name;
+            return a < b || (a == b && left < right);
+        });
+        for (auto id : callableIds)
+            writer.index(count(id));
         if (pass == 0)
             writer.allocate();
     }
@@ -603,6 +673,26 @@ void Metadata::publish() {
         (void)integer(type.rawTail.elementKind);
         (void)integer(type.rawTail.arrayLength);
     }
+    for (std::size_t id = 0; id < callableCount(); ++id) {
+        const auto row = state_->row<Pool::callables>(id);
+        (void)state_->text(row.nameRange);
+        checkRange(index(row.typeRange.firstIndex),
+                   index(row.typeRange.indexCount),
+                   index(counts.coreCounts.types));
+        if (row.typeRange.indexCount == 0)
+            invalidTransport();
+        (void)integer(row.moduleScope);
+        for (const auto shape : {row.receiver, row.secondReceiver})
+            (void)state_->text(shape.nameRange);
+        if ((row.flags & 8) != 0)
+            (void)integer(row.receiverSpanField);
+    }
+    if (counts.mapCounts.indices < count(callableCount()))
+        invalidTransport();
+    const auto callableIndex = index(counts.mapCounts.indices - count(callableCount()));
+    for (std::size_t i = 0; i < callableCount(); ++i)
+        if (index(state_->row<Pool::indices>(callableIndex + i).indexValue) >= callableCount())
+            invalidTransport();
     for (std::size_t i = 0; i < enumCount(); ++i) {
         const auto enumeration = state_->row<Pool::enums>(i);
         (void)state_->text(enumeration.nameRange);
@@ -695,6 +785,78 @@ std::string Metadata::enumName(EnumId id) const {
 }
 int Metadata::enumCases(EnumId id) const {
     return integer(state_->row<Pool::enums>(enumAt(id)).caseCount);
+}
+
+std::size_t Metadata::callableCount() const noexcept {
+    return state_->pools[static_cast<std::size_t>(Pool::callables)].size() / sizeof(wire::CallableRow);
+}
+CallableView Metadata::callable(CallableId id) const {
+    checkIndex(id, callableCount());
+    return {*this, id};
+}
+std::optional<Metadata::CallableId> Metadata::findCallable(std::string_view name) const {
+    const auto begin = index(state_->counts.mapCounts.indices - count(callableCount()));
+    const auto callableId = [&](std::size_t at) {
+        return index(state_->row<Pool::indices>(begin + at).indexValue);
+    };
+    std::size_t first = 0, last = callableCount();
+    while (first < last) {
+        const auto middle = first + (last - first) / 2;
+        const auto key = state_->text(state_->row<Pool::callables>(callableId(middle)).nameRange);
+        if (key < name)
+            first = middle + 1;
+        else
+            last = middle;
+    }
+    if (first < callableCount()) {
+        const auto id = callableId(first);
+        if (state_->text(state_->row<Pool::callables>(id).nameRange) == name)
+            return id;
+    }
+    return std::nullopt;
+}
+std::string CallableView::name() const {
+    return std::string(metadata_->state_->text(metadata_->state_->row<Pool::callables>(id_).nameRange));
+}
+int CallableView::moduleScope() const {
+    return integer(metadata_->state_->row<Pool::callables>(id_).moduleScope);
+}
+Type CallableView::result() const {
+    const auto range = metadata_->state_->row<Pool::callables>(id_).typeRange;
+    return metadata_->typeAt(index(range.firstIndex));
+}
+TypeRange CallableView::parameters() const {
+    const auto range = metadata_->state_->row<Pool::callables>(id_).typeRange;
+    return {*metadata_, index(range.firstIndex) + 1, index(range.indexCount) - 1};
+}
+std::optional<Receiver> CallableView::receiver() const {
+    const auto row = metadata_->state_->row<Pool::callables>(id_);
+    if ((row.flags & 1) == 0)
+        return std::nullopt;
+    const auto &shape = row.receiver;
+    return Receiver{std::string(metadata_->state_->text(shape.nameRange)),
+                    (shape.flags & 1) != 0,
+                    (shape.flags & 2) != 0,
+                    (shape.flags & 4) != 0};
+}
+bool CallableView::borrowedParameter() const {
+    return (metadata_->state_->row<Pool::callables>(id_).flags & 2) != 0;
+}
+std::optional<Receiver> CallableView::secondBorrowedParameter() const {
+    const auto row = metadata_->state_->row<Pool::callables>(id_);
+    if ((row.flags & 4) == 0)
+        return std::nullopt;
+    const auto &shape = row.secondReceiver;
+    return Receiver{std::string(metadata_->state_->text(shape.nameRange)),
+                    (shape.flags & 1) != 0,
+                    (shape.flags & 2) != 0,
+                    (shape.flags & 4) != 0};
+}
+std::optional<int> CallableView::receiverSpanField() const {
+    const auto row = metadata_->state_->row<Pool::callables>(id_);
+    if ((row.flags & 8) == 0)
+        return std::nullopt;
+    return integer(row.receiverSpanField);
 }
 
 std::size_t Metadata::scopeCount() const noexcept {

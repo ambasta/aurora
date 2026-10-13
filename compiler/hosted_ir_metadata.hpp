@@ -14,7 +14,12 @@ class Module;
 class ClassField;
 class Descriptor;
 class Metadata;
-class Function;
+class FunctionBody;
+class Receiver;
+class CallableView;
+namespace verification {
+class Metrics;
+}
 class ValidatedModule;
 class MetadataIngress;
 namespace detail {
@@ -58,6 +63,7 @@ class TypeRange {
         : metadata_(&metadata), begin_(begin), count_(count) {
     }
     friend class Metadata;
+    friend class CallableView;
 
 public:
     using value_type = Type;
@@ -165,10 +171,31 @@ public:
     int reservedBytes = 0;
 };
 
+// A borrowed callable identity. Every accessor reads the admitted owner; no
+// signature payload is retained in native function bodies.
+class CallableView {
+    const Metadata *metadata_ = nullptr;
+    std::size_t id_ = 0;
+    CallableView(const Metadata &metadata, std::size_t id) : metadata_(&metadata), id_(id) {
+    }
+    friend class Metadata;
+
+public:
+    std::string name() const;
+    int moduleScope() const;
+    Type result() const;
+    TypeRange parameters() const;
+    std::optional<Receiver> receiver() const;
+    bool borrowedParameter() const;
+    std::optional<Receiver> secondBorrowedParameter() const;
+    std::optional<int> receiverSpanField() const;
+};
+
 class Metadata final {
 public:
     using ClassId = std::size_t;
     using EnumId = std::size_t;
+    using CallableId = std::size_t;
     // Hostile fixtures import raw maps. Production supplies a pending owning
     // ingress; both paths independently verify before publishing any view.
     static std::unique_ptr<Metadata> import(const Module &module);
@@ -194,6 +221,10 @@ public:
     std::string enumName(EnumId id) const;
     int enumCases(EnumId id) const;
 
+    std::size_t callableCount() const noexcept;
+    CallableView callable(CallableId id) const;
+    std::optional<CallableId> findCallable(std::string_view name) const;
+
     std::size_t scopeCount() const noexcept;
     std::int64_t scopeAt(std::size_t index) const;
     bool hasScope(std::int64_t scope) const;
@@ -218,15 +249,17 @@ private:
     friend class TypeRange;
     friend class FieldRange;
     friend class IndexRange;
+    friend class CallableView;
 };
-// An opaque, move-only raw owner. Only validate can consume it, after function
-// symbol preflight, to run independent metadata verification and publish views.
+// An opaque, move-only raw owner. Only validate can consume it to run the
+// independent symbol, module and callable checks before publishing any view.
 class MetadataIngress final {
     std::unique_ptr<Metadata::State> state_;
     std::unique_ptr<Metadata> finish() &&;
     friend class Metadata;
     friend class detail::MetadataWriter;
-    friend ValidatedModule validate(std::vector<Function> functions, MetadataIngress metadata);
+    friend ValidatedModule validate(std::vector<FunctionBody> functions, MetadataIngress metadata,
+                                    verification::Metrics *metrics);
 
 public:
     MetadataIngress();

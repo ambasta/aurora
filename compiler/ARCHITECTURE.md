@@ -276,34 +276,43 @@ owner cleanup precedes region closure.
 Function CFG/provenance checks remain C++. They reject missing/malformed calls and
 unreachable semantic instructions before graph processing.
 
-## Durable module metadata
+## Durable metadata and callable signatures
 
-`ir_metadata_storage.au` owns raw metadata prefixes and appended canonical fields,
-offsets and layouts. `ir_metadata.au` verifies actual input shapes, including absent
-versus empty maps, nominal types, carriers, ownership, depth and sealed service data.
-Production lowering fills a move-only pending metadata ingress, without constructing
-native `Module` metadata maps. The ingress exposes no readable capsule. After
-projection and diagnostic rendering, Session is released; function-symbol preflight
-then precedes mandatory Aurora metadata verification and publication. The native
-`Module` importer remains for hostile fixtures, using the same mechanical writer and
-verifier. `ValidatedModule` retains one immutable capsule used by function verification,
-emission and ABI facts. There is no native layout fallback or reconstructed map cache.
+`ir_metadata_storage.au` owns raw metadata and callable signatures, plus appended
+canonical fields, offsets and layouts. `ir_metadata.au` admits symbol names, module
+metadata/layouts and then every callable header before publication. Native body,
+frame, provenance and CFG checks follow. A later bad signature can therefore precede
+an earlier bad body; receiver-header errors precede frame errors. This explicit
+phase order replaces the old interleaving of header and body checks. Noncanonical
+service Type names/tails are rejected before any canonical Type observation.
 
-The host binds named pools to generated row shapes and descriptor offsets. Its private
-Region observation returns readonly bytes only inside the capsule; reads copy records,
-and views are destroyed before consuming owner cleanup. The closed pool-to-row binding
-is source-reviewed because predecessor facts do not encode owned element identity.
+Production lowering fills one move-only pending ingress without native metadata
+maps or retained native signature values. `FunctionBody` holds a stable callable ID
+and the still-native slots/frame/instructions. Raw `Function` values remain only in
+hostile `Module` ingress; their signatures enter the same owner once and are released
+before body verification. Session is released before admission. `ValidatedModule`,
+the verifier, graph processing, x86 emission and ABI facts read the same immutable
+capsule. Callable IDs remain stable when graph processing removes function bodies.
+
+The host binds named pools to generated row shapes and descriptor offsets. Private
+Region observation returns readonly bytes inside the capsule; reads copy records,
+and views die before consuming owner cleanup. The closed pool-to-row binding is
+source-reviewed because predecessor facts do not encode owned element identity.
 Raw Type tail counts preserve rejection without serializing malformed template trees.
+Callable views are unavailable until all signature types have been admitted.
 
-The direct ingress removes the intermediate native metadata values and their re-import;
-sorted source-row indexes still arrange the owner's canonical input order. Supplied
-physical layouts remain raw inputs for independent recomputation. Sorting/counting
-can change which Internal transport error is selected among multiply-malformed
-metadata records; function and metadata semantic admission order is unchanged. The destination
-owner now allocates while Session is live, so reduced peak memory is unproven. Native
-instruction objects and their conversion retire with Aurora CFG verification and
-emission, rather than gaining more per-pass serializers. Current source-bootstrap,
-convergence and runtime gates are unexecuted.
+One callable pool brings the declared owning layout to the 520-byte limit; its
+allocation length supplies the count without another root counter. Types contain
+class leaves, supplied field types, then each callable result and parameters.
+The raw index prefix ends in a sorted callable-ID lookup suffix. Supplied physical
+layouts still undergo independent recomputation; no native fallback or signature
+cache is retained. Further slot/instruction ownership needs an explicit storage or
+ownership-composition design rather than another per-pass serializer.
+
+This migration does not claim a net source-line, peak-memory or speed reduction.
+Destination allocation overlaps Session lifetime. Sorting/counting may reorder
+Internal errors among multiply-malformed transport records. Current generated ABI,
+source-bootstrap, convergence and runtime gates remain unexecuted.
 
 ## CFG and frame invariants
 

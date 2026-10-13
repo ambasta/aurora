@@ -669,7 +669,7 @@ void copiedResourceTests() {
 void metadataLifetimeTests() {
     static_assert(!std::is_copy_constructible_v<ValidatedModule>);
     static_assert(std::is_move_constructible_v<ValidatedModule>);
-    static_assert(!std::is_constructible_v<ValidatedModule, std::vector<IRFunction>, std::unique_ptr<Metadata>>);
+    static_assert(!std::is_constructible_v<ValidatedModule, std::vector<FunctionBody>, std::unique_ptr<Metadata>>);
     auto input = moving();
     input.descriptors = {{7, {88, 5}}};
     input.descriptorViews = {{0, {7}}};

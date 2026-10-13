@@ -45,13 +45,13 @@ struct HostedLoweringServices {
 };
 
 struct HostedLoweringOutput {
-    std::vector<ir::Function> functions;
+    std::vector<ir::FunctionBody> functions;
     ir::MetadataIngress metadata;
     std::vector<Diagnostic> diagnostics;
 };
 
 // Call only for a checked LoweringResult success. Checks transport integrity and
-// materializes functions and raw owning ingress; does not publish metadata or
+// materializes bodies and raw owning ingress; does not publish metadata or
 // call ir::validate. The caller retains Session through projection and rendering,
 // then destroys these views and releases Session before independently validating
 // the owned result.

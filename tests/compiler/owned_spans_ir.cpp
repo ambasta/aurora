@@ -822,7 +822,7 @@ void importReachabilityTests() {
     auto valid = validate(m);
     std::set<std::string> names;
     for (const auto &function : valid.get().functions)
-        names.insert(function.name);
+        names.insert(valid.metadata().callable(function.callableId).name());
     check(names == std::set<std::string>{"fixed_view", "fixed_caller", "unused_private_root"},
           "reachable import or root bridge was pruned, or unused import was retained");
     ++accepted;
