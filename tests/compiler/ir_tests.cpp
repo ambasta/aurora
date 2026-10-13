@@ -4156,8 +4156,11 @@ void instructionOwnerTests() {
     replacement = std::move(moved);
     if (id != 9 || code.size() != 7 || code.idAt(2) != id || bytes.size() != 3 ||
         bytes[0] != 0 || bytes[1] != 42 || bytes[2] != 255 ||
-        replacement.get().functions.at(1).code.idAt(2) != id)
-        throw Error("instruction identity or borrowed payload changed after compaction, ingress destruction or owner move");
+        replacement.get().functions.at(1).code.idAt(2) != id ||
+        code.flowAt(0).target != CodePosition{1} || code.flowAt(0).fallsThrough ||
+        !code.flowAt(1).blockEntry || !code.flowAt(1).fallsThrough ||
+        replacement.get().functions.at(1).code.flowAt(0).target != CodePosition{1})
+        throw Error("instruction identity, CFG target or borrowed payload changed after compaction, ingress destruction or owner move");
     const auto assembly = X86Emitter{}.emit(replacement);
     if (assembly.find("leaq .Laurora_literal_9(%rip)") == std::string::npos ||
         assembly.find(".Laurora_literal_9:\n") == std::string::npos ||
@@ -4167,6 +4170,7 @@ void instructionOwnerTests() {
     std::cout << "PASS IR instruction ranges and literal IDs survive compaction and owner replacement\n";
     for (const auto &read : std::vector<std::function<void()>>{
              [&] { static_cast<void>(code.at(code.size())); },
+             [&] { static_cast<void>(code.flowAt(code.size())); },
              [&] { static_cast<void>(code.instructionById(0)); },
              [&] { static_cast<void>(code.instructionById(1)); },
              [&] { static_cast<void>(bytes.at(bytes.size())); }}) {
@@ -5034,7 +5038,7 @@ int main(int argc, char **argv) {
             [](Module &m) {
                 m.functions[0].code.push_back(BindParameter{999, 8, Type::I64});
             },
-            "outside entry prefix");
+            "unreachable semantic instruction");
         reject(
             "jump over stack effect",
             [](Module &m) {

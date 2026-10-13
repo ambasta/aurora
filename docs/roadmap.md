@@ -84,10 +84,10 @@ An explicitly selected, source-built predecessor emits the imported frontend;
 current C1/C2 stages verify convergence. Aurora owns existing module grammar,
 unresolved declaration admission, module/template resolution and resolved semantic/
 ownership analysis through typed IR. Independent metadata, callable, frame and
-call-graph checks also live in Aurora, alongside durable instruction storage,
-awaiting final-source qualification. The next deletion target is structural CFG
-checking over that storage. Instruction semantics/provenance and native emission
-remain later migrations, alongside host record projection and source loading.
+call-graph checks also live in Aurora, alongside durable instruction storage and
+structural CFG normalization, awaiting final-source qualification. Instruction
+value/provenance verification and native emission remain the next migrations,
+alongside host record projection and source loading.
 Native assembler/linker and host runtime/file/process services remain separate
 self-hosting dependencies.
 

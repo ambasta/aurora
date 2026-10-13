@@ -2,8 +2,9 @@ export module aurora.compiler.ir_instructions;
 import aurora.compiler.ir_instruction_storage;
 import aurora.compiler.ir_metadata;
 
-// Generic durable transport admission only. The sole native field walk owns
-// ordered opcode shapes; native verification retains all instruction semantics.
+// Generic durable transport admission precedes the sole native field walk for
+// exact opcode shapes. Then source structural admission normalizes all bodies;
+// native verification retains value/type, lifetime, provenance and join checks.
 export namespace compiler_ir_instructions {
     auto bounded_range(i64 begin, i64 count, i64 limit) -> bool {
         return begin >= 0 && count >= 0 && begin <= limit && count <= limit - begin;
@@ -42,7 +43,9 @@ export namespace compiler_ir_instructions {
         i64 at = 0;
         while (at < store.code_count()) {
             const CodeRow code = store.code_at(at);
-            if (code.id() != at + 1) { return fail(store, InstructionError::integrity); }
+            if (code.id() != at + 1 || code.target() != -1 || code.flags() != 0u64 || code.scratch() != 0) {
+                return fail(store, InstructionError::integrity);
+            }
             at = at + 1;
         }
         return true;
@@ -157,5 +160,8 @@ export namespace compiler_ir_instructions {
             if (store.status() == InstructionStatus::pending) { store.reject(InstructionError::integrity); }
         }
         return store.status();
+    }
+    auto normalize_instruction_cfg(InstructionStore& store) -> InstructionStatus {
+        return store.normalize_cfg();
     }
 }

@@ -9,7 +9,7 @@ The typed-IR milestone established behavior-preserving compiler phase boundaries
 3. The hosted Aurora lexer turns bytes into tokens; `syntax.hpp` defines the untyped source AST. `parser.hpp` is a compatibility entrypoint for one complete hosted Aurora module parse; all declaration/container grammar lives in `parser.au`.
 4. `lowering_types.au`, `lowering_values.au` and the `lowering_frames`, `lowering_calls`, `lowering_expressions`, `lowering_statements` and `lowering_body` modules perform resolved layout/signature analysis, local/member resolution, exact argument-type overload selection, initialization and const/private checks, ownership moves, lexical borrow checks and conservative branch/loop joins. `lowering.au` publishes typed instructions and metadata from the same resolved Session.
 5. `hosted_lowering.cpp` mechanically fills the durable Aurora metadata and instruction owners from generated typed records. One instruction field walk serves source ingress, hostile native fixtures and borrowed native observations. Instruction/operator enums come from predecessor-generated Aurora facts.
-6. `ir_metadata.au` independently validates module metadata, callable signatures and frame declarations, deriving physical class layouts. `ir_instructions.au` admits instruction storage and canonical type payloads. `ir_verify.hpp` checks instruction types, initialization, control-flow, operand-stack and bounds-token invariants through borrowed observations of those owners. After native function normalization, `ir_graph.au` independently checks the complete call graph and selects retained functions. Only the resulting immutable `ValidatedModule` can be passed to the emitter.
+6. `ir_metadata.au` independently validates module metadata, callable signatures and frame declarations, deriving physical class layouts. `ir_instructions.au` admits instruction storage and canonical type payloads, then derives and normalizes structural control flow after codec shape checks. `ir_verify.hpp` checks instruction types, initialization, operand-stack and bounds-token invariants using those source-owned flow facts. After native value-state verification, `ir_graph.au` independently checks the complete call graph and selects retained functions. Only the resulting immutable `ValidatedModule` can be passed to the emitter.
 7. `x86.hpp` lowers validated operations to GNU x86-64 assembly. It has no source AST, scope lookup, const policy, owner-liveness state or borrow-state checker. Target registers, ABI argument placement, stack alignment and machine trap sequences exist only here. Two local forms avoid stack and copy traffic without changing any check: a pushed left operand followed directly by a constant, local or receiver-field load stays in `%rcx` for the arithmetic or comparison that would pop it, and an element read that the next instruction returns is copied straight into the caller's result storage.
 8. `main.cpp` coordinates file I/O and those stages. GNU assembler/linker remain the bootstrap native toolchain.
 
@@ -263,8 +263,9 @@ This is a small checked-index token discipline, not a general theorem about arbi
 
 ## Independent module call graph
 
-The host snapshots actual `ir::Module` after every native `verifyFunction`
-has normalized its code, never from lowering Session summaries. `FunctionRow`
+The host derives call-graph input from the durable instruction owner after
+source CFG normalization and native value-state verification, never from
+lowering Session summaries. `FunctionRow`
 carries call ranges, receiver/service presence and scope-zero status; target indices
 cover `Call`, `MethodCall`, `BorrowedCall`, `AggregateCall`, `ServiceCall` and `ResourceCall`.
 
@@ -276,17 +277,19 @@ unrelated scalar recursion remains legal. Host filtering preserves original orde
 with no native graph fallback. Generated row sizes bound O(V + E) storage; paired
 owner cleanup precedes region closure.
 
-Function CFG/provenance checks remain C++. They reject missing/malformed calls and
-unreachable semantic instructions before graph processing.
+Function value-state/provenance checks remain C++. They reject missing or
+malformed calls before graph processing; Aurora rejects unreachable semantic
+instructions before native value-state analysis.
 
 ## Durable metadata and instructions
 
 `ir_metadata_storage.au` owns metadata, callable signatures and frame declarations,
 plus canonical class fields, offsets and layouts. `ir_metadata.au` admits names,
-module layouts, every callable header and every frame before publication. Native
-instruction/provenance/CFG checks follow. A later bad signature or frame may thus
-precede an earlier bad body; this explicit phase order replaces per-function
-interleaving. Malformed raw Type tails reject before canonical Type observation.
+module layouts, every callable header and every frame before publication.
+Instruction storage/types and exact codec shapes follow, then all structural CFG
+checks and normalization, native value-state/provenance checks, call-graph checks
+and publication. A later structural error can therefore precede an earlier
+value-state error; no per-function diagnostic-order replay is retained. Malformed raw Type tails reject before canonical Type observation.
 
 Production lowering fills one move-only pending ingress that binds both owners.
 `FunctionBody` contains a stable callable ID and a borrowed instruction range.
@@ -324,8 +327,8 @@ Malformed instruction type tails now reject before opcode-specific errors, with
 `invalid typed IR: noncanonical instruction type payload`.
 
 Instruction IDs are immutable and one-based; function-local code positions are
-separate. Native provenance uses IDs, while CFG worklists use positions. After
-body checking, normalization filters only code-order IDs. Argument lists and
+separate. Native provenance uses IDs, while CFG worklists use positions. Aurora
+normalizes code order before native State snapshots are created. Argument lists and
 literal bytes remain borrowed from the owner; the emitter revisits literals for
 rodata rather than retaining a second byte pool. Literal labels use stable IDs,
 so incidental assembly label numbering changes. Existing graph scratch remains
@@ -338,7 +341,27 @@ convergence and runtime qualification remain unexecuted.
 
 ## CFG and frame invariants
 
-The verifier follows all statically reachable successors, including both sides of conditional branches. It retains worklist snapshots only at basic-block entries (function entry, labels and conditional fallthrough), then walks each straight-line block with one mutable state. Reachability is recorded separately for every instruction. A loop is handled by worklist propagation until incoming abstract states stabilize. Source owner-liveness backedge rules remain the responsibility of semantic analysis; this lower pass tracks runtime initialization and value shapes.
+Aurora resolves every label target, follows both conditional successors and
+rejects reachable end-of-body fallthrough. Return-free cycles remain legal.
+It rejects every unreachable semantic instruction, removes only unreachable
+Label/Jump artifacts and remaps retained targets before copying code rows forward.
+The source-controlled `structured` state closes mutation and gates publication.
+
+Each CodeRow stores a stable ID, resolved target, flow flags and one scratch word.
+Scratch is reused for sorted sparse-label lookup, the reachability queue and the
+old-to-normalized position map. The predicted row grows from 8 to 32 bytes; the
+five-pool InstructionStore remains 176 bytes. This adds 24 bytes per original
+instruction and no pool or retained native CFG snapshot. Layout and cost remain
+unqualified.
+
+Native value analysis consumes the source-owned target, fallthrough and block-entry
+facts. It retains State snapshots only at entries (function entry, labels and
+conditional fallthrough), preserving target-before-fallthrough scheduling, and
+walks straight-line blocks with one mutable State. Loop states propagate until
+abstract joins stabilize. Native code keeps value/lifetime checks and linear
+emission-depth certification, with no label map, block-entry/reached vectors or
+compaction interface. Source owner-liveness backedges remain semantic-analysis
+policy; this lower value pass tracks runtime initialization and value shapes.
 
 - Function symbols must be identifiers and cannot collide with backend helper names. Calls must target a known function.
 - Parameter bindings form the exact entry prefix in parameter order. They cannot be repeated later after calls have clobbered argument registers.
@@ -348,7 +371,7 @@ The verifier follows all statically reachable successors, including both sides o
 - Labels are unique; all jump/branch targets exist, including targets in unreachable structural instructions.
 - Temporary value/token stacks match at joins. Statement labels and jumps do not carry temporary stack entries. Returns have balanced stacks and correct result types.
 - Reachable fallthrough without a return is rejected.
-- Unreachable semantic instructions are rejected. Only unreachable structural `Jump`/`Label` artifacts are removed after analysis; this removes harmless jumps emitted after a returning branch and prevents invisible unreachable push/pop operations from confusing backend linear stack accounting.
+- Unreachable semantic instructions are rejected. Only unreachable structural `Jump`/`Label` artifacts are removed before native value analysis; this removes harmless jumps emitted after a returning branch and prevents invisible unreachable push/pop operations from confusing backend linear stack accounting.
 
 Given those invariants, the backend's expression-stack depth agrees with reachable execution. It aligns the machine stack at each nested call. The semantic analyzer and verifier cap local frame storage at 65536 bytes; that bound does not eliminate target-stack exhaustion from call depth or expression temporaries.
 

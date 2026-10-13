@@ -655,19 +655,28 @@ public:
 };
 using InstructionId = std::size_t;
 using CodePosition = std::size_t;
+// A copied observation of source-owned, normalized control flow. Positions
+// name the retained function-local order; instruction IDs never change.
+class InstructionFlow {
+public:
+    std::optional<CodePosition> target;
+    bool fallsThrough;
+    bool blockEntry;
+    bool operator==(const InstructionFlow &) const = default;
+};
 class InstructionRange {
     const Instructions *instructions_ = nullptr;
     Metadata::CallableId callableId_ = 0;
     InstructionRange(const Instructions &instructions, Metadata::CallableId callableId)
         : instructions_(&instructions), callableId_(callableId) {}
     friend class Instructions;
-    friend class FunctionBody;
 public:
     using value_type = InstructionObservation;
     InstructionRange() = default;
     std::size_t size() const;
     bool empty() const { return size() == 0; }
     InstructionId idAt(CodePosition position) const;
+    InstructionFlow flowAt(CodePosition position) const;
     InstructionObservation instructionById(InstructionId id) const;
     InstructionObservation at(CodePosition position) const;
     InstructionObservation operator[](CodePosition position) const { return at(position); }
@@ -683,8 +692,6 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
 // Production bodies borrow durable source rows. No native executable payload
 // container survives ingress; code positions are separate from immutable IDs.
 class FunctionBody {
-    void retainInstructions(const std::vector<bool> &retained);
-    friend void verification::verifyFunction(FunctionBody &, const Metadata &, verification::Metrics *);
 public:
     Metadata::CallableId callableId = 0;
     InstructionRange code;

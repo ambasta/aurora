@@ -143,7 +143,7 @@ def abi_generation(facts):
         ("compiler_ir_metadata::MetadataStore", 512),
         ("compiler_ir_instructions::RawInstructionRow", 64),
         ("compiler_ir_instructions::RawOperandRow", 40),
-        ("compiler_ir_instructions::CodeRow", 8),
+        ("compiler_ir_instructions::CodeRow", 32),
         ("compiler_ir_instructions::BodyRow", 24),
         ("compiler_ir_instructions::InstructionCounts", 32),
         ("compiler_ir_instructions::InstructionStore", 176),
@@ -167,15 +167,22 @@ def abi_generation(facts):
     )
     require(
         all(f"struct alignas(8) {name} {{" in generated for name in (
-            "InstructionsCreate", "InstructionsRelease", "InstructionsRetainCode", "InstructionsTruncateBody"
+            "InstructionsCreate", "InstructionsRelease"
         ))
         and all(f"instructionStore_{pool}Bytes = 32;" in generated for pool in (
             "instructions", "operands", "literals", "codeOrder", "bodies"
         ))
         and all(f"instruction{row}PhysicalBytes = {width};" in generated for row, width in (
-            ("RawInstructionRow", 64), ("RawOperandRow", 40), ("CodeRow", 8), ("BodyRow", 24)
+            ("RawInstructionRow", 64), ("RawOperandRow", 40), ("CodeRow", 32), ("BodyRow", 24)
         )),
         "instruction arguments or closed owner/row physical bindings were omitted",
+    )
+    _, code_row = abi_declaration(facts, "records", "compiler_ir_instructions::CodeRow")
+    require(
+        [(field["name"], field["kind"], field["offset"], field["bytes"]) for field in code_row["fields"]]
+        == [("instructionId", "i64", 0, 8), ("targetPosition", "i64", 8, 8),
+            ("flowFlags", "u64", 16, 8), ("scratchValue", "i64", 24, 8)],
+        "instruction identity, structural facts or scratch layout changed",
     )
     # Exact root signatures are the only native entry authority. An imported
     # implementation must not become a fallback when its forwarding root is lost.
@@ -235,7 +242,7 @@ def abi_generation(facts):
         raise AssertionError(f"unsafe graph paired bridge accepted: {field}={value}")
     metadata_store, _ = abi_declaration(facts, "records", "compiler_ir_metadata::MetadataStore")
     instruction_store, _ = abi_declaration(facts, "records", "compiler_ir_instructions::InstructionStore")
-    for operation in ("create", "release", "allocated", "admit", "retain_code", "truncate_body", "publish", "error"):
+    for operation in ("create", "release", "allocated", "admit", "structure", "publish", "error"):
         for mutation in ("receiver", "result", "parameters", "root"):
             changed = deepcopy(facts)
             _, entry = abi_declaration(changed, "functions", "compiler_frontend::instructions_" + operation)
@@ -255,6 +262,20 @@ def abi_generation(facts):
             except ValueError:
                 continue
             raise AssertionError(f"unsafe instruction bridge accepted: {operation}/{mutation}")
+    for field, value in (
+        ("receiver_mutable", False),
+        ("second_receiver", {"type_name": metadata_store, "mutable": False}),
+        ("root_count", 2),
+        ("root_tuple_bytes", 8),
+    ):
+        changed = deepcopy(facts)
+        _, entry = abi_declaration(changed, "functions", "compiler_frontend::instructions_structure")
+        entry[field] = value
+        try:
+            frontend_abi_header(changed)
+        except ValueError:
+            continue
+        raise AssertionError(f"unsafe structural instruction bridge accepted: {field}={value}")
     for field, value in (
         ("receiver_mutable", False),
         ("borrowed_parameter", False),
@@ -489,11 +510,16 @@ def message_generation(facts, root):
     table = "\n".join(instruction_messages(source, facts))
     require(
         "case InstructionError::none: return nullptr;" in table
-        and 'return "invalid typed IR: noncanonical instruction type payload";' in table,
+        and 'return "invalid typed IR: noncanonical instruction type payload";' in table
+        and all(f'return "invalid typed IR: {message}";' in table for message in (
+            "empty function body", "duplicate or invalid label", "unknown jump target",
+            "unknown branch target", "reachable fallthrough without return", "unreachable semantic instruction",
+        )),
         "instruction message table lost its constant diagnostic binding",
     )
     for changed in (
         source.replace("        //: invalid hosted IR instruction transport\n", "", 1),
+        source.replace("        //: invalid typed IR: unreachable semantic instruction\n", "", 1),
         source.replace("        integrity,", "        unknown_reason,", 1),
     ):
         try:
@@ -569,7 +595,7 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
     )
     entries.update(
         "aurora_hosted_instructions_" + operation
-        for operation in ("create", "release", "allocated", "admit", "retain_code", "truncate_body", "publish", "error")
+        for operation in ("create", "release", "allocated", "admit", "structure", "publish", "error")
     )
     # A is predecessor-generated and need not equal B. Both actual build
     # objects must expose exactly the private host shim contract.

@@ -76,8 +76,8 @@ private:
     // Only sealed compiler Metadata and Instructions may retain these bytes.
     // Their closed bindings check generated offsets, exact row strides/counts.
     // Metadata and instruction payload rows are immutable after admission;
-    // Instructions may then stable-filter only fixed code-order/body rows before
-    // publication. Neither owner reallocates; views expose copied values and
+    // source CFG normalization may then update only fixed code-order/body rows
+    // before structured status. Neither owner reallocates; views expose copied values and
     // are destroyed before consuming the owner and Region.
     // No pin, ownership transfer, type assertion or Aurora pointer is created.
     std::span<const std::byte> observeMetadataBytes(const NativeOwner &owner) const noexcept;
