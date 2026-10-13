@@ -57,8 +57,8 @@ struct Region::Allocation {
     Allocation *next;
 };
 
-// All payload addresses and registry traversal stay inside this adapter. An ID
-// is looked up before any descriptor-derived offset or allocation is touched.
+// Payload ownership and registry traversal stay inside this adapter. An ID is
+// checked before accessing any allocation, including the sealed metadata view.
 class RuntimeAccess {
 public:
     static Region &region(std::uint64_t id) noexcept {
@@ -356,6 +356,18 @@ Metrics Region::metrics() const noexcept {
 
 bool Region::is_open() const noexcept {
     return open_;
+}
+
+std::span<const std::byte> Region::observeMetadataBytes(const NativeOwner &owner) const noexcept {
+    if (!open_ || owner.region != id_) {
+        invariant_trap();
+    }
+    Region *target = nullptr;
+    const auto *record = RuntimeAccess::allocation(&owner, target);
+    if (record == nullptr) {
+        bounds_trap();
+    }
+    return {reinterpret_cast<const std::byte *>(record->payload), static_cast<std::size_t>(record->length)};
 }
 
 bool Region::close() noexcept {

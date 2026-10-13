@@ -50,6 +50,7 @@ def frontend_arguments(compiler, root, output):
         str(root / "compiler/hosted_parser.S"),
         str(root / "compiler/hosted_resolver.S"),
         str(root / "compiler/hosted_graph.S"),
+        str(root / "compiler/hosted_ir_metadata.S"),
     ]
 
 
@@ -134,6 +135,14 @@ def abi_generation(facts):
     ):
         _, entry = abi_declaration(facts, "records", source)
         require(entry["reserved"] == extent and entry["alignment"] == 8, f"lowering layout changed: {source}")
+    require(
+        "struct alignas(8) MetadataCreate {" in generated
+        and "struct alignas(8) MetadataRelease {" in generated
+        and "aurora::hosted_abi::compiler_ir_metadata::InputCounts counts{};" in generated
+        and "metadataStore_typesBytes = 32;" in generated
+        and "metadataRawTypeRowPhysicalBytes = 64;" in generated,
+        "metadata arguments or closed owner/row physical bindings were omitted",
+    )
     # Exact root signatures are the only native entry authority. An imported
     # implementation must not become a fallback when its forwarding root is lost.
     for operation in (
@@ -190,7 +199,41 @@ def abi_generation(facts):
         except ValueError:
             continue
         raise AssertionError(f"unsafe graph paired bridge accepted: {field}={value}")
+    metadata_store, _ = abi_declaration(facts, "records", "compiler_ir_metadata::MetadataStore")
+    for operation in ("create", "release", "allocated", "run", "error"):
+        for mutation in ("receiver", "result", "parameters", "root"):
+            changed = deepcopy(facts)
+            _, entry = abi_declaration(changed, "functions", "compiler_frontend::metadata_" + operation)
+            if mutation == "receiver":
+                entry["receiver"] = metadata_store if entry["receiver"] is None else None
+            elif mutation == "result":
+                entry["result"]["bytes"] += 8
+            elif mutation == "parameters":
+                if entry["parameters"]:
+                    entry["parameters"][0]["bytes"] += 8
+                else:
+                    entry["parameter_bytes"] += 8
+            else:
+                entry["source_name"] = "fixture::removed_metadata_" + operation
+            try:
+                frontend_abi_header(changed)
+            except ValueError:
+                continue
+            raise AssertionError(f"unsafe metadata bridge accepted: {operation}/{mutation}")
+    for operation in ("allocated", "run", "error"):
+        changed = deepcopy(facts)
+        _, entry = abi_declaration(changed, "functions", "compiler_frontend::metadata_" + operation)
+        entry["receiver_mutable"] = operation != "run"
+        try:
+            frontend_abi_header(changed)
+        except ValueError:
+            continue
+        raise AssertionError(f"unsafe metadata owner authority accepted: {operation}")
     for kind in (
+        "metadata_second_root",
+        "metadata_owner_extent",
+        "metadata_row_stride",
+        "metadata_narrow_leaf",
         "unexpected_second_root",
         "unexpected_root_count",
         "unexpected_root_tuple",
@@ -212,7 +255,19 @@ def abi_generation(facts):
         "resolver_seed_shape",
     ):
         changed = deepcopy(facts)
-        if kind.startswith("unexpected_"):
+        if kind == "metadata_second_root":
+            _, entry = abi_declaration(changed, "functions", "compiler_frontend::metadata_run")
+            entry["second_receiver"] = {"type_name": metadata_store, "mutable": False}
+        elif kind == "metadata_owner_extent":
+            _, entry = abi_declaration(changed, "records", "compiler_ir_metadata::MetadataStore")
+            next(field for field in entry["fields"] if field["name"] == "types")["bytes"] += 8
+        elif kind in ("metadata_row_stride", "metadata_narrow_leaf"):
+            _, entry = abi_declaration(changed, "records", "compiler_ir_metadata::IndexRow")
+            if kind == "metadata_row_stride":
+                entry["size"] -= 1
+            else:
+                entry["fields"][0]["kind"] = "bool"
+        elif kind.startswith("unexpected_"):
             _, entry = abi_declaration(changed, "functions", "compiler_frontend::parser_read_node")
             if kind == "unexpected_second_root":
                 entry["second_receiver"] = {"type_name": entry["receiver"], "mutable": False}
@@ -264,11 +319,11 @@ def abi_generation(facts):
         except ValueError:
             continue
         raise AssertionError(f"unsupported or unsafe ABI facts accepted: {kind}")
-    print("PASS generic source-spelled ABI records/enums, nested layout and exact lowering bridge rejection")
+    print("PASS generic source-spelled ABI records/enums, nested layout and exact lowering/metadata bridge rejection")
 
 
 def message_generation(facts, root):
-    from bootstrap_frontend import lowering_messages
+    from bootstrap_frontend import lowering_messages, metadata_messages
 
     source = (root / "compiler/lowering_errors.au").read_text()
     table = "\n".join(lowering_messages(source, facts))
@@ -300,6 +355,23 @@ def message_generation(facts, root):
         except ValueError:
             continue
         raise AssertionError("lowering message generation accepted a missing, extra or malformed message")
+
+    source = (root / "compiler/ir_metadata_storage.au").read_text()
+    table = "\n".join(metadata_messages(source, facts))
+    require(
+        "case MetadataError::none: return nullptr;" in table
+        and 'case MetadataError::class_leaf: return "invalid typed IR: non-scalar class layout field";' in table,
+        "metadata message table lost its constant diagnostic binding",
+    )
+    for changed in (
+        source.replace("        //: invalid hosted IR metadata transport\n", "", 1),
+        source.replace("        integrity,", "        unknown_reason,", 1),
+    ):
+        try:
+            metadata_messages(changed, facts)
+        except ValueError:
+            continue
+        raise AssertionError("metadata message generation accepted a missing message or mismatched reason")
 
 
 def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
@@ -361,6 +433,10 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
             "create_input", "create_workspace", "release_input", "release_workspace",
             "set_function", "set_edge", "run", "retained",
         )
+    )
+    entries.update(
+        "aurora_hosted_metadata_" + operation
+        for operation in ("create", "release", "allocated", "run", "error")
     )
     # A is predecessor-generated and need not equal B. Both actual build
     # objects must expose exactly the private host shim contract.

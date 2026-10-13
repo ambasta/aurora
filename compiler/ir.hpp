@@ -1,8 +1,10 @@
 #pragma once
 #include "types.hpp"
+#include "hosted_ir_metadata.hpp"
 #include "hosted_frontend_abi.hpp"
 #include "services.hpp"
 #include <map>
+#include <memory>
 #include <optional>
 #include <set>
 #include <variant>
@@ -650,15 +652,10 @@ public:
     // flattened leaf range, including zero for arrays of empty copied classes.
     int elementCount = 1;
 };
-// Move-only identity is derived from logical shape, never caller-supplied metadata.
-inline bool owningClass(const std::map<std::string, std::vector<ClassField>> &fields, const std::string &name) {
-    const auto found = fields.find(name);
-    if (found == fields.end())
-        return false;
-    for (const auto &field : found->second)
-        if (field.elementType.isOwnerStorage())
-            return true;
-    return false;
+// Move-only identity comes from independently verified logical shape.
+inline bool owningClass(const Metadata &metadata, const std::string &name) {
+    const auto id = metadata.findClass(name);
+    return id && metadata.isOwning(*id);
 }
 class ClassStorage {
 public:
@@ -688,14 +685,29 @@ public:
 class ValidatedModule;
 ValidatedModule validate(Module module);
 class ValidatedModule {
-    Module module;
-    explicit ValidatedModule(Module value) : module(std::move(value)) {
+    class Contents {
+    public:
+        std::vector<Function> functions;
+    };
+    Contents contents;
+    std::unique_ptr<Metadata> metadataOwner;
+    explicit ValidatedModule(std::vector<Function> functions, std::unique_ptr<Metadata> metadata)
+        : contents{std::move(functions)}, metadataOwner(std::move(metadata)) {
     }
     friend ValidatedModule validate(Module module);
 
 public:
-    const Module &get() const {
-        return module;
+    ValidatedModule(const ValidatedModule &) = delete;
+    ValidatedModule &operator=(const ValidatedModule &) = delete;
+    ValidatedModule(ValidatedModule &&) noexcept = default;
+    ValidatedModule &operator=(ValidatedModule &&) noexcept = default;
+    const Contents &get() const {
+        return contents;
+    }
+    const Metadata &metadata() const {
+        if (!metadataOwner)
+            throw Error("metadata access on moved-from validated module");
+        return *metadataOwner;
     }
 };
 } // namespace aurora::ir

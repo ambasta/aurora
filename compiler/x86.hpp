@@ -2,7 +2,6 @@
 #include "ir_layout.hpp"
 #include <algorithm>
 #include <optional>
-#include <span>
 #include <sstream>
 #include <type_traits>
 #include <utility>
@@ -66,9 +65,16 @@ class X86Emitter {
     std::vector<std::vector<unsigned char>> literalBytes;
     std::map<int, int> serviceLoanOffsets;
     const ir::Function *currentFunction = nullptr;
-    const std::map<std::string, std::vector<Type>> *classLayouts = nullptr;
-    const std::map<std::string, std::vector<ir::ClassField>> *classFields = nullptr;
-    const std::map<std::string, ir::ClassStorage> *classStorage = nullptr;
+    const ir::Metadata *metadata = nullptr;
+    ir::TypeRange classLeaves(const std::string &name) const {
+        return metadata->leaves(metadata->findClass(name).value());
+    }
+    ir::FieldRange logicalFields(const std::string &name) const {
+        return metadata->fields(metadata->findClass(name).value());
+    }
+    ir::StorageView physicalStorage(const std::string &name) const {
+        return metadata->storage(metadata->findClass(name).value());
+    }
     std::map<std::string, const ir::Function *> functions;
     std::map<std::string, std::size_t> argumentCounts;
     const std::vector<std::string> argumentRegisters = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
@@ -87,9 +93,9 @@ class X86Emitter {
         StackDestination
     };
     template <class Source, class Destination>
-    void copyLeaves(std::span<const Type> leaves,
-                    std::span<const int> sourceOffsets,
-                    std::span<const int> destinationOffsets,
+    void copyLeaves(ir::TypeRange leaves,
+                    ir::IndexRange sourceOffsets,
+                    ir::IndexRange destinationOffsets,
                     const Source &source,
                     const Destination &destination,
                     CopyBases bases) {
@@ -155,7 +161,7 @@ class X86Emitter {
              (type == Type::U8 ? byteArgumentRegisters[index] : argumentRegisters[index]) + ", " + destination);
     }
     int objectLeaf(int base, std::size_t leaf) const {
-        return base - classStorage->at(currentFunction->objectSlots.at(base).className).leafOffsets.at(leaf);
+        return base - physicalStorage(currentFunction->objectSlots.at(base).className).leafOffsets.at(leaf);
     }
     template <class Address> void clearBytes(int begin, int end, const Address &destination) {
         while (begin < end) {
@@ -167,14 +173,14 @@ class X86Emitter {
         }
     }
     template <class Address> void clearPadding(const std::string &name, const Address &destination) {
-        const auto &physical = classStorage->at(name);
-        const auto &leaves = classLayouts->at(name);
+        const auto physical = physicalStorage(name);
+        const auto leaves = classLeaves(name);
         // Descriptors have no scalar leaves, but still occupy private payload
         // bytes. Clearing representation gaps must never clear a live owner.
         std::vector<std::pair<int, int>> payload;
         for (std::size_t leaf = 0; leaf < leaves.size(); ++leaf)
             payload.emplace_back(physical.leafOffsets[leaf], ir::storageWidth(leaves[leaf]));
-        const auto &fields = classFields->at(name);
+        const auto fields = logicalFields(name);
         for (std::size_t field = 0; field < fields.size(); ++field)
             if (fields[field].elementType.isOwnerStorage())
                 payload.emplace_back(physical.fieldOffsets[field], 32);
@@ -190,8 +196,8 @@ class X86Emitter {
         clearPadding(name, [&](int byte) {
             return address(base - byte);
         });
-        const auto &fields = classFields->at(name);
-        const auto &physical = classStorage->at(name);
+        const auto fields = logicalFields(name);
+        const auto physical = physicalStorage(name);
         for (std::size_t field = 0; field < fields.size(); ++field)
             if (fields[field].elementType.isOwnerStorage())
                 clearBytesOwner(base - physical.fieldOffsets[field]);
@@ -292,7 +298,7 @@ class X86Emitter {
     int argumentBytes(const Type &type) const {
         return type.isService()        ? service::capabilityBytes
                : type.isOwnerStorage() ? 32
-               : type.isClass()        ? classStorage->at(type.className).reservedBytes
+               : type.isClass()        ? physicalStorage(type.className).reservedBytes
                : type.isSpan()         ? ir::spanBytes
                                        : 8;
     }
@@ -308,10 +314,10 @@ class X86Emitter {
         const auto bytes = [&](const Type &type) {
             if (!type.isClass())
                 return scalarValue(type) && ir::storageWidth(type) == 8 ? argumentBytes(type) : 0;
-            if (ir::owningClass(*classFields, type.className))
+            if (ir::owningClass(*metadata, type.className))
                 return 0;
-            const auto &physical = classStorage->at(type.className);
-            const auto &leaves = classLayouts->at(type.className);
+            const auto physical = physicalStorage(type.className);
+            const auto leaves = classLeaves(type.className);
             int cursor = 0;
             for (std::size_t leaf = 0; leaf < leaves.size(); ++leaf) {
                 if (physical.leafOffsets[leaf] != cursor)
@@ -351,11 +357,11 @@ class X86Emitter {
         line("cmpq $" + std::to_string(maximum) + ", %rax");
         line("ja .Laurora_bounds_trap");
     }
-    const ir::ClassField &receiverField(int fieldIndex) const {
-        return classFields->at(currentFunction->receiver->className)[fieldIndex];
+    ir::ClassField receiverField(int fieldIndex) const {
+        return logicalFields(currentFunction->receiver->className)[fieldIndex];
     }
-    const ir::ClassStorage &receiverStorage() const {
-        return classStorage->at(currentFunction->receiver->className);
+    ir::StorageView receiverStorage() const {
+        return physicalStorage(currentFunction->receiver->className);
     }
     int packArguments(const ir::Function &target, const std::vector<int> &objects, const std::vector<int> &spans = {}) {
         for (std::size_t index = target.parameters.size(); index > 0; --index)
@@ -391,8 +397,8 @@ class X86Emitter {
             } else if (!type.isClass())
                 storeArgument(type, index, std::to_string(offset) + "(%rsp)");
             else {
-                const auto &layout = classLayouts->at(type.className);
-                const auto &offsets = classStorage->at(type.className).leafOffsets;
+                const auto layout = classLeaves(type.className);
+                const auto offsets = physicalStorage(type.className).leafOffsets;
                 copyLeaves(
                     layout,
                     offsets,
@@ -456,17 +462,17 @@ class X86Emitter {
         }
         const auto &name =
             offset == 0 ? currentFunction->receiver->className : currentFunction->objectSlots.at(offset).className;
-        return classFields->at(name).at(fieldIndex).elementType;
+        return logicalFields(name).at(fieldIndex).elementType;
     }
     int ownerElementStride(int offset, int fieldIndex) const {
-        return classStorage->at(ownerStorageType(offset, fieldIndex).className).sizeBytes;
+        return physicalStorage(ownerStorageType(offset, fieldIndex).className).sizeBytes;
     }
     std::string bytesOwnerAddress(int offset, int fieldIndex, int byte = 0) {
         if (fieldIndex < 0)
             return address(offset - byte);
         const auto &name =
             offset == 0 ? currentFunction->receiver->className : currentFunction->objectSlots.at(offset).className;
-        const int fieldOffset = classStorage->at(name).fieldOffsets[fieldIndex];
+        const int fieldOffset = physicalStorage(name).fieldOffsets[fieldIndex];
         if (offset != 0)
             return address(offset - fieldOffset - byte);
         line("movq " + address(receiverSaveOffset) + ", %r10");
@@ -474,8 +480,8 @@ class X86Emitter {
     }
     template <class Source, class Destination>
     void transferObject(const std::string &name, const Source &source, const Destination &destination) {
-        const auto &layout = classLayouts->at(name);
-        const auto &physical = classStorage->at(name);
+        const auto layout = classLeaves(name);
+        const auto physical = physicalStorage(name);
         // Transfer scalar payload by its verified width, preserving the current
         // scalar value. Genuine padding stays with the destination reservation.
         for (std::size_t leaf = 0; leaf < layout.size(); ++leaf) {
@@ -484,7 +490,7 @@ class X86Emitter {
             line(std::string(narrow ? "movzbq " : "movq ") + source(byte) + ", %rcx");
             line(std::string(narrow ? "movb %cl, " : "movq %rcx, ") + destination(byte));
         }
-        const auto &fields = classFields->at(name);
+        const auto fields = logicalFields(name);
         for (std::size_t field = 0; field < fields.size(); ++field) {
             if (!fields[field].elementType.isOwnerStorage())
                 continue;
@@ -497,13 +503,13 @@ class X86Emitter {
         }
     }
     void dropObject(int base, const std::string &name) {
-        if (!ir::owningClass(*classFields, name))
+        if (!ir::owningClass(*metadata, name))
             return;
         // A class lifetime owns each descriptor in reverse declaration order.
         // Preserve the pending scalar result and every outstanding operand.
         push();
-        const auto &fields = classFields->at(name);
-        const auto &physical = classStorage->at(name);
+        const auto fields = logicalFields(name);
+        const auto physical = physicalStorage(name);
         for (std::size_t field = fields.size(); field > 0; --field)
             if (fields[field - 1].elementType.isOwnerStorage()) {
                 line("leaq " + address(base - physical.fieldOffsets[field - 1]) + ", %rdi");
@@ -985,8 +991,8 @@ class X86Emitter {
                          address(operation.resultOffset - 48));
                 } else if constexpr (std::is_same_v<Op, ir::BorrowReceiverArraySpan>) {
                     const auto &name = currentFunction->receiver->className;
-                    const auto &field = classFields->at(name).at(operation.fieldIndex);
-                    const int byte = classStorage->at(name).fieldOffsets.at(operation.fieldIndex);
+                    const auto field = logicalFields(name).at(operation.fieldIndex);
+                    const int byte = physicalStorage(name).fieldOffsets.at(operation.fieldIndex);
                     line("movq $0, " + address(operation.resultOffset));
                     line("movq " + address(receiverSaveOffset) + ", %rcx");
                     line("leaq " + std::to_string(byte) + "(%rcx), %rcx");
@@ -1092,8 +1098,8 @@ class X86Emitter {
                         });
                 } else if constexpr (std::is_same_v<Op, ir::CopyObject>) {
                     const auto &name = currentFunction->objectSlots.at(operation.sourceOffset).className;
-                    const auto &layout = classLayouts->at(name);
-                    const auto &offsets = classStorage->at(name).leafOffsets;
+                    const auto layout = classLeaves(name);
+                    const auto offsets = physicalStorage(name).leafOffsets;
                     copyLeaves(
                         layout,
                         offsets,
@@ -1106,23 +1112,23 @@ class X86Emitter {
                         },
                         CopyBases::Stable);
                 } else if constexpr (std::is_same_v<Op, ir::ObjectFieldCopy>) {
-                    const ir::ClassField *field = nullptr;
-                    const ir::ClassStorage *source = nullptr;
+                    ir::ClassField field{};
+                    ir::StorageView source;
                     if (operation.sourceOffset == 0) {
-                        field = &receiverField(operation.fieldIndex);
-                        source = &receiverStorage();
+                        field = receiverField(operation.fieldIndex);
+                        source = receiverStorage();
                         line("movq " + address(receiverSaveOffset) + ", %r10");
                     } else {
                         const auto &name = currentFunction->objectSlots.at(operation.sourceOffset).className;
-                        field = &classFields->at(name)[operation.fieldIndex];
-                        source = &classStorage->at(name);
+                        field = logicalFields(name)[operation.fieldIndex];
+                        source = physicalStorage(name);
                         line("leaq " + address(operation.sourceOffset) + ", %r10");
                     }
-                    const auto &layout = classLayouts->at(field->elementType.className);
+                    const auto layout = classLeaves(field.elementType.className);
                     copyLeaves(
                         layout,
-                        std::span(source->leafOffsets).subspan(field->firstLeaf, field->length),
-                        classStorage->at(field->elementType.className).leafOffsets,
+                        source.leafOffsets.subrange(field.firstLeaf, field.length),
+                        physicalStorage(field.elementType.className).leafOffsets,
                         [](int byte) {
                             return std::to_string(byte) + "(%r10)";
                         },
@@ -1134,17 +1140,17 @@ class X86Emitter {
                     const auto &name = operation.objectOffset == 0
                                            ? currentFunction->receiver->className
                                            : currentFunction->objectSlots.at(operation.objectOffset).className;
-                    const auto &field = classFields->at(name)[operation.fieldIndex];
-                    const auto &sourceLayout = classLayouts->at(field.elementType.className);
-                    const auto &destinationStorage = classStorage->at(name);
+                    const auto field = logicalFields(name)[operation.fieldIndex];
+                    const auto sourceLayout = classLeaves(field.elementType.className);
+                    const auto destinationStorage = physicalStorage(name);
                     if (operation.objectOffset == 0)
                         line("movq " + address(receiverSaveOffset) + ", %r10");
                     else
                         line("leaq " + address(operation.objectOffset) + ", %r10");
                     copyLeaves(
                         sourceLayout,
-                        classStorage->at(field.elementType.className).leafOffsets,
-                        std::span(destinationStorage.leafOffsets).subspan(field.firstLeaf, field.length),
+                        physicalStorage(field.elementType.className).leafOffsets,
+                        destinationStorage.leafOffsets.subrange(field.firstLeaf, field.length),
                         [&](int byte) {
                             return address(operation.sourceOffset - byte);
                         },
@@ -1156,10 +1162,10 @@ class X86Emitter {
                     const auto &name = operation.objectOffset == 0
                                            ? currentFunction->receiver->className
                                            : currentFunction->objectSlots.at(operation.objectOffset).className;
-                    const auto &field = classFields->at(name)[operation.fieldIndex];
-                    const auto &layout = classLayouts->at(field.elementType.className);
-                    const auto &child = classStorage->at(field.elementType.className);
-                    const auto &storage = classStorage->at(name);
+                    const auto field = logicalFields(name)[operation.fieldIndex];
+                    const auto layout = classLeaves(field.elementType.className);
+                    const auto child = physicalStorage(field.elementType.className);
+                    const auto storage = physicalStorage(name);
                     if (operation.objectOffset == 0)
                         line("movq " + address(receiverSaveOffset) + ", %r10");
                     else
@@ -1168,8 +1174,7 @@ class X86Emitter {
                         copyLeaves(
                             layout,
                             child.leafOffsets,
-                            std::span(storage.leafOffsets)
-                                .subspan(field.firstLeaf + element * layout.size(), layout.size()),
+                            storage.leafOffsets.subrange(field.firstLeaf + element * layout.size(), layout.size()),
                             [&](int byte) {
                                 return address(operation.sources[element] - byte);
                             },
@@ -1182,7 +1187,7 @@ class X86Emitter {
                     const auto &name = operation.objectOffset == 0
                                            ? currentFunction->receiver->className
                                            : currentFunction->objectSlots.at(operation.objectOffset).className;
-                    const auto &field = classFields->at(name)[operation.fieldIndex];
+                    const auto field = logicalFields(name)[operation.fieldIndex];
                     // Reject signed-negative and upper bounds before multiplying.
                     line("cmpq $" + std::to_string(field.elementCount) + ", %rax");
                     line("jae .Laurora_bounds_trap");
@@ -1191,9 +1196,9 @@ class X86Emitter {
                     const auto &name = operation.objectOffset == 0
                                            ? currentFunction->receiver->className
                                            : currentFunction->objectSlots.at(operation.objectOffset).className;
-                    const auto &field = classFields->at(name)[operation.fieldIndex];
-                    const auto &layout = classLayouts->at(field.elementType.className);
-                    const auto &child = classStorage->at(field.elementType.className);
+                    const auto field = logicalFields(name)[operation.fieldIndex];
+                    const auto layout = classLeaves(field.elementType.className);
+                    const auto child = physicalStorage(field.elementType.className);
                     // Canonical validated shape bounds both factors and the complete
                     // byte extent. No indexed pointer or receiver escapes this copy.
                     const int stride = child.leafOffsets.empty() ? 0 : child.sizeBytes;
@@ -1202,7 +1207,7 @@ class X86Emitter {
                         line("movq " + address(receiverSaveOffset) + ", %r10");
                     else
                         line("leaq " + address(operation.objectOffset) + ", %r10");
-                    line("leaq " + std::to_string(classStorage->at(name).fieldOffsets[operation.fieldIndex]) +
+                    line("leaq " + std::to_string(physicalStorage(name).fieldOffsets[operation.fieldIndex]) +
                          "(%r10,%rax), %r10");
                     if constexpr (std::is_same_v<Op, ir::ClassArrayCopy>) {
                         copyLeaves(
@@ -1230,13 +1235,13 @@ class X86Emitter {
                             CopyBases::Stable);
                     }
                 } else if constexpr (std::is_same_v<Op, ir::InitializeObjectField>) {
-                    const auto &field = receiverField(operation.fieldIndex);
-                    const auto &layout = classLayouts->at(field.elementType.className);
+                    const auto field = receiverField(operation.fieldIndex);
+                    const auto layout = classLeaves(field.elementType.className);
                     line("movq " + address(receiverSaveOffset) + ", %r10");
                     copyLeaves(
                         layout,
-                        classStorage->at(field.elementType.className).leafOffsets,
-                        std::span(receiverStorage().leafOffsets).subspan(field.firstLeaf, field.length),
+                        physicalStorage(field.elementType.className).leafOffsets,
+                        receiverStorage().leafOffsets.subrange(field.firstLeaf, field.length),
                         [&](int byte) {
                             return address(operation.sourceOffset - byte);
                         },
@@ -1263,24 +1268,24 @@ class X86Emitter {
                     storeValue(operation.type,
                                std::to_string(receiverStorage().fieldOffsets[operation.fieldIndex]) + "(%r10)");
                 } else if constexpr (std::is_same_v<Op, ir::ReceiverArrayZero>) {
-                    const auto &field = receiverField(operation.fieldIndex);
+                    const auto field = receiverField(operation.fieldIndex);
                     line("movq " + address(receiverSaveOffset) + ", %r10");
                     for (int element = 0; element < field.length; ++element)
                         line(std::string(field.elementType == Type::U8 ? "movb $0, " : "movq $0, ") +
                              std::to_string(receiverStorage().leafOffsets[field.firstLeaf + element]) + "(%r10)");
                 } else if constexpr (std::is_same_v<Op, ir::ReceiverBoundsGuard>) {
-                    const auto &field = receiverField(operation.fieldIndex);
+                    const auto field = receiverField(operation.fieldIndex);
                     // The unsigned comparison also rejects every negative i64 index.
                     line("cmpq $" + std::to_string(field.length) + ", %rax");
                     line("jae .Laurora_bounds_trap");
                 } else if constexpr (std::is_same_v<Op, ir::ReceiverIndexLoad>) {
-                    const auto &field = receiverField(operation.fieldIndex);
+                    const auto field = receiverField(operation.fieldIndex);
                     line("movq " + address(receiverSaveOffset) + ", %r10");
                     loadValue(field.elementType,
                               std::to_string(receiverStorage().fieldOffsets[operation.fieldIndex]) + "(%r10,%rax," +
                                   std::to_string(ir::storageWidth(field.elementType)) + ")");
                 } else if constexpr (std::is_same_v<Op, ir::ReceiverIndexStore>) {
-                    const auto &field = receiverField(operation.fieldIndex);
+                    const auto field = receiverField(operation.fieldIndex);
                     pop("%rcx");
                     line("movq " + address(receiverSaveOffset) + ", %r10");
                     storeValue(field.elementType,
@@ -1312,7 +1317,7 @@ class X86Emitter {
                         const auto &name = operation.receiverOffset == 0
                                                ? currentFunction->receiver->className
                                                : currentFunction->objectSlots.at(operation.receiverOffset).className;
-                        const int fieldOffset = classStorage->at(name).fieldOffsets[operation.receiverFieldIndex];
+                        const int fieldOffset = physicalStorage(name).fieldOffsets[operation.receiverFieldIndex];
                         if (fieldOffset != 0)
                             line("addq $" + std::to_string(fieldOffset) + ", %r10");
                     }
@@ -1337,8 +1342,8 @@ class X86Emitter {
                     line("jmp " + returnLabel());
                 } else if constexpr (std::is_same_v<Op, ir::ReturnObject>) {
                     line("movq " + address(resultSaveOffset) + ", %r10");
-                    const auto &layout = classLayouts->at(currentFunction->result.className);
-                    const auto &offsets = classStorage->at(currentFunction->result.className).leafOffsets;
+                    const auto layout = classLeaves(currentFunction->result.className);
+                    const auto offsets = physicalStorage(currentFunction->result.className).leafOffsets;
                     copyLeaves(
                         layout,
                         offsets,
@@ -1381,10 +1386,10 @@ class X86Emitter {
                     }
                 } else if constexpr (std::is_same_v<Op, ir::BindObjectParameter>) {
                     line("movq " + address(callRecordSaveOffset) + ", %r11");
-                    const auto &layout = classLayouts->at(operation.className);
+                    const auto layout = classLeaves(operation.className);
                     const int offset = recordOffset(*currentFunction, operation.index);
                     clearObject(operation.offset, operation.className);
-                    const auto &offsets = classStorage->at(operation.className).leafOffsets;
+                    const auto offsets = physicalStorage(operation.className).leafOffsets;
                     copyLeaves(
                         layout,
                         offsets,
@@ -1481,7 +1486,7 @@ public:
     // It is data for private adapters, not a second storage/calling-convention calculator.
     std::string abiFactsJson(const ir::ValidatedModule &validated, const auto &declarations) const {
         const auto &module = validated.get();
-        if (classStorage != &module.classStorage)
+        if (metadata != &validated.metadata())
             throw Error("ABI facts require the same emitted module");
         std::ostringstream facts;
         const auto type = [&](const Type &value) {
@@ -1511,8 +1516,8 @@ public:
         facts << "{\"version\":1,\"span_bytes\":" << ir::spanBytes << ",\"records\":{";
         bool first = true;
         for (const auto &[symbol, declaration] : declarations.records) {
-            const auto &layout = module.classStorage.at(symbol);
-            const auto &fields = module.classFields.at(symbol);
+            const auto layout = physicalStorage(symbol);
+            const auto fields = logicalFields(symbol);
             if (fields.size() != declaration.members.size())
                 throw Error("ABI field names do not match validated storage");
             if (!std::exchange(first, false))
@@ -1523,7 +1528,7 @@ public:
             facts << ",\"size\":" << layout.sizeBytes << ",\"alignment\":" << layout.alignment
                   << ",\"reserved\":" << layout.reservedBytes << ",\"fields\":[";
             for (std::size_t index = 0; index < fields.size(); ++index) {
-                const auto &field = fields[index];
+                const auto field = fields[index];
                 if (index)
                     facts << ',';
                 int width = ir::storageWidth(field.elementType);
@@ -1531,7 +1536,7 @@ public:
                 if (field.elementType.isOwnerStorage())
                     width = argumentBytes(field.elementType);
                 if (field.elementType.isClass()) {
-                    const auto &child = module.classStorage.at(field.elementType.className);
+                    const auto child = physicalStorage(field.elementType.className);
                     width = child.leafOffsets.empty() ? 0 : child.sizeBytes;
                     count = field.array ? field.elementCount : 1;
                 }
@@ -1547,7 +1552,8 @@ public:
         facts << "},\"enums\":{";
         first = true;
         for (const auto &[symbol, declaration] : declarations.enums) {
-            if (module.enumCases.at(symbol) != static_cast<int>(declaration.members.size()))
+            if (metadata->enumCases(metadata->findEnum(symbol).value()) !=
+                static_cast<int>(declaration.members.size()))
                 throw Error("ABI enum names do not match validated cases");
             if (!std::exchange(first, false))
                 facts << ',';
@@ -1624,9 +1630,7 @@ public:
         literalBytes.clear();
         emittedStackFacts.clear();
         currentStackFacts = nullptr;
-        classLayouts = &module.classLayouts;
-        classFields = &module.classFields;
-        classStorage = &module.classStorage;
+        metadata = &validated.metadata();
         functionIndex = 0;
         for (const auto &function : module.functions) {
             argumentCounts[function.name] = function.parameters.size();
@@ -1641,21 +1645,19 @@ public:
         // Resource graphs link a trusted host adapter. No user-selected source
         // symbol may interpose its allocator, stdio or fail-stop dependencies.
         // Derive this from validated signatures/lifetime IR, never an input flag.
-        const bool resourceGraph =
-            std::any_of(module.classFields.begin(),
-                        module.classFields.end(),
-                        [&](const auto &entry) {
-                            return ir::owningClass(module.classFields, entry.first);
-                        }) ||
+        bool owningMetadata = false;
+        for (std::size_t index = 0; index < metadata->classCount(); ++index)
+            owningMetadata = owningMetadata || metadata->isOwning(metadata->classAt(index));
+        const bool resourceGraph = owningMetadata ||
             std::any_of(module.functions.begin(), module.functions.end(), [&](const ir::Function &function) {
                 return function.result.isResource() ||
-                       (function.result.isClass() && ir::owningClass(module.classFields, function.result.className)) ||
-                       (function.receiver && ir::owningClass(module.classFields, function.receiver->className)) ||
+                       (function.result.isClass() && ir::owningClass(*metadata, function.result.className)) ||
+                       (function.receiver && ir::owningClass(*metadata, function.receiver->className)) ||
                        std::any_of(function.parameters.begin(),
                                    function.parameters.end(),
                                    [&](const Type &type) {
                                        return type.isResource() ||
-                                              (type.isClass() && ir::owningClass(module.classFields, type.className));
+                                              (type.isClass() && ir::owningClass(*metadata, type.className));
                                    }) ||
                        std::any_of(function.code.begin(), function.code.end(), [](const ir::Instruction &op) {
                            return std::holds_alternative<ir::BeginBytes>(op) ||
@@ -1766,7 +1768,7 @@ public:
                     leftInRcx = false;
                     at += 2;
                 } else if (load && result && result->offset == load->resultOffset) {
-                    if (classStorage->at(function.result.className).sizeBytes !=
+                    if (physicalStorage(function.result.className).sizeBytes !=
                         ownerElementStride(load->offset, load->fieldIndex))
                         throw Error("x86 backend returned element storage of a different extent");
                     directResult = true;
@@ -1786,7 +1788,9 @@ public:
             output << ".size " << function.name << ", .-" << function.name << "\n";
             ++functionIndex;
         }
-        for (const auto &[scope, view] : module.descriptorViews) {
+        for (std::size_t index = 0; index < metadata->scopeCount(); ++index) {
+            const auto scope = metadata->scopeAt(index);
+            const auto view = metadata->visibleDescriptors(scope);
             for (const auto query : {ir::Query::Size, ir::Query::PublicFieldCount}) {
                 const std::string name = query == ir::Query::Size ? "size" : "field_count";
                 const auto symbol = querySymbol(query, scope);
@@ -1804,7 +1808,7 @@ public:
                 line("xorq %rax, %rax");
                 line("ret");
                 for (int id : view) {
-                    const auto &descriptor = module.descriptors.at(id);
+                    const auto descriptor = metadata->findDescriptor(id).value();
                     output << labelPrefix << id << ":\n";
                     line("movq $" +
                          std::to_string(query == ir::Query::Size ? descriptor.size : descriptor.publicFields) +

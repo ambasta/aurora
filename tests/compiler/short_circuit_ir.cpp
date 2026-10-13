@@ -721,7 +721,8 @@ IRFunction resourceFunction(int depth, int labels, bool operandOver = false) {
 }
 void verifyResource(IRFunction &f, verification::Metrics *metrics) {
     const std::map<std::string, const IRFunction *> functions{{f.name, &f}};
-    verification::verifyFunction(f, functions, metrics);
+    const auto metadata = Metadata::import(Module{});
+    verification::verifyFunction(f, functions, *metadata, metrics);
 }
 void resourceTests() {
     using Budget = verification::BlockRetentionBudget;
