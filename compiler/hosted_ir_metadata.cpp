@@ -14,6 +14,8 @@ void aurora_hosted_metadata_release(void *) noexcept;
 std::int64_t aurora_hosted_metadata_allocated(const void *) noexcept;
 std::int64_t aurora_hosted_metadata_run(void *) noexcept;
 std::int64_t aurora_hosted_metadata_error(const void *) noexcept;
+std::int64_t aurora_hosted_metadata_object_leaf_root(const void *, std::int64_t, std::int64_t) noexcept;
+std::int64_t aurora_hosted_metadata_byte_array_element_root(const void *, std::int64_t, std::int64_t) noexcept;
 }
 
 namespace aurora::ir {
@@ -910,6 +912,24 @@ CallableView Metadata::callable(CallableId id) const {
 FrameView Metadata::frame(CallableId id) const {
     checkIndex(id, callableCount());
     return {*this, id};
+}
+std::optional<int> Metadata::objectLeafRoot(CallableId id, int offset) const {
+    checkIndex(id, callableCount());
+    const auto root = aurora_hosted_metadata_object_leaf_root(state_->owner.data(), count(id), offset);
+    if (root == -1)
+        return std::nullopt;
+    if (root <= 0)
+        invalidTransport();
+    return integer(root);
+}
+std::optional<int> Metadata::byteArrayElementRoot(CallableId id, int offset) const {
+    checkIndex(id, callableCount());
+    const auto root = aurora_hosted_metadata_byte_array_element_root(state_->owner.data(), count(id), offset);
+    if (root == -1)
+        return std::nullopt;
+    if (root <= 0)
+        invalidTransport();
+    return integer(root);
 }
 std::optional<Metadata::CallableId> Metadata::findCallable(std::string_view name) const {
     const auto begin = index(state_->counts.mapCounts.indices - count(callableCount()));

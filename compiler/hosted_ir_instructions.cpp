@@ -101,7 +101,7 @@ static_assert([] {
     return true;
 }());
 static_assert(static_cast<std::int64_t>(lowering::RecordKind::Instruction) == 1);
-// Source structural, entry and call admission consume these ordinals. Pin them to
+// Source structural and static admission consume these ordinals. Pin them to
 // generated lowering facts rather than maintaining another opcode schema.
 static_assert(static_cast<std::int64_t>(lowering::InstructionForm::Label) == 40 &&
               static_cast<std::int64_t>(lowering::InstructionForm::Jump) == 41 &&
@@ -124,6 +124,15 @@ static_assert(static_cast<std::int64_t>(lowering::InstructionForm::ServiceCall) 
               static_cast<std::int64_t>(lowering::InstructionForm::MethodCall) == 38 &&
               static_cast<std::int64_t>(lowering::InstructionForm::ResourceCall) == 75 &&
               static_cast<std::int64_t>(lowering::InstructionForm::BorrowedCall) == 83);
+static_assert(static_cast<std::int64_t>(lowering::InstructionForm::Load) == 7 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::Store) == 8 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::BoundsGuard) == 15 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::IndexLoad) == 16 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::IndexStore) == 17 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::BorrowHandle) == 18 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::BeginArray) == 47 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::EndArray) == 48 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::BorrowSpan) == 49);
 static_assert(static_cast<std::int64_t>(Role::Index) == 1 && static_cast<std::int64_t>(Role::Offset) == 2 &&
               static_cast<std::int64_t>(Role::ServiceKindId) == 3);
 static_assert(static_cast<std::int64_t>(Role::LoanId) == 4 && static_cast<std::int64_t>(Role::ResultOffset) == 6 &&

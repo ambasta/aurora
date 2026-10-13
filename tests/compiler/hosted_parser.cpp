@@ -4499,11 +4499,13 @@ void rawInstructionAdmission() {
     namespace bytes = aurora::hosted::bytes;
     context = "instruction storage rejects malformed copied rows before observations";
     // One constant/return body exercises each physical domain. The final cases
-    // have valid transport/CFG but fail entry or static call admission.
-    for (int mutation = 0; mutation < 16; ++mutation) {
+    // have valid transport/CFG but fail entry, static call or storage admission.
+    for (int mutation = 0; mutation < 17; ++mutation) {
         const bool missingBinding = mutation == 14;
         const bool missingCall = mutation == 15;
-        const bool admitted = mutation == 0 || missingBinding || missingCall;
+        const bool missingSlot = mutation == 16;
+        const bool invalidBody = missingBinding || missingCall || missingSlot;
+        const bool admitted = mutation == 0 || invalidBody;
         Allocations allocations;
         bytes::Region region(1048576, allocations.allocator());
         {
@@ -4571,7 +4573,8 @@ void rawInstructionAdmission() {
             wire::RawInstructionRow constant{};
             constant.recordKind = mutation == 1 ? -1 : static_cast<std::int64_t>(lower::RecordKind::Instruction);
             constant.instructionForm = mutation == 2 ? -1 : static_cast<std::int64_t>(
-                missingCall ? lower::InstructionForm::Call : lower::InstructionForm::Constant);
+                missingCall ? lower::InstructionForm::Call : missingSlot ? lower::InstructionForm::Load
+                                                                      : lower::InstructionForm::Constant);
             constant.operandBegin = mutation == 3 ? std::numeric_limits<std::int64_t>::max() : 0;
             constant.operandCount = missingCall ? 1 : 2;
             set(storage, abi::instructionStore_instructionsOffset, 0, constant);
@@ -4582,7 +4585,8 @@ void rawInstructionAdmission() {
             set(storage, abi::instructionStore_instructionsOffset, 1, terminal);
             wire::RawOperandRow value{};
             value.operandRole = mutation == 4 ? -1 : static_cast<std::int64_t>(
-                missingCall ? lower::OperandRole::CalleeName : lower::OperandRole::SignedConstant);
+                missingCall ? lower::OperandRole::CalleeName : missingSlot ? lower::OperandRole::Offset
+                                                                         : lower::OperandRole::SignedConstant);
             value.signedValue = missingCall ? 0 : 42;
             value.sliceBegin = missingCall ? 1 : 0;
             value.sliceCount = mutation == 5 || missingCall ? 1 : 0;
@@ -4626,10 +4630,10 @@ void rawInstructionAdmission() {
                         "admitted instruction storage published before CFG normalization");
                 const auto attempted = allocations.attempted;
                 require(aurora_hosted_instructions_structure(roots.data()) ==
-                            static_cast<std::int64_t>(missingBinding || missingCall ? wire::InstructionStatus::invalid
-                                                                                   : wire::InstructionStatus::structured) &&
+                            static_cast<std::int64_t>(invalidBody ? wire::InstructionStatus::invalid
+                                                                 : wire::InstructionStatus::structured) &&
                             allocations.attempted == attempted,
-                        "instruction CFG/entry/call admission status differs or allocated another owner");
+                        "instruction CFG/entry/call/storage admission status differs or allocated another owner");
                 const auto codeOrder = descriptor(storage, abi::instructionStore_codeOrderOffset);
                 for (std::int64_t position = 0; position < 2; ++position) {
                     wire::CodeRow code{};
@@ -4638,9 +4642,10 @@ void rawInstructionAdmission() {
                                 code.flowFlags == (position == 0 ? 7u : 4u) && code.scratchValue == 0,
                             "normalized instruction facts lost stable identity or retained scratch");
                 }
-                if (missingBinding || missingCall) {
+                if (invalidBody) {
                     require(aurora_hosted_instructions_error(storage) ==
                                 static_cast<std::int64_t>(missingCall ? wire::InstructionError::call_target
+                                                       : missingSlot ? wire::InstructionError::scalar_slot
                                                                      : wire::InstructionError::scalar_prefix) &&
                                 aurora_hosted_instructions_publish(storage) == 0 &&
                                 aurora_hosted_instructions_admit(roots.data()) ==
@@ -4649,7 +4654,7 @@ void rawInstructionAdmission() {
                                     static_cast<std::int64_t>(wire::InstructionStatus::invalid) &&
                                 aurora_hosted_instructions_publish(storage) == 0 &&
                                 allocations.attempted == attempted,
-                            "failed entry/call admission published, reopened or allocated another owner");
+                            "failed entry/call/storage admission published, reopened or allocated another owner");
                 } else {
                     require(aurora_hosted_instructions_publish(storage) == 1 &&
                                 aurora_hosted_instructions_structure(roots.data()) ==
@@ -4658,7 +4663,7 @@ void rawInstructionAdmission() {
                             "instruction publication failed to require normalized structure or close mutation");
                 }
                 require(metadataSnapshot() == declarationsBefore,
-                        "instruction entry/call admission mutated its immutable metadata root");
+                        "instruction entry/call/storage admission mutated its immutable metadata root");
             }
         }
         require(allocations.successful == allocations.released && region.metrics().used == 0 && region.close(),

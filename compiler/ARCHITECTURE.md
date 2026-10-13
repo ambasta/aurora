@@ -293,8 +293,8 @@ plus canonical class fields, offsets and layouts. `ir_metadata.au` admits names,
 module layouts, every callable header and every frame before publication.
 Instruction storage/types and exact codec shapes follow, then all structural CFG
 checks and normalization, source entry-parameter admission, source static call-site
-admission, native dynamic value-state/provenance checks, call-graph checks and
-publication. A later structural, entry-binding or static call error can therefore
+and local-storage admission, native dynamic value-state/provenance checks,
+call-graph checks and publication. A later structural or static admission error can therefore
 precede an earlier dynamic value-state error;
 no per-function diagnostic-order replay is retained. Malformed raw Type tails reject before canonical Type observation.
 
@@ -308,8 +308,9 @@ immutable metadata. Graph pruning never renumbers callable IDs.
 Each callable owns a sorted range of eight existing slot-record kinds. Aurora
 checks frame bounds/alignment, types, exact object/array leaves, padding and
 cross-category overlap, including capability spills and owner annotations.
-Native instruction analysis retains only derived leaf-origin/initialization
-indexes; it does not reserve frame storage or re-admit declarations.
+Native instruction analysis queries exact storage origins from those canonical
+rows and retains its initialization domain; it does not copy per-leaf origin
+indexes, reserve frame storage or re-admit declarations.
 
 Pool lengths replace six redundant stored counts. Four raw-prefix counts remain
 because field/storage/index pools also hold normalization tails. Adding the slot
@@ -346,14 +347,14 @@ Destination allocation overlaps Session lifetime; sorting may reorder Internal
 errors among multiply-malformed transport records. Generated ABI, source-bootstrap,
 convergence and runtime qualification remain unexecuted.
 
-## Entry and call admission
+## Static instruction admission
 
 Aurora checks the complete normalized entry prefix against the admitted signature
 and frame: scalar, copied-class, span, region, owner and sealed-service bindings.
 It checks exact positions, nominal types, slot kinds, mutability, distinct roots,
 region dependencies and permitted origins, and rejects bindings after the prefix.
-The combined structural/entry bridge borrows both existing owners and returns
-`structured` only after both checks; entry failure makes the owner terminally
+The combined admission bridge borrows both existing owners and succeeds only
+after all structural and static phases; failure makes the owner terminally
 invalid before native state construction or publication. Individual owner methods
 are trusted compiler mechanisms, not unforgeable admission tokens.
 
@@ -371,6 +372,23 @@ still borrow target signatures to apply effects; they keep operand-stack types,
 live initialization, actual loan authority, ownership/region identity and span
 conflicts. No call-summary pool or mirrored dynamic state is introduced. Loan
 acquisition order follows CFG execution, not textual instruction order.
+
+Local scalar/fixed-array admission covers Load, Store, BorrowHandle, BoundsGuard,
+IndexLoad, IndexStore, BeginArray, EndArray and BorrowSpan. It checks exact slot
+and result declarations, range shape/extent, nested-field exclusions and static
+mutability. Indexed ranges may use contiguous scalar slots, including I64,
+without a byte-array declaration. Local span borrowing and array lifetimes do
+require the exact declared byte-array root.
+
+Exact object-leaf and byte-array-element origins come from binary searches over
+canonical metadata. Padding, descriptor storage and empty-object reservation
+bytes are not scalar leaves. Nested-field classification occurs in admission;
+no new origin pool or native map is retained. Native execution still checks
+initialization, active lifetimes, consumed values, loans, span conflicts, operand
+types, dominating bounds evidence and state-dependent writes. Bridge calls and
+searches have a cost; no speed or memory improvement has been measured. This
+storage migration is source-reviewed only; generated ABI and execution remain
+unqualified.
 
 ## CFG and frame invariants
 

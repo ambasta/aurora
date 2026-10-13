@@ -1792,7 +1792,7 @@ void composedTests() {
     rejectComposed(
         "copy stale current register rejected",
         [](Module &m) {
-            m.functions[0].code.insert(m.functions[0].code.begin() + 7, Store{16, Type::Bool});
+            m.functions[0].code.insert(m.functions[0].code.begin() + 7, Store{8, Type::Bool});
         },
         "missing or mistyped current value");
     rejectComposed(
@@ -2671,11 +2671,25 @@ void packedStorageTests() {
     emptyChild.classFields["EmptyShell"] = {{Type("Empty"), 0, 0, false}};
     emptyChild.classLayouts["ByteEmpty"] = {Type::U8, Type::U8};
     emptyChild.classFields["ByteEmpty"] = {
-        {Type::U8, 0, 1, false}, {Type("EmptyShell"), 1, 0, false}, {Type::U8, 1, 1, false}};
+        {Type("EmptyShell"), 0, 0, false}, {Type::U8, 0, 1, false},
+        {Type("EmptyShell"), 1, 0, false}, {Type::U8, 1, 1, false}, {Type("EmptyShell"), 2, 0, false}};
+    aurora::ir::Function neighbors;
+    neighbors.name = "zero_leaf_neighbors";
+    neighbors.result = Type::U8;
+    neighbors.frameBytes = 16;
+    neighbors.objectSlots = {{8, {"ByteEmpty", false}}};
+    neighbors.slots = {{8, Type::U8}, {7, Type::U8}};
+    neighbors.code = {BeginObject{8}, Constant{7, Type::U8}, Store{8, Type::U8}, Store{7, Type::U8},
+                       Load{7, Type::U8}, Return{}};
+    emptyChild.functions.push_back(neighbors);
     const auto emptyChecked = validate(emptyChild);
     const auto byteEmpty = emptyChecked.metadata().findClass("ByteEmpty");
+    const auto neighborId = emptyChecked.metadata().findCallable(neighbors.name).value();
     if (!byteEmpty || !storageMatches(emptyChecked.metadata().storage(*byteEmpty),
-                                     ClassStorage{{0, 1}, {0, 1, 1}, 2, 1, 8}))
+                                     ClassStorage{{0, 1}, {0, 0, 1, 1, 2}, 2, 1, 8}) ||
+        emptyChecked.metadata().objectLeafRoot(neighborId, 8) != 8 ||
+        emptyChecked.metadata().objectLeafRoot(neighborId, 7) != 8 ||
+        emptyChecked.metadata().objectLeafRoot(neighborId, 6))
         throw Error("empty descendant introduced physical payload or alignment");
     ++passed;
     std::cout << "PASS IR zero-leaf descendants retain logical shape without byte payload\n";
@@ -3915,6 +3929,102 @@ void spanTests() {
     std::cout << "PASS IR span negative and upper bounds precede pointer load\n";
 }
 
+void storageAccessTests() {
+    const auto packed = validate(packedMethodModule());
+    const auto &metadata = packed.metadata();
+    const auto entry = metadata.findCallable("packed_result_array").value();
+    // Explicit physical offsets distinguish leaf starts from wide interiors,
+    // nested leaves, padding and empty reservations without rebuilding a map.
+    for (const auto [offset, root] : std::vector<std::pair<int, int>>{
+             {40, 40}, {32, 40}, {31, 40}, {24, 40}, {112, 112}, {104, 112},
+             {96, 112}, {95, 112}, {88, 112}, {184, 184}, {176, 184}, {175, 184}, {168, 184}})
+        if (metadata.objectLeafRoot(entry, offset) != root || metadata.byteArrayElementRoot(entry, offset))
+            throw Error("exact packed object leaf origin differs");
+    for (int offset : {INT32_MIN, -1, 0, 1, 8, 23, 25, 30, 33, 39, 80, 94, 97, 174, 192, 193, INT32_MAX})
+        if (metadata.objectLeafRoot(entry, offset) || metadata.byteArrayElementRoot(entry, offset))
+            throw Error("object origin query accepted padding, empty reservation or invalid offset");
+    const auto tiny = metadata.findCallable("packed_tiny_roundtrip").value();
+    for (const auto [offset, root] : std::vector<std::pair<int, int>>{
+             {8, 8}, {7, 8}, {6, 8}, {16, 16}, {15, 16}, {14, 16}})
+        if (metadata.objectLeafRoot(tiny, offset) != root)
+            throw Error("adjacent tiny object roots or callable identity changed");
+    for (int offset : {1, 5, 9, 13, 17})
+        if (metadata.objectLeafRoot(tiny, offset))
+            throw Error("tiny reservation padding became an object leaf");
+
+    auto local = spanBaseline();
+    local.classLayouts["DescriptorAndByte"] = {Type::U8};
+    local.classFields["DescriptorAndByte"] = {{Type::OwnedBytes, 0, 0, false}, {Type::U8, 0, 1, false}};
+    auto &function = local.functions[0];
+    function.arraySlots[5] = 2;
+    function.slots.insert({{5, Type::U8}, {4, Type::U8}, {3, Type::U8}, {40, Type::U8}});
+    function.objectSlots[72] = {"DescriptorAndByte", true};
+    const auto bytes = validate(local);
+    for (const auto [offset, root] : std::vector<std::pair<int, int>>{{8, 8}, {7, 8}, {6, 8}, {5, 5}, {4, 5}})
+        if (bytes.metadata().byteArrayElementRoot(0, offset) != root || bytes.metadata().objectLeafRoot(0, offset))
+            throw Error("adjacent byte origins lost their exact first or last element");
+    for (int offset : {INT32_MIN, -1, 0, 3, 9, 33, 39, 41, 48, 65, 71, 72, 256, 320, 640, 641, INT32_MAX})
+        if (bytes.metadata().byteArrayElementRoot(0, offset) || bytes.metadata().objectLeafRoot(0, offset))
+            throw Error("storage origin query accepted an ordinary scalar, descriptor or invalid offset");
+    if (bytes.metadata().objectLeafRoot(0, 40) != 72 || bytes.metadata().byteArrayElementRoot(0, 40))
+        throw Error("scalar leaf beside an owned descriptor lost its exact object root");
+    for (const auto query : {&Metadata::objectLeafRoot, &Metadata::byteArrayElementRoot}) {
+        bool rejected = false;
+        try {
+            static_cast<void>((metadata.*query)(metadata.callableCount(), 8));
+        } catch (const std::out_of_range &) {
+            rejected = true;
+        }
+        if (!rejected)
+            throw Error("storage origin query accepted invalid callable identity");
+    }
+    ++passed;
+    std::cout << "PASS IR exact source storage origins exclude padding, empty objects and descriptors\n";
+
+    for (const auto &[operation, diagnostic] : std::vector<std::pair<Instruction, const char *>>{
+             {Load{24, Type::I64}, "slot type/layout mismatch"},
+             {Store{24, Type::I64}, "slot type/layout mismatch"},
+             {BorrowHandle{24, Type::Ref}, "slot type/layout mismatch"},
+             {BorrowHandle{8, Type::I64}, "invalid borrow-handle type"},
+             {BoundsGuard{8, 0, Type::I64}, "invalid array shape"},
+             {BoundsGuard{8, 2, Type::I64}, "array layout underflow"},
+             {IndexLoad{8, 2, Type::I64}, "array layout underflow"},
+             {IndexStore{8, 4097, Type::I64}, "invalid array shape"},
+             {IndexStore{8, 2, Type::I64}, "array layout underflow"},
+             {BeginArray{8}, "array lifetime requires exact byte array origin"},
+             {EndArray{8}, "array lifetime requires exact byte array origin"},
+             {BorrowSpan{8, 72}, "span borrow requires exact local byte array origin"}})
+        reject("unused imported storage admission precedes earlier dynamic state", [&](Module &module) {
+            module.descriptorViews[1] = {};
+            auto later = module.functions[0];
+            later.name = "unused_storage";
+            later.moduleScope = 1;
+            later.frameBytes = 80;
+            later.spanSlots = {72};
+            later.code = {operation, Return{}};
+            module.functions[0].code = {Pop{}, Return{}};
+            module.functions.push_back(later);
+        }, diagnostic);
+    for (const auto &[operation, diagnostic] : std::vector<std::pair<Instruction, const char *>>{
+             {Jump{99}, "unknown jump"}, {BindParameter{0, 8, Type::I64}, "outside entry prefix"},
+             {Call{"missing"}, "unknown call target"}})
+        reject("CFG entry and call phases precede earlier-body storage admission", [&](Module &module) {
+            auto later = module.functions[0];
+            later.name = "later_phase";
+            later.code = {operation, Return{}};
+            module.functions[0].code = {Load{24, Type::I64}, Return{}};
+            module.functions.push_back(later);
+        }, diagnostic);
+    auto scalars = baseline();
+    scalars.functions[0].slots[16] = Type::I64;
+    scalars.functions[0].code = {Constant{42, Type::I64}, Store{8, Type::I64}, Store{16, Type::I64},
+                                 Constant{0, Type::I64}, BoundsGuard{16, 2, Type::I64}, Push{},
+                                 Constant{43, Type::I64}, IndexStore{16, 2, Type::I64},
+                                 Constant{1, Type::I64}, BoundsGuard{16, 2, Type::I64},
+                                 IndexLoad{16, 2, Type::I64}, Return{}};
+    accept("contiguous i64 indexed loads and stores need no byte-array declaration", scalars);
+}
+
 void callGraphTests() {
     const auto scalarFunction = [](const std::string &name, int scope) {
         aurora::ir::Function function;
@@ -5023,6 +5133,7 @@ int main(int argc, char **argv) {
         unsignedTests();
         byteTests();
         packedStorageTests();
+        storageAccessTests();
         callableOwnerTests();
         metadataOwnerTests();
         instructionOwnerTests();

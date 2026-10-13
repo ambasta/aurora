@@ -219,6 +219,8 @@ def frontend_abi_entries(facts):
             ("allocated", metadata, [], "bool"),
             ("run", metadata, [], "compiler_ir_metadata::MetadataStatus"),
             ("error", metadata, [], "compiler_ir_metadata::MetadataError"),
+            ("object_leaf_root", metadata, ["i64", "i64"], "i64"),
+            ("byte_array_element_root", metadata, ["i64", "i64"], "i64"),
         )
     ]
     checks += [
@@ -281,7 +283,7 @@ def frontend_abi_entries(facts):
         if alias in ("graph_set_function", "graph_set_edge", "graph_retained"):
             if function.get("receiver_mutable") is not (alias != "graph_retained"):
                 raise ValueError(f"private graph root authority changed: {source}")
-        if alias in ("metadata_allocated", "metadata_run", "metadata_error"):
+        if alias.startswith("metadata_") and receiver is not None:
             if function.get("receiver_mutable") is not (alias == "metadata_run"):
                 raise ValueError(f"private metadata root authority changed: {source}")
         if alias.startswith("instructions_") and receiver is not None:

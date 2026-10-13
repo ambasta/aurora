@@ -308,10 +308,14 @@ def abi_generation(facts):
             except ValueError:
                 continue
             raise AssertionError(f"unsafe instruction pool binding accepted: {pool}/{mutation}")
-    for parameter, name in ((2, "callable-count"), (3, "slot-count"), (4, "instruction-begin")):
+    for operation, parameter, name in (
+        ("create", 2, "callable-count"), ("create", 3, "slot-count"), ("create", 4, "instruction-begin"),
+        ("object_leaf_root", 0, "callable"), ("object_leaf_root", 1, "offset"),
+        ("byte_array_element_root", 0, "callable"), ("byte_array_element_root", 1, "offset"),
+    ):
         for mutation in ("missing", "type", "offset"):
             changed = deepcopy(facts)
-            _, entry = abi_declaration(changed, "functions", "compiler_frontend::metadata_create")
+            _, entry = abi_declaration(changed, "functions", "compiler_frontend::metadata_" + operation)
             if mutation == "missing":
                 entry["parameters"].pop(parameter)
             elif mutation == "type":
@@ -322,8 +326,8 @@ def abi_generation(facts):
                 frontend_abi_header(changed)
             except ValueError:
                 continue
-            raise AssertionError(f"unsafe metadata {name} argument accepted: {mutation}")
-    for operation in ("create", "release", "allocated", "run", "error"):
+            raise AssertionError(f"unsafe metadata {operation}/{name} argument accepted: {mutation}")
+    for operation in ("create", "release", "allocated", "run", "error", "object_leaf_root", "byte_array_element_root"):
         for mutation in ("receiver", "result", "parameters", "root"):
             changed = deepcopy(facts)
             _, entry = abi_declaration(changed, "functions", "compiler_frontend::metadata_" + operation)
@@ -343,7 +347,7 @@ def abi_generation(facts):
             except ValueError:
                 continue
             raise AssertionError(f"unsafe metadata bridge accepted: {operation}/{mutation}")
-    for operation in ("allocated", "run", "error"):
+    for operation in ("allocated", "run", "error", "object_leaf_root", "byte_array_element_root"):
         changed = deepcopy(facts)
         _, entry = abi_declaration(changed, "functions", "compiler_frontend::metadata_" + operation)
         entry["receiver_mutable"] = operation != "run"

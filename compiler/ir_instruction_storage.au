@@ -353,7 +353,27 @@ export namespace compiler_ir_instructions {
         //: invalid typed IR: service result aliases argument snapshot
         service_result_alias,
         //: invalid typed IR: service scalar result mismatch
-        service_scalar_result
+        service_scalar_result,
+        //: invalid typed IR: scalar store cannot write nested class field
+        storage_nested_store,
+        //: invalid typed IR: object field cannot become a scalar borrow handle
+        storage_borrow_object,
+        //: invalid typed IR: invalid borrow-handle type
+        storage_borrow_type,
+        //: invalid typed IR: invalid array shape
+        storage_array_shape,
+        //: invalid typed IR: array layout underflow
+        storage_array_extent,
+        //: invalid typed IR: scalar array operation cannot address nested class field
+        storage_array_nested,
+        //: invalid typed IR: indexed write to immutable scalar parameter
+        storage_index_parameter,
+        //: invalid typed IR: indexed write to const object field
+        storage_index_const,
+        //: invalid typed IR: array lifetime requires exact byte array origin
+        storage_array_origin,
+        //: invalid typed IR: span borrow requires exact local byte array origin
+        storage_span_origin
     };
     // The eight OutputRow-width leaves remain raw integers. Unknown operator
     // values reach native semantics; unknown structural tags reject normally.
@@ -757,8 +777,8 @@ export namespace compiler_ir_instructions {
             return result;
         }
         auto reject(InstructionError reason) -> bool {
-            // Entry admission follows complete CFG normalization. A rejected
-            // normalized prefix must lose publication authority permanently.
+            // Entry, call and storage admission follow complete CFG normalization.
+            // A rejected normalized body loses publication authority permanently.
             if (statusValue == InstructionStatus::pending || statusValue == InstructionStatus::admitted
                 || statusValue == InstructionStatus::structured) {
                 statusValue = InstructionStatus::invalid;

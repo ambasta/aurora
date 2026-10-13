@@ -300,24 +300,6 @@ inline void verifyFunction(FunctionBody &function,
         receiverLayout = classLeaves(functionReceiver->className);
         receiverFields = logicalFields(functionReceiver->className);
     }
-    // Declaration admission belongs to the Aurora metadata owner. These indexes
-    // associate instruction addresses with already-admitted object/array origins;
-    // they neither reserve storage nor recheck declaration validity.
-    std::map<int, int> objectBases;
-    std::set<int> nestedObjectLeaves;
-    for (const auto &[base, object] : objectSlots) {
-        const auto layout = classLeaves(object.className);
-        for (const auto &field : logicalFields(object.className))
-            if (field.elementType.isClass())
-                for (int leaf = 0; leaf < field.length; ++leaf)
-                    nestedObjectLeaves.insert(objectLeaf(base, field.firstLeaf + leaf));
-        for (std::size_t index = 0; index < layout.size(); ++index)
-            objectBases.emplace(objectLeaf(base, index), base);
-    }
-    std::map<int, int> arrayBases;
-    for (const auto &[base, length] : arraySlots)
-        for (int element = 0; element < length; ++element)
-            arrayBases.emplace(base - element, base);
     // The admitted scalar offsets form the immutable initialization domain shared
     // by this function's CFG snapshots. This contains no declaration payloads.
     std::vector<int> initializationOffsets;
@@ -401,9 +383,6 @@ inline void verifyFunction(FunctionBody &function,
         *metrics = Metrics{};
         metrics->snapshots = 1;
     }
-    auto slot = [&](int offset, const Type &type) {
-        require(slots.contains(offset) && slots.at(offset) == type, "slot type/layout mismatch");
-    };
     auto facts = [](const State &state) {
         std::size_t ownedFields = 0;
         for (const auto &[unused, object] : state.ownedObjects) {
@@ -523,24 +502,23 @@ inline void verifyFunction(FunctionBody &function,
                     require(!writing && !loan.mutableValue, "object access conflicts with active synchronous loan");
                 }
             };
-            auto activeObjectField = [&](int offset) {
-                require(!objectBases.contains(offset) || state.activeObjects.contains(objectBases.at(offset)),
-                        "object field access outside active lifetime");
-                if (objectBases.contains(offset)) {
-                    const int root = objectBases.at(offset);
-                    loanAccess(root, false);
-                    require(!state.ownedObjects.contains(root) ||
-                                state.ownedObjects.at(root).disposition != ByteDisposition::Consumed,
-                            "field access through consumed owning object");
-                }
+            // Each access borrows exact local origins from the source owner once.
+            // Receiver roots, padding and empty object reservations are not leaves.
+            auto activeObjectField = [&](std::optional<int> root) {
+                if (!root)
+                    return;
+                require(state.activeObjects.contains(*root), "object field access outside active lifetime");
+                loanAccess(*root, false);
+                require(!state.ownedObjects.contains(*root) ||
+                            state.ownedObjects.at(*root).disposition != ByteDisposition::Consumed,
+                        "field access through consumed owning object");
             };
-            auto activeArrayElement = [&](int offset) {
-                require(!arrayBases.contains(offset) || state.activeArrays.contains(arrayBases.at(offset)),
-                        "array element access outside active lifetime");
+            auto activeArrayElement = [&](std::optional<int> root) {
+                require(!root || state.activeArrays.contains(*root), "array element access outside active lifetime");
             };
-            auto arrayWritable = [&](int offset) {
-                if (objectBases.contains(offset)) {
-                    const int root = objectBases.at(offset);
+            auto arrayWritable = [&](int offset, std::optional<int> objectRoot, std::optional<int> arrayRoot) {
+                if (objectRoot) {
+                    const int root = *objectRoot;
                     const auto &name = objectSlots.at(root).className;
                     for (const auto &[unused, capability] : state.activeSpans) {
                         (void)unused;
@@ -552,9 +530,9 @@ inline void verifyFunction(FunctionBody &function,
                                 "fixed array field write with live readonly span");
                     }
                 }
-                if (!arrayBases.contains(offset))
+                if (!arrayRoot)
                     return;
-                const int base = arrayBases.at(offset);
+                const int base = *arrayRoot;
                 for (const auto &[unused, capability] : state.activeSpans) {
                     (void)unused;
                     require(capability.literalOrigin || capability.ownedToken || capability.parameterOrigin ||
@@ -749,17 +727,17 @@ inline void verifyFunction(FunctionBody &function,
                 ownerWritable(base, -1);
                 consumeByteBinding(byteBinding(base));
             };
-            auto store = [&](int offset, const Type &type) {
-                slot(offset, type);
-                activeObjectField(offset);
-                if (objectBases.contains(offset))
-                    loanAccess(objectBases.at(offset), true);
-                activeArrayElement(offset);
-                arrayWritable(offset);
-                require(!nestedObjectLeaves.contains(offset), "scalar store cannot write nested class field");
+            auto store = [&](int offset) {
+                const auto objectRoot = metadata.objectLeafRoot(function.callableId, offset);
+                const auto arrayRoot = metadata.byteArrayElementRoot(function.callableId, offset);
+                activeObjectField(objectRoot);
+                if (objectRoot)
+                    loanAccess(*objectRoot, true);
+                activeArrayElement(arrayRoot);
+                arrayWritable(offset, objectRoot, arrayRoot);
                 require(!entryBindings.contains<BindParameter>(offset) || !state.maybeInitialized.contains(offset),
                         "write to immutable scalar parameter");
-                require(!objectBases.contains(offset) || objectSlots.at(objectBases.at(offset)).mutableValue ||
+                require(!objectRoot || objectSlots.at(*objectRoot).mutableValue ||
                             !state.maybeInitialized.contains(offset),
                         "write to initialized const object field");
                 state.initialized.insert(offset);
@@ -802,17 +780,21 @@ inline void verifyFunction(FunctionBody &function,
                             value.guard == std::optional<BoundsEvidence>(receiverEvidence(fieldIndex, field)),
                         "receiver index access lacks matching dominating bounds token");
             };
-            auto array = [&](int offset, int length, const Type &type) {
-                require(scalar(type) && length >= 1 && length <= 4096, "invalid array shape");
-                require(offset >= length * storageWidth(type), "array layout underflow");
+            // Source admission has checked every typed element and all unconditional
+            // write restrictions. This traversal retains only live-state checks.
+            auto initializedArray = [&](int offset, int length, const Type &type, bool writing) {
                 for (int element = 0; element < length; ++element) {
                     const int elementOffset = offset - element * storageWidth(type);
-                    slot(elementOffset, type);
-                    activeObjectField(elementOffset);
-                    activeArrayElement(elementOffset);
-                    require(!nestedObjectLeaves.contains(elementOffset),
-                            "scalar array operation cannot address nested class field");
+                    const auto objectRoot = metadata.objectLeafRoot(function.callableId, elementOffset);
+                    const auto arrayRoot = metadata.byteArrayElementRoot(function.callableId, elementOffset);
+                    activeObjectField(objectRoot);
+                    activeArrayElement(arrayRoot);
                     require(state.initialized.contains(elementOffset), "array element not initialized");
+                    if (writing) {
+                        arrayWritable(elementOffset, objectRoot, arrayRoot);
+                        if (objectRoot)
+                            loanAccess(*objectRoot, true);
+                    }
                 }
             };
             auto guard = [&](const Value &value, int offset, int length, const Type &type) {
@@ -1213,14 +1195,15 @@ inline void verifyFunction(FunctionBody &function,
                                 "enum constant is not a declared case");
                         state.current = Value{operation.type, {}};
                     } else if constexpr (std::is_same_v<Op, Load>) {
-                        slot(operation.offset, operation.type);
-                        activeObjectField(operation.offset);
-                        activeArrayElement(operation.offset);
+                        const auto objectRoot = metadata.objectLeafRoot(function.callableId, operation.offset);
+                        const auto arrayRoot = metadata.byteArrayElementRoot(function.callableId, operation.offset);
+                        activeObjectField(objectRoot);
+                        activeArrayElement(arrayRoot);
                         require(state.initialized.contains(operation.offset), "load before initialization");
                         state.current = Value{operation.type, {}};
                     } else if constexpr (std::is_same_v<Op, Store>) {
                         current(operation.type);
-                        store(operation.offset, operation.type);
+                        store(operation.offset);
                     } else if constexpr (std::is_same_v<Op, Push>) {
                         require(state.current.has_value(), "push without current value");
                         state.stack.push_back(*state.current);
@@ -1316,36 +1299,21 @@ inline void verifyFunction(FunctionBody &function,
                         state.current = Value{Type::Bool, {}};
                     } else if constexpr (std::is_same_v<Op, BoundsGuard>) {
                         current(Type::I64);
-                        array(operation.offset, operation.length, operation.elementType);
+                        initializedArray(operation.offset, operation.length, operation.elementType, false);
                         state.current =
                             Value{Type::I64, Guard{operation.offset, operation.length, operation.elementType}};
                     } else if constexpr (std::is_same_v<Op, IndexLoad>) {
-                        array(operation.offset, operation.length, operation.elementType);
+                        initializedArray(operation.offset, operation.length, operation.elementType, false);
                         guard(current(Type::I64), operation.offset, operation.length, operation.elementType);
                         state.current = Value{operation.elementType, {}};
                     } else if constexpr (std::is_same_v<Op, IndexStore>) {
-                        array(operation.offset, operation.length, operation.elementType);
+                        // Validate operands before one live range traversal so every
+                        // source-owned element origin is borrowed only once.
                         current(operation.elementType);
                         guard(pop(), operation.offset, operation.length, operation.elementType);
-                        for (int element = 0; element < operation.length; ++element) {
-                            const int offset = operation.offset - element * storageWidth(operation.elementType);
-                            arrayWritable(offset);
-                            if (objectBases.contains(offset))
-                                loanAccess(objectBases.at(offset), true);
-                            require(!nestedObjectLeaves.contains(offset),
-                                    "indexed store cannot write nested class field");
-                            require(!entryBindings.contains<BindParameter>(offset),
-                                    "indexed write to immutable scalar parameter");
-                            require(!objectBases.contains(offset) || objectSlots.at(objectBases.at(offset)).mutableValue,
-                                    "indexed write to const object field");
-                        }
+                        initializedArray(operation.offset, operation.length, operation.elementType, true);
                     } else if constexpr (std::is_same_v<Op, BorrowHandle>) {
-                        slot(operation.ownerOffset, Type::I64);
-                        require(!objectBases.contains(operation.ownerOffset),
-                                "object field cannot become a scalar borrow handle");
                         require(state.initialized.contains(operation.ownerOffset), "borrow of uninitialized payload");
-                        require(operation.referenceType == Type::Ref || operation.referenceType == Type::MutRef,
-                                "invalid borrow-handle type");
                         state.current = Value{operation.referenceType, {}};
                     } else if constexpr (std::is_same_v<Op, Call>) {
                         const auto target = metadata.callable(metadata.findCallable(operation.callee).value());
@@ -1523,8 +1491,6 @@ inline void verifyFunction(FunctionBody &function,
                         ownerWritable(operation.offset, -1);
                         state.activeBytes.erase(operation.offset);
                     } else if constexpr (std::is_same_v<Op, BeginArray> || std::is_same_v<Op, EndArray>) {
-                        require(arraySlots.contains(operation.offset),
-                                "array lifetime requires exact byte array origin");
                         if constexpr (std::is_same_v<Op, BeginArray>) {
                             require(!state.activeArrays.contains(operation.offset), "array lifetime already active");
                             state.activeArrays.emplace(operation.offset, instructionId);
@@ -1538,17 +1504,21 @@ inline void verifyFunction(FunctionBody &function,
                             }
                             state.activeArrays.erase(operation.offset);
                         }
-                        for (int element = 0; element < arraySlots.at(operation.offset); ++element) {
+                        const int length = arraySlots.at(operation.offset);
+                        for (int element = 0; element < length; ++element) {
                             state.initialized.erase(operation.offset - element);
                             state.maybeInitialized.erase(operation.offset - element);
                         }
                     } else if constexpr (std::is_same_v<Op, BorrowSpan>) {
-                        require(arraySlots.contains(operation.arrayOffset),
-                                "span borrow requires exact local byte array origin");
                         require(state.activeArrays.contains(operation.arrayOffset),
                                 "span borrow requires active byte array origin");
-                        array(operation.arrayOffset, arraySlots.at(operation.arrayOffset), Type::U8);
-                        spanTarget(operation.resultOffset);
+                        // The admitted exact byte array cannot overlap an object.
+                        // Its one checked lifetime covers every initialized element.
+                        const int length = arraySlots.at(operation.arrayOffset);
+                        for (int element = 0; element < length; ++element)
+                            require(state.initialized.contains(operation.arrayOffset - element),
+                                    "array element not initialized");
+                        inactiveSpanTarget(operation.resultOffset);
                         state.activeSpans.emplace(operation.resultOffset,
                                                   SpanCapability{false,
                                                                  operation.arrayOffset,
@@ -2296,7 +2266,7 @@ inline ValidatedModule validate(InstructionIngress pending, verification::Metric
         throw Error(DiagnosticCode::Internal, "missing hosted IR instruction ingress");
     instructions->admit(*metadata);
     // Source checks every CFG, then every normalized entry binding, then every
-    // immutable call contract before allocating native value-state arrays.
+    // immutable call and storage-access contract before native value-state arrays.
     instructions->structure();
     std::vector<FunctionBody> functions;
     functions.reserve(instructions->bodyCount());

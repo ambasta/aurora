@@ -2221,6 +2221,12 @@ extern "C" std::int64_t aurora_hosted_metadata_run(void *) noexcept {
 extern "C" std::int64_t aurora_hosted_metadata_error(const void *) noexcept {
     unexpectedMetadataEntry();
 }
+extern "C" std::int64_t aurora_hosted_metadata_object_leaf_root(const void *, std::int64_t, std::int64_t) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" std::int64_t aurora_hosted_metadata_byte_array_element_root(const void *, std::int64_t, std::int64_t) noexcept {
+    unexpectedMetadataEntry();
+}
 extern "C" void aurora_hosted_instructions_create(const void *, void *) noexcept {
     unexpectedMetadataEntry();
 }
