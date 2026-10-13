@@ -46,8 +46,7 @@ export namespace compiler_lowering {
     // remain explicit for invented assignment/designated-field Token spans.
 
     auto empty_lane() -> ArgumentLane {
-        const ArgumentLane result = ArgumentLane(-1, ArgumentKind::absent, -1, -1, -1, -1);
-        return result;
+        return ArgumentLane(-1, ArgumentKind::absent, -1, -1, -1, -1);
     }
     auto push_frame(compiler_resolver::Session& session, ContinuationRow frame) -> bool {
         if (session.continuation_count() >= 384) {
@@ -262,8 +261,7 @@ export namespace compiler_lowering {
             mutable_value = declaration.word(9) == 1;
             bind = true;
         }
-        const LocalRequest result = LocalRequest(name, type, reference, mutable_value, bind, true);
-        return result;
+        return LocalRequest(name, type, reference, mutable_value, bind, true);
     }
     auto expression_destination(compiler_resolver::Session& session, ContinuationRow frame, i64 type,
         i64 owner) -> i64 {

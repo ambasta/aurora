@@ -234,9 +234,8 @@ export namespace compiler_lowering {
             return true;
         }
         auto state() const -> SnapshotRow {
-            const SnapshotRow result = SnapshotRow(sharedCount, objectSharedCount, liveValue, exclusiveValue,
+            return SnapshotRow(sharedCount, objectSharedCount, liveValue, exclusiveValue,
                 resourceActiveValue, objectExclusiveValue);
-            return result;
         }
         auto set_state(SnapshotRow value) -> bool {
             sharedCount = value.shared_count();
@@ -469,8 +468,7 @@ export namespace compiler_lowering {
                 const ArgumentLane result = sixthArgument;
                 return result;
             }
-            const ArgumentLane empty = ArgumentLane(-1, ArgumentKind::absent, -1, -1, -1, -1);
-            return empty;
+            return ArgumentLane(-1, ArgumentKind::absent, -1, -1, -1, -1);
         }
         auto set_argument(i64 index, ArgumentLane value) -> bool {
             if (index < 0 || index >= argumentCount || value.index() != index) {

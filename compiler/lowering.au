@@ -31,17 +31,15 @@ export namespace compiler_lowering {
             if (storage == compiler_resolver::StorageStatus::allocation) {
                 status = LoweringStatus::storage_failure;
             }
-            const LoweringResult result = LoweringResult(status, LoweringError::none, session.diagnostic_payload_row(),
+            return LoweringResult(status, LoweringError::none, session.diagnostic_payload_row(),
                 -1);
-            return result;
         }
         const LoweringError reason = session.lowering_error();
         LoweringStatus status = LoweringStatus::invalid;
         if (reason != LoweringError::none && !layout_failure(reason)) {
             status = LoweringStatus::semantic_failure;
         }
-        const LoweringResult result = LoweringResult(status, reason, session.diagnostic_payload_row(), -1);
-        return result;
+        return LoweringResult(status, reason, session.diagnostic_payload_row(), -1);
     }
     // Seven bounded linear passes create the module's seven distinct lists.
     // Metadata rows may interleave instructions; no row order is guessed from
@@ -114,8 +112,7 @@ export namespace compiler_lowering {
             const LoweringResult result = failed_result(session);
             return result;
         }
-        const LoweringResult result = LoweringResult(LoweringStatus::success, LoweringError::none,
+        return LoweringResult(LoweringStatus::success, LoweringError::none,
             session.diagnostic_payload_row(), root);
-        return result;
     }
 }

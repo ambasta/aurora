@@ -384,8 +384,7 @@ export namespace compiler_lowering {
         if (!session.good() || session.continuation_count() != 0 || session.snapshot_count() != 0
             || session.local_count() != 0) {
             session.fail_storage(compiler_resolver::StorageStatus::invalid);
-            const FunctionBodyResult invalid = FunctionBodyResult(-1, next_label);
-            return invalid;
+            return FunctionBodyResult(-1, next_label);
         }
         const ArgumentLane empty = empty_lane();
         ContinuationRow root = ContinuationRow(ContinuationKind::function, function, -1, empty);
@@ -465,7 +464,6 @@ export namespace compiler_lowering {
             session.truncate_snapshots(0);
             session.reset_lowering_locals();
         }
-        const FunctionBodyResult result = FunctionBodyResult(row, final_label);
-        return result;
+        return FunctionBodyResult(row, final_label);
     }
 }
