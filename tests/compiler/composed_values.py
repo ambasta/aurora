@@ -944,16 +944,17 @@ def rejection_cases(suite):
         error=True,
     )
     suite.check(
-        "Value class method return requires a complete named local copy",
+        "Value class method directly returns independent receiver field copy",
         program(
-            "Leaf source=Leaf(42);Only<Leaf> value=Only<Leaf>(source);return 42;",
+            "Leaf source=Leaf(42);const Only<Leaf> value=Only<Leaf>(source);Leaf copied=value.get();"
+            "copied.add(1);source.add(2);const Leaf retained=value.get();"
+            "if(copied.get()!=43){return 1;}return retained.get();",
             LEAF
             + (
                 "template<Value T>class Only{T item;public:Only(T source):item(source){}auto get()const->T{retu"
                 "rn item;}};"
             ),
         ),
-        error=True,
     )
     suite.check(
         "Value substitution cannot authorize builtin arrays of classes",

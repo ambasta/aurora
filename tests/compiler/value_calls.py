@@ -384,7 +384,7 @@ check(
 check(
     "class method result cannot return scalar field",
     program("return 42;", definition=COUNTER.replace("get() const -> i64", "get() const -> Counter")),
-    error="unknown local",
+    error="expected Counter",
 )
 
 LIB = (

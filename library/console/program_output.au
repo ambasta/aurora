@@ -34,8 +34,7 @@ export namespace console {
             return count;
         }
         auto payload() const -> std::BinaryBuffer64 {
-            const std::BinaryBuffer64 result = bytes;
-            return result;
+            return bytes;
         }
 
         auto valid() const -> bool {

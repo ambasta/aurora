@@ -628,13 +628,11 @@ int main() {
         Reply(builtin::ConsoleSample sample, i64 count, Payload value)
             : observation(sample), copied_count(count), copied_payload(value) {}
         auto sample() const -> builtin::ConsoleSample {
-            const builtin::ConsoleSample value = observation;
-            return value;
+            return observation;
         }
         auto count() const -> i64 { return copied_count; }
         auto payload() const -> Payload {
-            const Payload value = copied_payload;
-            return value;
+            return copied_payload;
         }
     };
     auto number(builtin::ConsolePutResult status) -> i64 {

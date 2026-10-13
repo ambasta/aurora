@@ -40,8 +40,7 @@ export namespace console {
         auto missing() const -> bool { return absent == 1u64; }
         auto size() const -> u64 { return length; }
         auto bytes() const -> std::BinaryBuffer64 {
-            const std::BinaryBuffer64 copied = data;
-            return copied;
+            return data;
         }
     };
 

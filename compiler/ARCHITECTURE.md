@@ -243,6 +243,11 @@ remain required, followed by final integrated qualification.
 
 ## Typed instruction model
 
+Direct copied receiver-field returns reuse ordinary expression staging,
+`ObjectFieldCopy` and `ReturnObject`; they add no IR or ABI operation. Initial
+console adoption stays outside the predecessor-built frontend import closure.
+Compiler-source adoption still requires a deliberate predecessor advance.
+
 The current value and temporary operand stack carry explicit scalar/reference payload types. Source owners lower to scalar payload slots after the source ownership checks succeed. Borrow bindings lower to typed compiler-internal stack handles. No instruction offers arbitrary address arithmetic, arbitrary indirect stores, source-level raw pointers or opaque assembly injection.
 
 The IR records typed byte-addressed slots and complete frame size. U8 fields/elements use width one; previous scalar storage stays width eight, including canonical bool values. Logical class shapes and canonical byte offsets/alignment/reserved extents are distinct. The verifier recomputes physical metadata from nominal shape, rejects conflicting supplied maps and checks occupied-byte disjointness. The backend consumes the validated map; packed loads zero-extend and padding is initialized without making it a source field. See SCALARS.md for the developing representation gate.

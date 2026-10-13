@@ -178,7 +178,8 @@ Copied argument and result expressions are bounded:
   initializer, a direct copied-class return or an admitted copied argument.
 - A copied class return expression is a complete local name, a direct constructor
   call, or an ordinary free-function/overload/template or method call with the
-  exact declared result type.
+  exact declared result type. A method may also return an unqualified direct
+  non-owning class field of its receiver, subject to the same checked copy rules.
 
 For example, `return Box(42);` is accepted in an ordinary function or method
 returning exactly `Box`. It constructs a fresh internal object using the same
@@ -207,8 +208,8 @@ readonly arguments using the same checked constructor/call paths as named
 locals. Ordinary methods retain their existing receivers, including named owning
 or borrowed objects, the implicit receiver and direct copied-class fields. Their
 copied results carry no ownership or loan authority. Temporary receivers, direct field/index
-arguments, designated construction arguments, direct returned field projections
-and `return Box{.value=42};` remain unsupported. Resource calls, builtin owner and
+arguments, designated construction arguments, explicit returned projections such
+as `return object.field;` and `return Box{.value=42};` remain unsupported. Resource calls, builtin owner and
 service operations, service helpers and borrowed-object helpers still need their
 typed result locals.
 Owning results still require an explicit `move(named_local)` return. This narrow
@@ -395,8 +396,8 @@ contract.
 
 ### Complete copied method results
 
-A method may return a complete named class local or a
-[direct copied-class constructor](VALUES.md#source-contract). A caller uses a fresh explicitly typed local, an admitted direct copied return or a copied argument. This includes composed classes with
+A method may return a complete named class local, an unqualified direct copied
+receiver field or a [direct copied-class constructor](VALUES.md#source-contract). A caller uses a fresh explicitly typed local, an admitted direct copied return or a copied argument. This includes composed classes with
 private array, enum and empty-class descendants. The result has independent
 storage; changing the original receiver or the extracted copy cannot change the
 other. Const receivers may return copies that the caller binds mutably.
@@ -410,8 +411,14 @@ explicit class arguments remain supported.
 A result call acquires receiver identity and evaluates explicit arguments before
 making the new result binding visible. Direct copied calls, including ordinary
 methods on one copied-class field, and constructors can be returned as described
-above. Direct field-value returns such as `return item;` still require a complete
-named local. The [direct owned-field extension](VALUES.md) also supports complete
+above. `return item;` may copy a direct non-owning class field through the same
+checked staging as `const Result value = item; return value;`. Locals and parameters
+shadow fields, including when their return is invalid. Exact type, privacy,
+receiver access and full initialization still apply; constructor-time access,
+explicit/nested/indexed projections and owning or view results gain no exception.
+This direct-field spelling is source-reviewed only; generated equivalence and
+execution qualification remain outstanding.
+The [direct owned-field extension](VALUES.md) also supports complete
 direct field replacement. Deeper chained mutation, source references to subobjects
 and general class-valued expressions remain outside this subset.
 
