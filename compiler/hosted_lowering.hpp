@@ -45,13 +45,15 @@ struct HostedLoweringServices {
 };
 
 struct HostedLoweringOutput {
-    ir::Module module;
+    std::vector<ir::Function> functions;
+    ir::MetadataIngress metadata;
     std::vector<Diagnostic> diagnostics;
 };
 
 // Call only for a checked LoweringResult success. Checks transport integrity and
-// materializes privately; deliberately does not call ir::validate. The caller
-// retains Session through projection and rendering, then destroys these views
-// and releases Session before independently validating the owned result.
+// materializes functions and raw owning ingress; does not publish metadata or
+// call ir::validate. The caller retains Session through projection and rendering,
+// then destroys these views and releases Session before independently validating
+// the owned result.
 HostedLoweringOutput projectHostedLowering(const HostedLoweringInput &input, const HostedLoweringServices &services);
 } // namespace aurora

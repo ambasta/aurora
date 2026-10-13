@@ -1,4 +1,5 @@
 #include "hosted_lowering.hpp"
+#include "hosted_ir_metadata_writer.hpp"
 #include <algorithm>
 #include <bit>
 #include <limits>
@@ -9,6 +10,8 @@
 namespace aurora {
 namespace {
 namespace wire = hosted_abi::compiler_lowering;
+namespace metadata = hosted_abi::compiler_ir_metadata;
+using MetadataWriter = ir::detail::MetadataWriter;
 using wire::InstructionForm;
 using wire::OperandRole;
 using wire::RecordKind;
@@ -622,33 +625,53 @@ class Projection {
         values.finish();
         return result;
     }
-    ir::ClassStorage storage(std::int64_t id) {
+    metadata::IndexRange offsets(MetadataWriter &writer, Operands &values, OperandRole role) {
+        const auto items = list(values.take(role), OperandRole::Offset);
+        metadata::IndexRange range;
+        range.firstIndex = writer.position().mapCounts.indices;
+        range.indexCount = static_cast<std::int64_t>(items.size());
+        for (const auto &item : items)
+            writer.index(intValue(item.signedValue));
+        return range;
+    }
+    void storage(MetadataWriter &writer, std::int64_t id) {
         Operands values(*this, own(id, RecordKind::ClassStorage));
-        ir::ClassStorage result{offsets(values, OperandRole::LeafOffsets),
-                                offsets(values, OperandRole::FieldOffsets),
-                                values.integer(OperandRole::SizeBytes),
-                                values.integer(OperandRole::Alignment),
-                                values.integer(OperandRole::ReservedBytes)};
+        metadata::StorageRow result;
+        result.leafOffsetRange = offsets(writer, values, OperandRole::LeafOffsets);
+        result.fieldOffsetRange = offsets(writer, values, OperandRole::FieldOffsets);
+        result.physicalExtent.sizeBytes = values.integer(OperandRole::SizeBytes);
+        result.physicalExtent.alignmentBytes = values.integer(OperandRole::Alignment);
+        result.physicalExtent.reservedBytes = values.integer(OperandRole::ReservedBytes);
         values.finish();
-        return result;
+        writer.append(result);
     }
-    void classRecord(ir::Module &module, std::int64_t id) {
-        Operands values(*this, own(id, RecordKind::Class));
-        auto name = classOrCarrier(values);
-        auto leaves = types(values, OperandRole::LeafTypes);
-        const auto fieldRows = rows(values, OperandRole::Fields);
-        charge(fieldRows.size(), sizeof(ir::ClassField));
-        std::vector<ir::ClassField> fields;
-        fields.reserve(fieldRows.size());
-        for (const auto &item : fieldRows)
-            fields.push_back(field(item.signedValue));
-        auto layout = storage(values.scalar(OperandRole::StorageRef));
-        values.finish();
-        insertUnique(module.classLayouts, name, std::move(leaves));
-        insertUnique(module.classFields, name, std::move(fields));
-        insertUnique(module.classStorage, std::move(name), std::move(layout));
+    void classRecord(MetadataWriter &writer, const std::string &name, std::int64_t id, bool carrier) {
+        metadata::ClassRow result;
+        result.nameRange = writer.text(name);
+        result.leafRange.firstIndex = writer.position().coreCounts.leaves;
+        result.fieldRange.firstIndex = writer.position().coreCounts.fields;
+        result.suppliedStorage = -1;
+        result.membershipBits = carrier ? 8 : 0;
+        if (id >= 0) {
+            Operands values(*this, own(id, RecordKind::Class));
+            if (classOrCarrier(values) != name)
+                invalidLowering();
+            const auto leaves = list(values.take(OperandRole::LeafTypes), OperandRole::TypeId);
+            result.leafRange.indexCount = static_cast<std::int64_t>(leaves.size());
+            for (const auto &item : leaves)
+                writer.leaf(services.type(identity(item.signedValue)));
+            const auto fieldRows = rows(values, OperandRole::Fields);
+            result.fieldRange.indexCount = static_cast<std::int64_t>(fieldRows.size());
+            for (const auto &item : fieldRows)
+                writer.field(field(item.signedValue));
+            result.suppliedStorage = writer.position().mapCounts.storage;
+            storage(writer, values.scalar(OperandRole::StorageRef));
+            values.finish();
+            result.membershipBits |= 7;
+        }
+        writer.append(result);
     }
-    void carrier(ir::Module &module, std::int64_t id) {
+    void carrier(std::set<std::string> &names, std::int64_t id) {
         Operands values(*this, own(id, RecordKind::Carrier));
         const auto elementType = type(values, OperandRole::ElementTypeId);
         const auto count = values.integer(OperandRole::ElementCount);
@@ -658,39 +681,79 @@ class Projection {
         if (elementType.kind != TypeKind::Class)
             invalidLowering();
         auto name = "@array:" + elementType.className + ":" + std::to_string(count);
-        insertUnique(module.classArrayCarriers, name);
+        insertUnique(names, name);
         insertUnique(carrierNames, id, std::move(name));
     }
-    void descriptor(ir::Module &module, std::int64_t id) {
+    void descriptor(MetadataWriter &writer, std::int64_t key, std::int64_t id) {
         Operands values(*this, own(id, RecordKind::Descriptor));
-        const auto publicId = intValue(identity(values.scalar(OperandRole::PublicDescriptorId)));
-        const ir::Descriptor result{values.scalar(OperandRole::Size), values.scalar(OperandRole::PublicFields)};
+        metadata::DescriptorRow result;
+        result.descriptorId = intValue(identity(values.scalar(OperandRole::PublicDescriptorId)));
+        if (result.descriptorId != key)
+            invalidLowering();
+        result.sizeValue = values.scalar(OperandRole::Size);
+        result.publicFieldCount = values.scalar(OperandRole::PublicFields);
         values.finish();
-        insertUnique(module.descriptors, publicId, result);
+        writer.append(result);
     }
-    void descriptorView(ir::Module &module, std::int64_t id) {
+    void descriptorView(MetadataWriter &writer, std::int64_t key, std::int64_t id,
+                        const std::map<std::int64_t, std::int64_t> &descriptors) {
         Operands values(*this, own(id, RecordKind::DescriptorView));
-        const auto scope = moduleScope(values);
+        metadata::ViewRow result;
+        result.moduleScope = moduleScope(values);
+        if (result.moduleScope != key)
+            invalidLowering();
         const auto items = list(values.take(OperandRole::VisibleDescriptors), OperandRole::PublicDescriptorId);
         values.finish();
         charge(items.size(), sizeof(int));
         std::set<int> visible;
         for (const auto &item : items) {
             const auto publicId = intValue(identity(item.signedValue));
-            if (!module.descriptors.contains(publicId))
+            if (!descriptors.contains(publicId))
                 invalidLowering();
             insertUnique(visible, publicId);
         }
-        // Insert even an empty view; the Module constructor's legacy root view
-        // is cleared before any transport rows are consumed.
-        insertUnique(module.descriptorViews, scope, std::move(visible));
+        result.descriptorRange.firstIndex = writer.position().mapCounts.indices;
+        result.descriptorRange.indexCount = static_cast<std::int64_t>(visible.size());
+        for (auto publicId : visible)
+            writer.index(publicId);
+        writer.append(result);
     }
-    void enumeration(ir::Module &module, std::int64_t id) {
+    void enumeration(MetadataWriter &writer, const std::string &name, std::int64_t id) {
         Operands values(*this, own(id, RecordKind::EnumCases));
-        auto name = services.enumName(identity(values.scalar(OperandRole::EnumNominalId)));
-        const auto count = values.integer(OperandRole::CaseCount);
+        if (services.enumName(identity(values.scalar(OperandRole::EnumNominalId))) != name)
+            invalidLowering();
+        metadata::EnumRow result;
+        result.nameRange = writer.text(name);
+        result.caseCount = values.integer(OperandRole::CaseCount);
         values.finish();
-        insertUnique(module.enumCases, std::move(name), count);
+        writer.append(result);
+    }
+    void metadataRecords(MetadataWriter &writer, const std::map<std::string, std::int64_t> &classes,
+                         const std::set<std::string> &carriers,
+                         const std::map<std::int64_t, std::int64_t> &descriptors,
+                         const std::map<std::int64_t, std::int64_t> &views,
+                         const std::map<std::string, std::int64_t> &enums) {
+        for (const auto &[name, id] : classes)
+            classRecord(writer, name, id, carriers.contains(name));
+        for (const auto &[key, id] : descriptors)
+            descriptor(writer, key, id);
+        for (const auto &[key, id] : views)
+            descriptorView(writer, key, id, descriptors);
+        for (const auto &[name, id] : enums)
+            enumeration(writer, name, id);
+    }
+    const wire::OperandRow &key(std::int64_t id, RecordKind kind) const {
+        const auto &value = row(id);
+        const auto [begin, count] = range(value.operandBegin, value.operandCount, input.operands.size());
+        if (value.recordKind != kind || count == 0)
+            invalidLowering();
+        return input.operands[begin];
+    }
+    std::int64_t key(std::int64_t id, RecordKind kind, OperandRole role) const {
+        const auto &value = key(id, kind);
+        if (value.operandRole != role)
+            invalidLowering();
+        return identity(value.signedValue);
     }
     Diagnostic unreadLocal(std::int64_t id) {
         Operands values(*this, own(id, RecordKind::UnreadLocal));
@@ -776,27 +839,59 @@ public:
         values.finish();
 
         HostedLoweringOutput result;
-        result.module.descriptorViews.clear();
         // Carrier names are shared output identities. Materialize their owning
         // list once before following nonowning CarrierId references elsewhere.
+        std::set<std::string> carrierSymbols;
         for (const auto &item : carriers)
-            carrier(result.module, item.signedValue);
+            carrier(carrierSymbols, item.signedValue);
         charge(functions.size(), sizeof(ir::Function));
-        result.module.functions.reserve(functions.size());
+        result.functions.reserve(functions.size());
         std::set<std::string> functionNames;
         for (const auto &item : functions) {
             auto next = function(item.signedValue);
             insertUnique(functionNames, next.name);
-            result.module.functions.push_back(std::move(next));
+            result.functions.push_back(std::move(next));
         }
-        for (const auto &item : classes)
-            classRecord(result.module, item.signedValue);
+        // Sort only identities and source row IDs; leaf/field/storage payloads
+        // flow directly into the retained owner, in this canonical key order.
+        std::map<std::string, std::int64_t> classRows, enumRows;
+        std::map<std::int64_t, std::int64_t> descriptorRows, viewRows;
+        for (const auto &item : classes) {
+            const auto &value = key(item.signedValue, RecordKind::Class);
+            std::string name;
+            if (value.operandRole == OperandRole::ClassNominalId)
+                name = services.className(identity(value.signedValue));
+            else if (value.operandRole == OperandRole::CarrierId && carrierNames.contains(value.signedValue))
+                name = carrierNames.at(value.signedValue);
+            else
+                invalidLowering();
+            insertUnique(classRows, std::move(name), item.signedValue);
+        }
+        for (const auto &name : carrierSymbols)
+            classRows.try_emplace(name, -1);
         for (const auto &item : descriptors)
-            descriptor(result.module, item.signedValue);
+            insertUnique(descriptorRows,
+                         intValue(key(item.signedValue, RecordKind::Descriptor, OperandRole::PublicDescriptorId)),
+                         item.signedValue);
         for (const auto &item : views)
-            descriptorView(result.module, item.signedValue);
+            insertUnique(viewRows,
+                         intValue(key(item.signedValue, RecordKind::DescriptorView, OperandRole::ModuleScope)),
+                         item.signedValue);
         for (const auto &item : enums)
-            enumeration(result.module, item.signedValue);
+            insertUnique(enumRows,
+                         services.enumName(key(item.signedValue, RecordKind::EnumCases, OperandRole::EnumNominalId)),
+                         item.signedValue);
+        MetadataWriter writer;
+        {
+            // Independent count bookkeeping never exempts the final owning
+            // walk from checking aliases with function/prelude operands.
+            Projection counter(input, services);
+            counter.carrierNames = carrierNames;
+            counter.metadataRecords(writer, classRows, carrierSymbols, descriptorRows, viewRows, enumRows);
+        }
+        writer.allocate();
+        metadataRecords(writer, classRows, carrierSymbols, descriptorRows, viewRows, enumRows);
+        result.metadata = std::move(writer).take();
         charge(diagnostics.size(), sizeof(Diagnostic));
         result.diagnostics.reserve(diagnostics.size());
         for (const auto &item : diagnostics)

@@ -2710,18 +2710,27 @@ inline bool symbol(const std::string &value) {
         return letter(c) || (c >= '0' && c <= '9');
     });
 }
+inline std::map<std::string, const Function *> functionSymbols(const std::vector<Function> &input) {
+    std::map<std::string, const Function *> functions;
+    require(!input.empty(), "empty module");
+    for (const auto &function : input) {
+        require(symbol(function.name) && function.name != "aurora_reflect_size" &&
+                    function.name != "aurora_reflect_field_count" && !function.name.starts_with("__au_reflect_") &&
+                    !function.name.starts_with("__au_runtime_"),
+                "invalid or reserved function symbol");
+        require(functions.emplace(function.name, &function).second, "duplicate function");
+    }
+    return functions;
+}
+inline void verifyFunctions(std::vector<Function> &input, const std::map<std::string, const Function *> &symbols,
+                            const Metadata &metadata) {
+    for (auto &function : input)
+        verifyFunction(function, symbols, metadata);
+    verifyHostedGraph(input);
+}
 } // namespace verification
 inline ValidatedModule validate(Module module) {
-    std::map<std::string, const Function *> functions;
-    verification::require(!module.functions.empty(), "empty module");
-    for (const auto &function : module.functions) {
-        verification::require(verification::symbol(function.name) && function.name != "aurora_reflect_size" &&
-                                  function.name != "aurora_reflect_field_count" &&
-                                  !function.name.starts_with("__au_reflect_") &&
-                                  !function.name.starts_with("__au_runtime_"),
-                              "invalid or reserved function symbol");
-        verification::require(functions.emplace(function.name, &function).second, "duplicate function");
-    }
+    const auto functions = verification::functionSymbols(module.functions);
     auto metadata = Metadata::import(module);
     // The source-owned normalized ranges are authoritative from this point.
     // Retire hostile ingress maps before any native function or backend work.
@@ -2732,9 +2741,13 @@ inline ValidatedModule validate(Module module) {
     module.descriptors.clear();
     module.descriptorViews.clear();
     module.enumCases.clear();
-    for (auto &function : module.functions)
-        verification::verifyFunction(function, functions, *metadata);
-    verifyHostedGraph(module);
+    verification::verifyFunctions(module.functions, functions, *metadata);
     return ValidatedModule(std::move(module.functions), std::move(metadata));
+}
+inline ValidatedModule validate(std::vector<Function> functions, MetadataIngress pending) {
+    const auto symbols = verification::functionSymbols(functions);
+    auto metadata = std::move(pending).finish();
+    verification::verifyFunctions(functions, symbols, *metadata);
+    return ValidatedModule(std::move(functions), std::move(metadata));
 }
 } // namespace aurora::ir

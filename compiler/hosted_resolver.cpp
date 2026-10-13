@@ -1670,7 +1670,7 @@ class HostedResolution::Impl {
         // The result owns its values and shared source snapshots. Destroy all
         // native-backed views above, then free Session before verification.
         owner.release();
-        auto verified = ir::validate(std::move(output.module));
+        auto verified = ir::validate(std::move(output.functions), std::move(output.metadata));
         return {std::move(verified), std::move(output.diagnostics), std::move(declarations)};
     }
 

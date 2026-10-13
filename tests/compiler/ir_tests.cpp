@@ -1,10 +1,12 @@
 #include "ir_verify.hpp"
+#include "hosted_ir_metadata_writer.hpp"
 #include "x86.hpp"
 #include <bit>
 #include <functional>
 #include <iostream>
 #include <string>
 #include <tuple>
+#include <type_traits>
 
 using namespace aurora;
 using namespace aurora::ir;
@@ -4230,6 +4232,124 @@ void metadataOwnerTests() {
     }, "noncanonical class storage metadata");
 }
 
+MetadataIngress pendingMetadata(bool badStorage = false, bool badDescriptor = false) {
+    namespace wire = aurora::hosted_abi::compiler_ir_metadata;
+    detail::MetadataWriter writer;
+    const auto fill = [&] {
+        wire::ClassRow shape{};
+        shape.nameRange = writer.text(std::string("A\0\xff", 3));
+        shape.membershipBits = 1 | 2 | 4;
+        shape.leafRange = {writer.position().coreCounts.leaves, 2};
+        writer.leaf(Type::U8);
+        writer.leaf(Type::I64);
+        shape.fieldRange = {writer.position().coreCounts.fields, 2};
+        writer.field(ClassField{Type::U8, 0, 1, false});
+        writer.field(ClassField{Type::I64, 1, 1, false});
+        shape.suppliedStorage = writer.position().mapCounts.storage;
+        wire::StorageRow storage{};
+        storage.leafOffsetRange = {writer.position().mapCounts.indices, 2};
+        writer.index(0);
+        writer.index(badStorage ? 9 : 8);
+        storage.fieldOffsetRange = {writer.position().mapCounts.indices, 2};
+        writer.index(0);
+        writer.index(8);
+        storage.physicalExtent = {16, 8, 16};
+        writer.append(storage);
+        writer.append(shape);
+        wire::DescriptorRow descriptor{};
+        descriptor.descriptorId = 7;
+        descriptor.sizeValue = badDescriptor ? -1 : 16;
+        descriptor.publicFieldCount = 2;
+        writer.append(descriptor);
+        wire::ViewRow view{};
+        view.moduleScope = 0;
+        view.descriptorRange = {writer.position().mapCounts.indices, 1};
+        writer.index(7);
+        writer.append(view);
+    };
+    fill();
+    writer.allocate();
+    fill();
+    return std::move(writer).take();
+}
+
+void metadataIngressTests() {
+    static_assert(!std::is_copy_constructible_v<MetadataIngress> && !std::is_copy_assignable_v<MetadataIngress> &&
+                  std::is_nothrow_move_constructible_v<MetadataIngress> &&
+                  std::is_nothrow_move_assignable_v<MetadataIngress>);
+    const auto rejects = [](const char *name, const auto &operation, const char *expected) {
+        try {
+            operation();
+        } catch (const Error &error) {
+            if (std::string(error.what()).find(expected) == std::string::npos)
+                throw Error(std::string(name) + ": wrong diagnostic: " + error.what());
+            ++passed;
+            std::cout << "PASS IR " << name << '\n';
+            return;
+        }
+        throw Error(std::string(name) + ": invalid pending metadata was accepted");
+    };
+    auto pending = pendingMetadata();
+    MetadataIngress moved(std::move(pending));
+    pending = pendingMetadata();
+    pending = std::move(moved);
+    const auto checked = validate(baseline().functions, std::move(pending));
+    const auto &metadata = checked.metadata();
+    const auto id = metadata.findClass(std::string("A\0\xff", 3));
+    if (!id || metadata.leaves(*id).size() != 2 || metadata.fields(*id).at(1).elementType != Type::I64 ||
+        !storageMatches(metadata.storage(*id), ClassStorage{{0, 8}, {0, 8}, 16, 8, 16}) ||
+        metadata.visibleDescriptors(0).size() != 1 || metadata.visibleDescriptors(0).front() != 7)
+        throw Error("pending metadata moves lost copied names, fields or supplied storage");
+    ++passed;
+    std::cout << "PASS IR pending metadata move construction, replacement and publication\n";
+    rejects("pending metadata cannot publish twice", [&] {
+        static_cast<void>(validate(baseline().functions, std::move(pending)));
+    }, "invalid hosted IR metadata transport");
+    // Real Region destruction rejects any leaked owner. Exercise abandonment
+    // and exception cleanup without substituting the generated owner/runtime.
+    {
+        const auto abandoned = pendingMetadata();
+        (void)abandoned;
+    }
+    rejects("partially filled metadata cleans up without publication", [] {
+        detail::MetadataWriter partial;
+        partial.text("partial");
+        partial.allocate();
+        partial.text("p");
+        static_cast<void>(std::move(partial).take());
+    }, "invalid hosted IR metadata transport");
+    {
+        detail::MetadataWriter writer;
+        aurora::hosted_abi::compiler_ir_metadata::ViewRow root{};
+        writer.append(root);
+        writer.allocate();
+        writer.append(root);
+        auto sealed = std::move(writer).take();
+        rejects("consumed metadata writer cannot append fields", [&] {
+            writer.field(ClassField{Type::I64, 0, 1, false});
+        }, "invalid hosted IR metadata transport");
+        static_cast<void>(validate(baseline().functions, std::move(sealed)));
+    }
+    for (const int mode : {0, 1, 2}) {
+        rejects("function preflight precedes pending metadata semantics", [=] {
+            auto functions = baseline().functions;
+            if (mode == 0)
+                functions.clear();
+            else if (mode == 1)
+                functions.front().name = "__au_runtime_reserved";
+            else
+                functions.push_back(functions.front());
+            static_cast<void>(validate(std::move(functions), pendingMetadata(false, true)));
+        }, mode == 0 ? "empty module" : mode == 1 ? "invalid or reserved function symbol" : "duplicate function");
+    }
+    rejects("pending descriptor still receives independent validation", [] {
+        static_cast<void>(validate(baseline().functions, pendingMetadata(false, true)));
+    }, "invalid metadata descriptor");
+    rejects("pending supplied physical offsets cannot become canonical by assertion", [] {
+        static_cast<void>(validate(baseline().functions, pendingMetadata(true)));
+    }, "noncanonical class storage metadata");
+}
+
 } // namespace
 int main(int argc, char **argv) {
     try {
@@ -4273,6 +4393,7 @@ int main(int argc, char **argv) {
         byteTests();
         packedStorageTests();
         metadataOwnerTests();
+        metadataIngressTests();
         initializationPayloadMetricTests();
         callGraphTests();
         reflectionEmissionTests();
