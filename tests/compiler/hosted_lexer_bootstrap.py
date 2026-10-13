@@ -166,6 +166,9 @@ def abi_generation(facts):
                 continue
             raise AssertionError(f"unsafe lowering bridge accepted: {operation}/{mutation}")
     for kind in (
+        "unexpected_second_root",
+        "unexpected_root_count",
+        "unexpected_root_tuple",
         "result_extent",
         "field_extent",
         "unsupported_array",
@@ -184,7 +187,15 @@ def abi_generation(facts):
         "resolver_seed_shape",
     ):
         changed = deepcopy(facts)
-        if kind == "result_extent":
+        if kind.startswith("unexpected_"):
+            _, entry = abi_declaration(changed, "functions", "compiler_frontend::parser_read_node")
+            if kind == "unexpected_second_root":
+                entry["second_receiver"] = {"type_name": entry["receiver"], "mutable": False}
+            elif kind == "unexpected_root_count":
+                entry["root_count"] = 2
+            else:
+                entry["root_tuple_bytes"] = 16
+        elif kind == "result_extent":
             _, entry = abi_declaration(changed, "functions", "compiler_frontend::parser_read_node")
             entry["result"]["bytes"] += 8
         elif kind.startswith("resolver_"):

@@ -1579,6 +1579,23 @@ public:
                 writeJsonString(facts, function.receiver->className);
             else
                 facts << "null";
+            facts << ",\"receiver_mutable\":";
+            facts << (function.receiver ? (function.receiver->mutableValue ? "true" : "false") : "null");
+            facts << ",\"borrowed_parameter\":" << (function.borrowedParameter ? "true" : "false");
+            facts << ",\"second_receiver\":";
+            if (function.secondBorrowedParameter) {
+                facts << "{\"type_name\":";
+                writeJsonString(facts, function.secondBorrowedParameter->className);
+                facts << ",\"mutable\":" << (function.secondBorrowedParameter->mutableValue ? "true" : "false")
+                      << '}';
+            } else
+                facts << "null";
+            facts << ",\"root_count\":" << (function.secondBorrowedParameter ? 2 : function.receiver ? 1 : 0)
+                  << ",\"root_tuple_bytes\":" << (function.secondBorrowedParameter ? 16 : 0)
+                  << ",\"root_order\":"
+                  << (function.secondBorrowedParameter ? "[\"receiver\",\"second_receiver\"]"
+                      : function.receiver              ? "[\"receiver\"]"
+                                                       : "[]");
             facts << ",\"parameter_bytes\":" << recordOffset(function, function.parameters.size())
                   << ",\"parameters\":[";
             for (std::size_t index = 0; index < function.parameters.size(); ++index) {

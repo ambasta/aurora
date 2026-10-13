@@ -205,6 +205,12 @@ def frontend_abi_entries(facts):
             or not matches(function["result"], result)
         ):
             raise ValueError(f"private bridge signature changed: {source}")
+        if (
+            function.get("second_receiver") is not None
+            or function.get("root_count", int(receiver is not None)) != int(receiver is not None)
+            or function.get("root_tuple_bytes", 0) != 0
+        ):
+            raise ValueError(f"unexpected private bridge second root: {source}")
         offset = 0
         for actual, expected in zip(function["parameters"], parameters):
             if not matches(actual, expected) or actual["offset"] != offset:

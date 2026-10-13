@@ -1,5 +1,6 @@
 // Independently authored IR for synchronous named owning-object borrows.
 // No parser or lowering is used. Layout offsets are literal test expectations.
+#include "hosted_resolver.hpp"
 #include "ir_verify.hpp"
 #include "x86.hpp"
 #include <functional>
@@ -404,7 +405,8 @@ void pairedTests() {
         before<Jump>(f, {AcquireObjectLoan{4, -1, false}});
     }, "incompatible object loans at control-flow join");
     X86Emitter emitter;
-    const auto assembly = emitter.emit(validate(pairedForwarded()));
+    const auto validated = validate(pairedForwarded());
+    const auto assembly = emitter.emit(validated);
     const auto &facts = emitter.stackFacts();
     require(facts.at("borrow_pair").localBytes == 48 &&
                 facts.at("borrow_pair").calls.at("pair_leaf") == 48,
@@ -413,6 +415,20 @@ void pairedTests() {
                 assembly.find("movq -16(%rbp), %r10") != std::string::npos &&
                 assembly.find("--1(%rbp)") == std::string::npos,
             "paired second selector must use its saved capability, never negative frame addressing");
+    AbiDeclarations declarations;
+    declarations.functions = {{"borrow_pair", {"fixture::pair", {}}}, {"read_second", {"fixture::single", {}}}};
+    const auto abi = emitter.abiFactsJson(validated, declarations);
+    require(abi.find("\"borrow_pair\":{\"source_name\":\"fixture::pair\",\"receiver\":\"Buffer\","
+                     "\"receiver_mutable\":true,\"borrowed_parameter\":true,"
+                     "\"second_receiver\":{\"type_name\":\"Other\",\"mutable\":false},"
+                     "\"root_count\":2,\"root_tuple_bytes\":16,\"root_order\":[\"receiver\",\"second_receiver\"],"
+                     "\"parameter_bytes\":0,\"parameters\":[],\"result\":{\"bytes\":8,\"kind\":\"i64\"}") !=
+                std::string::npos,
+            "paired ABI facts must preserve nominal roots, authority, pointer order and scalar result");
+    require(abi.find("\"read_second\":{\"source_name\":\"fixture::single\",\"receiver\":\"Other\","
+                     "\"receiver_mutable\":false,\"borrowed_parameter\":false,\"second_receiver\":null,"
+                     "\"root_count\":1,\"root_tuple_bytes\":0,\"root_order\":[\"receiver\"]") != std::string::npos,
+            "single-root ABI facts must retain the receiver spelling and direct-pointer convention");
 }
 void loanTests() {
     accept("mutable local root", fixture());
