@@ -436,11 +436,13 @@ export namespace compiler_lowering {
         service_helper_parameter_type,
         //: service capability must be the leading exclusive parameter
         service_capability_parameter_position,
-        //: borrowed functions require one leading concrete owning-class reference and a scalar or copied result
+        //: borrowed functions require one to six leading concrete owning-class references with only the first
+        //: optionally mutable; multiple roots require a scalar or enum result
         borrowed_function_boundary,
         //: borrowed parameters cannot name a class template
         borrowed_class_template_parameter,
-        //: later borrowed-function parameters require scalar, copied class or readonly span values
+        //: borrowed-function tails require scalar or enum values; one root also permits copied class or
+        //: readonly span values
         borrowed_function_later_parameter_type,
         //: const borrowed permission requires a borrowed parameter
         const_permission_requires_borrowed_parameter,
@@ -506,8 +508,10 @@ export namespace compiler_lowering {
         //: [integrity] IR: class storage does not cover logical leaves
         ir_class_storage_leaf_coverage,
 
-        //: paired borrowed roots cannot produce spans
-        paired_borrowed_span_production
+        //: multiple borrowed roots cannot produce spans
+        multiple_borrowed_span_production,
+        //: borrowed arguments require distinct owning roots
+        borrowed_arguments_require_distinct_roots
     };
 
     // Four eight-byte words in this order. Failure never publishes a module

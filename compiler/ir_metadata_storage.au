@@ -141,20 +141,20 @@ export namespace compiler_ir_metadata {
         service_parameters,
         //: invalid typed IR: service signature has unsupported result
         service_result,
-        //: invalid typed IR: borrowed formal requires nonconstructor owning receiver shape
+        //: invalid typed IR: borrowed roots require a free-function signature
         borrowed_shape,
         //: invalid typed IR: borrowed formal cannot have resource or borrowed result
         borrowed_result,
-        //: invalid typed IR: borrowed formal counts toward six parameters
+        //: invalid typed IR: borrowed roots count toward six parameters
         borrowed_parameters,
-        //: invalid typed IR: paired borrowed formals require mutable first and readonly second owning roots
-        paired_shape,
-        //: invalid typed IR: second borrowed formal requires known owning class
-        paired_class,
-        //: invalid typed IR: two borrowed formals count toward six parameters
-        paired_parameters,
-        //: invalid typed IR: paired borrowed signature requires scalar or enum values
-        paired_values,
+        //: invalid typed IR: borrowed root requires a canonical named class type
+        borrowed_root_type,
+        //: invalid typed IR: borrowed root requires a complete concrete owning class
+        borrowed_root_class,
+        //: invalid typed IR: borrowed root count exceeds the explicit formal prefix
+        borrowed_root_count,
+        //: invalid typed IR: multi-root borrowed signature requires scalar or enum values
+        borrowed_root_values,
         //: invalid typed IR: resource signature only supports an owning constructor receiver
         resource_receiver,
         //: invalid typed IR: resource signature requires its region parameter first
@@ -293,6 +293,8 @@ export namespace compiler_ir_metadata {
         auto tail() const -> RawTypeTail { const RawTypeTail result = rawTail; return result; }
     };
     class ReceiverShape {
+        // Genuine method/constructor receiver only. Borrowed free-function
+        // formals live once in CallableRow's explicit-formal type prefix.
         ByteRange nameRange;
         i64 flags; // mutable=1, constructor=2, public access=4
     public:
@@ -307,34 +309,69 @@ export namespace compiler_ir_metadata {
         i64 receiverSpanField;
         i64 frameBytes;
         IndexRange slotRange;
+        i64 borrowedRootCount;
+        i64 firstBorrowedMutable;
     public:
-        CallableOptions(i64 attributes, i64 span, i64 frame, IndexRange slots) :
-            flags(attributes), receiverSpanField(span), frameBytes(frame), slotRange(slots) {}
+        CallableOptions(i64 attributes, i64 span, i64 frame, IndexRange slots, i64 roots, i64 first_mutable) :
+            flags(attributes), receiverSpanField(span), frameBytes(frame), slotRange(slots),
+            borrowedRootCount(roots), firstBorrowedMutable(first_mutable) {}
         auto attributes() const -> i64 { return flags; }
         auto receiver_span_field() const -> i64 { return receiverSpanField; }
         auto frame_bytes() const -> i64 { return frameBytes; }
         auto slots() const -> IndexRange { const IndexRange result = slotRange; return result; }
+        auto borrowed_root_count() const -> i64 { return borrowedRootCount; }
+        auto first_borrowed_mutable() const -> i64 { return firstBorrowedMutable; }
     };
     class CallableRow {
         ByteRange nameRange;
-        IndexRange typeRange;
+        IndexRange typeRange; // result, then every explicit source formal in order
         i64 moduleScope;
         ReceiverShape receiver;
-        ReceiverShape secondReceiver;
-        i64 flags; // receiver=1, borrowed formal=2, second receiver=4, span summary=8
+        i64 borrowedRootCount;
+        i64 firstBorrowedMutable;
+        i64 flags; // genuine receiver=1, span summary=8; bits 2 and 4 are invalid
         i64 receiverSpanField;
         i64 frameBytes;
         IndexRange slotRange;
     public:
-        CallableRow(ByteRange name, IndexRange types, i64 scope, ReceiverShape first, ReceiverShape second,
+        CallableRow(ByteRange name, IndexRange types, i64 scope, ReceiverShape first,
                     CallableOptions options) : nameRange(name), typeRange(types), moduleScope(scope),
-            receiver(first), secondReceiver(second), flags(options.attributes()),
+            receiver(first), borrowedRootCount(options.borrowed_root_count()),
+            firstBorrowedMutable(options.first_borrowed_mutable()), flags(options.attributes()),
             receiverSpanField(options.receiver_span_field()), frameBytes(options.frame_bytes()), slotRange(options.slots()) {}
         auto name() const -> ByteRange { const ByteRange result = nameRange; return result; }
         auto types() const -> IndexRange { const IndexRange result = typeRange; return result; }
         auto scope() const -> i64 { return moduleScope; }
         auto first_receiver() const -> ReceiverShape { const ReceiverShape result = receiver; return result; }
-        auto second_receiver() const -> ReceiverShape { const ReceiverShape result = secondReceiver; return result; }
+        // Invalid raw rows never produce an index or mutable authority. The
+        // owner separately checks these indices against its declared type pool.
+        auto borrowed_root_count() const -> i64 {
+            if (borrowedRootCount < 0 || borrowedRootCount > 6 || typeRange.begin() < 0
+                || typeRange.count() < 1 || borrowedRootCount > typeRange.count() - 1
+                || typeRange.begin() > 9223372036854775807 - typeRange.count()
+                || firstBorrowedMutable < 0 || firstBorrowedMutable > 1
+                || (borrowedRootCount == 0 && firstBorrowedMutable != 0)) { return -1; }
+            return borrowedRootCount;
+        }
+        auto first_borrowed_mutable() const -> i64 { return firstBorrowedMutable; }
+        auto borrowed_root_type(i64 ordinal) const -> i64 {
+            const i64 roots = borrowed_root_count();
+            if (ordinal < 0 || ordinal >= roots) { return -1; }
+            return typeRange.begin() + 1 + ordinal;
+        }
+        auto borrowed_root_mutable(i64 ordinal) const -> bool {
+            return ordinal == 0 && ordinal < borrowed_root_count() && firstBorrowedMutable == 1;
+        }
+        auto value_parameter_begin() const -> i64 {
+            const i64 roots = borrowed_root_count();
+            if (roots < 0) { return -1; }
+            return typeRange.begin() + 1 + roots;
+        }
+        auto value_parameter_count() const -> i64 {
+            const i64 roots = borrowed_root_count();
+            if (roots < 0) { return -1; }
+            return typeRange.count() - 1 - roots;
+        }
         auto attributes() const -> i64 { return flags; }
         auto receiver_span_field() const -> i64 { return receiverSpanField; }
         auto frame_bytes() const -> i64 { return frameBytes; }
@@ -538,7 +575,7 @@ export namespace compiler_ir_metadata {
     }
     auto invalid_callable() -> CallableRow {
         return CallableRow(ByteRange(-1, -1), IndexRange(-1, -1), -1, ReceiverShape(ByteRange(-1, -1), -1),
-                           ReceiverShape(ByteRange(-1, -1), -1), CallableOptions(-1, -1, -1, IndexRange(-1, -1)));
+                           CallableOptions(-1, -1, -1, IndexRange(-1, -1), -1, -1));
     }
     auto invalid_class() -> ClassRow {
         return ClassRow(ByteRange(-1, -1), IndexRange(-1, -1), IndexRange(-1, -1), -1, -1);

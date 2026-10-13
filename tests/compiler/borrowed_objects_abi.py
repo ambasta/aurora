@@ -159,6 +159,88 @@ def paired_harness(text, selected):
     return text
 
 
+def bounded_shapes():
+    return [(roots, mutable, tail) for roots in range(1, 7)
+            for mutable in range(2) for tail in range(7 - roots)]
+
+
+def bounded_value(ordinal):
+    return 97 if ordinal == 0 else 239 + 71 * (ordinal - 1)
+
+
+def bounded_cases(mode):
+    result = []
+    for roots, mutable, tail in bounded_shapes():
+        suffix = f"{roots}_{mutable}_{tail}"
+        for depth in ([0] if mode == "direct" else range(3)):
+            answer = sum(bounded_value(index) for index in range(roots)) + sum(range(101, 101 + tail))
+            if mode != "direct":
+                answer = (42 if mode == "outgoing" else answer) + bounded_value(roots - 1) + abi.retained(depth)
+            result.append({
+                "name": f"bounded {mode} roots {roots} mutable {mutable} tail {tail} depth {depth}",
+                "target": f"bounded_target_{suffix}" if mode == "direct" else f"bounded_forward_{suffix}_{depth}",
+                "input": [], "answer": answer, "probes": int(mode == "outgoing"),
+                "registers": list(range(101, 101 + tail)), "roots": roots,
+            })
+    return result
+
+
+def bounded_target(roots, tail):
+    code = abi.align()
+    if roots == 1:
+        code += "    cmpq $receiver, %r10\n    jne .Labi_record_fail\n"
+    else:
+        for ordinal in range(roots):
+            label = "receiver" if ordinal == 0 else f"bounded_receiver_{ordinal}"
+            code += f"    cmpq ${label}, {ordinal * 8}(%r10)\n    jne .Labi_record_fail\n"
+    for index, register in enumerate(abi.REGISTERS[:tail]):
+        code += f"    cmpq ${101 + index}, {register}\n    jne .Labi_record_fail\n"
+    return code + "    incq probe_calls(%rip)\n" + abi.clobber(42) + "    ret\n"
+
+
+def bounded_harness(text, selected):
+    incoming = "    leaq receiver(%rip), %r10\n"
+    chunks = text.split(incoming)
+    abi.require(len(chunks) == len(selected) + 1, "one bounded root input per case")
+    text = chunks[0]
+    for case, chunk in zip(selected, chunks[1:]):
+        label = "receiver" if case["roots"] == 1 else f"bounded_record_{case['roots']}"
+        text += f"    leaq {label}(%rip), %r10\n" + chunk
+    marker = "    incq completed(%rip)\n"
+    chunks = text.split(marker)
+    abi.require(len(chunks) == len(selected) + 1, "one bounded completion per case")
+    text = chunks[0]
+    for index, (case, chunk) in enumerate(zip(selected, chunks[1:])):
+        for ordinal in range(1, case["roots"]):
+            text += f"    leaq bounded_receiver_{ordinal}_left(%rip), %rdi\n"
+            text += abi.compare("%rdi", f"literal_bounded_receiver_{ordinal}", 64,
+                                f"bounded_{index}_{ordinal}", "canary")
+        if case["roots"] > 1:
+            roots = case["roots"]
+            reserved = (8 * roots + 15) & ~15
+            text += f"    leaq bounded_record_{roots}_left(%rip), %rdi\n"
+            text += abi.compare("%rdi", f"literal_bounded_record_{roots}", reserved + 16,
+                                f"bounded_record_{index}", "canary")
+        text += marker + chunk
+    text += "\n.data\n.balign 16\n"
+    for ordinal in range(1, 6):
+        words = [181 + ordinal, abi.REGION + ordinal, abi.ALLOCATION + ordinal, 37 + ordinal, 1,
+                 bounded_value(ordinal)]
+        text += abi.blob(f"bounded_receiver_{ordinal}_left", [abi.LEFT])
+        text += abi.blob(f"bounded_receiver_{ordinal}", words)
+        text += abi.blob(f"bounded_receiver_{ordinal}_right", [abi.RIGHT])
+        text += abi.blob(f"literal_bounded_receiver_{ordinal}", [abi.LEFT, *words, abi.RIGHT])
+    for roots in range(2, 7):
+        words = ["receiver", *(f"bounded_receiver_{ordinal}" for ordinal in range(1, roots))]
+        if roots % 2:
+            words.append(0xABABABABABABABAB)
+        text += abi.blob(f"bounded_record_{roots}_left", [abi.LEFT])
+        text += abi.blob(f"bounded_record_{roots}", words)
+        text += abi.blob(f"bounded_record_{roots}_right", [abi.RIGHT])
+        text += abi.blob(f"literal_bounded_record_{roots}", [abi.LEFT, *words, abi.RIGHT])
+    return text
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("ir_tests", type=Path)
@@ -296,7 +378,7 @@ def main():
         ("second-entry-selector", "direct", "paired_target_0",
          "    movq 8(%r10), %r11", "    movq (%r10), %r11", 93),
         ("first-outgoing-pointer", "outgoing", "paired_forward_0_0",
-         "    movq %r10, (%rsp)", "    movq $0, (%rsp)", 91),
+         "    movq %r10, 0(%rsp)", "    movq $0, 0(%rsp)", 91),
         ("second-outgoing-pointer", "outgoing", "paired_forward_0_0",
          "    movq %r10, 8(%rsp)", "    movq $0, 8(%rsp)", 91),
         ("paired-odd-alignment", "outgoing", "paired_forward_0_1",
@@ -307,8 +389,35 @@ def main():
     for name, mode, function, old, new, status in paired_controls:
         changed = abi.mutate_body(paired_assembly[mode], function, old, new)
         abi.execute(args.artifacts, "mutant-" + name, changed, paired_selected[mode], status, function)
-    native_cases = len(direct_cases) + len(forward_cases) + sum(map(len, paired_selected.values()))
-    rejected_mutants = len(controls) + 2 + len(paired_controls)
+    bounded_outgoing = paired_observed
+    for roots, mutable, tail in bounded_shapes():
+        bounded_outgoing = abi.replace_body(bounded_outgoing, f"bounded_target_{roots}_{mutable}_{tail}",
+                                           bounded_target(roots, tail))
+    bounded_assembly, bounded_selected = {}, {}
+    for mode in ("direct", "generated", "outgoing"):
+        selected = bounded_cases(mode)
+        assembly = bounded_outgoing if mode == "outgoing" else paired_observed
+        assembly += bounded_harness(harness(selected), selected)
+        bounded_assembly[mode], bounded_selected[mode] = assembly, selected
+        abi.execute(args.artifacts, "bounded-" + mode, assembly, selected)
+    bounded_controls = []
+    for roots in range(2, 7):
+        for ordinal in range(roots):
+            function = f"bounded_forward_{roots}_0_0_0"
+            old = f"    movq %r10, {ordinal * 8}(%rsp)"
+            bounded_controls.append((f"root-{roots}-lane-{ordinal}", "outgoing", function,
+                                     old, f"    movq $0, {ordinal * 8}(%rsp)", 91))
+        if roots % 2:
+            reserved = (roots * 8 + 15) & ~15
+            function = f"bounded_forward_{roots}_0_0_1"
+            bounded_controls.append((f"odd-tuple-{roots}-retained", "outgoing", function,
+                                     f"    call bounded_target_{roots}_0_0",
+                                     f"    addq $1, {reserved + 8}(%rsp)\n    call bounded_target_{roots}_0_0", 93))
+    for name, mode, function, old, new, status in bounded_controls:
+        changed = abi.mutate_body(bounded_assembly[mode], function, old, new)
+        abi.execute(args.artifacts, "mutant-" + name, changed, bounded_selected[mode], status, function)
+    native_cases = len(direct_cases) + len(forward_cases) + sum(map(len, paired_selected.values())) + sum(map(len, bounded_selected.values()))
+    rejected_mutants = len(controls) + 2 + len(paired_controls) + len(bounded_controls)
     summary = (
         f"PASS borrowed object ABI: {native_cases} native cases, "
         f"{rejected_mutants} exact rejected mutants"
@@ -327,7 +436,7 @@ def main():
     }
     (args.artifacts / "run.json").write_text(json.dumps(receipt, indent=2) + "\n")
     (args.artifacts / "cases.json").write_text(
-        json.dumps({"incoming": direct_cases, "outgoing": forward_cases, "paired": paired_selected}, indent=2) + "\n"
+        json.dumps({"incoming": direct_cases, "outgoing": forward_cases, "paired": paired_selected, "bounded": bounded_selected}, indent=2) + "\n"
     )
     (args.artifacts / "summary.txt").write_text(summary + "\n")
     print(summary)

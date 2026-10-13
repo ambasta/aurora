@@ -474,13 +474,11 @@ def paired_borrowing_cases(suite):
     }
     for name, body in bodies.items():
         signature = "auto bad(std::ByteBuffer& output, const std::ByteBuffer& input) -> bool { " + body + " }"
-        diagnostic = "paired borrowed roots cannot produce spans" if name.endswith("-span") else None
+        diagnostic = "multiple borrowed roots cannot produce spans" if name.endswith("-span") else None
         suite.reject("paired-" + name, program("return 0;", helpers + signature), diagnostic)
 
     leading = "std::ByteBuffer& a, const std::ByteBuffer& b"
     signatures = {
-        "third-reference": f"auto bad({leading}, const std::ByteBuffer& c) -> i64 {{ return 0; }}",
-        "first-const": "auto bad(const std::ByteBuffer& a, const std::ByteBuffer& b) -> i64 { return 0; }",
         "second-mutable": "auto bad(std::ByteBuffer& a, std::ByteBuffer& b) -> i64 { return 0; }",
         "copied-second-root": "auto bad(std::ByteBuffer& a, const Count& b) -> i64 { return 0; }",
         "copied-argument": f"auto bad({leading}, Count value) -> i64 {{ return 0; }}",
@@ -499,6 +497,91 @@ def paired_borrowing_cases(suite):
     }
     for name, signature in signatures.items():
         suite.reject("paired-" + name, program("return 0;", helpers + signature))
+
+
+def bounded_borrowing_cases(suite):
+    """One compact real program crosses every prefix/tail boundary and forwards it."""
+    definitions = [HELPERS, "enum class RootMode { zero, one };"]
+    checks = []
+    for roots in range(1, 7):
+        for mutable in (False, True):
+            for tail in range(7 - roots):
+                name = f"roots_{roots}_{int(mutable)}_{tail}"
+                formals = [f"{'' if mutable and index == 0 else 'const '}std::ByteBuffer& r{index}"
+                           for index in range(roots)]
+                formals += [f"{'RootMode' if index % 2 else 'i64'} a{index}" for index in range(tail)]
+                body = "if (!r0.clear()) { return -1; }" if mutable else ""
+                body += "".join(f"if (a{index} != RootMode::one) {{ return -1; }}"
+                                for index in range(tail) if index % 2)
+                terms = [f"r{index}.capacity()" for index in range(roots)]
+                terms += ["1" if index % 2 else f"a{index}" for index in range(tail)]
+                body += "return " + " + ".join(terms) + ";"
+                parameters = ", ".join(formals)
+                definitions.append(f"auto {name}({parameters}) -> i64 {{ {body} }}")
+                forwarded = ", ".join([f"r{index}" for index in range(roots)] + [f"a{index}" for index in range(tail)])
+                definitions.append(f"auto forward_{name}({parameters}) -> i64 {{ return {name}({forwarded}); }}")
+                actual = [f"v{index}" for index in range(roots)]
+                actual += ["RootMode::one" if index % 2 else str(101 + index) for index in range(tail)]
+                expected = sum(1 if index % 2 else 101 + index for index in range(tail))
+                checks.append(f"if (forward_{name}({', '.join(actual)}) != {roots} * n + {expected}) {{ return 0; }}")
+    formals = ", ".join(f"const std::ByteBuffer& r{index}" for index in range(6))
+    definitions.append(f"auto roots_enum({formals}) -> RootMode {{ return RootMode::one; }}")
+    definitions.append("auto roots_growth(std::ByteBuffer& r0, const std::ByteBuffer& r1, "
+                       "const std::ByteBuffer& r2, const std::ByteBuffer& r3, const std::ByteBuffer& r4, "
+                       "const std::ByteBuffer& r5) -> bool { return r0.try_reserve(r1.capacity() + 1); }")
+    create = "".join(
+        f"builtin::OwnedBytes allocation{index} = region.try_allocate(n);"
+        f"{'' if index == 0 else 'const '}std::ByteBuffer v{index} = std::ByteBuffer(region, move(allocation{index}));"
+        f"if (!v{index}.ok()) {{ return -7; }}"
+        for index in range(6)
+    )
+    actuals = ", ".join(f"v{index}" for index in range(6))
+    body = create + "".join(checks)
+    body += f"if (roots_enum({actuals}) != RootMode::one) {{ return 0; }}"
+    body += f"if (flag == 1 && roots_growth({actuals})) {{ return 0; }}"
+    body += "".join(f"if (v{index}.capacity() != n || v{index}.size() != 0) {{ return 0; }}" for index in range(6))
+    executable = suite.compile("bounded-roots-one-through-six", program(body + "return 42;", "".join(definitions)))
+    for length in (0, 2):
+        suite.run(executable, 6 * length, length, 0, 42, 6, 6)
+        suite.run(executable, 6 * length, length, 1, 42, 6, 6, fail_after=6)
+    suite.run(executable, 100, 2, 1, 42, 6, 6, fail_after=6)
+    suite.run(executable, 12, 2, 0, -7, 3, 3, fail_after=3)
+    suite.run(executable, 5, 2, 0, -7, 2, 2)
+
+    # All-readonly duplicate roots must reject too, even when every successful
+    # allocation is empty and every nominal class is the same.
+    for roots in range(2, 7):
+        for first in range(roots):
+            for second in range(first + 1, roots):
+                arguments = [f"v{index}" for index in range(roots)]
+                arguments[second] = arguments[first]
+                call = f"roots_{roots}_0_0({', '.join(arguments)});"
+                suite.reject(f"bounded-readonly-alias-{roots}-{first}-{second}",
+                             program(create + call + "return 0;", "".join(definitions)),
+                             "borrowed arguments require distinct owning roots")
+    readonly = ", ".join(f"const std::ByteBuffer& r{index}" for index in range(6))
+    for ordinal in range(6):
+        for name, statement, diagnostic in (
+            ("span", f"const {SPAN} view = r{ordinal}.bytes(); return view.size();",
+             "multiple borrowed roots cannot produce spans"),
+            ("const-escalation", f"append_one(r{ordinal}, 1u8); return 0;",
+             "mutable borrowed parameter requires a mutable owning object"),
+            ("private-field", f"return r{ordinal}.payload.size();",
+             "borrowed object parameters support public methods, not field projections"),
+        ):
+            suite.reject(f"bounded-{name}-{ordinal}",
+                         program("return 0;", HELPERS + f"auto bad({readonly}) -> i64 {{ {statement} }}"), diagnostic)
+    seven = ", ".join(f"const std::ByteBuffer& r{index}" for index in range(7))
+    suite.reject("bounded-seven-roots", program("return 0;", f"auto bad({seven}) -> i64 {{ return 0; }}"),
+                 "at most six parameters supported")
+    suite.reject("bounded-nonleading-root", program("return 0;", HELPERS +
+                 "auto bad(const std::ByteBuffer& r0, i64 value, const std::ByteBuffer& r1) -> i64 { return value; }"),
+                 "borrowed parameters require a supported leading owning-class reference signature")
+    for ordinal in range(1, 6):
+        formals = ", ".join(f"{'' if index == ordinal else 'const '}std::ByteBuffer& r{index}" for index in range(6))
+        suite.reject(f"bounded-later-mutable-root-{ordinal}",
+                     program("return 0;", f"auto bad({formals}) -> i64 {{ return 0; }}"),
+                     "borrowed parameters require a supported leading owning-class reference signature")
 
 
 def direct_method_return_case(suite):
@@ -885,9 +968,9 @@ def rejection_cases(suite):
         "borrowed parameters require a supported leading owning-class reference signature on an ordinary function"
     )
     result_diagnostic = (
-        "borrowed functions require one leading concrete owning-class reference and a scalar or copied result"
+        "borrowed functions require one to six leading concrete owning-class references"
     )
-    later_diagnostic = "later borrowed-function parameters require scalar, copied class or readonly span values"
+    later_diagnostic = "borrowed-function tails require scalar or enum values"
     signature_diagnostics = {
         "nonleading-borrow": declaration_diagnostic,
         "two-mutable-borrows": declaration_diagnostic,
@@ -1044,6 +1127,7 @@ def main():
         )
         borrowing_cases(suite)
         paired_borrowing_cases(suite)
+        bounded_borrowing_cases(suite)
         direct_method_return_case(suite)
         multiple_field_cases(suite)
         json_cases(suite)

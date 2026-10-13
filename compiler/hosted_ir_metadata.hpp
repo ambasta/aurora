@@ -304,10 +304,15 @@ public:
     std::string name() const;
     int moduleScope() const;
     Type result() const;
+    // Value parameters exclude the canonical borrowed-root prefix.
     TypeRange parameters() const;
+    std::size_t borrowedRootCount() const;
+    Type borrowedRootType(std::size_t ordinal) const;
+    bool borrowedRootMutable(std::size_t ordinal) const;
+    // Compatibility observation only: derives borrowed root zero when present.
+    // Callers must distinguish borrowedParameter() before granting privileges.
     std::optional<Receiver> receiver() const;
     bool borrowedParameter() const;
-    std::optional<Receiver> secondBorrowedParameter() const;
     std::optional<int> receiverSpanField() const;
     FrameView frame() const;
 };

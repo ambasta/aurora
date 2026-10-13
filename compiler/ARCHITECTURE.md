@@ -20,6 +20,13 @@ Their fixed paired-root
 [source-bootstrap dependency](README.md#source-bootstrap), current-stage convergence
 and final-source qualification remain unexecuted.
 
+Bounded borrowed-root helpers generalize the existing six-formal convention
+without adding owner pools or a third-root special case. Canonical metadata keeps
+one root prefix; call IR carries one ordered root/loan range. The capability
+frontend itself stays in the selected predecessor's syntax. The next value/stack
+ownership migration will use workspace, instruction and metadata roots only after
+an immutable capability checkpoint is selected; see [borrowing](OWNERSHIP.md#borrowed-owning-object-helpers).
+
 ## Hosted Aurora parser
 
 `parser.au` parses complete expressions containing integer, byte,

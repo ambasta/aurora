@@ -246,14 +246,12 @@ export namespace compiler_ir_metadata {
             const IndexRange types = row.types();
             const IndexRange slots = row.slots();
             const ReceiverShape receiver = row.first_receiver();
-            const ReceiverShape second = row.second_receiver();
             if (!index_range(types, declarations) || types.count() < 1 || types.begin() != next_type
                 || !index_range(slots, store.slot_count()) || slots.begin() != next_slot
-                || row.attributes() < 0 || row.attributes() > 15
+                || (row.attributes() != 0 && row.attributes() != 1 && row.attributes() != 8 && row.attributes() != 9)
+                || row.borrowed_root_count() < 0
                 || !byte_range(receiver.name(), store.byte_count()) || receiver.attributes() < 0 || receiver.attributes() > 7
-                || !byte_range(second.name(), store.byte_count()) || second.attributes() < 0 || second.attributes() > 7
                 || (!callable_flag(row, 1) && !absent_receiver(receiver))
-                || (!callable_flag(row, 4) && !absent_receiver(second))
                 || (!callable_flag(row, 8) && row.receiver_span_field() != 0)) {
                 return fail(store, MetadataError::integrity);
             }
@@ -975,19 +973,21 @@ export namespace compiler_ir_metadata {
     auto resource_signature(const MetadataStore& store, CallableRow row) -> bool {
         if (owning_constructor(store, row)) { return true; }
         const IndexRange types = row.types();
+        const RawTypeRow result = store.type_at(types.begin());
+        if (resource_type(result) || owning_type(store, result)) { return true; }
+        // Borrowed roots never become moved resource arguments.
         i64 at = 0;
-        while (at < types.count()) {
-            const RawTypeRow type = store.type_at(types.begin() + at);
+        while (at < row.value_parameter_count()) {
+            const RawTypeRow type = store.type_at(row.value_parameter_begin() + at);
             if (resource_type(type) || owning_type(store, type)) { return true; }
             at = at + 1;
         }
         return false;
     }
     auto service_signature(const MetadataStore& store, CallableRow row) -> bool {
-        const IndexRange types = row.types();
-        i64 at = 1;
-        while (at < types.count()) {
-            const RawTypeRow type = store.type_at(types.begin() + at);
+        i64 at = 0;
+        while (at < row.value_parameter_count()) {
+            const RawTypeRow type = store.type_at(row.value_parameter_begin() + at);
             if (service_type(type)) { return true; }
             at = at + 1;
         }
@@ -1000,16 +1000,16 @@ export namespace compiler_ir_metadata {
     }
     auto verify_service_signature(MetadataStore& store, CallableRow row, bool resource) -> bool {
         const IndexRange types = row.types();
-        if (callable_flag(row, 1) || callable_flag(row, 2) || callable_flag(row, 4) || resource || types.count() <= 1) {
+        if (callable_flag(row, 1) || row.borrowed_root_count() != 0 || resource || row.value_parameter_count() == 0) {
             return fail(store, MetadataError::service_signature);
         }
-        const RawTypeRow first = store.type_at(types.begin() + 1);
+        const RawTypeRow first = store.type_at(row.value_parameter_begin());
         if (!service_type(first)) { return fail(store, MetadataError::service_signature); }
-        i64 at = 1;
+        i64 at = 0;
         i64 kinds = 0;
         bool leading = true;
-        while (at < types.count() && leading) {
-            const RawTypeRow type = store.type_at(types.begin() + at);
+        while (at < row.value_parameter_count() && leading) {
+            const RawTypeRow type = store.type_at(row.value_parameter_begin() + at);
             if (service_type(type)) {
                 const i64 bit = service_bit(type);
                 if ((kinds / bit) % 2 != 0) { return fail(store, MetadataError::service_duplicates); }
@@ -1021,11 +1021,11 @@ export namespace compiler_ir_metadata {
         }
         // Independent closed allowlist: recognition alone never grants new
         // pair or triple forwarding authority.
-        if (at > 3 || (kinds != 1 && kinds != 2 && kinds != 4 && kinds != 3 && kinds != 5)) {
+        if (at > 2 || (kinds != 1 && kinds != 2 && kinds != 4 && kinds != 3 && kinds != 5)) {
             return fail(store, MetadataError::service_group);
         }
-        while (at < types.count()) {
-            const RawTypeRow type = store.type_at(types.begin() + at);
+        while (at < row.value_parameter_count()) {
+            const RawTypeRow type = store.type_at(row.value_parameter_begin() + at);
             if (!scalar_value(store, type) && !plain_type(type, 11)
                 && (type.kind() != 5 || owning_type(store, type))) {
                 return fail(store, MetadataError::service_parameters);
@@ -1039,36 +1039,40 @@ export namespace compiler_ir_metadata {
         return true;
     }
     auto verify_borrowed_signature(MetadataStore& store, CallableRow row, bool resource) -> bool {
+        const i64 roots = row.borrowed_root_count();
+        if (roots == 0) { return true; }
+        if (roots < 1 || roots > 6) { return fail(store, MetadataError::borrowed_root_count); }
         const IndexRange types = row.types();
         const RawTypeRow result = store.type_at(types.begin());
-        const ReceiverShape receiver = row.first_receiver();
-        if (callable_flag(row, 2)) {
-            if (!callable_flag(row, 1) || receiver_flag(receiver, 2)
-                || !owning_class(store, find_class(store, receiver.name()))) {
-                return fail(store, MetadataError::borrowed_shape);
-            }
-            if (resource || result.kind() == 11 || callable_flag(row, 8)) {
-                return fail(store, MetadataError::borrowed_result);
-            }
-            if (types.count() > 6) { return fail(store, MetadataError::borrowed_parameters); }
+        if (callable_flag(row, 1)) { return fail(store, MetadataError::borrowed_shape); }
+        if (resource || result.kind() == 11 || callable_flag(row, 8)) {
+            return fail(store, MetadataError::borrowed_result);
         }
-        if (callable_flag(row, 4)) {
-            const ReceiverShape second = row.second_receiver();
-            if (!callable_flag(row, 2) || !callable_flag(row, 1) || !receiver_flag(receiver, 1)
-                || receiver_flag(receiver, 2) || receiver_flag(second, 1) || receiver_flag(second, 2)) {
-                return fail(store, MetadataError::paired_shape);
+        if (types.count() > 7) { return fail(store, MetadataError::borrowed_parameters); }
+        i64 root = 0;
+        while (root < roots) {
+            const i64 index = row.borrowed_root_type(root);
+            if (index < 0) { return fail(store, MetadataError::borrowed_root_count); }
+            const RawTypeRow type = store.type_at(index);
+            if (type.kind() != 5 || name_length(type.name()) == 0 || !canonical_tail(type)) {
+                return fail(store, MetadataError::borrowed_root_type);
             }
-            const i64 second_class = find_class(store, second.name());
-            if (second_class < 0 || !owning_class(store, second_class)) {
-                return fail(store, MetadataError::paired_class);
+            const i64 class_index = find_class(store, type.name());
+            if (class_index < 0 || !owning_class(store, class_index)) {
+                return fail(store, MetadataError::borrowed_root_class);
             }
-            const ClassRow second_row = store.class_at(second_class);
-            if (!member(second_row, 1) || member(second_row, 8)) { return fail(store, MetadataError::paired_class); }
-            if (types.count() > 5) { return fail(store, MetadataError::paired_parameters); }
+            const ClassRow declaration = store.class_at(class_index);
+            if (!member(declaration, 1) || member(declaration, 8)) {
+                return fail(store, MetadataError::borrowed_root_class);
+            }
+            root = root + 1;
+        }
+        if (roots > 1) {
+            if (!scalar_value(store, result)) { return fail(store, MetadataError::borrowed_root_values); }
             i64 at = 0;
-            while (at < types.count()) {
-                const RawTypeRow type = store.type_at(types.begin() + at);
-                if (!scalar_value(store, type)) { return fail(store, MetadataError::paired_values); }
+            while (at < row.value_parameter_count()) {
+                const RawTypeRow type = store.type_at(row.value_parameter_begin() + at);
+                if (!scalar_value(store, type)) { return fail(store, MetadataError::borrowed_root_values); }
                 at = at + 1;
             }
         }
@@ -1079,16 +1083,16 @@ export namespace compiler_ir_metadata {
         const bool receiver = callable_flag(row, 1);
         const IndexRange types = row.types();
         if (receiver && !constructor) { return fail(store, MetadataError::resource_receiver); }
-        if (types.count() <= 1) { return fail(store, MetadataError::resource_region); }
-        const RawTypeRow first = store.type_at(types.begin() + 1);
+        if (row.value_parameter_count() == 0) { return fail(store, MetadataError::resource_region); }
+        const RawTypeRow first = store.type_at(row.value_parameter_begin());
         if (!plain_type(first, 12)) { return fail(store, MetadataError::resource_region); }
         const RawTypeRow result = store.type_at(types.begin());
         if (!scalar_value(store, result) && !owner_kind(result) && (receiver || result.kind() != 5)) {
             return fail(store, MetadataError::resource_result);
         }
-        i64 at = 2;
-        while (at < types.count()) {
-            const RawTypeRow type = store.type_at(types.begin() + at);
+        i64 at = 1;
+        while (at < row.value_parameter_count()) {
+            const RawTypeRow type = store.type_at(row.value_parameter_begin() + at);
             if (!scalar_value(store, type) && !owner_kind(type) && (receiver || !owning_type(store, type))
                 && (!constructor || type.kind() != 5 || owning_type(store, type))) {
                 return fail(store, MetadataError::resource_parameters);
@@ -1190,9 +1194,9 @@ export namespace compiler_ir_metadata {
             if (callable_flag(row, 8) && !plain_type(result, 11)) { return fail(store, MetadataError::span_result); }
             if (!verify_boundary_type(store, row, result, false, resource, service)) { return false; }
             if (types.count() > 7) { return fail(store, MetadataError::parameter_count); }
-            i64 parameter = 1;
-            while (parameter < types.count()) {
-                const RawTypeRow type = store.type_at(types.begin() + parameter);
+            i64 parameter = 0;
+            while (parameter < row.value_parameter_count()) {
+                const RawTypeRow type = store.type_at(row.value_parameter_begin() + parameter);
                 if (!verify_boundary_type(store, row, type, true, resource, service)) { return false; }
                 parameter = parameter + 1;
             }

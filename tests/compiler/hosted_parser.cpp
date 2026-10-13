@@ -2098,6 +2098,14 @@ void callableSyntax() {
              {"auto inspect(const Owner& owner,i64 amount)->i64{return amount;}",
               Stop::function,
               {.parameters = {{6, T("Owner"), true, 5}, {9, T::I64}}, .body = {{14, "return", name(15)}}}},
+             {"auto inspect(const Owner& first,const Other& second)->i64{return 0;}",
+              Stop::function,
+              {.parameters = {{6, T("Owner"), true, 5}, {11, T("Other"), true, 10}},
+               .body = {{16, "return", number(17)}}}},
+             {"auto inspect(Owner& first,const Other& second,const Third& third)->i64{return 0;}",
+              Stop::function,
+              {.parameters = {{5, T("Owner"), false, 4}, {10, T("Other"), true, 9}, {15, T("Third"), true, 14}},
+               .body = {{20, "return", number(21)}}}},
              {"auto touch(Owner& owner)->Owner{return owner;}",
               Stop::function,
               {.result = T("Owner"), .parameters = {{5, T("Owner"), false, 4}}, .body = {{10, "return", name(11)}}}},
@@ -2257,6 +2265,9 @@ void callableDiagnostics() {
                                 {"Box(Owner& value){}", Stop::constructor, {borrow, 4}},
                                 {"auto f(i64 first,Owner& second)->i64{}", Stop::function, {borrow, 8}},
                                 {"auto f(Owner& first,Other& second)->i64{}", Stop::function, {borrow, 9}},
+                                {"auto f(Owner& first,const Other& second,Third& third)->i64{}",
+                                 Stop::function,
+                                 {borrow, 14}},
                                 {"auto f(Box<i64>& value)->i64{}", Stop::function, {borrow, 8}},
                                 {"auto f(builtin::ConsoleSession& first,builtin::ConsoleSession& second)->i64{}",
                                  Stop::function,
@@ -5247,13 +5258,13 @@ void loweringSchemaSources(const std::vector<aurora::Token> &tokens,
          {"Comparison", 6},
          {"Query", 2},
          {"RecordKind", 27},
-         {"OperandRole", 102},
+         {"OperandRole", 105},
          {"SpanOriginKind", 5},
          {"ContinuationKind", 7},
          {"ContinuationPhase", 14},
          {"ArgumentKind", 7},
          {"CleanupKind", 6}},
-        {{"LoweringStatus", 4}, {"LoweringError", 243}},
+        {{"LoweringStatus", 4}, {"LoweringError", 244}},
         {},
     }};
     static const std::array<const char *, 3> functions{
@@ -5511,8 +5522,8 @@ void resolvedCompilerSources(char **paths) {
                 const auto declaration = abi.functions.find(candidate.name());
                 return declaration != abi.functions.end() && declaration->second.sourceName == sourceName &&
                        candidate.moduleScope() == scope &&
-                       (receiver.empty() ? !candidate.receiver() || candidate.borrowedParameter()
-                                         : candidate.receiver() && !candidate.borrowedParameter() &&
+                       (receiver.empty() ? !candidate.receiver() || candidate.borrowedRootCount() != 0
+                                         : candidate.receiver() && candidate.borrowedRootCount() == 0 &&
                                                candidate.receiver()->className == receiver);
             };
             ++functions;
@@ -5525,15 +5536,18 @@ void resolvedCompilerSources(char **paths) {
             require(std::count_if(module.functions.begin(), module.functions.end(), matches) == 1,
                     "compiler retained callable/source identity was duplicated: " + sourceName);
             const auto actual = metadata.callable(found->callableId);
+            std::size_t borrowedRoots = 0;
+            while (borrowedRoots < source.params.size() && source.params[borrowedRoots].borrowed &&
+                   !source.params[borrowedRoots].type.isService())
+                ++borrowedRoots;
             require(identities.insert(actual.name()).second && actual.moduleScope() == scope &&
-                        actual.borrowedParameter() == (!source.params.empty() && source.params.front().borrowed &&
-                                                       !source.params.front().type.isService()) &&
-                        bool(actual.secondBorrowedParameter()) ==
-                            (actual.borrowedParameter() && source.params.size() > 1 && source.params[1].borrowed) &&
-                        actual.parameters().size() == source.params.size() - std::size_t(actual.borrowedParameter()) -
-                                                         std::size_t(bool(actual.secondBorrowedParameter())) &&
-                        bool(actual.receiver()) == (!receiver.empty() || actual.borrowedParameter()),
+                        actual.borrowedRootCount() == borrowedRoots &&
+                        actual.parameters().size() == source.params.size() - borrowedRoots &&
+                        bool(actual.receiver()) == (!receiver.empty() || borrowedRoots != 0),
                     "compiler typed callable identity, module or receiver presence differs");
+            for (std::size_t root = 0; root < borrowedRoots; ++root)
+                require(actual.borrowedRootMutable(root) == !source.params[root].borrowConst,
+                        "compiler typed borrowed-root mutability differs");
             if (!receiver.empty())
                 require(actual.receiver()->className == receiver && actual.receiver()->constructor == source.constructor &&
                             actual.receiver()->mutableValue == !source.receiverConst &&

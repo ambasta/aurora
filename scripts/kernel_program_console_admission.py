@@ -567,6 +567,9 @@ def exact_abi(actual, expected, reason):
 
 def check_program_console_abi(facts, *, response=False):
     """Full existing ABI binds both service entries without a service-record sidecar."""
+    # Current admission requires current facts. Historical receipt files remain
+    # unchanged and are never upgraded by the frontend predecessor normalizer.
+    need(type(facts.get("version")) is int and facts["version"] == 2, "Expected current compiler ABI facts v2")
     source, copied, enum, field, size = (
         ("present_program_response", "console::ProgramResponse", "console::ProgramResponseKind", "kind", 80)
         if response else
@@ -607,8 +610,10 @@ def check_program_console_abi(facts, *, response=False):
         function,
         dict(
             source_name=source, receiver=None, receiver_mutable=None,
-            borrowed_parameter=False, second_receiver=None, root_count=0,
-            root_tuple_bytes=0, root_order=[], parameter_bytes=96 if response else 24,
+            borrowed_roots=[], borrowed_root_count=0,
+            borrowed_root_abi=dict(kind="none", register=None, tuple_payload_bytes=0,
+                                   tuple_reserved_bytes=0, saved_root_reserved_bytes=0),
+            parameter_bytes=96 if response else 24,
             parameters=[dict(offset=0, bytes=16, kind="service"),
                         dict(offset=16, bytes=80, kind="class", type_name=record) if response
                         else dict(offset=16, bytes=8, kind="bool")],

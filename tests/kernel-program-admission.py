@@ -39,14 +39,19 @@ def main():
     sys.path.insert(0, str(ROOT / "scripts"))
     from meson_aurora_assembly import render_bridge
 
-    facts = {"version": 1, "functions": {"compiler_chosen_name": {"source_name": "update_note"}}}
+    facts = {"version": 2, "functions": {"compiler_chosen_name": {"source_name": "update_note"}}}
     template = "call @update_note@\n.type bridge,@function\n"
     need(
         render_bridge(template, facts) == "call compiler_chosen_name\n.type bridge,@function\n",
         "Compiler symbol lookup",
     )
+    need(
+        render_bridge(template, dict(facts, version=1)) == render_bridge(template, facts),
+        "Historical source-symbol lookup must retain its original meaning",
+    )
     for changed in (
-        {"version": 2, "functions": facts["functions"]},
+        {"version": 3, "functions": facts["functions"]},
+        {"version": True, "functions": facts["functions"]},
         {"version": 1, "functions": {}},
         {"version": 1, "functions": {"wrong": {"source_name": "project_note"}}},
         {
@@ -69,7 +74,7 @@ def main():
     # The class-returning service uses the existing full ABI, without pretending
     # its capability is an ordinary copied_record or extending stack facts.
     input_abi = {
-        "version": 1,
+        "version": 2,
         "records": {
             "buffer_type": dict(
                 source_name="std::BinaryBuffer64", size=64, alignment=1, reserved=64,
@@ -94,8 +99,10 @@ def main():
         "functions": {
             "selected_reader": dict(
                 source_name="read_program_input", receiver=None, receiver_mutable=None,
-                borrowed_parameter=False, second_receiver=None, root_count=0, root_tuple_bytes=0,
-                root_order=[], parameter_bytes=24,
+                borrowed_roots=[], borrowed_root_count=0,
+                borrowed_root_abi=dict(kind="none", register=None, tuple_payload_bytes=0,
+                                       tuple_reserved_bytes=0, saved_root_reserved_bytes=0),
+                parameter_bytes=24,
                 parameters=[dict(offset=0, bytes=16, kind="service"), dict(offset=16, bytes=8, kind="bool")],
                 result=dict(bytes=88, kind="class", type_name="submission_type"),
             ),
@@ -103,6 +110,8 @@ def main():
     }
     need(admission.check_program_console_abi(input_abi) == "selected_reader", "Source-selected input ABI")
     for path, value in (
+        (("version",), 1),
+        (("version",), True),
         (("records", "submission_type", "size"), 80),
         (("records", "submission_type", "reserved"), 96),
         (("records", "submission_type", "fields", 0, "type_name"), "other_buffer"),
@@ -121,7 +130,12 @@ def main():
         (("functions", "selected_reader", "parameters", 1, "kind"), "u64"),
         (("functions", "selected_reader", "result", "bytes"), 80),
         (("functions", "selected_reader", "result", "type_name"), "other_result"),
-        (("functions", "selected_reader", "root_count"), 1),
+        (("functions", "selected_reader", "borrowed_root_count"), 1),
+        (("functions", "selected_reader", "borrowed_root_count"), False),
+        (("functions", "selected_reader", "borrowed_roots"), [dict(ordinal=0, selector=0, type_name="buffer_type", mutable=False)]),
+        (("functions", "selected_reader", "borrowed_root_abi", "tuple_payload_bytes"), 8),
+        (("functions", "selected_reader", "borrowed_root_abi", "saved_root_reserved_bytes"), 16),
+        (("functions", "selected_reader", "second_receiver"), None),
     ):
         changed = deepcopy(input_abi)
         selected = changed
@@ -146,8 +160,10 @@ def main():
     )
     response_abi["functions"]["selected_presenter"] = dict(
         source_name="present_program_response", receiver=None, receiver_mutable=None,
-        borrowed_parameter=False, second_receiver=None, root_count=0, root_tuple_bytes=0,
-        root_order=[], parameter_bytes=96,
+        borrowed_roots=[], borrowed_root_count=0,
+        borrowed_root_abi=dict(kind="none", register=None, tuple_payload_bytes=0,
+                               tuple_reserved_bytes=0, saved_root_reserved_bytes=0),
+        parameter_bytes=96,
         parameters=[dict(offset=0, bytes=16, kind="service"),
                     dict(offset=16, bytes=80, kind="class", type_name="response_type")],
         result=dict(bytes=8, kind="bool"),
@@ -180,7 +196,10 @@ def main():
         (("functions", "selected_presenter", "result", "kind"), "u64"),
         (("functions", "selected_presenter", "receiver"), "response_type"),
         (("functions", "selected_presenter", "borrowed_parameter"), True),
-        (("functions", "selected_presenter", "root_count"), 1),
+        (("functions", "selected_presenter", "borrowed_root_count"), 1),
+        (("functions", "selected_presenter", "borrowed_root_abi", "kind"), "direct"),
+        (("functions", "selected_presenter", "borrowed_root_abi", "register"), "r10"),
+        (("functions", "selected_presenter", "borrowed_root_abi", "tuple_reserved_bytes"), 16),
     ):
         changed = deepcopy(response_abi)
         selected = changed

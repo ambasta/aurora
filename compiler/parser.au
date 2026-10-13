@@ -3152,7 +3152,7 @@ namespace compiler_parser {
         i64 index = 0;
         i64 first_service = 0;
         bool first_borrowed = false;
-        bool first_mutable_class = false;
+        bool owning_prefix = false;
         while (arena.stack_size() > base) {
             const ParseFrame frame = arena.frame();
             arena.pop();
@@ -3169,10 +3169,11 @@ namespace compiler_parser {
                 const bool continuation = type.kind() == AdmissionKind::service && index == 1 && first_borrowed
                     && first_service != 0 && first_service != type.service() && (u64(configuration.groups()) & (1u64
                     << i64(group))) != 0u64;
-                const bool owning_pair = index == 1 && first_mutable_class && type.kind()
+                const bool owning_continuation = index > 0 && owning_prefix && type.kind()
                     == AdmissionKind::class_value && parameter_node.mutable_binding() == 1;
-                if (!function || (index != 0 && !continuation && !owning_pair) || context.end(0) != 0 || (type.kind()
-                    != AdmissionKind::class_value && type.kind() != AdmissionKind::service) || syntax.first() != -1) {
+                if (!function || (index != 0 && !continuation && !owning_continuation) || context.end(0) != 0
+                    || (type.kind() != AdmissionKind::class_value && type.kind() != AdmissionKind::service)
+                    || syntax.first() != -1) {
                     return admission_reject(AdmissionStatus::borrowed_parameter, parameter_node.binding(), token);
                 }
             } else {
@@ -3192,9 +3193,8 @@ namespace compiler_parser {
             if (index == 0) {
                 first_service = type.service();
                 first_borrowed = borrowed;
-                first_mutable_class = borrowed && type.kind() == AdmissionKind::class_value
-                    && parameter_node.mutable_binding() == 0;
             }
+            owning_prefix = borrowed && type.kind() == AdmissionKind::class_value && (index == 0 || owning_prefix);
             index = index + 1;
         }
         if (function || method) {

@@ -22,9 +22,11 @@ class Instructions final {
     InstructionObservation bodyInstruction(Metadata::CallableId callable, InstructionId id) const;
     int offsetAt(std::size_t index) const;
     ServiceArgument serviceAt(std::size_t index) const;
+    BorrowedRootArgument rootAt(std::size_t index) const;
     unsigned char literalAt(std::size_t index) const;
     OffsetRange offsets(std::size_t begin, std::size_t count) const;
     ServiceArgumentRange services(std::size_t begin, std::size_t count) const;
+    BorrowedRootArgumentRange roots(std::size_t begin, std::size_t count) const;
     LiteralRange literals(std::size_t begin, std::size_t count) const;
     friend class InstructionRange;
     friend class InstructionIngress;
@@ -118,6 +120,26 @@ class InstructionWriter final {
                     writer_.operand(at++, row);
                     row.operandRole = static_cast<std::int64_t>(OperandRole::ServiceKindId);
                     row.signedValue = static_cast<std::int64_t>(value.kind);
+                    writer_.operand(at++, row);
+                }
+            }
+            nested_ = nextNested;
+        }
+        template<class Payload> void roots(const Payload &values) {
+            const auto size = add(count(values.size()), count(values.size()));
+            const auto begin = add(add(row_.operandBegin, prefixLimit_), nested_);
+            const auto nextNested = add(nested_, size);
+            (void)add(begin, size);
+            slice(OperandRole::BorrowedRoots, begin, size);
+            if (!measuring_) {
+                std::int64_t at = begin;
+                for (const auto value : values) {
+                    Operand row{};
+                    row.operandRole = static_cast<std::int64_t>(OperandRole::Root);
+                    row.signedValue = value.root;
+                    writer_.operand(at++, row);
+                    row.operandRole = static_cast<std::int64_t>(OperandRole::LoanId);
+                    row.signedValue = value.loanId;
                     writer_.operand(at++, row);
                 }
             }

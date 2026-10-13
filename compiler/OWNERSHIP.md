@@ -644,19 +644,20 @@ readonly-span and copied-class semantics; results are scalar/enum or copied
 classes. No temporary/projected argument, reference local/
 field/result, reference template/overload or ownership transfer is added.
 
-One bounded two-root form also accepts leading `Workspace& workspace` and
-`const Session& session`, where both are complete concrete owning classes.
-The remaining parameters and result must be scalar or enum values. The existing
-six-parameter limit includes both roots. This form is for independent algorithms
-that read one owner while updating another, including the compiler's IR verifier.
-It does not add owning-reference method parameters or a third borrowed root.
+A bounded multi-root form accepts a leading sequence of up to six borrowed
+owning roots. The first may be mutable or readonly; every later root is readonly.
+Roots and trailing parameters together fit the existing six-parameter limit.
+With two or more roots, trailing parameters and the result are scalar/enum values.
+The single-root copied/span argument and copied-result rules above are unchanged.
+This enables algorithms that update a workspace while reading independent owners,
+including the verifier's instruction and metadata owners.
 
-The arguments must name distinct roots; two instances of the same class are
-permitted, but two names for one root are not. Each formal has its own loan and
-binding identity. Neither formal may produce a span in this two-root form;
-public scalar and copied-value getters remain usable. Independent local spans
-and the existing single-root view behavior are unchanged.
-
+Every actual root is complete, named and pairwise distinct, even when all borrows
+are readonly or the classes are empty. Different instances of the same class are
+permitted. Each formal has its own loan and binding identity. None of the formal
+roots may produce a span in the multi-root form; public scalar and copied-value
+getters remain usable. Independent local spans are unaffected. No owning-reference
+method parameters, reference locals or general lifetime syntax are added.
 
 ### Authority and argument evaluation
 
@@ -699,12 +700,27 @@ alignment/probes, 56-byte spans and 32-byte owned descriptors remain unchanged.
 Source symbols cannot expose this as a scalar C-callable boundary. Existing
 resource-graph checks and receiver call-cycle restrictions include borrowed calls.
 
-For a two-root call only, R10 points to a private sixteen-byte record containing
-the two root pointers. The callee saves both before making nested calls. Typed IR
-uses explicit selectors `0` and `-1` for the two bound formals; positive values
-remain actual owner slots. The second selector is never interpreted as a frame
-offset. Verification checks both loan identities and authorities independently.
-The single-root calling convention remains unchanged.
+For two or more roots, R10 points to an ordered private pointer tuple: root i is
+at byte offset 8*i. The callee saves every root before nested calls; outgoing tuple
+storage is aligned to sixteen bytes. Typed IR uses selectors 0 through -5 for
+bound formals and positive exact owner slots for locals. Selectors are bounded
+before negation and never interpreted as ordinary frame offsets. One ordered
+root/loan range replaces separate first/second call lanes. Verification checks all
+loan identities, authorities and pairwise distinctness independently. The existing
+single-root direct-pointer and two-root sixteen-byte tuple ABIs are preserved.
+
+Canonical callable metadata stores every explicit formal in source order, with a
+bounded borrowed-root prefix and a tail-only value-parameter view. Genuine method
+receivers remain separate; derived receiver-like observations grant no private
+access. Version-2 ABI facts describe ordered roots and distinguish tuple payload
+from aligned reservation. The bootstrap reader narrowly normalizes the selected
+version-1 predecessor facts and new facts for the unchanged frontend.
+
+This capability remains source-reviewed only pending generated ABI and execution
+qualification. Its own frontend uses predecessor-supported one/two-root syntax.
+Adopting three-root helpers in that frontend requires an immutable capability
+checkpoint and a subsequent source-bootstrap step; the existing selected
+predecessor is not claimed to understand the new signatures.
 
 ## Readonly method arguments
 

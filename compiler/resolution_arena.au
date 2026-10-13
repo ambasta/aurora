@@ -710,7 +710,7 @@ export namespace compiler_resolver {
                 return -1;
             }
             const compiler_lowering::SnapshotRow state = row.state();
-            const bool formal_root = row.borrowed_object() && (row.offset() == 0 || row.offset() == -1);
+            const bool formal_root = row.borrowed_object() && row.offset() <= 0 && row.offset() >= -5;
             const bool stack_slot = !row.borrowed_object() && row.offset() > 0;
             if (diagnosticPayloadRow != 0 || row.concrete_type_id() < 0 || (!formal_root && !stack_slot)
                 || row.name_source_id() < -1 || row.scope_id() < -1 || row.previous_binding() < -1

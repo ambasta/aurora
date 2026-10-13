@@ -4133,7 +4133,7 @@ void callGraphTests() {
     const std::vector<std::pair<Instruction, std::string>> missingCalls{
         {Call{"missing"}, "unknown call target"},
         {MethodCall{"missing", 0}, "unknown method call target"},
-        {BorrowedCall{"missing", 0, 1}, "unknown method call target"},
+        {BorrowedCall{"missing", {{0, 1}}}, "unknown method call target"},
         {AggregateCall{"missing", {}, 0}, "unknown aggregate call target"},
         {ServiceCall{"missing", 1, 0, {}}, "unknown service helper target"},
         {ResourceCall{"missing", 0, {}, 0}, "unknown resource call target"}};
@@ -4159,7 +4159,7 @@ void callGraphTests() {
              {ResourceCall{"leaf", 0, {}, 0},
               "resource call requires ordinary resource signature or owning constructor"},
              {MethodCall{"leaf", 0}, "method call requires receiver target"},
-             {BorrowedCall{"leaf", 0, 1}, "method call requires receiver target"},
+             {BorrowedCall{"leaf", {{0, 1}}}, "borrowed call requires borrowed formal target"},
              {ServiceCall{"leaf", 1, 0, {}}, "service helper requires service target and acquired loans"}})
         rejectModule(
             "unused imported call mode precedes earlier dynamic state: " + diagnostic,
@@ -4643,7 +4643,7 @@ void callableOwnerTests() {
         parameters[0] != Type::I64 || parameters[1] != Type::Bool || callable.receiver()->className != "Pair" ||
         receiver.className != "changed observation" ||
         !callable.receiver()->constructor || !callable.receiver()->mutableValue ||
-        callable.borrowedParameter() || callable.secondBorrowedParameter() || callable.receiverSpanField() ||
+        callable.borrowedRootCount() || callable.receiverSpanField() ||
         frame.frameBytes() != 16 || scalars.size() != 2 || scalars.at(8) != Type::I64 || scalars.at(16) != Type::Bool ||
         objects.size() != 1 || objects.at(16).className != "Pair" || objects.at(16).mutableValue ||
         copiedObject.className != "changed frame observation" || moved.get().functions[id].callableId != id)

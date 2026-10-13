@@ -56,7 +56,6 @@ class X86Emitter {
     int functionIndex = 0;
     int divisionIndex = 0;
     int receiverSaveOffset = 0;
-    int secondReceiverSaveOffset = 0;
     int callRecordSaveOffset = 0;
     int resultSaveOffset = 0;
     bool directResult = false; // the next ValuesLoad writes the function result storage
@@ -208,14 +207,19 @@ class X86Emitter {
     std::string address(int offset) {
         return "-" + std::to_string(offset) + "(%rbp)";
     }
+    int rootSaveOffset(std::size_t ordinal) const {
+        const auto function = currentCallable();
+        const auto count = function.borrowedParameter() ? function.borrowedRootCount()
+                                                       : function.receiver() ? 1u : 0u;
+        if (!receiverSaveOffset || ordinal >= count || ordinal >= 6)
+            throw Error("x86 backend received an unbound object root ordinal");
+        return receiverSaveOffset + static_cast<int>(ordinal) * 8;
+    }
     void receiverAddress(int root, const std::string &target) {
-        // Root selectors are never passed through ordinary frame addressing.
-        // Saved pointers survive every nested call, including copied getters
-        // that use R11 for their result and helpers that repack both roots.
-        if (root == 0 && receiverSaveOffset)
-            line("movq " + address(receiverSaveOffset) + ", " + target);
-        else if (root == -1 && secondReceiverSaveOffset)
-            line("movq " + address(secondReceiverSaveOffset) + ", " + target);
+        // Bound negative selectors before negation; none is a frame offset.
+        // Ordinal saves survive nested R10/R11 clobbers and root permutations.
+        if (root >= -5 && root <= 0)
+            line("movq " + address(rootSaveOffset(static_cast<std::size_t>(-root))) + ", " + target);
         else if (root > 0)
             line("leaq " + address(root) + ", " + target);
         else
@@ -1332,26 +1336,34 @@ class X86Emitter {
                             pop(argumentRegisters[index - 1]);
                     int borrowedRecordBytes = 0;
                     if constexpr (std::is_same_v<Op, ir::BorrowedCallObservation>) {
-                        if (target.secondBorrowedParameter()) {
-                            borrowedRecordBytes = 16;
+                        const auto rootCount = target.borrowedRootCount();
+                        if (rootCount < 1 || rootCount > 6 || operation.roots.size() != rootCount)
+                            throw Error("x86 backend received a mismatched borrowed root prefix");
+                        if (rootCount > 1) {
+                            // Payload and reservation are distinct for odd counts.
+                            // The scalar operand stack and tail register order stay
+                            // unchanged; only R10 is scratch while packing roots.
+                            borrowedRecordBytes = (static_cast<int>(rootCount) * 8 + 15) & ~15;
                             reserveStack(borrowedRecordBytes);
-                            receiverAddress(operation.receiverOffset, "%r10");
-                            line("movq %r10, (%rsp)");
-                            receiverAddress(operation.secondReceiverOffset, "%r10");
-                            line("movq %r10, 8(%rsp)");
+                            for (std::size_t ordinal = 0; ordinal < rootCount; ++ordinal) {
+                                receiverAddress(operation.roots[ordinal].root, "%r10");
+                                line("movq %r10, " + std::to_string(ordinal * 8) + "(%rsp)");
+                            }
                             line("leaq (%rsp), %r10");
+                        } else {
+                            receiverAddress(operation.roots.front().root, "%r10");
                         }
-                    }
-                    if (!borrowedRecordBytes)
+                    } else {
                         receiverAddress(operation.receiverOffset, "%r10");
-                    if (operation.receiverFieldIndex >= 0) {
-                        const auto receiver = currentCallable().receiver();
-                        const auto &name = operation.receiverOffset == 0
-                                               ? receiver->className
-                                               : currentFrame().objectSlots().at(operation.receiverOffset).className;
-                        const int fieldOffset = physicalStorage(name).fieldOffsets[operation.receiverFieldIndex];
-                        if (fieldOffset != 0)
-                            line("addq $" + std::to_string(fieldOffset) + ", %r10");
+                        if (operation.receiverFieldIndex >= 0) {
+                            const auto receiver = currentCallable().receiver();
+                            const auto &name = operation.receiverOffset == 0
+                                                   ? receiver->className
+                                                   : currentFrame().objectSlots().at(operation.receiverOffset).className;
+                            const int fieldOffset = physicalStorage(name).fieldOffsets[operation.receiverFieldIndex];
+                            if (fieldOffset != 0)
+                                line("addq $" + std::to_string(fieldOffset) + ", %r10");
+                        }
                     }
                     if (target.result().isClass() || target.result().isSpan())
                         line("leaq " + address(operation.resultOffset) + (aggregate ? ", %rax" : ", %r11"));
@@ -1545,7 +1557,7 @@ public:
                 writeJsonString(facts, value.className);
             }
         };
-        facts << "{\"version\":1,\"span_bytes\":" << ir::spanBytes << ",\"records\":{";
+        facts << "{\"version\":2,\"span_bytes\":" << ir::spanBytes << ",\"records\":{";
         bool first = true;
         for (const auto &[symbol, declaration] : declarations.records) {
             const auto layout = physicalStorage(symbol);
@@ -1606,7 +1618,7 @@ public:
         for (const auto &body : module.functions) {
             const auto function = metadata->callable(body.callableId);
             const auto receiver = function.receiver();
-            const auto secondReceiver = function.secondBorrowedParameter();
+            const auto borrowedRootCount = function.borrowedRootCount();
             const auto declaration = declarations.functions.find(function.name());
             if (declaration == declarations.functions.end())
                 continue;
@@ -1616,25 +1628,30 @@ public:
             facts << ":{\"source_name\":";
             writeJsonString(facts, declaration->second.sourceName);
             facts << ",\"receiver\":";
-            if (receiver)
+            if (receiver && !borrowedRootCount)
                 writeJsonString(facts, receiver->className);
             else
                 facts << "null";
             facts << ",\"receiver_mutable\":";
-            facts << (receiver ? (receiver->mutableValue ? "true" : "false") : "null");
-            facts << ",\"borrowed_parameter\":" << (function.borrowedParameter() ? "true" : "false");
-            facts << ",\"second_receiver\":";
-            if (secondReceiver) {
-                facts << "{\"type_name\":";
-                writeJsonString(facts, secondReceiver->className);
-                facts << ",\"mutable\":" << (secondReceiver->mutableValue ? "true" : "false") << '}';
-            } else
-                facts << "null";
-            facts << ",\"root_count\":" << (secondReceiver ? 2 : receiver ? 1 : 0)
-                  << ",\"root_tuple_bytes\":" << (secondReceiver ? 16 : 0) << ",\"root_order\":"
-                  << (secondReceiver ? "[\"receiver\",\"second_receiver\"]"
-                      : receiver     ? "[\"receiver\"]"
-                                     : "[]");
+            facts << (receiver && !borrowedRootCount ? (receiver->mutableValue ? "true" : "false") : "null");
+            facts << ",\"borrowed_root_count\":" << borrowedRootCount << ",\"borrowed_roots\":[";
+            for (std::size_t ordinal = 0; ordinal < borrowedRootCount; ++ordinal) {
+                if (ordinal)
+                    facts << ',';
+                facts << "{\"ordinal\":" << ordinal << ",\"selector\":" << -static_cast<int>(ordinal)
+                      << ",\"type_name\":";
+                writeJsonString(facts, function.borrowedRootType(ordinal).className);
+                facts << ",\"mutable\":" << (function.borrowedRootMutable(ordinal) ? "true" : "false") << '}';
+            }
+            const int tuplePayloadBytes = borrowedRootCount > 1 ? static_cast<int>(borrowedRootCount) * 8 : 0;
+            const int tupleReservedBytes = (tuplePayloadBytes + 15) & ~15;
+            const int rootSaveBytes = (static_cast<int>(borrowedRootCount) * 8 + 15) & ~15;
+            facts << "],\"borrowed_root_abi\":{\"kind\":";
+            writeJsonString(facts, !borrowedRootCount ? "none" : borrowedRootCount == 1 ? "direct" : "tuple");
+            facts << ",\"register\":" << (borrowedRootCount ? "\"r10\"" : "null")
+                  << ",\"tuple_payload_bytes\":" << tuplePayloadBytes
+                  << ",\"tuple_reserved_bytes\":" << tupleReservedBytes
+                  << ",\"saved_root_reserved_bytes\":" << rootSaveBytes << '}';
             facts << ",\"parameter_bytes\":" << recordOffset(function, function.parameters().size())
                   << ",\"parameters\":[";
             for (std::size_t index = 0; index < function.parameters().size(); ++index) {
@@ -1710,7 +1727,7 @@ public:
             const auto function = metadata->callable(body.callableId);
             const int declaredFrameBytes = metadata->frame(body.callableId).frameBytes();
             const auto receiver = function.receiver();
-            const auto secondReceiver = function.secondBorrowedParameter();
+            const auto borrowedRootCount = function.borrowedRootCount();
             stackDepth = 0;
             beginStackFacts(function.name());
             serviceLoanOffsets.clear();
@@ -1732,7 +1749,6 @@ public:
             growStack(8);
             line("movq %rsp, %rbp");
             receiverSaveOffset = receiver ? declaredFrameBytes + 8 : 0;
-            secondReceiverSaveOffset = secondReceiver ? declaredFrameBytes + 16 : 0;
             // Resource constructors always receive a packed record, even when
             // their explicit parameters contain no class values. Borrowed
             // ordinary methods retain their existing hidden-register modes.
@@ -1749,23 +1765,26 @@ public:
                 (function.result().isClass() || function.result().isOwnerStorage() || function.result().isSpan())
                     ? declaredFrameBytes + (combinedMethod ? 24 : 16)
                     : 0;
-            // Hidden capabilities never occupy source-addressable slots. The
-            // combined mode needs three distinct saves, rounded to 16-byte
-            // alignment. Scalar-only paired helpers use both words of the
-            // existing 16-byte hidden area; historical layouts are unchanged.
-            const int frameBytes = declaredFrameBytes + (combinedMethod           ? 32
+            // Hidden roots never occupy source-addressable slots. Preserve
+            // single-root copied/span saves and the literal two-root layout;
+            // longer scalar-only prefixes reserve their aligned pointer extent.
+            const int rootSaveBytes = (static_cast<int>(borrowedRootCount) * 8 + 15) & ~15;
+            const int frameBytes = declaredFrameBytes + (borrowedRootCount > 1   ? rootSaveBytes
+                                                         : combinedMethod       ? 32
                                                          : receiver || aggregate ? 16
                                                                                  : 0);
             reserveStack(frameBytes);
-            if (secondReceiver) {
-                // Paired calls pass a two-pointer record in R10. Copy both
-                // capabilities before any instruction can reuse R10 or R11.
-                line("movq 8(%r10), %r11");
-                line("movq %r11, " + address(secondReceiverSaveOffset));
+            if (borrowedRootCount > 1) {
+                // Keep the tuple in R10 until every later pointer is safely
+                // saved. R11 is scratch only in this scalar-only entry mode.
+                for (std::size_t ordinal = 1; ordinal < borrowedRootCount; ++ordinal) {
+                    line("movq " + std::to_string(ordinal * 8) + "(%r10), %r11");
+                    line("movq %r11, " + address(rootSaveOffset(ordinal)));
+                }
                 line("movq (%r10), %r10");
             }
             if (receiver)
-                line("movq %r10, " + address(receiverSaveOffset));
+                line("movq %r10, " + address(rootSaveOffset(0)));
             if (packedArguments)
                 line("movq %r11, " + address(callRecordSaveOffset));
             if (function.result().isClass() || function.result().isOwnerStorage() || function.result().isSpan())
