@@ -23,7 +23,77 @@ export namespace compiler_ir_instructions {
         //: invalid typed IR: reachable fallthrough without return
         reachable_fallthrough,
         //: invalid typed IR: unreachable semantic instruction
-        unreachable_semantic
+        unreachable_semantic,
+        //: invalid typed IR: service bindings must form the leading entry group
+        service_prefix,
+        //: invalid typed IR: service parameter bindings overlap
+        service_overlap,
+        //: invalid typed IR: region parameter binding must begin the entry prefix
+        region_prefix,
+        //: invalid typed IR: owned byte parameter bindings must form the entry prefix
+        owner_prefix,
+        //: invalid typed IR: owned byte parameter bindings overlap
+        owner_overlap,
+        //: invalid typed IR: owning class parameter bindings must form the entry prefix
+        owning_prefix,
+        //: invalid typed IR: owning class parameter bindings overlap
+        owning_overlap,
+        //: invalid typed IR: object parameter bindings must form the entry prefix
+        object_prefix,
+        //: invalid typed IR: object parameter bindings overlap
+        object_overlap,
+        //: invalid typed IR: span parameter bindings must form the entry prefix
+        span_prefix,
+        //: invalid typed IR: span parameter bindings overlap
+        span_overlap,
+        //: invalid typed IR: parameter bindings must form the entry prefix
+        scalar_prefix,
+        //: invalid typed IR: scalar parameter bindings overlap
+        scalar_overlap,
+        //: invalid typed IR: parameter binding outside entry prefix
+        late_binding,
+        //: invalid typed IR: service binding requires exact authorized leading parameter
+        service_binding,
+        //: invalid typed IR: region parameter requires exact typed spill
+        region_slot,
+        //: invalid typed IR: owned byte parameter type mismatch
+        owner_type,
+        //: invalid typed IR: owned byte parameter requires bound region
+        owner_region,
+        //: invalid typed IR: owned byte parameter requires exact typed spill
+        owner_slot,
+        //: invalid typed IR: owned byte parameter must be mutable
+        owner_mutable,
+        //: invalid typed IR: span parameter type mismatch
+        span_type,
+        //: invalid typed IR: span parameter requires exact typed spill
+        span_slot,
+        //: invalid typed IR: owning class parameter type mismatch
+        owning_type,
+        //: invalid typed IR: owning class parameter requires bound region
+        owning_region,
+        //: invalid typed IR: owning class parameter requires exact nominal object slot
+        owning_slot,
+        //: invalid typed IR: owning class parameter must be mutable
+        owning_mutable,
+        //: invalid typed IR: copied parameter cannot bind owning class
+        object_owner,
+        //: invalid typed IR: object parameter type mismatch
+        object_type,
+        //: invalid typed IR: object parameter requires exact object slot
+        object_slot,
+        //: invalid typed IR: object parameter nominal class mismatch
+        object_nominal,
+        //: invalid typed IR: object parameter must be readonly
+        object_readonly,
+        //: invalid typed IR: parameter type mismatch
+        scalar_type,
+        //: invalid typed IR: parameter cannot bind object field storage
+        scalar_object,
+        //: invalid typed IR: parameter cannot bind byte array origin storage
+        scalar_array,
+        //: invalid typed IR: slot type/layout mismatch
+        scalar_slot
     };
     // The eight OutputRow-width leaves remain raw integers. Unknown operator
     // values reach native semantics; unknown structural tags reject normally.
@@ -427,7 +497,10 @@ export namespace compiler_ir_instructions {
             return result;
         }
         auto reject(InstructionError reason) -> bool {
-            if (statusValue == InstructionStatus::pending || statusValue == InstructionStatus::admitted) {
+            // Entry admission follows complete CFG normalization. A rejected
+            // normalized prefix must lose publication authority permanently.
+            if (statusValue == InstructionStatus::pending || statusValue == InstructionStatus::admitted
+                || statusValue == InstructionStatus::structured) {
                 statusValue = InstructionStatus::invalid;
                 errorValue = reason;
                 if (reason == InstructionError::none) { errorValue = InstructionError::integrity; }

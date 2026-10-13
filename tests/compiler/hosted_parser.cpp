@@ -62,7 +62,7 @@ void aurora_hosted_instructions_release(void *) noexcept;
 std::int64_t aurora_hosted_instructions_allocated(const void *) noexcept;
 std::int64_t aurora_hosted_instructions_admit(const void *) noexcept;
 std::int64_t aurora_hosted_instructions_error(const void *) noexcept;
-std::int64_t aurora_hosted_instructions_structure(void *) noexcept;
+std::int64_t aurora_hosted_instructions_structure(const void *) noexcept;
 std::int64_t aurora_hosted_instructions_publish(void *) noexcept;
 }
 
@@ -4498,8 +4498,10 @@ void rawInstructionAdmission() {
     namespace lower = abi::compiler_lowering;
     namespace bytes = aurora::hosted::bytes;
     context = "instruction storage rejects malformed copied rows before observations";
-    // One constant/return body is enough to exercise each physical domain.
-    for (int mutation = 0; mutation < 14; ++mutation) {
+    // One constant/return body exercises each physical domain. The final case
+    // has valid transport and CFG but omits a declared scalar entry binding.
+    for (int mutation = 0; mutation < 15; ++mutation) {
+        const bool missingBinding = mutation == 14;
         Allocations allocations;
         bytes::Region region(1048576, allocations.allocator());
         {
@@ -4515,11 +4517,11 @@ void rawInstructionAdmission() {
             abi::MetadataCreate metadata{};
             metadata.region = region.id();
             metadata.counts.coreCounts.bytes = 1;
-            metadata.counts.coreCounts.types = 2;
+            metadata.counts.coreCounts.types = missingBinding ? 3 : 2;
             metadata.counts.mapCounts.indices = 1;
             metadata.counts.mapCounts.views = 1;
             metadata.callableCount = 1;
-            metadata.instructionBegin = 1;
+            metadata.instructionBegin = missingBinding ? 2 : 1;
             auto *declarations = owners.metadata.store.storage.data();
             aurora_hosted_metadata_create(&metadata, declarations);
             abi::InstructionsCreate instructions{};
@@ -4527,9 +4529,10 @@ void rawInstructionAdmission() {
             instructions.counts = {2, 2, mutation == 10 ? 1 : 0, 1};
             auto *storage = owners.instructions.store.storage.data();
             aurora_hosted_instructions_create(&instructions, storage);
+            const std::array<const void *, 2> roots{storage, declarations};
             require(aurora_hosted_metadata_allocated(declarations) == 1 &&
                         aurora_hosted_instructions_allocated(storage) == 1, "raw admission allocation failed");
-            require(aurora_hosted_instructions_structure(storage) ==
+            require(aurora_hosted_instructions_structure(roots.data()) ==
                         static_cast<std::int64_t>(wire::InstructionStatus::pending) &&
                         aurora_hosted_instructions_publish(storage) == 0,
                     "pending instruction storage normalized or published before admission");
@@ -4550,9 +4553,11 @@ void rawInstructionAdmission() {
             if (mutation == 7)
                 type.rawTail.templateArgumentCount = 1;
             set(declarations, abi::metadataStore_typesOffset, 1, type);
+            if (missingBinding)
+                set(declarations, abi::metadataStore_typesOffset, 2, type);
             meta::CallableRow callable{};
             callable.nameRange = {0, 1};
-            callable.typeRange = {0, 1};
+            callable.typeRange = {0, missingBinding ? 2 : 1};
             set(declarations, abi::metadataStore_callablesOffset, 0, callable);
             set(declarations, abi::metadataStore_indicesOffset, 0, meta::IndexRow{0});
             set(declarations, abi::metadataStore_viewsOffset, 0, meta::ViewRow{});
@@ -4576,29 +4581,46 @@ void rawInstructionAdmission() {
             set(storage, abi::instructionStore_operandsOffset, 0, value);
             wire::RawOperandRow typeOperand{};
             typeOperand.operandRole = static_cast<std::int64_t>(lower::OperandRole::TypeId);
-            typeOperand.signedValue = mutation == 6 ? 0 : 1;
+            typeOperand.signedValue = mutation == 6 ? 0 : missingBinding ? 2 : 1;
             set(storage, abi::instructionStore_operandsOffset, 1, typeOperand);
             set(storage, abi::instructionStore_codeOrderOffset, 0,
                 wire::CodeRow{1, mutation == 11 ? 0 : -1, mutation == 12 ? 1u : 0u, mutation == 13 ? 1 : 0});
             set(storage, abi::instructionStore_codeOrderOffset, 1, wire::CodeRow{mutation == 8 ? 1 : 2, -1, 0, 0});
             set(storage, abi::instructionStore_bodiesOffset, 0, wire::BodyRow{mutation == 9 ? 1 : 0, 2, 2});
-            const std::array<const void *, 2> roots{storage, declarations};
             const auto status = aurora_hosted_instructions_admit(roots.data());
-            require(status == static_cast<std::int64_t>(mutation == 0 ? wire::InstructionStatus::admitted
-                                                                      : wire::InstructionStatus::invalid),
+            require(status == static_cast<std::int64_t>(mutation == 0 || missingBinding
+                                                           ? wire::InstructionStatus::admitted
+                                                           : wire::InstructionStatus::invalid),
                     "malformed instruction storage status differs");
-            const auto expectedError = mutation == 0 ? wire::InstructionError::none
+            const auto expectedError = mutation == 0 || missingBinding ? wire::InstructionError::none
                 : mutation == 7 ? wire::InstructionError::noncanonical_type : wire::InstructionError::integrity;
             require(aurora_hosted_instructions_error(storage) == static_cast<std::int64_t>(expectedError),
                     "malformed instruction storage reason differs");
-            if (mutation == 0) {
+            if (mutation == 0 || missingBinding) {
+                const auto metadataSnapshot = [&] {
+                    std::vector<std::byte> snapshot(owners.metadata.store.storage.begin(),
+                                                    owners.metadata.store.storage.end());
+                    for (const auto pool : {abi::metadataStore_bytesOffset, abi::metadataStore_typesOffset,
+                                           abi::metadataStore_classesOffset, abi::metadataStore_fieldsOffset,
+                                           abi::metadataStore_storageOffset, abi::metadataStore_indicesOffset,
+                                           abi::metadataStore_descriptorsOffset, abi::metadataStore_viewsOffset,
+                                           abi::metadataStore_enumsOffset, abi::metadataStore_callablesOffset,
+                                           abi::metadataStore_slotsOffset, abi::metadataStore_resultsOffset,
+                                           abi::metadataStore_framesOffset}) {
+                        const auto bytes = region.observeMetadataBytes(descriptor(declarations, pool));
+                        snapshot.insert(snapshot.end(), bytes.begin(), bytes.end());
+                    }
+                    return snapshot;
+                };
+                const auto declarationsBefore = metadataSnapshot();
                 require(aurora_hosted_instructions_publish(storage) == 0,
                         "admitted instruction storage published before CFG normalization");
                 const auto attempted = allocations.attempted;
-                require(aurora_hosted_instructions_structure(storage) ==
-                            static_cast<std::int64_t>(wire::InstructionStatus::structured) &&
+                require(aurora_hosted_instructions_structure(roots.data()) ==
+                            static_cast<std::int64_t>(missingBinding ? wire::InstructionStatus::invalid
+                                                                    : wire::InstructionStatus::structured) &&
                             allocations.attempted == attempted,
-                        "instruction normalization failed or allocated another owner");
+                        "instruction CFG/entry admission status differs or allocated another owner");
                 const auto codeOrder = descriptor(storage, abi::instructionStore_codeOrderOffset);
                 for (std::int64_t position = 0; position < 2; ++position) {
                     wire::CodeRow code{};
@@ -4607,11 +4629,26 @@ void rawInstructionAdmission() {
                                 code.flowFlags == (position == 0 ? 7u : 4u) && code.scratchValue == 0,
                             "normalized instruction facts lost stable identity or retained scratch");
                 }
-                require(aurora_hosted_instructions_publish(storage) == 1 &&
-                            aurora_hosted_instructions_structure(storage) ==
-                                static_cast<std::int64_t>(wire::InstructionStatus::published) &&
-                            aurora_hosted_instructions_publish(storage) == 0,
-                        "instruction publication failed to require normalized structure or close mutation");
+                if (missingBinding) {
+                    require(aurora_hosted_instructions_error(storage) ==
+                                static_cast<std::int64_t>(wire::InstructionError::scalar_prefix) &&
+                                aurora_hosted_instructions_publish(storage) == 0 &&
+                                aurora_hosted_instructions_admit(roots.data()) ==
+                                    static_cast<std::int64_t>(wire::InstructionStatus::invalid) &&
+                                aurora_hosted_instructions_structure(roots.data()) ==
+                                    static_cast<std::int64_t>(wire::InstructionStatus::invalid) &&
+                                aurora_hosted_instructions_publish(storage) == 0 &&
+                                allocations.attempted == attempted,
+                            "failed entry admission published, reopened or allocated another owner");
+                } else {
+                    require(aurora_hosted_instructions_publish(storage) == 1 &&
+                                aurora_hosted_instructions_structure(roots.data()) ==
+                                    static_cast<std::int64_t>(wire::InstructionStatus::published) &&
+                                aurora_hosted_instructions_publish(storage) == 0,
+                            "instruction publication failed to require normalized structure or close mutation");
+                }
+                require(metadataSnapshot() == declarationsBefore,
+                        "instruction entry admission mutated its immutable metadata root");
             }
         }
         require(allocations.successful == allocations.released && region.metrics().used == 0 && region.close(),

@@ -233,6 +233,37 @@ public:
     // Excludes shared universe, other facts, current/merge states and allocator overhead.
     std::size_t peakRetainedInitializationPayloadBytes = 0;
 };
+// Entry admission has already certified these at-most-six normalized rows.
+// Borrow their roots on demand; no native binding index or Type graph survives.
+class EntryBindings {
+    const InstructionRange &code_;
+    std::size_t count_;
+
+public:
+    EntryBindings(const InstructionRange &code, std::size_t count) : code_(code), count_(count) {
+    }
+    template<class Binding>
+    std::optional<int> root(int position) const {
+        if (position < 0 || static_cast<std::size_t>(position) >= count_)
+            return {};
+        const auto instruction = code_[static_cast<CodePosition>(position)];
+        if (const auto *binding = std::get_if<Binding>(&instruction))
+            return binding->offset;
+        return {};
+    }
+    template<class... Binding>
+    bool contains(int offset) const {
+        for (CodePosition position = 0; position < count_; ++position) {
+            const auto instruction = code_[position];
+            if (((std::get_if<Binding>(&instruction) && std::get<Binding>(instruction).offset == offset) || ...))
+                return true;
+        }
+        return false;
+    }
+    std::optional<int> region() const {
+        return root<BindRegionParameter>(0);
+    }
+};
 inline void verifyFunction(FunctionBody &function,
                            const Metadata &metadata,
                            Metrics *metrics = nullptr) {
@@ -242,11 +273,11 @@ inline void verifyFunction(FunctionBody &function,
     const auto objectSlots = frame.objectSlots();
     const auto arraySlots = frame.arraySlots();
     const auto spanSlots = frame.spanSlots();
-    const auto serviceSlots = frame.serviceSlots();
     const auto regionSlots = frame.regionSlots();
     const auto byteSlots = frame.byteSlots();
     const auto ownedValueTypes = frame.ownedValueTypes();
     const auto parameters = signature.parameters();
+    const EntryBindings entryBindings(function.code, parameters.size());
     // Receiver observations are copied values. Keep them alive for boundRoot's
     // reference result throughout this body verification.
     const auto functionReceiver = signature.receiver();
@@ -276,11 +307,6 @@ inline void verifyFunction(FunctionBody &function,
     };
     const bool owningConstructor =
         functionReceiver && functionReceiver->constructor && owningClass(metadata, functionReceiver->className);
-    const bool resourceFunction = resourceSignature(signature, metadata);
-    const bool serviceFunction = serviceSignature(signature);
-    std::size_t serviceParameterCount = 0;
-    while (serviceParameterCount < parameters.size() && parameters[serviceParameterCount].isService())
-        ++serviceParameterCount;
     std::optional<TypeRange> receiverLayout;
     std::optional<FieldRange> receiverFields;
     if (functionReceiver) {
@@ -315,69 +341,12 @@ inline void verifyFunction(FunctionBody &function,
     }
     const auto initializationUniverse =
         std::make_shared<const InitializationSlotUniverse>(std::move(initializationOffsets), frame.frameBytes());
-    std::set<int> scalarParameterSlots;
-    std::set<int> objectParameterSlots;
-    std::set<int> spanParameterSlots;
-    std::set<int> byteParameterSlots;
-    std::optional<int> regionParameterSlot;
-    std::map<int, int> serviceParameterSlots; // source index -> distinct root spill
-    std::map<int, int> spanParameterOrigins;  // source position -> root spill
     for (CodePosition index = 0; index < function.code.size(); ++index) {
         const auto instruction = function.code[index];
         if (const auto *literal = std::get_if<BorrowLiteralSpanObservation>(&instruction)) {
             require(literal->bytes.size() <= maxByteStringBytes, "literal span exceeds byte-string bound");
             require(spanSlots.contains(literal->resultOffset), "literal span requires exact typed spill");
         }
-        const auto *serviceBinding = std::get_if<BindServiceParameter>(&instruction);
-        const auto *binding = std::get_if<BindParameter>(&instruction);
-        const auto *objectBinding = std::get_if<BindObjectParameter>(&instruction);
-        const auto *spanBinding = std::get_if<BindSpanParameter>(&instruction);
-        const auto *regionBinding = std::get_if<BindRegionParameter>(&instruction);
-        const auto *byteBinding = std::get_if<BindBytesParameter>(&instruction);
-        const auto *ownedObjectBinding = std::get_if<BindOwnedObjectParameter>(&instruction);
-        if (index < parameters.size()) {
-            const auto &type = parameters[index];
-            if (type.isService()) {
-                require(serviceBinding && serviceBinding->index == static_cast<int>(index) &&
-                            index < serviceParameterCount,
-                        "service bindings must form the leading entry group");
-                for (const auto &[position, root] : serviceParameterSlots) {
-                    (void)position;
-                    require(root != serviceBinding->offset, "service parameter bindings overlap");
-                }
-                serviceParameterSlots.emplace(static_cast<int>(index), serviceBinding->offset);
-            } else if (type.isRegion()) {
-                require(regionBinding && regionBinding->index == 0 && index == 0,
-                        "region parameter binding must begin the entry prefix");
-                require(!regionParameterSlot, "duplicate region parameter binding");
-                regionParameterSlot = regionBinding->offset;
-            } else if (type.isOwnerStorage()) {
-                require(byteBinding && byteBinding->index == static_cast<int>(index),
-                        "owned byte parameter bindings must form the entry prefix");
-                require(byteParameterSlots.insert(byteBinding->offset).second, "owned byte parameter bindings overlap");
-            } else if (owningType(type)) {
-                require(ownedObjectBinding && ownedObjectBinding->index == static_cast<int>(index),
-                        "owning class parameter bindings must form the entry prefix");
-                require(objectParameterSlots.insert(ownedObjectBinding->offset).second,
-                        "owning class parameter bindings overlap");
-            } else if (type.isClass()) {
-                require(objectBinding && objectBinding->index == static_cast<int>(index),
-                        "object parameter bindings must form the entry prefix");
-                require(objectParameterSlots.insert(objectBinding->offset).second, "object parameter bindings overlap");
-            } else if (type.isSpan()) {
-                require(spanBinding && spanBinding->index == static_cast<int>(index),
-                        "span parameter bindings must form the entry prefix");
-                require(spanParameterSlots.insert(spanBinding->offset).second, "span parameter bindings overlap");
-                spanParameterOrigins.emplace(static_cast<int>(index), spanBinding->offset);
-            } else {
-                require(binding && binding->index == static_cast<int>(index),
-                        "parameter bindings must form the entry prefix");
-                require(scalarParameterSlots.insert(binding->offset).second, "scalar parameter bindings overlap");
-            }
-        } else
-            require(!binding && !objectBinding && !spanBinding && !regionBinding && !byteBinding &&
-                        !ownedObjectBinding && !serviceBinding,
-                    "parameter binding outside entry prefix");
     }
     std::map<int, std::pair<int, service::Kind>> serviceLoanRoots;
     for (CodePosition index = 0; index < function.code.size(); ++index) {
@@ -665,8 +634,9 @@ inline void verifyFunction(FunctionBody &function,
                                     state.activeRegions.at(identity.offset) == identity,
                                 "span owner region identity is not active");
                 } else if (capability.parameterOrigin) {
-                    require(spanParameterOrigins.contains(capability.origin), "span parameter origin does not exist");
-                    const auto root = state.activeSpans.find(spanParameterOrigins.at(capability.origin));
+                    const auto parameterRoot = entryBindings.root<BindSpanParameter>(capability.origin);
+                    require(parameterRoot.has_value(), "span parameter origin does not exist");
+                    const auto root = state.activeSpans.find(*parameterRoot);
                     require(root != state.activeSpans.end() && root->second.site == capability.originSite &&
                                 root->second.parameterOrigin && root->second.origin == capability.origin &&
                                 root->second.originSite == capability.originSite && root->second.parent == 0,
@@ -693,7 +663,7 @@ inline void verifyFunction(FunctionBody &function,
             };
             auto spanTarget = [&](int base) {
                 require(spanSlots.contains(base), "span requires exact typed spill");
-                require(!spanParameterSlots.contains(base), "span parameter cannot be rebound");
+                require(!entryBindings.contains<BindSpanParameter>(base), "span parameter cannot be rebound");
                 require(!state.activeSpans.contains(base), "span spill is already active");
             };
             auto ownerWritable = [&](int root, std::optional<int> field = {}) {
@@ -706,10 +676,13 @@ inline void verifyFunction(FunctionBody &function,
                             "owned byte or root mutation with live readonly span");
                 }
             };
-            auto region = [&](int base) -> RegionIdentity {
-                require(regionSlots.contains(base), "region requires exact typed spill");
+            auto activeRegion = [&](int base) -> RegionIdentity {
                 require(state.activeRegions.contains(base), "region authority is not active");
                 return state.activeRegions.at(base);
+            };
+            auto region = [&](int base) -> RegionIdentity {
+                require(regionSlots.contains(base), "region requires exact typed spill");
+                return activeRegion(base);
             };
             auto byteBinding = [&](int base) -> ByteBinding & {
                 require(byteSlots.contains(base), "owned byte operation requires exact typed spill");
@@ -773,7 +746,7 @@ inline void verifyFunction(FunctionBody &function,
                 activeArrayElement(offset);
                 arrayWritable(offset);
                 require(!nestedObjectLeaves.contains(offset), "scalar store cannot write nested class field");
-                require(!scalarParameterSlots.contains(offset) || !state.maybeInitialized.contains(offset),
+                require(!entryBindings.contains<BindParameter>(offset) || !state.maybeInitialized.contains(offset),
                         "write to immutable scalar parameter");
                 require(!objectBases.contains(offset) || objectSlots.at(objectBases.at(offset)).mutableValue ||
                             !state.maybeInitialized.contains(offset),
@@ -989,12 +962,9 @@ inline void verifyFunction(FunctionBody &function,
                             std::optional<BoundsEvidence>(classArrayEvidence(base, fieldIndex, field)),
                         "class array access lacks matching dominating bounds token");
             };
-            auto copyTarget = [&](int base, const std::string &name) {
-                require(objectSlots.contains(base), "copy requires exact object slot");
-                require(state.activeObjects.contains(base), "copy object outside active lifetime");
-                require(objectSlots.at(base).className == name, "copy nominal class mismatch");
+            auto initializeObject = [&](int base) {
                 require(!state.maybeConstructedObjects.contains(base), "copy result object already initialized");
-                const auto layout = classLeaves(name);
+                const auto layout = classLeaves(objectSlots.at(base).className);
                 for (std::size_t leaf = 0; leaf < layout.size(); ++leaf)
                     require(!state.maybeInitialized.contains(objectLeaf(base, leaf)),
                             "copy requires pristine result object");
@@ -1010,6 +980,12 @@ inline void verifyFunction(FunctionBody &function,
                 }
                 markObject(base);
             };
+            auto copyTarget = [&](int base, const std::string &name) {
+                require(objectSlots.contains(base), "copy requires exact object slot");
+                require(state.activeObjects.contains(base), "copy object outside active lifetime");
+                require(objectSlots.at(base).className == name, "copy nominal class mismatch");
+                initializeObject(base);
+            };
             auto beginOwnedObject = [&](int base, const std::string &name) {
                 require(!state.ownedObjects.contains(base), "owning object lifetime already active");
                 OwnedObjectBinding object{instructionId, ByteDisposition::Pristine, {}};
@@ -1019,15 +995,18 @@ inline void verifyFunction(FunctionBody &function,
                                               ByteBinding{instructionId, ByteDisposition::Pristine, {}});
                 state.ownedObjects.emplace(base, std::move(object));
             };
-            auto mintObject = [&](int base, const std::string &name, const RegionIdentity &origin) {
-                require(owningClass(metadata, name), "owning result requires owning class");
-                copyTarget(base, name);
+            auto mintObjectFields = [&](int base, const RegionIdentity &origin) {
                 auto &object = state.ownedObjects.at(base);
                 for (auto &[ordinal, field] : object.fields) {
                     field.token = freshToken(origin, ordinal);
                     field.disposition = ByteDisposition::Live;
                 }
                 object.disposition = ByteDisposition::Live;
+            };
+            auto mintObject = [&](int base, const std::string &name, const RegionIdentity &origin) {
+                require(owningClass(metadata, name), "owning result requires owning class");
+                copyTarget(base, name);
+                mintObjectFields(base, origin);
             };
             auto consumeObject = [&](int base) {
                 ownerWritable(base);
@@ -1303,7 +1282,7 @@ inline void verifyFunction(FunctionBody &function,
                                 loanAccess(objectBases.at(offset), true);
                             require(!nestedObjectLeaves.contains(offset),
                                     "indexed store cannot write nested class field");
-                            require(!scalarParameterSlots.contains(offset),
+                            require(!entryBindings.contains<BindParameter>(offset),
                                     "indexed write to immutable scalar parameter");
                             require(!objectBases.contains(offset) || objectSlots.at(objectBases.at(offset)).mutableValue,
                                     "indexed write to const object field");
@@ -1517,7 +1496,7 @@ inline void verifyFunction(FunctionBody &function,
                     } else if constexpr (std::is_same_v<Op, BeginBytes>) {
                         require(byteSlots.contains(operation.offset),
                                 "owned byte lifetime requires exact typed spill");
-                        require(!byteParameterSlots.contains(operation.offset),
+                        require(!entryBindings.contains<BindBytesParameter>(operation.offset),
                                 "owned byte parameter lifetime cannot restart");
                         require(!state.activeBytes.contains(operation.offset), "owned byte lifetime already active");
                         state.activeBytes.emplace(
@@ -1666,7 +1645,7 @@ inline void verifyFunction(FunctionBody &function,
                         require(objectSlots.contains(operation.offset),
                                 "lifetime operation requires exact object slot");
                         if constexpr (std::is_same_v<Op, BeginObject>) {
-                            require(!objectParameterSlots.contains(operation.offset),
+                            require(!entryBindings.contains<BindObjectParameter, BindOwnedObjectParameter>(operation.offset),
                                     "object parameter lifetime cannot restart");
                             require(!state.activeObjects.contains(operation.offset), "object lifetime already active");
                             state.activeObjects.emplace(operation.offset, instructionId);
@@ -1743,7 +1722,8 @@ inline void verifyFunction(FunctionBody &function,
                         require(target.disposition == ByteDisposition::Pristine && !target.token,
                                 "constructor resource field initialized more than once");
                         const auto token = bytes(operation.sourceOffset, true).token;
-                        require(regionParameterSlot && token->region == region(*regionParameterSlot),
+                        const auto boundRegion = entryBindings.region();
+                        require(boundRegion && token->region == region(*boundRegion),
                                 "constructor resource field has wrong region");
                         consumeBytes(operation.sourceOffset);
                         target.disposition = ByteDisposition::Live;
@@ -2166,11 +2146,12 @@ inline void verifyFunction(FunctionBody &function,
                                             "constructor returns before all class fields initialized");
                         }
                         if (owningConstructor) {
-                            require(regionParameterSlot.has_value(), "owning constructor lacks region");
+                            const auto boundRegion = entryBindings.region();
+                            require(boundRegion.has_value(), "owning constructor lacks region");
                             for (const auto &[unused, field] : state.ownedObjects.at(0).fields) {
                                 (void)unused;
                                 require(field.disposition == ByteDisposition::Live && field.token &&
-                                            field.token->region == region(*regionParameterSlot),
+                                            field.token->region == region(*boundRegion),
                                         "constructor returns before all resource fields initialized");
                             }
                         }
@@ -2227,9 +2208,10 @@ inline void verifyFunction(FunctionBody &function,
                     } else if constexpr (std::is_same_v<Op, ReturnOwnedObject>) {
                         require(!functionReceiver && owningType(signature.result()),
                                 "owning object return requires ordinary owning class result");
-                        require(regionParameterSlot.has_value(), "owning object return requires bound region");
+                        const auto boundRegion = entryBindings.region();
+                        require(boundRegion.has_value(), "owning object return requires bound region");
                         require(ownedObject(operation.offset, signature.result().className, true) ==
-                                    region(*regionParameterSlot),
+                                    region(*boundRegion),
                                 "owning object return has wrong region");
                         state.ownedObjects.erase(operation.offset);
                         state.activeObjects.erase(operation.offset);
@@ -2241,8 +2223,9 @@ inline void verifyFunction(FunctionBody &function,
                     } else if constexpr (std::is_same_v<Op, ReturnBytes>) {
                         require(signature.result().isOwnerStorage() && ownerType(operation.offset) == signature.result(),
                                 "owner return nominal type mismatch");
-                        require(regionParameterSlot.has_value(), "owned byte return requires bound region parameter");
-                        require(bytes(operation.offset, true).token->region == region(*regionParameterSlot),
+                        const auto boundRegion = entryBindings.region();
+                        require(boundRegion.has_value(), "owned byte return requires bound region parameter");
+                        require(bytes(operation.offset, true).token->region == region(*boundRegion),
                                 "owned byte return has wrong region");
                         state.activeBytes.erase(operation.offset);
                         require(state.activeBytes.empty(), "return with active owned byte lifetime");
@@ -2251,13 +2234,8 @@ inline void verifyFunction(FunctionBody &function,
                                 "return with active span or byte array lifetime");
                         require(state.stack.empty(), "unbalanced stack at owned byte return");
                     } else if constexpr (std::is_same_v<Op, BindServiceParameter>) {
-                        require(serviceFunction && index < serviceParameterCount &&
-                                    operation.index == static_cast<int>(index) &&
-                                    operation.kind == service::kind(parameters[index]) &&
-                                    serviceParameterSlots.at(operation.index) == operation.offset &&
-                                    serviceSlots.contains(operation.offset) &&
-                                    !state.activeServices.contains(operation.offset),
-                                "service binding requires exact authorized leading parameter");
+                        require(!state.activeServices.contains(operation.offset),
+                                "service parameter authority already active");
                         state.activeServices.emplace(operation.offset, ServiceIdentity{instructionId, operation.kind});
                     } else if constexpr (std::is_same_v<Op, AcquireServiceLoan>) {
                         require(operation.loanId > 0 && !state.serviceLoans.contains(operation.loanId) &&
@@ -2404,86 +2382,36 @@ inline void verifyFunction(FunctionBody &function,
                         for (std::size_t position = 0; position < count; ++position)
                             state.serviceLoans.at(argumentAt(position).loanId).called = true;
                     } else if constexpr (std::is_same_v<Op, BindRegionParameter>) {
-                        require(resourceFunction && operation.index == 0 &&
-                                    parameters.front() == Type::ByteRegion,
-                                "region parameter type or index mismatch");
-                        require(regionSlots.contains(operation.offset),
-                                "region parameter requires exact typed spill");
                         require(state.activeRegions.empty(), "region parameter authority already active");
                         state.activeRegions.emplace(operation.offset, RegionIdentity{operation.offset, instructionId});
                     } else if constexpr (std::is_same_v<Op, BindBytesParameter>) {
-                        require(operation.index > 0 &&
-                                    static_cast<std::size_t>(operation.index) < parameters.size(),
-                                "invalid owned byte parameter index");
-                        require(parameters[operation.index].isOwnerStorage() &&
-                                    ownerType(operation.offset) == parameters[operation.index],
-                                "owned byte parameter type mismatch");
-                        require(regionParameterSlot.has_value(), "owned byte parameter requires bound region");
-                        require(byteSlots.contains(operation.offset),
-                                "owned byte parameter requires exact typed spill");
-                        require(byteSlots.at(operation.offset), "owned byte parameter must be mutable");
                         require(!state.activeBytes.contains(operation.offset),
                                 "owned byte parameter lifetime already active");
+                        const auto token = freshToken(activeRegion(*entryBindings.region()), -1);
                         state.activeBytes.emplace(
-                            operation.offset, ByteBinding{instructionId, ByteDisposition::Pristine, {}});
-                        mintBytes(operation.offset, region(*regionParameterSlot));
+                            operation.offset, ByteBinding{instructionId, ByteDisposition::Live, token});
                     } else if constexpr (std::is_same_v<Op, BindSpanParameter>) {
-                        require(operation.index >= 0 &&
-                                    static_cast<std::size_t>(operation.index) < parameters.size(),
-                                "invalid span parameter index");
-                        require(parameters[operation.index] == Type::ByteSpan &&
-                                    (!functionReceiver || !functionReceiver->constructor),
-                                "span parameter type mismatch");
-                        require(spanSlots.contains(operation.offset),
-                                "span parameter requires exact typed spill");
                         require(!state.activeSpans.contains(operation.offset),
                                 "span parameter lifetime already active");
                         state.activeSpans.emplace(
                             operation.offset, SpanCapability{true, operation.index, instructionId, 0, 0, instructionId});
                     } else if constexpr (std::is_same_v<Op, BindOwnedObjectParameter>) {
-                        require(!functionReceiver && operation.index > 0 &&
-                                    static_cast<std::size_t>(operation.index) < parameters.size(),
-                                "invalid owning class parameter index");
-                        require(parameters[operation.index] == Type(operation.className) &&
-                                    owningClass(metadata, operation.className),
-                                "owning class parameter type mismatch");
-                        require(regionParameterSlot.has_value(), "owning class parameter requires bound region");
-                        require(objectSlots.contains(operation.offset) &&
-                                    objectSlots.at(operation.offset).className == operation.className,
-                                "owning class parameter requires exact nominal object slot");
-                        require(objectSlots.at(operation.offset).mutableValue,
-                                "owning class parameter must be mutable");
                         require(!state.activeObjects.contains(operation.offset),
                                 "owning class parameter lifetime already active");
                         state.activeObjects.emplace(operation.offset, instructionId);
                         beginOwnedObject(operation.offset, operation.className);
-                        mintObject(operation.offset, operation.className, region(*regionParameterSlot));
+                        initializeObject(operation.offset);
+                        mintObjectFields(operation.offset, activeRegion(*entryBindings.region()));
                     } else if constexpr (std::is_same_v<Op, BindObjectParameter>) {
-                        require(operation.index >= 0 &&
-                                    static_cast<std::size_t>(operation.index) < parameters.size(),
-                                "invalid object parameter index");
-                        require(!owningClass(metadata, operation.className),
-                                "copied parameter cannot bind owning class");
-                        require(parameters[operation.index] == Type(operation.className),
-                                "object parameter type mismatch");
-                        require(objectSlots.contains(operation.offset),
-                                "object parameter requires exact object slot");
-                        const auto &object = objectSlots.at(operation.offset);
-                        require(object.className == operation.className, "object parameter nominal class mismatch");
-                        require(!object.mutableValue, "object parameter must be readonly");
                         require(!state.activeObjects.contains(operation.offset),
                                 "object parameter lifetime already active");
                         state.activeObjects.emplace(operation.offset, instructionId);
                         markObject(operation.offset);
                     } else if constexpr (std::is_same_v<Op, BindParameter>) {
-                        require(operation.index >= 0 &&
-                                    static_cast<std::size_t>(operation.index) < parameters.size(),
-                                "invalid parameter index");
-                        require(parameters[operation.index] == operation.type, "parameter type mismatch");
-                        require(!objectBases.contains(operation.offset), "parameter cannot bind object field storage");
-                        require(!arrayBases.contains(operation.offset),
-                                "parameter cannot bind byte array origin storage");
-                        store(operation.offset, operation.type);
+                        require(!state.maybeInitialized.contains(operation.offset),
+                                "write to immutable scalar parameter");
+                        state.initialized.insert(operation.offset);
+                        state.maybeInitialized.insert(operation.offset);
                     } else {
                         static_assert(!std::is_same_v<Op, Op>, "unhandled typed IR verifier operation");
                     }
@@ -2538,8 +2466,8 @@ inline ValidatedModule validate(InstructionIngress pending, verification::Metric
     if (!instructions)
         throw Error(DiagnosticCode::Internal, "missing hosted IR instruction ingress");
     instructions->admit(*metadata);
-    // All global structural errors precede native value-state verification.
-    // Code-order compaction is complete before allocating any native work arrays.
+    // Source checks every CFG first, then every normalized entry binding.
+    // Both module-wide phases finish before allocating native value-state arrays.
     instructions->structure();
     std::vector<FunctionBody> functions;
     functions.reserve(instructions->bodyCount());

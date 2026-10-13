@@ -260,7 +260,7 @@ def frontend_abi_entries(facts):
         ):
             raise ValueError(f"private bridge signature changed: {source}")
         second = function.get("second_receiver")
-        if alias in ("graph_run", "instructions_admit"):
+        if alias in ("graph_run", "instructions_admit", "instructions_structure"):
             if (
                 function.get("receiver_mutable") is not True
                 or function.get("borrowed_parameter") is not True

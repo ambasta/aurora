@@ -7,6 +7,7 @@
 #include <iostream>
 #include <limits>
 #include <string>
+#include <tuple>
 
 using namespace aurora;
 using namespace aurora::ir;
@@ -514,7 +515,7 @@ Module copiedChild() {
     return module;
 }
 void accept(const std::string &, Module);
-void reject(const std::string &, Module, const std::function<void(Module &)> &);
+void reject(const std::string &, Module, const std::function<void(Module &)> &, const std::string & = {});
 void childTests() {
     accept("copyable constructor snapshot and borrowed method result", copiedChild());
     auto nested = copiedChild();
@@ -551,7 +552,8 @@ void accept(const std::string &name, Module module) {
     ++accepted;
     std::cout << "PASS owning IR " << name << '\n';
 }
-void reject(const std::string &name, Module module, const std::function<void(Module &)> &change) {
+void reject(const std::string &name, Module module, const std::function<void(Module &)> &change,
+            const std::string &diagnostic) {
     change(module);
     try {
         (void)validate(std::move(module));
@@ -559,6 +561,8 @@ void reject(const std::string &name, Module module, const std::function<void(Mod
         require(std::string(error.what()).find("invalid typed IR") != std::string::npos ||
                     std::string(error.what()).starts_with("IR:"),
                 name + ": wrong diagnostic: " + error.what());
+        require(diagnostic.empty() || std::string(error.what()).find(diagnostic) != std::string::npos,
+                name + ": wrong entry diagnostic: " + error.what());
         ++rejected;
         std::cout << "PASS owning IR " << name << '\n';
         return;
@@ -915,7 +919,25 @@ void ownershipTests() {
     });
     reject("wrong owning parameter nominal identity", moving(), [](Module &m) {
         std::get<BindOwnedObjectParameter>(m.functions[0].code[1]).className = "Only";
-    });
+    }, "owning class parameter type mismatch");
+    for (const auto &[name, mutate, diagnostic] :
+         std::vector<std::tuple<const char *, std::function<void(Module &)>, const char *>>{
+             {"exact owning root", [](auto &module) {
+                  op<BindOwnedObjectParameter>(module).offset = 88;
+              }, "owning class parameter requires exact nominal object slot"},
+             {"nominal owning root", [](auto &module) {
+                  module.functions[0].parameters[1] = Type("Only");
+                  op<BindOwnedObjectParameter>(module).className = "Only";
+              }, "owning class parameter requires exact nominal object slot"},
+             {"mutable owning root", [](auto &module) {
+                  module.functions[0].objectSlots[96].mutableValue = false;
+              }, "owning class parameter must be mutable"},
+             {"distinct owning roots", [](auto &module) {
+                  auto &function = module.functions[0];
+                  function.parameters.push_back(Type("Parcel"));
+                  function.code.insert(function.code.begin() + 2, BindOwnedObjectParameter{2, 96, "Parcel"});
+              }, "owning class parameter bindings overlap"}})
+        reject(std::string("source entry ") + name, moving(), mutate, diagnostic);
     reject("owning class requires first region", moving(), [](Module &m) {
         m.functions[0].parameters[0] = Type::I64;
     });
