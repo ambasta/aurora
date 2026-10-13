@@ -6,8 +6,11 @@ uses an Aurora-written [lexer](LEXER.md) and a bounded
 [syntax parser](ARCHITECTURE.md#hosted-aurora-parser),
 bootstrapped with an explicitly selected predecessor compiler.
 Complete module syntax, declaration admission, module/template resolution and
-resolved type/lifetime analysis through typed IR run in Aurora. Module file loading,
-mechanical projection, independent typed-IR verification and x86-64 emission remain C++23.
+resolved type/lifetime analysis through typed IR run in Aurora. The `ir_graph.au`
+candidate independently checks normalized module call graphs and
+selects retained functions. Module file loading, mechanical projection,
+logical/physical layouts, function CFG/provenance verification and x86-64 emission
+remain C++23.
 GNU assembler/linker and Linux host I/O remain bootstrap dependencies.
 
 ## Build and check
@@ -29,6 +32,11 @@ The optional [language server](lsp/README.md) has its own dependency and suite.
 
 ### Source bootstrap
 
+The graph-verifier candidate requires the paired-root language and ABI-facts
+dependency included below at a fixed source revision. This additional bootstrap
+hop is source-only; it supplies no executed bootstrap/convergence receipt or
+qualified predecessor claim. The existing final-source gates still apply.
+
 The current source no longer contains a C++ expression parser or raw compiler
 seed. Meson requires `bootstrap_compiler`, an absolute executable path. Ninja
 tracks that executable as an ordinary input; changing it regenerates the frontend.
@@ -44,14 +52,18 @@ checkpoint [`c0ef02cc105de2b7699d8565f6a53f1dea9e1205`](https://github.com/ambas
 [`bbf18f40d73b0f7b862a4b23d77b03dfb3f3d0e4`](https://github.com/ambasta/aurora/commit/bbf18f40d73b0f7b862a4b23d77b03dfb3f3d0e4)
 (retained by `bootstrap-owner-field-initializers-v1`), and the register-carry checkpoint
 [`f89e0c9eb199ba482fcce20f1783a52ceae8b1b8`](https://github.com/ambasta/aurora/commit/f89e0c9eb199ba482fcce20f1783a52ceae8b1b8)
-(retained by `bootstrap-register-carry-v1`). Prepare the source worktrees on the host,
-where Git is installed; the pinned development image does not include Git:
+(retained by `bootstrap-register-carry-v1`). The candidate adds the paired-root
+ABI-facts dependency merged in PR #166 at immutable source commit
+[`052f79d7995be93053f73659bcfc37687b00b341`](https://github.com/ambasta/aurora/commit/052f79d7995be93053f73659bcfc37687b00b341).
+Prepare the source worktrees on the host, where Git is installed; the pinned
+development image does not include Git:
 
 ```sh
 git fetch origin tag bootstrap-abi-facts-v1
 git fetch origin tag bootstrap-copied-arguments-v1
 git fetch origin tag bootstrap-owner-field-initializers-v1
 git fetch origin tag bootstrap-register-carry-v1
+git fetch origin 052f79d7995be93053f73659bcfc37687b00b341
 git worktree add --detach build/predecessor-source bdf646f09d5e14c88124c4bc9e4f998beda16183
 git worktree add --detach build/abi-facts-source 17f4f1440e6faa9cdaf8711c04400854bdb60d9e
 test "$(git -C build/abi-facts-source rev-parse HEAD)" = 17f4f1440e6faa9cdaf8711c04400854bdb60d9e
@@ -61,6 +73,8 @@ git worktree add --detach build/owner-field-source bbf18f40d73b0f7b862a4b23d77b0
 test "$(git -C build/owner-field-source rev-parse HEAD)" = bbf18f40d73b0f7b862a4b23d77b03dfb3f3d0e4
 git worktree add --detach build/register-carry-source f89e0c9eb199ba482fcce20f1783a52ceae8b1b8
 test "$(git -C build/register-carry-source rev-parse HEAD)" = f89e0c9eb199ba482fcce20f1783a52ceae8b1b8
+git worktree add --detach build/paired-root-source 052f79d7995be93053f73659bcfc37687b00b341
+test "$(git -C build/paired-root-source rev-parse HEAD)" = 052f79d7995be93053f73659bcfc37687b00b341
 ```
 
 Then enter the [pinned development environment](../docs/local-development.md)
@@ -87,7 +101,11 @@ FIELDS=$(realpath build/owner-field-compiler/aurorac)
 meson setup build/register-carry-compiler build/register-carry-source -Dkernel_images=false \
   "-Dbootstrap_compiler=$FIELDS"
 meson compile -C build/register-carry-compiler -j 2 aurorac
-P=$(realpath build/register-carry-compiler/aurorac)
+CARRY=$(realpath build/register-carry-compiler/aurorac)
+meson setup build/paired-root-compiler build/paired-root-source -Dkernel_images=false \
+  "-Dbootstrap_compiler=$CARRY"
+meson compile -C build/paired-root-compiler -j 2 aurorac
+P=$(realpath build/paired-root-compiler/aurorac)
 meson setup build/meson . \
   "-Dbootstrap_compiler=$P" "-Duefi_ld=$UEFI_LD"
 meson setup build/meson-compiler . -Dkernel_images=false \
@@ -104,8 +122,12 @@ private index owner through a region-backed field factory; the earlier stages
 cannot build those respective spellings. The register-carry stage changes no
 spelling: its backend emits the current frontend with operands kept in registers
 and elements returned in place, which makes the resulting compiler about 10%
-faster (see [compile speed](ARCHITECTURE.md#compile-speed)). Current setup selects the resulting predecessor by path; its deprecated
-digest option is ignored and retained solely for existing-directory compatibility.
+faster (see [compile speed](ARCHITECTURE.md#compile-speed)). The additional paired-root
+stage supports the graph pass's mutable `Workspace` plus readonly `Input` and
+publishes their ordered two-root ABI facts. The register-carry predecessor alone
+cannot build that pass. Current setup selects the resulting predecessor by path;
+its deprecated digest option is ignored and retained solely for existing-directory
+compatibility.
 
 Both ordinary default directories are now configured: `make`/`make test` use the
 image-enabled graph, while `make -C compiler test` uses the hosted-only graph.
@@ -129,7 +151,9 @@ those facts; this is not a general exported ABI. Both stages generate their own
 facts and header. The existing bootstrap test checks current C1/C2 assembly, object,
 facts and header convergence, binds B to the frontend actually linked into C2, and compares current
 C1/C2 corpus diagnostics/output. No compiler binary or generated frontend is
-committed. Module file loading, mechanical IR projection, independent verification
+committed. The candidate's independent module graph pass runs in Aurora after all
+native function checks and before import pruning, without a C++ graph fallback.
+Module file loading, mechanical IR projection, layout and function verification,
 and the native backend remain C++.
 
 ## Supported source

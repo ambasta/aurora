@@ -9,16 +9,15 @@ The typed-IR milestone established behavior-preserving compiler phase boundaries
 3. The hosted Aurora lexer turns bytes into tokens; `syntax.hpp` defines the untyped source AST. `parser.hpp` is a compatibility entrypoint for one complete hosted Aurora module parse; all declaration/container grammar lives in `parser.au`.
 4. `lowering_types.au`, `lowering_values.au` and the `lowering_frames`, `lowering_calls`, `lowering_expressions`, `lowering_statements` and `lowering_body` modules perform resolved layout/signature analysis, local/member resolution, exact argument-type overload selection, initialization and const/private checks, ownership moves, lexical borrow checks and conservative branch/loop joins. `lowering.au` publishes typed instructions and metadata from the same resolved Session.
 5. `hosted_lowering.cpp` mechanically projects the generated typed records into the target-independent accumulator/value-stack model in `ir.hpp`. Its operations include checked arithmetic, typed loads/stores, explicit control flow, metadata queries and array guard/access operations. Instruction/operator enums come from predecessor-generated Aurora facts.
-6. `ir_verify.hpp` validates a complete module and creates an immutable `ValidatedModule`. Only this validated wrapper can be passed to the emitter. It checks lower-level type, initialization, control-flow, operand-stack, frame and bounds-token invariants.
+6. `ir_verify.hpp` validates layouts and every function's lower-level type, initialization, control-flow, operand-stack, frame and bounds-token invariants. After native function normalization, `ir_graph.au` independently checks the complete call graph and selects retained functions through a mechanical hosted adapter. Only the resulting immutable `ValidatedModule` can be passed to the emitter.
 7. `x86.hpp` lowers validated operations to GNU x86-64 assembly. It has no source AST, scope lookup, const policy, owner-liveness state or borrow-state checker. Target registers, ABI argument placement, stack alignment and machine trap sequences exist only here. Two local forms avoid stack and copy traffic without changing any check: a pushed left operand followed directly by a constant, local or receiver-field load stays in `%rcx` for the arithmetic or comparison that would pop it, and an element read that the next instruction returns is copied straight into the caller's result storage.
 8. `main.cpp` coordinates file I/O and those stages. GNU assembler/linker remain the bootstrap native toolchain.
 
 The C++ host uses internal header units and one main translation unit, linked with the generated Aurora frontend through Meson. Raw `main.cpp` compilation no longer builds a compiler. These are actual phase boundaries, not a stable external compiler-library API.
 
-Bounded two-owner helpers allow a mutable verifier workspace beside a readonly
-input owner. They are a language dependency for the next migration, not an Aurora
-IR verifier: `ir_verify.hpp` remains the independent authority until its checks
-over finalized IR and its normalization order have an actual replacement.
+The graph-verifier migration is a source-only candidate. Its fixed paired-root
+[source-bootstrap dependency](README.md#source-bootstrap), current-stage convergence
+and final-source qualification remain unexecuted.
 
 ## Hosted Aurora parser
 
@@ -144,7 +143,11 @@ checkpoint under `bootstrap-copied-arguments-v1` at source commit
 the facts stage before the current compiler can build its adopted frontend. The
 register-carry checkpoint under `bootstrap-register-carry-v1` at source commit
 `f89e0c9eb199ba482fcce20f1783a52ceae8b1b8` adds a third, so that the backend which
-emits the frontend is the one that keeps operands in registers.
+emits the frontend is the one that keeps operands in registers. The graph candidate
+adds a fourth source-build hop at immutable commit
+`052f79d7995be93053f73659bcfc37687b00b341`, merged in PR #166, to be compiled by register-carry
+for paired borrowed roots and their generated ABI facts. This dependency is
+included in the source recipe above.
 Advance the predecessor only
 when it cannot build the current frontend, to shorten the source-bootstrap
 chain, or for a measured compile-speed gain recorded below, each after
@@ -254,6 +257,24 @@ Call instructions identify validated local functions. Signature lookup establish
 The verifier tracks token identity through the current value, push/pop operations, branches and joins. Replacing a checked value with a new constant/load/calculation loses its token. A guard for another array or length cannot authorize access. Reloading an index from an ordinary local does not recreate a token. A path that bypasses the guard cannot merge into a checked access. Removing a guard or moving an access to a non-dominated path therefore makes the module fail verification; a future optimizer must rerun validation before emission.
 
 This is a small checked-index token discipline, not a general theorem about arbitrary future pointer/aliasing constructs. Arrays are still fixed-shape, scalar-only locals with no exposed alias/escape facility.
+
+## Independent module call graph
+
+The host snapshots actual `ir::Module` after every native `verifyFunction`
+has normalized its code, never from lowering Session summaries. `FunctionRow`
+carries call ranges, receiver/service presence and scope-zero status; target indices
+cover `Call`, `MethodCall`, `BorrowedCall`, `AggregateCall`, `ServiceCall` and `ResourceCall`.
+
+`ir_graph.au` uses paired immutable `Input` / mutable `Workspace` roots for iterative
+O(V + E) service reachability, complete SCC checks, then scope-zero root retention.
+Every component, including unused imports, is checked before pruning. Receiver or
+service-reachable cycles reject with `invalid typed IR: recursive receiver call cycle`;
+unrelated scalar recursion remains legal. Host filtering preserves original order,
+with no native graph fallback. Generated row sizes bound O(V + E) storage; paired
+owner cleanup precedes region closure.
+
+Logical/physical layouts and function CFG/provenance checks remain C++. They reject
+missing/malformed calls and unreachable semantic instructions before graph processing.
 
 ## CFG and frame invariants
 

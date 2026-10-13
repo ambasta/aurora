@@ -21,11 +21,13 @@ frontend_inputs = files('compiler/lexer.au', 'compiler/syntax_arena.au', 'compil
                         'compiler/resolution_kinds.au', 'compiler/lowering_errors.au', 'compiler/lowering_kinds.au',
                         'compiler/lowering_storage.au', 'compiler/resolution_rows.au', 'compiler/resolution_arena.au',
                         'compiler/resolution_names.au', 'compiler/resolution_ingest.au', 'compiler/resolver.au',
-                        'compiler/frontend.au', 'compiler/lowering_common.au', 'compiler/lowering_configuration.au',
+                        'compiler/frontend.au', 'compiler/ir_graph.au',
+                        'compiler/lowering_common.au', 'compiler/lowering_configuration.au',
                         'compiler/lowering_types.au', 'compiler/lowering_values.au', 'compiler/lowering_frames.au',
                         'compiler/lowering_calls.au', 'compiler/lowering_expressions.au',
                         'compiler/lowering_statements.au', 'compiler/lowering_body.au', 'compiler/lowering.au',
-                        'compiler/hosted_lexer.S', 'compiler/hosted_parser.S', 'compiler/hosted_resolver.S')
+                        'compiler/hosted_lexer.S', 'compiler/hosted_parser.S', 'compiler/hosted_resolver.S',
+                        'compiler/hosted_graph.S')
 frontend_assembly = custom_target(
   'hosted-frontend-assembly', input: frontend_inputs,
   output: ['hosted-frontend.s', 'hosted-frontend.generated.s', 'hosted-frontend.abi.json', 'hosted_frontend_abi.hpp'],
@@ -40,13 +42,14 @@ frontend_object = custom_target(
 frontend_args = ['-DAURORA_HOSTED_LEXER', '-DAURORA_HOSTED_PARSER']
 frontend_host_sources = files('compiler/hosted_lexer.cpp', 'compiler/hosted_parser.cpp',
                               'compiler/hosted_resolver.cpp', 'compiler/hosted_lowering.cpp',
-                              'compiler/hosted_lowering_diagnostics.cpp', 'runtime/hosted_bytes.cpp')
+                              'compiler/hosted_lowering_diagnostics.cpp', 'compiler/hosted_graph.cpp',
+                              'runtime/hosted_bytes.cpp')
 frontend_library = static_library(
   'hosted-frontend', [frontend_host_sources, frontend_object, frontend_assembly[3]],
   cpp_args: frontend_args, native: true, install: false,
 )
-# Operator enums are source-defined. Standalone IR/verifier fixtures need only
-# the predecessor-generated header, not the hosted frontend library.
+# Operator enums are source-defined. Header-only IR consumers need the generated
+# declarations; every executable calling validate also links hosted_frontend.
 frontend_headers = declare_dependency(sources: frontend_assembly[3],
                                      include_directories: include_directories('.'))
 hosted_frontend = declare_dependency(link_with: frontend_library, dependencies: frontend_headers,

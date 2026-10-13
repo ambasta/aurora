@@ -1,4 +1,5 @@
 #pragma once
+#include "hosted_graph.hpp"
 #include "initialization_facts.hpp"
 #include "ir_layout.hpp"
 #include "byte_literal.hpp"
@@ -2933,118 +2934,7 @@ inline ValidatedModule validate(Module module) {
                                      module.enumCases,
                                      module.classStorage,
                                      module.classArrayCarriers);
-    // Analyze the full call graph so scalar helpers cannot hide receiver
-    // recursion. Iterative Kosaraju traversal is O(functions + calls) and does
-    // not consume host call-stack depth on an adversarial source-sized graph.
-    std::map<std::string, std::size_t> functionIndices;
-    for (std::size_t index = 0; index < module.functions.size(); ++index)
-        functionIndices.emplace(module.functions[index].name, index);
-    std::vector<std::vector<std::size_t>> calls(module.functions.size());
-    std::vector<std::vector<std::size_t>> callers(module.functions.size());
-    for (std::size_t index = 0; index < module.functions.size(); ++index)
-        for (const auto &instruction : module.functions[index].code) {
-            const std::string *target = nullptr;
-            if (const auto *call = std::get_if<Call>(&instruction))
-                target = &call->callee;
-            if (const auto *call = std::get_if<MethodCall>(&instruction))
-                target = &call->callee;
-            if (const auto *call = std::get_if<BorrowedCall>(&instruction))
-                target = &call->callee;
-            if (const auto *call = std::get_if<AggregateCall>(&instruction))
-                target = &call->callee;
-            if (const auto *call = std::get_if<ServiceCall>(&instruction))
-                target = &call->callee;
-            if (const auto *call = std::get_if<ResourceCall>(&instruction))
-                target = &call->callee;
-            if (target) {
-                const auto next = functionIndices.at(*target);
-                calls[index].push_back(next);
-                callers[next].push_back(index);
-            }
-        }
-    std::vector<bool> serviceReachable(module.functions.size(), false);
-    std::vector<std::size_t> servicePending;
-    for (std::size_t index = 0; index < module.functions.size(); ++index)
-        if (verification::serviceSignature(module.functions[index])) {
-            serviceReachable[index] = true;
-            servicePending.push_back(index);
-        }
-    while (!servicePending.empty()) {
-        const auto current = servicePending.back();
-        servicePending.pop_back();
-        for (const auto child : calls[current])
-            if (!serviceReachable[child]) {
-                serviceReachable[child] = true;
-                servicePending.push_back(child);
-            }
-    }
-    std::vector<bool> visited(module.functions.size(), false);
-    std::vector<std::size_t> finishOrder;
-    for (std::size_t start = 0; start < module.functions.size(); ++start) {
-        if (visited[start])
-            continue;
-        visited[start] = true;
-        std::vector<std::pair<std::size_t, std::size_t>> pending{{start, 0}};
-        while (!pending.empty()) {
-            auto &[index, nextEdge] = pending.back();
-            if (nextEdge == calls[index].size()) {
-                finishOrder.push_back(index);
-                pending.pop_back();
-                continue;
-            }
-            const auto next = calls[index][nextEdge++];
-            if (!visited[next]) {
-                visited[next] = true;
-                pending.emplace_back(next, 0);
-            }
-        }
-    }
-    std::fill(visited.begin(), visited.end(), false);
-    for (auto start = finishOrder.rbegin(); start != finishOrder.rend(); ++start) {
-        if (visited[*start])
-            continue;
-        visited[*start] = true;
-        std::vector<std::size_t> pending{*start};
-        std::size_t componentSize = 0;
-        bool hasReceiver = false;
-        bool selfEdge = false;
-        while (!pending.empty()) {
-            const auto index = pending.back();
-            pending.pop_back();
-            ++componentSize;
-            hasReceiver |= module.functions[index].receiver.has_value() || serviceReachable[index];
-            selfEdge |= std::find(calls[index].begin(), calls[index].end(), index) != calls[index].end();
-            for (const auto next : callers[index])
-                if (!visited[next]) {
-                    visited[next] = true;
-                    pending.push_back(next);
-                }
-        }
-        verification::require(!hasReceiver || (componentSize == 1 && !selfEdge), "recursive receiver call cycle");
-    }
-    // Every source/IR function and recursion component above is checked before
-    // discarding unused imported implementations. Root-unit functions include
-    // private service/native bridges; keep them all, independent of visibility.
-    // Reflection and fail-stop/runtime dependencies remain backend-managed.
-    std::vector<bool> retained(module.functions.size(), false);
-    std::vector<std::size_t> pending;
-    for (std::size_t index = 0; index < module.functions.size(); ++index)
-        if (module.functions[index].moduleScope == 0) {
-            retained[index] = true;
-            pending.push_back(index);
-        }
-    while (!pending.empty()) {
-        const auto index = pending.back();
-        pending.pop_back();
-        for (const auto target : calls[index])
-            if (!retained[target]) {
-                retained[target] = true;
-                pending.push_back(target);
-            }
-    }
-    std::erase_if(module.functions, [&](const Function &function) {
-        return !retained[functionIndices.at(function.name)];
-    });
+    verifyHostedGraph(module);
     return ValidatedModule(std::move(module));
 }
 } // namespace aurora::ir

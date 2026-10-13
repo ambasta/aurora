@@ -33,6 +33,12 @@ ARGUMENT_RECORDS = (
     ("LoweringBeginInput", "compiler_frontend::lowering_begin", ("configuration",)),
     ("LoweringScalarInput", "compiler_frontend::lowering_seed_scalar", ("seed",)),
     ("LoweringServiceInput", "compiler_frontend::lowering_seed_service", ("seed",)),
+    ("GraphCreateInput", "compiler_frontend::graph_create_input", ("region", "functions", "edges")),
+    ("GraphCreateWorkspace", "compiler_frontend::graph_create_workspace", ("region", "functions", "edges")),
+    ("GraphReleaseInput", "compiler_frontend::graph_release_input", ("region", "input")),
+    ("GraphReleaseWorkspace", "compiler_frontend::graph_release_workspace", ("region", "workspace")),
+    ("GraphFunctionInput", "compiler_frontend::graph_set_function", ("index", "function")),
+    ("GraphEdgeInput", "compiler_frontend::graph_set_edge", ("index", "target")),
 )
 
 
@@ -66,6 +72,8 @@ def frontend_abi_entries(facts):
 
     arena, _ = abi_declaration(facts, "records", "compiler_parser::AstArena")
     session, _ = abi_declaration(facts, "records", "compiler_resolver::Session")
+    graph_input, _ = abi_declaration(facts, "records", "compiler_ir_graph::Input")
+    graph_workspace, _ = abi_declaration(facts, "records", "compiler_ir_graph::Workspace")
     checks = [
         (
             "lexer_next",
@@ -180,6 +188,19 @@ def frontend_abi_entries(facts):
         ),
     ]
     checks += [
+        ("graph_" + name, "compiler_frontend::graph_" + name, receiver, parameters, result)
+        for name, receiver, parameters, result in (
+            ("create_input", None, ["region", "i64", "i64"], "compiler_ir_graph::Input"),
+            ("create_workspace", None, ["region", "i64", "i64"], "compiler_ir_graph::Workspace"),
+            ("release_input", None, ["region", "compiler_ir_graph::Input"], "i64"),
+            ("release_workspace", None, ["region", "compiler_ir_graph::Workspace"], "i64"),
+            ("set_function", graph_input, ["i64", "compiler_ir_graph::FunctionRow"], "bool"),
+            ("set_edge", graph_input, ["i64", "i64"], "bool"),
+            ("run", graph_workspace, [], "compiler_ir_graph::GraphStatus"),
+            ("retained", graph_workspace, ["i64"], "bool"),
+        )
+    ]
+    checks += [
         ("parser_" + name, "compiler_frontend::parser_" + name, arena, [], "i64")
         for name in ("node_count", "edge_count", "type_count", "syntax_count")
     ]
@@ -205,12 +226,28 @@ def frontend_abi_entries(facts):
             or not matches(function["result"], result)
         ):
             raise ValueError(f"private bridge signature changed: {source}")
-        if (
-            function.get("second_receiver") is not None
+        second = function.get("second_receiver")
+        if alias == "graph_run":
+            if (
+                function.get("receiver_mutable") is not True
+                or function.get("borrowed_parameter") is not True
+                or not isinstance(second, dict)
+                or second.get("type_name") != graph_input
+                or second.get("mutable") is not False
+                or function.get("root_count") != 2
+                or function.get("root_tuple_bytes") != 16
+                or function.get("root_order") != ["receiver", "second_receiver"]
+            ):
+                raise ValueError(f"private paired-root bridge changed: {source}")
+        elif (
+            second is not None
             or function.get("root_count", int(receiver is not None)) != int(receiver is not None)
             or function.get("root_tuple_bytes", 0) != 0
         ):
             raise ValueError(f"unexpected private bridge second root: {source}")
+        if alias in ("graph_set_function", "graph_set_edge", "graph_retained"):
+            if function.get("receiver_mutable") is not (alias != "graph_retained"):
+                raise ValueError(f"private graph root authority changed: {source}")
         offset = 0
         for actual, expected in zip(function["parameters"], parameters):
             if not matches(actual, expected) or actual["offset"] != offset:

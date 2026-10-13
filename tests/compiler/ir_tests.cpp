@@ -3869,6 +3869,126 @@ void spanTests() {
     std::cout << "PASS IR span negative and upper bounds precede pointer load\n";
 }
 
+void callGraphTests() {
+    const auto scalarFunction = [](const std::string &name, int scope) {
+        aurora::ir::Function function;
+        function.name = name;
+        function.moduleScope = scope;
+        function.result = Type::I64;
+        function.code = {Constant{42, Type::I64}, Return{}};
+        return function;
+    };
+    const auto retainedNames = [](Module module) {
+        const auto checked = validate(std::move(module));
+        std::vector<std::string> names;
+        for (const auto &function : checked.get().functions)
+            names.push_back(function.name);
+        return names;
+    };
+    Module module;
+    module.descriptorViews[1] = {};
+    // Neither declaration nor retention order follows traversal order. Parallel
+    // edges must not duplicate output, and every root survives without callers.
+    module.functions = {scalarFunction("leaf", 1),
+                        scalarFunction("unused", 1),
+                        scalarFunction("bridge", 1),
+                        scalarFunction("root", 0),
+                        scalarFunction("other_root", 0)};
+    module.functions[2].code = {Call{"leaf"}, Return{}};
+    module.functions[3].code = {Call{"bridge"}, Call{"bridge"}, Return{}, Jump{1}, Label{1}};
+    const std::vector<std::string> expected{"leaf", "bridge", "root", "other_root"};
+    const auto checked = validate(module);
+    if (retainedNames(module) != expected || checked.get().functions[2].code.size() != 3)
+        throw Error("graph retention changed transitive roots, original order or normalized code");
+    ++passed;
+    std::cout << "PASS IR transitive graph retention preserves order after function normalization\n";
+
+    const std::vector<std::pair<Instruction, std::string>> missingCalls{
+        {Call{"missing"}, "unknown call target"},
+        {MethodCall{"missing", 0}, "unknown method call target"},
+        {BorrowedCall{"missing", 0, 1}, "unknown method call target"},
+        {AggregateCall{"missing", {}, 0}, "unknown aggregate call target"},
+        {ServiceCall{"missing", 1, 0, {}}, "unknown service helper target"},
+        {ResourceCall{"missing", 0, {}, 0}, "unknown resource call target"}};
+    for (const auto &[call, diagnostic] : missingCalls)
+        rejectModule(
+            "unused imported call cannot hide missing target " + diagnostic,
+            module,
+            [&](Module &bad) {
+                bad.functions[1].code = {call, Return{}};
+            },
+            diagnostic);
+    rejectModule(
+        "unreachable call rejects before graph retention",
+        module,
+        [](Module &bad) {
+            bad.functions[1].code.push_back(Call{"unused"});
+        },
+        "unreachable semantic instruction");
+    for (auto &function : module.functions)
+        function.moduleScope = 1;
+    if (!retainedNames(module).empty())
+        throw Error("graph without root functions retained imported implementations");
+    ++passed;
+    std::cout << "PASS IR rootless graph retains no imported implementation\n";
+
+    auto receivers = receiverBaseline();
+    receivers.descriptorViews[1] = {};
+    for (auto &function : receivers.functions)
+        function.moduleScope = 1;
+    receivers.functions.push_back(scalarFunction("root", 0));
+    if (retainedNames(receivers) != std::vector<std::string>{"root"})
+        throw Error("unused acyclic receiver component was retained");
+    ++passed;
+    std::cout << "PASS IR unused acyclic receiver component is pruned\n";
+    rejectModule(
+        "unused imported receiver cycle is checked before pruning",
+        receivers,
+        [](Module &bad) {
+            bad.functions[2].code = {MethodCall{"relay_pair", 0}, Return{}};
+        },
+        "invalid typed IR: recursive receiver call cycle");
+
+    auto serviceEntry = scalarFunction("service_root", 0);
+    serviceEntry.parameters = {Type::ConsoleSession};
+    serviceEntry.frameBytes = 16;
+    serviceEntry.serviceSlots = {16};
+    serviceEntry.code = {BindServiceParameter{0, 16, service::Kind::Console},
+                         AcquireServiceLoan{1, 16},
+                         ServiceCall{"service_helper", 1, 0, {0}},
+                         ReleaseServiceLoan{1},
+                         Return{}};
+    auto serviceHelper = serviceEntry;
+    serviceHelper.name = "service_helper";
+    serviceHelper.moduleScope = 1;
+    serviceHelper.code = {BindServiceParameter{0, 16, service::Kind::Console}, Call{"leaf"}, Return{}};
+    module.functions = {scalarFunction("leaf", 1),
+                        scalarFunction("cycle_a", 1),
+                        serviceHelper,
+                        scalarFunction("cycle_b", 1),
+                        serviceEntry};
+    module.functions[1].code = {Call{"cycle_b"}, Return{}};
+    module.functions[3].code = {Call{"cycle_a"}, Return{}};
+    if (retainedNames(module) != std::vector<std::string>{"leaf", "service_helper", "service_root"})
+        throw Error("service edge retention or disconnected scalar SCC handling changed");
+    ++passed;
+    std::cout << "PASS IR service forwarding retains scalar descendants and permits unrelated scalar cycles\n";
+    rejectModule(
+        "service-reachable scalar SCC rejects through transitive helpers",
+        module,
+        [](Module &bad) {
+            bad.functions[0].code = {Call{"cycle_a"}, Return{}};
+        },
+        "invalid typed IR: recursive receiver call cycle");
+    rejectModule(
+        "service-reachable scalar self edge rejects",
+        module,
+        [](Module &bad) {
+            bad.functions[0].code = {Call{"leaf"}, Return{}};
+        },
+        "invalid typed IR: recursive receiver call cycle");
+}
+
 void reflectionEmissionTests() {
     auto module = baseline();
     module.descriptors = {{1, {8, 0}}, {100, {16, 1}}, {101, {0, 0}}};
@@ -4010,6 +4130,7 @@ int main(int argc, char **argv) {
         byteTests();
         packedStorageTests();
         initializationPayloadMetricTests();
+        callGraphTests();
         reflectionEmissionTests();
         for (const auto operation : {Binary::CheckedDivide, Binary::CheckedRemainder}) {
             const auto name = operation == Binary::CheckedDivide ? "division" : "remainder";

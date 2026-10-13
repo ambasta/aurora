@@ -25,6 +25,7 @@ HEADERS = (
     "ir_layout.hpp",
     "initialization_facts.hpp",
     "ir_verify.hpp",
+    "hosted_graph.hpp",
     "x86.hpp",
     "byte_literal.hpp",
 )
