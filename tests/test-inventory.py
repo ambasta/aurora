@@ -202,15 +202,13 @@ def canonical_command(arguments, root, build, workdir=None):
 
 def check_commands(manifest, records, root, build):
     by_name = {record["name"]: record for record in records}
+    arguments = {record["name"]: {Path(arg).resolve() for arg in record["cmd"]} for record in records}
     for runner, entry in manifest.items():
         expected = entry.get("meson_commands", {})
         if entry["meson"] and not expected:
             raise ValueError("unaccounted compiler command variants: " + runner)
-        actual = {
-            record["name"]
-            for record in records
-            if any(Path(arg).resolve() == root / "tests/compiler" / runner for arg in record["cmd"])
-        }
+        script = root / "tests/compiler" / runner
+        actual = {name for name, paths in arguments.items() if script in paths}
         if actual != set(expected):
             raise ValueError("compiler command membership drift: " + runner)
         for name, declaration in expected.items():
