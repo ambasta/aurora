@@ -271,13 +271,14 @@ class SourceOwner {
 
 public:
     SourceOwner(std::uint64_t region, const wire::InputCounts &counts, std::int64_t callableCount,
-                std::int64_t slotCount) {
+                std::int64_t slotCount, std::int64_t instructionBegin) {
         release_.region = region;
         hosted_abi::MetadataCreate create;
         create.region = region;
         create.counts = counts;
         create.callableCount = callableCount;
         create.slotCount = slotCount;
+        create.instructionBegin = instructionBegin;
         aurora_hosted_metadata_create(&create, data());
     }
     ~SourceOwner() {
@@ -308,11 +309,13 @@ public:
     SourceOwner owner;
     wire::InputCounts counts;
     Capacities capacities;
+    std::int64_t instructionBegin;
     std::array<std::span<const std::byte>, static_cast<std::size_t>(Pool::count)> pools;
 
     State(const wire::InputCounts &input, std::int64_t callableCount, std::int64_t slotCount,
-          const Capacities &limits)
-        : region(quota(limits)), owner(region.id(), input, callableCount, slotCount), counts(input), capacities(limits) {
+          const Capacities &limits, std::int64_t instructionTypeBegin)
+        : region(quota(limits)), owner(region.id(), input, callableCount, slotCount, instructionTypeBegin),
+          counts(input), capacities(limits), instructionBegin(instructionTypeBegin) {
     }
     template <Pool pool> void set(std::int64_t position, const RowType<pool> &value) {
         // Runtime set borrows this descriptor observation; it only changes the
@@ -365,7 +368,8 @@ void detail::MetadataWriter::allocate() {
     if (allocated_)
         invalidTransport();
     pending_.state_ = std::make_unique<Metadata::State>(position_, callableCount_, slotCount_,
-                                                       capacities(position_, callableCount_, slotCount_));
+                                                       capacities(position_, callableCount_, slotCount_),
+                                                       instructionBegin_ < 0 ? position_.coreCounts.types : instructionBegin_);
     const auto allocated = aurora_hosted_metadata_allocated(pending_.state_->owner.data());
     if (allocated == 0)
         allocationFailure();
@@ -375,6 +379,19 @@ void detail::MetadataWriter::allocate() {
     position_ = {};
     callableCount_ = 0;
     slotCount_ = 0;
+    instructionBegin_ = -1;
+}
+void detail::MetadataWriter::beginInstructions() {
+    if (instructionBegin_ >= 0)
+        invalidTransport();
+    instructionBegin_ = position_.coreCounts.types;
+}
+std::int64_t detail::MetadataWriter::instructionType(const Type &value) {
+    if (instructionBegin_ < 0)
+        invalidTransport();
+    const auto position = position_.coreCounts.types;
+    type(position, value);
+    return position;
 }
 wire::ByteRange detail::MetadataWriter::text(std::string_view value) {
     wire::ByteRange range;
@@ -406,18 +423,26 @@ void detail::MetadataWriter::type(std::int64_t position, const Type &value) {
     position_.coreCounts.types = add(position_.coreCounts.types, 1);
 }
 void detail::MetadataWriter::callableType(const Type &value) {
+    if (instructionBegin_ >= 0)
+        invalidTransport();
     type(position_.coreCounts.types, value);
 }
 std::int64_t detail::MetadataWriter::slotType(const Type &value) {
+    if (instructionBegin_ >= 0)
+        invalidTransport();
     const auto position = position_.coreCounts.types;
     type(position, value);
     return position;
 }
 void detail::MetadataWriter::leaf(const Type &value) {
+    if (instructionBegin_ >= 0)
+        invalidTransport();
     type(position_.coreCounts.leaves, value);
     position_.coreCounts.leaves = add(position_.coreCounts.leaves, 1);
 }
 void detail::MetadataWriter::field(const ClassField &value) {
+    if (instructionBegin_ >= 0)
+        invalidTransport();
     if (allocated_ && !pending_.state_)
         invalidTransport();
     wire::FieldRow row;
@@ -504,12 +529,13 @@ MetadataIngress detail::MetadataWriter::take() && {
     if (capacities(position_, callableCount_, slotCount_) != pending_.state_->capacities ||
         position_.coreCounts.fields != expected.coreCounts.fields ||
         position_.coreCounts.leaves != expected.coreCounts.leaves ||
-        position_.mapCounts.indices != expected.mapCounts.indices)
+        position_.mapCounts.indices != expected.mapCounts.indices ||
+        (instructionBegin_ < 0 ? position_.coreCounts.types : instructionBegin_) != pending_.state_->instructionBegin)
         invalidTransport();
     return std::move(pending_);
 }
 
-std::unique_ptr<Metadata> Metadata::import(const Module &module) {
+void detail::MetadataWriter::declarations(const Module &module) {
     // Union membership preserves absent, empty and extra hostile map entries.
     std::vector<std::string_view> names;
     for (const auto &[name, value] : module.classLayouts) {
@@ -528,7 +554,7 @@ std::unique_ptr<Metadata> Metadata::import(const Module &module) {
         names.push_back(name);
     std::sort(names.begin(), names.end());
     names.erase(std::unique(names.begin(), names.end()), names.end());
-    detail::MetadataWriter writer;
+    auto &writer = *this;
     const auto copyIndices = [&](const auto &values) {
         wire::IndexRange range;
         range.firstIndex = writer.position().mapCounts.indices;
@@ -537,142 +563,146 @@ std::unique_ptr<Metadata> Metadata::import(const Module &module) {
             writer.index(value);
         return range;
     };
-    for (int pass = 0; pass < 2; ++pass) {
-        for (auto key : names) {
-            const std::string name(key);
-            wire::ClassRow row;
-            row.nameRange = writer.text(name);
-            row.leafRange.firstIndex = writer.position().coreCounts.leaves;
-            row.fieldRange.firstIndex = writer.position().coreCounts.fields;
-            row.suppliedStorage = -1;
-            if (const auto entry = module.classLayouts.find(name); entry != module.classLayouts.end()) {
-                row.membershipBits |= 1;
-                row.leafRange.indexCount = count(entry->second.size());
-                for (const auto &value : entry->second)
-                    writer.leaf(value);
-            }
-            if (const auto entry = module.classFields.find(name); entry != module.classFields.end()) {
-                row.membershipBits |= 2;
-                row.fieldRange.indexCount = count(entry->second.size());
-                for (const auto &value : entry->second)
-                    writer.field(value);
-            }
-            if (const auto entry = module.classStorage.find(name); entry != module.classStorage.end()) {
-                row.membershipBits |= 4;
-                row.suppliedStorage = writer.position().mapCounts.storage;
-                wire::StorageRow copied;
-                copied.leafOffsetRange = copyIndices(entry->second.leafOffsets);
-                copied.fieldOffsetRange = copyIndices(entry->second.fieldOffsets);
-                copied.physicalExtent.sizeBytes = entry->second.sizeBytes;
-                copied.physicalExtent.alignmentBytes = entry->second.alignment;
-                copied.physicalExtent.reservedBytes = entry->second.reservedBytes;
-                writer.append(copied);
-            }
-            if (module.classArrayCarriers.contains(name))
-                row.membershipBits |= 8;
-            writer.append(row);
+    for (auto key : names) {
+        const std::string name(key);
+        wire::ClassRow row;
+        row.nameRange = writer.text(name);
+        row.leafRange.firstIndex = writer.position().coreCounts.leaves;
+        row.fieldRange.firstIndex = writer.position().coreCounts.fields;
+        row.suppliedStorage = -1;
+        if (const auto entry = module.classLayouts.find(name); entry != module.classLayouts.end()) {
+            row.membershipBits |= 1;
+            row.leafRange.indexCount = count(entry->second.size());
+            for (const auto &value : entry->second)
+                writer.leaf(value);
         }
-        for (const auto &[id, value] : module.descriptors) {
-            wire::DescriptorRow row;
-            row.descriptorId = id;
-            row.sizeValue = value.size;
-            row.publicFieldCount = value.publicFields;
-            writer.append(row);
+        if (const auto entry = module.classFields.find(name); entry != module.classFields.end()) {
+            row.membershipBits |= 2;
+            row.fieldRange.indexCount = count(entry->second.size());
+            for (const auto &value : entry->second)
+                writer.field(value);
         }
-        for (const auto &[scope, values] : module.descriptorViews) {
-            wire::ViewRow row;
-            row.moduleScope = scope;
-            row.descriptorRange = copyIndices(values);
-            writer.append(row);
+        if (const auto entry = module.classStorage.find(name); entry != module.classStorage.end()) {
+            row.membershipBits |= 4;
+            row.suppliedStorage = writer.position().mapCounts.storage;
+            wire::StorageRow copied;
+            copied.leafOffsetRange = copyIndices(entry->second.leafOffsets);
+            copied.fieldOffsetRange = copyIndices(entry->second.fieldOffsets);
+            copied.physicalExtent.sizeBytes = entry->second.sizeBytes;
+            copied.physicalExtent.alignmentBytes = entry->second.alignment;
+            copied.physicalExtent.reservedBytes = entry->second.reservedBytes;
+            writer.append(copied);
         }
-        for (const auto &[name, cases] : module.enumCases) {
-            wire::EnumRow row;
-            row.nameRange = writer.text(name);
-            row.caseCount = cases;
-            writer.append(row);
-        }
-        // Signatures and frames stay raw until source admission. Each signature
-        // has one result-first range, followed by that callable's typed slots.
-        for (const auto &function : module.functions) {
-            wire::CallableRow row;
-            row.nameRange = writer.text(function.name);
-            row.typeRange.firstIndex = writer.position().coreCounts.types;
-            row.typeRange.indexCount = add(1, count(function.parameters.size()));
-            row.moduleScope = function.moduleScope;
-            writer.callableType(function.result);
-            for (const auto &parameter : function.parameters)
-                writer.callableType(parameter);
-            row.frameBytes = function.frameBytes;
-            row.slotRange.firstIndex = writer.slotCount();
-            const auto slot = [&](SlotKind kind, int offset, std::int64_t typeIndex = 0,
-                                  std::int64_t length = 0, bool mutableValue = false) {
-                wire::SlotRow declaration;
-                declaration.recordKind = static_cast<std::int64_t>(kind);
-                declaration.slotOffset = offset;
-                declaration.typeIndex = typeIndex;
-                declaration.slotLength = length;
-                declaration.mutableValue = mutableValue;
-                writer.append(declaration);
-            };
-            // Maps are already ordered by offset. Preserve every declaration,
-            // including annotations without owners, for source admission.
-            for (const auto &[offset, value] : function.slots)
-                slot(SlotKind::ScalarSlot, offset, writer.slotType(value));
-            for (const auto &[offset, value] : function.objectSlots)
-                slot(SlotKind::ObjectSlot, offset, writer.slotType(Type(value.className)), 0, value.mutableValue);
-            for (const auto &[offset, length] : function.arraySlots)
-                slot(SlotKind::ArraySlot, offset, 0, length);
-            for (const auto offset : function.spanSlots)
-                slot(SlotKind::SpanSlot, offset);
-            for (const auto offset : function.serviceSlots)
-                slot(SlotKind::ServiceSlot, offset);
-            for (const auto offset : function.regionSlots)
-                slot(SlotKind::RegionSlot, offset);
-            for (const auto &[offset, mutableValue] : function.byteSlots)
-                slot(SlotKind::ByteSlot, offset, 0, 0, mutableValue);
-            for (const auto &[offset, name] : function.ownedValueTypes)
-                slot(SlotKind::OwnedValueType, offset, writer.slotType(Type::ownedValues(Type(name))));
-            row.slotRange.indexCount = writer.slotCount() - row.slotRange.firstIndex;
-            const auto receiver = [&](const Receiver &value) {
-                wire::ReceiverShape shape;
-                shape.nameRange = writer.text(value.className);
-                shape.flags = (value.mutableValue ? 1 : 0) | (value.constructor ? 2 : 0) |
-                              (value.publicAccess ? 4 : 0);
-                return shape;
-            };
-            if (function.receiver) {
-                row.flags |= 1;
-                row.receiver = receiver(*function.receiver);
-            }
-            if (function.borrowedParameter)
-                row.flags |= 2;
-            if (function.secondBorrowedParameter) {
-                row.flags |= 4;
-                row.secondReceiver = receiver(*function.secondBorrowedParameter);
-            }
-            if (function.receiverSpanField) {
-                row.flags |= 8;
-                row.receiverSpanField = *function.receiverSpanField;
-            }
-            writer.append(row);
-        }
-        // Source checks this sorted (name, stable ID) suffix independently.
-        // Sorting never erases duplicate or malformed callable declarations.
-        std::vector<std::size_t> callableIds(module.functions.size());
-        for (std::size_t id = 0; id < callableIds.size(); ++id)
-            callableIds[id] = id;
-        std::sort(callableIds.begin(), callableIds.end(), [&](auto left, auto right) {
-            const auto &a = module.functions[left].name;
-            const auto &b = module.functions[right].name;
-            return a < b || (a == b && left < right);
-        });
-        for (auto id : callableIds)
-            writer.index(count(id));
-        if (pass == 0)
-            writer.allocate();
+        if (module.classArrayCarriers.contains(name))
+            row.membershipBits |= 8;
+        writer.append(row);
     }
+    for (const auto &[id, value] : module.descriptors) {
+        wire::DescriptorRow row;
+        row.descriptorId = id;
+        row.sizeValue = value.size;
+        row.publicFieldCount = value.publicFields;
+        writer.append(row);
+    }
+    for (const auto &[scope, values] : module.descriptorViews) {
+        wire::ViewRow row;
+        row.moduleScope = scope;
+        row.descriptorRange = copyIndices(values);
+        writer.append(row);
+    }
+    for (const auto &[name, cases] : module.enumCases) {
+        wire::EnumRow row;
+        row.nameRange = writer.text(name);
+        row.caseCount = cases;
+        writer.append(row);
+    }
+    // Signatures and frames stay raw until source admission. Each signature
+    // has one result-first range, followed by that callable's typed slots.
+    for (const auto &function : module.functions) {
+        wire::CallableRow row;
+        row.nameRange = writer.text(function.name);
+        row.typeRange.firstIndex = writer.position().coreCounts.types;
+        row.typeRange.indexCount = add(1, count(function.parameters.size()));
+        row.moduleScope = function.moduleScope;
+        writer.callableType(function.result);
+        for (const auto &parameter : function.parameters)
+            writer.callableType(parameter);
+        row.frameBytes = function.frameBytes;
+        row.slotRange.firstIndex = writer.slotCount();
+        const auto slot = [&](SlotKind kind, int offset, std::int64_t typeIndex = 0,
+                              std::int64_t length = 0, bool mutableValue = false) {
+            wire::SlotRow declaration;
+            declaration.recordKind = static_cast<std::int64_t>(kind);
+            declaration.slotOffset = offset;
+            declaration.typeIndex = typeIndex;
+            declaration.slotLength = length;
+            declaration.mutableValue = mutableValue;
+            writer.append(declaration);
+        };
+        // Maps are already ordered by offset. Preserve every declaration,
+        // including annotations without owners, for source admission.
+        for (const auto &[offset, value] : function.slots)
+            slot(SlotKind::ScalarSlot, offset, writer.slotType(value));
+        for (const auto &[offset, value] : function.objectSlots)
+            slot(SlotKind::ObjectSlot, offset, writer.slotType(Type(value.className)), 0, value.mutableValue);
+        for (const auto &[offset, length] : function.arraySlots)
+            slot(SlotKind::ArraySlot, offset, 0, length);
+        for (const auto offset : function.spanSlots)
+            slot(SlotKind::SpanSlot, offset);
+        for (const auto offset : function.serviceSlots)
+            slot(SlotKind::ServiceSlot, offset);
+        for (const auto offset : function.regionSlots)
+            slot(SlotKind::RegionSlot, offset);
+        for (const auto &[offset, mutableValue] : function.byteSlots)
+            slot(SlotKind::ByteSlot, offset, 0, 0, mutableValue);
+        for (const auto &[offset, name] : function.ownedValueTypes)
+            slot(SlotKind::OwnedValueType, offset, writer.slotType(Type::ownedValues(Type(name))));
+        row.slotRange.indexCount = writer.slotCount() - row.slotRange.firstIndex;
+        const auto receiver = [&](const Receiver &value) {
+            wire::ReceiverShape shape;
+            shape.nameRange = writer.text(value.className);
+            shape.flags = (value.mutableValue ? 1 : 0) | (value.constructor ? 2 : 0) |
+                          (value.publicAccess ? 4 : 0);
+            return shape;
+        };
+        if (function.receiver) {
+            row.flags |= 1;
+            row.receiver = receiver(*function.receiver);
+        }
+        if (function.borrowedParameter)
+            row.flags |= 2;
+        if (function.secondBorrowedParameter) {
+            row.flags |= 4;
+            row.secondReceiver = receiver(*function.secondBorrowedParameter);
+        }
+        if (function.receiverSpanField) {
+            row.flags |= 8;
+            row.receiverSpanField = *function.receiverSpanField;
+        }
+        writer.append(row);
+    }
+    // Source checks this sorted (name, stable ID) suffix independently.
+    // Sorting never erases duplicate or malformed callable declarations.
+    std::vector<std::size_t> callableIds(module.functions.size());
+    for (std::size_t id = 0; id < callableIds.size(); ++id)
+        callableIds[id] = id;
+    std::sort(callableIds.begin(), callableIds.end(), [&](auto left, auto right) {
+        const auto &a = module.functions[left].name;
+        const auto &b = module.functions[right].name;
+        return a < b || (a == b && left < right);
+    });
+    for (auto id : callableIds)
+        writer.index(count(id));
+
+}
+std::unique_ptr<Metadata> Metadata::import(const Module &module) {
+    detail::MetadataWriter writer;
+    writer.declarations(module);
+    writer.allocate();
+    writer.declarations(module);
     return std::move(writer).take().finish();
 }
+
 void Metadata::verify() {
     const auto status = aurora_hosted_metadata_run(state_->owner.data());
     const auto reason = aurora_hosted_metadata_error(state_->owner.data());
@@ -728,7 +758,7 @@ void Metadata::publish() {
         (void)integer(storage.physicalExtent.reservedBytes);
         for (std::size_t i = 0; i < index(result.fieldRange.indexCount); ++i) {
             const auto field = state_->row<Pool::fields>(index(result.fieldRange.firstIndex) + i);
-            if (field.typeIndex < 0 || field.typeIndex >= counts.coreCounts.types)
+            if (field.typeIndex < 0 || field.typeIndex >= state_->instructionBegin)
                 invalidTransport();
             (void)integer(field.firstLeaf);
             (void)integer(field.leafCount);
@@ -749,7 +779,7 @@ void Metadata::publish() {
         (void)state_->text(row.nameRange);
         checkRange(index(row.typeRange.firstIndex),
                    index(row.typeRange.indexCount),
-                   index(counts.coreCounts.types));
+                   index(state_->instructionBegin));
         if (row.typeRange.indexCount == 0)
             invalidTransport();
         state_->range(row.slotRange, Pool::slots);
@@ -768,7 +798,7 @@ void Metadata::publish() {
             invalidTransport();
         const auto kind = static_cast<SlotKind>(row.recordKind);
         if (kind == SlotKind::ScalarSlot || kind == SlotKind::ObjectSlot || kind == SlotKind::OwnedValueType)
-            checkIndex(index(row.typeIndex), index(counts.coreCounts.types));
+            checkIndex(index(row.typeIndex), index(state_->instructionBegin));
     }
     if (counts.mapCounts.indices < count(callableCount()))
         invalidTransport();
@@ -1078,7 +1108,17 @@ std::optional<Descriptor> Metadata::findDescriptor(std::int64_t id) const {
     return std::nullopt;
 }
 
+const void *Metadata::sourceOwner() const noexcept {
+    return state_->owner.data();
+}
+std::string Metadata::instructionText(std::size_t begin, std::size_t size) const {
+    wire::ByteRange range;
+    range.firstByte = count(begin);
+    range.byteCount = count(size);
+    return std::string(state_->text(range));
+}
 Type Metadata::typeAt(std::size_t position) const {
+    checkIndex(position, index(state_->instructionBegin));
     const auto row = state_->row<Pool::types>(position);
     Type type(static_cast<TypeKind>(integer(row.typeKind)));
     type.className = state_->text(row.nameRange);
@@ -1087,6 +1127,17 @@ Type Metadata::typeAt(std::size_t position) const {
     // Aurora established that every accepted metadata Type has empty unresolved
     // parameter strings/arguments. Display spelling and resolution provenance
     // never participate in metadata equality, validation or backend layout.
+    return type;
+}
+Type Metadata::instructionTypeAt(std::size_t position) const {
+    if (position < index(state_->instructionBegin))
+        invalidTransport();
+    checkIndex(position, index(state_->counts.coreCounts.types));
+    const auto row = state_->row<Pool::types>(position);
+    Type type(static_cast<TypeKind>(integer(row.typeKind)));
+    type.className = state_->text(row.nameRange);
+    type.elementKind = static_cast<TypeKind>(integer(row.rawTail.elementKind));
+    type.length = integer(row.rawTail.arrayLength);
     return type;
 }
 ClassField Metadata::fieldAt(std::size_t position) const {

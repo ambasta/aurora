@@ -14,7 +14,7 @@ inline constexpr std::int64_t hostedLoweringPreludeRows = 15;
 // These views own no Session descriptor. HostedResolution copies each published
 // output pool once while its consuming owner is armed, then keeps the copies
 // alive for this call. Source bytes stay in Session; only requested immutable
-// already-decoded literal intervals are copied by the mechanical renderer.
+// already-decoded literal bytes are read by index during direct owner fill.
 struct HostedLoweringInput {
     std::span<const hosted_abi::compiler_lowering::OutputRow> rows;
     std::span<const hosted_abi::compiler_lowering::OperandRow> operands;
@@ -38,20 +38,19 @@ struct HostedLoweringServices {
     std::function<void(std::int64_t)> checkModuleScope;
     std::function<service::Kind(std::int64_t)> serviceKind;
     std::function<service::Operation(std::int64_t)> serviceOperation;
-    // Read exactly count retained bytes starting at begin through the existing
-    // source accessor, preserving embedded zeros. Projection bounds-checks the
-    // interval before calling and requires the returned length to match exactly.
-    std::function<std::vector<std::uint8_t>(std::int64_t begin, std::int64_t count)> literalBytes;
+    // Read one already-decoded retained byte through the existing Session
+    // accessor. Projection bounds-checks each immutable interval; direct fill
+    // streams bytes into the Aurora owner without a native payload copy.
+    std::function<std::uint8_t(std::int64_t index)> literalByte;
 };
 
 struct HostedLoweringOutput {
-    std::vector<ir::FunctionBody> functions;
-    ir::MetadataIngress metadata;
+    ir::InstructionIngress instructions;
     std::vector<Diagnostic> diagnostics;
 };
 
 // Call only for a checked LoweringResult success. Checks transport integrity and
-// materializes bodies and raw owning ingress; does not publish metadata or
+// fills paired raw instruction/metadata owners; does not publish views or
 // call ir::validate. The caller retains Session through projection and rendering,
 // then destroys these views and releases Session before independently validating
 // the owned result.

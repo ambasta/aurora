@@ -749,20 +749,13 @@ public:
                 invalidResolution();
             return service::operations[sizeValue(identity)].operation;
         };
-        result.literalBytes = [&](auto begin, auto count) {
-            if (begin < 0 || count < 0 || begin > sourceBytes || count > sourceBytes - begin)
+        result.literalByte = [&](std::int64_t at) {
+            if (at < 0 || at >= sourceBytes)
                 invalidResolution();
-            std::vector<std::uint8_t> bytes;
-            if (sizeValue(count) > bytes.max_size())
+            const auto byte = aurora_hosted_resolver_read_source(session, at);
+            if (byte < 0 || byte > 255)
                 invalidResolution();
-            bytes.reserve(sizeValue(count));
-            for (std::int64_t at = begin; at < begin + count; ++at) {
-                const auto byte = aurora_hosted_resolver_read_source(session, at);
-                if (byte < 0 || byte > 255)
-                    invalidResolution();
-                bytes.push_back(static_cast<std::uint8_t>(byte));
-            }
-            return bytes;
+            return static_cast<std::uint8_t>(byte);
         };
         return result;
     }
@@ -1667,11 +1660,11 @@ class HostedResolution::Impl {
                 throw Error(renderHostedLoweringDiagnostic(result, input, projection.diagnosticServices()));
             return projectHostedLowering(input, projection.loweringServices(serviceKinds));
         }();
-        // The result owns only bodies and a pending callable/module capsule.
+        // The result owns one pending metadata/instruction bundle.
         // Destroy all transport views and free Session before source admission
         // of every signature, the single publication, and native body checks.
         owner.release();
-        auto verified = ir::validate(std::move(output.functions), std::move(output.metadata));
+        auto verified = ir::validate(std::move(output.instructions));
         return {std::move(verified), std::move(output.diagnostics), std::move(declarations)};
     }
 

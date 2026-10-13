@@ -25,8 +25,11 @@ class Metrics;
 }
 class ValidatedModule;
 class MetadataIngress;
+class InstructionIngress;
+class Instructions;
 namespace detail {
 class MetadataWriter;
+class InstructionWriter;
 }
 
 // All ranges borrow the immovable Metadata capsule. Dereferencing copies a
@@ -359,11 +362,17 @@ private:
     void verify();
     void publish();
     Type typeAt(std::size_t index) const;
+    Type instructionTypeAt(std::size_t index) const;
+    std::string instructionText(std::size_t begin, std::size_t count) const;
+    const void *sourceOwner() const noexcept;
+    friend class Instructions;
+    friend class InstructionIngress;
     ClassField fieldAt(std::size_t index) const;
     int indexAt(std::size_t index) const;
     std::optional<std::size_t> findScope(std::int64_t scope) const;
     friend class MetadataIngress;
     friend class detail::MetadataWriter;
+    friend class detail::InstructionWriter;
     friend class TypeRange;
     friend class FieldRange;
     friend class IndexRange;
@@ -378,8 +387,9 @@ class MetadataIngress final {
     std::unique_ptr<Metadata> finish() &&;
     friend class Metadata;
     friend class detail::MetadataWriter;
-    friend ValidatedModule validate(std::vector<FunctionBody> functions, MetadataIngress metadata,
-                                    verification::Metrics *metrics);
+    friend class InstructionIngress;
+    friend class detail::InstructionWriter;
+    friend ValidatedModule validate(InstructionIngress pending, verification::Metrics *metrics);
 
 public:
     MetadataIngress();
@@ -388,5 +398,23 @@ public:
     MetadataIngress &operator=(const MetadataIngress &) = delete;
     MetadataIngress(MetadataIngress &&) noexcept;
     MetadataIngress &operator=(MetadataIngress &&) noexcept;
+};
+
+// Metadata and executable storage have one construction/admission identity.
+// The bundle cannot be paired with a separately admitted metadata capsule.
+class InstructionIngress final {
+    MetadataIngress metadata_;
+    std::unique_ptr<Instructions> instructions_;
+    friend class detail::InstructionWriter;
+    friend ValidatedModule validate(InstructionIngress pending, verification::Metrics *metrics);
+
+public:
+    InstructionIngress();
+    ~InstructionIngress();
+    InstructionIngress(const InstructionIngress &) = delete;
+    InstructionIngress &operator=(const InstructionIngress &) = delete;
+    InstructionIngress(InstructionIngress &&) noexcept;
+    InstructionIngress &operator=(InstructionIngress &&) noexcept;
+    static InstructionIngress import(Module module);
 };
 } // namespace aurora::ir

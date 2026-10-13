@@ -39,8 +39,12 @@ ARGUMENT_RECORDS = (
     ("GraphReleaseWorkspace", "compiler_frontend::graph_release_workspace", ("region", "workspace")),
     ("GraphFunctionInput", "compiler_frontend::graph_set_function", ("index", "function")),
     ("GraphEdgeInput", "compiler_frontend::graph_set_edge", ("index", "target")),
-    ("MetadataCreate", "compiler_frontend::metadata_create", ("region", "counts", "callableCount", "slotCount")),
+    ("MetadataCreate", "compiler_frontend::metadata_create", ("region", "counts", "callableCount", "slotCount", "instructionBegin")),
     ("MetadataRelease", "compiler_frontend::metadata_release", ("region", "store")),
+    ("InstructionsCreate", "compiler_frontend::instructions_create", ("region", "counts")),
+    ("InstructionsRelease", "compiler_frontend::instructions_release", ("region", "store")),
+    ("InstructionsRetainCode", "compiler_frontend::instructions_retain_code", ("callable", "source", "destination")),
+    ("InstructionsTruncateBody", "compiler_frontend::instructions_truncate_body", ("callable", "count")),
 )
 
 
@@ -77,6 +81,7 @@ def frontend_abi_entries(facts):
     graph_input, _ = abi_declaration(facts, "records", "compiler_ir_graph::Input")
     graph_workspace, _ = abi_declaration(facts, "records", "compiler_ir_graph::Workspace")
     metadata, _ = abi_declaration(facts, "records", "compiler_ir_metadata::MetadataStore")
+    instructions, _ = abi_declaration(facts, "records", "compiler_ir_instructions::InstructionStore")
     checks = [
         (
             "lexer_next",
@@ -209,13 +214,26 @@ def frontend_abi_entries(facts):
             (
                 "create",
                 None,
-                ["region", "compiler_ir_metadata::InputCounts", "i64", "i64"],
+                ["region", "compiler_ir_metadata::InputCounts", "i64", "i64", "i64"],
                 "compiler_ir_metadata::MetadataStore",
             ),
             ("release", None, ["region", "compiler_ir_metadata::MetadataStore"], "i64"),
             ("allocated", metadata, [], "bool"),
             ("run", metadata, [], "compiler_ir_metadata::MetadataStatus"),
             ("error", metadata, [], "compiler_ir_metadata::MetadataError"),
+        )
+    ]
+    checks += [
+        ("instructions_" + name, "compiler_frontend::instructions_" + name, receiver, parameters, result)
+        for name, receiver, parameters, result in (
+            ("create", None, ["region", "compiler_ir_instructions::InstructionCounts"], "compiler_ir_instructions::InstructionStore"),
+            ("release", None, ["region", "compiler_ir_instructions::InstructionStore"], "i64"),
+            ("allocated", instructions, [], "bool"),
+            ("admit", instructions, [], "compiler_ir_instructions::InstructionStatus"),
+            ("retain_code", instructions, ["i64", "i64", "i64"], "bool"),
+            ("truncate_body", instructions, ["i64", "i64"], "bool"),
+            ("publish", instructions, [], "bool"),
+            ("error", instructions, [], "compiler_ir_instructions::InstructionError"),
         )
     ]
     checks += [
@@ -245,12 +263,12 @@ def frontend_abi_entries(facts):
         ):
             raise ValueError(f"private bridge signature changed: {source}")
         second = function.get("second_receiver")
-        if alias == "graph_run":
+        if alias in ("graph_run", "instructions_admit"):
             if (
                 function.get("receiver_mutable") is not True
                 or function.get("borrowed_parameter") is not True
                 or not isinstance(second, dict)
-                or second.get("type_name") != graph_input
+                or second.get("type_name") != (graph_input if alias == "graph_run" else metadata)
                 or second.get("mutable") is not False
                 or function.get("root_count") != 2
                 or function.get("root_tuple_bytes") != 16
@@ -269,6 +287,9 @@ def frontend_abi_entries(facts):
         if alias in ("metadata_allocated", "metadata_run", "metadata_error"):
             if function.get("receiver_mutable") is not (alias == "metadata_run"):
                 raise ValueError(f"private metadata root authority changed: {source}")
+        if alias.startswith("instructions_") and receiver is not None:
+            if function.get("receiver_mutable") is not (alias not in ("instructions_allocated", "instructions_error")):
+                raise ValueError(f"private instruction root authority changed: {source}")
         offset = 0
         for actual, expected in zip(function["parameters"], parameters):
             if not matches(actual, expected) or actual["offset"] != offset:
@@ -367,9 +388,9 @@ def lowering_messages(source, facts):
     ]
 
 
-def metadata_messages(source, facts):
-    """Render constant metadata diagnostics from their source-owned reasons."""
-    start = source.index("enum class MetadataError {")
+def owner_messages(source, facts, namespace, enumeration, function):
+    """Render constant owner diagnostics from their source-owned reasons."""
+    start = source.index("enum class " + enumeration + " {")
     block = source[start : source.index("};", start)].splitlines()[1:]
     messages, pending = {}, []
     for line in (raw.strip() for raw in block):
@@ -377,25 +398,25 @@ def metadata_messages(source, facts):
             pending.append(line[3:].strip())
         elif not line or line.startswith("//"):
             if pending:
-                raise ValueError("metadata message must directly precede its reason")
+                raise ValueError("owner message must directly precede its reason")
         else:
             name = line.removesuffix(",")
             if not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name in messages:
-                raise ValueError("unsupported or repeated metadata reason: " + line)
+                raise ValueError("unsupported or repeated owner reason: " + line)
             text = " ".join(pending)
             if (name == "none") != (not text):
-                raise ValueError("metadata reason requires exactly one constant message: " + name)
+                raise ValueError("owner reason requires exactly one constant message: " + name)
             messages[name] = text
             pending = []
-    _, reasons = abi_declaration(facts, "enums", "compiler_ir_metadata::MetadataError")
+    _, reasons = abi_declaration(facts, "enums", namespace + "::" + enumeration)
     if pending or list(messages) != list(reasons["cases"]):
-        raise ValueError("metadata messages differ from the compiled reasons")
+        raise ValueError("owner messages differ from the compiled reasons")
     return [
-        "namespace aurora::hosted_abi::compiler_ir_metadata {",
-        "inline constexpr const char *metadataErrorMessage(MetadataError reason) {",
+        "namespace aurora::hosted_abi::" + namespace + " {",
+        "inline constexpr const char *" + function + "(" + enumeration + " reason) {",
         "    switch (reason) {",
         *[
-            f"    case MetadataError::{name}: return {json.dumps(text, ensure_ascii=True) if text else 'nullptr'};"
+            f"    case {enumeration}::{name}: return {json.dumps(text, ensure_ascii=True) if text else 'nullptr'};"
             for name, text in messages.items()
         ],
         "    }",
@@ -405,7 +426,15 @@ def metadata_messages(source, facts):
     ]
 
 
-def frontend_abi_header(facts, messages=None, metadata_source=None):
+def metadata_messages(source, facts):
+    return owner_messages(source, facts, "compiler_ir_metadata", "MetadataError", "metadataErrorMessage")
+
+
+def instruction_messages(source, facts):
+    return owner_messages(source, facts, "compiler_ir_instructions", "InstructionError", "instructionErrorMessage")
+
+
+def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_source=None):
     """Render compiler-described classes and enums without a second field schema."""
     frontend_abi_entries(facts)
     lines = [
@@ -590,6 +619,36 @@ def frontend_abi_header(facts, messages=None, metadata_source=None):
                 f"inline constexpr std::size_t metadata{row_name}PhysicalBytes = {stride};",
                 f"static_assert(sizeof({cpp_name(symbol)}) == metadata{row_name}PhysicalBytes);",
             ]
+    _, instruction_store = abi_declaration(facts, "records", "compiler_ir_instructions::InstructionStore")
+    instruction_pools = {
+        "instructions": "RawInstructionRow",
+        "operands": "RawOperandRow",
+        "literals": None,
+        "codeOrder": "CodeRow",
+        "bodies": "BodyRow",
+    }
+    owners = {field["name"]: field for field in instruction_store["fields"] if field["kind"] == "owner"}
+    if owners.keys() != instruction_pools.keys():
+        raise ValueError("private instruction owner pools changed")
+    for field_name, row_name in instruction_pools.items():
+        field = owners[field_name]
+        offset, width = number(field["offset"]), number(field["bytes"])
+        if width != 32 or field.get("array_length", 0) or offset + width > instruction_store["size"]:
+            raise ValueError("private instruction owner descriptor changed: " + field_name)
+        lines += [
+            f"inline constexpr std::size_t instructionStore_{field_name}Offset = {offset};",
+            f"inline constexpr std::size_t instructionStore_{field_name}Bytes = {width};",
+        ]
+        if row_name is not None:
+            symbol, row = abi_declaration(facts, "records", "compiler_ir_instructions::" + row_name)
+            qword_row(symbol)
+            stride = number(row["size"])
+            if stride == 0 or stride > 520 or stride != row["reserved"] or row["alignment"] != 8:
+                raise ValueError("private instruction row stride changed: " + row_name)
+            lines += [
+                f"inline constexpr std::size_t instruction{row_name}PhysicalBytes = {stride};",
+                f"static_assert(sizeof({cpp_name(symbol)}) == instruction{row_name}PhysicalBytes);",
+            ]
     # The only manual physical shape is the trusted contiguous readonly span.
     # Source records and their nesting use the compiler's names and field facts.
     if facts["span_bytes"] != 56:
@@ -634,6 +693,8 @@ def frontend_abi_header(facts, messages=None, metadata_source=None):
         lines += lowering_messages(messages, facts)
     if metadata_source is not None:
         lines += metadata_messages(metadata_source, facts)
+    if instruction_source is not None:
+        lines += instruction_messages(instruction_source, facts)
     return "\n".join(lines) + "\n"
 
 
@@ -656,7 +717,8 @@ def stage_modules(module_root, modules):
         shutil.copyfile(source, destination / source.name)
 
 
-def emit(compiler, source, bridges, output, module_root, messages, metadata_source, compatible_header=None):
+def emit(compiler, source, bridges, output, module_root, messages, metadata_source, instruction_source,
+         compatible_header=None):
     raw = output.with_suffix(".generated.s")
     facts_output = output.with_suffix(".abi.json")
     command = ["--local-symbols", "--abi-facts", str(facts_output.resolve())]
@@ -665,7 +727,8 @@ def emit(compiler, source, bridges, output, module_root, messages, metadata_sour
     subprocess.run([str(compiler.resolve()), *command], check=True)
     facts = json.loads(facts_output.read_text())
     header = output.parent / (output.stem.replace("-", "_") + "_abi.hpp")
-    content = frontend_abi_header(facts, messages.read_text(), metadata_source.read_text()).encode()
+    content = frontend_abi_header(facts, messages.read_text(), metadata_source.read_text(),
+                                  instruction_source.read_text()).encode()
     if compatible_header is not None and compatible_header.read_bytes() != content:
         raise ValueError("stage2 ABI header differs from the header used by shared host objects")
     if not header.exists() or header.read_bytes() != content:
@@ -693,7 +756,7 @@ def main():
         len(modules) + len(bridges) + len(headers) != len(inputs)
         or len(headers) > 1
         or len(set(names)) != len(names)
-        or not {"frontend.au", "lowering_errors.au", "ir_metadata_storage.au"} <= set(names)
+        or not {"frontend.au", "lowering_errors.au", "ir_metadata_storage.au", "ir_instruction_storage.au"} <= set(names)
     ):
         raise ValueError("expected unique .au modules including frontend.au, .S bridges and at most one .hpp header")
     module_root = output.parent / "compiler-modules"
@@ -706,6 +769,7 @@ def main():
         module_root,
         modules[names.index("lowering_errors.au")],
         modules[names.index("ir_metadata_storage.au")],
+        modules[names.index("ir_instruction_storage.au")],
         headers[0] if headers else None,
     )
 

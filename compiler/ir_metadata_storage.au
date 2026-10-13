@@ -628,6 +628,8 @@ export namespace compiler_ir_metadata {
         i64 inputFields;
         i64 inputStorage;
         i64 inputIndices;
+        // Declaration rows precede the occurrence-owned instruction type suffix.
+        i64 instructionTypeBegin;
         i64 fieldEnd;
         i64 storageEnd;
         i64 indexEnd;
@@ -636,7 +638,8 @@ export namespace compiler_ir_metadata {
         MetadataError errorValue;
         bool started;
     public:
-        MetadataStore(builtin::ByteRegion region, InputCounts counts, i64 callableCount, i64 slotCount) :
+        MetadataStore(builtin::ByteRegion region, InputCounts counts, i64 callableCount, i64 slotCount,
+            i64 instructionBegin) :
             bytes(region.try_allocate(counts.byte_count())),
             types(type_pool(region, counts.type_count())), classes(class_pool(region, counts.class_count())),
             fields(field_pool(region, field_capacity(counts))), storage(storage_pool(region, storage_capacity(counts))),
@@ -645,12 +648,14 @@ export namespace compiler_ir_metadata {
             callables(callable_pool(region, callableCount)), slots(slot_pool(region, slotCount)),
             results(result_pool(region, counts.class_count())), frames(frame_pool(region)),
             inputLeaves(counts.leaf_count()), inputFields(counts.field_count()),
-            inputStorage(counts.storage_count()), inputIndices(counts.index_count()),
+            inputStorage(counts.storage_count()), inputIndices(counts.index_count()), instructionTypeBegin(instructionBegin),
             fieldEnd(counts.field_count()), storageEnd(counts.storage_count()), indexEnd(counts.index_count()),
             frameCount(0), statusValue(MetadataStatus::pending), errorValue(MetadataError::none), started(false) {}
-        auto initialize(InputCounts counts, i64 callableCount, i64 slotCount) -> bool {
+        auto initialize(InputCounts counts, i64 callableCount, i64 slotCount, i64 instructionBegin) -> bool {
             if (started || statusValue != MetadataStatus::pending) { return false; }
-            if (!valid_counts(counts) || callableCount < 0 || slotCount < 0) {
+            if (!valid_counts(counts) || callableCount < 0 || slotCount < 0
+                || instructionBegin < 0 || instructionBegin > counts.type_count()
+                || instructionTypeBegin != instructionBegin || field_capacity(counts) > instructionBegin) {
                 statusValue = MetadataStatus::invalid;
                 errorValue = MetadataError::integrity;
             } else {
@@ -668,7 +673,8 @@ export namespace compiler_ir_metadata {
             const i64 storage_limit = count_sum(inputStorage, classes.size());
             const i64 index_limit = count_sum(count_sum(inputIndices, inputLeaves), field_limit);
             return inputLeaves >= 0 && inputFields >= 0 && inputStorage >= 0 && inputIndices >= 0
-                && field_limit >= 0 && field_limit <= types.size() && storage_limit >= 0 && index_limit >= 0
+                && instructionTypeBegin >= 0 && instructionTypeBegin <= types.size()
+                && field_limit >= 0 && field_limit <= instructionTypeBegin && storage_limit >= 0 && index_limit >= 0
                 && bytes.ok() && types.ok() && classes.ok() && fields.ok() && storage.ok()
                 && indices.ok() && descriptors.ok() && views.ok() && enums.ok() && callables.ok() && slots.ok()
                 && results.ok() && frames.ok() && fields.size() == field_limit && storage.size() == storage_limit
@@ -697,6 +703,7 @@ export namespace compiler_ir_metadata {
         }
         auto byte_count() const -> i64 { return bytes.size(); }
         auto type_count() const -> i64 { return types.size(); }
+        auto instruction_type_begin() const -> i64 { return instructionTypeBegin; }
         auto class_count() const -> i64 { return classes.size(); }
         auto leaf_count() const -> i64 { return inputLeaves; }
         auto input_field_count() const -> i64 { return inputFields; }
@@ -856,9 +863,10 @@ export namespace compiler_ir_metadata {
             return true;
         }
     };
-    auto create(builtin::ByteRegion region, InputCounts counts, i64 callableCount, i64 slotCount) -> MetadataStore {
-        MetadataStore result = MetadataStore(region, counts, callableCount, slotCount);
-        result.initialize(counts, callableCount, slotCount);
+    auto create(builtin::ByteRegion region, InputCounts counts, i64 callableCount, i64 slotCount,
+        i64 instructionBegin) -> MetadataStore {
+        MetadataStore result = MetadataStore(region, counts, callableCount, slotCount, instructionBegin);
+        result.initialize(counts, callableCount, slotCount, instructionBegin);
         return move(result);
     }
     auto release(builtin::ByteRegion region, MetadataStore store) -> i64 { return 0; }

@@ -8,9 +8,9 @@ bootstrapped with an explicitly selected predecessor compiler.
 Complete module syntax, declaration admission, module/template resolution and
 resolved type/lifetime analysis through typed IR run in Aurora. The `ir_graph.au`
 candidate independently checks normalized module call graphs and
-selects retained functions. Module file loading, mechanical projection,
-logical/physical layouts, function CFG/provenance verification and x86-64 emission
-remain C++23.
+selects retained functions. Aurora also owns independent metadata/layout, callable
+and frame admission. Module file loading, mechanical projection, instruction
+semantics/CFG/provenance verification and x86-64 emission remain C++23.
 GNU assembler/linker and Linux host I/O remain bootstrap dependencies.
 
 ## Build and check
@@ -155,7 +155,8 @@ committed. The candidate's independent module graph pass runs in Aurora after al
 native function checks and before import pruning, without a C++ graph fallback.
 Module file loading, mechanical IR projection, instruction/CFG verification and
 the native backend remain C++. Aurora owns independent metadata/layout, callable
-and frame admission; these recent migrations still await execution qualification.
+and frame admission, plus durable instruction storage. Native verification and
+emission borrow that storage; these migrations still await execution qualification.
 
 ## Supported source
 

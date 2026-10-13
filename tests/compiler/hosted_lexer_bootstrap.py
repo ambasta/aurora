@@ -51,6 +51,7 @@ def frontend_arguments(compiler, root, output):
         str(root / "compiler/hosted_resolver.S"),
         str(root / "compiler/hosted_graph.S"),
         str(root / "compiler/hosted_ir_metadata.S"),
+        str(root / "compiler/hosted_ir_instructions.S"),
     ]
 
 
@@ -139,7 +140,13 @@ def abi_generation(facts):
         ("compiler_ir_metadata::CallableRow", 128),
         ("compiler_ir_metadata::SlotRow", 40),
         ("compiler_ir_metadata::InputCounts", 80),
-        ("compiler_ir_metadata::MetadataStore", 504),
+        ("compiler_ir_metadata::MetadataStore", 512),
+        ("compiler_ir_instructions::RawInstructionRow", 64),
+        ("compiler_ir_instructions::RawOperandRow", 40),
+        ("compiler_ir_instructions::CodeRow", 8),
+        ("compiler_ir_instructions::BodyRow", 24),
+        ("compiler_ir_instructions::InstructionCounts", 32),
+        ("compiler_ir_instructions::InstructionStore", 176),
     ):
         _, entry = abi_declaration(facts, "records", source)
         require(entry["reserved"] == extent and entry["alignment"] == 8, f"frontend layout changed: {source}")
@@ -149,6 +156,7 @@ def abi_generation(facts):
         and "aurora::hosted_abi::compiler_ir_metadata::InputCounts counts{};" in generated
         and "std::int64_t callableCount{};" in generated
         and "std::int64_t slotCount{};" in generated
+        and "std::int64_t instructionBegin{};" in generated
         and "metadataStore_typesBytes = 32;" in generated
         and "metadataStore_callablesBytes = 32;" in generated
         and "metadataStore_slotsBytes = 32;" in generated
@@ -156,6 +164,18 @@ def abi_generation(facts):
         and "metadataRawTypeRowPhysicalBytes = 64;" in generated
         and "metadataSlotRowPhysicalBytes = 40;" in generated,
         "metadata arguments or closed owner/row physical bindings were omitted",
+    )
+    require(
+        all(f"struct alignas(8) {name} {{" in generated for name in (
+            "InstructionsCreate", "InstructionsRelease", "InstructionsRetainCode", "InstructionsTruncateBody"
+        ))
+        and all(f"instructionStore_{pool}Bytes = 32;" in generated for pool in (
+            "instructions", "operands", "literals", "codeOrder", "bodies"
+        ))
+        and all(f"instruction{row}PhysicalBytes = {width};" in generated for row, width in (
+            ("RawInstructionRow", 64), ("RawOperandRow", 40), ("CodeRow", 8), ("BodyRow", 24)
+        )),
+        "instruction arguments or closed owner/row physical bindings were omitted",
     )
     # Exact root signatures are the only native entry authority. An imported
     # implementation must not become a fallback when its forwarding root is lost.
@@ -214,7 +234,64 @@ def abi_generation(facts):
             continue
         raise AssertionError(f"unsafe graph paired bridge accepted: {field}={value}")
     metadata_store, _ = abi_declaration(facts, "records", "compiler_ir_metadata::MetadataStore")
-    for parameter, name in ((2, "callable-count"), (3, "slot-count")):
+    instruction_store, _ = abi_declaration(facts, "records", "compiler_ir_instructions::InstructionStore")
+    for operation in ("create", "release", "allocated", "admit", "retain_code", "truncate_body", "publish", "error"):
+        for mutation in ("receiver", "result", "parameters", "root"):
+            changed = deepcopy(facts)
+            _, entry = abi_declaration(changed, "functions", "compiler_frontend::instructions_" + operation)
+            if mutation == "receiver":
+                entry["receiver"] = instruction_store if entry["receiver"] is None else None
+            elif mutation == "result":
+                entry["result"]["bytes"] += 8
+            elif mutation == "parameters":
+                if entry["parameters"]:
+                    entry["parameters"][0]["bytes"] += 8
+                else:
+                    entry["parameter_bytes"] += 8
+            else:
+                entry["source_name"] = "fixture::removed_instructions_" + operation
+            try:
+                frontend_abi_header(changed)
+            except ValueError:
+                continue
+            raise AssertionError(f"unsafe instruction bridge accepted: {operation}/{mutation}")
+    for field, value in (
+        ("receiver_mutable", False),
+        ("borrowed_parameter", False),
+        ("second_receiver", None),
+        ("second_receiver", {"type_name": instruction_store, "mutable": False}),
+        ("second_receiver", {"type_name": metadata_store, "mutable": True}),
+        ("root_count", 1),
+        ("root_order", ["second_receiver", "receiver"]),
+        ("root_tuple_bytes", 8),
+    ):
+        changed = deepcopy(facts)
+        _, entry = abi_declaration(changed, "functions", "compiler_frontend::instructions_admit")
+        entry[field] = value
+        try:
+            frontend_abi_header(changed)
+        except ValueError:
+            continue
+        raise AssertionError(f"unsafe instruction paired bridge accepted: {field}={value}")
+    for pool, row in (("instructions", "RawInstructionRow"), ("operands", "RawOperandRow"),
+                      ("literals", None), ("codeOrder", "CodeRow"), ("bodies", "BodyRow")):
+        for mutation in ("owner", "stride", "leaf") if row else ("owner",):
+            changed = deepcopy(facts)
+            if mutation == "owner":
+                _, entry = abi_declaration(changed, "records", "compiler_ir_instructions::InstructionStore")
+                next(field for field in entry["fields"] if field["name"] == pool)["bytes"] += 8
+            else:
+                _, entry = abi_declaration(changed, "records", "compiler_ir_instructions::" + row)
+                if mutation == "stride":
+                    entry["size"] -= 1
+                else:
+                    entry["fields"][0]["kind"] = "bool"
+            try:
+                frontend_abi_header(changed)
+            except ValueError:
+                continue
+            raise AssertionError(f"unsafe instruction pool binding accepted: {pool}/{mutation}")
+    for parameter, name in ((2, "callable-count"), (3, "slot-count"), (4, "instruction-begin")):
         for mutation in ("missing", "type", "offset"):
             changed = deepcopy(facts)
             _, entry = abi_declaration(changed, "functions", "compiler_frontend::metadata_create")
@@ -355,11 +432,11 @@ def abi_generation(facts):
         except ValueError:
             continue
         raise AssertionError(f"unsupported or unsafe ABI facts accepted: {kind}")
-    print("PASS generic source-spelled ABI records/enums, nested layout and exact lowering/metadata bridge rejection")
+    print("PASS generic source-spelled ABI records/enums, nested layout and exact lowering/metadata/instruction bridge rejection")
 
 
 def message_generation(facts, root):
-    from bootstrap_frontend import lowering_messages, metadata_messages
+    from bootstrap_frontend import instruction_messages, lowering_messages, metadata_messages
 
     source = (root / "compiler/lowering_errors.au").read_text()
     table = "\n".join(lowering_messages(source, facts))
@@ -408,6 +485,22 @@ def message_generation(facts, root):
         except ValueError:
             continue
         raise AssertionError("metadata message generation accepted a missing message or mismatched reason")
+    source = (root / "compiler/ir_instruction_storage.au").read_text()
+    table = "\n".join(instruction_messages(source, facts))
+    require(
+        "case InstructionError::none: return nullptr;" in table
+        and 'return "invalid typed IR: noncanonical instruction type payload";' in table,
+        "instruction message table lost its constant diagnostic binding",
+    )
+    for changed in (
+        source.replace("        //: invalid hosted IR instruction transport\n", "", 1),
+        source.replace("        integrity,", "        unknown_reason,", 1),
+    ):
+        try:
+            instruction_messages(changed, facts)
+        except ValueError:
+            continue
+        raise AssertionError("instruction message generation accepted a missing message or mismatched reason")
 
 
 def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
@@ -473,6 +566,10 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
     entries.update(
         "aurora_hosted_metadata_" + operation
         for operation in ("create", "release", "allocated", "run", "error")
+    )
+    entries.update(
+        "aurora_hosted_instructions_" + operation
+        for operation in ("create", "release", "allocated", "admit", "retain_code", "truncate_body", "publish", "error")
     )
     # A is predecessor-generated and need not equal B. Both actual build
     # objects must expose exactly the private host shim contract.

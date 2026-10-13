@@ -224,8 +224,10 @@ export namespace compiler_ir_metadata {
     // physical extents and semantic counts stay untouched until their original
     // diagnostic position. All ranges are checked before their first read.
     auto input_integrity(MetadataStore& store) -> bool {
-        if (store.leaf_count() < 0 || store.input_field_count() < 0 || store.leaf_count() > store.type_count()
-            || store.input_field_count() > store.type_count() - store.leaf_count()) {
+        const i64 declarations = store.instruction_type_begin();
+        if (declarations < 0 || declarations > store.type_count()
+            || store.leaf_count() < 0 || store.input_field_count() < 0 || store.leaf_count() > declarations
+            || store.input_field_count() > declarations - store.leaf_count()) {
             return fail(store, MetadataError::integrity);
         }
         i64 at = 0;
@@ -243,7 +245,7 @@ export namespace compiler_ir_metadata {
             const IndexRange slots = row.slots();
             const ReceiverShape receiver = row.first_receiver();
             const ReceiverShape second = row.second_receiver();
-            if (!index_range(types, store.type_count()) || types.count() < 1 || types.begin() != next_type
+            if (!index_range(types, declarations) || types.count() < 1 || types.begin() != next_type
                 || !index_range(slots, store.slot_count()) || slots.begin() != next_slot
                 || row.attributes() < 0 || row.attributes() > 15
                 || !byte_range(receiver.name(), store.byte_count()) || receiver.attributes() < 0 || receiver.attributes() > 7
@@ -270,7 +272,7 @@ export namespace compiler_ir_metadata {
                     }
                 }
                 if (kind == 10 || kind == 11 || kind == 17) {
-                    if (next_type >= store.type_count() || slot.type() != next_type) {
+                    if (next_type >= declarations || slot.type() != next_type) {
                         return fail(store, MetadataError::integrity);
                     }
                     next_type = next_type + 1;
@@ -282,7 +284,7 @@ export namespace compiler_ir_metadata {
             next_slot = next_slot + slots.count();
             at = at + 1;
         }
-        if (next_type != store.type_count() || next_slot != store.slot_count()) {
+        if (next_type != declarations || next_slot != store.slot_count()) {
             return fail(store, MetadataError::integrity);
         }
         const i64 metadata_indices = store.input_index_count() - store.callable_count();

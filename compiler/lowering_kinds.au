@@ -250,7 +250,10 @@ export namespace compiler_lowering {
         SecondReceiverRef,
         NoSecondReceiver,
         SecondReceiverOffset,
-        SecondLoanId
+        SecondLoanId,
+        // Durable instruction names are resolved MetadataStore byte ranges.
+        CalleeName,
+        ClassName
     };
     // Origin identity is frozen before a Local is published.
     enum class SpanOriginKind {

@@ -1,5 +1,6 @@
 #include "ir_verify.hpp"
 #include "hosted_ir_metadata_writer.hpp"
+#include "hosted_ir_instructions.hpp"
 #include "x86.hpp"
 #include <bit>
 #include <functional>
@@ -388,14 +389,14 @@ void unsignedTests() {
                 [target](Module &m) {
                     std::get<Convert>(m.functions[0].code[1]).resultType = target;
                 },
-                "invalid checked conversion types");
+                target.isArray() ? "noncanonical instruction type payload" : "invalid checked conversion types");
             rejectModule(
                 name + " invalid source " + typeName(target),
                 module,
                 [target](Module &m) {
                     std::get<Convert>(m.functions[0].code[1]).sourceType = target;
                 },
-                "invalid checked conversion types");
+                target.isArray() ? "noncanonical instruction type payload" : "invalid checked conversion types");
         }
         rejectModule(
             name + " identity rejected",
@@ -809,7 +810,7 @@ void byteTests() {
             forged.templateArguments = {TypeKind::U8};
             m.functions[0].code = {Constant{1, Type::U8}, UnaryValue{Unary::BitNot, forged}, Return{}};
         },
-        "invalid unary operand type");
+        "noncanonical instruction type payload");
     for (const auto &wide : {Type::I64, Type::U64})
         for (bool narrow : {false, true}) {
             const auto source = narrow ? wide : Type::U8;
@@ -838,14 +839,14 @@ void byteTests() {
                     [invalid](Module &m) {
                         std::get<Convert>(m.functions[0].code[1]).sourceType = invalid;
                     },
-                    "invalid checked conversion types");
+                    invalid.isArray() ? "noncanonical instruction type payload" : "invalid checked conversion types");
                 rejectModule(
                     name + " invalid target " + typeName(invalid),
                     module,
                     [invalid](Module &m) {
                         std::get<Convert>(m.functions[0].code[1]).resultType = invalid;
                     },
-                    "invalid checked conversion types");
+                    invalid.isArray() ? "noncanonical instruction type payload" : "invalid checked conversion types");
             }
         }
     reject(
@@ -2702,7 +2703,7 @@ void enumAndMethodResultTests() {
         [](Module &m) {
             std::get<EnumConstant>(m.functions[0].code[0]).type.length = 1;
         },
-        "invalid enum constant type");
+        "noncanonical instruction type payload");
     rejectEnum(
         "integer constant cannot forge enum",
         [=](Module &m) {
@@ -4131,6 +4132,71 @@ void initializationPayloadMetricTests() {
     }
 }
 
+void instructionOwnerTests() {
+    static_assert(!std::is_copy_constructible_v<InstructionIngress> &&
+                  std::is_nothrow_move_constructible_v<InstructionIngress> &&
+                  std::is_nothrow_move_assignable_v<InstructionIngress>);
+    auto source = baseline();
+    aurora::ir::Function literal;
+    literal.name = "literal_second";
+    literal.result = Type::U8;
+    literal.frameBytes = 64;
+    literal.spanSlots = {56};
+    literal.code = {Jump{7}, Label{6}, Jump{7}, Label{7}, BorrowLiteralSpan{{0, 42, 255}, 56},
+                    Constant{1, Type::I64}, SpanLoad{56}, EndSpan{56}, Return{}};
+    source.functions.push_back(std::move(literal));
+    auto checked = validate(source);
+    const auto code = checked.get().functions.at(1).code;
+    const auto id = code.idAt(2);
+    const auto observation = code.instructionById(id);
+    const auto bytes = std::get<BorrowLiteralSpanObservation>(observation).bytes;
+    source = Module{};
+    auto moved = std::move(checked);
+    auto replacement = validate(baseline());
+    replacement = std::move(moved);
+    if (id != 9 || code.size() != 7 || code.idAt(2) != id || bytes.size() != 3 ||
+        bytes[0] != 0 || bytes[1] != 42 || bytes[2] != 255 ||
+        replacement.get().functions.at(1).code.idAt(2) != id)
+        throw Error("instruction identity or borrowed payload changed after compaction, ingress destruction or owner move");
+    const auto assembly = X86Emitter{}.emit(replacement);
+    if (assembly.find("leaq .Laurora_literal_9(%rip)") == std::string::npos ||
+        assembly.find(".Laurora_literal_9:\n") == std::string::npos ||
+        assembly.find(".Laurora_literal_1:\n") != std::string::npos)
+        throw Error("nonfirst function literal lost its global immutable instruction ID");
+    ++passed;
+    std::cout << "PASS IR instruction ranges and literal IDs survive compaction and owner replacement\n";
+    for (const auto &read : std::vector<std::function<void()>>{
+             [&] { static_cast<void>(code.at(code.size())); },
+             [&] { static_cast<void>(code.instructionById(0)); },
+             [&] { static_cast<void>(code.instructionById(1)); },
+             [&] { static_cast<void>(bytes.at(bytes.size())); }}) {
+        bool rejected = false;
+        try {
+            read();
+        } catch (const Error &) {
+            rejected = true;
+        } catch (const std::out_of_range &) {
+            rejected = true;
+        }
+        if (!rejected)
+            throw Error("instruction range accepted an out-of-domain position, ID or payload index");
+        ++passed;
+    }
+    for (const auto &mutate : std::vector<std::function<void(Type &)>>{
+             [](Type &type) { type.elementKind = TypeKind::U8; },
+             [](Type &type) { type.length = 1; },
+             [](Type &type) { type.elementParameter = "T"; },
+             [](Type &type) { type.lengthParameter = "N"; },
+             [](Type &type) { type.templateArguments = {TypeKind::I64}; }})
+        reject("instruction ingress preserves unresolved raw type tails", [&](Module &module) {
+            mutate(std::get<Constant>(module.functions[0].code[0]).type);
+        }, "noncanonical instruction type payload");
+    reject("declaration admission precedes malformed instruction tail", [](Module &module) {
+        module.functions[0].slots[8].lengthParameter = "N";
+        std::get<Constant>(module.functions[0].code[0]).type.lengthParameter = "N";
+    }, "invalid slot payload type");
+}
+
 void callableOwnerTests() {
     reject("module metadata precedes malformed callable header", [](Module &module) {
         module.descriptors[0] = Descriptor{0, 0};
@@ -4383,14 +4449,14 @@ void metadataOwnerTests() {
     }, "noncanonical class storage metadata");
 }
 
-std::vector<FunctionBody> pendingBodies(std::size_t count = 1) {
-    std::vector<FunctionBody> functions(count);
-    for (std::size_t id = 0; id < functions.size(); ++id) {
-        auto &function = functions[id];
-        function.callableId = id;
-        function.code = {Constant{42, Type::I64}, Store{8, Type::I64}, Load{8, Type::I64}, Return{}};
+void pendingBodies(detail::InstructionWriter &writer, std::size_t count = 1, bool wrongId = false) {
+    const std::vector<Instruction> code{Constant{42, Type::I64}, Store{8, Type::I64}, Load{8, Type::I64}, Return{}};
+    for (std::size_t id = 0; id < count; ++id) {
+        writer.beginBody(wrongId ? id + 1 : id);
+        for (const auto &instruction : code)
+            writer.append(instruction);
+        writer.endBody();
     }
-    return functions;
 }
 
 enum class CallableMutation {
@@ -4543,11 +4609,13 @@ void pendingCallables(detail::MetadataWriter &writer, const std::vector<std::str
             : mutation == CallableMutation::IndexDuplicate ? 0 : id));
 }
 
-MetadataIngress pendingMetadata(bool badStorage = false, bool badDescriptor = false,
+InstructionIngress pendingMetadata(bool badStorage = false, bool badDescriptor = false,
                                 const std::vector<std::string> &names = {"test"},
-                                CallableMutation mutation = CallableMutation::None) {
+                                CallableMutation mutation = CallableMutation::None,
+                                std::optional<std::size_t> bodyCount = std::nullopt, bool wrongId = false) {
     namespace wire = aurora::hosted_abi::compiler_ir_metadata;
     detail::MetadataWriter writer;
+    detail::InstructionWriter instructions(writer);
     const auto fill = [&] {
         wire::ClassRow shape{};
         shape.nameRange = writer.text(std::string("A\0\xff", 3));
@@ -4580,11 +4648,14 @@ MetadataIngress pendingMetadata(bool badStorage = false, bool badDescriptor = fa
         writer.index(7);
         writer.append(view);
         pendingCallables(writer, names, mutation);
+        writer.beginInstructions();
+        pendingBodies(instructions, bodyCount.value_or(names.size()), wrongId);
     };
     fill();
     writer.allocate();
+    instructions.allocate();
     fill();
-    return std::move(writer).take();
+    return std::move(instructions).take();
 }
 
 void metadataIngressTests() {
@@ -4604,10 +4675,10 @@ void metadataIngressTests() {
         throw Error(std::string(name) + ": invalid pending metadata was accepted");
     };
     auto pending = pendingMetadata();
-    MetadataIngress moved(std::move(pending));
+    InstructionIngress moved(std::move(pending));
     pending = pendingMetadata();
     pending = std::move(moved);
-    const auto checked = validate(pendingBodies(), std::move(pending));
+    const auto checked = validate(std::move(pending));
     const auto &metadata = checked.metadata();
     const auto id = metadata.findClass(std::string("A\0\xff", 3));
     if (!id || metadata.leaves(*id).size() != 2 || metadata.fields(*id).at(1).elementType != Type::I64 ||
@@ -4621,7 +4692,7 @@ void metadataIngressTests() {
     ++passed;
     std::cout << "PASS IR pending metadata move construction, replacement and publication\n";
     rejects("pending metadata cannot publish twice", [&] {
-        static_cast<void>(validate(pendingBodies(), std::move(pending)));
+        static_cast<void>(validate(std::move(pending)));
     }, "invalid hosted IR metadata transport");
     // Real Region destruction rejects any leaked owner. Exercise abandonment
     // and exception cleanup without substituting the generated owner/runtime.
@@ -4636,37 +4707,59 @@ void metadataIngressTests() {
         partial.text("p");
         static_cast<void>(std::move(partial).take());
     }, "invalid hosted IR metadata transport");
+    rejects("partially filled instruction bundle releases both owners", [] {
+        detail::MetadataWriter metadata;
+        detail::InstructionWriter instructions(metadata);
+        const auto fill = [&](bool partial) {
+            metadata.declarations(baseline());
+            metadata.beginInstructions();
+            instructions.beginBody(0);
+            instructions.append(Instruction{Push{}});
+            if (!partial)
+                instructions.append(Instruction{Pop{}});
+            instructions.endBody();
+        };
+        fill(false);
+        metadata.allocate();
+        instructions.allocate();
+        fill(true);
+        static_cast<void>(std::move(instructions).take());
+    }, "invalid hosted IR instruction transport");
     {
         detail::MetadataWriter writer;
+        detail::InstructionWriter instructions(writer);
         aurora::hosted_abi::compiler_ir_metadata::ViewRow root{};
         const auto fill = [&] {
             writer.append(root);
             pendingCallables(writer, {"test"});
+            writer.beginInstructions();
+            pendingBodies(instructions);
         };
         fill();
         writer.allocate();
+        instructions.allocate();
         fill();
-        auto sealed = std::move(writer).take();
+        auto sealed = std::move(instructions).take();
         rejects("consumed metadata writer cannot append fields", [&] {
             writer.field(ClassField{Type::I64, 0, 1, false});
         }, "invalid hosted IR metadata transport");
-        static_cast<void>(validate(pendingBodies(), std::move(sealed)));
+        static_cast<void>(validate(std::move(sealed)));
     }
     for (const int mode : {0, 1, 2}) {
         rejects("source callable symbols precede pending metadata semantics", [=] {
             const std::vector<std::string> names = mode == 0 ? std::vector<std::string>{}
                 : mode == 1 ? std::vector<std::string>{"__au_runtime_reserved"}
                             : std::vector<std::string>{"test", "test"};
-            static_cast<void>(validate(pendingBodies(names.size()), pendingMetadata(false, true, names)));
+            static_cast<void>(validate(pendingMetadata(false, true, names)));
         }, mode == 0 ? "empty module" : mode == 1 ? "invalid or reserved function symbol" : "duplicate function");
     }
     rejects("source duplicate symbol precedes later reserved symbol", [] {
         const std::vector<std::string> names{"test", "test", "__au_runtime_reserved"};
-        static_cast<void>(validate(pendingBodies(names.size()), pendingMetadata(false, true, names)));
+        static_cast<void>(validate(pendingMetadata(false, true, names)));
     }, "duplicate function");
     rejects("source reserved symbol precedes later duplicate symbol", [] {
         const std::vector<std::string> names{"__au_runtime_reserved", "test", "test"};
-        static_cast<void>(validate(pendingBodies(names.size()), pendingMetadata(false, true, names)));
+        static_cast<void>(validate(pendingMetadata(false, true, names)));
     }, "invalid or reserved function symbol");
     for (const auto &[name, mutation] : std::vector<std::pair<const char *, CallableMutation>>{
              {"absent receiver payload", CallableMutation::AbsentReceiver},
@@ -4690,45 +4783,43 @@ void metadataIngressTests() {
              {"uncovered frame declaration suffix", CallableMutation::SlotUncovered},
              {"uncovered frame type suffix", CallableMutation::TypeUncovered}}) {
         rejects(name, [=] {
-            static_cast<void>(validate(pendingBodies(2), pendingMetadata(false, false, {"alpha", "omega"}, mutation)));
+            static_cast<void>(validate(pendingMetadata(false, false, {"alpha", "omega"}, mutation)));
         }, "invalid hosted IR metadata transport");
     }
     // These exercise source admission for both row counts. They do not
     // substitute for a successful hosted-lowering projection/sort fixture.
     for (const auto mutation : {CallableMutation::NegativeSingleSlot, CallableMutation::NegativePairedSlot}) {
         rejects("negative slot offset is independent of declaration count", [=] {
-            static_cast<void>(validate(pendingBodies(), pendingMetadata(false, false, {"test"}, mutation)));
+            static_cast<void>(validate(pendingMetadata(false, false, {"test"}, mutation)));
         }, "invalid typed IR: invalid slot offset");
     }
     rejects("pending scalar declaration preserves malformed raw tail", [] {
-        static_cast<void>(validate(pendingBodies(), pendingMetadata(false, false, {"test"}, CallableMutation::ScalarTail)));
+        static_cast<void>(validate(pendingMetadata(false, false, {"test"}, CallableMutation::ScalarTail)));
     }, "invalid slot payload type");
     rejects("pending object declaration preserves malformed nominal tail", [] {
-        static_cast<void>(validate(pendingBodies(), pendingMetadata(false, false, {"test"}, CallableMutation::ObjectTail)));
+        static_cast<void>(validate(pendingMetadata(false, false, {"test"}, CallableMutation::ObjectTail)));
     }, "unknown object class");
     rejects("pending typed owner preserves malformed raw tail", [] {
-        static_cast<void>(validate(pendingBodies(), pendingMetadata(false, false, {"test"}, CallableMutation::OwnerTail)));
+        static_cast<void>(validate(pendingMetadata(false, false, {"test"}, CallableMutation::OwnerTail)));
     }, "invalid canonical owned value type");
     rejects("pending owner annotation cannot omit owner declaration", [] {
-        static_cast<void>(validate(pendingBodies(), pendingMetadata(false, false, {"test"}, CallableMutation::OrphanOwner)));
+        static_cast<void>(validate(pendingMetadata(false, false, {"test"}, CallableMutation::OrphanOwner)));
     }, "owned value metadata requires exact owner spill");
     rejects("pending frame extent receives independent validation", [] {
-        static_cast<void>(validate(pendingBodies(), pendingMetadata(false, false, {"test"}, CallableMutation::FrameSize)));
+        static_cast<void>(validate(pendingMetadata(false, false, {"test"}, CallableMutation::FrameSize)));
     }, "invalid frame size");
     rejects("pending descriptor still receives independent validation", [] {
-        static_cast<void>(validate(pendingBodies(), pendingMetadata(false, true)));
+        static_cast<void>(validate(pendingMetadata(false, true)));
     }, "invalid metadata descriptor");
     rejects("pending supplied physical offsets cannot become canonical by assertion", [] {
-        static_cast<void>(validate(pendingBodies(), pendingMetadata(true)));
+        static_cast<void>(validate(pendingMetadata(true)));
     }, "noncanonical class storage metadata");
     rejects("pending callable header requires its body", [] {
-        static_cast<void>(validate(pendingBodies(0), pendingMetadata()));
-    }, "callable body count mismatch");
+        static_cast<void>(validate(pendingMetadata(false, false, {"test"}, CallableMutation::None, 0)));
+    }, "invalid hosted IR instruction transport");
     rejects("pending body cannot substitute another callable ID", [] {
-        auto functions = pendingBodies();
-        functions[0].callableId = 1;
-        static_cast<void>(validate(std::move(functions), pendingMetadata()));
-    }, "callable body ID does not match declaration order");
+        static_cast<void>(pendingMetadata(false, false, {"test"}, CallableMutation::None, 1, true));
+    }, "invalid hosted IR instruction transport");
 }
 
 } // namespace
@@ -4775,6 +4866,7 @@ int main(int argc, char **argv) {
         packedStorageTests();
         callableOwnerTests();
         metadataOwnerTests();
+        instructionOwnerTests();
         metadataIngressTests();
         initializationPayloadMetricTests();
         callGraphTests();
@@ -6505,7 +6597,7 @@ int main(int argc, char **argv) {
             [&](Module &m) {
                 std::get<Constant>(m.functions[0].code[0]).type.templateArguments = {nestedArgument()};
             },
-            "invalid constant type");
+            "noncanonical instruction type payload");
         rejectValue(
             "same-layout specialization argument forgery",
             [](Module &m) {
