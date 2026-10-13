@@ -206,8 +206,8 @@ and each continuation to 496 bytes. Fixed diagnostic storage is reserved before
 work, so a selected error needs no further allocation. Local/snapshot/continuation
 bounds and checked geometric growth are part of the quota; partial IR never
 publishes. `hosted_lowering.cpp` checks bounded roles, slices and unique ownership,
-then projects all 84 instruction forms and Function/Module metadata. It does not
-repeat source legality checks. Each Aurora-selected error's message is the `//:`
+then projects all 84 instruction forms and functions while filling pending
+Aurora-owned metadata directly. It does not repeat source legality checks. Each Aurora-selected error's message is the `//:`
 text above its reason in `lowering_errors.au`; the frontend generator turns those
 into a table in the generated ABI header and fails if a reason lacks one.
 `hosted_lowering_diagnostics.cpp` checks the payload against that entry and fills
@@ -281,10 +281,13 @@ unreachable semantic instructions before graph processing.
 `ir_metadata_storage.au` owns raw metadata prefixes and appended canonical fields,
 offsets and layouts. `ir_metadata.au` verifies actual input shapes, including absent
 versus empty maps, nominal types, carriers, ownership, depth and sealed service data.
-The native `Module` maps remain an untrusted ingress for lowering and hostile fixtures;
-validation clears them before native function checks. `ValidatedModule` retains one
-immutable metadata capsule used by function verification, emission and ABI facts.
-There is no native layout fallback or reconstructed metadata-map cache.
+Production lowering fills a move-only pending metadata ingress, without constructing
+native `Module` metadata maps. The ingress exposes no readable capsule. After
+projection and diagnostic rendering, Session is released; function-symbol preflight
+then precedes mandatory Aurora metadata verification and publication. The native
+`Module` importer remains for hostile fixtures, using the same mechanical writer and
+verifier. `ValidatedModule` retains one immutable capsule used by function verification,
+emission and ABI facts. There is no native layout fallback or reconstructed map cache.
 
 The host binds named pools to generated row shapes and descriptor offsets. Its private
 Region observation returns readonly bytes only inside the capsule; reads copy records,
@@ -292,11 +295,15 @@ and views are destroyed before consuming owner cleanup. The closed pool-to-row b
 is source-reviewed because predecessor facts do not encode owned element identity.
 Raw Type tail counts preserve rejection without serializing malformed template trees.
 
-This migration adds bootstrap transport code while removing native metadata policy;
-it does not claim a net line or memory reduction. The next deletion is the intermediate
-lowering-to-native metadata projection. Native instruction objects and their conversion
-retire with Aurora CFG verification and emission, rather than gaining more per-pass
-serializers. The current source-bootstrap, convergence and runtime gates are unexecuted.
+The direct ingress removes the intermediate native metadata values and their re-import;
+sorted source-row indexes still arrange the owner's canonical input order. Supplied
+physical layouts remain raw inputs for independent recomputation. Sorting/counting
+can change which Internal transport error is selected among multiply-malformed
+metadata records; function and metadata semantic admission order is unchanged. The destination
+owner now allocates while Session is live, so reduced peak memory is unproven. Native
+instruction objects and their conversion retire with Aurora CFG verification and
+emission, rather than gaining more per-pass serializers. Current source-bootstrap,
+convergence and runtime gates are unexecuted.
 
 ## CFG and frame invariants
 

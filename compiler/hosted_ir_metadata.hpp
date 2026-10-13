@@ -7,12 +7,19 @@
 #include <memory>
 #include <optional>
 #include <string_view>
+#include <vector>
 
 namespace aurora::ir {
 class Module;
 class ClassField;
 class Descriptor;
 class Metadata;
+class Function;
+class ValidatedModule;
+class MetadataIngress;
+namespace detail {
+class MetadataWriter;
+}
 
 // All ranges borrow the immovable Metadata capsule. Dereferencing copies a
 // value; neither a payload pointer nor an Aurora owner escapes this interface.
@@ -162,8 +169,8 @@ class Metadata final {
 public:
     using ClassId = std::size_t;
     using EnumId = std::size_t;
-    // The only construction path imports actual hostile Module metadata and
-    // completes independent Aurora verification before publishing any view.
+    // Hostile fixtures import raw maps. Production supplies a pending owning
+    // ingress; both paths independently verify before publishing any view.
     static std::unique_ptr<Metadata> import(const Module &module);
     ~Metadata();
     Metadata(const Metadata &) = delete;
@@ -200,14 +207,33 @@ private:
     class State;
     std::unique_ptr<State> state_;
     Metadata();
-    void ingest(const Module &module);
+    void verify();
     void publish();
     Type typeAt(std::size_t index) const;
     ClassField fieldAt(std::size_t index) const;
     int indexAt(std::size_t index) const;
     std::optional<std::size_t> findScope(std::int64_t scope) const;
+    friend class MetadataIngress;
+    friend class detail::MetadataWriter;
     friend class TypeRange;
     friend class FieldRange;
     friend class IndexRange;
+};
+// An opaque, move-only raw owner. Only validate can consume it, after function
+// symbol preflight, to run independent metadata verification and publish views.
+class MetadataIngress final {
+    std::unique_ptr<Metadata::State> state_;
+    std::unique_ptr<Metadata> finish() &&;
+    friend class Metadata;
+    friend class detail::MetadataWriter;
+    friend ValidatedModule validate(std::vector<Function> functions, MetadataIngress metadata);
+
+public:
+    MetadataIngress();
+    ~MetadataIngress();
+    MetadataIngress(const MetadataIngress &) = delete;
+    MetadataIngress &operator=(const MetadataIngress &) = delete;
+    MetadataIngress(MetadataIngress &&) noexcept;
+    MetadataIngress &operator=(MetadataIngress &&) noexcept;
 };
 } // namespace aurora::ir

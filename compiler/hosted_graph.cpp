@@ -79,22 +79,22 @@ public:
 };
 } // namespace
 
-void verifyHostedGraph(Module &module) {
+void verifyHostedGraph(std::vector<Function> &functions) {
     std::map<std::string, std::int64_t> indices;
     std::size_t callCount = 0;
-    for (std::size_t index = 0; index < module.functions.size(); ++index) {
-        indices.emplace(module.functions[index].name, graphCount(index));
-        for (const auto &instruction : module.functions[index].code)
+    for (std::size_t index = 0; index < functions.size(); ++index) {
+        indices.emplace(functions[index].name, graphCount(index));
+        for (const auto &instruction : functions[index].code)
             if (callee(instruction)) {
                 if (callCount == std::numeric_limits<std::size_t>::max())
                     invalidGraph();
                 ++callCount;
             }
     }
-    GraphOwners owners(graphCount(module.functions.size()), graphCount(callCount));
+    GraphOwners owners(graphCount(functions.size()), graphCount(callCount));
     std::int64_t edge = 0;
-    for (std::size_t index = 0; index < module.functions.size(); ++index) {
-        const auto &function = module.functions[index];
+    for (std::size_t index = 0; index < functions.size(); ++index) {
+        const auto &function = functions[index];
         hosted_abi::GraphFunctionInput value;
         value.index = graphCount(index);
         value.function.firstEdge = edge;
@@ -123,14 +123,14 @@ void verifyHostedGraph(Module &module) {
     if (result != static_cast<std::int64_t>(wire::GraphStatus::success))
         invalidGraph();
     std::vector<bool> retained;
-    retained.reserve(module.functions.size());
-    for (std::size_t index = 0; index < module.functions.size(); ++index) {
+    retained.reserve(functions.size());
+    for (std::size_t index = 0; index < functions.size(); ++index) {
         const auto keep = aurora_hosted_graph_retained(owners.workspaceData(), graphCount(index));
         if (keep != 0 && keep != 1)
             invalidGraph();
         retained.push_back(keep == 1);
     }
-    std::erase_if(module.functions, [&](const Function &function) {
+    std::erase_if(functions, [&](const Function &function) {
         return !retained[static_cast<std::size_t>(indices.at(function.name))];
     });
 }

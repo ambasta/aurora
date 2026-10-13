@@ -1,4 +1,4 @@
-#include "hosted_ir_metadata.hpp"
+#include "hosted_ir_metadata_writer.hpp"
 #include "ir.hpp"
 #include "../runtime/hosted_bytes.hpp"
 #include <algorithm>
@@ -311,16 +311,142 @@ public:
 
 Metadata::Metadata() = default;
 Metadata::~Metadata() = default;
-std::unique_ptr<Metadata> Metadata::import(const Module &module) {
+MetadataIngress::MetadataIngress() = default;
+MetadataIngress::~MetadataIngress() = default;
+MetadataIngress::MetadataIngress(MetadataIngress &&) noexcept = default;
+MetadataIngress &MetadataIngress::operator=(MetadataIngress &&) noexcept = default;
+std::unique_ptr<Metadata> MetadataIngress::finish() && {
+    if (!state_)
+        invalidTransport();
     std::unique_ptr<Metadata> metadata(new Metadata);
-    metadata->ingest(module);
+    metadata->state_ = std::move(state_);
+    metadata->verify();
     metadata->publish();
     return metadata;
 }
 
-void Metadata::ingest(const Module &module) {
-    // Only ephemeral key references are sorted. There is no retained native
-    // metadata map or second normalized metadata payload.
+void detail::MetadataWriter::allocate() {
+    if (allocated_)
+        invalidTransport();
+    pending_.state_ = std::make_unique<Metadata::State>(position_, capacities(position_));
+    const auto allocated = aurora_hosted_metadata_allocated(pending_.state_->owner.data());
+    if (allocated == 0)
+        allocationFailure();
+    if (allocated != 1)
+        invalidTransport();
+    allocated_ = true;
+    position_ = {};
+}
+wire::ByteRange detail::MetadataWriter::text(std::string_view value) {
+    wire::ByteRange range;
+    range.firstByte = position_.coreCounts.bytes;
+    range.byteCount = count(value.size());
+    position_.coreCounts.bytes = add(range.firstByte, range.byteCount);
+    if (allocated_) {
+        if (!pending_.state_)
+            invalidTransport();
+        auto descriptor = pending_.state_->owner.descriptor(Pool::bytes);
+        auto at = range.firstByte;
+        for (unsigned char character : value)
+            if (bytes::__au_runtime_bytes_set(&descriptor, at++, character) != 1)
+                invalidTransport();
+    }
+    return range;
+}
+void detail::MetadataWriter::type(std::int64_t position, const Type &value) {
+    wire::RawTypeRow row;
+    row.typeKind = static_cast<std::int64_t>(value.kind);
+    row.nameRange = text(value.className);
+    row.rawTail.elementKind = static_cast<std::int64_t>(value.elementKind);
+    row.rawTail.arrayLength = value.length;
+    row.rawTail.elementParameterBytes = value.elementParameter.size();
+    row.rawTail.lengthParameterBytes = value.lengthParameter.size();
+    row.rawTail.templateArgumentCount = value.templateArguments.size();
+    if (allocated_)
+        pending_.state_->set<Pool::types>(position, row);
+    position_.coreCounts.types = add(position_.coreCounts.types, 1);
+}
+void detail::MetadataWriter::leaf(const Type &value) {
+    type(position_.coreCounts.leaves, value);
+    position_.coreCounts.leaves = add(position_.coreCounts.leaves, 1);
+}
+void detail::MetadataWriter::field(const ClassField &value) {
+    if (allocated_ && !pending_.state_)
+        invalidTransport();
+    wire::FieldRow row;
+    row.typeIndex = add(allocated_ ? pending_.state_->counts.coreCounts.leaves : 0, position_.coreCounts.fields);
+    type(row.typeIndex, value.elementType);
+    row.firstLeaf = value.firstLeaf;
+    row.leafCount = value.length;
+    row.arrayFlag = value.array;
+    row.elementCount = value.elementCount;
+    if (allocated_)
+        pending_.state_->set<Pool::fields>(position_.coreCounts.fields, row);
+    position_.coreCounts.fields = add(position_.coreCounts.fields, 1);
+}
+void detail::MetadataWriter::index(std::int64_t value) {
+    wire::IndexRow row;
+    row.indexValue = value;
+    if (allocated_) {
+        if (!pending_.state_)
+            invalidTransport();
+        pending_.state_->set<Pool::indices>(position_.mapCounts.indices, row);
+    }
+    position_.mapCounts.indices = add(position_.mapCounts.indices, 1);
+}
+void detail::MetadataWriter::append(const wire::ClassRow &value) {
+    if (allocated_) {
+        if (!pending_.state_)
+            invalidTransport();
+        pending_.state_->set<Pool::classes>(position_.coreCounts.classes, value);
+    }
+    position_.coreCounts.classes = add(position_.coreCounts.classes, 1);
+}
+void detail::MetadataWriter::append(const wire::StorageRow &value) {
+    if (allocated_) {
+        if (!pending_.state_)
+            invalidTransport();
+        pending_.state_->set<Pool::storage>(position_.mapCounts.storage, value);
+    }
+    position_.mapCounts.storage = add(position_.mapCounts.storage, 1);
+}
+void detail::MetadataWriter::append(const wire::DescriptorRow &value) {
+    if (allocated_) {
+        if (!pending_.state_)
+            invalidTransport();
+        pending_.state_->set<Pool::descriptors>(position_.mapCounts.descriptors, value);
+    }
+    position_.mapCounts.descriptors = add(position_.mapCounts.descriptors, 1);
+}
+void detail::MetadataWriter::append(const wire::ViewRow &value) {
+    if (allocated_) {
+        if (!pending_.state_)
+            invalidTransport();
+        pending_.state_->set<Pool::views>(position_.mapCounts.views, value);
+    }
+    position_.mapCounts.views = add(position_.mapCounts.views, 1);
+}
+void detail::MetadataWriter::append(const wire::EnumRow &value) {
+    if (allocated_) {
+        if (!pending_.state_)
+            invalidTransport();
+        pending_.state_->set<Pool::enums>(position_.mapCounts.enums, value);
+    }
+    position_.mapCounts.enums = add(position_.mapCounts.enums, 1);
+}
+MetadataIngress detail::MetadataWriter::take() && {
+    if (!allocated_ || !pending_.state_)
+        invalidTransport();
+    const auto &expected = pending_.state_->counts;
+    if (capacities(position_) != capacities(expected) || position_.coreCounts.fields != expected.coreCounts.fields ||
+        position_.coreCounts.leaves != expected.coreCounts.leaves ||
+        position_.mapCounts.indices != expected.mapCounts.indices)
+        invalidTransport();
+    return std::move(pending_);
+}
+
+std::unique_ptr<Metadata> Metadata::import(const Module &module) {
+    // Union membership preserves absent, empty and extra hostile map entries.
     std::vector<std::string_view> names;
     for (const auto &[name, value] : module.classLayouts) {
         (void)value;
@@ -338,149 +464,75 @@ void Metadata::ingest(const Module &module) {
         names.push_back(name);
     std::sort(names.begin(), names.end());
     names.erase(std::unique(names.begin(), names.end()), names.end());
-    wire::InputCounts counts;
-    auto &core = counts.coreCounts;
-    auto &maps = counts.mapCounts;
-    core.classes = count(names.size());
-    maps.storage = count(module.classStorage.size());
-    maps.descriptors = count(module.descriptors.size());
-    maps.views = count(module.descriptorViews.size());
-    maps.enums = count(module.enumCases.size());
-    for (auto name : names)
-        core.bytes = add(core.bytes, count(name.size()));
-    for (const auto &[name, leaves] : module.classLayouts) {
-        (void)name;
-        core.leaves = add(core.leaves, count(leaves.size()));
-        for (const auto &type : leaves)
-            core.bytes = add(core.bytes, count(type.className.size()));
-    }
-    for (const auto &[name, fields] : module.classFields) {
-        (void)name;
-        core.fields = add(core.fields, count(fields.size()));
-        for (const auto &field : fields)
-            core.bytes = add(core.bytes, count(field.elementType.className.size()));
-    }
-    core.types = add(core.leaves, core.fields);
-    for (const auto &[name, storage] : module.classStorage) {
-        (void)name;
-        maps.indices = add(maps.indices, add(count(storage.leafOffsets.size()), count(storage.fieldOffsets.size())));
-    }
-    for (const auto &[scope, descriptors] : module.descriptorViews) {
-        (void)scope;
-        maps.indices = add(maps.indices, count(descriptors.size()));
-    }
-    for (const auto &[name, cases] : module.enumCases) {
-        (void)cases;
-        core.bytes = add(core.bytes, count(name.size()));
-    }
-    const auto limits = capacities(counts);
-    state_ = std::make_unique<State>(counts, limits);
-    const auto allocated = aurora_hosted_metadata_allocated(state_->owner.data());
-    if (allocated == 0)
-        allocationFailure();
-    if (allocated != 1)
-        invalidTransport();
-    std::int64_t byte = 0, leaf = 0, field = 0, storage = 0, integerIndex = 0;
-    auto byteDescriptor = state_->owner.descriptor(Pool::bytes);
-    const auto copyText = [&](std::string_view value) {
-        wire::ByteRange range;
-        range.firstByte = byte;
-        range.byteCount = count(value.size());
-        for (unsigned char character : value)
-            if (bytes::__au_runtime_bytes_set(&byteDescriptor, byte++, character) != 1)
-                invalidTransport();
-        return range;
-    };
-    const auto copyType = [&](std::int64_t position, const Type &type) {
-        wire::RawTypeRow row;
-        row.typeKind = static_cast<std::int64_t>(type.kind);
-        row.nameRange = copyText(type.className);
-        row.rawTail.elementKind = static_cast<std::int64_t>(type.elementKind);
-        row.rawTail.arrayLength = type.length;
-        row.rawTail.elementParameterBytes = type.elementParameter.size();
-        row.rawTail.lengthParameterBytes = type.lengthParameter.size();
-        row.rawTail.templateArgumentCount = type.templateArguments.size();
-        state_->set<Pool::types>(position, row);
-    };
+    detail::MetadataWriter writer;
     const auto copyIndices = [&](const auto &values) {
         wire::IndexRange range;
-        range.firstIndex = integerIndex;
+        range.firstIndex = writer.position().mapCounts.indices;
         range.indexCount = count(values.size());
-        for (auto value : values) {
-            wire::IndexRow row;
-            row.indexValue = value;
-            state_->set<Pool::indices>(integerIndex++, row);
-        }
+        for (auto value : values)
+            writer.index(value);
         return range;
     };
-    for (std::size_t classIndex = 0; classIndex < names.size(); ++classIndex) {
-        const std::string name(names[classIndex]);
-        wire::ClassRow row;
-        row.nameRange = copyText(name);
-        row.leafRange.firstIndex = leaf;
-        row.fieldRange.firstIndex = field;
-        row.suppliedStorage = -1;
-        if (const auto entry = module.classLayouts.find(name); entry != module.classLayouts.end()) {
-            row.membershipBits |= 1;
-            row.leafRange.indexCount = count(entry->second.size());
-            for (const auto &type : entry->second)
-                copyType(leaf++, type);
-        }
-        if (const auto entry = module.classFields.find(name); entry != module.classFields.end()) {
-            row.membershipBits |= 2;
-            row.fieldRange.indexCount = count(entry->second.size());
-            for (const auto &value : entry->second) {
-                wire::FieldRow copied;
-                copied.typeIndex = add(core.leaves, field);
-                copyType(copied.typeIndex, value.elementType);
-                copied.firstLeaf = value.firstLeaf;
-                copied.leafCount = value.length;
-                copied.arrayFlag = value.array;
-                copied.elementCount = value.elementCount;
-                state_->set<Pool::fields>(field++, copied);
+    for (int pass = 0; pass < 2; ++pass) {
+        for (auto key : names) {
+            const std::string name(key);
+            wire::ClassRow row;
+            row.nameRange = writer.text(name);
+            row.leafRange.firstIndex = writer.position().coreCounts.leaves;
+            row.fieldRange.firstIndex = writer.position().coreCounts.fields;
+            row.suppliedStorage = -1;
+            if (const auto entry = module.classLayouts.find(name); entry != module.classLayouts.end()) {
+                row.membershipBits |= 1;
+                row.leafRange.indexCount = count(entry->second.size());
+                for (const auto &value : entry->second)
+                    writer.leaf(value);
             }
+            if (const auto entry = module.classFields.find(name); entry != module.classFields.end()) {
+                row.membershipBits |= 2;
+                row.fieldRange.indexCount = count(entry->second.size());
+                for (const auto &value : entry->second)
+                    writer.field(value);
+            }
+            if (const auto entry = module.classStorage.find(name); entry != module.classStorage.end()) {
+                row.membershipBits |= 4;
+                row.suppliedStorage = writer.position().mapCounts.storage;
+                wire::StorageRow copied;
+                copied.leafOffsetRange = copyIndices(entry->second.leafOffsets);
+                copied.fieldOffsetRange = copyIndices(entry->second.fieldOffsets);
+                copied.physicalExtent.sizeBytes = entry->second.sizeBytes;
+                copied.physicalExtent.alignmentBytes = entry->second.alignment;
+                copied.physicalExtent.reservedBytes = entry->second.reservedBytes;
+                writer.append(copied);
+            }
+            if (module.classArrayCarriers.contains(name))
+                row.membershipBits |= 8;
+            writer.append(row);
         }
-        if (const auto entry = module.classStorage.find(name); entry != module.classStorage.end()) {
-            row.membershipBits |= 4;
-            row.suppliedStorage = storage;
-            wire::StorageRow copied;
-            copied.leafOffsetRange = copyIndices(entry->second.leafOffsets);
-            copied.fieldOffsetRange = copyIndices(entry->second.fieldOffsets);
-            copied.physicalExtent.sizeBytes = entry->second.sizeBytes;
-            copied.physicalExtent.alignmentBytes = entry->second.alignment;
-            copied.physicalExtent.reservedBytes = entry->second.reservedBytes;
-            state_->set<Pool::storage>(storage++, copied);
+        for (const auto &[id, value] : module.descriptors) {
+            wire::DescriptorRow row;
+            row.descriptorId = id;
+            row.sizeValue = value.size;
+            row.publicFieldCount = value.publicFields;
+            writer.append(row);
         }
-        if (module.classArrayCarriers.contains(name))
-            row.membershipBits |= 8;
-        state_->set<Pool::classes>(count(classIndex), row);
+        for (const auto &[scope, values] : module.descriptorViews) {
+            wire::ViewRow row;
+            row.moduleScope = scope;
+            row.descriptorRange = copyIndices(values);
+            writer.append(row);
+        }
+        for (const auto &[name, cases] : module.enumCases) {
+            wire::EnumRow row;
+            row.nameRange = writer.text(name);
+            row.caseCount = cases;
+            writer.append(row);
+        }
+        if (pass == 0)
+            writer.allocate();
     }
-    std::int64_t descriptor = 0;
-    for (const auto &[id, value] : module.descriptors) {
-        wire::DescriptorRow row;
-        row.descriptorId = id;
-        row.sizeValue = value.size;
-        row.publicFieldCount = value.publicFields;
-        state_->set<Pool::descriptors>(descriptor++, row);
-    }
-    std::int64_t view = 0;
-    for (const auto &[scope, values] : module.descriptorViews) {
-        wire::ViewRow row;
-        row.moduleScope = scope;
-        row.descriptorRange = copyIndices(values);
-        state_->set<Pool::views>(view++, row);
-    }
-    std::int64_t enumeration = 0;
-    for (const auto &[name, cases] : module.enumCases) {
-        wire::EnumRow row;
-        row.nameRange = copyText(name);
-        row.caseCount = cases;
-        state_->set<Pool::enums>(enumeration++, row);
-    }
-    if (byte != core.bytes || leaf != core.leaves || field != core.fields || storage != maps.storage ||
-        integerIndex != maps.indices || descriptor != maps.descriptors || view != maps.views ||
-        enumeration != maps.enums)
-        invalidTransport();
+    return std::move(writer).take().finish();
+}
+void Metadata::verify() {
     const auto status = aurora_hosted_metadata_run(state_->owner.data());
     const auto reason = aurora_hosted_metadata_error(state_->owner.data());
     if (status == static_cast<std::int64_t>(wire::MetadataStatus::allocation)) {

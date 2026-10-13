@@ -666,6 +666,8 @@ public:
     int reservedBytes = 0;
     bool operator==(const ClassStorage &) const = default;
 };
+// Raw metadata remains a hostile construction route. Production lowering owns
+// functions plus pending MetadataIngress and never fills these maps.
 class Module {
 public:
     std::vector<Function> functions;
@@ -684,6 +686,7 @@ public:
 };
 class ValidatedModule;
 ValidatedModule validate(Module module);
+ValidatedModule validate(std::vector<Function> functions, MetadataIngress metadata);
 class ValidatedModule {
     class Contents {
     public:
@@ -695,6 +698,7 @@ class ValidatedModule {
         : contents{std::move(functions)}, metadataOwner(std::move(metadata)) {
     }
     friend ValidatedModule validate(Module module);
+    friend ValidatedModule validate(std::vector<Function> functions, MetadataIngress metadata);
 
 public:
     ValidatedModule(const ValidatedModule &) = delete;
