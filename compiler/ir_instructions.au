@@ -3,8 +3,9 @@ import aurora.compiler.ir_instruction_storage;
 import aurora.compiler.ir_metadata;
 
 // Generic durable transport admission precedes the sole native field walk for
-// exact opcode shapes. Then source structural admission normalizes all bodies;
-// native verification retains value/type, lifetime, provenance and join checks.
+// exact opcode shapes. Source admission normalizes every body, then checks all
+// entry bindings directly against readonly metadata. Native verification keeps
+// dynamic value/type, lifetime, provenance and join checks.
 export namespace compiler_ir_instructions {
     auto bounded_range(i64 begin, i64 count, i64 limit) -> bool {
         return begin >= 0 && count >= 0 && begin <= limit && count <= limit - begin;
@@ -161,7 +162,252 @@ export namespace compiler_ir_instructions {
         }
         return store.status();
     }
-    auto normalize_instruction_cfg(InstructionStore& store) -> InstructionStatus {
-        return store.normalize_cfg();
+    // Generated lowering facts pin these forms and their ordered payloads.
+    // No retained binding index is needed: the admitted normalized prefix has
+    // at most six entries and is the sole source of parameter-root identities.
+    auto parameter_form(i64 form) -> bool {
+        return form == 0 || form == 45 || form == 46 || form == 59 || form == 73 || form == 74 || form == 79;
+    }
+    auto entry_instruction(const InstructionStore& store, i64 callable, i64 position) -> RawInstructionRow {
+        const BodyRow body = store.body_at(callable);
+        if (position < 0 || position >= body.count()) { return RawInstructionRow(-1, -1, -1, -1); }
+        const CodeRow code = store.code_at(body.begin() + position);
+        const RawInstructionRow result = store.instruction_at(code.id());
+        return result;
+    }
+    auto entry_operand(const InstructionStore& store, RawInstructionRow row, i64 field) -> RawOperandRow {
+        const RawOperandRow result = store.operand_at(row.operand_begin() + field);
+        return result;
+    }
+    auto entry_value(const InstructionStore& store, RawInstructionRow row, i64 field) -> i64 {
+        const RawOperandRow operand = entry_operand(store, row, field);
+        return operand.signed_value();
+    }
+    auto expected_parameter_form(const compiler_ir_metadata::MetadataStore& metadata,
+        compiler_ir_metadata::RawTypeRow type) -> i64 {
+        if (compiler_ir_metadata::service_type(type)) { return 0; }
+        if (type.kind() == 12) { return 73; }
+        if (compiler_ir_metadata::owner_kind(type)) { return 74; }
+        if (compiler_ir_metadata::owning_type(metadata, type)) { return 79; }
+        if (type.kind() == 5) { return 46; }
+        if (type.kind() == 11) { return 59; }
+        return 45;
+    }
+    auto prefix_error(i64 form) -> InstructionError {
+        if (form == 0) { return InstructionError::service_prefix; }
+        if (form == 73) { return InstructionError::region_prefix; }
+        if (form == 74) { return InstructionError::owner_prefix; }
+        if (form == 79) { return InstructionError::owning_prefix; }
+        if (form == 46) { return InstructionError::object_prefix; }
+        if (form == 59) { return InstructionError::span_prefix; }
+        return InstructionError::scalar_prefix;
+    }
+    auto overlap_error(i64 form) -> InstructionError {
+        if (form == 0) { return InstructionError::service_overlap; }
+        if (form == 74) { return InstructionError::owner_overlap; }
+        if (form == 79) { return InstructionError::owning_overlap; }
+        if (form == 46) { return InstructionError::object_overlap; }
+        if (form == 59) { return InstructionError::span_overlap; }
+        return InstructionError::scalar_overlap;
+    }
+    auto entry_slot(const compiler_ir_metadata::MetadataStore& metadata, i64 callable, i64 kind, i64 offset) -> i64 {
+        const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(callable);
+        const compiler_ir_metadata::IndexRange group = compiler_ir_metadata::slot_group(metadata, declaration, kind);
+        return compiler_ir_metadata::find_slot(metadata, group, offset);
+    }
+    auto entry_has_region(const InstructionStore& store, i64 callable) -> bool {
+        const RawInstructionRow first = entry_instruction(store, callable, 0);
+        return first.form() == 73 && entry_value(store, first, 0) == 0;
+    }
+    auto verify_entry_prefix(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 callable) -> bool {
+        const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(callable);
+        const compiler_ir_metadata::IndexRange types = declaration.types();
+        const i64 parameters = types.count() - 1;
+        i64 position = 0;
+        while (position < parameters) {
+            const compiler_ir_metadata::RawTypeRow type = metadata.type_at(types.begin() + 1 + position);
+            const i64 expected = expected_parameter_form(metadata, type);
+            const RawInstructionRow row = entry_instruction(store, callable, position);
+            if (row.form() != expected || entry_value(store, row, 0) != position
+                || (expected == 73 && position != 0)) { return fail(store, prefix_error(expected)); }
+            const i64 offset = entry_value(store, row, 1);
+            i64 previous = 0;
+            while (previous < position) {
+                const RawInstructionRow earlier = entry_instruction(store, callable, previous);
+                const bool same_root_kind = earlier.form() == expected
+                    || ((earlier.form() == 46 || earlier.form() == 79) && (expected == 46 || expected == 79));
+                if (same_root_kind && entry_value(store, earlier, 1) == offset) {
+                    return fail(store, overlap_error(expected));
+                }
+                previous = previous + 1;
+            }
+            position = position + 1;
+        }
+        const BodyRow body = store.body_at(callable);
+        while (position < body.count()) {
+            const RawInstructionRow row = entry_instruction(store, callable, position);
+            if (parameter_form(row.form())) { return fail(store, InstructionError::late_binding); }
+            position = position + 1;
+        }
+        return true;
+    }
+    auto verify_scalar_parameter(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 callable, i64 position) -> bool {
+        const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(callable);
+        const compiler_ir_metadata::IndexRange types = declaration.types();
+        const compiler_ir_metadata::RawTypeRow expected = metadata.type_at(types.begin() + 1 + position);
+        const RawInstructionRow row = entry_instruction(store, callable, position);
+        const i64 offset = entry_value(store, row, 1);
+        const compiler_ir_metadata::RawTypeRow supplied = metadata.type_at(entry_value(store, row, 2));
+        if (!compiler_ir_metadata::same_type(metadata, expected, supplied)) {
+            return fail(store, InstructionError::scalar_type);
+        }
+        // Each sorted, admitted storage group is disjoint. Its first end at or
+        // above offset is the only possible containing origin. For objects,
+        // check actual leaf offsets, not padding or the nominal root alone.
+        const compiler_ir_metadata::IndexRange objects = compiler_ir_metadata::slot_group(metadata, declaration, 11);
+        const i64 object_index = compiler_ir_metadata::slot_lower_bound(metadata, objects, offset);
+        if (object_index < objects.begin() + objects.count()) {
+            const compiler_ir_metadata::SlotRow object = metadata.slot_at(object_index);
+            if (compiler_ir_metadata::object_has_leaf(metadata, object, offset)) {
+                return fail(store, InstructionError::scalar_object);
+            }
+        }
+        const compiler_ir_metadata::IndexRange arrays = compiler_ir_metadata::slot_group(metadata, declaration, 12);
+        if (compiler_ir_metadata::first_slot_overlap(metadata, arrays, offset, offset) >= 0) {
+            return fail(store, InstructionError::scalar_array);
+        }
+        const i64 slot_index = entry_slot(metadata, callable, 10, offset);
+        if (slot_index < 0) { return fail(store, InstructionError::scalar_slot); }
+        const compiler_ir_metadata::SlotRow slot = metadata.slot_at(slot_index);
+        const compiler_ir_metadata::RawTypeRow slot_type = metadata.type_at(slot.type());
+        if (!compiler_ir_metadata::same_type(metadata, expected, slot_type)) {
+            return fail(store, InstructionError::scalar_slot);
+        }
+        return true;
+    }
+    auto verify_object_parameter(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 callable, i64 position) -> bool {
+        const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(callable);
+        const compiler_ir_metadata::IndexRange types = declaration.types();
+        const compiler_ir_metadata::RawTypeRow expected = metadata.type_at(types.begin() + 1 + position);
+        const RawInstructionRow row = entry_instruction(store, callable, position);
+        const i64 offset = entry_value(store, row, 1);
+        const RawOperandRow name_operand = entry_operand(store, row, 2);
+        const compiler_ir_metadata::ByteRange name = compiler_ir_metadata::ByteRange(name_operand.begin(), name_operand.count());
+        const bool owning = row.form() == 79;
+        const bool named_owner = compiler_ir_metadata::owning_class(metadata, compiler_ir_metadata::find_class(metadata, name));
+        if (!owning && named_owner) { return fail(store, InstructionError::object_owner); }
+        if (compiler_ir_metadata::compare_names(metadata, expected.name(), name) != 0 || owning != named_owner) {
+            if (owning) { return fail(store, InstructionError::owning_type); }
+            return fail(store, InstructionError::object_type);
+        }
+        if (owning && !entry_has_region(store, callable)) { return fail(store, InstructionError::owning_region); }
+        const i64 slot_index = entry_slot(metadata, callable, 11, offset);
+        if (slot_index < 0) {
+            if (owning) { return fail(store, InstructionError::owning_slot); }
+            return fail(store, InstructionError::object_slot);
+        }
+        const compiler_ir_metadata::SlotRow slot = metadata.slot_at(slot_index);
+        const compiler_ir_metadata::RawTypeRow slot_type = metadata.type_at(slot.type());
+        if (!compiler_ir_metadata::same_type(metadata, expected, slot_type)) {
+            if (owning) { return fail(store, InstructionError::owning_slot); }
+            return fail(store, InstructionError::object_nominal);
+        }
+        if (owning && slot.mutable_value() != 1) { return fail(store, InstructionError::owning_mutable); }
+        if (!owning && slot.mutable_value() != 0) { return fail(store, InstructionError::object_readonly); }
+        return true;
+    }
+    auto verify_owner_parameter(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 callable, i64 position) -> bool {
+        const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(callable);
+        const compiler_ir_metadata::IndexRange types = declaration.types();
+        const compiler_ir_metadata::RawTypeRow expected = metadata.type_at(types.begin() + 1 + position);
+        const RawInstructionRow row = entry_instruction(store, callable, position);
+        const i64 offset = entry_value(store, row, 1);
+        const i64 slot_index = entry_slot(metadata, callable, 16, offset);
+        if (slot_index < 0) { return fail(store, InstructionError::owner_slot); }
+        const i64 annotation = entry_slot(metadata, callable, 17, offset);
+        if (annotation < 0) {
+            if (expected.kind() != 13) { return fail(store, InstructionError::owner_type); }
+        } else {
+            const compiler_ir_metadata::SlotRow nominal = metadata.slot_at(annotation);
+            const compiler_ir_metadata::RawTypeRow slot_type = metadata.type_at(nominal.type());
+            if (!compiler_ir_metadata::same_type(metadata, expected, slot_type)) {
+                return fail(store, InstructionError::owner_type);
+            }
+        }
+        if (!entry_has_region(store, callable)) { return fail(store, InstructionError::owner_region); }
+        const compiler_ir_metadata::SlotRow slot = metadata.slot_at(slot_index);
+        if (slot.mutable_value() != 1) { return fail(store, InstructionError::owner_mutable); }
+        return true;
+    }
+    auto verify_entry_parameters(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 callable) -> bool {
+        if (!verify_entry_prefix(store, metadata, callable)) { return false; }
+        const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(callable);
+        const compiler_ir_metadata::IndexRange types = declaration.types();
+        i64 position = 0;
+        while (position < types.count() - 1) {
+            const RawInstructionRow row = entry_instruction(store, callable, position);
+            const i64 form = row.form();
+            const i64 offset = entry_value(store, row, 1);
+            if (form == 45) {
+                if (!verify_scalar_parameter(store, metadata, callable, position)) { return false; }
+            } else {
+                if (form == 46 || form == 79) {
+                    if (!verify_object_parameter(store, metadata, callable, position)) { return false; }
+                } else {
+                    if (form == 74) {
+                        if (!verify_owner_parameter(store, metadata, callable, position)) { return false; }
+                    } else {
+                        if (form == 0) {
+                            const compiler_ir_metadata::RawTypeRow type = metadata.type_at(types.begin() + 1 + position);
+                            if (entry_value(store, row, 2) != type.kind() - 14
+                                || entry_slot(metadata, callable, 14, offset) < 0) {
+                                return fail(store, InstructionError::service_binding);
+                            }
+                        } else {
+                            if (form == 73) {
+                                if (entry_slot(metadata, callable, 15, offset) < 0) {
+                                    return fail(store, InstructionError::region_slot);
+                                }
+                            } else {
+                                const compiler_ir_metadata::ReceiverShape receiver = declaration.first_receiver();
+                                if (compiler_ir_metadata::callable_flag(declaration, 1)
+                                    && compiler_ir_metadata::receiver_flag(receiver, 2)) {
+                                    return fail(store, InstructionError::span_type);
+                                }
+                                if (entry_slot(metadata, callable, 13, offset) < 0) {
+                                    return fail(store, InstructionError::span_slot);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            position = position + 1;
+        }
+        return true;
+    }
+    auto normalize_instruction_cfg(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata)
+        -> InstructionStatus {
+        if (store.status() != InstructionStatus::admitted) { return store.status(); }
+        if (metadata.status() != compiler_ir_metadata::MetadataStatus::success
+            || store.body_count() != metadata.callable_count()) {
+            store.reject(InstructionError::integrity);
+            return store.status();
+        }
+        // Structural errors in any body precede entry errors in every body.
+        // Post-normalization rejection poisons structured state; publication
+        // and all subsequent admission/mutation calls then remain closed.
+        if (store.normalize_cfg() != InstructionStatus::structured) { return store.status(); }
+        i64 callable = 0;
+        while (callable < store.body_count()) {
+            if (!verify_entry_parameters(store, metadata, callable)) { return store.status(); }
+            callable = callable + 1;
+        }
+        return store.status();
     }
 }

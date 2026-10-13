@@ -2937,7 +2937,13 @@ void enumAndMethodResultTests() {
     rejectResult(
         "method class argument requires snapshot vector",
         [](Module &m) {
-            namedFunction(m, "snapshot_outer").parameters[1] = Type("Empty");
+            auto &method = namedFunction(m, "snapshot_outer");
+            const auto previousType = method.parameters[1];
+            method.parameters[1] = Type("Empty");
+            method.slots.erase(16);
+            method.objectSlots[16] = {"Empty", false};
+            method.code[1] = BindObjectParameter{1, 16, "Empty"};
+            method.code[6] = EnumConstant{previousType, 0};
         },
         "object argument vector size mismatch");
     rejectResult(
@@ -4201,6 +4207,106 @@ void instructionOwnerTests() {
     }, "invalid slot payload type");
 }
 
+void entryBindingTests() {
+    auto input = baseline();
+    auto parameter = input.functions[0];
+    parameter.name = "entry_parameters";
+    parameter.parameters = {Type::I64, Type::I64};
+    parameter.slots = {{8, Type::I64}, {16, Type::I64}};
+    parameter.code = {BindParameter{0, 8, Type::I64}, BindParameter{1, 16, Type::I64},
+                      Load{8, Type::I64}, Return{}};
+    input.functions = {parameter};
+    accept("source-admitted scalar entry prefix", input);
+    for (const auto &[name, mutate, diagnostic] :
+         std::vector<std::tuple<const char *, std::function<void(aurora::ir::Function &)>, const char *>>{
+             {"missing final formal", [](auto &function) { function.code.erase(function.code.begin() + 1); },
+              "parameter bindings must form the entry prefix"},
+             {"negative position", [](auto &function) { std::get<BindParameter>(function.code[0]).index = -1; },
+              "parameter bindings must form the entry prefix"},
+             {"swapped position", [](auto &function) { std::get<BindParameter>(function.code[0]).index = 1; },
+              "parameter bindings must form the entry prefix"},
+             {"wrong type", [](auto &function) { std::get<BindParameter>(function.code[0]).type = Type::U64; },
+              "parameter type mismatch"},
+             {"missing exact spill", [](auto &function) { std::get<BindParameter>(function.code[0]).offset = 7; },
+              "slot type/layout mismatch"},
+             {"wrong spill type", [](auto &function) { function.slots[8] = Type::U64; },
+              "slot type/layout mismatch"},
+             {"duplicate spill", [](auto &function) { std::get<BindParameter>(function.code[1]).offset = 8; },
+              "scalar parameter bindings overlap"}})
+        rejectModule(std::string("source entry scalar ") + name, input, [&](Module &module) {
+            mutate(module.functions[0]);
+        }, diagnostic);
+    for (const Instruction &binding : std::vector<Instruction>{
+             BindParameter{0, 8, Type::I64}, BindObjectParameter{0, 8, "Empty"}, BindSpanParameter{0, 8},
+             BindRegionParameter{0, 8}, BindBytesParameter{0, 8}, BindOwnedObjectParameter{0, 8, "Empty"},
+             BindServiceParameter{0, 8, service::Kind::Console}})
+        reject("every binding form rejects outside the declared entry prefix", [&](Module &module) {
+            module.classLayouts["Empty"] = {};
+            module.functions[0].code.insert(module.functions[0].code.begin(), binding);
+        }, "parameter binding outside entry prefix");
+    for (const auto &[name, mutate, diagnostic] :
+         std::vector<std::tuple<const char *, std::function<void(Module &)>, const char *>>{
+             {"exact empty root", [](auto &module) {
+                  std::get<BindObjectParameter>(module.functions[1].code[0]).offset = 16;
+              }, "object parameter requires exact object slot"},
+             {"readonly empty root", [](auto &module) {
+                  module.functions[1].objectSlots[8].mutableValue = true;
+              }, "object parameter must be readonly"},
+             {"nominal empty root", [](auto &module) {
+                  module.classLayouts["OtherEmpty"] = {};
+                  module.functions[1].objectSlots[8].className = "OtherEmpty";
+              }, "object parameter nominal class mismatch"}})
+        rejectModule(std::string("source entry copied ") + name, emptyValueBaseline(), mutate, diagnostic);
+
+    // Earlier compaction shrinks retained counts while preserving each body's
+    // reserved interval, immutable instruction IDs and formal source positions.
+    auto compacted = baseline();
+    compacted.functions[0].code.insert(compacted.functions[0].code.end(), {Jump{7}, Label{7}});
+    parameter.code.insert(parameter.code.begin() + 2, {Jump{7}, Label{6}, Jump{7}, Label{7}});
+    compacted.functions.push_back(parameter);
+    const auto checked = validate(compacted);
+    const auto code = checked.get().functions.at(1).code;
+    if (checked.get().functions[0].code.size() != 4 || code.size() != 6 ||
+        code.idAt(0) != 7 || code.idAt(1) != 8 || code.idAt(2) != 9 || code.idAt(3) != 12 ||
+        std::get<BindParameter>(code[0]).index != 0 || std::get<BindParameter>(code[1]).index != 1 ||
+        code.flowAt(2).target != CodePosition{3})
+        throw Error("entry admission changed normalized positions or stable cross-body instruction IDs");
+    ++passed;
+    std::cout << "PASS IR all-body CFG normalization precedes entry admission with stable instruction IDs\n";
+
+    auto ordered = baseline();
+    ordered.functions.push_back(input.functions[0]);
+    for (const auto &[name, mutate, diagnostic] :
+         std::vector<std::tuple<const char *, std::function<void(Module &)>, const char *>>{
+             {"later CFG before earlier entry", [](auto &module) {
+                  module.functions[0].parameters = {Type::I64};
+                  module.functions[1].code.push_back(Jump{99});
+              }, "unknown jump target"},
+             {"later raw type before earlier entry", [](auto &module) {
+                  module.functions[0].parameters = {Type::I64};
+                  std::get<BindParameter>(module.functions[1].code[0]).type.lengthParameter = "N";
+              }, "noncanonical instruction type payload"},
+             {"later entry before earlier dynamic state", [](auto &module) {
+                  module.functions[0].code = {Pop{}, Return{}};
+                  module.functions[1].code[0] = Constant{42, Type::I64};
+              }, "parameter bindings must form the entry prefix"},
+             {"later entry type before earlier dynamic state", [](auto &module) {
+                  module.functions[0].code = {Pop{}, Return{}};
+                  std::get<BindParameter>(module.functions[1].code[0]).type = Type::U64;
+              }, "parameter type mismatch"},
+             {"entry errors retain declaration order", [](auto &module) {
+                  module.functions[0].parameters = {Type::I64};
+                  module.functions[1].name = "alphabetically_first";
+                  std::get<BindParameter>(module.functions[1].code[0]).type = Type::U64;
+              }, "parameter bindings must form the entry prefix"},
+             {"unused imported entry before pruning", [](auto &module) {
+                  module.descriptorViews[1] = {};
+                  module.functions[1].moduleScope = 1;
+                  module.functions[1].code[0] = Constant{42, Type::I64};
+              }, "parameter bindings must form the entry prefix"}})
+        rejectModule(std::string("module admission order: ") + name, ordered, mutate, diagnostic);
+}
+
 void callableOwnerTests() {
     reject("module metadata precedes malformed callable header", [](Module &module) {
         module.descriptors[0] = Descriptor{0, 0};
@@ -4871,6 +4977,7 @@ int main(int argc, char **argv) {
         callableOwnerTests();
         metadataOwnerTests();
         instructionOwnerTests();
+        entryBindingTests();
         metadataIngressTests();
         initializationPayloadMetricTests();
         callGraphTests();

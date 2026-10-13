@@ -260,6 +260,11 @@ int main(int argc, char **argv) {
     bad(groupDirect(), [](auto &m) {
         m.functions[0].code.insert(m.functions[0].code.begin() + 1, Constant{0, Type::I64});
     });
+    for (const bool displayFirst : {false, true})
+        bad(groupDirect(displayFirst), [=](auto &m) {
+            m.functions[0].code.insert(m.functions[0].code.end() - 1,
+                                       BindServiceParameter{0, 16, service::kind(m.functions[0].parameters[0])});
+        }, "parameter binding outside entry prefix");
     bad(groupDirect(), [](auto &m) {
         m.functions[0].parameters.insert(m.functions[0].parameters.begin() + 1, Type::I64);
     });

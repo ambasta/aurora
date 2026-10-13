@@ -11,7 +11,7 @@ void aurora_hosted_instructions_create(const void *, void *) noexcept;
 void aurora_hosted_instructions_release(void *) noexcept;
 std::int64_t aurora_hosted_instructions_allocated(const void *) noexcept;
 std::int64_t aurora_hosted_instructions_admit(const void *) noexcept;
-std::int64_t aurora_hosted_instructions_structure(void *) noexcept;
+std::int64_t aurora_hosted_instructions_structure(const void *) noexcept;
 std::int64_t aurora_hosted_instructions_publish(void *) noexcept;
 std::int64_t aurora_hosted_instructions_error(const void *) noexcept;
 }
@@ -101,9 +101,8 @@ static_assert([] {
     return true;
 }());
 static_assert(static_cast<std::int64_t>(lowering::RecordKind::Instruction) == 1);
-static_assert(static_cast<std::int64_t>(lowering::InstructionForm::BindServiceParameter) == 0);
 static_assert(static_cast<std::int64_t>(lowering::InstructionForm::BorrowedCall) == 83);
-// Source structural admission consumes only these form ordinals. Pin them to
+// Source structural and entry admission consume these form ordinals. Pin them to
 // generated lowering facts rather than maintaining another opcode schema.
 static_assert(static_cast<std::int64_t>(lowering::InstructionForm::Label) == 40 &&
               static_cast<std::int64_t>(lowering::InstructionForm::Jump) == 41 &&
@@ -113,6 +112,18 @@ static_assert(static_cast<std::int64_t>(lowering::InstructionForm::Label) == 40 
               static_cast<std::int64_t>(lowering::InstructionForm::ReturnSpan) == 53 &&
               static_cast<std::int64_t>(lowering::InstructionForm::ReturnBytes) == 76 &&
               static_cast<std::int64_t>(lowering::InstructionForm::ReturnOwnedObject) == 80);
+static_assert(static_cast<std::int64_t>(lowering::InstructionForm::BindServiceParameter) == 0 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::BindParameter) == 45 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::BindObjectParameter) == 46 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::BindSpanParameter) == 59 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::BindRegionParameter) == 73 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::BindBytesParameter) == 74 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::BindOwnedObjectParameter) == 79);
+static_assert(static_cast<std::int64_t>(Role::Index) == 1 && static_cast<std::int64_t>(Role::Offset) == 2 &&
+              static_cast<std::int64_t>(Role::ServiceKindId) == 3);
+static_assert(static_cast<std::int64_t>(service::Kind::Console) == 0 &&
+              static_cast<std::int64_t>(service::Kind::Display) == 1 &&
+              static_cast<std::int64_t>(service::Kind::IommuEvent) == 2);
 static_assert(static_cast<std::int64_t>(Role::TypeId) == 12 && static_cast<std::int64_t>(Role::OperandTypeId) == 14 &&
               static_cast<std::int64_t>(Role::SourceTypeId) == 15 && static_cast<std::int64_t>(Role::ResultTypeId) == 16 &&
               static_cast<std::int64_t>(Role::ElementTypeId) == 18 && static_cast<std::int64_t>(Role::ReferenceTypeId) == 20);
@@ -453,7 +464,9 @@ void Instructions::admit(const Metadata &metadata) {
 void Instructions::structure() {
     if (!state_ || !state_->metadata || state_->published)
         invalidInstructions();
-    const auto status = aurora_hosted_instructions_structure(state_->owner.data());
+    // Reuse the same immutable metadata owner paired during generic admission.
+    const std::array<const void *, 2> roots{state_->owner.data(), state_->metadata->sourceOwner()};
+    const auto status = aurora_hosted_instructions_structure(roots.data());
     const auto reason = aurora_hosted_instructions_error(state_->owner.data());
     if (status == static_cast<std::int64_t>(wire::InstructionStatus::invalid)) {
         const auto message = wire::instructionErrorMessage(static_cast<wire::InstructionError>(reason));

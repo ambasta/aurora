@@ -2233,7 +2233,7 @@ extern "C" std::int64_t aurora_hosted_instructions_allocated(const void *) noexc
 extern "C" std::int64_t aurora_hosted_instructions_admit(const void *) noexcept {
     unexpectedMetadataEntry();
 }
-extern "C" std::int64_t aurora_hosted_instructions_structure(void *) noexcept {
+extern "C" std::int64_t aurora_hosted_instructions_structure(const void *) noexcept {
     unexpectedMetadataEntry();
 }
 extern "C" std::int64_t aurora_hosted_instructions_publish(void *) noexcept {

@@ -287,9 +287,10 @@ instructions before native value-state analysis.
 plus canonical class fields, offsets and layouts. `ir_metadata.au` admits names,
 module layouts, every callable header and every frame before publication.
 Instruction storage/types and exact codec shapes follow, then all structural CFG
-checks and normalization, native value-state/provenance checks, call-graph checks
-and publication. A later structural error can therefore precede an earlier
-value-state error; no per-function diagnostic-order replay is retained. Malformed raw Type tails reject before canonical Type observation.
+checks and normalization, source entry-parameter admission, native dynamic
+value-state/provenance checks, call-graph checks and publication. A later structural
+or entry-binding error can therefore precede an earlier dynamic value-state error;
+no per-function diagnostic-order replay is retained. Malformed raw Type tails reject before canonical Type observation.
 
 Production lowering fills one move-only pending ingress that binds both owners.
 `FunctionBody` contains a stable callable ID and a borrowed instruction range.
@@ -322,7 +323,7 @@ metadata/signature/frame cache or per-pass summary serializer is retained.
 `ir_instruction_storage.au` owns raw instruction and operand rows, literal bytes,
 code-order IDs and body intervals. The generic source admission checks bounded,
 exclusive payload coverage and canonical raw type tails; the sole native codec
-checks ordered instruction shapes. Opcode-specific semantics remain native.
+checks ordered instruction shapes. Dynamic value-state semantics remain native.
 Malformed instruction type tails now reject before opcode-specific errors, with
 `invalid typed IR: noncanonical instruction type payload`.
 
@@ -338,6 +339,24 @@ This migration claims no net source-line, peak-memory or speed reduction.
 Destination allocation overlaps Session lifetime; sorting may reorder Internal
 errors among multiply-malformed transport records. Generated ABI, source-bootstrap,
 convergence and runtime qualification remain unexecuted.
+
+## Entry-parameter admission
+
+Aurora checks the complete normalized entry prefix against the admitted signature
+and frame: scalar, copied-class, span, region, owner and sealed-service bindings.
+It checks exact positions, nominal types, slot kinds, mutability, distinct roots,
+region dependencies and permitted origins, and rejects bindings after the prefix.
+The combined structural/entry bridge borrows both existing owners and returns
+`structured` only after both checks; entry failure makes the owner terminally
+invalid before native state construction or publication. Individual owner methods
+are trusted compiler mechanisms, not unforgeable admission tokens.
+
+The signature has at most six formals, so the existing leading instructions are
+also the binding index. Native queries borrow those rows instead of retaining
+parameter sets/maps or another summary. Native `Bind*` handlers establish dynamic
+initial state; subsequent initialization, lifetime, ownership, loan and CFG-join
+checks remain native. The separate service-loan identity scan is unchanged.
+This migration remains source-only pending generated ABI and execution checks.
 
 ## CFG and frame invariants
 

@@ -343,7 +343,15 @@ void directTests() {
     check(
         "span method argument lacks capability vector",
         [](Module &m) {
-            m.functions[1].parameters[0] = Type::ByteSpan;
+            auto &callee = m.functions[1];
+            callee.parameters[0] = Type::ByteSpan;
+            callee.frameBytes = 96;
+            callee.objectSlots.erase(8);
+            callee.slots.erase(8);
+            callee.spanSlots = {88};
+            callee.code[0] = BindSpanParameter{0, 88};
+            callee.code.back() = ReturnObject{24};
+            callee.code.insert(callee.code.end() - 1, EndSpan{88});
         },
         "method span argument vector size mismatch");
     check(

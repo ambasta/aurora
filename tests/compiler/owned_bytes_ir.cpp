@@ -7,6 +7,7 @@
 #include <iostream>
 #include <limits>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -1987,10 +1988,27 @@ void typedValueTests() {
     });
     reject("typed parameter requires metadata", valuesParameter(), [](Module &module) {
         module.functions[0].ownedValueTypes.erase(40);
-    });
+    }, "owned byte parameter type mismatch");
     reject("byte parameter rejects typed metadata", valuesParameter(), [](Module &module) {
         module.functions[0].parameters[1] = Type::OwnedBytes;
-    });
+    }, "owned byte parameter type mismatch");
+    for (const auto &[name, mutate, diagnostic] :
+         std::vector<std::tuple<const char *, std::function<void(Module &)>, const char *>>{
+             {"nominal element mismatch", [](auto &module) {
+                  module.functions[0].ownedValueTypes[40] = "Other";
+              }, "owned byte parameter type mismatch"},
+             {"exact owner spill", [](auto &module) {
+                  operation<BindBytesParameter>(module).offset = 32;
+              }, "owned byte parameter requires exact typed spill"},
+             {"mutable owner spill", [](auto &module) {
+                  module.functions[0].byteSlots[40] = false;
+              }, "owned byte parameter must be mutable"},
+             {"distinct owner spill", [](auto &module) {
+                  auto &function = module.functions[0];
+                  function.parameters.push_back(Type::ownedValues(Type("Record")));
+                  function.code.insert(function.code.begin() + 2, BindBytesParameter{2, 40});
+              }, "owned byte parameter bindings overlap"}})
+        reject(std::string("source typed entry ") + name, valuesParameter(), mutate, diagnostic);
     reject("typed parameter rejects dependent metadata", valuesParameter(), [](Module &module) {
         module.functions[0].parameters[1].lengthParameter = "N";
     });

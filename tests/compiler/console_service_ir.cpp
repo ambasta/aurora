@@ -193,6 +193,29 @@ Module copiedSpanArgument() {
     g.code.insert(g.code.begin() + 3, EndSpan{224});
     return m;
 }
+Module mixedEntry() {
+    Module m;
+    canonicalTypes(m);
+    m.enumCases[std::string(service::displayPutResultName)] = 2;
+    m.enumCases[std::string(service::displayCompletionName)] = 2;
+    m.classLayouts["Packet"] = {Type::U8, Type::I64};
+    auto f = entry("mixed_entry");
+    f.parameters = {Type::ConsoleSession, Type::DisplaySession, Type::U8,
+                    Type::ByteSpan, Type("Packet"), Type::Bool};
+    f.result = Type::Bool;
+    f.frameBytes = 144;
+    f.serviceSlots = {16, 32};
+    f.slots = {{40, Type::U8}, {128, Type::U8}, {120, Type::I64}, {136, Type::Bool}};
+    f.spanSlots = {104};
+    f.objectSlots = {{128, {"Packet", false}}};
+    f.code = {BindServiceParameter{0, 16, service::Kind::Console},
+              BindServiceParameter{1, 32, service::Kind::Display},
+              BindParameter{2, 40, Type::U8}, BindSpanParameter{3, 104},
+              BindObjectParameter{4, 128, "Packet"}, BindParameter{5, 136, Type::Bool},
+              Load{40, Type::U8}, Load{128, Type::U8}, EndSpan{104}, Load{136, Type::Bool}, Return{}};
+    m.functions = {f};
+    return m;
+}
 void copiedArgumentFacts() {
     for (const bool paired : {false, true}) {
         auto module = copiedArguments(0, paired);
@@ -250,11 +273,13 @@ void good(Module m) {
     need(text.find(".globl caller") == std::string::npos, "ordinary public service entry");
     ++checks;
 }
-void bad(Module m, const std::function<void(Module &)> &mutate) {
+void bad(Module m, const std::function<void(Module &)> &mutate, const std::string &expected = {}) {
     mutate(m);
     try {
         (void)validate(std::move(m));
-    } catch (const Error &) {
+    } catch (const Error &error) {
+        need(expected.empty() || std::string(error.what()).find(expected) != std::string::npos,
+             "wrong service IR diagnostic: " + std::string(error.what()));
         ++checks;
         return;
     }
@@ -271,6 +296,30 @@ int main() {
     good(copiedArguments(1));
     good(copiedArguments(2));
     good(copiedSpanArgument());
+    good(mixedEntry());
+    for (const auto &[position, diagnostic] :
+         std::vector<std::pair<int, const char *>>{{0, "service bindings must form the leading entry group"},
+                                                  {1, "service bindings must form the leading entry group"},
+                                                  {2, "parameter bindings must form the entry prefix"},
+                                                  {3, "span parameter bindings must form the entry prefix"},
+                                                  {4, "object parameter bindings must form the entry prefix"},
+                                                  {5, "parameter bindings must form the entry prefix"}})
+        bad(mixedEntry(), [=](auto &m) {
+            m.functions[0].code.erase(m.functions[0].code.begin() + position);
+        }, diagnostic);
+    for (const auto &[mutate, diagnostic] :
+         std::vector<std::pair<std::function<void(Module &)>, const char *>>{
+             {[](auto &m) { std::get<BindServiceParameter>(m.functions[0].code[1]).kind = service::Kind::Console; },
+              "service binding requires exact authorized leading parameter"},
+             {[](auto &m) { std::get<BindServiceParameter>(m.functions[0].code[1]).offset = 16; },
+              "service parameter bindings overlap"},
+             {[](auto &m) { std::get<BindSpanParameter>(m.functions[0].code[3]).offset = 40; },
+              "span parameter requires exact typed spill"},
+             {[](auto &m) { m.functions[0].objectSlots[128].mutableValue = true; },
+              "object parameter must be readonly"},
+             {[](auto &m) { m.functions[0].arraySlots[40] = 1; },
+              "parameter cannot bind byte array origin storage"}})
+        bad(mixedEntry(), mutate, diagnostic);
     copiedArgumentFacts();
     for (const std::vector<int> offsets : {std::vector<int>{}, {0, 320}, {0, 320, 416, 0},
                                           {320, 320, 416}, {0, 320, 320}, {0, 16, 416}, {0, 319, 416}})

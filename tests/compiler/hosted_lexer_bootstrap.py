@@ -262,38 +262,34 @@ def abi_generation(facts):
             except ValueError:
                 continue
             raise AssertionError(f"unsafe instruction bridge accepted: {operation}/{mutation}")
-    for field, value in (
-        ("receiver_mutable", False),
-        ("second_receiver", {"type_name": metadata_store, "mutable": False}),
-        ("root_count", 2),
-        ("root_tuple_bytes", 8),
-    ):
-        changed = deepcopy(facts)
-        _, entry = abi_declaration(changed, "functions", "compiler_frontend::instructions_structure")
-        entry[field] = value
-        try:
-            frontend_abi_header(changed)
-        except ValueError:
-            continue
-        raise AssertionError(f"unsafe structural instruction bridge accepted: {field}={value}")
-    for field, value in (
-        ("receiver_mutable", False),
-        ("borrowed_parameter", False),
-        ("second_receiver", None),
-        ("second_receiver", {"type_name": instruction_store, "mutable": False}),
-        ("second_receiver", {"type_name": metadata_store, "mutable": True}),
-        ("root_count", 1),
-        ("root_order", ["second_receiver", "receiver"]),
-        ("root_tuple_bytes", 8),
-    ):
-        changed = deepcopy(facts)
-        _, entry = abi_declaration(changed, "functions", "compiler_frontend::instructions_admit")
-        entry[field] = value
-        try:
-            frontend_abi_header(changed)
-        except ValueError:
-            continue
-        raise AssertionError(f"unsafe instruction paired bridge accepted: {field}={value}")
+    # Both admission phases borrow the same ordered pair: mutable instructions,
+    # immutable declarations. Neither may gain a second mutable root or silently
+    # degrade to the former single-root normalization entrypoint.
+    for operation in ("admit", "structure"):
+        for field, value in (
+            ("receiver", metadata_store),
+            ("receiver_mutable", False),
+            ("borrowed_parameter", False),
+            ("second_receiver", None),
+            ("second_receiver", {"type_name": instruction_store, "mutable": False}),
+            ("second_receiver", {"type_name": metadata_store, "mutable": True}),
+            ("root_count", 1),
+            ("root_count", 3),
+            ("root_order", ["second_receiver", "receiver"]),
+            ("root_order", ["receiver", "receiver"]),
+            ("root_tuple_bytes", 8),
+            ("root_tuple_bytes", 24),
+            ("parameters", [{"kind": "i64", "bytes": 8, "offset": 0}]),
+            ("parameter_bytes", 8),
+        ):
+            changed = deepcopy(facts)
+            _, entry = abi_declaration(changed, "functions", "compiler_frontend::instructions_" + operation)
+            entry[field] = value
+            try:
+                frontend_abi_header(changed)
+            except ValueError:
+                continue
+            raise AssertionError(f"unsafe instruction paired bridge accepted: {operation}/{field}={value}")
     for pool, row in (("instructions", "RawInstructionRow"), ("operands", "RawOperandRow"),
                       ("literals", None), ("codeOrder", "CodeRow"), ("bodies", "BodyRow")):
         for mutation in ("owner", "stride", "leaf") if row else ("owner",):

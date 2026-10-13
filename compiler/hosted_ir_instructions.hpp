@@ -6,7 +6,7 @@
 
 namespace aurora::ir {
 // An immovable capsule. Views survive moves of the unique owner in a validated
-// module; source mutation is confined to admission and CFG normalization.
+// module; source mutation is confined to admission and CFG/entry normalization.
 class Instructions final {
     class State;
     class ReadCursor;

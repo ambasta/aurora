@@ -1,5 +1,5 @@
-# Register-only private boundary. Admission borrows mutable Instructions and
-# readonly Metadata in a generated, ordered two-root tuple.
+# Register-only private boundary. Admission and structural/entry normalization
+# borrow mutable Instructions and readonly Metadata in ordered two-root tuples.
 .text
 .macro instructions_entry operation
 .globl aurora_hosted_instructions_\operation
