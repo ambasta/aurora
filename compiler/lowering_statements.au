@@ -230,6 +230,16 @@ export namespace compiler_lowering {
         if (kind == compiler_resolver::ResolvedTypeKind::class_value || kind
             == compiler_resolver::ResolvedTypeKind::byte_span) {
             if (syntax.expression_kind() == compiler_parser::NodeKind::name) {
+                const i64 reference = source_ref(session, node);
+                // An existing binding always shadows the receiver field, even
+                // when that local cannot be returned. Stage a field copy only
+                // through the same checked path as a typed local initializer.
+                if (kind == compiler_resolver::ResolvedTypeKind::class_value && syntax.word(0) == syntax.word(4)
+                    && lookup_local(session, reference) < 0 && implicit_field(session, reference) >= 0) {
+                    frame.set_phase(ContinuationPhase::returning);
+                    session.set_continuation(frame_id, frame);
+                    return push_expression(session, node, result, -1);
+                }
                 const i64 local = named_source(session, node);
                 const i64 staged_type_143 = local_type(session, local);
                 return emit_return(session, frame_id, staged_type_143, local);

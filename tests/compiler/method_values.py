@@ -467,22 +467,33 @@ def native_cases(suite):
             EMPTY + "class Receiver{public:Receiver(){}auto copy(Empty a,Empty b)const->Empty{return b;}};",
         ),
     )
+    direct = p(
+        "std::array<u8,3> bytes=std::array<u8,3>();bytes.set(0,255u8);bytes.set(2,40u8);"
+        "Empty empty=Empty();Packet source=Packet(7u8,bytes,Status::ready,empty,2u8);"
+        "const Receiver receiver=Receiver(source);Packet result=receiver.copy(source);bytes.set(2,0u8);"
+        "std::array<u8,3> changed=result.data;changed.set(2,1u8);"
+        "const std::array<u8,3> saved=result.data;"
+        "if(saved.at(0)!=255u8){return 1;}if(result.state!=Status::ready){return 2;}"
+        "if(result.head!=7u8){return 3;}const Empty zero=result.zero;if(zero.answer()!=42){return 4;}"
+        "result.data.set(2,1u8);source.data.set(2,0u8);const Packet again=receiver.copy(source);"
+        "const std::array<u8,3> retained=again.data;if(retained.at(2)!=40u8){return 5;}"
+        "return i64(saved.at(2))+i64(result.tail);",
+        ENUMS + EMPTY + "class Packet{public:u8 head;std::array<u8,3> data;Status state;Empty zero;u8 tail;"
+        "Packet(u8 h,std::array<u8,3> b,Status s,Empty e,u8 t):head(h),data(b),state(s),zero(e),tail(t){} };"
+        "class Receiver{Packet item;public:Receiver(Packet source):item(source){}"
+        "auto copy(Packet value)const->Packet{return item;}};",
+        imports="import std.array;",
+    )
     suite.check(
         "packed nested enum empty and private array payload all copy",
-        p(
-            "std::array<u8,3> bytes=std::array<u8,3>();bytes.set(0,255u8);bytes.set(2,40u8);"
-            "Empty empty=Empty();Packet source=Packet(7u8,bytes,Status::ready,empty,2u8);"
-            "Receiver receiver=Receiver();Packet result=receiver.copy(source);bytes.set(2,0u8);"
-            "std::array<u8,3> changed=result.data;changed.set(2,1u8);"
-            "const std::array<u8,3> saved=result.data;"
-            "if(saved.at(0)!=255u8){return 1;}if(result.state!=Status::ready){return 2;}"
-            "if(result.head!=7u8){return 3;}const Empty zero=result.zero;if(zero.answer()!=42){return 4;}"
-            "return i64(saved.at(2))+i64(result.tail);",
-            ENUMS + EMPTY + "class Packet{public:u8 head;std::array<u8,3> data;Status state;Empty zero;u8 tail;"
-            "Packet(u8 h,std::array<u8,3> b,Status s,Empty e,u8 t):head(h),data(b),state(s),zero(e),tail(t){} };"
-            "class Receiver{public:Receiver(){}auto copy(Packet value)const->Packet{return value;}};",
-            imports="import std.array;",
+        direct.replace("return item;", "return value;").replace(
+            "if(retained.at(2)!=40u8)", "if(retained.at(2)!=0u8)"
         ),
+    )
+    suite.check(
+        "direct receiver field copies packed nested enum empty and private array payload",
+        direct,
+        equivalent_source=direct.replace("return item;", "const Packet result=item;return result;"),
     )
     suite.check(
         "class template injected self supports ordinary copied parameter",
@@ -692,6 +703,67 @@ def native_cases(suite):
         direct,
         equivalent_source=direct.replace(
             "return holder.item.copy(source);", "const Empty result=holder.item.copy(source);return result;"
+        ),
+    )
+    direct = p(
+        "Empty source=Empty();const Holder holder=Holder(source);Empty result=holder.copy();return result.answer();",
+        EMPTY + "class Holder{Empty item;public:Holder(Empty source):item(source){}"
+        "auto copy()const->Empty{return item;}};",
+    )
+    suite.check(
+        "direct empty receiver field result keeps logical completeness",
+        direct,
+        equivalent_source=direct.replace("return item;", "const Empty result=item;return result;"),
+    )
+    for mutable in (False, True):
+        change = (
+            "builtin::array<u8,1> bytes={1u8};const builtin::span<const u8> view=borrow_bytes(bytes);"
+            "item.add(i64(view.at(0)));"
+            if mutable else ""
+        )
+        direct = p(
+            f"Counter source=Counter({41 if mutable else 42});"
+            + ("" if mutable else "const ")
+            + "Holder holder=Holder(source);Counter result=holder.copy(source);source.set(9);"
+            "if(result.get()!=42){return 2;}result.set(7);"
+            "if(!holder.intact()){return 1;}return holder.get();",
+            COUNTER + "class Holder{u8 first;Counter item;u8 last;public:"
+            "Holder(Counter source):first(13u8),item(source),last(29u8){}"
+            "auto intact()const->bool{return first==13u8&&last==29u8;}"
+            "auto get()const->i64{return item.get();}auto copy(Counter ignored)"
+            + ("" if mutable else "const")
+            + "->Counter{"
+            + change
+            + "return item;}};",
+        )
+        suite.check(
+            "direct private padded receiver field return " + ("mutable with live span" if mutable else "const"),
+            direct,
+            equivalent_source=direct.replace("return item;", "const Counter result=item;return result;"),
+        )
+    direct = p(
+        "Counter source=Counter(22);const Holder holder=Holder(source);i64 n=0;i64 total=0;"
+        "while(n<2){Counter result=holder.select(n==0);total=total+result.get();result.set(9);n=n+1;}"
+        "return total;",
+        COUNTER + "class Holder{Counter item;public:Holder(Counter source):item(source){}"
+        "auto select(bool local)const->Counter{if(local){Counter item=Counter(20);return item;}"
+        "i64 n=0;while(n<1){n=n+1;return item;}return item;}};",
+    )
+    suite.check(
+        "direct receiver field branch and loop returns keep local shadowing",
+        direct,
+        equivalent_source=direct.replace(
+            "n=n+1;return item;", "n=n+1;const Counter result=item;return result;"
+        ).replace("}return item;", "}const Counter result=item;return result;"),
+    )
+    suite.check(
+        "copied parameter return shadows receiver class field",
+        p(
+            "Counter initial=Counter(20);Counter source=Counter(22);const Holder holder=Holder(initial);"
+            "Counter result=holder.copy(source);if(result.get()!=22){return 1;}result.set(42);"
+            "if(holder.get()!=20){return 2;}return result.get();",
+            COUNTER + "class Holder{Counter item;public:Holder(Counter source):item(source){}"
+            "auto get()const->i64{return item.get();}auto copy(Counter item)const->Counter{return item;}};",
         ),
     )
 
@@ -1087,17 +1159,42 @@ def rejection_cases(suite):
             COUNTER + "class Holder{public:Counter item;Holder(Counter x):item(x){} };",
         ),
     )
-    suite.reject(
-        "direct receiver class field return remains unsupported",
-        p(
-            "return 42;",
-            COUNTER
-            + (
-                "class Holder{Counter item;public:Holder(Counter x):item(x){}auto copy(Counter ignored)const->C"
-                "ounter{return item;}};"
-            ),
+    for label, parameter, body, error in (
+        ("scalar parameter", "i64 item", "return item;", "expected Counter"),
+        ("wrong nominal local", "", "Other item=Other(42);return item;", "expected Counter"),
+        (
+            "moved local",
+            "",
+            "own<i64> item=own(42);own<i64> moved=move(item);return item;",
+            "use after move",
         ),
-    )
+    ):
+        suite.reject(
+            "failed shadowing " + label + " cannot fall back to receiver field",
+            p(
+                "return 42;",
+                COUNTER
+                + COUNTER.replace("Counter", "Other")
+                + "class Holder{Counter item;public:Holder(Counter source):item(source){}"
+                + f"auto copy({parameter})const->Counter{{{body}}}}};",
+            ),
+            error=error,
+        )
+    for label, field_type, expression, error in (
+        ("wrong nominal receiver field", "Other", "item", "expected Counter"),
+        ("qualified receiver field spelling", "Counter", "Holder::item", True),
+    ):
+        suite.reject(
+            "direct field return rejects " + label,
+            p(
+                "return 42;",
+                COUNTER
+                + COUNTER.replace("Counter", "Other")
+                + f"class Holder{{{field_type} item;public:Holder({field_type} source):item(source){{}}"
+                + f"auto copy()const->Counter{{return {expression};}}}};",
+            ),
+            error=error,
+        )
     for label, methods, helpers in (
         ("direct receiver cycle", "auto take(Counter x)const->Counter{return take(x);}", ""),
         (
