@@ -1,0 +1,40 @@
+export module console.io;
+
+export namespace console {
+    enum class WriteStatus {
+        complete,
+        timeout
+    };
+
+    // Copied observations carry no console authority or retained byte view.
+    class WriteResult {
+        i64 written_bytes;
+        WriteStatus outcome;
+    public:
+        WriteResult(i64 count, WriteStatus status) : written_bytes(count), outcome(status) {
+        }
+
+        auto written() const -> i64 {
+            return written_bytes;
+        }
+        auto status() const -> WriteStatus {
+            return outcome;
+        }
+        auto complete() const -> bool {
+            return outcome == WriteStatus::complete;
+        }
+    };
+
+    auto write(builtin::ConsoleSession& session, builtin::span<const u8> bytes) -> WriteResult {
+        i64 written = 0;
+        while (written < bytes.size()) {
+            if (session.put(bytes.at(written)) == builtin::ConsolePutResult::timeout) {
+                const WriteResult result = WriteResult(written, WriteStatus::timeout);
+                return result;
+            }
+            written = written + 1;
+        }
+        const WriteResult result = WriteResult(written, WriteStatus::complete);
+        return result;
+    }
+}

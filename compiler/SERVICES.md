@@ -25,11 +25,15 @@ local/field/array, returned, reflected or converted. A reference is a parameter
 mode, never an ordinary reference value. Service methods, constructors, templates,
 overloads, mixed regions/owners and recursion in the reachable service graph are
 rejected. Later parameters are copied scalars/enums or readonly byte spans, with
-the existing source-root lifetime and loan checks. A group containing Console additionally permits its approved copied ConsoleSample
-result; a group containing Event additionally permits IommuEventSample. Both
-permissions follow membership regardless of formal order. Display has no host
-input or copied class-report operation. Duplicate kinds, non-leading capabilities, and forwarding one kind into
-a formal of the other kind are rejected. No owner/region mixture is added.
+the existing source-root lifetime and loan checks. Helper results are scalars/enums
+or ordinary non-owning classes under the [copied-value boundary rules](VALUES.md).
+Exact nominal type, layout, private visibility and complete initialization apply.
+No result carries a capability, owner, span or escaping reference. Copied data,
+including ConsoleSample and IommuEventSample, is independent of service kind.
+Native operations retain exact canonical report types; Display has no host input
+or copied class-report operation. Duplicate kinds, non-leading capabilities and
+forwarding one kind into a formal of the other kind are rejected. No owner/region
+mixture is added.
 
 Named forwarding acquires one independent synchronous child loan for each
 forwarded capability before evaluating later value/span arguments, suspending
@@ -115,6 +119,11 @@ stack alignment, probes, saved-register rules and stack budgets are unchanged.
 Compiler-generated host operations validate full-width booleans, the raw byte
 range, absent-byte zero and closed status values before exposing source values.
 Canonical report layout/enum cardinality is checked independently in typed IR.
+Ordinary class-returning `ServiceCall` reuses the hidden R10 destination and full
+nominal copied layout, with exact active, pristine, disjoint result storage.
+`ReturnObject` requires complete results, including nested/empty completion;
+repeated empty initialization also rejects. Library `console::WriteResult` carries
+only copied count/status data, retaining no service loan or byte-span argument.
 
 The Display entry record is exactly grant at +0, generation at +8, width at +16,
 height at +24. `__au_runtime_display_pixel` receives seven full SysV qwords:
@@ -148,9 +157,11 @@ callback, port, pointer, syscall or device address.
 
 ## Verification
 
-Source/editor/host-report cases live in `tests/compiler/console_service.py`;
-independently constructed hostile IR lives in `console_service_ir.cpp`. The
-host-grant and UART tests are separate from generated-code tests.
+Source/editor/host-report cases live in `tests/compiler/console_service.py`,
+including copied service results and `console::write` success/timeout prefixes.
+Independently constructed hostile IR lives in `console_service_ir.cpp`. Acceptance
+requires the applicable gates on final integrated source; host-grant and UART
+tests remain separate from generated-code tests.
 `display_service.py`, `display_service_ir.cpp` and the handwritten
 `display_service_abi.S` add second-kind source, cross-module copied reflection,
 forged-kind/slot/operation/loan and seven-argument ABI coverage, while retaining

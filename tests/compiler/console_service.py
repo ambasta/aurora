@@ -601,12 +601,23 @@ int main() {
     require(result.returncode == 0, result.stderr.decode())
     result = run([files_binary])
     require(result.returncode == 0, f"shared files policy count/content/copy/zero-suffix contract: {result.returncode}")
-    # Separate positive ABI graph: a copied report crosses two service calls,
+    # Separate positive ABI graph: an ordinary composed value crosses two service calls,
     # five mixed value/span positions follow the capability, and a host put runs
     # with an odd outstanding scalar-expression depth.
     abi_source = work / "mixed-abi.au"
     abi_source.write_text("""module kernel_console_service;
     enum class Marker { okay, wrong };
+    class Reply {
+        builtin::ConsoleSample observation;
+        i64 copied_count;
+    public:
+        Reply(builtin::ConsoleSample sample, i64 count) : observation(sample), copied_count(count) {}
+        auto sample() const -> builtin::ConsoleSample {
+            const builtin::ConsoleSample value = observation;
+            return value;
+        }
+        auto count() const -> i64 { return copied_count; }
+    };
     auto number(builtin::ConsolePutResult status) -> i64 {
         if (status == builtin::ConsolePutResult::success) { return 7; }
         return -100;
@@ -615,21 +626,23 @@ int main() {
         return 1 + number(session.put('z'));
     }
     auto leaf(builtin::ConsoleSession& session, u8 a, builtin::span<const u8> text,
-              i64 b, bool flag, Marker marker) -> builtin::ConsoleSample {
+              i64 b, bool flag, Marker marker) -> Reply {
         const builtin::ConsoleSample report = session.next();
         if (a != 'A' || text.size() != 3 || text.at(1) != 'y' || b != 41 || !flag || marker != Marker::okay) {
             session.put('!');
         }
-        return report;
+        const Reply result = Reply(report, b);
+        return result;
     }
     auto forward(builtin::ConsoleSession& session, u8 a, builtin::span<const u8> text,
-                 i64 b, bool flag, Marker marker) -> builtin::ConsoleSample {
-        const builtin::ConsoleSample report = leaf(session, a, text, b, flag, marker);
-        return report;
+                 i64 b, bool flag, Marker marker) -> Reply {
+        const Reply result = leaf(session, a, text, b, flag, marker);
+        return result;
     }
     auto console_service(builtin::ConsoleSession& session) -> builtin::ConsoleCompletion {
-        const builtin::ConsoleSample report = forward(session, 'A', "xyz", 41, true, Marker::okay);
-        if (!report.byte_present || report.byte != 'Q' || report.damaged || odd(session) != 8) {
+        const Reply result = forward(session, 'A', "xyz", 41, true, Marker::okay);
+        const builtin::ConsoleSample report = result.sample();
+        if (!report.byte_present || report.byte != 'Q' || report.damaged || result.count() != 41 || odd(session) != 8) {
             session.put('?');
         }
         return builtin::ConsoleCompletion::requested_exit;
@@ -688,14 +701,18 @@ int main() {
             }
             auto outcome() const -> builtin::ConsolePutResult { return status; }
         };
+        auto fetch_saved(builtin::ConsoleSession& session) -> Holder {
+            const builtin::ConsoleSample sample = fetch(session);
+            const Holder saved = Holder(sample, builtin::ConsolePutResult::success);
+            return saved;
+        }
     }
     """)
     imported = work / "imported.au"
     imported.write_text("""module kernel_console_service;
     import service.helpers;
     auto console_service(builtin::ConsoleSession& session) -> builtin::ConsoleCompletion {
-        const builtin::ConsoleSample actual = service_test::fetch(session);
-        const service_test::Holder saved = service_test::Holder(actual, builtin::ConsolePutResult::success);
+        const service_test::Holder saved = service_test::fetch_saved(session);
         const builtin::ConsoleSample returned = saved.get();
         const builtin::ConsoleSample synthetic = builtin::ConsoleSample{
             .byte_present = false, .byte = 0u8, .damaged = true};
@@ -734,6 +751,64 @@ int main() {
     require(result.returncode == 0, result.stderr.decode())
     result = run([imported_binary], input=b"1 81 1\n")
     require(result.returncode == 0 and result.stdout == b"K", "cross-module copied-report/reflection inconsistency")
+    write_source = work / "write-result.au"
+    write_source.write_text("""module kernel_console_service;
+    import console.io;
+    auto console_service(builtin::ConsoleSession& session) -> builtin::ConsoleCompletion {
+        const builtin::ConsoleSample request = session.next();
+        const builtin::ConsoleSample expected = session.next();
+        const array<u8, 5> payload = "A\\0\\xffz!";
+        const builtin::span<const u8> bytes = borrow_bytes(payload);
+        const console::WriteResult result = console::write(session, bytes.subspan(0, i64(request.byte)));
+        const console::WriteResult copied = result;
+        const console::WriteResult empty = console::write(session, bytes.subspan(0, 0));
+        const bool complete = expected.byte == request.byte;
+        if (result.written() != i64(expected.byte) || copied.written() != result.written()
+            || copied.status() != result.status() || copied.complete() != result.complete()
+            || result.complete() != complete
+            || (complete && result.status() != console::WriteStatus::complete)
+            || (!complete && result.status() != console::WriteStatus::timeout)
+            || empty.written() != 0 || !empty.complete() || empty.status() != console::WriteStatus::complete) {
+            session.put('?');
+            return builtin::ConsoleCompletion::output_failure;
+        }
+        if (!result.complete()) { return builtin::ConsoleCompletion::output_failure; }
+        return builtin::ConsoleCompletion::requested_exit;
+    }
+    auto aurora_kernel_value() -> i64 { return 42; }
+    """)
+    write_assembly, write_binary = work / "write-result.s", work / "write-result"
+    result = run([compiler, "--module-root", ROOT / "library", write_source, "-o", write_assembly])
+    require(result.returncode == 0, result.stderr.decode())
+    write_assembly.write_text(write_assembly.read_text() + (ROOT / "kernel/uefi/console-service-entry.S").read_text())
+    result = run(
+        [
+            os.environ.get("CXX", "g++"),
+            "-std=c++23",
+            "-O1",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            ROOT / "tests/compiler/console_service_host.cpp",
+            ROOT / "tests/compiler/console_service_abi.S",
+            write_assembly,
+            "-o",
+            write_binary,
+        ]
+    )
+    require(result.returncode == 0, result.stderr.decode())
+    # Every short prefix, including NUL/high bytes, first/final-byte timeout,
+    # empty calls after timeout, copied reports and exactly one failed attempt.
+    for length in range(6):
+        for limit in range(length + 1):
+            result = run([write_binary, limit], input=f"1 {length} 0\n1 {limit} 0\n".encode())
+            failed = int(limit < length)
+            require(
+                result.returncode == failed
+                and result.stdout == b"A\x00\xffz!"[:limit]
+                and result.stderr == f"completion={failed} attempts={limit + failed}\n".encode(),
+                f"copied WriteResult prefix/count/status/no-retry contract: length={length}, limit={limit}",
+            )
     negative = {
         "by-value": "auto f(builtin::ConsoleSession s) -> i64 { return 0; }",
         "const": "auto f(const builtin::ConsoleSession& s) -> i64 { return 0; }",
@@ -765,7 +840,29 @@ int main() {
             "template<Scalar T> auto f(builtin::ConsoleSession& s, T n) -> i64 { return 0; } "
             "auto answer() -> i64 { return 0; }"
         ),
+        "owner-result": "auto f(builtin::ConsoleSession& s) -> builtin::OwnedBytes { return 0; }",
+        "span-result": (
+            "auto f(builtin::ConsoleSession& s, builtin::span<const u8> bytes) "
+            "-> builtin::span<const u8> { return bytes; }"
+        ),
+        "reference-result": (
+            "class Reply { public: i64 count; }; auto f(builtin::ConsoleSession& s) -> Reply& { return s; }"
+        ),
+        "copied-result-incomplete": (
+            "class Reply { public: i64 count; }; "
+            "auto f(builtin::ConsoleSession& s, bool ready) -> Reply { "
+            "if (ready) { const Reply result = Reply{.count = 0}; return result; } }"
+        ),
+        "copied-result-suspended": (
+            "class Reply { public: i64 count; }; "
+            "auto g(builtin::ConsoleSession& s, builtin::ConsolePutResult status) -> Reply { "
+            "const Reply result = Reply{.count = 0}; return result; } "
+            "auto f(builtin::ConsoleSession& s) -> Reply { const Reply result = g(s, s.put(65u8)); return result; }"
+        ),
     }
+    borrowed_parameter_error = (
+        "AU2001: borrowed parameters require a supported leading owning-class reference signature on an ordinary function"
+    )
     expected_errors = {
         "by-value": "AU3001: service functions require one leading exclusive sealed service reference",
         "const": "AU3001: service functions require one leading exclusive sealed service reference",
@@ -781,14 +878,19 @@ int main() {
         "region": "AU3001: service helper parameters require scalars, enums or readonly byte spans",
         "return": "AU2001: only scalar function results or scalar-field class values are supported",
         "scalar-cycle": "AU3001: invalid typed IR: recursive receiver call cycle",
-        "second": "AU2001: borrowed parameters require one leading concrete owning class",
+        "second": borrowed_parameter_error,
         "shadow": "AU2001: reserved builtin storage name",
         "suspended": "AU3001: service operation requires an active named exclusive service parameter",
-        "template": "AU2001: borrowed parameters require one leading concrete owning class",
-        "two": "AU2001: borrowed parameters require one leading concrete owning class",
+        "template": borrowed_parameter_error,
+        "two": borrowed_parameter_error,
         "unknown-op": "AU3001: unknown operation for sealed service kind",
         "value": "AU3001: service capability is not a value",
         "wrong-put": "AU3001: expected u8, got i64",
+        "owner-result": "AU3001: service functions require a leading exclusive sealed service group and copied result",
+        "span-result": "AU2001: only scalar function results or scalar-field class values are supported",
+        "reference-result": "expected '{'",
+        "copied-result-incomplete": "AU3001: function must return on every path",
+        "copied-result-suspended": "AU3001: service operation requires an active named exclusive service parameter",
     }
     for name, body in negative.items():
         source = work / f"{name}.au"
@@ -806,7 +908,8 @@ int main() {
         f"RAM-note lifetime/replacement/rejection and {len(note_normal.stdout)} note timeout prefixes, "
         "byte-span comparisons, four-file policy/records/lifetime/rejections and "
         f"{len(file_normal.stdout)} file timeout prefixes, "
-        f"canonical host reports and {len(negative)} source rejections; evidence {work}"
+        f"canonical host reports, copied service results/WriteResult prefixes and {len(negative)} source rejections; "
+        f"evidence {work}"
     )
 
 

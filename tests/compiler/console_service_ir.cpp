@@ -69,6 +69,36 @@ Module forwarded() {
     m.functions = {f, g};
     return m;
 }
+Module copiedResult(bool empty = false) {
+    Module m;
+    canonicalTypes(m);
+    // Five mixed-width leaves exercise the full layout beyond either native
+    // observation's fixed field count. Empty results still need completion.
+    m.classLayouts["Reply"] = empty ? std::vector<Type>{}
+                                   : std::vector<Type>{Type::U64, service::putResultType(), Type::U8, Type::U8, Type::Bool};
+    auto f = entry("caller");
+    f.result = Type("Reply");
+    f.objectSlots[48] = {"Reply", false};
+    if (!empty)
+        f.slots = {{48, Type::U64}, {40, service::putResultType()}, {32, Type::U8}, {31, Type::U8}, {24, Type::Bool}};
+    auto g = f;
+    g.name = "reply";
+    f.code.insert(f.code.end(),
+                  {BeginObject{48}, AcquireServiceLoan{1, 16}, ServiceCall{"reply", 1, 48, {0}},
+                   ReleaseServiceLoan{1}, ReturnObject{48}});
+    g.code.push_back(BeginObject{48});
+    if (empty)
+        g.code.push_back(InitializeEmptyObject{48});
+    else
+        g.code.insert(g.code.end(),
+                      {Constant{2, Type::U64}, Store{48, Type::U64},
+                       EnumConstant{service::putResultType(), 0}, Store{40, service::putResultType()},
+                       Constant{65, Type::U8}, Store{32, Type::U8}, Constant{66, Type::U8}, Store{31, Type::U8},
+                       Constant{1, Type::Bool}, Store{24, Type::Bool}});
+    g.code.push_back(ReturnObject{48});
+    m.functions = {f, g};
+    return m;
+}
 void good(Module m) {
     X86Emitter emitter;
     const auto text = emitter.emit(validate(std::move(m)));
@@ -99,6 +129,62 @@ void bad(Module m, const std::function<void(Module &)> &mutate) {
 int main() {
     good(sample());
     good(forwarded());
+    good(copiedResult());
+    good(copiedResult(true));
+    for (const int offset : {0, 16, 40})
+        bad(copiedResult(), [=](auto &m) {
+            std::get<ServiceCall>(m.functions[0].code[3]).resultOffset = offset;
+        });
+    bad(copiedResult(), [](auto &m) {
+        m.classLayouts["Other"] = m.classLayouts.at("Reply");
+        m.functions[0].objectSlots[48].className = "Other";
+    });
+    bad(copiedResult(), [](auto &m) {
+        auto &f = m.functions[0];
+        f.serviceSlots = {32}; // The exact result object overlaps its authority spill.
+        std::get<BindServiceParameter>(f.code[0]).offset = 32;
+        std::get<AcquireServiceLoan>(f.code[2]).offset = 32;
+    });
+    bad(copiedResult(), [](auto &m) {
+        m.functions[0].slots[31] = Type::Bool; // Correct base, malformed physical leaf.
+    });
+    bad(copiedResult(), [](auto &m) {
+        auto &code = m.functions[0].code;
+        code.insert(code.begin() + 3, {Constant{0, Type::Bool}, Store{24, Type::Bool}});
+    });
+    for (const bool empty : {false, true}) {
+        bad(copiedResult(empty), [](auto &m) {
+            auto &code = m.functions[0].code;
+            code.insert(code.end() - 1,
+                        {AcquireServiceLoan{1, 16}, ServiceCall{"reply", 1, 48, {0}}, ReleaseServiceLoan{1}});
+        });
+        bad(copiedResult(empty), [](auto &m) {
+            auto &code = m.functions[1].code;
+            code.erase(code.end() - 2); // Incomplete return cannot initialize the caller's result.
+        });
+    }
+    for (const auto type : {Type::ConsoleSession, Type::ByteSpan, Type::OwnedBytes, Type::Ref})
+        bad(copiedResult(), [=](auto &m) { m.functions[1].result = type; });
+    bad(copiedResult(), [](auto &m) {
+        m.classFields["Reply"] = {{Type::U64, 0, 1, false}, {service::putResultType(), 1, 1, false},
+                                   {Type::U8, 2, 1, false}, {Type::U8, 3, 1, false}, {Type::Bool, 4, 1, false},
+                                   {Type::OwnedBytes, 5, 0, false}};
+    });
+    bad(copiedResult(), [](auto &m) {
+        m.functions[0].code[3] = AggregateCall{"reply", {0}, 48};
+    });
+    bad(copiedResult(), [](auto &m) {
+        m.functions[0].code.erase(m.functions[0].code.begin() + 4); // Returning data cannot escape a child loan.
+    });
+    bad(copiedResult(), [](auto &m) {
+        m.functions[0].code.insert(m.functions[0].code.begin() + 3,
+                                   {Constant{65, Type::U8}, ServiceOperation{16, service::Operation::Put, 0}});
+    });
+    bad(copiedResult(), [](auto &m) {
+        m.functions[0].code[3] = ServiceOperation{16, service::Operation::Next, 48};
+        m.functions[0].code.erase(m.functions[0].code.begin() + 4);
+        m.functions[0].code.erase(m.functions[0].code.begin() + 2);
+    }); // An ordinary helper result never relaxes the native report's exact type.
     auto reused = forwarded();
     auto &reusedCode = reused.functions[0].code;
     reusedCode.insert(reusedCode.end() - 1,

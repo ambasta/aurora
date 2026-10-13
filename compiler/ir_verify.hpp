@@ -305,8 +305,7 @@ inline void verifyFunction(Function &function,
                         function.parameters[index] == Type::ByteSpan,
                     "service signature requires later scalar, enum or readonly span arguments");
         require(scalarValueType(function.result, enumCases) ||
-                    (kinds.contains(service::Kind::Console) && function.result == service::sampleType()) ||
-                    (kinds.contains(service::Kind::IommuEvent) && function.result == service::eventSampleType()),
+                    (function.result.isClass() && !owningType(function.result)),
                 "service signature has unsupported result");
     }
     require(serviceFunction || function.serviceSlots.empty(), "service spills without a service signature");
@@ -2587,18 +2586,10 @@ inline void verifyFunction(Function &function,
                             }
                         }
                         if (target.result.isClass()) {
-                            const int base = operation.resultOffset;
-                            const bool event = target.result == service::eventSampleType();
-                            require(function.objectSlots.contains(base) &&
-                                        (event || target.result == service::sampleType()) &&
-                                        function.objectSlots.at(base).className == target.result.className &&
-                                        state.activeObjects.contains(base) &&
-                                        !state.maybeConstructedObjects.contains(base),
-                                    "service helper requires pristine copied sample destination");
-                            for (std::size_t field = 0; field < (event ? 4u : 3u); ++field)
-                                require(!state.maybeInitialized.contains(objectLeaf(base, field)),
-                                        "service helper destination already initialized");
-                            markObject(base);
+                            // Signature validation applies the ordinary copied-value
+                            // bounds; use its full nominal layout, including empty
+                            // and nested completion facts, for the fresh destination.
+                            copyTarget(operation.resultOffset, target.result.className);
                             state.current.reset();
                         } else {
                             require(operation.resultOffset == 0 && scalarValueType(target.result, enumCases),

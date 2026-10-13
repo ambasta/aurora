@@ -52,6 +52,16 @@ width before reading, return a copied u64 and mask failures through `value_or`.
 allocation or retained views; empty prefixes match, equality also checks length.
 There is no normalization or textual meaning assigned to NUL/non-ASCII bytes.
 
+## Console output
+
+`console.io` supplies `write(ConsoleSession&, span<const u8>)`. Its copied
+`WriteResult` exposes `written()` successful bytes, `status()` (`WriteStatus::complete`
+or `::timeout`) and `complete()`. Empty input completes with zero transport calls.
+The first timeout stops output, preserving the emitted prefix and excluding the
+failed byte from the count; nothing is retried or rolled back. Results are ordinary
+forgeable data with no authority or retained span. Console and IOMMU consumers use
+the helper while keeping their existing failure/acknowledgement policy.
+
 ## Living component references
 
 - [ByteBuffer](../docs/byte-buffer.md): logical size, capacity, failure-safe growth and readonly views
