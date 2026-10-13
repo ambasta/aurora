@@ -23,6 +23,8 @@ extern "C" void __au_runtime_note_update(const void *, void *);
 extern "C" void __au_runtime_note_project(const void *, void *);
 extern "C" void note_test_initial(void *);
 extern "C" void files_test_initial(void *);
+extern "C" void stream_test_initial(void *);
+extern "C" I64 command_stream_contract();
 extern "C" void __au_runtime_files_update(const void *, void *);
 extern "C" void __au_runtime_files_replace(const void *, void *);
 extern "C" U64 note_test_service(const void *);
@@ -336,6 +338,30 @@ auto command_cases() -> void {
 }
 
 auto representation_controls() -> void {
+    std::array<std::byte, 224> initial_stream{};
+    initial_stream.fill(std::byte{0xa5});
+    stream_test_initial(initial_stream.data() + 16);
+    for (std::size_t index = 0; index < 16; ++index)
+        require(initial_stream[index] == std::byte{0xa5} && initial_stream[208 + index] == std::byte{0xa5},
+                "CommandStream constructor result canaries");
+    for (std::size_t index = 16; index < 208; ++index)
+        require(initial_stream[index] == std::byte{0}, "CommandStream matches native opaque initial representation");
+    for (const auto operation : {U64{10}, U64{7}}) {
+        std::array<std::byte, 280> input{};
+        put_word(input, 192, operation);
+        const auto before = input;
+        std::array<std::byte, 312> result{};
+        result.fill(std::byte{0xa5});
+        __au_runtime_stream_update(input.data(), result.data() + 16);
+        require(input == before, "stream bridge preserves complete copied input");
+        for (std::size_t index = 0; index < 16; ++index)
+            require(result[index] == std::byte{0xa5} && result[296 + index] == std::byte{0xa5},
+                    "stream bridge result canaries");
+        for (std::size_t index = 0; index < 280; ++index) {
+            const auto expected = index == 272 && operation == 10 ? std::byte{1} : std::byte{0};
+            require(result[16 + index] == expected, "closed stream query result");
+        }
+    }
     Note note;
     submit(note, "write note saved", 1);
     const auto saved = note.saved();
@@ -905,6 +931,7 @@ auto named_file_cases() -> void {
 } // namespace
 
 auto main() -> int {
+    require(command_stream_contract() == 0, "shared Aurora stream behavioral fixture");
     named_file_cases();
     command_cases();
     representation_controls();

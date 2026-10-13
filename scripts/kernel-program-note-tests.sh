@@ -11,6 +11,8 @@ mkdir -p "$out"
 "$AURORAC" --module-root kernel/policies tests/kernel-programs/program-stream-service.au -o "$out/service.s" --abi-facts "$out/service.abi.json"
 "$AURORAC" --local-symbols --module-root kernel/policies --module-root library \
     examples/kernel-program-console.au -o "$out/supervisor.s" --abi-facts "$out/supervisor.abi.json"
+"$AURORAC" --module-root library tests/kernel-programs/program-command-stream.au \
+    -o "$out/stream.s" --abi-facts "$out/stream.abi.json"
 # Test the native initial representation against the real library constructor.
 # This is a separate test-only root; all production inputs above are unchanged.
 cat > "$out/initial.au" <<'SOURCE'
@@ -52,10 +54,12 @@ python3 -B scripts/meson_aurora_assembly.py --render-bridge "$out/supervisor.abi
 as --64 -L "$out/supervisor.s" "$out/supervisor-entry.s" kernel/uefi/kernel-policy-entry.S -o "$out/supervisor-host.o"
 as --64 -L "$out/service.s" tests/kernel-program-note-entry.S -o "$out/service-host.o"
 as --64 -L --defsym NOTE_TEST_INITIAL=1 "$out/initial.s" tests/kernel-program-note-entry.S -o "$out/initial-host.o"
+python3 -B scripts/meson_aurora_assembly.py --render-bridge "$out/stream.abi.json" tests/kernel-program-note-entry.S "$out/stream-entry.s"
+as --64 -L --defsym STREAM_TEST_INITIAL=1 "$out/stream.s" "$out/stream-entry.s" -o "$out/stream-host.o"
 as --64 -L "$out/client.s" -o "$out/client-host.o"
 # Production roots live in distinct images. Localize only reflection exports
 # for this hosted link; never globalize private entries or rewrite instructions.
-for part in client service initial; do
+for part in client service initial stream; do
     nm -g --defined-only "$out/$part-host.o" \
         | awk '$3 ~ /^(aurora_reflect_|__au_reflect_)/ {print $3}' > "$out/$part-reflections.txt"
     objcopy --localize-symbols="$out/$part-reflections.txt" "$out/$part-host.o"
@@ -67,7 +71,8 @@ case "${SANITIZE:-0}" in
     *) echo 'SANITIZE must be 0 or 1' >&2; exit 2 ;;
 esac
 "${CXX:-g++}" "${flags[@]}" tests/kernel-program-note.cpp \
-    "$out/client-host.o" "$out/service-host.o" "$out/supervisor-host.o" "$out/initial-host.o" -o "$out/native"
+    "$out/client-host.o" "$out/service-host.o" "$out/supervisor-host.o" "$out/initial-host.o" \
+    "$out/stream-host.o" -o "$out/native"
 ulimit -c 0
 ASAN_OPTIONS='detect_leaks=0:halt_on_error=1:abort_on_error=1:handle_sigill=0' \
     UBSAN_OPTIONS='halt_on_error=1:print_stacktrace=1' "$out/native"

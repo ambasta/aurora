@@ -42,6 +42,15 @@ native_console_object = custom_target('native-console-policy',
     command: [python, '-B', native_fixture, '--compiler', aurorac,
               '--source', '@INPUT@', '--module-root', native_root / 'kernel/policies',
               '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
+native_program_console_object = custom_target('native-program-console-policy',
+    input: '../../examples/kernel-program-console.au', output: 'program-console-policy.o',
+    depfile: 'program-console-policy.d',
+    command: [python, '-B', native_fixture, '--compiler', aurorac,
+              '--source', '@INPUT@', '--module-root', native_root / 'kernel/policies',
+              '--module-root', native_root / 'library', '--local-symbols', '--referenced-reflection-only',
+              '--bridge', native_root / 'kernel/uefi/program-note-entry.S',
+              '--bridge', native_root / 'kernel/uefi/kernel-policy-entry.S',
+              '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
 native_memory_object = custom_target('native-uefi-memory-object',
     input: '../../kernel/uefi/memory.S', output: 'uefi-memory.o',
     command: [find_program('as', native: true), '--64', '@INPUT@', '-o', '@OUTPUT@'])
@@ -91,7 +100,7 @@ native_host = executable('native-kernel-ipc', files('../../tests/kernel-ipc.cpp'
     cpp_args: [], link_args: ['-no-pie'])
 test('native-kernel-ipc', native_host, suite: ['full', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
-native_host = executable('native-kernel-program-mailbox', files('../../tests/kernel-program-mailbox.cpp') + [native_uefi_object],
+native_host = executable('native-kernel-program-mailbox', files('../../tests/kernel-program-mailbox.cpp') + [native_program_console_object],
     native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
     cpp_args: [], link_args: ['-no-pie'])
 test('native-kernel-program-mailbox', native_host, suite: ['full', 'slow', 'integration'],
@@ -156,7 +165,7 @@ native_host = executable('native-kernel-pci', files('../../tests/kernel-pci.cpp'
     cpp_args: [], link_args: [])
 test('native-kernel-pci', native_host, suite: ['full', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
-native_host = executable('native-kernel-program-stream', files('../../tests/kernel-program-stream.cpp'),
+native_host = executable('native-kernel-program-stream', files('../../tests/kernel-program-stream.cpp') + [native_program_console_object],
     native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
     cpp_args: [], link_args: ['-no-pie'])
 test('native-kernel-program-stream', native_host, suite: ['full', 'slow', 'integration'],

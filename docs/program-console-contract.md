@@ -47,9 +47,10 @@ offsets (phase 12), the compiled service returns actual byte/EOF/missing data
 (phase 11), and the compiled client validates each reply (phase 13). Byte replies
 encode `1 | byte << 8`; EOF is 2 and missing is 3. A read includes one final EOF
 round even when empty. No expected-pattern fallback or native payload oracle is
-used. Native output staging validates order, closed encoding and exact client
-acknowledgment, then releases output only after Mailbox revocation and both domain
-retirements. Missing is reported after the same authenticated retirement boundary.
+used. The shared Aurora command ledger validates order, closed encoding and exact
+client acknowledgment. Native publication releases output only after Mailbox
+revocation and both domain retirements. Missing is reported after the same
+authenticated retirement boundary.
 
 `write note Hello, Aurora`, `upper note`, `cat note` produces `HELLO, AURORA`.
 For an existing note, Aurora selects a non-mutating upper action. Its copied
@@ -110,9 +111,9 @@ grants, and copied only into the authenticated service's verified stack record.
 The protected client requests offsets and receives actual service bytes through
 the same 12/11 read phases as the note. `upper <name>` uses completion phase 14:
 its Aurora client returns the original encoded service byte in bits 0–15 and its
-uppercase output in bits 16–23. Native code requires exact original-byte
-acknowledgment, closed encoding and a printable output byte; it never computes
-the transformation. EOF/missing retain their exact terminal encoding. Both
+uppercase output in bits 16–23. The shared Aurora command ledger requires exact
+original-byte acknowledgment, closed encoding and a printable output byte; it
+never computes the transformation. EOF/missing retain their exact terminal encoding. Both
 empty and nonempty files require a final authenticated EOF round; a missing
 selection is read through IPC and cannot create a file.
 
@@ -139,6 +140,22 @@ workflow; no separate admission workflow is introduced. Hosted checks and
 transcript controls do not establish a booted named-file image. Changed source
 still requires final linked-image, actual guest, full-native and independent-review
 qualification.
+
+## Shared copied command ledger
+
+`console::CommandStream` owns copied bytes and request/reply/ack, read-terminal,
+finish/cancel and scrub transitions. Native code retains only the opaque value,
+noncopyable stream identity and nonwrapping run generation, with no duplicate
+transition implementation. Scalar commands remain bounded to 64 bytes, reads to
+53 bytes plus an acknowledged terminal round, and named-file publication to 49.
+
+`Files` still binds the exact stream and run, requires an idle scrubbed Mailbox,
+and permits one-shot publication only after revocation and both original domain
+retirements. Copied library values grant none of that authority. The existing
+copied bridge and ABI/stack admission also check the named operation mapping.
+Direct host scripts now require a selected `AURORAC`. This migration was reviewed
+only as source; compilation, runtime behavior and image/stack qualification remain
+unverified.
 
 ## Authority and data
 
