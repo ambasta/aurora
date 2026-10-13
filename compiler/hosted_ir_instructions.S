@@ -24,19 +24,9 @@ instructions_return allocated, __aurora_frontend_instructions_allocated
 instructions_entry admit
     movq %rdi, %r10
 instructions_return admit, __aurora_frontend_instructions_admit
-instructions_entry retain_code
+instructions_entry structure
     movq %rdi, %r10
-    movq %rsi, %r11
-    movq __aurora_parameter_instructions_retain_code_0(%r11), %rdi
-    movq __aurora_parameter_instructions_retain_code_1(%r11), %rsi
-    movq __aurora_parameter_instructions_retain_code_2(%r11), %rdx
-instructions_return retain_code, __aurora_frontend_instructions_retain_code
-instructions_entry truncate_body
-    movq %rdi, %r10
-    movq %rsi, %r11
-    movq __aurora_parameter_instructions_truncate_body_0(%r11), %rdi
-    movq __aurora_parameter_instructions_truncate_body_1(%r11), %rsi
-instructions_return truncate_body, __aurora_frontend_instructions_truncate_body
+instructions_return structure, __aurora_frontend_instructions_structure
 instructions_entry publish
     movq %rdi, %r10
 instructions_return publish, __aurora_frontend_instructions_publish

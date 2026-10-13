@@ -461,6 +461,64 @@ void directTests() {
                        Return{}}));
     accept("unreachable structural artifacts filtered",
            moduleWith({Constant{1, Type::I64}, Push{}, Jump{2}, Label{1}, Jump{2}, Label{2}, Pop{}, Return{}}));
+    constexpr int sparseLabel = std::numeric_limits<int>::max();
+    accept("sparse maximum label identity",
+           moduleWith({Jump{sparseLabel}, Label{sparseLabel}, Constant{1, Type::I64}, Return{}}));
+    accept("nonmonotone sparse labels resolve after sorting",
+           moduleWith({Jump{500000}, Label{sparseLabel}, Jump{0}, Label{500000}, Jump{17},
+                       Label{0}, Constant{1, Type::I64}, Return{}, Label{17}, Jump{sparseLabel}}));
+    reject("nonadjacent duplicate label after sorting",
+           moduleWith({Label{sparseLabel}, Label{0}, Label{500000}, Label{17}, Label{sparseLabel},
+                       Constant{1, Type::I64}, Return{}}),
+           "duplicate or invalid label");
+    accept("return-free label jump cycle", moduleWith({Label{sparseLabel}, Jump{sparseLabel}}));
+    accept("unreachable final label has no fallthrough",
+           moduleWith({Constant{1, Type::I64}, Return{}, Label{sparseLabel}}));
+    {
+        const auto checked = validate(moduleWith({Jump{sparseLabel}, Label{7}, Jump{sparseLabel},
+                                                  Label{sparseLabel}, Jump{sparseLabel}}));
+        const auto code = checked.get().functions[0].code;
+        check(code.size() == 3 && code.idAt(0) == 1 && code.idAt(1) == 4 && code.idAt(2) == 5 &&
+                  code.flowAt(0).target == CodePosition{1} && !code.flowAt(0).fallsThrough &&
+                  code.flowAt(1).blockEntry && code.flowAt(1).fallsThrough &&
+                  code.flowAt(2).target == CodePosition{1} && !code.flowAt(2).fallsThrough,
+              "forward and backward targets were not remapped over removed structural rows");
+        ++accepted;
+        std::cout << "PASS short-circuit IR stable IDs and backward target remapping\n";
+    }
+    {
+        const auto checked = validate(moduleWith({Constant{0, Type::Bool}, BranchFalse{sparseLabel},
+                                                  Label{sparseLabel}, Constant{1, Type::I64}, Return{}}));
+        const auto code = checked.get().functions[0].code;
+        check(code.flowAt(1).target == CodePosition{2} && code.flowAt(1).fallsThrough &&
+                  code.flowAt(2).blockEntry && !code.flowAt(4).target && !code.flowAt(4).fallsThrough,
+              "identical branch target and fallthrough lost copied CFG facts");
+        ++accepted;
+        std::cout << "PASS short-circuit IR branch target equals fallthrough\n";
+    }
+    auto separateBodies = moduleWith({Jump{sparseLabel}, Label{sparseLabel}, Constant{1, Type::I64}, Return{}});
+    auto secondBody = separateBodies.functions[0];
+    secondBody.name = "second_body";
+    separateBodies.functions.push_back(secondBody);
+    accept("label IDs are body-local", separateBodies);
+    separateBodies.functions[0].code = {Jump{sparseLabel}};
+    reject("target cannot resolve in another body", separateBodies, "unknown jump target");
+    reject("final conditional still has a fallthrough edge",
+           moduleWith({Label{sparseLabel}, Constant{0, Type::Bool}, BranchFalse{sparseLabel}}),
+           "reachable fallthrough without return");
+    reject("empty body precedes native state", moduleWith({}), "empty function body");
+    reject("negative label identity", moduleWith({Label{-1}, Constant{1, Type::I64}, Return{}}),
+           "duplicate or invalid label");
+    // Terminal shape is structural even when the return's value/lifetime would
+    // be invalid. All five forms must reject the later semantic instruction first.
+    for (const auto &terminal : std::vector<Instruction>{Return{}, ReturnObject{8}, ReturnSpan{56},
+                                                        ReturnBytes{40}, ReturnOwnedObject{40}})
+        reject("each return form terminates before native value state",
+               moduleWith({terminal, Push{}}), "unreachable semantic instruction");
+    auto structuralFirst = moduleWith({Pop{}, Return{}});
+    secondBody.code = {Constant{0, Type::Bool}, BranchFalse{99}, Constant{1, Type::I64}, Return{}};
+    structuralFirst.functions.push_back(secondBody);
+    reject("later body structure precedes earlier native value state", structuralFirst, "unknown branch target");
     const std::string stackJoin = "incompatible value/guard stacks";
     reject("different stack lengths",
            moduleWith({Constant{7, Type::I64},

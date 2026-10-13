@@ -11,8 +11,7 @@ void aurora_hosted_instructions_create(const void *, void *) noexcept;
 void aurora_hosted_instructions_release(void *) noexcept;
 std::int64_t aurora_hosted_instructions_allocated(const void *) noexcept;
 std::int64_t aurora_hosted_instructions_admit(const void *) noexcept;
-std::int64_t aurora_hosted_instructions_retain_code(void *, const void *) noexcept;
-std::int64_t aurora_hosted_instructions_truncate_body(void *, const void *) noexcept;
+std::int64_t aurora_hosted_instructions_structure(void *) noexcept;
 std::int64_t aurora_hosted_instructions_publish(void *) noexcept;
 std::int64_t aurora_hosted_instructions_error(const void *) noexcept;
 }
@@ -85,7 +84,7 @@ static_assert(exactRow<Pool::instructions> && exactRow<Pool::operands> &&
               exactRow<Pool::codeOrder> && exactRow<Pool::bodies>);
 static_assert(sizeof(wire::RawInstructionRow) == 8 * sizeof(std::int64_t) &&
               sizeof(wire::RawOperandRow) == 5 * sizeof(std::int64_t) &&
-              sizeof(wire::CodeRow) == sizeof(std::int64_t) &&
+              sizeof(wire::CodeRow) == 4 * sizeof(std::int64_t) &&
               sizeof(wire::BodyRow) == 3 * sizeof(std::int64_t));
 static_assert(bindings.size() == static_cast<std::size_t>(Pool::count));
 static_assert([] {
@@ -104,6 +103,16 @@ static_assert([] {
 static_assert(static_cast<std::int64_t>(lowering::RecordKind::Instruction) == 1);
 static_assert(static_cast<std::int64_t>(lowering::InstructionForm::BindServiceParameter) == 0);
 static_assert(static_cast<std::int64_t>(lowering::InstructionForm::BorrowedCall) == 83);
+// Source structural admission consumes only these form ordinals. Pin them to
+// generated lowering facts rather than maintaining another opcode schema.
+static_assert(static_cast<std::int64_t>(lowering::InstructionForm::Label) == 40 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::Jump) == 41 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::BranchFalse) == 42 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::Return) == 43 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::ReturnObject) == 44 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::ReturnSpan) == 53 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::ReturnBytes) == 76 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::ReturnOwnedObject) == 80);
 static_assert(static_cast<std::int64_t>(Role::TypeId) == 12 && static_cast<std::int64_t>(Role::OperandTypeId) == 14 &&
               static_cast<std::int64_t>(Role::SourceTypeId) == 15 && static_cast<std::int64_t>(Role::ResultTypeId) == 16 &&
               static_cast<std::int64_t>(Role::ElementTypeId) == 18 && static_cast<std::int64_t>(Role::ReferenceTypeId) == 20);
@@ -217,8 +226,9 @@ void detail::InstructionWriter::instruction(const Row &value) {
         invalidInstructions();
     if (allocated_) {
         instructions_->state_->set<Pool::instructions>(position_.instructionCount, value);
-        wire::CodeRow code;
+        wire::CodeRow code{};
         code.instructionId = add(position_.instructionCount, 1);
+        code.targetPosition = -1;
         instructions_->state_->set<Pool::codeOrder>(position_.instructionCount, code);
     }
     position_.instructionCount = add(position_.instructionCount, 1);
@@ -440,6 +450,21 @@ void Instructions::admit(const Metadata &metadata) {
     for (std::size_t i = 0; i < index(state_->counts.instructionCount); ++i)
         (void)read(i + 1, true);
 }
+void Instructions::structure() {
+    if (!state_ || !state_->metadata || state_->published)
+        invalidInstructions();
+    const auto status = aurora_hosted_instructions_structure(state_->owner.data());
+    const auto reason = aurora_hosted_instructions_error(state_->owner.data());
+    if (status == static_cast<std::int64_t>(wire::InstructionStatus::invalid)) {
+        const auto message = wire::instructionErrorMessage(static_cast<wire::InstructionError>(reason));
+        if (reason == static_cast<std::int64_t>(wire::InstructionError::none) || !message)
+            invalidInstructions();
+        throw Error(std::string(message));
+    }
+    if (status != static_cast<std::int64_t>(wire::InstructionStatus::structured) ||
+        reason != static_cast<std::int64_t>(wire::InstructionError::none))
+        invalidInstructions();
+}
 void Instructions::publish() {
     if (!state_ || !state_->metadata || state_->published || aurora_hosted_instructions_publish(state_->owner.data()) != 1)
         invalidInstructions();
@@ -462,6 +487,14 @@ InstructionId Instructions::codeId(Metadata::CallableId callable, CodePosition p
     const auto body = state_->row<Pool::bodies>(callable);
     return index(state_->row<Pool::codeOrder>(index(body.codeBegin) + position).instructionId);
 }
+InstructionFlow Instructions::codeFlow(Metadata::CallableId callable, CodePosition position) const {
+    checkIndex(position, bodySize(callable));
+    const auto body = state_->row<Pool::bodies>(callable);
+    const auto code = state_->row<Pool::codeOrder>(index(body.codeBegin) + position);
+    return {code.targetPosition == -1 ? std::nullopt : std::optional<CodePosition>{index(code.targetPosition)},
+            (code.flowFlags & 2) != 0,
+            (code.flowFlags & 1) != 0};
+}
 InstructionObservation Instructions::bodyInstruction(Metadata::CallableId callable, InstructionId id) const {
     checkIndex(callable, bodyCount());
     const auto body = state_->row<Pool::bodies>(callable);
@@ -473,25 +506,6 @@ InstructionObservation Instructions::bodyInstruction(Metadata::CallableId callab
 InstructionRange Instructions::range(Metadata::CallableId callable) const {
     checkIndex(callable, bodyCount());
     return {*this, callable};
-}
-void Instructions::retain(Metadata::CallableId callable, const std::vector<bool> &retained) {
-    if (state_->published || retained.size() != bodySize(callable))
-        invalidInstructions();
-    std::size_t destination = 0;
-    for (std::size_t source = 0; source < retained.size(); ++source)
-        if (retained[source]) {
-            hosted_abi::InstructionsRetainCode input;
-            input.callable = checkedCount(callable);
-            input.source = checkedCount(source);
-            input.destination = checkedCount(destination++);
-            if (aurora_hosted_instructions_retain_code(state_->owner.data(), &input) != 1)
-                invalidInstructions();
-        }
-    hosted_abi::InstructionsTruncateBody input;
-    input.callable = checkedCount(callable);
-    input.count = checkedCount(destination);
-    if (aurora_hosted_instructions_truncate_body(state_->owner.data(), &input) != 1)
-        invalidInstructions();
 }
 int Instructions::offsetAt(std::size_t at) const {
     const auto row = state_->row<Pool::operands>(at);
@@ -543,18 +557,17 @@ InstructionId InstructionRange::idAt(CodePosition position) const {
         invalidInstructions();
     return instructions_->codeId(callableId_, position);
 }
+InstructionFlow InstructionRange::flowAt(CodePosition position) const {
+    if (!instructions_)
+        invalidInstructions();
+    return instructions_->codeFlow(callableId_, position);
+}
 InstructionObservation InstructionRange::instructionById(InstructionId id) const {
     if (!instructions_)
         invalidInstructions();
     return instructions_->bodyInstruction(callableId_, id);
 }
 InstructionObservation InstructionRange::at(CodePosition position) const { return instructionById(idAt(position)); }
-void FunctionBody::retainInstructions(const std::vector<bool> &retained) {
-    if (!code.instructions_ || code.callableId_ != callableId)
-        invalidInstructions();
-    // Mutation is available only to the verifier, on this unpublished capsule.
-    const_cast<Instructions *>(code.instructions_)->retain(callableId, retained);
-}
 InstructionIngress InstructionIngress::import(Module module) {
     detail::MetadataWriter metadata;
     detail::InstructionWriter instructions(metadata);

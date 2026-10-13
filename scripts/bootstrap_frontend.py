@@ -43,8 +43,6 @@ ARGUMENT_RECORDS = (
     ("MetadataRelease", "compiler_frontend::metadata_release", ("region", "store")),
     ("InstructionsCreate", "compiler_frontend::instructions_create", ("region", "counts")),
     ("InstructionsRelease", "compiler_frontend::instructions_release", ("region", "store")),
-    ("InstructionsRetainCode", "compiler_frontend::instructions_retain_code", ("callable", "source", "destination")),
-    ("InstructionsTruncateBody", "compiler_frontend::instructions_truncate_body", ("callable", "count")),
 )
 
 
@@ -230,8 +228,7 @@ def frontend_abi_entries(facts):
             ("release", None, ["region", "compiler_ir_instructions::InstructionStore"], "i64"),
             ("allocated", instructions, [], "bool"),
             ("admit", instructions, [], "compiler_ir_instructions::InstructionStatus"),
-            ("retain_code", instructions, ["i64", "i64", "i64"], "bool"),
-            ("truncate_body", instructions, ["i64", "i64"], "bool"),
+            ("structure", instructions, [], "compiler_ir_instructions::InstructionStatus"),
             ("publish", instructions, [], "bool"),
             ("error", instructions, [], "compiler_ir_instructions::InstructionError"),
         )

@@ -230,13 +230,9 @@ export namespace compiler_frontend {
         const compiler_ir_metadata::MetadataStore& metadata) -> compiler_ir_instructions::InstructionStatus {
         return compiler_ir_instructions::admit_instruction_storage(store, metadata);
     }
-    auto instructions_retain_code(compiler_ir_instructions::InstructionStore& store,
-        i64 callable, i64 source, i64 destination) -> bool {
-        return store.retain_code(callable, source, destination);
-    }
-    auto instructions_truncate_body(compiler_ir_instructions::InstructionStore& store,
-        i64 callable, i64 count) -> bool {
-        return store.truncate_body(callable, count);
+    auto instructions_structure(compiler_ir_instructions::InstructionStore& store)
+        -> compiler_ir_instructions::InstructionStatus {
+        return compiler_ir_instructions::normalize_instruction_cfg(store);
     }
     auto instructions_publish(compiler_ir_instructions::InstructionStore& store) -> bool {
         return store.publish();

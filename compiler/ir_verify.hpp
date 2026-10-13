@@ -315,7 +315,6 @@ inline void verifyFunction(FunctionBody &function,
     }
     const auto initializationUniverse =
         std::make_shared<const InitializationSlotUniverse>(std::move(initializationOffsets), frame.frameBytes());
-    require(!function.code.empty(), "empty function body");
     std::set<int> scalarParameterSlots;
     std::set<int> objectParameterSlots;
     std::set<int> spanParameterSlots;
@@ -380,7 +379,6 @@ inline void verifyFunction(FunctionBody &function,
                         !ownedObjectBinding && !serviceBinding,
                     "parameter binding outside entry prefix");
     }
-    std::map<int, CodePosition> labels;
     std::map<int, std::pair<int, service::Kind>> serviceLoanRoots;
     for (CodePosition index = 0; index < function.code.size(); ++index) {
         const auto instruction = function.code[index];
@@ -391,32 +389,14 @@ inline void verifyFunction(FunctionBody &function,
                     "service loan identity cannot change static root or kind");
             serviceLoanRoots.emplace(loan->loanId, root);
         }
-        if (const auto *label = std::get_if<Label>(&instruction))
-            require(label->id >= 0 && labels.emplace(label->id, index).second, "duplicate or invalid label");
     }
-    // Check targets even in unreachable instructions, so they cannot hide malformed references.
-    for (const auto instruction : function.code) {
-        if (const auto *jump = std::get_if<Jump>(&instruction))
-            require(labels.contains(jump->target), "unknown jump target");
-        if (const auto *branch = std::get_if<BranchFalse>(&instruction))
-            require(labels.contains(branch->target), "unknown branch target");
-    }
-    // CFG arrays and worklist entries use zero-based code positions, never IDs.
+    // Source normalization already checked every body and fixed its retained
+    // order. Native worklist entries use those zero-based positions, never IDs.
     // Only block entries retain snapshots. Saving a full state at every instruction
     // makes a straight-line N-element initializer retain O(N^2) stack/set contents.
-    std::vector<bool> blockEntry(function.code.size(), false);
-    std::vector<bool> reached(function.code.size(), false);
     // Depths alone are linear-sized. Full operand/provenance states still live
     // only at basic-block entries, never once per instruction.
     std::vector<std::size_t> stackBefore(function.code.size()), stackAfter(function.code.size());
-    blockEntry[0] = true;
-    for (CodePosition index = 0; index < function.code.size(); ++index) {
-        const auto instruction = function.code[index];
-        if (std::holds_alternative<Label>(instruction))
-            blockEntry[index] = true;
-        if (std::holds_alternative<BranchFalse>(instruction) && index + 1 < function.code.size())
-            blockEntry[index + 1] = true;
-    }
     std::vector<std::optional<State>> states(function.code.size());
     BlockRetentionBudget retention;
     retention.retain(0);
@@ -498,8 +478,7 @@ inline void verifyFunction(FunctionBody &function,
         return result;
     };
     auto enqueue = [&](CodePosition index, const State &state) {
-        require(index < function.code.size(), "reachable fallthrough without return");
-        require(blockEntry[index], "worklist target is not a basic-block entry");
+        require(function.code.flowAt(index).blockEntry, "worklist target is not a basic-block entry");
         if (!states[index]) {
             // Check before the snapshot allocation, whether metrics are enabled
             // or not. These retained counts never grow on worklist revisits.
@@ -564,11 +543,10 @@ inline void verifyFunction(FunctionBody &function,
         State state = *states[index];
         while (true) {
             const auto instruction = function.code[index];
+            const auto flow = function.code.flowAt(index);
             // Provenance names the immutable row, independently of retained order.
             const InstructionId instructionId = function.code.idAt(index);
-            reached[index] = true;
             stackBefore[index] = state.stack.size();
-            bool fallsThrough = true;
             auto current = [&](const Type &expected) -> Value {
                 require(state.current && state.current->type == expected, "missing or mistyped current value");
                 return *state.current;
@@ -2166,15 +2144,11 @@ inline void verifyFunction(FunctionBody &function,
                                 "metadata query changes defining-module scope");
                         current(Type::I64);
                         state.current = Value{Type::I64, {}};
-                    } else if constexpr (std::is_same_v<Op, Label>) {
+                    } else if constexpr (std::is_same_v<Op, Label> || std::is_same_v<Op, Jump>) {
                         // Nonempty expression stacks retain exact type and guard
                         // equality at every join, including loop backedges.
-                    } else if constexpr (std::is_same_v<Op, Jump>) {
-                        enqueue(labels.at(operation.target), state);
-                        fallsThrough = false;
                     } else if constexpr (std::is_same_v<Op, BranchFalse>) {
                         current(Type::Bool);
-                        enqueue(labels.at(operation.target), state);
                     } else if constexpr (std::is_same_v<Op, Return>) {
                         require(scalarValueType(signature.result(), metadata),
                                 "scalar return cannot return class value or resource value");
@@ -2201,7 +2175,6 @@ inline void verifyFunction(FunctionBody &function,
                                         "constructor returns before all resource fields initialized");
                             }
                         }
-                        fallsThrough = false;
                     } else if constexpr (std::is_same_v<Op, ReturnSpan>) {
                         require(signature.result() == Type::ByteSpan && signature.receiverSpanField() && functionReceiver &&
                                     !functionReceiver->constructor && !functionReceiver->mutableValue,
@@ -2233,7 +2206,6 @@ inline void verifyFunction(FunctionBody &function,
                             require(retained.contains(base) && matchesReceiver(active),
                                     "span return with unrelated active span lifetime");
                         }
-                        fallsThrough = false;
                     } else if constexpr (std::is_same_v<Op, ReturnObject>) {
                         require(signature.result().isClass() && !owningType(signature.result()),
                                 "object return requires class result; owning classes require an explicit move return");
@@ -2253,7 +2225,6 @@ inline void verifyFunction(FunctionBody &function,
                         closedOwnedObjects();
                         require(state.activeSpans.empty() && state.activeArrays.empty(),
                                 "return with active span or byte array lifetime");
-                        fallsThrough = false;
                     } else if constexpr (std::is_same_v<Op, ReturnOwnedObject>) {
                         require(!functionReceiver && owningType(signature.result()),
                                 "owning object return requires ordinary owning class result");
@@ -2268,7 +2239,6 @@ inline void verifyFunction(FunctionBody &function,
                         require(state.activeSpans.empty() && state.activeArrays.empty(),
                                 "return with active span or byte array lifetime");
                         require(state.stack.empty(), "unbalanced stack at owning object return");
-                        fallsThrough = false;
                     } else if constexpr (std::is_same_v<Op, ReturnBytes>) {
                         require(signature.result().isOwnerStorage() && ownerType(operation.offset) == signature.result(),
                                 "owner return nominal type mismatch");
@@ -2281,7 +2251,6 @@ inline void verifyFunction(FunctionBody &function,
                         require(state.activeSpans.empty() && state.activeArrays.empty(),
                                 "return with active span or byte array lifetime");
                         require(state.stack.empty(), "unbalanced stack at owned byte return");
-                        fallsThrough = false;
                     } else if constexpr (std::is_same_v<Op, BindServiceParameter>) {
                         require(serviceFunction && index < serviceParameterCount &&
                                     operation.index == static_cast<int>(index) &&
@@ -2502,11 +2471,14 @@ inline void verifyFunction(FunctionBody &function,
                 },
                 instruction);
             stackAfter[index] = state.stack.size();
-            if (!fallsThrough)
+            // Preserve target-before-fallthrough scheduling. Successors and
+            // block boundaries are copied source facts, not opcode decisions.
+            if (flow.target)
+                enqueue(*flow.target, state);
+            if (!flow.fallsThrough)
                 break;
             ++index;
-            require(index < function.code.size(), "reachable fallthrough without return");
-            if (blockEntry[index]) {
+            if (function.code.flowAt(index).blockEntry) {
                 enqueue(index, state);
                 break;
             }
@@ -2514,21 +2486,12 @@ inline void verifyFunction(FunctionBody &function,
     }
     std::size_t emittedDepth = 0;
     for (CodePosition index = 0; index < function.code.size(); ++index) {
-        const auto instruction = function.code[index];
-        if (reached[index]) {
-            // The backend counts push/pop effects in emitted order. Certify
-            // that order separately from CFG joins; arbitrary non-linear stack
-            // layouts are unsupported. Never reset this counter at a label.
-            require(stackBefore[index] == emittedDepth, "operand stack depth differs from linear emission order");
-            emittedDepth = stackAfter[index];
-        } else
-            require(std::holds_alternative<Label>(instruction) || std::holds_alternative<Jump>(instruction),
-                    "unreachable semantic instruction");
+        // The backend counts push/pop effects in emitted order. Certify
+        // that order separately from CFG joins; arbitrary non-linear stack
+        // layouts are unsupported. Never reset this counter at a label.
+        require(stackBefore[index] == emittedDepth, "operand stack depth differs from linear emission order");
+        emittedDepth = stackAfter[index];
     }
-    // Remove unreachable structural artifacts only after every native check.
-    // Filtering compacts stable IDs in code order; immutable payload rows stay put.
-    // Depth continuity above includes only this exact retained emission sequence.
-    function.retainInstructions(reached);
 }
 inline void verifyFunctions(std::vector<FunctionBody> &input, const Metadata &metadata,
                             Metrics *metrics = nullptr) {
@@ -2556,12 +2519,15 @@ inline ValidatedModule validate(InstructionIngress pending, verification::Metric
     if (!instructions)
         throw Error(DiagnosticCode::Internal, "missing hosted IR instruction ingress");
     instructions->admit(*metadata);
+    // All global structural errors precede native value-state verification.
+    // Code-order compaction is complete before allocating any native work arrays.
+    instructions->structure();
     std::vector<FunctionBody> functions;
     functions.reserve(instructions->bodyCount());
     for (std::size_t id = 0; id < instructions->bodyCount(); ++id)
         functions.push_back({id, instructions->range(id)});
-    // Native semantics and stable code-order filtering precede the existing
-    // graph seam. The source publication then permanently closes mutation.
+    // Native value semantics and the existing graph seam consume source rows
+    // already frozen at structured status. Publication records their completion.
     verification::verifyFunctions(functions, *metadata, metrics);
     instructions->publish();
     return ValidatedModule(std::move(functions), std::move(metadata), std::move(instructions));

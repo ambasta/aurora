@@ -104,7 +104,7 @@ void literalTests() {
         [](F &f) {
             f.code.push_back(BorrowLiteralSpan{std::vector<unsigned char>(4097), 128});
         },
-        "literal span exceeds byte-string bound");
+        "unreachable semantic instruction");
     invalid(
         "literal scalar spill",
         [](F &f) {

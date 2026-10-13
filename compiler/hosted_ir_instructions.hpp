@@ -6,18 +6,19 @@
 
 namespace aurora::ir {
 // An immovable capsule. Views survive moves of the unique owner in a validated
-// module; source mutation is confined to admission and code-order compaction.
+// module; source mutation is confined to admission and CFG normalization.
 class Instructions final {
     class State;
     class ReadCursor;
     std::unique_ptr<State> state_;
     Instructions();
     void admit(const Metadata &metadata);
+    void structure();
     void publish();
-    void retain(Metadata::CallableId callable, const std::vector<bool> &retained);
     InstructionObservation read(InstructionId id, bool checkPayload = false) const;
     std::size_t bodySize(Metadata::CallableId callable) const;
     InstructionId codeId(Metadata::CallableId callable, CodePosition position) const;
+    InstructionFlow codeFlow(Metadata::CallableId callable, CodePosition position) const;
     InstructionObservation bodyInstruction(Metadata::CallableId callable, InstructionId id) const;
     int offsetAt(std::size_t index) const;
     ServiceArgument serviceAt(std::size_t index) const;
@@ -26,7 +27,6 @@ class Instructions final {
     ServiceArgumentRange services(std::size_t begin, std::size_t count) const;
     LiteralRange literals(std::size_t begin, std::size_t count) const;
     friend class InstructionRange;
-    friend class FunctionBody;
     friend class InstructionIngress;
     friend class detail::InstructionWriter;
     template<class> friend class InstructionPayloadRange;

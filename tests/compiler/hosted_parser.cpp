@@ -62,8 +62,7 @@ void aurora_hosted_instructions_release(void *) noexcept;
 std::int64_t aurora_hosted_instructions_allocated(const void *) noexcept;
 std::int64_t aurora_hosted_instructions_admit(const void *) noexcept;
 std::int64_t aurora_hosted_instructions_error(const void *) noexcept;
-std::int64_t aurora_hosted_instructions_retain_code(void *, const void *) noexcept;
-std::int64_t aurora_hosted_instructions_truncate_body(void *, const void *) noexcept;
+std::int64_t aurora_hosted_instructions_structure(void *) noexcept;
 std::int64_t aurora_hosted_instructions_publish(void *) noexcept;
 }
 
@@ -4453,6 +4452,7 @@ void rawMetadataOwnership() {
 }
 
 void rawInstructionOwnership() {
+    namespace wire = aurora::hosted_abi::compiler_ir_instructions;
     context = "instruction owner allocation prefixes and consuming cleanup";
     const auto exercise = [&](std::size_t allowed, std::uint64_t quota, bool expected) {
         Allocations allocations;
@@ -4471,8 +4471,11 @@ void rawInstructionOwnership() {
         require((aurora_hosted_instructions_allocated(record.value.store.storage.data()) != 0) == expected,
                 "instruction owner allocation status differs");
         if (expected)
-            require(allocations.successful == 5 && allocations.attempted == 5,
-                    "instruction rows and payloads were not allocated as five exact owners");
+            require(allocations.successful == 5 && allocations.attempted == 5 &&
+                        sizeof(wire::CodeRow) == 32 &&
+                        allocations.initialBytes[3] + 3 * sizeof(wire::RawInstructionRow) ==
+                            allocations.initialBytes[0] + 3 * sizeof(wire::CodeRow),
+                    "instruction rows and CFG facts were not allocated as five exact owners");
         aurora_hosted_instructions_release(&record.value);
         const auto metrics = region.metrics();
         require(record.before == canary && record.after == canary,
@@ -4496,7 +4499,7 @@ void rawInstructionAdmission() {
     namespace bytes = aurora::hosted::bytes;
     context = "instruction storage rejects malformed copied rows before observations";
     // One constant/return body is enough to exercise each physical domain.
-    for (int mutation = 0; mutation < 11; ++mutation) {
+    for (int mutation = 0; mutation < 14; ++mutation) {
         Allocations allocations;
         bytes::Region region(1048576, allocations.allocator());
         {
@@ -4526,6 +4529,10 @@ void rawInstructionAdmission() {
             aurora_hosted_instructions_create(&instructions, storage);
             require(aurora_hosted_metadata_allocated(declarations) == 1 &&
                         aurora_hosted_instructions_allocated(storage) == 1, "raw admission allocation failed");
+            require(aurora_hosted_instructions_structure(storage) ==
+                        static_cast<std::int64_t>(wire::InstructionStatus::pending) &&
+                        aurora_hosted_instructions_publish(storage) == 0,
+                    "pending instruction storage normalized or published before admission");
             const auto descriptor = [](const std::byte *owner, std::size_t offset) {
                 bytes::NativeOwner result;
                 std::memcpy(&result, owner + offset, sizeof(result));
@@ -4571,8 +4578,9 @@ void rawInstructionAdmission() {
             typeOperand.operandRole = static_cast<std::int64_t>(lower::OperandRole::TypeId);
             typeOperand.signedValue = mutation == 6 ? 0 : 1;
             set(storage, abi::instructionStore_operandsOffset, 1, typeOperand);
-            set(storage, abi::instructionStore_codeOrderOffset, 0, wire::CodeRow{1});
-            set(storage, abi::instructionStore_codeOrderOffset, 1, wire::CodeRow{mutation == 8 ? 1 : 2});
+            set(storage, abi::instructionStore_codeOrderOffset, 0,
+                wire::CodeRow{1, mutation == 11 ? 0 : -1, mutation == 12 ? 1u : 0u, mutation == 13 ? 1 : 0});
+            set(storage, abi::instructionStore_codeOrderOffset, 1, wire::CodeRow{mutation == 8 ? 1 : 2, -1, 0, 0});
             set(storage, abi::instructionStore_bodiesOffset, 0, wire::BodyRow{mutation == 9 ? 1 : 0, 2, 2});
             const std::array<const void *, 2> roots{storage, declarations};
             const auto status = aurora_hosted_instructions_admit(roots.data());
@@ -4584,13 +4592,26 @@ void rawInstructionAdmission() {
             require(aurora_hosted_instructions_error(storage) == static_cast<std::int64_t>(expectedError),
                     "malformed instruction storage reason differs");
             if (mutation == 0) {
-                abi::InstructionsRetainCode retained{0, 1, 0};
-                abi::InstructionsTruncateBody truncated{0, 1};
-                require(aurora_hosted_instructions_retain_code(storage, &retained) == 1 &&
-                            aurora_hosted_instructions_truncate_body(storage, &truncated) == 1 &&
-                            aurora_hosted_instructions_publish(storage) == 1 &&
-                            aurora_hosted_instructions_retain_code(storage, &retained) == 0,
-                        "instruction publication failed to close code-order mutation");
+                require(aurora_hosted_instructions_publish(storage) == 0,
+                        "admitted instruction storage published before CFG normalization");
+                const auto attempted = allocations.attempted;
+                require(aurora_hosted_instructions_structure(storage) ==
+                            static_cast<std::int64_t>(wire::InstructionStatus::structured) &&
+                            allocations.attempted == attempted,
+                        "instruction normalization failed or allocated another owner");
+                const auto codeOrder = descriptor(storage, abi::instructionStore_codeOrderOffset);
+                for (std::int64_t position = 0; position < 2; ++position) {
+                    wire::CodeRow code{};
+                    bytes::__au_runtime_values_at(&codeOrder, position, sizeof(code), &code);
+                    require(code.instructionId == position + 1 && code.targetPosition == -1 &&
+                                code.flowFlags == (position == 0 ? 7u : 4u) && code.scratchValue == 0,
+                            "normalized instruction facts lost stable identity or retained scratch");
+                }
+                require(aurora_hosted_instructions_publish(storage) == 1 &&
+                            aurora_hosted_instructions_structure(storage) ==
+                                static_cast<std::int64_t>(wire::InstructionStatus::published) &&
+                            aurora_hosted_instructions_publish(storage) == 0,
+                        "instruction publication failed to require normalized structure or close mutation");
             }
         }
         require(allocations.successful == allocations.released && region.metrics().used == 0 && region.close(),

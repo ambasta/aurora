@@ -1,16 +1,29 @@
 export module aurora.compiler.ir_instruction_storage;
 
 // Durable executable storage. Ingress fills immutable instruction/payload rows
-// once. Native checks may only stable-filter code-order indices before publish.
+// once. Source structural admission normalizes code order before native values
+// are checked; immutable instruction/payload rows never move.
 // Layout comments are source predictions, never generated ABI evidence.
 export namespace compiler_ir_instructions {
-    enum class InstructionStatus { pending, admitted, published, allocation, invalid };
+    enum class InstructionStatus { pending, admitted, structured, published, allocation, invalid };
     enum class InstructionError {
         none,
         //: invalid hosted IR instruction transport
         integrity,
         //: invalid typed IR: noncanonical instruction type payload
-        noncanonical_type
+        noncanonical_type,
+        //: invalid typed IR: empty function body
+        empty_body,
+        //: invalid typed IR: duplicate or invalid label
+        invalid_label,
+        //: invalid typed IR: unknown jump target
+        unknown_jump,
+        //: invalid typed IR: unknown branch target
+        unknown_branch,
+        //: invalid typed IR: reachable fallthrough without return
+        reachable_fallthrough,
+        //: invalid typed IR: unreachable semantic instruction
+        unreachable_semantic
     };
     // The eight OutputRow-width leaves remain raw integers. Unknown operator
     // values reach native semantics; unknown structural tags reject normally.
@@ -55,12 +68,22 @@ export namespace compiler_ir_instructions {
     // within a body; neither declaration ordinals nor positions are row IDs.
     class CodeRow {
         i64 instructionId;
+        i64 targetPosition;
+        u64 flowFlags;
+        i64 scratchValue;
     public:
-        CodeRow(i64 id) : instructionId(id) {}
+        CodeRow(i64 id, i64 target, u64 flags, i64 scratch) : instructionId(id), targetPosition(target),
+            flowFlags(flags), scratchValue(scratch) {}
         auto id() const -> i64 { return instructionId; }
+        auto target() const -> i64 { return targetPosition; }
+        auto flags() const -> u64 { return flowFlags; }
+        auto scratch() const -> i64 { return scratchValue; }
+        auto block_entry() const -> bool { return (flowFlags & 1u64) != 0u64; }
+        auto falls_through() const -> bool { return (flowFlags & 2u64) != 0u64; }
+        auto reached() const -> bool { return (flowFlags & 4u64) != 0u64; }
     };
     // The row index is the stable zero-based CallableId. Its allocation never
-    // moves, including when native normalization reduces retainedCount.
+    // moves, including when source normalization reduces retainedCount.
     class BodyRow {
         i64 codeBegin;
         i64 codeCapacity;
@@ -100,7 +123,7 @@ export namespace compiler_ir_instructions {
         return move(result);
     }
     auto code_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<CodeRow> {
-        const CodeRow fill = CodeRow(0);
+        const CodeRow fill = CodeRow(0, -1, 0u64, 0);
         builtin::OwnedValues<CodeRow> result = region.try_allocate(count, fill);
         return move(result);
     }
@@ -117,6 +140,235 @@ export namespace compiler_ir_instructions {
         builtin::OwnedValues<BodyRow> bodies;
         InstructionStatus statusValue;
         InstructionError errorValue;
+        // All structural mutation is private and runs only while admitted.
+        // Scratch is reused in three disjoint phases: a sorted label-position
+        // index, the reachability queue, then old-to-normalized positions.
+        auto flow_at(BodyRow body, i64 position) const -> CodeRow {
+            const CodeRow result = codeOrder.at(body.begin() + position);
+            return result;
+        }
+        auto form_at(BodyRow body, i64 position) const -> i64 {
+            const CodeRow code = flow_at(body, position);
+            const RawInstructionRow row = instructions.at(code.id() - 1);
+            return row.form();
+        }
+        // The sole native codec walk has already established that Label, Jump
+        // and BranchFalse each have their one scalar label operand here.
+        auto label_at(BodyRow body, i64 position) const -> i64 {
+            const CodeRow code = flow_at(body, position);
+            const RawInstructionRow row = instructions.at(code.id() - 1);
+            const RawOperandRow operand = operands.at(row.operand_begin());
+            return operand.signed_value();
+        }
+        auto set_scratch(BodyRow body, i64 position, i64 scratch) -> bool {
+            const CodeRow old = flow_at(body, position);
+            const CodeRow value = CodeRow(old.id(), old.target(), old.flags(), scratch);
+            if (!codeOrder.set(body.begin() + position, value)) { return reject(InstructionError::integrity); }
+            return true;
+        }
+        auto set_flow(BodyRow body, i64 position, i64 target, u64 flags) -> bool {
+            // Always reread scratch: its index can alias the instruction whose
+            // flow is changing, including an enqueued node or collected label.
+            const CodeRow old = flow_at(body, position);
+            const CodeRow value = CodeRow(old.id(), target, flags, old.scratch());
+            if (!codeOrder.set(body.begin() + position, value)) { return reject(InstructionError::integrity); }
+            return true;
+        }
+        auto indexed_label(BodyRow body, i64 index) const -> i64 {
+            const CodeRow slot = flow_at(body, index);
+            return label_at(body, slot.scratch());
+        }
+        auto swap_scratch(BodyRow body, i64 left, i64 right) -> bool {
+            const CodeRow first = flow_at(body, left);
+            const CodeRow second = flow_at(body, right);
+            return set_scratch(body, left, second.scratch()) && set_scratch(body, right, first.scratch());
+        }
+        auto sift_labels(BodyRow body, i64 root, i64 count) -> bool {
+            i64 current = root;
+            // A node has a left child exactly below count/2. Establishing this
+            // before multiplication bounds 2*current+1 by count-1.
+            while (current < count / 2) {
+                i64 child = current * 2 + 1;
+                if (child + 1 < count && indexed_label(body, child) < indexed_label(body, child + 1)) {
+                    child = child + 1;
+                }
+                if (indexed_label(body, current) >= indexed_label(body, child)) { return true; }
+                if (!swap_scratch(body, current, child)) { return false; }
+                current = child;
+            }
+            return true;
+        }
+        auto sort_labels(BodyRow body, i64 count) -> bool {
+            i64 root = count / 2;
+            while (root > 0) {
+                root = root - 1;
+                if (!sift_labels(body, root, count)) { return false; }
+            }
+            i64 end = count;
+            while (end > 1) {
+                end = end - 1;
+                if (!swap_scratch(body, 0, end) || !sift_labels(body, 0, end)) { return false; }
+            }
+            i64 at = 1;
+            while (at < count) {
+                if (indexed_label(body, at - 1) == indexed_label(body, at)) {
+                    return reject(InstructionError::invalid_label);
+                }
+                at = at + 1;
+            }
+            return true;
+        }
+        auto find_label(BodyRow body, i64 count, i64 label) const -> i64 {
+            i64 begin = 0;
+            i64 end = count;
+            while (begin < end) {
+                const i64 middle = begin + (end - begin) / 2;
+                if (indexed_label(body, middle) < label) {
+                    begin = middle + 1;
+                } else {
+                    end = middle;
+                }
+            }
+            if (begin == count || indexed_label(body, begin) != label) { return -1; }
+            const CodeRow slot = flow_at(body, begin);
+            return slot.scratch();
+        }
+        auto returning(i64 form) const -> bool {
+            // Return, ReturnObject, ReturnSpan, ReturnBytes, ReturnOwnedObject.
+            // The native binding pins these raw forms to generated vocabulary.
+            return form == 43 || form == 44 || form == 53 || form == 76 || form == 80;
+        }
+        auto resolve_flow(BodyRow body) -> bool {
+            if (body.count() == 0) { return reject(InstructionError::empty_body); }
+            i64 labels = 0;
+            i64 at = 0;
+            while (at < body.count()) {
+                const i64 form = form_at(body, at);
+                u64 flags = 0u64;
+                if (form != 41 && !returning(form)) { flags = 2u64; }
+                if (at == 0 || form == 40) { flags = flags | 1u64; }
+                if (!set_flow(body, at, -1, flags)) { return false; }
+                if (form == 40) {
+                    if (label_at(body, at) < 0) { return reject(InstructionError::invalid_label); }
+                    if (!set_scratch(body, labels, at)) { return false; }
+                    labels = labels + 1;
+                }
+                at = at + 1;
+            }
+            if (!sort_labels(body, labels)) { return false; }
+            // Resolve all explicit edges, even from unreachable instructions,
+            // before scratch is reused for the reachability queue.
+            at = 0;
+            while (at < body.count()) {
+                const i64 form = form_at(body, at);
+                if (form == 41 || form == 42) {
+                    const i64 target = find_label(body, labels, label_at(body, at));
+                    if (target < 0) {
+                        if (form == 41) { return reject(InstructionError::unknown_jump); }
+                        return reject(InstructionError::unknown_branch);
+                    }
+                    const CodeRow old = flow_at(body, at);
+                    if (!set_flow(body, at, target, old.flags())) { return false; }
+                    if (form == 42 && at + 1 < body.count()) {
+                        const CodeRow next = flow_at(body, at + 1);
+                        if (!set_flow(body, at + 1, next.target(), next.flags() | 1u64)) { return false; }
+                    }
+                }
+                at = at + 1;
+            }
+            return true;
+        }
+        // Mark before queueing so each position occupies at most one slot. The
+        // caller increments its bounded tail only when this adds a new node.
+        auto enqueue(BodyRow body, i64 position, i64 tail) -> bool {
+            if (position < 0 || position >= body.count() || tail < 0 || tail >= body.count()) {
+                return reject(InstructionError::integrity);
+            }
+            const CodeRow old = flow_at(body, position);
+            return set_flow(body, position, old.target(), old.flags() | 4u64)
+                && set_scratch(body, tail, position);
+        }
+        auto reach_body(BodyRow body) -> bool {
+            if (!enqueue(body, 0, 0)) { return false; }
+            i64 head = 0;
+            i64 tail = 1;
+            while (head < tail) {
+                const CodeRow queued = flow_at(body, head);
+                const i64 position = queued.scratch();
+                head = head + 1;
+                const CodeRow code = flow_at(body, position);
+                // Conditional target precedes fallthrough, matching the native
+                // value-state worklist without making value claims here.
+                if (code.target() >= 0) {
+                    const CodeRow target = flow_at(body, code.target());
+                    if (!target.reached()) {
+                        if (!enqueue(body, code.target(), tail)) { return false; }
+                        tail = tail + 1;
+                    }
+                }
+                if (code.falls_through()) {
+                    const i64 next = position + 1;
+                    if (next == body.count()) { return reject(InstructionError::reachable_fallthrough); }
+                    const CodeRow following = flow_at(body, next);
+                    if (!following.reached()) {
+                        if (!enqueue(body, next, tail)) { return false; }
+                        tail = tail + 1;
+                    }
+                }
+            }
+            i64 at = 0;
+            while (at < body.count()) {
+                const CodeRow code = flow_at(body, at);
+                const i64 form = form_at(body, at);
+                if (!code.reached() && form != 40 && form != 41) {
+                    return reject(InstructionError::unreachable_semantic);
+                }
+                at = at + 1;
+            }
+            return true;
+        }
+        auto normalize_body(i64 callable, BodyRow body) -> bool {
+            i64 retained = 0;
+            i64 at = 0;
+            while (at < body.count()) {
+                const CodeRow code = flow_at(body, at);
+                i64 mapped = -1;
+                if (code.reached()) { mapped = retained; retained = retained + 1; }
+                if (!set_scratch(body, at, mapped)) { return false; }
+                at = at + 1;
+            }
+            // Remap every retained edge before forward compaction can overwrite
+            // an original position's mapping. Reachability retains its target.
+            at = 0;
+            while (at < body.count()) {
+                const CodeRow code = flow_at(body, at);
+                if (code.reached() && code.target() >= 0) {
+                    const CodeRow target = flow_at(body, code.target());
+                    if (target.scratch() < 0 || target.scratch() >= retained) {
+                        return reject(InstructionError::integrity);
+                    }
+                    if (!set_flow(body, at, target.scratch(), code.flags())) { return false; }
+                }
+                at = at + 1;
+            }
+            i64 destination = 0;
+            at = 0;
+            while (at < body.count()) {
+                const CodeRow code = flow_at(body, at);
+                if (code.reached()) {
+                    // IDs remain immutable; only copied code-order rows move.
+                    const CodeRow value = CodeRow(code.id(), code.target(), code.flags(), 0);
+                    if (!codeOrder.set(body.begin() + destination, value)) {
+                        return reject(InstructionError::integrity);
+                    }
+                    destination = destination + 1;
+                }
+                at = at + 1;
+            }
+            const BodyRow normalized = BodyRow(body.begin(), body.capacity(), retained);
+            if (!bodies.set(callable, normalized)) { return reject(InstructionError::integrity); }
+            return true;
+        }
     public:
         InstructionStore(builtin::ByteRegion region, InstructionCounts counts) :
             instructions(instruction_pool(region, counts.instruction_count())),
@@ -165,7 +417,7 @@ export namespace compiler_ir_instructions {
             return i64(literals.at(index));
         }
         auto code_at(i64 index) const -> CodeRow {
-            if (index < 0 || index >= code_count() || !codeOrder.ok()) { return CodeRow(0); }
+            if (index < 0 || index >= code_count() || !codeOrder.ok()) { return CodeRow(0, -1, 0u64, 0); }
             const CodeRow result = codeOrder.at(index);
             return result;
         }
@@ -187,49 +439,28 @@ export namespace compiler_ir_instructions {
             statusValue = InstructionStatus::admitted;
             return true;
         }
-        // Only an already checked native body may call these two operations.
-        // Forward compaction copies IDs, never immutable payload records.
-        auto retain_code(i64 callable, i64 source, i64 destination) -> bool {
-            if (statusValue != InstructionStatus::admitted || callable < 0 || callable >= body_count()) {
-                return reject(InstructionError::integrity);
+        // The only normalization entrypoint follows generic storage admission
+        // and the sole native codec shape walk. All bodies pass structural
+        // analysis before any body is compacted or native value states exist.
+        auto normalize_cfg() -> InstructionStatus {
+            if (statusValue != InstructionStatus::admitted) { return statusValue; }
+            i64 callable = 0;
+            while (callable < body_count()) {
+                const BodyRow body = bodies.at(callable);
+                if (!resolve_flow(body) || !reach_body(body)) { return statusValue; }
+                callable = callable + 1;
             }
-            const BodyRow body = bodies.at(callable);
-            if (source < 0 || source >= body.count() || destination < 0 || destination > source) {
-                return reject(InstructionError::integrity);
+            callable = 0;
+            while (callable < body_count()) {
+                const BodyRow body = bodies.at(callable);
+                if (!normalize_body(callable, body)) { return statusValue; }
+                callable = callable + 1;
             }
-            const CodeRow value = codeOrder.at(body.begin() + source);
-            if (value.id() <= body.begin() || value.id() > body.begin() + body.capacity()) {
-                return reject(InstructionError::integrity);
-            }
-            if (destination > 0) {
-                const CodeRow previous = codeOrder.at(body.begin() + destination - 1);
-                if (previous.id() >= value.id()) { return reject(InstructionError::integrity); }
-            }
-            if (!codeOrder.set(body.begin() + destination, value)) { return reject(InstructionError::integrity); }
-            return true;
-        }
-        auto truncate_body(i64 callable, i64 count) -> bool {
-            if (statusValue != InstructionStatus::admitted || callable < 0 || callable >= body_count()) {
-                return reject(InstructionError::integrity);
-            }
-            const BodyRow old = bodies.at(callable);
-            if (count < 0 || count > old.count()) { return reject(InstructionError::integrity); }
-            i64 previous = old.begin();
-            i64 at = 0;
-            while (at < count) {
-                const CodeRow code = codeOrder.at(old.begin() + at);
-                if (code.id() <= previous || code.id() > old.begin() + old.capacity()) {
-                    return reject(InstructionError::integrity);
-                }
-                previous = code.id();
-                at = at + 1;
-            }
-            const BodyRow value = BodyRow(old.begin(), old.capacity(), count);
-            if (!bodies.set(callable, value)) { return reject(InstructionError::integrity); }
-            return true;
+            statusValue = InstructionStatus::structured;
+            return statusValue;
         }
         auto publish() -> bool {
-            if (statusValue != InstructionStatus::admitted) { return false; }
+            if (statusValue != InstructionStatus::structured) { return false; }
             statusValue = InstructionStatus::published;
             return true;
         }

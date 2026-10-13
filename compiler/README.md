@@ -9,8 +9,9 @@ Complete module syntax, declaration admission, module/template resolution and
 resolved type/lifetime analysis through typed IR run in Aurora. The `ir_graph.au`
 candidate independently checks normalized module call graphs and
 selects retained functions. Aurora also owns independent metadata/layout, callable
-and frame admission. Module file loading, mechanical projection, instruction
-semantics/CFG/provenance verification and x86-64 emission remain C++23.
+and frame admission, plus structural CFG checks and normalization. Module file
+loading, mechanical projection, instruction value/provenance verification and
+x86-64 emission remain C++23.
 GNU assembler/linker and Linux host I/O remain bootstrap dependencies.
 
 ## Build and check
@@ -153,10 +154,11 @@ facts and header convergence, binds B to the frontend actually linked into C2, a
 C1/C2 corpus diagnostics/output. No compiler binary or generated frontend is
 committed. The candidate's independent module graph pass runs in Aurora after all
 native function checks and before import pruning, without a C++ graph fallback.
-Module file loading, mechanical IR projection, instruction/CFG verification and
-the native backend remain C++. Aurora owns independent metadata/layout, callable
-and frame admission, plus durable instruction storage. Native verification and
-emission borrow that storage; these migrations still await execution qualification.
+Module file loading, mechanical IR projection, instruction value/provenance
+verification and the native backend remain C++. Aurora owns metadata/layout,
+callable/frame admission, durable instruction storage and structural CFG checks.
+Native verification and emission consume the same normalized storage; these
+migrations still await execution qualification.
 
 ## Supported source
 
