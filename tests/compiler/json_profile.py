@@ -604,12 +604,14 @@ def all_tests():
 
 
 def batches(items):
+    # Each compile pays for the imported library, so fill batches up to the
+    # source cap; the case count only bounds one native program's observations.
     group = []
     size = 0
     for item in items:
         cost = len(item.body) + len(item.helper) + 120
         require(cost < 62000, "single generated source exceeds cap")
-        if group and (len(group) >= 16 or size + cost > 62000):
+        if group and (len(group) >= 48 or size + cost > 62000):
             yield group
             group = []
             size = 0

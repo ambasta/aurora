@@ -1037,6 +1037,22 @@ def corpus():
     ]
 
 
+def batches(cases, count=16, source_bytes=1 << 19):
+    # Each compile pays for the whole XFS import graph, so batch independent
+    # cases; half the compiler's 1 MiB module cap leaves room for the imports.
+    group, size = [], 0
+    for case in cases:
+        cost = len(case.body) + 64
+        require(cost <= source_bytes, f"{case.name}: generated case exceeds the batch source budget")
+        if group and (len(group) == count or size + cost > source_bytes):
+            yield group
+            group, size = [], 0
+        group.append(case)
+        size += cost
+    if group:
+        yield group
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("compiler", type=Path, nargs="?")
@@ -1052,8 +1068,8 @@ def main():
     print(f"compiler_sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()}", flush=True)
     with tempfile.TemporaryDirectory(prefix="aurora-xfs-file-") as temporary:
         runner = NativeRunner(Path(temporary), compiler, 15)
-        for start in range(0, len(cases), 2):
-            runner.cases(cases[start : start + 2])
+        for group in batches(cases):
+            runner.cases(group)
         for case in rejected:
             runner.rejection(case)
     print(f"PASS XFS file: {len(cases)} native cases, {len(rejected)} rejections", flush=True)
