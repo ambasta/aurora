@@ -150,7 +150,10 @@ with tempfile.TemporaryDirectory(prefix="aurora-ir-exhaustive-") as temporary:
             lambda match: match[1] + match[2].rstrip() + "\n    ExhaustivenessProbe,\n" + match[3], enum_original
         )
         generated_header.write_text(enum_injected)
-        for header, _ in CONSUMERS:
+        # Scalar operator admission is source-owned; rawInstructionAdmission
+        # exercises transport-valid unknown values and terminal rejection there.
+        # The backend still decodes these enums with exhaustive native switches.
+        for header in ("x86.hpp",):
             result = compile_probe(directory, header)
             if (
                 result.returncode == 0
@@ -159,7 +162,7 @@ with tempfile.TemporaryDirectory(prefix="aurora-ir-exhaustive-") as temporary:
             ):
                 raise AssertionError(f"{header}: missing {enumeration}-enum exhaustive rejection:\n{result.stderr}")
             print(f"PASS IR exhaustive unknown {enumeration} enum rejected by {header}")
-print("13 exhaustive IR dispatch checks passed")
+print("10 exhaustive IR dispatch checks passed")
 
 # When the direct-IR executable is supplied, exercise the same validated module
 # as actual native code. Keep this receipt separate from compile-time exhaustiveness.

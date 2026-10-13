@@ -4025,6 +4025,65 @@ void storageAccessTests() {
     accept("contiguous i64 indexed loads and stores need no byte-array declaration", scalars);
 }
 
+void scalarAdmissionTests() {
+    for (const auto &[operation, diagnostic] : std::vector<std::pair<Instruction, const char *>>{
+             {Constant{2, Type::Bool}, "noncanonical bool"},
+             {EnumConstant{Type::enumeration("Mode"), 2}, "not a declared case"},
+             {UnaryValue{static_cast<Unary>(99)}, "invalid unary operation"},
+             {BinaryValue{Binary::BitAnd, Type::I64}, "invalid binary operand type"},
+             {Convert{Type::U8, Type::U8}, "invalid checked conversion types"},
+             {Compare{Comparison::Less, Type::enumeration("Mode")}, "ordered bool comparison or enum comparison"}})
+        reject("unused imported scalar admission precedes earlier dynamic state", [&](Module &module) {
+            module.enumCases["Mode"] = 2;
+            module.descriptorViews[1] = {};
+            auto later = module.functions[0];
+            later.name = "unused_scalar";
+            later.moduleScope = 1;
+            later.code = {operation, Return{}};
+            module.functions[0].code = {Pop{}, Return{}};
+            module.functions.push_back(later);
+        }, diagnostic);
+    for (const auto &[operation, diagnostic] : std::vector<std::pair<Instruction, const char *>>{
+             {Jump{99}, "unknown jump target"},
+             {BindParameter{0, 8, Type::I64}, "outside entry prefix"},
+             {Call{"missing"}, "unknown call target"},
+             {Load{24, Type::I64}, "slot type/layout mismatch"}})
+        reject("earlier admission phases precede earlier-body scalar failure", [&](Module &module) {
+            auto later = module.functions[0];
+            later.name = "later_phase";
+            later.code = {operation, Return{}};
+            module.functions[0].code = {Constant{2, Type::Bool}, Return{}};
+            module.functions.push_back(later);
+        }, diagnostic);
+    reject("scalar errors retain declaration and instruction order", [](Module &module) {
+        auto later = module.functions[0];
+        later.name = "alphabetically_first";
+        later.code = {UnaryValue{static_cast<Unary>(99)}, Return{}};
+        module.functions[0].code = {Constant{256, Type::U8}, Constant{2, Type::Bool}, Return{}};
+        module.functions.push_back(later);
+    }, "noncanonical u8");
+
+    for (const Instruction &operation : std::vector<Instruction>{
+             UnaryValue{Unary::CheckedNegate}, BinaryValue{Binary::CheckedAdd},
+             Convert{Type::I64, Type::U8}, Compare{Comparison::Equal, Type::I64}})
+        reject("admitted scalar operation still requires current value", [&](Module &module) {
+            module.functions[0].code = {operation, Return{}};
+        }, "missing or mistyped current value");
+    reject("admitted comparison still requires saved left operand", [](Module &module) {
+        module.functions[0].code = {Constant{0, Type::I64}, Compare{Comparison::Equal, Type::I64}, Return{}};
+    }, "value stack underflow");
+    for (const auto &operations : std::vector<std::vector<Instruction>>{
+             {UnaryValue{Unary::CheckedNegate}},
+             {Push{}, Constant{0, Type::I64}, BinaryValue{Binary::CheckedAdd}}})
+        reject("admitted arithmetic cannot preserve local bounds token", [&](Module &module) {
+            auto &code = module.functions[0].code;
+            code = {Constant{42, Type::I64}, Store{8, Type::I64}, Constant{0, Type::I64},
+                    BoundsGuard{8, 1, Type::I64}};
+            code.insert(code.end(), operations.begin(), operations.end());
+            code.insert(code.end(), {IndexLoad{8, 1, Type::I64}, Return{}});
+        }, "bounds token");
+}
+
 void callGraphTests() {
     const auto scalarFunction = [](const std::string &name, int scope) {
         aurora::ir::Function function;
@@ -5134,6 +5193,7 @@ int main(int argc, char **argv) {
         byteTests();
         packedStorageTests();
         storageAccessTests();
+        scalarAdmissionTests();
         callableOwnerTests();
         metadataOwnerTests();
         instructionOwnerTests();

@@ -373,10 +373,37 @@ export namespace compiler_ir_instructions {
         //: invalid typed IR: array lifetime requires exact byte array origin
         storage_array_origin,
         //: invalid typed IR: span borrow requires exact local byte array origin
-        storage_span_origin
+        storage_span_origin,
+        //: invalid typed IR: invalid constant type
+        constant_type,
+        //: invalid typed IR: noncanonical bool
+        constant_bool,
+        //: invalid typed IR: noncanonical u8
+        constant_u8,
+        //: invalid typed IR: invalid enum constant type
+        enum_constant_type,
+        //: invalid typed IR: enum constant is not a declared case
+        enum_constant_case,
+        //: invalid typed IR: invalid unary operation
+        unary_operation,
+        //: invalid typed IR: invalid unary operand type
+        unary_operand,
+        //: invalid typed IR: invalid binary operation
+        binary_operation,
+        //: invalid typed IR: invalid binary operand type
+        binary_operand,
+        //: invalid typed IR: invalid checked conversion types
+        conversion_types,
+        //: invalid typed IR: invalid comparison
+        comparison_operation,
+        //: invalid typed IR: non-scalar comparison
+        comparison_scalar,
+        //: invalid typed IR: ordered bool comparison or enum comparison
+        comparison_ordered
     };
-    // The eight OutputRow-width leaves remain raw integers. Unknown operator
-    // values reach native semantics; unknown structural tags reject normally.
+    // The eight OutputRow-width leaves remain raw integers. The codec preserves
+    // unknown scalar operators for source admission to reject without enum
+    // conversion traps; unknown structural tags reject normally.
     class RawInstructionRow {
         i64 recordKind;
         i64 instructionForm;

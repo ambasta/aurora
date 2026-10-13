@@ -293,7 +293,7 @@ plus canonical class fields, offsets and layouts. `ir_metadata.au` admits names,
 module layouts, every callable header and every frame before publication.
 Instruction storage/types and exact codec shapes follow, then all structural CFG
 checks and normalization, source entry-parameter admission, source static call-site
-and local-storage admission, native dynamic value-state/provenance checks,
+and local-storage/scalar admission, native dynamic value-state/provenance checks,
 call-graph checks and publication. A later structural or static admission error can therefore
 precede an earlier dynamic value-state error;
 no per-function diagnostic-order replay is retained. Malformed raw Type tails reject before canonical Type observation.
@@ -389,6 +389,16 @@ types, dominating bounds evidence and state-dependent writes. Bridge calls and
 searches have a cost; no speed or memory improvement has been measured. This
 storage migration is source-reviewed only; generated ABI and execution remain
 unqualified.
+
+Scalar computation admission covers Constant, EnumConstant, UnaryValue,
+BinaryValue, Convert and Compare. Aurora checks canonical bool/byte constants,
+nominal enum cases, operator/type compatibility and legal integer conversions;
+unknown operator values reject before native state construction. The unsigned
+constant lane retains the complete U64 range. Native handlers retain operand
+type checks and result/guard updates. These checks reuse the instruction and
+metadata owners; no new ABI or retained workspace is introduced. A separate
+normalized-instruction traversal preserves module-wide storage-before-scalar
+error ordering. Its cost is unmeasured; execution qualification remains outstanding.
 
 ## CFG and frame invariants
 
