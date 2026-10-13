@@ -150,16 +150,19 @@ export namespace compiler_ir_graph {
         }
         auto marked(i64 node, i64 mask) const -> bool {
             const StateRow result = states.at(node);
-            return (result.flags() & mask) != 0;
+            // Flags start at zero and this pass uses only masks 1, 2 and 4.
+            return (result.flags() / mask) % 2 != 0;
         }
         auto mark(i64 node, i64 mask) -> bool {
             const StateRow old = states.at(node);
-            const StateRow value = StateRow(old.caller(), old.flags() | mask);
+            i64 flags = old.flags();
+            if ((flags / mask) % 2 == 0) { flags = flags + mask; }
+            const StateRow value = StateRow(old.caller(), flags);
             return states.set(node, value);
         }
         auto clear_visited(i64 node) -> bool {
             const StateRow old = states.at(node);
-            const StateRow value = StateRow(old.caller(), old.flags() & 6);
+            const StateRow value = StateRow(old.caller(), old.flags() - old.flags() % 2);
             return states.set(node, value);
         }
         auto add_reverse(i64 edge, i64 source, i64 target) -> bool {

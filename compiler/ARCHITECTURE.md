@@ -9,7 +9,7 @@ The typed-IR milestone established behavior-preserving compiler phase boundaries
 3. The hosted Aurora lexer turns bytes into tokens; `syntax.hpp` defines the untyped source AST. `parser.hpp` is a compatibility entrypoint for one complete hosted Aurora module parse; all declaration/container grammar lives in `parser.au`.
 4. `lowering_types.au`, `lowering_values.au` and the `lowering_frames`, `lowering_calls`, `lowering_expressions`, `lowering_statements` and `lowering_body` modules perform resolved layout/signature analysis, local/member resolution, exact argument-type overload selection, initialization and const/private checks, ownership moves, lexical borrow checks and conservative branch/loop joins. `lowering.au` publishes typed instructions and metadata from the same resolved Session.
 5. `hosted_lowering.cpp` mechanically fills the durable Aurora metadata and instruction owners from generated typed records. One instruction field walk serves source ingress, hostile native fixtures and borrowed native observations. Instruction/operator enums come from predecessor-generated Aurora facts.
-6. `ir_metadata.au` independently validates module metadata, callable signatures and frame declarations, deriving physical class layouts. `ir_instructions.au` admits instruction storage and canonical type payloads, then derives and normalizes structural control flow after codec shape checks. `ir_verify.hpp` checks instruction types, initialization, operand-stack and bounds-token invariants using those source-owned flow facts. After native value-state verification, `ir_graph.au` independently checks the complete call graph and selects retained functions. Only the resulting immutable `ValidatedModule` can be passed to the emitter.
+6. `ir_metadata.au` independently validates module metadata, callable signatures and frame declarations, deriving physical class layouts. `ir_instructions.au` admits instruction storage and canonical type payloads, then derives and normalizes structural control flow after codec shape checks. `ir_initialization.au` owns local scalar initialization facts and their joins. `ir_verify.hpp` orchestrates dynamic type, lifetime, operand-stack and bounds-token checks using those source-owned facts. After native value-state verification, `ir_graph.au` independently checks the complete call graph and selects retained functions. Only the resulting immutable `ValidatedModule` can be passed to the emitter.
 7. `x86.hpp` lowers validated operations to GNU x86-64 assembly. It has no source AST, scope lookup, const policy, owner-liveness state or borrow-state checker. Target registers, ABI argument placement, stack alignment and machine trap sequences exist only here. Two local forms avoid stack and copy traffic without changing any check: a pushed left operand followed directly by a constant, local or receiver-field load stays in `%rcx` for the arithmetic or comparison that would pop it, and an element read that the next instruction returns is copied straight into the caller's result storage.
 8. `main.cpp` coordinates file I/O and those stages. GNU assembler/linker remain the bootstrap native toolchain.
 
@@ -309,8 +309,8 @@ Each callable owns a sorted range of eight existing slot-record kinds. Aurora
 checks frame bounds/alignment, types, exact object/array leaves, padding and
 cross-category overlap, including capability spills and owner annotations.
 Native instruction analysis queries exact storage origins from those canonical
-rows and retains its initialization domain; it does not copy per-leaf origin
-indexes, reserve frame storage or re-admit declarations.
+rows; local initialization also uses the canonical scalar domain. Native analysis
+does not copy per-leaf origin indexes, reserve frame storage or re-admit declarations.
 
 Pool lengths replace six redundant stored counts. Four raw-prefix counts remain
 because field/storage/index pools also hold normalization tails. Adding the slot
@@ -361,8 +361,8 @@ are trusted compiler mechanisms, not unforgeable admission tokens.
 The signature has at most six formals, so the existing leading instructions are
 also the binding index. Native queries borrow those rows instead of retaining
 parameter sets/maps or another summary. Native `Bind*` handlers establish dynamic
-initial state; subsequent initialization, lifetime, ownership, loan and CFG-join
-checks remain native. Static service-loan identity belongs to source admission.
+initial authority state; lifetime, ownership, loan and worklist decisions remain
+native, while local scalar initialization payloads and joins are source-owned. Static service-loan identity belongs to source admission.
 This migration remains source-only pending generated ABI and execution checks.
 
 All six call forms share a subsequent source pass over those same owners. It
@@ -488,16 +488,43 @@ The verifier protects the backend against malformed instruction modules through 
 
 Historical verification manifests are preserved. A previous executable used for differential checks is a temporary local artifact, not vendored source or a new runtime dependency.
 
-## Remaining resource scaling
+## Local initialization ownership and resource scaling
 
-Basic-block snapshots remove the quadratic retained history of straight-line aggregate initialization. Currently, `State.initialized` and `State.maybeInitialized` use dense bits over the function's validated scalar-slot universe. Must-initialized joins use intersection and may-initialized joins use union. Other receiver/logical/object/capability facts, stacks, CFG and semantic decisions are unchanged. Negative/unknown offsets cannot become unchecked bit indices; slot-domain and allocation arithmetic follow existing frame limits.
+`ir_initialization.au` owns local scalar must/may initialization in a separate
+per-function workspace. The admitted metadata scalar group is the only offset
+domain; native code retains no offset universe or initialization bitsets. Receiver
+initialization, logical class completion, provenance, stacks and scheduling remain
+native. This is a source-only ownership migration, not a complete Aurora verifier.
 
-Each of the two bitsets reserves `8 * ceil(declared_scalar_slots / 64)` logical payload bytes per retained state, even when its current facts are empty. `peakRetainedInitializationPayloadBytes` measures these word payloads only: it excludes the shared universe, container/allocator overhead, temporary states and every other fact collection. The original logical fact metric continues counting facts, not bits allocated. This representation improves dense-fact snapshots but can use more memory for sparse or empty states.
+Three growable pools hold independent current word pairs, append-only retained
+word pairs and retained cardinalities. Block entries retain opaque ordinals outside
+native State. Dequeue loads a copy into current; joins intersect must bits and union
+may bits in the retained row. Explicit bitwise change requeues a block even when
+lost must facts and gained may facts cancel in total count. Self-loop joins do not
+alter the current row used by another successor. All rows close with the function.
 
-Dense storage depends on the complete declared universe even for empty facts,
-so many sparse block-entry states can use more memory than node-based sets.
-Other state, operand stacks, ASTs and allocations still scale with input. There
-is no compiler-wide memory/time budget or universal improvement claim.
+Semantic scalar/object/array batches avoid a native bridge for every bit operation.
+The capsule binds one metadata identity and never observes mutable pool storage.
+Empty-object logical completion and lifetime/loan checks remain native; bulk array
+queries return the first missing element so existing error order is preserved.
+
+Retained capacity grows geometrically from one row, capped at 65,536. Zero-slot
+functions still retain count rows without allocating word rows. Allocation failure
+is terminal; ordinary exceptions release actual surviving source owners before
+the granting Region. Runtime fail-stop traps do not unwind. There is no up-front
+maximum slab, generic snapshot allocator or parallel native fact representation.
+
+`peakRetainedInitializationPayloadBytes` remains logical retained word payload:
+`16 * ceil(declared_scalar_slots / 64) * retained_rows`. It excludes current words,
+spare capacity, count rows, replacement staging and other native state. Logical
+fact metrics count facts, not allocated bits; metric deltas use pre-join counts.
+At both 65,536-slot/state limits, committed source payload can reach roughly
+1.001 GiB; geometric replacement can temporarily bring it to roughly 1.501 GiB,
+excluding other allocations. These are bounds, not observed usage or RSS.
+
+Dense snapshots, geometric spare capacity, bridge calls and changed-bit counting
+have real costs. No speed or memory improvement is established. Generated ABI,
+predecessor bootstrap, convergence and execution qualification remain outstanding.
 
 ## Source-depth implementation limits
 

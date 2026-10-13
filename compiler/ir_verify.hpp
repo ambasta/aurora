@@ -1,10 +1,11 @@
 #pragma once
 #include "hosted_graph.hpp"
 #include "hosted_ir_instructions.hpp"
-#include "initialization_facts.hpp"
+#include "hosted_ir_initialization.hpp"
 #include "ir_layout.hpp"
 #include "byte_literal.hpp"
 #include <algorithm>
+#include <cstdint>
 #include <deque>
 #include <functional>
 #include <type_traits>
@@ -134,10 +135,6 @@ class State {
 public:
     std::optional<Value> current;
     std::vector<Value> stack;
-    InitializationFacts initialized;
-    // Must-initialized facts intersect at joins; may-written facts union. The
-    // latter prevent an alternate path or backedge from hiding a second init.
-    InitializationFacts maybeInitialized;
     std::set<int> receiverInitialized;
     std::set<int> receiverMaybeInitialized;
     std::set<int> maybeConstructedObjects;
@@ -157,10 +154,14 @@ public:
     std::set<std::pair<int, int>> objectClassesInitialized;
     std::set<int> receiverClassesInitialized;
     std::set<int> receiverClassesMaybeInitialized;
-    explicit State(const std::shared_ptr<const InitializationSlotUniverse> &universe)
-        : initialized(universe), maybeInitialized(universe) {
-    }
     bool operator==(const State &) const = default;
+};
+// Local scalar initialization is owned by a source workspace. Its retained ordinal
+// belongs to the block entry, never to native State equality or State copies.
+class BlockEntry {
+public:
+    State state;
+    InitializationWorkspace::Id initialization;
 };
 inline void require(bool condition, const std::string &message) {
     if (!condition)
@@ -215,10 +216,10 @@ public:
     std::size_t snapshots = 0;
     std::size_t peakOperandDepth = 0;
     std::size_t peakRetainedOperandFacts = 0;
-    std::size_t peakRetainedValueFacts = 0;
+    std::uint64_t peakRetainedValueFacts = 0;
     // Both scalar initialization word payloads across retained block entries.
-    // Excludes shared universe, other facts, current/merge states and allocator overhead.
-    std::size_t peakRetainedInitializationPayloadBytes = 0;
+    // Excludes the source domain, other facts, current words and allocator overhead.
+    std::uint64_t peakRetainedInitializationPayloadBytes = 0;
 };
 // Entry admission has already certified these at-most-six normalized rows.
 // Borrow their roots on demand; no native binding index or Type graph survives.
@@ -256,7 +257,6 @@ inline void verifyFunction(FunctionBody &function,
                            Metrics *metrics = nullptr) {
     const auto signature = metadata.callable(function.callableId);
     const auto frame = metadata.frame(function.callableId);
-    const auto slots = frame.scalarSlots();
     const auto objectSlots = frame.objectSlots();
     const auto arraySlots = frame.arraySlots();
     const auto spanSlots = frame.spanSlots();
@@ -286,9 +286,6 @@ inline void verifyFunction(FunctionBody &function,
         require(byteSlots.contains(base), "owner type requires exact typed spill");
         return ownedValueTypes.contains(base) ? Type::ownedValues(Type(ownedValueTypes.at(base))) : Type::OwnedBytes;
     };
-    auto objectLeaf = [&](int base, std::size_t leaf) {
-        return base - physicalStorage(objectSlots.at(base).className).leafOffsets.at(leaf);
-    };
     const auto owningType = [&](const Type &type) {
         return type.isClass() && owningClass(metadata, type.className);
     };
@@ -300,16 +297,9 @@ inline void verifyFunction(FunctionBody &function,
         receiverLayout = classLeaves(functionReceiver->className);
         receiverFields = logicalFields(functionReceiver->className);
     }
-    // The admitted scalar offsets form the immutable initialization domain shared
-    // by this function's CFG snapshots. This contains no declaration payloads.
-    std::vector<int> initializationOffsets;
-    initializationOffsets.reserve(slots.size());
-    for (const auto &[offset, type] : slots) {
-        (void)type;
-        initializationOffsets.push_back(offset);
-    }
-    const auto initializationUniverse =
-        std::make_shared<const InitializationSlotUniverse>(std::move(initializationOffsets), frame.frameBytes());
+    // Source metadata supplies the dense domain. This function owns independent
+    // current words and append-only retained snapshots through one RAII capsule.
+    InitializationWorkspace initialization(metadata, function.callableId);
     for (CodePosition index = 0; index < function.code.size(); ++index) {
         const auto instruction = function.code[index];
         if (const auto *literal = std::get_if<BorrowLiteralSpanObservation>(&instruction)) {
@@ -324,10 +314,10 @@ inline void verifyFunction(FunctionBody &function,
     // Depths alone are linear-sized. Full operand/provenance states still live
     // only at basic-block entries, never once per instruction.
     std::vector<std::size_t> stackBefore(function.code.size()), stackAfter(function.code.size());
-    std::vector<std::optional<State>> states(function.code.size());
+    std::vector<std::optional<BlockEntry>> states(function.code.size());
     BlockRetentionBudget retention;
     retention.retain(0);
-    states[0] = State{initializationUniverse};
+    State entryState;
     if (functionReceiver && owningClass(metadata, functionReceiver->className)) {
         OwnedObjectBinding receiver{
             0, functionReceiver->constructor ? ByteDisposition::Pristine : ByteDisposition::Live, {}};
@@ -339,7 +329,7 @@ inline void verifyFunction(FunctionBody &function,
                     binding.token = ByteToken{0, borrowed, static_cast<int>(field)};
                 receiver.fields.emplace(static_cast<int>(field), binding);
             }
-        states[0]->ownedObjects.emplace(0, std::move(receiver));
+        entryState.ownedObjects.emplace(0, std::move(receiver));
     }
     if (secondReceiver) {
         OwnedObjectBinding second{0, ByteDisposition::Live, {}};
@@ -353,44 +343,43 @@ inline void verifyFunction(FunctionBody &function,
                                       ByteBinding{0,
                                                   ByteDisposition::Live,
                                                   ByteToken{0, borrowed, static_cast<int>(field)}});
-        states[0]->ownedObjects.emplace(-1, std::move(second));
+        entryState.ownedObjects.emplace(-1, std::move(second));
     }
     if (functionReceiver && !functionReceiver->constructor) {
         for (std::size_t field = 0; field < receiverLayout->size(); ++field) {
-            states[0]->receiverInitialized.insert(static_cast<int>(field));
-            states[0]->receiverMaybeInitialized.insert(static_cast<int>(field));
+            entryState.receiverInitialized.insert(static_cast<int>(field));
+            entryState.receiverMaybeInitialized.insert(static_cast<int>(field));
         }
         for (std::size_t field = 0; field < receiverFields->size(); ++field)
             if ((*receiverFields)[field].elementType.isClass()) {
-                states[0]->receiverClassesInitialized.insert(static_cast<int>(field));
-                states[0]->receiverClassesMaybeInitialized.insert(static_cast<int>(field));
+                entryState.receiverClassesInitialized.insert(static_cast<int>(field));
+                entryState.receiverClassesMaybeInitialized.insert(static_cast<int>(field));
             }
     }
+    const auto entryInitialization = initialization.retain();
+    states[0].emplace(BlockEntry{std::move(entryState), entryInitialization});
     std::deque<CodePosition> pending{0};
-    std::size_t retainedValueFacts = 0;
+    std::uint64_t retainedValueFacts = 0;
     if (metrics) {
         *metrics = Metrics{};
         metrics->snapshots = 1;
     }
     auto facts = [](const State &state) {
-        std::size_t ownedFields = 0;
+        std::uint64_t ownedFields = 0;
         for (const auto &[unused, object] : state.ownedObjects) {
             (void)unused;
             ownedFields += object.fields.size();
         }
-        return ownedFields + state.stack.size() + state.initialized.size() + state.maybeInitialized.size() +
-               state.receiverInitialized.size() + state.receiverMaybeInitialized.size() +
-               state.maybeConstructedObjects.size() + state.activeObjects.size() +
+        return ownedFields + state.stack.size() + state.receiverInitialized.size() +
+               state.receiverMaybeInitialized.size() + state.maybeConstructedObjects.size() + state.activeObjects.size() +
                state.objectClassesInitialized.size() + state.receiverClassesInitialized.size() +
                state.receiverClassesMaybeInitialized.size() + state.activeArrays.size() + state.activeSpans.size() +
                state.activeRegions.size() + state.activeBytes.size() + state.ownedObjects.size() +
                state.objectLoans.size() + state.activeServices.size() + state.serviceLoans.size();
     };
-    retainedValueFacts = facts(*states[0]);
-    auto initializationPayload = [](const State &state) {
-        return state.initialized.payloadBytes() + state.maybeInitialized.payloadBytes();
-    };
-    std::size_t retainedInitializationPayloadBytes = initializationPayload(*states[0]);
+    retainedValueFacts = facts(states[0]->state) + initialization.retainedCountAt(entryInitialization);
+    const std::uint64_t initializationPayload = initialization.logicalPayloadBytesPerSnapshot();
+    std::uint64_t retainedInitializationPayloadBytes = initializationPayload;
     if (metrics) {
         metrics->peakRetainedValueFacts = retainedValueFacts;
         metrics->peakRetainedInitializationPayloadBytes = retainedInitializationPayloadBytes;
@@ -407,8 +396,12 @@ inline void verifyFunction(FunctionBody &function,
             // Check before the snapshot allocation, whether metrics are enabled
             // or not. These retained counts never grow on worklist revisits.
             retention.retain(state.stack.size());
-            retainedValueFacts += facts(state);
-            retainedInitializationPayloadBytes += initializationPayload(state);
+            State retainedState = state;
+            const auto retainedInitialization = initialization.retain();
+            states[index].emplace(BlockEntry{std::move(retainedState), retainedInitialization});
+            retainedValueFacts += facts(states[index]->state) +
+                                  initialization.retainedCountAt(retainedInitialization);
+            retainedInitializationPayloadBytes += initializationPayload;
             if (metrics) {
                 ++metrics->snapshots;
                 metrics->peakRetainedOperandFacts = retention.operands();
@@ -416,11 +409,10 @@ inline void verifyFunction(FunctionBody &function,
                 metrics->peakRetainedInitializationPayloadBytes =
                     std::max(metrics->peakRetainedInitializationPayloadBytes, retainedInitializationPayloadBytes);
             }
-            states[index] = state;
             pending.push_back(index);
             return;
         }
-        const auto &existing = *states[index];
+        const auto &existing = states[index]->state;
         require(existing.activeObjects == state.activeObjects,
                 "incompatible active object lifetimes at control-flow join");
         require(existing.activeArrays == state.activeArrays,
@@ -440,31 +432,40 @@ inline void verifyFunction(FunctionBody &function,
         State merged = existing;
         if (merged.current != state.current)
             merged.current.reset();
-        merged.initialized.intersectWith(state.initialized);
         merged.receiverInitialized = intersection(merged.receiverInitialized, state.receiverInitialized);
         merged.objectClassesInitialized = intersection(merged.objectClassesInitialized, state.objectClassesInitialized);
         merged.receiverClassesInitialized =
             intersection(merged.receiverClassesInitialized, state.receiverClassesInitialized);
         merged.receiverClassesMaybeInitialized.insert(state.receiverClassesMaybeInitialized.begin(),
                                                       state.receiverClassesMaybeInitialized.end());
-        merged.maybeInitialized.unionWith(state.maybeInitialized);
         merged.receiverMaybeInitialized.insert(state.receiverMaybeInitialized.begin(),
                                                state.receiverMaybeInitialized.end());
         merged.maybeConstructedObjects.insert(state.maybeConstructedObjects.begin(),
                                               state.maybeConstructedObjects.end());
-        if (merged != *states[index]) {
-            retainedValueFacts -= facts(*states[index]);
-            retainedValueFacts += facts(merged);
+        const bool nativeChanged = merged != existing;
+        const auto retainedInitialization = states[index]->initialization;
+        // Count before source join mutates the retained row. Must losses and may
+        // gains can cancel numerically, so only its explicit changed flag drives
+        // the initialization half of worklist convergence.
+        const auto oldInitializationCount = initialization.retainedCountAt(retainedInitialization);
+        const bool initializationChanged = initialization.join(retainedInitialization);
+        if (nativeChanged || initializationChanged) {
+            retainedValueFacts -= facts(existing) + oldInitializationCount;
+            retainedValueFacts += facts(merged) + initialization.retainedCountAt(retainedInitialization);
             if (metrics)
                 metrics->peakRetainedValueFacts = std::max(metrics->peakRetainedValueFacts, retainedValueFacts);
-            states[index] = std::move(merged);
+            states[index]->state = std::move(merged);
             pending.push_back(index);
         }
     };
     while (!pending.empty()) {
         auto index = pending.front();
         pending.pop_front();
-        State state = *states[index];
+        State state = states[index]->state;
+        // Loading copies retained words into independent source current storage.
+        // A self-loop join may change its retained row, never the current words
+        // subsequently consumed by another successor.
+        initialization.load(states[index]->initialization);
         while (true) {
             const auto instruction = function.code[index];
             const auto flow = function.code.flowAt(index);
@@ -724,13 +725,13 @@ inline void verifyFunction(FunctionBody &function,
                     loanAccess(*objectRoot, true);
                 activeArrayElement(arrayRoot);
                 arrayWritable(offset, objectRoot, arrayRoot);
-                require(!entryBindings.contains<BindParameter>(offset) || !state.maybeInitialized.contains(offset),
+                // Source returns prior must/may bits and sets both together. A
+                // rejected immutable write aborts this invocation; no rollback.
+                const auto prior = initialization.writeScalar(offset);
+                require(!entryBindings.contains<BindParameter>(offset) || (prior & 2u) == 0,
                         "write to immutable scalar parameter");
-                require(!objectRoot || objectSlots.at(*objectRoot).mutableValue ||
-                            !state.maybeInitialized.contains(offset),
+                require(!objectRoot || objectSlots.at(*objectRoot).mutableValue || (prior & 2u) == 0,
                         "write to initialized const object field");
-                state.initialized.insert(offset);
-                state.maybeInitialized.insert(offset);
             };
             auto receiverShape = [&](int fieldIndex) -> ClassField {
                 require(!signature.borrowedParameter(),
@@ -772,13 +773,17 @@ inline void verifyFunction(FunctionBody &function,
             // Source admission has checked every typed element and all unconditional
             // write restrictions. This traversal retains only live-state checks.
             auto initializedArray = [&](int offset, int length, const Type &type, bool writing) {
+                // This batch only observes initialization. Preserve native error
+                // interleaving by completing each preceding element's checks and
+                // the missing element's lifetime checks before reporting it.
+                const auto firstMissing = initialization.arrayFirstMissing(offset, length, storageWidth(type));
                 for (int element = 0; element < length; ++element) {
                     const int elementOffset = offset - element * storageWidth(type);
                     const auto objectRoot = metadata.objectLeafRoot(function.callableId, elementOffset);
                     const auto arrayRoot = metadata.byteArrayElementRoot(function.callableId, elementOffset);
                     activeObjectField(objectRoot);
                     activeArrayElement(arrayRoot);
-                    require(state.initialized.contains(elementOffset), "array element not initialized");
+                    require(!firstMissing || element != *firstMissing, "array element not initialized");
                     if (writing) {
                         arrayWritable(elementOffset, objectRoot, arrayRoot);
                         if (objectRoot)
@@ -814,24 +819,16 @@ inline void verifyFunction(FunctionBody &function,
                     require(state.objectClassesInitialized.contains({base, -1}),
                             "empty object not completely initialized");
             };
-            auto liveCopiedArgument = [&](int base, const Type &type, const std::string &role) {
+            auto liveCopiedArgument = [&](int base, const std::string &role) {
                 require(state.activeObjects.contains(base), role + " argument outside active object lifetime");
-                const auto layout = classLeaves(type.className);
-                for (std::size_t field = 0; field < layout.size(); ++field)
-                    require(state.initialized.contains(objectLeaf(base, field)),
-                            role + " argument object not fully initialized");
+                require(initialization.objectInitialized(base), role + " argument object not fully initialized");
                 logicalComplete(base);
             };
             auto markObject = [&](int base) {
                 const auto &name = objectSlots.at(base).className;
-                const auto layout = classLeaves(name);
                 state.maybeConstructedObjects.insert(base);
                 state.objectClassesInitialized.insert({base, -1});
-                for (std::size_t leaf = 0; leaf < layout.size(); ++leaf) {
-                    const int offset = objectLeaf(base, leaf);
-                    state.initialized.insert(offset);
-                    state.maybeInitialized.insert(offset);
-                }
+                initialization.markObject(base);
                 if (metadata.findClass(name))
                     for (std::size_t field = 0; field < logicalFields(name).size(); ++field)
                         if (logicalFields(name)[field].elementType.isClass())
@@ -840,10 +837,7 @@ inline void verifyFunction(FunctionBody &function,
             auto initializedObject = [&](int base) -> ObjectSlot {
                 require(state.activeObjects.contains(base), "copy object outside active lifetime");
                 auto object = objectSlots.at(base);
-                const auto layout = classLeaves(object.className);
-                for (std::size_t leaf = 0; leaf < layout.size(); ++leaf)
-                    require(state.initialized.contains(objectLeaf(base, leaf)),
-                            "copy source object not fully initialized");
+                require(initialization.objectInitialized(base), "copy source object not fully initialized");
                 logicalComplete(base);
                 return object;
             };
@@ -961,10 +955,7 @@ inline void verifyFunction(FunctionBody &function,
             };
             auto initializeObject = [&](int base) {
                 require(!state.maybeConstructedObjects.contains(base), "copy result object already initialized");
-                const auto layout = classLeaves(objectSlots.at(base).className);
-                for (std::size_t leaf = 0; leaf < layout.size(); ++leaf)
-                    require(!state.maybeInitialized.contains(objectLeaf(base, leaf)),
-                            "copy requires pristine result object");
+                require(initialization.objectPristine(base), "copy requires pristine result object");
                 if (state.ownedObjects.contains(base)) {
                     const auto &object = state.ownedObjects.at(base);
                     require(object.disposition == ByteDisposition::Pristine,
@@ -1177,7 +1168,8 @@ inline void verifyFunction(FunctionBody &function,
                         const auto arrayRoot = metadata.byteArrayElementRoot(function.callableId, operation.offset);
                         activeObjectField(objectRoot);
                         activeArrayElement(arrayRoot);
-                        require(state.initialized.contains(operation.offset), "load before initialization");
+                        require((initialization.scalarState(operation.offset) & 1u) != 0,
+                                "load before initialization");
                         state.current = Value{operation.type, {}};
                     } else if constexpr (std::is_same_v<Op, Store>) {
                         current(operation.type);
@@ -1222,7 +1214,8 @@ inline void verifyFunction(FunctionBody &function,
                         guard(pop(), operation.offset, operation.length, operation.elementType);
                         initializedArray(operation.offset, operation.length, operation.elementType, true);
                     } else if constexpr (std::is_same_v<Op, BorrowHandle>) {
-                        require(state.initialized.contains(operation.ownerOffset), "borrow of uninitialized payload");
+                        require((initialization.scalarState(operation.ownerOffset) & 1u) != 0,
+                                "borrow of uninitialized payload");
                         state.current = Value{operation.referenceType, {}};
                     } else if constexpr (std::is_same_v<Op, Call>) {
                         const auto target = metadata.callable(metadata.findCallable(operation.callee).value());
@@ -1242,19 +1235,16 @@ inline void verifyFunction(FunctionBody &function,
                                 require(pop().type == type, "aggregate scalar argument type mismatch");
                                 continue;
                             }
-                            liveCopiedArgument(base, type, "aggregate");
+                            liveCopiedArgument(base, "aggregate");
                         }
                         if (target.result().isClass()) {
                             const int base = operation.resultOffset;
-                            const auto &object = objectSlots.at(base);
                             require(state.activeObjects.contains(base),
                                     "aggregate result outside active object lifetime");
                             require(!state.maybeConstructedObjects.contains(base),
                                     "aggregate result object already initialized");
-                            const auto layout = classLeaves(object.className);
-                            for (std::size_t field = 0; field < layout.size(); ++field)
-                                require(!state.maybeInitialized.contains(objectLeaf(base, field)),
-                                        "aggregate result requires uninitialized object");
+                            require(initialization.objectPristine(base),
+                                    "aggregate result requires uninitialized object");
                             markObject(base);
                             state.current.reset();
                         } else {
@@ -1287,15 +1277,12 @@ inline void verifyFunction(FunctionBody &function,
                             pristineBytes(operation.resultOffset);
                         } else if (!constructor && target.result().isClass() && !owningType(target.result())) {
                             const int base = operation.resultOffset;
-                            const auto &object = objectSlots.at(base);
                             require(state.activeObjects.contains(base),
                                     "resource copied result outside active object lifetime");
                             require(!state.maybeConstructedObjects.contains(base),
                                     "resource copied result object already initialized");
-                            const auto layout = classLeaves(object.className);
-                            for (std::size_t field = 0; field < layout.size(); ++field)
-                                require(!state.maybeInitialized.contains(objectLeaf(base, field)),
-                                        "resource copied result requires uninitialized object");
+                            require(initialization.objectPristine(base),
+                                    "resource copied result requires uninitialized object");
                         }
                         // The source admitted distinct storage. Revisit borrowed
                         // argument rows to transfer only the target's owner lanes.
@@ -1413,20 +1400,15 @@ inline void verifyFunction(FunctionBody &function,
                             }
                             state.activeArrays.erase(operation.offset);
                         }
-                        const int length = arraySlots.at(operation.offset);
-                        for (int element = 0; element < length; ++element) {
-                            state.initialized.erase(operation.offset - element);
-                            state.maybeInitialized.erase(operation.offset - element);
-                        }
+                        initialization.clearArray(operation.offset, arraySlots.at(operation.offset), 1);
                     } else if constexpr (std::is_same_v<Op, BorrowSpan>) {
                         require(state.activeArrays.contains(operation.arrayOffset),
                                 "span borrow requires active byte array origin");
                         // The admitted exact byte array cannot overlap an object.
                         // Its one checked lifetime covers every initialized element.
                         const int length = arraySlots.at(operation.arrayOffset);
-                        for (int element = 0; element < length; ++element)
-                            require(state.initialized.contains(operation.arrayOffset - element),
-                                    "array element not initialized");
+                        require(!initialization.arrayFirstMissing(operation.arrayOffset, length, 1),
+                                "array element not initialized");
                         inactiveSpanTarget(operation.resultOffset);
                         state.activeSpans.emplace(operation.resultOffset,
                                                   SpanCapability{false,
@@ -1503,13 +1485,7 @@ inline void verifyFunction(FunctionBody &function,
                             invalidate(*state.current);
                         for (auto &value : state.stack)
                             invalidate(value);
-                        const auto &object = objectSlots.at(operation.offset);
-                        const auto layout = classLeaves(object.className);
-                        for (std::size_t field = 0; field < layout.size(); ++field) {
-                            const int offset = objectLeaf(operation.offset, field);
-                            state.initialized.erase(offset);
-                            state.maybeInitialized.erase(offset);
-                        }
+                        initialization.clearObject(operation.offset);
                         state.maybeConstructedObjects.erase(operation.offset);
                         for (auto field = state.objectClassesInitialized.begin();
                              field != state.objectClassesInitialized.end();) {
@@ -1810,22 +1786,17 @@ inline void verifyFunction(FunctionBody &function,
                         if (operation.receiverFieldIndex >= 0) {
                             liveClassField(operation.receiverOffset, operation.receiverFieldIndex, receiver.mutableValue);
                         } else if (operation.receiverOffset > 0) {
-                            const auto &object = objectSlots.at(operation.receiverOffset);
                             require(state.activeObjects.contains(operation.receiverOffset),
                                     "method receiver outside active object lifetime");
-                            const auto layout = classLeaves(object.className);
                             if (receiver.constructor) {
                                 require(!state.maybeConstructedObjects.contains(operation.receiverOffset),
                                         "object constructor called more than once");
-                                for (std::size_t field = 0; field < layout.size(); ++field)
-                                    require(
-                                        !state.maybeInitialized.contains(objectLeaf(operation.receiverOffset, field)),
+                                require(initialization.objectPristine(operation.receiverOffset),
                                         "constructor requires uninitialized object");
                                 markObject(operation.receiverOffset);
                             } else {
-                                for (std::size_t field = 0; field < layout.size(); ++field)
-                                    require(state.initialized.contains(objectLeaf(operation.receiverOffset, field)),
-                                            "method receiver object not fully initialized");
+                                require(initialization.objectInitialized(operation.receiverOffset),
+                                        "method receiver object not fully initialized");
                                 logicalComplete(operation.receiverOffset);
                             }
                         }
@@ -1840,14 +1811,10 @@ inline void verifyFunction(FunctionBody &function,
                             state.current.reset();
                         } else if (target.result().isClass()) {
                             const int base = operation.resultOffset;
-                            const auto &object = objectSlots.at(base);
                             require(state.activeObjects.contains(base), "method result outside active object lifetime");
                             require(!state.maybeConstructedObjects.contains(base),
                                     "method result object already initialized");
-                            const auto layout = classLeaves(object.className);
-                            for (std::size_t field = 0; field < layout.size(); ++field)
-                                require(!state.maybeInitialized.contains(objectLeaf(base, field)),
-                                        "method result requires uninitialized object");
+                            require(initialization.objectPristine(base), "method result requires uninitialized object");
                             markObject(base);
                             state.current.reset();
                         } else {
@@ -1932,10 +1899,8 @@ inline void verifyFunction(FunctionBody &function,
                         require(object.className == signature.result().className, "object return nominal class mismatch");
                         require(state.activeObjects.contains(operation.offset),
                                 "object return outside active lifetime");
-                        const auto layout = classLeaves(object.className);
-                        for (std::size_t field = 0; field < layout.size(); ++field)
-                            require(state.initialized.contains(objectLeaf(operation.offset, field)),
-                                    "returned object not fully initialized");
+                        require(initialization.objectInitialized(operation.offset),
+                                "returned object not fully initialized");
                         logicalComplete(operation.offset);
                         require(state.stack.empty(), "unbalanced stack at object return");
                         require(state.activeBytes.empty(), "return with active owned byte lifetime");
@@ -2015,14 +1980,12 @@ inline void verifyFunction(FunctionBody &function,
                             state.current = Value{service::eventAckResultType(), {}};
                         } else if (operation.operation == service::Operation::Next ||
                                    operation.operation == service::Operation::IommuPoll) {
-                            const bool event = operation.operation == service::Operation::IommuPoll;
                             const int base = operation.resultOffset;
                             require(state.activeObjects.contains(base) &&
                                         !state.maybeConstructedObjects.contains(base),
                                     "service observation requires exact pristine active copied sample object");
-                            for (std::size_t field = 0; field < (event ? 4u : 3u); ++field)
-                                require(!state.maybeInitialized.contains(objectLeaf(base, field)),
-                                        "service observation cannot overwrite initialized sample storage");
+                            require(initialization.objectPristine(base),
+                                    "service observation cannot overwrite initialized sample storage");
                             markObject(base);
                             state.current.reset();
                         } else {
@@ -2060,7 +2023,7 @@ inline void verifyFunction(FunctionBody &function,
                                 require(state.activeSpans.contains(base), "service span argument is not active");
                                 liveSpan(base);
                             } else if (type.isClass()) {
-                                liveCopiedArgument(operation.objectArguments[position], type, "service");
+                                liveCopiedArgument(operation.objectArguments[position], "service");
                             } else {
                                 require(pop().type == type, "service scalar argument mismatch");
                             }
@@ -2103,10 +2066,8 @@ inline void verifyFunction(FunctionBody &function,
                         state.activeObjects.emplace(operation.offset, instructionId);
                         markObject(operation.offset);
                     } else if constexpr (std::is_same_v<Op, BindParameter>) {
-                        require(!state.maybeInitialized.contains(operation.offset),
-                                "write to immutable scalar parameter");
-                        state.initialized.insert(operation.offset);
-                        state.maybeInitialized.insert(operation.offset);
+                        const auto prior = initialization.writeScalar(operation.offset);
+                        require((prior & 2u) == 0, "write to immutable scalar parameter");
                     } else {
                         static_assert(!std::is_same_v<Op, Op>, "unhandled typed IR verifier operation");
                     }

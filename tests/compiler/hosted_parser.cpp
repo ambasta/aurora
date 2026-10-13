@@ -58,6 +58,18 @@ void aurora_hosted_metadata_create(const void *, void *) noexcept;
 void aurora_hosted_metadata_release(void *) noexcept;
 std::int64_t aurora_hosted_metadata_allocated(const void *) noexcept;
 std::int64_t aurora_hosted_metadata_run(void *) noexcept;
+void aurora_hosted_initialization_create(const void *, void *) noexcept;
+void aurora_hosted_initialization_release(void *) noexcept;
+std::int64_t aurora_hosted_initialization_initialize(const void *, std::int64_t) noexcept;
+std::int64_t aurora_hosted_initialization_status(const void *) noexcept;
+std::int64_t aurora_hosted_initialization_retain(void *) noexcept;
+std::int64_t aurora_hosted_initialization_load(void *, std::int64_t) noexcept;
+std::int64_t aurora_hosted_initialization_join(void *, std::int64_t) noexcept;
+std::int64_t aurora_hosted_initialization_current_count(const void *) noexcept;
+std::int64_t aurora_hosted_initialization_retained_count(const void *) noexcept;
+std::int64_t aurora_hosted_initialization_retained_count_at(const void *, std::int64_t) noexcept;
+std::int64_t aurora_hosted_initialization_word_count(const void *) noexcept;
+std::int64_t aurora_hosted_initialization_write_scalar(const void *, std::int64_t) noexcept;
 void aurora_hosted_instructions_create(const void *, void *) noexcept;
 void aurora_hosted_instructions_release(void *) noexcept;
 std::int64_t aurora_hosted_instructions_allocated(const void *) noexcept;
@@ -4452,6 +4464,157 @@ void rawMetadataOwnership() {
     exercise(std::numeric_limits<std::size_t>::max(), 0, false);
 }
 
+void rawInitializationOwnership() {
+    namespace abi = aurora::hosted_abi;
+    namespace meta = abi::compiler_ir_metadata;
+    namespace wire = abi::compiler_ir_initialization;
+    namespace bytes = aurora::hosted::bytes;
+    context = "initialization owner creation, growth prefixes and exception cleanup";
+    bytes::Region metadataRegion(1048576);
+    struct MetadataOwner {
+        abi::MetadataRelease value{};
+        ~MetadataOwner() { aurora_hosted_metadata_release(&value); }
+    } metadata;
+    metadata.value.region = metadataRegion.id();
+    abi::MetadataCreate create{};
+    create.region = metadataRegion.id();
+    create.counts.coreCounts.bytes = 1;
+    create.counts.coreCounts.types = 66;
+    create.counts.mapCounts.indices = 1;
+    create.counts.mapCounts.views = 1;
+    create.callableCount = 1;
+    create.slotCount = 65;
+    create.instructionBegin = 66;
+    auto *declarations = metadata.value.store.storage.data();
+    aurora_hosted_metadata_create(&create, declarations);
+    require(aurora_hosted_metadata_allocated(declarations) == 1, "initialization metadata fixture allocation failed");
+    const auto descriptor = [&](std::size_t offset) {
+        bytes::NativeOwner result;
+        std::memcpy(&result, declarations + offset, sizeof(result));
+        return result;
+    };
+    const auto set = [&](std::size_t pool, std::int64_t at, const auto &row) {
+        auto owner = descriptor(pool);
+        require(bytes::__au_runtime_values_set(&owner, at, sizeof(row), &row) == 1,
+                "initialization fixture escaped metadata row storage");
+    };
+    auto names = descriptor(abi::metadataStore_bytesOffset);
+    require(bytes::__au_runtime_bytes_set(&names, 0, 'f') == 1, "initialization function name write failed");
+    set(abi::metadataStore_typesOffset, 0, meta::RawTypeRow{});
+    meta::RawTypeRow byte{};
+    byte.typeKind = static_cast<std::int64_t>(aurora::TypeKind::U8);
+    for (std::int64_t at = 0; at < 65; ++at)
+        set(abi::metadataStore_typesOffset, at + 1, byte);
+    meta::CallableRow callable{};
+    callable.nameRange = {0, 1};
+    callable.typeRange = {0, 1};
+    callable.frameBytes = 80;
+    callable.slotRange = {0, 65};
+    set(abi::metadataStore_callablesOffset, 0, callable);
+    for (std::int64_t at = 0; at < 65; ++at)
+        set(abi::metadataStore_slotsOffset, at,
+            meta::SlotRow{static_cast<std::int64_t>(abi::compiler_lowering::RecordKind::ScalarSlot), at + 1, at + 1, 0, 0});
+    set(abi::metadataStore_indicesOffset, 0, meta::IndexRow{0});
+    set(abi::metadataStore_viewsOffset, 0, meta::ViewRow{});
+    require(aurora_hosted_metadata_run(declarations) == static_cast<std::int64_t>(meta::MetadataStatus::success),
+            "initialization fixture metadata did not admit");
+
+    std::size_t successful = 0;
+    const auto exercise = [&](std::size_t allowed, std::uint64_t quota, int stop) {
+        Allocations allocations;
+        allocations.allowed = allowed;
+        bytes::Region region(quota, allocations.allocator());
+        std::int64_t published = 0;
+        bool completed = false, caught = false, releasedIntact = false;
+        try {
+            struct Owner {
+                std::uint64_t before = canary;
+                abi::InitializationRelease value{};
+                std::uint64_t after = canary;
+                bool &releasedIntact;
+                Owner(std::uint64_t region, bool &intact) : releasedIntact(intact) {
+                    value.region = region;
+                    abi::InitializationCreate input{};
+                    input.region = region;
+                    aurora_hosted_initialization_create(&input, value.workspace.storage.data());
+                }
+                ~Owner() {
+                    aurora_hosted_initialization_release(&value);
+                    releasedIntact = before == canary && after == canary;
+                }
+            } owner(region.id(), releasedIntact);
+            auto *workspace = owner.value.workspace.storage.data();
+            const std::array<const void *, 2> roots{workspace, declarations};
+            const auto status = aurora_hosted_initialization_initialize(roots.data(), 0);
+            if (status == static_cast<std::int64_t>(wire::InitializationStatus::success)) {
+                require(aurora_hosted_initialization_word_count(workspace) == 2 &&
+                            aurora_hosted_initialization_write_scalar(roots.data(), 64) == 0 &&
+                            aurora_hosted_initialization_write_scalar(roots.data(), 65) == 0,
+                        "word-boundary seed failed before retention");
+                while (published < 130) {
+                    const auto retained = aurora_hosted_initialization_retain(workspace);
+                    if (retained == -1)
+                        break;
+                    require(retained == published++, "failed resize published a partial ordinal");
+                }
+                completed = published == 130;
+                if (completed) {
+                    require(aurora_hosted_initialization_load(workspace, 0) == 1 &&
+                                aurora_hosted_initialization_current_count(workspace) == 4 &&
+                                aurora_hosted_initialization_retained_count_at(workspace, 129) == 4,
+                            "owner relocation lost an early row, high-bit fact or cached count");
+                    if (stop == 1) {
+                        require(aurora_hosted_initialization_load(workspace, published) == 0 &&
+                                    aurora_hosted_initialization_status(workspace) ==
+                                        static_cast<std::int64_t>(wire::InitializationStatus::invalid),
+                                "invalid retained ordinal did not enter terminal failure");
+                    } else if (stop == 2)
+                        throw std::runtime_error("injected native exception after retention");
+                }
+            }
+            if (!completed || stop == 1) {
+                const auto attempts = allocations.attempted;
+                require(aurora_hosted_initialization_retain(workspace) == -1 &&
+                            aurora_hosted_initialization_load(workspace, 0) == 0 &&
+                            aurora_hosted_initialization_join(workspace, 0) ==
+                                static_cast<std::int64_t>(wire::InitializationJoin::error) &&
+                            aurora_hosted_initialization_retained_count(workspace) == -1 &&
+                            allocations.attempted == attempts,
+                        "terminal owner retried allocation, revived a row or changed its published count");
+                if (!completed)
+                    require(aurora_hosted_initialization_status(workspace) ==
+                                static_cast<std::int64_t>(wire::InitializationStatus::allocation),
+                            "initial or partial-growth allocation failure lost its reason");
+            }
+            require(owner.before == canary && owner.after == canary, "initialization owner escaped generated extent");
+        } catch (const std::runtime_error &error) {
+            caught = std::string(error.what()) == "injected native exception after retention";
+            require(caught && stop == 2, "unexpected native exception in owner sweep");
+        }
+        if (allowed == std::numeric_limits<std::size_t>::max() && quota != 0) {
+            require(completed && caught == (stop == 2), "successful owner did not reach its requested stop");
+            successful = allocations.successful;
+            require(successful == 3 + 1 + 2 * 9,
+                    "retained owners did not grow through capacities 1, 2, 4, ..., 256");
+        } else
+            require(!completed, "allocation prefix unexpectedly completed");
+        const auto metrics = region.metrics();
+        require(releasedIntact, "initialization release escaped generated owner extent");
+        require(allocations.successful == allocations.released && metrics.used == 0 &&
+                    metrics.live_allocations == 0 && metrics.releases == metrics.successful_allocations && region.close(),
+                "creation, partial resize, terminal failure or native exception leaked an owner");
+        ++cases;
+    };
+    exercise(std::numeric_limits<std::size_t>::max(), 1048576, 0);
+    // This includes all three initial pools, the current-word resize, every
+    // retained-word/count growth and refusal after the first pool has resized.
+    for (std::size_t allowed = 0; allowed < successful; ++allowed)
+        exercise(allowed, 1048576, 0);
+    exercise(std::numeric_limits<std::size_t>::max(), 0, 0);
+    exercise(std::numeric_limits<std::size_t>::max(), 1048576, 1);
+    exercise(std::numeric_limits<std::size_t>::max(), 1048576, 2);
+}
+
 void rawInstructionOwnership() {
     namespace wire = aurora::hosted_abi::compiler_ir_instructions;
     context = "instruction owner allocation prefixes and consuming cleanup";
@@ -5184,10 +5347,10 @@ void loweringImplementationSources(const std::vector<aurora::Token> &tokens,
 }
 
 void resolvedCompilerSources(char **paths) {
-    context = "all twenty-eight real compiler modules through production typed lowering";
-    const std::array<std::size_t, 28> arguments{0,  1,  2,  15, 19, 20, 21, 32, 16, 33, 34, 17, 22,
-                                                23, 24, 25, 28, 29, 30, 31, 26, 27, 35, 37, 38, 39, 40, 18};
-    const std::array<std::string, 28> modules{"lexer",
+    context = "all twenty-nine real compiler modules through production typed lowering";
+    const std::array<std::size_t, 29> arguments{0,  1,  2,  15, 19, 20, 21, 32, 16, 33, 34, 17, 22,
+                                                23, 24, 25, 28, 29, 30, 31, 26, 27, 35, 37, 38, 39, 40, 41, 18};
+    const std::array<std::string, 29> modules{"lexer",
                                               "syntax_arena",
                                               "parser",
                                               "resolution_kinds",
@@ -5214,8 +5377,9 @@ void resolvedCompilerSources(char **paths) {
                                               "ir_metadata",
                                               "ir_instruction_storage",
                                               "ir_instructions",
+                                              "ir_initialization",
                                               "frontend"};
-    const std::array<std::vector<std::string>, 28> classNames{{
+    const std::array<std::vector<std::string>, 29> classNames{{
         {"Cursor", "Lexeme"},
         {"ParseFrame", "AstNode", "ChildEdge", "TypeSyntax", "SyntaxNode", "AstArena"},
         {"AdmissionConfig",
@@ -5273,11 +5437,12 @@ void resolvedCompilerSources(char **paths) {
         {},
         {"RawInstructionRow", "RawOperandRow", "CodeRow", "BodyRow", "InstructionCounts", "InstructionStore"},
         {},
+        {"WordPair", "CountPair", "InitializationWorkspace"},
         {},
     }};
     // Frontend's direct imports give this DFS postorder, independent of file argv.
-    std::array<aurora::Program, 28> syntax;
-    std::array<aurora::HostedModule, 28> headers;
+    std::array<aurora::Program, 29> syntax;
+    std::array<aurora::HostedModule, 29> headers;
     const auto resolved = [&] {
         aurora::HostedResolution resolution;
         for (std::size_t index = 0; index < modules.size(); ++index) {
@@ -5409,7 +5574,7 @@ void resolvedCompilerSources(char **paths) {
             ++enums;
         }
     }
-    require(enums == 38 && classes == 71 && fields > 228 && methods > 307 &&
+    require(enums == 40 && classes == 74 && fields > 228 && methods > 307 &&
                 retainedFunctions == module.functions.size() && functions == abi.functions.size() &&
                 sourceFunctionNames == abiFunctionNames,
             "real compiler typed graph omitted or appended an unaccounted declaration");
@@ -7227,7 +7392,7 @@ void rawAggregates() {
 int main(int argc, char **argv) {
     try {
         context = "fixture arguments";
-        require(argc == 42, "expected twenty-eight compiler, six aggregate and seven typed consumer source paths");
+        require(argc == 43, "expected twenty-nine compiler, six aggregate and seven typed consumer source paths");
         grammarExpectations();
         diagnosticExpectations();
         // Table rows cover ordinary semicolon inputs. Keep distinct trivia,
@@ -7377,6 +7542,7 @@ int main(int argc, char **argv) {
         rawResolutionOwnership();
         rawMetadataOwnership();
         rawInstructionOwnership();
+        rawInitializationOwnership();
         rawInstructionAdmission();
         resolvedCompilerSources(argv + 1);
         bootstrapSources(argv + 1);

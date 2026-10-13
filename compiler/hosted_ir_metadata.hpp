@@ -27,6 +27,7 @@ class ValidatedModule;
 class MetadataIngress;
 class InstructionIngress;
 class Instructions;
+class InitializationWorkspace;
 namespace detail {
 class MetadataWriter;
 class InstructionWriter;
@@ -370,6 +371,7 @@ private:
     std::string instructionText(std::size_t begin, std::size_t count) const;
     const void *sourceOwner() const noexcept;
     friend class Instructions;
+    friend class InitializationWorkspace;
     friend class InstructionIngress;
     ClassField fieldAt(std::size_t index) const;
     int indexAt(std::size_t index) const;

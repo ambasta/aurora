@@ -23,7 +23,7 @@ HEADERS = (
     "services.hpp",
     "ir.hpp",
     "ir_layout.hpp",
-    "initialization_facts.hpp",
+    "hosted_ir_initialization.hpp",
     "ir_verify.hpp",
     "hosted_graph.hpp",
     "hosted_ir_metadata.hpp",

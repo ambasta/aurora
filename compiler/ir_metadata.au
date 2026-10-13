@@ -22,7 +22,9 @@ export namespace compiler_ir_metadata {
     auto range_begin(IndexRange range) -> i64 { return range.begin(); }
     auto range_count(IndexRange range) -> i64 { return range.count(); }
     auto name_length(ByteRange name) -> i64 { return name.count(); }
-    auto member(ClassRow row, i64 bit) -> bool { return (row.membership() & bit) != 0; }
+    // input_integrity rejects malformed flags before these reads. Every caller
+    // supplies one of 1, 2, 4 or 8; arithmetic preserves the signed wire fields.
+    auto member(ClassRow row, i64 bit) -> bool { return (row.membership() / bit) % 2 != 0; }
     // Byte-lexicographic order matches std::map<std::string, ...>, including
     // embedded NUL and bytes above ASCII. Names are never C strings.
     auto compare_names(const MetadataStore& store, ByteRange left, ByteRange right) -> i64 {
@@ -135,8 +137,8 @@ export namespace compiler_ir_metadata {
         return 64;
     }
 
-    auto callable_flag(CallableRow row, i64 bit) -> bool { return (row.attributes() & bit) != 0; }
-    auto receiver_flag(ReceiverShape receiver, i64 bit) -> bool { return (receiver.attributes() & bit) != 0; }
+    auto callable_flag(CallableRow row, i64 bit) -> bool { return (row.attributes() / bit) % 2 != 0; }
+    auto receiver_flag(ReceiverShape receiver, i64 bit) -> bool { return (receiver.attributes() / bit) % 2 != 0; }
     auto absent_receiver(ReceiverShape receiver) -> bool {
         const ByteRange name = receiver.name();
         return name.begin() == 0 && name.count() == 0 && receiver.attributes() == 0;
@@ -1010,8 +1012,10 @@ export namespace compiler_ir_metadata {
             const RawTypeRow type = store.type_at(types.begin() + at);
             if (service_type(type)) {
                 const i64 bit = service_bit(type);
-                if ((kinds & bit) != 0) { return fail(store, MetadataError::service_duplicates); }
-                kinds = kinds | bit;
+                if ((kinds / bit) % 2 != 0) { return fail(store, MetadataError::service_duplicates); }
+                // The duplicate check keeps addition equivalent to setting
+                // this single bit; service_bit supplies only 1, 2 or 4.
+                kinds = kinds + bit;
                 at = at + 1;
             } else { leading = false; }
         }

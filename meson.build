@@ -24,13 +24,14 @@ frontend_inputs = files('compiler/lexer.au', 'compiler/syntax_arena.au', 'compil
                         'compiler/frontend.au', 'compiler/ir_graph.au',
                         'compiler/ir_metadata_storage.au', 'compiler/ir_metadata.au',
                         'compiler/ir_instruction_storage.au', 'compiler/ir_instructions.au',
+                        'compiler/ir_initialization.au',
                         'compiler/lowering_common.au', 'compiler/lowering_configuration.au',
                         'compiler/lowering_types.au', 'compiler/lowering_values.au', 'compiler/lowering_frames.au',
                         'compiler/lowering_calls.au', 'compiler/lowering_expressions.au',
                         'compiler/lowering_statements.au', 'compiler/lowering_body.au', 'compiler/lowering.au',
                         'compiler/hosted_lexer.S', 'compiler/hosted_parser.S', 'compiler/hosted_resolver.S',
                         'compiler/hosted_graph.S', 'compiler/hosted_ir_metadata.S',
-                        'compiler/hosted_ir_instructions.S')
+                        'compiler/hosted_ir_instructions.S', 'compiler/hosted_ir_initialization.S')
 frontend_assembly = custom_target(
   'hosted-frontend-assembly', input: frontend_inputs,
   output: ['hosted-frontend.s', 'hosted-frontend.generated.s', 'hosted-frontend.abi.json', 'hosted_frontend_abi.hpp'],
@@ -47,6 +48,7 @@ frontend_host_sources = files('compiler/hosted_lexer.cpp', 'compiler/hosted_pars
                               'compiler/hosted_resolver.cpp', 'compiler/hosted_lowering.cpp',
                               'compiler/hosted_lowering_diagnostics.cpp', 'compiler/hosted_graph.cpp',
                               'compiler/hosted_ir_metadata.cpp', 'compiler/hosted_ir_instructions.cpp',
+                              'compiler/hosted_ir_initialization.cpp',
                               'runtime/hosted_bytes.cpp')
 frontend_library = static_library(
   'hosted-frontend', [frontend_host_sources, frontend_object, frontend_assembly[3]],
