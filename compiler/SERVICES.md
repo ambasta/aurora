@@ -110,8 +110,12 @@ cannot authorize a different kind. A service spill is a private sixteen-byte
 opaque grant/generation pair, disjoint from scalar, object, array, span and owner
 storage. Ordinary loads/stores, aggregate/resource calls and metadata cannot mint
 service authority. Join/backedge loan states agree exactly; returns have no child
-loan. The independent verifier rejects unknown kinds/operations, duplicate or
-reused loans, loan IDs reused for a different static root/kind, ordinary-call bypass and recursive reachable call cycles.
+loan. The independent verifier rejects unknown kinds/operations, simultaneous
+reuse of a live loan ID, IDs reused for a different static root/kind, ordinary-call
+bypass and recursive reachable call cycles. After release, the same ID may name
+the same root/kind again. Source admission checks static declarations and ID
+consistency before native live-state verification; it does not require textual
+acquisition order. This migration remains source-only pending execution qualification.
 
 The existing private packed argument convention remains: R11 holds a borrowed
 argument record; R10 holds a copied result address when needed. Service authority

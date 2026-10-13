@@ -24,6 +24,7 @@
 #include <stdexcept>
 #include <string>
 #include <type_traits>
+#include <tuple>
 #include <sys/resource.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -4751,6 +4752,277 @@ void rawInstructionAdmission() {
         }
         require(allocations.successful == allocations.released && region.metrics().used == 0 && region.close(),
                 "raw instruction admission leaked either owner");
+        ++cases;
+    }
+    // Service admission uses the same raw owners and publication boundary. These
+    // rows deliberately omit live values/calls: only static facts belong here.
+    using Role = lower::OperandRole;
+    struct ServiceSite {
+        Form form;
+        std::vector<std::pair<Role, std::int64_t>> fields;
+    };
+    const auto acquire = [](std::int64_t id, std::int64_t offset = 16, std::int64_t kind = 0) {
+        return ServiceSite{Form::AcquireServiceLoan,
+                           {{Role::LoanId, id}, {Role::Offset, offset}, {Role::ServiceKindId, kind}}};
+    };
+    const auto release = [](std::int64_t id, std::int64_t kind = 0) {
+        return ServiceSite{Form::ReleaseServiceLoan, {{Role::LoanId, id}, {Role::ServiceKindId, kind}}};
+    };
+    const auto operation = [](std::int64_t op, std::int64_t kind, std::int64_t offset = 16,
+                              std::int64_t result = 0) {
+        return ServiceSite{Form::ServiceOperation, {{Role::Offset, offset}, {Role::ServiceOperationId, op},
+                                                  {Role::ResultOffset, result}, {Role::ServiceKindId, kind}}};
+    };
+    struct ServiceCase {
+        std::vector<std::vector<ServiceSite>> bodies;
+        Reason error = Reason::none;
+        std::int64_t firstKind = 0;
+        bool enums = true;
+    };
+    std::vector<ServiceCase> services{
+        {{{}}}, {{{acquire(1)}}},
+        {{{release(1)}}}, // No lexical acquisition or completed call is required statically.
+        {{{release(1, 1), release(INT64_MAX, 2)}}}, // Closed kinds need no matching entry or live loan here.
+        {{{acquire(1), release(1), acquire(1)}}},
+        {{{acquire(7), acquire(7), acquire(7)}}},
+        {{{acquire(1), acquire(1, 32, 1)}}, Reason::service_loan_identity},
+        // Independently pin both identity components before entry-site admission.
+        {{{acquire(1), acquire(1, 32, 0)}}, Reason::service_loan_identity},
+        {{{acquire(1), acquire(1, 16, 1)}}, Reason::service_loan_identity},
+        // A module-wide static failure precedes the first body's dynamic failure.
+        {{{release(1)}, {acquire(0)}}, Reason::service_loan_identity},
+        // Loan identity is scoped to a body, even with reused IDs and other roots.
+        {{{acquire(7)}, {acquire(7, 32, 1)}}},
+        {{{operation(0, 0, 16, 40)}}, Reason::service_sample_result},
+        {{{operation(3, 2, 16, 40)}}, Reason::service_sample_result, 2},
+    };
+    for (const auto id : {INT64_MIN, std::int64_t{-1}, std::int64_t{0}}) {
+        services.push_back({{{acquire(id)}}, Reason::service_loan_identity});
+        services.push_back({{{release(id)}}, Reason::service_release});
+    }
+    for (const auto kind : {std::int64_t{-1}, std::int64_t{3}, INT64_MAX}) {
+        services.push_back({{{acquire(1, 16, kind)}}, Reason::service_loan_root});
+        services.push_back({{{release(1, kind)}}, Reason::service_release});
+        services.push_back({{{operation(1, kind)}}, Reason::service_operation_kind});
+    }
+    for (const auto offset : {INT64_MIN, std::int64_t{0}, std::int64_t{8}, std::int64_t{32}, INT64_MAX}) {
+        services.push_back({{{acquire(1, offset)}}, Reason::service_loan_root});
+        services.push_back({{{operation(1, 0, offset)}}, Reason::service_operation_root});
+    }
+    for (const auto op : {INT64_MIN, std::int64_t{-1}, std::int64_t{5}, INT64_MAX})
+        services.push_back({{{operation(op, 0)}}, Reason::service_operation});
+    for (const auto &[op, kind, offset, reason] :
+         std::vector<std::tuple<std::int64_t, std::int64_t, std::int64_t, Reason>>{
+             {1, 0, 16, Reason::service_put_result}, {2, 1, 32, Reason::service_pixel_result},
+             {4, 2, 16, Reason::service_ack_result}}) {
+        const std::int64_t first = kind == 2 ? 2 : 0;
+        services.push_back({{{operation(op, kind, offset)}}, Reason::none, first});
+        services.push_back({{{operation(op, kind, offset)}}, reason, first, false});
+        services.push_back({{{operation(op, kind, offset, 40)}}, reason, first});
+    }
+    for (const auto &ids : std::vector<std::vector<std::int64_t>>{
+             {INT64_MAX}, {9, 3}, {INT64_MAX, 17, 1}, {99, 17, 3, 1},
+             {INT64_MAX, 4, 4, 3, 1}, {8, 7, 6, 5, 4, 3, 2, 1}}) {
+        std::vector<ServiceSite> sites;
+        for (const auto id : ids) sites.push_back(acquire(id));
+        services.push_back({{sites}});
+        // Reject only after collection/sort, and clean every borrowed scratch lane.
+        sites.push_back(acquire(ids.front(), 32, 1));
+        services.push_back({{sites}, Reason::service_loan_identity});
+    }
+    for (std::size_t mutation = 0; mutation < services.size(); ++mutation) {
+        context = "raw service instruction admission case " + std::to_string(mutation);
+        const auto &test = services[mutation];
+        const auto bodyCount = static_cast<std::int64_t>(test.bodies.size());
+        std::vector<wire::RawInstructionRow> instructions;
+        std::vector<wire::RawOperandRow> operands;
+        std::vector<wire::BodyRow> bodies;
+        std::vector<wire::CodeRow> expected;
+        const auto append = [&](const ServiceSite &site) {
+            wire::RawInstructionRow row{};
+            row.recordKind = static_cast<std::int64_t>(lower::RecordKind::Instruction);
+            row.instructionForm = static_cast<std::int64_t>(site.form);
+            row.operandBegin = static_cast<std::int64_t>(operands.size());
+            row.operandCount = static_cast<std::int64_t>(site.fields.size());
+            instructions.push_back(row);
+            for (const auto &[role, value] : site.fields) {
+                wire::RawOperandRow operand{};
+                operand.operandRole = static_cast<std::int64_t>(role);
+                operand.signedValue = value;
+                operands.push_back(operand);
+            }
+        };
+        for (const auto &sites : test.bodies) {
+            const auto begin = static_cast<std::int64_t>(instructions.size());
+            append({Form::BindServiceParameter, {{Role::Index, 0}, {Role::Offset, 16},
+                                                 {Role::ServiceKindId, test.firstKind}}});
+            append({Form::BindServiceParameter, {{Role::Index, 1}, {Role::Offset, 32},
+                                                 {Role::ServiceKindId, test.firstKind == 2 ? 0 : 1}}});
+            for (const auto &site : sites) append(site);
+            const auto target = static_cast<std::int64_t>(instructions.size()) - begin + 1;
+            append({Form::Jump, {{Role::LabelId, 77}}});
+            append({Form::Label, {{Role::LabelId, 77}}});
+            append({Form::Return, {}});
+            const auto retained = static_cast<std::int64_t>(instructions.size()) - begin;
+            // Normalize away an unreachable label/jump tail before loan sorting.
+            append({Form::Label, {{Role::LabelId, 88}}});
+            append({Form::Jump, {{Role::LabelId, 88}}});
+            bodies.push_back({begin, retained + 2, retained});
+            for (std::int64_t at = 0; at < retained; ++at)
+                expected.push_back({begin + at + 1, at == target - 1 ? target : -1,
+                    at == 0 || at == target ? 7u : at == target - 1 || at == retained - 1 ? 4u : 6u, 0});
+        }
+        Allocations allocations;
+        bytes::Region region(1048576, allocations.allocator());
+        {
+            struct Owners {
+                abi::MetadataRelease metadata{};
+                abi::InstructionsRelease instructions{};
+                ~Owners() {
+                    aurora_hosted_instructions_release(&instructions);
+                    aurora_hosted_metadata_release(&metadata);
+                }
+            } owners;
+            owners.metadata.region = owners.instructions.region = region.id();
+            const std::array<std::string, 3> enumNames{"__au_console_put_result", "__au_display_put_result",
+                                                      "__au_event_ack_result"};
+            std::string names = "fg";
+            std::vector<meta::EnumRow> enums;
+            if (test.enums)
+                for (std::size_t i = 0; i < enumNames.size(); ++i) {
+                    enums.push_back({{static_cast<std::int64_t>(names.size()),
+                                      static_cast<std::int64_t>(enumNames[i].size())}, i == 2 ? 3 : 2});
+                    names += enumNames[i];
+                }
+            abi::MetadataCreate metadata{};
+            metadata.region = region.id();
+            metadata.counts.coreCounts.bytes = static_cast<std::int64_t>(names.size());
+            metadata.counts.coreCounts.types = bodyCount * 3;
+            metadata.counts.mapCounts.enums = static_cast<std::int64_t>(enums.size());
+            metadata.counts.mapCounts.indices = bodyCount;
+            metadata.counts.mapCounts.views = 1;
+            metadata.callableCount = bodyCount;
+            metadata.slotCount = bodyCount * 2;
+            metadata.instructionBegin = bodyCount * 3;
+            auto *declarations = owners.metadata.store.storage.data();
+            aurora_hosted_metadata_create(&metadata, declarations);
+            abi::InstructionsCreate create{};
+            create.region = region.id();
+            create.counts = {static_cast<std::int64_t>(instructions.size()),
+                             static_cast<std::int64_t>(operands.size()), 0, bodyCount};
+            auto *storage = owners.instructions.store.storage.data();
+            aurora_hosted_instructions_create(&create, storage);
+            const auto descriptor = [](const std::byte *owner, std::size_t offset) {
+                bytes::NativeOwner result;
+                std::memcpy(&result, owner + offset, sizeof(result));
+                return result;
+            };
+            const auto set = [&](const std::byte *owner, std::size_t pool, std::int64_t at, const auto &row) {
+                auto target = descriptor(owner, pool);
+                require(bytes::__au_runtime_values_set(&target, at, sizeof(row), &row) == 1,
+                        "raw service row escaped its generated owner pool");
+            };
+            require(aurora_hosted_metadata_allocated(declarations) == 1 &&
+                        aurora_hosted_instructions_allocated(storage) == 1, "raw service allocation failed");
+            auto nameOwner = descriptor(declarations, abi::metadataStore_bytesOffset);
+            for (std::size_t at = 0; at < names.size(); ++at)
+                require(bytes::__au_runtime_bytes_set(&nameOwner, at, names[at]) == 1, "service name write failed");
+            for (std::size_t at = 0; at < enums.size(); ++at)
+                set(declarations, abi::metadataStore_enumsOffset, at, enums[at]);
+            for (std::int64_t body = 0; body < bodyCount; ++body) {
+                for (std::int64_t lane = 0; lane < 3; ++lane) {
+                    meta::RawTypeRow type{};
+                    type.typeKind = lane == 0 ? 0 : lane == 1 ? 14 + test.firstKind : test.firstKind == 2 ? 14 : 15;
+                    set(declarations, abi::metadataStore_typesOffset, body * 3 + lane, type);
+                }
+                meta::CallableRow callable{};
+                callable.nameRange = {body, 1};
+                callable.typeRange = {body * 3, 3};
+                callable.frameBytes = 32;
+                callable.slotRange = {body * 2, 2};
+                set(declarations, abi::metadataStore_callablesOffset, body, callable);
+                for (std::int64_t lane = 0; lane < 2; ++lane)
+                    set(declarations, abi::metadataStore_slotsOffset, body * 2 + lane,
+                        meta::SlotRow{14, (lane + 1) * 16, 0, 0, 0});
+                set(declarations, abi::metadataStore_indicesOffset, body, meta::IndexRow{body});
+                auto declared = bodies[body];
+                declared.retainedCount = declared.codeCapacity;
+                set(storage, abi::instructionStore_bodiesOffset, body, declared);
+            }
+            set(declarations, abi::metadataStore_viewsOffset, 0, meta::ViewRow{});
+            require(aurora_hosted_metadata_run(declarations) == static_cast<std::int64_t>(meta::MetadataStatus::success),
+                    "raw service declarations failed metadata admission");
+            for (std::size_t at = 0; at < instructions.size(); ++at) {
+                set(storage, abi::instructionStore_instructionsOffset, at, instructions[at]);
+                set(storage, abi::instructionStore_codeOrderOffset, at,
+                    wire::CodeRow{static_cast<std::int64_t>(at + 1), -1, 0, 0});
+            }
+            for (std::size_t at = 0; at < operands.size(); ++at)
+                set(storage, abi::instructionStore_operandsOffset, at, operands[at]);
+            const auto metadataSnapshot = [&] {
+                std::vector<std::byte> snapshot(owners.metadata.store.storage.begin(), owners.metadata.store.storage.end());
+                for (const auto pool : {abi::metadataStore_bytesOffset, abi::metadataStore_typesOffset,
+                                       abi::metadataStore_classesOffset, abi::metadataStore_fieldsOffset,
+                                       abi::metadataStore_storageOffset, abi::metadataStore_indicesOffset,
+                                       abi::metadataStore_descriptorsOffset, abi::metadataStore_viewsOffset,
+                                       abi::metadataStore_enumsOffset, abi::metadataStore_callablesOffset,
+                                       abi::metadataStore_slotsOffset, abi::metadataStore_resultsOffset,
+                                       abi::metadataStore_framesOffset}) {
+                    const auto data = region.observeMetadataBytes(descriptor(declarations, pool));
+                    snapshot.insert(snapshot.end(), data.begin(), data.end());
+                }
+                return snapshot;
+            };
+            const auto before = metadataSnapshot();
+            const auto attempted = allocations.attempted;
+            const std::array<const void *, 2> roots{storage, declarations};
+            require(aurora_hosted_instructions_admit(roots.data()) == static_cast<std::int64_t>(wire::InstructionStatus::admitted)
+                        && aurora_hosted_instructions_publish(storage) == 0, "raw service transport was not admitted");
+            const bool invalid = test.error != Reason::none;
+            const auto status = static_cast<std::int64_t>(invalid ? wire::InstructionStatus::invalid
+                                                                : wire::InstructionStatus::structured);
+            require(aurora_hosted_instructions_structure(roots.data()) == status &&
+                        aurora_hosted_instructions_error(storage) == static_cast<std::int64_t>(test.error),
+                    "raw service static status or diagnostic differs");
+            const auto codeOwner = descriptor(storage, abi::instructionStore_codeOrderOffset);
+            std::size_t expectedAt = 0;
+            for (const auto &body : bodies) {
+                for (std::int64_t at = 0; at < body.retainedCount; ++at) {
+                    wire::CodeRow code{};
+                    bytes::__au_runtime_values_at(&codeOwner, body.codeBegin + at, sizeof(code), &code);
+                    const auto &wanted = expected[expectedAt++];
+                    require(code.instructionId == wanted.instructionId && code.targetPosition == wanted.targetPosition &&
+                                code.flowFlags == wanted.flowFlags && code.scratchValue == 0,
+                            "service sort changed retained identity/order/target/flags or retained scratch");
+                }
+                for (std::int64_t tail = 0; tail < 2; ++tail) {
+                    wire::CodeRow code{};
+                    bytes::__au_runtime_values_at(&codeOwner, body.codeBegin + body.retainedCount + tail, sizeof(code), &code);
+                    require(code.instructionId == body.codeBegin + body.retainedCount + tail + 1 &&
+                                code.targetPosition == (tail == 0 ? -1 : body.retainedCount) &&
+                                code.flowFlags == (tail == 0 ? 3u : 0u) && code.scratchValue == -1,
+                            "service sort touched the discarded post-CFG capacity tail");
+                }
+            }
+            require(allocations.attempted == attempted && metadataSnapshot() == before,
+                    "service static admission allocated or mutated metadata");
+            if (invalid)
+                require(aurora_hosted_instructions_publish(storage) == 0 &&
+                            aurora_hosted_instructions_admit(roots.data()) == status &&
+                            aurora_hosted_instructions_structure(roots.data()) == status &&
+                            aurora_hosted_instructions_publish(storage) == 0 && allocations.attempted == attempted,
+                        "failed service static admission published, reopened or allocated");
+            else
+                require(aurora_hosted_instructions_publish(storage) == 1 &&
+                            aurora_hosted_instructions_structure(roots.data()) ==
+                                static_cast<std::int64_t>(wire::InstructionStatus::published) &&
+                            aurora_hosted_instructions_publish(storage) == 0,
+                        "service publication failed to close normalized storage");
+            require(metadataSnapshot() == before && allocations.attempted == attempted,
+                    "service publication or terminal retry allocated or mutated metadata");
+        }
+        require(allocations.successful == allocations.released && region.metrics().used == 0 && region.close(),
+                "raw service admission leaked an owner");
         ++cases;
     }
 }

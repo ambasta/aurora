@@ -448,6 +448,61 @@ int main() {
         m.functions[0].code.erase(m.functions[0].code.begin() + 4);
         m.functions[0].code.erase(m.functions[0].code.begin() + 2);
     }); // An ordinary helper result never relaxes the native report's exact type.
+    // Same static report declaration, but inactive, ended or initialized along
+    // the executed path: these must remain native lifetime/pristine checks.
+    bad(sample(), [](auto &m) {
+        m.functions[0].code.erase(m.functions[0].code.begin() + 1);
+    }, "service observation requires exact pristine active copied sample object");
+    bad(sample(), [](auto &m) {
+        m.functions[0].code.insert(m.functions[0].code.begin() + 2, EndObject{40});
+    }, "service observation requires exact pristine active copied sample object");
+    bad(sample(), [](auto &m) {
+        m.functions[0].code.insert(m.functions[0].code.begin() + 2, {Constant{0, Type::Bool}, Store{40, Type::Bool}});
+    }, "service observation cannot overwrite initialized sample storage");
+    bad(sample(), [](auto &m) {
+        const auto name = std::string(service::sampleName);
+        m.classLayouts["OtherSample"] = m.classLayouts.at(name);
+        m.classFields["OtherSample"] = m.classFields.at(name);
+        m.functions[0].objectSlots.at(40).className = "OtherSample";
+    }, "service observation requires exact pristine active copied sample object");
+    bad(sample(), [](auto &m) {
+        m.enumCases.erase(std::string(service::putResultName));
+        m.functions[0].code[2] = ServiceOperation{16, service::Operation::Put, 0};
+    }, "put requires closed enum result and no object storage");
+    bad(sample(), [](auto &m) {
+        m.functions[0].code[2] = ServiceOperation{16, service::Operation::Put, 0};
+    }, "missing or mistyped current value"); // Static declaration is valid; no current byte exists.
+    bad(sample(), [](auto &m) {
+        m.functions[0].frameBytes = 64;
+        m.functions[0].serviceSlots.insert(64);
+        std::get<ServiceOperation>(m.functions[0].code[2]).offset = 64;
+    }, "service operation requires active unsuspended capability provenance"); // Declared spill is not an entry root.
+    bad(forwarded(), [](auto &m) {
+        m.functions[0].frameBytes = 64;
+        m.functions[0].serviceSlots.insert(64);
+        std::get<AcquireServiceLoan>(m.functions[0].code[1]).offset = 64;
+    }, "service loan requires unsuspended parameter authority");
+    for (const int id : {-1, 0}) {
+        bad(forwarded(), [=](auto &m) {
+            std::get<AcquireServiceLoan>(m.functions[0].code[1]).loanId = id;
+        }, "service loan identity cannot change static root or kind");
+        bad(forwarded(), [=](auto &m) {
+            std::get<ReleaseServiceLoan>(m.functions[0].code[5]).loanId = id;
+        }, "service release requires exactly one completed helper call");
+    }
+    for (const auto kind : {static_cast<service::Kind>(-1), static_cast<service::Kind>(999)})
+        bad(forwarded(), [=](auto &m) {
+            std::get<ReleaseServiceLoan>(m.functions[0].code[5]).kind = kind;
+        }, "service release requires exactly one completed helper call");
+    // Same ID and root pass the source identity check; the second acquisition
+    // still fails because the first loan is live on this path.
+    bad(forwarded(), [](auto &m) {
+        m.functions[0].code.insert(m.functions[0].code.begin() + 2, AcquireServiceLoan{1, 16});
+    }, "service loan requires unsuspended parameter authority");
+    bad(forwarded(), [](auto &m) {
+        m.functions[0].code.insert(m.functions[0].code.begin() + 2, AcquireServiceLoan{1, 16});
+        std::get<ServiceOperation>(m.functions[1].code[3]).resultOffset = 24;
+    }, "put requires closed enum result and no object storage"); // Later static failure precedes earlier live-loan failure.
     auto reused = forwarded();
     auto &reusedCode = reused.functions[0].code;
     reusedCode.insert(reusedCode.end() - 1,
@@ -505,19 +560,19 @@ int main() {
     });
     bad(sample(), [](auto &m) {
         std::get<ServiceOperation>(m.functions[0].code[2]).offset = 32;
-    });
+    }, "service operation requires active unsuspended capability provenance");
     bad(sample(), [](auto &m) {
         std::get<ServiceOperation>(m.functions[0].code[2]).operation = static_cast<service::Operation>(999);
-    });
+    }, "unknown sealed service operation");
     bad(sample(), [](auto &m) {
         std::get<ServiceOperation>(m.functions[0].code[2]).resultOffset = 32;
-    });
+    }, "service observation requires exact pristine active copied sample object");
     bad(sample(), [](auto &m) {
         m.functions[0].code.insert(m.functions[0].code.begin() + 3, ServiceOperation{16, service::Operation::Next, 40});
-    });
+    }, "service observation requires exact pristine active copied sample object");
     bad(sample(), [](auto &m) {
         m.functions[0].code.insert(m.functions[0].code.begin() + 2, AcquireServiceLoan{1, 16});
-    });
+    }, "service operation requires active unsuspended capability provenance");
     bad(sample(), [](auto &m) {
         m.classLayouts[std::string(service::sampleName)][0] = Type::U64;
     });
@@ -544,7 +599,7 @@ int main() {
     });
     bad(forwarded(), [](auto &m) {
         m.functions[0].code.insert(m.functions[0].code.begin() + 2, ReleaseServiceLoan{1});
-    });
+    }, "service release requires exactly one completed helper call");
     bad(forwarded(), [](auto &m) {
         m.functions[0].code.insert(m.functions[0].code.begin() + 5, ServiceCall{"putter", 1, 0, {0, 0}});
     }, "service helper requires an unused loan with exact provenance");

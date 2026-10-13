@@ -118,6 +118,9 @@ static_assert(static_cast<std::int64_t>(lowering::InstructionForm::BindServicePa
               static_cast<std::int64_t>(lowering::InstructionForm::BindRegionParameter) == 73 &&
               static_cast<std::int64_t>(lowering::InstructionForm::BindBytesParameter) == 74 &&
               static_cast<std::int64_t>(lowering::InstructionForm::BindOwnedObjectParameter) == 79);
+static_assert(static_cast<std::int64_t>(lowering::InstructionForm::AcquireServiceLoan) == 1 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::ReleaseServiceLoan) == 2 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::ServiceOperation) == 3);
 static_assert(static_cast<std::int64_t>(lowering::InstructionForm::ServiceCall) == 4 &&
               static_cast<std::int64_t>(lowering::InstructionForm::Call) == 19 &&
               static_cast<std::int64_t>(lowering::InstructionForm::AggregateCall) == 20 &&
@@ -166,9 +169,28 @@ static_assert(static_cast<std::int64_t>(Role::LoanId) == 4 && static_cast<std::i
               static_cast<std::int64_t>(Role::RegionOffset) == 34 &&
               static_cast<std::int64_t>(Role::SecondReceiverOffset) == 98 &&
               static_cast<std::int64_t>(Role::SecondLoanId) == 99);
+static_assert(static_cast<std::int64_t>(Role::ServiceOperationId) == 5);
 static_assert(static_cast<std::int64_t>(service::Kind::Console) == 0 &&
               static_cast<std::int64_t>(service::Kind::Display) == 1 &&
               static_cast<std::int64_t>(service::Kind::IommuEvent) == 2);
+static_assert(static_cast<std::int64_t>(service::Operation::Next) == 0 &&
+              static_cast<std::int64_t>(service::Operation::Put) == 1 &&
+              static_cast<std::int64_t>(service::Operation::Pixel) == 2 &&
+              static_cast<std::int64_t>(service::Operation::IommuPoll) == 3 &&
+              static_cast<std::int64_t>(service::Operation::IommuAcknowledge) == 4);
+// Source operation/kind admission is tied to the closed service table as well
+// as its wire ordinals. It does not retain a second native service schema.
+static_assert(service::operations.size() == 5 &&
+              service::operations[0].operation == service::Operation::Next &&
+              service::operations[0].kind == service::Kind::Console &&
+              service::operations[1].operation == service::Operation::Put &&
+              service::operations[1].kind == service::Kind::Console &&
+              service::operations[2].operation == service::Operation::Pixel &&
+              service::operations[2].kind == service::Kind::Display &&
+              service::operations[3].operation == service::Operation::IommuPoll &&
+              service::operations[3].kind == service::Kind::IommuEvent &&
+              service::operations[4].operation == service::Operation::IommuAcknowledge &&
+              service::operations[4].kind == service::Kind::IommuEvent);
 static_assert(static_cast<std::int64_t>(Role::TypeId) == 12 && static_cast<std::int64_t>(Role::OperandTypeId) == 14 &&
               static_cast<std::int64_t>(Role::SourceTypeId) == 15 && static_cast<std::int64_t>(Role::ResultTypeId) == 16 &&
               static_cast<std::int64_t>(Role::ElementTypeId) == 18 && static_cast<std::int64_t>(Role::ReferenceTypeId) == 20);

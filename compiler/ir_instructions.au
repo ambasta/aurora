@@ -4,9 +4,9 @@ import aurora.compiler.ir_metadata;
 
 // Generic durable transport admission precedes the sole native field walk for
 // exact opcode shapes. Source admission normalizes every body, then checks all
-// entry bindings, static call sites, storage accesses and scalar computations
-// against readonly metadata. Native verification keeps dynamic value/type,
-// lifetime, provenance and joins.
+// entry bindings, static call sites, storage accesses, scalar computations and
+// service contracts against readonly metadata. Native verification keeps
+// dynamic value/type, lifetime, provenance and joins.
 export namespace compiler_ir_instructions {
     auto bounded_range(i64 begin, i64 count, i64 limit) -> bool {
         return begin >= 0 && count >= 0 && begin <= limit && count <= limit - begin;
@@ -1323,6 +1323,115 @@ export namespace compiler_ir_instructions {
         }
         return true;
     }
+    auto service_entry_matches(const InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 callable, i64 offset, i64 kind) -> bool {
+        const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(callable);
+        const compiler_ir_metadata::IndexRange types = declaration.types();
+        // Entry admission already proved the exact kind and spill declaration.
+        // At most six parameter rows are inspected; no root index is retained.
+        i64 position = 0;
+        while (position < types.count() - 1) {
+            const RawInstructionRow row = entry_instruction(store, callable, position);
+            if (row.form() == 0 && entry_value(store, row, 1) == offset && entry_value(store, row, 2) == kind) {
+                return true;
+            }
+            position = position + 1;
+        }
+        return false;
+    }
+    auto service_result_enums(const compiler_ir_metadata::MetadataStore& metadata) -> u64 {
+        // Presence only: metadata has already checked each declared sealed
+        // enum's cardinality. Scan once rather than once per service operation.
+        u64 result = 0u64;
+        i64 at = 0;
+        while (at < metadata.enum_count()) {
+            const compiler_ir_metadata::EnumRow row = metadata.enum_at(at);
+            if (compiler_ir_metadata::named(metadata, row.name(), "__au_console_put_result")) { result = result | 1u64; }
+            if (compiler_ir_metadata::named(metadata, row.name(), "__au_display_put_result")) { result = result | 2u64; }
+            if (compiler_ir_metadata::named(metadata, row.name(), "__au_event_ack_result")) { result = result | 4u64; }
+            at = at + 1;
+        }
+        return result;
+    }
+    auto verify_service_instruction(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 callable, i64 instruction, u64 result_enums) -> bool {
+        const RawInstructionRow row = store.instruction_at(instruction);
+        const i64 form = row.form();
+        if (form == 1) { // AcquireServiceLoan: positivity and stable ID roots were checked for this body.
+            if (!service_entry_matches(store, metadata, callable,
+                call_value(store, instruction, 1), call_value(store, instruction, 2))) {
+                return fail(store, InstructionError::service_loan_root);
+            }
+            return true;
+        }
+        if (form == 2) { // ReleaseServiceLoan: the executed path decides which loan is live and called.
+            const i64 kind = call_value(store, instruction, 1);
+            if (call_value(store, instruction, 0) <= 0 || kind < 0 || kind > 2) {
+                return fail(store, InstructionError::service_release);
+            }
+            return true;
+        }
+        if (form != 3) { return true; } // BindServiceParameter and ServiceCall were admitted in earlier phases.
+        const i64 operation = call_value(store, instruction, 1);
+        if (operation < 0 || operation > 4) { return fail(store, InstructionError::service_operation); }
+        i64 expected_kind = 0; // Console: Next, Put
+        if (operation == 2) { expected_kind = 1; } // Display: Pixel
+        if (operation >= 3) { expected_kind = 2; } // IommuEvent: Poll, Acknowledge
+        const i64 kind = call_value(store, instruction, 3);
+        if (kind != expected_kind) { return fail(store, InstructionError::service_operation_kind); }
+        if (!service_entry_matches(store, metadata, callable, call_value(store, instruction, 0), kind)) {
+            return fail(store, InstructionError::service_operation_root);
+        }
+        const i64 result_offset = call_value(store, instruction, 2);
+        if (operation == 2) {
+            if (result_offset != 0 || (result_enums & 2u64) == 0u64) {
+                return fail(store, InstructionError::service_pixel_result);
+            }
+            return true;
+        }
+        if (operation == 1) {
+            if (result_offset != 0 || (result_enums & 1u64) == 0u64) {
+                return fail(store, InstructionError::service_put_result);
+            }
+            return true;
+        }
+        if (operation == 4) {
+            if (result_offset != 0 || (result_enums & 4u64) == 0u64) {
+                return fail(store, InstructionError::service_ack_result);
+            }
+            return true;
+        }
+        // Next/Poll require an exact declared copied sample root. Its nominal
+        // class and physical layout were sealed by metadata admission; active,
+        // pristine and initialized state remains solely in the native verifier.
+        const i64 slot_index = entry_slot(metadata, callable, 11, result_offset);
+        if (slot_index < 0) { return fail(store, InstructionError::service_sample_result); }
+        const compiler_ir_metadata::SlotRow slot = metadata.slot_at(slot_index);
+        const compiler_ir_metadata::RawTypeRow type = metadata.type_at(slot.type());
+        if ((operation == 0 && !compiler_ir_metadata::named(metadata, type.name(), "__au_console_sample"))
+            || (operation == 3 && !compiler_ir_metadata::named(metadata, type.name(), "__au_iommu_event_sample"))) {
+            return fail(store, InstructionError::service_sample_result);
+        }
+        return true;
+    }
+    auto verify_service_instructions(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata) -> bool {
+        const u64 result_enums = service_result_enums(metadata);
+        i64 callable = 0;
+        while (callable < store.body_count()) {
+            // A body's stable loan identities precede its site contracts. The
+            // bounded scratch sort borrows no native state and clears its lanes.
+            if (!store.verify_service_loan_roots(callable)) { return false; }
+            const BodyRow body = store.body_at(callable);
+            i64 position = 0;
+            while (position < body.count()) {
+                const CodeRow code = store.code_at(body.begin() + position);
+                if (!verify_service_instruction(store, metadata, callable, code.id(), result_enums)) { return false; }
+                position = position + 1;
+            }
+            callable = callable + 1;
+        }
+        return true;
+    }
     auto admit_instruction_bodies(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata)
         -> InstructionStatus {
         if (store.status() != InstructionStatus::admitted) { return store.status(); }
@@ -1341,12 +1450,15 @@ export namespace compiler_ir_instructions {
             callable = callable + 1;
         }
         // All entry contracts precede all call contracts, then all storage
-        // contracts precede all scalar computations before the first native
-        // State in any body. Separate passes preserve this module-wide order:
+        // contracts precede all scalar computations and then service contracts
+        // before the first native State in any body. Separate passes preserve
+        // this module-wide order:
         // a later static error can precede an earlier dynamic value/lifetime
         // error; source rejection remains terminal and unpublished.
         if (!verify_call_sites(store, metadata) || !verify_storage_accesses(store, metadata)
-            || !verify_scalar_computations(store, metadata)) { return store.status(); }
+            || !verify_scalar_computations(store, metadata) || !verify_service_instructions(store, metadata)) {
+            return store.status();
+        }
         return store.status();
     }
 }

@@ -323,17 +323,17 @@ int main(int argc, char **argv) {
     });
     bad(groupForwarded(), [](auto &m) {
         std::get<AcquireServiceLoan>(m.functions.back().code[3]).loanId = 1;
-    });
+    }, "service loan identity cannot change static root or kind"); // Both sites have exact entry roots/kinds.
     bad(groupForwarded(), [](auto &m) {
         std::get<AcquireServiceLoan>(m.functions.back().code[3]).offset = 16;
-    });
+    }, "service loan requires unsuspended parameter authority");
     bad(groupForwarded(), [](auto &m) {
         std::get<AcquireServiceLoan>(m.functions.back().code[3]).kind = service::Kind::Console;
-    });
+    }, "service loan requires unsuspended parameter authority");
     bad(groupForwarded(), [](auto &m) {
         m.functions.back().code.insert(m.functions.back().code.begin() + 4,
                                        AcquireServiceLoan{3, 32, service::Kind::Display});
-    });
+    }, "service loan requires unsuspended parameter authority");
     bad(groupForwarded(), [](auto &m) {
         m.functions.back().code[4] = Call{"group_leaf"};
     });
@@ -351,7 +351,7 @@ int main(int argc, char **argv) {
                      ReleaseServiceLoan{1, service::Kind::Display},
                      Constant{0, Type::I64}});
         m.functions.push_back(displayPixel().functions[0]);
-    }); // A released ID cannot acquire a different root/kind at another static site.
+    }, "service loan identity cannot change static root or kind"); // Both acquisitions exactly match their own entry.
 
     // Only the borrowed roots are suspended; neither may be reused while suspended.
     bad(groupSubsets(true), [](auto &m) {

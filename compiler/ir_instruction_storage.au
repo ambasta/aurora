@@ -399,7 +399,27 @@ export namespace compiler_ir_instructions {
         //: invalid typed IR: non-scalar comparison
         comparison_scalar,
         //: invalid typed IR: ordered bool comparison or enum comparison
-        comparison_ordered
+        comparison_ordered,
+        //: invalid typed IR: service loan identity cannot change static root or kind
+        service_loan_identity,
+        //: invalid typed IR: service loan requires unsuspended parameter authority
+        service_loan_root,
+        //: invalid typed IR: service release requires exactly one completed helper call
+        service_release,
+        //: invalid typed IR: unknown sealed service operation
+        service_operation,
+        //: invalid typed IR: service operation kind does not match active capability
+        service_operation_kind,
+        //: invalid typed IR: service operation requires active unsuspended capability provenance
+        service_operation_root,
+        //: invalid typed IR: pixel requires closed enum result and no object storage
+        service_pixel_result,
+        //: invalid typed IR: put requires closed enum result and no object storage
+        service_put_result,
+        //: invalid typed IR: acknowledge requires closed enum result and no object storage
+        service_ack_result,
+        //: invalid typed IR: service observation requires exact pristine active copied sample object
+        service_sample_result
     };
     // The eight OutputRow-width leaves remain raw integers. The codec preserves
     // unknown scalar operators for source admission to reject without enum
@@ -517,9 +537,10 @@ export namespace compiler_ir_instructions {
         builtin::OwnedValues<BodyRow> bodies;
         InstructionStatus statusValue;
         InstructionError errorValue;
-        // All structural mutation is private and runs only while admitted.
-        // Scratch is reused in three disjoint phases: a sorted label-position
-        // index, the reachability queue, then old-to-normalized positions.
+        // Structural mutation is private and runs only while admitted. Scratch
+        // holds a sorted label-position index, the reachability queue, then
+        // old-to-normalized positions. Structured service identity admission
+        // later reuses only retained, cleared lanes for immutable instruction IDs.
         auto flow_at(BodyRow body, i64 position) const -> CodeRow {
             const CodeRow result = codeOrder.at(body.begin() + position);
             return result;
@@ -609,6 +630,46 @@ export namespace compiler_ir_instructions {
             if (begin == count || indexed_label(body, begin) != label) { return -1; }
             const CodeRow slot = flow_at(body, begin);
             return slot.scratch();
+        }
+        // AcquireServiceLoan's codec-checked leaves are LoanId, Offset and
+        // ServiceKindId. Scratch references immutable instruction IDs here,
+        // never normalized positions or service authority indexed by loan ID.
+        auto indexed_service_loan_operand(BodyRow body, i64 index, i64 field) const -> i64 {
+            const CodeRow slot = flow_at(body, index);
+            const RawInstructionRow row = instructions.at(slot.scratch() - 1);
+            const RawOperandRow operand = operands.at(row.operand_begin() + field);
+            return operand.signed_value();
+        }
+        auto sift_service_loans(BodyRow body, i64 root, i64 count) -> bool {
+            i64 current = root;
+            // Bound the child arithmetic before multiplying. Compare IDs
+            // directly so sparse extreme values cannot overflow a difference.
+            while (current < count / 2) {
+                i64 child = current * 2 + 1;
+                if (child + 1 < count
+                    && indexed_service_loan_operand(body, child, 0) < indexed_service_loan_operand(body, child + 1, 0)) {
+                    child = child + 1;
+                }
+                if (indexed_service_loan_operand(body, current, 0) >= indexed_service_loan_operand(body, child, 0)) {
+                    return true;
+                }
+                if (!swap_scratch(body, current, child)) { return false; }
+                current = child;
+            }
+            return true;
+        }
+        auto sort_service_loans(BodyRow body, i64 count) -> bool {
+            i64 root = count / 2;
+            while (root > 0) {
+                root = root - 1;
+                if (!sift_service_loans(body, root, count)) { return false; }
+            }
+            i64 end = count;
+            while (end > 1) {
+                end = end - 1;
+                if (!swap_scratch(body, 0, end) || !sift_service_loans(body, 0, end)) { return false; }
+            }
+            return true;
         }
         auto returning(i64 form) const -> bool {
             // Return, ReturnObject, ReturnSpan, ReturnBytes, ReturnOwnedObject.
@@ -804,7 +865,7 @@ export namespace compiler_ir_instructions {
             return result;
         }
         auto reject(InstructionError reason) -> bool {
-            // Entry, call and storage admission follow complete CFG normalization.
+            // Static semantic admission follows complete CFG normalization.
             // A rejected normalized body loses publication authority permanently.
             if (statusValue == InstructionStatus::pending || statusValue == InstructionStatus::admitted
                 || statusValue == InstructionStatus::structured) {
@@ -838,6 +899,48 @@ export namespace compiler_ir_instructions {
             }
             statusValue = InstructionStatus::structured;
             return statusValue;
+        }
+        // The narrow post-normalization mutation surface checks body-wide loan
+        // identity without imposing lexical acquisition/release ordering. It
+        // uses O(N + A log A) time and the first A retained scratch lanes only.
+        auto verify_service_loan_roots(i64 callable) -> bool {
+            if (statusValue != InstructionStatus::structured) { return false; }
+            if (callable < 0 || callable >= body_count()) { return reject(InstructionError::integrity); }
+            const BodyRow body = bodies.at(callable);
+            i64 loans = 0;
+            i64 at = 0;
+            bool valid = true;
+            while (at < body.count()) {
+                const CodeRow code = flow_at(body, at);
+                const RawInstructionRow row = instructions.at(code.id() - 1);
+                // AcquireServiceLoan is pinned to raw form 1 by the binding.
+                if (row.form() == 1) {
+                    const RawOperandRow loan = operands.at(row.operand_begin());
+                    if (loan.signed_value() <= 0) { valid = false; }
+                    if (!set_scratch(body, loans, code.id())) { return false; }
+                    loans = loans + 1;
+                }
+                at = at + 1;
+            }
+            if (valid && !sort_service_loans(body, loans)) { return false; }
+            at = 1;
+            while (valid && at < loans) {
+                if (indexed_service_loan_operand(body, at - 1, 0) == indexed_service_loan_operand(body, at, 0)
+                    && (indexed_service_loan_operand(body, at - 1, 1) != indexed_service_loan_operand(body, at, 1)
+                        || indexed_service_loan_operand(body, at - 1, 2) != indexed_service_loan_operand(body, at, 2))) {
+                    valid = false;
+                }
+                at = at + 1;
+            }
+            // Defer semantic rejection until exactly the collected lanes are
+            // cleared. Dropped capacity tails are neither read nor modified.
+            at = 0;
+            while (at < loans) {
+                if (!set_scratch(body, at, 0)) { return false; }
+                at = at + 1;
+            }
+            if (!valid) { return reject(InstructionError::service_loan_identity); }
+            return true;
         }
         auto publish() -> bool {
             if (statusValue != InstructionStatus::structured) { return false; }
