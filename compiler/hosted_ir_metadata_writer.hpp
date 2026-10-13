@@ -11,6 +11,7 @@ class MetadataWriter {
     Counts position_{};
     std::int64_t callableCount_ = 0;
     std::int64_t slotCount_ = 0;
+    std::int64_t instructionBegin_ = -1;
     bool allocated_ = false;
     void type(std::int64_t position, const Type &value);
 
@@ -25,6 +26,9 @@ public:
         return slotCount_;
     }
     void allocate();
+    void declarations(const Module &module);
+    void beginInstructions();
+    std::int64_t instructionType(const Type &value);
     hosted_abi::compiler_ir_metadata::ByteRange text(std::string_view value);
     void leaf(const Type &value);
     void callableType(const Type &value);

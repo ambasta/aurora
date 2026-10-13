@@ -12,6 +12,7 @@
 #include <csignal>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -55,6 +56,15 @@ void checked_hosted_resolver_status(const void *, void *);
 void aurora_hosted_metadata_create(const void *, void *) noexcept;
 void aurora_hosted_metadata_release(void *) noexcept;
 std::int64_t aurora_hosted_metadata_allocated(const void *) noexcept;
+std::int64_t aurora_hosted_metadata_run(void *) noexcept;
+void aurora_hosted_instructions_create(const void *, void *) noexcept;
+void aurora_hosted_instructions_release(void *) noexcept;
+std::int64_t aurora_hosted_instructions_allocated(const void *) noexcept;
+std::int64_t aurora_hosted_instructions_admit(const void *) noexcept;
+std::int64_t aurora_hosted_instructions_error(const void *) noexcept;
+std::int64_t aurora_hosted_instructions_retain_code(void *, const void *) noexcept;
+std::int64_t aurora_hosted_instructions_truncate_body(void *, const void *) noexcept;
+std::int64_t aurora_hosted_instructions_publish(void *) noexcept;
 }
 
 using AbiEntry = void (*)(const void *, const void *, void *);
@@ -3915,7 +3925,7 @@ void resolvedModules() {
     const auto answerCallable = metadata.callable(answer.callableId);
     require(answerCallable.name() == "answer" && answerCallable.moduleScope() == 0 && !answerCallable.receiver(),
             "root callable identity or dependency order differs");
-    const auto constructors = typedInstructions<aurora::ir::MethodCall>(answer);
+    const auto constructors = typedInstructions<aurora::ir::MethodCallObservation>(answer);
     require(constructors.size() == 3 && constructors[0].callee == constructors[2].callee &&
                 constructors[0].callee == "__au_k_m1_3dep_n2_3lib6Buffer_d6Buffer_t2_u8_v3" &&
                 constructors[1].callee == "__au_k_m1_3dep_n2_3lib6Buffer_d6Buffer_t2_u8_v4" &&
@@ -4415,6 +4425,7 @@ void rawMetadataOwnership() {
         input.counts.mapCounts.views = 1;
         input.callableCount = 1;
         input.slotCount = 2;
+        input.instructionBegin = input.counts.coreCounts.types;
         aurora_hosted_metadata_create(&input, record.value.store.storage.data());
         const bool allocated = aurora_hosted_metadata_allocated(record.value.store.storage.data()) != 0;
         require(allocated == expected, "metadata owner allocation status differs");
@@ -4439,6 +4450,153 @@ void rawMetadataOwnership() {
     for (std::size_t allowed = 0; allowed < successful; ++allowed)
         exercise(allowed, 1048576, false);
     exercise(std::numeric_limits<std::size_t>::max(), 0, false);
+}
+
+void rawInstructionOwnership() {
+    context = "instruction owner allocation prefixes and consuming cleanup";
+    const auto exercise = [&](std::size_t allowed, std::uint64_t quota, bool expected) {
+        Allocations allocations;
+        allocations.allowed = allowed;
+        aurora::hosted::bytes::Region region(quota, allocations.allocator());
+        struct GuardedOwner {
+            std::uint64_t before = canary;
+            aurora::hosted_abi::InstructionsRelease value{};
+            std::uint64_t after = canary;
+        } record;
+        record.value.region = region.id();
+        aurora::hosted_abi::InstructionsCreate input{};
+        input.region = region.id();
+        input.counts = {3, 5, 4, 2};
+        aurora_hosted_instructions_create(&input, record.value.store.storage.data());
+        require((aurora_hosted_instructions_allocated(record.value.store.storage.data()) != 0) == expected,
+                "instruction owner allocation status differs");
+        if (expected)
+            require(allocations.successful == 5 && allocations.attempted == 5,
+                    "instruction rows and payloads were not allocated as five exact owners");
+        aurora_hosted_instructions_release(&record.value);
+        const auto metrics = region.metrics();
+        require(record.before == canary && record.after == canary,
+                "instruction creation or release escaped its generated owner extent");
+        require(allocations.successful == allocations.released && metrics.used == 0 &&
+                    metrics.live_allocations == 0 && metrics.releases == metrics.successful_allocations && region.close(),
+                "instruction allocation failure or release leaked an owner");
+        ++cases;
+    };
+    exercise(std::numeric_limits<std::size_t>::max(), 1048576, true);
+    for (std::size_t allowed = 0; allowed < 5; ++allowed)
+        exercise(allowed, 1048576, false);
+    exercise(std::numeric_limits<std::size_t>::max(), 0, false);
+}
+
+void rawInstructionAdmission() {
+    namespace abi = aurora::hosted_abi;
+    namespace meta = abi::compiler_ir_metadata;
+    namespace wire = abi::compiler_ir_instructions;
+    namespace lower = abi::compiler_lowering;
+    namespace bytes = aurora::hosted::bytes;
+    context = "instruction storage rejects malformed copied rows before observations";
+    // One constant/return body is enough to exercise each physical domain.
+    for (int mutation = 0; mutation < 11; ++mutation) {
+        Allocations allocations;
+        bytes::Region region(1048576, allocations.allocator());
+        {
+            struct Owners {
+                abi::MetadataRelease metadata{};
+                abi::InstructionsRelease instructions{};
+                ~Owners() {
+                    aurora_hosted_instructions_release(&instructions);
+                    aurora_hosted_metadata_release(&metadata);
+                }
+            } owners;
+            owners.metadata.region = owners.instructions.region = region.id();
+            abi::MetadataCreate metadata{};
+            metadata.region = region.id();
+            metadata.counts.coreCounts.bytes = 1;
+            metadata.counts.coreCounts.types = 2;
+            metadata.counts.mapCounts.indices = 1;
+            metadata.counts.mapCounts.views = 1;
+            metadata.callableCount = 1;
+            metadata.instructionBegin = 1;
+            auto *declarations = owners.metadata.store.storage.data();
+            aurora_hosted_metadata_create(&metadata, declarations);
+            abi::InstructionsCreate instructions{};
+            instructions.region = region.id();
+            instructions.counts = {2, 2, mutation == 10 ? 1 : 0, 1};
+            auto *storage = owners.instructions.store.storage.data();
+            aurora_hosted_instructions_create(&instructions, storage);
+            require(aurora_hosted_metadata_allocated(declarations) == 1 &&
+                        aurora_hosted_instructions_allocated(storage) == 1, "raw admission allocation failed");
+            const auto descriptor = [](const std::byte *owner, std::size_t offset) {
+                bytes::NativeOwner result;
+                std::memcpy(&result, owner + offset, sizeof(result));
+                return result;
+            };
+            const auto set = [&](const std::byte *owner, std::size_t pool, std::int64_t index, const auto &row) {
+                auto target = descriptor(owner, pool);
+                require(bytes::__au_runtime_values_set(&target, index, sizeof(row), &row) == 1,
+                        "raw admission row escaped its generated owner pool");
+            };
+            auto names = descriptor(declarations, abi::metadataStore_bytesOffset);
+            require(bytes::__au_runtime_bytes_set(&names, 0, 'f') == 1, "raw admission name write failed");
+            meta::RawTypeRow type{};
+            set(declarations, abi::metadataStore_typesOffset, 0, type);
+            if (mutation == 7)
+                type.rawTail.templateArgumentCount = 1;
+            set(declarations, abi::metadataStore_typesOffset, 1, type);
+            meta::CallableRow callable{};
+            callable.nameRange = {0, 1};
+            callable.typeRange = {0, 1};
+            set(declarations, abi::metadataStore_callablesOffset, 0, callable);
+            set(declarations, abi::metadataStore_indicesOffset, 0, meta::IndexRow{0});
+            set(declarations, abi::metadataStore_viewsOffset, 0, meta::ViewRow{});
+            require(aurora_hosted_metadata_run(declarations) == static_cast<std::int64_t>(meta::MetadataStatus::success),
+                    "instruction raw tail escaped its metadata admission boundary");
+            wire::RawInstructionRow constant{};
+            constant.recordKind = mutation == 1 ? -1 : static_cast<std::int64_t>(lower::RecordKind::Instruction);
+            constant.instructionForm = mutation == 2 ? -1 : static_cast<std::int64_t>(lower::InstructionForm::Constant);
+            constant.operandBegin = mutation == 3 ? std::numeric_limits<std::int64_t>::max() : 0;
+            constant.operandCount = 2;
+            set(storage, abi::instructionStore_instructionsOffset, 0, constant);
+            wire::RawInstructionRow terminal{};
+            terminal.recordKind = static_cast<std::int64_t>(lower::RecordKind::Instruction);
+            terminal.instructionForm = static_cast<std::int64_t>(lower::InstructionForm::Return);
+            terminal.operandBegin = 2;
+            set(storage, abi::instructionStore_instructionsOffset, 1, terminal);
+            wire::RawOperandRow value{};
+            value.operandRole = mutation == 4 ? -1 : static_cast<std::int64_t>(lower::OperandRole::SignedConstant);
+            value.signedValue = 42;
+            value.sliceCount = mutation == 5 ? 1 : 0;
+            set(storage, abi::instructionStore_operandsOffset, 0, value);
+            wire::RawOperandRow typeOperand{};
+            typeOperand.operandRole = static_cast<std::int64_t>(lower::OperandRole::TypeId);
+            typeOperand.signedValue = mutation == 6 ? 0 : 1;
+            set(storage, abi::instructionStore_operandsOffset, 1, typeOperand);
+            set(storage, abi::instructionStore_codeOrderOffset, 0, wire::CodeRow{1});
+            set(storage, abi::instructionStore_codeOrderOffset, 1, wire::CodeRow{mutation == 8 ? 1 : 2});
+            set(storage, abi::instructionStore_bodiesOffset, 0, wire::BodyRow{mutation == 9 ? 1 : 0, 2, 2});
+            const std::array<const void *, 2> roots{storage, declarations};
+            const auto status = aurora_hosted_instructions_admit(roots.data());
+            require(status == static_cast<std::int64_t>(mutation == 0 ? wire::InstructionStatus::admitted
+                                                                      : wire::InstructionStatus::invalid),
+                    "malformed instruction storage status differs");
+            const auto expectedError = mutation == 0 ? wire::InstructionError::none
+                : mutation == 7 ? wire::InstructionError::noncanonical_type : wire::InstructionError::integrity;
+            require(aurora_hosted_instructions_error(storage) == static_cast<std::int64_t>(expectedError),
+                    "malformed instruction storage reason differs");
+            if (mutation == 0) {
+                abi::InstructionsRetainCode retained{0, 1, 0};
+                abi::InstructionsTruncateBody truncated{0, 1};
+                require(aurora_hosted_instructions_retain_code(storage, &retained) == 1 &&
+                            aurora_hosted_instructions_truncate_body(storage, &truncated) == 1 &&
+                            aurora_hosted_instructions_publish(storage) == 1 &&
+                            aurora_hosted_instructions_retain_code(storage, &retained) == 0,
+                        "instruction publication failed to close code-order mutation");
+            }
+        }
+        require(allocations.successful == allocations.released && region.metrics().used == 0 && region.close(),
+                "raw instruction admission leaked either owner");
+        ++cases;
+    }
 }
 
 // Keep a compact independent declaration inventory for the typed transport.
@@ -4498,7 +4656,7 @@ void loweringSchemaSources(const std::vector<aurora::Token> &tokens,
          {"Comparison", 6},
          {"Query", 2},
          {"RecordKind", 27},
-         {"OperandRole", 100},
+         {"OperandRole", 102},
          {"SpanOriginKind", 5},
          {"ContinuationKind", 7},
          {"ContinuationPhase", 14},
@@ -4598,10 +4756,10 @@ void loweringImplementationSources(const std::vector<aurora::Token> &tokens,
 }
 
 void resolvedCompilerSources(char **paths) {
-    context = "all twenty-six real compiler modules through production typed lowering";
-    const std::array<std::size_t, 26> arguments{0,  1,  2,  15, 19, 20, 21, 32, 16, 33, 34, 17, 22,
-                                                23, 24, 25, 28, 29, 30, 31, 26, 27, 35, 37, 38, 18};
-    const std::array<std::string, 26> modules{"lexer",
+    context = "all twenty-eight real compiler modules through production typed lowering";
+    const std::array<std::size_t, 28> arguments{0,  1,  2,  15, 19, 20, 21, 32, 16, 33, 34, 17, 22,
+                                                23, 24, 25, 28, 29, 30, 31, 26, 27, 35, 37, 38, 39, 40, 18};
+    const std::array<std::string, 28> modules{"lexer",
                                               "syntax_arena",
                                               "parser",
                                               "resolution_kinds",
@@ -4626,8 +4784,10 @@ void resolvedCompilerSources(char **paths) {
                                               "ir_graph",
                                               "ir_metadata_storage",
                                               "ir_metadata",
+                                              "ir_instruction_storage",
+                                              "ir_instructions",
                                               "frontend"};
-    const std::array<std::vector<std::string>, 26> classNames{{
+    const std::array<std::vector<std::string>, 28> classNames{{
         {"Cursor", "Lexeme"},
         {"ParseFrame", "AstNode", "ChildEdge", "TypeSyntax", "SyntaxNode", "AstArena"},
         {"AdmissionConfig",
@@ -4683,11 +4843,13 @@ void resolvedCompilerSources(char **paths) {
          "InputCounts",
          "MetadataStore"},
         {},
+        {"RawInstructionRow", "RawOperandRow", "CodeRow", "BodyRow", "InstructionCounts", "InstructionStore"},
+        {},
         {},
     }};
     // Frontend's direct imports give this DFS postorder, independent of file argv.
-    std::array<aurora::Program, 26> syntax;
-    std::array<aurora::HostedModule, 26> headers;
+    std::array<aurora::Program, 28> syntax;
+    std::array<aurora::HostedModule, 28> headers;
     const auto resolved = [&] {
         aurora::HostedResolution resolution;
         for (std::size_t index = 0; index < modules.size(); ++index) {
@@ -6637,7 +6799,7 @@ void rawAggregates() {
 int main(int argc, char **argv) {
     try {
         context = "fixture arguments";
-        require(argc == 40, "expected twenty-six compiler, six aggregate and seven typed consumer source paths");
+        require(argc == 42, "expected twenty-eight compiler, six aggregate and seven typed consumer source paths");
         grammarExpectations();
         diagnosticExpectations();
         // Table rows cover ordinary semicolon inputs. Keep distinct trivia,
@@ -6786,6 +6948,8 @@ int main(int argc, char **argv) {
         resolvedVisibility();
         rawResolutionOwnership();
         rawMetadataOwnership();
+        rawInstructionOwnership();
+        rawInstructionAdmission();
         resolvedCompilerSources(argv + 1);
         bootstrapSources(argv + 1);
         consumerSources({argv[4], argv[5], argv[6], argv[7], argv[8], argv[37]});

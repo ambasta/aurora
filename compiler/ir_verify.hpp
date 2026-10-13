@@ -1,5 +1,6 @@
 #pragma once
 #include "hosted_graph.hpp"
+#include "hosted_ir_instructions.hpp"
 #include "initialization_facts.hpp"
 #include "ir_layout.hpp"
 #include "byte_literal.hpp"
@@ -51,18 +52,18 @@ public:
     bool operator==(const Value &) const = default;
 };
 // Region identity comes only from an entry binding. Ownership tokens are minted
-// internally from instruction sites, never supplied by an IR operand or runtime
+// internally from stable instruction IDs, never supplied by an IR operand or runtime
 // descriptor. A failed allocation still creates one live logical ownership token.
 class RegionIdentity {
 public:
     int offset;
-    std::size_t site;
+    InstructionId site;
     bool borrowed = false; // symbolic receiver provenance never grants allocation authority
     bool operator==(const RegionIdentity &) const = default;
 };
 class ByteToken {
 public:
-    std::size_t site;
+    InstructionId site;
     RegionIdentity region;
     int fieldOrdinal = -1; // distinct tokens for one call or parameter owning several fields
     bool operator==(const ByteToken &) const = default;
@@ -76,10 +77,10 @@ class SpanCapability {
 public:
     bool parameterOrigin;
     int origin;
-    std::size_t originSite;
+    InstructionId originSite;
     int parent;
-    std::size_t parentSite;
-    std::size_t site;
+    InstructionId parentSite;
+    InstructionId site;
     // Owned views capture the exact owner token and direct-field selector. The
     // origin/site still identify the lifetime of the standalone binding or root.
     std::optional<ByteToken> ownedToken = {};
@@ -95,14 +96,14 @@ enum class ByteDisposition {
 };
 class ByteBinding {
 public:
-    std::size_t site;
+    InstructionId site;
     ByteDisposition disposition;
     std::optional<ByteToken> token;
     bool operator==(const ByteBinding &) const = default;
 };
 class OwnedObjectBinding {
 public:
-    std::size_t site;
+    InstructionId site;
     ByteDisposition disposition;
     std::map<int, ByteBinding> fields;
     bool operator==(const OwnedObjectBinding &) const = default;
@@ -110,7 +111,7 @@ public:
 class ObjectLoan {
 public:
     int root;
-    std::size_t rootSite;
+    InstructionId rootSite;
     std::string className;
     bool mutableValue;
     bool called = false;
@@ -118,7 +119,7 @@ public:
 };
 class ServiceIdentity {
 public:
-    std::size_t site;
+    InstructionId site;
     service::Kind kind;
     bool operator==(const ServiceIdentity &) const = default;
 };
@@ -140,8 +141,8 @@ public:
     std::set<int> receiverInitialized;
     std::set<int> receiverMaybeInitialized;
     std::set<int> maybeConstructedObjects;
-    std::map<int, std::size_t> activeObjects; // object base -> creation/binding site
-    std::map<int, std::size_t> activeArrays;  // array base -> BeginArray site
+    std::map<int, InstructionId> activeObjects; // object base -> creation/binding site
+    std::map<int, InstructionId> activeArrays;  // array base -> BeginArray site
     std::map<int, SpanCapability> activeSpans;
     std::map<int, ServiceIdentity> activeServices;
     std::map<int, ServiceLoan> serviceLoans;
@@ -322,18 +323,19 @@ inline void verifyFunction(FunctionBody &function,
     std::optional<int> regionParameterSlot;
     std::map<int, int> serviceParameterSlots; // source index -> distinct root spill
     std::map<int, int> spanParameterOrigins;  // source position -> root spill
-    for (std::size_t index = 0; index < function.code.size(); ++index) {
-        if (const auto *literal = std::get_if<BorrowLiteralSpan>(&function.code[index])) {
+    for (CodePosition index = 0; index < function.code.size(); ++index) {
+        const auto instruction = function.code[index];
+        if (const auto *literal = std::get_if<BorrowLiteralSpanObservation>(&instruction)) {
             require(literal->bytes.size() <= maxByteStringBytes, "literal span exceeds byte-string bound");
             require(spanSlots.contains(literal->resultOffset), "literal span requires exact typed spill");
         }
-        const auto *serviceBinding = std::get_if<BindServiceParameter>(&function.code[index]);
-        const auto *binding = std::get_if<BindParameter>(&function.code[index]);
-        const auto *objectBinding = std::get_if<BindObjectParameter>(&function.code[index]);
-        const auto *spanBinding = std::get_if<BindSpanParameter>(&function.code[index]);
-        const auto *regionBinding = std::get_if<BindRegionParameter>(&function.code[index]);
-        const auto *byteBinding = std::get_if<BindBytesParameter>(&function.code[index]);
-        const auto *ownedObjectBinding = std::get_if<BindOwnedObjectParameter>(&function.code[index]);
+        const auto *serviceBinding = std::get_if<BindServiceParameter>(&instruction);
+        const auto *binding = std::get_if<BindParameter>(&instruction);
+        const auto *objectBinding = std::get_if<BindObjectParameter>(&instruction);
+        const auto *spanBinding = std::get_if<BindSpanParameter>(&instruction);
+        const auto *regionBinding = std::get_if<BindRegionParameter>(&instruction);
+        const auto *byteBinding = std::get_if<BindBytesParameter>(&instruction);
+        const auto *ownedObjectBinding = std::get_if<BindOwnedObjectParameter>(&instruction);
         if (index < parameters.size()) {
             const auto &type = parameters[index];
             if (type.isService()) {
@@ -378,26 +380,28 @@ inline void verifyFunction(FunctionBody &function,
                         !ownedObjectBinding && !serviceBinding,
                     "parameter binding outside entry prefix");
     }
-    std::map<int, std::size_t> labels;
+    std::map<int, CodePosition> labels;
     std::map<int, std::pair<int, service::Kind>> serviceLoanRoots;
-    for (std::size_t index = 0; index < function.code.size(); ++index) {
-        if (const auto *loan = std::get_if<AcquireServiceLoan>(&function.code[index])) {
+    for (CodePosition index = 0; index < function.code.size(); ++index) {
+        const auto instruction = function.code[index];
+        if (const auto *loan = std::get_if<AcquireServiceLoan>(&instruction)) {
             const auto root = std::pair{loan->offset, loan->kind};
             require(loan->loanId > 0 &&
                         (!serviceLoanRoots.contains(loan->loanId) || serviceLoanRoots.at(loan->loanId) == root),
                     "service loan identity cannot change static root or kind");
             serviceLoanRoots.emplace(loan->loanId, root);
         }
-        if (const auto *label = std::get_if<Label>(&function.code[index]))
+        if (const auto *label = std::get_if<Label>(&instruction))
             require(label->id >= 0 && labels.emplace(label->id, index).second, "duplicate or invalid label");
     }
     // Check targets even in unreachable instructions, so they cannot hide malformed references.
-    for (const auto &instruction : function.code) {
+    for (const auto instruction : function.code) {
         if (const auto *jump = std::get_if<Jump>(&instruction))
             require(labels.contains(jump->target), "unknown jump target");
         if (const auto *branch = std::get_if<BranchFalse>(&instruction))
             require(labels.contains(branch->target), "unknown branch target");
     }
+    // CFG arrays and worklist entries use zero-based code positions, never IDs.
     // Only block entries retain snapshots. Saving a full state at every instruction
     // makes a straight-line N-element initializer retain O(N^2) stack/set contents.
     std::vector<bool> blockEntry(function.code.size(), false);
@@ -406,10 +410,11 @@ inline void verifyFunction(FunctionBody &function,
     // only at basic-block entries, never once per instruction.
     std::vector<std::size_t> stackBefore(function.code.size()), stackAfter(function.code.size());
     blockEntry[0] = true;
-    for (std::size_t index = 0; index < function.code.size(); ++index) {
-        if (std::holds_alternative<Label>(function.code[index]))
+    for (CodePosition index = 0; index < function.code.size(); ++index) {
+        const auto instruction = function.code[index];
+        if (std::holds_alternative<Label>(instruction))
             blockEntry[index] = true;
-        if (std::holds_alternative<BranchFalse>(function.code[index]) && index + 1 < function.code.size())
+        if (std::holds_alternative<BranchFalse>(instruction) && index + 1 < function.code.size())
             blockEntry[index + 1] = true;
     }
     std::vector<std::optional<State>> states(function.code.size());
@@ -454,7 +459,7 @@ inline void verifyFunction(FunctionBody &function,
                 states[0]->receiverClassesMaybeInitialized.insert(static_cast<int>(field));
             }
     }
-    std::deque<std::size_t> pending{0};
+    std::deque<CodePosition> pending{0};
     std::size_t retainedValueFacts = 0;
     if (metrics) {
         *metrics = Metrics{};
@@ -492,7 +497,7 @@ inline void verifyFunction(FunctionBody &function,
             left.begin(), left.end(), right.begin(), right.end(), std::inserter(result, result.end()));
         return result;
     };
-    auto enqueue = [&](std::size_t index, const State &state) {
+    auto enqueue = [&](CodePosition index, const State &state) {
         require(index < function.code.size(), "reachable fallthrough without return");
         require(blockEntry[index], "worklist target is not a basic-block entry");
         if (!states[index]) {
@@ -558,6 +563,9 @@ inline void verifyFunction(FunctionBody &function,
         pending.pop_front();
         State state = *states[index];
         while (true) {
+            const auto instruction = function.code[index];
+            // Provenance names the immutable row, independently of retained order.
+            const InstructionId instructionId = function.code.idAt(index);
             reached[index] = true;
             stackBefore[index] = state.stack.size();
             bool fallsThrough = true;
@@ -571,8 +579,8 @@ inline void verifyFunction(FunctionBody &function,
                 state.stack.pop_back();
                 return value;
             };
-            // Only the validated BorrowedCall may exercise its one or two loans.
-            const auto *borrowedCall = std::get_if<BorrowedCall>(&function.code[index]);
+            // Only the validated BorrowedCallObservation may exercise its one or two loans.
+            const auto *borrowedCall = std::get_if<BorrowedCallObservation>(&instruction);
             auto loanAccess = [&](int root, bool writing) {
                 for (const auto &[id, loan] : state.objectLoans) {
                     if (loan.root != root ||
@@ -627,8 +635,8 @@ inline void verifyFunction(FunctionBody &function,
                 if (capability.literalOrigin) {
                     require(!capability.parameterOrigin && !capability.ownedToken && capability.ownedField == -1,
                             "literal span cannot carry another origin kind");
-                    require(capability.originSite < function.code.size(), "literal span origin site is invalid");
-                    const auto *literal = std::get_if<BorrowLiteralSpan>(&function.code[capability.originSite]);
+                    const auto origin = function.code.instructionById(capability.originSite);
+                    const auto *literal = std::get_if<BorrowLiteralSpanObservation>(&origin);
                     require(literal && literal->resultOffset == capability.origin &&
                                 literal->bytes.size() <= maxByteStringBytes,
                             "literal span must retain its exact immutable origin");
@@ -750,7 +758,7 @@ inline void verifyFunction(FunctionBody &function,
             };
             auto freshToken = [&](const RegionIdentity &origin, int ordinal) {
                 auto distinct = [&](const ByteBinding &other) {
-                    require(!other.token || other.token->region.borrowed || other.token->site != index ||
+                    require(!other.token || other.token->region.borrowed || other.token->site != instructionId ||
                                 other.token->fieldOrdinal != ordinal,
                             "ownership creation site still has a live token");
                 };
@@ -765,7 +773,7 @@ inline void verifyFunction(FunctionBody &function,
                         distinct(other);
                     }
                 }
-                return ByteToken{index, origin, ordinal};
+                return ByteToken{instructionId, origin, ordinal};
             };
             auto mintBytes = [&](int base, const RegionIdentity &origin) {
                 auto &binding = byteTarget(base);
@@ -1012,11 +1020,11 @@ inline void verifyFunction(FunctionBody &function,
             };
             auto beginOwnedObject = [&](int base, const std::string &name) {
                 require(!state.ownedObjects.contains(base), "owning object lifetime already active");
-                OwnedObjectBinding object{index, ByteDisposition::Pristine, {}};
+                OwnedObjectBinding object{instructionId, ByteDisposition::Pristine, {}};
                 for (std::size_t field = 0; field < logicalFields(name).size(); ++field)
                     if (logicalFields(name)[field].elementType.isOwnerStorage())
                         object.fields.emplace(static_cast<int>(field),
-                                              ByteBinding{index, ByteDisposition::Pristine, {}});
+                                              ByteBinding{instructionId, ByteDisposition::Pristine, {}});
                 state.ownedObjects.emplace(base, std::move(object));
             };
             auto mintObject = [&](int base, const std::string &name, const RegionIdentity &origin) {
@@ -1125,14 +1133,14 @@ inline void verifyFunction(FunctionBody &function,
                         "typed owned values cannot supply a byte span");
                 spanTarget(result);
                 const auto rootSite = ordinal == -1 ? binding.site : state.ownedObjects.at(root).site;
-                state.activeSpans.emplace(result,
-                                          SpanCapability{false, root, rootSite, 0, 0, index, binding.token, ordinal});
+                state.activeSpans.emplace(
+                    result, SpanCapability{false, root, rootSite, 0, 0, instructionId, binding.token, ordinal});
             };
             auto borrowArrayField = [&](int root, int ordinal, int result, bool verifiedMethodView = false) {
                 require(root >= 0 && ordinal >= 0, "invalid fixed array span root or field");
                 loanAccess(root, false);
                 ClassField field{};
-                std::size_t site = 0;
+                InstructionId site = 0;
                 if (root == 0) {
                     field = receiverShape(ordinal, verifiedMethodView);
                     require(!functionReceiver->constructor, "constructor cannot borrow receiver array");
@@ -1150,8 +1158,8 @@ inline void verifyFunction(FunctionBody &function,
                 require(field.array && field.elementType == Type::U8,
                         "fixed array span requires direct u8 array field");
                 spanTarget(result);
-                state.activeSpans.emplace(result,
-                                          SpanCapability{false, root, site, 0, 0, index, {}, -1, false, ordinal});
+                state.activeSpans.emplace(
+                    result, SpanCapability{false, root, site, 0, 0, instructionId, {}, -1, false, ordinal});
             };
             auto closedOwnedObjects = [&]() {
                 require(state.serviceLoans.empty(), "return with active synchronous service loan");
@@ -1335,7 +1343,7 @@ inline void verifyFunction(FunctionBody &function,
                         for (std::size_t argument = target.parameters().size(); argument > 0; --argument)
                             require(pop().type == target.parameters()[argument - 1], "call argument type mismatch");
                         state.current = Value{target.result(), {}};
-                    } else if constexpr (std::is_same_v<Op, AggregateCall>) {
+                    } else if constexpr (std::is_same_v<Op, AggregateCallObservation>) {
                         const auto targetId = metadata.findCallable(operation.callee);
                         require(targetId.has_value(), "unknown aggregate call target");
                         const auto target = metadata.callable(*targetId);
@@ -1415,7 +1423,7 @@ inline void verifyFunction(FunctionBody &function,
                             require(operation.resultOffset == 0, "scalar result cannot name object storage");
                             state.current = Value{target.result(), {}};
                         }
-                    } else if constexpr (std::is_same_v<Op, ResourceCall>) {
+                    } else if constexpr (std::is_same_v<Op, ResourceCallObservation>) {
                         const auto targetId = metadata.findCallable(operation.callee);
                         require(targetId.has_value(), "unknown resource call target");
                         const auto target = metadata.callable(*targetId);
@@ -1535,7 +1543,8 @@ inline void verifyFunction(FunctionBody &function,
                         require(!byteParameterSlots.contains(operation.offset),
                                 "owned byte parameter lifetime cannot restart");
                         require(!state.activeBytes.contains(operation.offset), "owned byte lifetime already active");
-                        state.activeBytes.emplace(operation.offset, ByteBinding{index, ByteDisposition::Pristine, {}});
+                        state.activeBytes.emplace(
+                            operation.offset, ByteBinding{instructionId, ByteDisposition::Pristine, {}});
                     } else if constexpr (std::is_same_v<Op, AllocateBytes>) {
                         require(ownerType(operation.resultOffset) == Type::OwnedBytes,
                                 "byte allocation cannot initialize typed owned values");
@@ -1608,7 +1617,7 @@ inline void verifyFunction(FunctionBody &function,
                                 "array lifetime requires exact byte array origin");
                         if constexpr (std::is_same_v<Op, BeginArray>) {
                             require(!state.activeArrays.contains(operation.offset), "array lifetime already active");
-                            state.activeArrays.emplace(operation.offset, index);
+                            state.activeArrays.emplace(operation.offset, instructionId);
                         } else {
                             require(state.activeArrays.contains(operation.offset), "array lifetime is not active");
                             for (const auto &[unused, capability] : state.activeSpans) {
@@ -1636,15 +1645,16 @@ inline void verifyFunction(FunctionBody &function,
                                                                  state.activeArrays.at(operation.arrayOffset),
                                                                  0,
                                                                  0,
-                                                                 index});
+                                                                 instructionId});
                     } else if constexpr (std::is_same_v<Op, BorrowReceiverArraySpan>) {
                         borrowArrayField(0, operation.fieldIndex, operation.resultOffset);
-                    } else if constexpr (std::is_same_v<Op, BorrowLiteralSpan>) {
+                    } else if constexpr (std::is_same_v<Op, BorrowLiteralSpanObservation>) {
                         require(operation.bytes.size() <= maxByteStringBytes, "literal span exceeds byte-string bound");
                         spanTarget(operation.resultOffset);
                         state.activeSpans.emplace(
                             operation.resultOffset,
-                            SpanCapability{false, operation.resultOffset, index, 0, 0, index, {}, -1, true});
+                            SpanCapability{
+                                false, operation.resultOffset, instructionId, 0, 0, instructionId, {}, -1, true});
                     } else if constexpr (std::is_same_v<Op, BorrowOwnedSpan>) {
                         borrowOwned(operation.offset, operation.fieldIndex, operation.resultOffset);
                     } else if constexpr (std::is_same_v<Op, ReborrowSpan> || std::is_same_v<Op, Subspan>) {
@@ -1658,7 +1668,7 @@ inline void verifyFunction(FunctionBody &function,
                         spanTarget(operation.resultOffset);
                         capability.parent = operation.sourceOffset;
                         capability.parentSite = capability.site;
-                        capability.site = index;
+                        capability.site = instructionId;
                         state.activeSpans.emplace(operation.resultOffset, capability);
                     } else if constexpr (std::is_same_v<Op, EndSpan>) {
                         span(operation.offset);
@@ -1682,7 +1692,7 @@ inline void verifyFunction(FunctionBody &function,
                             require(!objectParameterSlots.contains(operation.offset),
                                     "object parameter lifetime cannot restart");
                             require(!state.activeObjects.contains(operation.offset), "object lifetime already active");
-                            state.activeObjects.emplace(operation.offset, index);
+                            state.activeObjects.emplace(operation.offset, instructionId);
                             const auto &name = objectSlots.at(operation.offset).className;
                             if (owningClass(metadata, name))
                                 beginOwnedObject(operation.offset, name);
@@ -1828,7 +1838,7 @@ inline void verifyFunction(FunctionBody &function,
                         state.receiverClassesInitialized.insert(operation.fieldIndex);
                         state.receiverClassesMaybeInitialized.insert(operation.fieldIndex);
                         state.current.reset();
-                    } else if constexpr (std::is_same_v<Op, InitializeClassArray>) {
+                    } else if constexpr (std::is_same_v<Op, InitializeClassArrayObservation>) {
                         require(operation.objectOffset >= 0, "invalid class array initialization root");
                         ClassField field{};
                         if (operation.objectOffset == 0) {
@@ -1966,12 +1976,13 @@ inline void verifyFunction(FunctionBody &function,
                         require(state.objectLoans.at(operation.loanId).called,
                                 "object loan release requires completed borrowed call");
                         state.objectLoans.erase(operation.loanId);
-                    } else if constexpr (std::is_same_v<Op, MethodCall> || std::is_same_v<Op, BorrowedCall>) {
+                    } else if constexpr (std::is_same_v<Op, MethodCallObservation> ||
+                                         std::is_same_v<Op, BorrowedCallObservation>) {
                         const auto targetId = metadata.findCallable(operation.callee);
                         require(targetId.has_value(), "unknown method call target");
                         const auto target = metadata.callable(*targetId);
                         require(target.receiver().has_value(), "method call requires receiver target");
-                        if constexpr (std::is_same_v<Op, BorrowedCall>) {
+                        if constexpr (std::is_same_v<Op, BorrowedCallObservation>) {
                             require(target.borrowedParameter(), "borrowed call requires borrowed formal target");
                             require(target.secondBorrowedParameter()
                                         ? operation.secondLoanId > 0 && operation.secondLoanId != operation.loanId &&
@@ -2279,7 +2290,7 @@ inline void verifyFunction(FunctionBody &function,
                                     serviceSlots.contains(operation.offset) &&
                                     !state.activeServices.contains(operation.offset),
                                 "service binding requires exact authorized leading parameter");
-                        state.activeServices.emplace(operation.offset, ServiceIdentity{index, operation.kind});
+                        state.activeServices.emplace(operation.offset, ServiceIdentity{instructionId, operation.kind});
                     } else if constexpr (std::is_same_v<Op, AcquireServiceLoan>) {
                         require(operation.loanId > 0 && !state.serviceLoans.contains(operation.loanId) &&
                                     std::none_of(state.serviceLoans.begin(),
@@ -2347,25 +2358,26 @@ inline void verifyFunction(FunctionBody &function,
                         } else {
                             require(false, "unknown sealed service operation");
                         }
-                    } else if constexpr (std::is_same_v<Op, ServiceCall>) {
+                    } else if constexpr (std::is_same_v<Op, ServiceCallObservation>) {
                         const auto targetId = metadata.findCallable(operation.callee);
                         require(targetId.has_value(), "unknown service helper target");
                         const auto target = metadata.callable(*targetId);
                         require(serviceSignature(target) && !target.receiver(),
                                 "service helper requires service target and acquired loans");
-                        std::vector<ServiceArgument> arguments{{operation.loanId, operation.kind}};
-                        arguments.insert(
-                            arguments.end(), operation.additionalServices.begin(), operation.additionalServices.end());
+                        const auto argumentAt = [&](std::size_t position) {
+                            return position == 0 ? ServiceArgument{operation.loanId, operation.kind}
+                                                 : operation.additionalServices.at(position - 1);
+                        };
                         const auto count = static_cast<std::size_t>(
                             std::count_if(target.parameters().begin(), target.parameters().end(), [](const Type &type) {
                                 return type.isService();
                             }));
-                        require(arguments.size() == count && count <= 2 &&
+                        require(count >= 1 && count <= 2 && operation.additionalServices.size() == count - 1 &&
                                     operation.spanArguments.size() == target.parameters().size(),
                                 "service helper argument vector mismatch");
                         std::set<int> usedLoans, usedRoots;
                         for (std::size_t position = 0; position < count; ++position) {
-                            const auto &argument = arguments[position];
+                            const auto argument = argumentAt(position);
                             require(state.serviceLoans.contains(argument.loanId) &&
                                         usedLoans.insert(argument.loanId).second &&
                                         operation.spanArguments[position] == 0 &&
@@ -2401,8 +2413,8 @@ inline void verifyFunction(FunctionBody &function,
                                     "service scalar result mismatch");
                             state.current = Value{target.result(), {}};
                         }
-                        for (const auto &argument : arguments)
-                            state.serviceLoans.at(argument.loanId).called = true;
+                        for (std::size_t position = 0; position < count; ++position)
+                            state.serviceLoans.at(argumentAt(position).loanId).called = true;
                     } else if constexpr (std::is_same_v<Op, BindRegionParameter>) {
                         require(resourceFunction && operation.index == 0 &&
                                     parameters.front() == Type::ByteRegion,
@@ -2410,7 +2422,7 @@ inline void verifyFunction(FunctionBody &function,
                         require(regionSlots.contains(operation.offset),
                                 "region parameter requires exact typed spill");
                         require(state.activeRegions.empty(), "region parameter authority already active");
-                        state.activeRegions.emplace(operation.offset, RegionIdentity{operation.offset, index});
+                        state.activeRegions.emplace(operation.offset, RegionIdentity{operation.offset, instructionId});
                     } else if constexpr (std::is_same_v<Op, BindBytesParameter>) {
                         require(operation.index > 0 &&
                                     static_cast<std::size_t>(operation.index) < parameters.size(),
@@ -2424,7 +2436,8 @@ inline void verifyFunction(FunctionBody &function,
                         require(byteSlots.at(operation.offset), "owned byte parameter must be mutable");
                         require(!state.activeBytes.contains(operation.offset),
                                 "owned byte parameter lifetime already active");
-                        state.activeBytes.emplace(operation.offset, ByteBinding{index, ByteDisposition::Pristine, {}});
+                        state.activeBytes.emplace(
+                            operation.offset, ByteBinding{instructionId, ByteDisposition::Pristine, {}});
                         mintBytes(operation.offset, region(*regionParameterSlot));
                     } else if constexpr (std::is_same_v<Op, BindSpanParameter>) {
                         require(operation.index >= 0 &&
@@ -2437,8 +2450,8 @@ inline void verifyFunction(FunctionBody &function,
                                 "span parameter requires exact typed spill");
                         require(!state.activeSpans.contains(operation.offset),
                                 "span parameter lifetime already active");
-                        state.activeSpans.emplace(operation.offset,
-                                                  SpanCapability{true, operation.index, index, 0, 0, index});
+                        state.activeSpans.emplace(
+                            operation.offset, SpanCapability{true, operation.index, instructionId, 0, 0, instructionId});
                     } else if constexpr (std::is_same_v<Op, BindOwnedObjectParameter>) {
                         require(!functionReceiver && operation.index > 0 &&
                                     static_cast<std::size_t>(operation.index) < parameters.size(),
@@ -2454,7 +2467,7 @@ inline void verifyFunction(FunctionBody &function,
                                 "owning class parameter must be mutable");
                         require(!state.activeObjects.contains(operation.offset),
                                 "owning class parameter lifetime already active");
-                        state.activeObjects.emplace(operation.offset, index);
+                        state.activeObjects.emplace(operation.offset, instructionId);
                         beginOwnedObject(operation.offset, operation.className);
                         mintObject(operation.offset, operation.className, region(*regionParameterSlot));
                     } else if constexpr (std::is_same_v<Op, BindObjectParameter>) {
@@ -2472,7 +2485,7 @@ inline void verifyFunction(FunctionBody &function,
                         require(!object.mutableValue, "object parameter must be readonly");
                         require(!state.activeObjects.contains(operation.offset),
                                 "object parameter lifetime already active");
-                        state.activeObjects.emplace(operation.offset, index);
+                        state.activeObjects.emplace(operation.offset, instructionId);
                         markObject(operation.offset);
                     } else if constexpr (std::is_same_v<Op, BindParameter>) {
                         require(operation.index >= 0 &&
@@ -2487,7 +2500,7 @@ inline void verifyFunction(FunctionBody &function,
                         static_assert(!std::is_same_v<Op, Op>, "unhandled typed IR verifier operation");
                     }
                 },
-                function.code[index]);
+                instruction);
             stackAfter[index] = state.stack.size();
             if (!fallsThrough)
                 break;
@@ -2499,24 +2512,23 @@ inline void verifyFunction(FunctionBody &function,
             }
         }
     }
-    std::vector<Instruction> reachable;
     std::size_t emittedDepth = 0;
-    for (std::size_t index = 0; index < function.code.size(); ++index) {
+    for (CodePosition index = 0; index < function.code.size(); ++index) {
+        const auto instruction = function.code[index];
         if (reached[index]) {
             // The backend counts push/pop effects in emitted order. Certify
             // that order separately from CFG joins; arbitrary non-linear stack
             // layouts are unsupported. Never reset this counter at a label.
             require(stackBefore[index] == emittedDepth, "operand stack depth differs from linear emission order");
             emittedDepth = stackAfter[index];
-            reachable.push_back(std::move(function.code[index]));
         } else
-            require(std::holds_alternative<Label>(function.code[index]) ||
-                        std::holds_alternative<Jump>(function.code[index]),
+            require(std::holds_alternative<Label>(instruction) || std::holds_alternative<Jump>(instruction),
                     "unreachable semantic instruction");
     }
-    // Remove unreachable structural artifacts (e.g. a jump emitted after a branch return).
+    // Remove unreachable structural artifacts only after every native check.
+    // Filtering compacts stable IDs in code order; immutable payload rows stay put.
     // Depth continuity above includes only this exact retained emission sequence.
-    function.code = std::move(reachable);
+    function.retainInstructions(reached);
 }
 inline void verifyFunctions(std::vector<FunctionBody> &input, const Metadata &metadata,
                             Metrics *metrics = nullptr) {
@@ -2531,33 +2543,27 @@ inline void verifyFunctions(std::vector<FunctionBody> &input, const Metadata &me
 }
 } // namespace verification
 inline ValidatedModule validate(Module module, verification::Metrics *metrics) {
-    auto metadata = Metadata::import(module);
-    // Every signature and frame has been admitted before any native body work.
-    // A later invalid frame can therefore precede an earlier body diagnostic.
-    // Retire all hostile declaration rows before checking the executable bodies.
-    std::vector<FunctionBody> functions;
-    functions.reserve(module.functions.size());
-    for (std::size_t index = 0; index < module.functions.size(); ++index) {
-        auto &function = module.functions[index];
-        function.callableId = index;
-        functions.push_back(std::move(static_cast<FunctionBody &>(function)));
-    }
-    // Destroy raw declaration containers and release their outer allocation too.
-    std::vector<Function>().swap(module.functions);
-    module.classLayouts.clear();
-    module.classFields.clear();
-    module.classStorage.clear();
-    module.classArrayCarriers.clear();
-    module.descriptors.clear();
-    module.descriptorViews.clear();
-    module.enumCases.clear();
-    verification::verifyFunctions(functions, *metadata, metrics);
-    return ValidatedModule(std::move(functions), std::move(metadata));
+    // Import consumes and destroys all raw fixture construction before either
+    // independent admission. Only the paired Aurora-owned bundle returns.
+    auto pending = InstructionIngress::import(std::move(module));
+    return validate(std::move(pending), metrics);
 }
-inline ValidatedModule validate(std::vector<FunctionBody> functions, MetadataIngress pending,
-                                verification::Metrics *metrics) {
-    auto metadata = std::move(pending).finish();
+inline ValidatedModule validate(InstructionIngress pending, verification::Metrics *metrics) {
+    // Finish metadata first; then source generic instruction admission checks
+    // suffix tails before codec reconstruction can discard unresolved payloads.
+    auto metadata = std::move(pending.metadata_).finish();
+    auto instructions = std::move(pending.instructions_);
+    if (!instructions)
+        throw Error(DiagnosticCode::Internal, "missing hosted IR instruction ingress");
+    instructions->admit(*metadata);
+    std::vector<FunctionBody> functions;
+    functions.reserve(instructions->bodyCount());
+    for (std::size_t id = 0; id < instructions->bodyCount(); ++id)
+        functions.push_back({id, instructions->range(id)});
+    // Native semantics and stable code-order filtering precede the existing
+    // graph seam. The source publication then permanently closes mutation.
     verification::verifyFunctions(functions, *metadata, metrics);
-    return ValidatedModule(std::move(functions), std::move(metadata));
+    instructions->publish();
+    return ValidatedModule(std::move(functions), std::move(metadata), std::move(instructions));
 }
 } // namespace aurora::ir

@@ -27,13 +27,14 @@ std::int64_t graphCount(std::size_t count) {
         invalidGraph();
     return static_cast<std::int64_t>(count);
 }
-const std::string *callee(const Instruction &instruction) {
+// The result borrows this named observation and is consumed before its loop iteration ends.
+const std::string *callee(const InstructionObservation &instruction) {
     return std::visit(
         [](const auto &call) -> const std::string * {
             using T = std::decay_t<decltype(call)>;
-            if constexpr (std::is_same_v<T, Call> || std::is_same_v<T, MethodCall> ||
-                          std::is_same_v<T, BorrowedCall> || std::is_same_v<T, AggregateCall> ||
-                          std::is_same_v<T, ServiceCall> || std::is_same_v<T, ResourceCall>)
+            if constexpr (std::is_same_v<T, Call> || std::is_same_v<T, MethodCallObservation> ||
+                          std::is_same_v<T, BorrowedCallObservation> || std::is_same_v<T, AggregateCallObservation> ||
+                          std::is_same_v<T, ServiceCallObservation> || std::is_same_v<T, ResourceCallObservation>)
                 return &call.callee;
             return nullptr;
         },
@@ -87,7 +88,7 @@ void verifyHostedGraph(std::vector<FunctionBody> &functions, const Metadata &met
     for (std::size_t index = 0; index < functions.size(); ++index) {
         if (!indices.emplace(functions[index].callableId, graphCount(index)).second)
             invalidGraph();
-        for (const auto &instruction : functions[index].code)
+        for (const auto instruction : functions[index].code)
             if (callee(instruction)) {
                 if (callCount == std::numeric_limits<std::size_t>::max())
                     invalidGraph();
@@ -107,7 +108,7 @@ void verifyHostedGraph(std::vector<FunctionBody> &functions, const Metadata &met
         value.function.serviceEntry = std::any_of(parameters.begin(), parameters.end(),
                                                   [](const Type &type) { return type.isService(); });
         value.function.rootScope = signature.moduleScope() == 0;
-        for (const auto &instruction : function.code)
+        for (const auto instruction : function.code)
             if (const auto *target = callee(instruction)) {
                 hosted_abi::GraphEdgeInput call;
                 call.index = edge++;

@@ -5,6 +5,7 @@
 
 namespace aurora::ir {
 class Metadata;
+class Instructions;
 }
 
 // Trusted single-threaded host machinery only. This is not an Aurora source API,
@@ -68,13 +69,16 @@ private:
 
     friend class RuntimeAccess;
     friend class aurora::ir::Metadata;
+    friend class aurora::ir::Instructions;
 #if defined(AURORA_HOSTED_BYTES_TESTING)
     friend class testing::MetadataObservation;
 #endif
-    // Only sealed compiler Metadata may retain these bytes. Its closed binding
-    // checks generated owner offsets, exact row shape/stride and published counts.
-    // It finishes every mutating Aurora call before observation, exposes copied
-    // rows only, and destroys all views before consuming the owner and Region.
+    // Only sealed compiler Metadata and Instructions may retain these bytes.
+    // Their closed bindings check generated offsets, exact row strides/counts.
+    // Metadata and instruction payload rows are immutable after admission;
+    // Instructions may then stable-filter only fixed code-order/body rows before
+    // publication. Neither owner reallocates; views expose copied values and
+    // are destroyed before consuming the owner and Region.
     // No pin, ownership transfer, type assertion or Aurora pointer is created.
     std::span<const std::byte> observeMetadataBytes(const NativeOwner &owner) const noexcept;
 

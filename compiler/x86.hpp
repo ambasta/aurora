@@ -62,7 +62,6 @@ class X86Emitter {
     bool directResult = false; // the next ValuesLoad writes the function result storage
     bool leftInRcx = false;    // the next binary operation's left operand is in %rcx, not pushed
     bool ownedSpanRuntime = false;
-    std::vector<std::vector<unsigned char>> literalBytes;
     std::map<int, int> serviceLoanOffsets;
     const ir::FunctionBody *currentFunction = nullptr;
     const ir::Metadata *metadata = nullptr;
@@ -372,7 +371,7 @@ class X86Emitter {
         const auto receiver = currentCallable().receiver();
         return physicalStorage(receiver->className);
     }
-    int packArguments(ir::CallableView target, const std::vector<int> &objects, const std::vector<int> &spans = {}) {
+    int packArguments(ir::CallableView target, ir::OffsetRange objects, ir::OffsetRange spans = {}) {
         const auto parameters = target.parameters();
         for (std::size_t index = parameters.size(); index > 0; --index)
             if (!parameters[index - 1].isClass() && !parameters[index - 1].isSpan())
@@ -425,7 +424,7 @@ class X86Emitter {
         line("movq %rsp, %r11");
         return recordBytes;
     }
-    int packService(ir::CallableView target, const ir::ServiceCall &operation) {
+    int packService(ir::CallableView target, const ir::ServiceCallObservation &operation) {
         const auto parameters = target.parameters();
         for (std::size_t reverse = parameters.size(); reverse > 0; --reverse)
             if (!parameters[reverse - 1].isSpan() && !parameters[reverse - 1].isService())
@@ -527,7 +526,7 @@ class X86Emitter {
             }
         pop("%rax");
     }
-    int packResources(ir::CallableView target, const ir::ResourceCall &operation) {
+    int packResources(ir::CallableView target, const ir::ResourceCallObservation &operation) {
         const auto parameters = target.parameters();
         for (std::size_t index = parameters.size(); index > 1; --index)
             if (!parameters[index - 1].isOwnerStorage() && !parameters[index - 1].isClass())
@@ -628,14 +627,14 @@ class X86Emitter {
         } else
             line("shrq %cl, %rax");
     }
-    static bool plainLoad(const ir::Instruction &operation) {
+    static bool plainLoad(const ir::InstructionObservation &operation) {
         return std::holds_alternative<ir::Constant>(operation) || std::holds_alternative<ir::EnumConstant>(operation) ||
                std::holds_alternative<ir::Load>(operation) || std::holds_alternative<ir::ReceiverLoad>(operation);
     }
-    static bool poppedBinary(const ir::Instruction &operation) {
+    static bool poppedBinary(const ir::InstructionObservation &operation) {
         return std::holds_alternative<ir::BinaryValue>(operation) || std::holds_alternative<ir::Compare>(operation);
     }
-    void instruction(const ir::Instruction &instruction) {
+    void instruction(const ir::InstructionObservation &instruction, ir::InstructionId instructionId) {
         std::visit(
             [&](const auto &operation) {
                 using Op = std::decay_t<decltype(operation)>;
@@ -782,7 +781,7 @@ class X86Emitter {
                     for (std::size_t index = target.parameters().size(); index > 0; --index)
                         pop(argumentRegisters[index - 1]);
                     call(operation.callee);
-                } else if constexpr (std::is_same_v<Op, ir::AggregateCall>) {
+                } else if constexpr (std::is_same_v<Op, ir::AggregateCallObservation>) {
                     const auto target = metadata->callable(metadata->findCallable(operation.callee).value());
                     const int recordBytes = packArguments(target, operation.objectArguments, operation.spanArguments);
                     if (target.result().isClass())
@@ -876,7 +875,7 @@ class X86Emitter {
                     line("leaq " + address(operation.offset) + ", %rdi");
                     call("__au_runtime_bytes_drop");
                     pop("%rax");
-                } else if constexpr (std::is_same_v<Op, ir::ResourceCall>) {
+                } else if constexpr (std::is_same_v<Op, ir::ResourceCallObservation>) {
                     const auto target = metadata->callable(metadata->findCallable(operation.callee).value());
                     const int recordBytes = packResources(target, operation);
                     if (target.receiver())
@@ -896,7 +895,7 @@ class X86Emitter {
                     // Static loan-to-root map is prepared before code emission.
                 } else if constexpr (std::is_same_v<Op, ir::ReleaseServiceLoan>) {
                     // Static provenance is checked across joins independently.
-                } else if constexpr (std::is_same_v<Op, ir::ServiceCall>) {
+                } else if constexpr (std::is_same_v<Op, ir::ServiceCallObservation>) {
                     const auto target = metadata->callable(metadata->findCallable(operation.callee).value());
                     const int recordBytes = packService(target, operation);
                     if (target.result().isClass())
@@ -1013,9 +1012,8 @@ class X86Emitter {
                     for (int padding = 16; padding <= 40; padding += 8)
                         line("movq $0, " + address(operation.resultOffset - padding));
                     line("movq $" + std::to_string(field.length) + ", " + address(operation.resultOffset - 48));
-                } else if constexpr (std::is_same_v<Op, ir::BorrowLiteralSpan>) {
-                    const std::string label = ".Laurora_literal_" + std::to_string(literalBytes.size());
-                    literalBytes.push_back(operation.bytes);
+                } else if constexpr (std::is_same_v<Op, ir::BorrowLiteralSpanObservation>) {
+                    const std::string label = ".Laurora_literal_" + std::to_string(instructionId);
                     line("movq $0, " + address(operation.resultOffset));
                     line("leaq " + label + "(%rip), %rcx");
                     line("movq %rcx, " + address(operation.resultOffset - 8));
@@ -1172,7 +1170,7 @@ class X86Emitter {
                             return std::to_string(byte) + "(%r10)";
                         },
                         CopyBases::Stable);
-                } else if constexpr (std::is_same_v<Op, ir::InitializeClassArray>) {
+                } else if constexpr (std::is_same_v<Op, ir::InitializeClassArrayObservation>) {
                     const auto receiver = currentCallable().receiver();
                     const auto &name = operation.objectOffset == 0
                                            ? receiver->className
@@ -1308,7 +1306,8 @@ class X86Emitter {
                     storeValue(field.elementType,
                                std::to_string(receiverStorage().fieldOffsets[operation.fieldIndex]) + "(%r10,%rcx," +
                                    std::to_string(ir::storageWidth(field.elementType)) + ")");
-                } else if constexpr (std::is_same_v<Op, ir::MethodCall> || std::is_same_v<Op, ir::BorrowedCall>) {
+                } else if constexpr (std::is_same_v<Op, ir::MethodCallObservation> ||
+                                     std::is_same_v<Op, ir::BorrowedCallObservation>) {
                     const auto target = metadata->callable(metadata->findCallable(operation.callee).value());
                     const bool aggregate = classParameters(target);
                     const int recordBytes =
@@ -1317,7 +1316,7 @@ class X86Emitter {
                         for (std::size_t index = target.parameters().size(); index > 0; --index)
                             pop(argumentRegisters[index - 1]);
                     int borrowedRecordBytes = 0;
-                    if constexpr (std::is_same_v<Op, ir::BorrowedCall>) {
+                    if constexpr (std::is_same_v<Op, ir::BorrowedCallObservation>) {
                         if (target.secondBorrowedParameter()) {
                             borrowedRecordBytes = 16;
                             reserveStack(borrowedRecordBytes);
@@ -1644,7 +1643,6 @@ public:
         const auto &module = validated.get();
         output.str("");
         output.clear();
-        literalBytes.clear();
         emittedStackFacts.clear();
         currentStackFacts = nullptr;
         metadata = &validated.metadata();
@@ -1652,7 +1650,7 @@ public:
         std::set<std::string> referencedReflection;
         if (reflection == ReflectionEmission::Referenced)
             for (const auto &body : module.functions)
-                for (const auto &instruction : body.code)
+                for (const auto instruction : body.code)
                     if (const auto *query = std::get_if<ir::MetadataQuery>(&instruction))
                         referencedReflection.insert(querySymbol(query->query, query->moduleScope));
         // Resource graphs link a trusted host adapter. No user-selected source
@@ -1674,9 +1672,9 @@ public:
                                        return type.isResource() ||
                                               (type.isClass() && ir::owningClass(*metadata, type.className));
                                    }) ||
-                       std::any_of(body.code.begin(), body.code.end(), [](const ir::Instruction &op) {
+                       std::any_of(body.code.begin(), body.code.end(), [](const ir::InstructionObservation &op) {
                            return std::holds_alternative<ir::BeginBytes>(op) ||
-                                  std::holds_alternative<ir::ResourceCall>(op) ||
+                                  std::holds_alternative<ir::ResourceCallObservation>(op) ||
                                   std::holds_alternative<ir::InitializeBytesField>(op) ||
                                   std::holds_alternative<ir::MoveObject>(op) ||
                                   std::holds_alternative<ir::BindOwnedObjectParameter>(op) ||
@@ -1701,7 +1699,7 @@ public:
             stackDepth = 0;
             beginStackFacts(function.name());
             serviceLoanOffsets.clear();
-            for (const auto &operation : body.code)
+            for (const auto operation : body.code)
                 if (const auto *loan = std::get_if<ir::AcquireServiceLoan>(&operation))
                     serviceLoanOffsets.emplace(loan->loanId, loan->offset);
             divisionIndex = 0;
@@ -1768,22 +1766,28 @@ public:
             // function clean even if an earlier emission was abandoned by a throw.
             directResult = false;
             leftInRcx = false;
-            for (std::size_t at = 0; at < body.code.size(); ++at) {
+            for (ir::CodePosition at = 0; at < body.code.size(); ++at) {
                 // An element read returned at once is copied into the result
                 // storage directly. Adjacency means no label or other use lies
                 // between; the slot is never read again after the return.
-                const auto *load = std::get_if<ir::ValuesLoad>(&body.code[at]);
-                const auto *result =
-                    at + 1 < body.code.size() ? std::get_if<ir::ReturnObject>(&body.code[at + 1]) : nullptr;
+                const auto currentInstruction = body.code[at];
+                const auto nextInstruction = at + 1 < body.code.size()
+                                                 ? std::optional<ir::InstructionObservation>(body.code[at + 1])
+                                                 : std::nullopt;
+                const auto followingInstruction = at + 2 < body.code.size()
+                                                      ? std::optional<ir::InstructionObservation>(body.code[at + 2])
+                                                      : std::nullopt;
+                const auto *load = std::get_if<ir::ValuesLoad>(&currentInstruction);
+                const auto *result = nextInstruction ? std::get_if<ir::ReturnObject>(&*nextInstruction) : nullptr;
                 // A pushed left operand followed by a plain accumulator load stays
                 // in %rcx for the binary operation that would pop it. The load
                 // touches neither %rcx nor the stack, and no label lies between.
-                if (at + 2 < body.code.size() && std::holds_alternative<ir::Push>(body.code[at]) &&
-                    plainLoad(body.code[at + 1]) && poppedBinary(body.code[at + 2])) {
+                if (followingInstruction && std::holds_alternative<ir::Push>(currentInstruction) &&
+                    plainLoad(*nextInstruction) && poppedBinary(*followingInstruction)) {
                     line("movq %rax, %rcx");
-                    instruction(body.code[at + 1]);
+                    instruction(*nextInstruction, body.code.idAt(at + 1));
                     leftInRcx = true;
-                    instruction(body.code[at + 2]);
+                    instruction(*followingInstruction, body.code.idAt(at + 2));
                     leftInRcx = false;
                     at += 2;
                 } else if (load && result && result->offset == load->resultOffset) {
@@ -1791,13 +1795,13 @@ public:
                         ownerElementStride(load->offset, load->fieldIndex))
                         throw Error("x86 backend returned element storage of a different extent");
                     directResult = true;
-                    instruction(body.code[at]);
+                    instruction(currentInstruction, body.code.idAt(at));
                     directResult = false;
                     line("xorq %rax, %rax");
                     line("jmp " + returnLabel());
                     ++at;
                 } else
-                    instruction(body.code[at]);
+                    instruction(currentInstruction, body.code.idAt(at));
             }
             if (stackDepth != 0 || liveStackBytes != frameBytes + 16)
                 throw Error("x86 backend left an unbalanced stack reservation");
@@ -1839,14 +1843,22 @@ public:
         }
         output << ".Laurora_bounds_trap:\n    ud2\n.Laurora_overflow_trap:\n    "
                   "ud2\n.Laurora_division_zero_trap:\n    ud2\n.Laurora_shift_count_trap:\n    ud2\n";
-        if (!literalBytes.empty()) {
-            output << ".section .rodata\n";
-            for (std::size_t index = 0; index < literalBytes.size(); ++index) {
-                output << ".Laurora_literal_" << index << ":\n";
-                for (const auto byte : literalBytes[index])
-                    output << "    .byte " << static_cast<unsigned>(byte) << '\n';
+        // Retained code names durable payload rows. Revisit those literals rather
+        // than retaining a second native owner of their bytes during emission.
+        bool literalSection = false;
+        for (const auto &body : module.functions)
+            for (ir::CodePosition at = 0; at < body.code.size(); ++at) {
+                const auto observation = body.code[at];
+                if (const auto *literal = std::get_if<ir::BorrowLiteralSpanObservation>(&observation)) {
+                    if (!literalSection) {
+                        output << ".section .rodata\n";
+                        literalSection = true;
+                    }
+                    output << ".Laurora_literal_" << body.code.idAt(at) << ":\n";
+                    for (const auto byte : literal->bytes)
+                        output << "    .byte " << static_cast<unsigned>(byte) << '\n';
+                }
             }
-        }
         output << ".section .note.GNU-stack,\"\",@progbits\n";
         return output.str();
     }

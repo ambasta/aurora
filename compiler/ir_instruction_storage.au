@@ -1,0 +1,243 @@
+export module aurora.compiler.ir_instruction_storage;
+
+// Durable executable storage. Ingress fills immutable instruction/payload rows
+// once. Native checks may only stable-filter code-order indices before publish.
+// Layout comments are source predictions, never generated ABI evidence.
+export namespace compiler_ir_instructions {
+    enum class InstructionStatus { pending, admitted, published, allocation, invalid };
+    enum class InstructionError {
+        none,
+        //: invalid hosted IR instruction transport
+        integrity,
+        //: invalid typed IR: noncanonical instruction type payload
+        noncanonical_type
+    };
+    // The eight OutputRow-width leaves remain raw integers. Unknown operator
+    // values reach native semantics; unknown structural tags reject normally.
+    class RawInstructionRow {
+        i64 recordKind;
+        i64 instructionForm;
+        i64 unaryOperation;
+        i64 binaryOperation;
+        i64 comparisonOperation;
+        i64 queryOperation;
+        i64 operandBegin;
+        i64 operandCount;
+    public:
+        RawInstructionRow(i64 kind, i64 form, i64 begin, i64 count) : recordKind(kind), instructionForm(form),
+            unaryOperation(0), binaryOperation(0), comparisonOperation(0), queryOperation(0),
+            operandBegin(begin), operandCount(count) {}
+        auto kind() const -> i64 { return recordKind; }
+        auto form() const -> i64 { return instructionForm; }
+        auto unary_operation() const -> i64 { return unaryOperation; }
+        auto binary_operation() const -> i64 { return binaryOperation; }
+        auto comparison_operation() const -> i64 { return comparisonOperation; }
+        auto query() const -> i64 { return queryOperation; }
+        auto operand_begin() const -> i64 { return operandBegin; }
+        auto operand_count() const -> i64 { return operandCount; }
+    };
+    class RawOperandRow {
+        i64 operandRole;
+        i64 signedValue;
+        u64 unsignedValue;
+        i64 sliceBegin;
+        i64 sliceCount;
+    public:
+        RawOperandRow(i64 role, i64 value, u64 unsigned_value, i64 begin, i64 count) : operandRole(role),
+            signedValue(value), unsignedValue(unsigned_value), sliceBegin(begin), sliceCount(count) {}
+        auto role() const -> i64 { return operandRole; }
+        auto signed_value() const -> i64 { return signedValue; }
+        auto unsigned_value() const -> u64 { return unsignedValue; }
+        auto begin() const -> i64 { return sliceBegin; }
+        auto count() const -> i64 { return sliceCount; }
+    };
+    // InstructionId is immutable and one-based. CodePosition is zero-based
+    // within a body; neither declaration ordinals nor positions are row IDs.
+    class CodeRow {
+        i64 instructionId;
+    public:
+        CodeRow(i64 id) : instructionId(id) {}
+        auto id() const -> i64 { return instructionId; }
+    };
+    // The row index is the stable zero-based CallableId. Its allocation never
+    // moves, including when native normalization reduces retainedCount.
+    class BodyRow {
+        i64 codeBegin;
+        i64 codeCapacity;
+        i64 retainedCount;
+    public:
+        BodyRow(i64 begin, i64 capacity, i64 count) : codeBegin(begin), codeCapacity(capacity),
+            retainedCount(count) {}
+        auto begin() const -> i64 { return codeBegin; }
+        auto capacity() const -> i64 { return codeCapacity; }
+        auto count() const -> i64 { return retainedCount; }
+    };
+    class InstructionCounts {
+        i64 instructionCount;
+        i64 operandCount;
+        i64 literalCount;
+        i64 bodyCount;
+    public:
+        InstructionCounts(i64 instructions, i64 operands, i64 literals, i64 bodies) :
+            instructionCount(instructions), operandCount(operands), literalCount(literals), bodyCount(bodies) {}
+        auto instruction_count() const -> i64 { return instructionCount; }
+        auto operand_count() const -> i64 { return operandCount; }
+        auto literal_count() const -> i64 { return literalCount; }
+        auto body_count() const -> i64 { return bodyCount; }
+    };
+    auto valid_counts(InstructionCounts counts) -> bool {
+        return counts.instruction_count() >= 0 && counts.operand_count() >= 0
+            && counts.literal_count() >= 0 && counts.body_count() >= 0;
+    }
+    auto instruction_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<RawInstructionRow> {
+        const RawInstructionRow fill = RawInstructionRow(-1, -1, -1, -1);
+        builtin::OwnedValues<RawInstructionRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
+    auto operand_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<RawOperandRow> {
+        const RawOperandRow fill = RawOperandRow(-1, 0, 0u64, -1, -1);
+        builtin::OwnedValues<RawOperandRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
+    auto code_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<CodeRow> {
+        const CodeRow fill = CodeRow(0);
+        builtin::OwnedValues<CodeRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
+    auto body_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<BodyRow> {
+        const BodyRow fill = BodyRow(-1, -1, -1);
+        builtin::OwnedValues<BodyRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
+    class InstructionStore {
+        builtin::OwnedValues<RawInstructionRow> instructions;
+        builtin::OwnedValues<RawOperandRow> operands;
+        builtin::OwnedBytes literals;
+        builtin::OwnedValues<CodeRow> codeOrder;
+        builtin::OwnedValues<BodyRow> bodies;
+        InstructionStatus statusValue;
+        InstructionError errorValue;
+    public:
+        InstructionStore(builtin::ByteRegion region, InstructionCounts counts) :
+            instructions(instruction_pool(region, counts.instruction_count())),
+            operands(operand_pool(region, counts.operand_count())), literals(region.try_allocate(counts.literal_count())),
+            codeOrder(code_pool(region, counts.instruction_count())), bodies(body_pool(region, counts.body_count())),
+            statusValue(InstructionStatus::pending), errorValue(InstructionError::none) {}
+        auto initialize(InstructionCounts counts) -> bool {
+            if (statusValue != InstructionStatus::pending) { return false; }
+            if (!valid_counts(counts)) {
+                statusValue = InstructionStatus::invalid;
+                errorValue = InstructionError::integrity;
+            } else {
+                if (!allocated() || instructions.size() != counts.instruction_count()
+                    || operands.size() != counts.operand_count() || literals.size() != counts.literal_count()
+                    || bodies.size() != counts.body_count()) { statusValue = InstructionStatus::allocation; }
+            }
+            return statusValue == InstructionStatus::pending;
+        }
+        auto allocated() const -> bool {
+            return instructions.ok() && operands.ok() && literals.ok() && codeOrder.ok() && bodies.ok()
+                && codeOrder.size() == instructions.size();
+        }
+        auto status() const -> InstructionStatus { return statusValue; }
+        auto error() const -> InstructionError { return errorValue; }
+        auto instruction_count() const -> i64 { return instructions.size(); }
+        auto operand_count() const -> i64 { return operands.size(); }
+        auto literal_count() const -> i64 { return literals.size(); }
+        auto code_count() const -> i64 { return codeOrder.size(); }
+        auto body_count() const -> i64 { return bodies.size(); }
+        auto instruction_at(i64 id) const -> RawInstructionRow {
+            if (id <= 0 || id > instruction_count() || !instructions.ok()) {
+                return RawInstructionRow(-1, -1, -1, -1);
+            }
+            const RawInstructionRow result = instructions.at(id - 1);
+            return result;
+        }
+        auto operand_at(i64 index) const -> RawOperandRow {
+            if (index < 0 || index >= operand_count() || !operands.ok()) {
+                return RawOperandRow(-1, 0, 0u64, -1, -1);
+            }
+            const RawOperandRow result = operands.at(index);
+            return result;
+        }
+        auto literal_at(i64 index) const -> i64 {
+            if (index < 0 || index >= literal_count() || !literals.ok()) { return -1; }
+            return i64(literals.at(index));
+        }
+        auto code_at(i64 index) const -> CodeRow {
+            if (index < 0 || index >= code_count() || !codeOrder.ok()) { return CodeRow(0); }
+            const CodeRow result = codeOrder.at(index);
+            return result;
+        }
+        auto body_at(i64 callable) const -> BodyRow {
+            if (callable < 0 || callable >= body_count() || !bodies.ok()) { return BodyRow(-1, -1, -1); }
+            const BodyRow result = bodies.at(callable);
+            return result;
+        }
+        auto reject(InstructionError reason) -> bool {
+            if (statusValue == InstructionStatus::pending || statusValue == InstructionStatus::admitted) {
+                statusValue = InstructionStatus::invalid;
+                errorValue = reason;
+                if (reason == InstructionError::none) { errorValue = InstructionError::integrity; }
+            }
+            return false;
+        }
+        auto admit() -> bool {
+            if (statusValue != InstructionStatus::pending) { return false; }
+            statusValue = InstructionStatus::admitted;
+            return true;
+        }
+        // Only an already checked native body may call these two operations.
+        // Forward compaction copies IDs, never immutable payload records.
+        auto retain_code(i64 callable, i64 source, i64 destination) -> bool {
+            if (statusValue != InstructionStatus::admitted || callable < 0 || callable >= body_count()) {
+                return reject(InstructionError::integrity);
+            }
+            const BodyRow body = bodies.at(callable);
+            if (source < 0 || source >= body.count() || destination < 0 || destination > source) {
+                return reject(InstructionError::integrity);
+            }
+            const CodeRow value = codeOrder.at(body.begin() + source);
+            if (value.id() <= body.begin() || value.id() > body.begin() + body.capacity()) {
+                return reject(InstructionError::integrity);
+            }
+            if (destination > 0) {
+                const CodeRow previous = codeOrder.at(body.begin() + destination - 1);
+                if (previous.id() >= value.id()) { return reject(InstructionError::integrity); }
+            }
+            if (!codeOrder.set(body.begin() + destination, value)) { return reject(InstructionError::integrity); }
+            return true;
+        }
+        auto truncate_body(i64 callable, i64 count) -> bool {
+            if (statusValue != InstructionStatus::admitted || callable < 0 || callable >= body_count()) {
+                return reject(InstructionError::integrity);
+            }
+            const BodyRow old = bodies.at(callable);
+            if (count < 0 || count > old.count()) { return reject(InstructionError::integrity); }
+            i64 previous = old.begin();
+            i64 at = 0;
+            while (at < count) {
+                const CodeRow code = codeOrder.at(old.begin() + at);
+                if (code.id() <= previous || code.id() > old.begin() + old.capacity()) {
+                    return reject(InstructionError::integrity);
+                }
+                previous = code.id();
+                at = at + 1;
+            }
+            const BodyRow value = BodyRow(old.begin(), old.capacity(), count);
+            if (!bodies.set(callable, value)) { return reject(InstructionError::integrity); }
+            return true;
+        }
+        auto publish() -> bool {
+            if (statusValue != InstructionStatus::admitted) { return false; }
+            statusValue = InstructionStatus::published;
+            return true;
+        }
+    };
+    auto create(builtin::ByteRegion region, InstructionCounts counts) -> InstructionStore {
+        InstructionStore result = InstructionStore(region, counts);
+        result.initialize(counts);
+        return move(result);
+    }
+    auto release(builtin::ByteRegion region, InstructionStore store) -> i64 { return 0; }
+}

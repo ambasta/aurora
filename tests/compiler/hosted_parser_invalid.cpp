@@ -2221,6 +2221,30 @@ extern "C" std::int64_t aurora_hosted_metadata_run(void *) noexcept {
 extern "C" std::int64_t aurora_hosted_metadata_error(const void *) noexcept {
     unexpectedMetadataEntry();
 }
+extern "C" void aurora_hosted_instructions_create(const void *, void *) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" void aurora_hosted_instructions_release(void *) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" std::int64_t aurora_hosted_instructions_allocated(const void *) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" std::int64_t aurora_hosted_instructions_admit(const void *) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" std::int64_t aurora_hosted_instructions_retain_code(void *, const void *) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" std::int64_t aurora_hosted_instructions_truncate_body(void *, const void *) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" std::int64_t aurora_hosted_instructions_publish(void *) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" std::int64_t aurora_hosted_instructions_error(const void *) noexcept {
+    unexpectedMetadataEntry();
+}
 extern "C" void aurora_hosted_parser_create(const void *input, void *output) {
     const auto &value = *static_cast<const aurora::hosted_abi::ParserCreate *>(input);
     require(value.region != 0 && value.capacity == 0, "adapter did not request empty arena with live region");

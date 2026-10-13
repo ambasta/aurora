@@ -16,6 +16,8 @@ import aurora.compiler.resolver;
 import aurora.compiler.ir_graph;
 import aurora.compiler.ir_metadata_storage;
 import aurora.compiler.ir_metadata;
+import aurora.compiler.ir_instruction_storage;
+import aurora.compiler.ir_instructions;
 
 // The host bridge enters this root module. Ordinary imported-function retention
 // then keeps exactly the parser, resolver, lowering and IR graph implementations they call.
@@ -194,9 +196,11 @@ export namespace compiler_frontend {
     auto graph_retained(const compiler_ir_graph::Workspace& workspace, i64 index) -> bool {
         return compiler_ir_graph::retained(workspace, index);
     }
-    auto metadata_create(builtin::ByteRegion region, compiler_ir_metadata::InputCounts counts, i64 callableCount, i64 slotCount)
+    auto metadata_create(builtin::ByteRegion region, compiler_ir_metadata::InputCounts counts,
+        i64 callableCount, i64 slotCount, i64 instructionBegin)
         -> compiler_ir_metadata::MetadataStore {
-        compiler_ir_metadata::MetadataStore result = compiler_ir_metadata::create(region, counts, callableCount, slotCount);
+        compiler_ir_metadata::MetadataStore result = compiler_ir_metadata::create(region, counts, callableCount,
+            slotCount, instructionBegin);
         return move(result);
     }
     auto metadata_release(builtin::ByteRegion region, compiler_ir_metadata::MetadataStore store) -> i64 {
@@ -209,6 +213,36 @@ export namespace compiler_frontend {
         return compiler_ir_metadata::run(store);
     }
     auto metadata_error(const compiler_ir_metadata::MetadataStore& store) -> compiler_ir_metadata::MetadataError {
+        return store.error();
+    }
+    auto instructions_create(builtin::ByteRegion region, compiler_ir_instructions::InstructionCounts counts)
+        -> compiler_ir_instructions::InstructionStore {
+        compiler_ir_instructions::InstructionStore result = compiler_ir_instructions::create(region, counts);
+        return move(result);
+    }
+    auto instructions_release(builtin::ByteRegion region, compiler_ir_instructions::InstructionStore store) -> i64 {
+        return compiler_ir_instructions::release(region, move(store));
+    }
+    auto instructions_allocated(const compiler_ir_instructions::InstructionStore& store) -> bool {
+        return store.allocated();
+    }
+    auto instructions_admit(compiler_ir_instructions::InstructionStore& store,
+        const compiler_ir_metadata::MetadataStore& metadata) -> compiler_ir_instructions::InstructionStatus {
+        return compiler_ir_instructions::admit_instruction_storage(store, metadata);
+    }
+    auto instructions_retain_code(compiler_ir_instructions::InstructionStore& store,
+        i64 callable, i64 source, i64 destination) -> bool {
+        return store.retain_code(callable, source, destination);
+    }
+    auto instructions_truncate_body(compiler_ir_instructions::InstructionStore& store,
+        i64 callable, i64 count) -> bool {
+        return store.truncate_body(callable, count);
+    }
+    auto instructions_publish(compiler_ir_instructions::InstructionStore& store) -> bool {
+        return store.publish();
+    }
+    auto instructions_error(const compiler_ir_instructions::InstructionStore& store)
+        -> compiler_ir_instructions::InstructionError {
         return store.error();
     }
 }

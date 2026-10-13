@@ -8,14 +8,15 @@ The typed-IR milestone established behavior-preserving compiler phase boundaries
 2. `types.hpp` defines source types and common tokens/errors.
 3. The hosted Aurora lexer turns bytes into tokens; `syntax.hpp` defines the untyped source AST. `parser.hpp` is a compatibility entrypoint for one complete hosted Aurora module parse; all declaration/container grammar lives in `parser.au`.
 4. `lowering_types.au`, `lowering_values.au` and the `lowering_frames`, `lowering_calls`, `lowering_expressions`, `lowering_statements` and `lowering_body` modules perform resolved layout/signature analysis, local/member resolution, exact argument-type overload selection, initialization and const/private checks, ownership moves, lexical borrow checks and conservative branch/loop joins. `lowering.au` publishes typed instructions and metadata from the same resolved Session.
-5. `hosted_lowering.cpp` mechanically projects the generated typed records into the target-independent accumulator/value-stack model in `ir.hpp`. Its operations include checked arithmetic, typed loads/stores, explicit control flow, metadata queries and array guard/access operations. Instruction/operator enums come from predecessor-generated Aurora facts.
-6. `ir_metadata.au` independently validates module metadata, callable signatures and frame declarations, deriving physical class layouts in one retained Aurora owner. `ir_verify.hpp` checks every function's instruction types, initialization, control-flow, operand-stack and bounds-token invariants against that owner. After native function normalization, `ir_graph.au` independently checks the complete call graph and selects retained functions. Only the resulting immutable `ValidatedModule` can be passed to the emitter.
+5. `hosted_lowering.cpp` mechanically fills the durable Aurora metadata and instruction owners from generated typed records. One instruction field walk serves source ingress, hostile native fixtures and borrowed native observations. Instruction/operator enums come from predecessor-generated Aurora facts.
+6. `ir_metadata.au` independently validates module metadata, callable signatures and frame declarations, deriving physical class layouts. `ir_instructions.au` admits instruction storage and canonical type payloads. `ir_verify.hpp` checks instruction types, initialization, control-flow, operand-stack and bounds-token invariants through borrowed observations of those owners. After native function normalization, `ir_graph.au` independently checks the complete call graph and selects retained functions. Only the resulting immutable `ValidatedModule` can be passed to the emitter.
 7. `x86.hpp` lowers validated operations to GNU x86-64 assembly. It has no source AST, scope lookup, const policy, owner-liveness state or borrow-state checker. Target registers, ABI argument placement, stack alignment and machine trap sequences exist only here. Two local forms avoid stack and copy traffic without changing any check: a pushed left operand followed directly by a constant, local or receiver-field load stays in `%rcx` for the arithmetic or comparison that would pop it, and an element read that the next instruction returns is copied straight into the caller's result storage.
 8. `main.cpp` coordinates file I/O and those stages. GNU assembler/linker remain the bootstrap native toolchain.
 
 The C++ host uses internal header units and one main translation unit, linked with the generated Aurora frontend through Meson. Raw `main.cpp` compilation no longer builds a compiler. These are actual phase boundaries, not a stable external compiler-library API.
 
-The graph and metadata migrations are source-only candidates. Their fixed paired-root
+The graph, metadata and instruction-owner migrations are source-only candidates.
+Their fixed paired-root
 [source-bootstrap dependency](README.md#source-bootstrap), current-stage convergence
 and final-source qualification remain unexecuted.
 
@@ -206,8 +207,10 @@ and each continuation to 496 bytes. Fixed diagnostic storage is reserved before
 work, so a selected error needs no further allocation. Local/snapshot/continuation
 bounds and checked geometric growth are part of the quota; partial IR never
 publishes. `hosted_lowering.cpp` checks bounded roles, slices and unique ownership,
-then projects all 84 instruction forms and functions while filling pending
-Aurora-owned metadata directly. It does not repeat source legality checks. Each Aurora-selected error's message is the `//:`
+then fills pending Aurora-owned metadata and instruction storage directly.
+Variable-length instruction payloads are borrowed while copying into the durable
+owner, rather than reconstructed as native vectors. Projection does not repeat
+source legality checks. Each Aurora-selected error's message is the `//:`
 text above its reason in `lowering_errors.au`; the frontend generator turns those
 into a table in the generated ABI header and fails if a reason lacks one.
 `hosted_lowering_diagnostics.cpp` checks the payload against that entry and fills
@@ -276,7 +279,7 @@ owner cleanup precedes region closure.
 Function CFG/provenance checks remain C++. They reject missing/malformed calls and
 unreachable semantic instructions before graph processing.
 
-## Durable metadata, callables and frames
+## Durable metadata and instructions
 
 `ir_metadata_storage.au` owns metadata, callable signatures and frame declarations,
 plus canonical class fields, offsets and layouts. `ir_metadata.au` admits names,
@@ -285,11 +288,11 @@ instruction/provenance/CFG checks follow. A later bad signature or frame may thu
 precede an earlier bad body; this explicit phase order replaces per-function
 interleaving. Malformed raw Type tails reject before canonical Type observation.
 
-Production lowering fills one move-only pending ingress directly from typed
-records. `FunctionBody` contains only a stable callable ID and instructions.
-Raw `Function` maps remain for hostile `Module` fixtures; their declarations enter
-the same owner and are destroyed before body checking. Session is released before
-admission. The verifier, graph pass, x86 emitter and ABI facts borrow the same
+Production lowering fills one move-only pending ingress that binds both owners.
+`FunctionBody` contains a stable callable ID and a borrowed instruction range.
+Raw `Function` maps and instruction vectors remain for hostile `Module` fixtures;
+they enter the same owners and are destroyed before body checking. Session is
+released before admission. The verifier, graph pass, x86 emitter and ABI facts borrow the same
 immutable metadata. Graph pruning never renumbers callable IDs.
 
 Each callable owns a sorted range of eight existing slot-record kinds. Aurora
@@ -300,17 +303,33 @@ indexes; it does not reserve frame storage or re-admit declarations.
 
 Pool lengths replace six redundant stored counts. Four raw-prefix counts remain
 because field/storage/index pools also hold normalization tails. Adding the slot
-owner after that compaction predicts a 504-byte MetadataStore, below the previous
-520-byte layout; emitted facts still need qualification. Types contain class
-leaves and supplied field types, then each callable's signature followed by its
-typed slots. Every slot/type range has exact coverage; the raw index suffix holds
-sorted callable IDs for lookup.
+owner and instruction-type boundary after that compaction predicts a 512-byte
+MetadataStore; emitted facts still need qualification. Declaration types contain
+class leaves and supplied field types, then each callable's signature and typed
+slots. Instruction type occurrences follow in a separate suffix of that same
+pool. Declaration references cannot reach the suffix. Every slot/type range has
+exact coverage; the raw index suffix holds sorted callable IDs for lookup.
 
 The host binds named pools to generated row shapes and descriptor offsets.
 Readonly Region observations stay inside the capsule; record reads copy values,
 and borrowed views die before owner cleanup. The closed pool-to-row binding is
 source-reviewed because predecessor facts lack owned element identity. No native
 metadata/signature/frame cache or per-pass summary serializer is retained.
+
+`ir_instruction_storage.au` owns raw instruction and operand rows, literal bytes,
+code-order IDs and body intervals. The generic source admission checks bounded,
+exclusive payload coverage and canonical raw type tails; the sole native codec
+checks ordered instruction shapes. Opcode-specific semantics remain native.
+Malformed instruction type tails now reject before opcode-specific errors, with
+`invalid typed IR: noncanonical instruction type payload`.
+
+Instruction IDs are immutable and one-based; function-local code positions are
+separate. Native provenance uses IDs, while CFG worklists use positions. After
+body checking, normalization filters only code-order IDs. Argument lists and
+literal bytes remain borrowed from the owner; the emitter revisits literals for
+rodata rather than retaining a second byte pool. Literal labels use stable IDs,
+so incidental assembly label numbering changes. Existing graph scratch remains
+separate until its own migration; this owner adds no unused graph workspace.
 
 This migration claims no net source-line, peak-memory or speed reduction.
 Destination allocation overlaps Session lifetime; sorting may reorder Internal
