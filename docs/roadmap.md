@@ -22,8 +22,9 @@ state behind sealed ConsoleSession/DisplaySession capabilities. The
 and four named session-local RAM files; the [graphical console](framebuffer-console.md)
 adds Aurora-owned presentation. This state lasts for the session, not across
 reboots. The protected-console source also uses ConsoleSession for individual
-input turns; native dispatch, lifecycle and result presentation remain migration
-dependencies. BIOS diagnostics retain their legacy boundary. General terminal
+input and response turns, awaiting execution qualification; native dispatch and
+lifecycle remain migration dependencies. BIOS diagnostics retain their legacy
+boundary. General terminal
 sessions and file services remain open.
 
 ## 1. Protected programs and file services

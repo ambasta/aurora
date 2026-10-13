@@ -8,6 +8,7 @@ program::Files command_files;
 bool command_file{},command_transform{};
 bool command_reading{};
 extern "C" void __au_runtime_program_input(const void*, void*);
+extern "C" auto __au_runtime_program_response(const void*) -> U64;
 extern "C" void __au_runtime_note_update(const void*, void*);
 extern "C" void __au_runtime_note_project(const void*, void*);
 extern "C" void __au_runtime_files_update(const void*, void*);
@@ -80,6 +81,24 @@ __attribute__((noinline)) auto program_read_input(program::Submission& input,U64
     require(input.valid(),"program closed input submission");
     ProgramInputSession::release(argument.console);
     require(ProgramInputPlatform::quiet(),"program released input boundary");
+}
+// One complete response, including the next prompt, uses the existing Console
+// operations only after native mutation or protected retirement is complete.
+// No submission, stream receipt or publication authority crosses this boundary.
+[[nodiscard]] __attribute__((noinline)) auto program_write_response(program::Response& response) -> bool {
+    require(ProgramInputPlatform::quiet() && response.canonical_kind(),"program response entry boundary");
+    program::ResponseArgument argument{ProgramInputSession::open(),response};
+    response.scrub();
+    const auto result=__au_runtime_program_response(&argument);
+    const bool canonical=result<=1;
+    ProgramInputSession::release(argument.console);
+    argument.scrub();
+    require(canonical && ProgramInputPlatform::quiet(),"program released response boundary");
+    return result==1;
+}
+template<class T> auto program_scrub_copy(T& value) -> void {
+    auto* bytes=reinterpret_cast<volatile std::byte*>(&value);
+    for (std::size_t index=0;index<sizeof(value);++index) bytes[index]=std::byte{0};
 }
 [[nodiscard]] auto recoverable_program_event() -> bool {
     const auto event=program.event();
@@ -234,7 +253,7 @@ __attribute__((noinline)) auto program_save_file() -> void {
     __au_runtime_files_replace(copied.data(),result.data());
     require(command_files.publish(result),"file Aurora replacement accepted");
 }
-auto program_command(program::Submission& input, bool reading=false, bool saving=false, bool file=false) -> void {
+[[nodiscard]] auto program_command(program::Submission& input, bool reading=false, bool saving=false, bool file=false) -> bool {
     require(!command_owned && program_boundary() && !mailbox && frames.used()==0 && !(reading && saving),
         "program command boundary");
     command_file=file;
@@ -286,29 +305,35 @@ auto program_command(program::Submission& input, bool reading=false, bool saving
             "file complete replacement authority");
     }
     program_cleanup(success);
+    program::Response response{program::Response::Kind::stopped};
     if (success && command_transform) {
         program_save_file();
-        ProgramSerial::text("File saved.\r\n");
+        response=program::Response{program::Response::Kind::file_saved};
     } else if (success) {
         auto output=command_stream.finish();
         require(output && command_stream.scrubbed(),"program complete output");
         if (saving) {
             program_save_note(*output);
-            ProgramSerial::text("Note saved.");
+            response=program::Response{program::Response::Kind::note_saved};
         } else {
-            ProgramSerial::text(output->missing() ? (file ? "File is missing." : "Note is missing.") : "output> ");
-            for (std::size_t i=0;i<output->length();++i) {
-                const auto byte=output->byte(i); require(byte.has_value(),"program output bounds");
-                ProgramSerial::put(*byte);
+            response=program::Response{output->missing()
+                ? (file ? program::Response::Kind::file_missing : program::Response::Kind::note_missing)
+                : program::Response::Kind::output};
+            if (!output->missing()) {
+                auto bytes=output->bytes();
+                require(output->length()<=bytes.size()
+                    && response.payload(std::span<const std::uint8_t>{bytes}.first(output->length())),
+                    "program copied response bytes");
+                program_scrub_copy(bytes);
             }
             output->scrub();
         }
-        ProgramSerial::text("\r\n");
     } else {
         require(command_stream.scrubbed(),"program cancelled output scrub");
-        ProgramSerial::text("Program stopped: checked fault or budget exhausted; output discarded.\r\n");
     }
-    ProgramSerial::text("aurora> ");
+    // A replacement may already be committed. A failed acknowledgment never
+    // retries the command or claims to roll that replacement back.
+    return program_write_response(response);
 }
 [[nodiscard]] auto program_note_update(const program::Submission& input) -> U64 {
     program::Note::UpdateInput copied{};
@@ -324,7 +349,8 @@ auto program_command(program::Submission& input, bool reading=false, bool saving
     }
     return program_note_apply(copied);
 }
-[[nodiscard]] __attribute__((noinline)) auto program_files_update(const program::Submission& input) -> U64 {
+[[nodiscard]] __attribute__((noinline)) auto program_files_update(const program::Submission& input,
+                                                                 program::Response& response) -> U64 {
     program::Files::UpdateInput copied{};
     const auto& saved=command_files.saved();
     for (std::size_t i=0;i<saved.size();++i) copied[i]=saved[i];
@@ -335,11 +361,12 @@ auto program_command(program::Submission& input, bool reading=false, bool saving
     const auto action=command_files.update(result);
     require(action.has_value(),"file closed update");
     if (*action==1) {
-        ProgramSerial::text("\r\n");
-        for (std::size_t i=0;i<Bytes{result}.get(336);++i)
-            ProgramSerial::put(std::to_integer<std::uint8_t>(result[272+i]));
-        ProgramSerial::text("\r\naurora> ");
+        response=program::Response{program::Response::Kind::file_reply};
+        const auto count=Bytes{result}.get(336);
+        require(count<=64 && response.payload(std::span<const std::byte>{result}.subspan(272,count)),
+            "file copied response bytes");
     }
+    program_scrub_copy(copied); program_scrub_copy(result);
     return *action;
 }
 __attribute__((noinline)) auto run_program_console() -> void {
@@ -350,41 +377,51 @@ __attribute__((noinline)) auto run_program_console() -> void {
     require((hardware::Io::read(0x3fb)&0x80)==0,"program UART register bank");
     hardware::Io::write(0x3f9,0); require(hardware::Io::read(0x3f9)==0,"program UART IRQ disabled");
     ProgramSerial::initialize_input();
-    ProgramSerial::text("AURORA_PROGRAM_CONSOLE_READY: UEFI CPL3 upper/note, ASCII, 64-byte lines\r\naurora> ");
+    program::Response ready{program::Response::Kind::ready};
+    bool okay=program_write_response(ready);
     program::Submission copied; U64 after_cr=0;
-    for (;;) {
+    while (okay) {
         program_read_input(copied,after_cr);
         after_cr=copied.after_cr(); // Carry a submitted CR across protected execution.
         const auto action=copied.action();
         if (action==program::Submission::Action::upper_payload) {
-            ProgramSerial::text("\r\n"); program_command(copied); continue;
+            okay=program_command(copied); continue;
         }
         if (action==program::Submission::Action::requested_exit || action==program::Submission::Action::output_failure) {
-            copied.scrub();
-            require(program_boundary() && frames.used()==0 && !mailbox,"program console exit boundary");
-            command_note.clear(); command_files.clear();
-            if (action==program::Submission::Action::output_failure) {
-                // A partial response cannot be rolled back or replayed. Leave
-                // through the failure device without using the failed channel.
-                hardware::Io::write(0xf4,0x11);
-                for (;;) asm volatile("cli; hlt");
-            }
-            ProgramSerial::text("AURORA_PROGRAM_CONSOLE_QUIET: timer=masked isr=0 irr=0 domains=0\r\n");
-            return;
+            okay=action!=program::Submission::Action::output_failure;
+            break;
         }
         const auto note_event=program_note_update(copied);
         if (note_event!=0) {
-            ProgramSerial::text("\r\n");
-            if (note_event==1) ProgramSerial::text("Note saved.\r\naurora> ");
-            else program_command(copied,note_event!=4,note_event==4);
+            if (note_event==1) {
+                program::Response response{program::Response::Kind::note_saved};
+                copied.scrub();
+                okay=program_write_response(response);
+            } else okay=program_command(copied,note_event!=4,note_event==4);
             copied.scrub(); continue;
         }
-        const auto file_event=program_files_update(copied);
+        program::Response response{program::Response::Kind::unknown};
+        const auto file_event=program_files_update(copied,response);
         if (file_event!=0) {
-            if (file_event>=2) { ProgramSerial::text("\r\n"); program_command(copied,true,false,true); }
+            if (file_event>=2) okay=program_command(copied,true,false,true);
+            else {
+                copied.scrub();
+                okay=program_write_response(response);
+            }
+            response.scrub();
             copied.scrub(); continue;
         }
         copied.scrub();
-        ProgramSerial::text("\r\nUnknown command. Type help.\r\naurora> ");
+        okay=program_write_response(response);
     }
+    copied.scrub();
+    require(ProgramInputPlatform::quiet(),"program console exit boundary");
+    command_note.clear(); command_files.clear();
+    if (!okay) {
+        // A partial response cannot be rolled back or replayed. Leave through
+        // the existing failure device without using the failed channel.
+        hardware::Io::write(0xf4,0x11);
+        for (;;) asm volatile("cli; hlt");
+    }
+    ProgramSerial::text("AURORA_PROGRAM_CONSOLE_QUIET: timer=masked isr=0 irr=0 domains=0\r\n");
 }

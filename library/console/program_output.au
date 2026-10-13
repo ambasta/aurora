@@ -1,0 +1,146 @@
+export module console.program_output;
+import console.io;
+import std.binary_buffer;
+
+export namespace console {
+    enum class ProgramResponseKind {
+        ready,
+        output,
+        note_missing,
+        file_missing,
+        note_saved,
+        file_saved,
+        file_reply,
+        stopped,
+        unknown
+    };
+
+    // Ordinary copied presentation data, with no command or publication authority.
+    // The private native ingress must validate raw kind bytes before entering
+    // Aurora: typed enum observations require a canonical enum representation.
+    class ProgramResponse {
+        std::BinaryBuffer64 bytes;
+        i64 count;
+        ProgramResponseKind kind;
+    public:
+        ProgramResponse(std::BinaryBuffer64 value, i64 length, ProgramResponseKind outcome)
+            : bytes(value), count(length), kind(outcome) {
+        }
+
+        auto status() const -> ProgramResponseKind {
+            return kind;
+        }
+        auto size() const -> i64 {
+            return count;
+        }
+        auto payload() const -> std::BinaryBuffer64 {
+            const std::BinaryBuffer64 result = bytes;
+            return result;
+        }
+
+        auto valid() const -> bool {
+            if (count < 0 || count > 64) {
+                return false;
+            }
+            if (kind != ProgramResponseKind::ready && kind != ProgramResponseKind::output
+                && kind != ProgramResponseKind::note_missing && kind != ProgramResponseKind::file_missing
+                && kind != ProgramResponseKind::note_saved && kind != ProgramResponseKind::file_saved
+                && kind != ProgramResponseKind::file_reply && kind != ProgramResponseKind::stopped
+                && kind != ProgramResponseKind::unknown) {
+                return false;
+            }
+            const bool carries_bytes = kind == ProgramResponseKind::output || kind == ProgramResponseKind::file_reply;
+            if (!carries_bytes && count != 0) {
+                return false;
+            }
+            i64 index = 0;
+            while (index < 64) {
+                const u8 byte = bytes.at(index);
+                if (index < count) {
+                    if (byte < ' ' || byte > '~') {
+                        return false;
+                    }
+                } else {
+                    if (byte != '\0') {
+                        return false;
+                    }
+                }
+                index = index + 1;
+            }
+            return true;
+        }
+    };
+}
+
+namespace console {
+    auto program_response_text(builtin::ConsoleSession& session, builtin::span<const u8> text) -> bool {
+        const WriteResult result = write(session, text);
+        return result.complete();
+    }
+}
+
+export namespace console {
+    // Validate the entire copied record before any output. A failed put ends
+    // this response immediately: no retry, later prompt or input read follows.
+    auto present_program_response(builtin::ConsoleSession& session, ProgramResponse response) -> bool {
+        if (!response.valid()) {
+            return false;
+        }
+        const ProgramResponseKind kind = response.status();
+        if (kind == ProgramResponseKind::output || kind == ProgramResponseKind::file_reply) {
+            if (kind == ProgramResponseKind::output) {
+                if (!program_response_text(session, "output> ")) {
+                    return false;
+                }
+            }
+            // Keep the existing readonly window on a named buffer. The response
+            // returns a bounded copy rather than a nested receiver-bound view.
+            const std::BinaryBuffer64 payload = response.payload();
+            if (!program_response_text(session, payload.bytes(0, response.size()))) {
+                return false;
+            }
+            if (!program_response_text(session, "\r\n")) {
+                return false;
+            }
+        } else {
+            if (kind == ProgramResponseKind::ready) {
+                if (!program_response_text(session,
+                    "AURORA_PROGRAM_CONSOLE_READY: UEFI CPL3 upper/note, ASCII, 64-byte lines\r\n")) {
+                    return false;
+                }
+            }
+            if (kind == ProgramResponseKind::note_missing) {
+                if (!program_response_text(session, "Note is missing.\r\n")) {
+                    return false;
+                }
+            }
+            if (kind == ProgramResponseKind::file_missing) {
+                if (!program_response_text(session, "File is missing.\r\n")) {
+                    return false;
+                }
+            }
+            if (kind == ProgramResponseKind::note_saved) {
+                if (!program_response_text(session, "Note saved.\r\n")) {
+                    return false;
+                }
+            }
+            if (kind == ProgramResponseKind::file_saved) {
+                if (!program_response_text(session, "File saved.\r\n")) {
+                    return false;
+                }
+            }
+            if (kind == ProgramResponseKind::stopped) {
+                if (!program_response_text(session,
+                    "Program stopped: checked fault or budget exhausted; output discarded.\r\n")) {
+                    return false;
+                }
+            }
+            if (kind == ProgramResponseKind::unknown) {
+                if (!program_response_text(session, "Unknown command. Type help.\r\n")) {
+                    return false;
+                }
+            }
+        }
+        return program_response_text(session, "aurora> ");
+    }
+}

@@ -601,22 +601,41 @@ int main() {
     require(result.returncode == 0, result.stderr.decode())
     result = run([files_binary])
     require(result.returncode == 0, f"shared files policy count/content/copy/zero-suffix contract: {result.returncode}")
-    # Separate positive ABI graph: an ordinary composed value crosses two service calls,
-    # five mixed value/span positions follow the capability, and a host put runs
-    # with an odd outstanding scalar-expression depth.
+    # Reuse the six-formal mixed ABI graph for copied nested/array/enum inputs
+    # and results. Independent snapshots cross two calls beside scalars/spans;
+    # the host put also retains its odd scalar-expression-depth coverage.
     abi_source = work / "mixed-abi.au"
     abi_source.write_text("""module kernel_console_service;
     enum class Marker { okay, wrong };
+    class Payload {
+        builtin::ConsoleSample observation;
+        array<u8, 3> bytes;
+        Marker marker;
+    public:
+        Payload(builtin::ConsoleSample sample) : observation(sample), bytes{}, marker(Marker::okay) {}
+        auto initialize() -> bool { bytes[0] = 'A'; bytes[2] = 255u8; return true; }
+        auto matches(u8 first, Marker expected) const -> bool {
+            return observation.byte_present && observation.byte == 'A' && !observation.damaged
+                && bytes[0] == first && bytes[1] == 0u8 && bytes[2] == 255u8 && marker == expected;
+        }
+        auto change() -> bool { bytes[0] = 'B'; marker = Marker::wrong; return true; }
+    };
     class Reply {
         builtin::ConsoleSample observation;
         i64 copied_count;
+        Payload copied_payload;
     public:
-        Reply(builtin::ConsoleSample sample, i64 count) : observation(sample), copied_count(count) {}
+        Reply(builtin::ConsoleSample sample, i64 count, Payload value)
+            : observation(sample), copied_count(count), copied_payload(value) {}
         auto sample() const -> builtin::ConsoleSample {
             const builtin::ConsoleSample value = observation;
             return value;
         }
         auto count() const -> i64 { return copied_count; }
+        auto payload() const -> Payload {
+            const Payload value = copied_payload;
+            return value;
+        }
     };
     auto number(builtin::ConsolePutResult status) -> i64 {
         if (status == builtin::ConsolePutResult::success) { return 7; }
@@ -625,24 +644,36 @@ int main() {
     auto odd(builtin::ConsoleSession& session) -> i64 {
         return 1 + number(session.put('z'));
     }
-    auto leaf(builtin::ConsoleSession& session, u8 a, builtin::span<const u8> text,
-              i64 b, bool flag, Marker marker) -> Reply {
+    auto leaf(builtin::ConsoleSession& session, u8 a, Payload value, builtin::span<const u8> text,
+              i64 b, Marker marker) -> Reply {
         const builtin::ConsoleSample report = session.next();
-        if (a != 'A' || text.size() != 3 || text.at(1) != 'y' || b != 41 || !flag || marker != Marker::okay) {
+        Payload changed = value;
+        if (!changed.change() || !value.matches('A', Marker::okay)
+            || !changed.matches('B', Marker::wrong) || text.size() != 3 || text.at(1) != 'y'
+            || a != 'A' || b != 41 || marker != Marker::okay) {
             session.put('!');
         }
-        const Reply result = Reply(report, b);
+        const Reply result = Reply(report, b, changed);
         return result;
     }
-    auto forward(builtin::ConsoleSession& session, u8 a, builtin::span<const u8> text,
+    auto forward(builtin::ConsoleSession& session, Payload value, builtin::span<const u8> text,
                  i64 b, bool flag, Marker marker) -> Reply {
-        const Reply result = leaf(session, a, text, b, flag, marker);
+        u8 a = '?';
+        if (flag) { a = 'A'; }
+        const Reply result = leaf(session, a, value, text, b, marker);
+        if (!value.matches('A', Marker::okay)) { session.put('!'); }
         return result;
     }
     auto console_service(builtin::ConsoleSession& session) -> builtin::ConsoleCompletion {
-        const Reply result = forward(session, 'A', "xyz", 41, true, Marker::okay);
+        const builtin::ConsoleSample sample = builtin::ConsoleSample{
+            .byte_present = true, .byte = 'A', .damaged = false};
+        Payload original = Payload(sample);
+        original.initialize();
+        const Reply result = forward(session, original, "xyz", 41, true, Marker::okay);
         const builtin::ConsoleSample report = result.sample();
-        if (!report.byte_present || report.byte != 'Q' || report.damaged || result.count() != 41 || odd(session) != 8) {
+        const Payload copied = result.payload();
+        if (!original.matches('A', Marker::okay) || !copied.matches('B', Marker::wrong)
+            || !report.byte_present || report.byte != 'Q' || report.damaged || result.count() != 41 || odd(session) != 8) {
             session.put('?');
         }
         return builtin::ConsoleCompletion::requested_exit;
@@ -671,7 +702,7 @@ int main() {
     )
     require(result.returncode == 0, result.stderr.decode())
     result = run([abi_binary], input=b"1 81 0\n")
-    require(result.returncode == 0 and result.stdout == b"z", "mixed service ABI/report/odd-depth failure")
+    require(result.returncode == 0 and result.stdout == b"z", "mixed copied service input/result/span/odd-depth failure")
     modules = work / "modules"
     (modules / "service").mkdir(parents=True)
     (modules / "service/helpers.au").write_text("""export module service.helpers;
@@ -823,6 +854,16 @@ int main() {
         "return": "auto f(builtin::ConsoleSession& s) -> builtin::ConsoleSession { return s; }",
         "region": "auto f(builtin::ConsoleSession& s, builtin::ByteRegion r) -> i64 { return 0; }",
         "owner": "auto f(builtin::ConsoleSession& s, builtin::OwnedBytes b) -> i64 { return 0; }",
+        "owned-class": (
+            "class Owner { builtin::OwnedBytes bytes; public: "
+            "Owner(builtin::ByteRegion region, builtin::OwnedBytes value) : bytes(move(value)) {} }; "
+            "auto f(builtin::ConsoleSession& s, Owner value) -> i64 { return 0; }"
+        ),
+        "seven-formals": (
+            "class Value { public: i64 count; }; "
+            "auto f(builtin::ConsoleSession& s, Value value, i64 a, i64 b, i64 c, i64 d, i64 e) "
+            "-> i64 { return 0; }"
+        ),
         "recursive": "auto f(builtin::ConsoleSession& s) -> i64 { return f(s); }",
         "scalar-cycle": (
             "auto again() -> i64 { return again(); } auto f(builtin::ConsoleSession& s) -> i64 { return again(); }"
@@ -859,6 +900,12 @@ int main() {
             "const Reply result = Reply{.count = 0}; return result; } "
             "auto f(builtin::ConsoleSession& s) -> Reply { const Reply result = g(s, s.put(65u8)); return result; }"
         ),
+        "copied-input-suspended": (
+            "class Value { builtin::ConsolePutResult status; public: "
+            "Value(builtin::ConsolePutResult result) : status(result) {} }; "
+            "auto use(builtin::ConsoleSession& s, Value value) -> i64 { return 0; } "
+            "auto f(builtin::ConsoleSession& s) -> i64 { return use(s, Value(s.put(65u8))); }"
+        ),
     }
     borrowed_parameter_error = (
         "AU2001: borrowed parameters require a supported leading owning-class reference signature on an ordinary function"
@@ -870,12 +917,14 @@ int main() {
         "forged": "AU3001: service forwarding requires a named exclusive service parameter",
         "local": "AU3001: service capability cannot be stored in a local",
         "overload": "AU4001: borrowed-object functions cannot be overloaded",
-        "owner": "AU3001: service helper parameters require scalars, enums or readonly byte spans",
+        "owner": "AU3001: service helper parameters require scalars, enums, copied values or readonly byte spans",
+        "owned-class": "AU3001: service helper parameters require scalars, enums, copied values or readonly byte spans",
+        "seven-formals": "AU3001: at most six parameters supported",
         "recursive": "AU3001: invalid typed IR: recursive receiver call cycle",
         "reflect": "AU3001: resource capabilities are unavailable to reflection",
         "reflect-id": "AU3001: resource capabilities are unavailable to reflection",
         "reflect-fields": "AU3001: resource capabilities are unavailable to reflection",
-        "region": "AU3001: service helper parameters require scalars, enums or readonly byte spans",
+        "region": "AU3001: service helper parameters require scalars, enums, copied values or readonly byte spans",
         "return": "AU2001: only scalar function results or scalar-field class values are supported",
         "scalar-cycle": "AU3001: invalid typed IR: recursive receiver call cycle",
         "second": borrowed_parameter_error,
@@ -891,6 +940,7 @@ int main() {
         "reference-result": "expected '{'",
         "copied-result-incomplete": "AU3001: function must return on every path",
         "copied-result-suspended": "AU3001: service operation requires an active named exclusive service parameter",
+        "copied-input-suspended": "AU3001: service operation requires an active named exclusive service parameter",
     }
     for name, body in negative.items():
         source = work / f"{name}.au"
@@ -908,7 +958,7 @@ int main() {
         f"RAM-note lifetime/replacement/rejection and {len(note_normal.stdout)} note timeout prefixes, "
         "byte-span comparisons, four-file policy/records/lifetime/rejections and "
         f"{len(file_normal.stdout)} file timeout prefixes, "
-        f"canonical host reports, copied service results/WriteResult prefixes and {len(negative)} source rejections; "
+        f"canonical host reports, copied service inputs/results/WriteResult prefixes and {len(negative)} source rejections; "
         f"evidence {work}"
     )
 

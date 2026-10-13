@@ -1392,6 +1392,8 @@ export namespace compiler_lowering {
         } else {
             if (service) {
                 const OperandRow span_arguments = argument_offsets(session, frame, OperandRole::SpanArguments, 0, true);
+                const OperandRow object_arguments = argument_offsets(session, frame, OperandRole::ObjectArguments, 0,
+                    true);
                 const i64 extra_begin = session.operand_count();
                 i64 service_index = 1;
                 while (service_index < frame.argument_count()) {
@@ -1412,6 +1414,7 @@ export namespace compiler_lowering {
                 session.append_operand(span_arguments);
                 put(session, OperandRole::ServiceKindId, first.service_kind_id());
                 session.append_operand(additional);
+                session.append_operand(object_arguments);
                 emit(session, InstructionForm::ServiceCall, begin);
             } else {
                 if (method || constructor) {

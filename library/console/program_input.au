@@ -34,7 +34,7 @@ namespace console {
 
 export namespace console {
     // Local commands remain inside this invocation. Exactly one accepted
-    // command or upper payload returns before its native result/newline path.
+    // command or upper payload returns only after its delimiter is written.
     auto read_program_input(builtin::ConsoleSession& session, bool after_cr) -> ProgramSubmission {
         Line64 line = Line64(after_cr);
         bool text_input = false;
@@ -74,6 +74,12 @@ export namespace console {
                                         text_input = true;
                                         okay = program_text(session, "\r\ntext> ");
                                     } else {
+                                        // Finish the accepted input line before
+                                        // native dispatch can mutate or launch.
+                                        if (!program_text(session, "\r\n")) {
+                                            return ProgramSubmission(std::BinaryBuffer64(), 0,
+                                                ProgramInputAction::output_failure, carry);
+                                        }
                                         std::BinaryBuffer64 bytes = std::BinaryBuffer64();
                                         i64 index = 0;
                                         while (index < count) {

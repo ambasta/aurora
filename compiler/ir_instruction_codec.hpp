@@ -59,6 +59,7 @@ struct InstructionCodec<BasicServiceCall<Offsets, Services>> {
         cursor.offsets(OperandRole::SpanArguments, value.spanArguments);
         cursor.serviceKind(value.kind);
         cursor.services(value.additionalServices);
+        cursor.offsets(OperandRole::ObjectArguments, value.objectArguments);
     }
 };
 

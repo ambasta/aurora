@@ -432,7 +432,7 @@ export namespace compiler_lowering {
         service_group_requires_distinct_leading_references,
         //: service functions require a leading exclusive sealed service group and copied result
         service_function_group_or_result,
-        //: service helper parameters require scalars, enums or readonly byte spans
+        //: service helper parameters require scalars, enums, copied values or readonly byte spans
         service_helper_parameter_type,
         //: service capability must be the leading exclusive parameter
         service_capability_parameter_position,

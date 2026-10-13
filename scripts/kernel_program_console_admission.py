@@ -28,6 +28,7 @@ MODES = (
     "program-transaction",
 )
 PROGRAM_INPUT_BRIDGE = "__au_runtime_program_input"
+PROGRAM_RESPONSE_BRIDGE = "__au_runtime_program_response"
 CONSOLE_OPERATIONS = frozenset(("__au_runtime_console_next", "__au_runtime_console_put"))
 
 
@@ -301,6 +302,7 @@ def stack_evidence(directory, *, snapshot=False):
             "__au_runtime_files_replace",
             "__au_runtime_stream_update",
             PROGRAM_INPUT_BRIDGE,
+            PROGRAM_RESPONSE_BRIDGE,
         )
     )
     graph = decoder.image_stack_graph(
@@ -326,6 +328,7 @@ def stack_evidence(directory, *, snapshot=False):
     irq_peak = irq["frame_bytes"] + irq["alignment_bytes"] + dispatch["peak"]
     points = {}
     input_entry = None if snapshot else source_symbol(directory / "language.abi.json", "read_program_input")
+    response_entry = None if snapshot else source_symbol(directory / "language.abi.json", "present_program_response")
     for name in () if snapshot else ("uefi_program_poll_begin", "uefi_service_drain_begin"):
         pc = named[name].address
         owners = [
@@ -339,8 +342,9 @@ def stack_evidence(directory, *, snapshot=False):
             check_program_input_wait(functions, owners[0], input_entry)
     if not snapshot:
         need(
-            not ({PROGRAM_INPUT_BRIDGE, input_entry} | CONSOLE_OPERATIONS) & set(dispatch["closure"]),
-            "Protected IRQ dispatcher acquired console input authority",
+            not ({PROGRAM_INPUT_BRIDGE, PROGRAM_RESPONSE_BRIDGE, input_entry, response_entry} | CONSOLE_OPERATIONS)
+            & set(dispatch["closure"]),
+            "Protected IRQ dispatcher acquired console authority",
         )
     reserve = decoder.FAULT_RESERVE if snapshot else boot_fault
     need(boot_fault <= reserve, "Synchronous fault path exceeds retained fault reserve")
@@ -412,6 +416,7 @@ def note_evidence(directory, functions, mode="program-console"):
         "__au_runtime_files_replace",
         "__au_runtime_stream_update",
         PROGRAM_INPUT_BRIDGE,
+        PROGRAM_RESPONSE_BRIDGE,
     }
     need(
         {name for name in names if name.startswith("__au_runtime_")} == bridges | CONSOLE_OPERATIONS,
@@ -473,8 +478,9 @@ def note_evidence(directory, functions, mode="program-console"):
     evidence = []
     facts = read_json(directory / "language.abi.json")
     check_stream_operation(facts)
-    input_entry = check_program_input_abi(facts)
-    input_calls = check_program_input_calls(functions, set(generated.functions), public, input_entry)
+    input_entry = check_program_console_abi(facts)
+    response_entry = check_program_console_abi(facts, response=True)
+    console_calls = check_program_console_calls(functions, set(generated.functions), public, input_entry, response_entry)
     # Native boundary contracts stay independent of compiler-emitted facts.
     for action, entry, parameters, result_bytes in (
         ("note_update", "update_note", [72, 64, 8], 80),
@@ -512,31 +518,33 @@ def note_evidence(directory, functions, mode="program-console"):
                 result_bytes=result_bytes,
             )
         )
-    need(input_entry not in public and input_entry in generated.functions, "Private program input source entry")
-    symbol = linked.functions[PROGRAM_INPUT_BRIDGE]
-    wrapper = [
-        (
-            row.op,
-            input_entry
-            if row.op == "call" and decoder.target_of(row) == linked.functions[input_entry].address
-            else row.args,
+    for bridge, entry, input_bytes, result_bytes, check in (
+        (PROGRAM_INPUT_BRIDGE, input_entry, 24, 88, check_note_bridge),
+        (PROGRAM_RESPONSE_BRIDGE, response_entry, 96, 8, check_response_bridge),
+    ):
+        need(entry not in public and entry in generated.functions, "Private program Console source entry")
+        symbol = linked.functions[bridge]
+        wrapper = [
+            (
+                row.op,
+                entry if row.op == "call" and decoder.target_of(row) == linked.functions[entry].address else row.args,
+            )
+            for address, row in sorted(code.items())
+            if symbol.address <= address < symbol.address + symbol.size
+        ]
+        check(wrapper, entry)
+        decoder.associate_object(linked, generated, generated.functions[bridge])
+        evidence.append(
+            dict(
+                bridge=bridge,
+                private_entry=entry,
+                local_peak=functions[entry]["local_peak"],
+                input_bytes=input_bytes,
+                result_bytes=result_bytes,
+                console_calls=console_calls[entry],
+                abi_basis="full compiler ABI plus object-bound call/stack facts; sealed Console kind checked by compiler",
+            )
         )
-        for address, row in sorted(code.items())
-        if symbol.address <= address < symbol.address + symbol.size
-    ]
-    check_note_bridge(wrapper, input_entry)
-    decoder.associate_object(linked, generated, generated.functions[PROGRAM_INPUT_BRIDGE])
-    evidence.append(
-        dict(
-            bridge=PROGRAM_INPUT_BRIDGE,
-            private_entry=input_entry,
-            local_peak=functions[input_entry]["local_peak"],
-            input_bytes=24,
-            result_bytes=88,
-            console_calls=input_calls,
-            abi_basis="full compiler ABI plus object-bound call/stack facts; sealed Console kind checked by compiler",
-        )
-    )
     abi.main(
         directory,
         "transaction" if mode == "program-transaction" else "normal",
@@ -552,69 +560,74 @@ def check_copied_record(actual, parameters, result_bytes):
     )
 
 
-def check_program_input_abi(facts):
-    """Check the existing full ABI; class-returning services have no record sidecar."""
-    entry, function = compiler_abi.abi_declaration(facts, "functions", "read_program_input")
-    result, submission = compiler_abi.abi_declaration(facts, "records", "console::ProgramSubmission")
-    action, operation = compiler_abi.abi_declaration(facts, "enums", "console::ProgramInputAction")
-    buffer, storage = compiler_abi.abi_declaration(facts, "records", "std::BinaryBuffer64")
+def exact_abi(actual, expected, reason):
+    # JSON identity also rejects bool/float substitutions for integer facts.
+    need(json.dumps(actual, sort_keys=True) == json.dumps(expected, sort_keys=True), reason)
 
-    def exact(actual, expected, reason):
-        # JSON identity also rejects bool/float substitutions for integer facts.
-        need(json.dumps(actual, sort_keys=True) == json.dumps(expected, sort_keys=True), reason)
 
-    exact(
-        operation["cases"],
-        dict(command=0, upper_payload=1, requested_exit=2, output_failure=3),
-        "Named program input actions must match the native result mapping",
+def check_program_console_abi(facts, *, response=False):
+    """Full existing ABI binds both service entries without a service-record sidecar."""
+    source, copied, enum, field, size = (
+        ("present_program_response", "console::ProgramResponse", "console::ProgramResponseKind", "kind", 80)
+        if response else
+        ("read_program_input", "console::ProgramSubmission", "console::ProgramInputAction", "action", 88)
     )
-    exact(
+    entry, function = compiler_abi.abi_declaration(facts, "functions", source)
+    record, value = compiler_abi.abi_declaration(facts, "records", copied)
+    kind, operation = compiler_abi.abi_declaration(facts, "enums", enum)
+    buffer, storage = compiler_abi.abi_declaration(facts, "records", "std::BinaryBuffer64")
+    cases = (
+        dict(ready=0, output=1, note_missing=2, file_missing=3, note_saved=4,
+             file_saved=5, file_reply=6, stopped=7, unknown=8)
+        if response else dict(command=0, upper_payload=1, requested_exit=2, output_failure=3)
+    )
+    exact_abi(operation["cases"], cases, source + ": named kinds must match the native mapping")
+    exact_abi(
         storage,
         dict(
             source_name="std::BinaryBuffer64", size=64, alignment=1, reserved=64,
             fields=[dict(name="elements", offset=0, bytes=64, array_length=64, kind="u8")],
         ),
-        "Program input bytes must be the exact ordinary 64-byte buffer",
+        source + ": exact ordinary 64-byte buffer",
     )
-    exact(
-        submission,
-        dict(
-            source_name="console::ProgramSubmission", size=88, alignment=8, reserved=88,
-            fields=[
-                dict(name="bytes", offset=0, bytes=64, array_length=0, kind="class", type_name=buffer),
-                dict(name="count", offset=64, bytes=8, array_length=0, kind="i64"),
-                dict(name="action", offset=72, bytes=8, array_length=0, kind="enum", type_name=action),
-                dict(name="after_cr", offset=80, bytes=8, array_length=0, kind="u64"),
-            ],
-        ),
-        "Program submission must be the exact ordinary 88-byte copied result",
+    fields = [
+        dict(name="bytes", offset=0, bytes=64, array_length=0, kind="class", type_name=buffer),
+        dict(name="count", offset=64, bytes=8, array_length=0, kind="i64"),
+        dict(name=field, offset=72, bytes=8, array_length=0, kind="enum", type_name=kind),
+    ]
+    if not response:
+        fields.append(dict(name="after_cr", offset=80, bytes=8, array_length=0, kind="u64"))
+    exact_abi(
+        value, dict(source_name=copied, size=size, alignment=8, reserved=size, fields=fields),
+        source + ": exact ordinary copied record",
     )
-    # Full ABI facts identify service storage, not its nominal sealed kind.
-    # Console identity is enforced by compiler typing and the closed next/put
-    # imports/call graph below, without extending the compiler facts schema.
-    exact(
+    # Facts identify service storage; compiler typing and the closed next/put
+    # graph enforce the sealed Console kind without any new metadata schema.
+    exact_abi(
         function,
         dict(
-            source_name="read_program_input", receiver=None, receiver_mutable=None,
+            source_name=source, receiver=None, receiver_mutable=None,
             borrowed_parameter=False, second_receiver=None, root_count=0,
-            root_tuple_bytes=0, root_order=[], parameter_bytes=24,
-            parameters=[dict(offset=0, bytes=16, kind="service"), dict(offset=16, bytes=8, kind="bool")],
-            result=dict(bytes=88, kind="class", type_name=result),
+            root_tuple_bytes=0, root_order=[], parameter_bytes=96 if response else 24,
+            parameters=[dict(offset=0, bytes=16, kind="service"),
+                        dict(offset=16, bytes=80, kind="class", type_name=record) if response
+                        else dict(offset=16, bytes=8, kind="bool")],
+            result=dict(bytes=8, kind="bool") if response else dict(bytes=88, kind="class", type_name=record),
         ),
-        "Program input entry must borrow one service and a canonical bool with a copied result",
+        source + ": exact service argument, copied value and canonical bool layout",
     )
     return entry
 
 
-def check_program_input_calls(functions, generated, public, entry):
-    """Keep Console authority confined to the source-selected reader graph."""
+def check_program_console_calls(functions, generated, public, input_entry, response_entry):
+    """Input may read/write; response may only write; copied policies have no authority."""
     def closure(root):
         pending, reached, imports = [root], set(), set()
         while pending:
             name = pending.pop()
             if name in reached:
                 continue
-            need(name in generated, "Program input call escaped generated ownership")
+            need(name in generated, "Program Console call escaped generated ownership")
             reached.add(name)
             for call in functions[name]["calls"]:
                 target = call["target"]
@@ -628,9 +641,11 @@ def check_program_input_calls(functions, generated, public, entry):
                     pending.append(target)
         return reached, imports
 
-    reader, imports = closure(entry)
+    reader, imports = closure(input_entry)
     need(imports == CONSOLE_OPERATIONS, "Program reader must use only Console next/put")
-    for root in public - {PROGRAM_INPUT_BRIDGE}:
+    presenter, imports = closure(response_entry)
+    need(imports == {"__au_runtime_console_put"}, "Program response must use only Console put")
+    for root in public - {PROGRAM_INPUT_BRIDGE, PROGRAM_RESPONSE_BRIDGE}:
         _, authority = closure(root)
         need(not authority, "Copied policy/store graph acquired Console authority")
     sites = []
@@ -638,12 +653,14 @@ def check_program_input_calls(functions, generated, public, entry):
         for call in functions[name]["calls"]:
             if call["target"] not in CONSOLE_OPERATIONS:
                 continue
-            need(name in reader and call["live_bytes"] % 16 == 0, "Unowned or misaligned Console host call")
+            need(name in reader | presenter and call["live_bytes"] % 16 == 0, "Unowned or misaligned Console host call")
             if call["target"] == "__au_runtime_console_put":
                 fact = (functions[name].get("service_abi") or {}).get("calls", {}).get(call["target"])
                 need(fact == dict(sysv_arguments=3, result_max=1), "Changed native Console put service ABI")
             sites.append(dict(function=name, **call))
-    return sorted(sites, key=lambda row: (row["function"], row["address"]))
+    sites.sort(key=lambda row: (row["function"], row["address"]))
+    return {entry: [site for site in sites if site["function"] in reached]
+            for entry, reached in ((input_entry, reader), (response_entry, presenter))}
 
 
 def check_program_input_wait(functions, owner, entry):
@@ -715,6 +732,14 @@ def check_note_bridge(actual, private):
             ("ret", ""),
         ],
         "Exact copied note bridge",
+    )
+
+
+def check_response_bridge(actual, private):
+    need(
+        actual == [("push", "%rbp"), ("mov", "%rsp,%rbp"), ("mov", "%rdi,%r11"),
+                   ("call", private), ("leave", ""), ("ret", "")],
+        "Exact copied response/scalar bool bridge",
     )
 
 

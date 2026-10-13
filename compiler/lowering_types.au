@@ -1078,7 +1078,8 @@ export namespace compiler_lowering {
                 const i64 type = parameter_type(session, symbol, at);
                 const compiler_resolver::ResolvedTypeKind kind = tk(session, type);
                 if (!compiler_resolver::scalar_value_kind(kind) && kind
-                    != compiler_resolver::ResolvedTypeKind::byte_span) {
+                    != compiler_resolver::ResolvedTypeKind::byte_span && (kind
+                    != compiler_resolver::ResolvedTypeKind::class_value || owning_type(session, type))) {
                     return fail(session, LoweringError::service_helper_parameter_type, source);
                 }
                 at = at + 1;

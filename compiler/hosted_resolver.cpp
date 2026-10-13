@@ -1215,7 +1215,9 @@ std::uint64_t resolutionQuota() {
     // return may repeat a full Local prefix; non-return cleanup <=allLocals.
     const auto instructions = sum(
         {mul(16, X), mul(4 * 4096, X), mul(3, X), mul(6, F), mul(2, allLocals), allLocals, mul(returns, localHigh)});
-    const auto instructionLists = add(mul(12, X), mul(64, X));
+    // A two-service, six-formal call may carry six span positions, six copied
+    // snapshot positions and the additional service's two loan/kind items.
+    const auto instructionLists = add(mul(14, X), mul(64, X));
     const auto literalBytes = mul(4096, X);
     // Packed u8 leaves make scalar slot count byte-bounded, not word-bounded.
     // Each other durable slot family has its own producer charge, including
@@ -1277,8 +1279,9 @@ std::uint64_t resolutionQuota() {
                                        enums,
                                        lint});
     // A borrowed call adds a second selector/loan pair, at most once per syntax row.
+    // A service call adds its copied-snapshot slice as a seventh fixed operand.
     const auto operandRows = sum(
-        {setupOperands, mul(6, instructions), mul(2, X), instructions, instructionLists, slotOperands, metadataOperands});
+        {setupOperands, mul(6, instructions), mul(2, X), X, instructions, instructionLists, slotOperands, metadataOperands});
     // Shared resolution owners remain live. Additional type/name/source rows
     // have distinct charges; lowering lookup domains retain nominal/layout,
     // field, function, lexical-binding, forward-list and reflection indexes.

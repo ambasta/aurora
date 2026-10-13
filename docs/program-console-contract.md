@@ -14,26 +14,40 @@ A separate CPL3 stream service validates and returns its requested output byte.
 This is an embedded bounded application demonstration, not a general process or
 syscall ABI, filesystem, terminal emulator, or hardware qualification.
 
-## Aurora-owned input turns
+## Aurora-owned console turns
 
 `console.program_input` uses the existing sealed `ConsoleSession` to own one
 command-reading turn: the shared `Line64` editor, echo, rejection, help/status,
-`upper`'s `text>` prompt and exit presentation. It returns a copied
-`ProgramSubmission`; commands typed after `text>` are payload, including empty
+`upper`'s `text>` prompt and exit presentation. The accepted command delimiter
+is written before returning a copied `ProgramSubmission`; commands typed after
+`text>` are payload, including empty
 input and the words `help`, `status` and `exit`. The one-bit CR carry crosses
 turns so a queued LF after a protected command does not submit another line.
 
 The native adapter validates the copied result and releases the console grant
 before note/file mutation or protected execution. It retains command dispatch,
-authenticated lifecycle/publication, result presentation and the following prompt.
-Every turn gets a fresh grant; UART initialization happens only once, preserving
-damage latched by runtime diagnostics. No new service kind, pointer-bearing
+authenticated lifecycle/publication and note/file commits. `console.program_output`
+then presents a copied, bounded `ProgramResponse` and the following prompt through
+the same sealed capability. Ready, saved, missing, stopped and unknown responses
+carry no payload; output and local file replies carry at most 64 printable bytes.
+The entire payload and zero suffix are checked before writing. The private native
+ingress also checks raw enum representation before Aurora observes a typed enum.
+
+Each input or response turn gets a fresh grant only at the quiescent boundary;
+the grant is released before proceeding. Response handoff copies are scrubbed
+before continuing; copied submissions survive until their command handoff. UART
+initialization happens only once, preserving damage latched by runtime diagnostics. No new service kind, pointer-bearing
 source interface or execution authority is added to `ConsoleSession`.
 
-The private entry uses existing compiler ABI facts for its capability/bool input
-and copied result, alongside the existing linked-image stack checks. This input
-migration is source-only; generated ABI, stack limits and actual boots still
-need final-source qualification.
+The first output failure ends the turn without retrying bytes, emitting another
+prompt or reading another command. A delimiter failure prevents dispatch. An
+acknowledgement failure after a note/file commit does not undo or repeat that
+commit; the session follows its existing quiet failure exit and clears session
+stores. Native lifecycle and authority diagnostics remain outside these turns.
+
+The private entries use compiler ABI facts alongside the existing linked-image
+stack checks. These migrations are source-only; generated ABI, stack limits and
+actual boots still need final-source qualification.
 
 ## Session-local protected note
 

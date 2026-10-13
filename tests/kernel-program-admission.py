@@ -101,7 +101,7 @@ def main():
             ),
         },
     }
-    need(admission.check_program_input_abi(input_abi) == "selected_reader", "Source-selected input ABI")
+    need(admission.check_program_console_abi(input_abi) == "selected_reader", "Source-selected input ABI")
     for path, value in (
         (("records", "submission_type", "size"), 80),
         (("records", "submission_type", "reserved"), 96),
@@ -128,13 +128,75 @@ def main():
         for key in path[:-1]:
             selected = selected[key]
         selected[path[-1]] = value
-        reject(lambda: admission.check_program_input_abi(changed), "program input full ABI mismatch")
+        reject(lambda: admission.check_program_console_abi(changed), "program input full ABI mismatch")
+
+    response_abi = deepcopy(input_abi)
+    response_abi["records"]["response_type"] = dict(
+        source_name="console::ProgramResponse", size=80, alignment=8, reserved=80,
+        fields=[
+            dict(name="bytes", offset=0, bytes=64, array_length=0, kind="class", type_name="buffer_type"),
+            dict(name="count", offset=64, bytes=8, array_length=0, kind="i64"),
+            dict(name="kind", offset=72, bytes=8, array_length=0, kind="enum", type_name="kind_type"),
+        ],
+    )
+    response_abi["enums"]["kind_type"] = dict(
+        source_name="console::ProgramResponseKind",
+        cases=dict(ready=0, output=1, note_missing=2, file_missing=3, note_saved=4,
+                   file_saved=5, file_reply=6, stopped=7, unknown=8),
+    )
+    response_abi["functions"]["selected_presenter"] = dict(
+        source_name="present_program_response", receiver=None, receiver_mutable=None,
+        borrowed_parameter=False, second_receiver=None, root_count=0, root_tuple_bytes=0,
+        root_order=[], parameter_bytes=96,
+        parameters=[dict(offset=0, bytes=16, kind="service"),
+                    dict(offset=16, bytes=80, kind="class", type_name="response_type")],
+        result=dict(bytes=8, kind="bool"),
+    )
+    need(admission.check_program_console_abi(response_abi, response=True) == "selected_presenter", "Source-selected response ABI")
+    for path, value in (
+        (("records", "response_type", "size"), 72),
+        (("records", "response_type", "alignment"), 1),
+        (("records", "response_type", "reserved"), 96),
+        (("records", "response_type", "fields", 0, "bytes"), 63),
+        (("records", "response_type", "fields", 0, "type_name"), "other_buffer"),
+        (("records", "response_type", "fields", 1, "offset"), 72),
+        (("records", "response_type", "fields", 1, "kind"), "u64"),
+        (("records", "response_type", "fields", 2, "offset"), 64),
+        (("records", "response_type", "fields", 2, "type_name"), "action_type"),
+        (("records", "buffer_type", "fields", 0, "array_length"), 63),
+        (("enums", "kind_type", "cases", "ready"), False),
+        (("enums", "kind_type", "cases", "output"), 1.0),
+        (("enums", "kind_type", "cases", "unknown"), 9),
+        (("enums", "kind_type", "cases", "extra"), 9),
+        (("functions", "selected_presenter", "parameter_bytes"), 80),
+        (("functions", "selected_presenter", "parameters", 0, "offset"), 80),
+        (("functions", "selected_presenter", "parameters", 0, "bytes"), 8),
+        (("functions", "selected_presenter", "parameters", 0, "kind"), "u64"),
+        (("functions", "selected_presenter", "parameters", 1, "offset"), 0),
+        (("functions", "selected_presenter", "parameters", 1, "bytes"), 72),
+        (("functions", "selected_presenter", "parameters", 1, "kind"), "service"),
+        (("functions", "selected_presenter", "parameters", 1, "type_name"), "submission_type"),
+        (("functions", "selected_presenter", "result", "bytes"), 1),
+        (("functions", "selected_presenter", "result", "kind"), "u64"),
+        (("functions", "selected_presenter", "receiver"), "response_type"),
+        (("functions", "selected_presenter", "borrowed_parameter"), True),
+        (("functions", "selected_presenter", "root_count"), 1),
+    ):
+        changed = deepcopy(response_abi)
+        selected = changed
+        for key in path[:-1]:
+            selected = selected[key]
+        selected[path[-1]] = value
+        reject(lambda: admission.check_program_console_abi(changed, response=True), "program response full ABI mismatch")
 
     bridge_name = admission.PROGRAM_INPUT_BRIDGE
+    response_bridge = admission.PROGRAM_RESPONSE_BRIDGE
     console_next, console_put = "__au_runtime_console_next", "__au_runtime_console_put"
     input_graph = {
         bridge_name: body(16, ("reader", 16)),
+        response_bridge: body(16, ("presenter", 16)),
         "reader": body(16, ("reader_body", 16)),
+        "presenter": body(16, ("writer", 16)),
         "reader_body": body(16, (console_next, 16), ("writer", 16), ("__au_reflect_s1_size", 16)),
         "writer": body(16, (console_put, 16)),
         "policy": body(16),
@@ -146,21 +208,28 @@ def main():
     for function in input_graph.values():
         for index, call in enumerate(function["calls"]):
             call["address"] = index
-    public = {bridge_name, "policy", "__au_reflect_s1_size"}
+    public = {bridge_name, response_bridge, "policy", "__au_reflect_s1_size"}
+    calls = admission.check_program_console_calls(input_graph, set(input_graph), public, "reader", "presenter")
     need(
-        len(admission.check_program_input_calls(input_graph, set(input_graph), public, "reader")) == 2,
-        "Reader follows generated helpers to the two closed Console operations",
+        len(calls["reader"]) == 2 and len(calls["presenter"]) == 1,
+        "Input and response follow shared helpers but response only reaches Console put",
     )
     for changed in (
         dict(input_graph, policy=body(16, ("writer", 16))),
+        dict(input_graph, policy=body(16, ("presenter", 16))),
         dict(input_graph, rogue=body(16, (console_next, 16))),
+        dict(input_graph, rogue=body(16, (console_put, 16))),
         dict(input_graph, reader_body=body(16, ("foreign_host", 16))),
+        dict(input_graph, presenter=body(16, ("reader", 16))),
+        dict(input_graph, presenter=body(16, (console_next, 16), ("writer", 16))),
+        dict(input_graph, presenter=body(16, ("foreign_host", 16))),
+        dict(input_graph, presenter=body(16)),
         dict(input_graph, writer=body(16, (console_put, 16))),
         dict(input_graph, writer=dict(input_graph["writer"], calls=[dict(target=console_put, live_bytes=8, address=0)])),
     ):
         reject(
-            lambda: admission.check_program_input_calls(changed, set(changed), public, "reader"),
-            "Console authority escaped reader or changed its host operation contract",
+            lambda: admission.check_program_console_calls(changed, set(changed), public, "reader", "presenter"),
+            "Console authority escaped its input/output closure or changed its host operation contract",
         )
 
     wait_graph = {
@@ -215,6 +284,16 @@ def main():
         changed = list(bridge)
         changed[index] = replacement
         reject(lambda: admission.check_note_bridge(changed, "private"), "copied note bridge binding")
+
+    response_wrapper = [row for row in bridge if row != ("mov", "%rsi,%r10")]
+    admission.check_response_bridge(response_wrapper, "private")
+    for changed in (
+        bridge,
+        response_wrapper[:2] + [("mov", "%rsi,%r11")] + response_wrapper[3:],
+        response_wrapper[:3] + [("call", "foreign")] + response_wrapper[4:],
+        response_wrapper[:-2] + [("xor", "%rax,%rax")] + response_wrapper[-2:],
+    ):
+        reject(lambda: admission.check_response_bridge(changed, "private"), "response argument/scalar return binding")
 
     # Native widths and their order are independent of trusted compiler facts.
     copied = dict(parameter_bytes=[272, 64, 8], result_bytes=520)
