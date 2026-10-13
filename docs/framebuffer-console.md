@@ -193,10 +193,11 @@ this mode; positive/three denied captures and a normal boot are separate gates.
 ## Bounded serial-input graphical session
 
 `examples/kernel-graphical-console.au` combines distinct ConsoleSession and
-DisplaySession borrows in one synchronous invocation. It reuses Aurora Line64
-and all printable ASCII, with two rows of 68 cells, underline cursor and dirty
-redraw. The prompt holds 64 bytes, BS/DEL and CR/LF/CRLF; damaged/invalid/overflow
-lines reject until submission. The second row keeps only the latest response.
+DisplaySession borrows in one synchronous invocation. It shares `console.line`
+with simple UEFI and accepts all printable ASCII, with two rows of 68 cells,
+underline cursor and dirty redraw. The prompt holds 64 bytes, BS/DEL and
+CR/LF/CRLF; damaged/invalid/overflow lines reject until submission. The second row
+keeps only the latest response.
 The [shared note/file grammar](native-console-service.md#session-local-ram-note)
 applies, with invocation-local storage and copied FileReply presentation.
 

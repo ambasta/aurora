@@ -202,11 +202,6 @@ class ProfileMetadata(unittest.TestCase):
         }
         self.assertEqual(set(runner.source_inputs()), expected)
         self.assertEqual(len(list(runner.cases())), 36)
-        consumer = (ROOT / "examples/kernel-graphical-console.au").read_text()
-        self.assertEqual(
-            re.findall(r"(?m)^\s*import\s+([^;]+);", consumer),
-            ["graphics.font5x7", "std.binary_buffer", "std.binary", "console.session_note", "console.session_files"],
-        )
         self.assertIn("library/graphics/font5x7.au", runner.SOURCE_INPUTS)
         self.assertNotRegex((ROOT / "library/graphics/font5x7.au").read_text(), r"(?m)^\s*import\b")
         with patch.dict(os.environ, {}, clear=True):

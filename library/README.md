@@ -52,7 +52,12 @@ width before reading, return a copied u64 and mask failures through `value_or`.
 allocation or retained views; empty prefixes match, equality also checks length.
 There is no normalization or textual meaning assigned to NUL/non-ASCII bytes.
 
-## Console output
+## Console input and output
+
+`console.line` supplies the shared `Line64` editor and `ConsoleEvent` values for
+simple UEFI and graphical sessions. Its private 64-byte ASCII state owns no
+transport authority; [input and submission behavior](../docs/native-console-service.md#input-behavior)
+is shared while each consumer handles its own output.
 
 `console.io` supplies `write(ConsoleSession&, span<const u8>)`. Its copied
 `WriteResult` exposes `written()` successful bytes, `status()` (`WriteStatus::complete`

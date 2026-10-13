@@ -43,9 +43,10 @@ whole line. Rejection stays latched through edits and suffixes until a delimiter
 Unsupported bytes are never echoed as terminal escapes. Commands are exact and
 case-sensitive; BIOS supports only the three lowercase words in the table.
 
-The simple-UEFI entry in `examples/kernel-console-service.au` owns `Line64` for
-the entire invocation, including private bytes, length, rejection and CRLF state.
-It parses commands and produces human-facing prompts, echo, erase and responses.
+Simple UEFI and the graphical console import `console.line`; each invocation
+owns a `console::Line64` with private bytes, length, rejection and CRLF state.
+Accepted submissions expose copied bytes only until the next byte or damage
+sample. The consumers keep their own prompts, echo, erase and responses.
 The [sealed language service](../compiler/SERVICES.md) supplies copied input
 observations and checked single-byte output. The linked simple-UEFI graph must
 contain no C++ `Line`, `Presentation`, old byte/command wrappers or C++ command
