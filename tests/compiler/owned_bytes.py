@@ -179,6 +179,9 @@ def program(body, helpers=""):
     return f"module owned_bytes;{helpers}auto entry({REGION} region,i64 n,i64 flag)->i64{{{body}}}"
 
 
+HOST_FLAGS = ("-std=c++23", "-O2", "-Wall", "-Wextra", "-Wpedantic", "-Werror")
+
+
 def command(args, timeout=30):
     result = subprocess.run([str(arg) for arg in args], capture_output=True, timeout=timeout, check=False)
     return result
@@ -194,6 +197,20 @@ class Suite:
         self.cxx = shlex.split(os.environ.get("CXX", "g++"))
         self.driver = directory / "driver.cpp"
         self.driver.write_text(DRIVER)
+        self.host_objects = None
+
+    def host(self):
+        # The driver and runtime adapter are the same for every program, so
+        # compile them once with the same flags and link each program to them.
+        if self.host_objects is None:
+            objects = []
+            for source in (self.driver, ROOT / "runtime/hosted_bytes.cpp"):
+                output = self.directory / (source.stem + ".o")
+                result = command([*self.cxx, *HOST_FLAGS, "-I", ROOT, "-c", source, "-o", output], timeout=60)
+                require(result.returncode == 0, f"host object {source.name} failed: {result.stderr.decode()}")
+                objects.append(output)
+            self.host_objects = objects
+        return self.host_objects
 
     def compile(self, name, source, entry_name=None):
         folder = self.directory / name
@@ -225,25 +242,7 @@ class Suite:
         require(f".local {entry}\n" in text, f"{name}: resource entry must stay private")
         assembly.write_text(bridged_assembly(text, entry))
         executable = folder / "native"
-        result = command(
-            [
-                *self.cxx,
-                "-std=c++23",
-                "-O2",
-                "-Wall",
-                "-Wextra",
-                "-Wpedantic",
-                "-Werror",
-                "-I",
-                ROOT,
-                self.driver,
-                ROOT / "runtime/hosted_bytes.cpp",
-                assembly,
-                "-o",
-                executable,
-            ],
-            timeout=60,
-        )
+        result = command([*self.cxx, *HOST_FLAGS, *self.host(), assembly, "-o", executable], timeout=60)
         require(result.returncode == 0, f"{name}: host link failed: {result.stderr.decode()}")
         self.programs += 1
         return executable
