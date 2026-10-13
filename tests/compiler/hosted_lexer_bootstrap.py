@@ -24,6 +24,14 @@ def stage_modules(root, destination):
 COMPILER_MODULES = tuple(sorted(path.name for path in (Path(__file__).resolve().parents[2] / "compiler").glob("*.au")))
 
 
+INITIALIZATION_OPERATIONS = (
+    "create", "release", "allocated", "status", "initialize", "slot_count", "word_count",
+    "retained_count", "current_count", "retained_count_at", "load", "retain", "join",
+    "scalar_state", "write_scalar", "object_initialized", "object_pristine", "mark_object", "clear_object",
+    "array_first_missing", "clear_array",
+)
+
+
 def require(value, message):
     if not value:
         raise AssertionError(message)
@@ -52,6 +60,7 @@ def frontend_arguments(compiler, root, output):
         str(root / "compiler/hosted_graph.S"),
         str(root / "compiler/hosted_ir_metadata.S"),
         str(root / "compiler/hosted_ir_instructions.S"),
+        str(root / "compiler/hosted_ir_initialization.S"),
     ]
 
 
@@ -242,6 +251,69 @@ def abi_generation(facts):
         raise AssertionError(f"unsafe graph paired bridge accepted: {field}={value}")
     metadata_store, _ = abi_declaration(facts, "records", "compiler_ir_metadata::MetadataStore")
     instruction_store, _ = abi_declaration(facts, "records", "compiler_ir_instructions::InstructionStore")
+    initialization, _ = abi_declaration(facts, "records", "compiler_ir_initialization::InitializationWorkspace")
+    require(
+        all(f"struct alignas(8) {name} {{" in generated for name in ("InitializationCreate", "InitializationRelease"))
+        and all(f"initializationWorkspace_{pool}Bytes = 32;" in generated for pool in
+                ("currentWords", "retainedWords", "retainedCounts"))
+        and "initializationWordPairPhysicalBytes = 16;" in generated
+        and "initializationCountPairPhysicalBytes = 16;" in generated,
+        "initialization owner transfer or physical pool facts were omitted",
+    )
+    for operation in INITIALIZATION_OPERATIONS:
+        for mutation in ("receiver", "result", "parameters", "root"):
+            changed = deepcopy(facts)
+            _, entry = abi_declaration(changed, "functions", "compiler_frontend::initialization_" + operation)
+            if mutation == "receiver":
+                entry["receiver"] = initialization if entry["receiver"] is None else None
+            elif mutation == "result":
+                entry["result"]["bytes"] += 8
+            elif mutation == "parameters":
+                if entry["parameters"]:
+                    entry["parameters"][0]["bytes"] += 8
+                else:
+                    entry["parameter_bytes"] += 8
+            else:
+                entry["source_name"] = "fixture::removed_initialization_" + operation
+            try:
+                frontend_abi_header(changed)
+            except ValueError:
+                continue
+            raise AssertionError(f"unsafe initialization bridge accepted: {operation}/{mutation}")
+    for operation in ("initialize", "scalar_state", "write_scalar", "object_initialized", "object_pristine",
+                      "mark_object", "clear_object", "array_first_missing", "clear_array"):
+        for field, value in (
+            ("receiver_mutable", False),
+            ("borrowed_parameter", False),
+            ("second_receiver", None),
+            ("second_receiver", {"type_name": initialization, "mutable": False}),
+            ("second_receiver", {"type_name": metadata_store, "mutable": True}),
+            ("root_count", 1),
+            ("root_order", ["second_receiver", "receiver"]),
+            ("root_tuple_bytes", 8),
+            ("result", {"kind": "class", "type_name": initialization, "bytes": 8}),
+        ):
+            changed = deepcopy(facts)
+            _, entry = abi_declaration(changed, "functions", "compiler_frontend::initialization_" + operation)
+            entry[field] = value
+            try:
+                frontend_abi_header(changed)
+            except ValueError:
+                continue
+            raise AssertionError(f"unsafe initialization paired bridge accepted: {operation}/{field}={value}")
+    for source, field in (
+        ("InitializationWorkspace", "currentWords"), ("InitializationWorkspace", "retainedWords"),
+        ("InitializationWorkspace", "retainedCounts"), ("InitializationWorkspace", "retainedCount"),
+        ("WordPair", "mustBits"), ("CountPair", "mayCount"),
+    ):
+        changed = deepcopy(facts)
+        _, entry = abi_declaration(changed, "records", "compiler_ir_initialization::" + source)
+        next(member for member in entry["fields"] if member["name"] == field)["bytes"] += 8
+        try:
+            frontend_abi_header(changed)
+        except ValueError:
+            continue
+        raise AssertionError(f"unsafe initialization owner/row binding accepted: {source}/{field}")
     for operation in ("create", "release", "allocated", "admit", "structure", "publish", "error"):
         for mutation in ("receiver", "result", "parameters", "root"):
             changed = deepcopy(facts)
@@ -591,12 +663,13 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
     )
     entries.update(
         "aurora_hosted_metadata_" + operation
-        for operation in ("create", "release", "allocated", "run", "error")
+        for operation in ("create", "release", "allocated", "run", "error", "object_leaf_root", "byte_array_element_root")
     )
     entries.update(
         "aurora_hosted_instructions_" + operation
         for operation in ("create", "release", "allocated", "admit", "structure", "publish", "error")
     )
+    entries.update("aurora_hosted_initialization_" + operation for operation in INITIALIZATION_OPERATIONS)
     # A is predecessor-generated and need not equal B. Both actual build
     # objects must expose exactly the private host shim contract.
     for unit in (built_a, built_b):

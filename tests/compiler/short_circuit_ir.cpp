@@ -757,6 +757,55 @@ void directTests() {
            "operand stack depth differs from linear emission order");
 }
 
+void initializationOwnerRegressions() {
+    auto object = moduleWith({BeginObject{8}, Constant{1, Type::U8}, Store{8, Type::U8}, EndObject{8},
+                              BeginObject{8}, Constant{2, Type::U8}, Store{8, Type::U8}, EndObject{8},
+                              Constant{0, Type::I64}, Return{}});
+    object.classLayouts["ByteBox"] = {Type::U8};
+    object.functions[0].frameBytes = 16;
+    object.functions[0].slots = {{8, Type::U8}};
+    object.functions[0].objectSlots = {{8, {"ByteBox", false}}};
+    accept("new object lifetime clears must and may facts", object);
+    object.functions[0].code = {BeginObject{8}, Constant{1, Type::U8}, Store{8, Type::U8}, EndObject{8},
+                                BeginObject{8}, Load{8, Type::U8}, EndObject{8}, Constant{0, Type::I64}, Return{}};
+    reject("new object lifetime cannot read old initialized leaf", object, "load before initialization");
+    // Entry's native State has no current value. The loop's incoming bool is
+    // discarded by its usual merge, so only the new may fact schedules a revisit.
+    object.functions[0].code = {BeginObject{8}, Label{1}, Constant{1, Type::U8}, Store{8, Type::U8},
+                                Constant{1, Type::Bool}, BranchFalse{2}, Jump{1}, Label{2}, EndObject{8},
+                                Constant{0, Type::I64}, Return{}};
+    reject("initialization-only backedge revisits immutable write", object, "write to initialized const object field");
+
+    auto empty = moduleWith({BeginObject{8}, Constant{1, Type::Bool}, BranchFalse{1}, InitializeEmptyObject{8},
+                             Label{1}, ReturnObject{8}}, Type("Empty"));
+    empty.classLayouts["Empty"] = {};
+    empty.functions[0].frameBytes = 16;
+    empty.functions[0].objectSlots = {{8, {"Empty", false}}};
+    reject("zero scalar domain still needs logical object completion", empty, "empty object not completely initialized");
+    empty.functions[0].code = {BeginObject{8}, InitializeEmptyObject{8}, ReturnObject{8}};
+    accept("zero scalar domain explicitly completes empty object", empty);
+
+    auto array = moduleWith({BeginArray{8}, Constant{1, Type::U8}, Store{8, Type::U8}, EndArray{8}, BeginArray{8},
+                             Load{8, Type::U8}, EndArray{8}, Constant{0, Type::I64}, Return{}});
+    array.functions[0].frameBytes = 16;
+    array.functions[0].slots = {{8, Type::U8}};
+    array.functions[0].arraySlots = {{8, 1}};
+    reject("new array lifetime cannot read old initialized element", array, "load before initialization");
+
+    // A source batch may find a later missing fact early, but the verifier must
+    // report each element's native lifetime checks at the original position.
+    auto mixed = moduleWith({BeginObject{16}, Constant{0, Type::I64}, BoundsGuard{16, 2, Type::I64},
+                             EndObject{16}, Return{}});
+    mixed.classLayouts["WordBox"] = {Type::I64};
+    mixed.functions[0].frameBytes = 16;
+    mixed.functions[0].slots = {{16, Type::I64}, {8, Type::I64}};
+    mixed.functions[0].objectSlots = {{16, {"WordBox", true}}, {8, {"WordBox", true}}};
+    reject("first missing element precedes later inactive object", mixed, "array element not initialized");
+    mixed.functions[0].code.insert(mixed.functions[0].code.begin() + 1,
+                                   {Constant{1, Type::I64}, Store{16, Type::I64}});
+    reject("inactive missing element reports its lifetime first", mixed, "object field access outside active lifetime");
+}
+
 IRFunction resourceFunction(int depth, int labels, bool operandOver = false) {
     IRFunction f;
     f.name = "resource";
@@ -847,7 +896,8 @@ void resourceTests() {
         auto f = resourceFunction(0, 65535);
         verification::Metrics metrics;
         verifyResource(f, &metrics);
-        check(metrics.snapshots == 65536 && metrics.peakRetainedOperandFacts == 0, "exact retained state accounting");
+        check(metrics.snapshots == 65536 && metrics.peakRetainedOperandFacts == 0 &&
+                  metrics.peakRetainedInitializationPayloadBytes == 0, "exact retained state accounting");
         ++accepted;
     }
     for (bool withMetrics : {false, true}) {
@@ -904,6 +954,7 @@ int main(int argc, char **argv) {
         }
         check(argc == 1, "usage: short-circuit-ir [--emit-native]");
         directTests();
+        initializationOwnerRegressions();
         resourceTests();
         std::cout << "PASS short-circuit direct IR: " << accepted << " accepted, " << rejected << " rejected\n";
         return 0;

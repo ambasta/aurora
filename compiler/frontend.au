@@ -18,6 +18,7 @@ import aurora.compiler.ir_metadata_storage;
 import aurora.compiler.ir_metadata;
 import aurora.compiler.ir_instruction_storage;
 import aurora.compiler.ir_instructions;
+import aurora.compiler.ir_initialization;
 
 // The host bridge enters this root module. Ordinary imported-function retention
 // then keeps exactly the parser, resolver, lowering and IR graph implementations they call.
@@ -248,5 +249,83 @@ export namespace compiler_frontend {
     auto instructions_error(const compiler_ir_instructions::InstructionStore& store)
         -> compiler_ir_instructions::InstructionError {
         return store.error();
+    }
+    auto initialization_create(builtin::ByteRegion region) -> compiler_ir_initialization::InitializationWorkspace {
+        compiler_ir_initialization::InitializationWorkspace result = compiler_ir_initialization::create(region);
+        return move(result);
+    }
+    auto initialization_release(builtin::ByteRegion region,
+        compiler_ir_initialization::InitializationWorkspace workspace) -> i64 {
+        return compiler_ir_initialization::release(region, move(workspace));
+    }
+    auto initialization_allocated(const compiler_ir_initialization::InitializationWorkspace& workspace) -> bool {
+        return workspace.allocated();
+    }
+    auto initialization_status(const compiler_ir_initialization::InitializationWorkspace& workspace)
+        -> compiler_ir_initialization::InitializationStatus {
+        return workspace.status();
+    }
+    auto initialization_slot_count(const compiler_ir_initialization::InitializationWorkspace& workspace) -> i64 {
+        return workspace.slot_count();
+    }
+    auto initialization_word_count(const compiler_ir_initialization::InitializationWorkspace& workspace) -> i64 {
+        return workspace.word_count();
+    }
+    auto initialization_retained_count(const compiler_ir_initialization::InitializationWorkspace& workspace) -> i64 {
+        return workspace.retained_count();
+    }
+    auto initialization_current_count(const compiler_ir_initialization::InitializationWorkspace& workspace) -> i64 {
+        return workspace.current_count();
+    }
+    auto initialization_retained_count_at(const compiler_ir_initialization::InitializationWorkspace& workspace,
+        i64 id) -> i64 {
+        return workspace.retained_count_at(id);
+    }
+    auto initialization_load(compiler_ir_initialization::InitializationWorkspace& workspace, i64 id) -> bool {
+        return workspace.load(id);
+    }
+    auto initialization_retain(compiler_ir_initialization::InitializationWorkspace& workspace) -> i64 {
+        return workspace.retain();
+    }
+    auto initialization_join(compiler_ir_initialization::InitializationWorkspace& workspace, i64 id)
+        -> compiler_ir_initialization::InitializationJoin {
+        return workspace.join(id);
+    }
+    auto initialization_initialize(compiler_ir_initialization::InitializationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 callable)
+        -> compiler_ir_initialization::InitializationStatus {
+        return compiler_ir_initialization::initialize(workspace, metadata, callable);
+    }
+    auto initialization_scalar_state(compiler_ir_initialization::InitializationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 offset) -> i64 {
+        return compiler_ir_initialization::scalar_state(workspace, metadata, offset);
+    }
+    auto initialization_write_scalar(compiler_ir_initialization::InitializationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 offset) -> i64 {
+        return compiler_ir_initialization::write_scalar(workspace, metadata, offset);
+    }
+    auto initialization_object_initialized(compiler_ir_initialization::InitializationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 base) -> i64 {
+        return compiler_ir_initialization::object_initialized(workspace, metadata, base);
+    }
+    auto initialization_object_pristine(compiler_ir_initialization::InitializationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 base) -> i64 {
+        return compiler_ir_initialization::object_pristine(workspace, metadata, base);
+    }
+    auto initialization_mark_object(compiler_ir_initialization::InitializationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 base) -> bool {
+        return compiler_ir_initialization::mark_object(workspace, metadata, base);
+    }
+    auto initialization_clear_object(compiler_ir_initialization::InitializationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 base) -> bool {
+        return compiler_ir_initialization::clear_object(workspace, metadata, base);
+    }
+    auto initialization_array_first_missing(compiler_ir_initialization::InitializationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 offset, i64 length, i64 width) -> i64 {
+        return compiler_ir_initialization::array_first_missing(workspace, metadata, offset, length, width);
+    }
+    auto initialization_clear_array(compiler_ir_initialization::InitializationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 offset, i64 length, i64 width) -> bool {
+        return compiler_ir_initialization::clear_array(workspace, metadata, offset, length, width);
     }
 }

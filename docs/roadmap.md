@@ -87,7 +87,8 @@ unresolved declaration admission, module/template resolution and resolved semant
 ownership analysis through typed IR. Independent metadata, callable, frame and
 call-graph checks also live in Aurora, alongside durable instruction storage and
 structural CFG normalization and static entry, call, local-storage and scalar admission,
-awaiting final-source qualification. Dynamic value/provenance verification and native emission remain the next migrations,
+awaiting final-source qualification. Local initialization facts have a source-owned workspace awaiting execution;
+remaining value/provenance state, worklist ownership and native emission are next,
 alongside host record projection and source loading.
 Native assembler/linker and host runtime/file/process services remain separate
 self-hosting dependencies.

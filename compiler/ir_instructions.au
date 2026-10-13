@@ -1092,7 +1092,8 @@ export namespace compiler_ir_instructions {
     // These checks depend only on admitted declarations and normalized operands.
     // Exact origins come from ordered canonical metadata, never a second frame
     // map or a retained instruction summary. Native State owns the changing
-    // lifetime, initialization, loan, current-value and bounds-token evidence.
+    // lifetime, loan, current-value and bounds-token evidence; the separate
+    // initialization workspace owns local scalar must/may facts.
     auto verify_storage_scalar(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 callable, i64 offset, i64 type_index) -> bool {
         const i64 slot_index = entry_slot(metadata, callable, 10, offset);
@@ -1402,8 +1403,9 @@ export namespace compiler_ir_instructions {
             return true;
         }
         // Next/Poll require an exact declared copied sample root. Its nominal
-        // class and physical layout were sealed by metadata admission; active,
-        // pristine and initialized state remains solely in the native verifier.
+        // class and physical layout were sealed by metadata admission. Active
+        // authority and logical completion remain native; local scalar facts live
+        // in the separate initialization workspace.
         const i64 slot_index = entry_slot(metadata, callable, 11, result_offset);
         if (slot_index < 0) { return fail(store, InstructionError::service_sample_result); }
         const compiler_ir_metadata::SlotRow slot = metadata.slot_at(slot_index);

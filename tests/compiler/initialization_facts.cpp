@@ -1,4 +1,8 @@
-#include "initialization_facts.hpp"
+// The reference sets live only in this fixture. Every observed operation goes
+// through the real per-function Aurora owner and its private generated bridge.
+#include "hosted_ir_initialization.hpp"
+#include "ir.hpp"
+#include <algorithm>
 #include <array>
 #include <functional>
 #include <iostream>
@@ -8,8 +12,10 @@
 #include <type_traits>
 
 using aurora::Error;
-using aurora::ir::verification::InitializationFacts;
-using aurora::ir::verification::InitializationSlotUniverse;
+using aurora::Type;
+using aurora::ir::InitializationWorkspace;
+using aurora::ir::Metadata;
+using aurora::ir::Module;
 
 namespace {
 std::size_t checks = 0;
@@ -18,291 +24,272 @@ void check(bool condition, const std::string &message) {
         throw Error(message);
     ++checks;
 }
-void rejects(const std::function<void()> &operation, const std::string &diagnostic) {
+void rejects(const std::function<void()> &operation) {
     try {
         operation();
-    } catch (const Error &error) {
-        check(std::string(error.what()).find(diagnostic) != std::string::npos, "wrong initialization-facts diagnostic");
+    } catch (const Error &) {
+        ++checks;
         return;
     }
-    throw Error("malformed initialization-facts input was accepted");
-}
-std::shared_ptr<const InitializationSlotUniverse> universe(std::vector<int> offsets, int frame = 65536) {
-    return std::make_shared<const InitializationSlotUniverse>(std::move(offsets), frame);
+    throw Error("invalid initialization workspace operation was accepted");
 }
 std::vector<int> denseOffsets(std::size_t count) {
     std::vector<int> offsets(count);
     std::iota(offsets.begin(), offsets.end(), 1);
     return offsets;
 }
-void matches(const InitializationFacts &actual,
-             const std::set<int> &expected,
-             const InitializationSlotUniverse &domain) {
-    check(actual.size() == expected.size(), "logical fact count differs from std::set");
-    check(actual.wordCount() == domain.size() / 64 + (domain.size() % 64 != 0),
-          "word storage is not exact ceil(slotCount / 64)");
-    check(actual.payloadBytes() == actual.wordCount() * sizeof(std::uint64_t),
-          "incorrect deterministic payload byte count");
-    for (std::size_t index = 0; index < domain.size(); ++index) {
-        const int offset = domain.offset(index);
-        check(actual.contains(offset) == expected.contains(offset), "membership differs from std::set");
+std::unique_ptr<Metadata> declarations(const std::vector<int> &offsets) {
+    aurora::ir::Function function;
+    function.name = "facts";
+    function.result = Type::I64;
+    function.frameBytes = offsets.empty() ? 0 : 65536;
+    for (int offset : offsets)
+        function.slots.emplace(offset, Type::U8);
+    Module module;
+    module.functions.push_back(std::move(function));
+    return Metadata::import(module);
+}
+struct Reference {
+    std::set<int> must, may;
+    std::size_t count() const {
+        return must.size() + may.size();
     }
-    for (int absent : {std::numeric_limits<int>::min(), -1, 0, 65537, std::numeric_limits<int>::max()})
-        check(!actual.contains(absent), "unknown offset appears in initialization facts");
-}
-std::set<int> intersect(const std::set<int> &left, const std::set<int> &right) {
-    std::set<int> result;
-    std::set_intersection(left.begin(), left.end(), right.begin(), right.end(), std::inserter(result, result.end()));
-    return result;
-}
-std::set<int> unite(const std::set<int> &left, const std::set<int> &right) {
-    std::set<int> result = left;
-    result.insert(right.begin(), right.end());
-    return result;
-}
-void malformedAndLifetimeTests() {
-    static_assert(!std::is_copy_assignable_v<InitializationSlotUniverse>);
-    for (int offset : {std::numeric_limits<int>::min(), -1, 0, 65537, std::numeric_limits<int>::max()})
-        rejects(
-            [&] {
-                (void)universe({offset});
-            },
-            "offset");
-    rejects(
-        [] {
-            (void)universe({1, 1});
-        },
-        "duplicate");
-    rejects(
-        [] {
-            (void)universe({}, -1);
-        },
-        "extent");
-    rejects(
-        [] {
-            (void)universe({}, 65537);
-        },
-        "extent");
-    rejects(
-        [] {
-            (void)universe(denseOffsets(65537));
-        },
-        "extent");
-    rejects(
-        [] {
-            (void)universe({17}, 16);
-        },
-        "offset");
-    rejects(
-        [] {
-            (void)InitializationFacts(nullptr);
-        },
-        "missing");
-
-    InitializationFacts empty;
-    check(empty.size() == 0 && empty.wordCount() == 0 && empty.payloadBytes() == 0, "default value is not empty");
-    check(empty == InitializationFacts(universe({}, 0)), "empty domain affects equality");
-    check(!empty.contains(1) && empty.erase(1) == 0, "default membership/removal");
-    rejects(
-        [&] {
-            empty.insert(1);
-        },
-        "validated scalar slot");
-
-    auto domain = universe({65536, 1, 127, 8});
-    std::weak_ptr<const InitializationSlotUniverse> lifetime = domain;
-    InitializationFacts facts(domain);
-    facts.insert(1);
-    facts.insert(65536);
-    for (int offset : {std::numeric_limits<int>::min(), -1, 0, 2, 65535, 65537, std::numeric_limits<int>::max()}) {
-        check(!facts.contains(offset) && facts.erase(offset) == 0, "unknown membership/removal differs from std::set");
-        rejects(
-            [&] {
-                facts.insert(offset);
-            },
-            "validated scalar slot");
-        check(facts.size() == 2, "failed insertion changed facts");
+    unsigned state(int offset) const {
+        return unsigned(must.contains(offset)) | (unsigned(may.contains(offset)) << 1);
     }
-    InitializationFacts copy = facts;
-    copy.erase(1);
-    check(facts.contains(1) && !copy.contains(1), "copies share mutable words");
-    copy = facts;
-    copy = copy;
-    check(copy == facts, "copy/self assignment changes facts");
-    domain.reset();
-    check(!lifetime.expired() && facts.contains(65536), "facts lost their slot universe");
-    InitializationFacts moved = std::move(copy);
-    check(moved == facts && copy.size() == 0 && !copy.contains(1), "move construction");
-    check(copy.erase(1) == 0, "moved-from removal");
-    rejects(
-        [&] {
-            copy.insert(1);
-        },
-        "validated scalar slot");
-    copy = std::move(moved);
-    check(copy == facts && moved.size() == 0 && !moved.contains(65536), "move assignment");
-    auto *self = &copy;
-    copy = std::move(*self);
-    check(copy == facts, "self move assignment");
-
-    InitializationFacts reordered(universe({8, 127, 65536, 1}));
-    reordered.insert(1);
-    reordered.insert(65536);
-    check(reordered == facts, "equivalent distinct universes affect equality");
-    reordered.intersectWith(facts);
-    reordered.unionWith(facts);
-    check(reordered == facts, "joins of equivalent distinct universes");
-
-    InitializationFacts narrow(universe({1, 65536}));
-    narrow.insert(1);
-    narrow.insert(65536);
-    check(narrow == facts, "different domains affect equal set values");
-    narrow.intersectWith(facts);
-    facts.unionWith(narrow);
-    check(narrow == facts, "cross-domain join changed equal set values");
-    facts.insert(8);
-    const auto before = narrow;
-    rejects(
-        [&] {
-            narrow.unionWith(facts);
-        },
-        "validated scalar slot");
-    check(narrow == before, "cross-domain union partially changed facts before failure");
-    facts.intersectWith(narrow);
-    check(facts == narrow, "cross-domain intersection differs from std::set");
-    empty.unionWith(InitializationFacts(universe({2})));
-    check(empty.size() == 0, "union with an empty foreign domain");
-    facts.intersectWith(empty);
-    check(facts.size() == 0, "intersection with an empty foreign domain");
+    unsigned write(int offset) {
+        const auto previous = state(offset);
+        must.insert(offset);
+        may.insert(offset);
+        return previous;
+    }
+    void clear(int offset) {
+        must.erase(offset);
+        may.erase(offset);
+    }
+    bool join(const Reference &incoming) {
+        const auto previousMust = must, previousMay = may;
+        std::set<int> common;
+        std::set_intersection(must.begin(), must.end(), incoming.must.begin(), incoming.must.end(),
+                              std::inserter(common, common.end()));
+        must = std::move(common);
+        may.insert(incoming.may.begin(), incoming.may.end());
+        return must != previousMust || may != previousMay;
+    }
+};
+void matches(InitializationWorkspace &actual, const Reference &expected, const std::vector<int> &offsets) {
+    check(actual.currentCount() == expected.count(), "logical must/may count differs from reference sets");
+    check(actual.slotCount() == offsets.size() && actual.wordCount() == (offsets.size() + 63) / 64,
+          "word storage does not follow the canonical dense slot domain");
+    check(actual.logicalPayloadBytesPerSnapshot() == 2 * actual.wordCount() * sizeof(std::uint64_t),
+          "logical snapshot payload includes spare capacity or owner overhead");
+    // Cover every bit in small domains, and every present fact plus boundary
+    // probes in the maximal domain without turning bridge calls into a benchmark.
+    if (offsets.size() <= 129) {
+        for (int offset : offsets)
+            check(actual.scalarState(offset) == expected.state(offset), "membership differs from reference sets");
+    } else {
+        for (std::size_t index : {0u, 62u, 63u, 64u, 127u, 128u, 65535u})
+            if (index < offsets.size())
+                check(actual.scalarState(offsets[index]) == expected.state(offsets[index]), "boundary membership differs");
+        for (int offset : expected.may)
+            check(actual.scalarState(offset) == expected.state(offset), "retained fact differs from reference sets");
+    }
+    for (int offset : {-1, 0, 65537})
+        check(actual.scalarState(offset) == 0, "absent offset acquired a scalar fact");
 }
-void boundaryTests() {
-    for (std::size_t count : {0u, 1u, 63u, 64u, 65u, 127u, 128u, 129u, 4096u, 65536u}) {
-        auto domain = universe(denseOffsets(count));
-        InitializationFacts actual(domain);
-        std::set<int> expected;
-        matches(actual, expected, *domain);
-        for (std::size_t index = 0; index < count; ++index) {
-            const int offset = domain->offset(index);
-            check(actual.insert(offset) == expected.insert(offset).second, "first insertion");
-            check(!actual.insert(offset), "repeated insertion changed count");
+void boundaryAndIsolationTests() {
+    static_assert(!std::is_copy_constructible_v<InitializationWorkspace> &&
+                  !std::is_move_constructible_v<InitializationWorkspace>);
+    for (std::size_t count : {0u, 1u, 63u, 64u, 65u, 127u, 128u, 129u, 65536u}) {
+        const auto offsets = denseOffsets(count);
+        auto metadata = declarations(offsets);
+        InitializationWorkspace workspace(*metadata, 0);
+        Reference expected;
+        matches(workspace, expected, offsets);
+        const auto empty = workspace.retain();
+        check(empty == 0 && workspace.retainedCountAt(empty) == 0, "first retained ordinal or count differs");
+        for (int offset : offsets) {
+            if (count > 129 && offset != 1 && offset != 63 && offset != 64 && offset != 65 && offset != 65536)
+                continue;
+            check(workspace.writeScalar(offset) == expected.write(offset), "first write lost previous state");
+            check(workspace.writeScalar(offset) == expected.write(offset), "repeated write changed membership");
         }
-        matches(actual, expected, *domain);
-        auto full = actual;
-        actual.unionWith(actual);
-        actual.intersectWith(actual);
-        check(actual == full, "self joins changed full words or tail");
-        InitializationFacts zero(domain);
-        full.intersectWith(zero);
-        check(full == zero && full.size() == 0, "AND did not clear all words/tail");
-        zero.unionWith(actual);
-        check(zero == actual, "OR did not copy all words/tail");
-        for (std::size_t index = count; index > 0; --index) {
-            const int offset = domain->offset(index - 1);
-            check(actual.erase(offset) == expected.erase(offset), "first removal");
-            check(actual.erase(offset) == 0, "repeated removal changed count");
+        const auto full = workspace.retain();
+        const auto saved = expected;
+        check(workspace.retainedCountAt(empty) == 0, "current writes mutated a retained row");
+        check(!workspace.join(full), "self join reported a change");
+        workspace.load(empty);
+        matches(workspace, {}, offsets);
+        check(workspace.retainedCountAt(full) == saved.count(), "load mutated another retained row");
+        workspace.load(full);
+        expected = saved;
+        for (int offset : saved.may) {
+            workspace.clearArray(offset, 1, 1);
+            expected.clear(offset);
         }
-        matches(actual, expected, *domain);
+        matches(workspace, expected, offsets);
+        workspace.load(full);
+        matches(workspace, saved, offsets);
+        // Append enough rows to relocate every retained owner repeatedly. Old
+        // ordinals remain valid; no cached native payload span may survive growth.
+        for (std::size_t index = 2; index < 130; ++index) {
+            check(workspace.retain() == index, "retained ordinals are not append-only");
+            check(workspace.retainedCountAt(index) == saved.count(), "growth lost a logical count");
+        }
+        workspace.load(empty);
+        matches(workspace, {}, offsets);
+        workspace.load(full);
+        matches(workspace, saved, offsets);
     }
-    // Storage tracks dense slot count, even for widely separated byte offsets.
-    auto sparse = universe({1, 32, 64, 4096, 65535, 65536});
-    InitializationFacts sparseFacts(sparse);
-    check(sparseFacts.wordCount() == 1, "sparse offsets allocate by raw frame offset");
-    for (std::size_t index = 0; index < sparse->size(); ++index)
-        sparseFacts.insert(sparse->offset(index));
-    matches(sparseFacts, {1, 32, 64, 4096, 65535, 65536}, *sparse);
+    const std::vector<int> sparse{1, 32, 64, 4096, 65535, 65536};
+    auto metadata = declarations(sparse);
+    InitializationWorkspace workspace(*metadata, 0);
+    Reference expected;
+    for (int offset : sparse) {
+        workspace.writeScalar(offset);
+        expected.write(offset);
+    }
+    matches(workspace, expected, sparse);
+    check(workspace.wordCount() == 1 && workspace.scalarState(2) == 0, "sparse frame used raw offsets as bit indices");
 }
-void exhaustiveTests() {
-    for (unsigned count = 0; count <= 6; ++count) {
-        std::vector<int> offsets;
-        for (unsigned index = 0; index < count; ++index)
-            offsets.push_back(static_cast<int>(index * 997 + 1));
-        auto domain = universe(offsets);
-        for (unsigned leftMask = 0; leftMask < (1u << count); ++leftMask) {
-            InitializationFacts left(domain);
-            std::set<int> leftSet;
-            for (unsigned index = 0; index < count; ++index)
-                if ((leftMask & (1u << index)) != 0) {
-                    left.insert(offsets[index]);
-                    leftSet.insert(offsets[index]);
-                }
-            for (unsigned rightMask = 0; rightMask < (1u << count); ++rightMask) {
-                InitializationFacts right(domain);
-                std::set<int> rightSet;
-                for (unsigned index = 0; index < count; ++index)
-                    if ((rightMask & (1u << index)) != 0) {
-                        right.insert(offsets[index]);
-                        rightSet.insert(offsets[index]);
-                    }
-                check((left == right) == (leftSet == rightSet), "exhaustive equality");
-                auto joined = left;
-                joined.intersectWith(right);
-                matches(joined, intersect(leftSet, rightSet), *domain);
-                joined = left;
-                joined.unionWith(right);
-                matches(joined, unite(leftSet, rightSet), *domain);
+void differentialJoins() {
+    const std::vector<int> offsets{1, 8, 127, 65536};
+    auto metadata = declarations(offsets);
+    InitializationWorkspace workspace(*metadata, 0);
+    std::array<InitializationWorkspace::Id, 16> rows{};
+    std::array<Reference, 16> values{};
+    const auto empty = workspace.retain();
+    for (unsigned mask = 0; mask < rows.size(); ++mask) {
+        workspace.load(empty);
+        for (unsigned bit = 0; bit < offsets.size(); ++bit)
+            if ((mask & (1u << bit)) != 0) {
+                workspace.writeScalar(offsets[bit]);
+                values[mask].write(offsets[bit]);
             }
-        }
+        rows[mask] = workspace.retain();
     }
+    for (unsigned left = 0; left < rows.size(); ++left)
+        for (unsigned right = 0; right < rows.size(); ++right) {
+            workspace.load(rows[left]);
+            const auto target = workspace.retain();
+            workspace.load(rows[right]);
+            auto expected = values[left];
+            const auto changed = expected.join(values[right]);
+            check(workspace.join(target) == changed, "must AND/may OR changed result differs");
+            matches(workspace, values[right], offsets);
+            check(workspace.retainedCountAt(target) == expected.count(), "join retained cardinality differs");
+            check(!workspace.join(target), "unchanged backedge reported a change");
+            workspace.load(target);
+            matches(workspace, expected, offsets);
+            if (left == 1 && right == 2)
+                check(changed && expected.count() == values[left].count(),
+                      "cardinality-canceling must removal/may insertion was not a changed join");
+        }
 }
-void randomizedTests() {
+void randomizedRetainedRows() {
     std::mt19937 random(0x1faca5u);
-    for (std::size_t count : {0u, 1u, 63u, 64u, 65u, 129u, 4096u, 65536u}) {
-        auto domain = universe(denseOffsets(count));
-        std::array<InitializationFacts, 3> actual{
-            InitializationFacts(domain), InitializationFacts(domain), InitializationFacts(domain)};
-        std::array<std::set<int>, 3> expected;
-        for (unsigned step = 0; step < 3000; ++step) {
-            const auto left = random() % actual.size();
-            const auto right = random() % actual.size();
-            const int offset = count == 0 ? 1 : domain->offset(random() % count);
-            switch (random() % 7) {
+    for (std::size_t count : {0u, 1u, 63u, 64u, 65u, 129u, 65536u}) {
+        const auto offsets = denseOffsets(count);
+        auto metadata = declarations(offsets);
+        InitializationWorkspace workspace(*metadata, 0);
+        Reference current;
+        std::vector<Reference> rows{current};
+        check(workspace.retain() == 0, "random initial retain");
+        for (unsigned step = 0; step < 400; ++step) {
+            const auto row = random() % rows.size();
+            const int offset = count == 0 ? 1 : offsets[random() % count];
+            switch (random() % 5) {
             case 0:
                 if (count != 0)
-                    check(actual[left].insert(offset) == expected[left].insert(offset).second, "random insertion");
+                    check(workspace.writeScalar(offset) == current.write(offset), "random previous write state");
                 break;
             case 1:
-                check(actual[left].erase(offset) == expected[left].erase(offset), "random erase");
+                if (count != 0) {
+                    workspace.clearArray(offset, 1, 1);
+                    current.clear(offset);
+                }
                 break;
             case 2:
-                actual[left].intersectWith(actual[right]);
-                expected[left] = intersect(expected[left], expected[right]);
+                workspace.load(row);
+                current = rows[row];
                 break;
             case 3:
-                actual[left].unionWith(actual[right]);
-                expected[left] = unite(expected[left], expected[right]);
+                check(workspace.join(row) == rows[row].join(current), "random changed join differs");
                 break;
             case 4:
-                actual[left] = actual[right];
-                expected[left] = expected[right];
-                break;
-            case 5:
-                check(actual[left].contains(offset) == expected[left].contains(offset), "random membership");
-                break;
-            case 6:
-                check((actual[left] == actual[right]) == (expected[left] == expected[right]), "random comparison");
+                check(workspace.retain() == rows.size(), "random ordinal differs");
+                rows.push_back(current);
                 break;
             }
-            check(actual[left].size() == expected[left].size(), "random logical count");
-            if (step % 97 == 0)
-                for (std::size_t index = 0; index < actual.size(); ++index)
-                    matches(actual[index], expected[index], *domain);
+            check(workspace.currentCount() == current.count() && workspace.retainedCountAt(row) == rows[row].count(),
+                  "random logical counts differ");
+            if (step % 41 == 0)
+                matches(workspace, current, offsets);
         }
-        for (std::size_t index = 0; index < actual.size(); ++index)
-            matches(actual[index], expected[index], *domain);
+        for (std::size_t row = 0; row < rows.size(); ++row) {
+            workspace.load(row);
+            matches(workspace, rows[row], offsets);
+        }
     }
+}
+void objectAndFailureTests() {
+    Module module;
+    module.classLayouts["Box"] = {Type::U8, Type::U8};
+    module.classLayouts["Empty"] = {};
+    aurora::ir::Function function;
+    function.name = "objects";
+    function.result = Type::I64;
+    function.frameBytes = 16;
+    function.slots = {{8, Type::U8}, {7, Type::U8}};
+    function.objectSlots = {{8, {"Box", false}}, {16, {"Empty", false}}};
+    module.functions.push_back(function);
+    auto metadata = Metadata::import(module);
+    {
+        InitializationWorkspace workspace(*metadata, 0);
+        check(workspace.objectPristine(8) && !workspace.objectInitialized(8), "fresh object facts");
+        check(workspace.objectInitialized(16) && workspace.objectPristine(16),
+              "zero-leaf facts acquired logical empty-object completion responsibility");
+        workspace.markObject(8);
+        const auto full = workspace.retain();
+        check(workspace.objectInitialized(8) && !workspace.objectPristine(8), "complete object facts");
+        workspace.clearObject(8);
+        check(workspace.objectPristine(8) && workspace.arrayFirstMissing(8, 2, 1) == 0,
+              "lifetime clear kept must/may facts");
+        workspace.writeScalar(8);
+        check(workspace.arrayFirstMissing(8, 2, 1) == 1, "first missing element order differs");
+        workspace.writeScalar(7);
+        check(!workspace.arrayFirstMissing(8, 2, 1), "complete array still has a missing element");
+        workspace.load(full);
+        check(workspace.objectInitialized(8), "object clear mutated the retained snapshot");
+    }
+    for (unsigned operation = 0; operation != 3; ++operation) {
+        InitializationWorkspace workspace(*metadata, 0);
+        workspace.markObject(8);
+        const auto retained = workspace.retain();
+        rejects([&] {
+            if (operation == 0)
+                workspace.load(retained + 1);
+            else if (operation == 1)
+                workspace.join(retained + 1);
+            else
+                workspace.writeScalar(6);
+        });
+    }
+    rejects([&] { InitializationWorkspace workspace(*metadata, metadata->callableCount()); });
 }
 } // namespace
 
 int main() {
     try {
-        malformedAndLifetimeTests();
-        boundaryTests();
-        exhaustiveTests();
-        randomizedTests();
-        std::cout << "PASS initialization facts: " << checks << " checks against std::set, including 65,536 slots\n";
+        boundaryAndIsolationTests();
+        differentialJoins();
+        randomizedRetainedRows();
+        objectAndFailureTests();
+        std::cout << "PASS initialization workspace: " << checks << " checks against reference sets\n";
         return 0;
     } catch (const std::exception &error) {
-        std::cerr << "FAIL initialization facts: " << error.what() << '\n';
+        std::cerr << "FAIL initialization workspace: " << error.what() << '\n';
         return 1;
     }
 }

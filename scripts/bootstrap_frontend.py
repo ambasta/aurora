@@ -43,6 +43,8 @@ ARGUMENT_RECORDS = (
     ("MetadataRelease", "compiler_frontend::metadata_release", ("region", "store")),
     ("InstructionsCreate", "compiler_frontend::instructions_create", ("region", "counts")),
     ("InstructionsRelease", "compiler_frontend::instructions_release", ("region", "store")),
+    ("InitializationCreate", "compiler_frontend::initialization_create", ("region",)),
+    ("InitializationRelease", "compiler_frontend::initialization_release", ("region", "workspace")),
 )
 
 
@@ -80,6 +82,7 @@ def frontend_abi_entries(facts):
     graph_workspace, _ = abi_declaration(facts, "records", "compiler_ir_graph::Workspace")
     metadata, _ = abi_declaration(facts, "records", "compiler_ir_metadata::MetadataStore")
     instructions, _ = abi_declaration(facts, "records", "compiler_ir_instructions::InstructionStore")
+    initialization, _ = abi_declaration(facts, "records", "compiler_ir_initialization::InitializationWorkspace")
     checks = [
         (
             "lexer_next",
@@ -235,6 +238,45 @@ def frontend_abi_entries(facts):
             ("error", instructions, [], "compiler_ir_instructions::InstructionError"),
         )
     ]
+    initialization_pairs = {
+        "initialization_" + name
+        for name in (
+            "initialize", "scalar_state", "write_scalar", "object_initialized", "object_pristine",
+            "mark_object", "clear_object", "array_first_missing", "clear_array",
+        )
+    }
+    initialization_readonly = {
+        "initialization_" + name
+        for name in (
+            "allocated", "status", "slot_count", "word_count", "retained_count", "current_count", "retained_count_at",
+        )
+    }
+    checks += [
+        ("initialization_" + name, "compiler_frontend::initialization_" + name, receiver, parameters, result)
+        for name, receiver, parameters, result in (
+            ("create", None, ["region"], "compiler_ir_initialization::InitializationWorkspace"),
+            ("release", None, ["region", "compiler_ir_initialization::InitializationWorkspace"], "i64"),
+            ("allocated", initialization, [], "bool"),
+            ("status", initialization, [], "compiler_ir_initialization::InitializationStatus"),
+            ("initialize", initialization, ["i64"], "compiler_ir_initialization::InitializationStatus"),
+            ("slot_count", initialization, [], "i64"),
+            ("word_count", initialization, [], "i64"),
+            ("retained_count", initialization, [], "i64"),
+            ("current_count", initialization, [], "i64"),
+            ("retained_count_at", initialization, ["i64"], "i64"),
+            ("load", initialization, ["i64"], "bool"),
+            ("retain", initialization, [], "i64"),
+            ("join", initialization, ["i64"], "compiler_ir_initialization::InitializationJoin"),
+            ("scalar_state", initialization, ["i64"], "i64"),
+            ("write_scalar", initialization, ["i64"], "i64"),
+            ("object_initialized", initialization, ["i64"], "i64"),
+            ("object_pristine", initialization, ["i64"], "i64"),
+            ("mark_object", initialization, ["i64"], "bool"),
+            ("clear_object", initialization, ["i64"], "bool"),
+            ("array_first_missing", initialization, ["i64", "i64", "i64"], "i64"),
+            ("clear_array", initialization, ["i64", "i64", "i64"], "bool"),
+        )
+    ]
     checks += [
         ("parser_" + name, "compiler_frontend::parser_" + name, arena, [], "i64")
         for name in ("node_count", "edge_count", "type_count", "syntax_count")
@@ -262,7 +304,7 @@ def frontend_abi_entries(facts):
         ):
             raise ValueError(f"private bridge signature changed: {source}")
         second = function.get("second_receiver")
-        if alias in ("graph_run", "instructions_admit", "instructions_structure"):
+        if alias in ("graph_run", "instructions_admit", "instructions_structure") or alias in initialization_pairs:
             if (
                 function.get("receiver_mutable") is not True
                 or function.get("borrowed_parameter") is not True
@@ -289,6 +331,31 @@ def frontend_abi_entries(facts):
         if alias.startswith("instructions_") and receiver is not None:
             if function.get("receiver_mutable") is not (alias not in ("instructions_allocated", "instructions_error")):
                 raise ValueError(f"private instruction root authority changed: {source}")
+        if alias.startswith("initialization_"):
+            expected_order = (
+                ["receiver", "second_receiver"] if alias in initialization_pairs
+                else ["receiver"] if receiver is not None else []
+            )
+            if (
+                function.get("root_order") != expected_order
+                or function.get("root_count") != len(expected_order)
+                or function.get("root_tuple_bytes") != (16 if len(expected_order) == 2 else 0)
+            ):
+                raise ValueError(f"private initialization root order changed: {source}")
+            if receiver is not None:
+                if (
+                    function.get("receiver_mutable") is not (alias not in initialization_readonly)
+                    or function.get("borrowed_parameter") is not True
+                    or len(parameters) > 4
+                    or any(
+                        shape(parameter)[0] not in ("i64", "u64", "u8", "bool", "enum")
+                        for parameter in parameters
+                    )
+                    or shape(result)[0] not in ("i64", "u64", "u8", "bool", "enum")
+                ):
+                    raise ValueError(f"private initialization root authority or register result changed: {source}")
+            elif function.get("receiver_mutable") is not None or function.get("borrowed_parameter") is not False:
+                raise ValueError(f"private initialization owner transfer changed: {source}")
         offset = 0
         for actual, expected in zip(function["parameters"], parameters):
             if not matches(actual, expected) or actual["offset"] != offset:
@@ -648,6 +715,63 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
                 f"inline constexpr std::size_t instruction{row_name}PhysicalBytes = {stride};",
                 f"static_assert(sizeof({cpp_name(symbol)}) == instruction{row_name}PhysicalBytes);",
             ]
+    # Mutable initialization pools never expose native payload observations.
+    # Still validate their complete actual owner/control layout against emitted
+    # facts before producing the opaque enclosing create/release record.
+    _, initialization_workspace = abi_declaration(
+        facts, "records", "compiler_ir_initialization::InitializationWorkspace"
+    )
+    initialization_fields = (
+        ("currentWords", "owner"), ("retainedWords", "owner"), ("retainedCounts", "owner"),
+        ("callableId", "i64"), ("scalarBegin", "i64"), ("scalarCount", "i64"), ("wordCount", "i64"),
+        ("retainedCount", "i64"), ("retainedCapacity", "i64"), ("currentMust", "i64"), ("currentMay", "i64"),
+        ("statusValue", "enum"),
+    )
+    fields = initialization_workspace["fields"]
+    if (
+        len(fields) != len(initialization_fields)
+        or initialization_workspace["alignment"] != 8
+        or initialization_workspace["reserved"] != initialization_workspace["size"]
+    ):
+        raise ValueError("private initialization owner layout changed")
+    status, _ = abi_declaration(facts, "enums", "compiler_ir_initialization::InitializationStatus")
+    end = 0
+    for field, (name, kind) in zip(fields, initialization_fields):
+        offset, width = number(field["offset"]), number(field["bytes"])
+        if (
+            field["name"] != name or field["kind"] != kind or field.get("array_length", 0)
+            or offset < end or offset % 8 != 0 or width != (32 if kind == "owner" else 8)
+            or offset + width > initialization_workspace["size"]
+            or (kind == "enum" and field.get("type_name") != status)
+        ):
+            raise ValueError("private initialization field changed: " + name)
+        end = offset + width
+        lines += [
+            f"inline constexpr std::size_t initializationWorkspace_{name}Offset = {offset};",
+            f"inline constexpr std::size_t initializationWorkspace_{name}Bytes = {width};",
+        ]
+    if end != initialization_workspace["size"]:
+        raise ValueError("private initialization owner extent changed")
+    for row_name, kind, field_names in (
+        ("WordPair", "u64", ("mustBits", "mayBits")),
+        ("CountPair", "i64", ("mustCount", "mayCount")),
+    ):
+        symbol, row = abi_declaration(facts, "records", "compiler_ir_initialization::" + row_name)
+        qword_row(symbol)
+        stride = number(row["size"])
+        if (
+            row["alignment"] != 8 or stride != row["reserved"] or stride != 16
+            or len(row["fields"]) != len(field_names)
+            or any(
+                field["name"] != name or field["kind"] != kind or field["offset"] != index * 8
+                for index, (field, name) in enumerate(zip(row["fields"], field_names))
+            )
+        ):
+            raise ValueError("private initialization row changed: " + row_name)
+        lines += [
+            f"inline constexpr std::size_t initialization{row_name}PhysicalBytes = {stride};",
+            f"static_assert(sizeof({cpp_name(symbol)}) == initialization{row_name}PhysicalBytes);",
+        ]
     # The only manual physical shape is the trusted contiguous readonly span.
     # Source records and their nesting use the compiler's names and field facts.
     if facts["span_bytes"] != 56:
@@ -755,7 +879,10 @@ def main():
         len(modules) + len(bridges) + len(headers) != len(inputs)
         or len(headers) > 1
         or len(set(names)) != len(names)
-        or not {"frontend.au", "lowering_errors.au", "ir_metadata_storage.au", "ir_instruction_storage.au"} <= set(names)
+        or not {
+            "frontend.au", "lowering_errors.au", "ir_metadata_storage.au", "ir_instruction_storage.au",
+            "ir_initialization.au",
+        } <= set(names)
     ):
         raise ValueError("expected unique .au modules including frontend.au, .S bridges and at most one .hpp header")
     module_root = output.parent / "compiler-modules"
