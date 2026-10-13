@@ -79,7 +79,7 @@ test(
 class_arrays_ir = executable(
     'class-arrays-ir',
     'compiler/class_arrays_ir.cpp',
-    dependencies: frontend_headers,
+    dependencies: hosted_frontend,
     include_directories: include_directories('../compiler'),
     native: true,
     install: false,
@@ -89,7 +89,7 @@ test('class-arrays-ir', class_arrays_ir, suite: ['full', 'dev', 'core', 'compile
 owned_mutation_ir = executable(
     'owned-mutation-ir',
     'compiler/owned_mutation_ir.cpp',
-    dependencies: frontend_headers,
+    dependencies: hosted_frontend,
     include_directories: include_directories('../compiler'),
     native: true,
     install: false,
@@ -109,7 +109,7 @@ test(
 sector_values_ir = executable(
     'sector-values-ir',
     'compiler/sector_values_ir.cpp',
-    dependencies: frontend_headers,
+    dependencies: hosted_frontend,
     include_directories: include_directories('../compiler'),
     native: true,
     install: false,
@@ -175,7 +175,7 @@ endforeach
 # Runtime-owned bytes are a hosted bootstrap boundary, separate from freestanding core.
 owned_bytes_ir = executable(
     'owned-bytes-ir', 'compiler/owned_bytes_ir.cpp',
-    dependencies: frontend_headers,
+    dependencies: hosted_frontend,
     include_directories: include_directories('../compiler'), native: true, install: false,
 )
 test('owned-bytes-ir', owned_bytes_ir, suite: ['full', 'dev', 'core', 'compiler'], timeout: 120)
@@ -188,7 +188,7 @@ test('owned-bytes-host', owned_bytes_host, suite: ['full', 'dev', 'core', 'compi
 # Direct owning classes reuse the hosted byte adapter and private value ABI.
 owning_classes_ir = executable(
     'owning-classes-ir', 'compiler/owning_classes_ir.cpp',
-    dependencies: frontend_headers,
+    dependencies: hosted_frontend,
     include_directories: include_directories('../compiler'), native: true, install: false,
 )
 test('owning-classes-ir', owning_classes_ir, suite: ['full', 'dev', 'core', 'compiler'], timeout: 120)
@@ -202,7 +202,7 @@ test(
 # Logical owner views share the established readonly-span source type.
 owned_spans_ir = executable(
     'owned-spans-ir', 'compiler/owned_spans_ir.cpp',
-    dependencies: frontend_headers,
+    dependencies: hosted_frontend,
     include_directories: include_directories('../compiler'), native: true, install: false,
 )
 test('owned-spans-ir', owned_spans_ir, suite: ['full', 'dev', 'core', 'bytes', 'compiler'], timeout: 120)
@@ -232,7 +232,7 @@ test(
 
 logical_spans_abi = executable(
     'logical-spans-abi', 'compiler/logical_spans_abi.cpp',
-    dependencies: frontend_headers,
+    dependencies: hosted_frontend,
     include_directories: include_directories('../compiler'), native: true, install: false,
 )
 test('logical-spans-abi', python,
@@ -244,13 +244,13 @@ test('logical-spans-abi', python,
 # Synchronous method capabilities retain independent IR and literal-layout ABI gates.
 method_spans_ir = executable(
     'method-spans-ir', 'compiler/method_spans_ir.cpp',
-    dependencies: frontend_headers,
+    dependencies: hosted_frontend,
     include_directories: include_directories('../compiler'), native: true, install: false,
 )
 test('method-spans-ir', method_spans_ir, suite: ['full', 'dev', 'core', 'bytes', 'compiler'], timeout: 120)
 method_spans_abi = executable(
     'method-spans-abi', 'compiler/method_spans_abi.cpp',
-    dependencies: frontend_headers,
+    dependencies: hosted_frontend,
     include_directories: include_directories('../compiler'), native: true, install: false,
 )
 test('method-spans-abi', python,
@@ -297,13 +297,13 @@ test('borrowed-objects', python,
      workdir: meson.current_build_dir(), timeout: 300, is_parallel: true)
 borrowed_objects_ir = executable(
     'borrowed-objects-ir', 'compiler/borrowed_objects_ir.cpp',
-    dependencies: frontend_headers,
+    dependencies: hosted_frontend,
     include_directories: include_directories('../compiler'), native: true, install: false,
 )
 test('borrowed-objects-ir', borrowed_objects_ir, suite: ['full', 'dev', 'core', 'bytes', 'compiler'], timeout: 120)
 borrowed_objects_abi = executable(
     'borrowed-objects-abi', 'compiler/borrowed_objects_abi.cpp',
-    dependencies: frontend_headers,
+    dependencies: hosted_frontend,
     include_directories: include_directories('../compiler'), native: true, install: false,
 )
 test('borrowed-objects-abi', python,
@@ -326,7 +326,7 @@ test('json-string-write', python,
 # Sealed service authority has its own independent verifier and host-grant model.
 console_service_ir = executable(
     'console-service-ir', 'compiler/console_service_ir.cpp',
-    dependencies: frontend_headers,
+    dependencies: hosted_frontend,
     include_directories: include_directories('../compiler'), native: true, install: false,
 )
 test('console-service-ir', console_service_ir, suite: ['full', 'dev', 'core', 'compiler'], timeout: 120)
@@ -344,7 +344,7 @@ test('console-service-admission-controls', python,
 # Second sealed kind reuses the service verifier and private bridge.
 display_service_ir = executable(
     'display-service-ir', 'compiler/service_group_ir.cpp',
-    dependencies: frontend_headers,
+    dependencies: hosted_frontend,
     include_directories: include_directories('../compiler'), native: true, install: false,
 )
 test('display-service-ir', python,
@@ -361,7 +361,7 @@ test('display-service-source-native', python,
 # Aurora consumer against bounded hosted observations; no guest is run here.
 iommu_event_ir = executable(
     'iommu-event-service-ir', 'compiler/iommu_event_service_ir.cpp',
-    dependencies: frontend_headers,
+    dependencies: hosted_frontend,
     include_directories: include_directories('../compiler'), native: true, install: false,
 )
 test('iommu-event-source-native', python,
@@ -688,7 +688,7 @@ test('hosted-parser', hosted_parser_test,
                  '../compiler/lowering_frames.au', '../compiler/lowering_calls.au',
                  '../compiler/lowering_expressions.au', '../compiler/lowering_statements.au',
                  '../compiler/resolution_rows.au', '../compiler/resolution_names.au',
-                 '../compiler/resolution_ingest.au'),
+                 '../compiler/resolution_ingest.au', '../compiler/ir_graph.au'),
      suite: ['full', 'dev', 'core', 'compiler'], timeout: 120)
 hosted_parser_invalid = executable(
     'hosted-parser-invalid', ['compiler/hosted_parser_invalid.cpp', '../compiler/hosted_parser.cpp',

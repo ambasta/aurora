@@ -49,6 +49,7 @@ def frontend_arguments(compiler, root, output):
         str(root / "compiler/hosted_lexer.S"),
         str(root / "compiler/hosted_parser.S"),
         str(root / "compiler/hosted_resolver.S"),
+        str(root / "compiler/hosted_graph.S"),
     ]
 
 
@@ -165,6 +166,30 @@ def abi_generation(facts):
             except ValueError:
                 continue
             raise AssertionError(f"unsafe lowering bridge accepted: {operation}/{mutation}")
+    graph_input, _ = abi_declaration(facts, "records", "compiler_ir_graph::Input")
+    graph_workspace, _ = abi_declaration(facts, "records", "compiler_ir_graph::Workspace")
+    for field, value in (
+        ("receiver", graph_input),
+        ("receiver_mutable", False),
+        ("borrowed_parameter", False),
+        ("second_receiver", None),
+        ("second_receiver", {"type_name": graph_workspace, "mutable": False}),
+        ("second_receiver", {"type_name": graph_input, "mutable": True}),
+        ("root_count", 1),
+        ("root_order", ["second_receiver", "receiver"]),
+        ("root_tuple_bytes", 8),
+        ("parameters", [{"kind": "i64", "bytes": 8, "offset": 0}]),
+        ("parameter_bytes", 8),
+        ("result", {"kind": "i64", "bytes": 8}),
+    ):
+        changed = deepcopy(facts)
+        _, entry = abi_declaration(changed, "functions", "compiler_frontend::graph_run")
+        entry[field] = value
+        try:
+            frontend_abi_header(changed)
+        except ValueError:
+            continue
+        raise AssertionError(f"unsafe graph paired bridge accepted: {field}={value}")
     for kind in (
         "unexpected_second_root",
         "unexpected_root_count",
@@ -328,6 +353,13 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
             "count",
             "read_output",
             "read_operand",
+        )
+    )
+    entries.update(
+        "aurora_hosted_graph_" + operation
+        for operation in (
+            "create_input", "create_workspace", "release_input", "release_workspace",
+            "set_function", "set_edge", "run", "retained",
         )
     )
     # A is predecessor-generated and need not equal B. Both actual build

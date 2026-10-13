@@ -1,8 +1,9 @@
 // Host-only representation controls. Aurora owns grammar; these stubs exercise
 // safe copied-record conversion, bounded ownership, cleanup and cursor commits.
-#include "lexer.hpp"
+#include "hosted_graph.hpp"
 #include "hosted_parser.hpp"
 #include "hosted_resolver.hpp"
+#include "lexer.hpp"
 #include "services.hpp"
 #include "../../runtime/bytes_abi.hpp"
 #include <algorithm>
@@ -2191,6 +2192,11 @@ void resolutionControls() {
 }
 
 } // namespace
+// No forged report in this fixture may reach successful module verification.
+// A distinct exception prevents the rejection controls from accepting this path.
+void aurora::ir::verifyHostedGraph(Module &) {
+    throw std::runtime_error("forged projection unexpectedly reached graph verification");
+}
 extern "C" void aurora_hosted_parser_create(const void *input, void *output) {
     const auto &value = *static_cast<const aurora::hosted_abi::ParserCreate *>(input);
     require(value.region != 0 && value.capacity == 0, "adapter did not request empty arena with live region");

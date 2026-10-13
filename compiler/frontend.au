@@ -13,9 +13,10 @@ import aurora.compiler.lowering_storage;
 import aurora.compiler.lowering_configuration;
 import aurora.compiler.lowering;
 import aurora.compiler.resolver;
+import aurora.compiler.ir_graph;
 
 // The host bridge enters this root module. Ordinary imported-function retention
-// then keeps exactly the parser, resolver and lowering implementations they call.
+// then keeps exactly the parser, resolver, lowering and IR graph implementations they call.
 // These forwards add no state, policy or owner: each moved input is consumed once.
 export namespace compiler_frontend {
     auto lexer_next(builtin::span<const u8> source, compiler_lexer::Cursor cursor) -> compiler_lexer::Lexeme {
@@ -163,5 +164,32 @@ export namespace compiler_frontend {
     auto lowering_read_operand(const compiler_resolver::Session& session, i64 index) -> compiler_lowering::OperandRow {
         const compiler_lowering::OperandRow result = session.view_operand(index);
         return result;
+    }
+    auto graph_create_input(builtin::ByteRegion region, i64 functions, i64 edges) -> compiler_ir_graph::Input {
+        compiler_ir_graph::Input result = compiler_ir_graph::create_input(region, functions, edges);
+        return move(result);
+    }
+    auto graph_create_workspace(builtin::ByteRegion region, i64 functions, i64 edges) -> compiler_ir_graph::Workspace {
+        compiler_ir_graph::Workspace result = compiler_ir_graph::create_workspace(region, functions, edges);
+        return move(result);
+    }
+    auto graph_release_input(builtin::ByteRegion region, compiler_ir_graph::Input input) -> i64 {
+        return compiler_ir_graph::release_input(region, move(input));
+    }
+    auto graph_release_workspace(builtin::ByteRegion region, compiler_ir_graph::Workspace workspace) -> i64 {
+        return compiler_ir_graph::release_workspace(region, move(workspace));
+    }
+    auto graph_set_function(compiler_ir_graph::Input& input, i64 index, compiler_ir_graph::FunctionRow function) -> bool {
+        return compiler_ir_graph::set_function(input, index, function);
+    }
+    auto graph_set_edge(compiler_ir_graph::Input& input, i64 index, i64 target) -> bool {
+        return compiler_ir_graph::set_edge(input, index, target);
+    }
+    auto graph_run(compiler_ir_graph::Workspace& workspace, const compiler_ir_graph::Input& input)
+        -> compiler_ir_graph::GraphStatus {
+        return compiler_ir_graph::run(workspace, input);
+    }
+    auto graph_retained(const compiler_ir_graph::Workspace& workspace, i64 index) -> bool {
+        return compiler_ir_graph::retained(workspace, index);
     }
 }
