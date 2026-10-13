@@ -209,18 +209,18 @@ inline void verifyOwnerType(const Type &type, const Metadata &metadata) {
                 storage.reservedBytes <= maximumCopiedClassBytes,
             "owned value element storage exceeds 520 bytes");
 }
-inline bool serviceSignature(const Function &function) {
-    return std::any_of(function.parameters.begin(), function.parameters.end(), [](const Type &type) {
+inline bool serviceSignature(CallableView function) {
+    return std::any_of(function.parameters().begin(), function.parameters().end(), [](const Type &type) {
         return type.isService();
     });
 }
-inline bool resourceSignature(const Function &function, const Metadata &metadata) {
+inline bool resourceSignature(CallableView function, const Metadata &metadata) {
     const auto resource = [&](const Type &type) {
         return type.isResource() || (type.isClass() && owningClass(metadata, type.className));
     };
-    return resource(function.result) ||
-           (function.receiver && function.receiver->constructor && owningClass(metadata, function.receiver->className)) ||
-           std::any_of(function.parameters.begin(), function.parameters.end(), resource);
+    return resource(function.result()) ||
+           (function.receiver() && function.receiver()->constructor && owningClass(metadata, function.receiver()->className)) ||
+           std::any_of(function.parameters().begin(), function.parameters().end(), resource);
 }
 class Metrics {
 public:
@@ -232,10 +232,15 @@ public:
     // Excludes shared universe, other facts, current/merge states and allocator overhead.
     std::size_t peakRetainedInitializationPayloadBytes = 0;
 };
-inline void verifyFunction(Function &function,
-                           const std::map<std::string, const Function *> &functions,
+inline void verifyFunction(FunctionBody &function,
                            const Metadata &metadata,
                            Metrics *metrics = nullptr) {
+    const auto signature = metadata.callable(function.callableId);
+    const auto parameters = signature.parameters();
+    // Receiver observations are copied values. Keep them alive for boundRoot's
+    // reference result throughout this body verification.
+    const auto functionReceiver = signature.receiver();
+    const auto secondReceiver = signature.secondBorrowedParameter();
     const auto classLeaves = [&](const std::string &name) {
         return metadata.leaves(metadata.findClass(name).value());
     };
@@ -261,125 +266,17 @@ inline void verifyFunction(Function &function,
     auto objectLeaf = [&](int base, std::size_t leaf) {
         return base - physicalStorage(function.objectSlots.at(base).className).leafOffsets.at(leaf);
     };
-    require(metadata.hasScope(function.moduleScope), "unknown function module scope");
     const auto owningType = [&](const Type &type) {
         return type.isClass() && owningClass(metadata, type.className);
     };
     const bool owningConstructor =
-        function.receiver && function.receiver->constructor && owningClass(metadata, function.receiver->className);
-    const bool resourceFunction = resourceSignature(function, metadata);
-    const bool serviceFunction = serviceSignature(function);
+        functionReceiver && functionReceiver->constructor && owningClass(metadata, functionReceiver->className);
+    const bool resourceFunction = resourceSignature(signature, metadata);
+    const bool serviceFunction = serviceSignature(signature);
     std::size_t serviceParameterCount = 0;
-    if (serviceFunction) {
-        require(!function.receiver && !function.borrowedParameter && !function.secondBorrowedParameter &&
-                    !resourceFunction &&
-                    !function.parameters.empty() && function.parameters.front().isService(),
-                "service signature requires a leading sealed group and no receiver or region");
-        std::set<service::Kind> kinds;
-        while (serviceParameterCount < function.parameters.size() &&
-               function.parameters[serviceParameterCount].isService()) {
-            require(kinds.insert(service::kind(function.parameters[serviceParameterCount])).second,
-                    "service signature requires distinct capability kinds");
-            ++serviceParameterCount;
-        }
-        // Deliberately independent closed allowlist: adding a recognized kind
-        // does not grant arbitrary pair or triple forwarding authority.
-        require(serviceParameterCount <= 2 &&
-                    (kinds == std::set<service::Kind>{service::Kind::Console} ||
-                     kinds == std::set<service::Kind>{service::Kind::Display} ||
-                     kinds == std::set<service::Kind>{service::Kind::IommuEvent} ||
-                     kinds == std::set<service::Kind>{service::Kind::Console, service::Kind::Display} ||
-                     kinds == std::set<service::Kind>{service::Kind::Console, service::Kind::IommuEvent}),
-                "unsupported service group");
-        for (std::size_t index = serviceParameterCount; index < function.parameters.size(); ++index)
-            require(scalarValueType(function.parameters[index], metadata) ||
-                        function.parameters[index] == Type::ByteSpan,
-                    "service signature requires later scalar, enum or readonly span arguments");
-        require(scalarValueType(function.result, metadata) ||
-                    (function.result.isClass() && !owningType(function.result)),
-                "service signature has unsupported result");
-    }
+    while (serviceParameterCount < parameters.size() && parameters[serviceParameterCount].isService())
+        ++serviceParameterCount;
     require(serviceFunction || function.serviceSlots.empty(), "service spills without a service signature");
-    if (function.borrowedParameter) {
-        require(function.receiver && !function.receiver->constructor &&
-                    owningClass(metadata, function.receiver->className),
-                "borrowed formal requires nonconstructor owning receiver shape");
-        require(!resourceFunction && !function.result.isSpan() && !function.receiverSpanField,
-                "borrowed formal cannot have resource or borrowed result");
-        require(function.parameters.size() <= 5, "borrowed formal counts toward six parameters");
-    }
-    if (function.secondBorrowedParameter) {
-        const auto &second = *function.secondBorrowedParameter;
-        require(function.borrowedParameter && function.receiver && function.receiver->mutableValue &&
-                    !function.receiver->constructor && !second.mutableValue && !second.constructor,
-                "paired borrowed formals require mutable first and readonly second owning roots");
-        require(metadata.findClass(second.className) && owningClass(metadata, second.className) &&
-                    !carrier(second.className),
-                "second borrowed formal requires known owning class");
-        require(function.parameters.size() <= 4, "two borrowed formals count toward six parameters");
-        require(scalarValueType(function.result, metadata) &&
-                    std::all_of(function.parameters.begin(), function.parameters.end(), [&](const Type &type) {
-                        return scalarValueType(type, metadata);
-                    }),
-                "paired borrowed signature requires scalar or enum values");
-    }
-    if (resourceFunction) {
-        require(!function.receiver || owningConstructor,
-                "resource signature only supports an owning constructor receiver");
-        require(!function.parameters.empty() && function.parameters.front() == Type::ByteRegion,
-                "resource signature requires its region parameter first");
-        require(scalarValueType(function.result, metadata) || function.result.isOwnerStorage() ||
-                    (!function.receiver && function.result.isClass()),
-                "resource signature requires scalar, owned byte or class result");
-        for (std::size_t index = 1; index < function.parameters.size(); ++index)
-            require(scalarValueType(function.parameters[index], metadata) ||
-                        function.parameters[index].isOwnerStorage() ||
-                        (!function.receiver && owningType(function.parameters[index])) ||
-                        (owningConstructor && function.parameters[index].isClass() &&
-                         !owningType(function.parameters[index])),
-                    "resource signature requires exactly one region and supported owning parameters");
-    }
-    auto boundaryType = [&](const Type &type, bool parameter) {
-        if (scalarValueType(type, metadata))
-            return;
-        if (type.isService()) {
-            require(parameter && serviceFunction, "service capability cannot cross an ordinary boundary or return");
-            return;
-        }
-        if (type.isResource()) {
-            require(resourceFunction && (type.isOwnerStorage() || (parameter && type == Type::ByteRegion)),
-                    "invalid resource boundary type");
-            if (type.isOwnerStorage())
-                verifyOwnerType(type, metadata);
-            return;
-        }
-        if (type.isSpan()) {
-            require(type == Type::ByteSpan && ((parameter && (!function.receiver || !function.receiver->constructor)) ||
-                                               (!parameter && function.receiver && !function.receiver->mutableValue &&
-                                                !function.receiver->constructor && function.receiverSpanField)),
-                    "readonly span boundary requires ordinary parameter or const receiver result");
-            return;
-        }
-        require(!function.receiver || parameter || !function.receiver->constructor,
-                "constructor result must remain scalar");
-        require(type.isClass() && type == Type(type.className), "invalid value boundary type");
-        require(metadata.findClass(type.className).has_value(), "unknown value boundary class");
-        require(!carrier(type.className), "class array carrier cannot cross value boundary");
-        require(!owningType(type) || (resourceFunction && !function.receiver),
-                "owning class requires an ordinary resource boundary");
-        require(!resourceFunction || owningType(type) || !parameter || owningConstructor,
-                "only an owning constructor may take a copied class resource parameter");
-        require(copiedClassLeavesSupported(classLeaves(type.className)),
-                "value boundary class exceeds 64 scalar fields excluding u8, 512 u8 leaves or 513 total leaves");
-        require(physicalStorage(type.className).reservedBytes <= maximumCopiedClassBytes,
-                "value boundary class storage exceeds 520 bytes");
-    };
-    require(!function.receiverSpanField || function.result == Type::ByteSpan,
-            "receiver span field summary requires span result");
-    boundaryType(function.result, false);
-    require(function.parameters.size() <= 6, "too many parameters");
-    for (const auto &type : function.parameters)
-        boundaryType(type, true);
     require(function.frameBytes >= 0 && function.frameBytes <= 65536 && function.frameBytes % 16 == 0,
             "invalid frame size");
     std::set<int> occupiedSlotBytes;
@@ -393,21 +290,9 @@ inline void verifyFunction(Function &function,
     }
     std::optional<TypeRange> receiverLayout;
     std::optional<FieldRange> receiverFields;
-    if (function.receiver) {
-        const auto &receiver = *function.receiver;
-        require(metadata.findClass(receiver.className).has_value(), "unknown receiver class");
-        require(!carrier(receiver.className), "class array carrier cannot be receiver");
-        receiverLayout = classLeaves(receiver.className);
-        receiverFields = logicalFields(receiver.className);
-        require(!receiver.constructor || (receiver.mutableValue && function.result == Type::I64),
-                "invalid constructor receiver signature");
-    }
-    if (function.receiverSpanField) {
-        const int field = *function.receiverSpanField;
-        require(receiverFields && field >= 0 && static_cast<std::size_t>(field) < receiverFields->size() &&
-                    (((*receiverFields)[field].elementType == Type::OwnedBytes && !(*receiverFields)[field].array) ||
-                     ((*receiverFields)[field].elementType == Type::U8 && (*receiverFields)[field].array)),
-                "receiver span field summary requires exact direct byte-storage field");
+    if (functionReceiver) {
+        receiverLayout = classLeaves(functionReceiver->className);
+        receiverFields = logicalFields(functionReceiver->className);
     }
     // Physical reservation and logical completion are separate. Every occupied
     // scalar byte is disjoint; object padding (including empty storage) has no slot.
@@ -516,8 +401,8 @@ inline void verifyFunction(Function &function,
         const auto *regionBinding = std::get_if<BindRegionParameter>(&function.code[index]);
         const auto *byteBinding = std::get_if<BindBytesParameter>(&function.code[index]);
         const auto *ownedObjectBinding = std::get_if<BindOwnedObjectParameter>(&function.code[index]);
-        if (index < function.parameters.size()) {
-            const auto &type = function.parameters[index];
+        if (index < parameters.size()) {
+            const auto &type = parameters[index];
             if (type.isService()) {
                 require(serviceBinding && serviceBinding->index == static_cast<int>(index) &&
                             index < serviceParameterCount,
@@ -598,25 +483,25 @@ inline void verifyFunction(Function &function,
     BlockRetentionBudget retention;
     retention.retain(0);
     states[0] = State{initializationUniverse};
-    if (function.receiver && owningClass(metadata, function.receiver->className)) {
+    if (functionReceiver && owningClass(metadata, functionReceiver->className)) {
         OwnedObjectBinding receiver{
-            0, function.receiver->constructor ? ByteDisposition::Pristine : ByteDisposition::Live, {}};
+            0, functionReceiver->constructor ? ByteDisposition::Pristine : ByteDisposition::Live, {}};
         const RegionIdentity borrowed{0, 0, true};
         for (std::size_t field = 0; field < receiverFields->size(); ++field)
             if ((*receiverFields)[field].elementType.isOwnerStorage()) {
                 ByteBinding binding{0, receiver.disposition, {}};
-                if (!function.receiver->constructor)
+                if (!functionReceiver->constructor)
                     binding.token = ByteToken{0, borrowed, static_cast<int>(field)};
                 receiver.fields.emplace(static_cast<int>(field), binding);
             }
         states[0]->ownedObjects.emplace(0, std::move(receiver));
     }
-    if (function.secondBorrowedParameter) {
+    if (secondReceiver) {
         OwnedObjectBinding second{0, ByteDisposition::Live, {}};
         // The selector distinguishes symbolic provenance even when both formal
         // classes and field ordinals match. It is never allocation authority.
         const RegionIdentity borrowed{-1, 0, true};
-        const auto fields = logicalFields(function.secondBorrowedParameter->className);
+        const auto fields = logicalFields(secondReceiver->className);
         for (std::size_t field = 0; field < fields.size(); ++field)
             if (fields[field].elementType.isOwnerStorage())
                 second.fields.emplace(static_cast<int>(field),
@@ -625,7 +510,7 @@ inline void verifyFunction(Function &function,
                                                   ByteToken{0, borrowed, static_cast<int>(field)}});
         states[0]->ownedObjects.emplace(-1, std::move(second));
     }
-    if (function.receiver && !function.receiver->constructor) {
+    if (functionReceiver && !functionReceiver->constructor) {
         for (std::size_t field = 0; field < receiverLayout->size(); ++field) {
             states[0]->receiverInitialized.insert(static_cast<int>(field));
             states[0]->receiverMaybeInitialized.insert(static_cast<int>(field));
@@ -820,14 +705,14 @@ inline void verifyFunction(Function &function,
                             "fixed array span cannot carry another origin kind");
                     loanAccess(capability.origin, false);
                     if (capability.origin == 0) {
-                        require(function.receiver && !function.receiver->constructor && capability.originSite == 0,
+                        require(functionReceiver && !functionReceiver->constructor && capability.originSite == 0,
                                 "fixed array span receiver lifetime is not active");
                     } else {
                         require(state.activeObjects.contains(capability.origin) &&
                                     state.activeObjects.at(capability.origin) == capability.originSite,
                                 "fixed array span object lifetime is not active");
                     }
-                    const auto &name = capability.origin == 0 ? function.receiver->className
+                    const auto &name = capability.origin == 0 ? functionReceiver->className
                                                               : function.objectSlots.at(capability.origin).className;
                     const auto fields = logicalFields(name);
                     require(static_cast<std::size_t>(capability.arrayField) < fields.size() &&
@@ -855,7 +740,7 @@ inline void verifyFunction(Function &function,
                             "span owner token is not active");
                     const auto &identity = capability.ownedToken->region;
                     if (identity.borrowed)
-                        require(capability.origin == 0 && capability.ownedField >= 0 && function.receiver,
+                        require(capability.origin == 0 && capability.ownedField >= 0 && functionReceiver,
                                 "span borrowed receiver provenance mismatch");
                     else
                         require(state.activeRegions.contains(identity.offset) &&
@@ -980,7 +865,7 @@ inline void verifyFunction(Function &function,
                 state.maybeInitialized.insert(offset);
             };
             auto receiverShape = [&](int fieldIndex, bool verifiedMethodView = false) -> ClassField {
-                require(!function.borrowedParameter || verifiedMethodView,
+                require(!signature.borrowedParameter() || verifiedMethodView,
                         "borrowed free formal grants no direct receiver field authority");
                 loanAccess(0, false);
                 require(receiverFields.has_value(), "receiver access without bound receiver");
@@ -999,7 +884,7 @@ inline void verifyFunction(Function &function,
                 require(field.array, "receiver array operation requires array field");
                 require(scalar(field.elementType), "receiver scalar array operation requires scalar array field");
                 if (initialized) {
-                    require(!function.receiver->constructor,
+                    require(!functionReceiver->constructor,
                             "constructor cannot access receiver array during initialization");
                     for (int element = 0; element < field.length; ++element)
                         require(state.receiverInitialized.contains(field.firstLeaf + element),
@@ -1009,7 +894,7 @@ inline void verifyFunction(Function &function,
             };
             auto receiverEvidence = [&](int fieldIndex, const ClassField &field) {
                 return ReceiverGuard{
-                    function.receiver->className, fieldIndex, field.firstLeaf, field.length, field.elementType};
+                    functionReceiver->className, fieldIndex, field.firstLeaf, field.length, field.elementType};
             };
             auto receiverGuard = [&](const Value &value, int fieldIndex, const ClassField &field) {
                 require(value.type == Type::I64 &&
@@ -1086,7 +971,7 @@ inline void verifyFunction(Function &function,
             };
             auto boundRoot = [&](int root) -> const Receiver & {
                 require(root == 0 || root == -1, "invalid bound object root selector");
-                const auto &formal = root == 0 ? function.receiver : function.secondBorrowedParameter;
+                const auto &formal = root == 0 ? functionReceiver : secondReceiver;
                 require(formal.has_value(), "borrowed object root is not bound");
                 return *formal;
             };
@@ -1117,9 +1002,9 @@ inline void verifyFunction(Function &function,
                 ClassField field{};
                 if (base == 0) {
                     field = receiverShape(index);
-                    require(!function.receiver->constructor,
+                    require(!functionReceiver->constructor,
                             "constructor cannot access owned field during initialization");
-                    require(!mutableAccess || function.receiver->mutableValue,
+                    require(!mutableAccess || functionReceiver->mutableValue,
                             "const receiver cannot supply mutable owned field");
                     require(state.receiverClassesInitialized.contains(index),
                             "receiver nested class field not initialized");
@@ -1140,9 +1025,9 @@ inline void verifyFunction(Function &function,
                 ClassField field{};
                 if (base == 0) {
                     field = receiverShape(fieldIndex);
-                    require(!function.receiver->constructor,
+                    require(!functionReceiver->constructor,
                             "constructor cannot access class array during initialization");
-                    require(!mutableAccess || function.receiver->mutableValue,
+                    require(!mutableAccess || functionReceiver->mutableValue,
                             "const receiver cannot supply mutable class array");
                     require(state.receiverClassesInitialized.contains(fieldIndex),
                             "receiver class array not completely initialized");
@@ -1162,7 +1047,7 @@ inline void verifyFunction(Function &function,
             };
             auto classArrayEvidence = [&](int base, int fieldIndex, const ClassField &field) {
                 return ClassArrayGuard{base,
-                                       base == 0 ? function.receiver->className
+                                       base == 0 ? functionReceiver->className
                                                  : function.objectSlots.at(base).className,
                                        fieldIndex,
                                        field.elementType,
@@ -1254,9 +1139,9 @@ inline void verifyFunction(Function &function,
                     const auto field = receiverShape(ordinal, verifiedMethodView);
                     require(field.elementType.isOwnerStorage() && !field.array,
                             "owned byte access requires direct resource field");
-                    require(!function.receiver->constructor,
+                    require(!functionReceiver->constructor,
                             "constructor cannot access resource field during initialization");
-                    require(!mutableAccess || function.receiver->mutableValue,
+                    require(!mutableAccess || functionReceiver->mutableValue,
                             "const receiver cannot mutate resource field");
                 } else {
                     const auto &object = completeObject(base);
@@ -1287,7 +1172,7 @@ inline void verifyFunction(Function &function,
                 if (ordinal == -1)
                     return ownerType(base);
                 require(ordinal >= 0 && base >= 0, "invalid owned storage field selector");
-                const auto &name = base == 0 ? function.receiver->className : function.objectSlots.at(base).className;
+                const auto &name = base == 0 ? functionReceiver->className : function.objectSlots.at(base).className;
                 const auto type = logicalFields(name).at(ordinal).elementType;
                 verifyOwnerType(type, metadata);
                 return type;
@@ -1319,7 +1204,7 @@ inline void verifyFunction(Function &function,
                 std::size_t site = 0;
                 if (root == 0) {
                     field = receiverShape(ordinal, verifiedMethodView);
-                    require(!function.receiver->constructor, "constructor cannot borrow receiver array");
+                    require(!functionReceiver->constructor, "constructor cannot borrow receiver array");
                     for (int leaf = 0; leaf < field.length; ++leaf)
                         require(state.receiverInitialized.contains(field.firstLeaf + leaf),
                                 "receiver array span requires complete initialization");
@@ -1342,8 +1227,8 @@ inline void verifyFunction(Function &function,
                 require(state.objectLoans.empty(), "return with active synchronous object loan");
                 for (const auto &[base, unused] : state.ownedObjects) {
                     (void)unused;
-                    require((base == 0 && function.receiver.has_value()) ||
-                                (base == -1 && function.secondBorrowedParameter.has_value()),
+                    require((base == 0 && functionReceiver.has_value()) ||
+                                (base == -1 && secondReceiver.has_value()),
                             "return with active owning object lifetime");
                 }
             };
@@ -1503,47 +1388,48 @@ inline void verifyFunction(Function &function,
                     } else if constexpr (std::is_same_v<Op, Call>) {
                         require(!operation.callee.starts_with("__au_runtime_"),
                                 "ordinary call cannot target runtime symbol");
-                        require(functions.contains(operation.callee), "unknown call target");
-                        const auto &target = *functions.at(operation.callee);
-                        require(!target.receiver, "plain call cannot target receiver function");
+                        const auto targetId = metadata.findCallable(operation.callee);
+                        require(targetId.has_value(), "unknown call target");
+                        const auto target = metadata.callable(*targetId);
+                        require(!target.receiver(), "plain call cannot target receiver function");
                         require(!serviceSignature(target), "plain call cannot bypass a service loan");
                         require(!resourceSignature(target, metadata), "plain call cannot target resource signature");
-                        require(scalarValueType(target.result, metadata) &&
-                                    std::all_of(target.parameters.begin(),
-                                                target.parameters.end(),
+                        require(scalarValueType(target.result(), metadata) &&
+                                    std::all_of(target.parameters().begin(),
+                                                target.parameters().end(),
                                                 [&](const Type &type) {
                                                     return scalarValueType(type, metadata);
                                                 }),
                                 "plain call cannot target aggregate signature");
-                        for (auto argument = target.parameters.rbegin(); argument != target.parameters.rend();
-                             ++argument)
-                            require(pop().type == *argument, "call argument type mismatch");
-                        state.current = Value{target.result, {}};
+                        for (std::size_t argument = target.parameters().size(); argument > 0; --argument)
+                            require(pop().type == target.parameters()[argument - 1], "call argument type mismatch");
+                        state.current = Value{target.result(), {}};
                     } else if constexpr (std::is_same_v<Op, AggregateCall>) {
-                        require(functions.contains(operation.callee), "unknown aggregate call target");
-                        const auto &target = *functions.at(operation.callee);
-                        require(!target.receiver, "aggregate call cannot target receiver function");
+                        const auto targetId = metadata.findCallable(operation.callee);
+                        require(targetId.has_value(), "unknown aggregate call target");
+                        const auto target = metadata.callable(*targetId);
+                        require(!target.receiver(), "aggregate call cannot target receiver function");
                         require(!serviceSignature(target), "aggregate call cannot bypass a service loan");
                         require(!resourceSignature(target, metadata),
                                 "aggregate call cannot target resource signature");
-                        require(target.result.isClass() || std::any_of(target.parameters.begin(),
-                                                                       target.parameters.end(),
+                        require(target.result().isClass() || std::any_of(target.parameters().begin(),
+                                                                       target.parameters().end(),
                                                                        [](const Type &type) {
                                                                            return type.isClass() || type.isSpan();
                                                                        }),
                                 "aggregate call requires aggregate signature");
-                        require(operation.objectArguments.size() == target.parameters.size(),
+                        require(operation.objectArguments.size() == target.parameters().size(),
                                 "aggregate call argument vector size mismatch");
                         const bool spanParameters =
-                            std::any_of(target.parameters.begin(), target.parameters.end(), [](const Type &type) {
+                            std::any_of(target.parameters().begin(), target.parameters().end(), [](const Type &type) {
                                 return type.isSpan();
                             });
                         require((!spanParameters && operation.spanArguments.empty()) ||
-                                    operation.spanArguments.size() == target.parameters.size(),
+                                    operation.spanArguments.size() == target.parameters().size(),
                                 "span call argument vector size mismatch");
                         std::set<int> argumentStorage;
-                        for (std::size_t arg = target.parameters.size(); arg > 0; --arg) {
-                            const auto &type = target.parameters[arg - 1];
+                        for (std::size_t arg = target.parameters().size(); arg > 0; --arg) {
+                            const auto &type = target.parameters()[arg - 1];
                             const int base = operation.objectArguments[arg - 1];
                             const int capability =
                                 operation.spanArguments.empty() ? 0 : operation.spanArguments[arg - 1];
@@ -1576,12 +1462,12 @@ inline void verifyFunction(Function &function,
                                         "aggregate argument object not fully initialized");
                             logicalComplete(base);
                         }
-                        if (target.result.isClass()) {
+                        if (target.result().isClass()) {
                             const int base = operation.resultOffset;
                             require(function.objectSlots.contains(base), "aggregate result requires exact object slot");
                             require(!argumentStorage.contains(base), "aggregate result aliases argument snapshot");
                             const auto &object = function.objectSlots.at(base);
-                            require(object.className == target.result.className,
+                            require(object.className == target.result().className,
                                     "aggregate result nominal class mismatch");
                             require(state.activeObjects.contains(base),
                                     "aggregate result outside active object lifetime");
@@ -1594,31 +1480,32 @@ inline void verifyFunction(Function &function,
                             markObject(base);
                             state.current.reset();
                         } else {
-                            require(scalarValueType(target.result, metadata), "invalid aggregate result type");
+                            require(scalarValueType(target.result(), metadata), "invalid aggregate result type");
                             require(operation.resultOffset == 0, "scalar result cannot name object storage");
-                            state.current = Value{target.result, {}};
+                            state.current = Value{target.result(), {}};
                         }
                     } else if constexpr (std::is_same_v<Op, ResourceCall>) {
-                        require(functions.contains(operation.callee), "unknown resource call target");
-                        const auto &target = *functions.at(operation.callee);
-                        const bool constructor = target.receiver && target.receiver->constructor &&
-                                                 owningClass(metadata, target.receiver->className);
-                        require(resourceSignature(target, metadata) && (!target.receiver || constructor) &&
-                                    !target.parameters.empty() && target.parameters.front() == Type::ByteRegion,
+                        const auto targetId = metadata.findCallable(operation.callee);
+                        require(targetId.has_value(), "unknown resource call target");
+                        const auto target = metadata.callable(*targetId);
+                        const bool constructor = target.receiver() && target.receiver()->constructor &&
+                                                 owningClass(metadata, target.receiver()->className);
+                        require(resourceSignature(target, metadata) && (!target.receiver() || constructor) &&
+                                    !target.parameters().empty() && target.parameters().front() == Type::ByteRegion,
                                 "resource call requires ordinary resource signature or owning constructor");
-                        require(!constructor || target.receiver->publicAccess ||
-                                    (function.receiver && !function.borrowedParameter &&
-                                     function.receiver->className == target.receiver->className),
+                        require(!constructor || target.receiver()->publicAccess ||
+                                    (functionReceiver && !signature.borrowedParameter() &&
+                                     functionReceiver->className == target.receiver()->className),
                                 "private constructor requires lexical class authority");
                         require(constructor ? operation.receiverOffset > 0 : operation.receiverOffset == 0,
                                 "resource call receiver offset does not match target");
                         const auto origin = region(operation.regionOffset);
-                        require(operation.ownerArguments.size() == target.parameters.size(),
+                        require(operation.ownerArguments.size() == target.parameters().size(),
                                 "resource call argument vector size mismatch");
                         std::map<int, bool> arguments; // transferred: true for owning object, false for bytes
                         std::set<int> argumentStorage; // also includes readonly constructor snapshots
-                        for (std::size_t arg = target.parameters.size(); arg > 0; --arg) {
-                            const auto &type = target.parameters[arg - 1];
+                        for (std::size_t arg = target.parameters().size(); arg > 0; --arg) {
+                            const auto &type = target.parameters()[arg - 1];
                             const int base = operation.ownerArguments[arg - 1];
                             if (type.isOwnerStorage() || owningType(type)) {
                                 require(!constructor || type.isOwnerStorage(),
@@ -1655,27 +1542,27 @@ inline void verifyFunction(Function &function,
                             }
                         }
                         if (constructor) {
-                            require(target.result == Type::I64 && operation.resultOffset == 0,
+                            require(target.result() == Type::I64 && operation.resultOffset == 0,
                                     "owning constructor requires scalar result and no result storage");
                             require(function.objectSlots.contains(operation.receiverOffset) &&
                                         function.objectSlots.at(operation.receiverOffset).className ==
-                                            target.receiver->className,
+                                            target.receiver()->className,
                                     "owning constructor requires exact nominal receiver root");
-                        } else if (target.result.isOwnerStorage() || owningType(target.result)) {
+                        } else if (target.result().isOwnerStorage() || owningType(target.result())) {
                             require(!arguments.contains(operation.resultOffset),
                                     "resource call owning result aliases argument");
-                            if (target.result.isOwnerStorage()) {
-                                require(ownerType(operation.resultOffset) == target.result,
+                            if (target.result().isOwnerStorage()) {
+                                require(ownerType(operation.resultOffset) == target.result(),
                                         "resource call owner result nominal type mismatch");
                                 byteTarget(operation.resultOffset);
                             }
-                        } else if (target.result.isClass()) {
+                        } else if (target.result().isClass()) {
                             const int base = operation.resultOffset;
                             require(function.objectSlots.contains(base),
                                     "resource copied result requires exact object slot");
                             require(!argumentStorage.contains(base), "resource copied result aliases argument storage");
                             const auto &object = function.objectSlots.at(base);
-                            require(object.className == target.result.className,
+                            require(object.className == target.result().className,
                                     "resource copied result nominal class mismatch");
                             require(state.activeObjects.contains(base),
                                     "resource copied result outside active object lifetime");
@@ -1686,7 +1573,7 @@ inline void verifyFunction(Function &function,
                                 require(!state.maybeInitialized.contains(objectLeaf(base, field)),
                                         "resource copied result requires uninitialized object");
                         } else {
-                            require(scalarValueType(target.result, metadata), "invalid resource call result type");
+                            require(scalarValueType(target.result(), metadata), "invalid resource call result type");
                             require(operation.resultOffset == 0,
                                     "scalar resource call result cannot name owning storage");
                         }
@@ -1697,20 +1584,20 @@ inline void verifyFunction(Function &function,
                                 consumeBytes(base);
                         }
                         if (constructor) {
-                            mintObject(operation.receiverOffset, target.receiver->className, origin);
-                            state.current = Value{target.result, {}};
-                        } else if (target.result.isOwnerStorage()) {
+                            mintObject(operation.receiverOffset, target.receiver()->className, origin);
+                            state.current = Value{target.result(), {}};
+                        } else if (target.result().isOwnerStorage()) {
                             mintBytes(operation.resultOffset, origin);
                             state.current.reset();
-                        } else if (owningType(target.result)) {
-                            mintObject(operation.resultOffset, target.result.className, origin);
+                        } else if (owningType(target.result())) {
+                            mintObject(operation.resultOffset, target.result().className, origin);
                             state.current.reset();
-                        } else if (target.result.isClass()) {
+                        } else if (target.result().isClass()) {
                             // A complete pointer-free copy carries no owner token or region provenance.
                             markObject(operation.resultOffset);
                             state.current.reset();
                         } else
-                            state.current = Value{target.result, {}};
+                            state.current = Value{target.result(), {}};
                     } else if constexpr (std::is_same_v<Op, BeginBytes>) {
                         require(function.byteSlots.contains(operation.offset),
                                 "owned byte lifetime requires exact typed spill");
@@ -1955,7 +1842,7 @@ inline void verifyFunction(Function &function,
                         ClassField field{};
                         if (operation.sourceOffset == 0) {
                             field = receiverShape(operation.fieldIndex);
-                            require(!function.receiver->constructor,
+                            require(!functionReceiver->constructor,
                                     "constructor cannot project receiver during initialization");
                             require(state.receiverClassesInitialized.contains(operation.fieldIndex),
                                     "receiver nested class field not initialized");
@@ -1990,7 +1877,7 @@ inline void verifyFunction(Function &function,
                         require(operation.objectOffset == 0,
                                 "class field initialization requires bound constructor receiver");
                         const auto field = receiverShape(operation.fieldIndex);
-                        require(function.receiver->constructor && function.receiver->mutableValue,
+                        require(functionReceiver->constructor && functionReceiver->mutableValue,
                                 "class field initialization requires constructor receiver");
                         require(!field.array && field.elementType.isClass(),
                                 "class field initialization requires class field");
@@ -2015,7 +1902,7 @@ inline void verifyFunction(Function &function,
                         ClassField field{};
                         if (operation.objectOffset == 0) {
                             field = receiverShape(operation.fieldIndex);
-                            require(function.receiver->constructor && function.receiver->mutableValue,
+                            require(functionReceiver->constructor && functionReceiver->mutableValue,
                                     "class array initialization requires constructor receiver");
                         } else {
                             require(function.objectSlots.contains(operation.objectOffset),
@@ -2078,22 +1965,22 @@ inline void verifyFunction(Function &function,
                         state.current.reset();
                     } else if constexpr (std::is_same_v<Op, ReceiverLoad>) {
                         const auto field = receiverField(operation.fieldIndex, operation.type);
-                        require(!function.receiver->constructor,
+                        require(!functionReceiver->constructor,
                                 "constructor cannot read receiver during initialization");
                         require(state.receiverInitialized.contains(field.firstLeaf), "receiver field not initialized");
                         state.current = Value{operation.type, {}};
                     } else if constexpr (std::is_same_v<Op, ReceiverStore>) {
                         const auto field = receiverField(operation.fieldIndex, operation.type);
                         current(operation.type);
-                        require(function.receiver->mutableValue, "write through const receiver");
-                        if (function.receiver->constructor)
+                        require(functionReceiver->mutableValue, "write through const receiver");
+                        if (functionReceiver->constructor)
                             require(!state.receiverMaybeInitialized.contains(field.firstLeaf),
                                     "constructor field initialized more than once");
                         state.receiverInitialized.insert(field.firstLeaf);
                         state.receiverMaybeInitialized.insert(field.firstLeaf);
                     } else if constexpr (std::is_same_v<Op, ReceiverArrayZero>) {
                         const auto field = receiverArray(operation.fieldIndex, false);
-                        require(function.receiver->constructor && function.receiver->mutableValue,
+                        require(functionReceiver->constructor && functionReceiver->mutableValue,
                                 "receiver array zero requires constructor receiver");
                         for (int element = 0; element < field.length; ++element) {
                             const int leaf = field.firstLeaf + element;
@@ -2112,7 +1999,7 @@ inline void verifyFunction(Function &function,
                         state.current = Value{field.elementType, {}};
                     } else if constexpr (std::is_same_v<Op, ReceiverIndexStore>) {
                         const auto field = receiverArray(operation.fieldIndex, true);
-                        require(function.receiver->mutableValue, "write through const receiver");
+                        require(functionReceiver->mutableValue, "write through const receiver");
                         current(field.elementType);
                         receiverGuard(pop(), operation.fieldIndex, field);
                         ownerWritable(0, operation.fieldIndex);
@@ -2120,12 +2007,12 @@ inline void verifyFunction(Function &function,
                         require(operation.loanId > 0 && !state.objectLoans.contains(operation.loanId),
                                 "invalid or duplicate object loan identity");
                         require(operation.root >= 0 ||
-                                    (operation.root == -1 && function.secondBorrowedParameter.has_value()),
+                                    (operation.root == -1 && secondReceiver.has_value()),
                                 "invalid borrowed object root");
                         loanAccess(operation.root, operation.mutableValue);
                         std::string name;
                         if (operation.root <= 0) {
-                            require(function.borrowedParameter && function.receiver,
+                            require(signature.borrowedParameter() && functionReceiver,
                                     "root zero loan requires named borrowed formal");
                             const auto &formal = boundRoot(operation.root);
                             require(!operation.mutableValue || formal.mutableValue,
@@ -2149,12 +2036,13 @@ inline void verifyFunction(Function &function,
                                 "object loan release requires completed borrowed call");
                         state.objectLoans.erase(operation.loanId);
                     } else if constexpr (std::is_same_v<Op, MethodCall> || std::is_same_v<Op, BorrowedCall>) {
-                        require(functions.contains(operation.callee), "unknown method call target");
-                        const auto &target = *functions.at(operation.callee);
-                        require(target.receiver.has_value(), "method call requires receiver target");
+                        const auto targetId = metadata.findCallable(operation.callee);
+                        require(targetId.has_value(), "unknown method call target");
+                        const auto target = metadata.callable(*targetId);
+                        require(target.receiver().has_value(), "method call requires receiver target");
                         if constexpr (std::is_same_v<Op, BorrowedCall>) {
-                            require(target.borrowedParameter, "borrowed call requires borrowed formal target");
-                            require(target.secondBorrowedParameter
+                            require(target.borrowedParameter(), "borrowed call requires borrowed formal target");
+                            require(target.secondBorrowedParameter()
                                         ? operation.secondLoanId > 0 && operation.secondLoanId != operation.loanId &&
                                               operation.secondReceiverOffset != operation.receiverOffset
                                         : operation.secondReceiverOffset == 0 && operation.secondLoanId == -1,
@@ -2173,51 +2061,51 @@ inline void verifyFunction(Function &function,
                                 loanAccess(root, formal.mutableValue);
                                 loan.called = true;
                             };
-                            useLoan(operation.loanId, operation.receiverOffset, *target.receiver);
-                            if (target.secondBorrowedParameter)
+                            useLoan(operation.loanId, operation.receiverOffset, *target.receiver());
+                            if (target.secondBorrowedParameter())
                                 useLoan(operation.secondLoanId,
                                         operation.secondReceiverOffset,
-                                        *target.secondBorrowedParameter);
+                                        *target.secondBorrowedParameter());
                         } else {
-                            require(!target.borrowedParameter, "method call cannot target borrowed free function");
-                            loanAccess(operation.receiverOffset, target.receiver->mutableValue);
-                            require(target.receiver->publicAccess ||
-                                        (function.receiver && !function.borrowedParameter &&
-                                         function.receiver->className == target.receiver->className),
+                            require(!target.borrowedParameter(), "method call cannot target borrowed free function");
+                            loanAccess(operation.receiverOffset, target.receiver()->mutableValue);
+                            require(target.receiver()->publicAccess ||
+                                        (functionReceiver && !signature.borrowedParameter() &&
+                                         functionReceiver->className == target.receiver()->className),
                                     "private method requires lexical class authority");
                         }
                         require(!resourceSignature(target, metadata),
                                 "method call cannot target resource signature or owning constructor");
-                        require((scalarValueType(target.result, metadata) ||
-                                 (!target.receiver->constructor && target.result.isClass()) ||
-                                 (target.result == Type::ByteSpan && target.receiverSpanField &&
-                                  !target.receiver->mutableValue && !target.receiver->constructor)) &&
-                                    std::all_of(target.parameters.begin(),
-                                                target.parameters.end(),
+                        require((scalarValueType(target.result(), metadata) ||
+                                 (!target.receiver()->constructor && target.result().isClass()) ||
+                                 (target.result() == Type::ByteSpan && target.receiverSpanField() &&
+                                  !target.receiver()->mutableValue && !target.receiver()->constructor)) &&
+                                    std::all_of(target.parameters().begin(),
+                                                target.parameters().end(),
                                                 [&](const Type &type) {
                                                     return scalarValueType(type, metadata) || type.isClass() ||
-                                                           (!target.receiver->constructor && type == Type::ByteSpan);
+                                                           (!target.receiver()->constructor && type == Type::ByteSpan);
                                                 }),
                                 "receiver signature requires scalar, enum or class values");
-                        const auto &receiver = *target.receiver;
+                        const auto receiver = *target.receiver();
                         const bool aggregate =
-                            std::any_of(target.parameters.begin(), target.parameters.end(), [](const Type &type) {
+                            std::any_of(target.parameters().begin(), target.parameters().end(), [](const Type &type) {
                                 return type.isClass() || type.isSpan();
                             });
-                        require(aggregate ? operation.objectArguments.size() == target.parameters.size()
+                        require(aggregate ? operation.objectArguments.size() == target.parameters().size()
                                           : operation.objectArguments.empty(),
                                 (receiver.constructor ? "constructor object argument vector size mismatch"
                                                       : "receiver object argument vector size mismatch"));
                         const bool spanParameters =
-                            std::any_of(target.parameters.begin(), target.parameters.end(), [](const Type &type) {
+                            std::any_of(target.parameters().begin(), target.parameters().end(), [](const Type &type) {
                                 return type.isSpan();
                             });
                         require((!spanParameters && operation.spanArguments.empty()) ||
-                                    operation.spanArguments.size() == target.parameters.size(),
+                                    operation.spanArguments.size() == target.parameters().size(),
                                 "method span argument vector size mismatch");
                         std::set<int> argumentStorage;
-                        for (std::size_t arg = target.parameters.size(); arg > 0; --arg) {
-                            const auto &type = target.parameters[arg - 1];
+                        for (std::size_t arg = target.parameters().size(); arg > 0; --arg) {
+                            const auto &type = target.parameters()[arg - 1];
                             const int capability =
                                 operation.spanArguments.empty() ? 0 : operation.spanArguments[arg - 1];
                             if (type.isSpan()) {
@@ -2250,7 +2138,7 @@ inline void verifyFunction(Function &function,
                             }
                         }
                         require(operation.receiverOffset >= 0 ||
-                                    (operation.receiverOffset == -1 && function.secondBorrowedParameter.has_value()),
+                                    (operation.receiverOffset == -1 && secondReceiver.has_value()),
                                 "invalid method receiver offset");
                         require(operation.receiverFieldIndex >= -1, "invalid method receiver field index");
                         if (receiver.mutableValue)
@@ -2262,7 +2150,7 @@ inline void verifyFunction(Function &function,
                             require(field.elementType.className == receiver.className,
                                     "nested method receiver nominal class mismatch");
                         } else if (operation.receiverOffset <= 0) {
-                            require(function.receiver.has_value(), "forwarding without bound receiver");
+                            require(functionReceiver.has_value(), "forwarding without bound receiver");
                             const auto &formal = boundRoot(operation.receiverOffset);
                             require(!formal.constructor && !receiver.constructor,
                                     "constructor cannot forward receiver during initialization");
@@ -2295,26 +2183,26 @@ inline void verifyFunction(Function &function,
                                 logicalComplete(operation.receiverOffset);
                             }
                         }
-                        if (target.result == Type::ByteSpan) {
-                            require(!function.secondBorrowedParameter || operation.receiverOffset > 0,
+                        if (target.result() == Type::ByteSpan) {
+                            require(!secondReceiver || operation.receiverOffset > 0,
                                     "paired borrowed roots cannot produce span results");
                             require(operation.receiverFieldIndex == -1, "span result requires direct receiver root");
-                            require(target.receiverSpanField.has_value(), "span result lacks receiver field summary");
-                            const auto field = logicalFields(receiver.className).at(*target.receiverSpanField);
+                            require(target.receiverSpanField().has_value(), "span result lacks receiver field summary");
+                            const auto field = logicalFields(receiver.className).at(*target.receiverSpanField());
                             if (field.array)
                                 borrowArrayField(
-                                    operation.receiverOffset, *target.receiverSpanField, operation.resultOffset, true);
+                                    operation.receiverOffset, *target.receiverSpanField(), operation.resultOffset, true);
                             else
                                 borrowOwned(
-                                    operation.receiverOffset, *target.receiverSpanField, operation.resultOffset, true);
+                                    operation.receiverOffset, *target.receiverSpanField(), operation.resultOffset, true);
                             state.current.reset();
-                        } else if (target.result.isClass()) {
+                        } else if (target.result().isClass()) {
                             const int base = operation.resultOffset;
                             require(base != operation.receiverOffset, "method result aliases receiver");
                             require(!argumentStorage.contains(base), "method result aliases argument snapshot");
                             require(function.objectSlots.contains(base), "method result requires exact object slot");
                             const auto &object = function.objectSlots.at(base);
-                            require(object.className == target.result.className,
+                            require(object.className == target.result().className,
                                     "method result nominal class mismatch");
                             require(state.activeObjects.contains(base), "method result outside active object lifetime");
                             require(!state.maybeConstructedObjects.contains(base),
@@ -2327,12 +2215,12 @@ inline void verifyFunction(Function &function,
                             state.current.reset();
                         } else {
                             require(operation.resultOffset == 0, "scalar method result cannot name object storage");
-                            state.current = Value{target.result, {}};
+                            state.current = Value{target.result(), {}};
                         }
                     } else if constexpr (std::is_same_v<Op, MetadataQuery>) {
                         require(operation.query == Query::Size || operation.query == Query::PublicFieldCount,
                                 "unknown metadata query");
-                        require(operation.moduleScope == function.moduleScope,
+                        require(operation.moduleScope == signature.moduleScope(),
                                 "metadata query changes defining-module scope");
                         current(Type::I64);
                         state.current = Value{Type::I64, {}};
@@ -2346,15 +2234,15 @@ inline void verifyFunction(Function &function,
                         current(Type::Bool);
                         enqueue(labels.at(operation.target), state);
                     } else if constexpr (std::is_same_v<Op, Return>) {
-                        require(scalarValueType(function.result, metadata),
+                        require(scalarValueType(signature.result(), metadata),
                                 "scalar return cannot return class value or resource value");
-                        current(function.result);
+                        current(signature.result());
                         require(state.stack.empty(), "unbalanced stack at return");
                         require(state.activeBytes.empty(), "return with active owned byte lifetime");
                         closedOwnedObjects();
                         require(state.activeSpans.empty() && state.activeArrays.empty(),
                                 "return with active span or byte array lifetime");
-                        if (function.receiver && function.receiver->constructor) {
+                        if (functionReceiver && functionReceiver->constructor) {
                             require(state.receiverInitialized.size() == receiverLayout->size(),
                                     "constructor returns before all fields initialized");
                             for (std::size_t field = 0; field < receiverFields->size(); ++field)
@@ -2373,17 +2261,17 @@ inline void verifyFunction(Function &function,
                         }
                         fallsThrough = false;
                     } else if constexpr (std::is_same_v<Op, ReturnSpan>) {
-                        require(function.result == Type::ByteSpan && function.receiverSpanField && function.receiver &&
-                                    !function.receiver->constructor && !function.receiver->mutableValue,
+                        require(signature.result() == Type::ByteSpan && signature.receiverSpanField() && functionReceiver &&
+                                    !functionReceiver->constructor && !functionReceiver->mutableValue,
                                 "span return requires const owning receiver field summary");
                         const auto &capability = span(operation.offset);
-                        const bool fixed = receiverShape(*function.receiverSpanField).array;
+                        const bool fixed = receiverShape(*signature.receiverSpanField()).array;
                         const auto token = fixed ? std::optional<ByteToken>{}
-                                                 : accessBytes(0, *function.receiverSpanField, false).token;
+                                                 : accessBytes(0, *signature.receiverSpanField(), false).token;
                         auto matchesReceiver = [&](const SpanCapability &view) {
                             return view.origin == 0 && !view.parameterOrigin && !view.literalOrigin &&
-                                   (fixed ? view.arrayField == *function.receiverSpanField && !view.ownedToken
-                                          : view.arrayField == -1 && view.ownedField == *function.receiverSpanField &&
+                                   (fixed ? view.arrayField == *signature.receiverSpanField() && !view.ownedToken
+                                          : view.arrayField == -1 && view.ownedField == *signature.receiverSpanField() &&
                                                 view.ownedToken == token && token && token->region.borrowed);
                         };
                         require(matchesReceiver(capability),
@@ -2405,12 +2293,12 @@ inline void verifyFunction(Function &function,
                         }
                         fallsThrough = false;
                     } else if constexpr (std::is_same_v<Op, ReturnObject>) {
-                        require(function.result.isClass() && !owningType(function.result),
+                        require(signature.result().isClass() && !owningType(signature.result()),
                                 "object return requires class result; owning classes require an explicit move return");
                         require(function.objectSlots.contains(operation.offset),
                                 "object return requires exact object slot");
                         const auto &object = function.objectSlots.at(operation.offset);
-                        require(object.className == function.result.className, "object return nominal class mismatch");
+                        require(object.className == signature.result().className, "object return nominal class mismatch");
                         require(state.activeObjects.contains(operation.offset),
                                 "object return outside active lifetime");
                         const auto layout = classLeaves(object.className);
@@ -2425,10 +2313,10 @@ inline void verifyFunction(Function &function,
                                 "return with active span or byte array lifetime");
                         fallsThrough = false;
                     } else if constexpr (std::is_same_v<Op, ReturnOwnedObject>) {
-                        require(!function.receiver && owningType(function.result),
+                        require(!functionReceiver && owningType(signature.result()),
                                 "owning object return requires ordinary owning class result");
                         require(regionParameterSlot.has_value(), "owning object return requires bound region");
-                        require(ownedObject(operation.offset, function.result.className, true) ==
+                        require(ownedObject(operation.offset, signature.result().className, true) ==
                                     region(*regionParameterSlot),
                                 "owning object return has wrong region");
                         state.ownedObjects.erase(operation.offset);
@@ -2440,7 +2328,7 @@ inline void verifyFunction(Function &function,
                         require(state.stack.empty(), "unbalanced stack at owning object return");
                         fallsThrough = false;
                     } else if constexpr (std::is_same_v<Op, ReturnBytes>) {
-                        require(function.result.isOwnerStorage() && ownerType(operation.offset) == function.result,
+                        require(signature.result().isOwnerStorage() && ownerType(operation.offset) == signature.result(),
                                 "owner return nominal type mismatch");
                         require(regionParameterSlot.has_value(), "owned byte return requires bound region parameter");
                         require(bytes(operation.offset, true).token->region == region(*regionParameterSlot),
@@ -2455,7 +2343,7 @@ inline void verifyFunction(Function &function,
                     } else if constexpr (std::is_same_v<Op, BindServiceParameter>) {
                         require(serviceFunction && index < serviceParameterCount &&
                                     operation.index == static_cast<int>(index) &&
-                                    operation.kind == service::kind(function.parameters[index]) &&
+                                    operation.kind == service::kind(parameters[index]) &&
                                     serviceParameterSlots.at(operation.index) == operation.offset &&
                                     function.serviceSlots.contains(operation.offset) &&
                                     !state.activeServices.contains(operation.offset),
@@ -2529,19 +2417,20 @@ inline void verifyFunction(Function &function,
                             require(false, "unknown sealed service operation");
                         }
                     } else if constexpr (std::is_same_v<Op, ServiceCall>) {
-                        require(functions.contains(operation.callee), "unknown service helper target");
-                        const auto &target = *functions.at(operation.callee);
-                        require(serviceSignature(target) && !target.receiver,
+                        const auto targetId = metadata.findCallable(operation.callee);
+                        require(targetId.has_value(), "unknown service helper target");
+                        const auto target = metadata.callable(*targetId);
+                        require(serviceSignature(target) && !target.receiver(),
                                 "service helper requires service target and acquired loans");
                         std::vector<ServiceArgument> arguments{{operation.loanId, operation.kind}};
                         arguments.insert(
                             arguments.end(), operation.additionalServices.begin(), operation.additionalServices.end());
                         const auto count = static_cast<std::size_t>(
-                            std::count_if(target.parameters.begin(), target.parameters.end(), [](const Type &type) {
+                            std::count_if(target.parameters().begin(), target.parameters().end(), [](const Type &type) {
                                 return type.isService();
                             }));
                         require(arguments.size() == count && count <= 2 &&
-                                    operation.spanArguments.size() == target.parameters.size(),
+                                    operation.spanArguments.size() == target.parameters().size(),
                                 "service helper argument vector mismatch");
                         std::set<int> usedLoans, usedRoots;
                         for (std::size_t position = 0; position < count; ++position) {
@@ -2549,19 +2438,19 @@ inline void verifyFunction(Function &function,
                             require(state.serviceLoans.contains(argument.loanId) &&
                                         usedLoans.insert(argument.loanId).second &&
                                         operation.spanArguments[position] == 0 &&
-                                        target.parameters[position].isService(),
+                                        target.parameters()[position].isService(),
                                     "service helper requires distinct acquired loans in leading positions");
                             auto &loan = state.serviceLoans.at(argument.loanId);
                             require(!loan.called && usedRoots.insert(loan.offset).second &&
                                         state.activeServices.contains(loan.offset) &&
                                         state.activeServices.at(loan.offset) == loan.identity &&
                                         loan.identity.kind == argument.kind &&
-                                        argument.kind == service::kind(target.parameters[position]),
+                                        argument.kind == service::kind(target.parameters()[position]),
                                     "service helper requires an unused loan with exact provenance");
                         }
-                        for (std::size_t reverse = target.parameters.size(); reverse > count; --reverse) {
+                        for (std::size_t reverse = target.parameters().size(); reverse > count; --reverse) {
                             const auto position = reverse - 1;
-                            const auto &type = target.parameters[position];
+                            const auto &type = target.parameters()[position];
                             const int base = operation.spanArguments[position];
                             if (type.isSpan()) {
                                 require(state.activeSpans.contains(base), "service span argument is not active");
@@ -2570,22 +2459,22 @@ inline void verifyFunction(Function &function,
                                         "service scalar argument mismatch");
                             }
                         }
-                        if (target.result.isClass()) {
+                        if (target.result().isClass()) {
                             // Signature validation applies the ordinary copied-value
                             // bounds; use its full nominal layout, including empty
                             // and nested completion facts, for the fresh destination.
-                            copyTarget(operation.resultOffset, target.result.className);
+                            copyTarget(operation.resultOffset, target.result().className);
                             state.current.reset();
                         } else {
-                            require(operation.resultOffset == 0 && scalarValueType(target.result, metadata),
+                            require(operation.resultOffset == 0 && scalarValueType(target.result(), metadata),
                                     "service scalar result mismatch");
-                            state.current = Value{target.result, {}};
+                            state.current = Value{target.result(), {}};
                         }
                         for (const auto &argument : arguments)
                             state.serviceLoans.at(argument.loanId).called = true;
                     } else if constexpr (std::is_same_v<Op, BindRegionParameter>) {
                         require(resourceFunction && operation.index == 0 &&
-                                    function.parameters.front() == Type::ByteRegion,
+                                    parameters.front() == Type::ByteRegion,
                                 "region parameter type or index mismatch");
                         require(function.regionSlots.contains(operation.offset),
                                 "region parameter requires exact typed spill");
@@ -2593,10 +2482,10 @@ inline void verifyFunction(Function &function,
                         state.activeRegions.emplace(operation.offset, RegionIdentity{operation.offset, index});
                     } else if constexpr (std::is_same_v<Op, BindBytesParameter>) {
                         require(operation.index > 0 &&
-                                    static_cast<std::size_t>(operation.index) < function.parameters.size(),
+                                    static_cast<std::size_t>(operation.index) < parameters.size(),
                                 "invalid owned byte parameter index");
-                        require(function.parameters[operation.index].isOwnerStorage() &&
-                                    ownerType(operation.offset) == function.parameters[operation.index],
+                        require(parameters[operation.index].isOwnerStorage() &&
+                                    ownerType(operation.offset) == parameters[operation.index],
                                 "owned byte parameter type mismatch");
                         require(regionParameterSlot.has_value(), "owned byte parameter requires bound region");
                         require(function.byteSlots.contains(operation.offset),
@@ -2608,10 +2497,10 @@ inline void verifyFunction(Function &function,
                         mintBytes(operation.offset, region(*regionParameterSlot));
                     } else if constexpr (std::is_same_v<Op, BindSpanParameter>) {
                         require(operation.index >= 0 &&
-                                    static_cast<std::size_t>(operation.index) < function.parameters.size(),
+                                    static_cast<std::size_t>(operation.index) < parameters.size(),
                                 "invalid span parameter index");
-                        require(function.parameters[operation.index] == Type::ByteSpan &&
-                                    (!function.receiver || !function.receiver->constructor),
+                        require(parameters[operation.index] == Type::ByteSpan &&
+                                    (!functionReceiver || !functionReceiver->constructor),
                                 "span parameter type mismatch");
                         require(function.spanSlots.contains(operation.offset),
                                 "span parameter requires exact typed spill");
@@ -2620,10 +2509,10 @@ inline void verifyFunction(Function &function,
                         state.activeSpans.emplace(operation.offset,
                                                   SpanCapability{true, operation.index, index, 0, 0, index});
                     } else if constexpr (std::is_same_v<Op, BindOwnedObjectParameter>) {
-                        require(!function.receiver && operation.index > 0 &&
-                                    static_cast<std::size_t>(operation.index) < function.parameters.size(),
+                        require(!functionReceiver && operation.index > 0 &&
+                                    static_cast<std::size_t>(operation.index) < parameters.size(),
                                 "invalid owning class parameter index");
-                        require(function.parameters[operation.index] == Type(operation.className) &&
+                        require(parameters[operation.index] == Type(operation.className) &&
                                     owningClass(metadata, operation.className),
                                 "owning class parameter type mismatch");
                         require(regionParameterSlot.has_value(), "owning class parameter requires bound region");
@@ -2639,11 +2528,11 @@ inline void verifyFunction(Function &function,
                         mintObject(operation.offset, operation.className, region(*regionParameterSlot));
                     } else if constexpr (std::is_same_v<Op, BindObjectParameter>) {
                         require(operation.index >= 0 &&
-                                    static_cast<std::size_t>(operation.index) < function.parameters.size(),
+                                    static_cast<std::size_t>(operation.index) < parameters.size(),
                                 "invalid object parameter index");
                         require(!owningClass(metadata, operation.className),
                                 "copied parameter cannot bind owning class");
-                        require(function.parameters[operation.index] == Type(operation.className),
+                        require(parameters[operation.index] == Type(operation.className),
                                 "object parameter type mismatch");
                         require(function.objectSlots.contains(operation.offset),
                                 "object parameter requires exact object slot");
@@ -2656,9 +2545,9 @@ inline void verifyFunction(Function &function,
                         markObject(operation.offset);
                     } else if constexpr (std::is_same_v<Op, BindParameter>) {
                         require(operation.index >= 0 &&
-                                    static_cast<std::size_t>(operation.index) < function.parameters.size(),
+                                    static_cast<std::size_t>(operation.index) < parameters.size(),
                                 "invalid parameter index");
-                        require(function.parameters[operation.index] == operation.type, "parameter type mismatch");
+                        require(parameters[operation.index] == operation.type, "parameter type mismatch");
                         require(!objectFields.contains(operation.offset), "parameter cannot bind object field storage");
                         require(!arrayBases.contains(operation.offset),
                                 "parameter cannot bind byte array origin storage");
@@ -2698,42 +2587,30 @@ inline void verifyFunction(Function &function,
     // Depth continuity above includes only this exact retained emission sequence.
     function.code = std::move(reachable);
 }
-inline bool symbol(const std::string &value) {
-    if (value.empty())
-        return false;
-    auto letter = [](char c) {
-        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
-    };
-    if (!letter(value[0]))
-        return false;
-    return std::all_of(value.begin() + 1, value.end(), [&](char c) {
-        return letter(c) || (c >= '0' && c <= '9');
-    });
-}
-inline std::map<std::string, const Function *> functionSymbols(const std::vector<Function> &input) {
-    std::map<std::string, const Function *> functions;
-    require(!input.empty(), "empty module");
-    for (const auto &function : input) {
-        require(symbol(function.name) && function.name != "aurora_reflect_size" &&
-                    function.name != "aurora_reflect_field_count" && !function.name.starts_with("__au_reflect_") &&
-                    !function.name.starts_with("__au_runtime_"),
-                "invalid or reserved function symbol");
-        require(functions.emplace(function.name, &function).second, "duplicate function");
+inline void verifyFunctions(std::vector<FunctionBody> &input, const Metadata &metadata,
+                            Metrics *metrics = nullptr) {
+    require(input.size() == metadata.callableCount(), "callable body count mismatch");
+    for (std::size_t index = 0; index < input.size(); ++index) {
+        // This is the executable-to-metadata association, not signature admission.
+        // Original declaration IDs remain stable after graph pruning below.
+        require(input[index].callableId == index, "callable body ID does not match declaration order");
+        verifyFunction(input[index], metadata, metrics);
     }
-    return functions;
-}
-inline void verifyFunctions(std::vector<Function> &input, const std::map<std::string, const Function *> &symbols,
-                            const Metadata &metadata) {
-    for (auto &function : input)
-        verifyFunction(function, symbols, metadata);
-    verifyHostedGraph(input);
+    verifyHostedGraph(input, metadata);
 }
 } // namespace verification
-inline ValidatedModule validate(Module module) {
-    const auto functions = verification::functionSymbols(module.functions);
+inline ValidatedModule validate(Module module, verification::Metrics *metrics) {
     auto metadata = Metadata::import(module);
-    // The source-owned normalized ranges are authoritative from this point.
-    // Retire hostile ingress maps before any native function or backend work.
+    // Every signature has been admitted before any native body work. Retire
+    // hostile signature rows as well as metadata maps before checking the bodies.
+    std::vector<FunctionBody> functions;
+    functions.reserve(module.functions.size());
+    for (std::size_t index = 0; index < module.functions.size(); ++index) {
+        auto &function = module.functions[index];
+        function.callableId = index;
+        functions.push_back(std::move(static_cast<FunctionBody &>(function)));
+    }
+    module.functions.clear();
     module.classLayouts.clear();
     module.classFields.clear();
     module.classStorage.clear();
@@ -2741,13 +2618,13 @@ inline ValidatedModule validate(Module module) {
     module.descriptors.clear();
     module.descriptorViews.clear();
     module.enumCases.clear();
-    verification::verifyFunctions(module.functions, functions, *metadata);
-    return ValidatedModule(std::move(module.functions), std::move(metadata));
+    verification::verifyFunctions(functions, *metadata, metrics);
+    return ValidatedModule(std::move(functions), std::move(metadata));
 }
-inline ValidatedModule validate(std::vector<Function> functions, MetadataIngress pending) {
-    const auto symbols = verification::functionSymbols(functions);
+inline ValidatedModule validate(std::vector<FunctionBody> functions, MetadataIngress pending,
+                                verification::Metrics *metrics) {
     auto metadata = std::move(pending).finish();
-    verification::verifyFunctions(functions, symbols, *metadata);
+    verification::verifyFunctions(functions, *metadata, metrics);
     return ValidatedModule(std::move(functions), std::move(metadata));
 }
 } // namespace aurora::ir

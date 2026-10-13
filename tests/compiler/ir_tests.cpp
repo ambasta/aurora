@@ -3904,7 +3904,7 @@ void callGraphTests() {
         const auto checked = validate(std::move(module));
         std::vector<std::string> names;
         for (const auto &function : checked.get().functions)
-            names.push_back(function.name);
+            names.push_back(checked.metadata().callable(function.callableId).name());
         return names;
     };
     Module module;
@@ -3922,8 +3922,16 @@ void callGraphTests() {
     const auto checked = validate(module);
     if (retainedNames(module) != expected || checked.get().functions[2].code.size() != 3)
         throw Error("graph retention changed transitive roots, original order or normalized code");
+    const std::vector<Metadata::CallableId> expectedIds{0, 2, 3, 4};
+    if (checked.metadata().callableCount() != 5 || checked.metadata().findCallable("unused") != 1 ||
+        checked.metadata().findCallable("absent"))
+        throw Error("graph pruning lost admitted callable identity or changed name lookup");
+    for (std::size_t index = 0; index < expectedIds.size(); ++index)
+        if (checked.get().functions[index].callableId != expectedIds[index] ||
+            checked.metadata().callable(expectedIds[index]).name() != expected[index])
+            throw Error("graph pruning renumbered stable callable IDs");
     ++passed;
-    std::cout << "PASS IR transitive graph retention preserves order after function normalization\n";
+    std::cout << "PASS IR transitive graph retention preserves order and stable callable IDs\n";
 
     const std::vector<std::pair<Instruction, std::string>> missingCalls{
         {Call{"missing"}, "unknown call target"},
@@ -4094,10 +4102,10 @@ void initializationPayloadMetricTests() {
                                   Label{join}});
         }
         function.code.push_back(Return{});
-        std::map<std::string, const aurora::ir::Function *> functions{{function.name, &function}};
+        Module module;
+        module.functions.push_back(std::move(function));
         verification::Metrics metrics;
-        const auto metadata = Metadata::import(Module{});
-        verification::verifyFunction(function, functions, *metadata, &metrics);
+        static_cast<void>(validate(std::move(module), &metrics));
         const auto count = static_cast<std::size_t>(slotCount);
         const auto words = count / 64 + (count % 64 != 0);
         if (metrics.snapshots != 7 || metrics.peakOperandDepth != 0 || metrics.peakRetainedValueFacts != 12 * count ||
@@ -4108,6 +4116,65 @@ void initializationPayloadMetricTests() {
                   << ", retained facts=" << metrics.peakRetainedValueFacts
                   << ", initialization payload bytes=" << metrics.peakRetainedInitializationPayloadBytes << '\n';
     }
+}
+
+void callableOwnerTests() {
+    reject("module metadata precedes malformed callable header", [](Module &module) {
+        module.descriptors[0] = Descriptor{0, 0};
+        module.functions[0].result = Type::Ref;
+    }, "invalid metadata descriptor");
+    reject("later callable header precedes earlier body frame", [](Module &module) {
+        auto later = module.functions[0];
+        later.name = "later";
+        later.result = Type::Ref;
+        module.functions[0].frameBytes = 1;
+        module.functions.push_back(std::move(later));
+    }, "invalid value boundary type");
+    reject("receiver header precedes frame layout", [](Module &module) {
+        module.functions[0].receiver = Receiver{"Missing", false, false};
+        module.functions[0].frameBytes = 1;
+    }, "unknown receiver class");
+    reject("callable header order remains declaration order", [](Module &module) {
+        auto later = module.functions[0];
+        later.name = "alphabetically_first";
+        later.moduleScope = 63;
+        module.functions[0].result = Type::Ref;
+        module.functions.push_back(std::move(later));
+    }, "invalid value boundary type");
+    for (const auto &mutate : std::vector<std::function<void(Type &)>>{
+             [](Type &type) { type.length = 1; },
+             [](Type &type) { type.className = "forged"; }}) {
+        reject("service header rejects noncanonical raw tail", [&](Module &module) {
+            module.functions[0].parameters = {Type::ConsoleSession};
+            mutate(module.functions[0].parameters[0]);
+        }, "invalid canonical service boundary type");
+    }
+    reject("present negative receiver span summary reaches semantic admission", [](Module &module) {
+        module.classLayouts["Pair"] = {Type::U8};
+        module.functions[0].receiver = Receiver{"Pair", false, false};
+        module.functions[0].result = Type::ByteSpan;
+        module.functions[0].receiverSpanField = -1;
+    }, "receiver span field summary requires exact direct byte-storage field");
+    auto input = receiverBaseline();
+    auto checked = validate(input);
+    const auto *identity = &checked.metadata();
+    const auto id = checked.metadata().findCallable("construct_pair").value();
+    const auto callable = checked.metadata().callable(id);
+    const auto parameters = callable.parameters();
+    auto receiver = callable.receiver().value();
+    receiver.className = "changed observation";
+    input = Module{};
+    auto moved = std::move(checked);
+    if (&moved.metadata() != identity || id != 1 || callable.name() != "construct_pair" ||
+        callable.moduleScope() != 0 || callable.result() != Type::I64 || parameters.size() != 2 ||
+        parameters[0] != Type::I64 || parameters[1] != Type::Bool || callable.receiver()->className != "Pair" ||
+        receiver.className != "changed observation" ||
+        !callable.receiver()->constructor || !callable.receiver()->mutableValue ||
+        callable.borrowedParameter() || callable.secondBorrowedParameter() || callable.receiverSpanField() ||
+        moved.get().functions[id].callableId != id)
+        throw Error("callable observations lost independent ingress lifetime, owner move or immutable receiver");
+    ++passed;
+    std::cout << "PASS IR callable views survive raw ingress destruction and validated owner move\n";
 }
 
 void metadataOwnerTests() {
@@ -4232,7 +4299,65 @@ void metadataOwnerTests() {
     }, "noncanonical class storage metadata");
 }
 
-MetadataIngress pendingMetadata(bool badStorage = false, bool badDescriptor = false) {
+std::vector<FunctionBody> pendingBodies(std::size_t count = 1) {
+    std::vector<FunctionBody> functions(count);
+    for (std::size_t id = 0; id < functions.size(); ++id) {
+        auto &function = functions[id];
+        function.callableId = id;
+        function.frameBytes = 16;
+        function.slots[8] = Type::I64;
+        function.code = {Constant{42, Type::I64}, Store{8, Type::I64}, Load{8, Type::I64}, Return{}};
+    }
+    return functions;
+}
+
+enum class CallableMutation {
+    None,
+    AbsentReceiver,
+    UnknownFlag,
+    RangeBegin,
+    RangeCount,
+    IndexOverflow,
+    IndexDuplicate,
+    IndexOrder
+};
+
+void pendingCallables(detail::MetadataWriter &writer, const std::vector<std::string> &names,
+                      CallableMutation mutation = CallableMutation::None) {
+    namespace wire = aurora::hosted_abi::compiler_ir_metadata;
+    for (const auto &name : names) {
+        wire::CallableRow callable{};
+        callable.nameRange = writer.text(name);
+        callable.typeRange = {writer.position().coreCounts.types, 1};
+        if (writer.callableCount() == 0) {
+            if (mutation == CallableMutation::AbsentReceiver)
+                callable.receiver.flags = 1;
+            else if (mutation == CallableMutation::UnknownFlag)
+                callable.flags = 16;
+            else if (mutation == CallableMutation::RangeBegin)
+                ++callable.typeRange.firstIndex;
+            else if (mutation == CallableMutation::RangeCount)
+                ++callable.typeRange.indexCount;
+        }
+        writer.callableType(Type::I64);
+        writer.append(callable);
+    }
+    std::vector<std::size_t> ids(names.size());
+    for (std::size_t id = 0; id < ids.size(); ++id)
+        ids[id] = id;
+    std::sort(ids.begin(), ids.end(), [&](auto left, auto right) {
+        return names[left] < names[right] || (names[left] == names[right] && left < right);
+    });
+    if (mutation == CallableMutation::IndexOrder)
+        std::reverse(ids.begin(), ids.end());
+    for (const auto id : ids)
+        writer.index(static_cast<std::int64_t>(mutation == CallableMutation::IndexOverflow ? names.size()
+            : mutation == CallableMutation::IndexDuplicate ? 0 : id));
+}
+
+MetadataIngress pendingMetadata(bool badStorage = false, bool badDescriptor = false,
+                                const std::vector<std::string> &names = {"test"},
+                                CallableMutation mutation = CallableMutation::None) {
     namespace wire = aurora::hosted_abi::compiler_ir_metadata;
     detail::MetadataWriter writer;
     const auto fill = [&] {
@@ -4266,6 +4391,7 @@ MetadataIngress pendingMetadata(bool badStorage = false, bool badDescriptor = fa
         view.descriptorRange = {writer.position().mapCounts.indices, 1};
         writer.index(7);
         writer.append(view);
+        pendingCallables(writer, names, mutation);
     };
     fill();
     writer.allocate();
@@ -4293,17 +4419,19 @@ void metadataIngressTests() {
     MetadataIngress moved(std::move(pending));
     pending = pendingMetadata();
     pending = std::move(moved);
-    const auto checked = validate(baseline().functions, std::move(pending));
+    const auto checked = validate(pendingBodies(), std::move(pending));
     const auto &metadata = checked.metadata();
     const auto id = metadata.findClass(std::string("A\0\xff", 3));
     if (!id || metadata.leaves(*id).size() != 2 || metadata.fields(*id).at(1).elementType != Type::I64 ||
         !storageMatches(metadata.storage(*id), ClassStorage{{0, 8}, {0, 8}, 16, 8, 16}) ||
-        metadata.visibleDescriptors(0).size() != 1 || metadata.visibleDescriptors(0).front() != 7)
-        throw Error("pending metadata moves lost copied names, fields or supplied storage");
+        metadata.visibleDescriptors(0).size() != 1 || metadata.visibleDescriptors(0).front() != 7 ||
+        metadata.callableCount() != 1 || metadata.findCallable("test") != 0 ||
+        metadata.callable(0).result() != Type::I64 || !metadata.callable(0).parameters().empty())
+        throw Error("pending metadata moves lost copied names, fields, storage or callable headers");
     ++passed;
     std::cout << "PASS IR pending metadata move construction, replacement and publication\n";
     rejects("pending metadata cannot publish twice", [&] {
-        static_cast<void>(validate(baseline().functions, std::move(pending)));
+        static_cast<void>(validate(pendingBodies(), std::move(pending)));
     }, "invalid hosted IR metadata transport");
     // Real Region destruction rejects any leaked owner. Exercise abandonment
     // and exception cleanup without substituting the generated owner/runtime.
@@ -4321,33 +4449,61 @@ void metadataIngressTests() {
     {
         detail::MetadataWriter writer;
         aurora::hosted_abi::compiler_ir_metadata::ViewRow root{};
-        writer.append(root);
+        const auto fill = [&] {
+            writer.append(root);
+            pendingCallables(writer, {"test"});
+        };
+        fill();
         writer.allocate();
-        writer.append(root);
+        fill();
         auto sealed = std::move(writer).take();
         rejects("consumed metadata writer cannot append fields", [&] {
             writer.field(ClassField{Type::I64, 0, 1, false});
         }, "invalid hosted IR metadata transport");
-        static_cast<void>(validate(baseline().functions, std::move(sealed)));
+        static_cast<void>(validate(pendingBodies(), std::move(sealed)));
     }
     for (const int mode : {0, 1, 2}) {
-        rejects("function preflight precedes pending metadata semantics", [=] {
-            auto functions = baseline().functions;
-            if (mode == 0)
-                functions.clear();
-            else if (mode == 1)
-                functions.front().name = "__au_runtime_reserved";
-            else
-                functions.push_back(functions.front());
-            static_cast<void>(validate(std::move(functions), pendingMetadata(false, true)));
+        rejects("source callable symbols precede pending metadata semantics", [=] {
+            const std::vector<std::string> names = mode == 0 ? std::vector<std::string>{}
+                : mode == 1 ? std::vector<std::string>{"__au_runtime_reserved"}
+                            : std::vector<std::string>{"test", "test"};
+            static_cast<void>(validate(pendingBodies(names.size()), pendingMetadata(false, true, names)));
         }, mode == 0 ? "empty module" : mode == 1 ? "invalid or reserved function symbol" : "duplicate function");
     }
+    rejects("source duplicate symbol precedes later reserved symbol", [] {
+        const std::vector<std::string> names{"test", "test", "__au_runtime_reserved"};
+        static_cast<void>(validate(pendingBodies(names.size()), pendingMetadata(false, true, names)));
+    }, "duplicate function");
+    rejects("source reserved symbol precedes later duplicate symbol", [] {
+        const std::vector<std::string> names{"__au_runtime_reserved", "test", "test"};
+        static_cast<void>(validate(pendingBodies(names.size()), pendingMetadata(false, true, names)));
+    }, "invalid or reserved function symbol");
+    for (const auto &[name, mutation] : std::vector<std::pair<const char *, CallableMutation>>{
+             {"absent receiver payload", CallableMutation::AbsentReceiver},
+             {"unknown callable flags", CallableMutation::UnknownFlag},
+             {"nonpacked callable type begin", CallableMutation::RangeBegin},
+             {"overlapping callable type range", CallableMutation::RangeCount},
+             {"callable name index overflow", CallableMutation::IndexOverflow},
+             {"duplicate callable index and missing ID", CallableMutation::IndexDuplicate},
+             {"unsorted callable name index", CallableMutation::IndexOrder}}) {
+        rejects(name, [=] {
+            static_cast<void>(validate(pendingBodies(2), pendingMetadata(false, false, {"alpha", "omega"}, mutation)));
+        }, "invalid hosted IR metadata transport");
+    }
     rejects("pending descriptor still receives independent validation", [] {
-        static_cast<void>(validate(baseline().functions, pendingMetadata(false, true)));
+        static_cast<void>(validate(pendingBodies(), pendingMetadata(false, true)));
     }, "invalid metadata descriptor");
     rejects("pending supplied physical offsets cannot become canonical by assertion", [] {
-        static_cast<void>(validate(baseline().functions, pendingMetadata(true)));
+        static_cast<void>(validate(pendingBodies(), pendingMetadata(true)));
     }, "noncanonical class storage metadata");
+    rejects("pending callable header requires its body", [] {
+        static_cast<void>(validate(pendingBodies(0), pendingMetadata()));
+    }, "callable body count mismatch");
+    rejects("pending body cannot substitute another callable ID", [] {
+        auto functions = pendingBodies();
+        functions[0].callableId = 1;
+        static_cast<void>(validate(std::move(functions), pendingMetadata()));
+    }, "callable body ID does not match declaration order");
 }
 
 } // namespace
@@ -4392,6 +4548,7 @@ int main(int argc, char **argv) {
         unsignedTests();
         byteTests();
         packedStorageTests();
+        callableOwnerTests();
         metadataOwnerTests();
         metadataIngressTests();
         initializationPayloadMetricTests();
@@ -6001,10 +6158,8 @@ int main(int argc, char **argv) {
                                    BoundsGuard{elementCount * 8, elementCount, Type::I64},
                                    IndexLoad{elementCount * 8, elementCount, Type::I64},
                                    Return{}});
-        std::map<std::string, const aurora::ir::Function *> largeFunctions{{"test", &largeFunction}};
         verification::Metrics metrics;
-        const auto metadata = Metadata::import(Module{});
-        verification::verifyFunction(largeFunction, largeFunctions, *metadata, &metrics);
+        static_cast<void>(validate(std::move(large), &metrics));
         if (metrics.peakOperandDepth != elementCount || metrics.snapshots > 8 ||
             metrics.peakRetainedValueFacts > elementCount * 16 ||
             metrics.peakRetainedInitializationPayloadBytes !=

@@ -1515,13 +1515,14 @@ void emittedSymbolTests() {
         const auto assembly = X86Emitter{}.emit(validated);
         // Check exact source-function directives. Reserved reflection helpers
         // are emitted separately and do not share host libc symbol names.
-        for (const auto &function : validated.get().functions) {
-            const auto local = "\n.local " + function.name + "\n";
-            const auto global = "\n.globl " + function.name + "\n";
+        for (const auto &body : validated.get().functions) {
+            const auto function = validated.metadata().callable(body.callableId);
+            const auto local = "\n.local " + function.name() + "\n";
+            const auto global = "\n.globl " + function.name() + "\n";
             require(assembly.find(privateGraph ? local : global) != std::string::npos,
-                    name + ": missing expected visibility for " + function.name);
+                    name + ": missing expected visibility for " + function.name());
             require(assembly.find(privateGraph ? global : local) == std::string::npos,
-                    name + ": unexpected opposite visibility for " + function.name);
+                    name + ": unexpected opposite visibility for " + function.name());
         }
         if (!privateGraph)
             require(assembly.find("__au_runtime_bytes_") == std::string::npos,

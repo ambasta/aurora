@@ -720,9 +720,9 @@ IRFunction resourceFunction(int depth, int labels, bool operandOver = false) {
     return f;
 }
 void verifyResource(IRFunction &f, verification::Metrics *metrics) {
-    const std::map<std::string, const IRFunction *> functions{{f.name, &f}};
-    const auto metadata = Metadata::import(Module{});
-    verification::verifyFunction(f, functions, *metadata, metrics);
+    Module module;
+    module.functions.push_back(f);
+    static_cast<void>(validate(std::move(module), metrics));
 }
 void resourceTests() {
     using Budget = verification::BlockRetentionBudget;

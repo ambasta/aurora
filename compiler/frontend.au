@@ -194,9 +194,9 @@ export namespace compiler_frontend {
     auto graph_retained(const compiler_ir_graph::Workspace& workspace, i64 index) -> bool {
         return compiler_ir_graph::retained(workspace, index);
     }
-    auto metadata_create(builtin::ByteRegion region, compiler_ir_metadata::InputCounts counts)
+    auto metadata_create(builtin::ByteRegion region, compiler_ir_metadata::InputCounts counts, i64 callableCount)
         -> compiler_ir_metadata::MetadataStore {
-        compiler_ir_metadata::MetadataStore result = compiler_ir_metadata::create(region, counts);
+        compiler_ir_metadata::MetadataStore result = compiler_ir_metadata::create(region, counts, callableCount);
         return move(result);
     }
     auto metadata_release(builtin::ByteRegion region, compiler_ir_metadata::MetadataStore store) -> i64 {

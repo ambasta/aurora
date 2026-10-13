@@ -1667,8 +1667,9 @@ class HostedResolution::Impl {
                 throw Error(renderHostedLoweringDiagnostic(result, input, projection.diagnosticServices()));
             return projectHostedLowering(input, projection.loweringServices(serviceKinds));
         }();
-        // The result owns its values and shared source snapshots. Destroy all
-        // native-backed views above, then free Session before verification.
+        // The result owns only bodies and a pending callable/module capsule.
+        // Destroy all transport views and free Session before source admission
+        // of every signature, the single publication, and native body checks.
         owner.release();
         auto verified = ir::validate(std::move(output.functions), std::move(output.metadata));
         return {std::move(verified), std::move(output.diagnostics), std::move(declarations)};

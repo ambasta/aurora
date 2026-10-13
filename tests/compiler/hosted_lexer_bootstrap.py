@@ -132,14 +132,22 @@ def abi_generation(facts):
         ("compiler_lowering::LocalRow", 160),
         ("compiler_lowering::SnapshotRow", 48),
         ("compiler_lowering::ContinuationRow", 496),
+        ("compiler_ir_metadata::ReceiverShape", 24),
+        ("compiler_ir_metadata::CallableOptions", 16),
+        ("compiler_ir_metadata::CallableRow", 104),
+        ("compiler_ir_metadata::InputCounts", 80),
+        ("compiler_ir_metadata::MetadataStore", 520),
     ):
         _, entry = abi_declaration(facts, "records", source)
-        require(entry["reserved"] == extent and entry["alignment"] == 8, f"lowering layout changed: {source}")
+        require(entry["reserved"] == extent and entry["alignment"] == 8, f"frontend layout changed: {source}")
     require(
         "struct alignas(8) MetadataCreate {" in generated
         and "struct alignas(8) MetadataRelease {" in generated
         and "aurora::hosted_abi::compiler_ir_metadata::InputCounts counts{};" in generated
+        and "std::int64_t callableCount{};" in generated
         and "metadataStore_typesBytes = 32;" in generated
+        and "metadataStore_callablesBytes = 32;" in generated
+        and "metadataCallableRowPhysicalBytes = 104;" in generated
         and "metadataRawTypeRowPhysicalBytes = 64;" in generated,
         "metadata arguments or closed owner/row physical bindings were omitted",
     )
@@ -200,6 +208,20 @@ def abi_generation(facts):
             continue
         raise AssertionError(f"unsafe graph paired bridge accepted: {field}={value}")
     metadata_store, _ = abi_declaration(facts, "records", "compiler_ir_metadata::MetadataStore")
+    for mutation in ("missing", "type", "offset"):
+        changed = deepcopy(facts)
+        _, entry = abi_declaration(changed, "functions", "compiler_frontend::metadata_create")
+        if mutation == "missing":
+            entry["parameters"].pop()
+        elif mutation == "type":
+            entry["parameters"][2]["kind"] = "u64"
+        else:
+            entry["parameters"][2]["offset"] += 8
+        try:
+            frontend_abi_header(changed)
+        except ValueError:
+            continue
+        raise AssertionError(f"unsafe metadata callable-count argument accepted: {mutation}")
     for operation in ("create", "release", "allocated", "run", "error"):
         for mutation in ("receiver", "result", "parameters", "root"):
             changed = deepcopy(facts)

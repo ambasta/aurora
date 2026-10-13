@@ -79,11 +79,14 @@ public:
 };
 } // namespace
 
-void verifyHostedGraph(std::vector<Function> &functions) {
-    std::map<std::string, std::int64_t> indices;
+void verifyHostedGraph(std::vector<FunctionBody> &functions, const Metadata &metadata) {
+    // Compact graph ordinals are distinct from stable callable IDs. Metadata
+    // rows and lookup IDs remain unchanged when retained bodies are pruned.
+    std::map<Metadata::CallableId, std::int64_t> indices;
     std::size_t callCount = 0;
     for (std::size_t index = 0; index < functions.size(); ++index) {
-        indices.emplace(functions[index].name, graphCount(index));
+        if (!indices.emplace(functions[index].callableId, graphCount(index)).second)
+            invalidGraph();
         for (const auto &instruction : functions[index].code)
             if (callee(instruction)) {
                 if (callCount == std::numeric_limits<std::size_t>::max())
@@ -95,18 +98,23 @@ void verifyHostedGraph(std::vector<Function> &functions) {
     std::int64_t edge = 0;
     for (std::size_t index = 0; index < functions.size(); ++index) {
         const auto &function = functions[index];
+        const auto signature = metadata.callable(function.callableId);
+        const auto parameters = signature.parameters();
         hosted_abi::GraphFunctionInput value;
         value.index = graphCount(index);
         value.function.firstEdge = edge;
-        value.function.hasReceiver = function.receiver.has_value();
-        value.function.serviceEntry = std::any_of(function.parameters.begin(), function.parameters.end(),
+        value.function.hasReceiver = signature.receiver().has_value();
+        value.function.serviceEntry = std::any_of(parameters.begin(), parameters.end(),
                                                   [](const Type &type) { return type.isService(); });
-        value.function.rootScope = function.moduleScope == 0;
+        value.function.rootScope = signature.moduleScope() == 0;
         for (const auto &instruction : function.code)
             if (const auto *target = callee(instruction)) {
                 hosted_abi::GraphEdgeInput call;
                 call.index = edge++;
-                call.target = indices.at(*target);
+                const auto targetId = metadata.findCallable(*target);
+                if (!targetId || !indices.contains(*targetId))
+                    invalidGraph();
+                call.target = indices.at(*targetId);
                 if (aurora_hosted_graph_set_edge(owners.inputData(), &call) != 1)
                     invalidGraph();
             }
@@ -130,8 +138,8 @@ void verifyHostedGraph(std::vector<Function> &functions) {
             invalidGraph();
         retained.push_back(keep == 1);
     }
-    std::erase_if(functions, [&](const Function &function) {
-        return !retained[static_cast<std::size_t>(indices.at(function.name))];
+    std::erase_if(functions, [&](const FunctionBody &function) {
+        return !retained[static_cast<std::size_t>(indices.at(function.callableId))];
     });
 }
 } // namespace aurora::ir

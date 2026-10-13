@@ -135,12 +135,97 @@ export namespace compiler_ir_metadata {
         return 64;
     }
 
+    auto callable_flag(CallableRow row, i64 bit) -> bool { return (row.attributes() & bit) != 0; }
+    auto receiver_flag(ReceiverShape receiver, i64 bit) -> bool { return (receiver.attributes() & bit) != 0; }
+    auto absent_receiver(ReceiverShape receiver) -> bool {
+        const ByteRange name = receiver.name();
+        return name.begin() == 0 && name.count() == 0 && receiver.attributes() == 0;
+    }
+    // Symbols precede module metadata diagnostics. Only the names and sorted
+    // suffix they read are admitted first; other transport checks remain below.
+    auto callable_name_integrity(MetadataStore& store) -> bool {
+        const i64 count = store.callable_count();
+        if (count < 0 || count > store.input_index_count()) { return fail(store, MetadataError::integrity); }
+        i64 at = 0;
+        while (at < count) {
+            const CallableRow row = store.callable_at(at);
+            if (!byte_range(row.name(), store.byte_count())) { return fail(store, MetadataError::integrity); }
+            at = at + 1;
+        }
+        const i64 first = store.input_index_count() - count;
+        at = 0;
+        while (at < count) {
+            const IndexRow id = store.index_at(first + at);
+            if (id.value() < 0 || id.value() >= count) { return fail(store, MetadataError::integrity); }
+            if (at > 0) {
+                const IndexRow previous_id = store.index_at(first + at - 1);
+                const CallableRow previous = store.callable_at(previous_id.value());
+                const CallableRow row = store.callable_at(id.value());
+                const i64 order = compare_names(store, previous.name(), row.name());
+                if (order > 0 || (order == 0 && previous_id.value() >= id.value())) {
+                    return fail(store, MetadataError::integrity);
+                }
+            }
+            at = at + 1;
+        }
+        // Strict (name, original ID) order excludes every repeated ID. Since
+        // exactly count in-range IDs were read, the suffix is a permutation.
+        return true;
+    }
+    auto first_named_callable(const MetadataStore& store, ByteRange name) -> i64 {
+        const i64 first = store.input_index_count() - store.callable_count();
+        i64 begin = 0;
+        i64 end = store.callable_count();
+        while (begin < end) {
+            const i64 middle = begin + (end - begin) / 2;
+            const IndexRow id = store.index_at(first + middle);
+            const CallableRow row = store.callable_at(id.value());
+            if (compare_names(store, row.name(), name) < 0) { begin = middle + 1; } else { end = middle; }
+        }
+        if (begin >= store.callable_count()) { return -1; }
+        const IndexRow id = store.index_at(first + begin);
+        const CallableRow row = store.callable_at(id.value());
+        if (compare_names(store, row.name(), name) != 0) { return -1; }
+        return id.value();
+    }
+    auto symbol_letter(i64 value) -> bool {
+        return (value >= 65 && value <= 90) || (value >= 97 && value <= 122) || value == 95;
+    }
+    auto symbol_name(const MetadataStore& store, ByteRange name) -> bool {
+        if (name.count() == 0 || !symbol_letter(store.byte_at(name.begin()))) { return false; }
+        i64 at = 1;
+        while (at < name.count()) {
+            const i64 value = store.byte_at(name.begin() + at);
+            if (!symbol_letter(value) && (value < 48 || value > 57)) { return false; }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto name_prefix(const MetadataStore& store, ByteRange name, builtin::span<const u8> prefix) -> bool {
+        return name.count() >= prefix.size() && named(store, ByteRange(name.begin(), prefix.size()), prefix);
+    }
+    auto verify_callable_symbols(MetadataStore& store) -> bool {
+        if (store.callable_count() == 0) { return fail(store, MetadataError::empty_module); }
+        i64 at = 0;
+        while (at < store.callable_count()) {
+            const CallableRow row = store.callable_at(at);
+            if (!symbol_name(store, row.name()) || named(store, row.name(), "aurora_reflect_size")
+                || named(store, row.name(), "aurora_reflect_field_count")
+                || name_prefix(store, row.name(), "__au_reflect_") || name_prefix(store, row.name(), "__au_runtime_")) {
+                return fail(store, MetadataError::function_symbol);
+            }
+            if (first_named_callable(store, row.name()) != at) { return fail(store, MetadataError::duplicate_function); }
+            at = at + 1;
+        }
+        return true;
+    }
+
     // Check only transport here. In particular raw Type tails, nominal names,
     // physical extents and semantic counts stay untouched until their original
     // diagnostic position. All ranges are checked before their first read.
     auto input_integrity(MetadataStore& store) -> bool {
-        if (store.leaf_count() < 0 || store.input_field_count() < 0
-            || store.type_count() - store.leaf_count() != store.input_field_count()) {
+        if (store.leaf_count() < 0 || store.input_field_count() < 0 || store.leaf_count() > store.type_count()
+            || store.input_field_count() > store.type_count() - store.leaf_count()) {
             return fail(store, MetadataError::integrity);
         }
         i64 at = 0;
@@ -149,6 +234,27 @@ export namespace compiler_ir_metadata {
             if (!byte_range(type.name(), store.byte_count())) { return fail(store, MetadataError::integrity); }
             at = at + 1;
         }
+        i64 next_type = store.leaf_count() + store.input_field_count();
+        at = 0;
+        while (at < store.callable_count()) {
+            const CallableRow row = store.callable_at(at);
+            const IndexRange types = row.types();
+            const ReceiverShape receiver = row.first_receiver();
+            const ReceiverShape second = row.second_receiver();
+            if (!index_range(types, store.type_count()) || types.count() < 1 || types.begin() != next_type
+                || row.attributes() < 0 || row.attributes() > 15
+                || !byte_range(receiver.name(), store.byte_count()) || receiver.attributes() < 0 || receiver.attributes() > 7
+                || !byte_range(second.name(), store.byte_count()) || second.attributes() < 0 || second.attributes() > 7
+                || (!callable_flag(row, 1) && !absent_receiver(receiver))
+                || (!callable_flag(row, 4) && !absent_receiver(second))
+                || (!callable_flag(row, 8) && row.receiver_span_field() != 0)) {
+                return fail(store, MetadataError::integrity);
+            }
+            next_type = next_type + types.count();
+            at = at + 1;
+        }
+        if (next_type != store.type_count()) { return fail(store, MetadataError::integrity); }
+        const i64 metadata_indices = store.input_index_count() - store.callable_count();
         i64 next_leaf = 0;
         i64 next_field = 0;
         i64 next_storage = 0;
@@ -176,10 +282,10 @@ export namespace compiler_ir_metadata {
                     return fail(store, MetadataError::integrity);
                 }
                 const StorageRow storage = store.storage_at(next_storage);
-                if (!index_range(storage.leaf_offsets(), store.input_index_count())
+                if (!index_range(storage.leaf_offsets(), metadata_indices)
                     || range_begin(storage.leaf_offsets()) != next_index) { return fail(store, MetadataError::integrity); }
                 next_index = next_index + range_count(storage.leaf_offsets());
-                if (!index_range(storage.field_offsets(), store.input_index_count())
+                if (!index_range(storage.field_offsets(), metadata_indices)
                     || range_begin(storage.field_offsets()) != next_index) { return fail(store, MetadataError::integrity); }
                 next_index = next_index + range_count(storage.field_offsets());
                 next_storage = next_storage + 1;
@@ -210,7 +316,7 @@ export namespace compiler_ir_metadata {
         at = 0;
         while (at < store.view_count()) {
             const ViewRow row = store.view_at(at);
-            if (!index_range(row.descriptors(), store.input_index_count()) || range_begin(row.descriptors()) != next_index) {
+            if (!index_range(row.descriptors(), metadata_indices) || range_begin(row.descriptors()) != next_index) {
                 return fail(store, MetadataError::integrity);
             }
             if (at > 0) {
@@ -227,7 +333,7 @@ export namespace compiler_ir_metadata {
             next_index = next_index + range_count(row.descriptors());
             at = at + 1;
         }
-        if (next_index != store.input_index_count()) { return fail(store, MetadataError::integrity); }
+        if (next_index != metadata_indices) { return fail(store, MetadataError::integrity); }
         at = 0;
         while (at < store.enum_count()) {
             const EnumRow row = store.enum_at(at);
@@ -807,6 +913,257 @@ export namespace compiler_ir_metadata {
         }
         return true;
     }
+    auto has_scope(const MetadataStore& store, i64 scope) -> bool {
+        i64 begin = 0;
+        i64 end = store.view_count();
+        while (begin < end) {
+            const i64 middle = begin + (end - begin) / 2;
+            const ViewRow row = store.view_at(middle);
+            if (row.scope() == scope) { return true; }
+            if (row.scope() < scope) { begin = middle + 1; } else { end = middle; }
+        }
+        return false;
+    }
+    auto plain_type(RawTypeRow type, i64 kind) -> bool {
+        return type.kind() == kind && name_length(type.name()) == 0 && canonical_tail(type);
+    }
+    auto service_type(RawTypeRow type) -> bool { return type.kind() >= 14 && type.kind() <= 16; }
+    auto resource_type(RawTypeRow type) -> bool { return type.kind() == 12 || owner_kind(type); }
+    auto owning_type(const MetadataStore& store, RawTypeRow type) -> bool {
+        return type.kind() == 5 && owning_class(store, find_class(store, type.name()));
+    }
+    auto owning_constructor(const MetadataStore& store, CallableRow row) -> bool {
+        const ReceiverShape receiver = row.first_receiver();
+        return callable_flag(row, 1) && receiver_flag(receiver, 2)
+            && owning_class(store, find_class(store, receiver.name()));
+    }
+    auto resource_signature(const MetadataStore& store, CallableRow row) -> bool {
+        if (owning_constructor(store, row)) { return true; }
+        const IndexRange types = row.types();
+        i64 at = 0;
+        while (at < types.count()) {
+            const RawTypeRow type = store.type_at(types.begin() + at);
+            if (resource_type(type) || owning_type(store, type)) { return true; }
+            at = at + 1;
+        }
+        return false;
+    }
+    auto service_signature(const MetadataStore& store, CallableRow row) -> bool {
+        const IndexRange types = row.types();
+        i64 at = 1;
+        while (at < types.count()) {
+            const RawTypeRow type = store.type_at(types.begin() + at);
+            if (service_type(type)) { return true; }
+            at = at + 1;
+        }
+        return false;
+    }
+    auto service_bit(RawTypeRow type) -> i64 {
+        if (type.kind() == 14) { return 1; }
+        if (type.kind() == 15) { return 2; }
+        return 4;
+    }
+    auto verify_service_signature(MetadataStore& store, CallableRow row, bool resource) -> bool {
+        const IndexRange types = row.types();
+        if (callable_flag(row, 1) || callable_flag(row, 2) || callable_flag(row, 4) || resource || types.count() <= 1) {
+            return fail(store, MetadataError::service_signature);
+        }
+        const RawTypeRow first = store.type_at(types.begin() + 1);
+        if (!service_type(first)) { return fail(store, MetadataError::service_signature); }
+        i64 at = 1;
+        i64 kinds = 0;
+        bool leading = true;
+        while (at < types.count() && leading) {
+            const RawTypeRow type = store.type_at(types.begin() + at);
+            if (service_type(type)) {
+                const i64 bit = service_bit(type);
+                if ((kinds & bit) != 0) { return fail(store, MetadataError::service_duplicates); }
+                kinds = kinds | bit;
+                at = at + 1;
+            } else { leading = false; }
+        }
+        // Independent closed allowlist: recognition alone never grants new
+        // pair or triple forwarding authority.
+        if (at > 3 || (kinds != 1 && kinds != 2 && kinds != 4 && kinds != 3 && kinds != 5)) {
+            return fail(store, MetadataError::service_group);
+        }
+        while (at < types.count()) {
+            const RawTypeRow type = store.type_at(types.begin() + at);
+            if (!scalar_value(store, type) && !plain_type(type, 11)) {
+                return fail(store, MetadataError::service_parameters);
+            }
+            at = at + 1;
+        }
+        const RawTypeRow result = store.type_at(types.begin());
+        if (!scalar_value(store, result) && (result.kind() != 5 || owning_type(store, result))) {
+            return fail(store, MetadataError::service_result);
+        }
+        return true;
+    }
+    auto verify_borrowed_signature(MetadataStore& store, CallableRow row, bool resource) -> bool {
+        const IndexRange types = row.types();
+        const RawTypeRow result = store.type_at(types.begin());
+        const ReceiverShape receiver = row.first_receiver();
+        if (callable_flag(row, 2)) {
+            if (!callable_flag(row, 1) || receiver_flag(receiver, 2)
+                || !owning_class(store, find_class(store, receiver.name()))) {
+                return fail(store, MetadataError::borrowed_shape);
+            }
+            if (resource || result.kind() == 11 || callable_flag(row, 8)) {
+                return fail(store, MetadataError::borrowed_result);
+            }
+            if (types.count() > 6) { return fail(store, MetadataError::borrowed_parameters); }
+        }
+        if (callable_flag(row, 4)) {
+            const ReceiverShape second = row.second_receiver();
+            if (!callable_flag(row, 2) || !callable_flag(row, 1) || !receiver_flag(receiver, 1)
+                || receiver_flag(receiver, 2) || receiver_flag(second, 1) || receiver_flag(second, 2)) {
+                return fail(store, MetadataError::paired_shape);
+            }
+            const i64 second_class = find_class(store, second.name());
+            if (second_class < 0 || !owning_class(store, second_class)) {
+                return fail(store, MetadataError::paired_class);
+            }
+            const ClassRow second_row = store.class_at(second_class);
+            if (!member(second_row, 1) || member(second_row, 8)) { return fail(store, MetadataError::paired_class); }
+            if (types.count() > 5) { return fail(store, MetadataError::paired_parameters); }
+            i64 at = 0;
+            while (at < types.count()) {
+                const RawTypeRow type = store.type_at(types.begin() + at);
+                if (!scalar_value(store, type)) { return fail(store, MetadataError::paired_values); }
+                at = at + 1;
+            }
+        }
+        return true;
+    }
+    auto verify_resource_signature(MetadataStore& store, CallableRow row) -> bool {
+        const bool constructor = owning_constructor(store, row);
+        const bool receiver = callable_flag(row, 1);
+        const IndexRange types = row.types();
+        if (receiver && !constructor) { return fail(store, MetadataError::resource_receiver); }
+        if (types.count() <= 1) { return fail(store, MetadataError::resource_region); }
+        const RawTypeRow first = store.type_at(types.begin() + 1);
+        if (!plain_type(first, 12)) { return fail(store, MetadataError::resource_region); }
+        const RawTypeRow result = store.type_at(types.begin());
+        if (!scalar_value(store, result) && !owner_kind(result) && (receiver || result.kind() != 5)) {
+            return fail(store, MetadataError::resource_result);
+        }
+        i64 at = 2;
+        while (at < types.count()) {
+            const RawTypeRow type = store.type_at(types.begin() + at);
+            if (!scalar_value(store, type) && !owner_kind(type) && (receiver || !owning_type(store, type))
+                && (!constructor || type.kind() != 5 || owning_type(store, type))) {
+                return fail(store, MetadataError::resource_parameters);
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto verify_boundary_type(MetadataStore& store, CallableRow row, RawTypeRow type, bool parameter,
+                              bool resource, bool service) -> bool {
+        if (scalar_value(store, type)) { return true; }
+        if (service_type(type)) {
+            if (!parameter || !service) { return fail(store, MetadataError::service_boundary); }
+            // The old kind-only native service branch admitted malformed names
+            // and tails. Raw callable types must all be canonical before any
+            // native observer reconstructs a Type from this owner.
+            if (name_length(type.name()) != 0 || !canonical_tail(type)) {
+                return fail(store, MetadataError::service_type);
+            }
+            return true;
+        }
+        if (resource_type(type)) {
+            if (!resource || (!owner_kind(type) && (!parameter || !plain_type(type, 12)))) {
+                return fail(store, MetadataError::resource_boundary);
+            }
+            if (owner_kind(type) && !verify_owner_element(store, type)) { return false; }
+            return true;
+        }
+        const ReceiverShape receiver = row.first_receiver();
+        if (type.kind() == 11) {
+            if (!plain_type(type, 11)
+                || !((parameter && (!callable_flag(row, 1) || !receiver_flag(receiver, 2)))
+                     || (!parameter && callable_flag(row, 1) && !receiver_flag(receiver, 1)
+                         && !receiver_flag(receiver, 2) && callable_flag(row, 8)))) {
+                return fail(store, MetadataError::span_boundary);
+            }
+            return true;
+        }
+        if (callable_flag(row, 1) && !parameter && receiver_flag(receiver, 2)) {
+            return fail(store, MetadataError::constructor_result);
+        }
+        if (type.kind() != 5 || !canonical_tail(type)) { return fail(store, MetadataError::value_type); }
+        const i64 class_index = find_class(store, type.name());
+        if (class_index < 0) { return fail(store, MetadataError::value_class); }
+        const ClassRow declaration = store.class_at(class_index);
+        if (!member(declaration, 1)) { return fail(store, MetadataError::value_class); }
+        if (member(declaration, 8)) { return fail(store, MetadataError::value_carrier); }
+        const bool owning = owning_class(store, class_index);
+        if (owning && (!resource || callable_flag(row, 1))) { return fail(store, MetadataError::value_owner); }
+        if (resource && !owning && parameter && !owning_constructor(store, row)) {
+            return fail(store, MetadataError::value_resource);
+        }
+        if (!copied_leaves(store, declaration)) { return fail(store, MetadataError::value_leaves); }
+        const ClassResultRow result = store.result_at(class_index);
+        const StorageRow storage = store.storage_at(result.canonical_storage());
+        const PhysicalExtent extent = storage.extent();
+        if (extent.reserved_bytes() > 520) { return fail(store, MetadataError::value_storage); }
+        return true;
+    }
+    auto verify_receiver_signature(MetadataStore& store, CallableRow row) -> bool {
+        const ReceiverShape receiver = row.first_receiver();
+        i64 class_index = -1;
+        if (callable_flag(row, 1)) {
+            class_index = find_class(store, receiver.name());
+            if (class_index < 0) { return fail(store, MetadataError::receiver_class); }
+            const ClassRow declaration = store.class_at(class_index);
+            if (!member(declaration, 1)) { return fail(store, MetadataError::receiver_class); }
+            if (member(declaration, 8)) { return fail(store, MetadataError::receiver_carrier); }
+            const RawTypeRow result = store.type_at(range_begin(row.types()));
+            if (receiver_flag(receiver, 2) && (!receiver_flag(receiver, 1) || !plain_type(result, 0))) {
+                return fail(store, MetadataError::constructor_signature);
+            }
+        }
+        if (callable_flag(row, 8)) {
+            if (class_index < 0 || row.receiver_span_field() < 0) { return fail(store, MetadataError::receiver_span); }
+            const ClassResultRow result = store.result_at(class_index);
+            const IndexRange fields = result.fields();
+            if (row.receiver_span_field() >= fields.count()) { return fail(store, MetadataError::receiver_span); }
+            const FieldRow field = store.field_at(fields.begin() + row.receiver_span_field());
+            const RawTypeRow type = store.type_at(field.type());
+            if (!((plain_type(type, 13) && field.array() == 0) || (plain_type(type, 10) && field.array() != 0))) {
+                return fail(store, MetadataError::receiver_span);
+            }
+        }
+        return true;
+    }
+    auto verify_callable_signatures(MetadataStore& store) -> bool {
+        i64 at = 0;
+        while (at < store.callable_count()) {
+            const CallableRow row = store.callable_at(at);
+            if (!has_scope(store, row.scope())) { return fail(store, MetadataError::function_scope); }
+            const bool resource = resource_signature(store, row);
+            const bool service = service_signature(store, row);
+            if (service && !verify_service_signature(store, row, resource)) { return false; }
+            if (!verify_borrowed_signature(store, row, resource)) { return false; }
+            if (resource && !verify_resource_signature(store, row)) { return false; }
+            const IndexRange types = row.types();
+            const RawTypeRow result = store.type_at(types.begin());
+            if (callable_flag(row, 8) && !plain_type(result, 11)) { return fail(store, MetadataError::span_result); }
+            if (!verify_boundary_type(store, row, result, false, resource, service)) { return false; }
+            if (types.count() > 7) { return fail(store, MetadataError::parameter_count); }
+            i64 parameter = 1;
+            while (parameter < types.count()) {
+                const RawTypeRow type = store.type_at(types.begin() + parameter);
+                if (!verify_boundary_type(store, row, type, true, resource, service)) { return false; }
+                parameter = parameter + 1;
+            }
+            if (!verify_receiver_signature(store, row)) { return false; }
+            at = at + 1;
+        }
+        return true;
+    }
+
     auto run(MetadataStore& store) -> MetadataStatus {
         if (store.status() != MetadataStatus::pending) { return store.status(); }
         if (!store.allocated()) {
@@ -814,9 +1171,10 @@ export namespace compiler_ir_metadata {
             return store.status();
         }
         if (!store.begin()) { return store.status(); }
-        if (!input_integrity(store) || !verify_headers(store) || !normalize_fields(store) || !verify_fields(store)
-            || !verify_carriers(store) || !verify_depths(store) || !verify_sealed(store) || !compute_storage(store)
-            || !verify_storage_limits(store) || !verify_supplied_storage(store) || !store.complete()) {
+        if (!callable_name_integrity(store) || !verify_callable_symbols(store) || !input_integrity(store)
+            || !verify_headers(store) || !normalize_fields(store) || !verify_fields(store) || !verify_carriers(store)
+            || !verify_depths(store) || !verify_sealed(store) || !compute_storage(store) || !verify_storage_limits(store)
+            || !verify_supplied_storage(store) || !verify_callable_signatures(store) || !store.complete()) {
             if (store.status() == MetadataStatus::pending) { store.reject(MetadataError::integrity); }
             return store.status();
         }

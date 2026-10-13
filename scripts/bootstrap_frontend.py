@@ -39,7 +39,7 @@ ARGUMENT_RECORDS = (
     ("GraphReleaseWorkspace", "compiler_frontend::graph_release_workspace", ("region", "workspace")),
     ("GraphFunctionInput", "compiler_frontend::graph_set_function", ("index", "function")),
     ("GraphEdgeInput", "compiler_frontend::graph_set_edge", ("index", "target")),
-    ("MetadataCreate", "compiler_frontend::metadata_create", ("region", "counts")),
+    ("MetadataCreate", "compiler_frontend::metadata_create", ("region", "counts", "callableCount")),
     ("MetadataRelease", "compiler_frontend::metadata_release", ("region", "store")),
 )
 
@@ -206,7 +206,7 @@ def frontend_abi_entries(facts):
     checks += [
         ("metadata_" + name, "compiler_frontend::metadata_" + name, receiver, parameters, result)
         for name, receiver, parameters, result in (
-            ("create", None, ["region", "compiler_ir_metadata::InputCounts"], "compiler_ir_metadata::MetadataStore"),
+            ("create", None, ["region", "compiler_ir_metadata::InputCounts", "i64"], "compiler_ir_metadata::MetadataStore"),
             ("release", None, ["region", "compiler_ir_metadata::MetadataStore"], "i64"),
             ("allocated", metadata, [], "bool"),
             ("run", metadata, [], "compiler_ir_metadata::MetadataStatus"),
@@ -546,6 +546,7 @@ def frontend_abi_header(facts, messages=None, metadata_source=None):
         "descriptors": "DescriptorRow",
         "views": "ViewRow",
         "enums": "EnumRow",
+        "callables": "CallableRow",
         "results": "ClassResultRow",
         "frames": "FrameRow",
     }

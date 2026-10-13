@@ -122,7 +122,83 @@ export namespace compiler_ir_metadata {
         //: invalid typed IR: composed or owning class storage exceeds 520 bytes
         class_storage_limit,
         //: invalid typed IR: noncanonical class storage metadata
-        supplied_storage
+        supplied_storage,
+        //: invalid typed IR: empty module
+        empty_module,
+        //: invalid typed IR: invalid or reserved function symbol
+        function_symbol,
+        //: invalid typed IR: duplicate function
+        duplicate_function,
+        //: invalid typed IR: unknown function module scope
+        function_scope,
+        //: invalid typed IR: service signature requires a leading sealed group and no receiver or region
+        service_signature,
+        //: invalid typed IR: service signature requires distinct capability kinds
+        service_duplicates,
+        //: invalid typed IR: unsupported service group
+        service_group,
+        //: invalid typed IR: service signature requires later scalar, enum or readonly span arguments
+        service_parameters,
+        //: invalid typed IR: service signature has unsupported result
+        service_result,
+        //: invalid typed IR: borrowed formal requires nonconstructor owning receiver shape
+        borrowed_shape,
+        //: invalid typed IR: borrowed formal cannot have resource or borrowed result
+        borrowed_result,
+        //: invalid typed IR: borrowed formal counts toward six parameters
+        borrowed_parameters,
+        //: invalid typed IR: paired borrowed formals require mutable first and readonly second owning roots
+        paired_shape,
+        //: invalid typed IR: second borrowed formal requires known owning class
+        paired_class,
+        //: invalid typed IR: two borrowed formals count toward six parameters
+        paired_parameters,
+        //: invalid typed IR: paired borrowed signature requires scalar or enum values
+        paired_values,
+        //: invalid typed IR: resource signature only supports an owning constructor receiver
+        resource_receiver,
+        //: invalid typed IR: resource signature requires its region parameter first
+        resource_region,
+        //: invalid typed IR: resource signature requires scalar, owned byte or class result
+        resource_result,
+        //: invalid typed IR: resource signature requires exactly one region and supported owning parameters
+        resource_parameters,
+        //: invalid typed IR: service capability cannot cross an ordinary boundary or return
+        service_boundary,
+        //: invalid typed IR: invalid canonical service boundary type
+        service_type,
+        //: invalid typed IR: invalid resource boundary type
+        resource_boundary,
+        //: invalid typed IR: readonly span boundary requires ordinary parameter or const receiver result
+        span_boundary,
+        //: invalid typed IR: constructor result must remain scalar
+        constructor_result,
+        //: invalid typed IR: invalid value boundary type
+        value_type,
+        //: invalid typed IR: unknown value boundary class
+        value_class,
+        //: invalid typed IR: class array carrier cannot cross value boundary
+        value_carrier,
+        //: invalid typed IR: owning class requires an ordinary resource boundary
+        value_owner,
+        //: invalid typed IR: only an owning constructor may take a copied class resource parameter
+        value_resource,
+        //: invalid typed IR: value boundary class exceeds 64 scalar fields excluding u8, 512 u8 leaves or 513 total leaves
+        value_leaves,
+        //: invalid typed IR: value boundary class storage exceeds 520 bytes
+        value_storage,
+        //: invalid typed IR: receiver span field summary requires span result
+        span_result,
+        //: invalid typed IR: too many parameters
+        parameter_count,
+        //: invalid typed IR: unknown receiver class
+        receiver_class,
+        //: invalid typed IR: class array carrier cannot be receiver
+        receiver_carrier,
+        //: invalid typed IR: invalid constructor receiver signature
+        constructor_signature,
+        //: invalid typed IR: receiver span field summary requires exact direct byte-storage field
+        receiver_span
     };
     class ByteRange {
         i64 firstByte;
@@ -165,6 +241,45 @@ export namespace compiler_ir_metadata {
         auto kind() const -> i64 { return typeKind; }
         auto name() const -> ByteRange { const ByteRange result = nameRange; return result; }
         auto tail() const -> RawTypeTail { const RawTypeTail result = rawTail; return result; }
+    };
+    class ReceiverShape {
+        ByteRange nameRange;
+        i64 flags; // mutable=1, constructor=2, public access=4
+    public:
+        ReceiverShape(ByteRange name, i64 attributes) : nameRange(name), flags(attributes) {}
+        auto name() const -> ByteRange { const ByteRange result = nameRange; return result; }
+        auto attributes() const -> i64 { return flags; }
+    };
+    // A copied argument keeps construction within the six-parameter boundary;
+    // CallableRow still stores these two scalars directly, without another pool.
+    class CallableOptions {
+        i64 flags;
+        i64 receiverSpanField;
+    public:
+        CallableOptions(i64 attributes, i64 span) : flags(attributes), receiverSpanField(span) {}
+        auto attributes() const -> i64 { return flags; }
+        auto receiver_span_field() const -> i64 { return receiverSpanField; }
+    };
+    class CallableRow {
+        ByteRange nameRange;
+        IndexRange typeRange;
+        i64 moduleScope;
+        ReceiverShape receiver;
+        ReceiverShape secondReceiver;
+        i64 flags; // receiver=1, borrowed formal=2, second receiver=4, span summary=8
+        i64 receiverSpanField;
+    public:
+        CallableRow(ByteRange name, IndexRange types, i64 scope, ReceiverShape first, ReceiverShape second,
+                    CallableOptions options) : nameRange(name), typeRange(types), moduleScope(scope),
+            receiver(first), secondReceiver(second), flags(options.attributes()),
+            receiverSpanField(options.receiver_span_field()) {}
+        auto name() const -> ByteRange { const ByteRange result = nameRange; return result; }
+        auto types() const -> IndexRange { const IndexRange result = typeRange; return result; }
+        auto scope() const -> i64 { return moduleScope; }
+        auto first_receiver() const -> ReceiverShape { const ReceiverShape result = receiver; return result; }
+        auto second_receiver() const -> ReceiverShape { const ReceiverShape result = secondReceiver; return result; }
+        auto attributes() const -> i64 { return flags; }
+        auto receiver_span_field() const -> i64 { return receiverSpanField; }
     };
     class ClassRow {
         ByteRange nameRange;
@@ -338,11 +453,15 @@ export namespace compiler_ir_metadata {
         return counts.byte_count() >= 0 && counts.type_count() >= 0 && counts.class_count() >= 0
             && counts.field_count() >= 0 && counts.leaf_count() >= 0 && counts.storage_count() >= 0
             && counts.index_count() >= 0 && counts.descriptor_count() >= 0 && counts.view_count() >= 0
-            && counts.enum_count() >= 0 && field_capacity(counts) == counts.type_count()
+            && counts.enum_count() >= 0 && field_capacity(counts) >= 0 && field_capacity(counts) <= counts.type_count()
             && storage_capacity(counts) >= 0 && index_capacity(counts) >= 0;
     }
     auto invalid_type() -> RawTypeRow {
         return RawTypeRow(-1, ByteRange(-1, -1), RawTypeTail(-1, -1, 1u64, 1u64, 1u64));
+    }
+    auto invalid_callable() -> CallableRow {
+        return CallableRow(ByteRange(-1, -1), IndexRange(-1, -1), -1, ReceiverShape(ByteRange(-1, -1), -1),
+                           ReceiverShape(ByteRange(-1, -1), -1), CallableOptions(-1, -1));
     }
     auto invalid_class() -> ClassRow {
         return ClassRow(ByteRange(-1, -1), IndexRange(-1, -1), IndexRange(-1, -1), -1, -1);
@@ -392,6 +511,11 @@ export namespace compiler_ir_metadata {
         builtin::OwnedValues<EnumRow> result = region.try_allocate(count, fill);
         return move(result);
     }
+    auto callable_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<CallableRow> {
+        const CallableRow fill = invalid_callable();
+        builtin::OwnedValues<CallableRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
     auto result_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<ClassResultRow> {
         const ClassResultRow fill = invalid_result();
         builtin::OwnedValues<ClassResultRow> result = region.try_allocate(count, fill);
@@ -412,6 +536,7 @@ export namespace compiler_ir_metadata {
         builtin::OwnedValues<DescriptorRow> descriptors;
         builtin::OwnedValues<ViewRow> views;
         builtin::OwnedValues<EnumRow> enums;
+        builtin::OwnedValues<CallableRow> callables;
         builtin::OwnedValues<ClassResultRow> results;
         builtin::OwnedValues<FrameRow> frames;
         InputCounts inputCounts;
@@ -423,12 +548,14 @@ export namespace compiler_ir_metadata {
         MetadataError errorValue;
         bool started;
     public:
-        MetadataStore(builtin::ByteRegion region, InputCounts counts) : bytes(region.try_allocate(counts.byte_count())),
+        MetadataStore(builtin::ByteRegion region, InputCounts counts, i64 callableCount) :
+            bytes(region.try_allocate(counts.byte_count())),
             types(type_pool(region, counts.type_count())), classes(class_pool(region, counts.class_count())),
             fields(field_pool(region, field_capacity(counts))), storage(storage_pool(region, storage_capacity(counts))),
             indices(index_pool(region, index_capacity(counts))), descriptors(descriptor_pool(region, counts.descriptor_count())),
             views(view_pool(region, counts.view_count())), enums(enum_pool(region, counts.enum_count())),
-            results(result_pool(region, counts.class_count())), frames(frame_pool(region)), inputCounts(counts),
+            callables(callable_pool(region, callableCount)), results(result_pool(region, counts.class_count())),
+            frames(frame_pool(region)), inputCounts(counts),
             fieldEnd(counts.field_count()), storageEnd(counts.storage_count()), indexEnd(counts.index_count()),
             frameCount(0), statusValue(MetadataStatus::pending), errorValue(MetadataError::none), started(false) {}
         auto initialize() -> bool {
@@ -445,7 +572,7 @@ export namespace compiler_ir_metadata {
         auto allocated() const -> bool {
             const InputCounts counts = inputCounts;
             return valid_counts(counts) && bytes.ok() && types.ok() && classes.ok() && fields.ok() && storage.ok()
-                && indices.ok() && descriptors.ok() && views.ok() && enums.ok() && results.ok() && frames.ok()
+                && indices.ok() && descriptors.ok() && views.ok() && enums.ok() && callables.ok() && results.ok() && frames.ok()
                 && bytes.size() == counts.byte_count() && types.size() == counts.type_count()
                 && classes.size() == counts.class_count() && fields.size() == field_capacity(counts)
                 && storage.size() == storage_capacity(counts) && indices.size() == index_capacity(counts)
@@ -483,6 +610,7 @@ export namespace compiler_ir_metadata {
         auto descriptor_count() const -> i64 { const InputCounts counts = inputCounts; return counts.descriptor_count(); }
         auto view_count() const -> i64 { const InputCounts counts = inputCounts; return counts.view_count(); }
         auto enum_count() const -> i64 { const InputCounts counts = inputCounts; return counts.enum_count(); }
+        auto callable_count() const -> i64 { return callables.size(); }
         auto field_count() const -> i64 { return fieldEnd; }
         auto storage_count() const -> i64 { return storageEnd; }
         auto index_count() const -> i64 { return indexEnd; }
@@ -541,6 +669,14 @@ export namespace compiler_ir_metadata {
         auto enum_at(i64 index) const -> EnumRow {
             if (index < 0 || index >= enum_count() || !enums.ok()) { return EnumRow(ByteRange(-1, -1), -1); }
             const EnumRow result = enums.at(index);
+            return result;
+        }
+        auto callable_at(i64 index) const -> CallableRow {
+            if (index < 0 || index >= callable_count() || !callables.ok()) {
+                const CallableRow invalid = invalid_callable();
+                return invalid;
+            }
+            const CallableRow result = callables.at(index);
             return result;
         }
         auto result_at(i64 index) const -> ClassResultRow {
@@ -619,8 +755,8 @@ export namespace compiler_ir_metadata {
             return true;
         }
     };
-    auto create(builtin::ByteRegion region, InputCounts counts) -> MetadataStore {
-        MetadataStore result = MetadataStore(region, counts);
+    auto create(builtin::ByteRegion region, InputCounts counts, i64 callableCount) -> MetadataStore {
+        MetadataStore result = MetadataStore(region, counts, callableCount);
         result.initialize();
         return move(result);
     }

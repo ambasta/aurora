@@ -173,15 +173,6 @@ class Projection {
             result.push_back(intValue(item.signedValue));
         return result;
     }
-    std::vector<Type> types(Operands &values, OperandRole role) {
-        const auto items = list(values.take(role), OperandRole::TypeId);
-        charge(items.size(), sizeof(Type));
-        std::vector<Type> result;
-        result.reserve(items.size());
-        for (const auto &item : items)
-            result.push_back(services.type(identity(item.signedValue)));
-        return result;
-    }
     std::vector<ir::ServiceArgument> additionalServices(Operands &values) {
         const auto &slice = values.take(OperandRole::AdditionalServices);
         const auto items = takeRange(slice.sliceBegin, slice.sliceCount);
@@ -521,7 +512,7 @@ class Projection {
         values.finish();
         return result;
     }
-    void slot(ir::Function &function, std::int64_t id) {
+    void slot(ir::FunctionBody *function, std::int64_t id) {
         const auto kind = row(id).recordKind;
         switch (kind) {
         case RecordKind::ScalarSlot:
@@ -539,81 +530,121 @@ class Projection {
         Operands values(*this, own(id, kind));
         const auto offset = values.integer(OperandRole::Offset);
         switch (kind) {
-        case RecordKind::ScalarSlot:
-            insertUnique(function.slots, offset, type(values, OperandRole::TypeId));
+        case RecordKind::ScalarSlot: {
+            auto value = type(values, OperandRole::TypeId);
+            if (function)
+                insertUnique(function->slots, offset, std::move(value));
             break;
+        }
         case RecordKind::ObjectSlot: {
             auto name = classOrCarrier(values);
             const auto mutableValue = values.boolean(OperandRole::MutableValue);
-            insertUnique(function.objectSlots, offset, ir::ObjectSlot{std::move(name), mutableValue});
+            if (function)
+                insertUnique(function->objectSlots, offset, ir::ObjectSlot{std::move(name), mutableValue});
             break;
         }
-        case RecordKind::ArraySlot:
-            insertUnique(function.arraySlots, offset, values.integer(OperandRole::Length));
+        case RecordKind::ArraySlot: {
+            const auto length = values.integer(OperandRole::Length);
+            if (function)
+                insertUnique(function->arraySlots, offset, length);
             break;
+        }
         case RecordKind::SpanSlot:
-            insertUnique(function.spanSlots, offset);
+            if (function)
+                insertUnique(function->spanSlots, offset);
             break;
         case RecordKind::ServiceSlot:
-            insertUnique(function.serviceSlots, offset);
+            if (function)
+                insertUnique(function->serviceSlots, offset);
             break;
         case RecordKind::RegionSlot:
-            insertUnique(function.regionSlots, offset);
+            if (function)
+                insertUnique(function->regionSlots, offset);
             break;
-        case RecordKind::ByteSlot:
-            insertUnique(function.byteSlots, offset, values.boolean(OperandRole::MutableValue));
+        case RecordKind::ByteSlot: {
+            const auto mutableValue = values.boolean(OperandRole::MutableValue);
+            if (function)
+                insertUnique(function->byteSlots, offset, mutableValue);
             break;
-        case RecordKind::OwnedValueType:
-            insertUnique(function.ownedValueTypes, offset, className(values));
+        }
+        case RecordKind::OwnedValueType: {
+            auto name = className(values);
+            if (function)
+                insertUnique(function->ownedValueTypes, offset, std::move(name));
             break;
+        }
         default:
             invalidLowering();
         }
         values.finish();
     }
-    ir::Receiver receiver(std::int64_t id) {
+    metadata::ReceiverShape receiver(MetadataWriter &writer, std::int64_t id) {
         Operands values(*this, own(id, RecordKind::Receiver));
-        ir::Receiver result{className(values),
-                            values.boolean(OperandRole::MutableValue),
-                            values.boolean(OperandRole::Constructor),
-                            values.boolean(OperandRole::PublicAccess)};
+        metadata::ReceiverShape result;
+        result.nameRange = writer.text(className(values));
+        result.flags = values.boolean(OperandRole::MutableValue) ? 1 : 0;
+        if (values.boolean(OperandRole::Constructor))
+            result.flags |= 2;
+        if (values.boolean(OperandRole::PublicAccess))
+            result.flags |= 4;
         values.finish();
         return result;
     }
-    ir::Function function(std::int64_t id) {
+    void function(MetadataWriter &writer, std::int64_t id, ir::FunctionBody *body) {
         Operands values(*this, own(id, RecordKind::Function));
-        ir::Function result;
-        result.name = functionName(values, OperandRole::FunctionSymbolId);
-        result.moduleScope = moduleScope(values);
-        result.result = type(values, OperandRole::ResultTypeId);
-        result.parameters = types(values, OperandRole::ParameterTypes);
+        metadata::CallableRow callable;
+        callable.nameRange = writer.text(functionName(values, OperandRole::FunctionSymbolId));
+        callable.moduleScope = moduleScope(values);
+        callable.typeRange.firstIndex = writer.position().coreCounts.types;
+        writer.callableType(type(values, OperandRole::ResultTypeId));
+        const auto parameters = list(values.take(OperandRole::ParameterTypes), OperandRole::TypeId);
+        if (parameters.size() >= static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
+            invalidLowering();
+        callable.typeRange.indexCount = 1 + static_cast<std::int64_t>(parameters.size());
+        for (const auto &parameter : parameters)
+            writer.callableType(services.type(identity(parameter.signedValue)));
         const auto slots = rows(values, OperandRole::Slots);
-        for (const auto &item : slots)
-            slot(result, item.signedValue);
+        if (body)
+            for (const auto &item : slots)
+                slot(body, item.signedValue);
         const auto &receiverOperand = values.take();
-        if (receiverOperand.operandRole == OperandRole::ReceiverRef)
-            result.receiver = receiver(receiverOperand.signedValue);
-        else if (receiverOperand.operandRole != OperandRole::NoReceiver)
+        if (receiverOperand.operandRole == OperandRole::ReceiverRef) {
+            callable.flags |= 1;
+            callable.receiver = receiver(writer, receiverOperand.signedValue);
+        } else if (receiverOperand.operandRole != OperandRole::NoReceiver) {
             invalidLowering();
-        result.borrowedParameter = values.boolean(OperandRole::BorrowedParameter);
+        }
+        if (values.boolean(OperandRole::BorrowedParameter))
+            callable.flags |= 2;
         const auto &secondReceiverOperand = values.take();
-        if (secondReceiverOperand.operandRole == OperandRole::SecondReceiverRef)
-            result.secondBorrowedParameter = receiver(secondReceiverOperand.signedValue);
-        else if (secondReceiverOperand.operandRole != OperandRole::NoSecondReceiver)
+        if (secondReceiverOperand.operandRole == OperandRole::SecondReceiverRef) {
+            callable.flags |= 4;
+            callable.secondReceiver = receiver(writer, secondReceiverOperand.signedValue);
+        } else if (secondReceiverOperand.operandRole != OperandRole::NoSecondReceiver) {
             invalidLowering();
+        }
         const auto &spanOperand = values.take();
-        if (spanOperand.operandRole == OperandRole::ReceiverSpanField)
-            result.receiverSpanField = intValue(spanOperand.signedValue);
-        else if (spanOperand.operandRole != OperandRole::NoReceiverSpan)
+        if (spanOperand.operandRole == OperandRole::ReceiverSpanField) {
+            callable.flags |= 8;
+            callable.receiverSpanField = intValue(spanOperand.signedValue);
+        } else if (spanOperand.operandRole != OperandRole::NoReceiverSpan) {
             invalidLowering();
-        result.frameBytes = values.integer(OperandRole::FrameBytes);
+        }
+        const auto frameBytes = values.integer(OperandRole::FrameBytes);
         const auto code = rows(values, OperandRole::Code);
         values.finish();
-        charge(code.size(), sizeof(ir::Instruction));
-        result.code.reserve(code.size());
-        for (const auto &item : code)
-            result.code.push_back(instruction(item.signedValue));
-        return result;
+        if (body) {
+            body->callableId = static_cast<ir::Metadata::CallableId>(writer.callableCount());
+            body->frameBytes = frameBytes;
+            charge(code.size(), sizeof(ir::Instruction));
+            body->code.reserve(code.size());
+        }
+        writer.append(callable);
+        // Counting retains the Function operand/list contract, but only the
+        // final owning walk traverses bodies and copies literal payloads.
+        if (body)
+            for (const auto &item : code)
+                body->code.push_back(instruction(item.signedValue));
     }
     ir::ClassField field(std::int64_t id) {
         Operands values(*this, own(id, RecordKind::ClassField));
@@ -844,14 +875,18 @@ public:
         std::set<std::string> carrierSymbols;
         for (const auto &item : carriers)
             carrier(carrierSymbols, item.signedValue);
-        charge(functions.size(), sizeof(ir::Function));
-        result.functions.reserve(functions.size());
-        std::set<std::string> functionNames;
-        for (const auto &item : functions) {
-            auto next = function(item.signedValue);
-            insertUnique(functionNames, next.name);
-            result.functions.push_back(std::move(next));
-        }
+        // A temporary name/ID ordering supplies the source-owned lookup suffix.
+        // Callable row IDs preserve function-list order; duplicates remain raw
+        // and are rejected by the independent source symbol pass.
+        std::vector<std::pair<std::string, std::int64_t>> callableNames;
+        charge(functions.size(), sizeof(std::pair<std::string, std::int64_t>));
+        callableNames.reserve(functions.size());
+        for (std::size_t id = 0; id < functions.size(); ++id)
+            callableNames.emplace_back(
+                services.functionName(key(functions[id].signedValue, RecordKind::Function,
+                                          OperandRole::FunctionSymbolId)),
+                static_cast<std::int64_t>(id));
+        std::sort(callableNames.begin(), callableNames.end());
         // Sort only identities and source row IDs; leaf/field/storage payloads
         // flow directly into the retained owner, in this canonical key order.
         std::map<std::string, std::int64_t> classRows, enumRows;
@@ -888,9 +923,25 @@ public:
             Projection counter(input, services);
             counter.carrierNames = carrierNames;
             counter.metadataRecords(writer, classRows, carrierSymbols, descriptorRows, viewRows, enumRows);
+            for (const auto &item : functions)
+                counter.function(writer, item.signedValue, nullptr);
+            for (const auto &[name, id] : callableNames) {
+                (void)name;
+                writer.index(id);
+            }
         }
         writer.allocate();
         metadataRecords(writer, classRows, carrierSymbols, descriptorRows, viewRows, enumRows);
+        charge(functions.size(), sizeof(ir::FunctionBody));
+        result.functions.reserve(functions.size());
+        for (const auto &item : functions) {
+            result.functions.emplace_back();
+            function(writer, item.signedValue, &result.functions.back());
+        }
+        for (const auto &[name, id] : callableNames) {
+            (void)name;
+            writer.index(id);
+        }
         result.metadata = std::move(writer).take();
         charge(diagnostics.size(), sizeof(Diagnostic));
         result.diagnostics.reserve(diagnostics.size());

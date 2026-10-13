@@ -64,8 +64,11 @@ class X86Emitter {
     bool ownedSpanRuntime = false;
     std::vector<std::vector<unsigned char>> literalBytes;
     std::map<int, int> serviceLoanOffsets;
-    const ir::Function *currentFunction = nullptr;
+    const ir::FunctionBody *currentFunction = nullptr;
     const ir::Metadata *metadata = nullptr;
+    ir::CallableView currentCallable() const {
+        return metadata->callable(currentFunction->callableId);
+    }
     ir::TypeRange classLeaves(const std::string &name) const {
         return metadata->leaves(metadata->findClass(name).value());
     }
@@ -75,8 +78,6 @@ class X86Emitter {
     ir::StorageView physicalStorage(const std::string &name) const {
         return metadata->storage(metadata->findClass(name).value());
     }
-    std::map<std::string, const ir::Function *> functions;
-    std::map<std::string, std::size_t> argumentCounts;
     const std::vector<std::string> argumentRegisters = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
     const std::vector<std::string> byteArgumentRegisters = {"%dil", "%sil", "%dl", "%cl", "%r8b", "%r9b"};
     void line(const std::string &text) {
@@ -282,16 +283,17 @@ class X86Emitter {
         const std::string name = query == ir::Query::Size ? "size" : "field_count";
         return scope == 0 ? "aurora_reflect_" + name : "__au_reflect_s" + std::to_string(scope) + "_" + name;
     }
-    bool aggregateSignature(const ir::Function &function) const {
-        if (function.result.isClass() || function.result.isOwnerStorage() || function.result.isSpan())
+    bool aggregateSignature(ir::CallableView function) const {
+        if (function.result().isClass() || function.result().isOwnerStorage() || function.result().isSpan())
             return true;
-        for (const auto &type : function.parameters)
+        for (const auto &type : function.parameters())
             if (type.isClass() || type.isSpan() || type.isResource() || type.isService())
                 return true;
         return false;
     }
-    bool classParameters(const ir::Function &function) const {
-        return std::any_of(function.parameters.begin(), function.parameters.end(), [](const Type &type) {
+    bool classParameters(ir::CallableView function) const {
+        const auto parameters = function.parameters();
+        return std::any_of(parameters.begin(), parameters.end(), [](const Type &type) {
             return type.isClass() || type.isSpan();
         });
     }
@@ -302,14 +304,15 @@ class X86Emitter {
                : type.isSpan()         ? ir::spanBytes
                                        : 8;
     }
-    int recordOffset(const ir::Function &function, std::size_t parameter) const {
+    int recordOffset(ir::CallableView function, std::size_t parameter) const {
+        const auto parameters = function.parameters();
         int offset = 0;
         for (std::size_t index = 0; index < parameter; ++index)
-            offset += argumentBytes(function.parameters[index]);
+            offset += argumentBytes(parameters[index]);
         return offset;
     }
-    std::optional<CopiedRecordFacts> copiedRecordFacts(const ir::Function &function) const {
-        if (function.receiver || !function.result.isClass())
+    std::optional<CopiedRecordFacts> copiedRecordFacts(ir::CallableView function) const {
+        if (function.receiver() || !function.result().isClass())
             return std::nullopt;
         const auto bytes = [&](const Type &type) {
             if (!type.isClass())
@@ -326,10 +329,10 @@ class X86Emitter {
             }
             return cursor == physical.reservedBytes ? argumentBytes(type) : 0;
         };
-        CopiedRecordFacts facts{{}, bytes(function.result)};
+        CopiedRecordFacts facts{{}, bytes(function.result())};
         if (!facts.resultBytes)
             return std::nullopt;
-        for (const auto &type : function.parameters) {
+        for (const auto &type : function.parameters()) {
             const int extent = bytes(type);
             if (!extent)
                 return std::nullopt;
@@ -337,14 +340,15 @@ class X86Emitter {
         }
         return facts;
     }
-    std::optional<ServiceRecordFacts> serviceRecordFacts(const ir::Function &function) const {
-        if (function.receiver || !scalarValue(function.result) ||
-            std::none_of(function.parameters.begin(), function.parameters.end(), [](const Type &type) {
+    std::optional<ServiceRecordFacts> serviceRecordFacts(ir::CallableView function) const {
+        const auto parameters = function.parameters();
+        if (function.receiver() || !scalarValue(function.result()) ||
+            std::none_of(parameters.begin(), parameters.end(), [](const Type &type) {
                 return type.isService();
             }))
             return std::nullopt;
-        ServiceRecordFacts facts{{}, ir::storageWidth(function.result)};
-        for (const auto &type : function.parameters) {
+        ServiceRecordFacts facts{{}, ir::storageWidth(function.result())};
+        for (const auto &type : parameters) {
             if (!type.isService() && !scalarValue(type))
                 return std::nullopt;
             facts.parameters.emplace_back(type.isService() ? typeName(type) : "scalar", argumentBytes(type));
@@ -358,22 +362,25 @@ class X86Emitter {
         line("ja .Laurora_bounds_trap");
     }
     ir::ClassField receiverField(int fieldIndex) const {
-        return logicalFields(currentFunction->receiver->className)[fieldIndex];
+        const auto receiver = currentCallable().receiver();
+        return logicalFields(receiver->className)[fieldIndex];
     }
     ir::StorageView receiverStorage() const {
-        return physicalStorage(currentFunction->receiver->className);
+        const auto receiver = currentCallable().receiver();
+        return physicalStorage(receiver->className);
     }
-    int packArguments(const ir::Function &target, const std::vector<int> &objects, const std::vector<int> &spans = {}) {
-        for (std::size_t index = target.parameters.size(); index > 0; --index)
-            if (!target.parameters[index - 1].isClass() && !target.parameters[index - 1].isSpan())
+    int packArguments(ir::CallableView target, const std::vector<int> &objects, const std::vector<int> &spans = {}) {
+        const auto parameters = target.parameters();
+        for (std::size_t index = parameters.size(); index > 0; --index)
+            if (!parameters[index - 1].isClass() && !parameters[index - 1].isSpan())
                 pop(argumentRegisters[index - 1]);
-        const int recordBytes = (recordOffset(target, target.parameters.size()) + 15) & ~15;
+        const int recordBytes = (recordOffset(target, parameters.size()) + 15) & ~15;
         if (recordBytes)
             reserveStack(recordBytes);
         // Clear only representation gaps. Verified payload copies initialize
         // their own bytes; old all-word objects need no redundant zero stores.
-        for (std::size_t index = 0; index < target.parameters.size(); ++index) {
-            const auto &type = target.parameters[index];
+        for (std::size_t index = 0; index < parameters.size(); ++index) {
+            const auto type = parameters[index];
             const int offset = recordOffset(target, index);
             const auto destination = [&](int byte) {
                 return std::to_string(offset + byte) + "(%rsp)";
@@ -383,11 +390,11 @@ class X86Emitter {
             else if (!type.isSpan())
                 clearBytes(ir::storageWidth(type), 8, destination);
         }
-        clearBytes(recordOffset(target, target.parameters.size()), recordBytes, [](int byte) {
+        clearBytes(recordOffset(target, parameters.size()), recordBytes, [](int byte) {
             return std::to_string(byte) + "(%rsp)";
         });
-        for (std::size_t index = 0; index < target.parameters.size(); ++index) {
-            const auto &type = target.parameters[index];
+        for (std::size_t index = 0; index < parameters.size(); ++index) {
+            const auto type = parameters[index];
             const int offset = recordOffset(target, index);
             if (type.isSpan()) {
                 for (int byte = 0; byte < ir::spanBytes; byte += 8) {
@@ -415,30 +422,31 @@ class X86Emitter {
         line("movq %rsp, %r11");
         return recordBytes;
     }
-    int packService(const ir::Function &target, const ir::ServiceCall &operation) {
-        for (std::size_t reverse = target.parameters.size(); reverse > 0; --reverse)
-            if (!target.parameters[reverse - 1].isSpan() && !target.parameters[reverse - 1].isService())
+    int packService(ir::CallableView target, const ir::ServiceCall &operation) {
+        const auto parameters = target.parameters();
+        for (std::size_t reverse = parameters.size(); reverse > 0; --reverse)
+            if (!parameters[reverse - 1].isSpan() && !parameters[reverse - 1].isService())
                 pop(argumentRegisters[reverse - 1]);
-        const int bytes = (recordOffset(target, target.parameters.size()) + 15) & ~15;
+        const int bytes = (recordOffset(target, parameters.size()) + 15) & ~15;
         reserveStack(bytes);
         for (int byte = 0; byte < bytes; byte += 8)
             line("movq $0, " + std::to_string(byte) + "(%rsp)");
-        for (std::size_t index = 0; index < target.parameters.size(); ++index) {
+        for (std::size_t index = 0; index < parameters.size(); ++index) {
             const int offset = recordOffset(target, index);
-            if (target.parameters[index].isService()) {
+            if (parameters[index].isService()) {
                 const int loan = index == 0 ? operation.loanId : operation.additionalServices.at(index - 1).loanId;
                 const int capability = serviceLoanOffsets.at(loan);
                 for (int byte = 0; byte < service::capabilityBytes; byte += 8) {
                     line("movq " + address(capability - byte) + ", %rax");
                     line("movq %rax, " + std::to_string(offset + byte) + "(%rsp)");
                 }
-            } else if (target.parameters[index].isSpan()) {
+            } else if (parameters[index].isSpan()) {
                 for (int byte = 0; byte < ir::spanBytes; byte += 8) {
                     line("movq " + address(operation.spanArguments[index] - byte) + ", %rax");
                     line("movq %rax, " + std::to_string(offset + byte) + "(%rsp)");
                 }
             } else
-                storeArgument(target.parameters[index], index, std::to_string(offset) + "(%rsp)");
+                storeArgument(parameters[index], index, std::to_string(offset) + "(%rsp)");
         }
         line("movq %rsp, %r11");
         return bytes;
@@ -460,8 +468,8 @@ class X86Emitter {
             return found == currentFunction->ownedValueTypes.end() ? Type::OwnedBytes
                                                                    : Type::ownedValues(Type(found->second));
         }
-        const auto &name =
-            offset == 0 ? currentFunction->receiver->className : currentFunction->objectSlots.at(offset).className;
+        const auto receiver = currentCallable().receiver();
+        const auto &name = offset == 0 ? receiver->className : currentFunction->objectSlots.at(offset).className;
         return logicalFields(name).at(fieldIndex).elementType;
     }
     int ownerElementStride(int offset, int fieldIndex) const {
@@ -470,8 +478,8 @@ class X86Emitter {
     std::string bytesOwnerAddress(int offset, int fieldIndex, int byte = 0) {
         if (fieldIndex < 0)
             return address(offset - byte);
-        const auto &name =
-            offset == 0 ? currentFunction->receiver->className : currentFunction->objectSlots.at(offset).className;
+        const auto receiver = currentCallable().receiver();
+        const auto &name = offset == 0 ? receiver->className : currentFunction->objectSlots.at(offset).className;
         const int fieldOffset = physicalStorage(name).fieldOffsets[fieldIndex];
         if (offset != 0)
             return address(offset - fieldOffset - byte);
@@ -517,23 +525,24 @@ class X86Emitter {
             }
         pop("%rax");
     }
-    int packResources(const ir::Function &target, const ir::ResourceCall &operation) {
-        for (std::size_t index = target.parameters.size(); index > 1; --index)
-            if (!target.parameters[index - 1].isOwnerStorage() && !target.parameters[index - 1].isClass())
+    int packResources(ir::CallableView target, const ir::ResourceCall &operation) {
+        const auto parameters = target.parameters();
+        for (std::size_t index = parameters.size(); index > 1; --index)
+            if (!parameters[index - 1].isOwnerStorage() && !parameters[index - 1].isClass())
                 pop(argumentRegisters[index - 1]);
-        const int recordBytes = (recordOffset(target, target.parameters.size()) + 15) & ~15;
+        const int recordBytes = (recordOffset(target, parameters.size()) + 15) & ~15;
         reserveStack(recordBytes);
         clearBytes(0, recordBytes, [](int byte) {
             return std::to_string(byte) + "(%rsp)";
         });
         // Save scalar arguments before descriptor copying reuses scratch GPRs.
-        for (std::size_t index = 1; index < target.parameters.size(); ++index)
-            if (!target.parameters[index].isOwnerStorage() && !target.parameters[index].isClass())
-                storeArgument(target.parameters[index], index, std::to_string(recordOffset(target, index)) + "(%rsp)");
+        for (std::size_t index = 1; index < parameters.size(); ++index)
+            if (!parameters[index].isOwnerStorage() && !parameters[index].isClass())
+                storeArgument(parameters[index], index, std::to_string(recordOffset(target, index)) + "(%rsp)");
         line("movq " + address(operation.regionOffset) + ", %rax");
         line("movq %rax, (%rsp)");
-        for (std::size_t index = 1; index < target.parameters.size(); ++index)
-            if (target.parameters[index].isOwnerStorage()) {
+        for (std::size_t index = 1; index < parameters.size(); ++index)
+            if (parameters[index].isOwnerStorage()) {
                 const int source = operation.ownerArguments[index];
                 const int destination = recordOffset(target, index);
                 for (int byte = 0; byte < 32; byte += 8) {
@@ -541,11 +550,11 @@ class X86Emitter {
                     line("movq %rax, " + std::to_string(destination + byte) + "(%rsp)");
                 }
                 clearBytesOwner(source);
-            } else if (target.parameters[index].isClass()) {
+            } else if (parameters[index].isClass()) {
                 const int source = operation.ownerArguments[index];
                 const int destination = recordOffset(target, index);
                 transferObject(
-                    target.parameters[index].className,
+                    parameters[index].className,
                     [&](int byte) {
                         return address(source - byte);
                     },
@@ -767,13 +776,14 @@ class X86Emitter {
                 } else if constexpr (std::is_same_v<Op, ir::BorrowHandle>) {
                     line("leaq " + address(operation.ownerOffset) + ", %rax");
                 } else if constexpr (std::is_same_v<Op, ir::Call>) {
-                    for (std::size_t index = argumentCounts.at(operation.callee); index > 0; --index)
+                    const auto target = metadata->callable(metadata->findCallable(operation.callee).value());
+                    for (std::size_t index = target.parameters().size(); index > 0; --index)
                         pop(argumentRegisters[index - 1]);
                     call(operation.callee);
                 } else if constexpr (std::is_same_v<Op, ir::AggregateCall>) {
-                    const auto &target = *functions.at(operation.callee);
+                    const auto target = metadata->callable(metadata->findCallable(operation.callee).value());
                     const int recordBytes = packArguments(target, operation.objectArguments, operation.spanArguments);
-                    if (target.result.isClass())
+                    if (target.result().isClass())
                         line("leaq " + address(operation.resultOffset) + ", %r10");
                     call(operation.callee);
                     if (recordBytes)
@@ -865,18 +875,18 @@ class X86Emitter {
                     call("__au_runtime_bytes_drop");
                     pop("%rax");
                 } else if constexpr (std::is_same_v<Op, ir::ResourceCall>) {
-                    const auto &target = *functions.at(operation.callee);
+                    const auto target = metadata->callable(metadata->findCallable(operation.callee).value());
                     const int recordBytes = packResources(target, operation);
-                    if (target.receiver)
+                    if (target.receiver())
                         line("leaq " + address(operation.receiverOffset) + ", %r10");
-                    else if (target.result.isOwnerStorage() || target.result.isClass())
+                    else if (target.result().isOwnerStorage() || target.result().isClass())
                         line("leaq " + address(operation.resultOffset) + ", %r10");
                     call(operation.callee);
                     releaseStack(recordBytes);
                 } else if constexpr (std::is_same_v<Op, ir::BindServiceParameter>) {
                     line("movq " + address(callRecordSaveOffset) + ", %r11");
                     for (int byte = 0; byte < service::capabilityBytes; byte += 8) {
-                        line("movq " + std::to_string(recordOffset(*currentFunction, operation.index) + byte) +
+                        line("movq " + std::to_string(recordOffset(currentCallable(), operation.index) + byte) +
                              "(%r11), %rax");
                         line("movq %rax, " + address(operation.offset - byte));
                     }
@@ -885,9 +895,9 @@ class X86Emitter {
                 } else if constexpr (std::is_same_v<Op, ir::ReleaseServiceLoan>) {
                     // Static provenance is checked across joins independently.
                 } else if constexpr (std::is_same_v<Op, ir::ServiceCall>) {
-                    const auto &target = *functions.at(operation.callee);
+                    const auto target = metadata->callable(metadata->findCallable(operation.callee).value());
                     const int recordBytes = packService(target, operation);
-                    if (target.result.isClass())
+                    if (target.result().isClass())
                         line("leaq " + address(operation.resultOffset) + ", %r10");
                     call(operation.callee);
                     releaseStack(recordBytes);
@@ -962,7 +972,7 @@ class X86Emitter {
                     line("movq %rax, " + address(operation.offset));
                 } else if constexpr (std::is_same_v<Op, ir::BindBytesParameter>) {
                     line("movq " + address(callRecordSaveOffset) + ", %r11");
-                    const int source = recordOffset(*currentFunction, operation.index);
+                    const int source = recordOffset(currentCallable(), operation.index);
                     for (int byte = 0; byte < 32; byte += 8) {
                         const auto field = std::to_string(source + byte) + "(%r11)";
                         line("movq " + field + ", %rax");
@@ -990,7 +1000,8 @@ class X86Emitter {
                     line("movq $" + std::to_string(currentFunction->arraySlots.at(operation.arrayOffset)) + ", " +
                          address(operation.resultOffset - 48));
                 } else if constexpr (std::is_same_v<Op, ir::BorrowReceiverArraySpan>) {
-                    const auto &name = currentFunction->receiver->className;
+                    const auto receiver = currentCallable().receiver();
+                    const auto &name = receiver->className;
                     const auto field = logicalFields(name).at(operation.fieldIndex);
                     const int byte = physicalStorage(name).fieldOffsets.at(operation.fieldIndex);
                     line("movq $0, " + address(operation.resultOffset));
@@ -1137,8 +1148,9 @@ class X86Emitter {
                         },
                         CopyBases::Stable);
                 } else if constexpr (std::is_same_v<Op, ir::AssignObjectField>) {
+                    const auto receiver = currentCallable().receiver();
                     const auto &name = operation.objectOffset == 0
-                                           ? currentFunction->receiver->className
+                                           ? receiver->className
                                            : currentFunction->objectSlots.at(operation.objectOffset).className;
                     const auto field = logicalFields(name)[operation.fieldIndex];
                     const auto sourceLayout = classLeaves(field.elementType.className);
@@ -1159,8 +1171,9 @@ class X86Emitter {
                         },
                         CopyBases::Stable);
                 } else if constexpr (std::is_same_v<Op, ir::InitializeClassArray>) {
+                    const auto receiver = currentCallable().receiver();
                     const auto &name = operation.objectOffset == 0
-                                           ? currentFunction->receiver->className
+                                           ? receiver->className
                                            : currentFunction->objectSlots.at(operation.objectOffset).className;
                     const auto field = logicalFields(name)[operation.fieldIndex];
                     const auto layout = classLeaves(field.elementType.className);
@@ -1184,8 +1197,9 @@ class X86Emitter {
                             CopyBases::Stable);
                     }
                 } else if constexpr (std::is_same_v<Op, ir::ClassArrayBoundsGuard>) {
+                    const auto receiver = currentCallable().receiver();
                     const auto &name = operation.objectOffset == 0
-                                           ? currentFunction->receiver->className
+                                           ? receiver->className
                                            : currentFunction->objectSlots.at(operation.objectOffset).className;
                     const auto field = logicalFields(name)[operation.fieldIndex];
                     // Reject signed-negative and upper bounds before multiplying.
@@ -1193,8 +1207,9 @@ class X86Emitter {
                     line("jae .Laurora_bounds_trap");
                 } else if constexpr (std::is_same_v<Op, ir::ClassArrayCopy> ||
                                      std::is_same_v<Op, ir::ClassArrayAssign>) {
+                    const auto receiver = currentCallable().receiver();
                     const auto &name = operation.objectOffset == 0
-                                           ? currentFunction->receiver->className
+                                           ? receiver->className
                                            : currentFunction->objectSlots.at(operation.objectOffset).className;
                     const auto field = logicalFields(name)[operation.fieldIndex];
                     const auto layout = classLeaves(field.elementType.className);
@@ -1292,16 +1307,16 @@ class X86Emitter {
                                std::to_string(receiverStorage().fieldOffsets[operation.fieldIndex]) + "(%r10,%rcx," +
                                    std::to_string(ir::storageWidth(field.elementType)) + ")");
                 } else if constexpr (std::is_same_v<Op, ir::MethodCall> || std::is_same_v<Op, ir::BorrowedCall>) {
-                    const auto &target = *functions.at(operation.callee);
+                    const auto target = metadata->callable(metadata->findCallable(operation.callee).value());
                     const bool aggregate = classParameters(target);
                     const int recordBytes =
                         aggregate ? packArguments(target, operation.objectArguments, operation.spanArguments) : 0;
                     if (!aggregate)
-                        for (std::size_t index = argumentCounts.at(operation.callee); index > 0; --index)
+                        for (std::size_t index = target.parameters().size(); index > 0; --index)
                             pop(argumentRegisters[index - 1]);
                     int borrowedRecordBytes = 0;
                     if constexpr (std::is_same_v<Op, ir::BorrowedCall>) {
-                        if (target.secondBorrowedParameter) {
+                        if (target.secondBorrowedParameter()) {
                             borrowedRecordBytes = 16;
                             reserveStack(borrowedRecordBytes);
                             receiverAddress(operation.receiverOffset, "%r10");
@@ -1314,14 +1329,15 @@ class X86Emitter {
                     if (!borrowedRecordBytes)
                         receiverAddress(operation.receiverOffset, "%r10");
                     if (operation.receiverFieldIndex >= 0) {
+                        const auto receiver = currentCallable().receiver();
                         const auto &name = operation.receiverOffset == 0
-                                               ? currentFunction->receiver->className
+                                               ? receiver->className
                                                : currentFunction->objectSlots.at(operation.receiverOffset).className;
                         const int fieldOffset = physicalStorage(name).fieldOffsets[operation.receiverFieldIndex];
                         if (fieldOffset != 0)
                             line("addq $" + std::to_string(fieldOffset) + ", %r10");
                     }
-                    if (target.result.isClass() || target.result.isSpan())
+                    if (target.result().isClass() || target.result().isSpan())
                         line("leaq " + address(operation.resultOffset) + (aggregate ? ", %rax" : ", %r11"));
                     call(operation.callee);
                     if (borrowedRecordBytes)
@@ -1342,8 +1358,8 @@ class X86Emitter {
                     line("jmp " + returnLabel());
                 } else if constexpr (std::is_same_v<Op, ir::ReturnObject>) {
                     line("movq " + address(resultSaveOffset) + ", %r10");
-                    const auto layout = classLeaves(currentFunction->result.className);
-                    const auto offsets = physicalStorage(currentFunction->result.className).leafOffsets;
+                    const auto layout = classLeaves(currentCallable().result().className);
+                    const auto offsets = physicalStorage(currentCallable().result().className).leafOffsets;
                     copyLeaves(
                         layout,
                         offsets,
@@ -1360,7 +1376,7 @@ class X86Emitter {
                 } else if constexpr (std::is_same_v<Op, ir::ReturnOwnedObject>) {
                     line("movq " + address(resultSaveOffset) + ", %r10");
                     transferObject(
-                        currentFunction->result.className,
+                        currentCallable().result().className,
                         [&](int byte) {
                             return address(operation.offset - byte);
                         },
@@ -1373,13 +1389,13 @@ class X86Emitter {
                     if (callRecordSaveOffset) {
                         line("movq " + address(callRecordSaveOffset) + ", %r11");
                         loadValue(operation.type,
-                                  std::to_string(recordOffset(*currentFunction, operation.index)) + "(%r11)");
+                                  std::to_string(recordOffset(currentCallable(), operation.index)) + "(%r11)");
                         storeValue(operation.type, address(operation.offset));
                     } else
                         storeArgument(operation.type, operation.index, address(operation.offset));
                 } else if constexpr (std::is_same_v<Op, ir::BindSpanParameter>) {
                     line("movq " + address(callRecordSaveOffset) + ", %r11");
-                    const int offset = recordOffset(*currentFunction, operation.index);
+                    const int offset = recordOffset(currentCallable(), operation.index);
                     for (int byte = 0; byte < ir::spanBytes; byte += 8) {
                         line("movq " + std::to_string(offset + byte) + "(%r11), %rax");
                         line("movq %rax, " + address(operation.offset - byte));
@@ -1387,7 +1403,7 @@ class X86Emitter {
                 } else if constexpr (std::is_same_v<Op, ir::BindObjectParameter>) {
                     line("movq " + address(callRecordSaveOffset) + ", %r11");
                     const auto layout = classLeaves(operation.className);
-                    const int offset = recordOffset(*currentFunction, operation.index);
+                    const int offset = recordOffset(currentCallable(), operation.index);
                     clearObject(operation.offset, operation.className);
                     const auto offsets = physicalStorage(operation.className).leafOffsets;
                     copyLeaves(
@@ -1403,7 +1419,7 @@ class X86Emitter {
                         CopyBases::Stable);
                 } else if constexpr (std::is_same_v<Op, ir::BindOwnedObjectParameter>) {
                     line("movq " + address(callRecordSaveOffset) + ", %r11");
-                    const int offset = recordOffset(*currentFunction, operation.index);
+                    const int offset = recordOffset(currentCallable(), operation.index);
                     clearObject(operation.offset, operation.className);
                     transferObject(
                         operation.className,
@@ -1571,49 +1587,50 @@ public:
         }
         facts << "},\"functions\":{";
         first = true;
-        for (const auto &function : module.functions) {
-            const auto declaration = declarations.functions.find(function.name);
+        for (const auto &body : module.functions) {
+            const auto function = metadata->callable(body.callableId);
+            const auto receiver = function.receiver();
+            const auto secondReceiver = function.secondBorrowedParameter();
+            const auto declaration = declarations.functions.find(function.name());
             if (declaration == declarations.functions.end())
                 continue;
             if (!std::exchange(first, false))
                 facts << ',';
-            writeJsonString(facts, function.name);
+            writeJsonString(facts, function.name());
             facts << ":{\"source_name\":";
             writeJsonString(facts, declaration->second.sourceName);
             facts << ",\"receiver\":";
-            if (function.receiver)
-                writeJsonString(facts, function.receiver->className);
+            if (receiver)
+                writeJsonString(facts, receiver->className);
             else
                 facts << "null";
             facts << ",\"receiver_mutable\":";
-            facts << (function.receiver ? (function.receiver->mutableValue ? "true" : "false") : "null");
-            facts << ",\"borrowed_parameter\":" << (function.borrowedParameter ? "true" : "false");
+            facts << (receiver ? (receiver->mutableValue ? "true" : "false") : "null");
+            facts << ",\"borrowed_parameter\":" << (function.borrowedParameter() ? "true" : "false");
             facts << ",\"second_receiver\":";
-            if (function.secondBorrowedParameter) {
+            if (secondReceiver) {
                 facts << "{\"type_name\":";
-                writeJsonString(facts, function.secondBorrowedParameter->className);
-                facts << ",\"mutable\":" << (function.secondBorrowedParameter->mutableValue ? "true" : "false")
-                      << '}';
+                writeJsonString(facts, secondReceiver->className);
+                facts << ",\"mutable\":" << (secondReceiver->mutableValue ? "true" : "false") << '}';
             } else
                 facts << "null";
-            facts << ",\"root_count\":" << (function.secondBorrowedParameter ? 2 : function.receiver ? 1 : 0)
-                  << ",\"root_tuple_bytes\":" << (function.secondBorrowedParameter ? 16 : 0)
-                  << ",\"root_order\":"
-                  << (function.secondBorrowedParameter ? "[\"receiver\",\"second_receiver\"]"
-                      : function.receiver              ? "[\"receiver\"]"
-                                                       : "[]");
-            facts << ",\"parameter_bytes\":" << recordOffset(function, function.parameters.size())
+            facts << ",\"root_count\":" << (secondReceiver ? 2 : receiver ? 1 : 0)
+                  << ",\"root_tuple_bytes\":" << (secondReceiver ? 16 : 0) << ",\"root_order\":"
+                  << (secondReceiver ? "[\"receiver\",\"second_receiver\"]"
+                      : receiver     ? "[\"receiver\"]"
+                                     : "[]");
+            facts << ",\"parameter_bytes\":" << recordOffset(function, function.parameters().size())
                   << ",\"parameters\":[";
-            for (std::size_t index = 0; index < function.parameters.size(); ++index) {
+            for (std::size_t index = 0; index < function.parameters().size(); ++index) {
                 if (index)
                     facts << ',';
                 facts << "{\"offset\":" << recordOffset(function, index)
-                      << ",\"bytes\":" << argumentBytes(function.parameters[index]) << ',';
-                type(function.parameters[index]);
+                      << ",\"bytes\":" << argumentBytes(function.parameters()[index]) << ',';
+                type(function.parameters()[index]);
                 facts << '}';
             }
-            facts << "],\"result\":{\"bytes\":" << argumentBytes(function.result) << ',';
-            type(function.result);
+            facts << "],\"result\":{\"bytes\":" << argumentBytes(function.result()) << ',';
+            type(function.result());
             facts << "}}";
         }
         facts << "}}\n";
@@ -1625,21 +1642,15 @@ public:
         const auto &module = validated.get();
         output.str("");
         output.clear();
-        argumentCounts.clear();
-        functions.clear();
         literalBytes.clear();
         emittedStackFacts.clear();
         currentStackFacts = nullptr;
         metadata = &validated.metadata();
         functionIndex = 0;
-        for (const auto &function : module.functions) {
-            argumentCounts[function.name] = function.parameters.size();
-            functions[function.name] = &function;
-        }
         std::set<std::string> referencedReflection;
         if (reflection == ReflectionEmission::Referenced)
-            for (const auto &function : module.functions)
-                for (const auto &instruction : function.code)
+            for (const auto &body : module.functions)
+                for (const auto &instruction : body.code)
                     if (const auto *query = std::get_if<ir::MetadataQuery>(&instruction))
                         referencedReflection.insert(querySymbol(query->query, query->moduleScope));
         // Resource graphs link a trusted host adapter. No user-selected source
@@ -1649,17 +1660,19 @@ public:
         for (std::size_t index = 0; index < metadata->classCount(); ++index)
             owningMetadata = owningMetadata || metadata->isOwning(metadata->classAt(index));
         const bool resourceGraph = owningMetadata ||
-            std::any_of(module.functions.begin(), module.functions.end(), [&](const ir::Function &function) {
-                return function.result.isResource() ||
-                       (function.result.isClass() && ir::owningClass(*metadata, function.result.className)) ||
-                       (function.receiver && ir::owningClass(*metadata, function.receiver->className)) ||
-                       std::any_of(function.parameters.begin(),
-                                   function.parameters.end(),
+            std::any_of(module.functions.begin(), module.functions.end(), [&](const ir::FunctionBody &body) {
+                const auto function = metadata->callable(body.callableId);
+                const auto receiver = function.receiver();
+                return function.result().isResource() ||
+                       (function.result().isClass() && ir::owningClass(*metadata, function.result().className)) ||
+                       (receiver && ir::owningClass(*metadata, receiver->className)) ||
+                       std::any_of(function.parameters().begin(),
+                                   function.parameters().end(),
                                    [&](const Type &type) {
                                        return type.isResource() ||
                                               (type.isClass() && ir::owningClass(*metadata, type.className));
                                    }) ||
-                       std::any_of(function.code.begin(), function.code.end(), [](const ir::Instruction &op) {
+                       std::any_of(body.code.begin(), body.code.end(), [](const ir::Instruction &op) {
                            return std::holds_alternative<ir::BeginBytes>(op) ||
                                   std::holds_alternative<ir::ResourceCall>(op) ||
                                   std::holds_alternative<ir::InitializeBytesField>(op) ||
@@ -1669,78 +1682,81 @@ public:
                        });
             });
         const bool serviceGraph =
-            std::any_of(module.functions.begin(), module.functions.end(), [](const auto &function) {
-                return std::any_of(function.parameters.begin(), function.parameters.end(), [](const Type &type) {
+            std::any_of(module.functions.begin(), module.functions.end(), [&](const ir::FunctionBody &body) {
+                const auto function = metadata->callable(body.callableId);
+                return std::any_of(function.parameters().begin(), function.parameters().end(), [](const Type &type) {
                     return type.isService();
                 });
             });
         const bool privateGraph = resourceGraph || serviceGraph;
         ownedSpanRuntime = resourceGraph;
         output << "# Aurora compiler output: validated typed IR, x86-64 bootstrap\n.text\n";
-        for (const auto &function : module.functions) {
+        for (const auto &body : module.functions) {
+            const auto function = metadata->callable(body.callableId);
+            const auto receiver = function.receiver();
+            const auto secondReceiver = function.secondBorrowedParameter();
             stackDepth = 0;
-            beginStackFacts(function.name);
+            beginStackFacts(function.name());
             serviceLoanOffsets.clear();
-            for (const auto &operation : function.code)
+            for (const auto &operation : body.code)
                 if (const auto *loan = std::get_if<ir::AcquireServiceLoan>(&operation))
                     serviceLoanOffsets.emplace(loan->loanId, loan->offset);
             divisionIndex = 0;
-            currentFunction = &function;
+            currentFunction = &body;
             const bool aggregate = aggregateSignature(function);
             // Receiver and aggregate entry points use a private compiler ABI and cannot be
             // exposed as ordinary scalar-callable external symbols.
-            output << (binding == SymbolBinding::Local || privateGraph || function.receiver || aggregate ||
-                               function.name.starts_with("__au_o_")
+            output << (binding == SymbolBinding::Local || privateGraph || receiver || aggregate ||
+                               function.name().starts_with("__au_o_")
                            ? ".local "
                            : ".globl ")
-                   << function.name << "\n.type " << function.name << ", @function\n"
-                   << function.name << ":\n";
+                   << function.name() << "\n.type " << function.name() << ", @function\n"
+                   << function.name() << ":\n";
             line("pushq %rbp");
             growStack(8);
             line("movq %rsp, %rbp");
-            receiverSaveOffset = function.receiver ? function.frameBytes + 8 : 0;
-            secondReceiverSaveOffset = function.secondBorrowedParameter ? function.frameBytes + 16 : 0;
+            receiverSaveOffset = receiver ? body.frameBytes + 8 : 0;
+            secondReceiverSaveOffset = secondReceiver ? body.frameBytes + 16 : 0;
             // Resource constructors always receive a packed record, even when
             // their explicit parameters contain no class values. Borrowed
             // ordinary methods retain their existing hidden-register modes.
-            const bool resourceParameters = !function.parameters.empty() && function.parameters.front().isRegion();
-            const bool packedArguments =
-                function.receiver ? classParameters(function) || resourceParameters : aggregate;
+            const bool resourceParameters = !function.parameters().empty() && function.parameters().front().isRegion();
+            const bool packedArguments = receiver ? classParameters(function) || resourceParameters : aggregate;
             if (packedArguments) {
                 currentStackFacts->copiedRecord = copiedRecordFacts(function);
                 currentStackFacts->serviceRecord = serviceRecordFacts(function);
             }
             const bool combinedMethod =
-                function.receiver && packedArguments && (function.result.isClass() || function.result.isSpan());
-            callRecordSaveOffset = packedArguments ? function.frameBytes + (function.receiver ? 16 : 8) : 0;
+                receiver && packedArguments && (function.result().isClass() || function.result().isSpan());
+            callRecordSaveOffset = packedArguments ? body.frameBytes + (receiver ? 16 : 8) : 0;
             resultSaveOffset =
-                (function.result.isClass() || function.result.isOwnerStorage() || function.result.isSpan())
-                    ? function.frameBytes + (combinedMethod ? 24 : 16)
+                (function.result().isClass() || function.result().isOwnerStorage() || function.result().isSpan())
+                    ? body.frameBytes + (combinedMethod ? 24 : 16)
                     : 0;
             // Hidden capabilities never occupy source-addressable slots. The
             // combined mode needs three distinct saves, rounded to 16-byte
             // alignment. Scalar-only paired helpers use both words of the
             // existing 16-byte hidden area; historical layouts are unchanged.
-            const int frameBytes = function.frameBytes + (combinedMethod                   ? 32
-                                                          : function.receiver || aggregate ? 16
-                                                                                           : 0);
+            const int frameBytes = body.frameBytes + (combinedMethod           ? 32
+                                                      : receiver || aggregate ? 16
+                                                                              : 0);
             reserveStack(frameBytes);
-            if (function.secondBorrowedParameter) {
+            if (secondReceiver) {
                 // Paired calls pass a two-pointer record in R10. Copy both
                 // capabilities before any instruction can reuse R10 or R11.
                 line("movq 8(%r10), %r11");
                 line("movq %r11, " + address(secondReceiverSaveOffset));
                 line("movq (%r10), %r10");
             }
-            if (function.receiver)
+            if (receiver)
                 line("movq %r10, " + address(receiverSaveOffset));
             if (packedArguments)
                 line("movq %r11, " + address(callRecordSaveOffset));
-            if (function.result.isClass() || function.result.isOwnerStorage() || function.result.isSpan())
+            if (function.result().isClass() || function.result().isOwnerStorage() || function.result().isSpan())
                 line(std::string("movq ") +
-                     (combinedMethod      ? "%rax"
-                      : function.receiver ? "%r11"
-                                          : "%r10") +
+                     (combinedMethod ? "%rax"
+                      : receiver     ? "%r11"
+                                     : "%r10") +
                      ", " + address(resultSaveOffset));
             // Validation certifies operand-depth continuity in this exact retained
             // sequence, including branch joins. Outgoing reservations are balanced
@@ -1749,43 +1765,43 @@ public:
             // function clean even if an earlier emission was abandoned by a throw.
             directResult = false;
             leftInRcx = false;
-            for (std::size_t at = 0; at < function.code.size(); ++at) {
+            for (std::size_t at = 0; at < body.code.size(); ++at) {
                 // An element read returned at once is copied into the result
                 // storage directly. Adjacency means no label or other use lies
                 // between; the slot is never read again after the return.
-                const auto *load = std::get_if<ir::ValuesLoad>(&function.code[at]);
+                const auto *load = std::get_if<ir::ValuesLoad>(&body.code[at]);
                 const auto *result =
-                    at + 1 < function.code.size() ? std::get_if<ir::ReturnObject>(&function.code[at + 1]) : nullptr;
+                    at + 1 < body.code.size() ? std::get_if<ir::ReturnObject>(&body.code[at + 1]) : nullptr;
                 // A pushed left operand followed by a plain accumulator load stays
                 // in %rcx for the binary operation that would pop it. The load
                 // touches neither %rcx nor the stack, and no label lies between.
-                if (at + 2 < function.code.size() && std::holds_alternative<ir::Push>(function.code[at]) &&
-                    plainLoad(function.code[at + 1]) && poppedBinary(function.code[at + 2])) {
+                if (at + 2 < body.code.size() && std::holds_alternative<ir::Push>(body.code[at]) &&
+                    plainLoad(body.code[at + 1]) && poppedBinary(body.code[at + 2])) {
                     line("movq %rax, %rcx");
-                    instruction(function.code[at + 1]);
+                    instruction(body.code[at + 1]);
                     leftInRcx = true;
-                    instruction(function.code[at + 2]);
+                    instruction(body.code[at + 2]);
                     leftInRcx = false;
                     at += 2;
                 } else if (load && result && result->offset == load->resultOffset) {
-                    if (physicalStorage(function.result.className).sizeBytes !=
+                    if (physicalStorage(function.result().className).sizeBytes !=
                         ownerElementStride(load->offset, load->fieldIndex))
                         throw Error("x86 backend returned element storage of a different extent");
                     directResult = true;
-                    instruction(function.code[at]);
+                    instruction(body.code[at]);
                     directResult = false;
                     line("xorq %rax, %rax");
                     line("jmp " + returnLabel());
                     ++at;
                 } else
-                    instruction(function.code[at]);
+                    instruction(body.code[at]);
             }
             if (stackDepth != 0 || liveStackBytes != frameBytes + 16)
                 throw Error("x86 backend left an unbalanced stack reservation");
             output << returnLabel() << ":\n";
             line("leave");
             line("ret");
-            output << ".size " << function.name << ", .-" << function.name << "\n";
+            output << ".size " << function.name() << ", .-" << function.name() << "\n";
             ++functionIndex;
         }
         for (std::size_t index = 0; index < metadata->scopeCount(); ++index) {

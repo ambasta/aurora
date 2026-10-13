@@ -9,6 +9,7 @@ class MetadataWriter {
     using Counts = hosted_abi::compiler_ir_metadata::InputCounts;
     MetadataIngress pending_;
     Counts position_{};
+    std::int64_t callableCount_ = 0;
     bool allocated_ = false;
     void type(std::int64_t position, const Type &value);
 
@@ -16,9 +17,13 @@ public:
     const Counts &position() const {
         return position_;
     }
+    std::int64_t callableCount() const {
+        return callableCount_;
+    }
     void allocate();
     hosted_abi::compiler_ir_metadata::ByteRange text(std::string_view value);
     void leaf(const Type &value);
+    void callableType(const Type &value);
     void field(const ClassField &value);
     void index(std::int64_t value);
     void append(const hosted_abi::compiler_ir_metadata::ClassRow &value);
@@ -26,6 +31,7 @@ public:
     void append(const hosted_abi::compiler_ir_metadata::DescriptorRow &value);
     void append(const hosted_abi::compiler_ir_metadata::ViewRow &value);
     void append(const hosted_abi::compiler_ir_metadata::EnumRow &value);
+    void append(const hosted_abi::compiler_ir_metadata::CallableRow &value);
     MetadataIngress take() &&;
 };
 } // namespace aurora::ir::detail

@@ -3726,14 +3726,15 @@ void preambleEnumDiagnostics() {
 // independently checked typed IR, optional ABI observations and source-backed
 // diagnostics; no fixture reconstructs a resolved Program.
 template <class Module>
-const aurora::ir::Function &typedFunction(const Module &module, const std::string &name) {
+const aurora::ir::FunctionBody &typedFunction(const Module &module, const aurora::ir::Metadata &metadata,
+                                            const std::string &name) {
     const auto found = std::find_if(module.functions.begin(), module.functions.end(), [&](const auto &function) {
-        return function.name == name;
+        return metadata.callable(function.callableId).name() == name;
     });
     require(found != module.functions.end(), "typed function was omitted: " + name);
     return *found;
 }
-template <class Instruction> std::vector<Instruction> typedInstructions(const aurora::ir::Function &function) {
+template <class Instruction> std::vector<Instruction> typedInstructions(const aurora::ir::FunctionBody &function) {
     std::vector<Instruction> result;
     for (const auto &instruction : function.code)
         if (const auto *value = std::get_if<Instruction>(&instruction))
@@ -3764,8 +3765,8 @@ bool nominalViews(const aurora::ir::Metadata &metadata, const std::map<int, std:
     }
     return true;
 }
-void constantReturn(const aurora::ir::Function &function, std::int64_t value) {
-    require(function.result == aurora::Type::I64 && function.parameters.empty() && function.code.size() == 2 &&
+void constantReturn(const aurora::ir::FunctionBody &function, aurora::ir::CallableView callable, std::int64_t value) {
+    require(callable.result() == aurora::Type::I64 && callable.parameters().empty() && function.code.size() == 2 &&
                 std::holds_alternative<aurora::ir::Constant>(function.code[0]) &&
                 std::get<aurora::ir::Constant>(function.code[0]).value == value &&
                 std::get<aurora::ir::Constant>(function.code[0]).type == aurora::Type::I64 &&
@@ -3835,7 +3836,8 @@ void resolvedModules() {
                 abi.functions.size() == 9,
             "typed output duplicated concrete instances or lost declarations");
     for (std::size_t index = 0; index < retained.size(); ++index)
-        require(module.functions[index].name == retained[index], "retained concrete function order differs");
+        require(metadata.callable(module.functions[index].callableId).name() == retained[index],
+                "retained concrete function order differs");
     for (std::size_t index = 0; index < metadata.classCount(); ++index)
         require(!metadata.isCarrier(metadata.classAt(index)), "typed output added an array carrier");
     const auto definitionSyntax = checkedProgram(aurora::lex(dependency));
@@ -3851,10 +3853,11 @@ void resolvedModules() {
             "source ABI field/case order or concrete enum identity differs");
     for (std::size_t index = 0; index < measures.size(); ++index) {
         const auto &function = module.functions.at(index);
-        require(function.name == measures[index] && function.moduleScope == 1 && !function.receiver &&
-                    abi.functions.at(function.name).sourceName == "lib::measure",
+        const auto callable = metadata.callable(function.callableId);
+        require(callable.name() == measures[index] && callable.moduleScope() == 1 && !callable.receiver() &&
+                    abi.functions.at(callable.name()).sourceName == "lib::measure",
                 "function instance order, exact nominal identity or defining module differs");
-        constantReturn(function, 8);
+        constantReturn(function, callable, 8);
     }
     for (std::size_t index = 0; index < buffers.size(); ++index) {
         const auto capacity = static_cast<int>(index + 3);
@@ -3887,15 +3890,16 @@ void resolvedModules() {
                 require(std::none_of(module.functions.begin(),
                                      module.functions.end(),
                                      [&](const auto &function) {
-                                         return function.name == names[method];
+                                         return metadata.callable(function.callableId).name() == names[method];
                                      }),
                         "unused imported getter escaped validated-IR pruning");
         }
-        const auto &constructor = typedFunction(module, names[0]);
-        require(constructor.moduleScope == 1 && constructor.receiver &&
-                    constructor.receiver->className == buffers[index] && constructor.receiver->constructor &&
-                    constructor.receiver->mutableValue && constructor.receiver->publicAccess &&
-                    constructor.parameters.empty() && constructor.result == aurora::Type::I64 &&
+        const auto &constructor = typedFunction(module, metadata, names[0]);
+        const auto callable = metadata.callable(constructor.callableId);
+        require(callable.moduleScope() == 1 && callable.receiver() &&
+                    callable.receiver()->className == buffers[index] && callable.receiver()->constructor &&
+                    callable.receiver()->mutableValue && callable.receiver()->publicAccess &&
+                    callable.parameters().empty() && callable.result() == aurora::Type::I64 &&
                     constructor.code.size() == 3 &&
                     std::holds_alternative<aurora::ir::ReceiverArrayZero>(constructor.code[0]) &&
                     std::get<aurora::ir::ReceiverArrayZero>(constructor.code[0]).fieldIndex == 0 &&
@@ -3905,7 +3909,8 @@ void resolvedModules() {
                 "concrete constructor lost its empty-array initialization");
     }
     const auto &answer = module.functions.at(2);
-    require(answer.name == "answer" && answer.moduleScope == 0 && !answer.receiver,
+    const auto answerCallable = metadata.callable(answer.callableId);
+    require(answerCallable.name() == "answer" && answerCallable.moduleScope() == 0 && !answerCallable.receiver(),
             "root callable identity or dependency order differs");
     const auto constructors = typedInstructions<aurora::ir::MethodCall>(answer);
     require(constructors.size() == 3 && constructors[0].callee == constructors[2].callee &&
@@ -3958,10 +3963,12 @@ void resolvedVisibility() {
     const std::array<std::string, 3> overloads{"__au_o_m1_9functions_n0__d6choose_p1_295___au_c_m1_5types_n0__d4Leaf",
                                                "__au_o_m1_9functions_n0__d6choose_p1_20_",
                                                "__au_o_m1_9functions_n0__d6choose_p1_21_"};
-    require(module.functions.size() == 2 && module.functions[0].name == overloads[1] &&
-                module.functions[0].moduleScope == 2 &&
-                module.functions[0].parameters == std::vector<aurora::Type>{aurora::Type::I64} &&
-                module.functions[1].name == "answer" && module.functions[1].moduleScope == 0 &&
+    require(module.functions.size() == 2, "selected overload/root count differs");
+    const auto selected = metadata.callable(module.functions[0].callableId);
+    const auto answer = metadata.callable(module.functions[1].callableId);
+    require(selected.name() == overloads[1] && selected.moduleScope() == 2 &&
+                selected.parameters().size() == 1 && selected.parameters().front() == aurora::Type::I64 &&
+                answer.name() == "answer" && answer.moduleScope() == 0 &&
                 resolved.abiDeclarations.functions.size() == 4 &&
                 resolved.abiDeclarations.functions.at("answer").sourceName == "answer",
             "selected overload/root order or pre-pruning ABI inventory differs");
@@ -3972,7 +3979,7 @@ void resolvedVisibility() {
             require(std::none_of(module.functions.begin(),
                                  module.functions.end(),
                                  [&](const auto &function) {
-                                     return function.name == overloads[index];
+                                     return metadata.callable(function.callableId).name() == overloads[index];
                                  }),
                     "unselected imported overload escaped validated-IR pruning");
     }
@@ -4606,6 +4613,9 @@ void resolvedCompilerSources(char **paths) {
          "IndexRange",
          "RawTypeTail",
          "RawTypeRow",
+         "ReceiverShape",
+         "CallableOptions",
+         "CallableRow",
          "ClassRow",
          "FieldRow",
          "PhysicalExtent",
@@ -4689,13 +4699,14 @@ void resolvedCompilerSources(char **paths) {
                                   const std::string &receiver) {
             // Legacy ABI method source names contain the namespace and method,
             // not the owning class. Typed receiver identity disambiguates them.
-            const auto matches = [&](const auto &candidate) {
-                const auto declaration = abi.functions.find(candidate.name);
+            const auto matches = [&](const auto &body) {
+                const auto candidate = metadata.callable(body.callableId);
+                const auto declaration = abi.functions.find(candidate.name());
                 return declaration != abi.functions.end() && declaration->second.sourceName == sourceName &&
-                       candidate.moduleScope == scope &&
-                       (receiver.empty() ? !candidate.receiver || candidate.borrowedParameter
-                                         : candidate.receiver && !candidate.borrowedParameter &&
-                                               candidate.receiver->className == receiver);
+                       candidate.moduleScope() == scope &&
+                       (receiver.empty() ? !candidate.receiver() || candidate.borrowedParameter()
+                                         : candidate.receiver() && !candidate.borrowedParameter() &&
+                                               candidate.receiver()->className == receiver);
             };
             ++functions;
             sourceFunctionNames.insert(sourceName);
@@ -4706,20 +4717,20 @@ void resolvedCompilerSources(char **paths) {
             }
             require(std::count_if(module.functions.begin(), module.functions.end(), matches) == 1,
                     "compiler retained callable/source identity was duplicated: " + sourceName);
-            const auto &actual = *found;
-            require(identities.insert(actual.name).second && actual.moduleScope == scope &&
-                        actual.borrowedParameter == (!source.params.empty() && source.params.front().borrowed &&
-                                                     !source.params.front().type.isService()) &&
-                        bool(actual.secondBorrowedParameter) ==
-                            (actual.borrowedParameter && source.params.size() > 1 && source.params[1].borrowed) &&
-                        actual.parameters.size() == source.params.size() - std::size_t(actual.borrowedParameter) -
-                                                        std::size_t(bool(actual.secondBorrowedParameter)) &&
-                        bool(actual.receiver) == (!receiver.empty() || actual.borrowedParameter),
+            const auto actual = metadata.callable(found->callableId);
+            require(identities.insert(actual.name()).second && actual.moduleScope() == scope &&
+                        actual.borrowedParameter() == (!source.params.empty() && source.params.front().borrowed &&
+                                                       !source.params.front().type.isService()) &&
+                        bool(actual.secondBorrowedParameter()) ==
+                            (actual.borrowedParameter() && source.params.size() > 1 && source.params[1].borrowed) &&
+                        actual.parameters().size() == source.params.size() - std::size_t(actual.borrowedParameter()) -
+                                                         std::size_t(bool(actual.secondBorrowedParameter())) &&
+                        bool(actual.receiver()) == (!receiver.empty() || actual.borrowedParameter()),
                     "compiler typed callable identity, module or receiver presence differs");
             if (!receiver.empty())
-                require(actual.receiver->className == receiver && actual.receiver->constructor == source.constructor &&
-                            actual.receiver->mutableValue == !source.receiverConst &&
-                            actual.receiver->publicAccess == source.publicAccess,
+                require(actual.receiver()->className == receiver && actual.receiver()->constructor == source.constructor &&
+                            actual.receiver()->mutableValue == !source.receiverConst &&
+                            actual.receiver()->publicAccess == source.publicAccess,
                         "compiler typed method receiver, constructor or visibility differs");
             ++retainedFunctions;
         };
@@ -4756,7 +4767,7 @@ void resolvedCompilerSources(char **paths) {
             ++enums;
         }
     }
-    require(enums == 38 && classes == 67 && fields > 228 && methods > 307 &&
+    require(enums == 38 && classes == 70 && fields > 228 && methods > 307 &&
                 retainedFunctions == module.functions.size() && functions == abi.functions.size() &&
                 sourceFunctionNames == abiFunctionNames,
             "real compiler typed graph omitted or appended an unaccounted declaration");
