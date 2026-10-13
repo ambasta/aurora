@@ -54,6 +54,113 @@ void close(F &f, const std::vector<int> &slots) {
             f.code.push_back(EndObject{slots[i - 1]});
     }
 }
+void pairedBoundaries(Module &module) {
+    F first;
+    first.name = "paired_read_first";
+    first.receiver = Receiver{"Receiver", true, false};
+    first.result = Type::I64;
+    first.code = {ReceiverLoad{0, Type::I64}, Return{}};
+    module.functions.push_back(first);
+    auto second = first;
+    second.name = "paired_read_second";
+    second.receiver->mutableValue = false;
+    second.code = {ReceiverLoad{2, Type::I64}, Return{}};
+    module.functions.push_back(second);
+    auto copied = second;
+    copied.name = "paired_copy_second";
+    copied.result = Type("Box");
+    copied.frameBytes = 16;
+    copied.slots = {{8, Type::I64}};
+    copied.objectSlots = {{8, {"Box", false}}};
+    copied.code = {BeginObject{8}, ReceiverLoad{2, Type::I64}, Store{8, Type::I64}, ReturnObject{8}};
+    module.functions.push_back(copied);
+    auto shared = second;
+    shared.name = "paired_single_second";
+    shared.borrowedParameter = true;
+    shared.code = {MethodCall{"paired_read_second", 0}, Return{}};
+    module.functions.push_back(shared);
+    F clobber;
+    clobber.name = "paired_scalar_clobber";
+    clobber.result = Type::I64;
+    clobber.code = {Constant{0, Type::I64}, Return{}};
+    module.functions.push_back(clobber);
+    for (int arity = 0; arity <= 4; ++arity) {
+        F target;
+        target.name = "paired_target_" + std::to_string(arity);
+        target.receiver = Receiver{"Receiver", true, false};
+        target.borrowedParameter = true;
+        target.secondBorrowedParameter = Receiver{"Receiver", false, false};
+        target.parameters.assign(arity, Type::I64);
+        target.result = Type::I64;
+        int cursor = 0;
+        const auto bound = bind(target, cursor);
+        const int total = slot(target, cursor, Type::I64);
+        const int result = slot(target, cursor, Type("Box"));
+        add(target,
+            {MethodCall{"paired_read_first", 0},
+             Store{total, Type::I64},
+             Call{"paired_scalar_clobber"},
+             BeginObject{result},
+             MethodCall{"paired_copy_second", -1, {}, result},
+             Load{total, Type::I64},
+             Push{},
+             Load{result, Type::I64},
+             BinaryValue{Binary::CheckedAdd},
+             Store{total, Type::I64},
+             EndObject{result},
+             AcquireObjectLoan{7, -1, false},
+             BorrowedCall{"paired_single_second", -1, 7},
+             ReleaseObjectLoan{7},
+             Push{},
+             Load{total, Type::I64},
+             BinaryValue{Binary::CheckedAdd},
+             Store{total, Type::I64}});
+        for (int base : bound)
+            add(target,
+                {Load{total, Type::I64},
+                 Push{},
+                 Load{base, Type::I64},
+                 BinaryValue{Binary::CheckedAdd},
+                 Store{total, Type::I64}});
+        add(target, {Load{total, Type::I64}, Return{}});
+        module.functions.push_back(target);
+        for (int depth = 0; depth <= 2; ++depth) {
+            F forward;
+            forward.name = "paired_forward_" + std::to_string(arity) + "_" + std::to_string(depth);
+            forward.receiver = target.receiver;
+            forward.borrowedParameter = true;
+            forward.secondBorrowedParameter = target.secondBorrowedParameter;
+            forward.parameters = target.parameters;
+            forward.result = Type::I64;
+            cursor = 0;
+            const auto forwarded = bind(forward, cursor);
+            const int saved = slot(forward, cursor, Type::I64);
+            const int copiedResult = slot(forward, cursor, Type("Box"));
+            add(forward, {AcquireObjectLoan{1, 0, true}, AcquireObjectLoan{2, -1, false}});
+            for (int operand = 0; operand < depth; ++operand)
+                add(forward, {Constant{4294967313LL + operand, Type::I64}, Push{}});
+            for (int base : forwarded)
+                add(forward, {Load{base, Type::I64}, Push{}});
+            add(forward,
+                {BorrowedCall{target.name, 0, 1, {}, 0, {}, -1, 2},
+                 ReleaseObjectLoan{2},
+                 ReleaseObjectLoan{1},
+                 Store{saved, Type::I64},
+                 Call{"paired_scalar_clobber"},
+                 BeginObject{copiedResult},
+                 MethodCall{"paired_copy_second", -1, {}, copiedResult},
+                 Load{saved, Type::I64},
+                 Push{},
+                 Load{copiedResult, Type::I64},
+                 BinaryValue{Binary::CheckedAdd},
+                 EndObject{copiedResult}});
+            for (int operand = 0; operand < depth; ++operand)
+                forward.code.push_back(BinaryValue{Binary::CheckedAdd});
+            forward.code.push_back(Return{});
+            module.functions.push_back(forward);
+        }
+    }
+}
 } // namespace
 int main() {
     try {
@@ -152,6 +259,7 @@ int main() {
                         m.functions.push_back(f);
                     }
             }
+        pairedBoundaries(m);
         std::cout << X86Emitter{}.emit(validate(std::move(m)));
         return 0;
     } catch (const std::exception &e) {

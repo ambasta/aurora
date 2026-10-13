@@ -641,8 +641,21 @@ transport the entire record without owner transfer or cleanup.
 An ordinary free helper accepts one leading named `T&` or `const T&` for an
 already supported concrete owning class. Later parameters retain scalar/enum,
 readonly-span and copied-class semantics; results are scalar/enum or copied
-classes. No second reference, temporary/projected argument, reference local/
+classes. No temporary/projected argument, reference local/
 field/result, reference template/overload or ownership transfer is added.
+
+One bounded two-root form also accepts leading `Workspace& workspace` and
+`const Session& session`, where both are complete concrete owning classes.
+The remaining parameters and result must be scalar or enum values. The existing
+six-parameter limit includes both roots. This form is for independent algorithms
+that read one owner while updating another, including the compiler's IR verifier.
+It does not add owning-reference method parameters or a third borrowed root.
+
+The arguments must name distinct roots; two instances of the same class are
+permitted, but two names for one root are not. Each formal has its own loan and
+binding identity. Neither formal may produce a span in this two-root form;
+public scalar and copied-value getters remain usable. Independent local spans
+and the existing single-root view behavior are unchanged.
 
 
 ### Authority and argument evaluation
@@ -685,6 +698,13 @@ one. Scalar arguments retain their existing registers. Hidden saves, stack
 alignment/probes, 56-byte spans and 32-byte owned descriptors remain unchanged.
 Source symbols cannot expose this as a scalar C-callable boundary. Existing
 resource-graph checks and receiver call-cycle restrictions include borrowed calls.
+
+For a two-root call only, R10 points to a private sixteen-byte record containing
+the two root pointers. The callee saves both before making nested calls. Typed IR
+uses explicit selectors `0` and `-1` for the two bound formals; positive values
+remain actual owner slots. The second selector is never interpreted as a frame
+offset. Verification checks both loan identities and authorities independently.
+The single-root calling convention remains unchanged.
 
 ## Readonly method arguments
 

@@ -63,6 +63,19 @@ export namespace compiler_lowering {
         put(session, OperandRole::PublicAccess, public_flag);
         return emit_record(session, RecordKind::Receiver, begin);
     }
+    auto publish_second_receiver(compiler_resolver::Session& session, i64 function) -> i64 {
+        if (!paired_borrowed_parameters(session, function)) {
+            return -1;
+        }
+        const i64 type = argument_type(session, function, 1);
+        const i64 nominal = compiler_resolver::mw(session, type, 1);
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::ClassNominalId, nominal);
+        put(session, OperandRole::MutableValue, 0);
+        put(session, OperandRole::Constructor, 0);
+        put(session, OperandRole::PublicAccess, 1);
+        return emit_record(session, RecordKind::Receiver, begin);
+    }
     auto bind_parameters(compiler_resolver::Session& session, i64 function) -> bool {
         const i64 count = signature_count(session, function);
         const i64 function_source = compiler_resolver::mw(session, function, 4);
@@ -84,6 +97,9 @@ export namespace compiler_lowering {
                 type);
             LocalRequest request = LocalRequest(name, type, function_source, mutable_value, true, begin);
             request.set_flags(alias, false);
+            if (alias) {
+                request.set_borrowed_root(0 - ordinal);
+            }
             if (!alias && is_resource_owner(session, type)) {
                 request.set_origin(0, SpanOriginKind::none, -1, -1, false);
             }
@@ -266,6 +282,7 @@ export namespace compiler_lowering {
     auto publish_function(compiler_resolver::Session& session, i64 receiver) -> i64 {
         const ContinuationRow root = session.continuation(0);
         const i64 function = root.syntax_node();
+        const i64 second_receiver = publish_second_receiver(session, function);
         const i64 output_end = session.output_count();
         const i64 parameter_begin = session.operand_count();
         i64 parameter = 0;
@@ -324,6 +341,11 @@ export namespace compiler_lowering {
             borrowed_flag = 1;
         }
         put(session, OperandRole::BorrowedParameter, borrowed_flag);
+        if (second_receiver >= 0) {
+            put(session, OperandRole::SecondReceiverRef, second_receiver);
+        } else {
+            put(session, OperandRole::NoSecondReceiver, 0);
+        }
         if (root.second_label() >= 0) {
             put(session, OperandRole::ReceiverSpanField, root.second_label());
         } else {

@@ -98,6 +98,67 @@ def cases(direct=False):
     return result
 
 
+def paired_cases(mode):
+    result = []
+    for arity in range(5):
+        values = [101 + index for index in range(arity)]
+        for depth in ([0] if mode == "direct" else range(3)):
+            direct = mode == "direct"
+            result.append(
+                {
+                    "name": f"paired {mode} arity {arity} retained depth {depth}",
+                    "target": f"paired_target_{arity}" if direct else f"paired_forward_{arity}_{depth}",
+                    "input": [],
+                    # Literal first-root field 73 and second-root field 239.
+                    # Targets read the second through a copied getter and a
+                    # legacy single-root helper. Forwarders read it once more.
+                    "answer": (551 + sum(values) if direct else
+                               (281 if mode == "outgoing" else 790 + sum(values)) + abi.retained(depth)),
+                    "probes": int(mode == "outgoing"),
+                    "registers": values,
+                }
+            )
+    return result
+
+
+def paired_target(arity):
+    code = abi.align()
+    code += "    cmpq $receiver, (%r10)\n    jne .Labi_record_fail\n"
+    code += "    cmpq $second_receiver, 8(%r10)\n    jne .Labi_record_fail\n"
+    for index, register in enumerate(abi.REGISTERS[:arity]):
+        code += f"    cmpq ${101 + index}, {register}\n    jne .Labi_record_fail\n"
+    return code + "    incq probe_calls(%rip)\n" + abi.clobber(42) + "    ret\n"
+
+
+def paired_harness(text, selected):
+    incoming = "    leaq receiver(%rip), %r10\n"
+    abi.require(text.count(incoming) == len(selected), "one paired incoming record per case")
+    text = text.replace(incoming, "    leaq paired_record(%rip), %r10\n")
+    marker = "    incq completed(%rip)\n"
+    parts = text.split(marker)
+    abi.require(len(parts) == len(selected) + 1, "one paired completion observation per case")
+    text = parts[0]
+    for index, part in enumerate(parts[1:]):
+        for actual, expected, size in (
+            ("second_receiver_left", "literal_second_receiver", 64),
+            ("paired_record_left", "literal_paired_record", 32),
+        ):
+            text += f"    leaq {actual}(%rip), %rdi\n"
+            text += abi.compare("%rdi", expected, size, f"paired_{index}_{actual}", "canary")
+        text += marker + part
+    second = [181, abi.REGION + 1, abi.ALLOCATION + 1, 37, 1, 239]
+    text += "\n.data\n.balign 16\n"
+    text += abi.blob("second_receiver_left", [abi.LEFT])
+    text += abi.blob("second_receiver", second)
+    text += abi.blob("second_receiver_right", [abi.RIGHT])
+    text += abi.blob("literal_second_receiver", [abi.LEFT, *second, abi.RIGHT])
+    text += abi.blob("paired_record_left", [abi.LEFT])
+    text += abi.blob("paired_record", ["receiver", "second_receiver"])
+    text += abi.blob("paired_record_right", [abi.RIGHT])
+    text += abi.blob("literal_paired_record", [abi.LEFT, "receiver", "second_receiver", abi.RIGHT])
+    return text
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("ir_tests", type=Path)
@@ -214,17 +275,51 @@ def main():
     abi.execute(args.artifacts, "mutant-result-overcopy", changed, direct_cases, 94, function)
     changed = abi.mutate_body(direct, function, "    movq %rax, -88(%rbp)", "    movq %r11, -88(%rbp)")
     abi.execute(args.artifacts, "mutant-hidden-result-register", changed, direct_cases, 94, function)
+    # Separate observations enter the paired ABI with a literal two-pointer
+    # record, then observe generated forwarding through handwritten callees.
+    # An ordinary nested helper clobbers every caller-saved register so keeping
+    # the second pointer live in R11 cannot accidentally pass the getter cases.
+    paired_observed = abi.replace_body(
+        raw, "paired_scalar_clobber", abi.align() + abi.clobber(0) + "    ret\n"
+    )
+    paired_outgoing = paired_observed
+    for arity in range(5):
+        paired_outgoing = abi.replace_body(paired_outgoing, f"paired_target_{arity}", paired_target(arity))
+    paired_assembly, paired_selected = {}, {}
+    for mode in ("direct", "generated", "outgoing"):
+        selected = paired_cases(mode)
+        assembly = paired_outgoing if mode == "outgoing" else paired_observed
+        assembly += paired_harness(harness(selected), selected)
+        paired_assembly[mode], paired_selected[mode] = assembly, selected
+        abi.execute(args.artifacts, "paired-" + mode, assembly, selected)
+    paired_controls = [
+        ("second-entry-selector", "direct", "paired_target_0",
+         "    movq 8(%r10), %r11", "    movq (%r10), %r11", 93),
+        ("first-outgoing-pointer", "outgoing", "paired_forward_0_0",
+         "    movq %r10, (%rsp)", "    movq $0, (%rsp)", 91),
+        ("second-outgoing-pointer", "outgoing", "paired_forward_0_0",
+         "    movq %r10, 8(%rsp)", "    movq $0, 8(%rsp)", 91),
+        ("paired-odd-alignment", "outgoing", "paired_forward_0_1",
+         "    subq $8, %rsp\n    call paired_target_0", "    nop\n    call paired_target_0", 92),
+        ("paired-retained-operand", "outgoing", "paired_forward_0_1",
+         "    call paired_target_0", "    addq $1, 24(%rsp)\n    call paired_target_0", 93),
+    ]
+    for name, mode, function, old, new, status in paired_controls:
+        changed = abi.mutate_body(paired_assembly[mode], function, old, new)
+        abi.execute(args.artifacts, "mutant-" + name, changed, paired_selected[mode], status, function)
+    native_cases = len(direct_cases) + len(forward_cases) + sum(map(len, paired_selected.values()))
+    rejected_mutants = len(controls) + 2 + len(paired_controls)
     summary = (
-        f"PASS borrowed object ABI: {len(direct_cases) + len(forward_cases)} native cases, "
-        f"{len(controls) + 2} exact rejected mutants"
+        f"PASS borrowed object ABI: {native_cases} native cases, "
+        f"{rejected_mutants} exact rejected mutants"
     )
     abi.require(args.ir_tests.read_bytes() == fixture_before, "fixture changed during ABI gate")
     for path, content in bound_inputs.items():
         abi.require(path.read_bytes() == content, f"bound ABI source changed: {path}")
     receipt = {
         "status": "passed",
-        "native_cases": len(direct_cases) + len(forward_cases),
-        "rejected_mutants": len(controls) + 2,
+        "native_cases": native_cases,
+        "rejected_mutants": rejected_mutants,
         "python": sys.version,
         "python_optimization": sys.flags.optimize,
         "fixture_sha256": hashlib.sha256(args.ir_tests.read_bytes()).hexdigest(),
@@ -232,7 +327,7 @@ def main():
     }
     (args.artifacts / "run.json").write_text(json.dumps(receipt, indent=2) + "\n")
     (args.artifacts / "cases.json").write_text(
-        json.dumps({"incoming": direct_cases, "outgoing": forward_cases}, indent=2) + "\n"
+        json.dumps({"incoming": direct_cases, "outgoing": forward_cases, "paired": paired_selected}, indent=2) + "\n"
     )
     (args.artifacts / "summary.txt").write_text(summary + "\n")
     print(summary)

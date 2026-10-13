@@ -922,10 +922,11 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
                 message = "constructor cannot have a return type";
                 break;
             case AdmissionStatus::borrowed_parameter:
-                message = "borrowed parameters require one leading concrete owning class on an ordinary function";
+                message = "borrowed parameters require a supported leading owning-class reference signature on an "
+                          "ordinary function";
                 break;
             case AdmissionStatus::const_parameter:
-                message = "const parameter spelling requires a leading owning-class reference";
+                message = "const parameter spelling requires a supported owning-class reference";
                 break;
             case AdmissionStatus::function_parameter:
                 message = "only scalar function parameters or scalar-field class values are supported";

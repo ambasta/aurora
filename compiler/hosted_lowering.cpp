@@ -505,7 +505,9 @@ class Projection {
                                     values.integer(OperandRole::LoanId),
                                     offsets(values, OperandRole::ObjectArguments),
                                     values.integer(OperandRole::ResultOffset),
-                                    offsets(values, OperandRole::SpanArguments)};
+                                    offsets(values, OperandRole::SpanArguments),
+                                    values.integer(OperandRole::SecondReceiverOffset),
+                                    values.integer(OperandRole::SecondLoanId)};
         }
         invalidLowering();
     }
@@ -591,6 +593,11 @@ class Projection {
         else if (receiverOperand.operandRole != OperandRole::NoReceiver)
             invalidLowering();
         result.borrowedParameter = values.boolean(OperandRole::BorrowedParameter);
+        const auto &secondReceiverOperand = values.take();
+        if (secondReceiverOperand.operandRole == OperandRole::SecondReceiverRef)
+            result.secondBorrowedParameter = receiver(secondReceiverOperand.signedValue);
+        else if (secondReceiverOperand.operandRole != OperandRole::NoSecondReceiver)
+            invalidLowering();
         const auto &spanOperand = values.take();
         if (spanOperand.operandRole == OperandRole::ReceiverSpanField)
             result.receiverSpanField = intValue(spanOperand.signedValue);

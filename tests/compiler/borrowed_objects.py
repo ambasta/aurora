@@ -395,6 +395,112 @@ TWIN_CREATE = """
 """
 
 
+def paired_borrowing_cases(suite):
+    helpers = HELPERS + """
+    enum class PairStatus { unchanged, written, failed };
+    auto paired_write(std::ByteBuffer& output, const std::ByteBuffer& input,
+                      i64 offset, u64 expected, u8 byte, bool enabled) -> bool {
+        if (!enabled) { return false; }
+        const std::ByteReadResult saved = input.read_u8(offset);
+        const builtin::array<u8, 1> local = {7u8};
+        const builtin::span<const u8> view = borrow_bytes(local);
+        if (saved.value_or(256u64) != expected || view.at(0) != 7u8) { return false; }
+        return output.try_append(byte);
+    }
+    auto paired_forward(std::ByteBuffer& output, const std::ByteBuffer& input,
+                        i64 offset, u64 expected, u8 byte, bool enabled) -> bool {
+        const i64 before = output.size();
+        const bool changed = paired_write(output, input, offset, expected, byte, enabled);
+        return changed && output.size() == before + 1 && inspect(input) == 1;
+    }
+    auto paired_status(std::ByteBuffer& output, const std::ByteBuffer& input, PairStatus action) -> PairStatus {
+        if (action == PairStatus::unchanged) { return PairStatus::unchanged; }
+        if (!output.try_append(29u8) || inspect(input) != 1) { return PairStatus::failed; }
+        return PairStatus::written;
+    }
+    auto paired_after(std::ByteBuffer& output, const std::ByteBuffer& input, i64 value, bool changed) -> i64 {
+        if (!changed) { return -1; }
+        return value + input.size();
+    }
+    """
+    create = CREATE + """
+        builtin::OwnedBytes backing = region.try_allocate(1);
+        std::ByteBuffer input = std::ByteBuffer(region, move(backing));
+        if (!input.try_append(17u8)) { return 0; }
+    """
+    body = create + """
+        if (!paired_forward(buffer, input, 0, 17u64, 23u8, inspect(input) == 1)) { return 0; }
+        if (paired_status(buffer, input, PairStatus::unchanged) != PairStatus::unchanged) { return 0; }
+        if (paired_status(buffer, input, PairStatus::written) != PairStatus::written) { return 0; }
+        if (!input.try_write_u8(0, 31u8)) { return 0; }
+        const std::ByteBuffer frozen = move(input);
+    """
+    body += check_state([23, 29], 2) + check_state([31], 1, "frozen")
+    body += "if (!buffer.clear() || paired_after(buffer, frozen, inspect(frozen), true) != 2) { return 0; } return 42;"
+    exe = suite.compile("paired-distinct-same-class-nested-forwarding", program(body, helpers))
+    suite.run(exe, 3, 2, 0, 42, 2, 2, release_order=[2, 1])
+
+    mixed = """
+    auto paired_twin(std::ByteBuffer& output, const Twin& input) -> bool {
+        return output.try_append(input.read_first());
+    }
+    """
+    body = CREATE + TWIN_CREATE + """
+        if (!twin_write(twin, 17u8, 25u8) || !paired_twin(buffer, twin) || twin_sum(twin) != 42) { return 0; }
+    """
+    body += check_state([17], 1) + "return 42;"
+    exe = suite.compile("paired-distinct-concrete-classes", program(body, TWIN + mixed))
+    suite.run(exe, 3, 1, 0, 42, 3, 3, release_order=[3, 2, 1])
+
+    conflicts = {
+        "same-root-alias": "paired_after(buffer, buffer, 0, true);",
+        "later-first-root-read": "paired_after(buffer, input, buffer.size(), true);",
+        "later-first-root-write": "paired_after(buffer, input, 0, buffer.clear());",
+        "later-second-root-write": "paired_after(buffer, input, 0, input.clear());",
+        "later-second-root-move": "paired_after(buffer, input, consume(region, move(input)), true);",
+        "later-first-root-move": "paired_after(buffer, input, consume(region, move(buffer)), true);",
+    }
+    for name, body in conflicts.items():
+        suite.reject("paired-" + name, program(create + body + "return 0;", helpers))
+
+    bodies = {
+        "const-write": "return input.clear();",
+        "const-mutable-forward": "return append_one(input, 1u8);",
+        "first-formal-move": "std::ByteBuffer taken = move(output); return true;",
+        "second-formal-move": "std::ByteBuffer taken = move(input); return true;",
+        "first-formal-span": f"const {SPAN} view = output.bytes(); return view.size() == 0;",
+        "second-formal-span": f"const {SPAN} view = input.bytes(); return view.size() == 0;",
+        "forward-alias": "return paired_write(output, output, 0, 17u64, 1u8, true);",
+    }
+    for name, body in bodies.items():
+        signature = "auto bad(std::ByteBuffer& output, const std::ByteBuffer& input) -> bool { " + body + " }"
+        diagnostic = "paired borrowed roots cannot produce spans" if name.endswith("-span") else None
+        suite.reject("paired-" + name, program("return 0;", helpers + signature), diagnostic)
+
+    leading = "std::ByteBuffer& a, const std::ByteBuffer& b"
+    signatures = {
+        "third-reference": f"auto bad({leading}, const std::ByteBuffer& c) -> i64 {{ return 0; }}",
+        "first-const": "auto bad(const std::ByteBuffer& a, const std::ByteBuffer& b) -> i64 { return 0; }",
+        "second-mutable": "auto bad(std::ByteBuffer& a, std::ByteBuffer& b) -> i64 { return 0; }",
+        "copied-second-root": "auto bad(std::ByteBuffer& a, const Count& b) -> i64 { return 0; }",
+        "copied-argument": f"auto bad({leading}, Count value) -> i64 {{ return 0; }}",
+        "span-argument": f"auto bad({leading}, {SPAN} view) -> i64 {{ return 0; }}",
+        "region-argument": f"auto bad({leading}, builtin::ByteRegion region) -> i64 {{ return 0; }}",
+        "owner-argument": f"auto bad({leading}, builtin::OwnedBytes taken) -> i64 {{ return 0; }}",
+        "service-argument": f"auto bad({leading}, builtin::ConsoleSession& service) -> i64 {{ return 0; }}",
+        "copied-result": f"auto bad({leading}) -> Count {{ const Count result = Count(0); return result; }}",
+        "span-result": f"auto bad({leading}) -> {SPAN} {{ return b.bytes(); }}",
+        "owning-result": f"auto bad({leading}) -> std::ByteBuffer {{ return move(a); }}",
+        "overload": (
+            f"auto bad({leading}, i64 n) -> i64 {{ return n; }}"
+            f"auto bad({leading}, u64 n) -> u64 {{ return n; }}"
+        ),
+        "parameter-cap": f"auto bad({leading}, i64 c, i64 d, i64 e, i64 f, i64 g) -> i64 {{ return 0; }}",
+    }
+    for name, signature in signatures.items():
+        suite.reject("paired-" + name, program("return 0;", helpers + signature))
+
+
 def direct_method_return_case(suite):
     helpers = (
         HELPERS
@@ -738,7 +844,7 @@ def rejection_cases(suite):
 
     signatures = {
         "nonleading-borrow": "auto bad(i64 first, std::ByteBuffer& input) -> i64 { return first; }",
-        "two-borrows": "auto bad(std::ByteBuffer& a, const std::ByteBuffer& b) -> i64 { return 0; }",
+        "two-mutable-borrows": "auto bad(std::ByteBuffer& a, std::ByteBuffer& b) -> i64 { return 0; }",
         "borrow-after-region": ("auto bad(builtin::ByteRegion region, std::ByteBuffer& input) -> i64 { return 0; }"),
         "borrow-and-owning-parameter": (
             "auto bad(std::ByteBuffer& input, std::ByteBuffer taken) -> i64 { return input.size(); }"
@@ -775,14 +881,16 @@ def rejection_cases(suite):
         ),
         "pointer-parameter": "auto bad(std::ByteBuffer* input) -> i64 { return 0; }",
     }
-    declaration_diagnostic = "borrowed parameters require one leading concrete owning class on an ordinary function"
+    declaration_diagnostic = (
+        "borrowed parameters require a supported leading owning-class reference signature on an ordinary function"
+    )
     result_diagnostic = (
         "borrowed functions require one leading concrete owning-class reference and a scalar or copied result"
     )
     later_diagnostic = "later borrowed-function parameters require scalar, copied class or readonly span values"
     signature_diagnostics = {
         "nonleading-borrow": declaration_diagnostic,
-        "two-borrows": declaration_diagnostic,
+        "two-mutable-borrows": declaration_diagnostic,
         "borrow-after-region": declaration_diagnostic,
         "borrow-and-owning-parameter": later_diagnostic,
         "borrow-and-owned-bytes-parameter": later_diagnostic,
@@ -935,6 +1043,7 @@ def main():
             + "\n"
         )
         borrowing_cases(suite)
+        paired_borrowing_cases(suite)
         direct_method_return_case(suite)
         multiple_field_cases(suite)
         json_cases(suite)
