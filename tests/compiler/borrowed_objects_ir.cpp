@@ -323,6 +323,7 @@ void pairedTests() {
     }, "borrowed call second root tuple does not match target");
     check("pair checks second nominal class", [](Module &m) {
         named(m, "borrow_pair").secondBorrowedParameter->className = "Buffer";
+        op<MethodCall>(named(m, "borrow_pair"), 1).callee = "read_buffer";
     }, "borrowed call root, lifetime, nominal type or authority mismatch");
     check("pair checks second loan mutability", [](Module &m) {
         op<AcquireObjectLoan>(m.functions[0], 1).mutableValue = true;
@@ -457,6 +458,25 @@ void loanTests() {
         "borrowed call requires active loan");
     for (int identity : {0, -1})
         check(
+            "call rejects nonpositive loan identity " + std::to_string(identity),
+            [=](Module &m) {
+                op<BorrowedCall>(m.functions[0]).loanId = identity;
+            },
+            "borrowed call requires active loan");
+    check(
+        "call rejects invalid negative root selector",
+        [](Module &m) {
+            op<BorrowedCall>(m.functions[0]).receiverOffset = -2;
+        },
+        "invalid borrowed object root");
+    check(
+        "call rejects unbound second root selector",
+        [](Module &m) {
+            op<BorrowedCall>(m.functions[0]).receiverOffset = -1;
+        },
+        "borrowed object root is not bound");
+    for (int identity : {0, -1})
+        check(
             "invalid loan identity " + std::to_string(identity),
             [=](Module &m) {
                 op<AcquireObjectLoan>(m.functions[0]).loanId = identity;
@@ -540,14 +560,21 @@ void loanTests() {
         "object loan requires exact owning root");
     reject(
         "const local cannot supply mutable loan",
-        constLocal(true),
-        [](Module &) {
+        constLocal(),
+        [](Module &m) {
+            // Keep the call contract valid so the acquisition itself rejects.
+            op<AcquireObjectLoan>(m.functions[0]).mutableValue = true;
         },
         "const object cannot supply mutable object loan");
     check(
         "same-layout wrong nominal target",
         [](Module &m) {
             named(m, "borrow_buffer").receiver->className = "Other";
+            auto otherMethod = method(true);
+            otherMethod.name = "write_other";
+            otherMethod.receiver->className = "Other";
+            op<MethodCall>(named(m, "borrow_buffer")).callee = "write_other";
+            m.functions.push_back(otherMethod);
         },
         "borrowed call root, lifetime, nominal type or authority mismatch");
     check(
@@ -566,6 +593,7 @@ void loanTests() {
         "mutable loan cannot call shared target",
         [](Module &m) {
             named(m, "borrow_buffer").receiver->mutableValue = false;
+            op<MethodCall>(named(m, "borrow_buffer")).callee = "read_buffer";
         },
         "borrowed call root, lifetime, nominal type or authority mismatch");
     reject(
@@ -613,10 +641,10 @@ void loanTests() {
         "object access conflicts with active synchronous loan");
     reject(
         "shared formal cannot escalate acquisition",
-        forwarded(false, true),
+        forwarded(false, false),
         [](Module &m) {
-            // Validate the callee body directly; the outer shared call is otherwise valid.
-            (void)m;
+            // Both call contracts remain valid; only the acquisition escalates.
+            op<AcquireObjectLoan>(named(m, "borrow_buffer")).mutableValue = true;
         },
         "shared formal cannot supply mutable object loan");
 }
@@ -720,6 +748,14 @@ void aliasTests() {
     before<EndObject>(sequential.functions[0],
                       {AcquireObjectLoan{1, 48, true}, BorrowedCall{"borrow_buffer", 48, 1}, ReleaseObjectLoan{1}});
     accept("released identity can name a new synchronous interval", sequential);
+    auto nonlexical = fixture();
+    const auto ordered = nonlexical.functions[0].code;
+    nonlexical.functions[0].code = {ordered[0], ordered[1], Jump{10},
+                                     Label{20}, ordered[3], ordered[4], Jump{30},
+                                     Label{10}, ordered[2], Jump{20},
+                                     Label{30}, ordered[2], ordered[3], ordered[4],
+                                     ordered[5], ordered[6]};
+    accept("call before acquisition in text follows CFG and reuses released identity", nonlexical);
     reject(
         "completed call still protects root until release",
         fixture(),

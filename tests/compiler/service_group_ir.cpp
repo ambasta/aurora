@@ -180,6 +180,7 @@ int main(int argc, char **argv) {
     good(groupConsoleSubsets(true)); // Direct Console operations also remain available.
     good(groupSample(false));
     good(groupSample(true)); // Copied Console reports do not depend on formal order.
+    good(executedNonlexical()); // Always cover the same reordered, ID-reusing native oracle body.
 
     // Grouped copied-result calls require exact pristine storage in either formal order.
     for (bool displayFirst : {false, true}) {

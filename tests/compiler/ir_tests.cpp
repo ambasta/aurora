@@ -1729,6 +1729,10 @@ void composedTests() {
         "whole copy equal-byte nominal forgery",
         [](Module &m) {
             m.functions[0].objectSlots[32].className = "Other";
+            // Isolate the copy: the later constructor requires the original
+            // nominal snapshot and must not preempt this dynamic failure.
+            m.functions[0].code.resize(7);
+            m.functions[0].code.insert(m.functions[0].code.end(), {Constant{0, Type::I64}, Return{}});
         },
         "copy nominal class mismatch");
     rejectComposed(
@@ -3942,6 +3946,10 @@ void callGraphTests() {
     const auto checked = validate(module);
     if (retainedNames(module) != expected || checked.get().functions[2].code.size() != 3)
         throw Error("graph retention changed transitive roots, original order or normalized code");
+    const auto rootCode = checked.get().functions[2].code;
+    if (rootCode.idAt(0) != 7 || rootCode.idAt(1) != 8 || rootCode.idAt(2) != 9 ||
+        std::get<Call>(rootCode[0]).callee != "bridge" || std::get<Call>(rootCode[1]).callee != "bridge")
+        throw Error("static call admission changed compacted call identities or targets");
     const std::vector<Metadata::CallableId> expectedIds{0, 2, 3, 4};
     if (checked.metadata().callableCount() != 5 || checked.metadata().findCallable("unused") != 1 ||
         checked.metadata().findCallable("absent"))
@@ -3965,6 +3973,30 @@ void callGraphTests() {
             "unused imported call cannot hide missing target " + diagnostic,
             module,
             [&](Module &bad) {
+                bad.functions[1].code = {call, Return{}};
+            },
+            diagnostic);
+    // Mode admission must scan unused imports before any earlier function's
+    // dynamic operand state. Every target exists and has a valid body here.
+    auto wrongModes = module;
+    wrongModes.classLayouts["CallReceiver"] = {Type::I64};
+    auto receiverTarget = scalarFunction("receiver_target", 1);
+    receiverTarget.receiver = Receiver{"CallReceiver", false, false};
+    receiverTarget.code = {ReceiverLoad{0, Type::I64}, Return{}};
+    wrongModes.functions.push_back(receiverTarget);
+    for (const auto &[call, diagnostic] : std::vector<std::pair<Instruction, std::string>>{
+             {Call{"receiver_target"}, "plain call cannot target receiver function"},
+             {AggregateCall{"leaf", {}, 0}, "aggregate call requires aggregate signature"},
+             {ResourceCall{"leaf", 0, {}, 0},
+              "resource call requires ordinary resource signature or owning constructor"},
+             {MethodCall{"leaf", 0}, "method call requires receiver target"},
+             {BorrowedCall{"leaf", 0, 1}, "method call requires receiver target"},
+             {ServiceCall{"leaf", 1, 0, {}}, "service helper requires service target and acquired loans"}})
+        rejectModule(
+            "unused imported call mode precedes earlier dynamic state: " + diagnostic,
+            wrongModes,
+            [&](Module &bad) {
+                bad.functions[0].code = {Pop{}, Return{}};
                 bad.functions[1].code = {call, Return{}};
             },
             diagnostic);
@@ -4294,6 +4326,23 @@ void entryBindingTests() {
                   module.functions[0].code = {Pop{}, Return{}};
                   std::get<BindParameter>(module.functions[1].code[0]).type = Type::U64;
               }, "parameter type mismatch"},
+             {"later CFG before earlier static call", [](auto &module) {
+                  module.functions[0].code = {Call{"missing"}, Return{}};
+                  module.functions[1].code.push_back(Jump{99});
+              }, "unknown jump target"},
+             {"later entry before earlier static call", [](auto &module) {
+                  module.functions[0].code = {Call{"missing"}, Return{}};
+                  module.functions[1].code[0] = Constant{42, Type::I64};
+              }, "parameter bindings must form the entry prefix"},
+             {"later static call before earlier dynamic state", [](auto &module) {
+                  module.functions[0].code = {Pop{}, Return{}};
+                  module.functions[1].code.insert(module.functions[1].code.begin() + 2, Call{"missing"});
+              }, "unknown call target"},
+             {"static call errors retain declaration order", [](auto &module) {
+                  module.functions[0].code = {Call{"missing"}, Return{}};
+                  module.functions[1].name = "alphabetically_first";
+                  module.functions[1].code.insert(module.functions[1].code.begin() + 2, MethodCall{"missing", 0});
+              }, "unknown call target"},
              {"entry errors retain declaration order", [](auto &module) {
                   module.functions[0].parameters = {Type::I64};
                   module.functions[1].name = "alphabetically_first";

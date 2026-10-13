@@ -1030,7 +1030,7 @@ void resourceCallTests() {
     reject("unbound second region cannot transport owner", resourceCall(), [](Module &module) {
         module.functions[0].regionSlots.insert(176);
         operation<ResourceCall>(module).regionOffset = 176;
-    });
+    }, "region authority is not active");
     reject("resource argument vector cannot omit region position", resourceCall(), [](Module &module) {
         operation<ResourceCall>(module).ownerArguments.erase(operation<ResourceCall>(module).ownerArguments.begin());
     });
@@ -1058,13 +1058,13 @@ void resourceCallTests() {
     });
     reject("pristine owner cannot supply argument", resourceCall(), [](Module &module) {
         eraseOperation<AllocateBytes>(module.functions[0]);
-    });
+    }, "owned byte binding does not hold live ownership");
     reject("consumed owner cannot supply argument", resourceCall(), [](Module &module) {
         insertBefore<ResourceCall>(module.functions[0], {BeginBytes{136}, MoveBytes{40, 136}});
-    });
+    }, "owned byte binding does not hold live ownership");
     reject("ended owner cannot supply argument", resourceCall(), [](Module &module) {
         insertBefore<ResourceCall>(module.functions[0], {EndBytes{40}});
-    });
+    }, "owned byte lifetime is not active");
     reject("resource call consumes every argument", resourceCall(), [](Module &module) {
         insertBefore<EndBytes>(module.functions[0], {BytesLength{72}});
     });
@@ -1073,10 +1073,10 @@ void resourceCallTests() {
     });
     reject("resource call result must have begun lifetime", resourceCall(), [](Module &module) {
         eraseOperation<BeginBytes>(module.functions[0], 2);
-    });
+    }, "owned byte lifetime is not active");
     reject("resource call result must be pristine", resourceCall(), [](Module &module) {
         insertBefore<ResourceCall>(module.functions[0], {Constant{1, Type::I64}, AllocateBytes{8, 104}});
-    });
+    }, "owned byte result requires pristine binding");
     reject("resource result cannot alias moved argument", resourceCall(), [](Module &module) {
         operation<ResourceCall>(module).resultOffset = 40;
     });
@@ -1092,12 +1092,12 @@ void resourceCallTests() {
     });
     reject("resource call requires scalar argument stack", resourceCall(), [](Module &module) {
         eraseOperation<Push>(module.functions[0], 2);
-    });
+    }, "resource call scalar argument type mismatch");
     reject("resource call checks scalar argument type", resourceCall(), [](Module &module) {
         auto &function = module.functions[0];
         const auto lastPush = position<Push>(function, 2);
         function.code[lastPush - 1] = Constant{1, Type::I64};
-    });
+    }, "resource call scalar argument type mismatch");
     reject("scalar Call cannot target resource signature", resourceCall(), [](Module &module) {
         auto &function = module.functions[0];
         function.code[position<ResourceCall>(function)] = Call{"bytes_callee"};

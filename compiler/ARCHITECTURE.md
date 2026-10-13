@@ -287,9 +287,10 @@ instructions before native value-state analysis.
 plus canonical class fields, offsets and layouts. `ir_metadata.au` admits names,
 module layouts, every callable header and every frame before publication.
 Instruction storage/types and exact codec shapes follow, then all structural CFG
-checks and normalization, source entry-parameter admission, native dynamic
-value-state/provenance checks, call-graph checks and publication. A later structural
-or entry-binding error can therefore precede an earlier dynamic value-state error;
+checks and normalization, source entry-parameter admission, source static call-site
+admission, native dynamic value-state/provenance checks, call-graph checks and
+publication. A later structural, entry-binding or static call error can therefore
+precede an earlier dynamic value-state error;
 no per-function diagnostic-order replay is retained. Malformed raw Type tails reject before canonical Type observation.
 
 Production lowering fills one move-only pending ingress that binds both owners.
@@ -340,7 +341,7 @@ Destination allocation overlaps Session lifetime; sorting may reorder Internal
 errors among multiply-malformed transport records. Generated ABI, source-bootstrap,
 convergence and runtime qualification remain unexecuted.
 
-## Entry-parameter admission
+## Entry and call admission
 
 Aurora checks the complete normalized entry prefix against the admitted signature
 and frame: scalar, copied-class, span, region, owner and sealed-service bindings.
@@ -357,6 +358,14 @@ parameter sets/maps or another summary. Native `Bind*` handlers establish dynami
 initial state; subsequent initialization, lifetime, ownership, loan and CFG-join
 checks remain native. The separate service-loan identity scan is unchanged.
 This migration remains source-only pending generated ABI and execution checks.
+
+All six call forms share a subsequent source pass over those same owners. It
+checks target/mode, argument and result storage declarations, vectors, nominal
+and receiver shape, static aliases and lexical member access. Native handlers
+still borrow target signatures to apply effects; they keep operand-stack types,
+live initialization, actual loan authority, ownership/region identity and span
+conflicts. No call-summary pool or mirrored dynamic state is introduced. Loan
+acquisition order follows CFG execution, not textual instruction order.
 
 ## CFG and frame invariants
 
