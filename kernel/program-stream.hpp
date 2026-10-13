@@ -1,8 +1,13 @@
 #pragma once
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
+
+// Private bootstrap copied-record ABI; never callable by a protected participant.
+extern "C" auto __au_runtime_stream_update(const std::byte *input, std::byte *output) -> void;
 
 namespace aurora::program {
 inline constexpr std::size_t stream_capacity = 64;
@@ -55,53 +60,74 @@ public:
     }
 };
 
-// Bounded copied-byte ledger, not IPC authority. A real ipc::Mailbox must still
-// authorize every endpoint, owner, transaction and completion in the runtime.
-// Per ordinal, the client submits {transformed byte, ordinal}; the service and
-// completion client each return that same byte with the original ordinal. This
-// adapter validates only printable ASCII, order and equality across those three
-// results. It must never compute the transformation or compare it with input.
-// A note read instead requests successive offsets, retains each actual encoded
-// service reply, and stages a byte or terminal marker only when the compiled
-// client acknowledges that exact reply. EOF is an extra round, including for an
-// empty note; missing is a distinct terminal marker. No native payload oracle.
-// A transforming read carries the original reply in the low 16 bits and a
-// separately validated printable output byte above it. The compiled client owns
-// the transformation; terminal acknowledgments retain their exact encoding.
-// The runtime may release finish()'s copied output only after both participants
-// are quiescent and retired. No partial output is exposed by this class.
+// Native identity and nonwrapping run authority surround opaque copied Aurora
+// state. All byte/order/encoding/stage transitions live in console.command_stream.
+// Files binds this exact noncopyable object and run; copied Aurora values cannot
+// mint that receipt. The runtime still authenticates Mailbox transactions and
+// retires both participants before releasing finish()'s copied output.
 class Stream final {
-    enum class Stage {
-        idle,
-        request,
-        reply,
-        acknowledgment,
-        finished,
-        cancelled
+    // Two 64-byte buffers and eight 8-byte fields, including CommandStage.
+    // The all-zero private initial representation matches CommandStream(empty).
+    static constexpr std::size_t state_bytes = 192;
+    static constexpr std::size_t result_bytes = 280;
+    using Value = std::array<std::byte, state_bytes>;
+    using Update = std::array<std::byte, result_bytes>;
+    // Independently checked against CommandOperation's emitted ABI enum cases.
+    enum class Operation : std::uint64_t {
+        begin = 0,
+        begin_read = 1,
+        awaiting_read = 2,
+        next_input = 3,
+        accept_request = 4,
+        accept_reply = 5,
+        acknowledge = 6,
+        ready_to_finish = 7,
+        finish = 8,
+        cancel = 9,
+        scrubbed = 10
     };
-    StreamBytes input_{};
-    StreamBytes output_{};
-    std::size_t length_{};
-    std::size_t ordinal_{};
-    std::uint64_t requested_{};
+    Value saved_{};
     std::uint64_t run_{};
     const std::uint64_t run_ceiling_;
-    bool reading_{}, transforming_{}, terminal_{}, missing_{};
-    Stage stage_ = Stage::idle;
 
-    [[nodiscard]] static constexpr auto printable(std::uint64_t byte) -> bool {
-        return byte >= 32 && byte <= 126;
+    static auto word(std::span<const std::byte> bytes, std::size_t offset) -> std::uint64_t {
+        std::uint64_t value = 0;
+        for (unsigned i = 0; i < 8; ++i)
+            value |= std::uint64_t(std::to_integer<unsigned char>(bytes[offset + i])) << (8 * i);
+        return value;
     }
-    [[nodiscard]] auto matches(std::uint64_t byte, std::uint64_t ordinal) const -> bool {
-        return ordinal_ < length_ && ordinal == ordinal_ && printable(byte) && byte == requested_;
+    static auto put(std::span<std::byte> bytes, std::size_t offset, std::uint64_t value) -> void {
+        for (unsigned i = 0; i < 8; ++i)
+            bytes[offset + i] = std::byte(value >> (8 * i));
     }
-    [[gnu::noinline]] auto scrub() -> void {
-        input_.fill(0);
-        output_.fill(0);
-        length_ = 0;
-        ordinal_ = 0;
-        requested_ = 0;
-        reading_ = transforming_ = terminal_ = missing_ = false;
+    [[nodiscard]] auto evaluate(Operation operation,
+                                std::uint64_t first = 0,
+                                std::uint64_t second = 0,
+                                const StreamBytes &bytes = {}) const -> Update {
+        // [CommandStream, operation, BinaryBuffer64, first, second]. The result
+        // is disjoint and stays private until the admitted Aurora call returns.
+        std::array<std::byte, 280> input{};
+        std::copy(saved_.begin(), saved_.end(), input.begin());
+        put(input, 192, static_cast<std::uint64_t>(operation));
+        for (std::size_t i = 0; i < stream_capacity; ++i)
+            input[200 + i] = std::byte(bytes[i]);
+        put(input, 264, first);
+        put(input, 272, second);
+        Update result{};
+        __au_runtime_stream_update(input.data(), result.data());
+        return result;
+    }
+    [[nodiscard]] static auto accepted(const Update &result) -> bool {
+        return word(result, 272) == 1;
+    }
+    [[nodiscard]] auto apply(Operation operation,
+                             std::uint64_t first = 0,
+                             std::uint64_t second = 0,
+                             const StreamBytes &bytes = {}) -> Update {
+        const auto result = evaluate(operation, first, second, bytes);
+        if (accepted(result))
+            std::copy_n(result.begin(), saved_.size(), saved_.begin());
+        return result;
     }
 
 public:
@@ -116,122 +142,52 @@ public:
     auto operator=(Stream &&) -> Stream & = delete;
 
     [[nodiscard]] auto begin(const StreamBytes &copied_input, std::size_t length) -> bool {
-        if ((stage_ != Stage::idle && stage_ != Stage::finished && stage_ != Stage::cancelled) || !scrubbed() ||
-            length > stream_capacity || run_ >= run_ceiling_)
+        if (run_ >= run_ceiling_ || !accepted(apply(Operation::begin, length, 0, copied_input)))
             return false;
-        for (std::size_t index = 0; index < length; ++index) {
-            if (!printable(copied_input[index]))
-                return false;
-        }
-        for (std::size_t index = 0; index < length; ++index)
-            input_[index] = copied_input[index];
-        length_ = length;
         ++run_;
-        stage_ = Stage::request;
         return true;
     }
     [[nodiscard]] auto begin_read(bool transforming = false) -> bool {
-        const StreamBytes empty{};
-        if (!begin(empty, 0))
+        if (run_ >= run_ceiling_ || !accepted(apply(Operation::begin_read, transforming)))
             return false;
-        reading_ = true;
-        transforming_ = transforming;
+        ++run_;
         return true;
     }
     [[nodiscard]] auto awaiting_read(bool transforming) const -> bool {
-        return stage_ == Stage::request && reading_ && transforming_ == transforming && ordinal_ == 0 && length_ == 0 &&
-               requested_ == 0 && !terminal_ && !missing_;
+        return accepted(evaluate(Operation::awaiting_read, transforming));
     }
     [[nodiscard]] auto next_input() const -> std::optional<Input> {
-        if (reading_) {
-            if (stage_ == Stage::request && !terminal_ && ordinal_ <= 53)
-                return Input{1, ordinal_};
+        const auto result = evaluate(Operation::next_input);
+        if (!accepted(result))
             return std::nullopt;
-        }
-        if (stage_ != Stage::request || ordinal_ >= length_)
-            return std::nullopt;
-        return Input{input_[ordinal_], ordinal_};
+        return Input{static_cast<std::uint8_t>(word(result, 256)), word(result, 264)};
     }
     [[nodiscard]] auto accept_request(std::uint64_t byte, std::uint64_t ordinal) -> bool {
-        if (stage_ != Stage::request || ordinal != ordinal_ ||
-            (reading_ ? terminal_ || ordinal_ > 53 || byte != 1 : ordinal_ >= length_ || !printable(byte)))
-            return false;
-        requested_ = static_cast<std::uint8_t>(byte);
-        stage_ = Stage::reply;
-        return true;
+        return accepted(apply(Operation::accept_request, byte, ordinal));
     }
     [[nodiscard]] auto accept_reply(std::uint64_t byte, std::uint64_t ordinal) -> bool {
-        if (reading_) {
-            if (stage_ != Stage::reply || ordinal != ordinal_ || terminal_ || ordinal_ > 53 ||
-                !(byte == 2 || byte == 3 || (byte & ~std::uint64_t{0xff00}) == 1))
-                return false;
-            requested_ = byte;
-            stage_ = Stage::acknowledgment;
-            return true;
-        }
-        if (stage_ != Stage::reply || !matches(byte, ordinal))
-            return false;
-        stage_ = Stage::acknowledgment;
-        return true;
+        return accepted(apply(Operation::accept_reply, byte, ordinal));
     }
     [[nodiscard]] auto acknowledge(std::uint64_t byte, std::uint64_t ordinal) -> bool {
-        if (reading_) {
-            if (stage_ != Stage::acknowledgment || ordinal != ordinal_)
-                return false;
-            if (requested_ == 2 || requested_ == 3) {
-                if (byte != requested_)
-                    return false;
-                terminal_ = true;
-                missing_ = byte == 3;
-            } else {
-                if (ordinal_ >= 53)
-                    return false;
-                // Checking the whole shifted value also rejects excess high bits.
-                if (transforming_ ? (byte & std::uint64_t{0xffff}) != requested_ || !printable(byte >> 16)
-                                  : byte != requested_)
-                    return false;
-                output_[ordinal_++] = static_cast<std::uint8_t>(byte >> (transforming_ ? 16 : 8));
-                length_ = ordinal_;
-            }
-            requested_ = 0;
-            stage_ = Stage::request;
-            return true;
-        }
-        if (stage_ != Stage::acknowledgment || !matches(byte, ordinal))
-            return false;
-        output_[ordinal_] = requested_;
-        input_[ordinal_] = 0;
-        requested_ = 0;
-        ++ordinal_;
-        stage_ = Stage::request;
-        return true;
+        return accepted(apply(Operation::acknowledge, byte, ordinal));
     }
     [[nodiscard]] auto ready_to_finish() const -> bool {
-        return stage_ == Stage::request && (reading_ ? terminal_ : ordinal_ == length_);
+        return accepted(evaluate(Operation::ready_to_finish));
     }
     [[nodiscard]] auto finish() -> std::optional<Output> {
-        if (!ready_to_finish())
+        const auto result = apply(Operation::finish);
+        if (!accepted(result))
             return std::nullopt;
-        const Output copied{output_, length_, missing_};
-        scrub();
-        stage_ = Stage::finished;
-        return copied;
+        StreamBytes bytes{};
+        for (std::size_t i = 0; i < stream_capacity; ++i)
+            bytes[i] = std::to_integer<std::uint8_t>(result[192 + i]);
+        return Output{bytes, static_cast<std::size_t>(word(result, 256)), word(result, 264) == 1};
     }
     [[nodiscard]] auto cancel() -> bool {
-        if (stage_ != Stage::request && stage_ != Stage::reply && stage_ != Stage::acknowledgment)
-            return false;
-        scrub();
-        stage_ = Stage::cancelled;
-        return true;
+        return accepted(apply(Operation::cancel));
     }
     [[nodiscard]] auto scrubbed() const -> bool {
-        if (length_ != 0 || ordinal_ != 0 || requested_ != 0 || reading_ || transforming_ || terminal_ || missing_)
-            return false;
-        for (std::size_t index = 0; index < stream_capacity; ++index) {
-            if (input_[index] != 0 || output_[index] != 0)
-                return false;
-        }
-        return true;
+        return accepted(evaluate(Operation::scrubbed));
     }
 };
 } // namespace aurora::program

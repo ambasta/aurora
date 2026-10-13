@@ -297,6 +297,7 @@ def stack_evidence(directory, *, snapshot=False):
             "__au_runtime_note_project",
             "__au_runtime_files_update",
             "__au_runtime_files_replace",
+            "__au_runtime_stream_update",
         )
     )
     graph = decoder.image_stack_graph(
@@ -398,6 +399,7 @@ def note_evidence(directory, functions, mode="program-console"):
         "__au_runtime_note_project",
         "__au_runtime_files_update",
         "__au_runtime_files_replace",
+        "__au_runtime_stream_update",
     }
     need(
         {name for name in names if name.startswith("__au_runtime_")} == bridges,
@@ -459,12 +461,14 @@ def note_evidence(directory, functions, mode="program-console"):
         "Exact note native exports",
     )
     evidence = []
+    check_stream_operation(read_json(directory / "language.abi.json"))
     # Native boundary contracts stay independent of compiler-emitted facts.
     for action, entry, parameters, result_bytes in (
         ("note_update", "update_note", [72, 64, 8], 80),
         ("note_project", "project_note", [72], 72),
         ("files_update", "update_files", [272, 64, 8], 520),
         ("files_replace", "replace_files", [272, 88, 64, 8], 352),
+        ("stream_update", "update_stream", [192, 8, 64, 8, 8], 280),
     ):
         private = source_symbol(directory / "language.abi.json", entry)
         bridge = "__au_runtime_" + action
@@ -507,6 +511,35 @@ def check_copied_record(actual, parameters, result_bytes):
     need(
         actual == dict(parameter_bytes=parameters, result_bytes=result_bytes),
         "Expected compiler v2 copied-record ABI with exact native parameter/result sizes",
+    )
+
+
+def check_stream_operation(facts):
+    symbol, operation = compiler_abi.abi_declaration(facts, "enums", "CommandOperation")
+    # These fixed values are the native Stream::Operation bridge mapping.
+    expected = {
+        "begin": 0,
+        "begin_read": 1,
+        "awaiting_read": 2,
+        "next_input": 3,
+        "accept_request": 4,
+        "accept_reply": 5,
+        "acknowledge": 6,
+        "ready_to_finish": 7,
+        "finish": 8,
+        "cancel": 9,
+        "scrubbed": 10,
+    }
+    cases = operation["cases"]
+    need(
+        cases == expected and all(type(value) is int for value in cases.values()),
+        "Named stream operations must match the native bridge values",
+    )
+    _, function = compiler_abi.abi_declaration(facts, "functions", "update_stream")
+    need(
+        len(function["parameters"]) == 5
+        and function["parameters"][1] == dict(offset=192, bytes=8, kind="enum", type_name=symbol),
+        "Stream bridge operation must use its exact nominal enum",
     )
 
 

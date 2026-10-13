@@ -62,6 +62,9 @@ There is no normalization or textual meaning assigned to NUL/non-ASCII bytes.
 - [Package metadata](../docs/packages.md): identity, manifest grammar and catalog ordering
 - [Offline XFS](../docs/xfs.md): narrow integrity/geometry/directory/file interpretation
 - [Console session policy](../docs/native-console-service.md): volatile note/named-file grammar, limits and lifetime
+- [Protected command ledger](../docs/program-console-contract.md#shared-copied-command-ledger):
+  `console.command_stream` owns copied bytes and request/reply/ack, read-terminal,
+  finish/cancel and scrub transitions; native identity, run and publication authority stay private
 
 The [runtime/library roadmap](../docs/library-stack.md) distinguishes freestanding,
 kernel and user layers. Owned strings, general containers/algorithms, threading,

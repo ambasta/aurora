@@ -1,6 +1,18 @@
 # Host-only bridges assembled with their matching generated Aurora roots.
 # Private source entries remain local; only these test adapters are exported.
 .text
+.ifdef STREAM_TEST_INITIAL
+.global stream_test_initial
+.type stream_test_initial,@function
+stream_test_initial:
+    pushq %rbp
+    movq %rsp,%rbp
+    movq %rdi,%r10
+    call @command_stream_initial@
+    leave
+    ret
+.size stream_test_initial,.-stream_test_initial
+.else
 .ifdef NOTE_TEST_INITIAL
 .global note_test_initial
 .type note_test_initial,@function
@@ -33,4 +45,5 @@ note_test_service:
     leave
     ret
 .size note_test_service,.-note_test_service
+.endif
 .endif

@@ -49,3 +49,15 @@ __au_runtime_files_replace:
     leave
     ret
 .size __au_runtime_files_replace,.-__au_runtime_files_replace
+.global __au_runtime_stream_update
+.hidden __au_runtime_stream_update
+.type __au_runtime_stream_update,@function
+__au_runtime_stream_update:
+    pushq %rbp
+    movq %rsp,%rbp
+    movq %rdi,%r11
+    movq %rsi,%r10
+    call @update_stream@
+    leave
+    ret
+.size __au_runtime_stream_update,.-__au_runtime_stream_update

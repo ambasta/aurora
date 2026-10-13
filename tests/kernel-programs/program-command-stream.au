@@ -1,0 +1,119 @@
+module program_command_stream;
+import console.command_stream;
+import std.binary_buffer;
+import std.binary;
+
+auto command_stream_initial() -> console::CommandStream {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::CommandStream stream = console::CommandStream(empty);
+    return stream;
+}
+
+// The existing generated-code host runner calls this alongside its native
+// identity/run, real-Mailbox and named-file publication controls.
+auto command_stream_contract() -> i64 {
+    static_assert(size_of(console::CommandStream) == 192);
+    static_assert(size_of(console::CommandInput) == 24);
+    static_assert(size_of(console::CommandOutput) == 88);
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    console::CommandStream stream = console::CommandStream(empty);
+    if (!stream.scrubbed() || stream.cancel() || stream.ready_to_finish()) { return 1; }
+    if (stream.begin(empty, 65u64) || stream.begin(empty, 18446744073709551615u64)
+        || stream.begin(empty, 1u64) || !stream.scrubbed()) { return 2; }
+    if (!stream.begin(empty, 0u64) || !stream.ready_to_finish()) { return 3; }
+    const console::CommandOutput zero = stream.finish();
+    const console::CommandOutput twice = stream.finish();
+    if (!zero.available() || zero.size() != 0u64 || zero.missing() || twice.available() || !stream.scrubbed()) {
+        return 4;
+    }
+
+    std::BinaryBuffer64 input = empty;
+    i64 index = 0;
+    while (index < 64) {
+        input.write_u8(index, 'a');
+        index = index + 1;
+    }
+    if (!stream.begin(input, 64u64) || stream.begin_read(false)) { return 5; }
+    index = 0;
+    while (index < 64) {
+        const u64 ordinal = u64(index);
+        const console::CommandInput next = stream.next_input();
+        if (!next.available() || next.byte() != 97u64 || next.ordinal() != ordinal
+            || stream.accept_reply(113u64, ordinal) || stream.acknowledge(113u64, ordinal)
+            || stream.accept_request(31u64, ordinal) || stream.accept_request(113u64, ordinal + 1u64)
+            || !stream.accept_request(113u64, ordinal) || stream.accept_request(113u64, ordinal)) { return 6; }
+        if (stream.accept_reply(114u64, ordinal) || !stream.accept_reply(113u64, ordinal)
+            || stream.acknowledge(113u64, ordinal + 1u64) || stream.acknowledge(114u64, ordinal)
+            || !stream.acknowledge(113u64, ordinal)) { return 7; }
+        index = index + 1;
+    }
+    const console::CommandOutput scalar = stream.finish();
+    const std::BinaryBuffer64 scalar_bytes = scalar.bytes();
+    if (!scalar.available() || scalar.size() != 64u64 || !stream.scrubbed()) { return 8; }
+    index = 0;
+    while (index < 64) {
+        // Deliberately not uppercase: the ledger authenticates copied equality.
+        if (scalar_bytes.at(index) != 'q') { return 9; }
+        index = index + 1;
+    }
+
+    i64 mode = 0;
+    while (mode < 2) {
+        const bool transform = mode == 1;
+        if (!stream.begin_read(transform) || !stream.awaiting_read(transform)
+            || stream.awaiting_read(!transform) || stream.ready_to_finish()) { return 10; }
+        index = 0;
+        while (index < 53) {
+            const u64 ordinal = u64(index);
+            const console::CommandInput next = stream.next_input();
+            // Ordinary reads preserve all eight source bits. Transforming reads
+            // retain that exact reply below a separately bounded printable byte.
+            u64 acknowledgment = 65281u64;
+            if (transform) { acknowledgment = acknowledgment | (113u64 << 16); }
+            if (!next.available() || next.byte() != 1u64 || next.ordinal() != ordinal
+                || stream.accept_request(257u64, ordinal) || !stream.accept_request(1u64, ordinal)
+                || stream.accept_reply(65537u64, ordinal) || !stream.accept_reply(65281u64, ordinal)
+                || stream.acknowledge(acknowledgment | (1u64 << 63), ordinal)
+                || stream.acknowledge(acknowledgment ^ 256u64, ordinal)
+                || !stream.acknowledge(acknowledgment, ordinal)) { return 11; }
+            index = index + 1;
+        }
+        const console::CommandOutput early = stream.finish();
+        if (early.available() || !stream.accept_request(1u64, 53u64) || !stream.accept_reply(2u64, 53u64)
+            || stream.acknowledge(3u64, 53u64) || stream.acknowledge(2u64 | (113u64 << 16), 53u64)
+            || !stream.acknowledge(2u64, 53u64) || !stream.ready_to_finish()) { return 12; }
+        const console::CommandOutput read = stream.finish();
+        const std::BinaryBuffer64 read_bytes = read.bytes();
+        if (!read.available() || read.size() != 53u64 || read.missing() || !stream.scrubbed()) { return 13; }
+        index = 0;
+        while (index < 64) {
+            u8 expected = 0u8;
+            if (index < 53) {
+                expected = 255u8;
+                if (transform) { expected = 'q'; }
+            }
+            if (read_bytes.at(index) != expected) { return 14; }
+            index = index + 1;
+        }
+        u64 marker = 2u64;
+        while (marker <= 3u64) {
+            if (!stream.begin_read(transform) || !stream.accept_request(1u64, 0u64)
+                || !stream.accept_reply(marker, 0u64) || !stream.acknowledge(marker, 0u64)) { return 15; }
+            const console::CommandOutput terminal = stream.finish();
+            if (!terminal.available() || terminal.size() != 0u64 || terminal.missing() != (marker == 3u64)) { return 16; }
+            marker = marker + 1u64;
+        }
+        mode = mode + 1;
+    }
+
+    // A copied value evolves independently and carries no native run authority.
+    if (!stream.begin(input, 1u64)) { return 17; }
+    console::CommandStream copy = stream;
+    if (!copy.cancel() || !copy.scrubbed() || stream.scrubbed()) { return 18; }
+    if (!stream.accept_request(113u64, 0u64) || !stream.cancel() || !stream.scrubbed()) { return 19; }
+    if (!stream.begin_read(true) || !stream.accept_request(1u64, 0u64)
+        || !stream.accept_reply(65281u64, 0u64) || stream.acknowledge(65281u64, 0u64)
+        || !stream.cancel() || !stream.scrubbed() || !stream.begin_read(false)
+        || !stream.awaiting_read(false) || !stream.cancel()) { return 20; }
+    return 0;
+}

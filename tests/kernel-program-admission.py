@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """No-guest adversarial checks for artifact admission and shared stack semantics."""
 
+from copy import deepcopy
 from pathlib import Path
 import importlib.util
 import json
@@ -118,6 +119,76 @@ def main():
             lambda changed=changed: admission.check_copied_record(changed, [272, 64, 8], 520),
             "exact compiler ABI/native boundary mismatch",
         )
+
+    # The copied stream has two 64-byte buffers and eight qwords. Neither the
+    # native object identity nor its nonwrapping run generation crosses this ABI.
+    stream_parameters = [192, 8, 64, 8, 8]
+    stream = dict(parameter_bytes=stream_parameters, result_bytes=280)
+    admission.check_copied_record(stream, stream_parameters, 280)
+    for changed in (
+        None,
+        dict(parameter_bytes=[184, 8, 64, 8, 8], result_bytes=280),
+        dict(parameter_bytes=[200, 8, 64, 8, 8], result_bytes=280),
+        dict(parameter_bytes=[192, 64, 8, 8, 8], result_bytes=280),
+        dict(parameter_bytes=[192, 8, 64, 8], result_bytes=280),
+        dict(parameter_bytes=[192, 8, 64, 8, 8, 8], result_bytes=280),
+        dict(parameter_bytes=stream_parameters, result_bytes=272),
+        dict(parameter_bytes=stream_parameters, result_bytes=288),
+        dict(stream, extra=True),
+    ):
+        reject(
+            lambda changed=changed: admission.check_copied_record(changed, stream_parameters, 280),
+            "exact copied stream boundary mismatch",
+        )
+
+    cases = {
+        "begin": 0,
+        "begin_read": 1,
+        "awaiting_read": 2,
+        "next_input": 3,
+        "accept_request": 4,
+        "accept_reply": 5,
+        "acknowledge": 6,
+        "ready_to_finish": 7,
+        "finish": 8,
+        "cancel": 9,
+        "scrubbed": 10,
+    }
+    typed_stream = {
+        "version": 1,
+        "enums": {"emitted_operation": dict(source_name="CommandOperation", cases=cases)},
+        "functions": {
+            "emitted_stream": {
+                "source_name": "update_stream",
+                "parameters": [
+                    dict(offset=0, bytes=192, kind="class", type_name="emitted_stream_class"),
+                    dict(offset=192, bytes=8, kind="enum", type_name="emitted_operation"),
+                    dict(offset=200, bytes=64, kind="class", type_name="emitted_buffer"),
+                    dict(offset=264, bytes=8, kind="u64"),
+                    dict(offset=272, bytes=8, kind="u64"),
+                ],
+            }
+        },
+    }
+    admission.check_stream_operation(typed_stream)
+    for replacement in (
+        dict(cases, begin=1, begin_read=0),
+        {name: value for name, value in cases.items() if name != "finish"},
+        dict(cases, extra=11),
+        dict(cases, begin=False),
+        dict(cases, begin_read=1.0),
+    ):
+        changed = deepcopy(typed_stream)
+        changed["enums"]["emitted_operation"]["cases"] = replacement
+        reject(lambda: admission.check_stream_operation(changed), "native stream operation mapping drift")
+    for replacement in ({}, dict(typed_stream["enums"], duplicate=typed_stream["enums"]["emitted_operation"])):
+        changed = deepcopy(typed_stream)
+        changed["enums"] = replacement
+        reject(lambda: admission.check_stream_operation(changed), "missing or ambiguous stream enum")
+    for field, value in (("kind", "u64"), ("type_name", "foreign_enum"), ("offset", 200), ("bytes", 16)):
+        changed = deepcopy(typed_stream)
+        changed["functions"]["emitted_stream"]["parameters"][1][field] = value
+        reject(lambda: admission.check_stream_operation(changed), "wrong nominal stream operation parameter")
 
     # Scalar AND semantics and hostile destinations are covered by the shared
     # decoder's self-test, not a program-only compiler-layout normalization.

@@ -1,0 +1,227 @@
+export module console.command_stream;
+import std.binary_buffer;
+import std.binary;
+
+// Copied command data only. Identity, run generations, authenticated Mailbox
+// transactions, domain retirement and publication remain with the supervisor.
+export namespace console {
+    enum class CommandStage {
+        idle,
+        request,
+        reply,
+        acknowledgment,
+        finished,
+        cancelled
+    };
+
+    class CommandInput {
+        u64 present;
+        u64 value;
+        u64 position;
+    public:
+        CommandInput(u64 available, u64 byte, u64 ordinal)
+            : present(available), value(byte), position(ordinal) {
+        }
+        auto available() const -> bool { return present == 1u64; }
+        auto byte() const -> u64 { return value; }
+        auto ordinal() const -> u64 { return position; }
+    };
+
+    class CommandOutput {
+        std::BinaryBuffer64 data;
+        u64 length;
+        u64 absent;
+        u64 present;
+    public:
+        CommandOutput(std::BinaryBuffer64 bytes, u64 count, u64 missing, u64 available)
+            : data(bytes), length(count), absent(missing), present(available) {
+        }
+        auto available() const -> bool { return present == 1u64; }
+        auto missing() const -> bool { return absent == 1u64; }
+        auto size() const -> u64 { return length; }
+        auto bytes() const -> std::BinaryBuffer64 {
+            const std::BinaryBuffer64 copied = data;
+            return copied;
+        }
+    };
+
+    auto command_printable(u64 byte) -> bool {
+        return byte >= 32u64 && byte <= 126u64;
+    }
+
+    // Neither a transformation oracle nor an output capability. All three
+    // participant results must agree in scalar mode. Reads retain the actual
+    // encoded reply and require its exact acknowledgment before staging a byte.
+    class CommandStream {
+        std::BinaryBuffer64 input;
+        std::BinaryBuffer64 output;
+        u64 length;
+        u64 ordinal;
+        u64 requested;
+        u64 reading;
+        u64 transforming;
+        u64 terminal;
+        u64 missing;
+        CommandStage stage;
+
+        auto matches(u64 byte, u64 position) const -> bool {
+            return ordinal < length && position == ordinal && command_printable(byte) && byte == requested;
+        }
+        auto scrub() -> bool {
+            const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+            input = empty;
+            output = empty;
+            length = 0u64;
+            ordinal = 0u64;
+            requested = 0u64;
+            reading = 0u64;
+            transforming = 0u64;
+            terminal = 0u64;
+            missing = 0u64;
+            return true;
+        }
+    public:
+        CommandStream(std::BinaryBuffer64 empty) : input(empty), output(empty),
+            length(0u64), ordinal(0u64), requested(0u64), reading(0u64), transforming(0u64),
+            terminal(0u64), missing(0u64), stage(CommandStage::idle) {
+        }
+
+        auto begin(std::BinaryBuffer64 copied_input, u64 count) -> bool {
+            if ((stage != CommandStage::idle && stage != CommandStage::finished && stage != CommandStage::cancelled)
+                || !scrubbed() || count > 64u64) {
+                return false;
+            }
+            i64 index = 0;
+            while (index < i64(count)) {
+                if (!command_printable(u64(copied_input.at(index)))) { return false; }
+                index = index + 1;
+            }
+            index = 0;
+            while (index < i64(count)) {
+                input.write_u8(index, copied_input.at(index));
+                index = index + 1;
+            }
+            length = count;
+            stage = CommandStage::request;
+            return true;
+        }
+        auto begin_read(bool transform) -> bool {
+            const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+            if (!begin(empty, 0u64)) { return false; }
+            reading = 1u64;
+            if (transform) { transforming = 1u64; }
+            return true;
+        }
+        auto awaiting_read(bool transform) const -> bool {
+            return stage == CommandStage::request && reading == 1u64 && (transforming == 1u64) == transform
+                && ordinal == 0u64 && length == 0u64 && requested == 0u64 && terminal == 0u64 && missing == 0u64;
+        }
+        auto next_input() const -> CommandInput {
+            if (reading == 1u64) {
+                if (stage == CommandStage::request && terminal == 0u64 && ordinal <= 53u64) {
+                    return CommandInput(1u64, 1u64, ordinal);
+                }
+                return CommandInput(0u64, 0u64, 0u64);
+            }
+            if (stage != CommandStage::request || ordinal >= length) {
+                return CommandInput(0u64, 0u64, 0u64);
+            }
+            return CommandInput(1u64, u64(input.at(i64(ordinal))), ordinal);
+        }
+        auto accept_request(u64 byte, u64 position) -> bool {
+            if (stage != CommandStage::request || position != ordinal) { return false; }
+            if (reading == 1u64) {
+                if (terminal != 0u64 || ordinal > 53u64 || byte != 1u64) { return false; }
+            } else {
+                if (ordinal >= length || !command_printable(byte)) { return false; }
+            }
+            requested = byte;
+            stage = CommandStage::reply;
+            return true;
+        }
+        auto accept_reply(u64 byte, u64 position) -> bool {
+            if (reading == 1u64) {
+                // Marker 1 plus one byte in bits 8..15; every other bit is closed.
+                if (stage != CommandStage::reply || position != ordinal || terminal != 0u64 || ordinal > 53u64
+                    || !(byte == 2u64 || byte == 3u64 || (byte & 18446744073709486335u64) == 1u64)) {
+                    return false;
+                }
+                requested = byte;
+                stage = CommandStage::acknowledgment;
+                return true;
+            }
+            if (stage != CommandStage::reply || !matches(byte, position)) { return false; }
+            stage = CommandStage::acknowledgment;
+            return true;
+        }
+        auto acknowledge(u64 byte, u64 position) -> bool {
+            if (reading == 1u64) {
+                if (stage != CommandStage::acknowledgment || position != ordinal) { return false; }
+                if (requested == 2u64 || requested == 3u64) {
+                    if (byte != requested) { return false; }
+                    terminal = 1u64;
+                    if (byte == 3u64) { missing = 1u64; }
+                } else {
+                    if (ordinal >= 53u64) { return false; }
+                    u64 value = byte >> 8;
+                    if (transforming == 1u64) {
+                        // Checking the entire shifted value rejects excess high bits.
+                        if ((byte & 65535u64) != requested || !command_printable(byte >> 16)) { return false; }
+                        value = byte >> 16;
+                    } else {
+                        if (byte != requested) { return false; }
+                    }
+                    output.write_u8(i64(ordinal), u8(value));
+                    ordinal = ordinal + 1u64;
+                    length = ordinal;
+                }
+                requested = 0u64;
+                stage = CommandStage::request;
+                return true;
+            }
+            if (stage != CommandStage::acknowledgment || !matches(byte, position)) { return false; }
+            output.write_u8(i64(ordinal), u8(requested));
+            input.write_u8(i64(ordinal), 0u8);
+            requested = 0u64;
+            ordinal = ordinal + 1u64;
+            stage = CommandStage::request;
+            return true;
+        }
+        auto ready_to_finish() const -> bool {
+            if (stage != CommandStage::request) { return false; }
+            if (reading == 1u64) { return terminal == 1u64; }
+            return ordinal == length;
+        }
+        auto finish() -> CommandOutput {
+            if (!ready_to_finish()) {
+                const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+                return CommandOutput(empty, 0u64, 0u64, 0u64);
+            }
+            const std::BinaryBuffer64 copied_bytes = output;
+            const CommandOutput copied = CommandOutput(copied_bytes, length, missing, 1u64);
+            scrub();
+            stage = CommandStage::finished;
+            return copied;
+        }
+        auto cancel() -> bool {
+            if (stage != CommandStage::request && stage != CommandStage::reply && stage != CommandStage::acknowledgment) {
+                return false;
+            }
+            scrub();
+            stage = CommandStage::cancelled;
+            return true;
+        }
+        auto scrubbed() const -> bool {
+            if (length != 0u64 || ordinal != 0u64 || requested != 0u64 || reading != 0u64
+                || transforming != 0u64 || terminal != 0u64 || missing != 0u64) {
+                return false;
+            }
+            i64 index = 0;
+            while (index < 64) {
+                if (input.at(index) != 0u8 || output.at(index) != 0u8) { return false; }
+                index = index + 1;
+            }
+            return true;
+        }
+    };
+}
