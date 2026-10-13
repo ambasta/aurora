@@ -133,6 +133,31 @@ static_assert(static_cast<std::int64_t>(lowering::InstructionForm::Load) == 7 &&
               static_cast<std::int64_t>(lowering::InstructionForm::BeginArray) == 47 &&
               static_cast<std::int64_t>(lowering::InstructionForm::EndArray) == 48 &&
               static_cast<std::int64_t>(lowering::InstructionForm::BorrowSpan) == 49);
+static_assert(static_cast<std::int64_t>(lowering::InstructionForm::Constant) == 5 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::EnumConstant) == 6 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::UnaryValue) == 11 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::BinaryValue) == 12 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::Convert) == 13 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::Compare) == 14);
+static_assert(static_cast<std::int64_t>(lowering::Unary::CheckedNegate) == 0 &&
+              static_cast<std::int64_t>(lowering::Unary::LogicalNot) == 1 &&
+              static_cast<std::int64_t>(lowering::Unary::BitNot) == 2);
+static_assert(static_cast<std::int64_t>(lowering::Binary::CheckedAdd) == 0 &&
+              static_cast<std::int64_t>(lowering::Binary::CheckedSubtract) == 1 &&
+              static_cast<std::int64_t>(lowering::Binary::CheckedMultiply) == 2 &&
+              static_cast<std::int64_t>(lowering::Binary::CheckedDivide) == 3 &&
+              static_cast<std::int64_t>(lowering::Binary::CheckedRemainder) == 4 &&
+              static_cast<std::int64_t>(lowering::Binary::BitAnd) == 5 &&
+              static_cast<std::int64_t>(lowering::Binary::BitOr) == 6 &&
+              static_cast<std::int64_t>(lowering::Binary::BitXor) == 7 &&
+              static_cast<std::int64_t>(lowering::Binary::ShiftLeft) == 8 &&
+              static_cast<std::int64_t>(lowering::Binary::ShiftRight) == 9);
+static_assert(static_cast<std::int64_t>(lowering::Comparison::Equal) == 0 &&
+              static_cast<std::int64_t>(lowering::Comparison::NotEqual) == 1 &&
+              static_cast<std::int64_t>(lowering::Comparison::Less) == 2 &&
+              static_cast<std::int64_t>(lowering::Comparison::Greater) == 3 &&
+              static_cast<std::int64_t>(lowering::Comparison::LessEqual) == 4 &&
+              static_cast<std::int64_t>(lowering::Comparison::GreaterEqual) == 5);
 static_assert(static_cast<std::int64_t>(Role::Index) == 1 && static_cast<std::int64_t>(Role::Offset) == 2 &&
               static_cast<std::int64_t>(Role::ServiceKindId) == 3);
 static_assert(static_cast<std::int64_t>(Role::LoanId) == 4 && static_cast<std::int64_t>(Role::ResultOffset) == 6 &&
@@ -152,6 +177,7 @@ static_assert(static_cast<std::int64_t>(Role::SpanArguments) == 8 && static_cast
               static_cast<std::int64_t>(Role::OwnerArguments) == 37);
 static_assert(static_cast<std::int64_t>(Role::LiteralBytes) == 33 && static_cast<std::int64_t>(Role::UnsignedConstant) == 11 &&
               static_cast<std::int64_t>(Role::CalleeName) == 100 && static_cast<std::int64_t>(Role::ClassName) == 101);
+static_assert(static_cast<std::int64_t>(Role::SignedConstant) == 10 && static_cast<std::int64_t>(Role::CaseIndex) == 13);
 using Capacities = std::array<std::int64_t, static_cast<std::size_t>(Pool::count)>;
 Capacities capacities(const wire::InstructionCounts &counts) {
     return {counts.instructionCount, counts.operandCount, counts.literalCount, counts.instructionCount, counts.bodyCount};

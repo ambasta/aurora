@@ -4497,15 +4497,65 @@ void rawInstructionAdmission() {
     namespace wire = abi::compiler_ir_instructions;
     namespace lower = abi::compiler_lowering;
     namespace bytes = aurora::hosted::bytes;
-    context = "instruction storage rejects malformed copied rows before observations";
-    // One constant/return body exercises each physical domain. The final cases
-    // have valid transport/CFG but fail entry, static call or storage admission.
-    for (int mutation = 0; mutation < 17; ++mutation) {
+    using Form = lower::InstructionForm;
+    using Reason = wire::InstructionError;
+    using Kind = aurora::TypeKind;
+    struct ScalarCase {
+        Form form;
+        Kind type;
+        std::int64_t value;
+        std::int64_t operation;
+        Reason error;
+    };
+    const std::vector<ScalarCase> scalars{
+        {Form::Constant, Kind::Ref, 0, 0, Reason::constant_type},
+        {Form::Constant, Kind::Bool, -1, 0, Reason::constant_bool},
+        {Form::Constant, Kind::Bool, 2, 0, Reason::constant_bool},
+        {Form::Constant, Kind::U8, -1, 0, Reason::constant_u8},
+        {Form::Constant, Kind::U8, 256, 0, Reason::constant_u8},
+        {Form::EnumConstant, Kind::I64, 0, 0, Reason::enum_constant_type},
+        {Form::EnumConstant, Kind::Enum, -1, 0, Reason::enum_constant_case},
+        {Form::EnumConstant, Kind::Enum, 2, 0, Reason::enum_constant_case},
+        {Form::UnaryValue, Kind::Ref, 0, -1, Reason::unary_operation},
+        {Form::UnaryValue, Kind::I64, 0, INT64_MAX, Reason::unary_operation},
+        {Form::UnaryValue, Kind::U8, 0, 0, Reason::unary_operand},
+        {Form::BinaryValue, Kind::Ref, 0, -1, Reason::binary_operation},
+        {Form::BinaryValue, Kind::I64, 0, INT64_MAX, Reason::binary_operation},
+        {Form::BinaryValue, Kind::I64, 0, 5, Reason::binary_operand},
+        {Form::Convert, Kind::I64, 0, 0, Reason::conversion_types},
+        {Form::Compare, Kind::Ref, 0, -1, Reason::comparison_operation},
+        {Form::Compare, Kind::I64, 0, INT64_MAX, Reason::comparison_operation},
+        {Form::Compare, Kind::Ref, 0, 0, Reason::comparison_scalar},
+        {Form::Compare, Kind::Bool, 0, 2, Reason::comparison_ordered},
+        {Form::Compare, Kind::Enum, 0, 2, Reason::comparison_ordered},
+        {Form::Constant, Kind::Bool, 0, 0, Reason::none},
+        {Form::Constant, Kind::Bool, 1, 0, Reason::none},
+        {Form::Constant, Kind::U8, 0, 0, Reason::none},
+        {Form::Constant, Kind::U8, 255, 0, Reason::none},
+        {Form::Constant, Kind::U64, INT64_MIN, 0, Reason::none},
+        {Form::Constant, Kind::U64, -1, 0, Reason::none},
+        {Form::EnumConstant, Kind::Enum, 1, 0, Reason::none},
+        // Static admission does not inspect current values or operand stacks.
+        {Form::UnaryValue, Kind::I64, 0, 0, Reason::none},
+        {Form::BinaryValue, Kind::U8, 0, 8, Reason::none},
+        {Form::Convert, Kind::U8, 0, 0, Reason::none},
+        {Form::Compare, Kind::Enum, 0, 0, Reason::none},
+    };
+    // Reuse one operation/return body for transport and semantic failures.
+    // Scalar rows are transport-valid, including unknown raw operator values.
+    for (std::size_t mutation = 0; mutation < 17 + scalars.size(); ++mutation) {
+        const auto *scalar = mutation < 17 ? nullptr : &scalars[mutation - 17];
+        context = "raw instruction admission case " + std::to_string(mutation);
+        const bool conversion = scalar && scalar->form == Form::Convert;
+        const bool singleOperand = scalar && (scalar->form == Form::UnaryValue ||
+            scalar->form == Form::BinaryValue || scalar->form == Form::Compare);
         const bool missingBinding = mutation == 14;
         const bool missingCall = mutation == 15;
         const bool missingSlot = mutation == 16;
-        const bool invalidBody = missingBinding || missingCall || missingSlot;
-        const bool admitted = mutation == 0 || invalidBody;
+        const bool invalidBody = missingBinding || missingCall || missingSlot ||
+            (scalar && scalar->error != Reason::none);
+        const bool admitted = mutation == 0 || invalidBody || scalar;
+        const std::int64_t operandCount = missingCall || singleOperand ? 1 : 2;
         Allocations allocations;
         bytes::Region region(1048576, allocations.allocator());
         {
@@ -4520,8 +4570,9 @@ void rawInstructionAdmission() {
             owners.metadata.region = owners.instructions.region = region.id();
             abi::MetadataCreate metadata{};
             metadata.region = region.id();
-            metadata.counts.coreCounts.bytes = missingCall ? 2 : 1;
-            metadata.counts.coreCounts.types = missingCall ? 1 : missingBinding ? 3 : 2;
+            metadata.counts.coreCounts.bytes = missingCall || scalar ? 2 : 1;
+            metadata.counts.coreCounts.types = missingCall ? 1 : missingBinding || conversion ? 3 : 2;
+            metadata.counts.mapCounts.enums = scalar ? 1 : 0;
             metadata.counts.mapCounts.indices = 1;
             metadata.counts.mapCounts.views = 1;
             metadata.callableCount = 1;
@@ -4530,7 +4581,7 @@ void rawInstructionAdmission() {
             aurora_hosted_metadata_create(&metadata, declarations);
             abi::InstructionsCreate instructions{};
             instructions.region = region.id();
-            instructions.counts = {2, missingCall ? 1 : 2, mutation == 10 ? 1 : 0, 1};
+            instructions.counts = {2, operandCount, mutation == 10 ? 1 : 0, 1};
             auto *storage = owners.instructions.store.storage.data();
             aurora_hosted_instructions_create(&instructions, storage);
             const std::array<const void *, 2> roots{storage, declarations};
@@ -4552,16 +4603,24 @@ void rawInstructionAdmission() {
             };
             auto names = descriptor(declarations, abi::metadataStore_bytesOffset);
             require(bytes::__au_runtime_bytes_set(&names, 0, 'f') == 1, "raw admission name write failed");
-            if (missingCall)
-                require(bytes::__au_runtime_bytes_set(&names, 1, 'g') == 1, "raw call target name write failed");
+            if (missingCall || scalar)
+                require(bytes::__au_runtime_bytes_set(&names, 1, scalar ? 'E' : 'g') == 1,
+                        "raw secondary name write failed");
+            if (scalar)
+                set(declarations, abi::metadataStore_enumsOffset, 0, meta::EnumRow{{1, 1}, 2});
             meta::RawTypeRow type{};
             set(declarations, abi::metadataStore_typesOffset, 0, type);
             if (mutation == 7)
                 type.rawTail.templateArgumentCount = 1;
+            if (scalar) {
+                type.typeKind = static_cast<std::int64_t>(scalar->type);
+                if (scalar->type == Kind::Enum)
+                    type.nameRange = {1, 1};
+            }
             if (!missingCall)
                 set(declarations, abi::metadataStore_typesOffset, 1, type);
-            if (missingBinding)
-                set(declarations, abi::metadataStore_typesOffset, 2, type);
+            if (missingBinding || conversion)
+                set(declarations, abi::metadataStore_typesOffset, 2, meta::RawTypeRow{});
             meta::CallableRow callable{};
             callable.nameRange = {0, 1};
             callable.typeRange = {0, missingBinding ? 2 : 1};
@@ -4573,15 +4632,19 @@ void rawInstructionAdmission() {
             wire::RawInstructionRow constant{};
             constant.recordKind = mutation == 1 ? -1 : static_cast<std::int64_t>(lower::RecordKind::Instruction);
             constant.instructionForm = mutation == 2 ? -1 : static_cast<std::int64_t>(
-                missingCall ? lower::InstructionForm::Call : missingSlot ? lower::InstructionForm::Load
-                                                                      : lower::InstructionForm::Constant);
+                scalar ? scalar->form : missingCall ? Form::Call : missingSlot ? Form::Load : Form::Constant);
+            if (scalar) {
+                if (scalar->form == Form::UnaryValue) constant.unaryOperation = scalar->operation;
+                if (scalar->form == Form::BinaryValue) constant.binaryOperation = scalar->operation;
+                if (scalar->form == Form::Compare) constant.comparisonOperation = scalar->operation;
+            }
             constant.operandBegin = mutation == 3 ? std::numeric_limits<std::int64_t>::max() : 0;
-            constant.operandCount = missingCall ? 1 : 2;
+            constant.operandCount = operandCount;
             set(storage, abi::instructionStore_instructionsOffset, 0, constant);
             wire::RawInstructionRow terminal{};
             terminal.recordKind = static_cast<std::int64_t>(lower::RecordKind::Instruction);
             terminal.instructionForm = static_cast<std::int64_t>(lower::InstructionForm::Return);
-            terminal.operandBegin = missingCall ? 1 : 2;
+            terminal.operandBegin = operandCount;
             set(storage, abi::instructionStore_instructionsOffset, 1, terminal);
             wire::RawOperandRow value{};
             value.operandRole = mutation == 4 ? -1 : static_cast<std::int64_t>(
@@ -4590,11 +4653,30 @@ void rawInstructionAdmission() {
             value.signedValue = missingCall ? 0 : 42;
             value.sliceBegin = missingCall ? 1 : 0;
             value.sliceCount = mutation == 5 || missingCall ? 1 : 0;
+            if (scalar) {
+                value.signedValue = scalar->value;
+                if (singleOperand || conversion || scalar->form == Form::EnumConstant) {
+                    value.operandRole = static_cast<std::int64_t>(singleOperand ? lower::OperandRole::OperandTypeId
+                        : conversion ? lower::OperandRole::SourceTypeId : lower::OperandRole::TypeId);
+                    value.signedValue = 1;
+                } else if (scalar->type == Kind::U64) {
+                    value.operandRole = static_cast<std::int64_t>(lower::OperandRole::UnsignedConstant);
+                    value.signedValue = 0;
+                    value.unsignedValue = static_cast<std::uint64_t>(scalar->value);
+                }
+            }
             set(storage, abi::instructionStore_operandsOffset, 0, value);
             wire::RawOperandRow typeOperand{};
             typeOperand.operandRole = static_cast<std::int64_t>(lower::OperandRole::TypeId);
             typeOperand.signedValue = mutation == 6 ? 0 : missingBinding ? 2 : 1;
-            if (!missingCall)
+            if (conversion) {
+                typeOperand.operandRole = static_cast<std::int64_t>(lower::OperandRole::ResultTypeId);
+                typeOperand.signedValue = 2;
+            } else if (scalar && scalar->form == Form::EnumConstant) {
+                typeOperand.operandRole = static_cast<std::int64_t>(lower::OperandRole::CaseIndex);
+                typeOperand.signedValue = scalar->value;
+            }
+            if (operandCount == 2)
                 set(storage, abi::instructionStore_operandsOffset, 1, typeOperand);
             set(storage, abi::instructionStore_codeOrderOffset, 0,
                 wire::CodeRow{1, mutation == 11 ? 0 : -1, mutation == 12 ? 1u : 0u, mutation == 13 ? 1 : 0});
@@ -4633,7 +4715,7 @@ void rawInstructionAdmission() {
                             static_cast<std::int64_t>(invalidBody ? wire::InstructionStatus::invalid
                                                                  : wire::InstructionStatus::structured) &&
                             allocations.attempted == attempted,
-                        "instruction CFG/entry/call/storage admission status differs or allocated another owner");
+                        "instruction static admission status differs or allocated another owner");
                 const auto codeOrder = descriptor(storage, abi::instructionStore_codeOrderOffset);
                 for (std::int64_t position = 0; position < 2; ++position) {
                     wire::CodeRow code{};
@@ -4644,7 +4726,8 @@ void rawInstructionAdmission() {
                 }
                 if (invalidBody) {
                     require(aurora_hosted_instructions_error(storage) ==
-                                static_cast<std::int64_t>(missingCall ? wire::InstructionError::call_target
+                                static_cast<std::int64_t>(scalar ? scalar->error
+                                                       : missingCall ? wire::InstructionError::call_target
                                                        : missingSlot ? wire::InstructionError::scalar_slot
                                                                      : wire::InstructionError::scalar_prefix) &&
                                 aurora_hosted_instructions_publish(storage) == 0 &&
@@ -4654,7 +4737,7 @@ void rawInstructionAdmission() {
                                     static_cast<std::int64_t>(wire::InstructionStatus::invalid) &&
                                 aurora_hosted_instructions_publish(storage) == 0 &&
                                 allocations.attempted == attempted,
-                            "failed entry/call/storage admission published, reopened or allocated another owner");
+                            "failed static admission published, reopened or allocated another owner");
                 } else {
                     require(aurora_hosted_instructions_publish(storage) == 1 &&
                                 aurora_hosted_instructions_structure(roots.data()) ==
@@ -4663,7 +4746,7 @@ void rawInstructionAdmission() {
                             "instruction publication failed to require normalized structure or close mutation");
                 }
                 require(metadataSnapshot() == declarationsBefore,
-                        "instruction entry/call/storage admission mutated its immutable metadata root");
+                        "instruction static admission mutated its immutable metadata root");
             }
         }
         require(allocations.successful == allocations.released && region.metrics().used == 0 && region.close(),

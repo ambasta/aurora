@@ -4,8 +4,9 @@ import aurora.compiler.ir_metadata;
 
 // Generic durable transport admission precedes the sole native field walk for
 // exact opcode shapes. Source admission normalizes every body, then checks all
-// entry bindings, static call sites and storage accesses against readonly metadata.
-// Native verification keeps dynamic value/type, lifetime, provenance and joins.
+// entry bindings, static call sites, storage accesses and scalar computations
+// against readonly metadata. Native verification keeps dynamic value/type,
+// lifetime, provenance and joins.
 export namespace compiler_ir_instructions {
     auto bounded_range(i64 begin, i64 count, i64 limit) -> bool {
         return begin >= 0 && count >= 0 && begin <= limit && count <= limit - begin;
@@ -1235,6 +1236,93 @@ export namespace compiler_ir_instructions {
         }
         return true;
     }
+    auto scalar_unsigned_type(compiler_ir_metadata::RawTypeRow type) -> bool {
+        return compiler_ir_metadata::plain_type(type, 7) || compiler_ir_metadata::plain_type(type, 10);
+    }
+    auto scalar_integer_type(compiler_ir_metadata::RawTypeRow type) -> bool {
+        return compiler_ir_metadata::plain_type(type, 0) || scalar_unsigned_type(type);
+    }
+    auto verify_scalar_constant(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 instruction) -> bool {
+        const compiler_ir_metadata::RawTypeRow type = metadata.type_at(call_value(store, instruction, 1));
+        if (!compiler_ir_metadata::scalar_type(type)) { return fail(store, InstructionError::constant_type); }
+        // Codec shape admission already selected the unsigned lane for U64.
+        // Every bit pattern is canonical there, including values above I64_MAX.
+        if (type.kind() == 7) { return true; }
+        const i64 value = call_value(store, instruction, 0);
+        if (type.kind() == 1 && value != 0 && value != 1) { return fail(store, InstructionError::constant_bool); }
+        if (type.kind() == 10 && (value < 0 || value > 255)) { return fail(store, InstructionError::constant_u8); }
+        return true;
+    }
+    auto verify_scalar_enum_constant(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 instruction) -> bool {
+        const compiler_ir_metadata::RawTypeRow type = metadata.type_at(call_value(store, instruction, 0));
+        if (type.kind() != 9 || !compiler_ir_metadata::canonical_tail(type)) {
+            return fail(store, InstructionError::enum_constant_type);
+        }
+        const i64 enum_index = compiler_ir_metadata::find_enum(metadata, type.name());
+        if (enum_index < 0) { return fail(store, InstructionError::enum_constant_type); }
+        const compiler_ir_metadata::EnumRow declaration = metadata.enum_at(enum_index);
+        const i64 case_index = call_value(store, instruction, 1);
+        if (case_index < 0 || case_index >= declaration.cases()) {
+            return fail(store, InstructionError::enum_constant_case);
+        }
+        return true;
+    }
+    auto verify_scalar_computation(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 instruction) -> bool {
+        const RawInstructionRow row = store.instruction_at(instruction);
+        const i64 form = row.form();
+        if (form == 5) { return verify_scalar_constant(store, metadata, instruction); }
+        if (form == 6) { return verify_scalar_enum_constant(store, metadata, instruction); }
+        if (form != 11 && form != 12 && form != 13 && form != 14) { return true; }
+        const compiler_ir_metadata::RawTypeRow type = metadata.type_at(call_value(store, instruction, 0));
+        if (form == 11) {
+            const i64 operation = row.unary_operation();
+            if (operation < 0 || operation > 2) { return fail(store, InstructionError::unary_operation); }
+            if ((operation == 0 && !compiler_ir_metadata::plain_type(type, 0))
+                || (operation == 1 && !compiler_ir_metadata::plain_type(type, 1))
+                || (operation == 2 && !scalar_unsigned_type(type))) {
+                return fail(store, InstructionError::unary_operand);
+            }
+            return true;
+        }
+        if (form == 12) {
+            const i64 operation = row.binary_operation();
+            if (operation < 0 || operation > 9) { return fail(store, InstructionError::binary_operation); }
+            if (!scalar_unsigned_type(type) && (operation >= 5 || !compiler_ir_metadata::plain_type(type, 0))) {
+                return fail(store, InstructionError::binary_operand);
+            }
+            return true;
+        }
+        if (form == 13) {
+            const compiler_ir_metadata::RawTypeRow result = metadata.type_at(call_value(store, instruction, 1));
+            if (!scalar_integer_type(type) || !scalar_integer_type(result)
+                || compiler_ir_metadata::same_type(metadata, type, result)) {
+                return fail(store, InstructionError::conversion_types);
+            }
+            return true;
+        }
+        const i64 operation = row.comparison_operation();
+        if (operation < 0 || operation > 5) { return fail(store, InstructionError::comparison_operation); }
+        if (!compiler_ir_metadata::scalar_value(metadata, type)) { return fail(store, InstructionError::comparison_scalar); }
+        if (operation >= 2 && !scalar_integer_type(type)) { return fail(store, InstructionError::comparison_ordered); }
+        return true;
+    }
+    auto verify_scalar_computations(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata) -> bool {
+        i64 callable = 0;
+        while (callable < store.body_count()) {
+            const BodyRow body = store.body_at(callable);
+            i64 position = 0;
+            while (position < body.count()) {
+                const CodeRow code = store.code_at(body.begin() + position);
+                if (!verify_scalar_computation(store, metadata, code.id())) { return false; }
+                position = position + 1;
+            }
+            callable = callable + 1;
+        }
+        return true;
+    }
     auto admit_instruction_bodies(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata)
         -> InstructionStatus {
         if (store.status() != InstructionStatus::admitted) { return store.status(); }
@@ -1253,10 +1341,12 @@ export namespace compiler_ir_instructions {
             callable = callable + 1;
         }
         // All entry contracts precede all call contracts, then all storage
-        // contracts precede the first native State in any body of this module.
-        // A later static access error can therefore precede an earlier dynamic
-        // value/lifetime error; source rejection remains terminal and unpublished.
-        if (!verify_call_sites(store, metadata) || !verify_storage_accesses(store, metadata)) { return store.status(); }
+        // contracts precede all scalar computations before the first native
+        // State in any body. Separate passes preserve this module-wide order:
+        // a later static error can precede an earlier dynamic value/lifetime
+        // error; source rejection remains terminal and unpublished.
+        if (!verify_call_sites(store, metadata) || !verify_storage_accesses(store, metadata)
+            || !verify_scalar_computations(store, metadata)) { return store.status(); }
         return store.status();
     }
 }

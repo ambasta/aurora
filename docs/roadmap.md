@@ -86,7 +86,7 @@ current C1/C2 stages verify convergence. Aurora owns existing module grammar,
 unresolved declaration admission, module/template resolution and resolved semantic/
 ownership analysis through typed IR. Independent metadata, callable, frame and
 call-graph checks also live in Aurora, alongside durable instruction storage and
-structural CFG normalization and static entry, call and local-storage admission,
+structural CFG normalization and static entry, call, local-storage and scalar admission,
 awaiting final-source qualification. Dynamic value/provenance verification and native emission remain the next migrations,
 alongside host record projection and source loading.
 Native assembler/linker and host runtime/file/process services remain separate
