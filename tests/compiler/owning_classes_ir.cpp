@@ -907,7 +907,7 @@ void ownershipTests() {
     });
     reject("inactive authority cannot replace owner provenance", called(), [](Module &m) {
         op<ResourceCall>(m).regionOffset = 416;
-    });
+    }, "region authority is not active");
     reject("scalar argument cannot name owner", called(), [](Module &m) {
         op<ResourceCall>(m).ownerArguments[2] = 96;
     });

@@ -232,7 +232,7 @@ export namespace compiler_frontend {
     }
     auto instructions_structure(compiler_ir_instructions::InstructionStore& store,
         const compiler_ir_metadata::MetadataStore& metadata) -> compiler_ir_instructions::InstructionStatus {
-        return compiler_ir_instructions::normalize_instruction_cfg(store, metadata);
+        return compiler_ir_instructions::admit_instruction_bodies(store, metadata);
     }
     auto instructions_publish(compiler_ir_instructions::InstructionStore& store) -> bool {
         return store.publish();

@@ -4498,10 +4498,12 @@ void rawInstructionAdmission() {
     namespace lower = abi::compiler_lowering;
     namespace bytes = aurora::hosted::bytes;
     context = "instruction storage rejects malformed copied rows before observations";
-    // One constant/return body exercises each physical domain. The final case
-    // has valid transport and CFG but omits a declared scalar entry binding.
-    for (int mutation = 0; mutation < 15; ++mutation) {
+    // One constant/return body exercises each physical domain. The final cases
+    // have valid transport/CFG but fail entry or static call admission.
+    for (int mutation = 0; mutation < 16; ++mutation) {
         const bool missingBinding = mutation == 14;
+        const bool missingCall = mutation == 15;
+        const bool admitted = mutation == 0 || missingBinding || missingCall;
         Allocations allocations;
         bytes::Region region(1048576, allocations.allocator());
         {
@@ -4516,8 +4518,8 @@ void rawInstructionAdmission() {
             owners.metadata.region = owners.instructions.region = region.id();
             abi::MetadataCreate metadata{};
             metadata.region = region.id();
-            metadata.counts.coreCounts.bytes = 1;
-            metadata.counts.coreCounts.types = missingBinding ? 3 : 2;
+            metadata.counts.coreCounts.bytes = missingCall ? 2 : 1;
+            metadata.counts.coreCounts.types = missingCall ? 1 : missingBinding ? 3 : 2;
             metadata.counts.mapCounts.indices = 1;
             metadata.counts.mapCounts.views = 1;
             metadata.callableCount = 1;
@@ -4526,7 +4528,7 @@ void rawInstructionAdmission() {
             aurora_hosted_metadata_create(&metadata, declarations);
             abi::InstructionsCreate instructions{};
             instructions.region = region.id();
-            instructions.counts = {2, 2, mutation == 10 ? 1 : 0, 1};
+            instructions.counts = {2, missingCall ? 1 : 2, mutation == 10 ? 1 : 0, 1};
             auto *storage = owners.instructions.store.storage.data();
             aurora_hosted_instructions_create(&instructions, storage);
             const std::array<const void *, 2> roots{storage, declarations};
@@ -4548,11 +4550,14 @@ void rawInstructionAdmission() {
             };
             auto names = descriptor(declarations, abi::metadataStore_bytesOffset);
             require(bytes::__au_runtime_bytes_set(&names, 0, 'f') == 1, "raw admission name write failed");
+            if (missingCall)
+                require(bytes::__au_runtime_bytes_set(&names, 1, 'g') == 1, "raw call target name write failed");
             meta::RawTypeRow type{};
             set(declarations, abi::metadataStore_typesOffset, 0, type);
             if (mutation == 7)
                 type.rawTail.templateArgumentCount = 1;
-            set(declarations, abi::metadataStore_typesOffset, 1, type);
+            if (!missingCall)
+                set(declarations, abi::metadataStore_typesOffset, 1, type);
             if (missingBinding)
                 set(declarations, abi::metadataStore_typesOffset, 2, type);
             meta::CallableRow callable{};
@@ -4565,38 +4570,42 @@ void rawInstructionAdmission() {
                     "instruction raw tail escaped its metadata admission boundary");
             wire::RawInstructionRow constant{};
             constant.recordKind = mutation == 1 ? -1 : static_cast<std::int64_t>(lower::RecordKind::Instruction);
-            constant.instructionForm = mutation == 2 ? -1 : static_cast<std::int64_t>(lower::InstructionForm::Constant);
+            constant.instructionForm = mutation == 2 ? -1 : static_cast<std::int64_t>(
+                missingCall ? lower::InstructionForm::Call : lower::InstructionForm::Constant);
             constant.operandBegin = mutation == 3 ? std::numeric_limits<std::int64_t>::max() : 0;
-            constant.operandCount = 2;
+            constant.operandCount = missingCall ? 1 : 2;
             set(storage, abi::instructionStore_instructionsOffset, 0, constant);
             wire::RawInstructionRow terminal{};
             terminal.recordKind = static_cast<std::int64_t>(lower::RecordKind::Instruction);
             terminal.instructionForm = static_cast<std::int64_t>(lower::InstructionForm::Return);
-            terminal.operandBegin = 2;
+            terminal.operandBegin = missingCall ? 1 : 2;
             set(storage, abi::instructionStore_instructionsOffset, 1, terminal);
             wire::RawOperandRow value{};
-            value.operandRole = mutation == 4 ? -1 : static_cast<std::int64_t>(lower::OperandRole::SignedConstant);
-            value.signedValue = 42;
-            value.sliceCount = mutation == 5 ? 1 : 0;
+            value.operandRole = mutation == 4 ? -1 : static_cast<std::int64_t>(
+                missingCall ? lower::OperandRole::CalleeName : lower::OperandRole::SignedConstant);
+            value.signedValue = missingCall ? 0 : 42;
+            value.sliceBegin = missingCall ? 1 : 0;
+            value.sliceCount = mutation == 5 || missingCall ? 1 : 0;
             set(storage, abi::instructionStore_operandsOffset, 0, value);
             wire::RawOperandRow typeOperand{};
             typeOperand.operandRole = static_cast<std::int64_t>(lower::OperandRole::TypeId);
             typeOperand.signedValue = mutation == 6 ? 0 : missingBinding ? 2 : 1;
-            set(storage, abi::instructionStore_operandsOffset, 1, typeOperand);
+            if (!missingCall)
+                set(storage, abi::instructionStore_operandsOffset, 1, typeOperand);
             set(storage, abi::instructionStore_codeOrderOffset, 0,
                 wire::CodeRow{1, mutation == 11 ? 0 : -1, mutation == 12 ? 1u : 0u, mutation == 13 ? 1 : 0});
             set(storage, abi::instructionStore_codeOrderOffset, 1, wire::CodeRow{mutation == 8 ? 1 : 2, -1, 0, 0});
             set(storage, abi::instructionStore_bodiesOffset, 0, wire::BodyRow{mutation == 9 ? 1 : 0, 2, 2});
             const auto status = aurora_hosted_instructions_admit(roots.data());
-            require(status == static_cast<std::int64_t>(mutation == 0 || missingBinding
+            require(status == static_cast<std::int64_t>(admitted
                                                            ? wire::InstructionStatus::admitted
                                                            : wire::InstructionStatus::invalid),
                     "malformed instruction storage status differs");
-            const auto expectedError = mutation == 0 || missingBinding ? wire::InstructionError::none
+            const auto expectedError = admitted ? wire::InstructionError::none
                 : mutation == 7 ? wire::InstructionError::noncanonical_type : wire::InstructionError::integrity;
             require(aurora_hosted_instructions_error(storage) == static_cast<std::int64_t>(expectedError),
                     "malformed instruction storage reason differs");
-            if (mutation == 0 || missingBinding) {
+            if (admitted) {
                 const auto metadataSnapshot = [&] {
                     std::vector<std::byte> snapshot(owners.metadata.store.storage.begin(),
                                                     owners.metadata.store.storage.end());
@@ -4617,10 +4626,10 @@ void rawInstructionAdmission() {
                         "admitted instruction storage published before CFG normalization");
                 const auto attempted = allocations.attempted;
                 require(aurora_hosted_instructions_structure(roots.data()) ==
-                            static_cast<std::int64_t>(missingBinding ? wire::InstructionStatus::invalid
-                                                                    : wire::InstructionStatus::structured) &&
+                            static_cast<std::int64_t>(missingBinding || missingCall ? wire::InstructionStatus::invalid
+                                                                                   : wire::InstructionStatus::structured) &&
                             allocations.attempted == attempted,
-                        "instruction CFG/entry admission status differs or allocated another owner");
+                        "instruction CFG/entry/call admission status differs or allocated another owner");
                 const auto codeOrder = descriptor(storage, abi::instructionStore_codeOrderOffset);
                 for (std::int64_t position = 0; position < 2; ++position) {
                     wire::CodeRow code{};
@@ -4629,9 +4638,10 @@ void rawInstructionAdmission() {
                                 code.flowFlags == (position == 0 ? 7u : 4u) && code.scratchValue == 0,
                             "normalized instruction facts lost stable identity or retained scratch");
                 }
-                if (missingBinding) {
+                if (missingBinding || missingCall) {
                     require(aurora_hosted_instructions_error(storage) ==
-                                static_cast<std::int64_t>(wire::InstructionError::scalar_prefix) &&
+                                static_cast<std::int64_t>(missingCall ? wire::InstructionError::call_target
+                                                                     : wire::InstructionError::scalar_prefix) &&
                                 aurora_hosted_instructions_publish(storage) == 0 &&
                                 aurora_hosted_instructions_admit(roots.data()) ==
                                     static_cast<std::int64_t>(wire::InstructionStatus::invalid) &&
@@ -4639,7 +4649,7 @@ void rawInstructionAdmission() {
                                     static_cast<std::int64_t>(wire::InstructionStatus::invalid) &&
                                 aurora_hosted_instructions_publish(storage) == 0 &&
                                 allocations.attempted == attempted,
-                            "failed entry admission published, reopened or allocated another owner");
+                            "failed entry/call admission published, reopened or allocated another owner");
                 } else {
                     require(aurora_hosted_instructions_publish(storage) == 1 &&
                                 aurora_hosted_instructions_structure(roots.data()) ==
@@ -4648,7 +4658,7 @@ void rawInstructionAdmission() {
                             "instruction publication failed to require normalized structure or close mutation");
                 }
                 require(metadataSnapshot() == declarationsBefore,
-                        "instruction entry admission mutated its immutable metadata root");
+                        "instruction entry/call admission mutated its immutable metadata root");
             }
         }
         require(allocations.successful == allocations.released && region.metrics().used == 0 && region.close(),

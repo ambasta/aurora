@@ -101,8 +101,7 @@ static_assert([] {
     return true;
 }());
 static_assert(static_cast<std::int64_t>(lowering::RecordKind::Instruction) == 1);
-static_assert(static_cast<std::int64_t>(lowering::InstructionForm::BorrowedCall) == 83);
-// Source structural and entry admission consume these form ordinals. Pin them to
+// Source structural, entry and call admission consume these ordinals. Pin them to
 // generated lowering facts rather than maintaining another opcode schema.
 static_assert(static_cast<std::int64_t>(lowering::InstructionForm::Label) == 40 &&
               static_cast<std::int64_t>(lowering::InstructionForm::Jump) == 41 &&
@@ -119,8 +118,20 @@ static_assert(static_cast<std::int64_t>(lowering::InstructionForm::BindServicePa
               static_cast<std::int64_t>(lowering::InstructionForm::BindRegionParameter) == 73 &&
               static_cast<std::int64_t>(lowering::InstructionForm::BindBytesParameter) == 74 &&
               static_cast<std::int64_t>(lowering::InstructionForm::BindOwnedObjectParameter) == 79);
+static_assert(static_cast<std::int64_t>(lowering::InstructionForm::ServiceCall) == 4 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::Call) == 19 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::AggregateCall) == 20 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::MethodCall) == 38 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::ResourceCall) == 75 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::BorrowedCall) == 83);
 static_assert(static_cast<std::int64_t>(Role::Index) == 1 && static_cast<std::int64_t>(Role::Offset) == 2 &&
               static_cast<std::int64_t>(Role::ServiceKindId) == 3);
+static_assert(static_cast<std::int64_t>(Role::LoanId) == 4 && static_cast<std::int64_t>(Role::ResultOffset) == 6 &&
+              static_cast<std::int64_t>(Role::ReceiverOffset) == 26 &&
+              static_cast<std::int64_t>(Role::ReceiverFieldIndex) == 27 &&
+              static_cast<std::int64_t>(Role::RegionOffset) == 34 &&
+              static_cast<std::int64_t>(Role::SecondReceiverOffset) == 98 &&
+              static_cast<std::int64_t>(Role::SecondLoanId) == 99);
 static_assert(static_cast<std::int64_t>(service::Kind::Console) == 0 &&
               static_cast<std::int64_t>(service::Kind::Display) == 1 &&
               static_cast<std::int64_t>(service::Kind::IommuEvent) == 2);

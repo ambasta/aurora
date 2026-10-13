@@ -93,7 +93,267 @@ export namespace compiler_ir_instructions {
         //: invalid typed IR: parameter cannot bind byte array origin storage
         scalar_array,
         //: invalid typed IR: slot type/layout mismatch
-        scalar_slot
+        scalar_slot,
+        //: invalid typed IR: ordinary call cannot target runtime symbol
+        call_runtime,
+        //: invalid typed IR: unknown call target
+        call_target,
+        //: invalid typed IR: plain call cannot target receiver function
+        call_receiver,
+        //: invalid typed IR: plain call cannot bypass a service loan
+        call_service,
+        //: invalid typed IR: plain call cannot target resource signature
+        call_resource,
+        //: invalid typed IR: plain call cannot target aggregate signature
+        call_aggregate,
+        //: invalid typed IR: unknown aggregate call target
+        aggregate_target,
+        //: invalid typed IR: aggregate call cannot target receiver function
+        aggregate_receiver,
+        //: invalid typed IR: aggregate call cannot bypass a service loan
+        aggregate_service,
+        //: invalid typed IR: aggregate call cannot target resource signature
+        aggregate_resource,
+        //: invalid typed IR: aggregate call requires aggregate signature
+        aggregate_signature,
+        //: invalid typed IR: aggregate call argument vector size mismatch
+        aggregate_vector,
+        //: invalid typed IR: span call argument vector size mismatch
+        aggregate_span_vector,
+        //: invalid typed IR: span argument cannot name object storage
+        aggregate_span_object,
+        //: invalid typed IR: non-span argument cannot name span storage
+        aggregate_nonspan,
+        //: invalid typed IR: scalar argument cannot name object storage
+        aggregate_scalar,
+        //: invalid typed IR: invalid aggregate parameter type
+        aggregate_parameter,
+        //: invalid typed IR: aggregate argument requires exact object slot
+        aggregate_argument_slot,
+        //: invalid typed IR: aggregate argument snapshots must be distinct
+        aggregate_argument_alias,
+        //: invalid typed IR: aggregate argument nominal class mismatch
+        aggregate_argument_nominal,
+        //: invalid typed IR: aggregate argument snapshot must be readonly
+        aggregate_argument_readonly,
+        //: invalid typed IR: aggregate result requires exact object slot
+        aggregate_result_slot,
+        //: invalid typed IR: aggregate result aliases argument snapshot
+        aggregate_result_alias,
+        //: invalid typed IR: aggregate result nominal class mismatch
+        aggregate_result_nominal,
+        //: invalid typed IR: invalid aggregate result type
+        aggregate_result_type,
+        //: invalid typed IR: scalar result cannot name object storage
+        aggregate_scalar_result,
+        //: invalid typed IR: unknown resource call target
+        resource_target,
+        //: invalid typed IR: resource call requires ordinary resource signature or owning constructor
+        resource_signature,
+        //: invalid typed IR: private constructor requires lexical class authority
+        resource_private,
+        //: invalid typed IR: resource call receiver offset does not match target
+        resource_receiver,
+        //: invalid typed IR: region requires exact typed spill
+        call_region_slot,
+        //: invalid typed IR: resource call argument vector size mismatch
+        resource_vector,
+        //: invalid typed IR: constructor cannot take owning class arguments
+        resource_constructor_argument,
+        //: invalid typed IR: resource call argument storage must be distinct
+        resource_argument_alias,
+        //: invalid typed IR: resource constructor receiver aliases owning argument
+        resource_receiver_alias,
+        //: invalid typed IR: owner type requires exact typed spill
+        call_owner_slot,
+        //: invalid typed IR: resource call owner argument nominal type mismatch
+        resource_argument_nominal,
+        //: invalid typed IR: const owned byte binding cannot be mutated or moved
+        call_owner_mutable,
+        //: invalid typed IR: owning object nominal class mismatch
+        call_owning_nominal,
+        //: invalid typed IR: const owning object cannot be moved or mutated
+        call_owning_mutable,
+        //: invalid typed IR: constructor receiver aliases copied argument snapshot
+        resource_copied_receiver,
+        //: invalid typed IR: constructor copied argument nominal class mismatch
+        resource_copied_nominal,
+        //: invalid typed IR: constructor copied argument snapshot must be readonly
+        resource_copied_readonly,
+        //: invalid typed IR: resource call non-owner argument cannot name storage
+        resource_nonowner,
+        //: invalid typed IR: resource call first argument must be region
+        resource_first,
+        //: invalid typed IR: invalid resource call parameter type
+        resource_parameter,
+        //: invalid typed IR: owning constructor requires scalar result and no result storage
+        resource_constructor_result,
+        //: invalid typed IR: owning constructor requires exact nominal receiver root
+        resource_constructor_root,
+        //: invalid typed IR: resource call owning result aliases argument
+        resource_result_alias,
+        //: invalid typed IR: resource call owner result nominal type mismatch
+        resource_result_nominal,
+        //: invalid typed IR: resource copied result requires exact object slot
+        resource_copied_result_slot,
+        //: invalid typed IR: resource copied result aliases argument storage
+        resource_copied_result_alias,
+        //: invalid typed IR: resource copied result nominal class mismatch
+        resource_copied_result_nominal,
+        //: invalid typed IR: invalid resource call result type
+        resource_result_type,
+        //: invalid typed IR: scalar resource call result cannot name owning storage
+        resource_scalar_result,
+        //: invalid typed IR: copy requires exact object slot
+        call_copy_slot,
+        //: invalid typed IR: copy nominal class mismatch
+        call_copy_nominal,
+        //: invalid typed IR: unknown method call target
+        method_target,
+        //: invalid typed IR: method call requires receiver target
+        method_receiver,
+        //: invalid typed IR: borrowed call requires borrowed formal target
+        borrowed_target,
+        //: invalid typed IR: borrowed call second root tuple does not match target
+        borrowed_second,
+        //: invalid typed IR: borrowed call requires active loan
+        borrowed_loan,
+        //: invalid typed IR: borrowed call root, lifetime, nominal type or authority mismatch
+        borrowed_root,
+        //: invalid typed IR: invalid borrowed object root
+        borrowed_selector,
+        //: invalid typed IR: borrowed object root is not bound
+        borrowed_unbound,
+        //: invalid typed IR: method call cannot target borrowed free function
+        method_borrowed,
+        //: invalid typed IR: private method requires lexical class authority
+        method_private,
+        //: invalid typed IR: method call cannot target resource signature or owning constructor
+        method_resource,
+        //: invalid typed IR: receiver signature requires scalar, enum or class values
+        method_signature,
+        //: invalid typed IR: constructor object argument vector size mismatch
+        constructor_vector,
+        //: invalid typed IR: receiver object argument vector size mismatch
+        method_vector,
+        //: invalid typed IR: method span argument vector size mismatch
+        method_span_vector,
+        //: invalid typed IR: span method argument cannot name object storage
+        method_span_object,
+        //: invalid typed IR: non-span method argument cannot name span storage
+        method_nonspan,
+        //: invalid typed IR: scalar constructor argument cannot name object storage
+        constructor_scalar,
+        //: invalid typed IR: scalar receiver argument cannot name object storage
+        method_scalar,
+        //: invalid typed IR: constructor receiver aliases argument snapshot
+        constructor_receiver_alias,
+        //: invalid typed IR: receiver aliases argument snapshot
+        method_receiver_alias,
+        //: invalid typed IR: constructor argument snapshots must be distinct
+        constructor_argument_alias,
+        //: invalid typed IR: receiver argument snapshots must be distinct
+        method_argument_alias,
+        //: invalid typed IR: constructor argument nominal class mismatch
+        constructor_argument_nominal,
+        //: invalid typed IR: receiver argument nominal class mismatch
+        method_argument_nominal,
+        //: invalid typed IR: constructor argument snapshot must be readonly
+        constructor_argument_readonly,
+        //: invalid typed IR: receiver argument snapshot must be readonly
+        method_argument_readonly,
+        //: invalid typed IR: invalid method receiver offset
+        method_offset,
+        //: invalid typed IR: invalid method receiver field index
+        method_field_index,
+        //: invalid typed IR: nested receiver cannot call constructor
+        method_nested_constructor,
+        //: invalid typed IR: invalid owned field root offset
+        method_field_root,
+        //: invalid typed IR: borrowed free formal grants no direct receiver field authority
+        method_field_authority,
+        //: invalid typed IR: receiver access without bound receiver
+        method_field_unbound,
+        //: invalid typed IR: receiver field type/layout mismatch
+        method_field_layout,
+        //: invalid typed IR: constructor cannot access owned field during initialization
+        method_field_constructor,
+        //: invalid typed IR: const receiver cannot supply mutable owned field
+        method_field_formal_mutable,
+        //: invalid typed IR: const object cannot supply mutable owned field
+        method_field_mutable,
+        //: invalid typed IR: owned field logical index out of range
+        method_field_range,
+        //: invalid typed IR: owned field operation requires class field
+        method_field_class,
+        //: invalid typed IR: nested method receiver nominal class mismatch
+        method_field_nominal,
+        //: invalid typed IR: forwarding without bound receiver
+        method_forward_unbound,
+        //: invalid typed IR: constructor cannot forward receiver during initialization
+        method_forward_constructor,
+        //: invalid typed IR: forwarded receiver nominal class mismatch
+        method_forward_nominal,
+        //: invalid typed IR: const receiver cannot forward mutable capability
+        method_forward_mutable,
+        //: invalid typed IR: method receiver is not an object slot
+        method_receiver_slot,
+        //: invalid typed IR: method receiver nominal class mismatch
+        method_receiver_nominal,
+        //: invalid typed IR: const object cannot supply mutable receiver
+        method_receiver_mutable,
+        //: invalid typed IR: paired borrowed roots cannot produce span results
+        method_span_paired,
+        //: invalid typed IR: span result requires direct receiver root
+        method_span_direct,
+        //: invalid typed IR: span result lacks receiver field summary
+        method_span_summary,
+        //: invalid typed IR: span requires exact typed spill
+        call_span_slot,
+        //: invalid typed IR: span parameter cannot be rebound
+        call_span_parameter,
+        //: invalid typed IR: method result aliases receiver
+        method_result_receiver,
+        //: invalid typed IR: method result aliases argument snapshot
+        method_result_alias,
+        //: invalid typed IR: method result requires exact object slot
+        method_result_slot,
+        //: invalid typed IR: method result nominal class mismatch
+        method_result_nominal,
+        //: invalid typed IR: scalar method result cannot name object storage
+        method_scalar_result,
+        //: invalid typed IR: unknown service helper target
+        service_target,
+        //: invalid typed IR: service helper requires service target and acquired loans
+        service_signature,
+        //: invalid typed IR: service helper argument vector mismatch
+        service_vector,
+        //: invalid typed IR: service copied argument vector mismatch
+        service_object_vector,
+        //: invalid typed IR: service helper requires distinct acquired loans in leading positions
+        service_leading,
+        //: invalid typed IR: service helper requires an unused loan with exact provenance
+        service_kind,
+        //: invalid typed IR: service span argument cannot name object storage
+        service_span_object,
+        //: invalid typed IR: service copied argument cannot name span storage
+        service_object_span,
+        //: invalid typed IR: invalid service parameter type
+        service_parameter,
+        //: invalid typed IR: service argument requires exact object slot
+        service_argument_slot,
+        //: invalid typed IR: service argument snapshots must be distinct
+        service_argument_alias,
+        //: invalid typed IR: service argument nominal class mismatch
+        service_argument_nominal,
+        //: invalid typed IR: service argument snapshot must be readonly
+        service_argument_readonly,
+        //: invalid typed IR: service scalar argument mismatch
+        service_scalar,
+        //: invalid typed IR: service result aliases argument snapshot
+        service_result_alias,
+        //: invalid typed IR: service scalar result mismatch
+        service_scalar_result
     };
     // The eight OutputRow-width leaves remain raw integers. Unknown operator
     // values reach native semantics; unknown structural tags reject normally.

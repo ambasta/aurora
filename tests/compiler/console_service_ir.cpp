@@ -216,6 +216,22 @@ Module mixedEntry() {
     m.functions = {f};
     return m;
 }
+Module mixedForwarded() {
+    auto m = mixedEntry();
+    auto caller = m.functions[0];
+    caller.name = "mixed_caller";
+    caller.code.resize(6);
+    caller.code.insert(caller.code.end(),
+                       {AcquireServiceLoan{1, 16, service::Kind::Console},
+                        AcquireServiceLoan{2, 32, service::Kind::Display},
+                        Load{40, Type::U8}, Push{}, Load{136, Type::Bool}, Push{},
+                        ServiceCall{"mixed_entry", 1, 0, {0, 0, 0, 104, 0, 0}, service::Kind::Console,
+                                    {{2, service::Kind::Display}}, {0, 0, 0, 0, 128, 0}},
+                        ReleaseServiceLoan{2, service::Kind::Display},
+                        ReleaseServiceLoan{1, service::Kind::Console}, EndSpan{104}, Return{}});
+    m.functions.push_back(caller);
+    return m;
+}
 void copiedArgumentFacts() {
     for (const bool paired : {false, true}) {
         auto module = copiedArguments(0, paired);
@@ -297,6 +313,7 @@ int main() {
     good(copiedArguments(2));
     good(copiedSpanArgument());
     good(mixedEntry());
+    good(mixedForwarded()); // Two services with interleaved scalar, span and copied lanes.
     for (const auto &[position, diagnostic] :
          std::vector<std::pair<int, const char *>>{{0, "service bindings must form the leading entry group"},
                                                   {1, "service bindings must form the leading entry group"},
@@ -521,7 +538,7 @@ int main() {
     });
     bad(forwarded(), [](auto &m) {
         m.functions[0].code.erase(m.functions[0].code.begin() + 1);
-    });
+    }, "service helper requires distinct acquired loans in leading positions");
     bad(forwarded(), [](auto &m) {
         m.functions[0].code.erase(m.functions[0].code.begin() + 5);
     });
@@ -530,16 +547,16 @@ int main() {
     });
     bad(forwarded(), [](auto &m) {
         m.functions[0].code.insert(m.functions[0].code.begin() + 5, ServiceCall{"putter", 1, 0, {0, 0}});
-    });
+    }, "service helper requires an unused loan with exact provenance");
     bad(forwarded(), [](auto &m) {
         std::get<ServiceCall>(m.functions[0].code[4]).loanId = 2;
-    });
+    }, "service helper requires distinct acquired loans in leading positions");
     bad(forwarded(), [](auto &m) {
         std::get<ServiceCall>(m.functions[0].code[4]).spanArguments = {16, 0};
     });
     bad(forwarded(), [](auto &m) {
         m.functions[0].code[2] = Constant{65, Type::I64};
-    });
+    }, "service scalar argument mismatch");
     bad(forwarded(), [](auto &m) {
         m.functions[0].code.insert(m.functions[0].code.begin() + 2,
                                    {Constant{1, Type::Bool}, BranchFalse{99}, AcquireServiceLoan{2, 16}, Label{99}});
