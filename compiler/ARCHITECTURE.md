@@ -4,13 +4,13 @@ The typed-IR milestone established behavior-preserving compiler phase boundaries
 
 ## Pipeline and ownership of checks
 
-1. `host_sources.hpp` owns the trusted Linux descriptor-relative source reader and atomic artifact writer. `modules.hpp` loads explicit-root module graphs; `resolver.au` resolves module names/exports, nominal identities and templates in defining-module contexts. MODULES.md specifies that boundary.
+1. `host_sources.hpp` owns the trusted Linux descriptor-relative source reader and atomic artifact writer. `modules.hpp` loads explicit-root module graphs; `resolver.au`, over the `resolution_*` Session modules, resolves module names/exports, nominal identities and templates in defining-module contexts. MODULES.md specifies that boundary.
 2. `types.hpp` defines source types and common tokens/errors.
 3. The hosted Aurora lexer turns bytes into tokens; `syntax.hpp` defines the untyped source AST. `parser.hpp` is a compatibility entrypoint for one complete hosted Aurora module parse; all declaration/container grammar lives in `parser.au`.
-4. `lowering_types.au`, `lowering_values.au` and `lowering_body.au` perform resolved layout/signature analysis, local/member resolution, exact argument-type overload selection, initialization and const/private checks, ownership moves, lexical borrow checks and conservative branch/loop joins. `lowering.au` publishes typed instructions and metadata from the same resolved Session.
+4. `lowering_types.au`, `lowering_values.au` and the `lowering_frames`, `lowering_calls`, `lowering_expressions`, `lowering_statements` and `lowering_body` modules perform resolved layout/signature analysis, local/member resolution, exact argument-type overload selection, initialization and const/private checks, ownership moves, lexical borrow checks and conservative branch/loop joins. `lowering.au` publishes typed instructions and metadata from the same resolved Session.
 5. `hosted_lowering.cpp` mechanically projects the generated typed records into the target-independent accumulator/value-stack model in `ir.hpp`. Its operations include checked arithmetic, typed loads/stores, explicit control flow, metadata queries and array guard/access operations. Instruction/operator enums come from predecessor-generated Aurora facts.
 6. `ir_verify.hpp` validates a complete module and creates an immutable `ValidatedModule`. Only this validated wrapper can be passed to the emitter. It checks lower-level type, initialization, control-flow, operand-stack, frame and bounds-token invariants.
-7. `x86.hpp` lowers validated operations to GNU x86-64 assembly. It has no source AST, scope lookup, const policy, owner-liveness state or borrow-state checker. Target registers, ABI argument placement, stack alignment and machine trap sequences exist only here.
+7. `x86.hpp` lowers validated operations to GNU x86-64 assembly. It has no source AST, scope lookup, const policy, owner-liveness state or borrow-state checker. Target registers, ABI argument placement, stack alignment and machine trap sequences exist only here. Two local forms avoid stack and copy traffic without changing any check: a pushed left operand followed directly by a constant, local or receiver-field load stays in `%rcx` for the arithmetic or comparison that would pop it, and an element read that the next instruction returns is copied straight into the caller's result storage.
 8. `main.cpp` coordinates file I/O and those stages. GNU assembler/linker remain the bootstrap native toolchain.
 
 The C++ host uses internal header units and one main translation unit, linked with the generated Aurora frontend through Meson. Raw `main.cpp` compilation no longer builds a compiler. These are actual phase boundaries, not a stable external compiler-library API.
@@ -136,10 +136,14 @@ checkpoint under `bootstrap-copied-arguments-v1` at source commit
 `c0ef02cc105de2b7699d8565f6a53f1dea9e1205`, then the owner-field checkpoint under
 `bootstrap-owner-field-initializers-v1` at source commit
 `bbf18f40d73b0f7b862a4b23d77b03dfb3f3d0e4`. These add two source-build hops after
-the facts stage before the current compiler can build its adopted frontend.
+the facts stage before the current compiler can build its adopted frontend. The
+register-carry checkpoint under `bootstrap-register-carry-v1` at source commit
+`f89e0c9eb199ba482fcce20f1783a52ceae8b1b8` adds a third, so that the backend which
+emits the frontend is the one that keeps operands in registers.
 Advance the predecessor only
-when it cannot build the current frontend, or to shorten the source-bootstrap
-chain after reproducible source rebuild, current-stage convergence and full
+when it cannot build the current frontend, to shorten the source-bootstrap
+chain, or for a measured compile-speed gain recorded below, each after
+reproducible source rebuild, current-stage convergence and full
 qualification. Preserve earlier source refs; ordinary features do not require a
 predecessor hop. No generated binary or layout snapshot is checked
 in. Focused conversion/ABI and multi-stage corpus checks do not replace the final
@@ -153,6 +157,13 @@ the bridge selects their compiler-produced symbols and layouts directly.
 
 `resolution_arena.au` owns one flat session: source bytes, syntax, metadata,
 resolved decorations, reusable work rows and a compact typed AVL index pool.
+Session keeps only storage (including the five lowering pools and the lowering
+diagnostic), sticky failure, checked row access, source appends, byte comparisons
+and the index; tree mutation stays private. An owning class cannot nest in
+another, so the code built on those primitives lives in free functions over
+`Session&`: `resolution_names.au` interns names, atoms and prefixes, orders
+modules and binds imports, and `resolution_ingest.au` copies parsed modules in.
+The copied row classes are in `resolution_rows.au`.
 The ten-i64 index rows keep private node IDs separate from heterogeneous payload
 IDs; metadata retains its original append order. The sixth owner is created by a
 region-backed field factory, and generated facts govern its layout and transfers.
@@ -188,8 +199,11 @@ work, so a selected error needs no further allocation. Local/snapshot/continuati
 bounds and checked geometric growth are part of the quota; partial IR never
 publishes. `hosted_lowering.cpp` checks bounded roles, slices and unique ownership,
 then projects all 84 instruction forms and Function/Module metadata. It does not
-repeat source legality checks. `hosted_lowering_diagnostics.cpp` formats Aurora
-selected errors while preserving real source spans and synthetic empty spans.
+repeat source legality checks. Each Aurora-selected error's message is the `//:`
+text above its reason in `lowering_errors.au`; the frontend generator turns those
+into a table in the generated ABI header and fails if a reason lacks one.
+`hosted_lowering_diagnostics.cpp` checks the payload against that entry and fills
+its placeholders, preserving real source spans and synthetic empty spans.
 
 ### C++ expression parser retirement
 
@@ -251,6 +265,32 @@ The verifier follows all statically reachable successors, including both sides o
 - Unreachable semantic instructions are rejected. Only unreachable structural `Jump`/`Label` artifacts are removed after analysis; this removes harmless jumps emitted after a returning branch and prevents invisible unreachable push/pop operations from confusing backend linear stack accounting.
 
 Given those invariants, the backend's expression-stack depth agrees with reachable execution. It aligns the machine stack at each nested call. The semantic analyzer and verifier cap local frame storage at 65536 bytes; that bound does not eliminate target-stack exhaustion from call depth or expression temporaries.
+
+## Compile speed
+
+Each frontend migration so far has cost compile time. Record it with the change
+instead of letting it compound unseen: for a compiler change, run
+`scripts/compiler-speed.py OLD_AURORAC NEW_AURORAC` on one host, at one time, and
+add a row here. The script fails if the two builds compile any input differently.
+There is no automated time budget, because host load on development machines
+varies too much for a stable threshold.
+
+`aurorac` links the frontend that the predecessor compiler emitted, so a backend
+change reaches its own speed only once a predecessor carrying it is selected.
+Measure such a change as `aurorac-stage2` against `aurorac` from the same build:
+both share the new backend and must compile identically, and only the frontend's
+generated code differs.
+
+| Change | Measured | CPU ratio |
+|---|---|---|
+| `bootstrap-register-carry-v1` predecessor, whose backend emits the frontend | `scripts/compiler-speed.py`, `aurorac` built with it against the owner-field predecessor: `compiler/frontend.au` 0.83x, library inputs 0.88-0.94x, identical output | 0.90x |
+| x86 backend keeps a pushed operand in `%rcx` before a plain load and copies a returned element straight into the result | `aurorac-stage2` against `aurorac` from the same build (see above): `compiler/frontend.au` 0.78x, library inputs 0.86-0.95x, identical output | 0.87x for a frontend it emits |
+| Hosted runtime moves a looked-up allocation to the front of its region's list | `scripts/compiler-speed.py` against the previous build: `compiler/frontend.au` 0.85x, library inputs 0.87-0.93x, identical output | 0.90x |
+| Enum cases named once, one copy per heap child, index values from the lookup loop | `scripts/compiler-speed.py` against the Session split: `compiler/frontend.au` 0.88x, library inputs 0.95-1.00x, identical output | 0.95x |
+| `resolution_arena.au` split into Session, rows, names and ingest; shared pool growth | `scripts/compiler-speed.py` against the `lowering_body.au` split: 0.98-1.03x per input, identical output | 1.01x |
+| Generated lowering messages and the `lowering_body.au` split | `scripts/compiler-speed.py` against #162: 0.96-1.03x per input, identical output | 1.00x |
+| #162, typed lowering in Aurora | five library/example inputs 1.24-1.48x wall; `std/json.au` 125 -> 184 ms; peak RSS 22 -> 22-27 MiB; full suite +16.8% (commit message) | about 1.44x |
+| Parser and resolver migrations before #162 | not recorded per step; `std/json.au` went from about 40 ms at the expression-parser stage to 125 ms before #162, on loaded hosts | - |
 
 ## Trusted boundaries and limits
 

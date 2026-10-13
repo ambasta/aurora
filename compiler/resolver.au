@@ -1,6 +1,8 @@
 export module aurora.compiler.resolver;
 import aurora.compiler.resolution_kinds;
 import aurora.compiler.resolution_arena;
+import aurora.compiler.resolution_rows;
+import aurora.compiler.resolution_names;
 import aurora.compiler.lowering_kinds;
 import aurora.compiler.lowering_errors;
 import aurora.compiler.lowering_storage;
@@ -237,32 +239,22 @@ export namespace compiler_resolver {
         }
         return found;
     }
-    auto source_name(Session& session, i64 first, i64 last) -> i64 {
-        if (first < 0) {
-            return -1;
-        }
-        if (last < 0 || last == first) {
-            return session.source_name(first);
-        }
-        const i64 reference = session.name_range(first, last);
-        return session.source_name(reference);
-    }
     auto leaf_is(Session& session, i64 name, builtin::span<const u8> text) -> bool {
         if (name < 0) {
             return false;
         }
-        const i64 atom = session.name_atom(name);
-        const i64 reference = session.atom_source(atom);
+        const i64 atom = name_atom(session, name);
+        const i64 reference = atom_source(session, atom);
         return session.source_equal(reference, text);
     }
     auto plain_is(Session& session, i64 name, builtin::span<const u8> text) -> bool {
-        return name >= 0 && session.prefix_parent(name) < 0 && leaf_is(session, name, text);
+        return name >= 0 && prefix_parent(session, name) < 0 && leaf_is(session, name, text);
     }
     auto builtin_name(Session& session, i64 name) -> bool {
         if (name < 0) {
             return false;
         }
-        const i64 parent = session.prefix_parent(name);
+        const i64 parent = prefix_parent(session, name);
         return plain_is(session, parent, "builtin");
     }
     auto source_identifier(Session& session, i64 name, i64 node) -> bool {
@@ -270,14 +262,14 @@ export namespace compiler_resolver {
         i64 current = name;
         while (current >= 0 && session.good()) {
             session.append_work(WorkRow(current, 0, 0, 0, 0, 0));
-            current = session.prefix_parent(current);
+            current = prefix_parent(session, current);
         }
         while (session.work_count() > base && session.good()) {
             const i64 top = session.work_count() - 1;
             const WorkRow item = session.work(top);
             session.truncate_work(top);
-            const i64 atom = session.name_atom(item.word(0));
-            const i64 reference = session.atom_source(atom);
+            const i64 atom = name_atom(session, item.word(0));
+            const i64 reference = atom_source(session, atom);
             if (session.source_prefix(reference, "__au_")) {
                 reject(session, SemanticError::reserved_prefix, node, reference, -1);
             } else {
@@ -290,7 +282,7 @@ export namespace compiler_resolver {
         return session.good();
     }
     auto intrinsic(Session& session, i64 name) -> bool {
-        if (name < 0 || session.prefix_parent(name) >= 0) {
+        if (name < 0 || prefix_parent(session, name) >= 0) {
             return false;
         }
         return leaf_is(session, name, "i64") || leaf_is(session, name, "u64") || leaf_is(session, name, "u8")
@@ -360,7 +352,7 @@ export namespace compiler_resolver {
         return -1;
     }
     auto direct_import(Session& session, i64 module_id, i64 target) -> bool {
-        i64 edge = session.import_head(module_id);
+        i64 edge = import_head(session, module_id);
         while (edge >= 0 && session.good()) {
             if (mw(session, edge, 1) == target) {
                 return true;
@@ -378,7 +370,7 @@ export namespace compiler_resolver {
     }
     auto visible_name(Session& session, i64 module_id, i64 name, i64 node) -> i64 {
         i64 found = session.index(32, module_id, name, 0, 0);
-        i64 edge = session.import_head(module_id);
+        i64 edge = import_head(session, module_id);
         while (edge >= 0 && session.good()) {
             const i64 imported_unit = mw(session, edge, 1);
             const i64 candidate = session.index(32, imported_unit, name, 0, 0);
@@ -399,7 +391,7 @@ export namespace compiler_resolver {
         i64 parent = context.scope();
         bool finished = false;
         while (!finished && session.good()) {
-            const i64 qualified = session.prefix_join(parent, name);
+            const i64 qualified = prefix_join(session, parent, name);
             const i64 found = visible_name(session, context.module_id(), qualified, node);
             if (found >= 0) {
                 if (required != DeclarationKind::invalid && declaration_kind(session, found) != required) {
@@ -410,14 +402,14 @@ export namespace compiler_resolver {
             if (parent < 0) {
                 finished = true;
             } else {
-                parent = session.prefix_parent(parent);
+                parent = prefix_parent(session, parent);
             }
         }
         parent = context.scope();
         finished = false;
         while (!finished && session.good()) {
-            const i64 qualified = session.prefix_join(parent, name);
-            i64 edge = session.import_head(context.module_id());
+            const i64 qualified = prefix_join(session, parent, name);
+            i64 edge = import_head(session, context.module_id());
             while (edge >= 0 && session.good()) {
                 const i64 imported_unit = mw(session, edge, 1);
                 const i64 candidate = session.index(32, imported_unit, qualified, 0, 0);
@@ -432,7 +424,7 @@ export namespace compiler_resolver {
             if (parent < 0) {
                 finished = true;
             } else {
-                parent = session.prefix_parent(parent);
+                parent = prefix_parent(session, parent);
             }
         }
         return -1;
@@ -558,11 +550,11 @@ export namespace compiler_resolver {
     }
     auto declaration_name(Session& session, i64 node) -> i64 {
         const i64 reference = sw(session, node, 0);
-        return session.source_name(reference);
+        return source_name(session, reference);
     }
     auto make_symbol(Session& session, DeclarationKind kind, i64 module_id, i64 scope, i64 node) -> i64 {
         const i64 leaf = declaration_name(session, node);
-        const i64 qualified = session.prefix_join(scope, leaf);
+        const i64 qualified = prefix_join(session, scope, leaf);
         const i64 reference = sw(session, node, 0);
         MetaRow value = MetaRow(MetaTag::symbol);
         value.set_declaration_kind(kind);
@@ -588,7 +580,7 @@ export namespace compiler_resolver {
                 const i64 row = session.append_meta(value);
                 session.index_insert(38, module_id, at, 0, 0, row);
             }
-            at = session.prefix_parent(at);
+            at = prefix_parent(session, at);
         }
         return 0;
     }
@@ -611,8 +603,8 @@ export namespace compiler_resolver {
                 export_value = 1;
             }
             if (syntax.declaration_kind() == compiler_parser::SyntaxKind::namespace_definition) {
-                const i64 relative = source_name(session, syntax.word(0), syntax.word(6));
-                const i64 full = session.prefix_join(scope, relative);
+                const i64 relative = source_name_range(session, syntax.word(0), syntax.word(6));
+                const i64 full = prefix_join(session, scope, relative);
                 add_namespace(session, module_id, full, node);
                 push_declarations(session, syntax.word(7), full, export_value, -1);
             } else {
@@ -708,7 +700,7 @@ export namespace compiler_resolver {
             return true;
         }
         if (syntax.type_kind() == compiler_parser::TypeKind::builtin_type) {
-            const i64 name = source_name(session, syntax.word(0), syntax.word(1));
+            const i64 name = source_name_range(session, syntax.word(0), syntax.word(1));
             const i64 seeded = session.index(48, name, 0, 0, 0);
             if (seeded >= 0) {
                 const MetaRow descriptor = session.meta(seeded);
@@ -841,7 +833,7 @@ export namespace compiler_resolver {
             if (row.declaration_kind() == compiler_parser::SyntaxKind::field) {
                 reference = row.word(6);
             }
-            const i64 name = session.source_name(reference);
+            const i64 name = source_name(session, reference);
             if (session.index(58, symbol, name, 0, 0) < 0) {
                 session.index_insert(58, symbol, name, 0, 0, member);
             }
@@ -861,7 +853,7 @@ export namespace compiler_resolver {
             const SyntaxRow syntax = session.syntax(member);
             if (syntax.declaration_kind() == compiler_parser::SyntaxKind::field) {
                 const i64 reference = syntax.word(6);
-                const i64 name = session.source_name(reference);
+                const i64 name = source_name(session, reference);
                 if (session.index(46, symbol, name, 0, 0) < 0) {
                     session.index_insert(46, symbol, name, 0, 0, member);
                 }
@@ -967,12 +959,12 @@ export namespace compiler_resolver {
         return parameter.declaration_kind() == compiler_parser::SyntaxKind::template_capacity;
     }
     auto parameter_root(Session& session, i64 symbol, i64 name) -> bool {
-        if (name < 0 || session.prefix_parent(name) < 0) {
+        if (name < 0 || prefix_parent(session, name) < 0) {
             return false;
         }
         i64 first = name;
-        while (session.prefix_parent(first) >= 0 && session.good()) {
-            first = session.prefix_parent(first);
+        while (prefix_parent(session, first) >= 0 && session.good()) {
+            first = prefix_parent(session, first);
         }
         return parameter_index(session, symbol, first) >= 0;
     }
@@ -1019,7 +1011,7 @@ export namespace compiler_resolver {
                 == compiler_parser::TypeKind::length_parameter || row.type_kind()
                 == compiler_parser::TypeKind::builtin_type || row.type_kind()
                 == compiler_parser::TypeKind::builtin_class)) {
-                const i64 name = source_name(session, row.word(0), row.word(1));
+                const i64 name = source_name_range(session, row.word(0), row.word(1));
                 set_rw(session, at, 0, name);
             }
             if (row.kind() == SyntaxTag::type && (row.word(6) == 1 || row.word(6) == 2)) {
@@ -1062,7 +1054,7 @@ export namespace compiler_resolver {
         }
         if (value.type_kind() == compiler_parser::TypeKind::builtin_class || value.type_kind()
             == compiler_parser::TypeKind::builtin_type) {
-            const i64 name = source_name(session, value.word(0), value.word(1));
+            const i64 name = source_name_range(session, value.word(0), value.word(1));
             const i64 descriptor = session.index(48, name, 0, 0, 0);
             if (descriptor >= 0) {
                 const MetaRow builtin_descriptor = session.meta(descriptor);
@@ -1145,13 +1137,13 @@ export namespace compiler_resolver {
                 if (row.type_kind() == compiler_parser::TypeKind::named || row.type_kind()
                     == compiler_parser::TypeKind::parameter || row.type_kind()
                     == compiler_parser::TypeKind::length_parameter) {
-                    name = source_name(session, row.word(0), row.word(1));
+                    name = source_name_range(session, row.word(0), row.word(1));
                 }
                 if (row.type_kind() == compiler_parser::TypeKind::array_type) {
                     const SyntaxRow element = session.syntax(row.word(3));
                     bool scalar = raw_scalar(element.type_kind());
                     if (element.type_kind() == compiler_parser::TypeKind::parameter) {
-                        const i64 parameter_name = source_name(session, element.word(0), element.word(1));
+                        const i64 parameter_name = source_name_range(session, element.word(0), element.word(1));
                         const i64 parameter = parameter_index(session, symbol, parameter_name);
                         scalar = parameter >= 0 && !capacity_parameter(session, symbol, parameter_name);
                         if (scalar && instance >= 0) {
@@ -1169,7 +1161,7 @@ export namespace compiler_resolver {
                     const SyntaxRow capacity = session.syntax(row.word(4));
                     i64 length = 0;
                     if (capacity.type_kind() == compiler_parser::TypeKind::length_parameter) {
-                        const i64 capacity_name = source_name(session, capacity.word(0), capacity.word(1));
+                        const i64 capacity_name = source_name_range(session, capacity.word(0), capacity.word(1));
                         if (function) {
                             reject(session, SemanticError::function_capacity, node, -1, -1);
                         } else {
@@ -1234,7 +1226,7 @@ export namespace compiler_resolver {
                     if (row.expression_kind() == compiler_parser::NodeKind::name || row.expression_kind()
                         == compiler_parser::NodeKind::call || row.expression_kind()
                         == compiler_parser::NodeKind::construct) {
-                        name = source_name(session, row.word(0), row.word(4));
+                        name = source_name_range(session, row.word(0), row.word(4));
                     }
                     const bool call = row.expression_kind() == compiler_parser::NodeKind::call;
                     const bool construct = row.expression_kind() == compiler_parser::NodeKind::construct;
@@ -1261,7 +1253,7 @@ export namespace compiler_resolver {
                                             const i64 child = sw(session, edge, 0);
                                             const SyntaxRow argument = session.syntax(child);
                                             if (argument.expression_kind() == compiler_parser::NodeKind::name) {
-                                                const i64 argument_name = source_name(session, argument.word(0),
+                                                const i64 argument_name = source_name_range(session, argument.word(0),
                                                     argument.word(4));
                                                 if (capacity_parameter(session, symbol, argument_name)) {
                                                     reject(session, SemanticError::capacity_move, child, argument_name,
@@ -1288,7 +1280,7 @@ export namespace compiler_resolver {
                             reference = row.word(0);
                         }
                         if (reference >= 0) {
-                            const i64 name = session.source_name(reference);
+                            const i64 name = source_name(session, reference);
                             if (!function && capacity_parameter(session, symbol, name)) {
                                 reject(session, SemanticError::shadow_capacity, node, name, -1);
                             } else {
@@ -1305,7 +1297,7 @@ export namespace compiler_resolver {
                             >= 0) {
                             const SyntaxRow target = session.syntax(row.word(4));
                             if (target.expression_kind() == compiler_parser::NodeKind::name) {
-                                const i64 name = source_name(session, target.word(0), target.word(4));
+                                const i64 name = source_name_range(session, target.word(0), target.word(4));
                                 if (capacity_parameter(session, symbol, name)) {
                                     reject(session, SemanticError::capacity_assign, node, name, -1);
                                 }
@@ -1494,7 +1486,7 @@ export namespace compiler_resolver {
                     binding.set_word(0, rw(session, node, 0));
                     if (row.kind() == SyntaxTag::type && (row.type_kind() == compiler_parser::TypeKind::parameter
                         || row.type_kind() == compiler_parser::TypeKind::length_parameter)) {
-                        const i64 name = source_name(session, row.word(0), row.word(1));
+                        const i64 name = source_name_range(session, row.word(0), row.word(1));
                         const i64 parameter = parameter_index(session, prototype, name);
                         if (parameter >= 0) {
                             const i64 argument = mw(session, instance, 2 + parameter);
@@ -1508,7 +1500,7 @@ export namespace compiler_resolver {
                     }
                     if (row.kind() == SyntaxTag::expression && row.expression_kind()
                         == compiler_parser::NodeKind::name) {
-                        const i64 name = source_name(session, row.word(0), row.word(4));
+                        const i64 name = source_name_range(session, row.word(0), row.word(4));
                         if (capacity_parameter(session, prototype, name)) {
                             const i64 parameter = parameter_index(session, prototype, name);
                             const i64 argument = mw(session, instance, 2 + parameter);
@@ -1594,7 +1586,7 @@ export namespace compiler_resolver {
     // Input word1 is the full source spelling reference, word3 the native
     // spelling reference. The return value is the canonical concrete TypeId.
     auto seed_builtin(Session& session, MetaRow input) -> i64 {
-        const i64 name = session.source_name(input.word(1));
+        const i64 name = source_name(session, input.word(1));
         const i64 descriptor = seed_descriptor(session, name, input.word(3), input.type_kind());
         return seed_type(session, input.type_kind(), descriptor);
     }
@@ -1646,7 +1638,7 @@ export namespace compiler_resolver {
             if (request.kind() == SyntaxTag::expression) {
                 last = request.word(4);
             }
-            const i64 spelling = source_name(session, request.word(0), last);
+            const i64 spelling = source_name_range(session, request.word(0), last);
             if (function) {
                 return reject(session, SemanticError::function_arity, node, spelling, -1);
             }
@@ -1891,10 +1883,10 @@ export namespace compiler_resolver {
                         bound = concrete_type(session, ResolvedTypeKind::owned_values, -1, element, 0);
                     } else {
                         if (row.type_kind() == compiler_parser::TypeKind::parameter) {
-                            const i64 name = source_name(session, row.word(0), row.word(1));
+                            const i64 name = source_name_range(session, row.word(0), row.word(1));
                             return reject(session, SemanticError::unsubstituted_parameter, node, name, -1);
                         } else {
-                            const i64 name = source_name(session, row.word(0), row.word(1));
+                            const i64 name = source_name_range(session, row.word(0), row.word(1));
                             if (builtin_name(session, name)) {
                                 bound = builtin_type(session, name);
                             }
@@ -2006,7 +1998,7 @@ export namespace compiler_resolver {
                     if (depth > 4) {
                         reject(session, SemanticError::template_depth, node, -1, -1);
                     }
-                    const i64 name = source_name(session, row.word(0), row.word(1));
+                    const i64 name = source_name_range(session, row.word(0), row.word(1));
                     const i64 target = lookup(session, context, name, DeclarationKind::class_template, node);
                     if (target < 0 && session.good()) {
                         reject(session, SemanticError::unknown_template, node, name, -1);
@@ -2056,7 +2048,7 @@ export namespace compiler_resolver {
             }
             if (!deferred && row.kind() == SyntaxTag::type && row.type_kind() == compiler_parser::TypeKind::named
                 && row.word(3) >= 0) {
-                const i64 name = source_name(session, row.word(0), row.word(1));
+                const i64 name = source_name_range(session, row.word(0), row.word(1));
                 const i64 target = lookup(session, context, name, DeclarationKind::class_template, node);
                 if (target < 0 && session.good()) {
                     reject(session, SemanticError::template_static_type, node, name, -1);
@@ -2064,7 +2056,7 @@ export namespace compiler_resolver {
             }
             if (!deferred && row.kind() == SyntaxTag::expression && (row.expression_kind()
                 == compiler_parser::NodeKind::call || row.expression_kind() == compiler_parser::NodeKind::construct)) {
-                const i64 name = source_name(session, row.word(0), row.word(4));
+                const i64 name = source_name_range(session, row.word(0), row.word(4));
                 bool member = false;
                 if (context.receiver() >= 0 && row.expression_kind() == compiler_parser::NodeKind::call) {
                     member = receiver_member(session, context.receiver(), name) >= 0;
@@ -2230,7 +2222,7 @@ export namespace compiler_resolver {
                 current = row.word(3);
             } else {
                 if (row.type_kind() == compiler_parser::TypeKind::parameter && rw(session, current, 2) < 0) {
-                    const i64 name = source_name(session, row.word(0), row.word(1));
+                    const i64 name = source_name_range(session, row.word(0), row.word(1));
                     reject(session, SemanticError::unsubstituted_parameter, current, name, -1);
                     finished = true;
                 } else {
@@ -2245,7 +2237,7 @@ export namespace compiler_resolver {
                     } else {
                         if (row.type_kind() == compiler_parser::TypeKind::builtin_type || row.type_kind()
                             == compiler_parser::TypeKind::builtin_class) {
-                            const i64 name = source_name(session, row.word(0), row.word(1));
+                            const i64 name = source_name_range(session, row.word(0), row.word(1));
                             builtin_type(session, name);
                         }
                     }
@@ -2324,7 +2316,7 @@ export namespace compiler_resolver {
         const BindContext context = BindContext(item.word(1), item.word(2), -1, -1, false, true);
         const i64 type = item.word(3);
         const SyntaxRow syntax = session.syntax(type);
-        const i64 name = source_name(session, syntax.word(0), syntax.word(1));
+        const i64 name = source_name_range(session, syntax.word(0), syntax.word(1));
         const i64 target = lookup(session, context, name, DeclarationKind::invalid, type);
         if (item.word(4) != 0 && target >= 0 && declaration_kind(session, target)
             == DeclarationKind::function_template) {
@@ -2658,18 +2650,18 @@ export namespace compiler_resolver {
             } else {
                 if (row.type_kind() == compiler_parser::TypeKind::builtin_class || row.type_kind()
                     == compiler_parser::TypeKind::builtin_type) {
-                    const i64 name = source_name(session, row.word(0), row.word(1));
+                    const i64 name = source_name_range(session, row.word(0), row.word(1));
                     const i64 descriptor = session.index(48, name, 0, 0, 0);
                     if (descriptor >= 0) {
                         const MetaRow builtin_descriptor = session.meta(descriptor);
                         if (nominal_kind(builtin_descriptor.type_kind())) {
-                            const i64 native = session.source_name(builtin_descriptor.word(3));
+                            const i64 native = source_name(session, builtin_descriptor.word(3));
                             source_identifier(session, native, node);
                         }
                     }
                 } else {
                     if (row.type_kind() == compiler_parser::TypeKind::named) {
-                        const i64 name = source_name(session, row.word(0), row.word(1));
+                        const i64 name = source_name_range(session, row.word(0), row.word(1));
                         const i64 target = lookup(session, context, name, DeclarationKind::invalid, node);
                         if (target < 0 && session.good()) {
                             reject(session, SemanticError::function_fixed_unknown, node, name, -1);
@@ -2873,12 +2865,12 @@ export namespace compiler_resolver {
         return 0;
     }
     auto bind_enum_name(Session& session, i64 node, i64 name, BindContext context) -> i64 {
-        const i64 enum_name = session.prefix_parent(name);
+        const i64 enum_name = prefix_parent(session, name);
         if (enum_name < 0) {
             return 0;
         }
         const SyntaxRow expression = session.syntax(node);
-        const i64 case_name = session.source_name(expression.word(4));
+        const i64 case_name = source_name(session, expression.word(4));
         i64 type = -1;
         i64 ordinal = -1;
         i64 target = -1;
@@ -2891,7 +2883,7 @@ export namespace compiler_resolver {
                 i64 member = descriptor.word(4);
                 while (member >= 0 && session.good()) {
                     const i64 reference = mw(session, member, 1);
-                    const i64 candidate = session.source_name(reference);
+                    const i64 candidate = source_name(session, reference);
                     if (candidate == case_name) {
                         ordinal = mw(session, member, 2);
                     }
@@ -2932,7 +2924,7 @@ export namespace compiler_resolver {
             != compiler_parser::NodeKind::name) {
             return 0;
         }
-        const i64 name = source_name(session, row.word(0), row.word(4));
+        const i64 name = source_name_range(session, row.word(0), row.word(4));
         set_rw(session, node, 0, name);
         const ResolvedRow prior = session.resolved(node);
         if (prior.operation() == ResolvedOperation::capacity_constant) {
@@ -3106,7 +3098,7 @@ export namespace compiler_resolver {
                     set_rw(session, node, 2, type);
                 }
             } else {
-                if (session.prefix_parent(name) >= 0) {
+                if (prefix_parent(session, name) >= 0) {
                     bind_enum_name(session, node, name, context);
                 } else {
                     source_identifier(session, name, node);
@@ -3165,13 +3157,13 @@ export namespace compiler_resolver {
                 const WorkRow left = session.work(base + child);
                 if (child + 1 < count) {
                     const WorkRow right = session.work(base + child + 1);
-                    if (session.prefix_compare(left.word(0), right.word(0)) < 0) {
+                    if (prefix_compare(session, left.word(0), right.word(0)) < 0) {
                         child = child + 1;
                     }
                 }
                 const WorkRow selected = session.work(base + child);
                 const WorkRow parent = session.work(base + current);
-                if (session.prefix_compare(parent.word(0), selected.word(0)) >= 0) {
+                if (prefix_compare(session, parent.word(0), selected.word(0)) >= 0) {
                     done = true;
                 } else {
                     session.set_work(base + current, selected);
@@ -3213,12 +3205,12 @@ export namespace compiler_resolver {
                     if (session.index(55, unit, name, 0, 0) < 0) {
                         session.index_insert(55, unit, name, 0, 0, at);
                         session.append_work(WorkRow(name, at, 0, 0, 0, 0));
-                        i64 parent = session.prefix_parent(name);
+                        i64 parent = prefix_parent(session, name);
                         while (parent >= 0 && session.good()) {
                             if (session.index(56, unit, parent, 0, 0) < 0) {
                                 session.index_insert(56, unit, parent, 0, 0, at);
                             }
-                            parent = session.prefix_parent(parent);
+                            parent = prefix_parent(session, parent);
                         }
                     }
                 }

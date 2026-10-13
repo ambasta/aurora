@@ -241,6 +241,12 @@ def enum_cases(suite):
             "namespace left{enum class State{ready};}namespace right{enum class State{ready};}",
         ),
     )
+    # Lowering names every case once; the duplicate check was cubic in the case count.
+    widest = "enum class Wide{" + ",".join(f"case_{index}" for index in range(256)) + "};"
+    suite.check(
+        "widest enum lowers distinct cases",
+        program("if(Wide::case_255!=Wide::case_0&&Wide::case_128==Wide::case_128){return 42;}return 0;", widest),
+    )
 
     invalid_bodies = [
         ("wrong enum local", "State s=Other::ready;return 42;"),

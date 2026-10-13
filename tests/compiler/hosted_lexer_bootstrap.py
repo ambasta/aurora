@@ -17,27 +17,11 @@ def stage_modules(root, destination):
     sys.path.insert(0, str(root / "scripts"))
     from bootstrap_frontend import stage_modules as stage
 
-    stage(destination, *(root / "compiler" / name for name in COMPILER_MODULES))
+    stage(destination, [root / "compiler" / name for name in COMPILER_MODULES])
 
 
-COMPILER_MODULES = (
-    "lexer.au",
-    "syntax_arena.au",
-    "parser.au",
-    "resolution_kinds.au",
-    "lowering_errors.au",
-    "lowering_kinds.au",
-    "lowering_storage.au",
-    "resolution_arena.au",
-    "resolver.au",
-    "frontend.au",
-    "lowering_common.au",
-    "lowering_configuration.au",
-    "lowering_types.au",
-    "lowering_values.au",
-    "lowering_body.au",
-    "lowering.au",
-)
+# Every .au file in compiler/ is a frontend module.
+COMPILER_MODULES = tuple(sorted(path.name for path in (Path(__file__).resolve().parents[2] / "compiler").glob("*.au")))
 
 
 def require(value, message):
@@ -59,11 +43,12 @@ def run(command):
 def frontend_arguments(compiler, root, output):
     return [
         str(compiler),
+        "--output",
+        str(output),
         *(str(root / "compiler" / name) for name in COMPILER_MODULES),
         str(root / "compiler/hosted_lexer.S"),
         str(root / "compiler/hosted_parser.S"),
         str(root / "compiler/hosted_resolver.S"),
-        str(output),
     ]
 
 
@@ -246,8 +231,44 @@ def abi_generation(facts):
     print("PASS generic source-spelled ABI records/enums, nested layout and exact lowering bridge rejection")
 
 
+def message_generation(facts, root):
+    from bootstrap_frontend import lowering_messages
+
+    source = (root / "compiler/lowering_errors.au").read_text()
+    table = "\n".join(lowering_messages(source, facts))
+    require(
+        "{\"unknown class type '{type}'\", MessageOrigin::source_or_synthetic, false, "
+        "{OperandRole::DiagnosticTypeId, OperandRole::NoDiagnosticValue}},"
+        in table
+        and '{"IR: storage extent exceeds 65536 bytes", MessageOrigin::unlocated, true,' in table,
+        "lowering message table lost a placeholder role or integrity flag",
+    )
+    first = "        unknown_class_type,"
+    for changed in (
+        source.replace("        //: unknown class type '{type}'\n", "", 1),
+        source.replace("unknown class type '{type}'", "unknown class type '{kind}'", 1),
+        source.replace("unknown class type '{type}'", "unknown class type '{type", 1),
+        source.replace("unknown class type '{type}'", "unknown class type '{type}' {", 1),
+        source.replace("unknown class type '{type}'", "unknown class type '{type}' }", 1),
+        source.replace("unknown class type '{type}'", "unknown class type '{{type}'", 1),
+        source.replace("unknown class type '{type}'", "[integrity] unknown class type '{type}'", 1),
+        source.replace(
+            "        ir_class_storage_leaf_coverage\n",
+            "        ir_class_storage_leaf_coverage\n        //: dangling\n",
+            1,
+        ),
+        source.replace(first, first + "\n        //: extra reason\n        unlisted_reason,", 1),
+    ):
+        try:
+            lowering_messages(changed, facts)
+        except ValueError:
+            continue
+        raise AssertionError("lowering message generation accepted a missing, extra or malformed message")
+
+
 def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
     abi_generation(json.loads(built_b.with_suffix(".abi.json").read_text()))
+    message_generation(json.loads(built_b.with_suffix(".abi.json").read_text()), root)
     entries = {
         "aurora_hosted_lexer_invoke",
         "aurora_hosted_parser_create",
@@ -376,7 +397,14 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
 
 
 def main():
-    current1, current2, root, built_a, built_b = (Path(value).resolve() for value in sys.argv[1:])
+    # The default selection checks stage convergence through the lexer and the
+    # whole frontend, which imports every compiler module. --corpus compares
+    # every other checked-in source across the two stages; slow suites run it.
+    arguments = sys.argv[1:]
+    whole_corpus = arguments[-1:] == ["--corpus"]
+    if whole_corpus:
+        arguments = arguments[:-1]
+    current1, current2, root, built_a, built_b = (Path(value).resolve() for value in arguments)
     with tempfile.TemporaryDirectory(prefix="hosted-lexer-bootstrap-") as temporary:
         work = Path(temporary)
         outputs = [work / "current-c1.s", work / "current-c2.s"]
@@ -388,6 +416,8 @@ def main():
         require(root / "compiler/frontend.au" in corpus, "whole frontend self-rebuild input is missing")
         compiler_sources = {root / "compiler" / name for name in COMPILER_MODULES}
         require(compiler_sources.issubset(corpus), "a real compiler module is missing from self-rebuild coverage")
+        convergence = {root / "compiler/lexer.au", root / "compiler/frontend.au"}
+        corpus = [source for source in corpus if (source in convergence) != whole_corpus]
         for source in corpus:
             runs = []
             for compiler, output in zip((current1, current2), outputs, strict=True):
@@ -441,7 +471,8 @@ def main():
             records.append({"source": str(source.relative_to(root)), "status": runs[0].returncode})
         require(len(records) > 1, "source corpus is empty")
         print(
-            "PASS current C1/C2 diagnostics, assembly and output preservation: "
+            ("PASS current C1/C2 corpus" if whole_corpus else "PASS current C1/C2 lexer and frontend")
+            + " diagnostics, assembly and output preservation: "
             + json.dumps(
                 {
                     "sources": len(records),

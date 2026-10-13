@@ -15,10 +15,10 @@ def discovered_files(root):
     }
 
 
-def normalize(arguments, root, build, workdir, python, cxx, outputs=()):
+def normalize(arguments, root, build, workdir, python, cxx, outputs=(), resolve=Path.resolve):
     """Canonical paths follow the actual cwd, including nested in-tree builds."""
     roots = sorted(
-        ((Path(root).resolve(), "@SOURCE@"), (Path(build).resolve(), "@BUILD@")),
+        ((resolve(Path(root)), "@SOURCE@"), (resolve(Path(build)), "@BUILD@")),
         key=lambda pair: len(pair[0].parts),
         reverse=True,
     )
@@ -37,8 +37,8 @@ def normalize(arguments, root, build, workdir, python, cxx, outputs=()):
             result.append("@" + path.name.upper() + "@")
             continue
         candidate = path if path.is_absolute() else cwd / path
-        if path.is_absolute() or value.startswith(("./", "../")) or candidate.resolve() in outputs:
-            path = candidate.resolve()
+        if path.is_absolute() or value.startswith(("./", "../")) or resolve(candidate) in outputs:
+            path = resolve(candidate)
             for prefix, replacement in roots:
                 if path.is_relative_to(prefix):
                     relative = path.relative_to(prefix).as_posix()
@@ -56,10 +56,18 @@ def contracts(records, targets, root, build):
     cxx = shlex.join(cpp)
     anchor = next(record for record in records if record["name"] == "compiler-test-inventory")
     python = anchor["cmd"][0]
-    outputs = {Path(path).resolve() for target in targets for path in target["filename"]}
+    resolved = {}
+
+    def resolve(path):
+        # One check observes one unchanging tree; resolve each distinct path once.
+        if path not in resolved:
+            resolved[path] = path.resolve()
+        return resolved[path]
+
+    outputs = {resolve(Path(path)) for target in targets for path in target["filename"]}
 
     def norm(values, cwd=None):
-        return normalize(values, root, build, cwd, python, cxx, outputs)
+        return normalize(values, root, build, cwd, python, cxx, outputs, resolve)
 
     test_contracts = {}
     for record in records:

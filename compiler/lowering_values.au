@@ -7,6 +7,8 @@ import aurora.compiler.lowering_errors;
 import aurora.compiler.lowering_kinds;
 import aurora.compiler.resolver;
 import aurora.compiler.resolution_arena;
+import aurora.compiler.resolution_rows;
+import aurora.compiler.resolution_names;
 import aurora.compiler.resolution_kinds;
 import aurora.compiler.syntax_arena;
 
@@ -524,7 +526,7 @@ export namespace compiler_lowering {
                 if ((row.expression_kind() == compiler_parser::NodeKind::name || row.expression_kind()
                     == compiler_parser::NodeKind::call || row.expression_kind() == compiler_parser::NodeKind::construct)
                     && row.word(4) >= 0 && row.word(4) != row.word(0)) {
-                    reference = session.name_range(row.word(0), row.word(4));
+                    reference = compiler_resolver::name_range(session, row.word(0), row.word(4));
                 } else {
                     reference = row.word(0);
                 }
@@ -600,7 +602,7 @@ export namespace compiler_lowering {
         return scope.syntax_node() + 1;
     }
     auto lookup_local(compiler_resolver::Session& session, i64 name) -> i64 {
-        const i64 atom = session.intern_atom(name);
+        const i64 atom = compiler_resolver::intern_atom(session, name);
         const i64 function = body_function(session);
         i64 at = session.continuation_count();
         while (at > 0 && session.good()) {
@@ -806,7 +808,7 @@ export namespace compiler_lowering {
         const i64 scope_id = scope_identity(scope);
         i64 atom = -1;
         if (request.bind()) {
-            atom = session.intern_atom(request.name());
+            atom = compiler_resolver::intern_atom(session, request.name());
             if (session.index(110, body_function(session), scope_id, atom, 0) >= 0) {
                 const OperandRow name = scalar(OperandRole::DiagnosticNameId, request.name());
                 const OperandRow absent = scalar(OperandRole::NoDiagnosticValue, 0);

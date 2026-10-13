@@ -42,13 +42,16 @@ Start from a normal Git checkout containing the historical seed source
 checkpoint [`c0ef02cc105de2b7699d8565f6a53f1dea9e1205`](https://github.com/ambasta/aurora/commit/c0ef02cc105de2b7699d8565f6a53f1dea9e1205)
 (retained by `bootstrap-copied-arguments-v1`), and the owner-field checkpoint
 [`bbf18f40d73b0f7b862a4b23d77b03dfb3f3d0e4`](https://github.com/ambasta/aurora/commit/bbf18f40d73b0f7b862a4b23d77b03dfb3f3d0e4)
-(retained by `bootstrap-owner-field-initializers-v1`). Prepare the source worktrees on the host,
+(retained by `bootstrap-owner-field-initializers-v1`), and the register-carry checkpoint
+[`f89e0c9eb199ba482fcce20f1783a52ceae8b1b8`](https://github.com/ambasta/aurora/commit/f89e0c9eb199ba482fcce20f1783a52ceae8b1b8)
+(retained by `bootstrap-register-carry-v1`). Prepare the source worktrees on the host,
 where Git is installed; the pinned development image does not include Git:
 
 ```sh
 git fetch origin tag bootstrap-abi-facts-v1
 git fetch origin tag bootstrap-copied-arguments-v1
 git fetch origin tag bootstrap-owner-field-initializers-v1
+git fetch origin tag bootstrap-register-carry-v1
 git worktree add --detach build/predecessor-source bdf646f09d5e14c88124c4bc9e4f998beda16183
 git worktree add --detach build/abi-facts-source 17f4f1440e6faa9cdaf8711c04400854bdb60d9e
 test "$(git -C build/abi-facts-source rev-parse HEAD)" = 17f4f1440e6faa9cdaf8711c04400854bdb60d9e
@@ -56,6 +59,8 @@ git worktree add --detach build/copied-argument-source c0ef02cc105de2b7699d8565f
 test "$(git -C build/copied-argument-source rev-parse HEAD)" = c0ef02cc105de2b7699d8565f6a53f1dea9e1205
 git worktree add --detach build/owner-field-source bbf18f40d73b0f7b862a4b23d77b03dfb3f3d0e4
 test "$(git -C build/owner-field-source rev-parse HEAD)" = bbf18f40d73b0f7b862a4b23d77b03dfb3f3d0e4
+git worktree add --detach build/register-carry-source f89e0c9eb199ba482fcce20f1783a52ceae8b1b8
+test "$(git -C build/register-carry-source rev-parse HEAD)" = f89e0c9eb199ba482fcce20f1783a52ceae8b1b8
 ```
 
 Then enter the [pinned development environment](../docs/local-development.md)
@@ -78,9 +83,13 @@ ARGUMENTS=$(realpath build/copied-argument-compiler/aurorac)
 meson setup build/owner-field-compiler build/owner-field-source -Dkernel_images=false \
   "-Dbootstrap_compiler=$ARGUMENTS"
 meson compile -C build/owner-field-compiler -j 2 aurorac
-P=$(realpath build/owner-field-compiler/aurorac)
+FIELDS=$(realpath build/owner-field-compiler/aurorac)
+meson setup build/register-carry-compiler build/register-carry-source -Dkernel_images=false \
+  "-Dbootstrap_compiler=$FIELDS"
+meson compile -C build/register-carry-compiler -j 2 aurorac
+P=$(realpath build/register-carry-compiler/aurorac)
 meson setup build/meson . \
-  "-Dbootstrap_compiler=$P"
+  "-Dbootstrap_compiler=$P" "-Duefi_ld=$UEFI_LD"
 meson setup build/meson-compiler . -Dkernel_images=false \
   "-Dbootstrap_compiler=$P"
 meson compile -C build/meson-compiler -j 2 aurorac aurorac-stage2
@@ -92,7 +101,10 @@ The digest option above belongs only to the unchanged historical precursor graph
 The copied-argument and owner-field stages add two source compiler builds after
 the ABI-facts stage. The frontend uses direct copied arguments and creates its
 private index owner through a region-backed field factory; the earlier stages
-cannot build those respective spellings. Current setup selects the resulting predecessor by path; its deprecated
+cannot build those respective spellings. The register-carry stage changes no
+spelling: its backend emits the current frontend with operands kept in registers
+and elements returned in place, which makes the resulting compiler about 10%
+faster (see [compile speed](ARCHITECTURE.md#compile-speed)). Current setup selects the resulting predecessor by path; its deprecated
 digest option is ignored and retained solely for existing-directory compatibility.
 
 Both ordinary default directories are now configured: `make`/`make test` use the

@@ -47,5 +47,6 @@ exec "$engine" run --rm --init --platform linux/amd64 \
     --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
     "${identity[@]}" --env HOME=/tmp "${controls[@]}" \
     --tmpfs /tmp:exec,mode=1777 \
+    --tmpfs /var/tmp:exec,mode=1777 \
     --mount "type=bind,source=$root,target=/workspace" --workdir /workspace \
     "${terminal[@]}" "$image" "$@"

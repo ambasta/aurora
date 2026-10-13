@@ -4452,7 +4452,7 @@ void loweringSchemaSources(const std::vector<aurora::Token> &tokens,
 void loweringImplementationSources(const std::vector<aurora::Token> &tokens,
                                    const aurora::Program &program,
                                    std::size_t module) {
-    static const std::array<std::vector<ContainerAst>, 6> classes{{
+    static const std::array<std::vector<ContainerAst>, 10> classes{{
         {},
         {{"LoweringConfig",
           true,
@@ -4480,12 +4480,23 @@ void loweringImplementationSources(const std::vector<aurora::Token> &tokens,
           true,
           "-typeId -signedValue -unsignedValue -validValue",
           "+LiteralValue +type +signed_value +unsigned_value +valid"}},
-        {{"IndexedStorage", true, "-rootId -fieldId -typeId", "+IndexedStorage +root +field +type"},
-         {"FunctionBodyResult", true, "-functionRow -nextLabel", "+FunctionBodyResult +function_row +next_label"}},
+        {},
+        {},
+        {{"IndexedStorage", true, "-rootId -fieldId -typeId", "+IndexedStorage +root +field +type"}},
+        {},
+        {{"FunctionBodyResult", true, "-functionRow -nextLabel", "+FunctionBodyResult +function_row +next_label"}},
         {},
     }};
-    static const std::array<const char *, 6> entries{
-        "fail_pair", "begin_lowering", "prepare_types", "add_local", "lower_function_body", "run_lowering"};
+    static const std::array<const char *, 10> entries{"fail_pair",
+                                                      "begin_lowering",
+                                                      "prepare_types",
+                                                      "add_local",
+                                                      "push_frame",
+                                                      "begin_call",
+                                                      "begin_expression",
+                                                      "begin_local",
+                                                      "lower_function_body",
+                                                      "run_lowering"};
     require(program.classes.size() == classes.at(module).size() && program.enums.empty() && program.templates.empty() &&
                 program.functionTemplates.empty() && program.namespaces == std::set<std::string>{"compiler_lowering"},
             "typed implementation class/enum/template/namespace inventory differs");
@@ -4505,25 +4516,33 @@ void loweringImplementationSources(const std::vector<aurora::Token> &tokens,
 }
 
 void resolvedCompilerSources(char **paths) {
-    context = "all sixteen real compiler modules through production typed lowering";
-    const std::array<std::size_t, 16> arguments{0, 1, 2, 15, 19, 20, 21, 16, 17, 22, 23, 24, 25, 26, 27, 18};
-    const std::array<std::string, 16> modules{"lexer",
+    context = "all twenty-three real compiler modules through production typed lowering";
+    const std::array<std::size_t, 23> arguments{0,  1,  2,  15, 19, 20, 21, 32, 16, 33, 34, 17,
+                                                22, 23, 24, 25, 28, 29, 30, 31, 26, 27, 18};
+    const std::array<std::string, 23> modules{"lexer",
                                               "syntax_arena",
                                               "parser",
                                               "resolution_kinds",
                                               "lowering_kinds",
                                               "lowering_errors",
                                               "lowering_storage",
+                                              "resolution_rows",
                                               "resolution_arena",
+                                              "resolution_names",
+                                              "resolution_ingest",
                                               "resolver",
                                               "lowering_common",
                                               "lowering_configuration",
                                               "lowering_types",
                                               "lowering_values",
+                                              "lowering_frames",
+                                              "lowering_calls",
+                                              "lowering_expressions",
+                                              "lowering_statements",
                                               "lowering_body",
                                               "lowering",
                                               "frontend"};
-    const std::array<std::vector<std::string>, 16> classNames{{
+    const std::array<std::vector<std::string>, 23> classNames{{
         {"Cursor", "Lexeme"},
         {"ParseFrame", "AstNode", "ChildEdge", "TypeSyntax", "SyntaxNode", "AstArena"},
         {"AdmissionConfig",
@@ -4540,19 +4559,26 @@ void resolvedCompilerSources(char **paths) {
         {},
         {"LoweringResult"},
         {"OutputRow", "OperandRow", "SnapshotRow", "LocalRow", "ArgumentLane", "ContinuationRow"},
-        {"SyntaxRow", "MetaRow", "IndexRow", "ResolvedRow", "WorkRow", "SessionStatus", "Session"},
+        {"SyntaxRow", "MetaRow", "IndexRow", "ResolvedRow", "WorkRow", "SessionStatus"},
+        {"Session"},
+        {},
+        {},
         {"BindContext", "Arguments"},
         {},
         {"LoweringConfig", "ScalarSeed", "ServiceParameters", "ServiceSeed"},
         {},
         {"LocalRequest", "LiteralValue"},
-        {"IndexedStorage", "FunctionBodyResult"},
+        {},
+        {},
+        {"IndexedStorage"},
+        {},
+        {"FunctionBodyResult"},
         {},
         {},
     }};
     // Frontend's direct imports give this DFS postorder, independent of file argv.
-    std::array<aurora::Program, 16> syntax;
-    std::array<aurora::HostedModule, 16> headers;
+    std::array<aurora::Program, 23> syntax;
+    std::array<aurora::HostedModule, 23> headers;
     const auto resolved = [&] {
         aurora::HostedResolution resolution;
         for (std::size_t index = 0; index < modules.size(); ++index) {
@@ -4567,8 +4593,8 @@ void resolvedCompilerSources(char **paths) {
                 bootstrapDeclarationTypes(tokens, syntax[index], index - 1);
                 loweringSchemaSources(tokens, syntax[index], index - 4);
             }
-            if (index >= 9 && index <= 14)
-                loweringImplementationSources(tokens, syntax[index], index - 9);
+            if (index >= 12 && index <= 21)
+                loweringImplementationSources(tokens, syntax[index], index - 12);
             headers[index] = resolution.add(source);
             require(headers[index].moduleName == "aurora.compiler." + modules[index] && headers[index].interfaceUnit &&
                         syntax[index].classes.size() == classNames[index].size(),
@@ -6495,7 +6521,7 @@ void rawAggregates() {
 int main(int argc, char **argv) {
     try {
         context = "fixture arguments";
-        require(argc == 29, "expected sixteen compiler, five aggregate and seven typed consumer source paths");
+        require(argc == 36, "expected twenty-three compiler, five aggregate and seven typed consumer source paths");
         grammarExpectations();
         diagnosticExpectations();
         // Table rows cover ordinary semicolon inputs. Keep distinct trivia,
@@ -6666,7 +6692,7 @@ int main(int argc, char **argv) {
                "typed native identities, dependency/instance order, exact nominal reflection views, selected "
                "overloads, "
                "independent concrete layouts and retained lint/template-error source spans; "
-               "sixteen-module compiler graph, fifteen typed classes/14 enums/513 cases, all implementation "
+               "twenty-three-module compiler graph, fifteen typed classes/14 enums/513 cases, all implementation "
                "declaration boundaries, generated typed-row extents and eleven-owner Session failure/release "
                "prefixes\n";
     } catch (const std::exception &error) {

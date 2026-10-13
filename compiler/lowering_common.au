@@ -3,6 +3,7 @@ import aurora.compiler.syntax_arena;
 import aurora.compiler.lexer;
 import aurora.compiler.resolver;
 import aurora.compiler.resolution_arena;
+import aurora.compiler.resolution_rows;
 import aurora.compiler.resolution_kinds;
 import aurora.compiler.lowering_kinds;
 import aurora.compiler.lowering_errors;
@@ -149,19 +150,6 @@ export namespace compiler_lowering {
             at = previous;
         }
         return count;
-    }
-    auto syntax_list_at(compiler_resolver::Session& session, i64 last, i64 index) -> i64 {
-        const i64 count = syntax_list_count(session, last);
-        if (index < 0 || index >= count) {
-            return session.fail_storage(compiler_resolver::StorageStatus::invalid);
-        }
-        i64 remaining = count - index - 1;
-        i64 at = last;
-        while (remaining > 0 && session.good()) {
-            at = compiler_resolver::sw(session, at, 2);
-            remaining = remaining - 1;
-        }
-        return at;
     }
 }
 export namespace compiler_lowering {
