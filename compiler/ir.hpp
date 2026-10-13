@@ -17,7 +17,7 @@ class ServiceArgument;
 class BorrowedRootArgument;
 // Payload ranges borrow the immutable Aurora instruction owner. They copy one
 // requested scalar value and never materialize a native payload container.
-template<class Value> class InstructionPayloadRange {
+template <class Value> class InstructionPayloadRange {
     const Instructions *instructions_ = nullptr;
     std::size_t begin_ = 0, count_ = 0;
     InstructionPayloadRange(const Instructions &instructions, std::size_t begin, std::size_t count)
@@ -28,24 +28,38 @@ template<class Value> class InstructionPayloadRange {
 public:
     using value_type = Value;
     InstructionPayloadRange() = default;
-    std::size_t size() const noexcept { return count_; }
-    bool empty() const noexcept { return count_ == 0; }
+    std::size_t size() const noexcept {
+        return count_;
+    }
+    bool empty() const noexcept {
+        return count_ == 0;
+    }
     Value at(std::size_t index) const;
-    Value operator[](std::size_t index) const { return at(index); }
-    Value front() const { return at(0); }
-    Value back() const { return at(count_ - 1); }
-    auto begin() const { return MetadataIterator<InstructionPayloadRange>(*this, 0); }
-    auto end() const { return MetadataIterator<InstructionPayloadRange>(*this, count_); }
+    Value operator[](std::size_t index) const {
+        return at(index);
+    }
+    Value front() const {
+        return at(0);
+    }
+    Value back() const {
+        return at(count_ - 1);
+    }
+    auto begin() const {
+        return MetadataIterator<InstructionPayloadRange>(*this, 0);
+    }
+    auto end() const {
+        return MetadataIterator<InstructionPayloadRange>(*this, count_);
+    }
     bool operator==(const InstructionPayloadRange &) const = default;
 };
 using OffsetRange = InstructionPayloadRange<int>;
 using ServiceArgumentRange = InstructionPayloadRange<ServiceArgument>;
 using BorrowedRootArgumentRange = InstructionPayloadRange<BorrowedRootArgument>;
 using LiteralRange = InstructionPayloadRange<unsigned char>;
-template<> int InstructionPayloadRange<int>::at(std::size_t index) const;
-template<> ServiceArgument InstructionPayloadRange<ServiceArgument>::at(std::size_t index) const;
-template<> BorrowedRootArgument InstructionPayloadRange<BorrowedRootArgument>::at(std::size_t index) const;
-template<> unsigned char InstructionPayloadRange<unsigned char>::at(std::size_t index) const;
+template <> int InstructionPayloadRange<int>::at(std::size_t index) const;
+template <> ServiceArgument InstructionPayloadRange<ServiceArgument>::at(std::size_t index) const;
+template <> BorrowedRootArgument InstructionPayloadRange<BorrowedRootArgument>::at(std::size_t index) const;
+template <> unsigned char InstructionPayloadRange<unsigned char>::at(std::size_t index) const;
 
 // Operations describe language semantics, never target-register names or assembly text.
 using hosted_abi::compiler_lowering::Binary;
@@ -134,11 +148,11 @@ public:
 };
 // Value-call storage is explicit and cannot inhabit the scalar value stack.
 // Scalar positions use zero; class positions name independent readonly snapshots.
-template<class Offsets> class BasicAggregateCall {
+template <class Offsets> class BasicAggregateCall {
 public:
     std::string callee;
     Offsets objectArguments;
-    int resultOffset;                    // zero for scalar results, exact pristine object base otherwise
+    int resultOffset;           // zero for scalar results, exact pristine object base otherwise
     Offsets spanArguments = {}; // zero except readonly capability positions
 };
 using AggregateCall = BasicAggregateCall<std::vector<int>>;
@@ -170,7 +184,7 @@ public:
     int resultOffset;
 };
 // Immutable module data, with no source/IR-supplied address or terminator.
-template<class Literals> class BasicBorrowLiteralSpan {
+template <class Literals> class BasicBorrowLiteralSpan {
 public:
     Literals bytes;
     int resultOffset;
@@ -319,7 +333,7 @@ public:
     int loanId;
     service::Kind kind;
 };
-template<class Offsets, class Services> class BasicServiceCall {
+template <class Offsets, class Services> class BasicServiceCall {
 public:
     std::string callee;
     int loanId;
@@ -342,13 +356,13 @@ public:
     int index;
     int offset;
 };
-template<class Offsets> class BasicResourceCall {
+template <class Offsets> class BasicResourceCall {
 public:
     std::string callee;
     int regionOffset;
     Offsets ownerArguments; // owners or readonly constructor class snapshots; zero otherwise
-    int resultOffset;                // pristine bytes/object root for owning or copied result; scalar result is zero
-    int receiverOffset = 0;          // positive only for an owning constructor
+    int resultOffset;       // pristine bytes/object root for owning or copied result; scalar result is zero
+    int receiverOffset = 0; // positive only for an owning constructor
 };
 using ResourceCall = BasicResourceCall<std::vector<int>>;
 using ResourceCallObservation = BasicResourceCall<OffsetRange>;
@@ -422,7 +436,7 @@ public:
 };
 // A class array remains one complete inline value. Indexed operations consume
 // a checked i64, never manufacture an element address or escaping reference.
-template<class Offsets> class BasicInitializeClassArray {
+template <class Offsets> class BasicInitializeClassArray {
 public:
     int objectOffset; // zero: constructor receiver; positive: declared local carrier
     int fieldIndex;
@@ -476,13 +490,13 @@ class ReceiverIndexStore {
 public:
     int fieldIndex;
 };
-template<class Offsets> class BasicMethodCall {
+template <class Offsets> class BasicMethodCall {
 public:
     std::string callee;
-    int receiverOffset;                    // 0: receiver/root 0; -1..-5: borrowed roots; positive: ObjectSlot
+    int receiverOffset;           // 0: receiver/root 0; -1..-5: borrowed roots; positive: ObjectSlot
     Offsets objectArguments = {}; // readonly copied snapshots; scalar entries are zero
-    int resultOffset = 0;                  // pristine class result destination; zero for scalar results
-    int receiverFieldIndex = -1;           // -1 selects the root; otherwise one logical owned class field
+    int resultOffset = 0;         // pristine class result destination; zero for scalar results
+    int receiverFieldIndex = -1;  // -1 selects the root; otherwise one logical owned class field
     Offsets spanArguments = {};   // zero except readonly capability positions
 };
 using MethodCall = BasicMethodCall<std::vector<int>>;
@@ -506,7 +520,7 @@ public:
 };
 // Ordered invocation-only root/loan pairs borrow the same immutable operand
 // owner as other payloads. No parallel first/second authority is retained.
-template<class Offsets, class Roots> class BasicBorrowedCall {
+template <class Offsets, class Roots> class BasicBorrowedCall {
 public:
     std::string callee;
     Roots roots;
@@ -560,94 +574,97 @@ public:
 // One operation inventory: hostile fixtures own their variable payloads,
 // while production observations borrow only immutable owner ranges. All other
 // operation records, including copied Type and name observations, are shared.
-template<class Offsets, class Services, class Literals, class Roots>
+template <class Offsets, class Services, class Literals, class Roots>
 using BasicInstruction = std::variant<BindServiceParameter,
-    AcquireServiceLoan,
-    ReleaseServiceLoan,
-    ServiceOperation,
-    BasicServiceCall<Offsets, Services>,
-    Constant,
-    EnumConstant,
-    Load,
-    Store,
-    Push,
-    Pop,
-    UnaryValue,
-    BinaryValue,
-    Convert,
-    Compare,
-    BoundsGuard,
-    IndexLoad,
-    IndexStore,
-    BorrowHandle,
-    Call,
-    BasicAggregateCall<Offsets>,
-    BeginObject,
-    InitializeEmptyObject,
-    EndObject,
-    CopyObject,
-    ObjectFieldCopy,
-    AssignObjectField,
-    InitializeObjectField,
-    BasicInitializeClassArray<Offsets>,
-    ClassArrayBoundsGuard,
-    ClassArrayCopy,
-    ClassArrayAssign,
-    ReceiverLoad,
-    ReceiverStore,
-    ReceiverArrayZero,
-    ReceiverBoundsGuard,
-    ReceiverIndexLoad,
-    ReceiverIndexStore,
-    BasicMethodCall<Offsets>,
-    MetadataQuery,
-    Label,
-    Jump,
-    BranchFalse,
-    Return,
-    ReturnObject,
-    BindParameter,
-    BindObjectParameter,
-    BeginArray,
-    EndArray,
-    BorrowSpan,
-    BorrowReceiverArraySpan,
-    BasicBorrowLiteralSpan<Literals>,
-    BorrowOwnedSpan,
-    ReturnSpan,
-    ReborrowSpan,
-    Subspan,
-    EndSpan,
-    SpanLength,
-    SpanLoad,
-    BindSpanParameter,
-    BeginBytes,
-    AllocateBytes,
-    AllocateValues,
-    ValuesLoad,
-    ValuesStore,
-    ValuesResize,
-    MoveBytes,
-    BytesOk,
-    BytesLength,
-    BytesLoad,
-    BytesStore,
-    BytesResize,
-    EndBytes,
-    BindRegionParameter,
-    BindBytesParameter,
-    BasicResourceCall<Offsets>,
-    ReturnBytes,
-    InitializeBytesField,
-    MoveObject,
-    BindOwnedObjectParameter,
-    ReturnOwnedObject,
-    AcquireObjectLoan,
-    ReleaseObjectLoan,
-    BasicBorrowedCall<Offsets, Roots>>;
-using Instruction = BasicInstruction<std::vector<int>, std::vector<ServiceArgument>, std::vector<unsigned char>,
+                                      AcquireServiceLoan,
+                                      ReleaseServiceLoan,
+                                      ServiceOperation,
+                                      BasicServiceCall<Offsets, Services>,
+                                      Constant,
+                                      EnumConstant,
+                                      Load,
+                                      Store,
+                                      Push,
+                                      Pop,
+                                      UnaryValue,
+                                      BinaryValue,
+                                      Convert,
+                                      Compare,
+                                      BoundsGuard,
+                                      IndexLoad,
+                                      IndexStore,
+                                      BorrowHandle,
+                                      Call,
+                                      BasicAggregateCall<Offsets>,
+                                      BeginObject,
+                                      InitializeEmptyObject,
+                                      EndObject,
+                                      CopyObject,
+                                      ObjectFieldCopy,
+                                      AssignObjectField,
+                                      InitializeObjectField,
+                                      BasicInitializeClassArray<Offsets>,
+                                      ClassArrayBoundsGuard,
+                                      ClassArrayCopy,
+                                      ClassArrayAssign,
+                                      ReceiverLoad,
+                                      ReceiverStore,
+                                      ReceiverArrayZero,
+                                      ReceiverBoundsGuard,
+                                      ReceiverIndexLoad,
+                                      ReceiverIndexStore,
+                                      BasicMethodCall<Offsets>,
+                                      MetadataQuery,
+                                      Label,
+                                      Jump,
+                                      BranchFalse,
+                                      Return,
+                                      ReturnObject,
+                                      BindParameter,
+                                      BindObjectParameter,
+                                      BeginArray,
+                                      EndArray,
+                                      BorrowSpan,
+                                      BorrowReceiverArraySpan,
+                                      BasicBorrowLiteralSpan<Literals>,
+                                      BorrowOwnedSpan,
+                                      ReturnSpan,
+                                      ReborrowSpan,
+                                      Subspan,
+                                      EndSpan,
+                                      SpanLength,
+                                      SpanLoad,
+                                      BindSpanParameter,
+                                      BeginBytes,
+                                      AllocateBytes,
+                                      AllocateValues,
+                                      ValuesLoad,
+                                      ValuesStore,
+                                      ValuesResize,
+                                      MoveBytes,
+                                      BytesOk,
+                                      BytesLength,
+                                      BytesLoad,
+                                      BytesStore,
+                                      BytesResize,
+                                      EndBytes,
+                                      BindRegionParameter,
+                                      BindBytesParameter,
+                                      BasicResourceCall<Offsets>,
+                                      ReturnBytes,
+                                      InitializeBytesField,
+                                      MoveObject,
+                                      BindOwnedObjectParameter,
+                                      ReturnOwnedObject,
+                                      AcquireObjectLoan,
+                                      ReleaseObjectLoan,
+                                      BasicBorrowedCall<Offsets, Roots>>;
+using Instruction = BasicInstruction<std::vector<int>,
+                                     std::vector<ServiceArgument>,
+                                     std::vector<unsigned char>,
                                      std::vector<BorrowedRootArgument>>;
-using InstructionObservation = BasicInstruction<OffsetRange, ServiceArgumentRange, LiteralRange, BorrowedRootArgumentRange>;
+using InstructionObservation =
+    BasicInstruction<OffsetRange, ServiceArgumentRange, LiteralRange, BorrowedRootArgumentRange>;
 class ObjectSlot {
 public:
     std::string className;
@@ -669,28 +686,43 @@ public:
     std::optional<CodePosition> target;
     bool fallsThrough;
     bool blockEntry;
+    bool unreachableSemanticAfter;
     bool operator==(const InstructionFlow &) const = default;
 };
 class InstructionRange {
     const Instructions *instructions_ = nullptr;
     Metadata::CallableId callableId_ = 0;
     InstructionRange(const Instructions &instructions, Metadata::CallableId callableId)
-        : instructions_(&instructions), callableId_(callableId) {}
+        : instructions_(&instructions), callableId_(callableId) {
+    }
     friend class Instructions;
+
 public:
     using value_type = InstructionObservation;
     InstructionRange() = default;
     std::size_t size() const;
-    bool empty() const { return size() == 0; }
+    bool empty() const {
+        return size() == 0;
+    }
     InstructionId idAt(CodePosition position) const;
     InstructionFlow flowAt(CodePosition position) const;
     InstructionObservation instructionById(InstructionId id) const;
     InstructionObservation at(CodePosition position) const;
-    InstructionObservation operator[](CodePosition position) const { return at(position); }
-    InstructionObservation front() const { return at(0); }
-    InstructionObservation back() const { return at(size() - 1); }
-    auto begin() const { return MetadataIterator<InstructionRange>(*this, 0); }
-    auto end() const { return MetadataIterator<InstructionRange>(*this, size()); }
+    InstructionObservation operator[](CodePosition position) const {
+        return at(position);
+    }
+    InstructionObservation front() const {
+        return at(0);
+    }
+    InstructionObservation back() const {
+        return at(size() - 1);
+    }
+    auto begin() const {
+        return MetadataIterator<InstructionRange>(*this, 0);
+    }
+    auto end() const {
+        return MetadataIterator<InstructionRange>(*this, size());
+    }
     bool operator==(const InstructionRange &) const = default;
 };
 namespace verification {
@@ -802,16 +834,20 @@ class ValidatedModule {
     std::unique_ptr<Metadata> metadataOwner;
     std::unique_ptr<Instructions> instructionOwner;
     Contents contents;
-    explicit ValidatedModule(std::vector<FunctionBody> functions, std::unique_ptr<Metadata> metadata,
+    explicit ValidatedModule(std::vector<FunctionBody> functions,
+                             std::unique_ptr<Metadata> metadata,
                              std::unique_ptr<Instructions> instructions);
     friend ValidatedModule validate(InstructionIngress pending, verification::Metrics *metrics);
+
 public:
     ~ValidatedModule();
     ValidatedModule(const ValidatedModule &) = delete;
     ValidatedModule &operator=(const ValidatedModule &) = delete;
     ValidatedModule(ValidatedModule &&) noexcept;
     ValidatedModule &operator=(ValidatedModule &&) noexcept;
-    const Contents &get() const { return contents; }
+    const Contents &get() const {
+        return contents;
+    }
     const Metadata &metadata() const {
         if (!metadataOwner)
             throw Error("metadata access on moved-from validated module");

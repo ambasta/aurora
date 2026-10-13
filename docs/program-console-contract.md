@@ -29,9 +29,11 @@ before note/file mutation or protected execution. It retains command dispatch,
 authenticated lifecycle/publication and note/file commits. `console.program_output`
 then presents a copied, bounded `ProgramResponse` and the following prompt through
 the same sealed capability. Ready, saved, missing, stopped and unknown responses
-carry no payload; output and local file replies carry at most 64 printable bytes.
-The entire payload and zero suffix are checked before writing. The private native
-ingress also checks raw enum representation before Aurora observes a typed enum.
+carry no payload; output and local file replies carry at most 64 bytes. Presentation
+preserves every payload byte, including NUL, control and non-ASCII values, as the
+previous native output path did. Count, payload kind and zero suffix are checked
+before writing. The private native ingress also checks raw enum representation
+before Aurora observes a typed enum.
 
 Each input or response turn gets a fresh grant only at the quiescent boundary;
 the grant is released before proceeding. Response handoff copies are scrubbed

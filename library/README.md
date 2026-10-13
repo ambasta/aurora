@@ -61,7 +61,7 @@ private 64-byte ASCII state owns no
 transport authority; [input and submission behavior](../docs/native-console-service.md#input-behavior)
 is shared while each consumer handles its own output.
 
-`console.io` supplies `write(ConsoleSession&, span<const u8>)`. Its copied
+`console.io` supplies `write_bytes(ConsoleSession&, span<const u8>)`. Its copied
 `WriteResult` exposes `written()` successful bytes, `status()` (`WriteStatus::complete`
 or `::timeout`) and `complete()`. Empty input completes with zero transport calls.
 The first timeout stops output, preserving the emitted prefix and excluding the
@@ -73,8 +73,9 @@ the helper while keeping their existing failure/acknowledgement policy.
 ConsoleSession and returns copied bytes, an action and CR carry. Native command
 execution and publication remain outside that input capability.
 `console.program_output` presents a bounded copied response and prompt through
-the same capability. It validates the whole record before writing, stops at the
-first failed output byte and never retries a command or committed update.
+the same capability. It validates the count, kind and zero suffix before writing,
+preserves every payload byte including NUL/non-ASCII values, stops at the first
+failed output byte and never retries a command or committed update.
 
 ## Living component references
 

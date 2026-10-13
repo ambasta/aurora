@@ -197,12 +197,17 @@ export namespace compiler_frontend {
     auto graph_retained(const compiler_ir_graph::Workspace& workspace, i64 index) -> bool {
         return compiler_ir_graph::retained(workspace, index);
     }
-    auto metadata_create(builtin::ByteRegion region, compiler_ir_metadata::InputCounts counts,
-        i64 callableCount, i64 slotCount, i64 instructionBegin)
-        -> compiler_ir_metadata::MetadataStore {
-        compiler_ir_metadata::MetadataStore result = compiler_ir_metadata::create(region, counts, callableCount,
-            slotCount, instructionBegin);
+    auto metadata_flag_masks() -> compiler_ir_metadata::FlagMasks {
+        const compiler_ir_metadata::FlagMasks result = compiler_ir_metadata::flag_masks();
+        return result;
+    }
+    auto metadata_create(builtin::ByteRegion region) -> compiler_ir_metadata::MetadataStore {
+        compiler_ir_metadata::MetadataStore result = compiler_ir_metadata::create(region);
         return move(result);
+    }
+    auto metadata_initialize(compiler_ir_metadata::MetadataStore& store, compiler_ir_metadata::InputCounts counts,
+        i64 callableCount, i64 slotCount, i64 instructionBegin) -> bool {
+        return store.initialize(counts, callableCount, slotCount, instructionBegin);
     }
     auto metadata_release(builtin::ByteRegion region, compiler_ir_metadata::MetadataStore store) -> i64 {
         return compiler_ir_metadata::release(region, move(store));
@@ -224,9 +229,10 @@ export namespace compiler_frontend {
         i64 callable, i64 offset) -> i64 {
         return compiler_ir_metadata::byte_array_element_root(store, callable, offset);
     }
-    auto instructions_create(builtin::ByteRegion region, compiler_ir_instructions::InstructionCounts counts)
-        -> compiler_ir_instructions::InstructionStore {
-        compiler_ir_instructions::InstructionStore result = compiler_ir_instructions::create(region, counts);
+    auto instructions_create(builtin::ByteRegion region, i64 instructionCount, i64 operandCount,
+        i64 literalCount, i64 bodyCount) -> compiler_ir_instructions::InstructionStore {
+        compiler_ir_instructions::InstructionStore result = compiler_ir_instructions::create(region,
+            instructionCount, operandCount, literalCount, bodyCount);
         return move(result);
     }
     auto instructions_release(builtin::ByteRegion region, compiler_ir_instructions::InstructionStore store) -> i64 {

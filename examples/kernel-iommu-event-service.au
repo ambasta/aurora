@@ -59,7 +59,7 @@ auto event_report(builtin::ConsoleSession& console, u64 kind, u64 word0, u64 wor
     const array<u8, 5> dva = " dva=";
     const array<u8, 8> stat = " status=";
     const array<u8, 2> newline = "\r\n";
-    const console::WriteResult prefix_result = console::write(console, borrow_bytes(prefix));
+    const console::WriteResult prefix_result = console::write_bytes(console, borrow_bytes(prefix));
     if (!prefix_result.complete()) {
         return false;
     }
@@ -73,7 +73,7 @@ auto event_report(builtin::ConsoleSession& console, u64 kind, u64 word0, u64 wor
     if (console.put(tag) != builtin::ConsolePutResult::success) {
         return false;
     }
-    const console::WriteResult raw_result = console::write(console, borrow_bytes(raw));
+    const console::WriteResult raw_result = console::write_bytes(console, borrow_bytes(raw));
     if (!raw_result.complete() || !event_hex(console, word0, 16)) {
         return false;
     }
@@ -81,24 +81,24 @@ auto event_report(builtin::ConsoleSession& console, u64 kind, u64 word0, u64 wor
         return false;
     }
     if (kind == 2u64) {
-        const console::WriteResult rid_result = console::write(console, borrow_bytes(rid));
+        const console::WriteResult rid_result = console::write_bytes(console, borrow_bytes(rid));
         if (!rid_result.complete() || !event_hex(console, word0 & 65535u64, 4)) {
             return false;
         }
-        const console::WriteResult dom_result = console::write(console, borrow_bytes(dom));
+        const console::WriteResult dom_result = console::write_bytes(console, borrow_bytes(dom));
         if (!dom_result.complete() || !event_hex(console, (word0 >> 32) & 65535u64, 4)) {
             return false;
         }
-        const console::WriteResult dva_result = console::write(console, borrow_bytes(dva));
+        const console::WriteResult dva_result = console::write_bytes(console, borrow_bytes(dva));
         if (!dva_result.complete() || !event_hex(console, word1, 16)) {
             return false;
         }
     }
-    const console::WriteResult status_result = console::write(console, borrow_bytes(stat));
+    const console::WriteResult status_result = console::write_bytes(console, borrow_bytes(stat));
     if (!status_result.complete() || !event_hex(console, status, 2)) {
         return false;
     }
-    const console::WriteResult newline_result = console::write(console, borrow_bytes(newline));
+    const console::WriteResult newline_result = console::write_bytes(console, borrow_bytes(newline));
     return newline_result.complete();
 }
 

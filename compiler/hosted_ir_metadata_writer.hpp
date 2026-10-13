@@ -1,8 +1,12 @@
 #pragma once
 #include "hosted_ir_metadata.hpp"
 #include "hosted_frontend_abi.hpp"
+#include <map>
+#include <string>
 
 namespace aurora::ir::detail {
+// One copied source table is shared by both native ingress paths and readers.
+const hosted_abi::compiler_ir_metadata::FlagMasks &metadataFlagMasks();
 // Closed bootstrap writer: count one walk, allocate the existing owner, then
 // repeat that walk into its exact raw prefixes. It never publishes a view.
 class MetadataWriter {
@@ -13,6 +17,8 @@ class MetadataWriter {
     std::int64_t slotCount_ = 0;
     std::int64_t instructionBegin_ = -1;
     bool allocated_ = false;
+    // Exact owned keys live only during each writer pass, never in Metadata.
+    std::map<std::string, hosted_abi::compiler_ir_metadata::ByteRange, std::less<>> textRanges_;
     void type(std::int64_t position, const Type &value);
 
 public:

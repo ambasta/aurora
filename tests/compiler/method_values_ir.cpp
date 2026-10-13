@@ -35,12 +35,15 @@ void accept(const std::string &name, Module m) {
 void reject(const std::string &name,
             Module m,
             const std::function<void(Module &)> &change,
-            const std::string &diagnostic) {
+            const std::string &diagnostic,
+            bool exact = false) {
     change(m);
     try {
         (void)validate(std::move(m));
     } catch (const Error &e) {
-        require(std::string(e.what()).find(diagnostic) != std::string::npos, name + ": wrong diagnostic: " + e.what());
+        require(exact ? e.diagnostic.code == DiagnosticCode::Unclassified && e.diagnostic.message == diagnostic
+                      : std::string(e.what()).find(diagnostic) != std::string::npos,
+                name + ": wrong diagnostic: " + e.what());
         ++rejected;
         std::cout << "PASS method IR " << name << '\n';
         return;
@@ -333,13 +336,23 @@ void directTests() {
             m.functions[1].code.insert(m.functions[1].code.begin() + 3, {Constant{1, Type::I64}, Store{8, Type::I64}});
         },
         "write to initialized const object field");
-    for (const auto &t : {Type::Own, Type::Ref, Type::MutRef, Type::array(TypeKind::U8, 2)})
+    for (const auto &t : {Type::Own, Type::Ref, Type::MutRef, Type::array(TypeKind::U8, 2)}) {
         check(
             "invalid method parameter " + typeName(t),
             [t](Module &m) {
                 m.functions[1].parameters[0] = t;
             },
             "receiver signature requires scalar, enum or class values");
+        reject(
+            "uncalled invalid method parameter " + typeName(t),
+            baseline(),
+            [t](Module &m) {
+                m.functions.erase(m.functions.begin());
+                m.functions[0].parameters[0] = t;
+            },
+            "invalid typed IR: receiver signature requires scalar, enum or class values",
+            true);
+    }
     check(
         "span method argument lacks capability vector",
         [](Module &m) {

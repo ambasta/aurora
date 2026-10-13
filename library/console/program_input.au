@@ -2,6 +2,7 @@ export module console.program_input;
 import console.io;
 import console.line;
 import std.binary_buffer;
+import std.binary;
 
 export namespace console {
     enum class ProgramInputAction {
@@ -27,7 +28,7 @@ export namespace console {
 
 namespace console {
     auto program_text(builtin::ConsoleSession& session, builtin::span<const u8> text) -> bool {
-        const WriteResult result = write(session, text);
+        const WriteResult result = write_bytes(session, text);
         return result.complete();
     }
 }

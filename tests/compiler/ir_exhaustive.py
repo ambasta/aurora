@@ -105,7 +105,7 @@ with tempfile.TemporaryDirectory(prefix="aurora-ir-exhaustive-") as temporary:
     print("PASS IR exhaustive unchanged instruction variant/form mapping control")
     original = (directory / "ir.hpp").read_text()
     pattern = re.compile(
-        r"(template\s*<class Offsets,\s*class Services,\s*class Literals>\s*"
+        r"(template\s*<class Offsets,\s*class Services,\s*class Literals,\s*class Roots>\s*"
         r"using\s+BasicInstruction\s*=\s*std::variant<)(.*?)(>;)", re.DOTALL
     )
     if len(pattern.findall(original)) != 1:

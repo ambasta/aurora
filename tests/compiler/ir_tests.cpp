@@ -5,6 +5,7 @@
 #include <bit>
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -13,6 +14,16 @@ using namespace aurora;
 using namespace aurora::ir;
 namespace {
 int passed = 0;
+int failed = 0;
+void diagnosticMismatch(const std::string &name, const std::string &expected, const Error &error, bool exact) {
+    ++failed;
+    std::cerr << "FAIL IR " << name << ": expected " << (exact ? "exact " : "containing ") << expected
+              << "; actual: " << error.what();
+    if (exact)
+        std::cerr << "; expected code " << static_cast<int>(DiagnosticCode::Unclassified) << ", actual code "
+                  << static_cast<int>(error.diagnostic.code);
+    std::cerr << '\n';
+}
 Module baseline() {
     Module module;
     aurora::ir::Function function;
@@ -33,8 +44,10 @@ void rejectModule(const std::string &name,
         auto checked = validate(std::move(module));
         (void)checked;
     } catch (const Error &error) {
-        if (std::string(error.what()).find(expected) == std::string::npos)
-            throw Error(name + ": wrong diagnostic: " + error.what());
+        if (std::string(error.what()).find(expected) == std::string::npos) {
+            diagnosticMismatch(name, expected, error, false);
+            return;
+        }
         ++passed;
         std::cout << "PASS IR " << name << '\n';
         return;
@@ -43,6 +56,22 @@ void rejectModule(const std::string &name,
 }
 void reject(const std::string &name, const std::function<void(Module &)> &mutate, const std::string &expected) {
     rejectModule(name, baseline(), mutate, expected);
+}
+void rejectExact(const std::string &name, Module module, const std::string &expected) {
+    try {
+        auto checked = validate(std::move(module));
+        (void)checked;
+    } catch (const Error &error) {
+        if (error.diagnostic.code != DiagnosticCode::Unclassified ||
+            error.diagnostic.message != "invalid typed IR: " + expected) {
+            diagnosticMismatch(name, "invalid typed IR: " + expected, error, true);
+            return;
+        }
+        ++passed;
+        std::cout << "PASS IR " << name << '\n';
+        return;
+    }
+    throw Error(name + ": malformed IR was accepted");
 }
 Module receiverBaseline() {
     Module module;
@@ -1944,6 +1973,14 @@ void composedTests() {
             m.functions[1].result = Type("Outer");
         },
         "receiver signature requires scalar, enum or class values");
+    {
+        auto uncalled = composedBaseline();
+        uncalled.functions.erase(uncalled.functions.begin());
+        uncalled.functions[0].result = Type("Outer");
+        rejectExact("uncalled constructor class result rejected",
+                    uncalled,
+                    "receiver signature requires scalar, enum or class values");
+    }
     rejectComposed(
         "nested metadata wrong flattened length",
         [](Module &m) {
@@ -2436,8 +2473,8 @@ Module packedMethodModule() {
     module.classFields["Empty"] = {};
     // An independent oracle, not the implementation under test.
     const std::map<std::string, ClassStorage> physical = {{"Empty", {{}, {}, 8, 8, 8}},
-                                                           {"Leaf", {{0, 8, 9, 16}, {0, 8, 16, 24}, 24, 8, 24}},
-                                                           {"Outer", {{0, 8, 16, 17, 24}, {0, 8, 32}, 32, 8, 32}}};
+                                                          {"Leaf", {{0, 8, 9, 16}, {0, 8, 16, 24}, 24, 8, 24}},
+                                                          {"Outer", {{0, 8, 16, 17, 24}, {0, 8, 32}, 32, 8, 32}}};
     for (auto &function : module.functions) {
         std::map<int, std::pair<int, Type>> remap;
         for (const auto &[base, object] : function.objectSlots) {
@@ -2552,10 +2589,14 @@ Module packedMethodModule() {
 bool storageMatches(StorageView actual, const ClassStorage &expected) {
     return actual.sizeBytes == expected.sizeBytes && actual.alignment == expected.alignment &&
            actual.reservedBytes == expected.reservedBytes &&
-           std::equal(actual.leafOffsets.begin(), actual.leafOffsets.end(),
-                      expected.leafOffsets.begin(), expected.leafOffsets.end()) &&
-           std::equal(actual.fieldOffsets.begin(), actual.fieldOffsets.end(),
-                      expected.fieldOffsets.begin(), expected.fieldOffsets.end());
+           std::equal(actual.leafOffsets.begin(),
+                      actual.leafOffsets.end(),
+                      expected.leafOffsets.begin(),
+                      expected.leafOffsets.end()) &&
+           std::equal(actual.fieldOffsets.begin(),
+                      actual.fieldOffsets.end(),
+                      expected.fieldOffsets.begin(),
+                      expected.fieldOffsets.end());
 }
 void packedStorageTests() {
     const auto module = packedMethodModule();
@@ -2670,23 +2711,25 @@ void packedStorageTests() {
     emptyChild.classLayouts["EmptyShell"] = {};
     emptyChild.classFields["EmptyShell"] = {{Type("Empty"), 0, 0, false}};
     emptyChild.classLayouts["ByteEmpty"] = {Type::U8, Type::U8};
-    emptyChild.classFields["ByteEmpty"] = {
-        {Type("EmptyShell"), 0, 0, false}, {Type::U8, 0, 1, false},
-        {Type("EmptyShell"), 1, 0, false}, {Type::U8, 1, 1, false}, {Type("EmptyShell"), 2, 0, false}};
+    emptyChild.classFields["ByteEmpty"] = {{Type("EmptyShell"), 0, 0, false},
+                                           {Type::U8, 0, 1, false},
+                                           {Type("EmptyShell"), 1, 0, false},
+                                           {Type::U8, 1, 1, false},
+                                           {Type("EmptyShell"), 2, 0, false}};
     aurora::ir::Function neighbors;
     neighbors.name = "zero_leaf_neighbors";
     neighbors.result = Type::U8;
     neighbors.frameBytes = 16;
     neighbors.objectSlots = {{8, {"ByteEmpty", false}}};
     neighbors.slots = {{8, Type::U8}, {7, Type::U8}};
-    neighbors.code = {BeginObject{8}, Constant{7, Type::U8}, Store{8, Type::U8}, Store{7, Type::U8},
-                       Load{7, Type::U8}, Return{}};
+    neighbors.code = {
+        BeginObject{8}, Constant{7, Type::U8}, Store{8, Type::U8}, Store{7, Type::U8}, Load{7, Type::U8}, Return{}};
     emptyChild.functions.push_back(neighbors);
     const auto emptyChecked = validate(emptyChild);
     const auto byteEmpty = emptyChecked.metadata().findClass("ByteEmpty");
     const auto neighborId = emptyChecked.metadata().findCallable(neighbors.name).value();
-    if (!byteEmpty || !storageMatches(emptyChecked.metadata().storage(*byteEmpty),
-                                     ClassStorage{{0, 1}, {0, 0, 1, 1, 2}, 2, 1, 8}) ||
+    if (!byteEmpty ||
+        !storageMatches(emptyChecked.metadata().storage(*byteEmpty), ClassStorage{{0, 1}, {0, 0, 1, 1, 2}, 2, 1, 8}) ||
         emptyChecked.metadata().objectLeafRoot(neighborId, 8) != 8 ||
         emptyChecked.metadata().objectLeafRoot(neighborId, 7) != 8 ||
         emptyChecked.metadata().objectLeafRoot(neighborId, 6))
@@ -3286,8 +3329,8 @@ void spanTests() {
         const auto arrays = frame.arraySlots();
         const auto spans = frame.spanSlots();
         auto moved = std::move(checked);
-        if (frame.frameBytes() != 640 || arrays.size() != 1 || arrays.at(8) != 3 ||
-            spans.size() != 2 || !spans.contains(256) || !spans.contains(320) || spans.contains(264) ||
+        if (frame.frameBytes() != 640 || arrays.size() != 1 || arrays.at(8) != 3 || spans.size() != 2 ||
+            !spans.contains(256) || !spans.contains(320) || spans.contains(264) ||
             frame.scalarSlots().at(6) != Type::U8 || !frame.byteSlots().empty() ||
             moved.metadata().frame(0).arraySlots().at(8) != 3)
             throw Error("frame array/span observations lost source ownership or exact declaration offsets");
@@ -3581,6 +3624,13 @@ void spanTests() {
             f.code[13] = Return{};
         },
         "return with active span or byte array lifetime");
+    {
+        auto active = spanBaseline();
+        active.functions[0].code[11] = Return{};
+        rejectExact("active lifetime precedes omitted semantic instruction",
+                    active,
+                    "return with active span or byte array lifetime");
+    }
     rejectSpan(
         "scalar load cannot expose span pointer",
         [](auto &f) {
@@ -3930,22 +3980,54 @@ void spanTests() {
 }
 
 void storageAccessTests() {
+    auto noOrigins = baseline();
+    auto emptyFrame = noOrigins.functions[0];
+    emptyFrame.name = "empty_frame";
+    emptyFrame.slots.clear();
+    emptyFrame.code = {Constant{42, Type::I64}, Return{}};
+    noOrigins.functions.push_back(std::move(emptyFrame));
+    const auto absent = validate(noOrigins);
+    for (std::size_t callable : {0, 1})
+        for (int offset : {1, 8, 16})
+            if (absent.metadata().objectLeafRoot(callable, offset) ||
+                absent.metadata().byteArrayElementRoot(callable, offset))
+                throw Error("empty origin groups accepted a scalar or empty frame");
+    const auto arrayOnly = validate(spanBaseline());
+    for (int offset : {6, 8, 9, 256}) {
+        const auto expected = offset <= 8 ? std::optional<int>{8} : std::nullopt;
+        if (arrayOnly.metadata().objectLeafRoot(0, offset) ||
+            arrayOnly.metadata().byteArrayElementRoot(0, offset) != expected)
+            throw Error("missing origin kind accepted a later array or span group");
+    }
+    ++passed;
+    std::cout << "PASS IR absent storage origins reject empty and later-kind groups\n";
+
     const auto packed = validate(packedMethodModule());
     const auto &metadata = packed.metadata();
     const auto entry = metadata.findCallable("packed_result_array").value();
     // Explicit physical offsets distinguish leaf starts from wide interiors,
     // nested leaves, padding and empty reservations without rebuilding a map.
-    for (const auto [offset, root] : std::vector<std::pair<int, int>>{
-             {40, 40}, {32, 40}, {31, 40}, {24, 40}, {112, 112}, {104, 112},
-             {96, 112}, {95, 112}, {88, 112}, {184, 184}, {176, 184}, {175, 184}, {168, 184}})
+    for (const auto [offset, root] : std::vector<std::pair<int, int>>{{40, 40},
+                                                                      {32, 40},
+                                                                      {31, 40},
+                                                                      {24, 40},
+                                                                      {112, 112},
+                                                                      {104, 112},
+                                                                      {96, 112},
+                                                                      {95, 112},
+                                                                      {88, 112},
+                                                                      {184, 184},
+                                                                      {176, 184},
+                                                                      {175, 184},
+                                                                      {168, 184}})
         if (metadata.objectLeafRoot(entry, offset) != root || metadata.byteArrayElementRoot(entry, offset))
             throw Error("exact packed object leaf origin differs");
     for (int offset : {INT32_MIN, -1, 0, 1, 8, 23, 25, 30, 33, 39, 80, 94, 97, 174, 192, 193, INT32_MAX})
         if (metadata.objectLeafRoot(entry, offset) || metadata.byteArrayElementRoot(entry, offset))
             throw Error("object origin query accepted padding, empty reservation or invalid offset");
     const auto tiny = metadata.findCallable("packed_tiny_roundtrip").value();
-    for (const auto [offset, root] : std::vector<std::pair<int, int>>{
-             {8, 8}, {7, 8}, {6, 8}, {16, 16}, {15, 16}, {14, 16}})
+    for (const auto [offset, root] :
+         std::vector<std::pair<int, int>>{{8, 8}, {7, 8}, {6, 8}, {16, 16}, {15, 16}, {14, 16}})
         if (metadata.objectLeafRoot(tiny, offset) != root)
             throw Error("adjacent tiny object roots or callable identity changed");
     for (int offset : {1, 5, 9, 13, 17})
@@ -3994,35 +4076,143 @@ void storageAccessTests() {
              {BeginArray{8}, "array lifetime requires exact byte array origin"},
              {EndArray{8}, "array lifetime requires exact byte array origin"},
              {BorrowSpan{8, 72}, "span borrow requires exact local byte array origin"}})
-        reject("unused imported storage admission precedes earlier dynamic state", [&](Module &module) {
-            module.descriptorViews[1] = {};
-            auto later = module.functions[0];
-            later.name = "unused_storage";
-            later.moduleScope = 1;
-            later.frameBytes = 80;
-            later.spanSlots = {72};
-            later.code = {operation, Return{}};
-            module.functions[0].code = {Pop{}, Return{}};
-            module.functions.push_back(later);
-        }, diagnostic);
-    for (const auto &[operation, diagnostic] : std::vector<std::pair<Instruction, const char *>>{
-             {Jump{99}, "unknown jump"}, {BindParameter{0, 8, Type::I64}, "outside entry prefix"},
-             {Call{"missing"}, "unknown call target"}})
-        reject("CFG entry and call phases precede earlier-body storage admission", [&](Module &module) {
-            auto later = module.functions[0];
-            later.name = "later_phase";
-            later.code = {operation, Return{}};
-            module.functions[0].code = {Load{24, Type::I64}, Return{}};
-            module.functions.push_back(later);
-        }, diagnostic);
+        reject(
+            "unused imported storage admission precedes earlier dynamic state",
+            [&](Module &module) {
+                module.descriptorViews[1] = {};
+                auto later = module.functions[0];
+                later.name = "unused_storage";
+                later.moduleScope = 1;
+                later.frameBytes = 80;
+                later.spanSlots = {72};
+                later.code = {operation, Return{}};
+                module.functions[0].code = {Pop{}, Return{}};
+                module.functions.push_back(later);
+            },
+            diagnostic);
+    for (const auto &[operation, diagnostic] :
+         std::vector<std::pair<Instruction, const char *>>{{Jump{99}, "unknown jump"},
+                                                           {BindParameter{0, 8, Type::I64}, "outside entry prefix"},
+                                                           {Call{"missing"}, "unknown call target"}})
+        reject(
+            "CFG entry and call phases precede earlier-body storage admission",
+            [&](Module &module) {
+                auto later = module.functions[0];
+                later.name = "later_phase";
+                later.code = {operation, Return{}};
+                module.functions[0].code = {Load{24, Type::I64}, Return{}};
+                module.functions.push_back(later);
+            },
+            diagnostic);
     auto scalars = baseline();
     scalars.functions[0].slots[16] = Type::I64;
-    scalars.functions[0].code = {Constant{42, Type::I64}, Store{8, Type::I64}, Store{16, Type::I64},
-                                 Constant{0, Type::I64}, BoundsGuard{16, 2, Type::I64}, Push{},
-                                 Constant{43, Type::I64}, IndexStore{16, 2, Type::I64},
-                                 Constant{1, Type::I64}, BoundsGuard{16, 2, Type::I64},
-                                 IndexLoad{16, 2, Type::I64}, Return{}};
+    scalars.functions[0].code = {Constant{42, Type::I64},
+                                 Store{8, Type::I64},
+                                 Store{16, Type::I64},
+                                 Constant{0, Type::I64},
+                                 BoundsGuard{16, 2, Type::I64},
+                                 Push{},
+                                 Constant{43, Type::I64},
+                                 IndexStore{16, 2, Type::I64},
+                                 Constant{1, Type::I64},
+                                 BoundsGuard{16, 2, Type::I64},
+                                 IndexLoad{16, 2, Type::I64},
+                                 Return{}};
     accept("contiguous i64 indexed loads and stores need no byte-array declaration", scalars);
+
+    auto indexStoreOrder = baseline();
+    auto &ordered = indexStoreOrder.functions[0];
+    ordered.slots = {{8, Type::U8}};
+    ordered.arraySlots = {{8, 1}};
+    ordered.code = {Constant{0, Type::I64},
+                    Push{},
+                    Constant{0, Type::I64},
+                    IndexStore{8, 1, Type::U8},
+                    Constant{42, Type::I64},
+                    Return{}};
+    rejectExact("indexed store lifetime precedes mistyped current",
+                indexStoreOrder,
+                "array element access outside active lifetime");
+    ordered.code = {BeginArray{8},
+                    Constant{0, Type::I64},
+                    Push{},
+                    Constant{7, Type::U8},
+                    IndexStore{8, 1, Type::U8},
+                    EndArray{8},
+                    Constant{42, Type::I64},
+                    Return{}};
+    rejectExact(
+        "indexed store initialization precedes missing bounds token", indexStoreOrder, "array element not initialized");
+
+    // The first root has a live readonly span, while restarting the second root
+    // removes its initialization. The whole read pass precedes any write check.
+    ordered.frameBytes = 96;
+    ordered.slots[7] = Type::U8;
+    ordered.arraySlots[7] = 1;
+    ordered.spanSlots = {80};
+    ordered.code = {BeginArray{8},
+                    BeginArray{7},
+                    Constant{7, Type::U8},
+                    Store{8, Type::U8},
+                    Store{7, Type::U8},
+                    Constant{0, Type::I64},
+                    BoundsGuard{8, 2, Type::U8},
+                    Push{},
+                    BorrowSpan{8, 80},
+                    EndArray{7},
+                    BeginArray{7},
+                    Constant{7, Type::U8},
+                    IndexStore{8, 2, Type::U8},
+                    EndSpan{80},
+                    EndArray{7},
+                    EndArray{8},
+                    Constant{42, Type::I64},
+                    Return{}};
+    rejectExact("indexed store later initialization precedes earlier write conflict",
+                indexStoreOrder,
+                "array element not initialized");
+    // With both roots still initialized, malformed operands must precede the
+    // otherwise inevitable write conflict with the first root's readonly span.
+    ordered.code.erase(ordered.code.begin() + 9, ordered.code.begin() + 11);
+    ordered.code[9] = Constant{0, Type::I64};
+    rejectExact(
+        "indexed store mistyped current precedes write conflict", indexStoreOrder, "missing or mistyped current value");
+
+    auto parameterWrite = baseline();
+    parameterWrite.functions[0].parameters = {Type::I64};
+    parameterWrite.functions[0].code = {BindParameter{0, 8, Type::I64},
+                                        Constant{0, Type::I64},
+                                        BoundsGuard{8, 1, Type::I64},
+                                        Push{},
+                                        Constant{1, Type::Bool},
+                                        IndexStore{8, 1, Type::I64},
+                                        Return{}};
+    rejectExact("indexed parameter write checks current value before immutability",
+                parameterWrite,
+                "missing or mistyped current value");
+    parameterWrite.functions[0].code[4] = Constant{1, Type::I64};
+    rejectExact("indexed parameter write still rejects immutability",
+                parameterWrite,
+                "indexed write to immutable scalar parameter");
+
+    auto constObjectWrite = baseline();
+    constObjectWrite.classLayouts["Cell"] = {Type::I64};
+    constObjectWrite.functions[0].objectSlots[8] = {"Cell", false};
+    constObjectWrite.functions[0].code = {BeginObject{8},
+                                          Constant{42, Type::I64},
+                                          Store{8, Type::I64},
+                                          Constant{0, Type::I64},
+                                          BoundsGuard{8, 1, Type::I64},
+                                          Push{},
+                                          Constant{1, Type::Bool},
+                                          IndexStore{8, 1, Type::I64},
+                                          Return{}};
+    rejectExact("indexed const object write checks current value before mutability",
+                constObjectWrite,
+                "missing or mistyped current value");
+    constObjectWrite.functions[0].code[6] = Constant{1, Type::I64};
+    rejectExact(
+        "indexed const object write still rejects mutability", constObjectWrite, "indexed write to const object field");
 }
 
 void scalarAdmissionTests() {
@@ -4033,55 +4223,73 @@ void scalarAdmissionTests() {
              {BinaryValue{Binary::BitAnd, Type::I64}, "invalid binary operand type"},
              {Convert{Type::U8, Type::U8}, "invalid checked conversion types"},
              {Compare{Comparison::Less, Type::enumeration("Mode")}, "ordered bool comparison or enum comparison"}})
-        reject("unused imported scalar admission precedes earlier dynamic state", [&](Module &module) {
-            module.enumCases["Mode"] = 2;
-            module.descriptorViews[1] = {};
+        reject(
+            "unused imported scalar admission precedes earlier dynamic state",
+            [&](Module &module) {
+                module.enumCases["Mode"] = 2;
+                module.descriptorViews[1] = {};
+                auto later = module.functions[0];
+                later.name = "unused_scalar";
+                later.moduleScope = 1;
+                later.code = {operation, Return{}};
+                module.functions[0].code = {Pop{}, Return{}};
+                module.functions.push_back(later);
+            },
+            diagnostic);
+    for (const auto &[operation, diagnostic] :
+         std::vector<std::pair<Instruction, const char *>>{{Jump{99}, "unknown jump target"},
+                                                           {BindParameter{0, 8, Type::I64}, "outside entry prefix"},
+                                                           {Call{"missing"}, "unknown call target"},
+                                                           {Load{24, Type::I64}, "slot type/layout mismatch"}})
+        reject(
+            "earlier admission phases precede earlier-body scalar failure",
+            [&](Module &module) {
+                auto later = module.functions[0];
+                later.name = "later_phase";
+                later.code = {operation, Return{}};
+                module.functions[0].code = {Constant{2, Type::Bool}, Return{}};
+                module.functions.push_back(later);
+            },
+            diagnostic);
+    reject(
+        "scalar errors retain declaration and instruction order",
+        [](Module &module) {
             auto later = module.functions[0];
-            later.name = "unused_scalar";
-            later.moduleScope = 1;
-            later.code = {operation, Return{}};
-            module.functions[0].code = {Pop{}, Return{}};
+            later.name = "alphabetically_first";
+            later.code = {UnaryValue{static_cast<Unary>(99)}, Return{}};
+            module.functions[0].code = {Constant{256, Type::U8}, Constant{2, Type::Bool}, Return{}};
             module.functions.push_back(later);
-        }, diagnostic);
-    for (const auto &[operation, diagnostic] : std::vector<std::pair<Instruction, const char *>>{
-             {Jump{99}, "unknown jump target"},
-             {BindParameter{0, 8, Type::I64}, "outside entry prefix"},
-             {Call{"missing"}, "unknown call target"},
-             {Load{24, Type::I64}, "slot type/layout mismatch"}})
-        reject("earlier admission phases precede earlier-body scalar failure", [&](Module &module) {
-            auto later = module.functions[0];
-            later.name = "later_phase";
-            later.code = {operation, Return{}};
-            module.functions[0].code = {Constant{2, Type::Bool}, Return{}};
-            module.functions.push_back(later);
-        }, diagnostic);
-    reject("scalar errors retain declaration and instruction order", [](Module &module) {
-        auto later = module.functions[0];
-        later.name = "alphabetically_first";
-        later.code = {UnaryValue{static_cast<Unary>(99)}, Return{}};
-        module.functions[0].code = {Constant{256, Type::U8}, Constant{2, Type::Bool}, Return{}};
-        module.functions.push_back(later);
-    }, "noncanonical u8");
+        },
+        "noncanonical u8");
 
-    for (const Instruction &operation : std::vector<Instruction>{
-             UnaryValue{Unary::CheckedNegate}, BinaryValue{Binary::CheckedAdd},
-             Convert{Type::I64, Type::U8}, Compare{Comparison::Equal, Type::I64}})
-        reject("admitted scalar operation still requires current value", [&](Module &module) {
-            module.functions[0].code = {operation, Return{}};
-        }, "missing or mistyped current value");
-    reject("admitted comparison still requires saved left operand", [](Module &module) {
-        module.functions[0].code = {Constant{0, Type::I64}, Compare{Comparison::Equal, Type::I64}, Return{}};
-    }, "value stack underflow");
+    for (const Instruction &operation : std::vector<Instruction>{UnaryValue{Unary::CheckedNegate},
+                                                                 BinaryValue{Binary::CheckedAdd},
+                                                                 Convert{Type::I64, Type::U8},
+                                                                 Compare{Comparison::Equal, Type::I64}})
+        reject(
+            "admitted scalar operation still requires current value",
+            [&](Module &module) {
+                module.functions[0].code = {operation, Return{}};
+            },
+            "missing or mistyped current value");
+    reject(
+        "admitted comparison still requires saved left operand",
+        [](Module &module) {
+            module.functions[0].code = {Constant{0, Type::I64}, Compare{Comparison::Equal, Type::I64}, Return{}};
+        },
+        "value stack underflow");
     for (const auto &operations : std::vector<std::vector<Instruction>>{
-             {UnaryValue{Unary::CheckedNegate}},
-             {Push{}, Constant{0, Type::I64}, BinaryValue{Binary::CheckedAdd}}})
-        reject("admitted arithmetic cannot preserve local bounds token", [&](Module &module) {
-            auto &code = module.functions[0].code;
-            code = {Constant{42, Type::I64}, Store{8, Type::I64}, Constant{0, Type::I64},
-                    BoundsGuard{8, 1, Type::I64}};
-            code.insert(code.end(), operations.begin(), operations.end());
-            code.insert(code.end(), {IndexLoad{8, 1, Type::I64}, Return{}});
-        }, "bounds token");
+             {UnaryValue{Unary::CheckedNegate}}, {Push{}, Constant{0, Type::I64}, BinaryValue{Binary::CheckedAdd}}})
+        reject(
+            "admitted arithmetic cannot preserve local bounds token",
+            [&](Module &module) {
+                auto &code = module.functions[0].code;
+                code = {
+                    Constant{42, Type::I64}, Store{8, Type::I64}, Constant{0, Type::I64}, BoundsGuard{8, 1, Type::I64}};
+                code.insert(code.end(), operations.begin(), operations.end());
+                code.insert(code.end(), {IndexLoad{8, 1, Type::I64}, Return{}});
+            },
+            "bounds token");
 }
 
 void callGraphTests() {
@@ -4349,8 +4557,15 @@ void instructionOwnerTests() {
     literal.result = Type::U8;
     literal.frameBytes = 64;
     literal.spanSlots = {56};
-    literal.code = {Jump{7}, Label{6}, Jump{7}, Label{7}, BorrowLiteralSpan{{0, 42, 255}, 56},
-                    Constant{1, Type::I64}, SpanLoad{56}, EndSpan{56}, Return{}};
+    literal.code = {Jump{7},
+                    Label{6},
+                    Jump{7},
+                    Label{7},
+                    BorrowLiteralSpan{{0, 42, 255}, 56},
+                    Constant{1, Type::I64},
+                    SpanLoad{56},
+                    EndSpan{56},
+                    Return{}};
     source.functions.push_back(std::move(literal));
     auto checked = validate(source);
     const auto code = checked.get().functions.at(1).code;
@@ -4361,13 +4576,12 @@ void instructionOwnerTests() {
     auto moved = std::move(checked);
     auto replacement = validate(baseline());
     replacement = std::move(moved);
-    if (id != 9 || code.size() != 7 || code.idAt(2) != id || bytes.size() != 3 ||
-        bytes[0] != 0 || bytes[1] != 42 || bytes[2] != 255 ||
-        replacement.get().functions.at(1).code.idAt(2) != id ||
-        code.flowAt(0).target != CodePosition{1} || code.flowAt(0).fallsThrough ||
-        !code.flowAt(1).blockEntry || !code.flowAt(1).fallsThrough ||
-        replacement.get().functions.at(1).code.flowAt(0).target != CodePosition{1})
-        throw Error("instruction identity, CFG target or borrowed payload changed after compaction, ingress destruction or owner move");
+    if (id != 9 || code.size() != 7 || code.idAt(2) != id || bytes.size() != 3 || bytes[0] != 0 || bytes[1] != 42 ||
+        bytes[2] != 255 || replacement.get().functions.at(1).code.idAt(2) != id ||
+        code.flowAt(0).target != CodePosition{1} || code.flowAt(0).fallsThrough || !code.flowAt(1).blockEntry ||
+        !code.flowAt(1).fallsThrough || replacement.get().functions.at(1).code.flowAt(0).target != CodePosition{1})
+        throw Error("instruction identity, CFG target or borrowed payload changed after compaction, ingress "
+                    "destruction or owner move");
     const auto assembly = X86Emitter{}.emit(replacement);
     if (assembly.find("leaq .Laurora_literal_9(%rip)") == std::string::npos ||
         assembly.find(".Laurora_literal_9:\n") == std::string::npos ||
@@ -4375,12 +4589,21 @@ void instructionOwnerTests() {
         throw Error("nonfirst function literal lost its global immutable instruction ID");
     ++passed;
     std::cout << "PASS IR instruction ranges and literal IDs survive compaction and owner replacement\n";
-    for (const auto &read : std::vector<std::function<void()>>{
-             [&] { static_cast<void>(code.at(code.size())); },
-             [&] { static_cast<void>(code.flowAt(code.size())); },
-             [&] { static_cast<void>(code.instructionById(0)); },
-             [&] { static_cast<void>(code.instructionById(1)); },
-             [&] { static_cast<void>(bytes.at(bytes.size())); }}) {
+    for (const auto &read : std::vector<std::function<void()>>{[&] {
+                                                                   static_cast<void>(code.at(code.size()));
+                                                               },
+                                                               [&] {
+                                                                   static_cast<void>(code.flowAt(code.size()));
+                                                               },
+                                                               [&] {
+                                                                   static_cast<void>(code.instructionById(0));
+                                                               },
+                                                               [&] {
+                                                                   static_cast<void>(code.instructionById(1));
+                                                               },
+                                                               [&] {
+                                                                   static_cast<void>(bytes.at(bytes.size()));
+                                                               }}) {
         bool rejected = false;
         try {
             read();
@@ -4393,19 +4616,34 @@ void instructionOwnerTests() {
             throw Error("instruction range accepted an out-of-domain position, ID or payload index");
         ++passed;
     }
-    for (const auto &mutate : std::vector<std::function<void(Type &)>>{
-             [](Type &type) { type.elementKind = TypeKind::U8; },
-             [](Type &type) { type.length = 1; },
-             [](Type &type) { type.elementParameter = "T"; },
-             [](Type &type) { type.lengthParameter = "N"; },
-             [](Type &type) { type.templateArguments = {TypeKind::I64}; }})
-        reject("instruction ingress preserves unresolved raw type tails", [&](Module &module) {
-            mutate(std::get<Constant>(module.functions[0].code[0]).type);
-        }, "noncanonical instruction type payload");
-    reject("declaration admission precedes malformed instruction tail", [](Module &module) {
-        module.functions[0].slots[8].lengthParameter = "N";
-        std::get<Constant>(module.functions[0].code[0]).type.lengthParameter = "N";
-    }, "invalid slot payload type");
+    for (const auto &mutate : std::vector<std::function<void(Type &)>>{[](Type &type) {
+                                                                           type.elementKind = TypeKind::U8;
+                                                                       },
+                                                                       [](Type &type) {
+                                                                           type.length = 1;
+                                                                       },
+                                                                       [](Type &type) {
+                                                                           type.elementParameter = "T";
+                                                                       },
+                                                                       [](Type &type) {
+                                                                           type.lengthParameter = "N";
+                                                                       },
+                                                                       [](Type &type) {
+                                                                           type.templateArguments = {TypeKind::I64};
+                                                                       }})
+        reject(
+            "instruction ingress preserves unresolved raw type tails",
+            [&](Module &module) {
+                mutate(std::get<Constant>(module.functions[0].code[0]).type);
+            },
+            "noncanonical instruction type payload");
+    reject(
+        "declaration admission precedes malformed instruction tail",
+        [](Module &module) {
+            module.functions[0].slots[8].lengthParameter = "N";
+            std::get<Constant>(module.functions[0].code[0]).type.lengthParameter = "N";
+        },
+        "invalid slot payload type");
 }
 
 void entryBindingTests() {
@@ -4414,49 +4652,85 @@ void entryBindingTests() {
     parameter.name = "entry_parameters";
     parameter.parameters = {Type::I64, Type::I64};
     parameter.slots = {{8, Type::I64}, {16, Type::I64}};
-    parameter.code = {BindParameter{0, 8, Type::I64}, BindParameter{1, 16, Type::I64},
-                      Load{8, Type::I64}, Return{}};
+    parameter.code = {BindParameter{0, 8, Type::I64}, BindParameter{1, 16, Type::I64}, Load{8, Type::I64}, Return{}};
     input.functions = {parameter};
     accept("source-admitted scalar entry prefix", input);
     for (const auto &[name, mutate, diagnostic] :
          std::vector<std::tuple<const char *, std::function<void(aurora::ir::Function &)>, const char *>>{
-             {"missing final formal", [](auto &function) { function.code.erase(function.code.begin() + 1); },
+             {"missing final formal",
+              [](auto &function) {
+                  function.code.erase(function.code.begin() + 1);
+              },
               "parameter bindings must form the entry prefix"},
-             {"negative position", [](auto &function) { std::get<BindParameter>(function.code[0]).index = -1; },
+             {"negative position",
+              [](auto &function) {
+                  std::get<BindParameter>(function.code[0]).index = -1;
+              },
               "parameter bindings must form the entry prefix"},
-             {"swapped position", [](auto &function) { std::get<BindParameter>(function.code[0]).index = 1; },
+             {"swapped position",
+              [](auto &function) {
+                  std::get<BindParameter>(function.code[0]).index = 1;
+              },
               "parameter bindings must form the entry prefix"},
-             {"wrong type", [](auto &function) { std::get<BindParameter>(function.code[0]).type = Type::U64; },
+             {"wrong type",
+              [](auto &function) {
+                  std::get<BindParameter>(function.code[0]).type = Type::U64;
+              },
               "parameter type mismatch"},
-             {"missing exact spill", [](auto &function) { std::get<BindParameter>(function.code[0]).offset = 7; },
+             {"missing exact spill",
+              [](auto &function) {
+                  std::get<BindParameter>(function.code[0]).offset = 7;
+              },
               "slot type/layout mismatch"},
-             {"wrong spill type", [](auto &function) { function.slots[8] = Type::U64; },
+             {"wrong spill type",
+              [](auto &function) {
+                  function.slots[8] = Type::U64;
+              },
               "slot type/layout mismatch"},
-             {"duplicate spill", [](auto &function) { std::get<BindParameter>(function.code[1]).offset = 8; },
+             {"duplicate spill",
+              [](auto &function) {
+                  std::get<BindParameter>(function.code[1]).offset = 8;
+              },
               "scalar parameter bindings overlap"}})
-        rejectModule(std::string("source entry scalar ") + name, input, [&](Module &module) {
-            mutate(module.functions[0]);
-        }, diagnostic);
-    for (const Instruction &binding : std::vector<Instruction>{
-             BindParameter{0, 8, Type::I64}, BindObjectParameter{0, 8, "Empty"}, BindSpanParameter{0, 8},
-             BindRegionParameter{0, 8}, BindBytesParameter{0, 8}, BindOwnedObjectParameter{0, 8, "Empty"},
-             BindServiceParameter{0, 8, service::Kind::Console}})
-        reject("every binding form rejects outside the declared entry prefix", [&](Module &module) {
-            module.classLayouts["Empty"] = {};
-            module.functions[0].code.insert(module.functions[0].code.begin(), binding);
-        }, "parameter binding outside entry prefix");
+        rejectModule(
+            std::string("source entry scalar ") + name,
+            input,
+            [&](Module &module) {
+                mutate(module.functions[0]);
+            },
+            diagnostic);
+    for (const Instruction &binding : std::vector<Instruction>{BindParameter{0, 8, Type::I64},
+                                                               BindObjectParameter{0, 8, "Empty"},
+                                                               BindSpanParameter{0, 8},
+                                                               BindRegionParameter{0, 8},
+                                                               BindBytesParameter{0, 8},
+                                                               BindOwnedObjectParameter{0, 8, "Empty"},
+                                                               BindServiceParameter{0, 8, service::Kind::Console}})
+        reject(
+            "every binding form rejects outside the declared entry prefix",
+            [&](Module &module) {
+                module.classLayouts["Empty"] = {};
+                module.functions[0].code.insert(module.functions[0].code.begin(), binding);
+            },
+            "parameter binding outside entry prefix");
     for (const auto &[name, mutate, diagnostic] :
          std::vector<std::tuple<const char *, std::function<void(Module &)>, const char *>>{
-             {"exact empty root", [](auto &module) {
+             {"exact empty root",
+              [](auto &module) {
                   std::get<BindObjectParameter>(module.functions[1].code[0]).offset = 16;
-              }, "object parameter requires exact object slot"},
-             {"readonly empty root", [](auto &module) {
+              },
+              "object parameter requires exact object slot"},
+             {"readonly empty root",
+              [](auto &module) {
                   module.functions[1].objectSlots[8].mutableValue = true;
-              }, "object parameter must be readonly"},
-             {"nominal empty root", [](auto &module) {
+              },
+              "object parameter must be readonly"},
+             {"nominal empty root",
+              [](auto &module) {
                   module.classLayouts["OtherEmpty"] = {};
                   module.functions[1].objectSlots[8].className = "OtherEmpty";
-              }, "object parameter nominal class mismatch"}})
+              },
+              "object parameter nominal class mismatch"}})
         rejectModule(std::string("source entry copied ") + name, emptyValueBaseline(), mutate, diagnostic);
 
     // Earlier compaction shrinks retained counts while preserving each body's
@@ -4467,10 +4741,9 @@ void entryBindingTests() {
     compacted.functions.push_back(parameter);
     const auto checked = validate(compacted);
     const auto code = checked.get().functions.at(1).code;
-    if (checked.get().functions[0].code.size() != 4 || code.size() != 6 ||
-        code.idAt(0) != 7 || code.idAt(1) != 8 || code.idAt(2) != 9 || code.idAt(3) != 12 ||
-        std::get<BindParameter>(code[0]).index != 0 || std::get<BindParameter>(code[1]).index != 1 ||
-        code.flowAt(2).target != CodePosition{3})
+    if (checked.get().functions[0].code.size() != 4 || code.size() != 6 || code.idAt(0) != 7 || code.idAt(1) != 8 ||
+        code.idAt(2) != 9 || code.idAt(3) != 12 || std::get<BindParameter>(code[0]).index != 0 ||
+        std::get<BindParameter>(code[1]).index != 1 || code.flowAt(2).target != CodePosition{3})
         throw Error("entry admission changed normalized positions or stable cross-body instruction IDs");
     ++passed;
     std::cout << "PASS IR all-body CFG normalization precedes entry admission with stable instruction IDs\n";
@@ -4479,150 +4752,243 @@ void entryBindingTests() {
     ordered.functions.push_back(input.functions[0]);
     for (const auto &[name, mutate, diagnostic] :
          std::vector<std::tuple<const char *, std::function<void(Module &)>, const char *>>{
-             {"later CFG before earlier entry", [](auto &module) {
+             {"later CFG before earlier entry",
+              [](auto &module) {
                   module.functions[0].parameters = {Type::I64};
                   module.functions[1].code.push_back(Jump{99});
-              }, "unknown jump target"},
-             {"later raw type before earlier entry", [](auto &module) {
+              },
+              "unknown jump target"},
+             {"later raw type before earlier entry",
+              [](auto &module) {
                   module.functions[0].parameters = {Type::I64};
                   std::get<BindParameter>(module.functions[1].code[0]).type.lengthParameter = "N";
-              }, "noncanonical instruction type payload"},
-             {"later entry before earlier dynamic state", [](auto &module) {
+              },
+              "noncanonical instruction type payload"},
+             {"later entry before earlier dynamic state",
+              [](auto &module) {
                   module.functions[0].code = {Pop{}, Return{}};
                   module.functions[1].code[0] = Constant{42, Type::I64};
-              }, "parameter bindings must form the entry prefix"},
-             {"later entry type before earlier dynamic state", [](auto &module) {
+              },
+              "parameter bindings must form the entry prefix"},
+             {"later entry type before earlier dynamic state",
+              [](auto &module) {
                   module.functions[0].code = {Pop{}, Return{}};
                   std::get<BindParameter>(module.functions[1].code[0]).type = Type::U64;
-              }, "parameter type mismatch"},
-             {"later CFG before earlier static call", [](auto &module) {
+              },
+              "parameter type mismatch"},
+             {"later CFG before earlier static call",
+              [](auto &module) {
                   module.functions[0].code = {Call{"missing"}, Return{}};
                   module.functions[1].code.push_back(Jump{99});
-              }, "unknown jump target"},
-             {"later entry before earlier static call", [](auto &module) {
+              },
+              "unknown jump target"},
+             {"later entry before earlier static call",
+              [](auto &module) {
                   module.functions[0].code = {Call{"missing"}, Return{}};
                   module.functions[1].code[0] = Constant{42, Type::I64};
-              }, "parameter bindings must form the entry prefix"},
-             {"later static call before earlier dynamic state", [](auto &module) {
+              },
+              "parameter bindings must form the entry prefix"},
+             {"later static call before earlier dynamic state",
+              [](auto &module) {
                   module.functions[0].code = {Pop{}, Return{}};
                   module.functions[1].code.insert(module.functions[1].code.begin() + 2, Call{"missing"});
-              }, "unknown call target"},
-             {"static call errors retain declaration order", [](auto &module) {
+              },
+              "unknown call target"},
+             {"static call errors retain declaration order",
+              [](auto &module) {
                   module.functions[0].code = {Call{"missing"}, Return{}};
                   module.functions[1].name = "alphabetically_first";
                   module.functions[1].code.insert(module.functions[1].code.begin() + 2, MethodCall{"missing", 0});
-              }, "unknown call target"},
-             {"entry errors retain declaration order", [](auto &module) {
+              },
+              "unknown call target"},
+             {"entry errors retain declaration order",
+              [](auto &module) {
                   module.functions[0].parameters = {Type::I64};
                   module.functions[1].name = "alphabetically_first";
                   std::get<BindParameter>(module.functions[1].code[0]).type = Type::U64;
-              }, "parameter bindings must form the entry prefix"},
-             {"unused imported entry before pruning", [](auto &module) {
+              },
+              "parameter bindings must form the entry prefix"},
+             {"unused imported entry before pruning",
+              [](auto &module) {
                   module.descriptorViews[1] = {};
                   module.functions[1].moduleScope = 1;
                   module.functions[1].code[0] = Constant{42, Type::I64};
-              }, "parameter bindings must form the entry prefix"}})
+              },
+              "parameter bindings must form the entry prefix"}})
         rejectModule(std::string("module admission order: ") + name, ordered, mutate, diagnostic);
 }
 
 void callableOwnerTests() {
-    reject("module metadata precedes malformed callable header", [](Module &module) {
-        module.descriptors[0] = Descriptor{0, 0};
-        module.functions[0].result = Type::Ref;
-    }, "invalid metadata descriptor");
-    reject("later callable header precedes earlier body frame", [](Module &module) {
-        auto later = module.functions[0];
-        later.name = "later";
-        later.result = Type::Ref;
-        module.functions[0].frameBytes = 1;
-        module.functions.push_back(std::move(later));
-    }, "invalid value boundary type");
-    reject("later frame admission precedes earlier malformed body", [](Module &module) {
-        auto later = module.functions[0];
-        later.name = "later";
-        later.frameBytes = 1;
-        module.functions[0].code = {Pop{}, Return{}};
-        module.functions.push_back(std::move(later));
-    }, "invalid frame size");
-    reject("frame admission remains declaration order", [](Module &module) {
-        auto later = module.functions[0];
-        later.name = "alphabetically_first";
-        later.frameBytes = 1;
-        module.functions[0].slots[7] = Type::I64;
-        module.functions.push_back(std::move(later));
-    }, "invalid slot offset");
-    reject("orphan owner annotation precedes frame and body failures", [](Module &module) {
-        module.functions[0].ownedValueTypes[40] = "Missing";
-        module.functions[0].frameBytes = 1;
-        module.functions[0].code = {Pop{}, Return{}};
-    }, "owned value metadata requires exact owner spill");
-    reject("service declaration admission precedes frame and body failures", [](Module &module) {
-        module.functions[0].serviceSlots.insert(16);
-        module.functions[0].frameBytes = 1;
-        module.functions[0].code = {Pop{}, Return{}};
-    }, "service spills without a service signature");
+    for (bool imported : {false, true}) {
+        for (int mutation = 0; mutation < 3; ++mutation) {
+            auto uncalled = receiverBaseline();
+            uncalled.functions.erase(uncalled.functions.begin());
+            auto &constructor = uncalled.functions[0];
+            if (mutation == 0)
+                constructor.receiver->mutableValue = false;
+            else
+                constructor.result = mutation == 1 ? Type::Bool : Type::U64;
+            if (imported) {
+                uncalled.descriptorViews[1] = {};
+                constructor.moduleScope = 1;
+            }
+            // Canonical metadata views alone do not grant executable authority.
+            // The mandatory source instruction phase still rejects uncalled and
+            // imported constructor policies before graph pruning/publication.
+            const auto shape = Metadata::import(uncalled);
+            if (!shape->callable(0).receiver()->constructor || shape->callable(0).result() != constructor.result)
+                throw Error("intermediate constructor metadata changed declaration shape");
+            rejectExact(std::string(imported ? "imported" : "uncalled") + " invalid constructor policy " +
+                            std::to_string(mutation),
+                        uncalled,
+                        "invalid constructor receiver signature");
+        }
+    }
+    reject(
+        "module metadata precedes malformed callable header",
+        [](Module &module) {
+            module.descriptors[0] = Descriptor{0, 0};
+            module.functions[0].result = Type::Ref;
+        },
+        "invalid metadata descriptor");
+    reject(
+        "later callable header precedes earlier body frame",
+        [](Module &module) {
+            auto later = module.functions[0];
+            later.name = "later";
+            later.result = Type::Ref;
+            module.functions[0].frameBytes = 1;
+            module.functions.push_back(std::move(later));
+        },
+        "invalid value boundary type");
+    reject(
+        "later frame admission precedes earlier malformed body",
+        [](Module &module) {
+            auto later = module.functions[0];
+            later.name = "later";
+            later.frameBytes = 1;
+            module.functions[0].code = {Pop{}, Return{}};
+            module.functions.push_back(std::move(later));
+        },
+        "invalid frame size");
+    reject(
+        "frame admission remains declaration order",
+        [](Module &module) {
+            auto later = module.functions[0];
+            later.name = "alphabetically_first";
+            later.frameBytes = 1;
+            module.functions[0].slots[7] = Type::I64;
+            module.functions.push_back(std::move(later));
+        },
+        "invalid slot offset");
+    reject(
+        "orphan owner annotation precedes frame and body failures",
+        [](Module &module) {
+            module.functions[0].ownedValueTypes[40] = "Missing";
+            module.functions[0].frameBytes = 1;
+            module.functions[0].code = {Pop{}, Return{}};
+        },
+        "owned value metadata requires exact owner spill");
+    reject(
+        "service declaration admission precedes frame and body failures",
+        [](Module &module) {
+            module.functions[0].serviceSlots.insert(16);
+            module.functions[0].frameBytes = 1;
+            module.functions[0].code = {Pop{}, Return{}};
+        },
+        "service spills without a service signature");
     for (const auto &[name, mutate, diagnostic] :
          std::vector<std::tuple<const char *, std::function<void(aurora::ir::Function &)>, const char *>>{
-             {"service overlaps span", [](auto &function) {
+             {"service overlaps span",
+              [](auto &function) {
                   function.parameters = {Type::ConsoleSession};
                   function.serviceSlots = {16};
                   function.spanSlots = {64};
-              }, "service spill overlaps"},
-             {"region overlaps span", [](auto &function) {
+              },
+              "service spill overlaps"},
+             {"region overlaps span",
+              [](auto &function) {
                   function.regionSlots = {16};
                   function.spanSlots = {64};
-              }, "region spill overlaps"},
-             {"owner overlaps span", [](auto &function) {
+              },
+              "region spill overlaps"},
+             {"owner overlaps span",
+              [](auto &function) {
                   function.byteSlots = {{40, true}};
                   function.spanSlots = {64};
-              }, "owned byte spill overlaps"},
-             {"region overlaps service", [](auto &function) {
+              },
+              "owned byte spill overlaps"},
+             {"region overlaps service",
+              [](auto &function) {
                   function.parameters = {Type::ConsoleSession};
                   function.serviceSlots = {16};
                   function.regionSlots = {16};
-              }, "overlapping region or owned byte spills"},
-             {"owner overlaps service", [](auto &function) {
+              },
+              "overlapping region or owned byte spills"},
+             {"owner overlaps service",
+              [](auto &function) {
                   function.parameters = {Type::ConsoleSession};
                   function.serviceSlots = {16};
                   function.byteSlots = {{32, true}};
-              }, "overlapping region or owned byte spills"},
-             {"owner overlaps region", [](auto &function) {
+              },
+              "overlapping region or owned byte spills"},
+             {"owner overlaps region",
+              [](auto &function) {
                   function.regionSlots = {16};
                   function.byteSlots = {{40, true}};
-              }, "overlapping region or owned byte spills"}}) {
-        reject(name, [&](Module &module) {
-            auto &function = module.functions[0];
-            function.frameBytes = 64;
-            function.slots.clear();
-            function.code = {Pop{}, Return{}};
-            mutate(function);
-        }, diagnostic);
+              },
+              "overlapping region or owned byte spills"}}) {
+        reject(
+            name,
+            [&](Module &module) {
+                auto &function = module.functions[0];
+                function.frameBytes = 64;
+                function.slots.clear();
+                function.code = {Pop{}, Return{}};
+                mutate(function);
+            },
+            diagnostic);
     }
-    reject("receiver header precedes frame layout", [](Module &module) {
-        module.functions[0].receiver = Receiver{"Missing", false, false};
-        module.functions[0].frameBytes = 1;
-    }, "unknown receiver class");
-    reject("callable header order remains declaration order", [](Module &module) {
-        auto later = module.functions[0];
-        later.name = "alphabetically_first";
-        later.moduleScope = 63;
-        module.functions[0].result = Type::Ref;
-        module.functions.push_back(std::move(later));
-    }, "invalid value boundary type");
-    for (const auto &mutate : std::vector<std::function<void(Type &)>>{
-             [](Type &type) { type.length = 1; },
-             [](Type &type) { type.className = "forged"; }}) {
-        reject("service header rejects noncanonical raw tail", [&](Module &module) {
-            module.functions[0].parameters = {Type::ConsoleSession};
-            mutate(module.functions[0].parameters[0]);
-        }, "invalid canonical service boundary type");
+    reject(
+        "receiver header precedes frame layout",
+        [](Module &module) {
+            module.functions[0].receiver = Receiver{"Missing", false, false};
+            module.functions[0].frameBytes = 1;
+        },
+        "unknown receiver class");
+    reject(
+        "callable header order remains declaration order",
+        [](Module &module) {
+            auto later = module.functions[0];
+            later.name = "alphabetically_first";
+            later.moduleScope = 63;
+            module.functions[0].result = Type::Ref;
+            module.functions.push_back(std::move(later));
+        },
+        "invalid value boundary type");
+    for (const auto &mutate : std::vector<std::function<void(Type &)>>{[](Type &type) {
+                                                                           type.length = 1;
+                                                                       },
+                                                                       [](Type &type) {
+                                                                           type.className = "forged";
+                                                                       }}) {
+        reject(
+            "service header rejects noncanonical raw tail",
+            [&](Module &module) {
+                module.functions[0].parameters = {Type::ConsoleSession};
+                mutate(module.functions[0].parameters[0]);
+            },
+            "invalid canonical service boundary type");
     }
-    reject("present negative receiver span summary reaches semantic admission", [](Module &module) {
-        module.classLayouts["Pair"] = {Type::U8};
-        module.functions[0].receiver = Receiver{"Pair", false, false};
-        module.functions[0].result = Type::ByteSpan;
-        module.functions[0].receiverSpanField = -1;
-    }, "receiver span field summary requires exact direct byte-storage field");
+    reject(
+        "present negative receiver span summary reaches semantic admission",
+        [](Module &module) {
+            module.classLayouts["Pair"] = {Type::U8};
+            module.functions[0].receiver = Receiver{"Pair", false, false};
+            module.functions[0].result = Type::ByteSpan;
+            module.functions[0].receiverSpanField = -1;
+        },
+        "receiver span field summary requires exact direct byte-storage field");
     auto input = receiverBaseline();
     auto checked = validate(input);
     const auto *identity = &checked.metadata();
@@ -4641,9 +5007,8 @@ void callableOwnerTests() {
     if (&moved.metadata() != identity || id != 1 || callable.name() != "construct_pair" ||
         callable.moduleScope() != 0 || callable.result() != Type::I64 || parameters.size() != 2 ||
         parameters[0] != Type::I64 || parameters[1] != Type::Bool || callable.receiver()->className != "Pair" ||
-        receiver.className != "changed observation" ||
-        !callable.receiver()->constructor || !callable.receiver()->mutableValue ||
-        callable.borrowedRootCount() || callable.receiverSpanField() ||
+        receiver.className != "changed observation" || !callable.receiver()->constructor ||
+        !callable.receiver()->mutableValue || callable.borrowedRootCount() || callable.receiverSpanField() ||
         frame.frameBytes() != 16 || scalars.size() != 2 || scalars.at(8) != Type::I64 || scalars.at(16) != Type::Bool ||
         objects.size() != 1 || objects.at(16).className != "Pair" || objects.at(16).mutableValue ||
         copiedObject.className != "changed frame observation" || moved.get().functions[id].callableId != id)
@@ -4658,6 +5023,10 @@ void metadataOwnerTests() {
     const std::string highName("\xff", 1);
     source.classLayouts[binaryName] = {Type::U8, Type::I64};
     source.classLayouts[highName] = {};
+    source.classLayouts["A"] = {};
+    source.classLayouts[std::string("A\0", 2)] = {};
+    source.classLayouts[std::string("A\x7f", 2)] = {};
+    source.classLayouts[std::string("A\x80", 2)] = {};
     source.classLayouts["Empty"] = {};
     source.classFields["Empty"] = {};
     source.enumCases["Mode"] = 2;
@@ -4677,39 +5046,85 @@ void metadataOwnerTests() {
     const auto mode = metadata.findEnum("Mode");
     const auto descriptor = metadata.findDescriptor(7);
     if (!binary || !high || !empty || !mode || metadata.className(*binary) != binaryName ||
-        metadata.className(*high) != highName || *high <= *empty ||
-        metadata.leaves(*binary).size() != 2 || metadata.leaves(*binary).at(0) != Type::U8 ||
-        metadata.fields(*binary).size() != 2 || metadata.fields(*binary).at(1).firstLeaf != 1 ||
-        metadata.fields(*binary).at(1).elementType != Type::I64 || !metadata.fields(*empty).empty() ||
+        metadata.className(*high) != highName || *high <= *empty || metadata.leaves(*binary).size() != 2 ||
+        metadata.leaves(*binary).at(0) != Type::U8 || metadata.fields(*binary).size() != 2 ||
+        metadata.fields(*binary).at(1).firstLeaf != 1 || metadata.fields(*binary).at(1).elementType != Type::I64 ||
+        !metadata.fields(*empty).empty() ||
         !storageMatches(metadata.storage(*binary), ClassStorage{{0, 8}, {0, 8}, 16, 8, 16}) ||
-        !storageMatches(metadata.storage(*empty), ClassStorage{{}, {}, 8, 8, 8}) ||
-        metadata.enumCases(*mode) != 2 || !descriptor || descriptor->size != 16 ||
-        metadata.visibleDescriptors(0).size() != 1 || metadata.visibleDescriptors(0).at(0) != 7)
+        !storageMatches(metadata.storage(*empty), ClassStorage{{}, {}, 8, 8, 8}) || metadata.enumCases(*mode) != 2 ||
+        !descriptor || descriptor->size != 16 || metadata.visibleDescriptors(0).size() != 1 ||
+        metadata.visibleDescriptors(0).at(0) != 7)
         throw Error("durable metadata lost normalized fields, byte names or independent input lifetime");
     ++passed;
     std::cout << "PASS IR durable metadata preserves normalized fields and exact byte names\n";
 
+    const auto prefix = metadata.findClass("A");
+    const auto nulPrefix = metadata.findClass(std::string("A\0", 2));
+    const auto lowByte = metadata.findClass(std::string("A\x7f", 2));
+    const auto highByte = metadata.findClass(std::string("A\x80", 2));
+    if (!prefix || !nulPrefix || !lowByte || !highByte ||
+        !(*prefix < *nulPrefix && *nulPrefix < *binary && *binary < *lowByte && *lowByte < *highByte))
+        throw Error("metadata name comparison lost prefix, embedded NUL or unsigned-byte ordering");
+    ++passed;
+    std::cout << "PASS IR metadata names preserve prefix and unsigned-byte ordering\n";
+    reject(
+        "metadata empty class name precedes nonempty name",
+        [](Module &module) {
+            module.classLayouts[""] = {};
+            module.classLayouts["A"] = {};
+        },
+        "invalid nominal class layout");
+
     const std::vector<std::pair<std::string, std::function<void(Type &)>>> noncanonical = {
-        {"unknown kind", [](Type &type) { type.kind = static_cast<TypeKind>(99); }},
-        {"unknown element kind", [](Type &type) { type.elementKind = static_cast<TypeKind>(99); }},
-        {"length", [](Type &type) { type.length = 1; }},
-        {"element parameter", [](Type &type) { type.elementParameter = "T"; }},
-        {"length parameter", [](Type &type) { type.lengthParameter = "N"; }},
-        {"template arguments", [](Type &type) { type.templateArguments = {TypeKind::I64}; }},
-        {"scalar nominal tail", [](Type &type) { type.className = "Unexpected"; }}};
+        {"unknown kind",
+         [](Type &type) {
+             type.kind = static_cast<TypeKind>(99);
+         }},
+        {"unknown element kind",
+         [](Type &type) {
+             type.elementKind = static_cast<TypeKind>(99);
+         }},
+        {"length",
+         [](Type &type) {
+             type.length = 1;
+         }},
+        {"element parameter",
+         [](Type &type) {
+             type.elementParameter = "T";
+         }},
+        {"length parameter",
+         [](Type &type) {
+             type.lengthParameter = "N";
+         }},
+        {"template arguments",
+         [](Type &type) {
+             type.templateArguments = {TypeKind::I64};
+         }},
+        {"scalar nominal tail", [](Type &type) {
+             type.className = "Unexpected";
+         }}};
     for (const auto &[name, mutate] : noncanonical) {
-        reject("metadata raw leaf " + name, [&](Module &module) {
-            module.classLayouts["Leaf"] = {Type::I64};
-            mutate(module.classLayouts["Leaf"][0]);
-        }, "non-scalar class layout field");
-        reject("metadata raw scalar slot " + name, [&](Module &module) {
-            mutate(module.functions[0].slots[8]);
-        }, "invalid slot payload type");
-        reject("metadata raw logical field " + name, [&](Module &module) {
-            module.classLayouts["Leaf"] = {Type::I64};
-            module.classFields["Leaf"] = {{Type::I64, 0, 1, false}};
-            mutate(module.classFields["Leaf"][0].elementType);
-        }, "invalid logical class field shape");
+        reject(
+            "metadata raw leaf " + name,
+            [&](Module &module) {
+                module.classLayouts["Leaf"] = {Type::I64};
+                mutate(module.classLayouts["Leaf"][0]);
+            },
+            "non-scalar class layout field");
+        reject(
+            "metadata raw scalar slot " + name,
+            [&](Module &module) {
+                mutate(module.functions[0].slots[8]);
+            },
+            "invalid slot payload type");
+        reject(
+            "metadata raw logical field " + name,
+            [&](Module &module) {
+                module.classLayouts["Leaf"] = {Type::I64};
+                module.classFields["Leaf"] = {{Type::I64, 0, 1, false}};
+                mutate(module.classFields["Leaf"][0].elementType);
+            },
+            "invalid logical class field shape");
     }
     auto provenance = baseline();
     auto leaf = Type::U8;
@@ -4718,63 +5133,92 @@ void metadataOwnerTests() {
     provenance.classLayouts["Leaf"] = {leaf};
     accept("metadata ignores nonsemantic Type display and provenance", provenance);
 
-    reject("metadata descriptor precedes raw type tail", [](Module &module) {
-        module.descriptors[0] = Descriptor{0, 0};
-        module.classLayouts["Leaf"] = {Type::I64};
-        module.classLayouts["Leaf"][0].lengthParameter = "N";
-    }, "invalid metadata descriptor");
-    reject("metadata root scope precedes invalid enum", [](Module &module) {
-        module.descriptorViews.clear();
-        module.enumCases[""] = 0;
-    }, "missing root reflection scope");
-    reject("metadata enum limit precedes invalid enum shape", [](Module &module) {
-        module.enumCases[""] = 0;
-        for (int index = 0; index < 64; ++index)
-            module.enumCases["E" + std::to_string(index)] = 1;
-    }, "too many enum declarations");
-    reject("metadata unknown logical key precedes field normalization", [](Module &module) {
-        module.classLayouts["A"] = {Type::I64};
-        module.classFields["Z"] = {};
-    }, "logical fields reference unknown class layout");
-    reject("metadata nested carrier precedes field shape and raw tail", [](Module &module) {
-        module.classLayouts["AParent"] = {};
-        module.classLayouts["Empty"] = {};
-        module.classLayouts["ZCarrier"] = {};
-        module.classFields["AParent"] = {{Type("ZCarrier"), 1, 0, false}};
-        module.classFields["AParent"][0].elementType.length = 1;
-        module.classFields["ZCarrier"] = {{Type("Empty"), 0, 0, true, 1}};
-        module.classArrayCarriers.insert("ZCarrier");
-    }, "class array carrier cannot be nested element type");
-    reject("metadata owning child precedes nested canonical type", [](Module &module) {
-        module.classLayouts["AParent"] = {};
-        module.classLayouts["ZOwner"] = {};
-        module.classFields["AParent"] = {{Type("ZOwner"), 0, 0, false}};
-        module.classFields["AParent"][0].elementType.templateArguments = {TypeKind::I64};
-        module.classFields["ZOwner"] = {{Type::OwnedBytes, 0, 0, false}};
-    }, "nested owning class field is unsupported");
-    reject("metadata cycle precedes fifth-level depth error", [](Module &module) {
-        for (const auto &name : {"A", "B", "C", "D"})
-            module.classLayouts[name] = {};
-        module.classFields["A"] = {{Type("B"), 0, 0, false}};
-        module.classFields["B"] = {{Type("C"), 0, 0, false}};
-        module.classFields["C"] = {{Type("D"), 0, 0, false}};
-        module.classFields["D"] = {{Type("A"), 0, 0, false}};
-    }, "cyclic nested class layout");
-    reject("metadata sealed shape precedes supplied physical map", [](Module &module) {
-        const auto name = std::string(service::sampleName);
-        module.classLayouts[name] = {Type::Bool, Type::U8, Type::Bool};
-        module.classFields[name] = {{Type::Bool, 0, 1, true}, {Type::U8, 1, 1, false},
-                                   {Type::Bool, 2, 1, false}};
-        module.classStorage["Unknown"] = ClassStorage{};
-    }, "noncanonical sealed ConsoleSample field shape");
-    reject("metadata owning storage limit precedes supplied physical map", [](Module &module) {
-        module.classLayouts["Owner"] = {};
-        module.classFields["Owner"] = std::vector<ClassField>(17, {Type::OwnedBytes, 0, 0, false});
-        module.classStorage["Unknown"] = ClassStorage{};
-    }, "composed or owning class storage exceeds 520 bytes");
-    reject("metadata standalone supplied key survives union import", [](Module &module) {
-        module.classStorage["Unknown"] = ClassStorage{{}, {}, 8, 8, 8};
-    }, "noncanonical class storage metadata");
+    reject(
+        "metadata descriptor precedes raw type tail",
+        [](Module &module) {
+            module.descriptors[0] = Descriptor{0, 0};
+            module.classLayouts["Leaf"] = {Type::I64};
+            module.classLayouts["Leaf"][0].lengthParameter = "N";
+        },
+        "invalid metadata descriptor");
+    reject(
+        "metadata root scope precedes invalid enum",
+        [](Module &module) {
+            module.descriptorViews.clear();
+            module.enumCases[""] = 0;
+        },
+        "missing root reflection scope");
+    reject(
+        "metadata enum limit precedes invalid enum shape",
+        [](Module &module) {
+            module.enumCases[""] = 0;
+            for (int index = 0; index < 64; ++index)
+                module.enumCases["E" + std::to_string(index)] = 1;
+        },
+        "too many enum declarations");
+    reject(
+        "metadata unknown logical key precedes field normalization",
+        [](Module &module) {
+            module.classLayouts["A"] = {Type::I64};
+            module.classFields["Z"] = {};
+        },
+        "logical fields reference unknown class layout");
+    reject(
+        "metadata nested carrier precedes field shape and raw tail",
+        [](Module &module) {
+            module.classLayouts["AParent"] = {};
+            module.classLayouts["Empty"] = {};
+            module.classLayouts["ZCarrier"] = {};
+            module.classFields["AParent"] = {{Type("ZCarrier"), 1, 0, false}};
+            module.classFields["AParent"][0].elementType.length = 1;
+            module.classFields["ZCarrier"] = {{Type("Empty"), 0, 0, true, 1}};
+            module.classArrayCarriers.insert("ZCarrier");
+        },
+        "class array carrier cannot be nested element type");
+    reject(
+        "metadata owning child precedes nested canonical type",
+        [](Module &module) {
+            module.classLayouts["AParent"] = {};
+            module.classLayouts["ZOwner"] = {};
+            module.classFields["AParent"] = {{Type("ZOwner"), 0, 0, false}};
+            module.classFields["AParent"][0].elementType.templateArguments = {TypeKind::I64};
+            module.classFields["ZOwner"] = {{Type::OwnedBytes, 0, 0, false}};
+        },
+        "nested owning class field is unsupported");
+    reject(
+        "metadata cycle precedes fifth-level depth error",
+        [](Module &module) {
+            for (const auto &name : {"A", "B", "C", "D"})
+                module.classLayouts[name] = {};
+            module.classFields["A"] = {{Type("B"), 0, 0, false}};
+            module.classFields["B"] = {{Type("C"), 0, 0, false}};
+            module.classFields["C"] = {{Type("D"), 0, 0, false}};
+            module.classFields["D"] = {{Type("A"), 0, 0, false}};
+        },
+        "cyclic nested class layout");
+    reject(
+        "metadata sealed shape precedes supplied physical map",
+        [](Module &module) {
+            const auto name = std::string(service::sampleName);
+            module.classLayouts[name] = {Type::Bool, Type::U8, Type::Bool};
+            module.classFields[name] = {{Type::Bool, 0, 1, true}, {Type::U8, 1, 1, false}, {Type::Bool, 2, 1, false}};
+            module.classStorage["Unknown"] = ClassStorage{};
+        },
+        "noncanonical sealed ConsoleSample field shape");
+    reject(
+        "metadata owning storage limit precedes supplied physical map",
+        [](Module &module) {
+            module.classLayouts["Owner"] = {};
+            module.classFields["Owner"] = std::vector<ClassField>(17, {Type::OwnedBytes, 0, 0, false});
+            module.classStorage["Unknown"] = ClassStorage{};
+        },
+        "composed or owning class storage exceeds 520 bytes");
+    reject(
+        "metadata standalone supplied key survives union import",
+        [](Module &module) {
+            module.classStorage["Unknown"] = ClassStorage{{}, {}, 8, 8, 8};
+        },
+        "noncanonical class storage metadata");
 }
 
 void pendingBodies(detail::InstructionWriter &writer, std::size_t count = 1, bool wrongId = false) {
@@ -4789,8 +5233,23 @@ void pendingBodies(detail::InstructionWriter &writer, std::size_t count = 1, boo
 
 enum class CallableMutation {
     None,
+    NegativeNameBegin,
+    NegativeNameCount,
+    NameBeginOverflow,
+    NameCountOverflow,
     AbsentReceiver,
     UnknownFlag,
+    UnknownReceiverFlag,
+    ReservedCallableBit2,
+    ReservedCallableBit4,
+    HighCallableFlag,
+    HighReceiverFlag,
+    NegativeCallableFlags,
+    NegativeReceiverFlags,
+    ZeroClassFlags,
+    UnknownClassFlag,
+    HighClassFlag,
+    NegativeClassFlags,
     RangeBegin,
     RangeCount,
     IndexOverflow,
@@ -4818,7 +5277,8 @@ enum class CallableMutation {
     NegativePairedSlot
 };
 
-void pendingCallables(detail::MetadataWriter &writer, const std::vector<std::string> &names,
+void pendingCallables(detail::MetadataWriter &writer,
+                      const std::vector<std::string> &names,
                       CallableMutation mutation = CallableMutation::None) {
     namespace wire = aurora::hosted_abi::compiler_ir_metadata;
     for (const auto &name : names) {
@@ -4829,10 +5289,32 @@ void pendingCallables(detail::MetadataWriter &writer, const std::vector<std::str
         callable.slotRange = {writer.slotCount(), 2};
         const bool first = writer.callableCount() == 0;
         if (first) {
-            if (mutation == CallableMutation::AbsentReceiver)
+            if (mutation == CallableMutation::NegativeNameBegin)
+                callable.nameRange.firstByte = -1;
+            else if (mutation == CallableMutation::NegativeNameCount)
+                callable.nameRange.byteCount = -1;
+            else if (mutation == CallableMutation::NameBeginOverflow)
+                callable.nameRange.firstByte = std::numeric_limits<std::int64_t>::max();
+            else if (mutation == CallableMutation::NameCountOverflow)
+                callable.nameRange.byteCount = std::numeric_limits<std::int64_t>::max();
+            else if (mutation == CallableMutation::AbsentReceiver)
                 callable.receiver.flags = 1;
             else if (mutation == CallableMutation::UnknownFlag)
                 callable.flags = 16;
+            else if (mutation == CallableMutation::UnknownReceiverFlag)
+                callable.receiver.flags = 8;
+            else if (mutation == CallableMutation::ReservedCallableBit2)
+                callable.flags = 2;
+            else if (mutation == CallableMutation::ReservedCallableBit4)
+                callable.flags = 4;
+            else if (mutation == CallableMutation::HighCallableFlag)
+                callable.flags = std::uint64_t{1} << 63;
+            else if (mutation == CallableMutation::HighReceiverFlag)
+                callable.receiver.flags = std::uint64_t{1} << 63;
+            else if (mutation == CallableMutation::NegativeCallableFlags)
+                callable.flags = UINT64_MAX;
+            else if (mutation == CallableMutation::NegativeReceiverFlags)
+                callable.receiver.flags = UINT64_MAX;
             else if (mutation == CallableMutation::RangeBegin)
                 ++callable.typeRange.firstIndex;
             else if (mutation == CallableMutation::RangeCount)
@@ -4933,14 +5415,17 @@ void pendingCallables(detail::MetadataWriter &writer, const std::vector<std::str
     if (mutation == CallableMutation::IndexOrder)
         std::reverse(ids.begin(), ids.end());
     for (const auto id : ids)
-        writer.index(static_cast<std::int64_t>(mutation == CallableMutation::IndexOverflow ? names.size()
-            : mutation == CallableMutation::IndexDuplicate ? 0 : id));
+        writer.index(static_cast<std::int64_t>(mutation == CallableMutation::IndexOverflow    ? names.size()
+                                               : mutation == CallableMutation::IndexDuplicate ? 0
+                                                                                              : id));
 }
 
-InstructionIngress pendingMetadata(bool badStorage = false, bool badDescriptor = false,
-                                const std::vector<std::string> &names = {"test"},
-                                CallableMutation mutation = CallableMutation::None,
-                                std::optional<std::size_t> bodyCount = std::nullopt, bool wrongId = false) {
+InstructionIngress pendingMetadata(bool badStorage = false,
+                                   bool badDescriptor = false,
+                                   const std::vector<std::string> &names = {"test"},
+                                   CallableMutation mutation = CallableMutation::None,
+                                   std::optional<std::size_t> bodyCount = std::nullopt,
+                                   bool wrongId = false) {
     namespace wire = aurora::hosted_abi::compiler_ir_metadata;
     detail::MetadataWriter writer;
     detail::InstructionWriter instructions(writer);
@@ -4948,6 +5433,14 @@ InstructionIngress pendingMetadata(bool badStorage = false, bool badDescriptor =
         wire::ClassRow shape{};
         shape.nameRange = writer.text(std::string("A\0\xff", 3));
         shape.membershipBits = 1 | 2 | 4;
+        if (mutation == CallableMutation::ZeroClassFlags)
+            shape.membershipBits = 0;
+        else if (mutation == CallableMutation::UnknownClassFlag)
+            shape.membershipBits |= 16;
+        else if (mutation == CallableMutation::HighClassFlag)
+            shape.membershipBits = std::uint64_t{1} << 63;
+        else if (mutation == CallableMutation::NegativeClassFlags)
+            shape.membershipBits = UINT64_MAX;
         shape.leafRange = {writer.position().coreCounts.leaves, 2};
         writer.leaf(Type::U8);
         writer.leaf(Type::I64);
@@ -4990,18 +5483,61 @@ void metadataIngressTests() {
     static_assert(!std::is_copy_constructible_v<MetadataIngress> && !std::is_copy_assignable_v<MetadataIngress> &&
                   std::is_nothrow_move_constructible_v<MetadataIngress> &&
                   std::is_nothrow_move_assignable_v<MetadataIngress>);
-    const auto rejects = [](const char *name, const auto &operation, const char *expected) {
+    const auto rejects = [](const char *name, const auto &operation, const char *expected, bool exact = false) {
         try {
             operation();
         } catch (const Error &error) {
-            if (std::string(error.what()).find(expected) == std::string::npos)
-                throw Error(std::string(name) + ": wrong diagnostic: " + error.what());
+            if (exact ? error.diagnostic.code != DiagnosticCode::Unclassified || error.diagnostic.message != expected
+                      : std::string(error.what()).find(expected) == std::string::npos) {
+                diagnosticMismatch(name, expected, error, exact);
+                return;
+            }
             ++passed;
             std::cout << "PASS IR " << name << '\n';
             return;
         }
         throw Error(std::string(name) + ": invalid pending metadata was accepted");
     };
+    {
+        detail::MetadataWriter writer;
+        detail::InstructionWriter instructions(writer);
+        const auto fill = [&] {
+            std::string temporary("A\0\x80", 3);
+            const auto first = writer.text(temporary);
+            temporary[0] = 'B';
+            const auto duplicate = writer.text(std::string("A\0\x80", 3));
+            const auto different = writer.text(temporary);
+            const auto prefix = writer.text("A");
+            writer.text("");
+            if (first.firstByte != duplicate.firstByte || first.byteCount != duplicate.byteCount ||
+                different.firstByte == first.firstByte || prefix.byteCount != 1 ||
+                writer.position().coreCounts.bytes != 7)
+                throw Error("metadata text sharing lost exact bytes or short-lived string ownership");
+            writer.declarations(baseline());
+            writer.beginInstructions();
+            pendingBodies(instructions);
+            return first;
+        };
+        const auto counted = fill();
+        const auto byteCount = writer.position().coreCounts.bytes;
+        writer.allocate();
+        instructions.allocate();
+        const auto replayed = fill();
+        if (counted.firstByte != replayed.firstByte || counted.byteCount != replayed.byteCount ||
+            writer.position().coreCounts.bytes != byteCount)
+            throw Error("metadata text replay changed shared ranges or exact byte accounting");
+        const auto shared = validate(std::move(instructions).take());
+        if (shared.metadata().callable(0).name() != "test")
+            throw Error("metadata text replay did not publish the counted callable name");
+        rejects(
+            "consumed metadata writer rejects repeated text",
+            [&] {
+                writer.text(std::string("A\0\x80", 3));
+            },
+            "invalid hosted IR metadata transport");
+        ++passed;
+        std::cout << "PASS IR temporary metadata text sharing preserves count and replay\n";
+    }
     auto pending = pendingMetadata();
     InstructionIngress moved(std::move(pending));
     pending = pendingMetadata();
@@ -5016,43 +5552,53 @@ void metadataIngressTests() {
         metadata.callable(0).result() != Type::I64 || !metadata.callable(0).parameters().empty() ||
         metadata.frame(0).frameBytes() != 16 || metadata.frame(0).scalarSlots().size() != 2 ||
         metadata.frame(0).scalarSlots().at(8) != Type::I64 || metadata.frame(0).scalarSlots().at(16) != Type::I64)
-        throw Error("pending metadata moves lost copied names, fields, storage, callable headers or frame declarations");
+        throw Error(
+            "pending metadata moves lost copied names, fields, storage, callable headers or frame declarations");
     ++passed;
     std::cout << "PASS IR pending metadata move construction, replacement and publication\n";
-    rejects("pending metadata cannot publish twice", [&] {
-        static_cast<void>(validate(std::move(pending)));
-    }, "invalid hosted IR metadata transport");
+    rejects(
+        "pending metadata cannot publish twice",
+        [&] {
+            static_cast<void>(validate(std::move(pending)));
+        },
+        "invalid hosted IR metadata transport");
     // Real Region destruction rejects any leaked owner. Exercise abandonment
     // and exception cleanup without substituting the generated owner/runtime.
     {
         const auto abandoned = pendingMetadata();
         (void)abandoned;
     }
-    rejects("partially filled metadata cleans up without publication", [] {
-        detail::MetadataWriter partial;
-        partial.text("partial");
-        partial.allocate();
-        partial.text("p");
-        static_cast<void>(std::move(partial).take());
-    }, "invalid hosted IR metadata transport");
-    rejects("partially filled instruction bundle releases both owners", [] {
-        detail::MetadataWriter metadata;
-        detail::InstructionWriter instructions(metadata);
-        const auto fill = [&](bool partial) {
-            metadata.declarations(baseline());
-            metadata.beginInstructions();
-            instructions.beginBody(0);
-            instructions.append(Instruction{Push{}});
-            if (!partial)
-                instructions.append(Instruction{Pop{}});
-            instructions.endBody();
-        };
-        fill(false);
-        metadata.allocate();
-        instructions.allocate();
-        fill(true);
-        static_cast<void>(std::move(instructions).take());
-    }, "invalid hosted IR instruction transport");
+    rejects(
+        "partially filled metadata cleans up without publication",
+        [] {
+            detail::MetadataWriter partial;
+            partial.text("partial");
+            partial.allocate();
+            partial.text("p");
+            static_cast<void>(std::move(partial).take());
+        },
+        "invalid hosted IR metadata transport");
+    rejects(
+        "partially filled instruction bundle releases both owners",
+        [] {
+            detail::MetadataWriter metadata;
+            detail::InstructionWriter instructions(metadata);
+            const auto fill = [&](bool partial) {
+                metadata.declarations(baseline());
+                metadata.beginInstructions();
+                instructions.beginBody(0);
+                instructions.append(Instruction{Push{}});
+                if (!partial)
+                    instructions.append(Instruction{Pop{}});
+                instructions.endBody();
+            };
+            fill(false);
+            metadata.allocate();
+            instructions.allocate();
+            fill(true);
+            static_cast<void>(std::move(instructions).take());
+        },
+        "invalid hosted IR instruction transport");
     {
         detail::MetadataWriter writer;
         detail::InstructionWriter instructions(writer);
@@ -5068,28 +5614,66 @@ void metadataIngressTests() {
         instructions.allocate();
         fill();
         auto sealed = std::move(instructions).take();
-        rejects("consumed metadata writer cannot append fields", [&] {
-            writer.field(ClassField{Type::I64, 0, 1, false});
-        }, "invalid hosted IR metadata transport");
+        rejects(
+            "consumed metadata writer cannot append fields",
+            [&] {
+                writer.field(ClassField{Type::I64, 0, 1, false});
+            },
+            "invalid hosted IR metadata transport");
         static_cast<void>(validate(std::move(sealed)));
     }
     for (const int mode : {0, 1, 2}) {
-        rejects("source callable symbols precede pending metadata semantics", [=] {
-            const std::vector<std::string> names = mode == 0 ? std::vector<std::string>{}
-                : mode == 1 ? std::vector<std::string>{"__au_runtime_reserved"}
-                            : std::vector<std::string>{"test", "test"};
-            static_cast<void>(validate(pendingMetadata(false, true, names)));
-        }, mode == 0 ? "empty module" : mode == 1 ? "invalid or reserved function symbol" : "duplicate function");
+        rejects(
+            "source callable symbols precede pending metadata semantics",
+            [=] {
+                const std::vector<std::string> names = mode == 0   ? std::vector<std::string>{}
+                                                       : mode == 1 ? std::vector<std::string>{"__au_runtime_reserved"}
+                                                                   : std::vector<std::string>{"test", "test"};
+                static_cast<void>(validate(pendingMetadata(false, true, names)));
+            },
+            mode == 0   ? "empty module"
+            : mode == 1 ? "invalid or reserved function symbol"
+                        : "duplicate function");
     }
-    rejects("source duplicate symbol precedes later reserved symbol", [] {
-        const std::vector<std::string> names{"test", "test", "__au_runtime_reserved"};
-        static_cast<void>(validate(pendingMetadata(false, true, names)));
-    }, "duplicate function");
-    rejects("source reserved symbol precedes later duplicate symbol", [] {
-        const std::vector<std::string> names{"__au_runtime_reserved", "test", "test"};
-        static_cast<void>(validate(pendingMetadata(false, true, names)));
-    }, "invalid or reserved function symbol");
+    rejects(
+        "source duplicate symbol precedes later reserved symbol",
+        [] {
+            const std::vector<std::string> names{"test", "test", "__au_runtime_reserved"};
+            static_cast<void>(validate(pendingMetadata(false, true, names)));
+        },
+        "duplicate function");
+    rejects(
+        "source reserved symbol precedes later duplicate symbol",
+        [] {
+            const std::vector<std::string> names{"__au_runtime_reserved", "test", "test"};
+            static_cast<void>(validate(pendingMetadata(false, true, names)));
+        },
+        "invalid or reserved function symbol");
     for (const auto &[name, mutation] : std::vector<std::pair<const char *, CallableMutation>>{
+             {"unknown receiver flag bit", CallableMutation::UnknownReceiverFlag},
+             {"reserved callable flag bit 2", CallableMutation::ReservedCallableBit2},
+             {"reserved callable flag bit 4", CallableMutation::ReservedCallableBit4},
+             {"isolated high callable flag bit", CallableMutation::HighCallableFlag},
+             {"isolated high receiver flag bit", CallableMutation::HighReceiverFlag},
+             {"negative signed callable flag encoding", CallableMutation::NegativeCallableFlags},
+             {"negative signed receiver flag encoding", CallableMutation::NegativeReceiverFlags},
+             {"zero class membership", CallableMutation::ZeroClassFlags},
+             {"unknown class membership bit", CallableMutation::UnknownClassFlag},
+             {"isolated high class membership bit", CallableMutation::HighClassFlag},
+             {"negative signed class membership encoding", CallableMutation::NegativeClassFlags}}) {
+        rejects(
+            name,
+            [=] {
+                static_cast<void>(validate(pendingMetadata(false, false, {"alpha", "omega"}, mutation)));
+            },
+            "invalid hosted IR metadata transport",
+            true);
+    }
+    for (const auto &[name, mutation] : std::vector<std::pair<const char *, CallableMutation>>{
+             {"negative callable name begin", CallableMutation::NegativeNameBegin},
+             {"negative callable name count", CallableMutation::NegativeNameCount},
+             {"overflowing callable name begin", CallableMutation::NameBeginOverflow},
+             {"overflowing callable name count", CallableMutation::NameCountOverflow},
              {"absent receiver payload", CallableMutation::AbsentReceiver},
              {"unknown callable flags", CallableMutation::UnknownFlag},
              {"nonpacked callable type begin", CallableMutation::RangeBegin},
@@ -5110,44 +5694,77 @@ void metadataIngressTests() {
              {"reversed scalar declaration rows", CallableMutation::SlotOrder},
              {"uncovered frame declaration suffix", CallableMutation::SlotUncovered},
              {"uncovered frame type suffix", CallableMutation::TypeUncovered}}) {
-        rejects(name, [=] {
-            static_cast<void>(validate(pendingMetadata(false, false, {"alpha", "omega"}, mutation)));
-        }, "invalid hosted IR metadata transport");
+        rejects(
+            name,
+            [=] {
+                static_cast<void>(validate(pendingMetadata(false, false, {"alpha", "omega"}, mutation)));
+            },
+            "invalid hosted IR metadata transport");
     }
     // These exercise source admission for both row counts. They do not
     // substitute for a successful hosted-lowering projection/sort fixture.
     for (const auto mutation : {CallableMutation::NegativeSingleSlot, CallableMutation::NegativePairedSlot}) {
-        rejects("negative slot offset is independent of declaration count", [=] {
-            static_cast<void>(validate(pendingMetadata(false, false, {"test"}, mutation)));
-        }, "invalid typed IR: invalid slot offset");
+        rejects(
+            "negative slot offset is independent of declaration count",
+            [=] {
+                static_cast<void>(validate(pendingMetadata(false, false, {"test"}, mutation)));
+            },
+            "invalid typed IR: invalid slot offset");
     }
-    rejects("pending scalar declaration preserves malformed raw tail", [] {
-        static_cast<void>(validate(pendingMetadata(false, false, {"test"}, CallableMutation::ScalarTail)));
-    }, "invalid slot payload type");
-    rejects("pending object declaration preserves malformed nominal tail", [] {
-        static_cast<void>(validate(pendingMetadata(false, false, {"test"}, CallableMutation::ObjectTail)));
-    }, "unknown object class");
-    rejects("pending typed owner preserves malformed raw tail", [] {
-        static_cast<void>(validate(pendingMetadata(false, false, {"test"}, CallableMutation::OwnerTail)));
-    }, "invalid canonical owned value type");
-    rejects("pending owner annotation cannot omit owner declaration", [] {
-        static_cast<void>(validate(pendingMetadata(false, false, {"test"}, CallableMutation::OrphanOwner)));
-    }, "owned value metadata requires exact owner spill");
-    rejects("pending frame extent receives independent validation", [] {
-        static_cast<void>(validate(pendingMetadata(false, false, {"test"}, CallableMutation::FrameSize)));
-    }, "invalid frame size");
-    rejects("pending descriptor still receives independent validation", [] {
-        static_cast<void>(validate(pendingMetadata(false, true)));
-    }, "invalid metadata descriptor");
-    rejects("pending supplied physical offsets cannot become canonical by assertion", [] {
-        static_cast<void>(validate(pendingMetadata(true)));
-    }, "noncanonical class storage metadata");
-    rejects("pending callable header requires its body", [] {
-        static_cast<void>(validate(pendingMetadata(false, false, {"test"}, CallableMutation::None, 0)));
-    }, "invalid hosted IR instruction transport");
-    rejects("pending body cannot substitute another callable ID", [] {
-        static_cast<void>(pendingMetadata(false, false, {"test"}, CallableMutation::None, 1, true));
-    }, "invalid hosted IR instruction transport");
+    rejects(
+        "pending scalar declaration preserves malformed raw tail",
+        [] {
+            static_cast<void>(validate(pendingMetadata(false, false, {"test"}, CallableMutation::ScalarTail)));
+        },
+        "invalid slot payload type");
+    rejects(
+        "pending object declaration preserves malformed nominal tail",
+        [] {
+            static_cast<void>(validate(pendingMetadata(false, false, {"test"}, CallableMutation::ObjectTail)));
+        },
+        "unknown object class");
+    rejects(
+        "pending typed owner preserves malformed raw tail",
+        [] {
+            static_cast<void>(validate(pendingMetadata(false, false, {"test"}, CallableMutation::OwnerTail)));
+        },
+        "invalid canonical owned value type");
+    rejects(
+        "pending owner annotation cannot omit owner declaration",
+        [] {
+            static_cast<void>(validate(pendingMetadata(false, false, {"test"}, CallableMutation::OrphanOwner)));
+        },
+        "owned value metadata requires exact owner spill");
+    rejects(
+        "pending frame extent receives independent validation",
+        [] {
+            static_cast<void>(validate(pendingMetadata(false, false, {"test"}, CallableMutation::FrameSize)));
+        },
+        "invalid frame size");
+    rejects(
+        "pending descriptor still receives independent validation",
+        [] {
+            static_cast<void>(validate(pendingMetadata(false, true)));
+        },
+        "invalid metadata descriptor");
+    rejects(
+        "pending supplied physical offsets cannot become canonical by assertion",
+        [] {
+            static_cast<void>(validate(pendingMetadata(true)));
+        },
+        "noncanonical class storage metadata");
+    rejects(
+        "pending callable header requires its body",
+        [] {
+            static_cast<void>(validate(pendingMetadata(false, false, {"test"}, CallableMutation::None, 0)));
+        },
+        "invalid hosted IR instruction transport");
+    rejects(
+        "pending body cannot substitute another callable ID",
+        [] {
+            static_cast<void>(pendingMetadata(false, false, {"test"}, CallableMutation::None, 1, true));
+        },
+        "invalid hosted IR instruction transport");
 }
 
 } // namespace
@@ -5342,6 +5959,49 @@ int main(int argc, char **argv) {
                 m.functions[0].code.pop_back();
             },
             "fallthrough");
+        {
+            auto terminal = baseline();
+            terminal.functions[0].code.pop_back();
+            rejectExact("valid terminal instruction still rejects fallthrough",
+                        terminal,
+                        "reachable fallthrough without return");
+            terminal.functions[0].code = {Pop{}};
+            rejectExact("terminal value error precedes fallthrough", terminal, "value stack underflow");
+            terminal.functions[0].code = {Label{1}, Constant{1, Type::Bool}, BranchFalse{1}};
+            rejectExact(
+                "terminal conditional still rejects fallthrough", terminal, "reachable fallthrough without return");
+            terminal.functions[0].code = {Jump{1}, Constant{0, Type::I64}, Label{1}, Pop{}};
+            rejectExact(
+                "reachable value error precedes omitted semantic instruction", terminal, "value stack underflow");
+            terminal.functions[0].code = {Constant{42, Type::I64}, Jump{1}, Constant{0, Type::I64}, Label{1}};
+            rejectExact("terminal fallthrough precedes omitted semantic instruction",
+                        terminal,
+                        "reachable fallthrough without return");
+            terminal.functions[0].code = {Constant{42, Type::I64}, Return{}, Constant{0, Type::I64}};
+            rejectExact("valid reachable return still rejects omitted semantic instruction",
+                        terminal,
+                        "unreachable semantic instruction");
+            // This CFG balances the stack, but its physical block order places
+            // the empty-stack return before the pop block. Dead semantic rows
+            // must retain their original priority against that emission error.
+            terminal.functions[0].code = {Constant{42, Type::I64},
+                                          Push{},
+                                          Jump{1},
+                                          Label{2},
+                                          Return{},
+                                          Constant{0, Type::I64},
+                                          Label{1},
+                                          Pop{},
+                                          Jump{2}};
+            rejectExact("linear depth error precedes later omitted semantic instruction",
+                        terminal,
+                        "operand stack depth differs from linear emission order");
+            terminal.functions[0].code.insert(terminal.functions[0].code.begin() + 3,
+                                              {Label{9}, Jump{9}, Constant{0, Type::I64}});
+            rejectExact("first omitted semantic instruction precedes later linear depth error",
+                        terminal,
+                        "unreachable semantic instruction");
+        }
         reject(
             "unknown jump",
             [](Module &m) {
@@ -5633,12 +6293,23 @@ int main(int argc, char **argv) {
             },
             "returns before all fields initialized");
 
+        // Canonical headers precede frame declarations globally. Clearing all
+        // layouts invalidates both a caller object and a later receiver; the
+        // receiver header is the specified first nominal failure.
         rejectReceiver(
             "missing class layout",
             [](Module &m) {
                 m.classLayouts.clear();
             },
-            "unknown object class");
+            "unknown receiver class");
+        {
+            auto object = baseline();
+            object.functions[0].objectSlots[8] = {"Missing", false};
+            rejectExact("isolated unknown object class", object, "unknown object class");
+            auto receiver = baseline();
+            receiver.functions[0].receiver = Receiver{"Missing", false, false};
+            rejectExact("isolated unknown receiver class", receiver, "unknown receiver class");
+        }
         rejectReceiver(
             "non-scalar class layout",
             [](Module &m) {
@@ -6962,6 +7633,35 @@ int main(int argc, char **argv) {
                 m.functions[1].parameters[1] = Type(TypeKind::Parameter);
             },
             "invalid aggregate parameter type");
+        for (std::size_t position = 0; position < 2; ++position) {
+            auto uncalled = valueBaseline();
+            uncalled.functions.erase(uncalled.functions.begin());
+            uncalled.functions[0].parameters[position] = Type(TypeKind::Parameter);
+            rejectExact("uncalled aggregate header rejects unresolved parameter " + std::to_string(position),
+                        uncalled,
+                        "invalid aggregate parameter type");
+        }
+        {
+            auto scalar = baseline();
+            scalar.functions[0].parameters = {Type(TypeKind::Parameter)};
+            rejectExact("scalar-only header keeps generic unresolved parameter diagnostic",
+                        scalar,
+                        "invalid value boundary type");
+            for (const auto &aggregate : {Type("Pair"), Type::ByteSpan}) {
+                auto header = baseline();
+                header.classLayouts["Pair"] = {Type::I64};
+                header.functions[0].parameters = {aggregate, Type(TypeKind::Parameter)};
+                rejectExact("aggregate parameter shape selects header diagnostic " + typeName(aggregate),
+                            header,
+                            "invalid aggregate parameter type");
+            }
+            auto malformedClass = valueBaseline();
+            malformedClass.functions.erase(malformedClass.functions.begin());
+            malformedClass.functions[0].parameters[0].length = 1;
+            rejectExact("uncalled aggregate header keeps malformed class diagnostic",
+                        malformedClass,
+                        "invalid value boundary type");
+        }
         rejectValue(
             "function-template dependent class result metadata",
             [](Module &m) {
@@ -6979,7 +7679,9 @@ int main(int argc, char **argv) {
             },
             "invalid value boundary type");
         std::cout << passed << " typed IR tests passed\n";
-        return 0;
+        if (failed)
+            std::cerr << failed << " typed IR diagnostic checks failed\n";
+        return failed == 0 ? 0 : 1;
     } catch (const std::exception &error) {
         std::cerr << error.what() << '\n';
         return 1;

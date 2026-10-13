@@ -4,6 +4,10 @@ export module aurora.compiler.ir_graph;
 // normalized native IR, never lowering state or a producer's success report.
 export namespace compiler_ir_graph {
     enum class GraphStatus { success, allocation, invalid, recursive };
+    // Source-private marks have no native numeric counterpart.
+    auto visited_mark() -> u64 { return 1u64; }
+    auto service_mark() -> u64 { return 2u64; }
+    auto retained_mark() -> u64 { return 4u64; }
     class FunctionRow {
         i64 firstEdge;
         i64 edgeCount;
@@ -28,11 +32,11 @@ export namespace compiler_ir_graph {
     };
     class StateRow {
         i64 callerHead;
-        i64 marks;
+        u64 marks;
     public:
-        StateRow(i64 caller, i64 flags) : callerHead(caller), marks(flags) {}
+        StateRow(i64 caller, u64 flags) : callerHead(caller), marks(flags) {}
         auto caller() const -> i64 { return callerHead; }
-        auto flags() const -> i64 { return marks; }
+        auto flags() const -> u64 { return marks; }
     };
     class ReverseEdge {
         i64 source;
@@ -61,7 +65,7 @@ export namespace compiler_ir_graph {
         return move(result);
     }
     auto state_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<StateRow> {
-        const StateRow fill = StateRow(-1, 0);
+        const StateRow fill = StateRow(-1, 0u64);
         builtin::OwnedValues<StateRow> result = region.try_allocate(count, fill);
         return move(result);
     }
@@ -148,21 +152,18 @@ export namespace compiler_ir_graph {
             const StateRow result = states.at(node);
             return result;
         }
-        auto marked(i64 node, i64 mask) const -> bool {
+        auto marked(i64 node, u64 mask) const -> bool {
             const StateRow result = states.at(node);
-            // Flags start at zero and this pass uses only masks 1, 2 and 4.
-            return (result.flags() / mask) % 2 != 0;
+            return (result.flags() & mask) != 0u64;
         }
-        auto mark(i64 node, i64 mask) -> bool {
+        auto mark(i64 node, u64 mask) -> bool {
             const StateRow old = states.at(node);
-            i64 flags = old.flags();
-            if ((flags / mask) % 2 == 0) { flags = flags + mask; }
-            const StateRow value = StateRow(old.caller(), flags);
+            const StateRow value = StateRow(old.caller(), old.flags() | mask);
             return states.set(node, value);
         }
         auto clear_visited(i64 node) -> bool {
             const StateRow old = states.at(node);
-            const StateRow value = StateRow(old.caller(), old.flags() - old.flags() % 2);
+            const StateRow value = StateRow(old.caller(), old.flags() & ~visited_mark());
             return states.set(node, value);
         }
         auto add_reverse(i64 edge, i64 source, i64 target) -> bool {
@@ -211,7 +212,7 @@ export namespace compiler_ir_graph {
         auto publish() -> bool { completed = true; return true; }
         auto retained(i64 index) const -> bool {
             if (!completed || index < 0 || index >= functionCount) { return false; }
-            return marked(index, 4);
+            return marked(index, retained_mark());
         }
     };
     auto create_input(builtin::ByteRegion region, i64 functions, i64 edges) -> Input {
@@ -231,12 +232,11 @@ export namespace compiler_ir_graph {
     auto retained(const Workspace& workspace, i64 index) -> bool { return workspace.retained(index); }
 
     // A node is marked before it is pushed: each worklist has at most V entries.
-    // Flags: 1 = DFS visited, 2 = service reachable, 4 = retained from scope zero.
-    auto reach(Workspace& workspace, const Input& input, i64 mask) -> bool {
+    auto reach(Workspace& workspace, const Input& input, u64 mask) -> bool {
         i64 node = 0;
         while (node < input.size()) {
             const FunctionRow function = input.function(node);
-            if ((mask == 2 && function.service()) || (mask == 4 && function.root())) {
+            if ((mask == service_mark() && function.service()) || (mask == retained_mark() && function.root())) {
                 if (!workspace.mark(node, mask) || !workspace.push(node, 0)) { return false; }
             }
             node = node + 1;
@@ -279,12 +279,14 @@ export namespace compiler_ir_graph {
             }
             node = node + 1;
         }
-        if (next != input.calls() || !reach(workspace, input, 2)) { return GraphStatus::invalid; }
+        if (next != input.calls() || !reach(workspace, input, service_mark())) { return GraphStatus::invalid; }
         node = 0;
         while (node < input.size()) {
-            if (!workspace.marked(node, 1)) {
+            if (!workspace.marked(node, visited_mark())) {
                 const FunctionRow start = input.function(node);
-                if (!workspace.mark(node, 1) || !workspace.push(node, start.first())) { return GraphStatus::invalid; }
+                if (!workspace.mark(node, visited_mark()) || !workspace.push(node, start.first())) {
+                    return GraphStatus::invalid;
+                }
                 while (!workspace.empty()) {
                     const FrameRow frame = workspace.top();
                     const FunctionRow function = input.function(frame.node());
@@ -293,9 +295,9 @@ export namespace compiler_ir_graph {
                     } else {
                         const i64 target = input.target(frame.edge());
                         if (!workspace.advance(frame.node(), frame.edge() + 1)) { return GraphStatus::invalid; }
-                        if (!workspace.marked(target, 1)) {
+                        if (!workspace.marked(target, visited_mark())) {
                             const FunctionRow child = input.function(target);
-                            if (!workspace.mark(target, 1) || !workspace.push(target, child.first())) {
+                            if (!workspace.mark(target, visited_mark()) || !workspace.push(target, child.first())) {
                                 return GraphStatus::invalid;
                             }
                         }
@@ -314,8 +316,8 @@ export namespace compiler_ir_graph {
         while (order > 0) {
             order = order - 1;
             const i64 start = workspace.finished_at(order);
-            if (!workspace.marked(start, 1)) {
-                if (!workspace.mark(start, 1) || !workspace.push(start, 0)) { return GraphStatus::invalid; }
+            if (!workspace.marked(start, visited_mark())) {
+                if (!workspace.mark(start, visited_mark()) || !workspace.push(start, 0)) { return GraphStatus::invalid; }
                 i64 component_size = 0;
                 bool has_receiver = false;
                 bool self_edge = false;
@@ -325,7 +327,7 @@ export namespace compiler_ir_graph {
                     const i64 current = frame.node();
                     const FunctionRow function = input.function(current);
                     component_size = component_size + 1;
-                    has_receiver = has_receiver || function.receiver() || workspace.marked(current, 2);
+                    has_receiver = has_receiver || function.receiver() || workspace.marked(current, service_mark());
                     i64 edge = function.first();
                     while (edge < function.first() + function.count()) {
                         self_edge = self_edge || input.target(edge) == current;
@@ -336,8 +338,8 @@ export namespace compiler_ir_graph {
                     while (edge != -1) {
                         const ReverseEdge incoming = workspace.incoming(edge);
                         const i64 caller = incoming.caller();
-                        if (!workspace.marked(caller, 1)) {
-                            if (!workspace.mark(caller, 1) || !workspace.push(caller, 0)) {
+                        if (!workspace.marked(caller, visited_mark())) {
+                            if (!workspace.mark(caller, visited_mark()) || !workspace.push(caller, 0)) {
                                 return GraphStatus::invalid;
                             }
                         }
@@ -348,7 +350,7 @@ export namespace compiler_ir_graph {
             }
         }
         // All components, including unreachable imports, precede retention.
-        if (!reach(workspace, input, 4) || !workspace.publish()) { return GraphStatus::invalid; }
+        if (!reach(workspace, input, retained_mark()) || !workspace.publish()) { return GraphStatus::invalid; }
         return GraphStatus::success;
     }
 }

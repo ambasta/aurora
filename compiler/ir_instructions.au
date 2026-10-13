@@ -1,6 +1,7 @@
 export module aurora.compiler.ir_instructions;
 import aurora.compiler.ir_instruction_storage;
 import aurora.compiler.ir_metadata;
+import aurora.compiler.ir_metadata_storage;
 
 // Generic durable transport admission precedes the sole native field walk for
 // exact opcode shapes. Source admission normalizes every body, then checks all
@@ -34,7 +35,7 @@ export namespace compiler_ir_instructions {
         while (callable < store.body_count()) {
             const BodyRow body = store.body_at(callable);
             if (!bounded_range(body.begin(), body.capacity(), store.code_count())
-                || body.count() != body.capacity()
+                || body.count() != body.capacity() || body.unreachable_after() != 0
                 || (body.capacity() != 0 && body.begin() != next_code)) {
                 return fail(store, InstructionError::integrity);
             }
@@ -213,9 +214,12 @@ export namespace compiler_ir_instructions {
         return InstructionError::scalar_overlap;
     }
     auto entry_slot(const compiler_ir_metadata::MetadataStore& metadata, i64 callable, i64 kind, i64 offset) -> i64 {
-        const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(callable);
-        const compiler_ir_metadata::IndexRange group = compiler_ir_metadata::slot_group(metadata, declaration, kind);
-        return compiler_ir_metadata::find_slot(metadata, group, offset);
+        // Instruction admission only reads successfully admitted metadata.
+        const i64 index = compiler_ir_metadata::local_origin_candidate(metadata, callable, kind, offset);
+        if (index < 0) { return -1; }
+        const compiler_ir_metadata::SlotRow slot = metadata.slot_at(index);
+        if (slot.offset() != offset) { return -1; }
+        return index;
     }
     auto entry_has_region(const InstructionStore& store, i64 callable) -> bool {
         const RawInstructionRow first = entry_instruction(store, callable, 0);
@@ -343,6 +347,7 @@ export namespace compiler_ir_instructions {
     }
     auto verify_entry_parameters(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 callable) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
         if (!verify_entry_prefix(store, metadata, callable)) { return false; }
         const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(callable);
         i64 position = 0;
@@ -372,8 +377,8 @@ export namespace compiler_ir_instructions {
                                 }
                             } else {
                                 const compiler_ir_metadata::ReceiverShape receiver = declaration.first_receiver();
-                                if (compiler_ir_metadata::callable_flag(declaration, 1)
-                                    && compiler_ir_metadata::receiver_flag(receiver, 2)) {
+                                if (compiler_ir_metadata::callable_flag(declaration, masks.callable_receiver())
+                                    && compiler_ir_metadata::receiver_flag(receiver, masks.receiver_constructor())) {
                                     return fail(store, InstructionError::span_type);
                                 }
                                 if (entry_slot(metadata, callable, 13, offset) < 0) {
@@ -462,12 +467,13 @@ export namespace compiler_ir_instructions {
         return false;
     }
     auto call_private_access(const compiler_ir_metadata::MetadataStore& metadata, i64 caller, i64 target) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
         const compiler_ir_metadata::CallableRow destination = metadata.callable_at(target);
         const compiler_ir_metadata::ReceiverShape receiver = destination.first_receiver();
-        if (compiler_ir_metadata::receiver_flag(receiver, 4)) { return true; }
+        if (compiler_ir_metadata::receiver_flag(receiver, masks.receiver_public())) { return true; }
         const compiler_ir_metadata::CallableRow source = metadata.callable_at(caller);
         const compiler_ir_metadata::ReceiverShape authority = source.first_receiver();
-        return compiler_ir_metadata::callable_flag(source, 1) && source.borrowed_root_count() == 0
+        return compiler_ir_metadata::callable_flag(source, masks.callable_receiver()) && source.borrowed_root_count() == 0
             && compiler_ir_metadata::compare_names(metadata, authority.name(), receiver.name()) == 0;
     }
     auto call_exact_slot(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
@@ -510,11 +516,12 @@ export namespace compiler_ir_instructions {
     }
     auto verify_call_copy_argument(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 caller, i64 instruction, i64 target, i64 position) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
         const RawInstructionRow row = store.instruction_at(instruction);
         const i64 form = row.form();
         const compiler_ir_metadata::CallableRow destination = metadata.callable_at(target);
         const compiler_ir_metadata::ReceiverShape receiver = destination.first_receiver();
-        const bool constructor = compiler_ir_metadata::receiver_flag(receiver, 2);
+        const bool constructor = compiler_ir_metadata::receiver_flag(receiver, masks.receiver_constructor());
         const compiler_ir_metadata::RawTypeRow type = call_type(metadata, target, position + 1);
         const i64 field = call_objects_field(form);
         const i64 root = call_lane(store, instruction, field, position);
@@ -592,8 +599,9 @@ export namespace compiler_ir_instructions {
     }
     auto verify_plain_call(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 target) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
         const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(target);
-        if (compiler_ir_metadata::callable_flag(declaration, 1) || declaration.borrowed_root_count() != 0) {
+        if (compiler_ir_metadata::callable_flag(declaration, masks.callable_receiver()) || declaration.borrowed_root_count() != 0) {
             return fail(store, InstructionError::call_receiver);
         }
         if (compiler_ir_metadata::service_signature(metadata, declaration)) { return fail(store, InstructionError::call_service); }
@@ -609,8 +617,9 @@ export namespace compiler_ir_instructions {
     }
     auto verify_aggregate_call(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 caller, i64 instruction, i64 target) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
         const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(target);
-        if (compiler_ir_metadata::callable_flag(declaration, 1) || declaration.borrowed_root_count() != 0) {
+        if (compiler_ir_metadata::callable_flag(declaration, masks.callable_receiver()) || declaration.borrowed_root_count() != 0) {
             return fail(store, InstructionError::aggregate_receiver);
         }
         if (compiler_ir_metadata::service_signature(metadata, declaration)) { return fail(store, InstructionError::aggregate_service); }
@@ -664,12 +673,13 @@ export namespace compiler_ir_instructions {
     }
     auto verify_resource_call(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 caller, i64 instruction, i64 target) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
         const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(target);
         const compiler_ir_metadata::IndexRange types = declaration.types();
         const compiler_ir_metadata::ReceiverShape receiver = declaration.first_receiver();
         const bool constructor = compiler_ir_metadata::owning_constructor(metadata, declaration);
         if (declaration.borrowed_root_count() != 0 || !compiler_ir_metadata::resource_signature(metadata, declaration)
-            || (compiler_ir_metadata::callable_flag(declaration, 1) && !constructor) || declaration.value_parameter_count() == 0) {
+            || (compiler_ir_metadata::callable_flag(declaration, masks.callable_receiver()) && !constructor) || declaration.value_parameter_count() == 0) {
             return fail(store, InstructionError::resource_signature);
         }
         const compiler_ir_metadata::RawTypeRow first = call_type(metadata, target, 1);
@@ -679,7 +689,8 @@ export namespace compiler_ir_instructions {
         if ((constructor && receiver_root <= 0) || (!constructor && receiver_root != 0)) {
             return fail(store, InstructionError::resource_receiver);
         }
-        if (!call_exact_slot(store, metadata, caller, 15, call_value(store, instruction, 1), InstructionError::call_region_slot)) {
+        const i64 region_root = call_value(store, instruction, 1);
+        if (!call_exact_slot(store, metadata, caller, 15, region_root, InstructionError::call_region_slot)) {
             return false;
         }
         if (call_count(store, instruction, 2) != declaration.value_parameter_count()) { return fail(store, InstructionError::resource_vector); }
@@ -753,22 +764,24 @@ export namespace compiler_ir_instructions {
         return true;
     }
     auto call_bound_root(compiler_ir_metadata::CallableRow declaration, i64 root) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
         // Bound before negation: hostile minimum integers never become ordinals.
         if (root > 0 || root < -5) { return false; }
         if (declaration.borrowed_root_count() > 0) { return 0 - root < declaration.borrowed_root_count(); }
-        return root == 0 && compiler_ir_metadata::callable_flag(declaration, 1);
+        return root == 0 && compiler_ir_metadata::callable_flag(declaration, masks.callable_receiver());
     }
     auto call_formal(const compiler_ir_metadata::MetadataStore& metadata, i64 callable, i64 root)
         -> compiler_ir_metadata::ReceiverShape {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
         const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(callable);
         if (!call_bound_root(declaration, root)) {
-            return compiler_ir_metadata::ReceiverShape(compiler_ir_metadata::ByteRange(0, 0), 0);
+            return compiler_ir_metadata::ReceiverShape(compiler_ir_metadata::ByteRange(0, 0), 0u64);
         }
         if (declaration.borrowed_root_count() > 0) {
             const i64 ordinal = 0 - root;
             const compiler_ir_metadata::RawTypeRow type = metadata.type_at(declaration.borrowed_root_type(ordinal));
-            i64 flags = 4;
-            if (declaration.borrowed_root_mutable(ordinal)) { flags = flags + 1; }
+            u64 flags = masks.receiver_public();
+            if (declaration.borrowed_root_mutable(ordinal)) { flags = flags | masks.receiver_mutable(); }
             return compiler_ir_metadata::ReceiverShape(type.name(), flags);
         }
         const compiler_ir_metadata::ReceiverShape result = declaration.first_receiver();
@@ -788,15 +801,16 @@ export namespace compiler_ir_instructions {
     }
     auto verify_borrowed_call_root(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 caller, i64 target, i64 root, i64 ordinal) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
         const compiler_ir_metadata::CallableRow source = metadata.callable_at(caller);
         const compiler_ir_metadata::ReceiverShape receiver = call_formal(metadata, target, 0 - ordinal);
         if (root < -5) { return fail(store, InstructionError::borrowed_selector); }
         if (root <= 0) {
             if (!call_bound_root(source, root)) { return fail(store, InstructionError::borrowed_unbound); }
             const compiler_ir_metadata::ReceiverShape formal = call_formal(metadata, caller, root);
-            if (compiler_ir_metadata::receiver_flag(formal, 2)
+            if (compiler_ir_metadata::receiver_flag(formal, masks.receiver_constructor())
                 || compiler_ir_metadata::compare_names(metadata, formal.name(), receiver.name()) != 0
-                || (compiler_ir_metadata::receiver_flag(receiver, 1) && !compiler_ir_metadata::receiver_flag(formal, 1))) {
+                || (compiler_ir_metadata::receiver_flag(receiver, masks.receiver_mutable()) && !compiler_ir_metadata::receiver_flag(formal, masks.receiver_mutable()))) {
                 return fail(store, InstructionError::borrowed_root);
             }
         } else {
@@ -805,7 +819,7 @@ export namespace compiler_ir_instructions {
             const compiler_ir_metadata::SlotRow slot = metadata.slot_at(slot_index);
             const compiler_ir_metadata::RawTypeRow type = metadata.type_at(slot.type());
             if (compiler_ir_metadata::compare_names(metadata, type.name(), receiver.name()) != 0
-                || (compiler_ir_metadata::receiver_flag(receiver, 1) && slot.mutable_value() != 1)) {
+                || (compiler_ir_metadata::receiver_flag(receiver, masks.receiver_mutable()) && slot.mutable_value() != 1)) {
                 return fail(store, InstructionError::borrowed_root);
             }
         }
@@ -815,20 +829,21 @@ export namespace compiler_ir_instructions {
     }
     auto verify_method_field(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 caller, i64 instruction, i64 target) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
         const compiler_ir_metadata::ReceiverShape receiver = call_formal(metadata, target, 0);
         const i64 root = call_value(store, instruction, 1);
         const i64 field_index = call_value(store, instruction, 4);
-        if (compiler_ir_metadata::receiver_flag(receiver, 2)) { return fail(store, InstructionError::method_nested_constructor); }
+        if (compiler_ir_metadata::receiver_flag(receiver, masks.receiver_constructor())) { return fail(store, InstructionError::method_nested_constructor); }
         if (root < 0) { return fail(store, InstructionError::method_field_root); }
         const compiler_ir_metadata::CallableRow source = metadata.callable_at(caller);
         if (root == 0) {
             if (source.borrowed_root_count() != 0) { return fail(store, InstructionError::method_field_authority); }
-            if (!compiler_ir_metadata::callable_flag(source, 1)) { return fail(store, InstructionError::method_field_unbound); }
+            if (!compiler_ir_metadata::callable_flag(source, masks.callable_receiver())) { return fail(store, InstructionError::method_field_unbound); }
         } else {
             const i64 slot_index = entry_slot(metadata, caller, 11, root);
             if (slot_index < 0) { return fail(store, InstructionError::call_copy_slot); }
             const compiler_ir_metadata::SlotRow slot = metadata.slot_at(slot_index);
-            if (compiler_ir_metadata::receiver_flag(receiver, 1) && slot.mutable_value() != 1) {
+            if (compiler_ir_metadata::receiver_flag(receiver, masks.receiver_mutable()) && slot.mutable_value() != 1) {
                 return fail(store, InstructionError::method_field_mutable);
             }
         }
@@ -841,14 +856,14 @@ export namespace compiler_ir_instructions {
         }
         if (root == 0) {
             const compiler_ir_metadata::ReceiverShape formal = source.first_receiver();
-            if (compiler_ir_metadata::receiver_flag(formal, 2)) { return fail(store, InstructionError::method_field_constructor); }
-            if (compiler_ir_metadata::receiver_flag(receiver, 1) && !compiler_ir_metadata::receiver_flag(formal, 1)) {
+            if (compiler_ir_metadata::receiver_flag(formal, masks.receiver_constructor())) { return fail(store, InstructionError::method_field_constructor); }
+            if (compiler_ir_metadata::receiver_flag(receiver, masks.receiver_mutable()) && !compiler_ir_metadata::receiver_flag(formal, masks.receiver_mutable())) {
                 return fail(store, InstructionError::method_field_formal_mutable);
             }
         }
         const compiler_ir_metadata::FieldRow field = metadata.field_at(fields.begin() + field_index);
         const compiler_ir_metadata::RawTypeRow type = metadata.type_at(field.type());
-        if (field.array() != 0 || type.kind() != 5) { return fail(store, InstructionError::method_field_class); }
+        if (field.array_flag() != 0 || type.kind() != 5) { return fail(store, InstructionError::method_field_class); }
         if (compiler_ir_metadata::compare_names(metadata, type.name(), receiver.name()) != 0) {
             return fail(store, InstructionError::method_field_nominal);
         }
@@ -856,6 +871,7 @@ export namespace compiler_ir_instructions {
     }
     auto verify_method_receiver(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 caller, i64 instruction, i64 target) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
         const RawInstructionRow row = store.instruction_at(instruction);
         const compiler_ir_metadata::CallableRow source = metadata.callable_at(caller);
         const compiler_ir_metadata::ReceiverShape receiver = call_formal(metadata, target, 0);
@@ -871,13 +887,13 @@ export namespace compiler_ir_instructions {
         if (root <= 0) {
             if (!call_bound_root(source, root)) { return fail(store, InstructionError::method_forward_unbound); }
             const compiler_ir_metadata::ReceiverShape formal = call_formal(metadata, caller, root);
-            if (compiler_ir_metadata::receiver_flag(formal, 2) || compiler_ir_metadata::receiver_flag(receiver, 2)) {
+            if (compiler_ir_metadata::receiver_flag(formal, masks.receiver_constructor()) || compiler_ir_metadata::receiver_flag(receiver, masks.receiver_constructor())) {
                 return fail(store, InstructionError::method_forward_constructor);
             }
             if (compiler_ir_metadata::compare_names(metadata, formal.name(), receiver.name()) != 0) {
                 return fail(store, InstructionError::method_forward_nominal);
             }
-            if (compiler_ir_metadata::receiver_flag(receiver, 1) && !compiler_ir_metadata::receiver_flag(formal, 1)) {
+            if (compiler_ir_metadata::receiver_flag(receiver, masks.receiver_mutable()) && !compiler_ir_metadata::receiver_flag(formal, masks.receiver_mutable())) {
                 return fail(store, InstructionError::method_forward_mutable);
             }
         } else {
@@ -888,8 +904,8 @@ export namespace compiler_ir_instructions {
             if (compiler_ir_metadata::compare_names(metadata, type.name(), receiver.name()) != 0) {
                 return fail(store, InstructionError::method_receiver_nominal);
             }
-            if (!compiler_ir_metadata::receiver_flag(receiver, 2)
-                && compiler_ir_metadata::receiver_flag(receiver, 1) && slot.mutable_value() != 1) {
+            if (!compiler_ir_metadata::receiver_flag(receiver, masks.receiver_constructor())
+                && compiler_ir_metadata::receiver_flag(receiver, masks.receiver_mutable()) && slot.mutable_value() != 1) {
                 return fail(store, InstructionError::method_receiver_mutable);
             }
         }
@@ -911,6 +927,7 @@ export namespace compiler_ir_instructions {
     }
     auto verify_method_call(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 caller, i64 instruction, i64 target) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
         const RawInstructionRow row = store.instruction_at(instruction);
         const bool borrowed = row.form() == 83;
         const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(target);
@@ -938,11 +955,11 @@ export namespace compiler_ir_instructions {
             }
         } else {
             if (root_count != 0) { return fail(store, InstructionError::method_borrowed); }
-            if (!compiler_ir_metadata::callable_flag(declaration, 1)) { return fail(store, InstructionError::method_receiver); }
+            if (!compiler_ir_metadata::callable_flag(declaration, masks.callable_receiver())) { return fail(store, InstructionError::method_receiver); }
             if (!call_private_access(metadata, caller, target)) { return fail(store, InstructionError::method_private); }
         }
         const compiler_ir_metadata::ReceiverShape receiver = call_formal(metadata, target, 0);
-        const bool constructor = compiler_ir_metadata::receiver_flag(receiver, 2);
+        const bool constructor = compiler_ir_metadata::receiver_flag(receiver, masks.receiver_constructor());
         const i64 root = call_receiver_root(store, instruction);
         if (compiler_ir_metadata::resource_signature(metadata, declaration)) { return fail(store, InstructionError::method_resource); }
         const compiler_ir_metadata::RawTypeRow result = call_type(metadata, target, 0);
@@ -950,8 +967,8 @@ export namespace compiler_ir_instructions {
             return fail(store, InstructionError::method_signature);
         }
         if (!compiler_ir_metadata::scalar_value(metadata, result) && !(!constructor && result.kind() == 5)
-            && !(result.kind() == 11 && compiler_ir_metadata::callable_flag(declaration, 8)
-                 && !compiler_ir_metadata::receiver_flag(receiver, 1) && !constructor)) {
+            && !(result.kind() == 11 && compiler_ir_metadata::callable_flag(declaration, masks.callable_span_summary())
+                 && !compiler_ir_metadata::receiver_flag(receiver, masks.receiver_mutable()) && !constructor)) {
             return fail(store, InstructionError::method_signature);
         }
         i64 at = 1;
@@ -1011,7 +1028,7 @@ export namespace compiler_ir_instructions {
             const compiler_ir_metadata::CallableRow source = metadata.callable_at(caller);
             if (source.borrowed_root_count() > 1 && root <= 0) { return fail(store, InstructionError::method_span_multiple); }
             if (!borrowed && call_value(store, instruction, 4) != -1) { return fail(store, InstructionError::method_span_direct); }
-            if (!compiler_ir_metadata::callable_flag(declaration, 8)) { return fail(store, InstructionError::method_span_summary); }
+            if (!compiler_ir_metadata::callable_flag(declaration, masks.callable_span_summary())) { return fail(store, InstructionError::method_span_summary); }
             // Admitted summary plus exact receiver nominal identity already
             // proves a direct u8 array or OwnedBytes field, including its index.
             return verify_call_span_result(store, metadata, caller, result_root);
@@ -1022,9 +1039,10 @@ export namespace compiler_ir_instructions {
     }
     auto verify_service_call(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 caller, i64 instruction, i64 target) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
         const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(target);
         if (declaration.borrowed_root_count() != 0 || !compiler_ir_metadata::service_signature(metadata, declaration)
-            || compiler_ir_metadata::callable_flag(declaration, 1)) { return fail(store, InstructionError::service_signature); }
+            || compiler_ir_metadata::callable_flag(declaration, masks.callable_receiver())) { return fail(store, InstructionError::service_signature); }
         const i64 parameters = declaration.value_parameter_count();
         i64 count = 0;
         i64 at = 1;
@@ -1120,6 +1138,25 @@ export namespace compiler_ir_instructions {
         }
         return true;
     }
+    auto verify_constructor_signatures(InstructionStore& store,
+        const compiler_ir_metadata::MetadataStore& metadata) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
+        i64 callable = 0;
+        while (callable < metadata.callable_count()) {
+            const compiler_ir_metadata::CallableRow row = metadata.callable_at(callable);
+            const compiler_ir_metadata::ReceiverShape receiver = row.first_receiver();
+            if (compiler_ir_metadata::callable_flag(row, masks.callable_receiver())
+                && compiler_ir_metadata::receiver_flag(receiver, masks.receiver_constructor())) {
+                const compiler_ir_metadata::RawTypeRow result = call_type(metadata, callable, 0);
+                if (!compiler_ir_metadata::receiver_flag(receiver, masks.receiver_mutable())
+                    || !compiler_ir_metadata::plain_type(result, 0)) {
+                    return fail(store, InstructionError::constructor_signature);
+                }
+            }
+            callable = callable + 1;
+        }
+        return true;
+    }
     // These checks depend only on admitted declarations and normalized operands.
     // Exact origins come from ordered canonical metadata, never a second frame
     // map or a retained instruction summary. Native State owns the changing
@@ -1182,39 +1219,6 @@ export namespace compiler_ir_instructions {
         // origin declaration. Only byte-array lifetime/span forms require one.
         return true;
     }
-    auto storage_scalar_parameter(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
-        i64 callable, i64 offset) -> bool {
-        const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(callable);
-        i64 at = 0;
-        while (at < declaration.value_parameter_count()) {
-            const RawInstructionRow binding = entry_instruction(store, callable, at);
-            if (binding.form() == 45 && entry_value(store, binding, 1) == offset) { return true; }
-            at = at + 1;
-        }
-        return false;
-    }
-    auto verify_storage_index_write(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
-        i64 callable, i64 instruction) -> bool {
-        const i64 offset = call_value(store, instruction, 0);
-        const i64 length = call_value(store, instruction, 1);
-        const compiler_ir_metadata::RawTypeRow type = metadata.type_at(call_value(store, instruction, 2));
-        const i64 width = compiler_ir_metadata::scalar_width(type);
-        i64 element = 0;
-        while (element < length) {
-            const i64 element_offset = offset - element * width;
-            if (storage_scalar_parameter(store, metadata, callable, element_offset)) {
-                return fail(store, InstructionError::storage_index_parameter);
-            }
-            const i64 root = compiler_ir_metadata::object_leaf_root(metadata, callable, element_offset);
-            if (root >= 0) {
-                const i64 object_index = entry_slot(metadata, callable, 11, root);
-                const compiler_ir_metadata::SlotRow object = metadata.slot_at(object_index);
-                if (object.mutable_value() != 1) { return fail(store, InstructionError::storage_index_const); }
-            }
-            element = element + 1;
-        }
-        return true;
-    }
     auto verify_storage_access(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 callable, i64 instruction) -> bool {
         const RawInstructionRow row = store.instruction_at(instruction);
@@ -1232,9 +1236,7 @@ export namespace compiler_ir_instructions {
         }
         if (form == 18) { return verify_storage_borrow(store, metadata, callable, instruction); }
         if (form == 15 || form == 16 || form == 17) {
-            if (!verify_storage_range(store, metadata, callable, instruction)) { return false; }
-            if (form == 17) { return verify_storage_index_write(store, metadata, callable, instruction); }
-            return true;
+            return verify_storage_range(store, metadata, callable, instruction);
         }
         if (form == 47 || form == 48) {
             if (entry_slot(metadata, callable, 12, call_value(store, instruction, 0)) < 0) {
@@ -1482,13 +1484,16 @@ export namespace compiler_ir_instructions {
             if (!verify_entry_parameters(store, metadata, callable)) { return store.status(); }
             callable = callable + 1;
         }
-        // All entry contracts precede all call contracts, then all storage
-        // contracts precede all scalar computations and then service contracts
+        // All entry contracts precede all call contracts. Constructor call
+        // restrictions precede the final mutable/I64 constructor policy, even
+        // for uncalled/imported declarations. Then storage contracts precede
+        // all scalar computations and service contracts
         // before the first native State in any body. Separate passes preserve
         // this module-wide order:
         // a later static error can precede an earlier dynamic value/lifetime
         // error; source rejection remains terminal and unpublished.
-        if (!verify_call_sites(store, metadata) || !verify_storage_accesses(store, metadata)
+        if (!verify_call_sites(store, metadata) || !verify_constructor_signatures(store, metadata)
+            || !verify_storage_accesses(store, metadata)
             || !verify_scalar_computations(store, metadata) || !verify_service_instructions(store, metadata)) {
             return store.status();
         }

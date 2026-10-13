@@ -2200,13 +2200,22 @@ void aurora::ir::verifyHostedGraph(std::vector<FunctionBody> &, const Metadata &
     throw std::runtime_error("forged projection unexpectedly reached graph verification");
 }
 // Link the real native capsule without the generated metadata verifier. Every
-// metadata entry rejects: parser conversion failures must precede construction,
+// owner entry rejects: parser conversion failures must precede construction,
 // and this fixture must never manufacture accepted durable metadata.
 [[noreturn]] static void unexpectedMetadataEntry() noexcept {
     std::fputs("forged projection unexpectedly reached metadata verification\n", stderr);
     std::abort();
 }
+extern "C" void aurora_hosted_metadata_flag_masks(void *output) noexcept {
+    // Projection failures precede construction. This fixture grants no flag
+    // authority and still aborts if any forged projection reaches an owner.
+    const aurora::hosted_abi::compiler_ir_metadata::FlagMasks inert{};
+    std::memcpy(output, &inert, sizeof(inert));
+}
 extern "C" void aurora_hosted_metadata_create(const void *, void *) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" std::int64_t aurora_hosted_metadata_initialize(void *, const void *) noexcept {
     unexpectedMetadataEntry();
 }
 extern "C" void aurora_hosted_metadata_release(void *) noexcept {
@@ -2224,7 +2233,8 @@ extern "C" std::int64_t aurora_hosted_metadata_error(const void *) noexcept {
 extern "C" std::int64_t aurora_hosted_metadata_object_leaf_root(const void *, std::int64_t, std::int64_t) noexcept {
     unexpectedMetadataEntry();
 }
-extern "C" std::int64_t aurora_hosted_metadata_byte_array_element_root(const void *, std::int64_t, std::int64_t) noexcept {
+extern "C" std::int64_t
+aurora_hosted_metadata_byte_array_element_root(const void *, std::int64_t, std::int64_t) noexcept {
     unexpectedMetadataEntry();
 }
 extern "C" void aurora_hosted_instructions_create(const void *, void *) noexcept {
@@ -2306,10 +2316,12 @@ extern "C" std::int64_t aurora_hosted_initialization_mark_object(const void *, s
 extern "C" std::int64_t aurora_hosted_initialization_clear_object(const void *, std::int64_t) noexcept {
     unexpectedMetadataEntry();
 }
-extern "C" std::int64_t aurora_hosted_initialization_array_first_missing(const void *, std::int64_t, std::int64_t, std::int64_t) noexcept {
+extern "C" std::int64_t
+aurora_hosted_initialization_array_first_missing(const void *, std::int64_t, std::int64_t, std::int64_t) noexcept {
     unexpectedMetadataEntry();
 }
-extern "C" std::int64_t aurora_hosted_initialization_clear_array(const void *, std::int64_t, std::int64_t, std::int64_t) noexcept {
+extern "C" std::int64_t
+aurora_hosted_initialization_clear_array(const void *, std::int64_t, std::int64_t, std::int64_t) noexcept {
     unexpectedMetadataEntry();
 }
 extern "C" void aurora_hosted_parser_create(const void *input, void *output) {

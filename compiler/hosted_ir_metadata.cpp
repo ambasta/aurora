@@ -9,7 +9,9 @@
 #include <type_traits>
 
 extern "C" {
+void aurora_hosted_metadata_flag_masks(void *) noexcept;
 void aurora_hosted_metadata_create(const void *, void *) noexcept;
+std::int64_t aurora_hosted_metadata_initialize(void *, const void *) noexcept;
 void aurora_hosted_metadata_release(void *) noexcept;
 std::int64_t aurora_hosted_metadata_allocated(const void *) noexcept;
 std::int64_t aurora_hosted_metadata_run(void *) noexcept;
@@ -23,6 +25,11 @@ namespace {
 namespace wire = hosted_abi::compiler_ir_metadata;
 using SlotKind = hosted_abi::compiler_lowering::RecordKind;
 namespace bytes = hosted::bytes;
+using detail::metadataFlagMasks;
+static_assert(std::is_same_v<decltype(wire::ClassRow::membershipBits), std::uint64_t>);
+static_assert(std::is_same_v<decltype(wire::CallableRow::flags), std::uint64_t>);
+static_assert(std::is_same_v<decltype(wire::ReceiverShape::flags), std::uint64_t>);
+
 [[noreturn]] void invalidTransport() {
     throw Error(DiagnosticCode::Internal, "invalid hosted IR metadata transport");
 }
@@ -165,8 +172,7 @@ static_assert(bindings.size() == static_cast<std::size_t>(Pool::count));
 static_assert([] {
     for (std::size_t i = 0; i < bindings.size(); ++i) {
         const auto binding = bindings[i];
-        if (binding.ownerBytes != sizeof(bytes::NativeOwner) ||
-            binding.offset % alignof(bytes::NativeOwner) != 0 ||
+        if (binding.ownerBytes != sizeof(bytes::NativeOwner) || binding.offset % alignof(bytes::NativeOwner) != 0 ||
             binding.offset > sizeof(wire::MetadataStore) ||
             binding.ownerBytes > sizeof(wire::MetadataStore) - binding.offset)
             return false;
@@ -177,14 +183,14 @@ static_assert([] {
     }
     return true;
 }());
-template <Pool pool> constexpr bool exactRow =
-    std::is_standard_layout_v<RowType<pool>> && std::is_trivially_copyable_v<RowType<pool>> &&
-    alignof(RowType<pool>) == 8 && sizeof(RowType<pool>) % 8 == 0 &&
-    sizeof(RowType<pool>) == bindings[static_cast<std::size_t>(pool)].stride;
-static_assert(exactRow<Pool::types> && exactRow<Pool::classes> && exactRow<Pool::fields> &&
-              exactRow<Pool::storage> && exactRow<Pool::indices> && exactRow<Pool::descriptors> &&
-              exactRow<Pool::views> && exactRow<Pool::enums> && exactRow<Pool::callables> &&
-              exactRow<Pool::slots> && exactRow<Pool::results> && exactRow<Pool::frames>);
+template <Pool pool>
+constexpr bool exactRow = std::is_standard_layout_v<RowType<pool>> && std::is_trivially_copyable_v<RowType<pool>> &&
+                          alignof(RowType<pool>) == 8 && sizeof(RowType<pool>) % 8 == 0 &&
+                          sizeof(RowType<pool>) == bindings[static_cast<std::size_t>(pool)].stride;
+static_assert(exactRow<Pool::types> && exactRow<Pool::classes> && exactRow<Pool::fields> && exactRow<Pool::storage> &&
+              exactRow<Pool::indices> && exactRow<Pool::descriptors> && exactRow<Pool::views> &&
+              exactRow<Pool::enums> && exactRow<Pool::callables> && exactRow<Pool::slots> && exactRow<Pool::results> &&
+              exactRow<Pool::frames>);
 
 // Source admission reuses the lowering declaration tags. Guard that closed
 // correspondence against the predecessor's generated enum facts.
@@ -200,28 +206,18 @@ static_assert(spanBytes == 56);
 static_assert(service::capabilityBytes == 16);
 static_assert(sizeof(bytes::NativeOwner) == 32);
 
-static_assert(static_cast<std::int64_t>(TypeKind::I64) ==
-              static_cast<std::int64_t>(wire::MetadataTypeKind::I64));
-static_assert(static_cast<std::int64_t>(TypeKind::Bool) ==
-              static_cast<std::int64_t>(wire::MetadataTypeKind::Bool));
-static_assert(static_cast<std::int64_t>(TypeKind::Own) ==
-              static_cast<std::int64_t>(wire::MetadataTypeKind::Own));
-static_assert(static_cast<std::int64_t>(TypeKind::Ref) ==
-              static_cast<std::int64_t>(wire::MetadataTypeKind::Ref));
-static_assert(static_cast<std::int64_t>(TypeKind::MutRef) ==
-              static_cast<std::int64_t>(wire::MetadataTypeKind::MutRef));
-static_assert(static_cast<std::int64_t>(TypeKind::Class) ==
-              static_cast<std::int64_t>(wire::MetadataTypeKind::Class));
-static_assert(static_cast<std::int64_t>(TypeKind::Array) ==
-              static_cast<std::int64_t>(wire::MetadataTypeKind::Array));
-static_assert(static_cast<std::int64_t>(TypeKind::U64) ==
-              static_cast<std::int64_t>(wire::MetadataTypeKind::U64));
+static_assert(static_cast<std::int64_t>(TypeKind::I64) == static_cast<std::int64_t>(wire::MetadataTypeKind::I64));
+static_assert(static_cast<std::int64_t>(TypeKind::Bool) == static_cast<std::int64_t>(wire::MetadataTypeKind::Bool));
+static_assert(static_cast<std::int64_t>(TypeKind::Own) == static_cast<std::int64_t>(wire::MetadataTypeKind::Own));
+static_assert(static_cast<std::int64_t>(TypeKind::Ref) == static_cast<std::int64_t>(wire::MetadataTypeKind::Ref));
+static_assert(static_cast<std::int64_t>(TypeKind::MutRef) == static_cast<std::int64_t>(wire::MetadataTypeKind::MutRef));
+static_assert(static_cast<std::int64_t>(TypeKind::Class) == static_cast<std::int64_t>(wire::MetadataTypeKind::Class));
+static_assert(static_cast<std::int64_t>(TypeKind::Array) == static_cast<std::int64_t>(wire::MetadataTypeKind::Array));
+static_assert(static_cast<std::int64_t>(TypeKind::U64) == static_cast<std::int64_t>(wire::MetadataTypeKind::U64));
 static_assert(static_cast<std::int64_t>(TypeKind::Parameter) ==
               static_cast<std::int64_t>(wire::MetadataTypeKind::Parameter));
-static_assert(static_cast<std::int64_t>(TypeKind::Enum) ==
-              static_cast<std::int64_t>(wire::MetadataTypeKind::Enum));
-static_assert(static_cast<std::int64_t>(TypeKind::U8) ==
-              static_cast<std::int64_t>(wire::MetadataTypeKind::U8));
+static_assert(static_cast<std::int64_t>(TypeKind::Enum) == static_cast<std::int64_t>(wire::MetadataTypeKind::Enum));
+static_assert(static_cast<std::int64_t>(TypeKind::U8) == static_cast<std::int64_t>(wire::MetadataTypeKind::U8));
 static_assert(static_cast<std::int64_t>(TypeKind::ByteSpan) ==
               static_cast<std::int64_t>(wire::MetadataTypeKind::ByteSpan));
 static_assert(static_cast<std::int64_t>(TypeKind::ByteRegion) ==
@@ -272,16 +268,21 @@ class SourceOwner {
     hosted_abi::MetadataRelease release_;
 
 public:
-    SourceOwner(std::uint64_t region, const wire::InputCounts &counts, std::int64_t callableCount,
-                std::int64_t slotCount, std::int64_t instructionBegin) {
+    SourceOwner(std::uint64_t region,
+                const wire::InputCounts &counts,
+                std::int64_t callableCount,
+                std::int64_t slotCount,
+                std::int64_t instructionBegin) {
         release_.region = region;
         hosted_abi::MetadataCreate create;
         create.region = region;
-        create.counts = counts;
-        create.callableCount = callableCount;
-        create.slotCount = slotCount;
-        create.instructionBegin = instructionBegin;
         aurora_hosted_metadata_create(&create, data());
+        hosted_abi::MetadataInitialize initialize;
+        initialize.counts = counts;
+        initialize.callableCount = callableCount;
+        initialize.slotCount = slotCount;
+        initialize.instructionBegin = instructionBegin;
+        aurora_hosted_metadata_initialize(data(), &initialize);
     }
     ~SourceOwner() {
         aurora_hosted_metadata_release(&release_);
@@ -303,6 +304,15 @@ public:
 };
 } // namespace
 
+const hosted_abi::compiler_ir_metadata::FlagMasks &detail::metadataFlagMasks() {
+    static const auto masks = [] {
+        hosted_abi::compiler_ir_metadata::FlagMasks result;
+        aurora_hosted_metadata_flag_masks(&result);
+        return result;
+    }();
+    return masks;
+}
+
 class Metadata::State {
 public:
     // Reverse destruction removes retained views, consumes the source owner,
@@ -314,8 +324,11 @@ public:
     std::int64_t instructionBegin;
     std::array<std::span<const std::byte>, static_cast<std::size_t>(Pool::count)> pools;
 
-    State(const wire::InputCounts &input, std::int64_t callableCount, std::int64_t slotCount,
-          const Capacities &limits, std::int64_t instructionTypeBegin)
+    State(const wire::InputCounts &input,
+          std::int64_t callableCount,
+          std::int64_t slotCount,
+          const Capacities &limits,
+          std::int64_t instructionTypeBegin)
         : region(quota(limits)), owner(region.id(), input, callableCount, slotCount, instructionTypeBegin),
           counts(input), capacities(limits), instructionBegin(instructionTypeBegin) {
     }
@@ -323,10 +336,8 @@ public:
         // Runtime set borrows this descriptor observation; it only changes the
         // checked allocation payload, never descriptor identity or ownership.
         auto descriptor = owner.descriptor(pool);
-        if (bytes::__au_runtime_values_set(&descriptor,
-                                          position,
-                                          static_cast<std::int64_t>(sizeof(value)),
-                                          &value) != 1)
+        if (bytes::__au_runtime_values_set(&descriptor, position, static_cast<std::int64_t>(sizeof(value)), &value) !=
+            1)
             invalidTransport();
     }
     template <Pool pool> RowType<pool> row(std::size_t position) const {
@@ -369,9 +380,12 @@ std::unique_ptr<Metadata> MetadataIngress::finish() && {
 void detail::MetadataWriter::allocate() {
     if (allocated_)
         invalidTransport();
-    pending_.state_ = std::make_unique<Metadata::State>(position_, callableCount_, slotCount_,
-                                                       capacities(position_, callableCount_, slotCount_),
-                                                       instructionBegin_ < 0 ? position_.coreCounts.types : instructionBegin_);
+    pending_.state_ =
+        std::make_unique<Metadata::State>(position_,
+                                          callableCount_,
+                                          slotCount_,
+                                          capacities(position_, callableCount_, slotCount_),
+                                          instructionBegin_ < 0 ? position_.coreCounts.types : instructionBegin_);
     const auto allocated = aurora_hosted_metadata_allocated(pending_.state_->owner.data());
     if (allocated == 0)
         allocationFailure();
@@ -382,6 +396,7 @@ void detail::MetadataWriter::allocate() {
     callableCount_ = 0;
     slotCount_ = 0;
     instructionBegin_ = -1;
+    textRanges_.clear();
 }
 void detail::MetadataWriter::beginInstructions() {
     if (instructionBegin_ >= 0)
@@ -396,13 +411,19 @@ std::int64_t detail::MetadataWriter::instructionType(const Type &value) {
     return position;
 }
 wire::ByteRange detail::MetadataWriter::text(std::string_view value) {
+    if (allocated_ && !pending_.state_)
+        invalidTransport();
+    if (value.empty())
+        return {position_.coreCounts.bytes, 0};
+    if (const auto found = textRanges_.find(value); found != textRanges_.end())
+        return found->second;
     wire::ByteRange range;
     range.firstByte = position_.coreCounts.bytes;
     range.byteCount = count(value.size());
-    position_.coreCounts.bytes = add(range.firstByte, range.byteCount);
+    const auto next = add(range.firstByte, range.byteCount);
+    textRanges_.emplace(std::string(value), range);
+    position_.coreCounts.bytes = next;
     if (allocated_) {
-        if (!pending_.state_)
-            invalidTransport();
         auto descriptor = pending_.state_->owner.descriptor(Pool::bytes);
         auto at = range.firstByte;
         for (unsigned char character : value)
@@ -534,6 +555,7 @@ MetadataIngress detail::MetadataWriter::take() && {
         position_.mapCounts.indices != expected.mapCounts.indices ||
         (instructionBegin_ < 0 ? position_.coreCounts.types : instructionBegin_) != pending_.state_->instructionBegin)
         invalidTransport();
+    textRanges_.clear();
     return std::move(pending_);
 }
 
@@ -573,19 +595,19 @@ void detail::MetadataWriter::declarations(const Module &module) {
         row.fieldRange.firstIndex = writer.position().coreCounts.fields;
         row.suppliedStorage = -1;
         if (const auto entry = module.classLayouts.find(name); entry != module.classLayouts.end()) {
-            row.membershipBits |= 1;
+            row.membershipBits |= metadataFlagMasks().classLayout;
             row.leafRange.indexCount = count(entry->second.size());
             for (const auto &value : entry->second)
                 writer.leaf(value);
         }
         if (const auto entry = module.classFields.find(name); entry != module.classFields.end()) {
-            row.membershipBits |= 2;
+            row.membershipBits |= metadataFlagMasks().classFields;
             row.fieldRange.indexCount = count(entry->second.size());
             for (const auto &value : entry->second)
                 writer.field(value);
         }
         if (const auto entry = module.classStorage.find(name); entry != module.classStorage.end()) {
-            row.membershipBits |= 4;
+            row.membershipBits |= metadataFlagMasks().classStorage;
             row.suppliedStorage = writer.position().mapCounts.storage;
             wire::StorageRow copied;
             copied.leafOffsetRange = copyIndices(entry->second.leafOffsets);
@@ -596,7 +618,7 @@ void detail::MetadataWriter::declarations(const Module &module) {
             writer.append(copied);
         }
         if (module.classArrayCarriers.contains(name))
-            row.membershipBits |= 8;
+            row.membershipBits |= metadataFlagMasks().classArrayCarrier;
         writer.append(row);
     }
     for (const auto &[id, value] : module.descriptors) {
@@ -634,8 +656,11 @@ void detail::MetadataWriter::declarations(const Module &module) {
             writer.callableType(parameter);
         row.frameBytes = function.frameBytes;
         row.slotRange.firstIndex = writer.slotCount();
-        const auto slot = [&](SlotKind kind, int offset, std::int64_t typeIndex = 0,
-                              std::int64_t length = 0, bool mutableValue = false) {
+        const auto slot = [&](SlotKind kind,
+                              int offset,
+                              std::int64_t typeIndex = 0,
+                              std::int64_t length = 0,
+                              bool mutableValue = false) {
             wire::SlotRow declaration;
             declaration.recordKind = static_cast<std::int64_t>(kind);
             declaration.slotOffset = offset;
@@ -666,16 +691,17 @@ void detail::MetadataWriter::declarations(const Module &module) {
         const auto receiver = [&](const Receiver &value) {
             wire::ReceiverShape shape;
             shape.nameRange = writer.text(value.className);
-            shape.flags = (value.mutableValue ? 1 : 0) | (value.constructor ? 2 : 0) |
-                          (value.publicAccess ? 4 : 0);
+            shape.flags = (value.mutableValue ? metadataFlagMasks().receiverMutable : 0) |
+                          (value.constructor ? metadataFlagMasks().receiverConstructor : 0) |
+                          (value.publicAccess ? metadataFlagMasks().receiverPublic : 0);
             return shape;
         };
         if (function.receiver) {
-            row.flags |= 1;
+            row.flags |= metadataFlagMasks().callableReceiver;
             row.receiver = receiver(*function.receiver);
         }
         if (function.receiverSpanField) {
-            row.flags |= 8;
+            row.flags |= metadataFlagMasks().callableSpanSummary;
             row.receiverSpanField = *function.receiverSpanField;
         }
         writer.append(row);
@@ -692,7 +718,6 @@ void detail::MetadataWriter::declarations(const Module &module) {
     });
     for (auto id : callableIds)
         writer.index(count(id));
-
 }
 std::unique_ptr<Metadata> Metadata::import(const Module &module) {
     detail::MetadataWriter writer;
@@ -776,9 +801,7 @@ void Metadata::publish() {
     for (std::size_t id = 0; id < callableCount(); ++id) {
         const auto row = state_->row<Pool::callables>(id);
         (void)state_->text(row.nameRange);
-        checkRange(index(row.typeRange.firstIndex),
-                   index(row.typeRange.indexCount),
-                   index(state_->instructionBegin));
+        checkRange(index(row.typeRange.firstIndex), index(row.typeRange.indexCount), index(state_->instructionBegin));
         if (row.typeRange.indexCount == 0)
             invalidTransport();
         state_->range(row.slotRange, Pool::slots);
@@ -790,7 +813,7 @@ void Metadata::publish() {
             (row.firstBorrowedMutable != 0 && row.firstBorrowedMutable != 1) ||
             (roots == 0 && row.firstBorrowedMutable != 0))
             invalidTransport();
-        if ((row.flags & 8) != 0)
+        if ((row.flags & metadataFlagMasks().callableSpanSummary) != 0)
             (void)integer(row.receiverSpanField);
     }
     for (std::size_t i = 0; i < index(state_->capacities[static_cast<std::size_t>(Pool::slots)]); ++i) {
@@ -866,7 +889,7 @@ StorageView Metadata::storage(ClassId id) const {
             integer(row.physicalExtent.reservedBytes)};
 }
 bool Metadata::isCarrier(ClassId id) const {
-    return (state_->row<Pool::classes>(classAt(id)).membershipBits & 8) != 0;
+    return (state_->row<Pool::classes>(classAt(id)).membershipBits & metadataFlagMasks().classArrayCarrier) != 0;
 }
 bool Metadata::isOwning(ClassId id) const {
     for (const auto field : fields(id))
@@ -989,20 +1012,20 @@ std::optional<Receiver> CallableView::receiver() const {
     if (borrowedRootCount() != 0)
         return Receiver{borrowedRootType(0).className, borrowedRootMutable(0), false, false};
     const auto row = metadata_->state_->row<Pool::callables>(id_);
-    if ((row.flags & 1) == 0)
+    if ((row.flags & metadataFlagMasks().callableReceiver) == 0)
         return std::nullopt;
     const auto &shape = row.receiver;
     return Receiver{std::string(metadata_->state_->text(shape.nameRange)),
-                    (shape.flags & 1) != 0,
-                    (shape.flags & 2) != 0,
-                    (shape.flags & 4) != 0};
+                    (shape.flags & metadataFlagMasks().receiverMutable) != 0,
+                    (shape.flags & metadataFlagMasks().receiverConstructor) != 0,
+                    (shape.flags & metadataFlagMasks().receiverPublic) != 0};
 }
 bool CallableView::borrowedParameter() const {
     return borrowedRootCount() != 0;
 }
 std::optional<int> CallableView::receiverSpanField() const {
     const auto row = metadata_->state_->row<Pool::callables>(id_);
-    if ((row.flags & 8) == 0)
+    if ((row.flags & metadataFlagMasks().callableSpanSummary) == 0)
         return std::nullopt;
     return integer(row.receiverSpanField);
 }

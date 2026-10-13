@@ -1,5 +1,6 @@
 export module aurora.compiler.ir_initialization;
 import aurora.compiler.ir_metadata;
+import aurora.compiler.ir_metadata_storage;
 
 // Per-function initialization facts. Metadata owns the sole sorted scalar-slot
 // domain; this owner stores only dense must/may words and retained cardinalities.

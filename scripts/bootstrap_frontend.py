@@ -39,9 +39,10 @@ ARGUMENT_RECORDS = (
     ("GraphReleaseWorkspace", "compiler_frontend::graph_release_workspace", ("region", "workspace")),
     ("GraphFunctionInput", "compiler_frontend::graph_set_function", ("index", "function")),
     ("GraphEdgeInput", "compiler_frontend::graph_set_edge", ("index", "target")),
-    ("MetadataCreate", "compiler_frontend::metadata_create", ("region", "counts", "callableCount", "slotCount", "instructionBegin")),
+    ("MetadataCreate", "compiler_frontend::metadata_create", ("region",)),
+    ("MetadataInitialize", "compiler_frontend::metadata_initialize", ("counts", "callableCount", "slotCount", "instructionBegin")),
     ("MetadataRelease", "compiler_frontend::metadata_release", ("region", "store")),
-    ("InstructionsCreate", "compiler_frontend::instructions_create", ("region", "counts")),
+    ("InstructionsCreate", "compiler_frontend::instructions_create", ("region", "instructionCount", "operandCount", "literalCount", "bodyCount")),
     ("InstructionsRelease", "compiler_frontend::instructions_release", ("region", "store")),
     ("InitializationCreate", "compiler_frontend::initialization_create", ("region",)),
     ("InitializationRelease", "compiler_frontend::initialization_release", ("region", "workspace")),
@@ -304,12 +305,14 @@ def frontend_abi_entries(facts):
     checks += [
         ("metadata_" + name, "compiler_frontend::metadata_" + name, receiver, parameters, result)
         for name, receiver, parameters, result in (
+            ("flag_masks", None, [], "compiler_ir_metadata::FlagMasks"),
             (
                 "create",
                 None,
-                ["region", "compiler_ir_metadata::InputCounts", "i64", "i64", "i64"],
+                ["region"],
                 "compiler_ir_metadata::MetadataStore",
             ),
+            ("initialize", metadata, ["compiler_ir_metadata::InputCounts", "i64", "i64", "i64"], "bool"),
             ("release", None, ["region", "compiler_ir_metadata::MetadataStore"], "i64"),
             ("allocated", metadata, [], "bool"),
             ("run", metadata, [], "compiler_ir_metadata::MetadataStatus"),
@@ -321,7 +324,7 @@ def frontend_abi_entries(facts):
     checks += [
         ("instructions_" + name, "compiler_frontend::instructions_" + name, receiver, parameters, result)
         for name, receiver, parameters, result in (
-            ("create", None, ["region", "compiler_ir_instructions::InstructionCounts"], "compiler_ir_instructions::InstructionStore"),
+            ("create", None, ["region", "i64", "i64", "i64", "i64"], "compiler_ir_instructions::InstructionStore"),
             ("release", None, ["region", "compiler_ir_instructions::InstructionStore"], "i64"),
             ("allocated", instructions, [], "bool"),
             ("admit", instructions, [], "compiler_ir_instructions::InstructionStatus"),
@@ -412,7 +415,7 @@ def frontend_abi_entries(facts):
                     "lowering_count", "lowering_read_output", "lowering_read_operand",
                 ))
                 or alias == "graph_retained"
-                or (alias.startswith("metadata_") and alias != "metadata_run")
+                or (alias.startswith("metadata_") and alias not in ("metadata_initialize", "metadata_run"))
                 or alias in ("instructions_allocated", "instructions_error")
                 or alias in initialization_readonly
             )

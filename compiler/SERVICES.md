@@ -179,7 +179,7 @@ callback, port, pointer, syscall or device address.
 ## Verification
 
 Source/editor/host-report cases live in `tests/compiler/console_service.py`,
-including copied service inputs/results and `console::write` success/timeout prefixes.
+including copied service inputs/results and `console::write_bytes` success/timeout prefixes.
 Independently constructed hostile IR lives in `console_service_ir.cpp`. Acceptance
 requires the applicable gates on final integrated source; host-grant and UART
 tests remain separate from generated-code tests.

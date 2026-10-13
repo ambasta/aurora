@@ -8,25 +8,25 @@ import console.session_files;
 
 auto show_ready(builtin::ConsoleSession& session) -> bool {
     array<u8, 58> text = "AURORA_CONSOLE_READY: UEFI, ASCII, 64-byte lines\r\naurora> ";
-    const console::WriteResult result = console::write(session, borrow_bytes(text));
+    const console::WriteResult result = console::write_bytes(session, borrow_bytes(text));
     return result.complete();
 }
 
 auto show_prompt(builtin::ConsoleSession& session) -> bool {
     array<u8, 8> text = "aurora> ";
-    const console::WriteResult result = console::write(session, borrow_bytes(text));
+    const console::WriteResult result = console::write_bytes(session, borrow_bytes(text));
     return result.complete();
 }
 
 auto show_newline(builtin::ConsoleSession& session) -> bool {
     array<u8, 2> text = "\r\n";
-    const console::WriteResult result = console::write(session, borrow_bytes(text));
+    const console::WriteResult result = console::write_bytes(session, borrow_bytes(text));
     return result.complete();
 }
 
 auto show_erased(builtin::ConsoleSession& session) -> bool {
     array<u8, 3> text = "\b \b";
-    const console::WriteResult result = console::write(session, borrow_bytes(text));
+    const console::WriteResult result = console::write_bytes(session, borrow_bytes(text));
     return result.complete();
 }
 
@@ -35,44 +35,44 @@ auto show_help(builtin::ConsoleSession& session) -> bool {
     array<u8,
         289> text =
         "help    Show commands\r\nstatus  Show boot state\r\nwrite NAME TEXT   Replace RAM-only file (4 files; name 1-8; text max 49)\r\ncat NAME; rm NAME; ls   Read, remove, list session files\r\nwrite note TEXT; cat note   Separate RAM-only note (max 53)\r\nexit    Close session; note and files are lost\r\n";
-    const console::WriteResult result = console::write(session, borrow_bytes(text));
+    const console::WriteResult result = console::write_bytes(session, borrow_bytes(text));
     return result.complete();
 }
 
 auto show_status(builtin::ConsoleSession& session) -> bool {
     array<u8,
         92> text = "status: boot self-tests passed; UEFI serial console; timer-woken polling; line capacity=64\r\n";
-    const console::WriteResult result = console::write(session, borrow_bytes(text));
+    const console::WriteResult result = console::write_bytes(session, borrow_bytes(text));
     return result.complete();
 }
 
 auto show_unknown(builtin::ConsoleSession& session) -> bool {
     array<u8, 29> text = "Unknown command. Type help.\r\n";
-    const console::WriteResult result = console::write(session, borrow_bytes(text));
+    const console::WriteResult result = console::write_bytes(session, borrow_bytes(text));
     return result.complete();
 }
 
 auto show_rejected(builtin::ConsoleSession& session) -> bool {
     array<u8, 65> text = "Line rejected: too long, non-ASCII/control byte, or UART error.\r\n";
-    const console::WriteResult result = console::write(session, borrow_bytes(text));
+    const console::WriteResult result = console::write_bytes(session, borrow_bytes(text));
     return result.complete();
 }
 
 auto show_note_written(builtin::ConsoleSession& session) -> bool {
     array<u8, 42> text = "note: RAM-only; lost when session exits.\r\n";
-    const console::WriteResult result = console::write(session, borrow_bytes(text));
+    const console::WriteResult result = console::write_bytes(session, borrow_bytes(text));
     return result.complete();
 }
 
 auto show_note_missing(builtin::ConsoleSession& session) -> bool {
     array<u8, 29> text = "note: not found (RAM-only).\r\n";
-    const console::WriteResult result = console::write(session, borrow_bytes(text));
+    const console::WriteResult result = console::write_bytes(session, borrow_bytes(text));
     return result.complete();
 }
 
 auto show_exit(builtin::ConsoleSession& session) -> bool {
     array<u8, 21> text = "AURORA_CONSOLE_EXIT\r\n";
-    const console::WriteResult result = console::write(session, borrow_bytes(text));
+    const console::WriteResult result = console::write_bytes(session, borrow_bytes(text));
     return result.complete();
 }
 

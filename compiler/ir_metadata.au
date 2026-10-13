@@ -22,22 +22,21 @@ export namespace compiler_ir_metadata {
     auto range_begin(IndexRange range) -> i64 { return range.begin(); }
     auto range_count(IndexRange range) -> i64 { return range.count(); }
     auto name_length(ByteRange name) -> i64 { return name.count(); }
-    // input_integrity rejects malformed flags before these reads. Every caller
-    // supplies one of 1, 2, 4 or 8; arithmetic preserves the signed wire fields.
-    auto member(ClassRow row, i64 bit) -> bool { return (row.membership() / bit) % 2 != 0; }
+    // Unknown bits are rejected by input_integrity before any flag grants authority.
+    auto member(ClassRow row, u64 bit) -> bool { return (row.membership() & bit) != 0u64; }
     // Byte-lexicographic order matches std::map<std::string, ...>, including
     // embedded NUL and bytes above ASCII. Names are never C strings.
     auto compare_names(const MetadataStore& store, ByteRange left, ByteRange right) -> i64 {
-        i64 at = 0;
-        while (at < left.count() && at < right.count()) {
-            const i64 a = store.byte_at(left.begin() + at);
-            const i64 b = store.byte_at(right.begin() + at);
-            if (a < b) { return -1; }
-            if (a > b) { return 1; }
-            at = at + 1;
-        }
-        if (left.count() < right.count()) { return -1; }
-        if (left.count() > right.count()) { return 1; }
+        const i64 left_begin = left.begin();
+        const i64 right_begin = right.begin();
+        const i64 left_count = left.count();
+        const i64 right_count = right.count();
+        i64 count = left_count;
+        if (right_count < count) { count = right_count; }
+        const i64 order = store.compare_bytes(left_begin, right_begin, count);
+        if (order != 0) { return order; }
+        if (left_count < right_count) { return -1; }
+        if (left_count > right_count) { return 1; }
         return 0;
     }
     auto named(const MetadataStore& store, ByteRange name, builtin::span<const u8> expected) -> bool {
@@ -137,11 +136,11 @@ export namespace compiler_ir_metadata {
         return 64;
     }
 
-    auto callable_flag(CallableRow row, i64 bit) -> bool { return (row.attributes() / bit) % 2 != 0; }
-    auto receiver_flag(ReceiverShape receiver, i64 bit) -> bool { return (receiver.attributes() / bit) % 2 != 0; }
+    auto callable_flag(CallableRow row, u64 bit) -> bool { return (row.attributes() & bit) != 0u64; }
+    auto receiver_flag(ReceiverShape receiver, u64 bit) -> bool { return (receiver.attributes() & bit) != 0u64; }
     auto absent_receiver(ReceiverShape receiver) -> bool {
         const ByteRange name = receiver.name();
-        return name.begin() == 0 && name.count() == 0 && receiver.attributes() == 0;
+        return name.begin() == 0 && name.count() == 0 && receiver.attributes() == 0u64;
     }
     // Symbols precede module metadata diagnostics. Only the names and sorted
     // suffix they read are admitted first; other transport checks remain below.
@@ -226,6 +225,7 @@ export namespace compiler_ir_metadata {
     // physical extents and semantic counts stay untouched until their original
     // diagnostic position. All ranges are checked before their first read.
     auto input_integrity(MetadataStore& store) -> bool {
+        const FlagMasks masks = FlagMasks();
         const i64 declarations = store.instruction_type_begin();
         if (declarations < 0 || declarations > store.type_count()
             || store.leaf_count() < 0 || store.input_field_count() < 0 || store.leaf_count() > declarations
@@ -248,11 +248,11 @@ export namespace compiler_ir_metadata {
             const ReceiverShape receiver = row.first_receiver();
             if (!index_range(types, declarations) || types.count() < 1 || types.begin() != next_type
                 || !index_range(slots, store.slot_count()) || slots.begin() != next_slot
-                || (row.attributes() != 0 && row.attributes() != 1 && row.attributes() != 8 && row.attributes() != 9)
+                || (row.attributes() & ~masks.callable_allowed()) != 0u64
                 || row.borrowed_root_count() < 0
-                || !byte_range(receiver.name(), store.byte_count()) || receiver.attributes() < 0 || receiver.attributes() > 7
-                || (!callable_flag(row, 1) && !absent_receiver(receiver))
-                || (!callable_flag(row, 8) && row.receiver_span_field() != 0)) {
+                || !byte_range(receiver.name(), store.byte_count()) || (receiver.attributes() & ~masks.receiver_allowed()) != 0u64
+                || (!callable_flag(row, masks.callable_receiver()) && !absent_receiver(receiver))
+                || (!callable_flag(row, masks.callable_span_summary()) && row.receiver_span_field() != 0)) {
                 return fail(store, MetadataError::integrity);
             }
             next_type = next_type + types.count();
@@ -295,11 +295,12 @@ export namespace compiler_ir_metadata {
         at = 0;
         while (at < store.class_count()) {
             const ClassRow row = store.class_at(at);
-            if (!byte_range(row.name(), store.byte_count()) || row.membership() < 1 || row.membership() > 15
+            if (!byte_range(row.name(), store.byte_count()) || row.membership() == 0u64
+                || (row.membership() & ~masks.class_allowed()) != 0u64
                 || !index_range(row.leaves(), store.leaf_count())
                 || !index_range(row.fields(), store.input_field_count()) || range_begin(row.leaves()) != next_leaf
-                || range_begin(row.fields()) != next_field || (!member(row, 1) && range_count(row.leaves()) != 0)
-                || (!member(row, 2) && range_count(row.fields()) != 0)) {
+                || range_begin(row.fields()) != next_field || (!member(row, masks.class_layout()) && range_count(row.leaves()) != 0)
+                || (!member(row, masks.class_fields()) && range_count(row.fields()) != 0)) {
                 return fail(store, MetadataError::integrity);
             }
             if (at > 0) {
@@ -310,7 +311,7 @@ export namespace compiler_ir_metadata {
             }
             next_leaf = next_leaf + range_count(row.leaves());
             next_field = next_field + range_count(row.fields());
-            if (member(row, 4)) {
+            if (member(row, masks.class_storage())) {
                 if (row.supplied_storage() != next_storage || next_storage >= store.input_storage_count()) {
                     return fail(store, MetadataError::integrity);
                 }
@@ -332,7 +333,7 @@ export namespace compiler_ir_metadata {
         at = 0;
         while (at < store.input_field_count()) {
             const FieldRow field = store.field_at(at);
-            if (field.type() != store.leaf_count() + at || (field.array() != 0 && field.array() != 1)) {
+            if (field.type() != store.leaf_count() + at || (field.array_flag() != 0 && field.array_flag() != 1)) {
                 return fail(store, MetadataError::integrity);
             }
             at = at + 1;
@@ -383,6 +384,7 @@ export namespace compiler_ir_metadata {
     }
 
     auto verify_headers(MetadataStore& store) -> bool {
+        const FlagMasks masks = FlagMasks();
         i64 at = 0;
         while (at < store.descriptor_count()) {
             const DescriptorRow row = store.descriptor_at(at);
@@ -421,14 +423,14 @@ export namespace compiler_ir_metadata {
             const i64 class_index = find_class(store, row.name());
             if (class_index >= 0) {
                 const ClassRow declaration = store.class_at(class_index);
-                if (member(declaration, 1)) { return fail(store, MetadataError::nominal_overlap); }
+                if (member(declaration, masks.class_layout())) { return fail(store, MetadataError::nominal_overlap); }
             }
             at = at + 1;
         }
         at = 0;
         while (at < store.class_count()) {
             const ClassRow row = store.class_at(at);
-            if (member(row, 1)) {
+            if (member(row, masks.class_layout())) {
                 if (name_length(row.name()) == 0 || name_length(row.name()) > 4096 || range_count(row.leaves()) > 8192) {
                     return fail(store, MetadataError::class_layout);
                 }
@@ -444,27 +446,31 @@ export namespace compiler_ir_metadata {
         return true;
     }
     auto normalize_fields(MetadataStore& store) -> bool {
+        const FlagMasks masks = FlagMasks();
         i64 at = 0;
         while (at < store.class_count()) {
             const ClassRow row = store.class_at(at);
-            if (member(row, 2) && !member(row, 1)) { return fail(store, MetadataError::unknown_fields); }
+            if (member(row, masks.class_fields()) && !member(row, masks.class_layout())) { return fail(store, MetadataError::unknown_fields); }
             at = at + 1;
         }
         at = 0;
         while (at < store.class_count()) {
             const ClassRow row = store.class_at(at);
-            IndexRange fields = row.fields();
-            if (member(row, 1) && !member(row, 2)) {
-                const i64 begin = store.field_count();
+            const IndexRange original_fields = row.fields();
+            i64 field_begin = original_fields.begin();
+            i64 field_length = original_fields.count();
+            if (member(row, masks.class_layout()) && !member(row, masks.class_fields())) {
+                const i64 begin = store.field_row_count();
                 i64 leaf = 0;
                 while (leaf < range_count(row.leaves())) {
                     const FieldRow field = FieldRow(range_begin(row.leaves()) + leaf, leaf, 1, 0, 1);
                     if (store.append_field(field) < 0) { return false; }
                     leaf = leaf + 1;
                 }
-                const IndexRange synthesized = IndexRange(begin, range_count(row.leaves()));
-                fields = synthesized;
+                field_begin = begin;
+                field_length = range_count(row.leaves());
             }
+            const IndexRange fields = IndexRange(field_begin, field_length);
             const ClassResultRow result = ClassResultRow(fields, -1, 0, 0);
             if (!store.set_result(at, result)) { return false; }
             at = at + 1;
@@ -472,10 +478,11 @@ export namespace compiler_ir_metadata {
         return true;
     }
     auto verify_fields(MetadataStore& store) -> bool {
+        const FlagMasks masks = FlagMasks();
         i64 at = 0;
         while (at < store.class_count()) {
             const ClassRow row = store.class_at(at);
-            if (member(row, 1)) {
+            if (member(row, masks.class_layout())) {
                 const ClassResultRow result = store.result_at(at);
                 const IndexRange fields = result.fields();
                 i64 next_leaf = 0;
@@ -485,19 +492,19 @@ export namespace compiler_ir_metadata {
                     const FieldRow field = store.field_at(fields.begin() + field_index);
                     const RawTypeRow type = store.type_at(field.type());
                     const bool child = type.kind() == 5;
-                    if (!(field.array() != 0 && child) && field.element_count() != 1) {
+                    if (!(field.array_flag() != 0 && child) && field.element_count() != 1) {
                         return fail(store, MetadataError::field_element_count);
                     }
                     const i64 child_index = find_class(store, type.name());
                     if (child && child_index >= 0) {
                         const ClassRow child_row = store.class_at(child_index);
-                        if (member(child_row, 8)) { return fail(store, MetadataError::nested_carrier); }
+                        if (member(child_row, masks.class_array_carrier())) { return fail(store, MetadataError::nested_carrier); }
                     }
                     if (field.first_leaf() < 0 || field.first_leaf() != next_leaf) {
                         return fail(store, MetadataError::field_shape);
                     }
                     if (owner_kind(type)) {
-                        if (field.array() != 0 || field.length() != 0) { return fail(store, MetadataError::owner_leaves); }
+                        if (field.array_flag() != 0 || field.length() != 0) { return fail(store, MetadataError::owner_leaves); }
                         if (!owner_type(type)) { return fail(store, MetadataError::owner_field_type); }
                     } else {
                         if (child) {
@@ -505,9 +512,9 @@ export namespace compiler_ir_metadata {
                             if (owning_class(store, child_index)) { return fail(store, MetadataError::nested_owner); }
                             if (!canonical_tail(type) || child_index < 0) { return fail(store, MetadataError::nested_type); }
                             const ClassRow child_row = store.class_at(child_index);
-                            if (!member(child_row, 1)) { return fail(store, MetadataError::nested_type); }
+                            if (!member(child_row, masks.class_layout())) { return fail(store, MetadataError::nested_type); }
                             i64 count = 1;
-                            if (field.array() != 0) { count = field.element_count(); }
+                            if (field.array_flag() != 0) { count = field.element_count(); }
                             if (count < 1 || count > 64) { return fail(store, MetadataError::class_array_count); }
                             if (field.length() < 0 || field.length() > 513 || field.length() != range_count(child_row.leaves()) * count) {
                                 return fail(store, MetadataError::nested_length);
@@ -528,7 +535,7 @@ export namespace compiler_ir_metadata {
                         } else {
                             bool valid = scalar_value(store, type);
                             i64 maximum = 1;
-                            if (field.array() != 0) { valid = scalar_type(type); maximum = scalar_array_limit(type); }
+                            if (field.array_flag() != 0) { valid = scalar_type(type); maximum = scalar_array_limit(type); }
                             if (!valid || field.length() < 1 || field.length() > maximum) {
                                 return fail(store, MetadataError::field_shape);
                             }
@@ -555,17 +562,18 @@ export namespace compiler_ir_metadata {
     }
 
     auto verify_carriers(MetadataStore& store) -> bool {
+        const FlagMasks masks = FlagMasks();
         i64 at = 0;
         while (at < store.class_count()) {
             const ClassRow row = store.class_at(at);
-            if (member(row, 8)) {
-                if (!member(row, 1)) { return fail(store, MetadataError::unknown_carrier); }
+            if (member(row, masks.class_array_carrier())) {
+                if (!member(row, masks.class_layout())) { return fail(store, MetadataError::unknown_carrier); }
                 const ClassResultRow result = store.result_at(at);
                 const IndexRange fields = result.fields();
                 if (fields.count() != 1) { return fail(store, MetadataError::carrier_shape); }
                 const FieldRow field = store.field_at(fields.begin());
                 const RawTypeRow type = store.type_at(field.type());
-                if (field.array() == 0 || type.kind() != 5) { return fail(store, MetadataError::carrier_shape); }
+                if (field.array_flag() == 0 || type.kind() != 5) { return fail(store, MetadataError::carrier_shape); }
             }
             at = at + 1;
         }
@@ -586,10 +594,11 @@ export namespace compiler_ir_metadata {
         return store.set_result(class_index, entered) && store.push_frame(frame);
     }
     auto verify_depths(MetadataStore& store) -> bool {
+        const FlagMasks masks = FlagMasks();
         i64 at = 0;
         while (at < store.class_count()) {
             const ClassRow row = store.class_at(at);
-            if (member(row, 1)) {
+            if (member(row, masks.class_layout())) {
                 if (!enter_depth(store, at, 1)) { return false; }
                 while (store.frame_count() > 0) {
                     const i64 top = store.frame_count() - 1;
@@ -666,7 +675,7 @@ export namespace compiler_ir_metadata {
             const FieldRow field = store.field_at(fields.begin() + at);
             const RawTypeRow type = store.type_at(field.type());
             const RawTypeRow leaf = store.type_at(leaves.begin() + at);
-            if (field.array() != 0 || field.first_leaf() != at || field.length() != 1 || !same_type(store, type, leaf)) {
+            if (field.array_flag() != 0 || field.first_leaf() != at || field.length() != 1 || !same_type(store, type, leaf)) {
                 return fail(store, shape_error);
             }
             at = at + 1;
@@ -686,11 +695,12 @@ export namespace compiler_ir_metadata {
         return true;
     }
     auto verify_sealed(MetadataStore& store) -> bool {
+        const FlagMasks masks = FlagMasks();
         // Preserve the service-contract order, rather than map-name order.
         i64 at = 0;
         while (at < store.class_count()) {
             const ClassRow row = store.class_at(at);
-            if (member(row, 1) && named(store, row.name(), "__au_console_sample")) {
+            if (member(row, masks.class_layout()) && named(store, row.name(), "__au_console_sample")) {
                 if (!sealed_class(store, at, false)) { return false; }
             }
             at = at + 1;
@@ -698,7 +708,7 @@ export namespace compiler_ir_metadata {
         at = 0;
         while (at < store.class_count()) {
             const ClassRow row = store.class_at(at);
-            if (member(row, 1) && named(store, row.name(), "__au_iommu_event_sample")) {
+            if (member(row, masks.class_layout()) && named(store, row.name(), "__au_iommu_event_sample")) {
                 if (!sealed_class(store, at, true)) { return false; }
             }
             at = at + 1;
@@ -732,7 +742,7 @@ export namespace compiler_ir_metadata {
             const FieldRow field = store.field_at(fields.begin() + at);
             const RawTypeRow type = store.type_at(field.type());
             if (field.first_leaf() != leaf_count || field.length() < 0
-                || (!(field.array() != 0 && type.kind() == 5) && field.element_count() != 1)) {
+                || (!(field.array_flag() != 0 && type.kind() == 5) && field.element_count() != 1)) {
                 return fail(store, MetadataError::storage_field_range);
             }
             i64 field_alignment = 8;
@@ -741,7 +751,7 @@ export namespace compiler_ir_metadata {
             i64 child_storage = -1;
             bool empty = false;
             if (owner_kind(type)) {
-                if (field.array() != 0 || field.length() != 0) { return fail(store, MetadataError::storage_owner_shape); }
+                if (field.array_flag() != 0 || field.length() != 0) { return fail(store, MetadataError::storage_owner_shape); }
             } else {
                 if (type.kind() == 5) {
                     const i64 child_index = find_class(store, type.name());
@@ -755,8 +765,8 @@ export namespace compiler_ir_metadata {
                     const StorageRow child = store.storage_at(child_storage);
                     const IndexRange child_leaves = child.leaf_offsets();
                     const PhysicalExtent extent = child.extent();
-                    if (field.array() != 0) { count = field.element_count(); }
-                    if (count < 1 || count > 64 || (field.array() == 0 && field.element_count() != 1)
+                    if (field.array_flag() != 0) { count = field.element_count(); }
+                    if (count < 1 || count > 64 || (field.array_flag() == 0 && field.element_count() != 1)
                         || field.length() != child_leaves.count() * count) {
                         return fail(store, MetadataError::storage_nested_shape);
                     }
@@ -765,9 +775,9 @@ export namespace compiler_ir_metadata {
                     if (empty) { field_alignment = 1; }
                 } else {
                     bool valid = scalar_type(type) || type.kind() == 9;
-                    if (field.array() != 0) { valid = scalar_type(type); }
-                    if (!valid || field.length() < 1 || (field.array() == 0 && field.length() != 1)
-                        || (field.array() != 0 && field.length() > scalar_array_limit(type))) {
+                    if (field.array_flag() != 0) { valid = scalar_type(type); }
+                    if (!valid || field.length() < 1 || (field.array_flag() == 0 && field.length() != 1)
+                        || (field.array_flag() != 0 && field.length() > scalar_array_limit(type))) {
                         return fail(store, MetadataError::storage_scalar_shape);
                     }
                     if (type.kind() == 10) { field_alignment = 1; width = 1; }
@@ -833,11 +843,12 @@ export namespace compiler_ir_metadata {
         return store.set_result(class_index, finished);
     }
     auto compute_storage(MetadataStore& store) -> bool {
+        const FlagMasks masks = FlagMasks();
         i64 at = 0;
         while (at < store.class_count()) {
             const ClassRow row = store.class_at(at);
             const ClassResultRow result = store.result_at(at);
-            if (member(row, 1) && result.canonical_storage() < 0) {
+            if (member(row, masks.class_layout()) && result.canonical_storage() < 0) {
                 const FrameRow root = FrameRow(at, 0, 1);
                 if (!store.push_frame(root)) { return false; }
                 while (store.frame_count() > 0) {
@@ -870,14 +881,15 @@ export namespace compiler_ir_metadata {
         return true;
     }
     auto verify_owner_element(MetadataStore& store, RawTypeRow type) -> bool {
+        const FlagMasks masks = FlagMasks();
         if (type.kind() == 13 && owner_type(type)) { return true; }
         if (type.kind() != 17 || !owner_type(type)) { return fail(store, MetadataError::owner_type); }
         const i64 class_index = find_class(store, type.name());
         if (class_index < 0) { return fail(store, MetadataError::owner_element_unknown); }
         const ClassRow row = store.class_at(class_index);
         const ClassResultRow result = store.result_at(class_index);
-        if (!member(row, 1) || result.canonical_storage() < 0) { return fail(store, MetadataError::owner_element_unknown); }
-        if (owning_class(store, class_index) || member(row, 8)) { return fail(store, MetadataError::owner_element_kind); }
+        if (!member(row, masks.class_layout()) || result.canonical_storage() < 0) { return fail(store, MetadataError::owner_element_unknown); }
+        if (owning_class(store, class_index) || member(row, masks.class_array_carrier())) { return fail(store, MetadataError::owner_element_kind); }
         if (!copied_leaves(store, row)) { return fail(store, MetadataError::owner_element_leaves); }
         const StorageRow storage = store.storage_at(result.canonical_storage());
         const PhysicalExtent extent = storage.extent();
@@ -887,10 +899,11 @@ export namespace compiler_ir_metadata {
         return true;
     }
     auto verify_storage_limits(MetadataStore& store) -> bool {
+        const FlagMasks masks = FlagMasks();
         i64 at = 0;
         while (at < store.class_count()) {
             const ClassRow row = store.class_at(at);
-            if (member(row, 1)) {
+            if (member(row, masks.class_layout())) {
                 const ClassResultRow result = store.result_at(at);
                 const IndexRange fields = result.fields();
                 bool composed = false;
@@ -924,12 +937,13 @@ export namespace compiler_ir_metadata {
         return true;
     }
     auto verify_supplied_storage(MetadataStore& store) -> bool {
+        const FlagMasks masks = FlagMasks();
         if (store.input_storage_count() == 0) { return true; }
         i64 at = 0;
         while (at < store.class_count()) {
             const ClassRow row = store.class_at(at);
-            if (member(row, 1) != member(row, 4)) { return fail(store, MetadataError::supplied_storage); }
-            if (member(row, 1)) {
+            if (member(row, masks.class_layout()) != member(row, masks.class_storage())) { return fail(store, MetadataError::supplied_storage); }
+            if (member(row, masks.class_layout())) {
                 const ClassResultRow result = store.result_at(at);
                 const StorageRow supplied = store.storage_at(row.supplied_storage());
                 const StorageRow canonical = store.storage_at(result.canonical_storage());
@@ -966,8 +980,9 @@ export namespace compiler_ir_metadata {
         return type.kind() == 5 && owning_class(store, find_class(store, type.name()));
     }
     auto owning_constructor(const MetadataStore& store, CallableRow row) -> bool {
+        const FlagMasks masks = FlagMasks();
         const ReceiverShape receiver = row.first_receiver();
-        return callable_flag(row, 1) && receiver_flag(receiver, 2)
+        return callable_flag(row, masks.callable_receiver()) && receiver_flag(receiver, masks.receiver_constructor())
             && owning_class(store, find_class(store, receiver.name()));
     }
     auto resource_signature(const MetadataStore& store, CallableRow row) -> bool {
@@ -993,35 +1008,37 @@ export namespace compiler_ir_metadata {
         }
         return false;
     }
-    auto service_bit(RawTypeRow type) -> i64 {
-        if (type.kind() == 14) { return 1; }
-        if (type.kind() == 15) { return 2; }
-        return 4;
+    auto service_bit(RawTypeRow type) -> u64 {
+        const FlagMasks masks = FlagMasks();
+        if (type.kind() == 14) { return masks.service_console(); }
+        if (type.kind() == 15) { return masks.service_display(); }
+        return masks.service_iommu();
     }
     auto verify_service_signature(MetadataStore& store, CallableRow row, bool resource) -> bool {
+        const FlagMasks masks = FlagMasks();
         const IndexRange types = row.types();
-        if (callable_flag(row, 1) || row.borrowed_root_count() != 0 || resource || row.value_parameter_count() == 0) {
+        if (callable_flag(row, masks.callable_receiver()) || row.borrowed_root_count() != 0 || resource || row.value_parameter_count() == 0) {
             return fail(store, MetadataError::service_signature);
         }
         const RawTypeRow first = store.type_at(row.value_parameter_begin());
         if (!service_type(first)) { return fail(store, MetadataError::service_signature); }
         i64 at = 0;
-        i64 kinds = 0;
+        u64 kinds = 0u64;
         bool leading = true;
         while (at < row.value_parameter_count() && leading) {
             const RawTypeRow type = store.type_at(row.value_parameter_begin() + at);
             if (service_type(type)) {
-                const i64 bit = service_bit(type);
-                if ((kinds / bit) % 2 != 0) { return fail(store, MetadataError::service_duplicates); }
-                // The duplicate check keeps addition equivalent to setting
-                // this single bit; service_bit supplies only 1, 2 or 4.
-                kinds = kinds + bit;
+                const u64 bit = service_bit(type);
+                if ((kinds & bit) != 0u64) { return fail(store, MetadataError::service_duplicates); }
+                kinds = kinds | bit;
                 at = at + 1;
             } else { leading = false; }
         }
         // Independent closed allowlist: recognition alone never grants new
         // pair or triple forwarding authority.
-        if (at > 2 || (kinds != 1 && kinds != 2 && kinds != 4 && kinds != 3 && kinds != 5)) {
+        if (at > 2 || (kinds != masks.service_console() && kinds != masks.service_display()
+            && kinds != masks.service_iommu() && kinds != (masks.service_console() | masks.service_display())
+            && kinds != (masks.service_console() | masks.service_iommu()))) {
             return fail(store, MetadataError::service_group);
         }
         while (at < row.value_parameter_count()) {
@@ -1039,13 +1056,14 @@ export namespace compiler_ir_metadata {
         return true;
     }
     auto verify_borrowed_signature(MetadataStore& store, CallableRow row, bool resource) -> bool {
+        const FlagMasks masks = FlagMasks();
         const i64 roots = row.borrowed_root_count();
         if (roots == 0) { return true; }
         if (roots < 1 || roots > 6) { return fail(store, MetadataError::borrowed_root_count); }
         const IndexRange types = row.types();
         const RawTypeRow result = store.type_at(types.begin());
-        if (callable_flag(row, 1)) { return fail(store, MetadataError::borrowed_shape); }
-        if (resource || result.kind() == 11 || callable_flag(row, 8)) {
+        if (callable_flag(row, masks.callable_receiver())) { return fail(store, MetadataError::borrowed_shape); }
+        if (resource || result.kind() == 11 || callable_flag(row, masks.callable_span_summary())) {
             return fail(store, MetadataError::borrowed_result);
         }
         if (types.count() > 7) { return fail(store, MetadataError::borrowed_parameters); }
@@ -1062,7 +1080,7 @@ export namespace compiler_ir_metadata {
                 return fail(store, MetadataError::borrowed_root_class);
             }
             const ClassRow declaration = store.class_at(class_index);
-            if (!member(declaration, 1) || member(declaration, 8)) {
+            if (!member(declaration, masks.class_layout()) || member(declaration, masks.class_array_carrier())) {
                 return fail(store, MetadataError::borrowed_root_class);
             }
             root = root + 1;
@@ -1079,8 +1097,9 @@ export namespace compiler_ir_metadata {
         return true;
     }
     auto verify_resource_signature(MetadataStore& store, CallableRow row) -> bool {
+        const FlagMasks masks = FlagMasks();
         const bool constructor = owning_constructor(store, row);
-        const bool receiver = callable_flag(row, 1);
+        const bool receiver = callable_flag(row, masks.callable_receiver());
         const IndexRange types = row.types();
         if (receiver && !constructor) { return fail(store, MetadataError::resource_receiver); }
         if (row.value_parameter_count() == 0) { return fail(store, MetadataError::resource_region); }
@@ -1101,8 +1120,20 @@ export namespace compiler_ir_metadata {
         }
         return true;
     }
+    auto aggregate_boundary(const MetadataStore& store, CallableRow row) -> bool {
+        const RawTypeRow result = store.type_at(range_begin(row.types()));
+        if (result.kind() == 5) { return true; }
+        i64 at = 0;
+        while (at < row.value_parameter_count()) {
+            const RawTypeRow parameter = store.type_at(row.value_parameter_begin() + at);
+            if (parameter.kind() == 5 || parameter.kind() == 11) { return true; }
+            at = at + 1;
+        }
+        return false;
+    }
     auto verify_boundary_type(MetadataStore& store, CallableRow row, RawTypeRow type, bool parameter,
                               bool resource, bool service) -> bool {
+        const FlagMasks masks = FlagMasks();
         if (scalar_value(store, type)) { return true; }
         if (service_type(type)) {
             if (!parameter || !service) { return fail(store, MetadataError::service_boundary); }
@@ -1124,24 +1155,36 @@ export namespace compiler_ir_metadata {
         const ReceiverShape receiver = row.first_receiver();
         if (type.kind() == 11) {
             if (!plain_type(type, 11)
-                || !((parameter && (!callable_flag(row, 1) || !receiver_flag(receiver, 2)))
-                     || (!parameter && callable_flag(row, 1) && !receiver_flag(receiver, 1)
-                         && !receiver_flag(receiver, 2) && callable_flag(row, 8)))) {
+                || !((parameter && (!callable_flag(row, masks.callable_receiver()) || !receiver_flag(receiver, masks.receiver_constructor())))
+                     || (!parameter && callable_flag(row, masks.callable_receiver()) && !receiver_flag(receiver, masks.receiver_mutable())
+                         && !receiver_flag(receiver, masks.receiver_constructor()) && callable_flag(row, masks.callable_span_summary())))) {
                 return fail(store, MetadataError::span_boundary);
             }
             return true;
         }
-        if (callable_flag(row, 1) && !parameter && receiver_flag(receiver, 2)) {
-            return fail(store, MetadataError::constructor_result);
+        if (callable_flag(row, masks.callable_receiver()) && !parameter && receiver_flag(receiver, masks.receiver_constructor())) {
+            return fail(store, MetadataError::receiver_signature);
         }
-        if (type.kind() != 5 || !canonical_tail(type)) { return fail(store, MetadataError::value_type); }
+        if (type.kind() != 5 || !canonical_tail(type)) {
+            // Keep the boundary's specific contract when header admission
+            // precedes a call that formerly rejected this unsupported kind.
+            if (parameter && type.kind() != 5) {
+                if (callable_flag(row, masks.callable_receiver())) {
+                    return fail(store, MetadataError::receiver_signature);
+                }
+                if (!resource && !service && row.borrowed_root_count() == 0 && aggregate_boundary(store, row)) {
+                    return fail(store, MetadataError::aggregate_parameter);
+                }
+            }
+            return fail(store, MetadataError::value_type);
+        }
         const i64 class_index = find_class(store, type.name());
         if (class_index < 0) { return fail(store, MetadataError::value_class); }
         const ClassRow declaration = store.class_at(class_index);
-        if (!member(declaration, 1)) { return fail(store, MetadataError::value_class); }
-        if (member(declaration, 8)) { return fail(store, MetadataError::value_carrier); }
+        if (!member(declaration, masks.class_layout())) { return fail(store, MetadataError::value_class); }
+        if (member(declaration, masks.class_array_carrier())) { return fail(store, MetadataError::value_carrier); }
         const bool owning = owning_class(store, class_index);
-        if (owning && (!resource || callable_flag(row, 1))) { return fail(store, MetadataError::value_owner); }
+        if (owning && (!resource || callable_flag(row, masks.callable_receiver()))) { return fail(store, MetadataError::value_owner); }
         if (resource && !owning && parameter && !owning_constructor(store, row)) {
             return fail(store, MetadataError::value_resource);
         }
@@ -1153,33 +1196,31 @@ export namespace compiler_ir_metadata {
         return true;
     }
     auto verify_receiver_signature(MetadataStore& store, CallableRow row) -> bool {
+        const FlagMasks masks = FlagMasks();
         const ReceiverShape receiver = row.first_receiver();
         i64 class_index = -1;
-        if (callable_flag(row, 1)) {
+        if (callable_flag(row, masks.callable_receiver())) {
             class_index = find_class(store, receiver.name());
             if (class_index < 0) { return fail(store, MetadataError::receiver_class); }
             const ClassRow declaration = store.class_at(class_index);
-            if (!member(declaration, 1)) { return fail(store, MetadataError::receiver_class); }
-            if (member(declaration, 8)) { return fail(store, MetadataError::receiver_carrier); }
-            const RawTypeRow result = store.type_at(range_begin(row.types()));
-            if (receiver_flag(receiver, 2) && (!receiver_flag(receiver, 1) || !plain_type(result, 0))) {
-                return fail(store, MetadataError::constructor_signature);
-            }
+            if (!member(declaration, masks.class_layout())) { return fail(store, MetadataError::receiver_class); }
+            if (member(declaration, masks.class_array_carrier())) { return fail(store, MetadataError::receiver_carrier); }
         }
-        if (callable_flag(row, 8)) {
+        if (callable_flag(row, masks.callable_span_summary())) {
             if (class_index < 0 || row.receiver_span_field() < 0) { return fail(store, MetadataError::receiver_span); }
             const ClassResultRow result = store.result_at(class_index);
             const IndexRange fields = result.fields();
             if (row.receiver_span_field() >= fields.count()) { return fail(store, MetadataError::receiver_span); }
             const FieldRow field = store.field_at(fields.begin() + row.receiver_span_field());
             const RawTypeRow type = store.type_at(field.type());
-            if (!((plain_type(type, 13) && field.array() == 0) || (plain_type(type, 10) && field.array() != 0))) {
+            if (!((plain_type(type, 13) && field.array_flag() == 0) || (plain_type(type, 10) && field.array_flag() != 0))) {
                 return fail(store, MetadataError::receiver_span);
             }
         }
         return true;
     }
     auto verify_callable_signatures(MetadataStore& store) -> bool {
+        const FlagMasks masks = FlagMasks();
         i64 at = 0;
         while (at < store.callable_count()) {
             const CallableRow row = store.callable_at(at);
@@ -1191,7 +1232,7 @@ export namespace compiler_ir_metadata {
             if (resource && !verify_resource_signature(store, row)) { return false; }
             const IndexRange types = row.types();
             const RawTypeRow result = store.type_at(types.begin());
-            if (callable_flag(row, 8) && !plain_type(result, 11)) { return fail(store, MetadataError::span_result); }
+            if (callable_flag(row, masks.callable_span_summary()) && !plain_type(result, 11)) { return fail(store, MetadataError::span_result); }
             if (!verify_boundary_type(store, row, result, false, resource, service)) { return false; }
             if (types.count() > 7) { return fail(store, MetadataError::parameter_count); }
             i64 parameter = 0;
@@ -1362,10 +1403,24 @@ export namespace compiler_ir_metadata {
             || offset <= 0) { return -1; }
         const CallableRow row = store.callable_at(callable);
         if (offset > row.frame_bytes()) { return -1; }
-        const IndexRange group = slot_group(store, row, kind);
-        const i64 index = slot_lower_bound(store, group, offset);
-        if (index == group.begin() + group.count()) { return -1; }
-        return index;
+        // Successful admission proved strict (kind, offset) order. Search that
+        // pair once instead of finding both group bounds before its offset.
+        const IndexRange slots = row.slots();
+        i64 begin = slots.begin();
+        const i64 limit = begin + slots.count();
+        i64 end = limit;
+        while (begin < end) {
+            const i64 middle = begin + (end - begin) / 2;
+            const SlotRow slot = store.slot_at(middle);
+            const i64 slot_kind = slot.kind();
+            if (slot_kind < kind || (slot_kind == kind && slot.offset() < offset)) {
+                begin = middle + 1;
+            } else { end = middle; }
+        }
+        if (begin == limit) { return -1; }
+        const SlotRow candidate = store.slot_at(begin);
+        if (candidate.kind() != kind) { return -1; }
+        return begin;
     }
     auto object_leaf_root(const MetadataStore& store, i64 callable, i64 offset) -> i64 {
         const i64 index = local_origin_candidate(store, callable, 11, offset);
@@ -1377,9 +1432,9 @@ export namespace compiler_ir_metadata {
     auto byte_array_element_root(const MetadataStore& store, i64 callable, i64 offset) -> i64 {
         const i64 index = local_origin_candidate(store, callable, 12, offset);
         if (index < 0) { return -1; }
-        const SlotRow array = store.slot_at(index);
-        if (array.offset() - offset >= array.length()) { return -1; }
-        return array.offset();
+        const SlotRow array_slot = store.slot_at(index);
+        if (array_slot.offset() - offset >= array_slot.length()) { return -1; }
+        return array_slot.offset();
     }
     auto nested_object_leaf(const MetadataStore& store, i64 callable, i64 offset) -> bool {
         const i64 index = local_origin_candidate(store, callable, 11, offset);
@@ -1407,6 +1462,7 @@ export namespace compiler_ir_metadata {
         return element.kind() == 5;
     }
     auto verify_object_slots(MetadataStore& store, CallableRow row) -> bool {
+        const FlagMasks masks = FlagMasks();
         const IndexRange objects = slot_group(store, row, 11);
         const IndexRange scalars = slot_group(store, row, 10);
         i64 previous_end = 0;
@@ -1420,7 +1476,7 @@ export namespace compiler_ir_metadata {
             }
             const ClassRow layout = store.class_at(class_index);
             const ClassResultRow result = store.result_at(class_index);
-            if (!member(layout, 1) || result.canonical_storage() < 0) { return fail(store, MetadataError::object_class); }
+            if (!member(layout, masks.class_layout()) || result.canonical_storage() < 0) { return fail(store, MetadataError::object_class); }
             const StorageRow storage = store.storage_at(result.canonical_storage());
             const PhysicalExtent extent = storage.extent();
             if (slot.offset() <= 0 || slot.offset() > row.frame_bytes() || slot.offset() % 8 != 0

@@ -14,6 +14,7 @@ namespace {
 namespace wire = hosted_abi::compiler_lowering;
 namespace metadata = hosted_abi::compiler_ir_metadata;
 using MetadataWriter = ir::detail::MetadataWriter;
+using ir::detail::metadataFlagMasks;
 using InstructionWriter = ir::detail::InstructionWriter;
 using wire::InstructionForm;
 using wire::OperandRole;
@@ -170,15 +171,26 @@ class Projection {
     struct SourceOffsets {
         using value_type = int;
         std::span<const wire::OperandRow> values;
-        std::size_t size() const { return values.size(); }
-        bool empty() const { return values.empty(); }
+        std::size_t size() const {
+            return values.size();
+        }
+        bool empty() const {
+            return values.empty();
+        }
         int at(std::size_t index) const {
-            if (index >= values.size()) invalidLowering();
+            if (index >= values.size())
+                invalidLowering();
             return intValue(values[index].signedValue);
         }
-        int operator[](std::size_t index) const { return at(index); }
-        auto begin() const { return ir::MetadataIterator<SourceOffsets>(*this, 0); }
-        auto end() const { return ir::MetadataIterator<SourceOffsets>(*this, size()); }
+        int operator[](std::size_t index) const {
+            return at(index);
+        }
+        auto begin() const {
+            return ir::MetadataIterator<SourceOffsets>(*this, 0);
+        }
+        auto end() const {
+            return ir::MetadataIterator<SourceOffsets>(*this, size());
+        }
         bool operator==(const SourceOffsets &other) const {
             return values.data() == other.values.data() && values.size() == other.values.size();
         }
@@ -187,16 +199,27 @@ class Projection {
         using value_type = ir::ServiceArgument;
         std::span<const wire::OperandRow> values;
         const HostedLoweringServices *renderers = nullptr;
-        std::size_t size() const { return values.size() / 2; }
-        bool empty() const { return values.empty(); }
+        std::size_t size() const {
+            return values.size() / 2;
+        }
+        bool empty() const {
+            return values.empty();
+        }
         ir::ServiceArgument at(std::size_t index) const {
-            if (index >= size() || !renderers) invalidLowering();
+            if (index >= size() || !renderers)
+                invalidLowering();
             return {intValue(values[index * 2].signedValue),
                     renderers->serviceKind(identity(values[index * 2 + 1].signedValue))};
         }
-        ir::ServiceArgument operator[](std::size_t index) const { return at(index); }
-        auto begin() const { return ir::MetadataIterator<SourceServices>(*this, 0); }
-        auto end() const { return ir::MetadataIterator<SourceServices>(*this, size()); }
+        ir::ServiceArgument operator[](std::size_t index) const {
+            return at(index);
+        }
+        auto begin() const {
+            return ir::MetadataIterator<SourceServices>(*this, 0);
+        }
+        auto end() const {
+            return ir::MetadataIterator<SourceServices>(*this, size());
+        }
         bool operator==(const SourceServices &other) const {
             return values.data() == other.values.data() && values.size() == other.values.size() &&
                    renderers == other.renderers;
@@ -205,15 +228,26 @@ class Projection {
     struct SourceRoots {
         using value_type = ir::BorrowedRootArgument;
         std::span<const wire::OperandRow> values;
-        std::size_t size() const { return values.size() / 2; }
-        bool empty() const { return values.empty(); }
+        std::size_t size() const {
+            return values.size() / 2;
+        }
+        bool empty() const {
+            return values.empty();
+        }
         ir::BorrowedRootArgument at(std::size_t index) const {
-            if (index >= size()) invalidLowering();
+            if (index >= size())
+                invalidLowering();
             return {intValue(values[index * 2].signedValue), intValue(values[index * 2 + 1].signedValue)};
         }
-        ir::BorrowedRootArgument operator[](std::size_t index) const { return at(index); }
-        auto begin() const { return ir::MetadataIterator<SourceRoots>(*this, 0); }
-        auto end() const { return ir::MetadataIterator<SourceRoots>(*this, size()); }
+        ir::BorrowedRootArgument operator[](std::size_t index) const {
+            return at(index);
+        }
+        auto begin() const {
+            return ir::MetadataIterator<SourceRoots>(*this, 0);
+        }
+        auto end() const {
+            return ir::MetadataIterator<SourceRoots>(*this, size());
+        }
         bool operator==(const SourceRoots &other) const {
             return values.data() == other.values.data() && values.size() == other.values.size();
         }
@@ -223,15 +257,26 @@ class Projection {
         const HostedLoweringServices *renderers = nullptr;
         std::int64_t first = 0;
         std::size_t count = 0;
-        std::size_t size() const { return count; }
-        bool empty() const { return count == 0; }
+        std::size_t size() const {
+            return count;
+        }
+        bool empty() const {
+            return count == 0;
+        }
         unsigned char at(std::size_t index) const {
-            if (index >= count || !renderers) invalidLowering();
+            if (index >= count || !renderers)
+                invalidLowering();
             return renderers->literalByte(first + static_cast<std::int64_t>(index));
         }
-        unsigned char operator[](std::size_t index) const { return at(index); }
-        auto begin() const { return ir::MetadataIterator<SourceLiteral>(*this, 0); }
-        auto end() const { return ir::MetadataIterator<SourceLiteral>(*this, size()); }
+        unsigned char operator[](std::size_t index) const {
+            return at(index);
+        }
+        auto begin() const {
+            return ir::MetadataIterator<SourceLiteral>(*this, 0);
+        }
+        auto end() const {
+            return ir::MetadataIterator<SourceLiteral>(*this, size());
+        }
         bool operator==(const SourceLiteral &) const = default;
     };
     using SourceInstruction = ir::BasicInstruction<SourceOffsets, SourceServices, SourceLiteral, SourceRoots>;
@@ -293,28 +338,52 @@ class Projection {
         SourceInstructionCursor(Projection &owner, const wire::OutputRow &header, Operands &values)
             : owner(owner), header(header), values(values) {
         }
-        void integer(OperandRole role, int &value) { value = values.integer(role); }
-        void boolean(OperandRole role, bool &value) { value = values.boolean(role); }
-        void type(OperandRole role, Type &value) { value = owner.type(values, role); }
-        void callee(std::string &value) { value = owner.functionName(values, OperandRole::CalleeSymbolId); }
-        void className(std::string &value) { value = owner.className(values); }
-        void moduleScope(int &value) { value = owner.moduleScope(values); }
-        void serviceKind(service::Kind &value) { value = owner.serviceKind(values); }
+        void integer(OperandRole role, int &value) {
+            value = values.integer(role);
+        }
+        void boolean(OperandRole role, bool &value) {
+            value = values.boolean(role);
+        }
+        void type(OperandRole role, Type &value) {
+            value = owner.type(values, role);
+        }
+        void callee(std::string &value) {
+            value = owner.functionName(values, OperandRole::CalleeSymbolId);
+        }
+        void className(std::string &value) {
+            value = owner.className(values);
+        }
+        void moduleScope(int &value) {
+            value = owner.moduleScope(values);
+        }
+        void serviceKind(service::Kind &value) {
+            value = owner.serviceKind(values);
+        }
         void serviceOperation(service::Operation &value) {
             value = owner.services.serviceOperation(identity(values.scalar(OperandRole::ServiceOperationId)));
         }
-        void unary(wire::Unary &value) { value = Projection::unary(header.unaryOperation); }
-        void binary(wire::Binary &value) { value = Projection::binary(header.binaryOperation); }
-        void comparison(wire::Comparison &value) { value = Projection::comparison(header.comparisonOperation); }
-        void query(wire::Query &value) { value = Projection::query(header.queryOperation); }
+        void unary(wire::Unary &value) {
+            value = Projection::unary(header.unaryOperation);
+        }
+        void binary(wire::Binary &value) {
+            value = Projection::binary(header.binaryOperation);
+        }
+        void comparison(wire::Comparison &value) {
+            value = Projection::comparison(header.comparisonOperation);
+        }
+        void query(wire::Query &value) {
+            value = Projection::query(header.queryOperation);
+        }
         void constant(std::int64_t &value, Type &resultType) {
             const auto &payload = values.take();
             resultType = owner.type(values, OperandRole::TypeId);
             if (resultType == Type::U64) {
-                if (payload.operandRole != OperandRole::UnsignedConstant) invalidLowering();
+                if (payload.operandRole != OperandRole::UnsignedConstant)
+                    invalidLowering();
                 value = std::bit_cast<std::int64_t>(payload.unsignedValue);
             } else {
-                if (payload.operandRole != OperandRole::SignedConstant) invalidLowering();
+                if (payload.operandRole != OperandRole::SignedConstant)
+                    invalidLowering();
                 value = payload.signedValue;
             }
         }
@@ -327,7 +396,8 @@ class Projection {
             const auto &slice = values.take(OperandRole::AdditionalServices);
             value.values = owner.takeRange(slice.sliceBegin, slice.sliceCount);
             value.renderers = &owner.services;
-            if (value.values.size() % 2 != 0) invalidLowering();
+            if (value.values.size() % 2 != 0)
+                invalidLowering();
             for (std::size_t index = 0; index < value.values.size(); index += 2) {
                 if (value.values[index].operandRole != OperandRole::ServiceLoanId ||
                     value.values[index + 1].operandRole != OperandRole::ServiceKindId)
@@ -351,8 +421,7 @@ class Projection {
         }
         void literal(SourceLiteral &value) {
             const auto &slice = values.take(OperandRole::LiteralBytes);
-            const auto count = range(slice.sliceBegin, slice.sliceCount,
-                                     sizeValue(owner.input.sourceByteCount)).second;
+            const auto count = range(slice.sliceBegin, slice.sliceCount, sizeValue(owner.input.sourceByteCount)).second;
             value = {&owner.services, slice.sliceBegin, count};
             // Discarding suppresses storage, never source-domain validation.
             // Retained literals stream during fill; discarded bytes are checked
@@ -361,7 +430,9 @@ class Projection {
                 for (std::size_t index = 0; index < count; ++index)
                     (void)value.at(index);
         }
-        void finish() const { values.finish(); }
+        void finish() const {
+            values.finish();
+        }
     };
     SourceInstruction instruction(std::int64_t id, RecordKind kind = RecordKind::Instruction) {
         const auto &header = own(id, kind);
@@ -432,11 +503,11 @@ class Projection {
         Operands values(*this, own(id, RecordKind::Receiver));
         metadata::ReceiverShape result;
         result.nameRange = writer.text(className(values));
-        result.flags = values.boolean(OperandRole::MutableValue) ? 1 : 0;
+        result.flags = values.boolean(OperandRole::MutableValue) ? metadataFlagMasks().receiverMutable : 0;
         if (values.boolean(OperandRole::Constructor))
-            result.flags |= 2;
+            result.flags |= metadataFlagMasks().receiverConstructor;
         if (values.boolean(OperandRole::PublicAccess))
-            result.flags |= 4;
+            result.flags |= metadataFlagMasks().receiverPublic;
         values.finish();
         return result;
     }
@@ -478,7 +549,7 @@ class Projection {
         callable.slotRange.indexCount = writer.slotCount() - callable.slotRange.firstIndex;
         const auto &receiverOperand = values.take();
         if (receiverOperand.operandRole == OperandRole::ReceiverRef) {
-            callable.flags |= 1;
+            callable.flags |= metadataFlagMasks().callableReceiver;
             callable.receiver = receiver(writer, receiverOperand.signedValue);
         } else if (receiverOperand.operandRole != OperandRole::NoReceiver) {
             invalidLowering();
@@ -487,7 +558,7 @@ class Projection {
         callable.firstBorrowedMutable = values.scalar(OperandRole::FirstBorrowedMutable);
         const auto &spanOperand = values.take();
         if (spanOperand.operandRole == OperandRole::ReceiverSpanField) {
-            callable.flags |= 8;
+            callable.flags |= metadataFlagMasks().callableSpanSummary;
             callable.receiverSpanField = intValue(spanOperand.signedValue);
         } else if (spanOperand.operandRole != OperandRole::NoReceiverSpan) {
             invalidLowering();
@@ -536,7 +607,7 @@ class Projection {
         result.leafRange.firstIndex = writer.position().coreCounts.leaves;
         result.fieldRange.firstIndex = writer.position().coreCounts.fields;
         result.suppliedStorage = -1;
-        result.membershipBits = carrier ? 8 : 0;
+        result.membershipBits = carrier ? metadataFlagMasks().classArrayCarrier : 0;
         if (id >= 0) {
             Operands values(*this, own(id, RecordKind::Class));
             if (classOrCarrier(values) != name)
@@ -552,7 +623,8 @@ class Projection {
             result.suppliedStorage = writer.position().mapCounts.storage;
             storage(writer, values.scalar(OperandRole::StorageRef));
             values.finish();
-            result.membershipBits |= 7;
+            result.membershipBits |=
+                metadataFlagMasks().classLayout | metadataFlagMasks().classFields | metadataFlagMasks().classStorage;
         }
         writer.append(result);
     }
@@ -580,7 +652,9 @@ class Projection {
         values.finish();
         writer.append(result);
     }
-    void descriptorView(MetadataWriter &writer, std::int64_t key, std::int64_t id,
+    void descriptorView(MetadataWriter &writer,
+                        std::int64_t key,
+                        std::int64_t id,
                         const std::map<std::int64_t, std::int64_t> &descriptors) {
         Operands values(*this, own(id, RecordKind::DescriptorView));
         metadata::ViewRow result;
@@ -613,7 +687,8 @@ class Projection {
         values.finish();
         writer.append(result);
     }
-    void metadataRecords(MetadataWriter &writer, const std::map<std::string, std::int64_t> &classes,
+    void metadataRecords(MetadataWriter &writer,
+                         const std::map<std::string, std::int64_t> &classes,
                          const std::set<std::string> &carriers,
                          const std::map<std::int64_t, std::int64_t> &descriptors,
                          const std::map<std::int64_t, std::int64_t> &views,
@@ -737,8 +812,8 @@ public:
         callableNames.reserve(functions.size());
         for (std::size_t id = 0; id < functions.size(); ++id)
             callableNames.emplace_back(
-                services.functionName(key(functions[id].signedValue, RecordKind::Function,
-                                          OperandRole::FunctionSymbolId)),
+                services.functionName(
+                    key(functions[id].signedValue, RecordKind::Function, OperandRole::FunctionSymbolId)),
                 static_cast<std::int64_t>(id));
         std::sort(callableNames.begin(), callableNames.end());
         // Sort only identities and source row IDs; leaf/field/storage payloads

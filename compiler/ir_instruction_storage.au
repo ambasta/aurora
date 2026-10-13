@@ -366,10 +366,8 @@ export namespace compiler_ir_instructions {
         storage_array_extent,
         //: invalid typed IR: scalar array operation cannot address nested class field
         storage_array_nested,
-        //: invalid typed IR: indexed write to immutable scalar parameter
-        storage_index_parameter,
-        //: invalid typed IR: indexed write to const object field
-        storage_index_const,
+        //: invalid typed IR: invalid constructor receiver signature
+        constructor_signature,
         //: invalid typed IR: array lifetime requires exact byte array origin
         storage_array_origin,
         //: invalid typed IR: span borrow requires exact local byte array origin
@@ -485,12 +483,14 @@ export namespace compiler_ir_instructions {
         i64 codeBegin;
         i64 codeCapacity;
         i64 retainedCount;
+        i64 unreachableAfter;
     public:
-        BodyRow(i64 begin, i64 capacity, i64 count) : codeBegin(begin), codeCapacity(capacity),
-            retainedCount(count) {}
+        BodyRow(i64 begin, i64 capacity, i64 count, i64 unreachable) : codeBegin(begin), codeCapacity(capacity),
+            retainedCount(count), unreachableAfter(unreachable) {}
         auto begin() const -> i64 { return codeBegin; }
         auto capacity() const -> i64 { return codeCapacity; }
         auto count() const -> i64 { return retainedCount; }
+        auto unreachable_after() const -> i64 { return unreachableAfter; }
     };
     class InstructionCounts {
         i64 instructionCount;
@@ -525,7 +525,7 @@ export namespace compiler_ir_instructions {
         return move(result);
     }
     auto body_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<BodyRow> {
-        const BodyRow fill = BodyRow(-1, -1, -1);
+        const BodyRow fill = BodyRow(-1, -1, -1, 0);
         builtin::OwnedValues<BodyRow> result = region.try_allocate(count, fill);
         return move(result);
     }
@@ -746,32 +746,41 @@ export namespace compiler_ir_instructions {
                 }
                 if (code.falls_through()) {
                     const i64 next = position + 1;
-                    if (next == body.count()) { return reject(InstructionError::reachable_fallthrough); }
-                    const CodeRow following = flow_at(body, next);
-                    if (!following.reached()) {
-                        if (!enqueue(body, next, tail)) { return false; }
-                        tail = tail + 1;
+                    // Keep a terminal fallthrough flag for native value checking.
+                    // Its instruction's lifetime/value error precedes falling off
+                    // the body, and no out-of-range position is read or queued.
+                    if (next < body.count()) {
+                        const CodeRow following = flow_at(body, next);
+                        if (!following.reached()) {
+                            if (!enqueue(body, next, tail)) { return false; }
+                            tail = tail + 1;
+                        }
                     }
                 }
-            }
-            i64 at = 0;
-            while (at < body.count()) {
-                const CodeRow code = flow_at(body, at);
-                const i64 form = form_at(body, at);
-                if (!code.reached() && form != 40 && form != 41) {
-                    return reject(InstructionError::unreachable_semantic);
-                }
-                at = at + 1;
             }
             return true;
         }
         auto normalize_body(i64 callable, BodyRow body) -> bool {
             i64 retained = 0;
+            i64 unreachable = 0;
             i64 at = 0;
             while (at < body.count()) {
                 const CodeRow code = flow_at(body, at);
                 i64 mapped = -1;
-                if (code.reached()) { mapped = retained; retained = retained + 1; }
+                if (code.reached()) {
+                    mapped = retained;
+                    retained = retained + 1;
+                } else {
+                    if (unreachable == 0) {
+                        const i64 form = form_at(body, at);
+                        if (form != 40 && form != 41) {
+                            // Entry is reached, so this first omitted semantic row
+                            // follows at least one retained row. Native value checks
+                            // precede this source-owned final emission-order fact.
+                            unreachable = retained;
+                        }
+                    }
+                }
                 if (!set_scratch(body, at, mapped)) { return false; }
                 at = at + 1;
             }
@@ -803,7 +812,7 @@ export namespace compiler_ir_instructions {
                 }
                 at = at + 1;
             }
-            const BodyRow normalized = BodyRow(body.begin(), body.capacity(), retained);
+            const BodyRow normalized = BodyRow(body.begin(), body.capacity(), retained, unreachable);
             if (!bodies.set(callable, normalized)) { return reject(InstructionError::integrity); }
             return true;
         }
@@ -860,7 +869,7 @@ export namespace compiler_ir_instructions {
             return result;
         }
         auto body_at(i64 callable) const -> BodyRow {
-            if (callable < 0 || callable >= body_count() || !bodies.ok()) { return BodyRow(-1, -1, -1); }
+            if (callable < 0 || callable >= body_count() || !bodies.ok()) { return BodyRow(-1, -1, -1, 0); }
             const BodyRow result = bodies.at(callable);
             return result;
         }
@@ -948,7 +957,9 @@ export namespace compiler_ir_instructions {
             return true;
         }
     };
-    auto create(builtin::ByteRegion region, InstructionCounts counts) -> InstructionStore {
+    auto create(builtin::ByteRegion region, i64 instructions, i64 operands, i64 literals, i64 bodies)
+        -> InstructionStore {
+        const InstructionCounts counts = InstructionCounts(instructions, operands, literals, bodies);
         InstructionStore result = InstructionStore(region, counts);
         result.initialize(counts);
         return move(result);

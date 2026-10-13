@@ -615,7 +615,8 @@ int main() {
         Payload(builtin::ConsoleSample sample) : observation(sample), bytes{}, marker(Marker::okay) {}
         auto initialize() -> bool { bytes[0] = 'A'; bytes[2] = 255u8; return true; }
         auto matches(u8 first, Marker expected) const -> bool {
-            return observation.byte_present && observation.byte == 'A' && !observation.damaged
+            const builtin::ConsoleSample sample = observation;
+            return sample.byte_present && sample.byte == 'A' && !sample.damaged
                 && bytes[0] == first && bytes[1] == 0u8 && bytes[2] == 255u8 && marker == expected;
         }
         auto change() -> bool { bytes[0] = 'B'; marker = Marker::wrong; return true; }
@@ -788,9 +789,9 @@ int main() {
         const builtin::ConsoleSample expected = session.next();
         const array<u8, 5> payload = "A\\0\\xffz!";
         const builtin::span<const u8> bytes = borrow_bytes(payload);
-        const console::WriteResult result = console::write(session, bytes.subspan(0, i64(request.byte)));
+        const console::WriteResult result = console::write_bytes(session, bytes.subspan(0, i64(request.byte)));
         const console::WriteResult copied = result;
-        const console::WriteResult empty = console::write(session, bytes.subspan(0, 0));
+        const console::WriteResult empty = console::write_bytes(session, bytes.subspan(0, 0));
         const bool complete = expected.byte == request.byte;
         if (result.written() != i64(expected.byte) || copied.written() != result.written()
             || copied.status() != result.status() || copied.complete() != result.complete()

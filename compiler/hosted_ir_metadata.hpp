@@ -324,6 +324,9 @@ public:
     using CallableId = std::size_t;
     // Hostile fixtures import raw maps. Production supplies a pending owning
     // ingress; both paths independently verify before publishing any view.
+    // These are canonical declaration/shape views, not executable authority.
+    // Constructor mutability/I64 policy is completed by source instruction
+    // admission; only final validate can publish an executable module.
     static std::unique_ptr<Metadata> import(const Module &module);
     ~Metadata();
     Metadata(const Metadata &) = delete;
