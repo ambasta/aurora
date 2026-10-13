@@ -345,6 +345,10 @@ public:
     CallableView callable(CallableId id) const;
     FrameView frame(CallableId id) const;
     std::optional<CallableId> findCallable(std::string_view name) const;
+    // Exact local storage origins observed from the admitted source owner.
+    // Padding, descriptors, empty reservations and receiver roots have no leaf.
+    std::optional<int> objectLeafRoot(CallableId id, int offset) const;
+    std::optional<int> byteArrayElementRoot(CallableId id, int offset) const;
 
     std::size_t scopeCount() const noexcept;
     std::int64_t scopeAt(std::size_t index) const;

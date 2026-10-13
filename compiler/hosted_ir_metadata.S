@@ -33,4 +33,16 @@ metadata_entry error
     movq %rdi, %r10
 metadata_return error, __aurora_frontend_metadata_error
 
+metadata_entry object_leaf_root
+    movq %rdi, %r10
+    movq %rsi, %rdi
+    movq %rdx, %rsi
+metadata_return object_leaf_root, __aurora_frontend_metadata_object_leaf_root
+
+metadata_entry byte_array_element_root
+    movq %rdi, %r10
+    movq %rsi, %rdi
+    movq %rdx, %rsi
+metadata_return byte_array_element_root, __aurora_frontend_metadata_byte_array_element_root
+
 .section .note.GNU-stack,"",@progbits

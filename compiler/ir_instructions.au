@@ -4,7 +4,7 @@ import aurora.compiler.ir_metadata;
 
 // Generic durable transport admission precedes the sole native field walk for
 // exact opcode shapes. Source admission normalizes every body, then checks all
-// entry bindings and static call sites directly against readonly metadata.
+// entry bindings, static call sites and storage accesses against readonly metadata.
 // Native verification keeps dynamic value/type, lifetime, provenance and joins.
 export namespace compiler_ir_instructions {
     auto bounded_range(i64 begin, i64 count, i64 limit) -> bool {
@@ -1088,6 +1088,153 @@ export namespace compiler_ir_instructions {
         }
         return true;
     }
+    // These checks depend only on admitted declarations and normalized operands.
+    // Exact origins come from ordered canonical metadata, never a second frame
+    // map or a retained instruction summary. Native State owns the changing
+    // lifetime, initialization, loan, current-value and bounds-token evidence.
+    auto verify_storage_scalar(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 callable, i64 offset, i64 type_index) -> bool {
+        const i64 slot_index = entry_slot(metadata, callable, 10, offset);
+        if (slot_index < 0) { return fail(store, InstructionError::scalar_slot); }
+        const compiler_ir_metadata::SlotRow slot = metadata.slot_at(slot_index);
+        const compiler_ir_metadata::RawTypeRow declared = metadata.type_at(slot.type());
+        const compiler_ir_metadata::RawTypeRow supplied = metadata.type_at(type_index);
+        if (!compiler_ir_metadata::same_type(metadata, declared, supplied)) {
+            return fail(store, InstructionError::scalar_slot);
+        }
+        return true;
+    }
+    auto verify_storage_borrow(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 callable, i64 instruction) -> bool {
+        const i64 offset = call_value(store, instruction, 0);
+        const i64 slot_index = entry_slot(metadata, callable, 10, offset);
+        if (slot_index < 0) { return fail(store, InstructionError::scalar_slot); }
+        const compiler_ir_metadata::SlotRow slot = metadata.slot_at(slot_index);
+        const compiler_ir_metadata::RawTypeRow declared = metadata.type_at(slot.type());
+        if (!compiler_ir_metadata::plain_type(declared, 0)) { return fail(store, InstructionError::scalar_slot); }
+        if (compiler_ir_metadata::object_leaf_root(metadata, callable, offset) >= 0) {
+            return fail(store, InstructionError::storage_borrow_object);
+        }
+        const compiler_ir_metadata::RawTypeRow reference = metadata.type_at(call_value(store, instruction, 1));
+        if (!compiler_ir_metadata::plain_type(reference, 3) && !compiler_ir_metadata::plain_type(reference, 4)) {
+            return fail(store, InstructionError::storage_borrow_type);
+        }
+        return true;
+    }
+    auto verify_storage_range(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 callable, i64 instruction) -> bool {
+        const i64 offset = call_value(store, instruction, 0);
+        const i64 length = call_value(store, instruction, 1);
+        const i64 type_index = call_value(store, instruction, 2);
+        const compiler_ir_metadata::RawTypeRow type = metadata.type_at(type_index);
+        if (!compiler_ir_metadata::scalar_type(type) || length < 1 || length > 4096) {
+            return fail(store, InstructionError::storage_array_shape);
+        }
+        const i64 width = compiler_ir_metadata::scalar_width(type);
+        // Divide before multiplying untrusted extents. Scalar widths are 1/8;
+        // the admitted length then bounds every element product by 32760.
+        if (offset < width || length > offset / width) {
+            return fail(store, InstructionError::storage_array_extent);
+        }
+        i64 element = 0;
+        while (element < length) {
+            const i64 element_offset = offset - element * width;
+            if (!verify_storage_scalar(store, metadata, callable, element_offset, type_index)) { return false; }
+            if (compiler_ir_metadata::nested_object_leaf(metadata, callable, element_offset)) {
+                return fail(store, InstructionError::storage_array_nested);
+            }
+            element = element + 1;
+        }
+        // Contiguous scalar ranges, including I64 ranges, need no byte-array
+        // origin declaration. Only byte-array lifetime/span forms require one.
+        return true;
+    }
+    auto storage_scalar_parameter(const InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 callable, i64 offset) -> bool {
+        const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(callable);
+        const compiler_ir_metadata::IndexRange types = declaration.types();
+        i64 at = 0;
+        while (at < types.count() - 1) {
+            const RawInstructionRow binding = entry_instruction(store, callable, at);
+            if (binding.form() == 45 && entry_value(store, binding, 1) == offset) { return true; }
+            at = at + 1;
+        }
+        return false;
+    }
+    auto verify_storage_index_write(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 callable, i64 instruction) -> bool {
+        const i64 offset = call_value(store, instruction, 0);
+        const i64 length = call_value(store, instruction, 1);
+        const compiler_ir_metadata::RawTypeRow type = metadata.type_at(call_value(store, instruction, 2));
+        const i64 width = compiler_ir_metadata::scalar_width(type);
+        i64 element = 0;
+        while (element < length) {
+            const i64 element_offset = offset - element * width;
+            if (storage_scalar_parameter(store, metadata, callable, element_offset)) {
+                return fail(store, InstructionError::storage_index_parameter);
+            }
+            const i64 root = compiler_ir_metadata::object_leaf_root(metadata, callable, element_offset);
+            if (root >= 0) {
+                const i64 object_index = entry_slot(metadata, callable, 11, root);
+                const compiler_ir_metadata::SlotRow object = metadata.slot_at(object_index);
+                if (object.mutable_value() != 1) { return fail(store, InstructionError::storage_index_const); }
+            }
+            element = element + 1;
+        }
+        return true;
+    }
+    auto verify_storage_access(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 callable, i64 instruction) -> bool {
+        const RawInstructionRow row = store.instruction_at(instruction);
+        const i64 form = row.form();
+        if (form == 7 || form == 8) {
+            const i64 offset = call_value(store, instruction, 0);
+            const i64 type_index = call_value(store, instruction, 1);
+            if (!verify_storage_scalar(store, metadata, callable, offset, type_index)) {
+                return false;
+            }
+            if (form == 8 && compiler_ir_metadata::nested_object_leaf(metadata, callable, offset)) {
+                return fail(store, InstructionError::storage_nested_store);
+            }
+            return true;
+        }
+        if (form == 18) { return verify_storage_borrow(store, metadata, callable, instruction); }
+        if (form == 15 || form == 16 || form == 17) {
+            if (!verify_storage_range(store, metadata, callable, instruction)) { return false; }
+            if (form == 17) { return verify_storage_index_write(store, metadata, callable, instruction); }
+            return true;
+        }
+        if (form == 47 || form == 48) {
+            if (entry_slot(metadata, callable, 12, call_value(store, instruction, 0)) < 0) {
+                return fail(store, InstructionError::storage_array_origin);
+            }
+            return true;
+        }
+        if (form == 49) {
+            // Frame admission already proves this exact local byte-array root's
+            // complete U8 element range and disjointness from every object.
+            if (entry_slot(metadata, callable, 12, call_value(store, instruction, 0)) < 0) {
+                return fail(store, InstructionError::storage_span_origin);
+            }
+            const i64 result_offset = call_value(store, instruction, 1);
+            return verify_call_span_result(store, metadata, callable, result_offset);
+        }
+        return true;
+    }
+    auto verify_storage_accesses(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata) -> bool {
+        i64 callable = 0;
+        while (callable < store.body_count()) {
+            const BodyRow body = store.body_at(callable);
+            i64 position = 0;
+            while (position < body.count()) {
+                const CodeRow code = store.code_at(body.begin() + position);
+                if (!verify_storage_access(store, metadata, callable, code.id())) { return false; }
+                position = position + 1;
+            }
+            callable = callable + 1;
+        }
+        return true;
+    }
     auto admit_instruction_bodies(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata)
         -> InstructionStatus {
         if (store.status() != InstructionStatus::admitted) { return store.status(); }
@@ -1105,9 +1252,11 @@ export namespace compiler_ir_instructions {
             if (!verify_entry_parameters(store, metadata, callable)) { return store.status(); }
             callable = callable + 1;
         }
-        // All entry contracts precede all call contracts, which in turn
-        // precede the first native State in any body of this module.
-        if (!verify_call_sites(store, metadata)) { return store.status(); }
+        // All entry contracts precede all call contracts, then all storage
+        // contracts precede the first native State in any body of this module.
+        // A later static access error can therefore precede an earlier dynamic
+        // value/lifetime error; source rejection remains terminal and unpublished.
+        if (!verify_call_sites(store, metadata) || !verify_storage_accesses(store, metadata)) { return store.status(); }
         return store.status();
     }
 }

@@ -215,6 +215,14 @@ export namespace compiler_frontend {
     auto metadata_error(const compiler_ir_metadata::MetadataStore& store) -> compiler_ir_metadata::MetadataError {
         return store.error();
     }
+    auto metadata_object_leaf_root(const compiler_ir_metadata::MetadataStore& store,
+        i64 callable, i64 offset) -> i64 {
+        return compiler_ir_metadata::object_leaf_root(store, callable, offset);
+    }
+    auto metadata_byte_array_element_root(const compiler_ir_metadata::MetadataStore& store,
+        i64 callable, i64 offset) -> i64 {
+        return compiler_ir_metadata::byte_array_element_root(store, callable, offset);
+    }
     auto instructions_create(builtin::ByteRegion region, compiler_ir_instructions::InstructionCounts counts)
         -> compiler_ir_instructions::InstructionStore {
         compiler_ir_instructions::InstructionStore result = compiler_ir_instructions::create(region, counts);

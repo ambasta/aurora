@@ -1325,7 +1325,8 @@ export namespace compiler_ir_metadata {
         }
         return true;
     }
-    auto object_has_leaf(const MetadataStore& store, SlotRow object, i64 offset) -> bool {
+    auto object_leaf_ordinal(const MetadataStore& store, SlotRow object, i64 offset) -> i64 {
+        if (offset <= 0 || offset > object.offset()) { return -1; }
         const StorageRow storage = object_storage(store, object);
         const IndexRange offsets = storage.leaf_offsets();
         const i64 target = object.offset() - offset;
@@ -1336,9 +1337,66 @@ export namespace compiler_ir_metadata {
             const IndexRow leaf = store.index_at(middle);
             if (leaf.value() < target) { begin = middle + 1; } else { end = middle; }
         }
-        if (begin == offsets.begin() + offsets.count()) { return false; }
+        if (begin == offsets.begin() + offsets.count()) { return -1; }
         const IndexRow leaf = store.index_at(begin);
-        return leaf.value() == target;
+        if (leaf.value() != target) { return -1; }
+        return begin - offsets.begin();
+    }
+    auto object_has_leaf(const MetadataStore& store, SlotRow object, i64 offset) -> bool {
+        return object_leaf_ordinal(store, object, offset) >= 0;
+    }
+    // Published frame groups are disjoint and sorted by their final offset.
+    // The first end at/above an address is its only possible local origin. A
+    // candidate is not membership proof: callers still check exact leaves or
+    // byte-array bounds. Receiver identities are never frame addresses.
+    auto local_origin_candidate(const MetadataStore& store, i64 callable, i64 kind, i64 offset) -> i64 {
+        if (store.status() != MetadataStatus::success || callable < 0 || callable >= store.callable_count()
+            || offset <= 0) { return -1; }
+        const CallableRow row = store.callable_at(callable);
+        if (offset > row.frame_bytes()) { return -1; }
+        const IndexRange group = slot_group(store, row, kind);
+        const i64 index = slot_lower_bound(store, group, offset);
+        if (index == group.begin() + group.count()) { return -1; }
+        return index;
+    }
+    auto object_leaf_root(const MetadataStore& store, i64 callable, i64 offset) -> i64 {
+        const i64 index = local_origin_candidate(store, callable, 11, offset);
+        if (index < 0) { return -1; }
+        const SlotRow object = store.slot_at(index);
+        if (!object_has_leaf(store, object, offset)) { return -1; }
+        return object.offset();
+    }
+    auto byte_array_element_root(const MetadataStore& store, i64 callable, i64 offset) -> i64 {
+        const i64 index = local_origin_candidate(store, callable, 12, offset);
+        if (index < 0) { return -1; }
+        const SlotRow array = store.slot_at(index);
+        if (array.offset() - offset >= array.length()) { return -1; }
+        return array.offset();
+    }
+    auto nested_object_leaf(const MetadataStore& store, i64 callable, i64 offset) -> bool {
+        const i64 index = local_origin_candidate(store, callable, 11, offset);
+        if (index < 0) { return false; }
+        const SlotRow object = store.slot_at(index);
+        const i64 leaf = object_leaf_ordinal(store, object, offset);
+        if (leaf < 0) { return false; }
+        const RawTypeRow type = store.type_at(object.type());
+        const ClassResultRow result = store.result_at(find_class(store, type.name()));
+        const IndexRange fields = result.fields();
+        i64 begin = fields.begin();
+        i64 end = fields.begin() + fields.count();
+        // Admitted field ends are monotonic. The first end strictly beyond
+        // this leaf skips empty nested fields and owner descriptors, including
+        // runs sharing a firstLeaf with the next nonempty logical field.
+        while (begin < end) {
+            const i64 middle = begin + (end - begin) / 2;
+            const FieldRow field = store.field_at(middle);
+            if (field.first_leaf() + field.length() <= leaf) { begin = middle + 1; } else { end = middle; }
+        }
+        if (begin == fields.begin() + fields.count()) { return false; }
+        const FieldRow field = store.field_at(begin);
+        if (field.length() == 0 || field.first_leaf() > leaf) { return false; }
+        const RawTypeRow element = store.type_at(field.type());
+        return element.kind() == 5;
     }
     auto verify_object_slots(MetadataStore& store, CallableRow row) -> bool {
         const IndexRange objects = slot_group(store, row, 11);
