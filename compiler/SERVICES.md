@@ -24,9 +24,15 @@ by-value or const variant. It cannot be constructed, copied, moved, assigned, st
 local/field/array, returned, reflected or converted. A reference is a parameter
 mode, never an ordinary reference value. Service methods, constructors, templates,
 overloads, mixed regions/owners and recursion in the reachable service graph are
-rejected. Later parameters are copied scalars/enums or readonly byte spans, with
-the existing source-root lifetime and loan checks. Helper results are scalars/enums
+rejected. Later parameters are copied scalars/enums, ordinary non-owning copied
+classes or readonly byte spans, with the existing source-root lifetime and loan
+checks. Copied inputs use independent readonly argument snapshots under the same
+nominal, complete-initialization and bounded-layout rules as ordinary copied calls.
+Owners, authority-bearing fields and escaping views remain excluded. The existing
+six-formal limit includes the leading service group. Helper results are scalars/enums
 or ordinary non-owning classes under the [copied-value boundary rules](VALUES.md).
+Copied service results still require an explicitly typed local before being
+passed into another call; direct service-result argument expressions are unchanged.
 Exact nominal type, layout, private visibility and complete initialization apply.
 No result carries a capability, owner, span or escaping reference. Copied data,
 including ConsoleSample and IommuEventSample, is independent of service kind.
@@ -125,6 +131,17 @@ nominal copied layout, with exact active, pristine, disjoint result storage.
 repeated empty initialization also rejects. Library `console::WriteResult` carries
 only copied count/status data, retaining no service loan or byte-span argument.
 
+`ServiceCall` records copied input offsets separately from span offsets. Every
+copied argument is an exact, live, readonly, nominally typed and fully initialized
+snapshot; snapshots are distinct and cannot alias a copied result. Capability,
+scalar and span positions cannot name object storage. Existing copied-value
+packing and `BindObjectParameter` move the canonical physical value without
+copying service authority. A Console grant plus an 80-byte copied record has a
+predicted 96-byte private argument record. Generic ABI metadata describes copied
+parameters; the narrower scalar-only `service_record` facts remain unchanged.
+This copied-input extension and its protected-console consumer are source-only
+candidates until generated ABI and execution qualification.
+
 The Display entry record is exactly grant at +0, generation at +8, width at +16,
 height at +24. `__au_runtime_display_pixel` receives seven full SysV qwords:
 RDI grant, RSI generation, RDX x, RCX y, R8 red, R9 green, and blue at 8(RSP) on
@@ -158,7 +175,7 @@ callback, port, pointer, syscall or device address.
 ## Verification
 
 Source/editor/host-report cases live in `tests/compiler/console_service.py`,
-including copied service results and `console::write` success/timeout prefixes.
+including copied service inputs/results and `console::write` success/timeout prefixes.
 Independently constructed hostile IR lives in `console_service_ir.cpp`. Acceptance
 requires the applicable gates on final integrated source; host-grant and UART
 tests remain separate from generated-code tests.

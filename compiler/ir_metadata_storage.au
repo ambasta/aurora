@@ -137,7 +137,7 @@ export namespace compiler_ir_metadata {
         service_duplicates,
         //: invalid typed IR: unsupported service group
         service_group,
-        //: invalid typed IR: service signature requires later scalar, enum or readonly span arguments
+        //: invalid typed IR: service signature requires later scalar, enum, copied value or readonly span arguments
         service_parameters,
         //: invalid typed IR: service signature has unsupported result
         service_result,

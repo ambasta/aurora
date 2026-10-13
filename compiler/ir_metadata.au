@@ -1022,7 +1022,8 @@ export namespace compiler_ir_metadata {
         }
         while (at < types.count()) {
             const RawTypeRow type = store.type_at(types.begin() + at);
-            if (!scalar_value(store, type) && !plain_type(type, 11)) {
+            if (!scalar_value(store, type) && !plain_type(type, 11)
+                && (type.kind() != 5 || owning_type(store, type))) {
                 return fail(store, MetadataError::service_parameters);
             }
             at = at + 1;

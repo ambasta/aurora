@@ -1,6 +1,8 @@
 // Independently authored IR: no parser, semantic lowering or source fixtures.
 #include "ir_verify.hpp"
+#include "hosted_resolver.hpp"
 #include "x86.hpp"
+#include <algorithm>
 #include <functional>
 #include <iostream>
 #include <tuple>
@@ -99,6 +101,139 @@ Module copiedResult(bool empty = false) {
     m.functions = {f, g};
     return m;
 }
+Module copiedArguments(int shape = 0, bool paired = false) {
+    Module m;
+    canonicalTypes(m);
+    // Shape zero is an independent 80-byte array/count/enum contract. Shapes
+    // one and two distinguish zero-field and nested-empty completion evidence.
+    if (shape == 0) {
+        m.classLayouts["Packet"] = std::vector<Type>(64, Type::U8);
+        m.classLayouts["Packet"].insert(m.classLayouts["Packet"].end(), {Type::I64, service::putResultType()});
+        m.classFields["Packet"] = {{Type::U8, 0, 64, true}, {Type::I64, 64, 1, false},
+                                     {service::putResultType(), 65, 1, false}};
+    } else {
+        m.classLayouts["Packet"] = {};
+        if (shape == 2) {
+            m.classLayouts["Empty"] = {};
+            m.classFields["Packet"] = {{Type("Empty"), 0, 0, false}};
+        }
+    }
+    auto reserve = [&](F &function, int base) {
+        function.objectSlots[base] = {"Packet", false};
+        if (shape == 0) {
+            for (int byte = 0; byte < 64; ++byte)
+                function.slots[base - byte] = Type::U8;
+            function.slots[base - 64] = Type::I64;
+            function.slots[base - 72] = service::putResultType();
+        }
+    };
+    auto f = entry("copied_caller");
+    f.frameBytes = 512;
+    f.result = Type("Packet");
+    f.parameters.insert(f.parameters.end(), {Type("Packet"), Type("Packet")});
+    for (const int base : {128, 224, 320, 416, 512})
+        reserve(f, base);
+    f.code.insert(f.code.end(),
+                  {BindObjectParameter{1, 128, "Packet"}, BindObjectParameter{2, 224, "Packet"},
+                   BeginObject{320}, CopyObject{128, 320}, BeginObject{416}, CopyObject{224, 416},
+                   BeginObject{512}, AcquireServiceLoan{1, 16},
+                   ServiceCall{"copied_helper", 1, 512, {0, 0, 0}, service::Kind::Console, {}, {0, 320, 416}},
+                   ReleaseServiceLoan{1}, EndObject{416}, EndObject{320}, ReturnObject{512}});
+    auto g = entry("copied_helper");
+    g.frameBytes = 224;
+    g.result = Type("Packet");
+    g.parameters = f.parameters;
+    reserve(g, 128);
+    reserve(g, 224);
+    g.code.insert(g.code.end(),
+                  {BindObjectParameter{1, 128, "Packet"}, BindObjectParameter{2, 224, "Packet"}, ReturnObject{128}});
+    if (paired) {
+        m.enumCases[std::string(service::displayPutResultName)] = 2;
+        m.enumCases[std::string(service::displayCompletionName)] = 2;
+        for (auto *function : {&f, &g}) {
+            function->parameters.insert(function->parameters.begin() + 1, Type::DisplaySession);
+            function->serviceSlots.insert(32);
+            std::get<BindObjectParameter>(function->code[1]).index = 2;
+            std::get<BindObjectParameter>(function->code[2]).index = 3;
+            function->code.insert(function->code.begin() + 1, BindServiceParameter{1, 32, service::Kind::Display});
+        }
+        auto &call = std::get<ServiceCall>(f.code[10]);
+        call.spanArguments = {0, 0, 0, 0};
+        call.objectArguments = {0, 0, 320, 416};
+        call.additionalServices = {{2, service::Kind::Display}};
+        f.code.insert(f.code.begin() + 10, AcquireServiceLoan{2, 32, service::Kind::Display});
+        f.code.insert(f.code.begin() + 12, ReleaseServiceLoan{2, service::Kind::Display});
+    }
+    m.functions = {f, g};
+    return m;
+}
+ServiceCall &copiedCall(Module &module) {
+    for (auto &instruction : module.functions[0].code)
+        if (auto *call = std::get_if<ServiceCall>(&instruction))
+            return *call;
+    throw Error("copied fixture lost its service call");
+}
+Module copiedSpanArgument() {
+    auto m = copiedArguments();
+    auto &f = m.functions[0];
+    f.frameBytes = 576;
+    f.spanSlots.insert(576);
+    auto &call = copiedCall(m);
+    call.objectArguments[2] = 0;
+    call.spanArguments[2] = 576;
+    f.code.insert(f.code.begin() + 8, BorrowLiteralSpan{{65}, 576});
+    f.code.insert(f.code.begin() + 12, EndSpan{576});
+    auto &g = m.functions[1];
+    g.parameters[2] = Type::ByteSpan;
+    g.objectSlots.erase(224);
+    for (int byte = 0; byte < 80; ++byte)
+        g.slots.erase(224 - byte);
+    g.spanSlots.insert(224);
+    g.code[2] = BindSpanParameter{2, 224};
+    g.code.insert(g.code.begin() + 3, EndSpan{224});
+    return m;
+}
+void copiedArgumentFacts() {
+    for (const bool paired : {false, true}) {
+        auto module = copiedArguments(0, paired);
+        copiedCall(module).resultOffset = 0;
+        auto &caller = module.functions[0];
+        // Scalar results ensure a missing narrow service_record is caused by
+        // the copied inputs, independently of the existing copied-result rule.
+        const auto unused = std::find_if(caller.code.begin(), caller.code.end(), [](const auto &instruction) {
+            const auto *begin = std::get_if<BeginObject>(&instruction);
+            return begin && begin->offset == 512;
+        });
+        need(unused != caller.code.end(), "copied fixture lost its result reservation");
+        caller.code.erase(unused);
+        for (auto &function : module.functions) {
+            function.result = Type::Bool;
+            function.code.back() = Constant{1, Type::Bool};
+            function.code.push_back(Return{});
+        }
+        const auto checked = validate(std::move(module));
+        X86Emitter emitter;
+        (void)emitter.emit(checked);
+        AbiDeclarations declarations;
+        declarations.records["Packet"] = {"Packet", {"bytes", "count", "kind"}};
+        declarations.functions["copied_helper"] = {"copied_helper", {}};
+        const auto abi = emitter.abiFactsJson(checked, declarations);
+        const int grantBytes = paired ? 32 : 16;
+        need(abi.find("\"size\":80,\"alignment\":8,\"reserved\":80") != std::string::npos &&
+                 abi.find("\"parameter_bytes\":" + std::to_string(grantBytes + 160)) != std::string::npos,
+             "copied service generic ABI must preserve complete record widths");
+        for (const int offset : {grantBytes, grantBytes + 80})
+            need(abi.find("\"offset\":" + std::to_string(offset) +
+                          ",\"bytes\":80,\"kind\":\"class\",\"type_name\":\"Packet\"") != std::string::npos,
+                 "copied service ABI must retain positional nominal value records");
+        const auto &facts = emitter.stackFacts().at("copied_caller");
+        need(!facts.serviceRecord && !emitter.stackFacts().at("copied_helper").serviceRecord,
+             "copied service inputs must not advertise scalar-only service_record facts");
+        need(facts.localBytes == facts.calls.at("copied_helper") + 24,
+             "copied service stack facts must retain the bounded copy register-save burst");
+        ++checks;
+    }
+}
 void good(Module m) {
     X86Emitter emitter;
     const auto text = emitter.emit(validate(std::move(m)));
@@ -131,6 +266,68 @@ int main() {
     good(forwarded());
     good(copiedResult());
     good(copiedResult(true));
+    good(copiedArguments());
+    good(copiedArguments(0, true));
+    good(copiedArguments(1));
+    good(copiedArguments(2));
+    good(copiedSpanArgument());
+    copiedArgumentFacts();
+    for (const std::vector<int> offsets : {std::vector<int>{}, {0, 320}, {0, 320, 416, 0},
+                                          {320, 320, 416}, {0, 320, 320}, {0, 16, 416}, {0, 319, 416}})
+        bad(copiedArguments(), [&](auto &m) { copiedCall(m).objectArguments = offsets; });
+    bad(copiedArguments(), [](auto &m) {
+        m.functions[0].objectSlots[320].mutableValue = true;
+    });
+    bad(copiedArguments(), [](auto &m) {
+        m.classLayouts["Other"] = m.classLayouts.at("Packet");
+        m.classFields["Other"] = m.classFields.at("Packet");
+        auto &f = m.functions[0];
+        f.parameters[2] = Type("Other");
+        f.objectSlots[224].className = "Other";
+        f.objectSlots[416].className = "Other";
+        std::get<BindObjectParameter>(f.code[2]).className = "Other";
+    });
+    for (const int shape : {0, 1, 2}) {
+        bad(copiedArguments(shape), [](auto &m) {
+            m.functions[0].code.erase(m.functions[0].code.begin() + 4); // Incomplete snapshot, including empty fields.
+        });
+        bad(copiedArguments(shape), [](auto &m) {
+            m.functions[0].code.insert(m.functions[0].code.begin() + 9, EndObject{320});
+        });
+        bad(copiedArguments(shape), [](auto &m) { copiedCall(m).resultOffset = 320; });
+    }
+    bad(copiedArguments(), [](auto &m) { copiedCall(m).spanArguments[1] = 320; });
+    bad(copiedSpanArgument(), [](auto &m) { copiedCall(m).objectArguments[2] = 416; });
+    bad(copiedArguments(0, true), [](auto &m) { copiedCall(m).objectArguments[1] = 416; });
+    bad(copiedArguments(0, true), [](auto &m) {
+        copiedCall(m).additionalServices[0].kind = service::Kind::Console;
+    });
+    for (const auto type : {Type::ConsoleSession, Type::ByteSpan, Type::OwnedBytes, Type::ByteRegion})
+        bad(copiedArguments(), [&](auto &m) {
+            m.classFields["Packet"].push_back({type, 66, 0, false});
+        });
+    bad(copiedArguments(), [](auto &m) {
+        m.functions[1].parameters.resize(7, Type::I64);
+    });
+    bad(copiedArguments(), [](auto &m) {
+        m.functions[0].code[9] = Call{"copied_helper"};
+    });
+    bad(copiedArguments(), [](auto &m) {
+        m.functions[0].code[9] = AggregateCall{"copied_helper", {0, 320, 416}, 512};
+    });
+    bad(copiedArguments(), [](auto &m) {
+        m.functions[0].code.erase(m.functions[0].code.begin() + 8); // No acquired Console loan.
+    });
+    bad(copiedArguments(), [](auto &m) {
+        m.functions[0].code.insert(m.functions[0].code.begin() + 9,
+                                  {Constant{65, Type::U8}, ServiceOperation{16, service::Operation::Put, 0}});
+    });
+    auto explicitZeroObjects = forwarded();
+    std::get<ServiceCall>(explicitZeroObjects.functions[0].code[4]).objectArguments = {0, 0};
+    good(explicitZeroObjects);
+    bad(explicitZeroObjects, [](auto &m) {
+        std::get<ServiceCall>(m.functions[0].code[4]).objectArguments[1] = 24;
+    });
     for (const int offset : {0, 16, 40})
         bad(copiedResult(), [=](auto &m) {
             std::get<ServiceCall>(m.functions[0].code[3]).resultOffset = offset;

@@ -72,6 +72,9 @@ the helper while keeping their existing failure/acknowledgement policy.
 `console.program_input` reads one protected-console submission through a sealed
 ConsoleSession and returns copied bytes, an action and CR carry. Native command
 execution and publication remain outside that input capability.
+`console.program_output` presents a bounded copied response and prompt through
+the same capability. It validates the whole record before writing, stops at the
+first failed output byte and never retries a command or committed update.
 
 ## Living component references
 

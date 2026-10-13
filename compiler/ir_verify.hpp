@@ -859,6 +859,20 @@ inline void verifyFunction(FunctionBody &function,
                     require(state.objectClassesInitialized.contains({base, -1}),
                             "empty object not completely initialized");
             };
+            auto copiedArgument = [&](int base, const Type &type, std::set<int> &storage, const std::string &role) {
+                require(type.isClass() && metadata.findClass(type.className), "invalid " + role + " parameter type");
+                require(objectSlots.contains(base), role + " argument requires exact object slot");
+                require(storage.insert(base).second, role + " argument snapshots must be distinct");
+                const auto &object = objectSlots.at(base);
+                require(object.className == type.className, role + " argument nominal class mismatch");
+                require(!object.mutableValue, role + " argument snapshot must be readonly");
+                require(state.activeObjects.contains(base), role + " argument outside active object lifetime");
+                const auto layout = classLeaves(type.className);
+                for (std::size_t field = 0; field < layout.size(); ++field)
+                    require(state.initialized.contains(objectLeaf(base, field)),
+                            role + " argument object not fully initialized");
+                logicalComplete(base);
+            };
             auto markObject = [&](int base) {
                 const auto &name = objectSlots.at(base).className;
                 const auto layout = classLeaves(name);
@@ -1362,22 +1376,7 @@ inline void verifyFunction(FunctionBody &function,
                                 require(pop().type == type, "aggregate scalar argument type mismatch");
                                 continue;
                             }
-                            require(type.isClass() && metadata.findClass(type.className),
-                                    "invalid aggregate parameter type");
-                            require(objectSlots.contains(base),
-                                    "aggregate argument requires exact object slot");
-                            require(argumentStorage.insert(base).second,
-                                    "aggregate argument snapshots must be distinct");
-                            const auto &object = objectSlots.at(base);
-                            require(object.className == type.className, "aggregate argument nominal class mismatch");
-                            require(!object.mutableValue, "aggregate argument snapshot must be readonly");
-                            require(state.activeObjects.contains(base),
-                                    "aggregate argument outside active object lifetime");
-                            const auto layout = classLeaves(type.className);
-                            for (std::size_t field = 0; field < layout.size(); ++field)
-                                require(state.initialized.contains(objectLeaf(base, field)),
-                                        "aggregate argument object not fully initialized");
-                            logicalComplete(base);
+                            copiedArgument(base, type, argumentStorage, "aggregate");
                         }
                         if (target.result().isClass()) {
                             const int base = operation.resultOffset;
@@ -2344,12 +2343,23 @@ inline void verifyFunction(FunctionBody &function,
                         require(count >= 1 && count <= 2 && operation.additionalServices.size() == count - 1 &&
                                     operation.spanArguments.size() == target.parameters().size(),
                                 "service helper argument vector mismatch");
+                        const bool copiedParameters =
+                            std::any_of(target.parameters().begin(), target.parameters().end(), [](const Type &type) {
+                                return type.isClass();
+                            });
+                        require((!copiedParameters && operation.objectArguments.empty()) ||
+                                    operation.objectArguments.size() == target.parameters().size(),
+                                "service copied argument vector mismatch");
+                        const auto objectAt = [&](std::size_t position) {
+                            return operation.objectArguments.empty() ? 0 : operation.objectArguments[position];
+                        };
                         std::set<int> usedLoans, usedRoots;
                         for (std::size_t position = 0; position < count; ++position) {
                             const auto argument = argumentAt(position);
                             require(state.serviceLoans.contains(argument.loanId) &&
                                         usedLoans.insert(argument.loanId).second &&
                                         operation.spanArguments[position] == 0 &&
+                                        objectAt(position) == 0 &&
                                         target.parameters()[position].isService(),
                                     "service helper requires distinct acquired loans in leading positions");
                             auto &loan = state.serviceLoans.at(argument.loanId);
@@ -2360,14 +2370,21 @@ inline void verifyFunction(FunctionBody &function,
                                         argument.kind == service::kind(target.parameters()[position]),
                                     "service helper requires an unused loan with exact provenance");
                         }
+                        std::set<int> argumentStorage;
                         for (std::size_t reverse = target.parameters().size(); reverse > count; --reverse) {
                             const auto position = reverse - 1;
                             const auto &type = target.parameters()[position];
                             const int base = operation.spanArguments[position];
                             if (type.isSpan()) {
+                                require(objectAt(position) == 0, "service span argument cannot name object storage");
                                 require(state.activeSpans.contains(base), "service span argument is not active");
+                                span(base);
+                            } else if (type.isClass()) {
+                                require(base == 0, "service copied argument cannot name span storage");
+                                copiedArgument(objectAt(position), type, argumentStorage, "service");
                             } else {
-                                require(base == 0 && scalarValueType(type, metadata) && pop().type == type,
+                                require(base == 0 && objectAt(position) == 0 && scalarValueType(type, metadata) &&
+                                            pop().type == type,
                                         "service scalar argument mismatch");
                             }
                         }
@@ -2375,6 +2392,8 @@ inline void verifyFunction(FunctionBody &function,
                             // Signature validation applies the ordinary copied-value
                             // bounds; use its full nominal layout, including empty
                             // and nested completion facts, for the fresh destination.
+                            require(!argumentStorage.contains(operation.resultOffset),
+                                    "service result aliases argument snapshot");
                             copyTarget(operation.resultOffset, target.result().className);
                             state.current.reset();
                         } else {

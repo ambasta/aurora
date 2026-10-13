@@ -11,6 +11,7 @@ import console.session_files;
 import console.protected_files;
 import console.command_stream;
 import console.program_input;
+import console.program_output;
 import kernel.note_read;
 
 // A private sealed Console turn; only its ordinary copied submission returns.
@@ -18,6 +19,13 @@ auto read_program_input(builtin::ConsoleSession& session, bool after_cr) -> cons
     static_assert(size_of(console::ProgramSubmission) == 88);
     const console::ProgramSubmission result = console::read_program_input(session, after_cr);
     return result;
+}
+
+// A separate sealed output turn. The private ingress validates canonical enum
+// bytes; this helper owns only response presentation and the following prompt.
+auto present_program_response(builtin::ConsoleSession& session, console::ProgramResponse response) -> bool {
+    static_assert(size_of(console::ProgramResponse) == 80);
+    return console::present_program_response(session, response);
 }
 
 auto aurora_kernel_value() -> i64 {

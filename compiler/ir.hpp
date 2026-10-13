@@ -321,10 +321,11 @@ public:
     std::string callee;
     int loanId;
     int resultOffset;
-    Offsets spanArguments; // full parameter positions, capability/scalars zero
+    Offsets spanArguments; // full parameter positions, capability/scalar/object positions zero
     service::Kind kind = service::Kind::Console;
     // The first loan retains its original representation for single-service IR.
     Services additionalServices{};
+    Offsets objectArguments{}; // readonly copied snapshots; zero at every other position
 };
 using ServiceCall = BasicServiceCall<std::vector<int>, std::vector<ServiceArgument>>;
 using ServiceCallObservation = BasicServiceCall<OffsetRange, ServiceArgumentRange>;

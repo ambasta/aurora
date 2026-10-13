@@ -427,7 +427,8 @@ class X86Emitter {
     int packService(ir::CallableView target, const ir::ServiceCallObservation &operation) {
         const auto parameters = target.parameters();
         for (std::size_t reverse = parameters.size(); reverse > 0; --reverse)
-            if (!parameters[reverse - 1].isSpan() && !parameters[reverse - 1].isService())
+            if (!parameters[reverse - 1].isSpan() && !parameters[reverse - 1].isService() &&
+                !parameters[reverse - 1].isClass())
                 pop(argumentRegisters[reverse - 1]);
         const int bytes = (recordOffset(target, parameters.size()) + 15) & ~15;
         reserveStack(bytes);
@@ -447,6 +448,20 @@ class X86Emitter {
                     line("movq " + address(operation.spanArguments[index] - byte) + ", %rax");
                     line("movq %rax, " + std::to_string(offset + byte) + "(%rsp)");
                 }
+            } else if (parameters[index].isClass()) {
+                const auto layout = classLeaves(parameters[index].className);
+                const auto offsets = physicalStorage(parameters[index].className).leafOffsets;
+                copyLeaves(
+                    layout,
+                    offsets,
+                    offsets,
+                    [&](int byte) {
+                        return address(operation.objectArguments[index] - byte);
+                    },
+                    [&](int byte) {
+                        return std::to_string(offset + byte) + "(%rsp)";
+                    },
+                    CopyBases::StackDestination);
             } else
                 storeArgument(parameters[index], index, std::to_string(offset) + "(%rsp)");
         }
