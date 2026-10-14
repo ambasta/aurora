@@ -199,10 +199,11 @@ def entry(functions):
 
 
 class NativeRunner:
-    def __init__(self, directory, compiler, timeout):
+    def __init__(self, directory, compiler, timeout, *, symbol_timeout=5):
         self.directory = directory
         self.compiler = compiler
         self.timeout = timeout
+        self.symbol_timeout = symbol_timeout
         self.observer = directory / "integer_signal.o"
         command(
             shlex.split(os.environ.get("CXX", "c++"))
@@ -236,7 +237,11 @@ class NativeRunner:
         binary = self.directory / "program"
         command(["ld", "-o", binary, self.directory / "entry.o", self.directory / "program.o", self.observer])
         symbols = {}
-        for line in command(["nm", "--defined-only", "--numeric-sort", binary]).stdout.decode().splitlines():
+        for line in (
+            command(["nm", "--defined-only", "--numeric-sort", binary], timeout=self.symbol_timeout)
+            .stdout.decode()
+            .splitlines()
+        ):
             fields = line.split()
             if len(fields) == 3:
                 symbols[fields[2]] = int(fields[0], 16)
@@ -524,7 +529,8 @@ def main():
             flush=True,
         )
     with tempfile.TemporaryDirectory(prefix="aurora-integer-oracle-") as temporary:
-        runner = NativeRunner(Path(temporary), args.compiler.resolve(), args.timeout)
+        # Symbol inspection is a host-tool watchdog, not the native execution budget.
+        runner = NativeRunner(Path(temporary), args.compiler.resolve(), args.timeout, symbol_timeout=30)
         self_tests(runner)
         if args.self_test_only:
             return

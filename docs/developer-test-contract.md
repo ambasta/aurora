@@ -92,6 +92,11 @@ without semantic observations; watchdogs are not performance assertions.
 XFS-file uses a 600-second aggregate watchdog; individual command limits remain
 unchanged, and batches retain the 512 KiB source budget.
 
+Method-values and readonly-spans use 45-second host compilation watchdogs;
+integer-oracle uses 30 seconds for symbol inspection. Native execution guards,
+imported runner defaults, explicit readonly-spans `--timeout` overrides and the
+three 900-second Meson aggregate guards remain unchanged.
+
 ### Bounded Graph report transport
 
 Graph fixtures evaluate an order report or ranked-entry call once, copy it,

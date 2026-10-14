@@ -92,8 +92,9 @@ def decode(values, offset, endian):
 
 
 class Suite:
-    def __init__(self, directory, compiler, timeout, keep_going):
+    def __init__(self, directory, compiler, timeout, keep_going, *, compiler_timeout=None):
         self.runner = NativeRunner(directory, compiler, timeout)
+        self.compiler_timeout = timeout if compiler_timeout is None else compiler_timeout
         self.keep_going = keep_going
         self.count = self.traps = self.rejections = 0
         self.failures = []
@@ -107,7 +108,7 @@ class Suite:
         try:
             command(
                 [self.runner.compiler, "--module-root", ROOT / "library", path, "-o", output],
-                timeout=self.runner.timeout,
+                timeout=self.compiler_timeout,
             )
             require(path.read_text() == program, name + ": compiler changed source")
             observed, symbols = self.runner.assemble(output.read_text(), ["test"])
@@ -140,7 +141,7 @@ class Suite:
                     output.write_bytes(sentinel)
                 observed = command(
                     [self.runner.compiler, "--module-root", ROOT / "library", path, "-o", output],
-                    timeout=self.runner.timeout,
+                    timeout=self.compiler_timeout,
                     allow_rejection=True,
                 )
                 require(
@@ -688,9 +689,15 @@ def main():
     parser.add_argument("--keep-going", action="store_true")
     parser.add_argument("--seed", type=int, default=14014)
     parser.add_argument("--steps", type=int, default=16)
-    parser.add_argument("--timeout", type=float, default=10)
+    parser.add_argument(
+        "--timeout", type=float, help="override both compiler and native watchdogs (defaults: 45 and 10 seconds)"
+    )
     args = parser.parse_args()
-    require(args.timeout > 0 and 1 <= args.steps <= 64, "invalid timeout or steps")
+    require((args.timeout is None or args.timeout > 0) and 1 <= args.steps <= 64, "invalid timeout or steps")
+    # Omission separates host compilation from native execution; an explicit
+    # legacy --timeout still controls both, as do existing imported Suite callers.
+    native_timeout = 10 if args.timeout is None else args.timeout
+    compiler_timeout = 45 if args.timeout is None else args.timeout
     compiler = args.compiler.resolve()
     started = time.monotonic()
     if not args.self_test_only:
@@ -701,7 +708,7 @@ def main():
             flush=True,
         )
     with tempfile.TemporaryDirectory(prefix="aurora-readonly-spans-") as temporary:
-        suite = Suite(Path(temporary), compiler, args.timeout, args.keep_going)
+        suite = Suite(Path(temporary), compiler, native_timeout, args.keep_going, compiler_timeout=compiler_timeout)
         self_tests(suite)
         if args.self_test_only:
             return
