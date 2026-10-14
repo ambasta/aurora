@@ -1501,14 +1501,21 @@ export namespace compiler_ir_metadata {
             at = at + 1;
         }
         at = 0;
+        i64 cached_object = -1;
+        i64 cached_start = 0;
         while (at < scalars.count()) {
             const SlotRow scalar = store.slot_at(scalars.begin() + at);
             const i64 first = scalar.offset() - slot_width(store, scalar) + 1;
             const i64 object_index = slot_lower_bound(store, objects, first);
             if (object_index < objects.begin() + objects.count()) {
                 const SlotRow object = store.slot_at(object_index);
-                const i64 start = object.offset() - slot_width(store, object) + 1;
-                if (start <= scalar.offset() && !object_has_leaf(store, object, scalar.offset())) {
+                // Layout and storage are immutable throughout this pass. Keep
+                // checked row reads, but resolve the same candidate's extent once.
+                if (object_index != cached_object) {
+                    cached_start = object.offset() - slot_width(store, object) + 1;
+                    cached_object = object_index;
+                }
+                if (cached_start <= scalar.offset() && !object_has_leaf(store, object, scalar.offset())) {
                     return fail(store, MetadataError::object_padding);
                 }
             }

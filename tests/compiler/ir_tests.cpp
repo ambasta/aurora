@@ -2686,6 +2686,27 @@ void packedStorageTests() {
             namedFunction(m, "packed_tiny_roundtrip").slots[5] = Type::U8;
         },
         "scalar slot overlaps empty object or padding");
+    auto cachedExtents = module;
+    aurora::ir::Function cachedFrame;
+    cachedFrame.name = "packed_extent_cache";
+    cachedFrame.result = Type::I64;
+    cachedFrame.frameBytes = 48;
+    cachedFrame.objectSlots = {{8, ObjectSlot{"Tiny", false}}, {40, ObjectSlot{"Leaf", false}}};
+    cachedFrame.slots = {{6, Type::U8},
+                         {7, Type::U8},
+                         {8, Type::U8},
+                         {16, Type::I64},
+                         {24, Type::Bool},
+                         {31, Type::U8},
+                         {32, Type::U8},
+                         {40, Type::enumeration("Mode")}};
+    cachedFrame.code = {Constant{42, Type::I64}, Return{}};
+    cachedExtents.functions.push_back(std::move(cachedFrame));
+    accept("object extent cache refreshes before a different-width candidate", cachedExtents);
+    namedFunction(cachedExtents, "packed_extent_cache").slots[30] = Type::U8;
+    rejectExact("cached object extent still rejects later padding",
+                std::move(cachedExtents),
+                "scalar slot overlaps empty object or padding");
     rejectModule(
         "packed object invalid minimum offset",
         module,
