@@ -1,4 +1,5 @@
 export module aurora.compiler.ir_instruction_storage;
+import aurora.compiler.ir_metadata_storage;
 
 // Durable executable storage. Ingress fills immutable instruction/payload rows
 // once. Source structural admission normalizes code order before native values
@@ -473,9 +474,7 @@ export namespace compiler_ir_instructions {
         auto target() const -> i64 { return targetPosition; }
         auto flags() const -> u64 { return flowFlags; }
         auto scratch() const -> i64 { return scratchValue; }
-        auto block_entry() const -> bool { return (flowFlags & 1u64) != 0u64; }
-        auto falls_through() const -> bool { return (flowFlags & 2u64) != 0u64; }
-        auto reached() const -> bool { return (flowFlags & 4u64) != 0u64; }
+        auto has_flow(u64 mask) const -> bool { return (flowFlags & mask) != 0u64; }
     };
     // The row index is the stable zero-based CallableId. Its allocation never
     // moves, including when source normalization reduces retainedCount.
@@ -678,13 +677,16 @@ export namespace compiler_ir_instructions {
         }
         auto resolve_flow(BodyRow body) -> bool {
             if (body.count() == 0) { return reject(InstructionError::empty_body); }
+            const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
+            const u64 leader = masks.flow_leader();
+            const u64 fallthrough = masks.flow_fallthrough();
             i64 labels = 0;
             i64 at = 0;
             while (at < body.count()) {
                 const i64 form = form_at(body, at);
                 u64 flags = 0u64;
-                if (form != 41 && !returning(form)) { flags = 2u64; }
-                if (at == 0 || form == 40) { flags = flags | 1u64; }
+                if (form != 41 && !returning(form)) { flags = fallthrough; }
+                if (at == 0 || form == 40) { flags = flags | leader; }
                 if (!set_flow(body, at, -1, flags)) { return false; }
                 if (form == 40) {
                     if (label_at(body, at) < 0) { return reject(InstructionError::invalid_label); }
@@ -709,7 +711,7 @@ export namespace compiler_ir_instructions {
                     if (!set_flow(body, at, target, old.flags())) { return false; }
                     if (form == 42 && at + 1 < body.count()) {
                         const CodeRow next = flow_at(body, at + 1);
-                        if (!set_flow(body, at + 1, next.target(), next.flags() | 1u64)) { return false; }
+                        if (!set_flow(body, at + 1, next.target(), next.flags() | leader)) { return false; }
                     }
                 }
                 at = at + 1;
@@ -718,16 +720,19 @@ export namespace compiler_ir_instructions {
         }
         // Mark before queueing so each position occupies at most one slot. The
         // caller increments its bounded tail only when this adds a new node.
-        auto enqueue(BodyRow body, i64 position, i64 tail) -> bool {
+        auto enqueue(BodyRow body, i64 position, i64 tail, u64 reached) -> bool {
             if (position < 0 || position >= body.count() || tail < 0 || tail >= body.count()) {
                 return reject(InstructionError::integrity);
             }
             const CodeRow old = flow_at(body, position);
-            return set_flow(body, position, old.target(), old.flags() | 4u64)
+            return set_flow(body, position, old.target(), old.flags() | reached)
                 && set_scratch(body, tail, position);
         }
         auto reach_body(BodyRow body) -> bool {
-            if (!enqueue(body, 0, 0)) { return false; }
+            const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
+            const u64 reached = masks.flow_reached();
+            const u64 fallthrough = masks.flow_fallthrough();
+            if (!enqueue(body, 0, 0, reached)) { return false; }
             i64 head = 0;
             i64 tail = 1;
             while (head < tail) {
@@ -739,20 +744,20 @@ export namespace compiler_ir_instructions {
                 // value-state worklist without making value claims here.
                 if (code.target() >= 0) {
                     const CodeRow target = flow_at(body, code.target());
-                    if (!target.reached()) {
-                        if (!enqueue(body, code.target(), tail)) { return false; }
+                    if (!target.has_flow(reached)) {
+                        if (!enqueue(body, code.target(), tail, reached)) { return false; }
                         tail = tail + 1;
                     }
                 }
-                if (code.falls_through()) {
+                if (code.has_flow(fallthrough)) {
                     const i64 next = position + 1;
                     // Keep a terminal fallthrough flag for native value checking.
                     // Its instruction's lifetime/value error precedes falling off
                     // the body, and no out-of-range position is read or queued.
                     if (next < body.count()) {
                         const CodeRow following = flow_at(body, next);
-                        if (!following.reached()) {
-                            if (!enqueue(body, next, tail)) { return false; }
+                        if (!following.has_flow(reached)) {
+                            if (!enqueue(body, next, tail, reached)) { return false; }
                             tail = tail + 1;
                         }
                     }
@@ -761,13 +766,15 @@ export namespace compiler_ir_instructions {
             return true;
         }
         auto normalize_body(i64 callable, BodyRow body) -> bool {
+            const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
+            const u64 reached = masks.flow_reached();
             i64 retained = 0;
             i64 unreachable = 0;
             i64 at = 0;
             while (at < body.count()) {
                 const CodeRow code = flow_at(body, at);
                 i64 mapped = -1;
-                if (code.reached()) {
+                if (code.has_flow(reached)) {
                     mapped = retained;
                     retained = retained + 1;
                 } else {
@@ -789,7 +796,7 @@ export namespace compiler_ir_instructions {
             at = 0;
             while (at < body.count()) {
                 const CodeRow code = flow_at(body, at);
-                if (code.reached() && code.target() >= 0) {
+                if (code.has_flow(reached) && code.target() >= 0) {
                     const CodeRow target = flow_at(body, code.target());
                     if (target.scratch() < 0 || target.scratch() >= retained) {
                         return reject(InstructionError::integrity);
@@ -802,7 +809,7 @@ export namespace compiler_ir_instructions {
             at = 0;
             while (at < body.count()) {
                 const CodeRow code = flow_at(body, at);
-                if (code.reached()) {
+                if (code.has_flow(reached)) {
                     // IDs remain immutable; only copied code-order rows move.
                     const CodeRow value = CodeRow(code.id(), code.target(), code.flags(), 0);
                     if (!codeOrder.set(body.begin() + destination, value)) {

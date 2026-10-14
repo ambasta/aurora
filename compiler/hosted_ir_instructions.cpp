@@ -686,9 +686,10 @@ InstructionFlow Instructions::codeFlow(Metadata::CallableId callable, CodePositi
     if (body.unreachableAfter < 0 || body.unreachableAfter > body.retainedCount)
         invalidInstructions();
     const auto code = state_->row<Pool::codeOrder>(index(body.codeBegin) + position);
+    const auto &masks = detail::metadataFlagMasks();
     return {code.targetPosition == -1 ? std::nullopt : std::optional<CodePosition>{index(code.targetPosition)},
-            (code.flowFlags & 2) != 0,
-            (code.flowFlags & 1) != 0,
+            (code.flowFlags & masks.flowFallthrough) != 0,
+            (code.flowFlags & masks.flowLeader) != 0,
             body.unreachableAfter != 0 && index(body.unreachableAfter) == position + 1};
 }
 InstructionObservation Instructions::bodyInstruction(Metadata::CallableId callable, InstructionId id) const {

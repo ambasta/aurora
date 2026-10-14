@@ -309,10 +309,14 @@ export namespace compiler_ir_metadata {
         u64 serviceConsole;
         u64 serviceDisplay;
         u64 serviceIommu;
+        u64 flowLeader;
+        u64 flowFallthrough;
+        u64 flowReached;
     public:
         FlagMasks() : classLayout(1u64), classFields(2u64), classStorage(4u64), classArrayCarrier(8u64),
             callableReceiver(1u64), callableSpanSummary(8u64), receiverMutable(1u64), receiverConstructor(2u64),
-            receiverPublic(4u64), serviceConsole(1u64), serviceDisplay(2u64), serviceIommu(4u64) {}
+            receiverPublic(4u64), serviceConsole(1u64), serviceDisplay(2u64), serviceIommu(4u64),
+            flowLeader(1u64), flowFallthrough(2u64), flowReached(4u64) {}
         auto class_layout() const -> u64 { return classLayout; }
         auto class_fields() const -> u64 { return classFields; }
         auto class_storage() const -> u64 { return classStorage; }
@@ -325,6 +329,9 @@ export namespace compiler_ir_metadata {
         auto service_console() const -> u64 { return serviceConsole; }
         auto service_display() const -> u64 { return serviceDisplay; }
         auto service_iommu() const -> u64 { return serviceIommu; }
+        auto flow_leader() const -> u64 { return flowLeader; }
+        auto flow_fallthrough() const -> u64 { return flowFallthrough; }
+        auto flow_reached() const -> u64 { return flowReached; }
         auto class_allowed() const -> u64 { return classLayout | classFields | classStorage | classArrayCarrier; }
         auto callable_allowed() const -> u64 { return callableReceiver | callableSpanSummary; }
         auto receiver_allowed() const -> u64 { return receiverMutable | receiverConstructor | receiverPublic; }

@@ -8,6 +8,7 @@
 #include "../../runtime/hosted_bytes.hpp"
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cerrno>
 #include <csignal>
 #include <cstdint>
@@ -4708,6 +4709,12 @@ void rawInstructionAdmission() {
     using Kind = aurora::TypeKind;
     meta::FlagMasks masks{};
     aurora_hosted_metadata_flag_masks(&masks);
+    require(std::has_single_bit(masks.flowLeader) && std::has_single_bit(masks.flowFallthrough) &&
+                std::has_single_bit(masks.flowReached) && (masks.flowLeader & masks.flowFallthrough) == 0 &&
+                (masks.flowLeader & masks.flowReached) == 0 && (masks.flowFallthrough & masks.flowReached) == 0,
+            "source flow masks must be distinct single-bit u64 flags");
+    const auto reachedLeader = masks.flowLeader | masks.flowFallthrough | masks.flowReached;
+    const auto reachedFallthrough = masks.flowFallthrough | masks.flowReached;
     struct ScalarCase {
         Form form;
         Kind type;
@@ -4987,7 +4994,8 @@ void rawInstructionAdmission() {
                     wire::CodeRow code{};
                     bytes::__au_runtime_values_at(&codeOrder, position, sizeof(code), &code);
                     require(code.instructionId == position + 1 && code.targetPosition == -1 &&
-                                code.flowFlags == (position == 0 ? 7u : 4u) && code.scratchValue == 0,
+                                code.flowFlags == (position == 0 ? reachedLeader : masks.flowReached) &&
+                                code.scratchValue == 0,
                             "normalized instruction facts lost stable identity or retained scratch");
                 }
                 if (invalidBody) {
@@ -5156,9 +5164,9 @@ void rawInstructionAdmission() {
             for (std::int64_t at = 0; at < retained; ++at)
                 expected.push_back({begin + at + 1,
                                     at == target - 1 ? target : -1,
-                                    at == 0 || at == target                  ? 7u
-                                    : at == target - 1 || at == retained - 1 ? 4u
-                                                                             : 6u,
+                                    at == 0 || at == target                  ? reachedLeader
+                                    : at == target - 1 || at == retained - 1 ? masks.flowReached
+                                                                             : reachedFallthrough,
                                     0});
         }
         Allocations allocations;
@@ -5311,7 +5319,8 @@ void rawInstructionAdmission() {
                         &codeOwner, body.codeBegin + body.retainedCount + tail, sizeof(code), &code);
                     require(code.instructionId == body.codeBegin + body.retainedCount + tail + 1 &&
                                 code.targetPosition == (tail == 0 ? -1 : body.retainedCount) &&
-                                code.flowFlags == (tail == 0 ? 3u : 0u) && code.scratchValue == -1,
+                                code.flowFlags == (tail == 0 ? masks.flowLeader | masks.flowFallthrough : 0u) &&
+                                code.scratchValue == -1,
                             "service sort touched the discarded post-CFG capacity tail");
                 }
             }

@@ -163,7 +163,7 @@ def abi_generation(facts):
         ("compiler_lowering::LocalRow", 160),
         ("compiler_lowering::SnapshotRow", 48),
         ("compiler_lowering::ContinuationRow", 496),
-        ("compiler_ir_metadata::FlagMasks", 96),
+        ("compiler_ir_metadata::FlagMasks", 120),
         ("compiler_ir_metadata::ReceiverShape", 24),
         ("compiler_ir_metadata::CallableOptions", 40),
         ("compiler_ir_metadata::CallableRow", 120),
@@ -225,6 +225,9 @@ def abi_generation(facts):
                 "serviceConsole",
                 "serviceDisplay",
                 "serviceIommu",
+                "flowLeader",
+                "flowFallthrough",
+                "flowReached",
             )
         ],
         "metadata flag table is not the named full-width source record",

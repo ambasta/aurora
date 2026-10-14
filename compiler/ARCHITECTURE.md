@@ -31,6 +31,10 @@ legacy C++ expression parser is retired; final-source convergence remains a requ
 
 ## Current boundaries
 
+Metadata and instruction-flow masks share the source-owned `FlagMasks` table.
+Its existing generated ABI bridge supplies native readers; structural passes
+read the needed `u64` masks once per pass and keep the 32-byte code row unchanged.
+
 Native adapters still bind storage, convert records and enforce transport bounds.
 Those checks do not justify duplicated semantic policy. Static source admission
 and dynamic native lifetime/provenance checks have different inputs; remove a
