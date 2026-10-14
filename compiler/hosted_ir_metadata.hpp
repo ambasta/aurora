@@ -31,7 +31,7 @@ class InitializationWorkspace;
 namespace detail {
 class MetadataWriter;
 class InstructionWriter;
-}
+} // namespace detail
 
 // All ranges borrow the immovable Metadata capsule. Dereferencing copies a
 // value; neither a payload pointer nor an Aurora owner escapes this interface.

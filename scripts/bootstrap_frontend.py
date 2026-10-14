@@ -40,9 +40,17 @@ ARGUMENT_RECORDS = (
     ("GraphFunctionInput", "compiler_frontend::graph_set_function", ("index", "function")),
     ("GraphEdgeInput", "compiler_frontend::graph_set_edge", ("index", "target")),
     ("MetadataCreate", "compiler_frontend::metadata_create", ("region",)),
-    ("MetadataInitialize", "compiler_frontend::metadata_initialize", ("counts", "callableCount", "slotCount", "instructionBegin")),
+    (
+        "MetadataInitialize",
+        "compiler_frontend::metadata_initialize",
+        ("counts", "callableCount", "slotCount", "instructionBegin"),
+    ),
     ("MetadataRelease", "compiler_frontend::metadata_release", ("region", "store")),
-    ("InstructionsCreate", "compiler_frontend::instructions_create", ("region", "instructionCount", "operandCount", "literalCount", "bodyCount")),
+    (
+        "InstructionsCreate",
+        "compiler_frontend::instructions_create",
+        ("region", "instructionCount", "operandCount", "literalCount", "bodyCount"),
+    ),
     ("InstructionsRelease", "compiler_frontend::instructions_release", ("region", "store")),
     ("InitializationCreate", "compiler_frontend::initialization_create", ("region",)),
     ("InitializationRelease", "compiler_frontend::initialization_release", ("region", "workspace")),
@@ -51,7 +59,11 @@ ARGUMENT_RECORDS = (
 
 def abi_declaration(facts, group, source_name):
     """Find a resolved declaration; source spelling is never a mangling recipe."""
-    if type(facts.get("version")) is not int or facts["version"] not in (1, 2) or not isinstance(facts.get(group), dict):
+    if (
+        type(facts.get("version")) is not int
+        or facts["version"] not in (1, 2)
+        or not isinstance(facts.get(group), dict)
+    ):
         raise ValueError("unsupported compiler ABI facts")
     found = [(symbol, entry) for symbol, entry in facts[group].items() if entry["source_name"] == source_name]
     if len(found) != 1:
@@ -85,9 +97,12 @@ def normalize_function_abi(facts, function):
     receiver, mutable = function.get("receiver"), function.get("receiver_mutable")
     records = facts.get("records", {})
     if (
-        "receiver" not in function or "receiver_mutable" not in function
+        "receiver" not in function
+        or "receiver_mutable" not in function
         or (receiver is None and mutable is not None)
-        or (receiver is not None and (type(receiver) is not str or receiver not in records or type(mutable) is not bool))
+        or (
+            receiver is not None and (type(receiver) is not str or receiver not in records or type(mutable) is not bool)
+        )
     ):
         raise ValueError("invalid compiler ABI receiver facts")
 
@@ -96,17 +111,23 @@ def normalize_function_abi(facts, function):
         if type(borrowed) is not bool or (borrowed and receiver is None):
             raise ValueError("invalid predecessor borrowed root")
         if second is not None and (
-            not borrowed or mutable is not True or type(second) is not dict
-            or set(second) != {"type_name", "mutable"} or second["mutable"] is not False
-            or type(second["type_name"]) is not str or second["type_name"] not in records
+            not borrowed
+            or mutable is not True
+            or type(second) is not dict
+            or set(second) != {"type_name", "mutable"}
+            or second["mutable"] is not False
+            or type(second["type_name"]) is not str
+            or second["type_name"] not in records
         ):
             raise ValueError("invalid predecessor second borrowed root")
         count = 2 if second is not None else int(receiver is not None)
         if (
-            type(function["root_count"]) is not int or function["root_count"] != count
+            type(function["root_count"]) is not int
+            or function["root_count"] != count
             or type(function["root_tuple_bytes"]) is not int
             or function["root_tuple_bytes"] != (16 if count == 2 else 0)
-            or function["root_order"] != (["receiver", "second_receiver"] if count == 2 else ["receiver"] if count else [])
+            or function["root_order"]
+            != (["receiver", "second_receiver"] if count == 2 else ["receiver"] if count else [])
         ):
             raise ValueError("invalid predecessor root count, order or tuple")
         roots = []
@@ -125,19 +146,27 @@ def normalize_function_abi(facts, function):
 
     for ordinal, root in enumerate(roots):
         if (
-            type(root) is not dict or set(root) != {"ordinal", "selector", "type_name", "mutable"}
-            or type(root["ordinal"]) is not int or root["ordinal"] != ordinal
-            or type(root["selector"]) is not int or root["selector"] != -ordinal
-            or type(root["mutable"]) is not bool or (ordinal > 0 and root["mutable"])
-            or type(root["type_name"]) is not str or root["type_name"] not in records
+            type(root) is not dict
+            or set(root) != {"ordinal", "selector", "type_name", "mutable"}
+            or type(root["ordinal"]) is not int
+            or root["ordinal"] != ordinal
+            or type(root["selector"]) is not int
+            or root["selector"] != -ordinal
+            or type(root["mutable"]) is not bool
+            or (ordinal > 0 and root["mutable"])
+            or type(root["type_name"]) is not str
+            or root["type_name"] not in records
             or not any(field.get("kind") == "owner" for field in records[root["type_name"]]["fields"])
         ):
             raise ValueError("invalid compiler ABI borrowed root lane")
     count = len(roots)
-    if count + len(function["parameters"]) > 6 or (count >= 2 and (
-        any(parameter["kind"] not in ("i64", "u64", "u8", "bool", "enum") for parameter in function["parameters"])
-        or function["result"]["kind"] not in ("i64", "u64", "u8", "bool", "enum")
-    )):
+    if count + len(function["parameters"]) > 6 or (
+        count >= 2
+        and (
+            any(parameter["kind"] not in ("i64", "u64", "u8", "bool", "enum") for parameter in function["parameters"])
+            or function["result"]["kind"] not in ("i64", "u64", "u8", "bool", "enum")
+        )
+    ):
         raise ValueError("invalid compiler ABI borrowed root tail")
     root_abi = dict(
         kind="tuple" if count >= 2 else "direct" if count else "none",
@@ -146,12 +175,17 @@ def normalize_function_abi(facts, function):
         tuple_reserved_bytes=((8 * count + 15) // 16) * 16 if count >= 2 else 0,
         saved_root_reserved_bytes=((8 * count + 15) // 16) * 16 if count else 0,
     )
-    if version == 2 and json.dumps(function["borrowed_root_abi"], sort_keys=True) != json.dumps(root_abi, sort_keys=True):
+    if version == 2 and json.dumps(function["borrowed_root_abi"], sort_keys=True) != json.dumps(
+        root_abi, sort_keys=True
+    ):
         raise ValueError("invalid compiler ABI borrowed root transport")
     return {
         **{key: value for key, value in function.items() if key not in old_fields},
-        "receiver": receiver, "receiver_mutable": mutable,
-        "borrowed_roots": roots, "borrowed_root_count": count, "borrowed_root_abi": root_abi,
+        "receiver": receiver,
+        "receiver_mutable": mutable,
+        "borrowed_roots": roots,
+        "borrowed_root_count": count,
+        "borrowed_root_abi": root_abi,
     }
 
 
@@ -336,14 +370,27 @@ def frontend_abi_entries(facts):
     initialization_pairs = {
         "initialization_" + name
         for name in (
-            "initialize", "scalar_state", "write_scalar", "object_initialized", "object_pristine",
-            "mark_object", "clear_object", "array_first_missing", "clear_array",
+            "initialize",
+            "scalar_state",
+            "write_scalar",
+            "object_initialized",
+            "object_pristine",
+            "mark_object",
+            "clear_object",
+            "array_first_missing",
+            "clear_array",
         )
     }
     initialization_readonly = {
         "initialization_" + name
         for name in (
-            "allocated", "status", "slot_count", "word_count", "retained_count", "current_count", "retained_count_at",
+            "allocated",
+            "status",
+            "slot_count",
+            "word_count",
+            "retained_count",
+            "current_count",
+            "retained_count_at",
         )
     }
     checks += [
@@ -407,13 +454,27 @@ def frontend_abi_entries(facts):
         if roots:
             readonly = (
                 (alias.startswith("parser_") and alias not in ("parser_parse", "parser_admit"))
-                or (alias.startswith("resolver_") and alias in (
-                    "resolver_count", "resolver_read_source", "resolver_status", "resolver_read_syntax",
-                    "resolver_read_meta", "resolver_read_resolved",
-                ))
-                or (alias.startswith("lowering_") and alias in (
-                    "lowering_count", "lowering_read_output", "lowering_read_operand",
-                ))
+                or (
+                    alias.startswith("resolver_")
+                    and alias
+                    in (
+                        "resolver_count",
+                        "resolver_read_source",
+                        "resolver_status",
+                        "resolver_read_syntax",
+                        "resolver_read_meta",
+                        "resolver_read_resolved",
+                    )
+                )
+                or (
+                    alias.startswith("lowering_")
+                    and alias
+                    in (
+                        "lowering_count",
+                        "lowering_read_output",
+                        "lowering_read_operand",
+                    )
+                )
                 or alias == "graph_retained"
                 or (alias.startswith("metadata_") and alias not in ("metadata_initialize", "metadata_run"))
                 or alias in ("instructions_allocated", "instructions_error")
@@ -794,9 +855,17 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
         facts, "records", "compiler_ir_initialization::InitializationWorkspace"
     )
     initialization_fields = (
-        ("currentWords", "owner"), ("retainedWords", "owner"), ("retainedCounts", "owner"),
-        ("callableId", "i64"), ("scalarBegin", "i64"), ("scalarCount", "i64"), ("wordCount", "i64"),
-        ("retainedCount", "i64"), ("retainedCapacity", "i64"), ("currentMust", "i64"), ("currentMay", "i64"),
+        ("currentWords", "owner"),
+        ("retainedWords", "owner"),
+        ("retainedCounts", "owner"),
+        ("callableId", "i64"),
+        ("scalarBegin", "i64"),
+        ("scalarCount", "i64"),
+        ("wordCount", "i64"),
+        ("retainedCount", "i64"),
+        ("retainedCapacity", "i64"),
+        ("currentMust", "i64"),
+        ("currentMay", "i64"),
         ("statusValue", "enum"),
     )
     fields = initialization_workspace["fields"]
@@ -811,8 +880,12 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
     for field, (name, kind) in zip(fields, initialization_fields):
         offset, width = number(field["offset"]), number(field["bytes"])
         if (
-            field["name"] != name or field["kind"] != kind or field.get("array_length", 0)
-            or offset < end or offset % 8 != 0 or width != (32 if kind == "owner" else 8)
+            field["name"] != name
+            or field["kind"] != kind
+            or field.get("array_length", 0)
+            or offset < end
+            or offset % 8 != 0
+            or width != (32 if kind == "owner" else 8)
             or offset + width > initialization_workspace["size"]
             or (kind == "enum" and field.get("type_name") != status)
         ):
@@ -832,7 +905,9 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
         qword_row(symbol)
         stride = number(row["size"])
         if (
-            row["alignment"] != 8 or stride != row["reserved"] or stride != 16
+            row["alignment"] != 8
+            or stride != row["reserved"]
+            or stride != 16
             or len(row["fields"]) != len(field_names)
             or any(
                 field["name"] != name or field["kind"] != kind or field["offset"] != index * 8
@@ -912,8 +987,17 @@ def stage_modules(module_root, modules):
         shutil.copyfile(source, destination / source.name)
 
 
-def emit(compiler, source, bridges, output, module_root, messages, metadata_source, instruction_source,
-         compatible_header=None):
+def emit(
+    compiler,
+    source,
+    bridges,
+    output,
+    module_root,
+    messages,
+    metadata_source,
+    instruction_source,
+    compatible_header=None,
+):
     raw = output.with_suffix(".generated.s")
     facts_output = output.with_suffix(".abi.json")
     command = ["--local-symbols", "--abi-facts", str(facts_output.resolve())]
@@ -922,8 +1006,9 @@ def emit(compiler, source, bridges, output, module_root, messages, metadata_sour
     subprocess.run([str(compiler.resolve()), *command], check=True)
     facts = json.loads(facts_output.read_text())
     header = output.parent / (output.stem.replace("-", "_") + "_abi.hpp")
-    content = frontend_abi_header(facts, messages.read_text(), metadata_source.read_text(),
-                                  instruction_source.read_text()).encode()
+    content = frontend_abi_header(
+        facts, messages.read_text(), metadata_source.read_text(), instruction_source.read_text()
+    ).encode()
     if compatible_header is not None and compatible_header.read_bytes() != content:
         raise ValueError("stage2 ABI header differs from the header used by shared host objects")
     if not header.exists() or header.read_bytes() != content:
@@ -952,9 +1037,13 @@ def main():
         or len(headers) > 1
         or len(set(names)) != len(names)
         or not {
-            "frontend.au", "lowering_errors.au", "ir_metadata_storage.au", "ir_instruction_storage.au",
+            "frontend.au",
+            "lowering_errors.au",
+            "ir_metadata_storage.au",
+            "ir_instruction_storage.au",
             "ir_initialization.au",
-        } <= set(names)
+        }
+        <= set(names)
     ):
         raise ValueError("expected unique .au modules including frontend.au, .S bridges and at most one .hpp header")
     module_root = output.parent / "compiler-modules"

@@ -86,7 +86,7 @@ auto event_report(builtin::ConsoleSession& console, u64 kind, u64 word0, u64 wor
             return false;
         }
         const console::WriteResult dom_result = console::write_bytes(console, borrow_bytes(dom));
-        if (!dom_result.complete() || !event_hex(console, (word0 >> 32) & 65535u64, 4)) {
+        if (!dom_result.complete() || !event_hex(console,(word0 >> 32) & 65535u64, 4)) {
             return false;
         }
         const console::WriteResult dva_result = console::write_bytes(console, borrow_bytes(dva));

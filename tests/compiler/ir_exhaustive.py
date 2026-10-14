@@ -55,28 +55,30 @@ def compile_codec_probe(directory):
     # Both inventories are authoritative: generated source forms and the one
     # parameterized operation variant. No independently maintained opcode list.
     generated = (directory / GENERATED_HEADERS[0]).read_text()
-    declaration = re.search(
-        r"enum class InstructionForm\s*:\s*std::int64_t\s*\{(.*?)\};", generated, re.DOTALL
-    )
+    declaration = re.search(r"enum class InstructionForm\s*:\s*std::int64_t\s*\{(.*?)\};", generated, re.DOTALL)
     if declaration is None:
         raise AssertionError("could not locate generated instruction forms")
     forms = re.findall(r"([A-Za-z_][A-Za-z0-9_]*)\s*=", declaration[1])
     probe = directory / "probe.cpp"
     probe.write_text(
         '#include "ir_instruction_codec.hpp"\n#include <array>\n#include <utility>\n'
-        'using namespace aurora::ir;\n'
-        'template<std::size_t... I> consteval bool covered(std::index_sequence<I...>) {\n'
-        '  constexpr std::array mapped{detail::InstructionCodec<std::variant_alternative_t<I, InstructionObservation>>::form...};\n'
-        '  constexpr std::array expected{' + ','.join('detail::InstructionForm::' + name for name in forms) + '};\n'
-        '  if (mapped.size() != expected.size()) return false;\n'
-        '  for (auto form : expected) { unsigned count = 0; for (auto value : mapped) count += value == form; if (count != 1) return false; }\n'
-        '  return true;\n}\n'
-        'static_assert(covered(std::make_index_sequence<std::variant_size_v<InstructionObservation>>{}), '
+        "using namespace aurora::ir;\n"
+        "template<std::size_t... I> consteval bool covered(std::index_sequence<I...>) {\n"
+        "  constexpr std::array mapped{detail::InstructionCodec<"
+        "std::variant_alternative_t<I, InstructionObservation>>::form...};\n"
+        "  constexpr std::array expected{" + ",".join("detail::InstructionForm::" + name for name in forms) + "};\n"
+        "  if (mapped.size() != expected.size()) return false;\n"
+        "  for (auto form : expected) { unsigned count = 0; "
+        "for (auto value : mapped) count += value == form; if (count != 1) return false; }\n"
+        "  return true;\n}\n"
+        "static_assert(covered(std::make_index_sequence<std::variant_size_v<InstructionObservation>>{}), "
         '"instruction variant/form mapping must be one-to-one");\nint main() {}\n'
     )
     return subprocess.run(
         COMPILER + ["-std=c++23", "-fsyntax-only", "-I", str(directory), str(probe)],
-        capture_output=True, text=True, timeout=45,
+        capture_output=True,
+        text=True,
+        timeout=45,
     )
 
 
@@ -106,7 +108,8 @@ with tempfile.TemporaryDirectory(prefix="aurora-ir-exhaustive-") as temporary:
     original = (directory / "ir.hpp").read_text()
     pattern = re.compile(
         r"(template\s*<class Offsets,\s*class Services,\s*class Literals,\s*class Roots>\s*"
-        r"using\s+BasicInstruction\s*=\s*std::variant<)(.*?)(>;)", re.DOTALL
+        r"using\s+BasicInstruction\s*=\s*std::variant<)(.*?)(>;)",
+        re.DOTALL,
     )
     if len(pattern.findall(original)) != 1:
         raise AssertionError("could not uniquely locate the authoritative BasicInstruction inventory for injection")
@@ -129,9 +132,11 @@ with tempfile.TemporaryDirectory(prefix="aurora-ir-exhaustive-") as temporary:
     form_pattern = re.compile(r"(enum class InstructionForm\s*:\s*std::int64_t\s*\{)(.*?)(\};)", re.DOTALL)
     if len(form_pattern.findall(enum_original)) != 1:
         raise AssertionError("could not uniquely locate generated instruction forms")
-    generated_header.write_text(form_pattern.sub(
-        lambda match: match[1] + match[2].rstrip() + "\n    ExhaustivenessProbe = 999,\n" + match[3], enum_original
-    ))
+    generated_header.write_text(
+        form_pattern.sub(
+            lambda match: match[1] + match[2].rstrip() + "\n    ExhaustivenessProbe = 999,\n" + match[3], enum_original
+        )
+    )
     result = compile_codec_probe(directory)
     if result.returncode == 0 or "instruction variant/form mapping must be one-to-one" not in result.stderr:
         raise AssertionError(f"instruction codec missing unknown form rejection:\n{result.stderr}")

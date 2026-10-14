@@ -6,7 +6,14 @@ import aurora.compiler.ir_metadata_storage;
 // are checked; immutable instruction/payload rows never move.
 // Layout comments are source predictions, never generated ABI evidence.
 export namespace compiler_ir_instructions {
-    enum class InstructionStatus { pending, admitted, structured, published, allocation, invalid };
+    enum class InstructionStatus {
+        pending,
+        admitted,
+        structured,
+        published,
+        allocation,
+        invalid
+    };
     enum class InstructionError {
         none,
         //: invalid hosted IR instruction transport
@@ -434,16 +441,33 @@ export namespace compiler_ir_instructions {
         i64 operandCount;
     public:
         RawInstructionRow(i64 kind, i64 form, i64 begin, i64 count) : recordKind(kind), instructionForm(form),
-            unaryOperation(0), binaryOperation(0), comparisonOperation(0), queryOperation(0),
-            operandBegin(begin), operandCount(count) {}
-        auto kind() const -> i64 { return recordKind; }
-        auto form() const -> i64 { return instructionForm; }
-        auto unary_operation() const -> i64 { return unaryOperation; }
-        auto binary_operation() const -> i64 { return binaryOperation; }
-        auto comparison_operation() const -> i64 { return comparisonOperation; }
-        auto query() const -> i64 { return queryOperation; }
-        auto operand_begin() const -> i64 { return operandBegin; }
-        auto operand_count() const -> i64 { return operandCount; }
+            unaryOperation(0), binaryOperation(0), comparisonOperation(0), queryOperation(0), operandBegin(begin),
+            operandCount(count) {
+        }
+        auto kind() const -> i64 {
+            return recordKind;
+        }
+        auto form() const -> i64 {
+            return instructionForm;
+        }
+        auto unary_operation() const -> i64 {
+            return unaryOperation;
+        }
+        auto binary_operation() const -> i64 {
+            return binaryOperation;
+        }
+        auto comparison_operation() const -> i64 {
+            return comparisonOperation;
+        }
+        auto query() const -> i64 {
+            return queryOperation;
+        }
+        auto operand_begin() const -> i64 {
+            return operandBegin;
+        }
+        auto operand_count() const -> i64 {
+            return operandCount;
+        }
     };
     class RawOperandRow {
         i64 operandRole;
@@ -453,12 +477,23 @@ export namespace compiler_ir_instructions {
         i64 sliceCount;
     public:
         RawOperandRow(i64 role, i64 value, u64 unsigned_value, i64 begin, i64 count) : operandRole(role),
-            signedValue(value), unsignedValue(unsigned_value), sliceBegin(begin), sliceCount(count) {}
-        auto role() const -> i64 { return operandRole; }
-        auto signed_value() const -> i64 { return signedValue; }
-        auto unsigned_value() const -> u64 { return unsignedValue; }
-        auto begin() const -> i64 { return sliceBegin; }
-        auto count() const -> i64 { return sliceCount; }
+            signedValue(value), unsignedValue(unsigned_value), sliceBegin(begin), sliceCount(count) {
+        }
+        auto role() const -> i64 {
+            return operandRole;
+        }
+        auto signed_value() const -> i64 {
+            return signedValue;
+        }
+        auto unsigned_value() const -> u64 {
+            return unsignedValue;
+        }
+        auto begin() const -> i64 {
+            return sliceBegin;
+        }
+        auto count() const -> i64 {
+            return sliceCount;
+        }
     };
     // InstructionId is immutable and one-based. CodePosition is zero-based
     // within a body; neither declaration ordinals nor positions are row IDs.
@@ -469,12 +504,23 @@ export namespace compiler_ir_instructions {
         i64 scratchValue;
     public:
         CodeRow(i64 id, i64 target, u64 flags, i64 scratch) : instructionId(id), targetPosition(target),
-            flowFlags(flags), scratchValue(scratch) {}
-        auto id() const -> i64 { return instructionId; }
-        auto target() const -> i64 { return targetPosition; }
-        auto flags() const -> u64 { return flowFlags; }
-        auto scratch() const -> i64 { return scratchValue; }
-        auto has_flow(u64 mask) const -> bool { return (flowFlags & mask) != 0u64; }
+            flowFlags(flags), scratchValue(scratch) {
+        }
+        auto id() const -> i64 {
+            return instructionId;
+        }
+        auto target() const -> i64 {
+            return targetPosition;
+        }
+        auto flags() const -> u64 {
+            return flowFlags;
+        }
+        auto scratch() const -> i64 {
+            return scratchValue;
+        }
+        auto has_flow(u64 mask) const -> bool {
+            return (flowFlags & mask) != 0u64;
+        }
     };
     // The row index is the stable zero-based CallableId. Its allocation never
     // moves, including when source normalization reduces retainedCount.
@@ -485,11 +531,20 @@ export namespace compiler_ir_instructions {
         i64 unreachableAfter;
     public:
         BodyRow(i64 begin, i64 capacity, i64 count, i64 unreachable) : codeBegin(begin), codeCapacity(capacity),
-            retainedCount(count), unreachableAfter(unreachable) {}
-        auto begin() const -> i64 { return codeBegin; }
-        auto capacity() const -> i64 { return codeCapacity; }
-        auto count() const -> i64 { return retainedCount; }
-        auto unreachable_after() const -> i64 { return unreachableAfter; }
+            retainedCount(count), unreachableAfter(unreachable) {
+        }
+        auto begin() const -> i64 {
+            return codeBegin;
+        }
+        auto capacity() const -> i64 {
+            return codeCapacity;
+        }
+        auto count() const -> i64 {
+            return retainedCount;
+        }
+        auto unreachable_after() const -> i64 {
+            return unreachableAfter;
+        }
     };
     class InstructionCounts {
         i64 instructionCount;
@@ -497,16 +552,25 @@ export namespace compiler_ir_instructions {
         i64 literalCount;
         i64 bodyCount;
     public:
-        InstructionCounts(i64 instructions, i64 operands, i64 literals, i64 bodies) :
-            instructionCount(instructions), operandCount(operands), literalCount(literals), bodyCount(bodies) {}
-        auto instruction_count() const -> i64 { return instructionCount; }
-        auto operand_count() const -> i64 { return operandCount; }
-        auto literal_count() const -> i64 { return literalCount; }
-        auto body_count() const -> i64 { return bodyCount; }
+        InstructionCounts(i64 instructions, i64 operands, i64 literals, i64 bodies) : instructionCount(instructions),
+            operandCount(operands), literalCount(literals), bodyCount(bodies) {
+        }
+        auto instruction_count() const -> i64 {
+            return instructionCount;
+        }
+        auto operand_count() const -> i64 {
+            return operandCount;
+        }
+        auto literal_count() const -> i64 {
+            return literalCount;
+        }
+        auto body_count() const -> i64 {
+            return bodyCount;
+        }
     };
     auto valid_counts(InstructionCounts counts) -> bool {
-        return counts.instruction_count() >= 0 && counts.operand_count() >= 0
-            && counts.literal_count() >= 0 && counts.body_count() >= 0;
+        return counts.instruction_count() >= 0 && counts.operand_count() >= 0 && counts.literal_count() >= 0
+            && counts.body_count() >= 0;
     }
     auto instruction_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<RawInstructionRow> {
         const RawInstructionRow fill = RawInstructionRow(-1, -1, -1, -1);
@@ -560,7 +624,9 @@ export namespace compiler_ir_instructions {
         auto set_scratch(BodyRow body, i64 position, i64 scratch) -> bool {
             const CodeRow old = flow_at(body, position);
             const CodeRow value = CodeRow(old.id(), old.target(), old.flags(), scratch);
-            if (!codeOrder.set(body.begin() + position, value)) { return reject(InstructionError::integrity); }
+            if (!codeOrder.set(body.begin() + position, value)) {
+                return reject(InstructionError::integrity);
+            }
             return true;
         }
         auto set_flow(BodyRow body, i64 position, i64 target, u64 flags) -> bool {
@@ -568,7 +634,9 @@ export namespace compiler_ir_instructions {
             // flow is changing, including an enqueued node or collected label.
             const CodeRow old = flow_at(body, position);
             const CodeRow value = CodeRow(old.id(), target, flags, old.scratch());
-            if (!codeOrder.set(body.begin() + position, value)) { return reject(InstructionError::integrity); }
+            if (!codeOrder.set(body.begin() + position, value)) {
+                return reject(InstructionError::integrity);
+            }
             return true;
         }
         auto indexed_label(BodyRow body, i64 index) const -> i64 {
@@ -589,8 +657,12 @@ export namespace compiler_ir_instructions {
                 if (child + 1 < count && indexed_label(body, child) < indexed_label(body, child + 1)) {
                     child = child + 1;
                 }
-                if (indexed_label(body, current) >= indexed_label(body, child)) { return true; }
-                if (!swap_scratch(body, current, child)) { return false; }
+                if (indexed_label(body, current) >= indexed_label(body, child)) {
+                    return true;
+                }
+                if (!swap_scratch(body, current, child)) {
+                    return false;
+                }
                 current = child;
             }
             return true;
@@ -599,12 +671,16 @@ export namespace compiler_ir_instructions {
             i64 root = count / 2;
             while (root > 0) {
                 root = root - 1;
-                if (!sift_labels(body, root, count)) { return false; }
+                if (!sift_labels(body, root, count)) {
+                    return false;
+                }
             }
             i64 end = count;
             while (end > 1) {
                 end = end - 1;
-                if (!swap_scratch(body, 0, end) || !sift_labels(body, 0, end)) { return false; }
+                if (!swap_scratch(body, 0, end) || !sift_labels(body, 0, end)) {
+                    return false;
+                }
             }
             i64 at = 1;
             while (at < count) {
@@ -626,7 +702,9 @@ export namespace compiler_ir_instructions {
                     end = middle;
                 }
             }
-            if (begin == count || indexed_label(body, begin) != label) { return -1; }
+            if (begin == count || indexed_label(body, begin) != label) {
+                return -1;
+            }
             const CodeRow slot = flow_at(body, begin);
             return slot.scratch();
         }
@@ -645,14 +723,16 @@ export namespace compiler_ir_instructions {
             // directly so sparse extreme values cannot overflow a difference.
             while (current < count / 2) {
                 i64 child = current * 2 + 1;
-                if (child + 1 < count
-                    && indexed_service_loan_operand(body, child, 0) < indexed_service_loan_operand(body, child + 1, 0)) {
+                if (child + 1 < count && indexed_service_loan_operand(body, child, 0)
+                    < indexed_service_loan_operand(body, child + 1, 0)) {
                     child = child + 1;
                 }
                 if (indexed_service_loan_operand(body, current, 0) >= indexed_service_loan_operand(body, child, 0)) {
                     return true;
                 }
-                if (!swap_scratch(body, current, child)) { return false; }
+                if (!swap_scratch(body, current, child)) {
+                    return false;
+                }
                 current = child;
             }
             return true;
@@ -661,12 +741,16 @@ export namespace compiler_ir_instructions {
             i64 root = count / 2;
             while (root > 0) {
                 root = root - 1;
-                if (!sift_service_loans(body, root, count)) { return false; }
+                if (!sift_service_loans(body, root, count)) {
+                    return false;
+                }
             }
             i64 end = count;
             while (end > 1) {
                 end = end - 1;
-                if (!swap_scratch(body, 0, end) || !sift_service_loans(body, 0, end)) { return false; }
+                if (!swap_scratch(body, 0, end) || !sift_service_loans(body, 0, end)) {
+                    return false;
+                }
             }
             return true;
         }
@@ -676,7 +760,9 @@ export namespace compiler_ir_instructions {
             return form == 43 || form == 44 || form == 53 || form == 76 || form == 80;
         }
         auto resolve_flow(BodyRow body) -> bool {
-            if (body.count() == 0) { return reject(InstructionError::empty_body); }
+            if (body.count() == 0) {
+                return reject(InstructionError::empty_body);
+            }
             const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
             const u64 leader = masks.flow_leader();
             const u64 fallthrough = masks.flow_fallthrough();
@@ -685,17 +771,29 @@ export namespace compiler_ir_instructions {
             while (at < body.count()) {
                 const i64 form = form_at(body, at);
                 u64 flags = 0u64;
-                if (form != 41 && !returning(form)) { flags = fallthrough; }
-                if (at == 0 || form == 40) { flags = flags | leader; }
-                if (!set_flow(body, at, -1, flags)) { return false; }
+                if (form != 41 && !returning(form)) {
+                    flags = fallthrough;
+                }
+                if (at == 0 || form == 40) {
+                    flags = flags | leader;
+                }
+                if (!set_flow(body, at, -1, flags)) {
+                    return false;
+                }
                 if (form == 40) {
-                    if (label_at(body, at) < 0) { return reject(InstructionError::invalid_label); }
-                    if (!set_scratch(body, labels, at)) { return false; }
+                    if (label_at(body, at) < 0) {
+                        return reject(InstructionError::invalid_label);
+                    }
+                    if (!set_scratch(body, labels, at)) {
+                        return false;
+                    }
                     labels = labels + 1;
                 }
                 at = at + 1;
             }
-            if (!sort_labels(body, labels)) { return false; }
+            if (!sort_labels(body, labels)) {
+                return false;
+            }
             // Resolve all explicit edges, even from unreachable instructions,
             // before scratch is reused for the reachability queue.
             at = 0;
@@ -704,14 +802,20 @@ export namespace compiler_ir_instructions {
                 if (form == 41 || form == 42) {
                     const i64 target = find_label(body, labels, label_at(body, at));
                     if (target < 0) {
-                        if (form == 41) { return reject(InstructionError::unknown_jump); }
+                        if (form == 41) {
+                            return reject(InstructionError::unknown_jump);
+                        }
                         return reject(InstructionError::unknown_branch);
                     }
                     const CodeRow old = flow_at(body, at);
-                    if (!set_flow(body, at, target, old.flags())) { return false; }
+                    if (!set_flow(body, at, target, old.flags())) {
+                        return false;
+                    }
                     if (form == 42 && at + 1 < body.count()) {
                         const CodeRow next = flow_at(body, at + 1);
-                        if (!set_flow(body, at + 1, next.target(), next.flags() | leader)) { return false; }
+                        if (!set_flow(body, at + 1, next.target(), next.flags() | leader)) {
+                            return false;
+                        }
                     }
                 }
                 at = at + 1;
@@ -725,14 +829,15 @@ export namespace compiler_ir_instructions {
                 return reject(InstructionError::integrity);
             }
             const CodeRow old = flow_at(body, position);
-            return set_flow(body, position, old.target(), old.flags() | reached)
-                && set_scratch(body, tail, position);
+            return set_flow(body, position, old.target(), old.flags() | reached) && set_scratch(body, tail, position);
         }
         auto reach_body(BodyRow body) -> bool {
             const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
             const u64 reached = masks.flow_reached();
             const u64 fallthrough = masks.flow_fallthrough();
-            if (!enqueue(body, 0, 0, reached)) { return false; }
+            if (!enqueue(body, 0, 0, reached)) {
+                return false;
+            }
             i64 head = 0;
             i64 tail = 1;
             while (head < tail) {
@@ -745,7 +850,9 @@ export namespace compiler_ir_instructions {
                 if (code.target() >= 0) {
                     const CodeRow target = flow_at(body, code.target());
                     if (!target.has_flow(reached)) {
-                        if (!enqueue(body, code.target(), tail, reached)) { return false; }
+                        if (!enqueue(body, code.target(), tail, reached)) {
+                            return false;
+                        }
                         tail = tail + 1;
                     }
                 }
@@ -757,7 +864,9 @@ export namespace compiler_ir_instructions {
                     if (next < body.count()) {
                         const CodeRow following = flow_at(body, next);
                         if (!following.has_flow(reached)) {
-                            if (!enqueue(body, next, tail, reached)) { return false; }
+                            if (!enqueue(body, next, tail, reached)) {
+                                return false;
+                            }
                             tail = tail + 1;
                         }
                     }
@@ -788,7 +897,9 @@ export namespace compiler_ir_instructions {
                         }
                     }
                 }
-                if (!set_scratch(body, at, mapped)) { return false; }
+                if (!set_scratch(body, at, mapped)) {
+                    return false;
+                }
                 at = at + 1;
             }
             // Remap every retained edge before forward compaction can overwrite
@@ -801,7 +912,9 @@ export namespace compiler_ir_instructions {
                     if (target.scratch() < 0 || target.scratch() >= retained) {
                         return reject(InstructionError::integrity);
                     }
-                    if (!set_flow(body, at, target.scratch(), code.flags())) { return false; }
+                    if (!set_flow(body, at, target.scratch(), code.flags())) {
+                        return false;
+                    }
                 }
                 at = at + 1;
             }
@@ -820,24 +933,31 @@ export namespace compiler_ir_instructions {
                 at = at + 1;
             }
             const BodyRow normalized = BodyRow(body.begin(), body.capacity(), retained, unreachable);
-            if (!bodies.set(callable, normalized)) { return reject(InstructionError::integrity); }
+            if (!bodies.set(callable, normalized)) {
+                return reject(InstructionError::integrity);
+            }
             return true;
         }
     public:
-        InstructionStore(builtin::ByteRegion region, InstructionCounts counts) :
-            instructions(instruction_pool(region, counts.instruction_count())),
-            operands(operand_pool(region, counts.operand_count())), literals(region.try_allocate(counts.literal_count())),
-            codeOrder(code_pool(region, counts.instruction_count())), bodies(body_pool(region, counts.body_count())),
-            statusValue(InstructionStatus::pending), errorValue(InstructionError::none) {}
+        InstructionStore(builtin::ByteRegion region, InstructionCounts counts) : instructions(instruction_pool(region,
+            counts.instruction_count())), operands(operand_pool(region, counts.operand_count())),
+            literals(region.try_allocate(counts.literal_count())), codeOrder(code_pool(region,
+            counts.instruction_count())), bodies(body_pool(region, counts.body_count())),
+            statusValue(InstructionStatus::pending), errorValue(InstructionError::none) {
+        }
         auto initialize(InstructionCounts counts) -> bool {
-            if (statusValue != InstructionStatus::pending) { return false; }
+            if (statusValue != InstructionStatus::pending) {
+                return false;
+            }
             if (!valid_counts(counts)) {
                 statusValue = InstructionStatus::invalid;
                 errorValue = InstructionError::integrity;
             } else {
-                if (!allocated() || instructions.size() != counts.instruction_count()
-                    || operands.size() != counts.operand_count() || literals.size() != counts.literal_count()
-                    || bodies.size() != counts.body_count()) { statusValue = InstructionStatus::allocation; }
+                if (!allocated() || instructions.size() != counts.instruction_count() || operands.size()
+                    != counts.operand_count() || literals.size() != counts.literal_count() || bodies.size()
+                    != counts.body_count()) {
+                    statusValue = InstructionStatus::allocation;
+                }
             }
             return statusValue == InstructionStatus::pending;
         }
@@ -845,13 +965,27 @@ export namespace compiler_ir_instructions {
             return instructions.ok() && operands.ok() && literals.ok() && codeOrder.ok() && bodies.ok()
                 && codeOrder.size() == instructions.size();
         }
-        auto status() const -> InstructionStatus { return statusValue; }
-        auto error() const -> InstructionError { return errorValue; }
-        auto instruction_count() const -> i64 { return instructions.size(); }
-        auto operand_count() const -> i64 { return operands.size(); }
-        auto literal_count() const -> i64 { return literals.size(); }
-        auto code_count() const -> i64 { return codeOrder.size(); }
-        auto body_count() const -> i64 { return bodies.size(); }
+        auto status() const -> InstructionStatus {
+            return statusValue;
+        }
+        auto error() const -> InstructionError {
+            return errorValue;
+        }
+        auto instruction_count() const -> i64 {
+            return instructions.size();
+        }
+        auto operand_count() const -> i64 {
+            return operands.size();
+        }
+        auto literal_count() const -> i64 {
+            return literals.size();
+        }
+        auto code_count() const -> i64 {
+            return codeOrder.size();
+        }
+        auto body_count() const -> i64 {
+            return bodies.size();
+        }
         auto instruction_at(i64 id) const -> RawInstructionRow {
             if (id <= 0 || id > instruction_count() || !instructions.ok()) {
                 return RawInstructionRow(-1, -1, -1, -1);
@@ -867,32 +1001,42 @@ export namespace compiler_ir_instructions {
             return result;
         }
         auto literal_at(i64 index) const -> i64 {
-            if (index < 0 || index >= literal_count() || !literals.ok()) { return -1; }
+            if (index < 0 || index >= literal_count() || !literals.ok()) {
+                return -1;
+            }
             return i64(literals.at(index));
         }
         auto code_at(i64 index) const -> CodeRow {
-            if (index < 0 || index >= code_count() || !codeOrder.ok()) { return CodeRow(0, -1, 0u64, 0); }
+            if (index < 0 || index >= code_count() || !codeOrder.ok()) {
+                return CodeRow(0, -1, 0u64, 0);
+            }
             const CodeRow result = codeOrder.at(index);
             return result;
         }
         auto body_at(i64 callable) const -> BodyRow {
-            if (callable < 0 || callable >= body_count() || !bodies.ok()) { return BodyRow(-1, -1, -1, 0); }
+            if (callable < 0 || callable >= body_count() || !bodies.ok()) {
+                return BodyRow(-1, -1, -1, 0);
+            }
             const BodyRow result = bodies.at(callable);
             return result;
         }
         auto reject(InstructionError reason) -> bool {
             // Static semantic admission follows complete CFG normalization.
             // A rejected normalized body loses publication authority permanently.
-            if (statusValue == InstructionStatus::pending || statusValue == InstructionStatus::admitted
-                || statusValue == InstructionStatus::structured) {
+            if (statusValue == InstructionStatus::pending || statusValue == InstructionStatus::admitted || statusValue
+                == InstructionStatus::structured) {
                 statusValue = InstructionStatus::invalid;
                 errorValue = reason;
-                if (reason == InstructionError::none) { errorValue = InstructionError::integrity; }
+                if (reason == InstructionError::none) {
+                    errorValue = InstructionError::integrity;
+                }
             }
             return false;
         }
         auto admit() -> bool {
-            if (statusValue != InstructionStatus::pending) { return false; }
+            if (statusValue != InstructionStatus::pending) {
+                return false;
+            }
             statusValue = InstructionStatus::admitted;
             return true;
         }
@@ -900,17 +1044,23 @@ export namespace compiler_ir_instructions {
         // and the sole native codec shape walk. All bodies pass structural
         // analysis before any body is compacted or native value states exist.
         auto normalize_cfg() -> InstructionStatus {
-            if (statusValue != InstructionStatus::admitted) { return statusValue; }
+            if (statusValue != InstructionStatus::admitted) {
+                return statusValue;
+            }
             i64 callable = 0;
             while (callable < body_count()) {
                 const BodyRow body = bodies.at(callable);
-                if (!resolve_flow(body) || !reach_body(body)) { return statusValue; }
+                if (!resolve_flow(body) || !reach_body(body)) {
+                    return statusValue;
+                }
                 callable = callable + 1;
             }
             callable = 0;
             while (callable < body_count()) {
                 const BodyRow body = bodies.at(callable);
-                if (!normalize_body(callable, body)) { return statusValue; }
+                if (!normalize_body(callable, body)) {
+                    return statusValue;
+                }
                 callable = callable + 1;
             }
             statusValue = InstructionStatus::structured;
@@ -920,8 +1070,12 @@ export namespace compiler_ir_instructions {
         // identity without imposing lexical acquisition/release ordering. It
         // uses O(N + A log A) time and the first A retained scratch lanes only.
         auto verify_service_loan_roots(i64 callable) -> bool {
-            if (statusValue != InstructionStatus::structured) { return false; }
-            if (callable < 0 || callable >= body_count()) { return reject(InstructionError::integrity); }
+            if (statusValue != InstructionStatus::structured) {
+                return false;
+            }
+            if (callable < 0 || callable >= body_count()) {
+                return reject(InstructionError::integrity);
+            }
             const BodyRow body = bodies.at(callable);
             i64 loans = 0;
             i64 at = 0;
@@ -932,18 +1086,24 @@ export namespace compiler_ir_instructions {
                 // AcquireServiceLoan is pinned to raw form 1 by the binding.
                 if (row.form() == 1) {
                     const RawOperandRow loan = operands.at(row.operand_begin());
-                    if (loan.signed_value() <= 0) { valid = false; }
-                    if (!set_scratch(body, loans, code.id())) { return false; }
+                    if (loan.signed_value() <= 0) {
+                        valid = false;
+                    }
+                    if (!set_scratch(body, loans, code.id())) {
+                        return false;
+                    }
                     loans = loans + 1;
                 }
                 at = at + 1;
             }
-            if (valid && !sort_service_loans(body, loans)) { return false; }
+            if (valid && !sort_service_loans(body, loans)) {
+                return false;
+            }
             at = 1;
             while (valid && at < loans) {
                 if (indexed_service_loan_operand(body, at - 1, 0) == indexed_service_loan_operand(body, at, 0)
                     && (indexed_service_loan_operand(body, at - 1, 1) != indexed_service_loan_operand(body, at, 1)
-                        || indexed_service_loan_operand(body, at - 1, 2) != indexed_service_loan_operand(body, at, 2))) {
+                    || indexed_service_loan_operand(body, at - 1, 2) != indexed_service_loan_operand(body, at, 2))) {
                     valid = false;
                 }
                 at = at + 1;
@@ -952,24 +1112,32 @@ export namespace compiler_ir_instructions {
             // cleared. Dropped capacity tails are neither read nor modified.
             at = 0;
             while (at < loans) {
-                if (!set_scratch(body, at, 0)) { return false; }
+                if (!set_scratch(body, at, 0)) {
+                    return false;
+                }
                 at = at + 1;
             }
-            if (!valid) { return reject(InstructionError::service_loan_identity); }
+            if (!valid) {
+                return reject(InstructionError::service_loan_identity);
+            }
             return true;
         }
         auto publish() -> bool {
-            if (statusValue != InstructionStatus::structured) { return false; }
+            if (statusValue != InstructionStatus::structured) {
+                return false;
+            }
             statusValue = InstructionStatus::published;
             return true;
         }
     };
-    auto create(builtin::ByteRegion region, i64 instructions, i64 operands, i64 literals, i64 bodies)
-        -> InstructionStore {
+    auto create(builtin::ByteRegion region, i64 instructions, i64 operands, i64 literals,
+        i64 bodies) -> InstructionStore {
         const InstructionCounts counts = InstructionCounts(instructions, operands, literals, bodies);
         InstructionStore result = InstructionStore(region, counts);
         result.initialize(counts);
         return move(result);
     }
-    auto release(builtin::ByteRegion region, InstructionStore store) -> i64 { return 0; }
+    auto release(builtin::ByteRegion region, InstructionStore store) -> i64 {
+        return 0;
+    }
 }

@@ -7,23 +7,42 @@ import aurora.compiler.ir_metadata_storage;
 // Native verification retains lifetime, provenance and logical empty-object
 // completion, and binds every paired call to the same immutable MetadataStore.
 export namespace compiler_ir_initialization {
-    enum class InitializationStatus { pending, success, allocation, invalid };
-    enum class InitializationJoin { error, unchanged, changed };
+    enum class InitializationStatus {
+        pending,
+        success,
+        allocation,
+        invalid
+    };
+    enum class InitializationJoin {
+        error,
+        unchanged,
+        changed
+    };
     class WordPair {
         u64 mustBits;
         u64 mayBits;
     public:
-        WordPair(u64 must, u64 may) : mustBits(must), mayBits(may) {}
-        auto must_bits() const -> u64 { return mustBits; }
-        auto may_bits() const -> u64 { return mayBits; }
+        WordPair(u64 must, u64 may) : mustBits(must), mayBits(may) {
+        }
+        auto must_bits() const -> u64 {
+            return mustBits;
+        }
+        auto may_bits() const -> u64 {
+            return mayBits;
+        }
     };
     class CountPair {
         i64 mustCount;
         i64 mayCount;
     public:
-        CountPair(i64 must, i64 may) : mustCount(must), mayCount(may) {}
-        auto must_count() const -> i64 { return mustCount; }
-        auto may_count() const -> i64 { return mayCount; }
+        CountPair(i64 must, i64 may) : mustCount(must), mayCount(may) {
+        }
+        auto must_count() const -> i64 {
+            return mustCount;
+        }
+        auto may_count() const -> i64 {
+            return mayCount;
+        }
     };
     auto word_pool(builtin::ByteRegion region) -> builtin::OwnedValues<WordPair> {
         const WordPair fill = WordPair(0u64, 0u64);
@@ -70,28 +89,43 @@ export namespace compiler_ir_initialization {
             return statusValue == InitializationStatus::success && id >= 0 && id < retainedCount;
         }
         auto grow_retained() -> bool {
-            if (statusValue != InitializationStatus::success || retainedCount < 0
-                || retainedCount > retainedCapacity || retainedCapacity < 0 || retainedCapacity > 65536) {
+            if (statusValue != InitializationStatus::success || retainedCount < 0 || retainedCount > retainedCapacity
+                || retainedCapacity < 0 || retainedCapacity > 65536) {
                 return reject();
             }
-            if (retainedCount < retainedCapacity) { return true; }
-            if (retainedCapacity == 65536) { return reject(); }
+            if (retainedCount < retainedCapacity) {
+                return true;
+            }
+            if (retainedCapacity == 65536) {
+                return reject();
+            }
             i64 next = 1;
-            if (retainedCapacity != 0) { next = retainedCapacity * 2; }
-            if (next > 65536) { next = 65536; }
-            if (wordCount < 0 || wordCount > 1024
-                || (wordCount != 0 && next > 9223372036854775807 / wordCount)) { return reject(); }
+            if (retainedCapacity != 0) {
+                next = retainedCapacity * 2;
+            }
+            if (next > 65536) {
+                next = 65536;
+            }
+            if (wordCount < 0 || wordCount > 1024 || (wordCount != 0 && next > 9223372036854775807 / wordCount)) {
+                return reject();
+            }
             const i64 words = next * wordCount;
             // Both copied rows contain exactly two eight-byte scalar leaves.
             // Generated native layout facts separately pin these widths.
-            if (words > 9223372036854775807 / 16 || next > 9223372036854775807 / 16) { return reject(); }
+            if (words > 9223372036854775807 / 16 || next > 9223372036854775807 / 16) {
+                return reject();
+            }
             const WordPair empty_words = WordPair(0u64, 0u64);
             const CountPair empty_counts = CountPair(0, 0);
             // Each replacement preserves its old prefix. A later failure is
             // terminal; the actual, possibly enlarged owners still close normally.
             // With zero slots, the unchanged zero-length word owner never grows.
-            if (!retainedWords.try_resize(words, empty_words)) { return allocation_failure(); }
-            if (!retainedCounts.try_resize(next, empty_counts)) { return allocation_failure(); }
+            if (!retainedWords.try_resize(words, empty_words)) {
+                return allocation_failure();
+            }
+            if (!retainedCounts.try_resize(next, empty_counts)) {
+                return allocation_failure();
+            }
             retainedCapacity = next;
             return true;
         }
@@ -99,11 +133,14 @@ export namespace compiler_ir_initialization {
         InitializationWorkspace(builtin::ByteRegion region) : currentWords(word_pool(region)),
             retainedWords(word_pool(region)), retainedCounts(count_pool(region)), callableId(-1), scalarBegin(0),
             scalarCount(0), wordCount(0), retainedCount(0), retainedCapacity(0), currentMust(0), currentMay(0),
-            statusValue(InitializationStatus::pending) {}
+            statusValue(InitializationStatus::pending) {
+        }
         auto allocated() const -> bool {
             return currentWords.ok() && retainedWords.ok() && retainedCounts.ok();
         }
-        auto status() const -> InitializationStatus { return statusValue; }
+        auto status() const -> InitializationStatus {
+            return statusValue;
+        }
         auto reject() -> bool {
             if (statusValue == InitializationStatus::pending || statusValue == InitializationStatus::success) {
                 statusValue = InitializationStatus::invalid;
@@ -111,23 +148,33 @@ export namespace compiler_ir_initialization {
             return false;
         }
         auto prepare() -> bool {
-            if (statusValue != InitializationStatus::pending) { return false; }
-            if (!allocated()) { return allocation_failure(); }
+            if (statusValue != InitializationStatus::pending) {
+                return false;
+            }
+            if (!allocated()) {
+                return allocation_failure();
+            }
             return true;
         }
         // Only initialize(metadata, callable) supplies this canonical group.
         // This is a scalar extent, never a second offset index or payload view.
         auto configure(i64 callable, i64 first, i64 count) -> bool {
-            if (statusValue != InitializationStatus::pending || callable < 0 || first < 0
-                || count < 0 || count > 65536 || callableId != -1
-                || currentWords.size() != 0 || retainedWords.size() != 0 || retainedCounts.size() != 0) {
+            if (statusValue != InitializationStatus::pending || callable < 0 || first < 0 || count < 0 || count > 65536
+                || callableId != -1 || currentWords.size() != 0 || retainedWords.size() != 0 || retainedCounts.size()
+                != 0) {
                 return reject();
             }
-            if (!prepare()) { return false; }
+            if (!prepare()) {
+                return false;
+            }
             i64 words = count / 64;
-            if (count % 64 != 0) { words = words + 1; }
+            if (count % 64 != 0) {
+                words = words + 1;
+            }
             const WordPair fill = WordPair(0u64, 0u64);
-            if (!currentWords.try_resize(words, fill)) { return allocation_failure(); }
+            if (!currentWords.try_resize(words, fill)) {
+                return allocation_failure();
+            }
             callableId = callable;
             scalarBegin = first;
             scalarCount = count;
@@ -135,45 +182,69 @@ export namespace compiler_ir_initialization {
             statusValue = InitializationStatus::success;
             return true;
         }
-        auto callable() const -> i64 { return callableId; }
-        auto scalar_begin() const -> i64 { return scalarBegin; }
+        auto callable() const -> i64 {
+            return callableId;
+        }
+        auto scalar_begin() const -> i64 {
+            return scalarBegin;
+        }
         auto slot_count() const -> i64 {
-            if (statusValue != InitializationStatus::success) { return -1; }
+            if (statusValue != InitializationStatus::success) {
+                return -1;
+            }
             return scalarCount;
         }
         auto word_count() const -> i64 {
-            if (statusValue != InitializationStatus::success) { return -1; }
+            if (statusValue != InitializationStatus::success) {
+                return -1;
+            }
             return wordCount;
         }
         auto retained_count() const -> i64 {
-            if (statusValue != InitializationStatus::success) { return -1; }
+            if (statusValue != InitializationStatus::success) {
+                return -1;
+            }
             return retainedCount;
         }
-        auto retained_capacity() const -> i64 { return retainedCapacity; }
+        auto retained_capacity() const -> i64 {
+            return retainedCapacity;
+        }
         auto current_must_count() const -> i64 {
-            if (statusValue != InitializationStatus::success) { return -1; }
+            if (statusValue != InitializationStatus::success) {
+                return -1;
+            }
             return currentMust;
         }
         auto current_may_count() const -> i64 {
-            if (statusValue != InitializationStatus::success) { return -1; }
+            if (statusValue != InitializationStatus::success) {
+                return -1;
+            }
             return currentMay;
         }
         auto current_count() const -> i64 {
-            if (statusValue != InitializationStatus::success) { return -1; }
+            if (statusValue != InitializationStatus::success) {
+                return -1;
+            }
             return currentMust + currentMay;
         }
         auto retained_must_count(i64 id) const -> i64 {
-            if (!valid_retained(id)) { return -1; }
+            if (!valid_retained(id)) {
+                return -1;
+            }
             const CountPair counts = retainedCounts.at(id);
             return counts.must_count();
         }
         auto retained_may_count(i64 id) const -> i64 {
-            if (!valid_retained(id)) { return -1; }
+            if (!valid_retained(id)) {
+                return -1;
+            }
             const CountPair counts = retainedCounts.at(id);
             return counts.may_count();
         }
         auto retained_count_at(i64 id) const -> i64 {
-            if (!valid_retained(id)) { return -1; }
+            if (!valid_retained(id)) {
+                return -1;
+            }
             const CountPair counts = retainedCounts.at(id);
             return counts.must_count() + counts.may_count();
         }
@@ -181,29 +252,48 @@ export namespace compiler_ir_initialization {
         // callers use metadata-paired batches, never one bridge per bit.
         auto index_state(i64 index) -> i64 {
             if (statusValue != InitializationStatus::success || index < 0 || index >= scalarCount) {
-                reject(); return -1;
+                reject();
+                return -1;
             }
             const WordPair word = currentWords.at(index / 64);
             const u64 mask = 1u64 << (index % 64);
             i64 state = 0;
-            if ((word.must_bits() & mask) != 0u64) { state = state + 1; }
-            if ((word.may_bits() & mask) != 0u64) { state = state + 2; }
+            if ((word.must_bits() & mask) != 0u64) {
+                state = state + 1;
+            }
+            if ((word.may_bits() & mask) != 0u64) {
+                state = state + 2;
+            }
             return state;
         }
         auto write_index(i64 index) -> i64 {
             if (statusValue != InitializationStatus::success || index < 0 || index >= scalarCount) {
-                reject(); return -1;
+                reject();
+                return -1;
             }
             const WordPair old = currentWords.at(index / 64);
             const u64 mask = 1u64 << (index % 64);
             i64 previous = 0;
-            if ((old.must_bits() & mask) != 0u64) { previous = previous + 1; }
-            if ((old.may_bits() & mask) != 0u64) { previous = previous + 2; }
-            if (previous == 3) { return previous; }
+            if ((old.must_bits() & mask) != 0u64) {
+                previous = previous + 1;
+            }
+            if ((old.may_bits() & mask) != 0u64) {
+                previous = previous + 2;
+            }
+            if (previous == 3) {
+                return previous;
+            }
             const WordPair updated = WordPair(old.must_bits() | mask, old.may_bits() | mask);
-            if (!currentWords.set(index / 64, updated)) { reject(); return -1; }
-            if (previous == 0 || previous == 2) { currentMust = currentMust + 1; }
-            if (previous < 2) { currentMay = currentMay + 1; }
+            if (!currentWords.set(index / 64, updated)) {
+                reject();
+                return -1;
+            }
+            if (previous == 0 || previous == 2) {
+                currentMust = currentMust + 1;
+            }
+            if (previous < 2) {
+                currentMay = currentMay + 1;
+            }
             return previous;
         }
         auto clear_index(i64 index) -> bool {
@@ -212,22 +302,34 @@ export namespace compiler_ir_initialization {
             }
             const WordPair old = currentWords.at(index / 64);
             const u64 mask = 1u64 << (index % 64);
-            const bool must = (old.must_bits() & mask) != 0u64;
-            const bool may = (old.may_bits() & mask) != 0u64;
-            if (!must && !may) { return true; }
+            const bool must =(old.must_bits() & mask) != 0u64;
+            const bool may =(old.may_bits() & mask) != 0u64;
+            if (!must && !may) {
+                return true;
+            }
             const WordPair updated = WordPair(old.must_bits() & ~mask, old.may_bits() & ~mask);
-            if (!currentWords.set(index / 64, updated)) { return reject(); }
-            if (must) { currentMust = currentMust - 1; }
-            if (may) { currentMay = currentMay - 1; }
+            if (!currentWords.set(index / 64, updated)) {
+                return reject();
+            }
+            if (must) {
+                currentMust = currentMust - 1;
+            }
+            if (may) {
+                currentMay = currentMay - 1;
+            }
             return true;
         }
         auto load(i64 id) -> bool {
-            if (!valid_retained(id)) { return reject(); }
+            if (!valid_retained(id)) {
+                return reject();
+            }
             const i64 first = id * wordCount;
             i64 at = 0;
             while (at < wordCount) {
                 const WordPair word = retainedWords.at(first + at);
-                if (!currentWords.set(at, word)) { return reject(); }
+                if (!currentWords.set(at, word)) {
+                    return reject();
+                }
                 at = at + 1;
             }
             const CountPair counts = retainedCounts.at(id);
@@ -236,17 +338,28 @@ export namespace compiler_ir_initialization {
             return true;
         }
         auto retain() -> i64 {
-            if (statusValue != InitializationStatus::success) { reject(); return -1; }
-            if (!grow_retained()) { return -1; }
+            if (statusValue != InitializationStatus::success) {
+                reject();
+                return -1;
+            }
+            if (!grow_retained()) {
+                return -1;
+            }
             const i64 first = retainedCount * wordCount;
             i64 at = 0;
             while (at < wordCount) {
                 const WordPair word = currentWords.at(at);
-                if (!retainedWords.set(first + at, word)) { reject(); return -1; }
+                if (!retainedWords.set(first + at, word)) {
+                    reject();
+                    return -1;
+                }
                 at = at + 1;
             }
             const CountPair counts = CountPair(currentMust, currentMay);
-            if (!retainedCounts.set(retainedCount, counts)) { reject(); return -1; }
+            if (!retainedCounts.set(retainedCount, counts)) {
+                reject();
+                return -1;
+            }
             // Publish the monotonic ordinal only after both growths and all
             // copies succeed. Snapshots remain owned until function teardown.
             const i64 id = retainedCount;
@@ -254,7 +367,10 @@ export namespace compiler_ir_initialization {
             return id;
         }
         auto join(i64 id) -> InitializationJoin {
-            if (!valid_retained(id)) { reject(); return InitializationJoin::error; }
+            if (!valid_retained(id)) {
+                reject();
+                return InitializationJoin::error;
+            }
             const CountPair old_counts = retainedCounts.at(id);
             i64 must = old_counts.must_count();
             i64 may = old_counts.may_count();
@@ -270,16 +386,24 @@ export namespace compiler_ir_initialization {
                 const u64 added = existing.may_bits() ^ next_may;
                 if (removed != 0u64 || added != 0u64) {
                     const WordPair updated = WordPair(next_must, next_may);
-                    if (!retainedWords.set(first + at, updated)) { reject(); return InitializationJoin::error; }
+                    if (!retainedWords.set(first + at, updated)) {
+                        reject();
+                        return InitializationJoin::error;
+                    }
                     must = must - changed_count(removed);
                     may = may + changed_count(added);
                     changed = true;
                 }
                 at = at + 1;
             }
-            if (!changed) { return InitializationJoin::unchanged; }
+            if (!changed) {
+                return InitializationJoin::unchanged;
+            }
             const CountPair counts = CountPair(must, may);
-            if (!retainedCounts.set(id, counts)) { reject(); return InitializationJoin::error; }
+            if (!retainedCounts.set(id, counts)) {
+                reject();
+                return InitializationJoin::error;
+            }
             // A lost must bit and gained may bit can cancel in the combined
             // cardinality. Change is a wordwise fact, never a count comparison.
             return InitializationJoin::changed;
@@ -292,55 +416,70 @@ export namespace compiler_ir_initialization {
         result.prepare();
         return move(result);
     }
-    auto release(builtin::ByteRegion region, InitializationWorkspace workspace) -> i64 { return 0; }
+    auto release(builtin::ByteRegion region, InitializationWorkspace workspace) -> i64 {
+        return 0;
+    }
 
     auto initialize(InitializationWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
         i64 callable) -> InitializationStatus {
         if (workspace.status() != InitializationStatus::pending) {
-            workspace.reject(); return workspace.status();
+            workspace.reject();
+            return workspace.status();
         }
-        if (!workspace.prepare()) { return workspace.status(); }
-        if (metadata.status() != compiler_ir_metadata::MetadataStatus::success
-            || callable < 0 || callable >= metadata.callable_count()) {
-            workspace.reject(); return workspace.status();
+        if (!workspace.prepare()) {
+            return workspace.status();
+        }
+        if (metadata.status() != compiler_ir_metadata::MetadataStatus::success || callable < 0 || callable
+            >= metadata.callable_count()) {
+            workspace.reject();
+            return workspace.status();
         }
         const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(callable);
         const compiler_ir_metadata::IndexRange slots = compiler_ir_metadata::slot_group(metadata, declaration, 10);
-        if (declaration.frame_bytes() < 0 || declaration.frame_bytes() > 65536
-            || slots.count() > declaration.frame_bytes()
-            || !compiler_ir_metadata::index_range(slots, metadata.slot_count())) {
-            workspace.reject(); return workspace.status();
+        if (declaration.frame_bytes() < 0 || declaration.frame_bytes() > 65536 || slots.count()
+            > declaration.frame_bytes() || !compiler_ir_metadata::index_range(slots, metadata.slot_count())) {
+            workspace.reject();
+            return workspace.status();
         }
         workspace.configure(callable, slots.begin(), slots.count());
         return workspace.status();
     }
     auto ready(InitializationWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata) -> bool {
-        if (workspace.status() != InitializationStatus::success
-            || metadata.status() != compiler_ir_metadata::MetadataStatus::success
-            || workspace.callable() < 0 || workspace.callable() >= metadata.callable_count()) {
+        if (workspace.status() != InitializationStatus::success || metadata.status()
+            != compiler_ir_metadata::MetadataStatus::success || workspace.callable() < 0 || workspace.callable()
+            >= metadata.callable_count()) {
             return workspace.reject();
         }
         return true;
     }
     auto scalar_index(InitializationWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
         i64 offset) -> i64 {
-        if (!ready(workspace, metadata)) { return -1; }
-        const compiler_ir_metadata::IndexRange slots =
-            compiler_ir_metadata::IndexRange(workspace.scalar_begin(), workspace.slot_count());
+        if (!ready(workspace, metadata)) {
+            return -1;
+        }
+        const compiler_ir_metadata::IndexRange slots = compiler_ir_metadata::IndexRange(workspace.scalar_begin(),
+            workspace.slot_count());
         const i64 found = compiler_ir_metadata::find_slot(metadata, slots, offset);
-        if (found < 0) { workspace.reject(); return -1; }
+        if (found < 0) {
+            workspace.reject();
+            return -1;
+        }
         return found - slots.begin();
     }
     // A scalar query returns both facts in one crossing: must=1, may=2.
     auto scalar_state(InitializationWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
         i64 offset) -> i64 {
-        if (!ready(workspace, metadata)) { return -1; }
-        const compiler_ir_metadata::IndexRange slots =
-            compiler_ir_metadata::IndexRange(workspace.scalar_begin(), workspace.slot_count());
+        if (!ready(workspace, metadata)) {
+            return -1;
+        }
+        const compiler_ir_metadata::IndexRange slots = compiler_ir_metadata::IndexRange(workspace.scalar_begin(),
+            workspace.slot_count());
         const i64 found = compiler_ir_metadata::find_slot(metadata, slots, offset);
         // Membership of an undeclared offset is false, matching the old fact
         // set's observation contract. Insertion still rejects an unknown slot.
-        if (found < 0) { return 0; }
+        if (found < 0) {
+            return 0;
+        }
         return workspace.index_state(found - slots.begin());
     }
     // Return the previous pair while marking both, so immutable-write checks
@@ -349,16 +488,22 @@ export namespace compiler_ir_initialization {
     auto write_scalar(InitializationWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
         i64 offset) -> i64 {
         const i64 index = scalar_index(workspace, metadata, offset);
-        if (index < 0) { return -1; }
+        if (index < 0) {
+            return -1;
+        }
         return workspace.write_index(index);
     }
     auto object_index(InitializationWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
         i64 base) -> i64 {
-        if (!ready(workspace, metadata)) { return -1; }
+        if (!ready(workspace, metadata)) {
+            return -1;
+        }
         const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(workspace.callable());
         const compiler_ir_metadata::IndexRange objects = compiler_ir_metadata::slot_group(metadata, declaration, 11);
         const i64 found = compiler_ir_metadata::find_slot(metadata, objects, base);
-        if (found < 0) { workspace.reject(); }
+        if (found < 0) {
+            workspace.reject();
+        }
         return found;
     }
     // 0 checks all must bits, 1 checks no may bits, 2 marks both, 3 clears both.
@@ -366,9 +511,14 @@ export namespace compiler_ir_initialization {
     // owning objects remains at its original native diagnostic position.
     auto object_action(InitializationWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
         i64 base, i64 action) -> i64 {
-        if (action < 0 || action > 3) { workspace.reject(); return -1; }
+        if (action < 0 || action > 3) {
+            workspace.reject();
+            return -1;
+        }
         const i64 index = object_index(workspace, metadata, base);
-        if (index < 0) { return -1; }
+        if (index < 0) {
+            return -1;
+        }
         const compiler_ir_metadata::SlotRow object = metadata.slot_at(index);
         const compiler_ir_metadata::StorageRow storage = compiler_ir_metadata::object_storage(metadata, object);
         const compiler_ir_metadata::IndexRange leaves = storage.leaf_offsets();
@@ -376,16 +526,26 @@ export namespace compiler_ir_initialization {
         while (at < leaves.count()) {
             const compiler_ir_metadata::IndexRow leaf = metadata.index_at(leaves.begin() + at);
             const i64 scalar = scalar_index(workspace, metadata, base - leaf.value());
-            if (scalar < 0) { return -1; }
+            if (scalar < 0) {
+                return -1;
+            }
             if (action == 2) {
-                if (workspace.write_index(scalar) < 0) { return -1; }
+                if (workspace.write_index(scalar) < 0) {
+                    return -1;
+                }
             } else {
                 if (action == 3) {
-                    if (!workspace.clear_index(scalar)) { return -1; }
+                    if (!workspace.clear_index(scalar)) {
+                        return -1;
+                    }
                 } else {
                     const i64 state = workspace.index_state(scalar);
-                    if (state < 0) { return -1; }
-                    if ((action == 0 && (state == 0 || state == 2)) || (action == 1 && state >= 2)) { return 0; }
+                    if (state < 0) {
+                        return -1;
+                    }
+                    if ((action == 0 && (state == 0 || state == 2)) || (action == 1 && state >= 2)) {
+                        return 0;
+                    }
                 }
             }
             at = at + 1;
@@ -393,21 +553,30 @@ export namespace compiler_ir_initialization {
         return 1;
     }
     auto object_initialized(InitializationWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
-        i64 base) -> i64 { return object_action(workspace, metadata, base, 0); }
+        i64 base) -> i64 {
+        return object_action(workspace, metadata, base, 0);
+    }
     auto object_pristine(InitializationWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
-        i64 base) -> i64 { return object_action(workspace, metadata, base, 1); }
+        i64 base) -> i64 {
+        return object_action(workspace, metadata, base, 1);
+    }
     auto mark_object(InitializationWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
-        i64 base) -> bool { return object_action(workspace, metadata, base, 2) == 1; }
+        i64 base) -> bool {
+        return object_action(workspace, metadata, base, 2) == 1;
+    }
     auto clear_object(InitializationWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
-        i64 base) -> bool { return object_action(workspace, metadata, base, 3) == 1; }
+        i64 base) -> bool {
+        return object_action(workspace, metadata, base, 3) == 1;
+    }
 
     auto array_range(InitializationWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
         i64 offset, i64 length, i64 width) -> bool {
-        if (!ready(workspace, metadata)) { return false; }
+        if (!ready(workspace, metadata)) {
+            return false;
+        }
         const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(workspace.callable());
-        if ((width != 1 && width != 8) || length < 0 || length > 65536
-            || offset < 0 || offset > declaration.frame_bytes()
-            || (length != 0 && (offset == 0 || length - 1 > (offset - 1) / width))) {
+        if ((width != 1 && width != 8) || length < 0 || length > 65536 || offset < 0 || offset
+            > declaration.frame_bytes() || (length != 0 && (offset == 0 || length - 1 > (offset - 1) / width))) {
             return workspace.reject();
         }
         return true;
@@ -417,25 +586,37 @@ export namespace compiler_ir_initialization {
     // that element before reporting missing initialization.
     auto array_first_missing(InitializationWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
         i64 offset, i64 length, i64 width) -> i64 {
-        if (!array_range(workspace, metadata, offset, length, width)) { return -2; }
+        if (!array_range(workspace, metadata, offset, length, width)) {
+            return -2;
+        }
         i64 element = 0;
         while (element < length) {
             const i64 scalar = scalar_index(workspace, metadata, offset - element * width);
-            if (scalar < 0) { return -2; }
+            if (scalar < 0) {
+                return -2;
+            }
             const i64 state = workspace.index_state(scalar);
-            if (state < 0) { return -2; }
-            if (state == 0 || state == 2) { return element; }
+            if (state < 0) {
+                return -2;
+            }
+            if (state == 0 || state == 2) {
+                return element;
+            }
             element = element + 1;
         }
         return -1;
     }
     auto clear_array(InitializationWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
         i64 offset, i64 length, i64 width) -> bool {
-        if (!array_range(workspace, metadata, offset, length, width)) { return false; }
+        if (!array_range(workspace, metadata, offset, length, width)) {
+            return false;
+        }
         i64 element = 0;
         while (element < length) {
             const i64 scalar = scalar_index(workspace, metadata, offset - element * width);
-            if (scalar < 0 || !workspace.clear_index(scalar)) { return false; }
+            if (scalar < 0 || !workspace.clear_index(scalar)) {
+                return false;
+            }
             element = element + 1;
         }
         return true;

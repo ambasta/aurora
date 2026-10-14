@@ -24,8 +24,8 @@ export namespace console {
         i64 count;
         ProgramResponseKind kind;
     public:
-        ProgramResponse(std::BinaryBuffer64 value, i64 length, ProgramResponseKind outcome)
-            : bytes(value), count(length), kind(outcome) {
+        ProgramResponse(std::BinaryBuffer64 value, i64 length, ProgramResponseKind outcome) : bytes(value),
+            count(length), kind(outcome) {
         }
 
         auto status() const -> ProgramResponseKind {
@@ -42,11 +42,11 @@ export namespace console {
             if (count < 0 || count > 64) {
                 return false;
             }
-            if (kind != ProgramResponseKind::ready && kind != ProgramResponseKind::output
-                && kind != ProgramResponseKind::note_missing && kind != ProgramResponseKind::file_missing
-                && kind != ProgramResponseKind::note_saved && kind != ProgramResponseKind::file_saved
-                && kind != ProgramResponseKind::file_reply && kind != ProgramResponseKind::stopped
-                && kind != ProgramResponseKind::unknown) {
+            if (kind != ProgramResponseKind::ready && kind != ProgramResponseKind::output && kind
+                != ProgramResponseKind::note_missing && kind != ProgramResponseKind::file_missing && kind
+                != ProgramResponseKind::note_saved && kind != ProgramResponseKind::file_saved && kind
+                != ProgramResponseKind::file_reply && kind != ProgramResponseKind::stopped && kind
+                != ProgramResponseKind::unknown) {
                 return false;
             }
             const bool carries_bytes = kind == ProgramResponseKind::output || kind == ProgramResponseKind::file_reply;
