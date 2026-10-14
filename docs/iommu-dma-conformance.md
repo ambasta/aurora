@@ -16,6 +16,12 @@ after its output succeeds. Code5 and unsupported records remain pending. Closed
 poll/ack results, zero budgets, exhaustion and output failure are explicit. This
 is source-program ordering; Event authority alone does not certify telemetry.
 
+The shared `console.io` writer adds one defining-module reflection scope. Event
+image admission requires exactly the root and scope-1 size/field-count helper
+pairs, all global text definitions owned by the language object. Extra scopes,
+different bindings and additional runtime authorities remain rejected. The
+generated-source runner checks this inventory against actual linked output.
+
 The bootstrap adapter authenticates both grants before live transport admission,
 retains one copied pending record, and makes at most one head-write attempt per
 acknowledgement. Overflow and uncertainty are absorbing. A failed acknowledgement

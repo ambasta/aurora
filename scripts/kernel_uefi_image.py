@@ -221,8 +221,10 @@ GRAPHICAL_IMPORTS = frozenset(("__au_runtime_console_next", "__au_runtime_displa
 GRAPHICAL_HOST = GRAPHICAL_IMPORTS | {"__au_runtime_console_put"}
 GRAPHICAL_ENTRY = "__au_v_m1_24kernel_graphical_console_n0__d17graphical_console"
 EVENT_OBJECTS = (GRAPHICAL_OBJECTS - {"graphical-console", "console-entry"}) | {"event-intake"}
-# Event has no imported module scope; graphical also reflects its font module.
-EVENT_REFLECTION_HELPERS = frozenset(("aurora_reflect_size", "aurora_reflect_field_count"))
+# Default emission reflects exactly the Event root and its console.io import.
+EVENT_REFLECTION_HELPERS = frozenset(
+    ("aurora_reflect_size", "aurora_reflect_field_count", "__au_reflect_s1_size", "__au_reflect_s1_field_count")
+)
 EVENT_BRIDGES = frozenset(("__au_runtime_iommu_event_entry", "__au_runtime_iommu_event_value"))
 EVENT_IMPORTS = frozenset(
     ("__au_runtime_iommu_event_poll", "__au_runtime_iommu_event_acknowledge", "__au_runtime_console_put")
