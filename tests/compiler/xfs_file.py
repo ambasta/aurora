@@ -1069,7 +1069,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix="aurora-xfs-file-") as temporary:
         runner = NativeRunner(Path(temporary), compiler, 15)
         for group in batches(cases):
-            runner.cases(group)
+            # Compiler-only runaway watchdog; Meson bounds the complete correctness fixture to 300 seconds.
+            runner.cases(group, compiler_timeout=120)
         for case in rejected:
             runner.rejection(case)
     print(f"PASS XFS file: {len(cases)} native cases, {len(rejected)} rejections", flush=True)

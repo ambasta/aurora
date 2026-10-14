@@ -155,6 +155,8 @@ def validate_trap(observed, expected, symbols, name):
 
 
 def command(args, timeout=5, allow_signal=False, allow_rejection=False):
+    before = resource.getrusage(resource.RUSAGE_CHILDREN)
+    started = time.monotonic()
     try:
         result = subprocess.run(
             [str(arg) for arg in args],
@@ -163,7 +165,14 @@ def command(args, timeout=5, allow_signal=False, allow_rejection=False):
             preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)),
         )
     except subprocess.TimeoutExpired as error:
-        raise AssertionError(f"timeout is a failure, not a trap: {args}") from error
+        wall = time.monotonic() - started
+        after = resource.getrusage(resource.RUSAGE_CHILDREN)
+        raise AssertionError(
+            f"timeout is a failure, not a trap: {args}\n"
+            f"cap_s={timeout:.6f} wall_s={wall:.6f} "
+            f"child_user_s={after.ru_utime - before.ru_utime:.6f} "
+            f"child_system_s={after.ru_stime - before.ru_stime:.6f}"
+        ) from error
     require(
         result.returncode == 0
         or (allow_signal and result.returncode < 0)
@@ -273,7 +282,7 @@ class NativeRunner:
             signal_code=code,
         ), symbols
 
-    def cases(self, cases):
+    def cases(self, cases, *, compiler_timeout=None):
         require(
             cases and (len(cases) == 1 or all(not c.prelude for c in cases)),
             "only independent scalar cases may be batched",
@@ -294,7 +303,10 @@ class NativeRunner:
         output = self.directory / "compiled.s"
         output.unlink(missing_ok=True)
         try:
-            command([self.compiler, "--module-root", ROOT / "library", input_path, "-o", output], timeout=self.timeout)
+            command(
+                [self.compiler, "--module-root", ROOT / "library", input_path, "-o", output],
+                timeout=self.timeout if compiler_timeout is None else compiler_timeout,
+            )
             require(input_path.read_text() == source, "compiler modified its input")
             observed, symbols = self.assemble(output.read_text(), functions)
             if isinstance(cases[0].expected, Trap):
@@ -428,7 +440,21 @@ def self_tests(runner):
         observed, symbols = native("xorq %rax, %rax\n" + setup + "\ndivq %rcx\n.Laurora_division_zero_trap:\nud2")
         require(observed.terminal_signal == signal.SIGFPE, "native #DE self-test did not execute")
         rejected(lambda: validate_trap(observed, Trap.ZERO, symbols, "native #DE"), "hardware divide fault")
-    rejected(lambda: command([sys.executable, "-c", "while True: pass"], timeout=0.05), "timeout")
+    try:
+        command([sys.executable, "-c", "while True: pass"], timeout=0.05)
+    except AssertionError as error:
+        require(isinstance(error.__cause__, subprocess.TimeoutExpired), "timeout cause must be retained")
+        metrics = re.search(
+            r"\ncap_s=([0-9]+\.[0-9]+) wall_s=([0-9]+\.[0-9]+) "
+            r"child_user_s=([0-9]+\.[0-9]+) child_system_s=([0-9]+\.[0-9]+)$",
+            str(error),
+        )
+        require(
+            metrics is not None and all(float(value) >= 0 for value in metrics.groups()),
+            "timeout must report nonnegative cap, wall and child CPU metrics",
+        )
+    else:
+        raise AssertionError("harness self-test accepted timeout")
     print(
         "PASS unsigned oracle self-tests: full-width u64/i64, wrong values/signals, "
         "three exact UD2 sites, hardware #DE and timeout rejection",
