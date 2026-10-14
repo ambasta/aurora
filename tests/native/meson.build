@@ -518,6 +518,11 @@ test('native-kernel-uefi-bar-runner-optimized', python, args: ['-B', '-O', files
 foreach optimized : [false, true]
   suffix = optimized ? '-optimized' : ''
   test('native-meson-kernel-controls' + suffix, python,
-    args: ['-B'] + (optimized ? ['-O'] : []) + [files('../meson-kernel-images.py')],
+    args: ['-B'] + (optimized ? ['-O'] : []) + [files('../meson-kernel-images.py'),
+      'GeneratorBoundaries', 'SmokeRunOnlyRouting'],
+    suite: ['full', 'dev', 'boot'], env: native_test_env, workdir: native_root, timeout: 30, is_parallel: false)
+  # Intentional timeout plus descendant cleanup has its own aggregate guard.
+  test('native-meson-kernel-timeout-controls' + suffix, python,
+    args: ['-B'] + (optimized ? ['-O'] : []) + [files('../meson-kernel-images.py'), 'WrapperTimeoutCleanup'],
     suite: ['full', 'dev', 'boot'], env: native_test_env, workdir: native_root, timeout: 30, is_parallel: false)
 endforeach

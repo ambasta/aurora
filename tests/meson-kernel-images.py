@@ -318,7 +318,7 @@ class GeneratorBoundaries(unittest.TestCase):
             )
 
 
-class SmokeRunOnlyRouting(unittest.TestCase):
+class SmokeRunOnlyFixture(unittest.TestCase):
     """Real wrappers and clock checks; recording substitutes never boot a guest."""
 
     def children(self):
@@ -481,6 +481,8 @@ class SmokeRunOnlyRouting(unittest.TestCase):
         self.assertEqual(result.returncode == 0, success, result.stdout)
         return [json.loads(line) for line in self.calls.read_text().splitlines()] if self.calls.exists() else []
 
+
+class WrapperTimeoutCleanup(SmokeRunOnlyFixture):
     def test_timeout_reaps_term_ignoring_guest_in_separate_session(self):
         ready, escaped = self.root / "ready.json", self.root / "escaped-timeout"
         self.qemu.write_text(
@@ -509,6 +511,8 @@ class SmokeRunOnlyRouting(unittest.TestCase):
         for name in ("guest", "transport"):
             self.assertFalse(Path("/proc", str(observed[name])).exists(), name + " survived wrapper timeout")
 
+
+class SmokeRunOnlyRouting(SmokeRunOnlyFixture):
     def test_run_only_uses_canonical_images_and_isolates_all_evidence(self):
         for platform, mode in (
             ("bios", "normal"),
