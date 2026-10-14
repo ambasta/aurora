@@ -1,8 +1,7 @@
 # Compiler status and ownership
 
-The repair builds both compiler stages through the source-bootstrap chain. Final
-integrated qualification is still pending; prior-source test results do not qualify
-this candidate. Further migration and merging remain frozen until the checks pass.
+Source-bootstrap builds are restored. Further migration uses deletion-first steps
+with one semantic authority and final-source qualification for each change.
 
 | Component | Current source authority | Remaining work |
 |---|---|---|
@@ -13,7 +12,7 @@ this candidate. Further migration and merging remain frozen until the checks pas
 | Instruction storage and static admission | Aurora with native transport adapter | Validate diagnostic order and the source/native boundary |
 | Local initialization facts | Aurora workspace | Validate allocation, error behavior and joins |
 | Current values, operand stacks, bounds evidence | C++ verifier | Migration frozen; unmerged draft is not current functionality |
-| Ownership, provenance and worklist | C++ verifier | Establish one authority before any further migration |
+| Ownership, provenance and worklist | C++ verifier; Aurora owns entry-binding uniqueness | Continue deletion-first migration; retain dynamic checks |
 | Call graph | Aurora | Validate final integrated behavior |
 | x86 emission | C++ backend | Aurora-native emission remains incomplete |
 | Assembly, linking and hosted runtime | External bootstrap tools/C++ | Native replacements remain incomplete |
@@ -40,6 +39,9 @@ Those checks do not justify duplicated semantic policy. Static source admission
 and dynamic native lifetime/provenance checks have different inputs; remove a
 native check only after establishing which authority replaces it.
 
+Aurora admits the unique entry-binding prefix; native code constructs its state
+and retains dynamic lifetime, initialization and provenance checks.
+
 The verifier protects the backend against malformed internal IR. It is not a
 verified compiler or a proof of Rust-equivalent safety. C++ host code, generated
 bridges and the emitter remain trusted. Kernel execution also needs its separate
@@ -54,10 +56,8 @@ XFS test and final integrated suite still determine acceptance.
 
 ## Acceptance and next step
 
-Run the original repository check and complete the final-source GCC16
-full suite. Then demonstrate a completed migration with a smaller trusted native
-implementation and one authority before resuming the series. Generated ABI and
-multi-stage convergence checks remain required; no execution waiver applies.
+Each deletion-first change requires final-source GCC16 full validation, generated
+ABI checks and multi-stage convergence; no execution waiver applies.
 
 Language contracts: [values](VALUES.md), [ownership](OWNERSHIP.md),
 [generics](GENERICS.md), [scalars](SCALARS.md), [services](SERVICES.md),

@@ -1944,8 +1944,6 @@ inline void verifyFunction(FunctionBody &function, const Metadata &metadata, Met
                                 "return with active span or byte array lifetime");
                         require(state.stack.empty(), "unbalanced stack at owned byte return");
                     } else if constexpr (std::is_same_v<Op, BindServiceParameter>) {
-                        require(!state.activeServices.contains(operation.offset),
-                                "service parameter authority already active");
                         state.activeServices.emplace(operation.offset, ServiceIdentity{instructionId, operation.kind});
                     } else if constexpr (std::is_same_v<Op, AcquireServiceLoan>) {
                         require(!state.serviceLoans.contains(operation.loanId) &&
@@ -2047,30 +2045,21 @@ inline void verifyFunction(FunctionBody &function, const Metadata &metadata, Met
                         for (std::size_t position = 0; position < count; ++position)
                             state.serviceLoans.at(argumentAt(position).loanId).called = true;
                     } else if constexpr (std::is_same_v<Op, BindRegionParameter>) {
-                        require(state.activeRegions.empty(), "region parameter authority already active");
                         state.activeRegions.emplace(operation.offset, RegionIdentity{operation.offset, instructionId});
                     } else if constexpr (std::is_same_v<Op, BindBytesParameter>) {
-                        require(!state.activeBytes.contains(operation.offset),
-                                "owned byte parameter lifetime already active");
                         const auto token = freshToken(activeRegion(*entryBindings.region()), -1);
                         state.activeBytes.emplace(operation.offset,
                                                   ByteBinding{instructionId, ByteDisposition::Live, token});
                     } else if constexpr (std::is_same_v<Op, BindSpanParameter>) {
-                        require(!state.activeSpans.contains(operation.offset),
-                                "span parameter lifetime already active");
                         state.activeSpans.emplace(
                             operation.offset,
                             SpanCapability{true, operation.index, instructionId, 0, 0, instructionId});
                     } else if constexpr (std::is_same_v<Op, BindOwnedObjectParameter>) {
-                        require(!state.activeObjects.contains(operation.offset),
-                                "owning class parameter lifetime already active");
                         state.activeObjects.emplace(operation.offset, instructionId);
                         beginOwnedObject(operation.offset, operation.className);
                         initializeObject(operation.offset);
                         mintObjectFields(operation.offset, activeRegion(*entryBindings.region()));
                     } else if constexpr (std::is_same_v<Op, BindObjectParameter>) {
-                        require(!state.activeObjects.contains(operation.offset),
-                                "object parameter lifetime already active");
                         state.activeObjects.emplace(operation.offset, instructionId);
                         markObject(operation.offset);
                     } else if constexpr (std::is_same_v<Op, BindParameter>) {
