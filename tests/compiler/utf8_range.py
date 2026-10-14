@@ -294,6 +294,7 @@ class Suite:
             wall_seconds=45,
             status="running",
         )
+        before = resource.getrusage(resource.RUSAGE_CHILDREN)
         start = time.monotonic()
         try:
             with (directory / (name + ".stdout")).open("wb") as out, (directory / (name + ".stderr")).open("wb") as err:
@@ -313,6 +314,10 @@ class Suite:
             raise
         finally:
             receipt["seconds"] = time.monotonic() - start
+            after = resource.getrusage(resource.RUSAGE_CHILDREN)
+            receipt["child_user_seconds"] = after.ru_utime - before.ru_utime
+            receipt["child_system_seconds"] = after.ru_stime - before.ru_stime
+            receipt["child_cpu_seconds"] = receipt["child_user_seconds"] + receipt["child_system_seconds"]
             (directory / (name + ".json")).write_text(json.dumps(receipt, indent=2) + "\n")
             self.budget(0)
 

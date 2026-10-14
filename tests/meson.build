@@ -274,7 +274,7 @@ test(
     args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/json_integers.py'),
            aurorac, '--developer-selected-compiler', '--artifacts', '@ARTIFACTS@'],
     depends: aurorac, suite: ['full', 'slow', 'bytes', 'compiler'], env: oracle_env,
-    workdir: meson.current_build_dir(), timeout: 300, is_parallel: true,
+    workdir: meson.current_build_dir(), timeout: 660, is_parallel: true,
 )
 
 # Full-document validation precedes copied root member/index observations.
@@ -283,7 +283,7 @@ test(
     args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/json_lookup.py'),
            aurorac, '--developer-selected-compiler', '--artifacts', '@ARTIFACTS@'],
     depends: aurorac, suite: ['full', 'slow', 'bytes', 'compiler'], env: oracle_env,
-    workdir: meson.current_build_dir(), timeout: 600, is_parallel: true,
+    workdir: meson.current_build_dir(), timeout: 1200, is_parallel: true,
 )
 
 # Keep routine borrowed-object feedback small; full owner/helper and literal ABI

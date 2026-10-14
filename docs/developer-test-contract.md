@@ -92,6 +92,10 @@ without semantic observations; watchdogs are not performance assertions.
 XFS-file uses a 600-second aggregate watchdog; individual command limits remain
 unchanged, and batches retain the 512 KiB source budget.
 
+JSON integers/lookup use 660/1200-second aggregate watchdogs; their child limits
+remain 20/21 CPU seconds and 45 wall seconds. Command receipts record actual
+child CPU and wall costs separately from those limits.
+
 Method-values and readonly-spans use 45-second host compilation watchdogs;
 integer-oracle uses 30 seconds for symbol inspection. Native execution guards,
 imported runner defaults, explicit readonly-spans `--timeout` overrides and the
