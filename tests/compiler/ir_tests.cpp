@@ -4754,6 +4754,22 @@ void entryBindingTests() {
               "object parameter nominal class mismatch"}})
         rejectModule(std::string("source entry copied ") + name, emptyValueBaseline(), mutate, diagnostic);
 
+    // CFG targets must name labels, and no label may interrupt the admitted
+    // binding prefix. A backedge therefore cannot execute any binding twice.
+    for (const int position : {0, 1}) {
+        for (const bool conditional : {false, true}) {
+            auto reentry = input;
+            auto &code = reentry.functions[0].code;
+            code.insert(code.begin() + position, Label{7});
+            code.insert(code.end() - 1, Constant{1, Type::Bool});
+            code.insert(code.end() - 1, conditional ? Instruction{BranchFalse{7}} : Instruction{Jump{7}});
+            rejectExact(std::string("source entry rejects ") + (conditional ? "branch" : "jump") +
+                            " re-entry at formal " + std::to_string(position),
+                        std::move(reentry),
+                        "parameter bindings must form the entry prefix");
+        }
+    }
+
     // Earlier compaction shrinks retained counts while preserving each body's
     // reserved interval, immutable instruction IDs and formal source positions.
     auto compacted = baseline();
