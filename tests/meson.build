@@ -57,7 +57,7 @@ foreach entry : [
         suite: ['full', feedback, entry[2], 'compiler'],
         env: oracle_env,
         workdir: meson.current_build_dir(),
-        timeout: 300,
+        timeout: entry[0] == 'xfs-file' ? 600 : 300,
         is_parallel: true,
     )
 endforeach

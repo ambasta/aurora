@@ -89,6 +89,8 @@ seconds (121 hard), 360 wall seconds; host tools/rejection compiles retain
 10 CPU/30 wall seconds. Batches are at most 128 cases, Graph at most 96.
 Commands record actual child CPU/wall costs. Signals and wall timeouts fail
 without semantic observations; watchdogs are not performance assertions.
+XFS-file uses a 600-second aggregate watchdog; individual command limits remain
+unchanged, and batches retain the 512 KiB source budget.
 
 ### Bounded Graph report transport
 
