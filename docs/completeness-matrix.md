@@ -17,5 +17,7 @@ restored; self-hosting and full kernel migration remain incomplete.
 Current gate: original repository check and final-source GCC16 full
 suite, followed by affected image/guest checks. See [development and qualification](developer-test-contract.md).
 
+The native verifier remains C++-owned in one shared compilation unit.
+
 Component state: [compiler](../compiler/ARCHITECTURE.md), [libraries](../library/README.md),
 [kernel](../kernel/README.md), [storage](storage.md). Next dependencies: [roadmap](roadmap.md).

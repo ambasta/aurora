@@ -514,7 +514,8 @@ def main():
     root = Path(__file__).resolve().parents[2]
     sources = [Path(__file__).resolve(), Path(__file__).with_suffix(".cpp").resolve()]
     sources += [
-        root / "compiler" / name for name in ("ir.hpp", "ir_verify.hpp", "ir_layout.hpp", "types.hpp", "x86.hpp")
+        root / "compiler" / name
+        for name in ("ir.hpp", "ir_verify.hpp", "ir_verify.cpp", "ir_layout.hpp", "types.hpp", "x86.hpp")
     ]
     manifest = {
         "status": "passed",

@@ -49,6 +49,12 @@ image, stack and authority checks.
 
 ## Compile speed
 
+The native verifier implementation lives in `ir_verify.cpp`, compiled into the
+existing hosted frontend library. `ir_verify.hpp` exposes its metrics and retained
+block-entry budget interface; body-only edits do not require rebuilding IR test
+translation units or the resolver. Stage2 reuses the same host object, while the
+parser-invalid fixture compiles the implementation with its existing adapter stubs.
+
 The formerly timing-out XFS input compiled in 12.7 seconds after metadata-name
 sharing and lookup simplification, versus 32.8 seconds before them, with identical
 assembly. This is one diagnostic input, not a whole-compiler benchmark; the full
