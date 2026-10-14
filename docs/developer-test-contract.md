@@ -101,6 +101,9 @@ integer-oracle uses 30 seconds for symbol inspection. Native execution guards,
 imported runner defaults, explicit readonly-spans `--timeout` overrides and the
 three 900-second Meson aggregate guards remain unchanged.
 
+Smoke-wrapper timeout cleanup gives each adopted child its own bounded
+two-second post-KILL settling period; a child that does not settle fails cleanup.
+
 ### Bounded Graph report transport
 
 Graph fixtures evaluate an order report or ranked-entry call once, copy it,

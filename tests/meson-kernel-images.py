@@ -340,7 +340,7 @@ class SmokeRunOnlyFixture(unittest.TestCase):
         # A transport can own a separate guest session. Adoption, rather than
         # an outer killpg, keeps that guest owned if its supervisor exits first.
         for signum in (signal.SIGTERM, signal.SIGKILL):
-            deadline, signaled = time.monotonic() + 2, set()
+            deadline, signaled = time.monotonic() + 2, {}
             while children := self.children():
                 for pid in children:
                     # WNOWAIT verifies direct-child ownership and keeps the PID
@@ -348,10 +348,15 @@ class SmokeRunOnlyFixture(unittest.TestCase):
                     os.waitid(os.P_PID, pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
                     if pid not in signaled:
                         os.kill(pid, signum)
-                        signaled.add(pid)
+                        signaled[pid] = time.monotonic() + 2
                     if os.waitpid(pid, os.WNOHANG)[0]:
-                        signaled.discard(pid)
-                if time.monotonic() >= deadline:
+                        del signaled[pid]
+                    elif signum == signal.SIGKILL and time.monotonic() >= signaled[pid]:
+                        raise transport.ChildNotReaped("Smoke wrapper descendants have not settled")
+                # TERM has a shared grace period. KILL settling is per owned
+                # child: an orphan adopted after killing its supervisor must
+                # get the same guard from its own signal, not the supervisor's.
+                if signum == signal.SIGTERM and time.monotonic() >= deadline:
                     break
                 time.sleep(0.01)
             if not self.children():
@@ -483,6 +488,58 @@ class SmokeRunOnlyFixture(unittest.TestCase):
 
 
 class WrapperTimeoutCleanup(SmokeRunOnlyFixture):
+    def test_late_adopted_guest_has_its_own_kill_settle_guard(self):
+        elapsed, killed, alive = [0.0], {}, {101, 102}
+
+        def children():
+            return (101,) if 101 in alive else ((102,) if 102 in alive else ())
+
+        def kill(pid, signum):
+            if signum == signal.SIGKILL:
+                killed[pid] = elapsed[0]
+
+        def waitpid(pid, options):
+            if pid in killed and elapsed[0] - killed[pid] >= 1.5:
+                alive.remove(pid)
+                return pid, 0
+            return 0, 0
+
+        def sleep(seconds):
+            elapsed[0] += seconds
+            self.assertLess(elapsed[0], 10, "Cleanup did not honor its bounded guards")
+
+        with (
+            patch.object(self, "children", side_effect=children),
+            patch.object(os, "waitid", return_value=None),
+            patch.object(os, "kill", side_effect=kill),
+            patch.object(os, "waitpid", side_effect=waitpid),
+            patch.object(time, "monotonic", side_effect=lambda: elapsed[0]),
+            patch.object(time, "sleep", side_effect=sleep),
+        ):
+            self.reap_wrapper_children()
+        self.assertEqual(alive, set())
+        self.assertEqual(set(killed), {101, 102})
+        self.assertLess(elapsed[0], 5.1)
+
+    def test_killed_child_that_does_not_settle_still_fails(self):
+        elapsed = [0.0]
+
+        def sleep(seconds):
+            elapsed[0] += seconds
+            self.assertLess(elapsed[0], 10, "Cleanup did not honor its bounded guards")
+
+        with (
+            patch.object(self, "children", return_value=(101,)),
+            patch.object(os, "waitid", return_value=None),
+            patch.object(os, "kill"),
+            patch.object(os, "waitpid", return_value=(0, 0)),
+            patch.object(time, "monotonic", side_effect=lambda: elapsed[0]),
+            patch.object(time, "sleep", side_effect=sleep),
+            self.assertRaisesRegex(transport.ChildNotReaped, "not settled"),
+        ):
+            self.reap_wrapper_children()
+        self.assertLess(elapsed[0], 4.1)
+
     def test_timeout_reaps_term_ignoring_guest_in_separate_session(self):
         ready, escaped = self.root / "ready.json", self.root / "escaped-timeout"
         self.qemu.write_text(
