@@ -210,10 +210,13 @@ class Controls(unittest.TestCase):
 
     def test_shared_serial_timeout_preserves_output(self):
         log = self.root / "serial-timeout.log"
+        # Seed the real child pipe before Popen returns and starts the deadline,
+        # so output preservation does not depend on interpreter startup latency.
         status = transport.run_logged(
-            [sys.executable, "-c", "import time; print('started', flush=True); time.sleep(20)"],
+            [sys.executable, "-c", "import time; time.sleep(20)"],
             log,
             timeout=0.2,
+            preexec_fn=lambda: os.write(1, b"started\n"),
         )
         self.assertEqual(status, 124)
         self.assertEqual(log.read_bytes(), b"started\n")

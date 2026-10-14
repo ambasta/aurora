@@ -151,7 +151,8 @@ Member and qualified access chains (`token.value_or`, `std::ByteWriteStatus`),
 unary operators, call/index punctuation and closing delimiters have no internal
 soft-break opportunity. Calls can break inside their argument lists; a chained
 call retains `).member(` while its arguments can wrap. A member-only chain or
-other indivisible atom wider than the target stays intact and retains AUF1001.
+other indivisible atom wider than the target stays intact and retains AUF1001,
+except for the standalone oversized string-literal rule below.
 Explicitly anchored line comments remain hard boundaries, including a comment
 between a dot/scope token and its member; the formatter never moves that comment
 across a token to force visual continuity.
@@ -184,9 +185,16 @@ there is no transactional stdout API.
 
 Line comments retain all bytes, including a CR, tabs or trailing spaces. Outside
 comments whitespace becomes LF and spaces. Indivisible tokens/comments, member/qualified chains and deep
-indentation may exceed 120 bytes. They are preserved and reported; this increment
+indentation may exceed 120 bytes. They are preserved and normally reported; this increment
 does not promise a strict 120-column result. The limit counts bytes, not Unicode
 display cells, codepoints or UTF-16 units.
+
+A standalone byte-string line may exceed 120 bytes because Aurora cannot split
+or concatenate string tokens. It must contain only leading spaces, one literal,
+and optional closing punctuation (`;`, `,`, `)`, `]`); replacing the literal with
+`""` must fit within 120 bytes. Canonical layout and all other findings remain
+required by `--check`. Comments, identifiers, member chains, and other code
+receive no exception.
 
 Style findings are `AUF1001` (line above 120 bytes), `AUF1002` (trailing space, tab
 or CR), and `AUF1003` (tab indentation or a non-four-space leading count). They have

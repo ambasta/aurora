@@ -6,6 +6,7 @@ exceptions or unittest assertions and remain active under python -O.
 """
 
 from copy import deepcopy
+import hashlib
 import importlib.util
 import json
 import os
@@ -268,10 +269,18 @@ class NativeArtifacts(unittest.TestCase):
             )
             record.write_text(json.dumps(association))
 
-            def check():
+            def check(expected="kernel/uefi/payload.cpp"):
                 rows = decoder.object_stack_rows(directory, "payload", {"local_fn": object()}, source_root=source)
-                self.assertEqual(rows["local_fn"].source, "kernel/uefi/payload.cpp")
+                self.assertEqual(rows["local_fn"].source, expected)
                 self.assertEqual(rows["local_fn"].signature, signature)
+
+            def frame_source(path, line=1, column=1):
+                # Both original and exported sidecars agree, so negative origins
+                # reach the source policy rather than failing the .su/.ci join.
+                for suffix in (".su", ".ci"):
+                    changed = contents[suffix].decode().replace(location, f"{path}:{line}:{column}")
+                    original.with_suffix(suffix).write_text(changed)
+                    exported.with_suffix(suffix).write_text(changed)
 
             check()
             for field, value in (
@@ -308,7 +317,6 @@ class NativeArtifacts(unittest.TestCase):
             for changed in (
                 graph.replace(json.dumps(spelling), json.dumps("foreign.cpp"), 1),
                 graph.replace(":local_fn", ":other_fn"),
-                graph.replace(location, "/outside/kernel.hpp:1:1"),
             ):
                 original.with_suffix(".ci").write_text(changed)
                 exported.with_suffix(".ci").write_text(changed)
@@ -316,6 +324,104 @@ class NativeArtifacts(unittest.TestCase):
                     check()
             original.with_suffix(".ci").write_bytes(contents[".ci"])
             exported.with_suffix(".ci").write_bytes(contents[".ci"])
+            check()
+
+            headers = root / "include/c++/16"
+            header = headers / "string_view"
+            headers.mkdir(parents=True)
+            header.write_text("void local_fn() {}\n")
+            outside = root / "outside.hpp"
+            outside.write_text("void local_fn() {}\n")
+            other_version = headers.parent / "17/string_view"
+            other_version.parent.mkdir()
+            other_version.write_text(header.read_text())
+            escape = headers / "escape"
+            escape.symlink_to(outside)
+            self.assertEqual(decoder.CPP_HEADER_ROOT, Path("/usr/include/c++/16"))
+            with patch.object(decoder, "CPP_HEADER_ROOT", headers):
+                frame_source(header)
+                check(str(header))
+                obj = SimpleNamespace(type=1, functions={"local_fn": object()}, path=exported)
+                with (
+                    patch.object(decoder, "Elf", return_value=obj),
+                    patch.object(decoder, "compiler_witnesses", side_effect=lambda _, __, variants: variants),
+                ):
+                    frames, receipts = decoder.cpp_frames(directory, obj, objects=("payload",), source_root=source)
+                    self.assertEqual(frames, {"local_fn": 16})
+                    receipt = receipts["local_fn"][0]
+                    self.assertEqual(receipt["source"], str(header))
+                    self.assertEqual(receipt["source_sha256"], hashlib.sha256(header.read_bytes()).hexdigest())
+                    self.assertEqual((receipt["line"], receipt["column"], receipt["record"]), (1, 1, signature))
+                    for line, column in ((2, 1), (1, len(header.read_text().splitlines()[0]) + 2)):
+                        frame_source(header, line, column)
+                        with (
+                            self.subTest(line=line, column=column),
+                            self.assertRaisesRegex(ValueError, "Invalid frame location"),
+                        ):
+                            decoder.cpp_frames(directory, obj, objects=("payload",), source_root=source)
+                    frame_source(header)
+                    # The second confinement check independently rejects a header
+                    # on a weaker historical path, even with a normalized row.
+                    row = decoder.StackRecord(str(header), 1, 1, signature, 16, "static")
+                    with patch.object(decoder, "object_stack_rows", return_value={"local_fn": row}):
+                        with self.assertRaisesRegex(ValueError, "Historical compiler frame"):
+                            decoder.cpp_frames(root / "historical", obj, objects=("payload",), source_root=source)
+                alias = headers / "alias"
+                alias.symlink_to(header)
+                su = exported.with_suffix(".su").read_text()
+                ci = exported.with_suffix(".ci").read_text()
+                alias_node = ci.splitlines()[1].replace(":local_fn", ":other_fn").replace(str(header), str(alias))
+                replacements = {
+                    ".su": su + su.replace(str(header), str(alias)),
+                    ".ci": ci[:-1] + alias_node + "\n}",
+                }
+                for suffix, data in replacements.items():
+                    original.with_suffix(suffix).write_text(data)
+                    exported.with_suffix(suffix).write_text(data)
+                with self.assertRaisesRegex(ValueError, "Aliased compiler source record"):
+                    decoder.object_stack_rows(
+                        directory, "payload", {"local_fn": object(), "other_fn": object()}, source_root=source
+                    )
+                frame_source(header)
+                for path, error in (
+                    (outside, "outside selected kernel"),
+                    (other_version, "outside selected kernel"),
+                    (escape, "escaped supported root"),
+                    (headers, "not a regular file"),
+                ):
+                    frame_source(path)
+                    with self.subTest(source=path), self.assertRaisesRegex(ValueError, error):
+                        check()
+                frame_source(headers / "missing")
+                with self.assertRaises(FileNotFoundError):
+                    check()
+                frame_source(header)
+                real_open = Path.open
+
+                def unreadable(path, *args, **kwargs):
+                    if path == header:
+                        raise PermissionError("unreadable fixture header")
+                    return real_open(path, *args, **kwargs)
+
+                with patch.object(Path, "open", unreadable), self.assertRaises(PermissionError):
+                    check()
+                relocated = headers.with_name("relocated")
+                headers.rename(relocated)
+                headers.symlink_to(relocated, target_is_directory=True)
+                with self.assertRaisesRegex(ValueError, "Noncanonical compiler header root"):
+                    check()
+                headers.unlink()
+                relocated.rename(headers)
+                # The earlier normalization boundary also keeps historical
+                # coherent compiler exports kernel-only.
+                historical = root / "historical"
+                (historical / "objects").mkdir(parents=True)
+                for suffix in (".su", ".ci"):
+                    changed = exported.with_suffix(suffix).read_text().replace(spelling, "kernel/uefi/payload.cpp")
+                    (historical / ("objects/payload" + suffix)).write_text(changed)
+                with self.assertRaisesRegex(ValueError, "Historical compiler frame"):
+                    decoder.object_stack_rows(historical, "payload", {"local_fn": object()}, source_root=source)
+            frame_source(unit)
             check()
 
     def test_artifact_hash_roots_are_explicit_and_confined(self):

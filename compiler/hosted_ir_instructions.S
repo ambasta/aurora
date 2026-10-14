@@ -33,4 +33,4 @@ instructions_return publish, __aurora_frontend_instructions_publish
 instructions_entry error
     movq %rdi, %r10
 instructions_return error, __aurora_frontend_instructions_error
-.section .note.GNU-stack,"",@progbits
+# The generated assembly in this same unit owns .note.GNU-stack.

@@ -32,6 +32,8 @@ from composed_values import Trap, observer_self_test, program, require, signed_b
 from integer_oracle import NativeRunner, validate_trap, validate_values
 
 ROOT = Path(__file__).resolve().parents[2]
+# Host compilation watchdog, separate from the five-second native execution guard.
+COMPILER_TIMEOUT = 45
 PRESERVED = b"previous verified assembly\x00\xff\n"
 SCALARS = ("i64", "u64", "u8", "bool")
 ENUMS = "enum class Status{ready,failed};enum class Other{ready,failed};"
@@ -124,7 +126,7 @@ class Suite:
             compiled = subprocess.run(
                 command,
                 capture_output=True,
-                timeout=10,
+                timeout=COMPILER_TIMEOUT,
                 preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)),
             )
             (directory / "stdout.bin").write_bytes(compiled.stdout)
@@ -160,7 +162,7 @@ class Suite:
                     named = subprocess.run(
                         named_command,
                         capture_output=True,
-                        timeout=10,
+                        timeout=COMPILER_TIMEOUT,
                         preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)),
                     )
                     (directory / "named-stderr.bin").write_bytes(named.stderr)
@@ -486,9 +488,7 @@ def native_cases(suite):
     )
     suite.check(
         "packed nested enum empty and private array payload all copy",
-        direct.replace("return item;", "return value;").replace(
-            "if(retained.at(2)!=40u8)", "if(retained.at(2)!=0u8)"
-        ),
+        direct.replace("return item;", "return value;").replace("if(retained.at(2)!=40u8)", "if(retained.at(2)!=0u8)"),
     )
     suite.check(
         "direct receiver field copies packed nested enum empty and private array payload",
@@ -719,7 +719,8 @@ def native_cases(suite):
         change = (
             "builtin::array<u8,1> bytes={1u8};const builtin::span<const u8> view=borrow_bytes(bytes);"
             "item.add(i64(view.at(0)));"
-            if mutable else ""
+            if mutable
+            else ""
         )
         direct = p(
             f"Counter source=Counter({41 if mutable else 42});"

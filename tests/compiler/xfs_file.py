@@ -1068,8 +1068,9 @@ def main():
     print(f"compiler_sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()}", flush=True)
     with tempfile.TemporaryDirectory(prefix="aurora-xfs-file-") as temporary:
         runner = NativeRunner(Path(temporary), compiler, 15)
-        for group in batches(cases):
-            runner.cases(group)
+        for group in batches(cases, count=32):
+            # Compiler-only runaway watchdog; Meson bounds the complete correctness fixture to 600 seconds.
+            runner.cases(group, compiler_timeout=120)
         for case in rejected:
             runner.rejection(case)
     print(f"PASS XFS file: {len(cases)} native cases, {len(rejected)} rejections", flush=True)

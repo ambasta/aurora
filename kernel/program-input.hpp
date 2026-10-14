@@ -52,8 +52,7 @@ public:
     [[nodiscard]] auto valid() const -> bool {
         if (record_.count < 0 || record_.count > 64 || record_.action > 3 || record_.after_cr > 1)
             return false;
-        if ((action() == Action::command && record_.count == 0) ||
-            (record_.action >= 2 && record_.count != 0))
+        if ((action() == Action::command && record_.count == 0) || (record_.action >= 2 && record_.count != 0))
             return false;
         for (std::size_t index = 0; index < record_.bytes.size(); ++index) {
             const auto byte = record_.bytes[index];
@@ -70,8 +69,8 @@ public:
 };
 
 // A supervisor response is ordinary copied data. Check its raw kind before
-// Aurora loads a typed enum. Source policy validates the count, payload kind,
-// printable bytes and zero suffix before any output.
+// Aurora loads a typed enum. Source policy validates the count, payload kind
+// and zero suffix before any output; payload bytes retain their exact values.
 class Response final {
 public:
     enum class Kind : std::uint64_t {

@@ -12,10 +12,19 @@ aurora_hosted_metadata_\operation:
 .size aurora_hosted_metadata_\operation, .-aurora_hosted_metadata_\operation
 .endm
 
+metadata_entry flag_masks
+    movq %rdi, %r10
+metadata_return flag_masks, __aurora_frontend_metadata_flag_masks
+
 metadata_entry create
     movq %rdi, %r11
     movq %rsi, %r10
 metadata_return create, __aurora_frontend_metadata_create
+
+metadata_entry initialize
+    movq %rdi, %r10
+    movq %rsi, %r11
+metadata_return initialize, __aurora_frontend_metadata_initialize
 
 metadata_entry release
     movq %rdi, %r11
@@ -45,4 +54,4 @@ metadata_entry byte_array_element_root
     movq %rdx, %rsi
 metadata_return byte_array_element_root, __aurora_frontend_metadata_byte_array_element_root
 
-.section .note.GNU-stack,"",@progbits
+# The generated assembly in this same unit owns .note.GNU-stack.

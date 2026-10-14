@@ -3,6 +3,7 @@
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -136,6 +137,22 @@ __au_runtime_iommu_event_entry:
         return assembly
 
     consumer = link(emit(ROOT / "examples/kernel-iommu-event-service.au", "consumer"), "iommu_event_intake", "consumer")
+    # Compare actual generated code with image admission, not a synthetic fixture
+    # derived solely from the policy's own expected helper inventory.
+    spec = importlib.util.spec_from_file_location("event_image_policy", ROOT / "scripts/kernel_uefi_image.py")
+    image_policy = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(image_policy)
+    result = run(["nm", "--defined-only", consumer])
+    need(result.returncode == 0, result.stderr.decode())
+    reflection = {
+        name: kind
+        for name, kind in image_policy.nm_entries(result.stdout.decode()).items()
+        if name.startswith(("aurora_reflect_", "__au_reflect_"))
+    }
+    need(
+        reflection == dict.fromkeys(image_policy.EVENT_REFLECTION_HELPERS, "T"),
+        "Event source reflection helpers disagree with exact image admission",
+    )
     for mode in POSITIVE:
         result = run([consumer, mode])
         need(result.returncode == 0 and result.stdout.startswith(b"PASS IOMMU event"), f"{mode}: {result.stderr!r}")

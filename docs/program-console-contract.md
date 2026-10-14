@@ -29,9 +29,11 @@ before note/file mutation or protected execution. It retains command dispatch,
 authenticated lifecycle/publication and note/file commits. `console.program_output`
 then presents a copied, bounded `ProgramResponse` and the following prompt through
 the same sealed capability. Ready, saved, missing, stopped and unknown responses
-carry no payload; output and local file replies carry at most 64 printable bytes.
-The entire payload and zero suffix are checked before writing. The private native
-ingress also checks raw enum representation before Aurora observes a typed enum.
+carry no payload; output and local file replies carry at most 64 bytes. Presentation
+preserves every payload byte, including NUL, control and non-ASCII values, as the
+previous native output path did. Count, payload kind and zero suffix are checked
+before writing. The private native ingress also checks raw enum representation
+before Aurora observes a typed enum.
 
 Each input or response turn gets a fresh grant only at the quiescent boundary;
 the grant is released before proceeding. Response handoff copies are scrubbed
@@ -263,6 +265,16 @@ exact in-function targets and no entry that bypasses their guard. Unknown
 control-transfer forms reject. Compiler metadata and trusted inline assembly are
 part of the assurance boundary; these checks do not independently prove compiler
 correctness, memory authority or termination.
+
+Native frames bound to an exact object compilation may name selected kernel
+sources or readable headers under the canonical pinned `/usr/include/c++/16`
+root. Kernel locations remain repository-relative; header locations are canonical
+absolute paths, with source hashes and coordinates retained. Escaping symlinks,
+other include roots/GCC versions and historical unbound header frames reject.
+This recognizes the standard-library implementation already trusted when inlined;
+it is a provenance/review scope, not an additional security proof. Protected
+program profiles use size optimization within the unchanged 128 KiB payload
+reservation; complete frame/edge checks and stack limits still apply.
 
 Version 2 Aurora facts also describe the R11 packed-input/R10 copied-result ABI
 for receiver-free dense non-owning values and qword scalar parameters. The four

@@ -31,7 +31,7 @@ class InitializationWorkspace;
 namespace detail {
 class MetadataWriter;
 class InstructionWriter;
-}
+} // namespace detail
 
 // All ranges borrow the immovable Metadata capsule. Dereferencing copies a
 // value; neither a payload pointer nor an Aurora owner escapes this interface.
@@ -324,6 +324,9 @@ public:
     using CallableId = std::size_t;
     // Hostile fixtures import raw maps. Production supplies a pending owning
     // ingress; both paths independently verify before publishing any view.
+    // These are canonical declaration/shape views, not executable authority.
+    // Constructor mutability/I64 policy is completed by source instruction
+    // admission; only final validate can publish an executable module.
     static std::unique_ptr<Metadata> import(const Module &module);
     ~Metadata();
     Metadata(const Metadata &) = delete;

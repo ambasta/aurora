@@ -8,6 +8,9 @@ Meson/Ninja owns the complete incremental native graph. `make test` selects
 build directory per toolchain and flags, with matching real GCC/G++ on PATH.
 See [build commands and suite selection](meson-bootstrap.md).
 
+The whole-source bootstrap corpus runs first in an exclusive test slot to avoid
+compiler-workload contention; other tests remain parallel and all limits stay unchanged.
+
 Every merge/release still requires final integrated GCC 16 `full`, independent
 review, normal BIOS and UEFI image builds and actual smokes, and the applicable
 affected profile image/admission/fault/recovery/restoration gates. GCC 14 is
@@ -89,6 +92,20 @@ seconds (121 hard), 360 wall seconds; host tools/rejection compiles retain
 10 CPU/30 wall seconds. Batches are at most 128 cases, Graph at most 96.
 Commands record actual child CPU/wall costs. Signals and wall timeouts fail
 without semantic observations; watchdogs are not performance assertions.
+XFS-file uses a 600-second aggregate watchdog; individual command limits remain
+unchanged, and batches retain the 512 KiB source budget.
+
+JSON integers/lookup use 660/1200-second aggregate watchdogs; their child limits
+remain 20/21 CPU seconds and 45 wall seconds. Command receipts record actual
+child CPU and wall costs separately from those limits.
+
+Method-values and readonly-spans use 45-second host compilation watchdogs;
+integer-oracle uses 30 seconds for symbol inspection. Native execution guards,
+imported runner defaults, explicit readonly-spans `--timeout` overrides and the
+three 900-second Meson aggregate guards remain unchanged.
+
+Smoke-wrapper timeout cleanup gives each adopted child its own bounded
+two-second post-KILL settling period; a child that does not settle fails cleanup.
 
 ### Bounded Graph report transport
 

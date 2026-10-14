@@ -1,6 +1,7 @@
 export module aurora.compiler.ir_instructions;
 import aurora.compiler.ir_instruction_storage;
 import aurora.compiler.ir_metadata;
+import aurora.compiler.ir_metadata_storage;
 
 // Generic durable transport admission precedes the sole native field walk for
 // exact opcode shapes. Source admission normalizes every body, then checks all
@@ -33,15 +34,16 @@ export namespace compiler_ir_instructions {
         i64 callable = 0;
         while (callable < store.body_count()) {
             const BodyRow body = store.body_at(callable);
-            if (!bounded_range(body.begin(), body.capacity(), store.code_count())
-                || body.count() != body.capacity()
-                || (body.capacity() != 0 && body.begin() != next_code)) {
+            if (!bounded_range(body.begin(), body.capacity(), store.code_count()) || body.count() != body.capacity()
+                || body.unreachable_after() != 0 || (body.capacity() != 0 && body.begin() != next_code)) {
                 return fail(store, InstructionError::integrity);
             }
             next_code = next_code + body.capacity();
             callable = callable + 1;
         }
-        if (next_code != store.code_count()) { return fail(store, InstructionError::integrity); }
+        if (next_code != store.code_count()) {
+            return fail(store, InstructionError::integrity);
+        }
         i64 at = 0;
         while (at < store.code_count()) {
             const CodeRow code = store.code_at(at);
@@ -58,8 +60,8 @@ export namespace compiler_ir_instructions {
             const RawOperandRow operand = store.operand_at(begin + at);
             // All nested lists contain scalar leaves. Their exact entry roles
             // and pair grouping belong to the sole native field walk.
-            if (operand.role() <= 0 || operand.role() > 102
-                || (operand.role() >= 96 && operand.role() <= 99) || !scalar_payload(operand)) {
+            if (operand.role() <= 0 || operand.role() > 102 || (operand.role() >= 96 && operand.role() <= 99)
+                || !scalar_payload(operand)) {
                 return fail(store, InstructionError::integrity);
             }
             at = at + 1;
@@ -67,12 +69,14 @@ export namespace compiler_ir_instructions {
         return true;
     }
     auto storage_integrity(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata) -> bool {
-        if (metadata.status() != compiler_ir_metadata::MetadataStatus::success
-            || store.body_count() != metadata.callable_count() || !body_integrity(store)) {
+        if (metadata.status() != compiler_ir_metadata::MetadataStatus::success || store.body_count()
+            != metadata.callable_count() || !body_integrity(store)) {
             return fail(store, InstructionError::integrity);
         }
         const i64 type_begin = metadata.instruction_type_begin();
-        if (type_begin < 0 || type_begin > metadata.type_count()) { return fail(store, InstructionError::integrity); }
+        if (type_begin < 0 || type_begin > metadata.type_count()) {
+            return fail(store, InstructionError::integrity);
+        }
         // Raw unresolved counts survive ingress. Reject them explicitly before
         // a native observation can reconstruct a canonical Type and lose them.
         i64 at = type_begin;
@@ -92,9 +96,9 @@ export namespace compiler_ir_instructions {
         i64 instruction = 0;
         while (instruction < store.instruction_count()) {
             const RawInstructionRow row = store.instruction_at(instruction + 1);
-            if (row.kind() != 1 || row.form() < 0 || row.form() > 83
-                || !bounded_range(row.operand_begin(), row.operand_count(), store.operand_count())
-                || (row.operand_count() != 0 && row.operand_begin() != next_operand)) {
+            if (row.kind() != 1 || row.form() < 0 || row.form() > 83 || !bounded_range(row.operand_begin(),
+                row.operand_count(), store.operand_count()) || (row.operand_count() != 0 && row.operand_begin()
+                != next_operand)) {
                 return fail(store, InstructionError::integrity);
             }
             // Each prefix is followed by its child lists in prefix order. This
@@ -104,33 +108,35 @@ export namespace compiler_ir_instructions {
             while (at < row.operand_count()) {
                 const RawOperandRow operand = store.operand_at(row.operand_begin() + at);
                 const i64 role = operand.role();
-                if (role <= 0 || role > 102 || (role >= 96 && role <= 99)) { return fail(store, InstructionError::integrity); }
+                if (role <= 0 || role > 102 || (role >= 96 && role <= 99)) {
+                    return fail(store, InstructionError::integrity);
+                }
                 if (type_role(role)) {
-                    if (!scalar_payload(operand) || next_type >= metadata.type_count()
-                        || operand.signed_value() != next_type) { return fail(store, InstructionError::integrity); }
+                    if (!scalar_payload(operand) || next_type >= metadata.type_count() || operand.signed_value()
+                        != next_type) {
+                        return fail(store, InstructionError::integrity);
+                    }
                     // Occurrences have storage identities, never semantic type identities.
                     next_type = next_type + 1;
                 } else {
                     if (list_role(role)) {
-                        if (!slice_payload(operand)
-                            || !bounded_range(operand.begin(), operand.count(), store.operand_count())
-                            || (operand.count() != 0 && operand.begin() != next_operand)
+                        if (!slice_payload(operand) || !bounded_range(operand.begin(), operand.count(),
+                            store.operand_count()) || (operand.count() != 0 && operand.begin() != next_operand)
                             || !list_integrity(store, operand.begin(), operand.count())) {
                             return fail(store, InstructionError::integrity);
                         }
                         next_operand = next_operand + operand.count();
                     } else {
                         if (role == 33) { // LiteralBytes, packed once for each occurrence
-                            if (!slice_payload(operand)
-                                || !bounded_range(operand.begin(), operand.count(), store.literal_count())
-                                || (operand.count() != 0 && operand.begin() != next_literal)) {
+                            if (!slice_payload(operand) || !bounded_range(operand.begin(), operand.count(),
+                                store.literal_count()) || (operand.count() != 0 && operand.begin() != next_literal)) {
                                 return fail(store, InstructionError::integrity);
                             }
                             next_literal = next_literal + operand.count();
                         } else {
                             if (role == 100 || role == 101) { // CalleeName, ClassName
-                                if (!slice_payload(operand)
-                                    || !bounded_range(operand.begin(), operand.count(), metadata.byte_count())) {
+                                if (!slice_payload(operand) || !bounded_range(operand.begin(), operand.count(),
+                                    metadata.byte_count())) {
                                     return fail(store, InstructionError::integrity);
                                 }
                             } else {
@@ -151,16 +157,25 @@ export namespace compiler_ir_instructions {
             }
             instruction = instruction + 1;
         }
-        if (next_operand != store.operand_count() || next_literal != store.literal_count()
-            || next_type != metadata.type_count()) { return fail(store, InstructionError::integrity); }
+        if (next_operand != store.operand_count() || next_literal != store.literal_count() || next_type
+            != metadata.type_count()) {
+            return fail(store, InstructionError::integrity);
+        }
         return true;
     }
-    auto admit_instruction_storage(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata)
-        -> InstructionStatus {
-        if (store.status() != InstructionStatus::pending) { return store.status(); }
-        if (!store.allocated()) { store.reject(InstructionError::integrity); return store.status(); }
+    auto admit_instruction_storage(InstructionStore& store,
+        const compiler_ir_metadata::MetadataStore& metadata) -> InstructionStatus {
+        if (store.status() != InstructionStatus::pending) {
+            return store.status();
+        }
+        if (!store.allocated()) {
+            store.reject(InstructionError::integrity);
+            return store.status();
+        }
         if (!storage_integrity(store, metadata) || !store.admit()) {
-            if (store.status() == InstructionStatus::pending) { store.reject(InstructionError::integrity); }
+            if (store.status() == InstructionStatus::pending) {
+                store.reject(InstructionError::integrity);
+            }
         }
         return store.status();
     }
@@ -172,7 +187,9 @@ export namespace compiler_ir_instructions {
     }
     auto entry_instruction(const InstructionStore& store, i64 callable, i64 position) -> RawInstructionRow {
         const BodyRow body = store.body_at(callable);
-        if (position < 0 || position >= body.count()) { return RawInstructionRow(-1, -1, -1, -1); }
+        if (position < 0 || position >= body.count()) {
+            return RawInstructionRow(-1, -1, -1, -1);
+        }
         const CodeRow code = store.code_at(body.begin() + position);
         const RawInstructionRow result = store.instruction_at(code.id());
         return result;
@@ -187,35 +204,76 @@ export namespace compiler_ir_instructions {
     }
     auto expected_parameter_form(const compiler_ir_metadata::MetadataStore& metadata,
         compiler_ir_metadata::RawTypeRow type) -> i64 {
-        if (compiler_ir_metadata::service_type(type)) { return 0; }
-        if (type.kind() == 12) { return 73; }
-        if (compiler_ir_metadata::owner_kind(type)) { return 74; }
-        if (compiler_ir_metadata::owning_type(metadata, type)) { return 79; }
-        if (type.kind() == 5) { return 46; }
-        if (type.kind() == 11) { return 59; }
+        if (compiler_ir_metadata::service_type(type)) {
+            return 0;
+        }
+        if (type.kind() == 12) {
+            return 73;
+        }
+        if (compiler_ir_metadata::owner_kind(type)) {
+            return 74;
+        }
+        if (compiler_ir_metadata::owning_type(metadata, type)) {
+            return 79;
+        }
+        if (type.kind() == 5) {
+            return 46;
+        }
+        if (type.kind() == 11) {
+            return 59;
+        }
         return 45;
     }
     auto prefix_error(i64 form) -> InstructionError {
-        if (form == 0) { return InstructionError::service_prefix; }
-        if (form == 73) { return InstructionError::region_prefix; }
-        if (form == 74) { return InstructionError::owner_prefix; }
-        if (form == 79) { return InstructionError::owning_prefix; }
-        if (form == 46) { return InstructionError::object_prefix; }
-        if (form == 59) { return InstructionError::span_prefix; }
+        if (form == 0) {
+            return InstructionError::service_prefix;
+        }
+        if (form == 73) {
+            return InstructionError::region_prefix;
+        }
+        if (form == 74) {
+            return InstructionError::owner_prefix;
+        }
+        if (form == 79) {
+            return InstructionError::owning_prefix;
+        }
+        if (form == 46) {
+            return InstructionError::object_prefix;
+        }
+        if (form == 59) {
+            return InstructionError::span_prefix;
+        }
         return InstructionError::scalar_prefix;
     }
     auto overlap_error(i64 form) -> InstructionError {
-        if (form == 0) { return InstructionError::service_overlap; }
-        if (form == 74) { return InstructionError::owner_overlap; }
-        if (form == 79) { return InstructionError::owning_overlap; }
-        if (form == 46) { return InstructionError::object_overlap; }
-        if (form == 59) { return InstructionError::span_overlap; }
+        if (form == 0) {
+            return InstructionError::service_overlap;
+        }
+        if (form == 74) {
+            return InstructionError::owner_overlap;
+        }
+        if (form == 79) {
+            return InstructionError::owning_overlap;
+        }
+        if (form == 46) {
+            return InstructionError::object_overlap;
+        }
+        if (form == 59) {
+            return InstructionError::span_overlap;
+        }
         return InstructionError::scalar_overlap;
     }
     auto entry_slot(const compiler_ir_metadata::MetadataStore& metadata, i64 callable, i64 kind, i64 offset) -> i64 {
-        const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(callable);
-        const compiler_ir_metadata::IndexRange group = compiler_ir_metadata::slot_group(metadata, declaration, kind);
-        return compiler_ir_metadata::find_slot(metadata, group, offset);
+        // Instruction admission only reads successfully admitted metadata.
+        const i64 index = compiler_ir_metadata::local_origin_candidate(metadata, callable, kind, offset);
+        if (index < 0) {
+            return -1;
+        }
+        const compiler_ir_metadata::SlotRow slot = metadata.slot_at(index);
+        if (slot.offset() != offset) {
+            return -1;
+        }
+        return index;
     }
     auto entry_has_region(const InstructionStore& store, i64 callable) -> bool {
         const RawInstructionRow first = entry_instruction(store, callable, 0);
@@ -227,17 +285,19 @@ export namespace compiler_ir_instructions {
         const i64 parameters = declaration.value_parameter_count();
         i64 position = 0;
         while (position < parameters) {
-            const compiler_ir_metadata::RawTypeRow type = metadata.type_at(declaration.value_parameter_begin() + position);
+            const compiler_ir_metadata::RawTypeRow type = metadata.type_at(declaration.value_parameter_begin()
+                + position);
             const i64 expected = expected_parameter_form(metadata, type);
             const RawInstructionRow row = entry_instruction(store, callable, position);
-            if (row.form() != expected || entry_value(store, row, 0) != position
-                || (expected == 73 && position != 0)) { return fail(store, prefix_error(expected)); }
+            if (row.form() != expected || entry_value(store, row, 0) != position || (expected == 73 && position != 0)) {
+                return fail(store, prefix_error(expected));
+            }
             const i64 offset = entry_value(store, row, 1);
             i64 previous = 0;
             while (previous < position) {
                 const RawInstructionRow earlier = entry_instruction(store, callable, previous);
-                const bool same_root_kind = earlier.form() == expected
-                    || ((earlier.form() == 46 || earlier.form() == 79) && (expected == 46 || expected == 79));
+                const bool same_root_kind = earlier.form() == expected || ((earlier.form() == 46 || earlier.form()
+                    == 79) && (expected == 46 || expected == 79));
                 if (same_root_kind && entry_value(store, earlier, 1) == offset) {
                     return fail(store, overlap_error(expected));
                 }
@@ -248,7 +308,9 @@ export namespace compiler_ir_instructions {
         const BodyRow body = store.body_at(callable);
         while (position < body.count()) {
             const RawInstructionRow row = entry_instruction(store, callable, position);
-            if (parameter_form(row.form())) { return fail(store, InstructionError::late_binding); }
+            if (parameter_form(row.form())) {
+                return fail(store, InstructionError::late_binding);
+            }
             position = position + 1;
         }
         return true;
@@ -256,7 +318,8 @@ export namespace compiler_ir_instructions {
     auto verify_scalar_parameter(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 callable, i64 position) -> bool {
         const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(callable);
-        const compiler_ir_metadata::RawTypeRow expected = metadata.type_at(declaration.value_parameter_begin() + position);
+        const compiler_ir_metadata::RawTypeRow expected = metadata.type_at(declaration.value_parameter_begin()
+            + position);
         const RawInstructionRow row = entry_instruction(store, callable, position);
         const i64 offset = entry_value(store, row, 1);
         const compiler_ir_metadata::RawTypeRow supplied = metadata.type_at(entry_value(store, row, 2));
@@ -279,7 +342,9 @@ export namespace compiler_ir_instructions {
             return fail(store, InstructionError::scalar_array);
         }
         const i64 slot_index = entry_slot(metadata, callable, 10, offset);
-        if (slot_index < 0) { return fail(store, InstructionError::scalar_slot); }
+        if (slot_index < 0) {
+            return fail(store, InstructionError::scalar_slot);
+        }
         const compiler_ir_metadata::SlotRow slot = metadata.slot_at(slot_index);
         const compiler_ir_metadata::RawTypeRow slot_type = metadata.type_at(slot.type());
         if (!compiler_ir_metadata::same_type(metadata, expected, slot_type)) {
@@ -290,45 +355,67 @@ export namespace compiler_ir_instructions {
     auto verify_object_parameter(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 callable, i64 position) -> bool {
         const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(callable);
-        const compiler_ir_metadata::RawTypeRow expected = metadata.type_at(declaration.value_parameter_begin() + position);
+        const compiler_ir_metadata::RawTypeRow expected = metadata.type_at(declaration.value_parameter_begin()
+            + position);
         const RawInstructionRow row = entry_instruction(store, callable, position);
         const i64 offset = entry_value(store, row, 1);
         const RawOperandRow name_operand = entry_operand(store, row, 2);
-        const compiler_ir_metadata::ByteRange name = compiler_ir_metadata::ByteRange(name_operand.begin(), name_operand.count());
+        const compiler_ir_metadata::ByteRange name = compiler_ir_metadata::ByteRange(name_operand.begin(),
+            name_operand.count());
         const bool owning = row.form() == 79;
-        const bool named_owner = compiler_ir_metadata::owning_class(metadata, compiler_ir_metadata::find_class(metadata, name));
-        if (!owning && named_owner) { return fail(store, InstructionError::object_owner); }
+        const bool named_owner = compiler_ir_metadata::owning_class(metadata, compiler_ir_metadata::find_class(metadata,
+            name));
+        if (!owning && named_owner) {
+            return fail(store, InstructionError::object_owner);
+        }
         if (compiler_ir_metadata::compare_names(metadata, expected.name(), name) != 0 || owning != named_owner) {
-            if (owning) { return fail(store, InstructionError::owning_type); }
+            if (owning) {
+                return fail(store, InstructionError::owning_type);
+            }
             return fail(store, InstructionError::object_type);
         }
-        if (owning && !entry_has_region(store, callable)) { return fail(store, InstructionError::owning_region); }
+        if (owning && !entry_has_region(store, callable)) {
+            return fail(store, InstructionError::owning_region);
+        }
         const i64 slot_index = entry_slot(metadata, callable, 11, offset);
         if (slot_index < 0) {
-            if (owning) { return fail(store, InstructionError::owning_slot); }
+            if (owning) {
+                return fail(store, InstructionError::owning_slot);
+            }
             return fail(store, InstructionError::object_slot);
         }
         const compiler_ir_metadata::SlotRow slot = metadata.slot_at(slot_index);
         const compiler_ir_metadata::RawTypeRow slot_type = metadata.type_at(slot.type());
         if (!compiler_ir_metadata::same_type(metadata, expected, slot_type)) {
-            if (owning) { return fail(store, InstructionError::owning_slot); }
+            if (owning) {
+                return fail(store, InstructionError::owning_slot);
+            }
             return fail(store, InstructionError::object_nominal);
         }
-        if (owning && slot.mutable_value() != 1) { return fail(store, InstructionError::owning_mutable); }
-        if (!owning && slot.mutable_value() != 0) { return fail(store, InstructionError::object_readonly); }
+        if (owning && slot.mutable_value() != 1) {
+            return fail(store, InstructionError::owning_mutable);
+        }
+        if (!owning && slot.mutable_value() != 0) {
+            return fail(store, InstructionError::object_readonly);
+        }
         return true;
     }
     auto verify_owner_parameter(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 callable, i64 position) -> bool {
         const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(callable);
-        const compiler_ir_metadata::RawTypeRow expected = metadata.type_at(declaration.value_parameter_begin() + position);
+        const compiler_ir_metadata::RawTypeRow expected = metadata.type_at(declaration.value_parameter_begin()
+            + position);
         const RawInstructionRow row = entry_instruction(store, callable, position);
         const i64 offset = entry_value(store, row, 1);
         const i64 slot_index = entry_slot(metadata, callable, 16, offset);
-        if (slot_index < 0) { return fail(store, InstructionError::owner_slot); }
+        if (slot_index < 0) {
+            return fail(store, InstructionError::owner_slot);
+        }
         const i64 annotation = entry_slot(metadata, callable, 17, offset);
         if (annotation < 0) {
-            if (expected.kind() != 13) { return fail(store, InstructionError::owner_type); }
+            if (expected.kind() != 13) {
+                return fail(store, InstructionError::owner_type);
+            }
         } else {
             const compiler_ir_metadata::SlotRow nominal = metadata.slot_at(annotation);
             const compiler_ir_metadata::RawTypeRow slot_type = metadata.type_at(nominal.type());
@@ -336,14 +423,21 @@ export namespace compiler_ir_instructions {
                 return fail(store, InstructionError::owner_type);
             }
         }
-        if (!entry_has_region(store, callable)) { return fail(store, InstructionError::owner_region); }
+        if (!entry_has_region(store, callable)) {
+            return fail(store, InstructionError::owner_region);
+        }
         const compiler_ir_metadata::SlotRow slot = metadata.slot_at(slot_index);
-        if (slot.mutable_value() != 1) { return fail(store, InstructionError::owner_mutable); }
+        if (slot.mutable_value() != 1) {
+            return fail(store, InstructionError::owner_mutable);
+        }
         return true;
     }
     auto verify_entry_parameters(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 callable) -> bool {
-        if (!verify_entry_prefix(store, metadata, callable)) { return false; }
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
+        if (!verify_entry_prefix(store, metadata, callable)) {
+            return false;
+        }
         const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(callable);
         i64 position = 0;
         while (position < declaration.value_parameter_count()) {
@@ -351,18 +445,25 @@ export namespace compiler_ir_instructions {
             const i64 form = row.form();
             const i64 offset = entry_value(store, row, 1);
             if (form == 45) {
-                if (!verify_scalar_parameter(store, metadata, callable, position)) { return false; }
+                if (!verify_scalar_parameter(store, metadata, callable, position)) {
+                    return false;
+                }
             } else {
                 if (form == 46 || form == 79) {
-                    if (!verify_object_parameter(store, metadata, callable, position)) { return false; }
+                    if (!verify_object_parameter(store, metadata, callable, position)) {
+                        return false;
+                    }
                 } else {
                     if (form == 74) {
-                        if (!verify_owner_parameter(store, metadata, callable, position)) { return false; }
+                        if (!verify_owner_parameter(store, metadata, callable, position)) {
+                            return false;
+                        }
                     } else {
                         if (form == 0) {
-                            const compiler_ir_metadata::RawTypeRow type = metadata.type_at(declaration.value_parameter_begin() + position);
-                            if (entry_value(store, row, 2) != type.kind() - 14
-                                || entry_slot(metadata, callable, 14, offset) < 0) {
+                            const compiler_ir_metadata::RawTypeRow type = metadata.type_at(
+                                declaration.value_parameter_begin() + position);
+                            if (entry_value(store, row, 2) != type.kind() - 14 || entry_slot(metadata, callable, 14,
+                                offset) < 0) {
                                 return fail(store, InstructionError::service_binding);
                             }
                         } else {
@@ -372,8 +473,8 @@ export namespace compiler_ir_instructions {
                                 }
                             } else {
                                 const compiler_ir_metadata::ReceiverShape receiver = declaration.first_receiver();
-                                if (compiler_ir_metadata::callable_flag(declaration, 1)
-                                    && compiler_ir_metadata::receiver_flag(receiver, 2)) {
+                                if (compiler_ir_metadata::callable_flag(declaration, masks.callable_receiver())
+                                    && compiler_ir_metadata::receiver_flag(receiver, masks.receiver_constructor())) {
                                     return fail(store, InstructionError::span_type);
                                 }
                                 if (entry_slot(metadata, callable, 13, offset) < 0) {
@@ -406,16 +507,20 @@ export namespace compiler_ir_instructions {
     }
     auto call_lane(const InstructionStore& store, i64 instruction, i64 field, i64 position) -> i64 {
         const RawOperandRow list = call_operand(store, instruction, field);
-        if (list.count() == 0) { return 0; }
+        if (list.count() == 0) {
+            return 0;
+        }
         const RawOperandRow operand = store.operand_at(list.begin() + position);
         return operand.signed_value();
     }
-    auto call_type(const compiler_ir_metadata::MetadataStore& metadata, i64 target, i64 position)
-        -> compiler_ir_metadata::RawTypeRow {
+    auto call_type(const compiler_ir_metadata::MetadataStore& metadata, i64 target,
+        i64 position) -> compiler_ir_metadata::RawTypeRow {
         const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(target);
         const compiler_ir_metadata::IndexRange types = declaration.types();
         i64 index = types.begin();
-        if (position > 0) { index = declaration.value_parameter_begin() + position - 1; }
+        if (position > 0) {
+            index = declaration.value_parameter_begin() + position - 1;
+        }
         const compiler_ir_metadata::RawTypeRow result = metadata.type_at(index);
         return result;
     }
@@ -424,97 +529,161 @@ export namespace compiler_ir_instructions {
         i64 at = 0;
         while (at < declaration.value_parameter_count()) {
             const compiler_ir_metadata::RawTypeRow type = metadata.type_at(declaration.value_parameter_begin() + at);
-            if (type.kind() == kind) { return true; }
+            if (type.kind() == kind) {
+                return true;
+            }
             at = at + 1;
         }
         return false;
     }
     auto call_objects_field(i64 form) -> i64 {
-        if (form == 20) { return 1; }
-        if (form == 4) { return 6; }
-        if (form == 83) { return 2; }
+        if (form == 20) {
+            return 1;
+        }
+        if (form == 4) {
+            return 6;
+        }
+        if (form == 83) {
+            return 2;
+        }
         return 2;
     }
     auto call_result_field(i64 form) -> i64 {
-        if (form == 20 || form == 4) { return 2; }
-        if (form == 83) { return 3; }
+        if (form == 20 || form == 4) {
+            return 2;
+        }
+        if (form == 83) {
+            return 3;
+        }
         return 3;
     }
     auto call_receiver_root(const InstructionStore& store, i64 instruction) -> i64 {
         const RawInstructionRow row = store.instruction_at(instruction);
-        if (row.form() == 75) { return call_value(store, instruction, 4); }
-        if (row.form() == 83) { return call_lane(store, instruction, 1, 0); }
+        if (row.form() == 75) {
+            return call_value(store, instruction, 4);
+        }
+        if (row.form() == 83) {
+            return call_lane(store, instruction, 1, 0);
+        }
         return call_value(store, instruction, 1);
     }
     auto call_spans_field(i64 form) -> i64 {
-        if (form == 83) { return 4; }
+        if (form == 83) {
+            return 4;
+        }
         return 5;
     }
     auto call_lane_alias(const InstructionStore& store, i64 instruction, i64 field, i64 start, i64 root) -> bool {
         // Zero lanes are absent roots, never members of a copied/transferred
         // argument set. A zero supplied for a real root fails its exact slot.
-        if (root == 0) { return false; }
+        if (root == 0) {
+            return false;
+        }
         i64 at = start;
         while (at < call_count(store, instruction, field)) {
-            if (call_lane(store, instruction, field, at) == root) { return true; }
+            if (call_lane(store, instruction, field, at) == root) {
+                return true;
+            }
             at = at + 1;
         }
         return false;
     }
     auto call_private_access(const compiler_ir_metadata::MetadataStore& metadata, i64 caller, i64 target) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
         const compiler_ir_metadata::CallableRow destination = metadata.callable_at(target);
         const compiler_ir_metadata::ReceiverShape receiver = destination.first_receiver();
-        if (compiler_ir_metadata::receiver_flag(receiver, 4)) { return true; }
+        if (compiler_ir_metadata::receiver_flag(receiver, masks.receiver_public())) {
+            return true;
+        }
         const compiler_ir_metadata::CallableRow source = metadata.callable_at(caller);
         const compiler_ir_metadata::ReceiverShape authority = source.first_receiver();
-        return compiler_ir_metadata::callable_flag(source, 1) && source.borrowed_root_count() == 0
-            && compiler_ir_metadata::compare_names(metadata, authority.name(), receiver.name()) == 0;
+        return compiler_ir_metadata::callable_flag(source, masks.callable_receiver()) && source.borrowed_root_count()
+            == 0 && compiler_ir_metadata::compare_names(metadata, authority.name(), receiver.name()) == 0;
     }
-    auto call_exact_slot(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
-        i64 caller, i64 kind, i64 offset, InstructionError reason) -> bool {
-        if (entry_slot(metadata, caller, kind, offset) < 0) { return fail(store, reason); }
+    auto call_exact_slot(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata, i64 caller,
+        i64 kind, i64 offset, InstructionError reason) -> bool {
+        if (entry_slot(metadata, caller, kind, offset) < 0) {
+            return fail(store, reason);
+        }
         return true;
     }
     auto call_argument_error(i64 form, bool constructor, i64 fault) -> InstructionError {
         if (form == 20) {
-            if (fault == 0) { return InstructionError::aggregate_parameter; }
-            if (fault == 1) { return InstructionError::aggregate_argument_slot; }
-            if (fault == 2) { return InstructionError::aggregate_argument_alias; }
-            if (fault == 3) { return InstructionError::aggregate_argument_nominal; }
+            if (fault == 0) {
+                return InstructionError::aggregate_parameter;
+            }
+            if (fault == 1) {
+                return InstructionError::aggregate_argument_slot;
+            }
+            if (fault == 2) {
+                return InstructionError::aggregate_argument_alias;
+            }
+            if (fault == 3) {
+                return InstructionError::aggregate_argument_nominal;
+            }
             return InstructionError::aggregate_argument_readonly;
         }
         if (form == 4) {
-            if (fault == 0) { return InstructionError::service_parameter; }
-            if (fault == 1) { return InstructionError::service_argument_slot; }
-            if (fault == 2) { return InstructionError::service_argument_alias; }
-            if (fault == 3) { return InstructionError::service_argument_nominal; }
+            if (fault == 0) {
+                return InstructionError::service_parameter;
+            }
+            if (fault == 1) {
+                return InstructionError::service_argument_slot;
+            }
+            if (fault == 2) {
+                return InstructionError::service_argument_alias;
+            }
+            if (fault == 3) {
+                return InstructionError::service_argument_nominal;
+            }
             return InstructionError::service_argument_readonly;
         }
-        if (fault == 1) { return InstructionError::call_copy_slot; }
+        if (fault == 1) {
+            return InstructionError::call_copy_slot;
+        }
         if (form == 75) {
-            if (fault == 2) { return InstructionError::constructor_argument_alias; }
-            if (fault == 3) { return InstructionError::resource_copied_nominal; }
-            if (fault == 5) { return InstructionError::resource_copied_receiver; }
+            if (fault == 2) {
+                return InstructionError::constructor_argument_alias;
+            }
+            if (fault == 3) {
+                return InstructionError::resource_copied_nominal;
+            }
+            if (fault == 5) {
+                return InstructionError::resource_copied_receiver;
+            }
             return InstructionError::resource_copied_readonly;
         }
         if (constructor) {
-            if (fault == 2) { return InstructionError::constructor_argument_alias; }
-            if (fault == 3) { return InstructionError::constructor_argument_nominal; }
-            if (fault == 5) { return InstructionError::constructor_receiver_alias; }
+            if (fault == 2) {
+                return InstructionError::constructor_argument_alias;
+            }
+            if (fault == 3) {
+                return InstructionError::constructor_argument_nominal;
+            }
+            if (fault == 5) {
+                return InstructionError::constructor_receiver_alias;
+            }
             return InstructionError::constructor_argument_readonly;
         }
-        if (fault == 2) { return InstructionError::method_argument_alias; }
-        if (fault == 3) { return InstructionError::method_argument_nominal; }
-        if (fault == 5) { return InstructionError::method_receiver_alias; }
+        if (fault == 2) {
+            return InstructionError::method_argument_alias;
+        }
+        if (fault == 3) {
+            return InstructionError::method_argument_nominal;
+        }
+        if (fault == 5) {
+            return InstructionError::method_receiver_alias;
+        }
         return InstructionError::method_argument_readonly;
     }
     auto verify_call_copy_argument(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 caller, i64 instruction, i64 target, i64 position) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
         const RawInstructionRow row = store.instruction_at(instruction);
         const i64 form = row.form();
         const compiler_ir_metadata::CallableRow destination = metadata.callable_at(target);
         const compiler_ir_metadata::ReceiverShape receiver = destination.first_receiver();
-        const bool constructor = compiler_ir_metadata::receiver_flag(receiver, 2);
+        const bool constructor = compiler_ir_metadata::receiver_flag(receiver, masks.receiver_constructor());
         const compiler_ir_metadata::RawTypeRow type = call_type(metadata, target, position + 1);
         const i64 field = call_objects_field(form);
         const i64 root = call_lane(store, instruction, field, position);
@@ -523,7 +692,9 @@ export namespace compiler_ir_instructions {
             if (type.kind() != 5 || compiler_ir_metadata::find_class(metadata, type.name()) < 0) {
                 return fail(store, call_argument_error(form, constructor, 0));
             }
-            if (slot_index < 0) { return fail(store, call_argument_error(form, constructor, 1)); }
+            if (slot_index < 0) {
+                return fail(store, call_argument_error(form, constructor, 1));
+            }
         } else {
             if (form != 75 && root == call_receiver_root(store, instruction)) {
                 return fail(store, call_argument_error(form, constructor, 5));
@@ -535,33 +706,53 @@ export namespace compiler_ir_instructions {
         if (form == 75 && root == call_receiver_root(store, instruction)) {
             return fail(store, InstructionError::resource_copied_receiver);
         }
-        if (slot_index < 0) { return fail(store, call_argument_error(form, constructor, 1)); }
+        if (slot_index < 0) {
+            return fail(store, call_argument_error(form, constructor, 1));
+        }
         const compiler_ir_metadata::SlotRow slot = metadata.slot_at(slot_index);
         const compiler_ir_metadata::RawTypeRow declared = metadata.type_at(slot.type());
         if (!compiler_ir_metadata::same_type(metadata, type, declared)) {
             return fail(store, call_argument_error(form, constructor, 3));
         }
-        if (slot.mutable_value() != 0) { return fail(store, call_argument_error(form, constructor, 4)); }
+        if (slot.mutable_value() != 0) {
+            return fail(store, call_argument_error(form, constructor, 4));
+        }
         return true;
     }
     auto call_result_error(i64 form, i64 fault) -> InstructionError {
         if (form == 20) {
-            if (fault == 0) { return InstructionError::aggregate_result_slot; }
-            if (fault == 1) { return InstructionError::aggregate_result_alias; }
+            if (fault == 0) {
+                return InstructionError::aggregate_result_slot;
+            }
+            if (fault == 1) {
+                return InstructionError::aggregate_result_alias;
+            }
             return InstructionError::aggregate_result_nominal;
         }
         if (form == 75) {
-            if (fault == 0) { return InstructionError::resource_copied_result_slot; }
-            if (fault == 1) { return InstructionError::resource_copied_result_alias; }
+            if (fault == 0) {
+                return InstructionError::resource_copied_result_slot;
+            }
+            if (fault == 1) {
+                return InstructionError::resource_copied_result_alias;
+            }
             return InstructionError::resource_copied_result_nominal;
         }
         if (form == 4) {
-            if (fault == 0) { return InstructionError::call_copy_slot; }
-            if (fault == 1) { return InstructionError::service_result_alias; }
+            if (fault == 0) {
+                return InstructionError::call_copy_slot;
+            }
+            if (fault == 1) {
+                return InstructionError::service_result_alias;
+            }
             return InstructionError::call_copy_nominal;
         }
-        if (fault == 0) { return InstructionError::method_result_slot; }
-        if (fault == 1) { return InstructionError::method_result_alias; }
+        if (fault == 0) {
+            return InstructionError::method_result_slot;
+        }
+        if (fault == 1) {
+            return InstructionError::method_result_alias;
+        }
         return InstructionError::method_result_nominal;
     }
     auto verify_call_copy_result(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
@@ -581,7 +772,9 @@ export namespace compiler_ir_instructions {
         if (call_lane_alias(store, instruction, call_objects_field(form), 0, root)) {
             return fail(store, call_result_error(form, 1));
         }
-        if (slot_index < 0) { return fail(store, call_result_error(form, 0)); }
+        if (slot_index < 0) {
+            return fail(store, call_result_error(form, 0));
+        }
         const compiler_ir_metadata::SlotRow slot = metadata.slot_at(slot_index);
         const compiler_ir_metadata::RawTypeRow declared = metadata.type_at(slot.type());
         const compiler_ir_metadata::RawTypeRow result = call_type(metadata, target, 0);
@@ -592,36 +785,52 @@ export namespace compiler_ir_instructions {
     }
     auto verify_plain_call(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 target) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
         const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(target);
-        if (compiler_ir_metadata::callable_flag(declaration, 1) || declaration.borrowed_root_count() != 0) {
+        if (compiler_ir_metadata::callable_flag(declaration, masks.callable_receiver())
+            || declaration.borrowed_root_count() != 0) {
             return fail(store, InstructionError::call_receiver);
         }
-        if (compiler_ir_metadata::service_signature(metadata, declaration)) { return fail(store, InstructionError::call_service); }
-        if (compiler_ir_metadata::resource_signature(metadata, declaration)) { return fail(store, InstructionError::call_resource); }
+        if (compiler_ir_metadata::service_signature(metadata, declaration)) {
+            return fail(store, InstructionError::call_service);
+        }
+        if (compiler_ir_metadata::resource_signature(metadata, declaration)) {
+            return fail(store, InstructionError::call_resource);
+        }
         const compiler_ir_metadata::IndexRange types = declaration.types();
         i64 at = 0;
         while (at < types.count()) {
             const compiler_ir_metadata::RawTypeRow type = metadata.type_at(types.begin() + at);
-            if (!compiler_ir_metadata::scalar_value(metadata, type)) { return fail(store, InstructionError::call_aggregate); }
+            if (!compiler_ir_metadata::scalar_value(metadata, type)) {
+                return fail(store, InstructionError::call_aggregate);
+            }
             at = at + 1;
         }
         return true;
     }
-    auto verify_aggregate_call(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
-        i64 caller, i64 instruction, i64 target) -> bool {
+    auto verify_aggregate_call(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata, i64 caller,
+        i64 instruction, i64 target) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
         const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(target);
-        if (compiler_ir_metadata::callable_flag(declaration, 1) || declaration.borrowed_root_count() != 0) {
+        if (compiler_ir_metadata::callable_flag(declaration, masks.callable_receiver())
+            || declaration.borrowed_root_count() != 0) {
             return fail(store, InstructionError::aggregate_receiver);
         }
-        if (compiler_ir_metadata::service_signature(metadata, declaration)) { return fail(store, InstructionError::aggregate_service); }
-        if (compiler_ir_metadata::resource_signature(metadata, declaration)) { return fail(store, InstructionError::aggregate_resource); }
+        if (compiler_ir_metadata::service_signature(metadata, declaration)) {
+            return fail(store, InstructionError::aggregate_service);
+        }
+        if (compiler_ir_metadata::resource_signature(metadata, declaration)) {
+            return fail(store, InstructionError::aggregate_resource);
+        }
         const compiler_ir_metadata::RawTypeRow result = call_type(metadata, target, 0);
         const bool spans = call_has_parameter(metadata, target, 11);
         if (result.kind() != 5 && !call_has_parameter(metadata, target, 5) && !spans) {
             return fail(store, InstructionError::aggregate_signature);
         }
         const i64 count = declaration.value_parameter_count();
-        if (call_count(store, instruction, 1) != count) { return fail(store, InstructionError::aggregate_vector); }
+        if (call_count(store, instruction, 1) != count) {
+            return fail(store, InstructionError::aggregate_vector);
+        }
         if ((spans || call_count(store, instruction, 3) != 0) && call_count(store, instruction, 3) != count) {
             return fail(store, InstructionError::aggregate_span_vector);
         }
@@ -632,57 +841,88 @@ export namespace compiler_ir_instructions {
             const i64 object = call_lane(store, instruction, 1, at);
             const i64 span = call_lane(store, instruction, 3, at);
             if (type.kind() == 11) {
-                if (object != 0) { return fail(store, InstructionError::aggregate_span_object); }
-                if (!call_exact_slot(store, metadata, caller, 13, span, InstructionError::call_span_slot)) { return false; }
+                if (object != 0) {
+                    return fail(store, InstructionError::aggregate_span_object);
+                }
+                if (!call_exact_slot(store, metadata, caller, 13, span, InstructionError::call_span_slot)) {
+                    return false;
+                }
             } else {
-                if (span != 0) { return fail(store, InstructionError::aggregate_nonspan); }
+                if (span != 0) {
+                    return fail(store, InstructionError::aggregate_nonspan);
+                }
                 if (compiler_ir_metadata::scalar_value(metadata, type)) {
-                    if (object != 0) { return fail(store, InstructionError::aggregate_scalar); }
+                    if (object != 0) {
+                        return fail(store, InstructionError::aggregate_scalar);
+                    }
                 } else {
-                    if (!verify_call_copy_argument(store, metadata, caller, instruction, target, at)) { return false; }
+                    if (!verify_call_copy_argument(store, metadata, caller, instruction, target, at)) {
+                        return false;
+                    }
                 }
             }
         }
-        if (result.kind() == 5) { return verify_call_copy_result(store, metadata, caller, instruction, target); }
-        if (!compiler_ir_metadata::scalar_value(metadata, result)) { return fail(store, InstructionError::aggregate_result_type); }
-        if (call_value(store, instruction, 2) != 0) { return fail(store, InstructionError::aggregate_scalar_result); }
+        if (result.kind() == 5) {
+            return verify_call_copy_result(store, metadata, caller, instruction, target);
+        }
+        if (!compiler_ir_metadata::scalar_value(metadata, result)) {
+            return fail(store, InstructionError::aggregate_result_type);
+        }
+        if (call_value(store, instruction, 2) != 0) {
+            return fail(store, InstructionError::aggregate_scalar_result);
+        }
         return true;
     }
     auto verify_call_owner_type(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 caller, i64 root, i64 type_index, InstructionError reason) -> bool {
-        if (!call_exact_slot(store, metadata, caller, 16, root, InstructionError::call_owner_slot)) { return false; }
+        if (!call_exact_slot(store, metadata, caller, 16, root, InstructionError::call_owner_slot)) {
+            return false;
+        }
         const compiler_ir_metadata::RawTypeRow type = metadata.type_at(type_index);
         const i64 annotation = entry_slot(metadata, caller, 17, root);
         if (annotation < 0) {
-            if (type.kind() != 13) { return fail(store, reason); }
+            if (type.kind() != 13) {
+                return fail(store, reason);
+            }
         } else {
             const compiler_ir_metadata::SlotRow slot = metadata.slot_at(annotation);
             const compiler_ir_metadata::RawTypeRow supplied = metadata.type_at(slot.type());
-            if (!compiler_ir_metadata::same_type(metadata, type, supplied)) { return fail(store, reason); }
+            if (!compiler_ir_metadata::same_type(metadata, type, supplied)) {
+                return fail(store, reason);
+            }
         }
         return true;
     }
-    auto verify_resource_call(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
-        i64 caller, i64 instruction, i64 target) -> bool {
+    auto verify_resource_call(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata, i64 caller,
+        i64 instruction, i64 target) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
         const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(target);
         const compiler_ir_metadata::IndexRange types = declaration.types();
         const compiler_ir_metadata::ReceiverShape receiver = declaration.first_receiver();
         const bool constructor = compiler_ir_metadata::owning_constructor(metadata, declaration);
         if (declaration.borrowed_root_count() != 0 || !compiler_ir_metadata::resource_signature(metadata, declaration)
-            || (compiler_ir_metadata::callable_flag(declaration, 1) && !constructor) || declaration.value_parameter_count() == 0) {
+            || (compiler_ir_metadata::callable_flag(declaration, masks.callable_receiver()) && !constructor)
+            || declaration.value_parameter_count() == 0) {
             return fail(store, InstructionError::resource_signature);
         }
         const compiler_ir_metadata::RawTypeRow first = call_type(metadata, target, 1);
-        if (first.kind() != 12) { return fail(store, InstructionError::resource_signature); }
-        if (constructor && !call_private_access(metadata, caller, target)) { return fail(store, InstructionError::resource_private); }
+        if (first.kind() != 12) {
+            return fail(store, InstructionError::resource_signature);
+        }
+        if (constructor && !call_private_access(metadata, caller, target)) {
+            return fail(store, InstructionError::resource_private);
+        }
         const i64 receiver_root = call_value(store, instruction, 4);
         if ((constructor && receiver_root <= 0) || (!constructor && receiver_root != 0)) {
             return fail(store, InstructionError::resource_receiver);
         }
-        if (!call_exact_slot(store, metadata, caller, 15, call_value(store, instruction, 1), InstructionError::call_region_slot)) {
+        const i64 region_root = call_value(store, instruction, 1);
+        if (!call_exact_slot(store, metadata, caller, 15, region_root, InstructionError::call_region_slot)) {
             return false;
         }
-        if (call_count(store, instruction, 2) != declaration.value_parameter_count()) { return fail(store, InstructionError::resource_vector); }
+        if (call_count(store, instruction, 2) != declaration.value_parameter_count()) {
+            return fail(store, InstructionError::resource_vector);
+        }
         i64 at = declaration.value_parameter_count();
         while (at > 0) {
             at = at - 1;
@@ -690,31 +930,55 @@ export namespace compiler_ir_instructions {
             const i64 root = call_lane(store, instruction, 2, at);
             const bool owner = compiler_ir_metadata::owner_kind(type);
             if (owner || compiler_ir_metadata::owning_type(metadata, type)) {
-                if (constructor && !owner) { return fail(store, InstructionError::resource_constructor_argument); }
-                if (call_lane_alias(store, instruction, 2, at + 1, root)) { return fail(store, InstructionError::resource_argument_alias); }
-                if (root == receiver_root) { return fail(store, InstructionError::resource_receiver_alias); }
+                if (constructor && !owner) {
+                    return fail(store, InstructionError::resource_constructor_argument);
+                }
+                if (call_lane_alias(store, instruction, 2, at + 1, root)) {
+                    return fail(store, InstructionError::resource_argument_alias);
+                }
+                if (root == receiver_root) {
+                    return fail(store, InstructionError::resource_receiver_alias);
+                }
                 if (owner) {
                     if (!verify_call_owner_type(store, metadata, caller, root, declaration.value_parameter_begin() + at,
-                        InstructionError::resource_argument_nominal)) { return false; }
+                        InstructionError::resource_argument_nominal)) {
+                        return false;
+                    }
                     const compiler_ir_metadata::SlotRow slot = metadata.slot_at(entry_slot(metadata, caller, 16, root));
-                    if (slot.mutable_value() != 1) { return fail(store, InstructionError::call_owner_mutable); }
+                    if (slot.mutable_value() != 1) {
+                        return fail(store, InstructionError::call_owner_mutable);
+                    }
                 } else {
                     const i64 slot_index = entry_slot(metadata, caller, 11, root);
-                    if (slot_index < 0) { return fail(store, InstructionError::call_copy_slot); }
+                    if (slot_index < 0) {
+                        return fail(store, InstructionError::call_copy_slot);
+                    }
                     const compiler_ir_metadata::SlotRow slot = metadata.slot_at(slot_index);
                     const compiler_ir_metadata::RawTypeRow supplied = metadata.type_at(slot.type());
-                    if (!compiler_ir_metadata::same_type(metadata, type, supplied)) { return fail(store, InstructionError::call_owning_nominal); }
-                    if (slot.mutable_value() != 1) { return fail(store, InstructionError::call_owning_mutable); }
+                    if (!compiler_ir_metadata::same_type(metadata, type, supplied)) {
+                        return fail(store, InstructionError::call_owning_nominal);
+                    }
+                    if (slot.mutable_value() != 1) {
+                        return fail(store, InstructionError::call_owning_mutable);
+                    }
                 }
             } else {
                 if (constructor && type.kind() == 5) {
-                    if (!verify_call_copy_argument(store, metadata, caller, instruction, target, at)) { return false; }
+                    if (!verify_call_copy_argument(store, metadata, caller, instruction, target, at)) {
+                        return false;
+                    }
                 } else {
-                    if (root != 0) { return fail(store, InstructionError::resource_nonowner); }
+                    if (root != 0) {
+                        return fail(store, InstructionError::resource_nonowner);
+                    }
                     if (at == 0) {
-                        if (type.kind() != 12) { return fail(store, InstructionError::resource_first); }
+                        if (type.kind() != 12) {
+                            return fail(store, InstructionError::resource_first);
+                        }
                     } else {
-                        if (!compiler_ir_metadata::scalar_value(metadata, type)) { return fail(store, InstructionError::resource_parameter); }
+                        if (!compiler_ir_metadata::scalar_value(metadata, type)) {
+                            return fail(store, InstructionError::resource_parameter);
+                        }
                     }
                 }
             }
@@ -722,9 +986,13 @@ export namespace compiler_ir_instructions {
         const compiler_ir_metadata::RawTypeRow result = call_type(metadata, target, 0);
         const i64 root = call_value(store, instruction, 3);
         if (constructor) {
-            if (result.kind() != 0 || root != 0) { return fail(store, InstructionError::resource_constructor_result); }
+            if (result.kind() != 0 || root != 0) {
+                return fail(store, InstructionError::resource_constructor_result);
+            }
             const i64 slot_index = entry_slot(metadata, caller, 11, receiver_root);
-            if (slot_index < 0) { return fail(store, InstructionError::resource_constructor_root); }
+            if (slot_index < 0) {
+                return fail(store, InstructionError::resource_constructor_root);
+            }
             const compiler_ir_metadata::SlotRow slot = metadata.slot_at(slot_index);
             const compiler_ir_metadata::RawTypeRow supplied = metadata.type_at(slot.type());
             if (compiler_ir_metadata::compare_names(metadata, supplied.name(), receiver.name()) != 0) {
@@ -732,50 +1000,71 @@ export namespace compiler_ir_instructions {
             }
         } else {
             if (compiler_ir_metadata::owner_kind(result) || compiler_ir_metadata::owning_type(metadata, result)) {
-                if (call_lane_alias(store, instruction, 2, 0, root)) { return fail(store, InstructionError::resource_result_alias); }
+                if (call_lane_alias(store, instruction, 2, 0, root)) {
+                    return fail(store, InstructionError::resource_result_alias);
+                }
                 if (compiler_ir_metadata::owner_kind(result)) {
-                    if (!verify_call_owner_type(store, metadata, caller, root, types.begin(), InstructionError::resource_result_nominal)) {
+                    if (!verify_call_owner_type(store, metadata, caller, root, types.begin(),
+                        InstructionError::resource_result_nominal)) {
                         return false;
                     }
                 } else {
                     const i64 slot_index = entry_slot(metadata, caller, 11, root);
-                    if (slot_index < 0) { return fail(store, InstructionError::call_copy_slot); }
+                    if (slot_index < 0) {
+                        return fail(store, InstructionError::call_copy_slot);
+                    }
                     const compiler_ir_metadata::SlotRow slot = metadata.slot_at(slot_index);
                     const compiler_ir_metadata::RawTypeRow supplied = metadata.type_at(slot.type());
-                    if (!compiler_ir_metadata::same_type(metadata, result, supplied)) { return fail(store, InstructionError::call_copy_nominal); }
+                    if (!compiler_ir_metadata::same_type(metadata, result, supplied)) {
+                        return fail(store, InstructionError::call_copy_nominal);
+                    }
                 }
             } else {
-                if (result.kind() == 5) { return verify_call_copy_result(store, metadata, caller, instruction, target); }
-                if (!compiler_ir_metadata::scalar_value(metadata, result)) { return fail(store, InstructionError::resource_result_type); }
-                if (root != 0) { return fail(store, InstructionError::resource_scalar_result); }
+                if (result.kind() == 5) {
+                    return verify_call_copy_result(store, metadata, caller, instruction, target);
+                }
+                if (!compiler_ir_metadata::scalar_value(metadata, result)) {
+                    return fail(store, InstructionError::resource_result_type);
+                }
+                if (root != 0) {
+                    return fail(store, InstructionError::resource_scalar_result);
+                }
             }
         }
         return true;
     }
     auto call_bound_root(compiler_ir_metadata::CallableRow declaration, i64 root) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
         // Bound before negation: hostile minimum integers never become ordinals.
-        if (root > 0 || root < -5) { return false; }
-        if (declaration.borrowed_root_count() > 0) { return 0 - root < declaration.borrowed_root_count(); }
-        return root == 0 && compiler_ir_metadata::callable_flag(declaration, 1);
+        if (root > 0 || root < -5) {
+            return false;
+        }
+        if (declaration.borrowed_root_count() > 0) {
+            return 0 - root < declaration.borrowed_root_count();
+        }
+        return root == 0 && compiler_ir_metadata::callable_flag(declaration, masks.callable_receiver());
     }
-    auto call_formal(const compiler_ir_metadata::MetadataStore& metadata, i64 callable, i64 root)
-        -> compiler_ir_metadata::ReceiverShape {
+    auto call_formal(const compiler_ir_metadata::MetadataStore& metadata, i64 callable,
+        i64 root) -> compiler_ir_metadata::ReceiverShape {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
         const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(callable);
         if (!call_bound_root(declaration, root)) {
-            return compiler_ir_metadata::ReceiverShape(compiler_ir_metadata::ByteRange(0, 0), 0);
+            return compiler_ir_metadata::ReceiverShape(compiler_ir_metadata::ByteRange(0, 0), 0u64);
         }
         if (declaration.borrowed_root_count() > 0) {
             const i64 ordinal = 0 - root;
             const compiler_ir_metadata::RawTypeRow type = metadata.type_at(declaration.borrowed_root_type(ordinal));
-            i64 flags = 4;
-            if (declaration.borrowed_root_mutable(ordinal)) { flags = flags + 1; }
+            u64 flags = masks.receiver_public();
+            if (declaration.borrowed_root_mutable(ordinal)) {
+                flags = flags | masks.receiver_mutable();
+            }
             return compiler_ir_metadata::ReceiverShape(type.name(), flags);
         }
         const compiler_ir_metadata::ReceiverShape result = declaration.first_receiver();
         return result;
     }
-    auto call_root_name(const compiler_ir_metadata::MetadataStore& metadata, i64 caller, i64 root)
-        -> compiler_ir_metadata::ByteRange {
+    auto call_root_name(const compiler_ir_metadata::MetadataStore& metadata, i64 caller,
+        i64 root) -> compiler_ir_metadata::ByteRange {
         if (root <= 0) {
             const compiler_ir_metadata::ReceiverShape formal = call_formal(metadata, caller, root);
             const compiler_ir_metadata::ByteRange result = formal.name();
@@ -788,24 +1077,33 @@ export namespace compiler_ir_instructions {
     }
     auto verify_borrowed_call_root(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 caller, i64 target, i64 root, i64 ordinal) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
         const compiler_ir_metadata::CallableRow source = metadata.callable_at(caller);
         const compiler_ir_metadata::ReceiverShape receiver = call_formal(metadata, target, 0 - ordinal);
-        if (root < -5) { return fail(store, InstructionError::borrowed_selector); }
+        if (root < -5) {
+            return fail(store, InstructionError::borrowed_selector);
+        }
         if (root <= 0) {
-            if (!call_bound_root(source, root)) { return fail(store, InstructionError::borrowed_unbound); }
+            if (!call_bound_root(source, root)) {
+                return fail(store, InstructionError::borrowed_unbound);
+            }
             const compiler_ir_metadata::ReceiverShape formal = call_formal(metadata, caller, root);
-            if (compiler_ir_metadata::receiver_flag(formal, 2)
+            if (compiler_ir_metadata::receiver_flag(formal, masks.receiver_constructor())
                 || compiler_ir_metadata::compare_names(metadata, formal.name(), receiver.name()) != 0
-                || (compiler_ir_metadata::receiver_flag(receiver, 1) && !compiler_ir_metadata::receiver_flag(formal, 1))) {
+                || (compiler_ir_metadata::receiver_flag(receiver, masks.receiver_mutable())
+                && !compiler_ir_metadata::receiver_flag(formal, masks.receiver_mutable()))) {
                 return fail(store, InstructionError::borrowed_root);
             }
         } else {
             const i64 slot_index = entry_slot(metadata, caller, 11, root);
-            if (slot_index < 0) { return fail(store, InstructionError::borrowed_root); }
+            if (slot_index < 0) {
+                return fail(store, InstructionError::borrowed_root);
+            }
             const compiler_ir_metadata::SlotRow slot = metadata.slot_at(slot_index);
             const compiler_ir_metadata::RawTypeRow type = metadata.type_at(slot.type());
             if (compiler_ir_metadata::compare_names(metadata, type.name(), receiver.name()) != 0
-                || (compiler_ir_metadata::receiver_flag(receiver, 1) && slot.mutable_value() != 1)) {
+                || (compiler_ir_metadata::receiver_flag(receiver, masks.receiver_mutable()) && slot.mutable_value()
+                != 1)) {
                 return fail(store, InstructionError::borrowed_root);
             }
         }
@@ -813,42 +1111,61 @@ export namespace compiler_ir_instructions {
         // Live ownership and each loan's recorded site remain dynamic facts.
         return true;
     }
-    auto verify_method_field(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
-        i64 caller, i64 instruction, i64 target) -> bool {
+    auto verify_method_field(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata, i64 caller,
+        i64 instruction, i64 target) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
         const compiler_ir_metadata::ReceiverShape receiver = call_formal(metadata, target, 0);
         const i64 root = call_value(store, instruction, 1);
         const i64 field_index = call_value(store, instruction, 4);
-        if (compiler_ir_metadata::receiver_flag(receiver, 2)) { return fail(store, InstructionError::method_nested_constructor); }
-        if (root < 0) { return fail(store, InstructionError::method_field_root); }
+        if (compiler_ir_metadata::receiver_flag(receiver, masks.receiver_constructor())) {
+            return fail(store, InstructionError::method_nested_constructor);
+        }
+        if (root < 0) {
+            return fail(store, InstructionError::method_field_root);
+        }
         const compiler_ir_metadata::CallableRow source = metadata.callable_at(caller);
         if (root == 0) {
-            if (source.borrowed_root_count() != 0) { return fail(store, InstructionError::method_field_authority); }
-            if (!compiler_ir_metadata::callable_flag(source, 1)) { return fail(store, InstructionError::method_field_unbound); }
+            if (source.borrowed_root_count() != 0) {
+                return fail(store, InstructionError::method_field_authority);
+            }
+            if (!compiler_ir_metadata::callable_flag(source, masks.callable_receiver())) {
+                return fail(store, InstructionError::method_field_unbound);
+            }
         } else {
             const i64 slot_index = entry_slot(metadata, caller, 11, root);
-            if (slot_index < 0) { return fail(store, InstructionError::call_copy_slot); }
+            if (slot_index < 0) {
+                return fail(store, InstructionError::call_copy_slot);
+            }
             const compiler_ir_metadata::SlotRow slot = metadata.slot_at(slot_index);
-            if (compiler_ir_metadata::receiver_flag(receiver, 1) && slot.mutable_value() != 1) {
+            if (compiler_ir_metadata::receiver_flag(receiver, masks.receiver_mutable()) && slot.mutable_value() != 1) {
                 return fail(store, InstructionError::method_field_mutable);
             }
         }
         const compiler_ir_metadata::ByteRange name = call_root_name(metadata, caller, root);
-        const compiler_ir_metadata::ClassResultRow shape = metadata.result_at(compiler_ir_metadata::find_class(metadata, name));
+        const compiler_ir_metadata::ClassResultRow shape = metadata.result_at(compiler_ir_metadata::find_class(metadata,
+            name));
         const compiler_ir_metadata::IndexRange fields = shape.fields();
         if (field_index >= fields.count()) {
-            if (root == 0) { return fail(store, InstructionError::method_field_layout); }
+            if (root == 0) {
+                return fail(store, InstructionError::method_field_layout);
+            }
             return fail(store, InstructionError::method_field_range);
         }
         if (root == 0) {
             const compiler_ir_metadata::ReceiverShape formal = source.first_receiver();
-            if (compiler_ir_metadata::receiver_flag(formal, 2)) { return fail(store, InstructionError::method_field_constructor); }
-            if (compiler_ir_metadata::receiver_flag(receiver, 1) && !compiler_ir_metadata::receiver_flag(formal, 1)) {
+            if (compiler_ir_metadata::receiver_flag(formal, masks.receiver_constructor())) {
+                return fail(store, InstructionError::method_field_constructor);
+            }
+            if (compiler_ir_metadata::receiver_flag(receiver, masks.receiver_mutable())
+                && !compiler_ir_metadata::receiver_flag(formal, masks.receiver_mutable())) {
                 return fail(store, InstructionError::method_field_formal_mutable);
             }
         }
         const compiler_ir_metadata::FieldRow field = metadata.field_at(fields.begin() + field_index);
         const compiler_ir_metadata::RawTypeRow type = metadata.type_at(field.type());
-        if (field.array() != 0 || type.kind() != 5) { return fail(store, InstructionError::method_field_class); }
+        if (field.array_flag() != 0 || type.kind() != 5) {
+            return fail(store, InstructionError::method_field_class);
+        }
         if (compiler_ir_metadata::compare_names(metadata, type.name(), receiver.name()) != 0) {
             return fail(store, InstructionError::method_field_nominal);
         }
@@ -856,6 +1173,7 @@ export namespace compiler_ir_instructions {
     }
     auto verify_method_receiver(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 caller, i64 instruction, i64 target) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
         const RawInstructionRow row = store.instruction_at(instruction);
         const compiler_ir_metadata::CallableRow source = metadata.callable_at(caller);
         const compiler_ir_metadata::ReceiverShape receiver = call_formal(metadata, target, 0);
@@ -865,31 +1183,42 @@ export namespace compiler_ir_instructions {
         }
         if (row.form() == 38) {
             const i64 field = call_value(store, instruction, 4);
-            if (field < -1) { return fail(store, InstructionError::method_field_index); }
-            if (field >= 0) { return verify_method_field(store, metadata, caller, instruction, target); }
+            if (field < -1) {
+                return fail(store, InstructionError::method_field_index);
+            }
+            if (field >= 0) {
+                return verify_method_field(store, metadata, caller, instruction, target);
+            }
         }
         if (root <= 0) {
-            if (!call_bound_root(source, root)) { return fail(store, InstructionError::method_forward_unbound); }
+            if (!call_bound_root(source, root)) {
+                return fail(store, InstructionError::method_forward_unbound);
+            }
             const compiler_ir_metadata::ReceiverShape formal = call_formal(metadata, caller, root);
-            if (compiler_ir_metadata::receiver_flag(formal, 2) || compiler_ir_metadata::receiver_flag(receiver, 2)) {
+            if (compiler_ir_metadata::receiver_flag(formal, masks.receiver_constructor())
+                || compiler_ir_metadata::receiver_flag(receiver, masks.receiver_constructor())) {
                 return fail(store, InstructionError::method_forward_constructor);
             }
             if (compiler_ir_metadata::compare_names(metadata, formal.name(), receiver.name()) != 0) {
                 return fail(store, InstructionError::method_forward_nominal);
             }
-            if (compiler_ir_metadata::receiver_flag(receiver, 1) && !compiler_ir_metadata::receiver_flag(formal, 1)) {
+            if (compiler_ir_metadata::receiver_flag(receiver, masks.receiver_mutable())
+                && !compiler_ir_metadata::receiver_flag(formal, masks.receiver_mutable())) {
                 return fail(store, InstructionError::method_forward_mutable);
             }
         } else {
             const i64 slot_index = entry_slot(metadata, caller, 11, root);
-            if (slot_index < 0) { return fail(store, InstructionError::method_receiver_slot); }
+            if (slot_index < 0) {
+                return fail(store, InstructionError::method_receiver_slot);
+            }
             const compiler_ir_metadata::SlotRow slot = metadata.slot_at(slot_index);
             const compiler_ir_metadata::RawTypeRow type = metadata.type_at(slot.type());
             if (compiler_ir_metadata::compare_names(metadata, type.name(), receiver.name()) != 0) {
                 return fail(store, InstructionError::method_receiver_nominal);
             }
-            if (!compiler_ir_metadata::receiver_flag(receiver, 2)
-                && compiler_ir_metadata::receiver_flag(receiver, 1) && slot.mutable_value() != 1) {
+            if (!compiler_ir_metadata::receiver_flag(receiver, masks.receiver_constructor())
+                && compiler_ir_metadata::receiver_flag(receiver, masks.receiver_mutable()) && slot.mutable_value()
+                != 1) {
                 return fail(store, InstructionError::method_receiver_mutable);
             }
         }
@@ -897,7 +1226,9 @@ export namespace compiler_ir_instructions {
     }
     auto verify_call_span_result(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 caller, i64 root) -> bool {
-        if (!call_exact_slot(store, metadata, caller, 13, root, InstructionError::call_span_slot)) { return false; }
+        if (!call_exact_slot(store, metadata, caller, 13, root, InstructionError::call_span_slot)) {
+            return false;
+        }
         const compiler_ir_metadata::CallableRow source = metadata.callable_at(caller);
         i64 at = 0;
         while (at < source.value_parameter_count()) {
@@ -909,14 +1240,17 @@ export namespace compiler_ir_instructions {
         }
         return true;
     }
-    auto verify_method_call(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
-        i64 caller, i64 instruction, i64 target) -> bool {
+    auto verify_method_call(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata, i64 caller,
+        i64 instruction, i64 target) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
         const RawInstructionRow row = store.instruction_at(instruction);
         const bool borrowed = row.form() == 83;
         const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(target);
         const i64 root_count = declaration.borrowed_root_count();
         if (borrowed) {
-            if (root_count < 1 || root_count > 6) { return fail(store, InstructionError::borrowed_target); }
+            if (root_count < 1 || root_count > 6) {
+                return fail(store, InstructionError::borrowed_target);
+            }
             if (call_count(store, instruction, 1) != 2 * root_count) {
                 return fail(store, InstructionError::borrowed_roots);
             }
@@ -924,34 +1258,46 @@ export namespace compiler_ir_instructions {
             while (ordinal < root_count) {
                 const i64 root = call_lane(store, instruction, 1, 2 * ordinal);
                 const i64 loan = call_lane(store, instruction, 1, 2 * ordinal + 1);
-                if (loan <= 0) { return fail(store, InstructionError::borrowed_loan); }
+                if (loan <= 0) {
+                    return fail(store, InstructionError::borrowed_loan);
+                }
                 i64 previous = 0;
                 while (previous < ordinal) {
-                    if (root == call_lane(store, instruction, 1, 2 * previous)
-                        || loan == call_lane(store, instruction, 1, 2 * previous + 1)) {
+                    if (root == call_lane(store, instruction, 1, 2 * previous) || loan == call_lane(store, instruction,
+                        1, 2 * previous + 1)) {
                         return fail(store, InstructionError::borrowed_roots);
                     }
                     previous = previous + 1;
                 }
-                if (!verify_borrowed_call_root(store, metadata, caller, target, root, ordinal)) { return false; }
+                if (!verify_borrowed_call_root(store, metadata, caller, target, root, ordinal)) {
+                    return false;
+                }
                 ordinal = ordinal + 1;
             }
         } else {
-            if (root_count != 0) { return fail(store, InstructionError::method_borrowed); }
-            if (!compiler_ir_metadata::callable_flag(declaration, 1)) { return fail(store, InstructionError::method_receiver); }
-            if (!call_private_access(metadata, caller, target)) { return fail(store, InstructionError::method_private); }
+            if (root_count != 0) {
+                return fail(store, InstructionError::method_borrowed);
+            }
+            if (!compiler_ir_metadata::callable_flag(declaration, masks.callable_receiver())) {
+                return fail(store, InstructionError::method_receiver);
+            }
+            if (!call_private_access(metadata, caller, target)) {
+                return fail(store, InstructionError::method_private);
+            }
         }
         const compiler_ir_metadata::ReceiverShape receiver = call_formal(metadata, target, 0);
-        const bool constructor = compiler_ir_metadata::receiver_flag(receiver, 2);
+        const bool constructor = compiler_ir_metadata::receiver_flag(receiver, masks.receiver_constructor());
         const i64 root = call_receiver_root(store, instruction);
-        if (compiler_ir_metadata::resource_signature(metadata, declaration)) { return fail(store, InstructionError::method_resource); }
+        if (compiler_ir_metadata::resource_signature(metadata, declaration)) {
+            return fail(store, InstructionError::method_resource);
+        }
         const compiler_ir_metadata::RawTypeRow result = call_type(metadata, target, 0);
         if (root_count > 1 && !compiler_ir_metadata::scalar_value(metadata, result)) {
             return fail(store, InstructionError::method_signature);
         }
         if (!compiler_ir_metadata::scalar_value(metadata, result) && !(!constructor && result.kind() == 5)
-            && !(result.kind() == 11 && compiler_ir_metadata::callable_flag(declaration, 8)
-                 && !compiler_ir_metadata::receiver_flag(receiver, 1) && !constructor)) {
+            && !(result.kind() == 11 && compiler_ir_metadata::callable_flag(declaration, masks.callable_span_summary())
+            && !compiler_ir_metadata::receiver_flag(receiver, masks.receiver_mutable()) && !constructor)) {
             return fail(store, InstructionError::method_signature);
         }
         i64 at = 1;
@@ -960,8 +1306,10 @@ export namespace compiler_ir_instructions {
             if (root_count > 1 && !compiler_ir_metadata::scalar_value(metadata, type)) {
                 return fail(store, InstructionError::method_signature);
             }
-            if (!compiler_ir_metadata::scalar_value(metadata, type) && type.kind() != 5
-                && !(!constructor && type.kind() == 11)) { return fail(store, InstructionError::method_signature); }
+            if (!compiler_ir_metadata::scalar_value(metadata, type) && type.kind() != 5 && !(!constructor && type.kind()
+                == 11)) {
+                return fail(store, InstructionError::method_signature);
+            }
             at = at + 1;
         }
         const bool spans = call_has_parameter(metadata, target, 11);
@@ -971,17 +1319,19 @@ export namespace compiler_ir_instructions {
         const i64 span_field = call_spans_field(row.form());
         // Multiple roots have scalar-only tails/results. In particular an
         // all-zero nonempty span list is not the canonical empty lane shape.
-        if (root_count > 1 && (call_count(store, instruction, objects) != 0
-            || call_count(store, instruction, span_field) != 0
-            || call_value(store, instruction, call_result_field(row.form())) != 0)) {
+        if (root_count > 1 && (call_count(store, instruction, objects) != 0 || call_count(store, instruction,
+            span_field) != 0 || call_value(store, instruction, call_result_field(row.form())) != 0)) {
             return fail(store, InstructionError::borrowed_roots);
         }
-        if ((aggregate && call_count(store, instruction, objects) != count)
-            || (!aggregate && call_count(store, instruction, objects) != 0)) {
-            if (constructor) { return fail(store, InstructionError::constructor_vector); }
+        if ((aggregate && call_count(store, instruction, objects) != count) || (!aggregate && call_count(store,
+            instruction, objects) != 0)) {
+            if (constructor) {
+                return fail(store, InstructionError::constructor_vector);
+            }
             return fail(store, InstructionError::method_vector);
         }
-        if ((spans || call_count(store, instruction, span_field) != 0) && call_count(store, instruction, span_field) != count) {
+        if ((spans || call_count(store, instruction, span_field) != 0) && call_count(store, instruction, span_field)
+            != count) {
             return fail(store, InstructionError::method_span_vector);
         }
         at = count;
@@ -991,52 +1341,83 @@ export namespace compiler_ir_instructions {
             const i64 object = call_lane(store, instruction, objects, at);
             const i64 span = call_lane(store, instruction, span_field, at);
             if (type.kind() == 11) {
-                if (object != 0) { return fail(store, InstructionError::method_span_object); }
-                if (!call_exact_slot(store, metadata, caller, 13, span, InstructionError::call_span_slot)) { return false; }
+                if (object != 0) {
+                    return fail(store, InstructionError::method_span_object);
+                }
+                if (!call_exact_slot(store, metadata, caller, 13, span, InstructionError::call_span_slot)) {
+                    return false;
+                }
             } else {
-                if (span != 0) { return fail(store, InstructionError::method_nonspan); }
+                if (span != 0) {
+                    return fail(store, InstructionError::method_nonspan);
+                }
                 if (compiler_ir_metadata::scalar_value(metadata, type)) {
                     if (object != 0) {
-                        if (constructor) { return fail(store, InstructionError::constructor_scalar); }
+                        if (constructor) {
+                            return fail(store, InstructionError::constructor_scalar);
+                        }
                         return fail(store, InstructionError::method_scalar);
                     }
                 } else {
-                    if (!verify_call_copy_argument(store, metadata, caller, instruction, target, at)) { return false; }
+                    if (!verify_call_copy_argument(store, metadata, caller, instruction, target, at)) {
+                        return false;
+                    }
                 }
             }
         }
-        if (!borrowed && !verify_method_receiver(store, metadata, caller, instruction, target)) { return false; }
+        if (!borrowed && !verify_method_receiver(store, metadata, caller, instruction, target)) {
+            return false;
+        }
         const i64 result_root = call_value(store, instruction, call_result_field(row.form()));
         if (result.kind() == 11) {
             const compiler_ir_metadata::CallableRow source = metadata.callable_at(caller);
-            if (source.borrowed_root_count() > 1 && root <= 0) { return fail(store, InstructionError::method_span_multiple); }
-            if (!borrowed && call_value(store, instruction, 4) != -1) { return fail(store, InstructionError::method_span_direct); }
-            if (!compiler_ir_metadata::callable_flag(declaration, 8)) { return fail(store, InstructionError::method_span_summary); }
+            if (source.borrowed_root_count() > 1 && root <= 0) {
+                return fail(store, InstructionError::method_span_multiple);
+            }
+            if (!borrowed && call_value(store, instruction, 4) != -1) {
+                return fail(store, InstructionError::method_span_direct);
+            }
+            if (!compiler_ir_metadata::callable_flag(declaration, masks.callable_span_summary())) {
+                return fail(store, InstructionError::method_span_summary);
+            }
             // Admitted summary plus exact receiver nominal identity already
             // proves a direct u8 array or OwnedBytes field, including its index.
             return verify_call_span_result(store, metadata, caller, result_root);
         }
-        if (result.kind() == 5) { return verify_call_copy_result(store, metadata, caller, instruction, target); }
-        if (result_root != 0) { return fail(store, InstructionError::method_scalar_result); }
+        if (result.kind() == 5) {
+            return verify_call_copy_result(store, metadata, caller, instruction, target);
+        }
+        if (result_root != 0) {
+            return fail(store, InstructionError::method_scalar_result);
+        }
         return true;
     }
-    auto verify_service_call(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
-        i64 caller, i64 instruction, i64 target) -> bool {
+    auto verify_service_call(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata, i64 caller,
+        i64 instruction, i64 target) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
         const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(target);
         if (declaration.borrowed_root_count() != 0 || !compiler_ir_metadata::service_signature(metadata, declaration)
-            || compiler_ir_metadata::callable_flag(declaration, 1)) { return fail(store, InstructionError::service_signature); }
+            || compiler_ir_metadata::callable_flag(declaration, masks.callable_receiver())) {
+            return fail(store, InstructionError::service_signature);
+        }
         const i64 parameters = declaration.value_parameter_count();
         i64 count = 0;
         i64 at = 1;
         while (at <= declaration.value_parameter_count()) {
             const compiler_ir_metadata::RawTypeRow type = call_type(metadata, target, at);
-            if (compiler_ir_metadata::service_type(type)) { count = count + 1; }
+            if (compiler_ir_metadata::service_type(type)) {
+                count = count + 1;
+            }
             at = at + 1;
         }
-        if (count < 1 || count > 2 || call_count(store, instruction, 5) != 2 * (count - 1)
-            || call_count(store, instruction, 3) != parameters) { return fail(store, InstructionError::service_vector); }
-        if ((call_has_parameter(metadata, target, 5) || call_count(store, instruction, 6) != 0)
-            && call_count(store, instruction, 6) != parameters) { return fail(store, InstructionError::service_object_vector); }
+        if (count < 1 || count > 2 || call_count(store, instruction, 5) != 2 * (count - 1) || call_count(store,
+            instruction, 3) != parameters) {
+            return fail(store, InstructionError::service_vector);
+        }
+        if ((call_has_parameter(metadata, target, 5) || call_count(store, instruction, 6) != 0) && call_count(store,
+            instruction, 6) != parameters) {
+            return fail(store, InstructionError::service_object_vector);
+        }
         // These are immutable explicit IDs and kinds only. Never infer roots,
         // identity or suspension by scanning textual loan acquisitions: CFG
         // execution may acquire later in text, and completed IDs may be reused.
@@ -1049,10 +1430,13 @@ export namespace compiler_ir_instructions {
                 kind = call_lane(store, instruction, 5, 1);
             }
             const compiler_ir_metadata::RawTypeRow type = call_type(metadata, target, at + 1);
-            if (loan <= 0 || (at != 0 && loan == call_value(store, instruction, 1))
-                || call_lane(store, instruction, 3, at) != 0 || call_lane(store, instruction, 6, at) != 0
-                || !compiler_ir_metadata::service_type(type)) { return fail(store, InstructionError::service_leading); }
-            if (kind != type.kind() - 14) { return fail(store, InstructionError::service_kind); }
+            if (loan <= 0 || (at != 0 && loan == call_value(store, instruction, 1)) || call_lane(store, instruction, 3,
+                at) != 0 || call_lane(store, instruction, 6, at) != 0 || !compiler_ir_metadata::service_type(type)) {
+                return fail(store, InstructionError::service_leading);
+            }
+            if (kind != type.kind() - 14) {
+                return fail(store, InstructionError::service_kind);
+            }
             at = at + 1;
         }
         at = parameters;
@@ -1062,12 +1446,20 @@ export namespace compiler_ir_instructions {
             const i64 span = call_lane(store, instruction, 3, at);
             const i64 object = call_lane(store, instruction, 6, at);
             if (type.kind() == 11) {
-                if (object != 0) { return fail(store, InstructionError::service_span_object); }
-                if (!call_exact_slot(store, metadata, caller, 13, span, InstructionError::call_span_slot)) { return false; }
+                if (object != 0) {
+                    return fail(store, InstructionError::service_span_object);
+                }
+                if (!call_exact_slot(store, metadata, caller, 13, span, InstructionError::call_span_slot)) {
+                    return false;
+                }
             } else {
                 if (type.kind() == 5) {
-                    if (span != 0) { return fail(store, InstructionError::service_object_span); }
-                    if (!verify_call_copy_argument(store, metadata, caller, instruction, target, at)) { return false; }
+                    if (span != 0) {
+                        return fail(store, InstructionError::service_object_span);
+                    }
+                    if (!verify_call_copy_argument(store, metadata, caller, instruction, target, at)) {
+                        return false;
+                    }
                 } else {
                     if (span != 0 || object != 0 || !compiler_ir_metadata::scalar_value(metadata, type)) {
                         return fail(store, InstructionError::service_scalar);
@@ -1076,17 +1468,21 @@ export namespace compiler_ir_instructions {
             }
         }
         const compiler_ir_metadata::RawTypeRow result = call_type(metadata, target, 0);
-        if (result.kind() == 5) { return verify_call_copy_result(store, metadata, caller, instruction, target); }
+        if (result.kind() == 5) {
+            return verify_call_copy_result(store, metadata, caller, instruction, target);
+        }
         if (call_value(store, instruction, 2) != 0 || !compiler_ir_metadata::scalar_value(metadata, result)) {
             return fail(store, InstructionError::service_scalar_result);
         }
         return true;
     }
-    auto verify_call_site(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
-        i64 caller, i64 instruction) -> bool {
+    auto verify_call_site(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata, i64 caller,
+        i64 instruction) -> bool {
         const RawInstructionRow row = store.instruction_at(instruction);
         const i64 form = row.form();
-        if (form != 19 && form != 20 && form != 75 && form != 38 && form != 83 && form != 4) { return true; }
+        if (form != 19 && form != 20 && form != 75 && form != 38 && form != 83 && form != 4) {
+            return true;
+        }
         const RawOperandRow operand = call_operand(store, instruction, 0);
         const compiler_ir_metadata::ByteRange name = compiler_ir_metadata::ByteRange(operand.begin(), operand.count());
         if (form == 19 && compiler_ir_metadata::name_prefix(metadata, name, "__au_runtime_")) {
@@ -1094,16 +1490,32 @@ export namespace compiler_ir_instructions {
         }
         const i64 target = compiler_ir_metadata::first_named_callable(metadata, name);
         if (target < 0) {
-            if (form == 19) { return fail(store, InstructionError::call_target); }
-            if (form == 20) { return fail(store, InstructionError::aggregate_target); }
-            if (form == 75) { return fail(store, InstructionError::resource_target); }
-            if (form == 4) { return fail(store, InstructionError::service_target); }
+            if (form == 19) {
+                return fail(store, InstructionError::call_target);
+            }
+            if (form == 20) {
+                return fail(store, InstructionError::aggregate_target);
+            }
+            if (form == 75) {
+                return fail(store, InstructionError::resource_target);
+            }
+            if (form == 4) {
+                return fail(store, InstructionError::service_target);
+            }
             return fail(store, InstructionError::method_target);
         }
-        if (form == 19) { return verify_plain_call(store, metadata, target); }
-        if (form == 20) { return verify_aggregate_call(store, metadata, caller, instruction, target); }
-        if (form == 75) { return verify_resource_call(store, metadata, caller, instruction, target); }
-        if (form == 4) { return verify_service_call(store, metadata, caller, instruction, target); }
+        if (form == 19) {
+            return verify_plain_call(store, metadata, target);
+        }
+        if (form == 20) {
+            return verify_aggregate_call(store, metadata, caller, instruction, target);
+        }
+        if (form == 75) {
+            return verify_resource_call(store, metadata, caller, instruction, target);
+        }
+        if (form == 4) {
+            return verify_service_call(store, metadata, caller, instruction, target);
+        }
         return verify_method_call(store, metadata, caller, instruction, target);
     }
     auto verify_call_sites(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata) -> bool {
@@ -1113,10 +1525,31 @@ export namespace compiler_ir_instructions {
             i64 position = 0;
             while (position < body.count()) {
                 const CodeRow code = store.code_at(body.begin() + position);
-                if (!verify_call_site(store, metadata, caller, code.id())) { return false; }
+                if (!verify_call_site(store, metadata, caller, code.id())) {
+                    return false;
+                }
                 position = position + 1;
             }
             caller = caller + 1;
+        }
+        return true;
+    }
+    auto verify_constructor_signatures(InstructionStore& store,
+        const compiler_ir_metadata::MetadataStore& metadata) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
+        i64 callable = 0;
+        while (callable < metadata.callable_count()) {
+            const compiler_ir_metadata::CallableRow row = metadata.callable_at(callable);
+            const compiler_ir_metadata::ReceiverShape receiver = row.first_receiver();
+            if (compiler_ir_metadata::callable_flag(row, masks.callable_receiver())
+                && compiler_ir_metadata::receiver_flag(receiver, masks.receiver_constructor())) {
+                const compiler_ir_metadata::RawTypeRow result = call_type(metadata, callable, 0);
+                if (!compiler_ir_metadata::receiver_flag(receiver, masks.receiver_mutable())
+                    || !compiler_ir_metadata::plain_type(result, 0)) {
+                    return fail(store, InstructionError::constructor_signature);
+                }
+            }
+            callable = callable + 1;
         }
         return true;
     }
@@ -1128,7 +1561,9 @@ export namespace compiler_ir_instructions {
     auto verify_storage_scalar(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 callable, i64 offset, i64 type_index) -> bool {
         const i64 slot_index = entry_slot(metadata, callable, 10, offset);
-        if (slot_index < 0) { return fail(store, InstructionError::scalar_slot); }
+        if (slot_index < 0) {
+            return fail(store, InstructionError::scalar_slot);
+        }
         const compiler_ir_metadata::SlotRow slot = metadata.slot_at(slot_index);
         const compiler_ir_metadata::RawTypeRow declared = metadata.type_at(slot.type());
         const compiler_ir_metadata::RawTypeRow supplied = metadata.type_at(type_index);
@@ -1141,10 +1576,14 @@ export namespace compiler_ir_instructions {
         i64 callable, i64 instruction) -> bool {
         const i64 offset = call_value(store, instruction, 0);
         const i64 slot_index = entry_slot(metadata, callable, 10, offset);
-        if (slot_index < 0) { return fail(store, InstructionError::scalar_slot); }
+        if (slot_index < 0) {
+            return fail(store, InstructionError::scalar_slot);
+        }
         const compiler_ir_metadata::SlotRow slot = metadata.slot_at(slot_index);
         const compiler_ir_metadata::RawTypeRow declared = metadata.type_at(slot.type());
-        if (!compiler_ir_metadata::plain_type(declared, 0)) { return fail(store, InstructionError::scalar_slot); }
+        if (!compiler_ir_metadata::plain_type(declared, 0)) {
+            return fail(store, InstructionError::scalar_slot);
+        }
         if (compiler_ir_metadata::object_leaf_root(metadata, callable, offset) >= 0) {
             return fail(store, InstructionError::storage_borrow_object);
         }
@@ -1172,7 +1611,9 @@ export namespace compiler_ir_instructions {
         i64 element = 0;
         while (element < length) {
             const i64 element_offset = offset - element * width;
-            if (!verify_storage_scalar(store, metadata, callable, element_offset, type_index)) { return false; }
+            if (!verify_storage_scalar(store, metadata, callable, element_offset, type_index)) {
+                return false;
+            }
             if (compiler_ir_metadata::nested_object_leaf(metadata, callable, element_offset)) {
                 return fail(store, InstructionError::storage_array_nested);
             }
@@ -1180,39 +1621,6 @@ export namespace compiler_ir_instructions {
         }
         // Contiguous scalar ranges, including I64 ranges, need no byte-array
         // origin declaration. Only byte-array lifetime/span forms require one.
-        return true;
-    }
-    auto storage_scalar_parameter(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
-        i64 callable, i64 offset) -> bool {
-        const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(callable);
-        i64 at = 0;
-        while (at < declaration.value_parameter_count()) {
-            const RawInstructionRow binding = entry_instruction(store, callable, at);
-            if (binding.form() == 45 && entry_value(store, binding, 1) == offset) { return true; }
-            at = at + 1;
-        }
-        return false;
-    }
-    auto verify_storage_index_write(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
-        i64 callable, i64 instruction) -> bool {
-        const i64 offset = call_value(store, instruction, 0);
-        const i64 length = call_value(store, instruction, 1);
-        const compiler_ir_metadata::RawTypeRow type = metadata.type_at(call_value(store, instruction, 2));
-        const i64 width = compiler_ir_metadata::scalar_width(type);
-        i64 element = 0;
-        while (element < length) {
-            const i64 element_offset = offset - element * width;
-            if (storage_scalar_parameter(store, metadata, callable, element_offset)) {
-                return fail(store, InstructionError::storage_index_parameter);
-            }
-            const i64 root = compiler_ir_metadata::object_leaf_root(metadata, callable, element_offset);
-            if (root >= 0) {
-                const i64 object_index = entry_slot(metadata, callable, 11, root);
-                const compiler_ir_metadata::SlotRow object = metadata.slot_at(object_index);
-                if (object.mutable_value() != 1) { return fail(store, InstructionError::storage_index_const); }
-            }
-            element = element + 1;
-        }
         return true;
     }
     auto verify_storage_access(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
@@ -1230,11 +1638,11 @@ export namespace compiler_ir_instructions {
             }
             return true;
         }
-        if (form == 18) { return verify_storage_borrow(store, metadata, callable, instruction); }
+        if (form == 18) {
+            return verify_storage_borrow(store, metadata, callable, instruction);
+        }
         if (form == 15 || form == 16 || form == 17) {
-            if (!verify_storage_range(store, metadata, callable, instruction)) { return false; }
-            if (form == 17) { return verify_storage_index_write(store, metadata, callable, instruction); }
-            return true;
+            return verify_storage_range(store, metadata, callable, instruction);
         }
         if (form == 47 || form == 48) {
             if (entry_slot(metadata, callable, 12, call_value(store, instruction, 0)) < 0) {
@@ -1260,7 +1668,9 @@ export namespace compiler_ir_instructions {
             i64 position = 0;
             while (position < body.count()) {
                 const CodeRow code = store.code_at(body.begin() + position);
-                if (!verify_storage_access(store, metadata, callable, code.id())) { return false; }
+                if (!verify_storage_access(store, metadata, callable, code.id())) {
+                    return false;
+                }
                 position = position + 1;
             }
             callable = callable + 1;
@@ -1276,13 +1686,21 @@ export namespace compiler_ir_instructions {
     auto verify_scalar_constant(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 instruction) -> bool {
         const compiler_ir_metadata::RawTypeRow type = metadata.type_at(call_value(store, instruction, 1));
-        if (!compiler_ir_metadata::scalar_type(type)) { return fail(store, InstructionError::constant_type); }
+        if (!compiler_ir_metadata::scalar_type(type)) {
+            return fail(store, InstructionError::constant_type);
+        }
         // Codec shape admission already selected the unsigned lane for U64.
         // Every bit pattern is canonical there, including values above I64_MAX.
-        if (type.kind() == 7) { return true; }
+        if (type.kind() == 7) {
+            return true;
+        }
         const i64 value = call_value(store, instruction, 0);
-        if (type.kind() == 1 && value != 0 && value != 1) { return fail(store, InstructionError::constant_bool); }
-        if (type.kind() == 10 && (value < 0 || value > 255)) { return fail(store, InstructionError::constant_u8); }
+        if (type.kind() == 1 && value != 0 && value != 1) {
+            return fail(store, InstructionError::constant_bool);
+        }
+        if (type.kind() == 10 && (value < 0 || value > 255)) {
+            return fail(store, InstructionError::constant_u8);
+        }
         return true;
     }
     auto verify_scalar_enum_constant(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
@@ -1292,7 +1710,9 @@ export namespace compiler_ir_instructions {
             return fail(store, InstructionError::enum_constant_type);
         }
         const i64 enum_index = compiler_ir_metadata::find_enum(metadata, type.name());
-        if (enum_index < 0) { return fail(store, InstructionError::enum_constant_type); }
+        if (enum_index < 0) {
+            return fail(store, InstructionError::enum_constant_type);
+        }
         const compiler_ir_metadata::EnumRow declaration = metadata.enum_at(enum_index);
         const i64 case_index = call_value(store, instruction, 1);
         if (case_index < 0 || case_index >= declaration.cases()) {
@@ -1304,23 +1724,32 @@ export namespace compiler_ir_instructions {
         i64 instruction) -> bool {
         const RawInstructionRow row = store.instruction_at(instruction);
         const i64 form = row.form();
-        if (form == 5) { return verify_scalar_constant(store, metadata, instruction); }
-        if (form == 6) { return verify_scalar_enum_constant(store, metadata, instruction); }
-        if (form != 11 && form != 12 && form != 13 && form != 14) { return true; }
+        if (form == 5) {
+            return verify_scalar_constant(store, metadata, instruction);
+        }
+        if (form == 6) {
+            return verify_scalar_enum_constant(store, metadata, instruction);
+        }
+        if (form != 11 && form != 12 && form != 13 && form != 14) {
+            return true;
+        }
         const compiler_ir_metadata::RawTypeRow type = metadata.type_at(call_value(store, instruction, 0));
         if (form == 11) {
             const i64 operation = row.unary_operation();
-            if (operation < 0 || operation > 2) { return fail(store, InstructionError::unary_operation); }
-            if ((operation == 0 && !compiler_ir_metadata::plain_type(type, 0))
-                || (operation == 1 && !compiler_ir_metadata::plain_type(type, 1))
-                || (operation == 2 && !scalar_unsigned_type(type))) {
+            if (operation < 0 || operation > 2) {
+                return fail(store, InstructionError::unary_operation);
+            }
+            if ((operation == 0 && !compiler_ir_metadata::plain_type(type, 0)) || (operation == 1
+                && !compiler_ir_metadata::plain_type(type, 1)) || (operation == 2 && !scalar_unsigned_type(type))) {
                 return fail(store, InstructionError::unary_operand);
             }
             return true;
         }
         if (form == 12) {
             const i64 operation = row.binary_operation();
-            if (operation < 0 || operation > 9) { return fail(store, InstructionError::binary_operation); }
+            if (operation < 0 || operation > 9) {
+                return fail(store, InstructionError::binary_operation);
+            }
             if (!scalar_unsigned_type(type) && (operation >= 5 || !compiler_ir_metadata::plain_type(type, 0))) {
                 return fail(store, InstructionError::binary_operand);
             }
@@ -1328,26 +1757,35 @@ export namespace compiler_ir_instructions {
         }
         if (form == 13) {
             const compiler_ir_metadata::RawTypeRow result = metadata.type_at(call_value(store, instruction, 1));
-            if (!scalar_integer_type(type) || !scalar_integer_type(result)
-                || compiler_ir_metadata::same_type(metadata, type, result)) {
+            if (!scalar_integer_type(type) || !scalar_integer_type(result) || compiler_ir_metadata::same_type(metadata,
+                type, result)) {
                 return fail(store, InstructionError::conversion_types);
             }
             return true;
         }
         const i64 operation = row.comparison_operation();
-        if (operation < 0 || operation > 5) { return fail(store, InstructionError::comparison_operation); }
-        if (!compiler_ir_metadata::scalar_value(metadata, type)) { return fail(store, InstructionError::comparison_scalar); }
-        if (operation >= 2 && !scalar_integer_type(type)) { return fail(store, InstructionError::comparison_ordered); }
+        if (operation < 0 || operation > 5) {
+            return fail(store, InstructionError::comparison_operation);
+        }
+        if (!compiler_ir_metadata::scalar_value(metadata, type)) {
+            return fail(store, InstructionError::comparison_scalar);
+        }
+        if (operation >= 2 && !scalar_integer_type(type)) {
+            return fail(store, InstructionError::comparison_ordered);
+        }
         return true;
     }
-    auto verify_scalar_computations(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata) -> bool {
+    auto verify_scalar_computations(InstructionStore& store,
+        const compiler_ir_metadata::MetadataStore& metadata) -> bool {
         i64 callable = 0;
         while (callable < store.body_count()) {
             const BodyRow body = store.body_at(callable);
             i64 position = 0;
             while (position < body.count()) {
                 const CodeRow code = store.code_at(body.begin() + position);
-                if (!verify_scalar_computation(store, metadata, code.id())) { return false; }
+                if (!verify_scalar_computation(store, metadata, code.id())) {
+                    return false;
+                }
                 position = position + 1;
             }
             callable = callable + 1;
@@ -1376,9 +1814,15 @@ export namespace compiler_ir_instructions {
         i64 at = 0;
         while (at < metadata.enum_count()) {
             const compiler_ir_metadata::EnumRow row = metadata.enum_at(at);
-            if (compiler_ir_metadata::named(metadata, row.name(), "__au_console_put_result")) { result = result | 1u64; }
-            if (compiler_ir_metadata::named(metadata, row.name(), "__au_display_put_result")) { result = result | 2u64; }
-            if (compiler_ir_metadata::named(metadata, row.name(), "__au_event_ack_result")) { result = result | 4u64; }
+            if (compiler_ir_metadata::named(metadata, row.name(), "__au_console_put_result")) {
+                result = result | 1u64;
+            }
+            if (compiler_ir_metadata::named(metadata, row.name(), "__au_display_put_result")) {
+                result = result | 2u64;
+            }
+            if (compiler_ir_metadata::named(metadata, row.name(), "__au_event_ack_result")) {
+                result = result | 4u64;
+            }
             at = at + 1;
         }
         return result;
@@ -1402,14 +1846,24 @@ export namespace compiler_ir_instructions {
             }
             return true;
         }
-        if (form != 3) { return true; } // BindServiceParameter and ServiceCall were admitted in earlier phases.
+        if (form != 3) {
+            return true;
+        } // BindServiceParameter and ServiceCall were admitted in earlier phases.
         const i64 operation = call_value(store, instruction, 1);
-        if (operation < 0 || operation > 4) { return fail(store, InstructionError::service_operation); }
+        if (operation < 0 || operation > 4) {
+            return fail(store, InstructionError::service_operation);
+        }
         i64 expected_kind = 0; // Console: Next, Put
-        if (operation == 2) { expected_kind = 1; } // Display: Pixel
-        if (operation >= 3) { expected_kind = 2; } // IommuEvent: Poll, Acknowledge
+        if (operation == 2) {
+            expected_kind = 1;
+        } // Display: Pixel
+        if (operation >= 3) {
+            expected_kind = 2;
+        } // IommuEvent: Poll, Acknowledge
         const i64 kind = call_value(store, instruction, 3);
-        if (kind != expected_kind) { return fail(store, InstructionError::service_operation_kind); }
+        if (kind != expected_kind) {
+            return fail(store, InstructionError::service_operation_kind);
+        }
         const i64 root = call_value(store, instruction, 0);
         if (!service_entry_matches(store, metadata, callable, root, kind)) {
             return fail(store, InstructionError::service_operation_root);
@@ -1438,58 +1892,74 @@ export namespace compiler_ir_instructions {
         // authority and logical completion remain native; local scalar facts live
         // in the separate initialization workspace.
         const i64 slot_index = entry_slot(metadata, callable, 11, result_offset);
-        if (slot_index < 0) { return fail(store, InstructionError::service_sample_result); }
+        if (slot_index < 0) {
+            return fail(store, InstructionError::service_sample_result);
+        }
         const compiler_ir_metadata::SlotRow slot = metadata.slot_at(slot_index);
         const compiler_ir_metadata::RawTypeRow type = metadata.type_at(slot.type());
-        if ((operation == 0 && !compiler_ir_metadata::named(metadata, type.name(), "__au_console_sample"))
-            || (operation == 3 && !compiler_ir_metadata::named(metadata, type.name(), "__au_iommu_event_sample"))) {
+        if ((operation == 0 && !compiler_ir_metadata::named(metadata, type.name(), "__au_console_sample")) || (operation
+            == 3 && !compiler_ir_metadata::named(metadata, type.name(), "__au_iommu_event_sample"))) {
             return fail(store, InstructionError::service_sample_result);
         }
         return true;
     }
-    auto verify_service_instructions(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata) -> bool {
+    auto verify_service_instructions(InstructionStore& store,
+        const compiler_ir_metadata::MetadataStore& metadata) -> bool {
         const u64 result_enums = service_result_enums(metadata);
         i64 callable = 0;
         while (callable < store.body_count()) {
             // A body's stable loan identities precede its site contracts. The
             // bounded scratch sort borrows no native state and clears its lanes.
-            if (!store.verify_service_loan_roots(callable)) { return false; }
+            if (!store.verify_service_loan_roots(callable)) {
+                return false;
+            }
             const BodyRow body = store.body_at(callable);
             i64 position = 0;
             while (position < body.count()) {
                 const CodeRow code = store.code_at(body.begin() + position);
-                if (!verify_service_instruction(store, metadata, callable, code.id(), result_enums)) { return false; }
+                if (!verify_service_instruction(store, metadata, callable, code.id(), result_enums)) {
+                    return false;
+                }
                 position = position + 1;
             }
             callable = callable + 1;
         }
         return true;
     }
-    auto admit_instruction_bodies(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata)
-        -> InstructionStatus {
-        if (store.status() != InstructionStatus::admitted) { return store.status(); }
-        if (metadata.status() != compiler_ir_metadata::MetadataStatus::success
-            || store.body_count() != metadata.callable_count()) {
+    auto admit_instruction_bodies(InstructionStore& store,
+        const compiler_ir_metadata::MetadataStore& metadata) -> InstructionStatus {
+        if (store.status() != InstructionStatus::admitted) {
+            return store.status();
+        }
+        if (metadata.status() != compiler_ir_metadata::MetadataStatus::success || store.body_count()
+            != metadata.callable_count()) {
             store.reject(InstructionError::integrity);
             return store.status();
         }
         // Structural errors in any body precede entry errors in every body.
         // Post-normalization rejection poisons structured state; publication
         // and all subsequent admission/mutation calls then remain closed.
-        if (store.normalize_cfg() != InstructionStatus::structured) { return store.status(); }
+        if (store.normalize_cfg() != InstructionStatus::structured) {
+            return store.status();
+        }
         i64 callable = 0;
         while (callable < store.body_count()) {
-            if (!verify_entry_parameters(store, metadata, callable)) { return store.status(); }
+            if (!verify_entry_parameters(store, metadata, callable)) {
+                return store.status();
+            }
             callable = callable + 1;
         }
-        // All entry contracts precede all call contracts, then all storage
-        // contracts precede all scalar computations and then service contracts
+        // All entry contracts precede all call contracts. Constructor call
+        // restrictions precede the final mutable/I64 constructor policy, even
+        // for uncalled/imported declarations. Then storage contracts precede
+        // all scalar computations and service contracts
         // before the first native State in any body. Separate passes preserve
         // this module-wide order:
         // a later static error can precede an earlier dynamic value/lifetime
         // error; source rejection remains terminal and unpublished.
-        if (!verify_call_sites(store, metadata) || !verify_storage_accesses(store, metadata)
-            || !verify_scalar_computations(store, metadata) || !verify_service_instructions(store, metadata)) {
+        if (!verify_call_sites(store, metadata) || !verify_constructor_signatures(store, metadata)
+            || !verify_storage_accesses(store, metadata) || !verify_scalar_computations(store, metadata)
+            || !verify_service_instructions(store, metadata)) {
             return store.status();
         }
         return store.status();

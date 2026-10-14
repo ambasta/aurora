@@ -203,12 +203,14 @@ void reject(
     const std::function<void(Module &)> &change =
         [](Module &) {
         },
-    const std::string &diagnostic = "invalid typed IR") {
+    const std::string &diagnostic = "invalid typed IR",
+    bool exact = false) {
     change(module);
     try {
         (void)validate(std::move(module));
     } catch (const Error &error) {
-        require(std::string(error.what()).find(diagnostic) != std::string::npos,
+        require(exact ? error.diagnostic.code == DiagnosticCode::Unclassified && error.diagnostic.message == diagnostic
+                      : std::string(error.what()).find(diagnostic) != std::string::npos,
                 name + ": wrong diagnostic: " + error.what());
         ++rejected;
         std::cout << "PASS owned byte IR " << name << '\n';
@@ -1027,10 +1029,14 @@ void resourceCallTests() {
                [=](Module &module) {
                    operation<ResourceCall>(module).regionOffset = offset;
                });
-    reject("unbound second region cannot transport owner", resourceCall(), [](Module &module) {
-        module.functions[0].regionSlots.insert(176);
-        operation<ResourceCall>(module).regionOffset = 176;
-    }, "region authority is not active");
+    reject(
+        "unbound second region cannot transport owner",
+        resourceCall(),
+        [](Module &module) {
+            module.functions[0].regionSlots.insert(176);
+            operation<ResourceCall>(module).regionOffset = 176;
+        },
+        "region authority is not active");
     reject("resource argument vector cannot omit region position", resourceCall(), [](Module &module) {
         operation<ResourceCall>(module).ownerArguments.erase(operation<ResourceCall>(module).ownerArguments.begin());
     });
@@ -1056,27 +1062,47 @@ void resourceCallTests() {
     reject("readonly owner cannot supply moved argument", resourceCall(), [](Module &module) {
         module.functions[0].byteSlots[40] = false;
     });
-    reject("pristine owner cannot supply argument", resourceCall(), [](Module &module) {
-        eraseOperation<AllocateBytes>(module.functions[0]);
-    }, "owned byte binding does not hold live ownership");
-    reject("consumed owner cannot supply argument", resourceCall(), [](Module &module) {
-        insertBefore<ResourceCall>(module.functions[0], {BeginBytes{136}, MoveBytes{40, 136}});
-    }, "owned byte binding does not hold live ownership");
-    reject("ended owner cannot supply argument", resourceCall(), [](Module &module) {
-        insertBefore<ResourceCall>(module.functions[0], {EndBytes{40}});
-    }, "owned byte lifetime is not active");
+    reject(
+        "pristine owner cannot supply argument",
+        resourceCall(),
+        [](Module &module) {
+            eraseOperation<AllocateBytes>(module.functions[0]);
+        },
+        "owned byte binding does not hold live ownership");
+    reject(
+        "consumed owner cannot supply argument",
+        resourceCall(),
+        [](Module &module) {
+            insertBefore<ResourceCall>(module.functions[0], {BeginBytes{136}, MoveBytes{40, 136}});
+        },
+        "owned byte binding does not hold live ownership");
+    reject(
+        "ended owner cannot supply argument",
+        resourceCall(),
+        [](Module &module) {
+            insertBefore<ResourceCall>(module.functions[0], {EndBytes{40}});
+        },
+        "owned byte lifetime is not active");
     reject("resource call consumes every argument", resourceCall(), [](Module &module) {
         insertBefore<EndBytes>(module.functions[0], {BytesLength{72}});
     });
     reject("resource call cannot move an argument twice", resourceCall(), [](Module &module) {
         insertBefore<EndBytes>(module.functions[0], {BeginBytes{136}, MoveBytes{40, 136}});
     });
-    reject("resource call result must have begun lifetime", resourceCall(), [](Module &module) {
-        eraseOperation<BeginBytes>(module.functions[0], 2);
-    }, "owned byte lifetime is not active");
-    reject("resource call result must be pristine", resourceCall(), [](Module &module) {
-        insertBefore<ResourceCall>(module.functions[0], {Constant{1, Type::I64}, AllocateBytes{8, 104}});
-    }, "owned byte result requires pristine binding");
+    reject(
+        "resource call result must have begun lifetime",
+        resourceCall(),
+        [](Module &module) {
+            eraseOperation<BeginBytes>(module.functions[0], 2);
+        },
+        "owned byte lifetime is not active");
+    reject(
+        "resource call result must be pristine",
+        resourceCall(),
+        [](Module &module) {
+            insertBefore<ResourceCall>(module.functions[0], {Constant{1, Type::I64}, AllocateBytes{8, 104}});
+        },
+        "owned byte result requires pristine binding");
     reject("resource result cannot alias moved argument", resourceCall(), [](Module &module) {
         operation<ResourceCall>(module).resultOffset = 40;
     });
@@ -1090,14 +1116,22 @@ void resourceCallTests() {
     reject("owner call result clears scalar current", resourceCall(), [](Module &module) {
         insertBefore<EndBytes>(module.functions[0], {Push{}});
     });
-    reject("resource call requires scalar argument stack", resourceCall(), [](Module &module) {
-        eraseOperation<Push>(module.functions[0], 2);
-    }, "resource call scalar argument type mismatch");
-    reject("resource call checks scalar argument type", resourceCall(), [](Module &module) {
-        auto &function = module.functions[0];
-        const auto lastPush = position<Push>(function, 2);
-        function.code[lastPush - 1] = Constant{1, Type::I64};
-    }, "resource call scalar argument type mismatch");
+    reject(
+        "resource call requires scalar argument stack",
+        resourceCall(),
+        [](Module &module) {
+            eraseOperation<Push>(module.functions[0], 2);
+        },
+        "resource call scalar argument type mismatch");
+    reject(
+        "resource call checks scalar argument type",
+        resourceCall(),
+        [](Module &module) {
+            auto &function = module.functions[0];
+            const auto lastPush = position<Push>(function, 2);
+            function.code[lastPush - 1] = Constant{1, Type::I64};
+        },
+        "resource call scalar argument type mismatch");
     reject("scalar Call cannot target resource signature", resourceCall(), [](Module &module) {
         auto &function = module.functions[0];
         function.code[position<ResourceCall>(function)] = Call{"bytes_callee"};
@@ -1880,6 +1914,41 @@ void typedValueTests() {
     reject("typed field rejects resource element", values(), [](Module &module) {
         module.classFields["ValuesBox"][0].elementType = Type::ownedValues(Type("ByteBox"));
     });
+    // ValuesBox is unused by this body. Its owner element must be rejected by
+    // metadata admission without relying on a later native field access.
+    reject(
+        "unused typed field rejects carrier element",
+        values(),
+        [](Module &module) {
+            module.classLayouts["Carrier"] = {Type::U8, Type::U64, Type::U8};
+            module.classFields["Carrier"] = {{Type("Record"), 0, 3, true}};
+            module.classArrayCarriers.insert("Carrier");
+            module.classStorage.clear();
+            module.classFields["ValuesBox"][0].elementType = Type::ownedValues(Type("Carrier"));
+        },
+        "invalid typed IR: owned value element must be a copied class, not an owner or carrier",
+        true);
+    reject(
+        "unused typed field checks element leaf limits",
+        values(),
+        [](Module &module) {
+            module.classLayouts["TooMany"] = std::vector<Type>(65, Type::I64);
+            module.classStorage.clear();
+            module.classFields["ValuesBox"][0].elementType = Type::ownedValues(Type("TooMany"));
+        },
+        "invalid typed IR: owned value element exceeds copied class leaf limits",
+        true);
+    reject(
+        "unused typed field checks element physical size",
+        values(),
+        [](Module &module) {
+            module.classLayouts["TooWide"] = std::vector<Type>(64, Type::I64);
+            module.classLayouts["TooWide"].insert(module.classLayouts["TooWide"].end(), 9, Type::U8);
+            module.classStorage.clear();
+            module.classFields["ValuesBox"][0].elementType = Type::ownedValues(Type("TooWide"));
+        },
+        "invalid typed IR: owned value element storage exceeds 520 bytes",
+        true);
     reject("typed field rejects array descriptor", values(), [](Module &module) {
         module.classFields["ValuesBox"][0].array = true;
     });
@@ -1986,28 +2055,44 @@ void typedValueTests() {
     reject("typed move rejects foreign nominal destination", valuesParameter(), [](Module &module) {
         module.functions[0].ownedValueTypes[72] = "Other";
     });
-    reject("typed parameter requires metadata", valuesParameter(), [](Module &module) {
-        module.functions[0].ownedValueTypes.erase(40);
-    }, "owned byte parameter type mismatch");
-    reject("byte parameter rejects typed metadata", valuesParameter(), [](Module &module) {
-        module.functions[0].parameters[1] = Type::OwnedBytes;
-    }, "owned byte parameter type mismatch");
+    reject(
+        "typed parameter requires metadata",
+        valuesParameter(),
+        [](Module &module) {
+            module.functions[0].ownedValueTypes.erase(40);
+        },
+        "owned byte parameter type mismatch");
+    reject(
+        "byte parameter rejects typed metadata",
+        valuesParameter(),
+        [](Module &module) {
+            module.functions[0].parameters[1] = Type::OwnedBytes;
+        },
+        "owned byte parameter type mismatch");
     for (const auto &[name, mutate, diagnostic] :
          std::vector<std::tuple<const char *, std::function<void(Module &)>, const char *>>{
-             {"nominal element mismatch", [](auto &module) {
+             {"nominal element mismatch",
+              [](auto &module) {
                   module.functions[0].ownedValueTypes[40] = "Other";
-              }, "owned byte parameter type mismatch"},
-             {"exact owner spill", [](auto &module) {
+              },
+              "owned byte parameter type mismatch"},
+             {"exact owner spill",
+              [](auto &module) {
                   operation<BindBytesParameter>(module).offset = 32;
-              }, "owned byte parameter requires exact typed spill"},
-             {"mutable owner spill", [](auto &module) {
+              },
+              "owned byte parameter requires exact typed spill"},
+             {"mutable owner spill",
+              [](auto &module) {
                   module.functions[0].byteSlots[40] = false;
-              }, "owned byte parameter must be mutable"},
-             {"distinct owner spill", [](auto &module) {
+              },
+              "owned byte parameter must be mutable"},
+             {"distinct owner spill",
+              [](auto &module) {
                   auto &function = module.functions[0];
                   function.parameters.push_back(Type::ownedValues(Type("Record")));
                   function.code.insert(function.code.begin() + 2, BindBytesParameter{2, 40});
-              }, "owned byte parameter bindings overlap"}})
+              },
+              "owned byte parameter bindings overlap"}})
         reject(std::string("source typed entry ") + name, valuesParameter(), mutate, diagnostic);
     reject("typed parameter rejects dependent metadata", valuesParameter(), [](Module &module) {
         module.functions[0].parameters[1].lengthParameter = "N";

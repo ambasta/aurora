@@ -4,8 +4,10 @@
 from pathlib import Path
 from copy import deepcopy
 import hashlib
+import io
 import json
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -25,10 +27,27 @@ COMPILER_MODULES = tuple(sorted(path.name for path in (Path(__file__).resolve().
 
 
 INITIALIZATION_OPERATIONS = (
-    "create", "release", "allocated", "status", "initialize", "slot_count", "word_count",
-    "retained_count", "current_count", "retained_count_at", "load", "retain", "join",
-    "scalar_state", "write_scalar", "object_initialized", "object_pristine", "mark_object", "clear_object",
-    "array_first_missing", "clear_array",
+    "create",
+    "release",
+    "allocated",
+    "status",
+    "initialize",
+    "slot_count",
+    "word_count",
+    "retained_count",
+    "current_count",
+    "retained_count_at",
+    "load",
+    "retain",
+    "join",
+    "scalar_state",
+    "write_scalar",
+    "object_initialized",
+    "object_pristine",
+    "mark_object",
+    "clear_object",
+    "array_first_missing",
+    "clear_array",
 )
 
 
@@ -144,8 +163,9 @@ def abi_generation(facts):
         ("compiler_lowering::LocalRow", 160),
         ("compiler_lowering::SnapshotRow", 48),
         ("compiler_lowering::ContinuationRow", 496),
+        ("compiler_ir_metadata::FlagMasks", 120),
         ("compiler_ir_metadata::ReceiverShape", 24),
-        ("compiler_ir_metadata::CallableOptions", 56),
+        ("compiler_ir_metadata::CallableOptions", 40),
         ("compiler_ir_metadata::CallableRow", 120),
         ("compiler_ir_metadata::SlotRow", 40),
         ("compiler_ir_metadata::InputCounts", 80),
@@ -153,7 +173,7 @@ def abi_generation(facts):
         ("compiler_ir_instructions::RawInstructionRow", 64),
         ("compiler_ir_instructions::RawOperandRow", 40),
         ("compiler_ir_instructions::CodeRow", 32),
-        ("compiler_ir_instructions::BodyRow", 24),
+        ("compiler_ir_instructions::BodyRow", 32),
         ("compiler_ir_instructions::InstructionCounts", 32),
         ("compiler_ir_instructions::InstructionStore", 176),
     ):
@@ -161,6 +181,7 @@ def abi_generation(facts):
         require(entry["reserved"] == extent and entry["alignment"] == 8, f"frontend layout changed: {source}")
     require(
         "struct alignas(8) MetadataCreate {" in generated
+        and "struct alignas(8) MetadataInitialize {" in generated
         and "struct alignas(8) MetadataRelease {" in generated
         and "aurora::hosted_abi::compiler_ir_metadata::InputCounts counts{};" in generated
         and "std::int64_t callableCount{};" in generated
@@ -175,23 +196,72 @@ def abi_generation(facts):
         "metadata arguments or closed owner/row physical bindings were omitted",
     )
     require(
-        all(f"struct alignas(8) {name} {{" in generated for name in (
-            "InstructionsCreate", "InstructionsRelease"
-        ))
-        and all(f"instructionStore_{pool}Bytes = 32;" in generated for pool in (
-            "instructions", "operands", "literals", "codeOrder", "bodies"
-        ))
-        and all(f"instruction{row}PhysicalBytes = {width};" in generated for row, width in (
-            ("RawInstructionRow", 64), ("RawOperandRow", 40), ("CodeRow", 32), ("BodyRow", 24)
-        )),
+        all(f"struct alignas(8) {name} {{" in generated for name in ("InstructionsCreate", "InstructionsRelease"))
+        and all(
+            f"instructionStore_{pool}Bytes = 32;" in generated
+            for pool in ("instructions", "operands", "literals", "codeOrder", "bodies")
+        )
+        and all(
+            f"instruction{row}PhysicalBytes = {width};" in generated
+            for row, width in (("RawInstructionRow", 64), ("RawOperandRow", 40), ("CodeRow", 32), ("BodyRow", 32))
+        ),
         "instruction arguments or closed owner/row physical bindings were omitted",
     )
+    _, flag_masks = abi_declaration(facts, "records", "compiler_ir_metadata::FlagMasks")
+    require(
+        [(field["name"], field["kind"], field["bytes"]) for field in flag_masks["fields"]]
+        == [
+            (name, "u64", 8)
+            for name in (
+                "classLayout",
+                "classFields",
+                "classStorage",
+                "classArrayCarrier",
+                "callableReceiver",
+                "callableSpanSummary",
+                "receiverMutable",
+                "receiverConstructor",
+                "receiverPublic",
+                "serviceConsole",
+                "serviceDisplay",
+                "serviceIommu",
+                "flowLeader",
+                "flowFallthrough",
+                "flowReached",
+            )
+        ],
+        "metadata flag table is not the named full-width source record",
+    )
+    for source, member in (
+        ("ClassRow", "membershipBits"),
+        ("CallableRow", "flags"),
+        ("CallableOptions", "flags"),
+        ("ReceiverShape", "flags"),
+    ):
+        _, row = abi_declaration(facts, "records", "compiler_ir_metadata::" + source)
+        field = next(field for field in row["fields"] if field["name"] == member)
+        require(field["kind"] == "u64" and field["bytes"] == 8, "metadata flags were narrowed or signed")
     _, code_row = abi_declaration(facts, "records", "compiler_ir_instructions::CodeRow")
     require(
         [(field["name"], field["kind"], field["offset"], field["bytes"]) for field in code_row["fields"]]
-        == [("instructionId", "i64", 0, 8), ("targetPosition", "i64", 8, 8),
-            ("flowFlags", "u64", 16, 8), ("scratchValue", "i64", 24, 8)],
+        == [
+            ("instructionId", "i64", 0, 8),
+            ("targetPosition", "i64", 8, 8),
+            ("flowFlags", "u64", 16, 8),
+            ("scratchValue", "i64", 24, 8),
+        ],
         "instruction identity, structural facts or scratch layout changed",
+    )
+    _, body_row = abi_declaration(facts, "records", "compiler_ir_instructions::BodyRow")
+    require(
+        [(field["name"], field["kind"], field["offset"], field["bytes"]) for field in body_row["fields"]]
+        == [
+            ("codeBegin", "i64", 0, 8),
+            ("codeCapacity", "i64", 8, 8),
+            ("retainedCount", "i64", 16, 8),
+            ("unreachableAfter", "i64", 24, 8),
+        ],
+        "instruction body ranges or source-derived unreachable boundary layout changed",
     )
     # Exact root signatures are the only native entry authority. An imported
     # implementation must not become a fallback when its forwarding root is lost.
@@ -254,8 +324,10 @@ def abi_generation(facts):
     initialization, _ = abi_declaration(facts, "records", "compiler_ir_initialization::InitializationWorkspace")
     require(
         all(f"struct alignas(8) {name} {{" in generated for name in ("InitializationCreate", "InitializationRelease"))
-        and all(f"initializationWorkspace_{pool}Bytes = 32;" in generated for pool in
-                ("currentWords", "retainedWords", "retainedCounts"))
+        and all(
+            f"initializationWorkspace_{pool}Bytes = 32;" in generated
+            for pool in ("currentWords", "retainedWords", "retainedCounts")
+        )
         and "initializationWordPairPhysicalBytes = 16;" in generated
         and "initializationCountPairPhysicalBytes = 16;" in generated,
         "initialization owner transfer or physical pool facts were omitted",
@@ -280,8 +352,17 @@ def abi_generation(facts):
             except ValueError:
                 continue
             raise AssertionError(f"unsafe initialization bridge accepted: {operation}/{mutation}")
-    for operation in ("initialize", "scalar_state", "write_scalar", "object_initialized", "object_pristine",
-                      "mark_object", "clear_object", "array_first_missing", "clear_array"):
+    for operation in (
+        "initialize",
+        "scalar_state",
+        "write_scalar",
+        "object_initialized",
+        "object_pristine",
+        "mark_object",
+        "clear_object",
+        "array_first_missing",
+        "clear_array",
+    ):
         for field, value in (
             ("receiver_mutable", False),
             ("borrowed_parameter", False),
@@ -302,9 +383,12 @@ def abi_generation(facts):
                 continue
             raise AssertionError(f"unsafe initialization paired bridge accepted: {operation}/{field}={value}")
     for source, field in (
-        ("InitializationWorkspace", "currentWords"), ("InitializationWorkspace", "retainedWords"),
-        ("InitializationWorkspace", "retainedCounts"), ("InitializationWorkspace", "retainedCount"),
-        ("WordPair", "mustBits"), ("CountPair", "mayCount"),
+        ("InitializationWorkspace", "currentWords"),
+        ("InitializationWorkspace", "retainedWords"),
+        ("InitializationWorkspace", "retainedCounts"),
+        ("InitializationWorkspace", "retainedCount"),
+        ("WordPair", "mustBits"),
+        ("CountPair", "mayCount"),
     ):
         changed = deepcopy(facts)
         _, entry = abi_declaration(changed, "records", "compiler_ir_initialization::" + source)
@@ -362,8 +446,13 @@ def abi_generation(facts):
             except ValueError:
                 continue
             raise AssertionError(f"unsafe instruction paired bridge accepted: {operation}/{field}={value}")
-    for pool, row in (("instructions", "RawInstructionRow"), ("operands", "RawOperandRow"),
-                      ("literals", None), ("codeOrder", "CodeRow"), ("bodies", "BodyRow")):
+    for pool, row in (
+        ("instructions", "RawInstructionRow"),
+        ("operands", "RawOperandRow"),
+        ("literals", None),
+        ("codeOrder", "CodeRow"),
+        ("bodies", "BodyRow"),
+    ):
         for mutation in ("owner", "stride", "leaf") if row else ("owner",):
             changed = deepcopy(facts)
             if mutation == "owner":
@@ -381,9 +470,13 @@ def abi_generation(facts):
                 continue
             raise AssertionError(f"unsafe instruction pool binding accepted: {pool}/{mutation}")
     for operation, parameter, name in (
-        ("create", 2, "callable-count"), ("create", 3, "slot-count"), ("create", 4, "instruction-begin"),
-        ("object_leaf_root", 0, "callable"), ("object_leaf_root", 1, "offset"),
-        ("byte_array_element_root", 0, "callable"), ("byte_array_element_root", 1, "offset"),
+        ("initialize", 1, "callable-count"),
+        ("initialize", 2, "slot-count"),
+        ("initialize", 3, "instruction-begin"),
+        ("object_leaf_root", 0, "callable"),
+        ("object_leaf_root", 1, "offset"),
+        ("byte_array_element_root", 0, "callable"),
+        ("byte_array_element_root", 1, "offset"),
     ):
         for mutation in ("missing", "type", "offset"):
             changed = deepcopy(facts)
@@ -399,7 +492,17 @@ def abi_generation(facts):
             except ValueError:
                 continue
             raise AssertionError(f"unsafe metadata {operation}/{name} argument accepted: {mutation}")
-    for operation in ("create", "release", "allocated", "run", "error", "object_leaf_root", "byte_array_element_root"):
+    for operation in (
+        "flag_masks",
+        "create",
+        "initialize",
+        "release",
+        "allocated",
+        "run",
+        "error",
+        "object_leaf_root",
+        "byte_array_element_root",
+    ):
         for mutation in ("receiver", "result", "parameters", "root"):
             changed = deepcopy(facts)
             _, entry = abi_declaration(changed, "functions", "compiler_frontend::metadata_" + operation)
@@ -419,10 +522,10 @@ def abi_generation(facts):
             except ValueError:
                 continue
             raise AssertionError(f"unsafe metadata bridge accepted: {operation}/{mutation}")
-    for operation in ("allocated", "run", "error", "object_leaf_root", "byte_array_element_root"):
+    for operation in ("initialize", "allocated", "run", "error", "object_leaf_root", "byte_array_element_root"):
         changed = deepcopy(facts)
         _, entry = abi_declaration(changed, "functions", "compiler_frontend::metadata_" + operation)
-        entry["borrowed_roots"][0]["mutable"] = operation != "run"
+        entry["borrowed_roots"][0]["mutable"] = operation not in ("initialize", "run")
         try:
             frontend_abi_header(changed)
         except ValueError:
@@ -465,7 +568,10 @@ def abi_generation(facts):
             pool = "slots" if kind == "metadata_slot_owner_extent" else "types"
             next(field for field in entry["fields"] if field["name"] == pool)["bytes"] += 8
         elif kind in (
-            "metadata_row_stride", "metadata_narrow_leaf", "metadata_slot_stride", "metadata_slot_narrow_leaf"
+            "metadata_row_stride",
+            "metadata_narrow_leaf",
+            "metadata_slot_stride",
+            "metadata_slot_narrow_leaf",
         ):
             row = "SlotRow" if kind.startswith("metadata_slot_") else "IndexRow"
             _, entry = abi_declaration(changed, "records", "compiler_ir_metadata::" + row)
@@ -525,7 +631,10 @@ def abi_generation(facts):
         except ValueError:
             continue
         raise AssertionError(f"unsupported or unsafe ABI facts accepted: {kind}")
-    print("PASS generic source-spelled ABI records/enums, nested layout and exact lowering/metadata/instruction bridge rejection")
+    print(
+        "PASS generic source-spelled ABI records/enums, nested layout and exact "
+        "lowering/metadata/instruction bridge rejection"
+    )
 
 
 def borrowed_root_generation(facts):
@@ -544,13 +653,12 @@ def borrowed_root_generation(facts):
             require(function["receiver"] is None, "borrowed roots duplicated in genuine receiver")
             function["receiver"], function["receiver_mutable"] = roots[0]["type_name"], roots[0]["mutable"]
         function["borrowed_parameter"] = bool(count)
-        function["second_receiver"] = (
-            dict(type_name=roots[1]["type_name"], mutable=False) if count == 2 else None
-        )
+        function["second_receiver"] = dict(type_name=roots[1]["type_name"], mutable=False) if count == 2 else None
         function["root_count"] = count if count else int(function["receiver"] is not None)
         function["root_tuple_bytes"] = 16 if count == 2 else 0
-        function["root_order"] = (["receiver", "second_receiver"] if count == 2 else
-                                  ["receiver"] if function["receiver"] is not None else [])
+        function["root_order"] = (
+            ["receiver", "second_receiver"] if count == 2 else ["receiver"] if function["receiver"] is not None else []
+        )
     require(frontend_abi_header(predecessor) == header, "paired predecessor/current normalization changed headers")
     bridge = "call __aurora_frontend_graph_run\ncall __aurora_frontend_lexer_next\n"
     require(frontend_bridge(bridge, predecessor) == frontend_bridge(bridge, facts), "predecessor/current bridge drift")
@@ -569,11 +677,21 @@ def borrowed_root_generation(facts):
     for alias in pair_sources:
         source = "compiler_frontend::" + alias
         for lane in (0, 1):
-            for field, value in (("ordinal", 1 - lane), ("ordinal", False), ("selector", -6),
-                                 ("selector", -9223372036854775808), ("selector", False),
-                                 ("type_name", "missing-root"), ("mutable", lane == 1), ("mutable", 1)):
-                reject(facts, source, lambda f, lane=lane, field=field, value=value:
-                       f["borrowed_roots"][lane].__setitem__(field, value))
+            for field, value in (
+                ("ordinal", 1 - lane),
+                ("ordinal", False),
+                ("selector", -6),
+                ("selector", -9223372036854775808),
+                ("selector", False),
+                ("type_name", "missing-root"),
+                ("mutable", lane == 1),
+                ("mutable", 1),
+            ):
+                reject(
+                    facts,
+                    source,
+                    lambda f, lane=lane, field=field, value=value: f["borrowed_roots"][lane].__setitem__(field, value),
+                )
         for mutation in (
             lambda f: f["borrowed_roots"].reverse(),
             lambda f: f["borrowed_roots"].pop(),
@@ -608,11 +726,17 @@ def borrowed_root_generation(facts):
                 function = deepcopy(pair)
                 function["borrowed_root_count"] = count
                 function["borrowed_roots"] = [
-                    dict(ordinal=i, selector=-i, type_name=pair["borrowed_roots"][i % 2]["type_name"],
-                         mutable=mutable and i == 0) for i in range(count)
+                    dict(
+                        ordinal=i,
+                        selector=-i,
+                        type_name=pair["borrowed_roots"][i % 2]["type_name"],
+                        mutable=mutable and i == 0,
+                    )
+                    for i in range(count)
                 ]
                 function["borrowed_root_abi"] = dict(
-                    kind="direct" if count == 1 else "tuple", register="r10",
+                    kind="direct" if count == 1 else "tuple",
+                    register="r10",
                     tuple_payload_bytes=8 * count if count > 1 else 0,
                     tuple_reserved_bytes=16 * ((count + 1) // 2) if count > 1 else 0,
                     saved_root_reserved_bytes=16 * ((count + 1) // 2),
@@ -678,10 +802,17 @@ def message_generation(facts, root):
     require(
         "case InstructionError::none: return nullptr;" in table
         and 'return "invalid typed IR: noncanonical instruction type payload";' in table
-        and all(f'return "invalid typed IR: {message}";' in table for message in (
-            "empty function body", "duplicate or invalid label", "unknown jump target",
-            "unknown branch target", "reachable fallthrough without return", "unreachable semantic instruction",
-        )),
+        and all(
+            f'return "invalid typed IR: {message}";' in table
+            for message in (
+                "empty function body",
+                "duplicate or invalid label",
+                "unknown jump target",
+                "unknown branch target",
+                "reachable fallthrough without return",
+                "unreachable semantic instruction",
+            )
+        ),
         "instruction message table lost its constant diagnostic binding",
     )
     for changed in (
@@ -697,6 +828,32 @@ def message_generation(facts, root):
 
 
 def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
+    from qemu_transport import run_logged
+
+    def regenerate(compiler, output):
+        stdout, stderr = io.BytesIO(), io.BytesIO()
+        # This whole-frontend emission takes 25-30 seconds even on an idle host.
+        # Reuse owned-process cleanup for the wrapper and its compiler child.
+        status = run_logged(
+            [
+                sys.executable,
+                "-B",
+                str(root / "scripts/bootstrap_frontend.py"),
+                *frontend_arguments(compiler, root, output),
+            ],
+            stdout,
+            stderr=stderr,
+            timeout=90,
+            timeout_status=False,
+        )
+        diagnostic = stderr.getvalue()
+        require(
+            status == 0,
+            f"whole frontend self-rebuild failed: {compiler}: {status}: {diagnostic.decode(errors='replace')}",
+        )
+        require(b"AU9001" not in diagnostic, f"internal compiler failure: {root / 'compiler/frontend.au'}")
+        return stdout.getvalue(), diagnostic
+
     abi_generation(json.loads(built_b.with_suffix(".abi.json").read_text()))
     borrowed_root_generation(json.loads(built_b.with_suffix(".abi.json").read_text()))
     message_generation(json.loads(built_b.with_suffix(".abi.json").read_text()), root)
@@ -753,13 +910,29 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
     entries.update(
         "aurora_hosted_graph_" + operation
         for operation in (
-            "create_input", "create_workspace", "release_input", "release_workspace",
-            "set_function", "set_edge", "run", "retained",
+            "create_input",
+            "create_workspace",
+            "release_input",
+            "release_workspace",
+            "set_function",
+            "set_edge",
+            "run",
+            "retained",
         )
     )
     entries.update(
         "aurora_hosted_metadata_" + operation
-        for operation in ("create", "release", "allocated", "run", "error", "object_leaf_root", "byte_array_element_root")
+        for operation in (
+            "flag_masks",
+            "create",
+            "initialize",
+            "release",
+            "allocated",
+            "run",
+            "error",
+            "object_leaf_root",
+            "byte_array_element_root",
+        )
     )
     entries.update(
         "aurora_hosted_instructions_" + operation
@@ -781,17 +954,10 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
         header(built_a).read_bytes() == header(built_b).read_bytes(),
         "A/B generated layout differs for reused host objects",
     )
-    units = []
+    units, diagnostics = [], []
     for number, compiler in enumerate((current1, current2), start=1):
         output = work / f"frontend-c{number}.s"
-        run(
-            [
-                sys.executable,
-                "-B",
-                str(root / "scripts/bootstrap_frontend.py"),
-                *frontend_arguments(compiler, root, output),
-            ]
-        )
+        diagnostics.append(regenerate(compiler, output))
         units.append(output)
         obj = output.with_suffix(".o")
         run(["as", "--64", str(output), "-o", str(obj)])
@@ -802,6 +968,7 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
                 == (root / "compiler" / name).read_bytes(),
                 f"staged compiler module changed exported source: {name}",
             )
+    require(diagnostics[0] == diagnostics[1], "whole frontend compiler diagnostics differ")
     for suffix, description in (
         (".s", "assembly"),
         (".generated.s", "generated graph"),
@@ -825,14 +992,7 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
     expected = generated_header.read_bytes()
     old_mtime = 1_000_000_000_000_000_000
     os.utime(generated_header, ns=(old_mtime, old_mtime))
-    run(
-        [
-            sys.executable,
-            "-B",
-            str(root / "scripts/bootstrap_frontend.py"),
-            *frontend_arguments(current1, root, units[0]),
-        ]
-    )
+    regenerate(current1, units[0])
     require(
         generated_header.read_bytes() == expected and generated_header.stat().st_mtime_ns == old_mtime,
         "unchanged compiler ABI header was rewritten",
@@ -866,6 +1026,12 @@ def main():
         convergence = {root / "compiler/lexer.au", root / "compiler/frontend.au"}
         corpus = [source for source in corpus if (source in convergence) != whole_corpus]
         for source in corpus:
+            if source == root / "compiler/frontend.au":
+                # The dedicated path compiles this graph with local bindings and
+                # ABI facts. Lexer and corpus checks retain ordinary emission.
+                frontend_bootstrap(current1, current2, root, work, built_a, built_b)
+                records.append({"source": str(source.relative_to(root)), "status": 0})
+                continue
             runs = []
             for compiler, output in zip((current1, current2), outputs, strict=True):
                 output.write_bytes(b"preserve on rejection\n")
@@ -912,9 +1078,6 @@ def main():
             vocabulary_modules = {"resolution_kinds.au", "lowering_kinds.au", "lowering_errors.au"}
             if source in compiler_sources and source.name not in vocabulary_modules:
                 require(runs[0].returncode == 0, f"compiler module self-rebuild failed: {source.name}")
-            if source == root / "compiler/frontend.au":
-                require(runs[0].returncode == 0, "whole frontend self-rebuild failed")
-                frontend_bootstrap(current1, current2, root, work, built_a, built_b)
             records.append({"source": str(source.relative_to(root)), "status": runs[0].returncode})
         require(len(records) > 1, "source corpus is empty")
         print(
@@ -930,4 +1093,10 @@ def main():
 
 
 if __name__ == "__main__":
+
+    def terminate(signum, frame):
+        # Let owned-process cleanup finish when Meson's outer deadline expires.
+        raise SystemExit(128 + signum)
+
+    signal.signal(signal.SIGTERM, terminate)
     main()

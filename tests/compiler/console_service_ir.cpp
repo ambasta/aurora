@@ -76,8 +76,9 @@ Module copiedResult(bool empty = false) {
     canonicalTypes(m);
     // Five mixed-width leaves exercise the full layout beyond either native
     // observation's fixed field count. Empty results still need completion.
-    m.classLayouts["Reply"] = empty ? std::vector<Type>{}
-                                   : std::vector<Type>{Type::U64, service::putResultType(), Type::U8, Type::U8, Type::Bool};
+    m.classLayouts["Reply"] =
+        empty ? std::vector<Type>{}
+              : std::vector<Type>{Type::U64, service::putResultType(), Type::U8, Type::U8, Type::Bool};
     auto f = entry("caller");
     f.result = Type("Reply");
     f.objectSlots[48] = {"Reply", false};
@@ -86,17 +87,26 @@ Module copiedResult(bool empty = false) {
     auto g = f;
     g.name = "reply";
     f.code.insert(f.code.end(),
-                  {BeginObject{48}, AcquireServiceLoan{1, 16}, ServiceCall{"reply", 1, 48, {0}},
-                   ReleaseServiceLoan{1}, ReturnObject{48}});
+                  {BeginObject{48},
+                   AcquireServiceLoan{1, 16},
+                   ServiceCall{"reply", 1, 48, {0}},
+                   ReleaseServiceLoan{1},
+                   ReturnObject{48}});
     g.code.push_back(BeginObject{48});
     if (empty)
         g.code.push_back(InitializeEmptyObject{48});
     else
         g.code.insert(g.code.end(),
-                      {Constant{2, Type::U64}, Store{48, Type::U64},
-                       EnumConstant{service::putResultType(), 0}, Store{40, service::putResultType()},
-                       Constant{65, Type::U8}, Store{32, Type::U8}, Constant{66, Type::U8}, Store{31, Type::U8},
-                       Constant{1, Type::Bool}, Store{24, Type::Bool}});
+                      {Constant{2, Type::U64},
+                       Store{48, Type::U64},
+                       EnumConstant{service::putResultType(), 0},
+                       Store{40, service::putResultType()},
+                       Constant{65, Type::U8},
+                       Store{32, Type::U8},
+                       Constant{66, Type::U8},
+                       Store{31, Type::U8},
+                       Constant{1, Type::Bool},
+                       Store{24, Type::Bool}});
     g.code.push_back(ReturnObject{48});
     m.functions = {f, g};
     return m;
@@ -109,8 +119,8 @@ Module copiedArguments(int shape = 0, bool paired = false) {
     if (shape == 0) {
         m.classLayouts["Packet"] = std::vector<Type>(64, Type::U8);
         m.classLayouts["Packet"].insert(m.classLayouts["Packet"].end(), {Type::I64, service::putResultType()});
-        m.classFields["Packet"] = {{Type::U8, 0, 64, true}, {Type::I64, 64, 1, false},
-                                     {service::putResultType(), 65, 1, false}};
+        m.classFields["Packet"] = {
+            {Type::U8, 0, 64, true}, {Type::I64, 64, 1, false}, {service::putResultType(), 65, 1, false}};
     } else {
         m.classLayouts["Packet"] = {};
         if (shape == 2) {
@@ -134,11 +144,19 @@ Module copiedArguments(int shape = 0, bool paired = false) {
     for (const int base : {128, 224, 320, 416, 512})
         reserve(f, base);
     f.code.insert(f.code.end(),
-                  {BindObjectParameter{1, 128, "Packet"}, BindObjectParameter{2, 224, "Packet"},
-                   BeginObject{320}, CopyObject{128, 320}, BeginObject{416}, CopyObject{224, 416},
-                   BeginObject{512}, AcquireServiceLoan{1, 16},
+                  {BindObjectParameter{1, 128, "Packet"},
+                   BindObjectParameter{2, 224, "Packet"},
+                   BeginObject{320},
+                   CopyObject{128, 320},
+                   BeginObject{416},
+                   CopyObject{224, 416},
+                   BeginObject{512},
+                   AcquireServiceLoan{1, 16},
                    ServiceCall{"copied_helper", 1, 512, {0, 0, 0}, service::Kind::Console, {}, {0, 320, 416}},
-                   ReleaseServiceLoan{1}, EndObject{416}, EndObject{320}, ReturnObject{512}});
+                   ReleaseServiceLoan{1},
+                   EndObject{416},
+                   EndObject{320},
+                   ReturnObject{512}});
     auto g = entry("copied_helper");
     g.frameBytes = 224;
     g.result = Type("Packet");
@@ -200,8 +218,7 @@ Module mixedEntry() {
     m.enumCases[std::string(service::displayCompletionName)] = 2;
     m.classLayouts["Packet"] = {Type::U8, Type::I64};
     auto f = entry("mixed_entry");
-    f.parameters = {Type::ConsoleSession, Type::DisplaySession, Type::U8,
-                    Type::ByteSpan, Type("Packet"), Type::Bool};
+    f.parameters = {Type::ConsoleSession, Type::DisplaySession, Type::U8, Type::ByteSpan, Type("Packet"), Type::Bool};
     f.result = Type::Bool;
     f.frameBytes = 144;
     f.serviceSlots = {16, 32};
@@ -210,9 +227,15 @@ Module mixedEntry() {
     f.objectSlots = {{128, {"Packet", false}}};
     f.code = {BindServiceParameter{0, 16, service::Kind::Console},
               BindServiceParameter{1, 32, service::Kind::Display},
-              BindParameter{2, 40, Type::U8}, BindSpanParameter{3, 104},
-              BindObjectParameter{4, 128, "Packet"}, BindParameter{5, 136, Type::Bool},
-              Load{40, Type::U8}, Load{128, Type::U8}, EndSpan{104}, Load{136, Type::Bool}, Return{}};
+              BindParameter{2, 40, Type::U8},
+              BindSpanParameter{3, 104},
+              BindObjectParameter{4, 128, "Packet"},
+              BindParameter{5, 136, Type::Bool},
+              Load{40, Type::U8},
+              Load{128, Type::U8},
+              EndSpan{104},
+              Load{136, Type::Bool},
+              Return{}};
     m.functions = {f};
     return m;
 }
@@ -224,11 +247,21 @@ Module mixedForwarded() {
     caller.code.insert(caller.code.end(),
                        {AcquireServiceLoan{1, 16, service::Kind::Console},
                         AcquireServiceLoan{2, 32, service::Kind::Display},
-                        Load{40, Type::U8}, Push{}, Load{136, Type::Bool}, Push{},
-                        ServiceCall{"mixed_entry", 1, 0, {0, 0, 0, 104, 0, 0}, service::Kind::Console,
-                                    {{2, service::Kind::Display}}, {0, 0, 0, 0, 128, 0}},
+                        Load{40, Type::U8},
+                        Push{},
+                        Load{136, Type::Bool},
+                        Push{},
+                        ServiceCall{"mixed_entry",
+                                    1,
+                                    0,
+                                    {0, 0, 0, 104, 0, 0},
+                                    service::Kind::Console,
+                                    {{2, service::Kind::Display}},
+                                    {0, 0, 0, 0, 128, 0}},
                         ReleaseServiceLoan{2, service::Kind::Display},
-                        ReleaseServiceLoan{1, service::Kind::Console}, EndSpan{104}, Return{}});
+                        ReleaseServiceLoan{1, service::Kind::Console},
+                        EndSpan{104},
+                        Return{}});
     m.functions.push_back(caller);
     return m;
 }
@@ -316,31 +349,45 @@ int main() {
     good(mixedForwarded()); // Two services with interleaved scalar, span and copied lanes.
     for (const auto &[position, diagnostic] :
          std::vector<std::pair<int, const char *>>{{0, "service bindings must form the leading entry group"},
-                                                  {1, "service bindings must form the leading entry group"},
-                                                  {2, "parameter bindings must form the entry prefix"},
-                                                  {3, "span parameter bindings must form the entry prefix"},
-                                                  {4, "object parameter bindings must form the entry prefix"},
-                                                  {5, "parameter bindings must form the entry prefix"}})
-        bad(mixedEntry(), [=](auto &m) {
-            m.functions[0].code.erase(m.functions[0].code.begin() + position);
-        }, diagnostic);
-    for (const auto &[mutate, diagnostic] :
-         std::vector<std::pair<std::function<void(Module &)>, const char *>>{
-             {[](auto &m) { std::get<BindServiceParameter>(m.functions[0].code[1]).kind = service::Kind::Console; },
+                                                   {1, "service bindings must form the leading entry group"},
+                                                   {2, "parameter bindings must form the entry prefix"},
+                                                   {3, "span parameter bindings must form the entry prefix"},
+                                                   {4, "object parameter bindings must form the entry prefix"},
+                                                   {5, "parameter bindings must form the entry prefix"}})
+        bad(
+            mixedEntry(),
+            [=](auto &m) {
+                m.functions[0].code.erase(m.functions[0].code.begin() + position);
+            },
+            diagnostic);
+    for (const auto &[mutate, diagnostic] : std::vector<std::pair<std::function<void(Module &)>, const char *>>{
+             {[](auto &m) {
+                  std::get<BindServiceParameter>(m.functions[0].code[1]).kind = service::Kind::Console;
+              },
               "service binding requires exact authorized leading parameter"},
-             {[](auto &m) { std::get<BindServiceParameter>(m.functions[0].code[1]).offset = 16; },
+             {[](auto &m) {
+                  std::get<BindServiceParameter>(m.functions[0].code[1]).offset = 16;
+              },
               "service parameter bindings overlap"},
-             {[](auto &m) { std::get<BindSpanParameter>(m.functions[0].code[3]).offset = 40; },
+             {[](auto &m) {
+                  std::get<BindSpanParameter>(m.functions[0].code[3]).offset = 40;
+              },
               "span parameter requires exact typed spill"},
-             {[](auto &m) { m.functions[0].objectSlots[128].mutableValue = true; },
+             {[](auto &m) {
+                  m.functions[0].objectSlots[128].mutableValue = true;
+              },
               "object parameter must be readonly"},
-             {[](auto &m) { m.functions[0].arraySlots[40] = 1; },
+             {[](auto &m) {
+                  m.functions[0].arraySlots[40] = 1;
+              },
               "parameter cannot bind byte array origin storage"}})
         bad(mixedEntry(), mutate, diagnostic);
     copiedArgumentFacts();
-    for (const std::vector<int> offsets : {std::vector<int>{}, {0, 320}, {0, 320, 416, 0},
-                                          {320, 320, 416}, {0, 320, 320}, {0, 16, 416}, {0, 319, 416}})
-        bad(copiedArguments(), [&](auto &m) { copiedCall(m).objectArguments = offsets; });
+    for (const std::vector<int> &offsets :
+         {std::vector<int>{}, {0, 320}, {0, 320, 416, 0}, {320, 320, 416}, {0, 320, 320}, {0, 16, 416}, {0, 319, 416}})
+        bad(copiedArguments(), [&](auto &m) {
+            copiedCall(m).objectArguments = offsets;
+        });
     bad(copiedArguments(), [](auto &m) {
         m.functions[0].objectSlots[320].mutableValue = true;
     });
@@ -360,15 +407,23 @@ int main() {
         bad(copiedArguments(shape), [](auto &m) {
             m.functions[0].code.insert(m.functions[0].code.begin() + 9, EndObject{320});
         });
-        bad(copiedArguments(shape), [](auto &m) { copiedCall(m).resultOffset = 320; });
+        bad(copiedArguments(shape), [](auto &m) {
+            copiedCall(m).resultOffset = 320;
+        });
     }
-    bad(copiedArguments(), [](auto &m) { copiedCall(m).spanArguments[1] = 320; });
-    bad(copiedSpanArgument(), [](auto &m) { copiedCall(m).objectArguments[2] = 416; });
-    bad(copiedArguments(0, true), [](auto &m) { copiedCall(m).objectArguments[1] = 416; });
+    bad(copiedArguments(), [](auto &m) {
+        copiedCall(m).spanArguments[1] = 320;
+    });
+    bad(copiedSpanArgument(), [](auto &m) {
+        copiedCall(m).objectArguments[2] = 416;
+    });
+    bad(copiedArguments(0, true), [](auto &m) {
+        copiedCall(m).objectArguments[1] = 416;
+    });
     bad(copiedArguments(0, true), [](auto &m) {
         copiedCall(m).additionalServices[0].kind = service::Kind::Console;
     });
-    for (const auto type : {Type::ConsoleSession, Type::ByteSpan, Type::OwnedBytes, Type::ByteRegion})
+    for (const auto &type : {Type::ConsoleSession, Type::ByteSpan, Type::OwnedBytes, Type::ByteRegion})
         bad(copiedArguments(), [&](auto &m) {
             m.classFields["Packet"].push_back({type, 66, 0, false});
         });
@@ -386,7 +441,7 @@ int main() {
     });
     bad(copiedArguments(), [](auto &m) {
         m.functions[0].code.insert(m.functions[0].code.begin() + 9,
-                                  {Constant{65, Type::U8}, ServiceOperation{16, service::Operation::Put, 0}});
+                                   {Constant{65, Type::U8}, ServiceOperation{16, service::Operation::Put, 0}});
     });
     auto explicitZeroObjects = forwarded();
     std::get<ServiceCall>(explicitZeroObjects.functions[0].code[4]).objectArguments = {0, 0};
@@ -426,12 +481,17 @@ int main() {
             code.erase(code.end() - 2); // Incomplete return cannot initialize the caller's result.
         });
     }
-    for (const auto type : {Type::ConsoleSession, Type::ByteSpan, Type::OwnedBytes, Type::Ref})
-        bad(copiedResult(), [=](auto &m) { m.functions[1].result = type; });
+    for (const auto &type : {Type::ConsoleSession, Type::ByteSpan, Type::OwnedBytes, Type::Ref})
+        bad(copiedResult(), [=](auto &m) {
+            m.functions[1].result = type;
+        });
     bad(copiedResult(), [](auto &m) {
-        m.classFields["Reply"] = {{Type::U64, 0, 1, false}, {service::putResultType(), 1, 1, false},
-                                   {Type::U8, 2, 1, false}, {Type::U8, 3, 1, false}, {Type::Bool, 4, 1, false},
-                                   {Type::OwnedBytes, 5, 0, false}};
+        m.classFields["Reply"] = {{Type::U64, 0, 1, false},
+                                  {service::putResultType(), 1, 1, false},
+                                  {Type::U8, 2, 1, false},
+                                  {Type::U8, 3, 1, false},
+                                  {Type::Bool, 4, 1, false},
+                                  {Type::OwnedBytes, 5, 0, false}};
     });
     bad(copiedResult(), [](auto &m) {
         m.functions[0].code[3] = AggregateCall{"reply", {0}, 48};
@@ -450,59 +510,99 @@ int main() {
     }); // An ordinary helper result never relaxes the native report's exact type.
     // Same static report declaration, but inactive, ended or initialized along
     // the executed path: these must remain native lifetime/pristine checks.
-    bad(sample(), [](auto &m) {
-        m.functions[0].code.erase(m.functions[0].code.begin() + 1);
-    }, "service observation requires exact pristine active copied sample object");
-    bad(sample(), [](auto &m) {
-        m.functions[0].code.insert(m.functions[0].code.begin() + 2, EndObject{40});
-    }, "service observation requires exact pristine active copied sample object");
-    bad(sample(), [](auto &m) {
-        m.functions[0].code.insert(m.functions[0].code.begin() + 2, {Constant{0, Type::Bool}, Store{40, Type::Bool}});
-    }, "service observation cannot overwrite initialized sample storage");
-    bad(sample(), [](auto &m) {
-        const auto name = std::string(service::sampleName);
-        m.classLayouts["OtherSample"] = m.classLayouts.at(name);
-        m.classFields["OtherSample"] = m.classFields.at(name);
-        m.functions[0].objectSlots.at(40).className = "OtherSample";
-    }, "service observation requires exact pristine active copied sample object");
-    bad(sample(), [](auto &m) {
-        m.enumCases.erase(std::string(service::putResultName));
-        m.functions[0].code[2] = ServiceOperation{16, service::Operation::Put, 0};
-    }, "put requires closed enum result and no object storage");
-    bad(sample(), [](auto &m) {
-        m.functions[0].code[2] = ServiceOperation{16, service::Operation::Put, 0};
-    }, "missing or mistyped current value"); // Static declaration is valid; no current byte exists.
-    bad(sample(), [](auto &m) {
-        m.functions[0].frameBytes = 64;
-        m.functions[0].serviceSlots.insert(64);
-        std::get<ServiceOperation>(m.functions[0].code[2]).offset = 64;
-    }, "service operation requires active unsuspended capability provenance"); // Declared spill is not an entry root.
-    bad(forwarded(), [](auto &m) {
-        m.functions[0].frameBytes = 64;
-        m.functions[0].serviceSlots.insert(64);
-        std::get<AcquireServiceLoan>(m.functions[0].code[1]).offset = 64;
-    }, "service loan requires unsuspended parameter authority");
+    bad(
+        sample(),
+        [](auto &m) {
+            m.functions[0].code.erase(m.functions[0].code.begin() + 1);
+        },
+        "service observation requires exact pristine active copied sample object");
+    bad(
+        sample(),
+        [](auto &m) {
+            m.functions[0].code.insert(m.functions[0].code.begin() + 2, EndObject{40});
+        },
+        "service observation requires exact pristine active copied sample object");
+    bad(
+        sample(),
+        [](auto &m) {
+            m.functions[0].code.insert(m.functions[0].code.begin() + 2,
+                                       {Constant{0, Type::Bool}, Store{40, Type::Bool}});
+        },
+        "service observation cannot overwrite initialized sample storage");
+    bad(
+        sample(),
+        [](auto &m) {
+            const auto name = std::string(service::sampleName);
+            m.classLayouts["OtherSample"] = m.classLayouts.at(name);
+            m.classFields["OtherSample"] = m.classFields.at(name);
+            m.functions[0].objectSlots.at(40).className = "OtherSample";
+        },
+        "service observation requires exact pristine active copied sample object");
+    bad(
+        sample(),
+        [](auto &m) {
+            m.enumCases.erase(std::string(service::putResultName));
+            m.functions[0].code[2] = ServiceOperation{16, service::Operation::Put, 0};
+        },
+        "put requires closed enum result and no object storage");
+    bad(
+        sample(),
+        [](auto &m) {
+            m.functions[0].code[2] = ServiceOperation{16, service::Operation::Put, 0};
+        },
+        "missing or mistyped current value"); // Static declaration is valid; no current byte exists.
+    bad(
+        sample(),
+        [](auto &m) {
+            m.functions[0].frameBytes = 64;
+            m.functions[0].serviceSlots.insert(64);
+            std::get<ServiceOperation>(m.functions[0].code[2]).offset = 64;
+        },
+        "service operation requires active unsuspended capability provenance"); // Declared spill is not an entry root.
+    bad(
+        forwarded(),
+        [](auto &m) {
+            m.functions[0].frameBytes = 64;
+            m.functions[0].serviceSlots.insert(64);
+            std::get<AcquireServiceLoan>(m.functions[0].code[1]).offset = 64;
+        },
+        "service loan requires unsuspended parameter authority");
     for (const int id : {-1, 0}) {
-        bad(forwarded(), [=](auto &m) {
-            std::get<AcquireServiceLoan>(m.functions[0].code[1]).loanId = id;
-        }, "service loan identity cannot change static root or kind");
-        bad(forwarded(), [=](auto &m) {
-            std::get<ReleaseServiceLoan>(m.functions[0].code[5]).loanId = id;
-        }, "service release requires exactly one completed helper call");
+        bad(
+            forwarded(),
+            [=](auto &m) {
+                std::get<AcquireServiceLoan>(m.functions[0].code[1]).loanId = id;
+            },
+            "service loan identity cannot change static root or kind");
+        bad(
+            forwarded(),
+            [=](auto &m) {
+                std::get<ReleaseServiceLoan>(m.functions[0].code[5]).loanId = id;
+            },
+            "service release requires exactly one completed helper call");
     }
     for (const auto kind : {static_cast<service::Kind>(-1), static_cast<service::Kind>(999)})
-        bad(forwarded(), [=](auto &m) {
-            std::get<ReleaseServiceLoan>(m.functions[0].code[5]).kind = kind;
-        }, "service release requires exactly one completed helper call");
+        bad(
+            forwarded(),
+            [=](auto &m) {
+                std::get<ReleaseServiceLoan>(m.functions[0].code[5]).kind = kind;
+            },
+            "service release requires exactly one completed helper call");
     // Same ID and root pass the source identity check; the second acquisition
     // still fails because the first loan is live on this path.
-    bad(forwarded(), [](auto &m) {
-        m.functions[0].code.insert(m.functions[0].code.begin() + 2, AcquireServiceLoan{1, 16});
-    }, "service loan requires unsuspended parameter authority");
-    bad(forwarded(), [](auto &m) {
-        m.functions[0].code.insert(m.functions[0].code.begin() + 2, AcquireServiceLoan{1, 16});
-        std::get<ServiceOperation>(m.functions[1].code[3]).resultOffset = 24;
-    }, "put requires closed enum result and no object storage"); // Later static failure precedes earlier live-loan failure.
+    bad(
+        forwarded(),
+        [](auto &m) {
+            m.functions[0].code.insert(m.functions[0].code.begin() + 2, AcquireServiceLoan{1, 16});
+        },
+        "service loan requires unsuspended parameter authority");
+    bad(
+        forwarded(),
+        [](auto &m) {
+            m.functions[0].code.insert(m.functions[0].code.begin() + 2, AcquireServiceLoan{1, 16});
+            std::get<ServiceOperation>(m.functions[1].code[3]).resultOffset = 24;
+        },
+        "put requires closed enum result and no object storage"); // Later static failure precedes earlier live-loan failure.
     auto reused = forwarded();
     auto &reusedCode = reused.functions[0].code;
     reusedCode.insert(reusedCode.end() - 1,
@@ -558,21 +658,37 @@ int main() {
     bad(sample(), [](auto &m) {
         m.functions[0].serviceSlots.insert(24);
     });
-    bad(sample(), [](auto &m) {
-        std::get<ServiceOperation>(m.functions[0].code[2]).offset = 32;
-    }, "service operation requires active unsuspended capability provenance");
-    bad(sample(), [](auto &m) {
-        std::get<ServiceOperation>(m.functions[0].code[2]).operation = static_cast<service::Operation>(999);
-    }, "unknown sealed service operation");
-    bad(sample(), [](auto &m) {
-        std::get<ServiceOperation>(m.functions[0].code[2]).resultOffset = 32;
-    }, "service observation requires exact pristine active copied sample object");
-    bad(sample(), [](auto &m) {
-        m.functions[0].code.insert(m.functions[0].code.begin() + 3, ServiceOperation{16, service::Operation::Next, 40});
-    }, "service observation requires exact pristine active copied sample object");
-    bad(sample(), [](auto &m) {
-        m.functions[0].code.insert(m.functions[0].code.begin() + 2, AcquireServiceLoan{1, 16});
-    }, "service operation requires active unsuspended capability provenance");
+    bad(
+        sample(),
+        [](auto &m) {
+            std::get<ServiceOperation>(m.functions[0].code[2]).offset = 32;
+        },
+        "service operation requires active unsuspended capability provenance");
+    bad(
+        sample(),
+        [](auto &m) {
+            std::get<ServiceOperation>(m.functions[0].code[2]).operation = static_cast<service::Operation>(999);
+        },
+        "unknown sealed service operation");
+    bad(
+        sample(),
+        [](auto &m) {
+            std::get<ServiceOperation>(m.functions[0].code[2]).resultOffset = 32;
+        },
+        "service observation requires exact pristine active copied sample object");
+    bad(
+        sample(),
+        [](auto &m) {
+            m.functions[0].code.insert(m.functions[0].code.begin() + 3,
+                                       ServiceOperation{16, service::Operation::Next, 40});
+        },
+        "service observation requires exact pristine active copied sample object");
+    bad(
+        sample(),
+        [](auto &m) {
+            m.functions[0].code.insert(m.functions[0].code.begin() + 2, AcquireServiceLoan{1, 16});
+        },
+        "service operation requires active unsuspended capability provenance");
     bad(sample(), [](auto &m) {
         m.classLayouts[std::string(service::sampleName)][0] = Type::U64;
     });
@@ -591,27 +707,42 @@ int main() {
     bad(forwarded(), [](auto &m) {
         m.functions[0].code[4] = AggregateCall{"putter", {0, 0}, 0};
     });
-    bad(forwarded(), [](auto &m) {
-        m.functions[0].code.erase(m.functions[0].code.begin() + 1);
-    }, "service helper requires distinct acquired loans in leading positions");
+    bad(
+        forwarded(),
+        [](auto &m) {
+            m.functions[0].code.erase(m.functions[0].code.begin() + 1);
+        },
+        "service helper requires distinct acquired loans in leading positions");
     bad(forwarded(), [](auto &m) {
         m.functions[0].code.erase(m.functions[0].code.begin() + 5);
     });
-    bad(forwarded(), [](auto &m) {
-        m.functions[0].code.insert(m.functions[0].code.begin() + 2, ReleaseServiceLoan{1});
-    }, "service release requires exactly one completed helper call");
-    bad(forwarded(), [](auto &m) {
-        m.functions[0].code.insert(m.functions[0].code.begin() + 5, ServiceCall{"putter", 1, 0, {0, 0}});
-    }, "service helper requires an unused loan with exact provenance");
-    bad(forwarded(), [](auto &m) {
-        std::get<ServiceCall>(m.functions[0].code[4]).loanId = 2;
-    }, "service helper requires distinct acquired loans in leading positions");
+    bad(
+        forwarded(),
+        [](auto &m) {
+            m.functions[0].code.insert(m.functions[0].code.begin() + 2, ReleaseServiceLoan{1});
+        },
+        "service release requires exactly one completed helper call");
+    bad(
+        forwarded(),
+        [](auto &m) {
+            m.functions[0].code.insert(m.functions[0].code.begin() + 5, ServiceCall{"putter", 1, 0, {0, 0}});
+        },
+        "service helper requires an unused loan with exact provenance");
+    bad(
+        forwarded(),
+        [](auto &m) {
+            std::get<ServiceCall>(m.functions[0].code[4]).loanId = 2;
+        },
+        "service helper requires distinct acquired loans in leading positions");
     bad(forwarded(), [](auto &m) {
         std::get<ServiceCall>(m.functions[0].code[4]).spanArguments = {16, 0};
     });
-    bad(forwarded(), [](auto &m) {
-        m.functions[0].code[2] = Constant{65, Type::I64};
-    }, "service scalar argument mismatch");
+    bad(
+        forwarded(),
+        [](auto &m) {
+            m.functions[0].code[2] = Constant{65, Type::I64};
+        },
+        "service scalar argument mismatch");
     bad(forwarded(), [](auto &m) {
         m.functions[0].code.insert(m.functions[0].code.begin() + 2,
                                    {Constant{1, Type::Bool}, BranchFalse{99}, AcquireServiceLoan{2, 16}, Label{99}});

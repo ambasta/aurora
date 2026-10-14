@@ -26,8 +26,8 @@ auto need(bool condition, std::string_view message) -> void {
 }
 
 // Reuse both linked production turns and the existing grant with scripted I/O.
-using aurora::program::Submission;
 using aurora::program::Response;
+using aurora::program::Submission;
 using Action = Submission::Action;
 using ResponseKind = Response::Kind;
 std::vector<aurora::console::Sample> samples;
@@ -94,8 +94,7 @@ auto expect_input(const Submission &result, std::string_view expected, Action ac
              "reader copied bytes and zero suffix");
 }
 auto program_input() -> void {
-    const std::string rejected =
-        "\r\nLine rejected: too long, non-ASCII/control byte, or UART error.\r\naurora> ";
+    const std::string rejected = "\r\nLine rejected: too long, non-ASCII/control byte, or UART error.\r\naurora> ";
     struct Case {
         std::string text, expected;
         Action action;
@@ -110,12 +109,22 @@ auto program_input() -> void {
         {"upper\nstatus\n", "status", Action::upper_payload, 0, "upper\r\ntext> status\r\n"},
         {"upper\nexit\n", "exit", Action::upper_payload, 0, "upper\r\ntext> exit\r\n"},
         {"upper\r\n\n", "", Action::upper_payload, 0, "upper\r\ntext> \r\n"},
-        {"upper\n\b\x7f" "abx\bcZ!\r", "abcZ!", Action::upper_payload, 1,
+        {"upper\n\b\x7f"
+         "abx\bcZ!\r",
+         "abcZ!",
+         Action::upper_payload,
+         1,
          "upper\r\ntext> abx\b \bcZ!\r\n"},
         {"upper\nabx\x7fZ\n", "abZ", Action::upper_payload, 0, "upper\r\ntext> abx\b \bZ\r\n"},
-        {"upper\n" + std::string(64, 'a') + "\n", std::string(64, 'a'), Action::upper_payload, 0,
+        {"upper\n" + std::string(64, 'a') + "\n",
+         std::string(64, 'a'),
+         Action::upper_payload,
+         0,
          "upper\r\ntext> " + std::string(64, 'a') + "\r\n"},
-        {"upper\n" + std::string(65, 'a') + "\b\nq\n", "q", Action::command, 0,
+        {"upper\n" + std::string(65, 'a') + "\b\nq\n",
+         "q",
+         Action::command,
+         0,
          "upper\r\ntext> " + std::string(64, 'a') + rejected + "q\r\n"},
         {"exit\r", "", Action::requested_exit, 1, "exit\r\nAURORA_CONSOLE_EXIT\r\n"},
     };
@@ -144,7 +153,8 @@ auto program_input() -> void {
         "cat <name> / upper <name>  Protected read / atomic uppercase replacement\r\n"
         "ls / rm <name>     List / remove RAM files\r\nhelp    Show commands\r\n"
         "status  Show console state\r\nexit    Close this QEMU session\r\naurora> "
-        "status\r\nstatus: protected Aurora upper; two-domain copied stream; timer budgets; capacity=64\r\naurora> q\r\n";
+        "status\r\nstatus: protected Aurora upper; two-domain copied stream; timer budgets; capacity=64\r\naurora> "
+        "q\r\n";
     need(transcript == local_output, "help/status must finish locally with exactly one prompt per command");
     for (std::size_t position = 0; position < local_output.size(); ++position) {
         script("help\r\nstatus\nq\n", position);
@@ -180,7 +190,8 @@ auto program_input() -> void {
     expect_input(second, "exit", Action::upper_payload, 1);
     expect_input(read_input(second.after_cr()), "", Action::requested_exit, 0);
     expect_input(first, "one", Action::command, 1);
-    need(sample_index == samples.size() && transcript == "one\r\nupper\r\ntext> exit\r\nexit\r\nAURORA_CONSOLE_EXIT\r\n",
+    need(sample_index == samples.size() &&
+             transcript == "one\r\nupper\r\ntext> exit\r\nexit\r\nAURORA_CONSOLE_EXIT\r\n",
          "CRLF carry or copied submission changed across invocations");
 
     for (const auto damaged : {aurora::console::Sample{false, 0, true}, {true, 'x', true}, {true, '\r', true}}) {
@@ -318,8 +329,10 @@ auto program_response() -> void {
         ResponseKind kind;
         std::string payload, output;
     };
-    const Case cases[] = {
-        {ResponseKind::ready, "", "AURORA_PROGRAM_CONSOLE_READY: UEFI CPL3 upper/note, ASCII, 64-byte lines\r\naurora> "},
+    std::vector<Case> cases = {
+        {ResponseKind::ready,
+         "",
+         "AURORA_PROGRAM_CONSOLE_READY: UEFI CPL3 upper/note, ASCII, 64-byte lines\r\naurora> "},
         {ResponseKind::output, "AZ !~", "output> AZ !~\r\naurora> "},
         {ResponseKind::output, "", "output> \r\naurora> "},
         {ResponseKind::output, std::string(64, '~'), "output> " + std::string(64, '~') + "\r\naurora> "},
@@ -330,18 +343,36 @@ auto program_response() -> void {
         {ResponseKind::file_reply, "a b c", "a b c\r\naurora> "},
         {ResponseKind::file_reply, "", "\r\naurora> "},
         {ResponseKind::file_reply, std::string(64, ' '), std::string(64, ' ') + "\r\naurora> "},
-        {ResponseKind::stopped, "", "Program stopped: checked fault or budget exhausted; output discarded.\r\naurora> "},
+        {ResponseKind::stopped,
+         "",
+         "Program stopped: checked fault or budget exhausted; output discarded.\r\naurora> "},
         {ResponseKind::unknown, "", "Unknown command. Type help.\r\naurora> "},
     };
+    // The original native presenter wrote each bounded byte without imposing
+    // the input editor's printable-ASCII policy. Exercise every byte through
+    // both payload kinds, including NUL, controls and high bytes at full length.
+    for (const auto kind : {ResponseKind::output, ResponseKind::file_reply}) {
+        const std::string prefix = kind == ResponseKind::output ? "output> " : "";
+        const std::string binary{"\0\1\x1b\r\n\x7f\x80\xff", 8};
+        cases.push_back({kind, binary, prefix + binary + "\r\naurora> "});
+        for (unsigned base = 0; base < 256; base += 64) {
+            std::string payload;
+            for (unsigned offset = 0; offset < 64; ++offset)
+                payload += static_cast<char>(base + offset);
+            cases.push_back({kind, payload, prefix + payload + "\r\naurora> "});
+        }
+    }
     for (const auto &test : cases) {
         const auto record = response_record(test.kind, test.payload);
         script("later\n", test.output.size());
         need(present_response(copied_response(record)) == 1 && transcript == test.output &&
-                 output_attempts == test.output.size(), "response exact body and one complete prompt");
+                 output_attempts == test.output.size(),
+             "response exact body and one complete prompt");
         for (std::size_t position = 0; position < test.output.size(); ++position) {
             script("later\n", position);
             need(present_response(copied_response(record)) == 0 && transcript == test.output.substr(0, position) &&
-                     output_attempts == position + 1, "response timeout prefix, one failed write and no later prompt");
+                     output_attempts == position + 1,
+                 "response timeout prefix, one failed write and no later prompt");
         }
     }
     const auto reject = [](const Response::Record &record) {
@@ -361,8 +392,10 @@ auto program_response() -> void {
              !bounded.payload(std::as_bytes(std::span{oversized})) &&
              std::memcmp(bounded.data(), &record, sizeof(record)) == 0,
          "oversized native response copy must reject without changing the record");
-    for (const auto count : {std::int64_t{-1}, std::int64_t{65},
-                             std::numeric_limits<std::int64_t>::min(), std::numeric_limits<std::int64_t>::max()}) {
+    for (const auto count : {std::int64_t{-1},
+                             std::int64_t{65},
+                             std::numeric_limits<std::int64_t>::min(),
+                             std::numeric_limits<std::int64_t>::max()}) {
         auto bad = record;
         bad.count = count;
         reject(bad);
@@ -379,15 +412,12 @@ auto program_response() -> void {
         bad.kind = kind;
         reject(bad); // Do not pass noncanonical enum bits into typed Aurora.
     }
-    for (const unsigned byte : {0U, 31U, 127U, 128U, 255U}) {
-        auto bad = record;
-        bad.bytes[0] = static_cast<std::uint8_t>(byte);
-        reject(bad);
-    }
     for (const auto index : {1U, 63U}) {
-        auto bad = record;
-        bad.bytes[index] = 'x';
-        reject(bad);
+        for (const unsigned byte : {1U, 31U, 127U, 128U, 255U}) {
+            auto bad = record;
+            bad.bytes[index] = static_cast<std::uint8_t>(byte);
+            reject(bad);
+        }
     }
     auto bad_empty = response_record(ResponseKind::note_missing);
     bad_empty.bytes[63] = 'x';
@@ -747,9 +777,8 @@ auto generated_model() -> void {
 }
 } // namespace
 
-extern "C" void __au_runtime_console_next(const void *grant,
-                                          std::uint64_t generation,
-                                          aurora::console::RawSample *sample) {
+extern "C" void
+__au_runtime_console_next(const void *grant, std::uint64_t generation, aurora::console::RawSample *sample) {
     *sample = InputSession::next(grant, generation);
 }
 extern "C" std::uint64_t __au_runtime_console_put(const void *grant, std::uint64_t generation, std::uint64_t byte) {
@@ -831,7 +860,8 @@ auto main() -> int {
     }
     read_streams();
     generated_model();
-    std::cout << "PASS: source input/response turns, copied record validation, per-byte output failure, copied-byte and authenticated "
+    std::cout << "PASS: source input/response turns, copied record validation, per-byte output failure, copied-byte "
+                 "and authenticated "
                  "read/transform streams, ordered one-shot request/reply/ack, output staging and scrub; "
                  "40000 scalar model steps\n";
 }

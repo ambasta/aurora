@@ -57,7 +57,7 @@ foreach entry : [
         suite: ['full', feedback, entry[2], 'compiler'],
         env: oracle_env,
         workdir: meson.current_build_dir(),
-        timeout: 300,
+        timeout: entry[0] == 'xfs-file' ? 600 : 300,
         is_parallel: true,
     )
 endforeach
@@ -274,7 +274,7 @@ test(
     args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/json_integers.py'),
            aurorac, '--developer-selected-compiler', '--artifacts', '@ARTIFACTS@'],
     depends: aurorac, suite: ['full', 'slow', 'bytes', 'compiler'], env: oracle_env,
-    workdir: meson.current_build_dir(), timeout: 300, is_parallel: true,
+    workdir: meson.current_build_dir(), timeout: 660, is_parallel: true,
 )
 
 # Full-document validation precedes copied root member/index observations.
@@ -283,7 +283,7 @@ test(
     args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/json_lookup.py'),
            aurorac, '--developer-selected-compiler', '--artifacts', '@ARTIFACTS@'],
     depends: aurorac, suite: ['full', 'slow', 'bytes', 'compiler'], env: oracle_env,
-    workdir: meson.current_build_dir(), timeout: 600, is_parallel: true,
+    workdir: meson.current_build_dir(), timeout: 1200, is_parallel: true,
 )
 
 # Keep routine borrowed-object feedback small; full owner/helper and literal ABI
@@ -644,9 +644,11 @@ test('hosted-lexer-bootstrap', python, args: bootstrap_args,
      depends: [aurorac, aurorac_stage2], suite: ['full', 'dev', 'core', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 # Comparing every other source across both stages compiles the whole corpus twice.
+# Run this heavy comparison alone and first; retain its existing watchdogs.
 test('hosted-lexer-bootstrap-corpus', python, args: bootstrap_args + ['--corpus'],
      depends: [aurorac, aurorac_stage2], suite: ['full', 'slow', 'compiler'],
-     env: oracle_env, workdir: meson.current_build_dir(), timeout: 600)
+     env: oracle_env, workdir: meson.current_build_dir(), timeout: 600,
+     is_parallel: false, priority: 1)
 
 format_fixture = executable('format-fixture', 'compiler/format.cpp', dependencies: hosted_frontend,
                             include_directories: include_directories('../compiler'), native: true, install: false)

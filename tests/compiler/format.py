@@ -121,6 +121,16 @@ def main():
         require(run([qualified], 0).stdout == qualified_expected, "qualified-name CLI output is not idempotent")
         record = json.loads(run(["--check", "--diagnostics=json", qualified], 0).stderr)
         require(record["success"] and not record["changed"], "canonical qualified-name layout fails --check")
+        literal = root / "literal.au"
+        literal.write_text('module x;auto f()->i64{return g("' + "x" * 119 + '");}')
+        record = json.loads(run(["--check", "--diagnostics=json", literal], 1).stderr)
+        require(record["changed"], "oversized literal hid noncanonical layout")
+        literal.write_bytes(run([literal], 0).stdout)
+        record = json.loads(run(["--check", "--diagnostics=json", literal], 0).stderr)
+        require(record["success"] and not record["diagnostics"], "canonical oversized literal fails check")
+        literal.write_text(literal.read_text().replace("x" * 119, "x" * 118))
+        record = json.loads(run(["--check", "--diagnostics=json", literal], 0).stderr)
+        require(record["success"] and not record["changed"], "canonical indented literal fails check")
         bad = root / "bad.au"
         for text, code in [
             ("module x;auto f()->i64{return @;}", "AU1001"),

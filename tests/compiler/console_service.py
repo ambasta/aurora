@@ -615,7 +615,8 @@ int main() {
         Payload(builtin::ConsoleSample sample) : observation(sample), bytes{}, marker(Marker::okay) {}
         auto initialize() -> bool { bytes[0] = 'A'; bytes[2] = 255u8; return true; }
         auto matches(u8 first, Marker expected) const -> bool {
-            return observation.byte_present && observation.byte == 'A' && !observation.damaged
+            const builtin::ConsoleSample sample = observation;
+            return sample.byte_present && sample.byte == 'A' && !sample.damaged
                 && bytes[0] == first && bytes[1] == 0u8 && bytes[2] == 255u8 && marker == expected;
         }
         auto change() -> bool { bytes[0] = 'B'; marker = Marker::wrong; return true; }
@@ -671,7 +672,8 @@ int main() {
         const builtin::ConsoleSample report = result.sample();
         const Payload copied = result.payload();
         if (!original.matches('A', Marker::okay) || !copied.matches('B', Marker::wrong)
-            || !report.byte_present || report.byte != 'Q' || report.damaged || result.count() != 41 || odd(session) != 8) {
+            || !report.byte_present || report.byte != 'Q' || report.damaged || result.count() != 41 || \
+odd(session) != 8) {
             session.put('?');
         }
         return builtin::ConsoleCompletion::requested_exit;
@@ -700,7 +702,9 @@ int main() {
     )
     require(result.returncode == 0, result.stderr.decode())
     result = run([abi_binary], input=b"1 81 0\n")
-    require(result.returncode == 0 and result.stdout == b"z", "mixed copied service input/result/span/odd-depth failure")
+    require(
+        result.returncode == 0 and result.stdout == b"z", "mixed copied service input/result/span/odd-depth failure"
+    )
     modules = work / "modules"
     (modules / "service").mkdir(parents=True)
     (modules / "service/helpers.au").write_text("""export module service.helpers;
@@ -788,9 +792,9 @@ int main() {
         const builtin::ConsoleSample expected = session.next();
         const array<u8, 5> payload = "A\\0\\xffz!";
         const builtin::span<const u8> bytes = borrow_bytes(payload);
-        const console::WriteResult result = console::write(session, bytes.subspan(0, i64(request.byte)));
+        const console::WriteResult result = console::write_bytes(session, bytes.subspan(0, i64(request.byte)));
         const console::WriteResult copied = result;
-        const console::WriteResult empty = console::write(session, bytes.subspan(0, 0));
+        const console::WriteResult empty = console::write_bytes(session, bytes.subspan(0, 0));
         const bool complete = expected.byte == request.byte;
         if (result.written() != i64(expected.byte) || copied.written() != result.written()
             || copied.status() != result.status() || copied.complete() != result.complete()
@@ -906,7 +910,8 @@ int main() {
         ),
     }
     borrowed_parameter_error = (
-        "AU2001: borrowed parameters require a supported leading owning-class reference signature on an ordinary function"
+        "AU2001: borrowed parameters require a supported leading owning-class reference "
+        "signature on an ordinary function"
     )
     expected_errors = {
         "by-value": "AU3001: service functions require one leading exclusive sealed service reference",
@@ -956,7 +961,8 @@ int main() {
         f"RAM-note lifetime/replacement/rejection and {len(note_normal.stdout)} note timeout prefixes, "
         "byte-span comparisons, four-file policy/records/lifetime/rejections and "
         f"{len(file_normal.stdout)} file timeout prefixes, "
-        f"canonical host reports, copied service inputs/results/WriteResult prefixes and {len(negative)} source rejections; "
+        "canonical host reports, copied service inputs/results/WriteResult prefixes and "
+        f"{len(negative)} source rejections; "
         f"evidence {work}"
     )
 

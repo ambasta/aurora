@@ -33,11 +33,16 @@ void accept(const std::string &name, Module m) {
     ++accepted;
     std::cout << "PASS short-circuit IR " << name << '\n';
 }
-void rejection(const std::string &name, const std::function<void()> &operation, const std::string &diagnostic) {
+void rejection(const std::string &name,
+               const std::function<void()> &operation,
+               const std::string &diagnostic,
+               bool exact = false) {
     try {
         operation();
     } catch (const Error &error) {
-        check(std::string(error.what()).find(diagnostic) != std::string::npos,
+        check(exact ? error.diagnostic.code == DiagnosticCode::Unclassified &&
+                          error.diagnostic.message == "invalid typed IR: " + diagnostic
+                    : std::string(error.what()).find(diagnostic) != std::string::npos,
               name + ": wrong rejection: " + error.what());
         ++rejected;
         std::cout << "PASS short-circuit IR " << name << '\n';
@@ -45,13 +50,14 @@ void rejection(const std::string &name, const std::function<void()> &operation, 
     }
     throw Error(name + ": malformed IR accepted");
 }
-void reject(const std::string &name, Module m, const std::string &diagnostic) {
+void reject(const std::string &name, Module m, const std::string &diagnostic, bool exact = false) {
     rejection(
         name,
         [&] {
             (void)validate(std::move(m));
         },
-        diagnostic);
+        diagnostic,
+        exact);
 }
 
 // A real preserved scalar value, deliberately above both signed and unsigned
@@ -465,18 +471,31 @@ void directTests() {
     accept("sparse maximum label identity",
            moduleWith({Jump{sparseLabel}, Label{sparseLabel}, Constant{1, Type::I64}, Return{}}));
     accept("nonmonotone sparse labels resolve after sorting",
-           moduleWith({Jump{500000}, Label{sparseLabel}, Jump{0}, Label{500000}, Jump{17},
-                       Label{0}, Constant{1, Type::I64}, Return{}, Label{17}, Jump{sparseLabel}}));
+           moduleWith({Jump{500000},
+                       Label{sparseLabel},
+                       Jump{0},
+                       Label{500000},
+                       Jump{17},
+                       Label{0},
+                       Constant{1, Type::I64},
+                       Return{},
+                       Label{17},
+                       Jump{sparseLabel}}));
     reject("nonadjacent duplicate label after sorting",
-           moduleWith({Label{sparseLabel}, Label{0}, Label{500000}, Label{17}, Label{sparseLabel},
-                       Constant{1, Type::I64}, Return{}}),
+           moduleWith({Label{sparseLabel},
+                       Label{0},
+                       Label{500000},
+                       Label{17},
+                       Label{sparseLabel},
+                       Constant{1, Type::I64},
+                       Return{}}),
            "duplicate or invalid label");
     accept("return-free label jump cycle", moduleWith({Label{sparseLabel}, Jump{sparseLabel}}));
     accept("unreachable final label has no fallthrough",
            moduleWith({Constant{1, Type::I64}, Return{}, Label{sparseLabel}}));
     {
-        const auto checked = validate(moduleWith({Jump{sparseLabel}, Label{7}, Jump{sparseLabel},
-                                                  Label{sparseLabel}, Jump{sparseLabel}}));
+        const auto checked = validate(
+            moduleWith({Jump{sparseLabel}, Label{7}, Jump{sparseLabel}, Label{sparseLabel}, Jump{sparseLabel}}));
         const auto code = checked.get().functions[0].code;
         check(code.size() == 3 && code.idAt(0) == 1 && code.idAt(1) == 4 && code.idAt(2) == 5 &&
                   code.flowAt(0).target == CodePosition{1} && !code.flowAt(0).fallsThrough &&
@@ -487,11 +506,11 @@ void directTests() {
         std::cout << "PASS short-circuit IR stable IDs and backward target remapping\n";
     }
     {
-        const auto checked = validate(moduleWith({Constant{0, Type::Bool}, BranchFalse{sparseLabel},
-                                                  Label{sparseLabel}, Constant{1, Type::I64}, Return{}}));
+        const auto checked = validate(moduleWith(
+            {Constant{0, Type::Bool}, BranchFalse{sparseLabel}, Label{sparseLabel}, Constant{1, Type::I64}, Return{}}));
         const auto code = checked.get().functions[0].code;
-        check(code.flowAt(1).target == CodePosition{2} && code.flowAt(1).fallsThrough &&
-                  code.flowAt(2).blockEntry && !code.flowAt(4).target && !code.flowAt(4).fallsThrough,
+        check(code.flowAt(1).target == CodePosition{2} && code.flowAt(1).fallsThrough && code.flowAt(2).blockEntry &&
+                  !code.flowAt(4).target && !code.flowAt(4).fallsThrough,
               "identical branch target and fallthrough lost copied CFG facts");
         ++accepted;
         std::cout << "PASS short-circuit IR branch target equals fallthrough\n";
@@ -507,14 +526,21 @@ void directTests() {
            moduleWith({Label{sparseLabel}, Constant{0, Type::Bool}, BranchFalse{sparseLabel}}),
            "reachable fallthrough without return");
     reject("empty body precedes native state", moduleWith({}), "empty function body");
-    reject("negative label identity", moduleWith({Label{-1}, Constant{1, Type::I64}, Return{}}),
+    reject("negative label identity",
+           moduleWith({Label{-1}, Constant{1, Type::I64}, Return{}}),
            "duplicate or invalid label");
-    // Terminal shape is structural even when the return's value/lifetime would
-    // be invalid. All five forms must reject the later semantic instruction first.
-    for (const auto &terminal : std::vector<Instruction>{Return{}, ReturnObject{8}, ReturnSpan{56},
-                                                        ReturnBytes{40}, ReturnOwnedObject{40}})
-        reject("each return form terminates before native value state",
-               moduleWith({terminal, Push{}}), "unreachable semantic instruction");
+    // Keep the original mixed-fault inputs. Restored pre-migration ordering
+    // checks the reachable return before reporting its omitted semantic tail.
+    for (const auto &[terminal, diagnostic] : std::vector<std::pair<Instruction, const char *>>{
+             {Return{}, "missing or mistyped current value"},
+             {ReturnObject{8}, "object return requires class result; owning classes require an explicit move return"},
+             {ReturnSpan{56}, "span return requires const owning receiver field summary"},
+             {ReturnBytes{40}, "owner return nominal type mismatch"},
+             {ReturnOwnedObject{40}, "owning object return requires ordinary owning class result"}})
+        reject(std::string("reachable return precedes omitted semantic instruction: ") + diagnostic,
+               moduleWith({terminal, Push{}}),
+               diagnostic,
+               true);
     auto structuralFirst = moduleWith({Pop{}, Return{}});
     secondBody.code = {Constant{0, Type::Bool}, BranchFalse{99}, Constant{1, Type::I64}, Return{}};
     structuralFirst.functions.push_back(secondBody);
@@ -758,35 +784,66 @@ void directTests() {
 }
 
 void initializationOwnerRegressions() {
-    auto object = moduleWith({BeginObject{8}, Constant{1, Type::U8}, Store{8, Type::U8}, EndObject{8},
-                              BeginObject{8}, Constant{2, Type::U8}, Store{8, Type::U8}, EndObject{8},
-                              Constant{0, Type::I64}, Return{}});
+    auto object = moduleWith({BeginObject{8},
+                              Constant{1, Type::U8},
+                              Store{8, Type::U8},
+                              EndObject{8},
+                              BeginObject{8},
+                              Constant{2, Type::U8},
+                              Store{8, Type::U8},
+                              EndObject{8},
+                              Constant{0, Type::I64},
+                              Return{}});
     object.classLayouts["ByteBox"] = {Type::U8};
     object.functions[0].frameBytes = 16;
     object.functions[0].slots = {{8, Type::U8}};
     object.functions[0].objectSlots = {{8, {"ByteBox", false}}};
     accept("new object lifetime clears must and may facts", object);
-    object.functions[0].code = {BeginObject{8}, Constant{1, Type::U8}, Store{8, Type::U8}, EndObject{8},
-                                BeginObject{8}, Load{8, Type::U8}, EndObject{8}, Constant{0, Type::I64}, Return{}};
+    object.functions[0].code = {BeginObject{8},
+                                Constant{1, Type::U8},
+                                Store{8, Type::U8},
+                                EndObject{8},
+                                BeginObject{8},
+                                Load{8, Type::U8},
+                                EndObject{8},
+                                Constant{0, Type::I64},
+                                Return{}};
     reject("new object lifetime cannot read old initialized leaf", object, "load before initialization");
     // Entry's native State has no current value. The loop's incoming bool is
     // discarded by its usual merge, so only the new may fact schedules a revisit.
-    object.functions[0].code = {BeginObject{8}, Label{1}, Constant{1, Type::U8}, Store{8, Type::U8},
-                                Constant{1, Type::Bool}, BranchFalse{2}, Jump{1}, Label{2}, EndObject{8},
-                                Constant{0, Type::I64}, Return{}};
+    object.functions[0].code = {BeginObject{8},
+                                Label{1},
+                                Constant{1, Type::U8},
+                                Store{8, Type::U8},
+                                Constant{1, Type::Bool},
+                                BranchFalse{2},
+                                Jump{1},
+                                Label{2},
+                                EndObject{8},
+                                Constant{0, Type::I64},
+                                Return{}};
     reject("initialization-only backedge revisits immutable write", object, "write to initialized const object field");
 
-    auto empty = moduleWith({BeginObject{8}, Constant{1, Type::Bool}, BranchFalse{1}, InitializeEmptyObject{8},
-                             Label{1}, ReturnObject{8}}, Type("Empty"));
+    auto empty = moduleWith(
+        {BeginObject{8}, Constant{1, Type::Bool}, BranchFalse{1}, InitializeEmptyObject{8}, Label{1}, ReturnObject{8}},
+        Type("Empty"));
     empty.classLayouts["Empty"] = {};
     empty.functions[0].frameBytes = 16;
     empty.functions[0].objectSlots = {{8, {"Empty", false}}};
-    reject("zero scalar domain still needs logical object completion", empty, "empty object not completely initialized");
+    reject(
+        "zero scalar domain still needs logical object completion", empty, "empty object not completely initialized");
     empty.functions[0].code = {BeginObject{8}, InitializeEmptyObject{8}, ReturnObject{8}};
     accept("zero scalar domain explicitly completes empty object", empty);
 
-    auto array = moduleWith({BeginArray{8}, Constant{1, Type::U8}, Store{8, Type::U8}, EndArray{8}, BeginArray{8},
-                             Load{8, Type::U8}, EndArray{8}, Constant{0, Type::I64}, Return{}});
+    auto array = moduleWith({BeginArray{8},
+                             Constant{1, Type::U8},
+                             Store{8, Type::U8},
+                             EndArray{8},
+                             BeginArray{8},
+                             Load{8, Type::U8},
+                             EndArray{8},
+                             Constant{0, Type::I64},
+                             Return{}});
     array.functions[0].frameBytes = 16;
     array.functions[0].slots = {{8, Type::U8}};
     array.functions[0].arraySlots = {{8, 1}};
@@ -794,15 +851,14 @@ void initializationOwnerRegressions() {
 
     // A source batch may find a later missing fact early, but the verifier must
     // report each element's native lifetime checks at the original position.
-    auto mixed = moduleWith({BeginObject{16}, Constant{0, Type::I64}, BoundsGuard{16, 2, Type::I64},
-                             EndObject{16}, Return{}});
+    auto mixed =
+        moduleWith({BeginObject{16}, Constant{0, Type::I64}, BoundsGuard{16, 2, Type::I64}, EndObject{16}, Return{}});
     mixed.classLayouts["WordBox"] = {Type::I64};
     mixed.functions[0].frameBytes = 16;
     mixed.functions[0].slots = {{16, Type::I64}, {8, Type::I64}};
     mixed.functions[0].objectSlots = {{16, {"WordBox", true}}, {8, {"WordBox", true}}};
     reject("first missing element precedes later inactive object", mixed, "array element not initialized");
-    mixed.functions[0].code.insert(mixed.functions[0].code.begin() + 1,
-                                   {Constant{1, Type::I64}, Store{16, Type::I64}});
+    mixed.functions[0].code.insert(mixed.functions[0].code.begin() + 1, {Constant{1, Type::I64}, Store{16, Type::I64}});
     reject("inactive missing element reports its lifetime first", mixed, "object field access outside active lifetime");
 }
 
@@ -897,7 +953,8 @@ void resourceTests() {
         verification::Metrics metrics;
         verifyResource(f, &metrics);
         check(metrics.snapshots == 65536 && metrics.peakRetainedOperandFacts == 0 &&
-                  metrics.peakRetainedInitializationPayloadBytes == 0, "exact retained state accounting");
+                  metrics.peakRetainedInitializationPayloadBytes == 0,
+              "exact retained state accounting");
         ++accepted;
     }
     for (bool withMetrics : {false, true}) {

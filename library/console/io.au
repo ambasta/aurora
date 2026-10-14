@@ -25,7 +25,7 @@ export namespace console {
         }
     };
 
-    auto write(builtin::ConsoleSession& session, builtin::span<const u8> bytes) -> WriteResult {
+    auto write_bytes(builtin::ConsoleSession& session, builtin::span<const u8> bytes) -> WriteResult {
         i64 written = 0;
         while (written < bytes.size()) {
             if (session.put(bytes.at(written)) == builtin::ConsolePutResult::timeout) {

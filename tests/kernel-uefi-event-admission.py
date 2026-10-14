@@ -188,7 +188,15 @@ class EventAdmission(unittest.TestCase):
                 policy.event_object_policy(**changed)
 
     def test_event_reflection_helpers_are_profile_specific(self):
-        self.assertEqual(policy.EVENT_REFLECTION_HELPERS, {"aurora_reflect_size", "aurora_reflect_field_count"})
+        self.assertEqual(
+            policy.EVENT_REFLECTION_HELPERS,
+            {
+                "aurora_reflect_size",
+                "aurora_reflect_field_count",
+                "__au_reflect_s1_size",
+                "__au_reflect_s1_field_count",
+            },
+        )
         valid = fixture()
         policy.event_object_policy(**valid)
         for name in policy.EVENT_REFLECTION_HELPERS:
@@ -202,10 +210,31 @@ class EventAdmission(unittest.TestCase):
                     )
                 with self.subTest(missing=name, location=location), self.assertRaises(ValueError):
                     policy.event_object_policy(**changed)
+                for kind in ("t", "U", "W", "B", "D"):
+                    changed = copy.deepcopy(valid)
+                    if location == "linked":
+                        changed["symbols"] = changed["symbols"].replace(defined(name), defined(name, kind))
+                    else:
+                        changed["object_symbols"]["language"] = changed["object_symbols"]["language"].replace(
+                            defined(name), defined(name, kind)
+                        )
+                    with self.subTest(helper=name, location=location, kind=kind), self.assertRaises(ValueError):
+                        policy.event_object_policy(**changed)
+            for owner in policy.EVENT_OBJECTS - {"language"}:
+                changed = copy.deepcopy(valid)
+                changed["object_symbols"][owner] += defined(name)
+                with self.subTest(helper=name, owner=owner), self.assertRaises(ValueError):
+                    policy.event_object_policy(**changed)
+            for binding in (("LOCAL", "DEFAULT"), ("GLOBAL", "HIDDEN"), ("WEAK", "DEFAULT")):
+                changed = copy.deepcopy(valid)
+                changed["language_bindings"][name] = binding
+                with self.subTest(helper=name, binding=binding), self.assertRaises(ValueError):
+                    policy.event_object_policy(**changed)
         for name in (
-            "__au_reflect_s1_size",
-            "__au_reflect_s1_field_count",
             "__au_reflect_s2_size",
+            "__au_reflect_s2_field_count",
+            "__au_reflect_s01_size",
+            "__au_reflect_s1_address",
             "aurora_reflect_extra",
         ):
             changed = copy.deepcopy(valid)

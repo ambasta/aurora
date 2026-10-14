@@ -76,7 +76,9 @@ def shell_plan(*modes, data="", extra_env=None, root=ROOT, plan=True):
         env=env,
         capture_output=True,
         text=True,
-        timeout=10,
+        # Host-command runaway watchdog; Meson bounds the complete fixture to 300 seconds.
+        # Guest deadlines are checked separately in the emitted command.
+        timeout=30,
     )
 
 

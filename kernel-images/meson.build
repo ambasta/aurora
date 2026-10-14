@@ -206,6 +206,8 @@ foreach profile_id : profile_data['profiles'].split('|')
   endif
 
   # Native Meson compiles own C++ dependency files and compile_commands entries.
+  # Keep the closed protected supervisor within its existing 128 KiB reservation.
+  profile_options = kernel_options + {'optimization': admission == 'program' ? 's' : '2'}
   cpp_names = profile_data[key + '.cpp'].split('|')
   foreach name : cpp_names
     source = files('../' + profile_data[key + '.cpp.' + name])
@@ -216,7 +218,7 @@ foreach profile_id : profile_data['profiles'].split('|')
     endif
     native = static_library(prefix + '-' + name, [source, generated_headers],
       native: true, pic: false, install: false, build_by_default: false, implicit_include_directories: false,
-      override_options: kernel_options, build_subdir: output_subdir / 'native', cpp_args: flags)
+      override_options: profile_options, build_subdir: output_subdir / 'native', cpp_args: flags)
     sidecars = [name + '.o', name + '.su', name + '.source.json'] + (platform == 'uefi' ? [name + '.ci'] : [])
     objects += {name: custom_target(prefix + '-' + name + '-export', input: native.extract_objects(source),
       output: sidecars, build_subdir: object_subdir,

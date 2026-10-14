@@ -254,6 +254,7 @@ __attribute__((noinline)) auto program_save_file() -> void {
     require(command_files.publish(result),"file Aurora replacement accepted");
 }
 [[nodiscard]] auto program_command(program::Submission& input, bool reading=false, bool saving=false, bool file=false) -> bool {
+    using namespace std::literals::string_view_literals;
     require(!command_owned && program_boundary() && !mailbox && frames.used()==0 && !(reading && saving),
         "program command boundary");
     command_file=file;
@@ -276,7 +277,7 @@ __attribute__((noinline)) auto program_save_file() -> void {
     const auto grant=mailbox->endpoint(*domains[0].handle); require(grant.has_value(),"program command grant");
     ProgramSerial::text("AURORA_PROGRAM_COMMAND_BEGIN: grant="); ProgramSerial::number(grant->generation());
     ProgramSerial::text(" length="); ProgramSerial::number(input_length);
-    ProgramSerial::text(file ? (command_transform ? " domains=2 kind=upper-file\r\n" : " domains=2 kind=file\r\n") : reading ? " domains=2 kind=note\r\n" : saving ? " domains=2 kind=upper-note\r\n" : " domains=2 kind=upper\r\n");
+    ProgramSerial::text(file ? (command_transform ? " domains=2 kind=upper-file\r\n"sv : " domains=2 kind=file\r\n"sv) : reading ? " domains=2 kind=note\r\n"sv : saving ? " domains=2 kind=upper-note\r\n"sv : " domains=2 kind=upper\r\n"sv);
     bool success=true;
     while (const auto next=command_stream.next_input()) {
         const auto ordinal=next->ordinal();

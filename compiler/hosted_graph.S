@@ -52,4 +52,4 @@ graph_entry retained
     movq %rsi, %rdi
 graph_return retained, __aurora_frontend_graph_retained
 
-.section .note.GNU-stack,"",@progbits
+# The generated assembly in this same unit owns .note.GNU-stack.

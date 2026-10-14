@@ -1,6 +1,7 @@
 export module console.program_output;
 import console.io;
 import std.binary_buffer;
+import std.binary;
 
 export namespace console {
     enum class ProgramResponseKind {
@@ -23,8 +24,8 @@ export namespace console {
         i64 count;
         ProgramResponseKind kind;
     public:
-        ProgramResponse(std::BinaryBuffer64 value, i64 length, ProgramResponseKind outcome)
-            : bytes(value), count(length), kind(outcome) {
+        ProgramResponse(std::BinaryBuffer64 value, i64 length, ProgramResponseKind outcome) : bytes(value),
+            count(length), kind(outcome) {
         }
 
         auto status() const -> ProgramResponseKind {
@@ -41,28 +42,23 @@ export namespace console {
             if (count < 0 || count > 64) {
                 return false;
             }
-            if (kind != ProgramResponseKind::ready && kind != ProgramResponseKind::output
-                && kind != ProgramResponseKind::note_missing && kind != ProgramResponseKind::file_missing
-                && kind != ProgramResponseKind::note_saved && kind != ProgramResponseKind::file_saved
-                && kind != ProgramResponseKind::file_reply && kind != ProgramResponseKind::stopped
-                && kind != ProgramResponseKind::unknown) {
+            if (kind != ProgramResponseKind::ready && kind != ProgramResponseKind::output && kind
+                != ProgramResponseKind::note_missing && kind != ProgramResponseKind::file_missing && kind
+                != ProgramResponseKind::note_saved && kind != ProgramResponseKind::file_saved && kind
+                != ProgramResponseKind::file_reply && kind != ProgramResponseKind::stopped && kind
+                != ProgramResponseKind::unknown) {
                 return false;
             }
             const bool carries_bytes = kind == ProgramResponseKind::output || kind == ProgramResponseKind::file_reply;
             if (!carries_bytes && count != 0) {
                 return false;
             }
-            i64 index = 0;
+            // Presentation preserves every payload byte, including NUL and
+            // non-ASCII values. Only the unused suffix must be zero.
+            i64 index = count;
             while (index < 64) {
-                const u8 byte = bytes.at(index);
-                if (index < count) {
-                    if (byte < ' ' || byte > '~') {
-                        return false;
-                    }
-                } else {
-                    if (byte != '\0') {
-                        return false;
-                    }
+                if (bytes.at(index) != '\0') {
+                    return false;
                 }
                 index = index + 1;
             }
@@ -73,7 +69,7 @@ export namespace console {
 
 namespace console {
     auto program_response_text(builtin::ConsoleSession& session, builtin::span<const u8> text) -> bool {
-        const WriteResult result = write(session, text);
+        const WriteResult result = write_bytes(session, text);
         return result.complete();
     }
 }

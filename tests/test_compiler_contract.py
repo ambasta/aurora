@@ -680,7 +680,6 @@ class Controls(unittest.TestCase):
         # Source composition only. Actual linked/native observations remain
         # separate gates; these checks prevent accidentally restoring old stubs.
         for name in (
-            "kernel-uefi-ipc-tests.sh",
             "kernel-uefi-budget-tests.sh",
             "kernel-uefi-dispatch-tests.sh",
             "kernel-uefi-user-phases-tests.sh",
@@ -689,6 +688,21 @@ class Controls(unittest.TestCase):
             self.assertIn('compiler="${AURORAC:-build/aurorac}"', text)
             self.assertIn('if [[ -z "${AURORAC:-}" ]]; then make -C compiler; fi', text)
             self.assertIn('"$compiler" --module-root kernel/policies examples/kernel.au', text)
+        text = (ROOT / "scripts/kernel-uefi-ipc-tests.sh").read_text()
+        self.assertIn(': "${AURORAC:?', text)
+        self.assertIn('[[ -x "$AURORAC" ]]', text)
+        self.assertNotIn("make -C compiler", text)
+        self.assertNotIn("${AURORAC:-", text)
+        for fragment in (
+            'scripts/meson-native-fixture.py --compiler "$AURORAC"',
+            "--source examples/kernel-program-console.au --module-root kernel/policies --module-root library",
+            "--local-symbols --referenced-reflection-only",
+            "--bridge kernel/uefi/program-note-entry.S --bridge kernel/uefi/kernel-policy-entry.S",
+            "--object build/uefi/ipc-language.o --depfile build/uefi/ipc-language.d",
+            "tests/kernel-ipc.cpp build/uefi/ipc-language.o",
+            "tests/kernel-program-mailbox.cpp build/uefi/ipc-language.o",
+        ):
+            self.assertIn(fragment, text)
         text = (ROOT / "scripts/kernel-round-robin-tests.sh").read_text()
         self.assertIn('"$compiler" --module-root kernel/policies examples/kernel.au', text)
         self.assertIn("--redefine-sym aurora_kernel_round_robin_next=aurora_kernel_round_robin_next_real", text)

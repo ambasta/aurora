@@ -184,25 +184,31 @@ export namespace compiler_frontend {
     auto graph_release_workspace(builtin::ByteRegion region, compiler_ir_graph::Workspace workspace) -> i64 {
         return compiler_ir_graph::release_workspace(region, move(workspace));
     }
-    auto graph_set_function(compiler_ir_graph::Input& input, i64 index, compiler_ir_graph::FunctionRow function) -> bool {
+    auto graph_set_function(compiler_ir_graph::Input& input, i64 index,
+        compiler_ir_graph::FunctionRow function) -> bool {
         return compiler_ir_graph::set_function(input, index, function);
     }
     auto graph_set_edge(compiler_ir_graph::Input& input, i64 index, i64 target) -> bool {
         return compiler_ir_graph::set_edge(input, index, target);
     }
-    auto graph_run(compiler_ir_graph::Workspace& workspace, const compiler_ir_graph::Input& input)
-        -> compiler_ir_graph::GraphStatus {
+    auto graph_run(compiler_ir_graph::Workspace& workspace,
+        const compiler_ir_graph::Input& input) -> compiler_ir_graph::GraphStatus {
         return compiler_ir_graph::run(workspace, input);
     }
     auto graph_retained(const compiler_ir_graph::Workspace& workspace, i64 index) -> bool {
         return compiler_ir_graph::retained(workspace, index);
     }
-    auto metadata_create(builtin::ByteRegion region, compiler_ir_metadata::InputCounts counts,
-        i64 callableCount, i64 slotCount, i64 instructionBegin)
-        -> compiler_ir_metadata::MetadataStore {
-        compiler_ir_metadata::MetadataStore result = compiler_ir_metadata::create(region, counts, callableCount,
-            slotCount, instructionBegin);
+    auto metadata_flag_masks() -> compiler_ir_metadata::FlagMasks {
+        const compiler_ir_metadata::FlagMasks result = compiler_ir_metadata::flag_masks();
+        return result;
+    }
+    auto metadata_create(builtin::ByteRegion region) -> compiler_ir_metadata::MetadataStore {
+        compiler_ir_metadata::MetadataStore result = compiler_ir_metadata::create(region);
         return move(result);
+    }
+    auto metadata_initialize(compiler_ir_metadata::MetadataStore& store, compiler_ir_metadata::InputCounts counts,
+        i64 callableCount, i64 slotCount, i64 instructionBegin) -> bool {
+        return store.initialize(counts, callableCount, slotCount, instructionBegin);
     }
     auto metadata_release(builtin::ByteRegion region, compiler_ir_metadata::MetadataStore store) -> i64 {
         return compiler_ir_metadata::release(region, move(store));
@@ -216,17 +222,17 @@ export namespace compiler_frontend {
     auto metadata_error(const compiler_ir_metadata::MetadataStore& store) -> compiler_ir_metadata::MetadataError {
         return store.error();
     }
-    auto metadata_object_leaf_root(const compiler_ir_metadata::MetadataStore& store,
-        i64 callable, i64 offset) -> i64 {
+    auto metadata_object_leaf_root(const compiler_ir_metadata::MetadataStore& store, i64 callable, i64 offset) -> i64 {
         return compiler_ir_metadata::object_leaf_root(store, callable, offset);
     }
-    auto metadata_byte_array_element_root(const compiler_ir_metadata::MetadataStore& store,
-        i64 callable, i64 offset) -> i64 {
+    auto metadata_byte_array_element_root(const compiler_ir_metadata::MetadataStore& store, i64 callable,
+        i64 offset) -> i64 {
         return compiler_ir_metadata::byte_array_element_root(store, callable, offset);
     }
-    auto instructions_create(builtin::ByteRegion region, compiler_ir_instructions::InstructionCounts counts)
-        -> compiler_ir_instructions::InstructionStore {
-        compiler_ir_instructions::InstructionStore result = compiler_ir_instructions::create(region, counts);
+    auto instructions_create(builtin::ByteRegion region, i64 instructionCount, i64 operandCount, i64 literalCount,
+        i64 bodyCount) -> compiler_ir_instructions::InstructionStore {
+        compiler_ir_instructions::InstructionStore result = compiler_ir_instructions::create(region, instructionCount,
+            operandCount, literalCount, bodyCount);
         return move(result);
     }
     auto instructions_release(builtin::ByteRegion region, compiler_ir_instructions::InstructionStore store) -> i64 {
@@ -246,8 +252,8 @@ export namespace compiler_frontend {
     auto instructions_publish(compiler_ir_instructions::InstructionStore& store) -> bool {
         return store.publish();
     }
-    auto instructions_error(const compiler_ir_instructions::InstructionStore& store)
-        -> compiler_ir_instructions::InstructionError {
+    auto instructions_error(const compiler_ir_instructions::InstructionStore& store) ->
+        compiler_ir_instructions::InstructionError {
         return store.error();
     }
     auto initialization_create(builtin::ByteRegion region) -> compiler_ir_initialization::InitializationWorkspace {
@@ -261,8 +267,8 @@ export namespace compiler_frontend {
     auto initialization_allocated(const compiler_ir_initialization::InitializationWorkspace& workspace) -> bool {
         return workspace.allocated();
     }
-    auto initialization_status(const compiler_ir_initialization::InitializationWorkspace& workspace)
-        -> compiler_ir_initialization::InitializationStatus {
+    auto initialization_status(const compiler_ir_initialization::InitializationWorkspace& workspace) ->
+        compiler_ir_initialization::InitializationStatus {
         return workspace.status();
     }
     auto initialization_slot_count(const compiler_ir_initialization::InitializationWorkspace& workspace) -> i64 {
@@ -287,13 +293,13 @@ export namespace compiler_frontend {
     auto initialization_retain(compiler_ir_initialization::InitializationWorkspace& workspace) -> i64 {
         return workspace.retain();
     }
-    auto initialization_join(compiler_ir_initialization::InitializationWorkspace& workspace, i64 id)
-        -> compiler_ir_initialization::InitializationJoin {
+    auto initialization_join(compiler_ir_initialization::InitializationWorkspace& workspace,
+        i64 id) -> compiler_ir_initialization::InitializationJoin {
         return workspace.join(id);
     }
     auto initialization_initialize(compiler_ir_initialization::InitializationWorkspace& workspace,
-        const compiler_ir_metadata::MetadataStore& metadata, i64 callable)
-        -> compiler_ir_initialization::InitializationStatus {
+        const compiler_ir_metadata::MetadataStore& metadata,
+        i64 callable) -> compiler_ir_initialization::InitializationStatus {
         return compiler_ir_initialization::initialize(workspace, metadata, callable);
     }
     auto initialization_scalar_state(compiler_ir_initialization::InitializationWorkspace& workspace,

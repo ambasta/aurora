@@ -60,4 +60,4 @@ initialization_return \operation, \target
 .endm
 initialization_array array_first_missing, __aurora_frontend_initialization_array_first_missing
 initialization_array clear_array, __aurora_frontend_initialization_clear_array
-.section .note.GNU-stack,"",@progbits
+# The generated assembly in this same unit owns .note.GNU-stack.

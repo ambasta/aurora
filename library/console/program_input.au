@@ -2,6 +2,7 @@ export module console.program_input;
 import console.io;
 import console.line;
 import std.binary_buffer;
+import std.binary;
 
 export namespace console {
     enum class ProgramInputAction {
@@ -19,15 +20,15 @@ export namespace console {
         ProgramInputAction action;
         u64 after_cr;
     public:
-        ProgramSubmission(std::BinaryBuffer64 value, i64 length, ProgramInputAction outcome, u64 carry)
-            : bytes(value), count(length), action(outcome), after_cr(carry) {
+        ProgramSubmission(std::BinaryBuffer64 value, i64 length, ProgramInputAction outcome, u64 carry) : bytes(value),
+            count(length), action(outcome), after_cr(carry) {
         }
     };
 }
 
 namespace console {
     auto program_text(builtin::ConsoleSession& session, builtin::span<const u8> text) -> bool {
-        const WriteResult result = write(session, text);
+        const WriteResult result = write_bytes(session, text);
         return result.complete();
     }
 }
@@ -66,10 +67,9 @@ export namespace console {
                                 // including empty input and help/status/exit.
                                 if (text_input || event == ConsoleEvent::unknown) {
                                     const i64 count = line.submission_size();
-                                    const bool upper = !text_input && count == 5
-                                        && line.submission_byte(0) == 'u' && line.submission_byte(1) == 'p'
-                                        && line.submission_byte(2) == 'p' && line.submission_byte(3) == 'e'
-                                        && line.submission_byte(4) == 'r';
+                                    const bool upper = !text_input && count == 5 && line.submission_byte(0) == 'u'
+                                        && line.submission_byte(1) == 'p' && line.submission_byte(2) == 'p'
+                                        && line.submission_byte(3) == 'e' && line.submission_byte(4) == 'r';
                                     if (upper) {
                                         text_input = true;
                                         okay = program_text(session, "\r\ntext> ");
@@ -119,12 +119,10 @@ export namespace console {
                     }
                 }
                 if (!okay) {
-                    return ProgramSubmission(std::BinaryBuffer64(), 0,
-                        ProgramInputAction::output_failure, carry);
+                    return ProgramSubmission(std::BinaryBuffer64(), 0, ProgramInputAction::output_failure, carry);
                 }
             }
         }
-        return ProgramSubmission(std::BinaryBuffer64(), 0,
-            ProgramInputAction::output_failure, 0u64);
+        return ProgramSubmission(std::BinaryBuffer64(), 0, ProgramInputAction::output_failure, 0u64);
     }
 }

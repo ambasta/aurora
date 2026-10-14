@@ -347,6 +347,26 @@ inline std::string layout(const LexedSource &source, const Program &program) {
     return result;
 }
 
+// A standalone literal cannot be split to fit its canonical indentation.
+// Keep this exception narrower than general indivisible expressions or deep
+// indentation: only a standalone literal and its closing punctuation qualify.
+inline bool oversizedLiteralLine(const LexedSource &source, std::size_t begin, std::size_t end) {
+    const auto &text = source.source->text;
+    auto first = begin;
+    while (first < end && text[first] == ' ')
+        ++first;
+    const auto token =
+        std::lower_bound(source.tokens.begin(), source.tokens.end(), first, [](const Token &value, std::size_t offset) {
+            return value.span.begin.offset < offset;
+        });
+    if (token == source.tokens.end() || token->span.begin.offset != first || token->text.empty() ||
+        token->text.front() != '"' || token->span.end.offset > end)
+        return false;
+    const auto suffix = std::string_view(text).substr(token->span.end.offset, end - token->span.end.offset);
+    return suffix.find_first_not_of(";,)]") == std::string_view::npos &&
+           first - begin + 2 + suffix.size() <= columnLimit;
+}
+
 inline std::vector<Finding> styleFindings(const LexedSource &source) {
     std::vector<Finding> findings;
     SourcePosition position;
@@ -361,7 +381,7 @@ inline std::vector<Finding> styleFindings(const LexedSource &source) {
                               {begin, lineStart.line, static_cast<int>(begin - lineStart.offset + 1)},
                               {finish, lineStart.line, static_cast<int>(finish - lineStart.offset + 1)}};
         };
-        if (end - position.offset > columnLimit)
+        if (end - position.offset > columnLimit && !oversizedLiteralLine(source, position.offset, end))
             findings.push_back({"AUF1001",
                                 "line exceeds 120 byte columns; comments and tokens are never split",
                                 span(position.offset + columnLimit, end)});
