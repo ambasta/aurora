@@ -347,7 +347,7 @@ inline std::string layout(const LexedSource &source, const Program &program) {
     return result;
 }
 
-// A literal wider than the target cannot be repaired without changing tokens.
+// A standalone literal cannot be split to fit its canonical indentation.
 // Keep this exception narrower than general indivisible expressions or deep
 // indentation: only a standalone literal and its closing punctuation qualify.
 inline bool oversizedLiteralLine(const LexedSource &source, std::size_t begin, std::size_t end) {
@@ -360,7 +360,7 @@ inline bool oversizedLiteralLine(const LexedSource &source, std::size_t begin, s
             return value.span.begin.offset < offset;
         });
     if (token == source.tokens.end() || token->span.begin.offset != first || token->text.empty() ||
-        token->text.front() != '"' || token->text.size() <= columnLimit || token->span.end.offset > end)
+        token->text.front() != '"' || token->span.end.offset > end)
         return false;
     const auto suffix = std::string_view(text).substr(token->span.end.offset, end - token->span.end.offset);
     return suffix.find_first_not_of(";,)]") == std::string_view::npos &&

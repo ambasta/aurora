@@ -129,11 +129,8 @@ def main():
         record = json.loads(run(["--check", "--diagnostics=json", literal], 0).stderr)
         require(record["success"] and not record["diagnostics"], "canonical oversized literal fails check")
         literal.write_text(literal.read_text().replace("x" * 119, "x" * 118))
-        record = json.loads(run(["--check", "--diagnostics=json", literal], 1).stderr)
-        require(
-            not record["changed"] and record["diagnostics"][0]["code"] == "AUF1001",
-            "120-byte literal overflowing from indentation was exempted",
-        )
+        record = json.loads(run(["--check", "--diagnostics=json", literal], 0).stderr)
+        require(record["success"] and not record["changed"], "canonical indented literal fails check")
         bad = root / "bad.au"
         for text, code in [
             ("module x;auto f()->i64{return @;}", "AU1001"),

@@ -185,9 +185,12 @@ void oversizedStrings() {
         const auto findings = aurora::format::styleFindings(aurora::lexSource("        " + literal + suffix + "\n"));
         require(findings.empty(), "standalone oversized literal was not exempted");
     }
-    for (const auto &line : {"        \"" + std::string(118, 'x') + "\";", // 120-byte token
-                             std::string(24, ' ') + "\"" + std::string(100, 'x') + "\";",
-                             std::string(120, ' ') + literal + ";", // indentation itself is too wide
+    for (const auto &line :
+         {"        \"" + std::string(118, 'x') + "\";", std::string(24, ' ') + "\"" + std::string(100, 'x') + "\";"}) {
+        require(aurora::format::styleFindings(aurora::lexSource(line + "\n")).empty(),
+                "standalone literal at canonical indentation was not exempted");
+    }
+    for (const auto &line : {std::string(120, ' ') + literal + ";", // indentation itself is too wide
                              "        return " + literal + ";",
                              "        " + literal + " + value;",
                              "        " + literal + ".member;",

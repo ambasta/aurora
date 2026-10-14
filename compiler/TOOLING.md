@@ -189,14 +189,12 @@ indentation may exceed 120 bytes. They are preserved and normally reported; this
 does not promise a strict 120-column result. The limit counts bytes, not Unicode
 display cells, codepoints or UTF-16 units.
 
-A narrowly bounded exception permits a standalone byte-string token whose source
-spelling (including quotes and escapes) itself exceeds 120 bytes. The line must
-contain only leading spaces, that one literal, and optional closing punctuation
-(`;`, `,`, `)`, `]`). Replacing the literal with `""` must bring the line within
-120 bytes. Such a line has no AUF1001 finding: Aurora has no string-token splitting
-or concatenation syntax. Canonical layout is still required by `--check`, and all
-other findings remain active. Shorter literals overflowing because of indentation,
-comments, identifiers, member chains, and other code receive no exception.
+A standalone byte-string line may exceed 120 bytes because Aurora cannot split
+or concatenate string tokens. It must contain only leading spaces, one literal,
+and optional closing punctuation (`;`, `,`, `)`, `]`); replacing the literal with
+`""` must fit within 120 bytes. Canonical layout and all other findings remain
+required by `--check`. Comments, identifiers, member chains, and other code
+receive no exception.
 
 Style findings are `AUF1001` (line above 120 bytes), `AUF1002` (trailing space, tab
 or CR), and `AUF1003` (tab indentation or a non-four-space leading count). They have
