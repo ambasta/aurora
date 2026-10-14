@@ -31,6 +31,11 @@ namespace console {
         const WriteResult result = write_bytes(session, text);
         return result.complete();
     }
+
+    auto program_status(builtin::ConsoleSession& session) -> bool {
+        return program_text(session,
+            "\r\nstatus: protected Aurora upper; two-domain copied stream; timer budgets; capacity=64\r\naurora> ");
+    }
 }
 
 export namespace console {
@@ -99,8 +104,7 @@ export namespace console {
                                             "\r\nupper   Uppercase a line in a protected Aurora program\r\nwrite note <text>  Replace the RAM note (53 ASCII bytes)\r\ncat note          Read the note in protected Aurora\r\nupper note        Replace the note with protected uppercase output\r\nwrite <name> <text>  Write one of four RAM files (8-byte name, 49-byte content)\r\ncat <name> / upper <name>  Protected read / atomic uppercase replacement\r\nls / rm <name>     List / remove RAM files\r\nhelp    Show commands\r\nstatus  Show console state\r\nexit    Close this QEMU session\r\naurora> ");
                                     } else {
                                         if (event == ConsoleEvent::status) {
-                                            okay = program_text(session,
-                                                "\r\nstatus: protected Aurora upper; two-domain copied stream; timer budgets; capacity=64\r\naurora> ");
+                                            okay = program_status(session);
                                         } else {
                                             if (event == ConsoleEvent::exit) {
                                                 okay = program_text(session, "\r\nAURORA_CONSOLE_EXIT\r\n");

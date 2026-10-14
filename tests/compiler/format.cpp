@@ -174,6 +174,39 @@ void byteStrings() {
         rejected("module x;auto f()->u8{const array<u8,1> a=" + spelling + ";return a[0];}",
                  aurora::DiagnosticCode::InvalidByteStringLiteral);
 }
+void oversizedStrings() {
+    const auto has = [](const std::vector<aurora::format::Finding> &findings, const std::string &code) {
+        return std::any_of(findings.begin(), findings.end(), [&](const auto &finding) {
+            return finding.code == code;
+        });
+    };
+    const std::string literal = "\"" + std::string(119, 'x') + "\""; // 121 source bytes
+    for (const auto &suffix : {";", ");", "));", ",", "]);"}) {
+        const auto findings = aurora::format::styleFindings(aurora::lexSource("        " + literal + suffix + "\n"));
+        require(findings.empty(), "standalone oversized literal was not exempted");
+    }
+    for (const auto &line : {"        \"" + std::string(118, 'x') + "\";", // 120-byte token
+                             std::string(24, ' ') + "\"" + std::string(100, 'x') + "\";",
+                             std::string(120, ' ') + literal + ";", // indentation itself is too wide
+                             "        return " + literal + ";",
+                             "        " + literal + " + value;",
+                             "        " + literal + ".member;",
+                             "\t" + literal + ";",
+                             "        " + literal + " \"second\";",
+                             "        " + literal + "; // comment",
+                             "        " + std::string(121, 'x') + ";",
+                             "        // " + literal}) {
+        require(has(aurora::format::styleFindings(aurora::lexSource(line + "\n")), "AUF1001"),
+                "non-literal excess incorrectly exempted: " + line);
+    }
+    const auto whitespace = aurora::format::styleFindings(aurora::lexSource(" " + literal + "; \n"));
+    require(has(whitespace, "AUF1002") && has(whitespace, "AUF1003"), "literal hid whitespace findings");
+    const auto formatted = aurora::format::source("module x;auto f()->i64{return g(" + literal + ");}");
+    require(formatted.changed, "literal exception hid noncanonical layout");
+    const auto canonical = aurora::format::source(formatted.text);
+    require(!canonical.changed && canonical.findings.empty(), "canonical oversized literal fails check");
+    verify(formatted.text, "oversized-string.au");
+}
 void cases() {
     golden("module x;auto f()->u64{return 0b10001'10001'10001'11111'10001'10001'01110u64;}",
            "module x;\nauto f() -> u64 {\n"
@@ -328,6 +361,7 @@ int main(int argc, char **argv) {
         parenthesizedReturns();
         byteLiterals();
         byteStrings();
+        oversizedStrings();
         cases();
         for (int index = 1; index < argc; ++index)
             verify(read(argv[index]), argv[index]);
