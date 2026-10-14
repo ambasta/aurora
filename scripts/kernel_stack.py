@@ -15,6 +15,7 @@ import struct
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
+CPP_HEADER_ROOT = Path("/usr/include/c++/16")
 CPP_OBJECTS = ("payload", "acpi", "pci", "runtime", "owned-bytes-runtime", "owned-bytes-profile")
 STACK_BYTES = 16384
 STACK_CAP = 15360
@@ -474,6 +475,24 @@ def object_source(directory, name, source_root=None):
     return str(expected), compile_directory
 
 
+def frame_source(source, root, *, native=False, compile_directory=None):
+    """Resolve reviewed source origins, not a proof of compiler/header safety."""
+    reported = (compile_directory or root) / source
+    location = reported.resolve(strict=True)
+    if reported.is_relative_to(CPP_HEADER_ROOT):
+        require(native, "Historical compiler frame outside kernel source inventory")
+        require(CPP_HEADER_ROOT.resolve(strict=True) == CPP_HEADER_ROOT, "Noncanonical compiler header root")
+        require(location.is_relative_to(CPP_HEADER_ROOT), "Compiler header escaped supported root")
+        identity = str(location)
+    else:
+        require(location.is_relative_to(root / "kernel"), "Compiler frame outside selected kernel sources")
+        identity = location.relative_to(root).as_posix()
+    require(location.is_file(), "Compiler frame source is not a regular file")
+    with location.open("rb"):
+        pass  # Fail closed on unreadable files, including at the normalization boundary.
+    return location, identity
+
+
 def object_stack_rows(directory, name, symbols, edges=None, source_root=None, allow_bounded=None):
     source, compile_directory = object_source(directory, name, source_root)
     text = (directory / "objects" / (name + ".su")).read_text()
@@ -487,17 +506,14 @@ def object_stack_rows(directory, name, symbols, edges=None, source_root=None, al
         edges,
         compile_directory if native else None,
     )
-    if native:
-        root = Path(source_root or ROOT).resolve(strict=True)
-        normalized, identities = {}, set()
-        for name, row in associated.items():
-            location = (compile_directory / row.source).resolve(strict=True)
-            require(location.is_relative_to(root / "kernel"), "Compiler frame outside selected kernel sources")
-            normalized[name] = replace(row, source=location.relative_to(root).as_posix())
-            require(normalized[name].identity not in identities, "Aliased native compiler source record")
-            identities.add(normalized[name].identity)
-        return normalized
-    return associated
+    root = Path(source_root or ROOT).resolve(strict=True)
+    normalized, identities = {}, set()
+    for name, row in associated.items():
+        _, identity = frame_source(row.source, root, native=native, compile_directory=compile_directory)
+        normalized[name] = replace(row, source=identity)
+        require(normalized[name].identity not in identities, "Aliased compiler source record")
+        identities.add(normalized[name].identity)
+    return normalized
 
 
 def source_frame_symbol(associations, object_name, source, signature):
@@ -523,14 +539,17 @@ def cpp_frames(directory, linked, objects=None, edges=None, source_root=None, al
         for symbol, row in rows.items():
             require(symbol in linked.functions, "Object function omitted from linked profile")
             candidates.setdefault(symbol, []).append((obj, row, {(a, b) for a, b in calls if a == symbol}))
+    # Every native object above has passed object_source's exact compile binding.
+    # A historical directory never gains header eligibility from an absolute row.
+    native = directory.parent.name == "uefi" and directory.parent.parent.name == "kernel-images"
     for symbol, variants in candidates.items():
         matched = compiler_witnesses(linked, symbol, variants)
         associated[symbol] = matched[0][1].size
         if edges is not None:
             edges.update(matched[0][2])
         for obj, row, _ in matched:
-            source = (root / row.source).resolve()
-            require(source.is_relative_to(root / "kernel"), "Compiler frame outside kernel source inventory")
+            source, identity = frame_source(row.source, root, native=native)
+            require(identity == row.source, "Noncanonical compiler frame source identity")
             contents = source.read_bytes()
             lines = contents.decode().splitlines()
             require(row.line <= len(lines) and row.column <= len(lines[row.line - 1]) + 1, "Invalid frame location")

@@ -266,6 +266,16 @@ control-transfer forms reject. Compiler metadata and trusted inline assembly are
 part of the assurance boundary; these checks do not independently prove compiler
 correctness, memory authority or termination.
 
+Native frames bound to an exact object compilation may name selected kernel
+sources or readable headers under the canonical pinned `/usr/include/c++/16`
+root. Kernel locations remain repository-relative; header locations are canonical
+absolute paths, with source hashes and coordinates retained. Escaping symlinks,
+other include roots/GCC versions and historical unbound header frames reject.
+This recognizes the standard-library implementation already trusted when inlined;
+it is a provenance/review scope, not an additional security proof. Protected
+program profiles use size optimization within the unchanged 128 KiB payload
+reservation; complete frame/edge checks and stack limits still apply.
+
 Version 2 Aurora facts also describe the R11 packed-input/R10 copied-result ABI
 for receiver-free dense non-owning values and qword scalar parameters. The four
 note/file boundaries require those facts and retain independent source-entry

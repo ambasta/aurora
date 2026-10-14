@@ -81,6 +81,7 @@ auto initialize_service_timer() -> void {
     Serial::text(" root="); Serial::number(root()); Serial::text("\r\n");
 }
 auto timer_begin(unsigned index) -> void {
+    using namespace std::literals::string_view_literals;
 #ifdef AURORA_UEFI_USER_BUDGET
     require(index<L::domain_count && domains[index].handle && selected_client<2
         && !timer_armed && timer_epoch!=UINT64_MAX,"user timer run boundary");
@@ -105,8 +106,8 @@ auto timer_begin(unsigned index) -> void {
     require(timer_arm(),"timer arm");
 #ifdef AURORA_UEFI_USER_BUDGET
     Serial::text("AURORA_UEFI_USER_RUN: epoch="); Serial::number(run_authority->epoch());
-    Serial::text(" role="); Serial::text(run_authority->role()==SelectedRunAuthority::Role::client ? "client" : "service");
-    Serial::text(" phase="); Serial::text(run_authority->phase()==ipc::Phase::request ? "request" : run_authority->phase()==ipc::Phase::service ? "service" : "completion");
+    Serial::text(" role="); Serial::text(run_authority->role()==SelectedRunAuthority::Role::client ? "client"sv : "service"sv);
+    Serial::text(" phase="); Serial::text(run_authority->phase()==ipc::Phase::request ? "request"sv : run_authority->phase()==ipc::Phase::service ? "service"sv : "completion"sv);
     Serial::text(" client="); Serial::number(run_authority->client()); Serial::text(" transaction="); Serial::number(run_authority->transaction());
     Serial::text(" source="); Serial::number(run_authority->source_phase()); Serial::text(" root="); Serial::number(run_authority->root()); Serial::text("\r\n");
 #endif
