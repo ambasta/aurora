@@ -519,5 +519,5 @@ foreach optimized : [false, true]
   suffix = optimized ? '-optimized' : ''
   test('native-meson-kernel-controls' + suffix, python,
     args: ['-B'] + (optimized ? ['-O'] : []) + [files('../meson-kernel-images.py')],
-    suite: ['full', 'dev', 'boot'], env: native_test_env, workdir: native_root, timeout: 30)
+    suite: ['full', 'dev', 'boot'], env: native_test_env, workdir: native_root, timeout: 30, is_parallel: false)
 endforeach

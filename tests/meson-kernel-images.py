@@ -2,13 +2,17 @@
 """Compiler-free controls for native kernel generator boundaries, not image qualification."""
 
 import importlib.util
+from contextlib import contextmanager
+import ctypes
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 from pathlib import Path
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -27,6 +31,7 @@ objects = load("kernel_object", "scripts/meson_kernel_object.py")
 profiles = load("kernel_profiles", "scripts/kernel_profiles.py")
 clock = load("kernel_clock", "scripts/kernel_emulator_clock.py")
 image = load("kernel_image", "scripts/kernel_uefi_image.py")
+transport = load("kernel_transport", "scripts/qemu_transport.py")
 
 
 class GeneratorBoundaries(unittest.TestCase):
@@ -316,6 +321,67 @@ class GeneratorBoundaries(unittest.TestCase):
 class SmokeRunOnlyRouting(unittest.TestCase):
     """Real wrappers and clock checks; recording substitutes never boot a guest."""
 
+    def children(self):
+        # This fixture process is single-threaded and owns no other child work.
+        children = []
+        for path in Path("/proc").iterdir():
+            if not path.name.isdecimal():
+                continue
+            try:
+                raw = (path / "stat").read_text()
+            except (FileNotFoundError, ProcessLookupError):
+                continue
+            fields = raw[raw.rfind(")") + 2 :].split()
+            if int(fields[1]) == os.getpid():
+                children.append(int(path.name))
+        return tuple(children)
+
+    def reap_wrapper_children(self):
+        # A transport can own a separate guest session. Adoption, rather than
+        # an outer killpg, keeps that guest owned if its supervisor exits first.
+        for signum in (signal.SIGTERM, signal.SIGKILL):
+            deadline, signaled = time.monotonic() + 2, set()
+            while children := self.children():
+                for pid in children:
+                    # WNOWAIT verifies direct-child ownership and keeps the PID
+                    # unreaped until after any signal, preventing PID reuse.
+                    os.waitid(os.P_PID, pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+                    if pid not in signaled:
+                        os.kill(pid, signum)
+                        signaled.add(pid)
+                    if os.waitpid(pid, os.WNOHANG)[0]:
+                        signaled.discard(pid)
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(0.01)
+            if not self.children():
+                return
+        raise transport.ChildNotReaped("Smoke wrapper descendants have not settled")
+
+    @contextmanager
+    def owned_wrapper(self):
+        self.assertEqual(self.children(), (), "Smoke fixture already has child work")
+        libc = ctypes.CDLL(None, use_errno=True)
+        previous = ctypes.c_int()
+        # Linux PR_GET_CHILD_SUBREAPER / PR_SET_CHILD_SUBREAPER, scoped to this
+        # serial fixture only. Production transport and its deadlines are unchanged.
+        if libc.prctl(37, ctypes.byref(previous), 0, 0, 0) or libc.prctl(36, 1, 0, 0, 0):
+            raise OSError(ctypes.get_errno(), "Cannot own smoke wrapper descendants")
+        try:
+            yield
+        finally:
+            primary = sys.exc_info()[1]
+            with transport.defer_interrupts():
+                leaked = bool(self.children())
+                try:
+                    self.reap_wrapper_children()
+                except BaseException as cleanup_error:
+                    raise transport.ChildNotReaped("Smoke wrapper cleanup failed: " + str(cleanup_error)) from primary
+                if libc.prctl(36, previous.value, 0, 0, 0):
+                    raise transport.ChildNotReaped("Cannot restore smoke fixture child ownership") from primary
+                if leaked and primary is None:
+                    raise transport.ChildNotReaped("Successful smoke wrapper left descendants")
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="aurora-smoke-routing-")
         self.addCleanup(temporary.cleanup)
@@ -396,17 +462,52 @@ class SmokeRunOnlyRouting(unittest.TestCase):
 
     def invoke(self, platform, *arguments, image=None, success=True):
         script = "kernel-smoke.sh" if platform == "bios" else "kernel-uefi-smoke.sh"
-        result = subprocess.run(
-            ["bash", str(self.repo / "scripts" / script), *map(str, arguments)],
-            cwd=self.root,
-            env=self.env | {"BUILT_IMAGE": str(image)},
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            timeout=5,
-        )
+        with self.owned_wrapper():
+            try:
+                result = subprocess.run(
+                    ["bash", str(self.repo / "scripts" / script), *map(str, arguments)],
+                    cwd=self.root,
+                    env=self.env | {"BUILT_IMAGE": str(image)},
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    timeout=5,
+                )
+            except subprocess.TimeoutExpired as error:
+                output = error.stdout or b""
+                text = output.decode(errors="replace") if isinstance(output, bytes) else output
+                error.add_note("Captured wrapper output:\n" + text)
+                raise
         self.assertEqual(result.returncode == 0, success, result.stdout)
         return [json.loads(line) for line in self.calls.read_text().splitlines()] if self.calls.exists() else []
+
+    def test_timeout_reaps_term_ignoring_guest_in_separate_session(self):
+        ready, escaped = self.root / "ready.json", self.root / "escaped-timeout"
+        self.qemu.write_text(
+            f"#!{sys.executable}\n"
+            "import json, os, signal, time\nfrom pathlib import Path\n"
+            "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+            "record = dict(guest=os.getpid(), transport=os.getppid(), session=os.getsid(0))\n"
+            f"Path({str(ready)!r}).write_text(json.dumps(record))\n"
+            "time.sleep(20)\n"
+            f"Path({str(escaped)!r}).write_text('escaped timeout')\n"
+        )
+        wrapper = self.repo / "scripts/kernel-uefi-smoke.sh"
+        wrapper.write_text(
+            wrapper.read_text().replace("set -euo pipefail\n", "set -euo pipefail\necho timeout-diagnostic >&2\n", 1)
+        )
+        image = self.native("uefi", "snapshot")
+        with self.assertRaises(subprocess.TimeoutExpired) as failure:
+            self.invoke("uefi", "--run-only", image, "--output-dir", self.root / "timed-out", "snapshot")
+        self.assertEqual(failure.exception.timeout, 5)
+        self.assertIn(b"timeout-diagnostic", failure.exception.stdout)
+        self.assertIn("timeout-diagnostic", "\n".join(failure.exception.__notes__))
+        observed = json.loads(ready.read_text())
+        self.assertEqual(observed["guest"], observed["session"])
+        self.assertFalse(escaped.exists())
+        self.assertEqual(self.children(), ())
+        for name in ("guest", "transport"):
+            self.assertFalse(Path("/proc", str(observed[name])).exists(), name + " survived wrapper timeout")
 
     def test_run_only_uses_canonical_images_and_isolates_all_evidence(self):
         for platform, mode in (
