@@ -186,12 +186,11 @@ migrations still await execution qualification.
 
 ## Emitter migration qualification
 
-The new multi-root source hop and the native emitter remain unqualified until
-built through the explicit predecessor route above. Preserve its source identity,
-toolchain, commands and build logs; a binary digest alone is not source provenance.
-Use that source-built `7811ba8` compiler as the external old-backend oracle, never
-as a production fallback. Before merging this port, run the whole checked-in
-source corpus with the current C2 compiler in both ordinary and closed profiles:
+The source-built `7811ba8` predecessor still carries the C++ x86 backend, so it
+is also the external old-backend oracle, never a production fallback. The
+`emitter-differential-default` and `emitter-differential-closed` tests in `slow`
+and `full` run the whole checked-in corpus through it and the current C2 compiler
+in the ordinary and closed profiles; by hand:
 
 ```sh
 python3 -B tests/compiler/emitter_differential.py \
@@ -210,7 +209,7 @@ mismatch, internal failure or watchdog timeout fails the gate and reports partia
 coverage. Equal rejection is not emission coverage. The corpus is every `.au`
 file under compiler, examples, kernel, library and tests; embedded generated
 fixtures and machine behavior remain covered by their existing native suites.
-This external-oracle gate supplements C1/C2 convergence and the final GCC 16 full,
+It supplements C1/C2 convergence and the final GCC 16 full,
 BIOS/UEFI and affected-profile gates; it does not replace them. Record before/after
 `scripts/compiler-speed.py` time and peak-memory observations before further
 migration work, with every timeout named rather than silently extending limits.
