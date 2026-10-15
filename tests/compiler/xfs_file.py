@@ -1071,7 +1071,7 @@ def main():
         runner = NativeRunner(Path(temporary), compiler, 15)
         for group in batches(cases, count=32):
             # Compiler-only runaway watchdog; Meson bounds the complete correctness fixture to 600 seconds.
-            runner.cases(group, compiler_timeout=120)
+            runner.cases(group)
         for case in rejected:
             runner.rejection(case)
     print(f"PASS XFS file: {len(cases)} native cases, {len(rejected)} rejections", flush=True)
