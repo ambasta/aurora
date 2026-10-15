@@ -36,6 +36,16 @@ public:
     unsigned writeScalar(int offset);
     bool objectInitialized(int base);
     bool objectPristine(int base);
+    // Whole construction is separate from physical scalar initialization.
+    // physical means no logical marker is required, not that the leaves are initialized.
+    enum class ObjectCompletion {
+        whole,
+        physical,
+        missing_nested,
+        missing_empty
+    };
+    bool objectWasConstructed(int base);
+    ObjectCompletion objectCompletion(int base);
     void markObject(int base);
     void clearObject(int base);
     // A missing element is its forward ordinal; an empty result means complete.

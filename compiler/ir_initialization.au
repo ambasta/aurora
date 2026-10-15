@@ -2,10 +2,10 @@ export module aurora.compiler.ir_initialization;
 import aurora.compiler.ir_metadata;
 import aurora.compiler.ir_metadata_storage;
 
-// Per-function initialization facts. Metadata owns the sole sorted scalar-slot
-// domain; this owner stores only dense must/may words and retained cardinalities.
-// Native verification retains lifetime, provenance and logical empty-object
-// completion, and binds every paired call to the same immutable MetadataStore.
+// Per-function initialization facts. Metadata owns the sorted scalar and object
+// domains; this owner stores dense physical-initialization and logical-completion
+// must/may words. Native verification retains lifetime and ownership provenance,
+// and binds every paired call to the same immutable MetadataStore.
 export namespace compiler_ir_initialization {
     enum class InitializationStatus {
         pending,
@@ -17,6 +17,13 @@ export namespace compiler_ir_initialization {
         error,
         unchanged,
         changed
+    };
+    enum class ObjectCompletion {
+        invalid,
+        whole,
+        physical,
+        missing_nested,
+        missing_empty
     };
     class WordPair {
         u64 mustBits;
@@ -72,6 +79,8 @@ export namespace compiler_ir_initialization {
         i64 callableId;
         i64 scalarBegin;
         i64 scalarCount;
+        i64 objectBegin;
+        i64 objectCount;
         i64 wordCount;
         i64 retainedCount;
         i64 retainedCapacity;
@@ -106,7 +115,7 @@ export namespace compiler_ir_initialization {
             if (next > 65536) {
                 next = 65536;
             }
-            if (wordCount < 0 || wordCount > 1024 || (wordCount != 0 && next > 9223372036854775807 / wordCount)) {
+            if (wordCount < 0 || wordCount > 1152 || (wordCount != 0 && next > 9223372036854775807 / wordCount)) {
                 return reject();
             }
             const i64 words = next * wordCount;
@@ -132,8 +141,8 @@ export namespace compiler_ir_initialization {
     public:
         InitializationWorkspace(builtin::ByteRegion region) : currentWords(word_pool(region)),
             retainedWords(word_pool(region)), retainedCounts(count_pool(region)), callableId(-1), scalarBegin(0),
-            scalarCount(0), wordCount(0), retainedCount(0), retainedCapacity(0), currentMust(0), currentMay(0),
-            statusValue(InitializationStatus::pending) {
+            scalarCount(0), objectBegin(0), objectCount(0), wordCount(0), retainedCount(0), retainedCapacity(0),
+            currentMust(0), currentMay(0), statusValue(InitializationStatus::pending) {
         }
         auto allocated() const -> bool {
             return currentWords.ok() && retainedWords.ok() && retainedCounts.ok();
@@ -156,10 +165,11 @@ export namespace compiler_ir_initialization {
             }
             return true;
         }
-        // Only initialize(metadata, callable) supplies this canonical group.
-        // This is a scalar extent, never a second offset index or payload view.
-        auto configure(i64 callable, i64 first, i64 count) -> bool {
+        // Only initialize(metadata, callable) supplies these canonical groups.
+        // Their extents are not another offset index or native payload view.
+        auto configure(i64 callable, i64 first, i64 count, i64 object_first, i64 object_count) -> bool {
             if (statusValue != InitializationStatus::pending || callable < 0 || first < 0 || count < 0 || count > 65536
+                || object_first < 0 || object_count < 0 || object_count > 8192
                 || callableId != -1 || currentWords.size() != 0 || retainedWords.size() != 0 || retainedCounts.size()
                 != 0) {
                 return reject();
@@ -167,8 +177,9 @@ export namespace compiler_ir_initialization {
             if (!prepare()) {
                 return false;
             }
-            i64 words = count / 64;
-            if (count % 64 != 0) {
+            const i64 facts = count + object_count;
+            i64 words = facts / 64;
+            if (facts % 64 != 0) {
                 words = words + 1;
             }
             const WordPair fill = WordPair(0u64, 0u64);
@@ -178,6 +189,8 @@ export namespace compiler_ir_initialization {
             callableId = callable;
             scalarBegin = first;
             scalarCount = count;
+            objectBegin = object_first;
+            objectCount = object_count;
             wordCount = words;
             statusValue = InitializationStatus::success;
             return true;
@@ -187,6 +200,12 @@ export namespace compiler_ir_initialization {
         }
         auto scalar_begin() const -> i64 {
             return scalarBegin;
+        }
+        auto object_begin() const -> i64 {
+            return objectBegin;
+        }
+        auto object_count() const -> i64 {
+            return objectCount;
         }
         auto slot_count() const -> i64 {
             if (statusValue != InitializationStatus::success) {
@@ -251,7 +270,7 @@ export namespace compiler_ir_initialization {
         // Dense-index helpers are source-internal semantic operations. Native
         // callers use metadata-paired batches, never one bridge per bit.
         auto index_state(i64 index) -> i64 {
-            if (statusValue != InitializationStatus::success || index < 0 || index >= scalarCount) {
+            if (statusValue != InitializationStatus::success || index < 0 || index >= scalarCount + objectCount) {
                 reject();
                 return -1;
             }
@@ -267,7 +286,7 @@ export namespace compiler_ir_initialization {
             return state;
         }
         auto write_index(i64 index) -> i64 {
-            if (statusValue != InitializationStatus::success || index < 0 || index >= scalarCount) {
+            if (statusValue != InitializationStatus::success || index < 0 || index >= scalarCount + objectCount) {
                 reject();
                 return -1;
             }
@@ -297,7 +316,7 @@ export namespace compiler_ir_initialization {
             return previous;
         }
         auto clear_index(i64 index) -> bool {
-            if (statusValue != InitializationStatus::success || index < 0 || index >= scalarCount) {
+            if (statusValue != InitializationStatus::success || index < 0 || index >= scalarCount + objectCount) {
                 return reject();
             }
             const WordPair old = currentWords.at(index / 64);
@@ -436,12 +455,15 @@ export namespace compiler_ir_initialization {
         }
         const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(callable);
         const compiler_ir_metadata::IndexRange slots = compiler_ir_metadata::slot_group(metadata, declaration, 10);
+        const compiler_ir_metadata::IndexRange objects = compiler_ir_metadata::slot_group(metadata, declaration, 11);
         if (declaration.frame_bytes() < 0 || declaration.frame_bytes() > 65536 || slots.count()
-            > declaration.frame_bytes() || !compiler_ir_metadata::index_range(slots, metadata.slot_count())) {
+            > declaration.frame_bytes() || !compiler_ir_metadata::index_range(slots, metadata.slot_count())
+            || objects.count() > declaration.frame_bytes() / 8
+            || !compiler_ir_metadata::index_range(objects, metadata.slot_count())) {
             workspace.reject();
             return workspace.status();
         }
-        workspace.configure(callable, slots.begin(), slots.count());
+        workspace.configure(callable, slots.begin(), slots.count(), objects.begin(), objects.count());
         return workspace.status();
     }
     auto ready(InitializationWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata) -> bool {
@@ -498,17 +520,70 @@ export namespace compiler_ir_initialization {
         if (!ready(workspace, metadata)) {
             return -1;
         }
-        const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(workspace.callable());
-        const compiler_ir_metadata::IndexRange objects = compiler_ir_metadata::slot_group(metadata, declaration, 11);
+        const compiler_ir_metadata::IndexRange objects = compiler_ir_metadata::IndexRange(workspace.object_begin(),
+            workspace.object_count());
         const i64 found = compiler_ir_metadata::find_slot(metadata, objects, base);
         if (found < 0) {
             workspace.reject();
         }
         return found;
     }
+    // Local object completion has one must bit and one may-history bit. Every
+    // complete copy/construction initializes all logical fields together, so no
+    // per-field completion table is needed. Physical scalar writes do not mint it.
+    auto object_was_constructed(InitializationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 base) -> i64 {
+        const i64 index = object_index(workspace, metadata, base);
+        if (index < 0) {
+            return -1;
+        }
+        const i64 state = workspace.index_state(workspace.slot_count() + index - workspace.object_begin());
+        if (state < 0) {
+            return -1;
+        }
+        if (state >= 2) {
+            return 1;
+        }
+        return 0;
+    }
+    auto object_completion(InitializationWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 base) -> ObjectCompletion {
+        const i64 index = object_index(workspace, metadata, base);
+        if (index < 0) {
+            return ObjectCompletion::invalid;
+        }
+        const i64 state = workspace.index_state(workspace.slot_count() + index - workspace.object_begin());
+        if (state < 0) {
+            return ObjectCompletion::invalid;
+        }
+        if (state == 3) {
+            return ObjectCompletion::whole;
+        }
+        const compiler_ir_metadata::SlotRow object = metadata.slot_at(index);
+        const compiler_ir_metadata::RawTypeRow type = metadata.type_at(object.type());
+        const i64 class_index = compiler_ir_metadata::find_class(metadata, type.name());
+        const compiler_ir_metadata::ClassResultRow result = metadata.result_at(class_index);
+        const compiler_ir_metadata::IndexRange fields = result.fields();
+        i64 at = 0;
+        while (at < fields.count()) {
+            const compiler_ir_metadata::FieldRow field = metadata.field_at(fields.begin() + at);
+            const compiler_ir_metadata::RawTypeRow element = metadata.type_at(field.type());
+            if (element.kind() == 5) {
+                return ObjectCompletion::missing_nested;
+            }
+            at = at + 1;
+        }
+        const compiler_ir_metadata::ClassRow declaration = metadata.class_at(class_index);
+        const compiler_ir_metadata::IndexRange leaves = declaration.leaves();
+        if (leaves.count() == 0) {
+            return ObjectCompletion::missing_empty;
+        }
+        return ObjectCompletion::physical;
+    }
     // 0 checks all must bits, 1 checks no may bits, 2 marks both, 3 clears both.
-    // Physical leaves alone belong here; logical completion of empty/nested or
-    // owning objects remains at its original native diagnostic position.
+    // The two queries remain physical-only. Mark/clear also update logical
+    // completion; its separate query preserves diagnostic order and leafless
+    // objects' distinct construction requirement.
     auto object_action(InitializationWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
         i64 base, i64 action) -> i64 {
         if (action < 0 || action > 3) {
@@ -549,6 +624,13 @@ export namespace compiler_ir_initialization {
                 }
             }
             at = at + 1;
+        }
+        const i64 completion = workspace.slot_count() + index - workspace.object_begin();
+        if (action == 2 && workspace.write_index(completion) < 0) {
+            return -1;
+        }
+        if (action == 3 && !workspace.clear_index(completion)) {
+            return -1;
         }
         return 1;
     }
