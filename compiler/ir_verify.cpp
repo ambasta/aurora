@@ -785,27 +785,32 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                         "nested class field not completely initialized");
                 require(completion != InitializationWorkspace::ObjectCompletion::missing_empty,
                         "empty object not completely initialized");
+                return completion;
             };
             auto liveCopiedArgument = [&](int base, const std::string &role) {
                 require(state.activeObjects.contains(base), role + " argument outside active object lifetime");
                 require(initialization.objectInitialized(base), role + " argument object not fully initialized");
                 logicalComplete(base);
             };
-            auto initializedObject = [&](int base) -> ObjectSlot {
+            auto initializedObject =
+                [&](int base, InitializationWorkspace::ObjectCompletion *completion = nullptr) -> ObjectSlot {
                 require(state.activeObjects.contains(base), "copy object outside active lifetime");
                 auto object = objectSlots.at(base);
                 require(initialization.objectInitialized(base), "copy source object not fully initialized");
-                logicalComplete(base);
+                const auto observed = logicalComplete(base);
+                if (completion)
+                    *completion = observed;
                 return object;
             };
             auto liveObject = [&](int base) -> ObjectSlot {
                 loanAccess(base, false);
                 return initializedObject(base);
             };
-            auto completeObject = [&](int base) -> ObjectSlot {
+            auto completeObject = [&](int base,
+                                      InitializationWorkspace::ObjectCompletion *completion = nullptr) -> ObjectSlot {
                 loanAccess(base, false);
                 require(objectSlots.contains(base), "copy requires exact object slot");
-                return initializedObject(base);
+                return initializedObject(base, completion);
             };
             auto liveOwnedRoot = [&](int root) -> const OwnedObjectBinding & {
                 require(state.ownedObjects.contains(root), "object loan requires exact owning root");
@@ -1031,10 +1036,11 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
             };
             auto copiedValue = [&](int base, const Type &owner, int root) {
                 require(base != root, "owned value snapshot aliases owner root");
-                const auto &value = completeObject(base);
+                InitializationWorkspace::ObjectCompletion completion;
+                const auto &value = completeObject(base, &completion);
                 require(value.className == owner.className, "owned value snapshot nominal class mismatch");
                 require(!value.mutableValue, "owned value snapshot must be readonly");
-                require(initialization.objectCompletion(base) == InitializationWorkspace::ObjectCompletion::whole,
+                require(completion == InitializationWorkspace::ObjectCompletion::whole,
                         "owned value snapshot requires complete copied or constructed value");
             };
             auto publishOwnedBorrow = [&](int root, int ordinal, int result, const ByteBinding &binding) {
