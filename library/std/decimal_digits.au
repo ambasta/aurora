@@ -1,0 +1,30 @@
+export module std.decimal_digits;
+
+export namespace std_decimal {
+    // Scalar decimal projections avoid a copied encoding when only digits are needed.
+    auto width_u64(u64 value) -> i64 {
+        u64 remaining = value;
+        i64 width = 1;
+        while (remaining >= 10u64) {
+            remaining = remaining / 10u64;
+            width = width + 1;
+        }
+        return width;
+    }
+    // Place zero is the units digit; absent or invalid places return NUL.
+    auto digit_at_u64(u64 value, i64 place) -> u8 {
+        if (place < 0 || place >= 20) {
+            return '\0';
+        }
+        u64 remaining = value;
+        i64 index = 0;
+        while (index < place) {
+            remaining = remaining / 10u64;
+            if (remaining == 0u64) {
+                return '\0';
+            }
+            index = index + 1;
+        }
+        return u8(48u64 + remaining % 10u64);
+    }
+}

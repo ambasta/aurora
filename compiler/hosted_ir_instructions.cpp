@@ -316,6 +316,22 @@ public:
     }
 };
 
+const void *Instructions::sourceOwner(const Metadata &metadata) const {
+    if (!state_ || !state_->published || state_->metadata != &metadata)
+        invalidInstructions();
+    return state_->owner.data();
+}
+
+std::uint64_t Instructions::sourceIdentity(const Metadata &metadata) const {
+    (void)sourceOwner(metadata);
+    return state_->region.id();
+}
+
+std::size_t Instructions::sourceInstructionCount(const Metadata &metadata) const {
+    (void)sourceOwner(metadata);
+    return index(state_->counts.instructionCount);
+}
+
 Instructions::Instructions() = default;
 Instructions::~Instructions() = default;
 InstructionIngress::InstructionIngress() = default;

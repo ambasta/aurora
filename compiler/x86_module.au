@@ -1,0 +1,463 @@
+export module aurora.compiler.x86_module;
+import aurora.compiler.x86_storage;
+import aurora.compiler.x86_helpers;
+import aurora.compiler.x86_scalar;
+import aurora.compiler.x86_objects;
+import aurora.compiler.x86_resources;
+import aurora.compiler.x86_facts;
+import aurora.compiler.ir_instruction_storage;
+import aurora.compiler.ir_instructions;
+import aurora.compiler.ir_metadata_storage;
+import aurora.compiler.ir_metadata;
+
+// The module owner visits retained durable instruction IDs in their admitted
+// order. All instruction text and stack/ABI policy stays in Aurora; the host
+// receives bounded completed-artifact chunks only after sticky success.
+export namespace compiler_x86 {
+    auto module_form(const compiler_ir_instructions::InstructionStore& s, i64 instruction) -> i64 {
+        if (instruction <= 0) {
+            return -1;
+        }
+        const compiler_ir_instructions::RawInstructionRow row = s.instruction_at(instruction);
+        return row.form();
+    }
+    auto module_instruction(const compiler_ir_instructions::InstructionStore& s, i64 callable, i64 position) -> i64 {
+        const compiler_ir_instructions::BodyRow body = s.body_at(callable);
+        if (position < 0 || position >= body.count()) {
+            return -1;
+        }
+        const compiler_ir_instructions::CodeRow row = s.code_at(body.begin() + position);
+        return row.id();
+    }
+    auto module_private_type(const compiler_ir_metadata::MetadataStore& m, i64 type) -> bool {
+        const i64 kind = type_kind(m, type);
+        if (kind == 12 || kind == 13 || kind == 17) {
+            return true;
+        }
+        return kind == 5 && owning_class(m, type_class(m, type));
+    }
+    auto module_resource_graph(const EmitWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s) -> bool {
+        i64 at = 0;
+        while (at < m.class_count()) {
+            if (owning_class(m, at)) {
+                return true;
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < w.retained_count()) {
+            const i64 callable = w.retained_at(at);
+            if (module_private_type(m, result_type(m, callable))) {
+                return true;
+            }
+            if (has_receiver(m, callable) && owning_class(m, receiver_class(m, callable))) {
+                return true;
+            }
+            i64 parameter = 0;
+            while (parameter < parameter_count(m, callable)) {
+                if (module_private_type(m, parameter_type(m, callable, parameter))) {
+                    return true;
+                }
+                parameter = parameter + 1;
+            }
+            const compiler_ir_instructions::BodyRow body = s.body_at(callable);
+            i64 position = 0;
+            while (position < body.count()) {
+                const i64 form = module_form(s, module_instruction(s, callable, position));
+                if (form == 60 || form == 75 || form == 77 || form == 78 || form == 79 || form == 80) {
+                    return true;
+                }
+                position = position + 1;
+            }
+            at = at + 1;
+        }
+        return false;
+    }
+    auto module_service_graph(const EmitWorkspace& w, const compiler_ir_metadata::MetadataStore& m) -> bool {
+        i64 at = 0;
+        while (at < w.retained_count()) {
+            const i64 callable = w.retained_at(at);
+            i64 parameter = 0;
+            while (parameter < parameter_count(m, callable)) {
+                const i64 kind = type_kind(m, parameter_type(m, callable, parameter));
+                if (kind >= 14 && kind <= 16) {
+                    return true;
+                }
+                parameter = parameter + 1;
+            }
+            at = at + 1;
+        }
+        return false;
+    }
+    auto module_hidden_symbol(const compiler_ir_metadata::MetadataStore& m, i64 callable) -> bool {
+        const compiler_ir_metadata::CallableRow row = m.callable_at(callable);
+        return compiler_ir_metadata::name_prefix(m, row.name(), "__au_o_");
+    }
+    auto module_emit_instruction(EmitWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 instruction) -> bool {
+        if (emit_scalar(w, m, s, instruction)) {
+            return w.ok();
+        }
+        if (emit_objects(w, m, s, instruction)) {
+            return w.ok();
+        }
+        if (emit_resources(w, m, s, instruction)) {
+            return w.ok();
+        }
+        return w.fail();
+    }
+    auto module_plain_load(i64 form) -> bool {
+        return form == 5 || form == 6 || form == 7 || form == 32;
+    }
+    auto module_popped_binary(i64 form) -> bool {
+        return form == 12 || form == 14;
+    }
+    auto module_emit_body(EmitWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 callable) -> bool {
+        const compiler_ir_instructions::BodyRow body = s.body_at(callable);
+        w.set_direct_result(false);
+        w.set_left_in_rcx(false);
+        i64 at = 0;
+        while (at < body.count() && w.ok()) {
+            const i64 current = module_instruction(s, callable, at);
+            const i64 next = module_instruction(s, callable, at + 1);
+            const i64 following = module_instruction(s, callable, at + 2);
+            const i64 form = module_form(s, current);
+            const i64 next_form = module_form(s, next);
+            if (following > 0 && form == 9 && module_plain_load(next_form) && module_popped_binary(module_form(s,
+                following))) {
+                // The intervening accumulator load touches neither RCX nor the
+                // operand stack; preserve the old adjacency-only peephole.
+                w.line("movq %rax, %rcx");
+                module_emit_instruction(w, m, s, next);
+                w.set_left_in_rcx(true);
+                module_emit_instruction(w, m, s, following);
+                w.set_left_in_rcx(false);
+                at = at + 3;
+            } else {
+                if (form == 63 && next_form == 44 && operand_value(s, next, 0) == operand_value(s, current, 2)) {
+                    const i64 result = result_type(m, callable);
+                    const i64 source = operand_value(s, current, 0);
+                    const i64 field = operand_value(s, current, 1);
+                    if (class_size(m, type_class(m, result)) != owner_element_stride(m, callable, source, field)) {
+                        return w.fail();
+                    }
+                    w.set_direct_result(true);
+                    module_emit_instruction(w, m, s, current);
+                    w.set_direct_result(false);
+                    w.line("xorq %rax, %rax");
+                    w.text("    jmp ");
+                    w.return_label();
+                    w.end_line();
+                    at = at + 2;
+                } else {
+                    module_emit_instruction(w, m, s, current);
+                    at = at + 1;
+                }
+            }
+        }
+        return w.ok();
+    }
+    auto module_emit_callable(EmitWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 callable, i64 binding, bool private_graph) -> bool {
+        const compiler_ir_metadata::CallableRow declaration = m.callable_at(callable);
+        const compiler_ir_instructions::BodyRow body = s.body_at(callable);
+        const i64 declared = declaration.frame_bytes();
+        const i64 roots = declaration.borrowed_root_count();
+        const bool receiver = has_receiver(m, callable);
+        const bool aggregate = aggregate_signature(m, callable);
+        // Independent backend backstop: multiple borrowed roots admit only
+        // scalar/enum value tails and results, never aggregate/private records.
+        if (roots > 1 && aggregate) {
+            return w.fail();
+        }
+        if (!w.begin_function(0, callable, callable)) {
+            return false;
+        }
+        i64 at = 0;
+        while (at < body.count()) {
+            const i64 instruction = module_instruction(s, callable, at);
+            if (module_form(s, instruction) == 1) {
+                w.add_loan(operand_value(s, instruction, 0), operand_value(s, instruction, 1));
+            }
+            at = at + 1;
+        }
+        if (binding == 1 || private_graph || receiver || aggregate || module_hidden_symbol(m, callable)) {
+            w.text(".local ");
+        } else {
+            w.text(".globl ");
+        }
+        callable_name(w, m, callable);
+        w.text("\n.type ");
+        callable_name(w, m, callable);
+        w.text(", @function\n");
+        callable_name(w, m, callable);
+        w.text(":\n");
+        w.line("pushq %rbp");
+        w.grow_stack(8);
+        w.line("movq %rsp, %rbp");
+        i64 receiver_save = 0;
+        if (receiver) {
+            receiver_save = declared + 8;
+        }
+        const bool resource_parameters = parameter_count(m, callable) != 0 && type_kind(m, parameter_type(m, callable,
+            0)) == 12;
+        bool packed = aggregate;
+        if (receiver) {
+            packed = class_parameters(m, callable) || resource_parameters;
+        }
+        if (packed) {
+            w.record_signature(copied_record_bytes(m, callable), service_record_bytes(m, callable));
+        }
+        const i64 result_kind = type_kind(m, result_type(m, callable));
+        const bool combined = receiver && packed && (result_kind == 5 || result_kind == 11);
+        i64 record_save = 0;
+        if (packed) {
+            record_save = declared + 8;
+            if (receiver) {
+                record_save = declared + 16;
+            }
+        }
+        i64 result_save = 0;
+        if (result_kind == 5 || result_kind == 11 || result_kind == 13 || result_kind == 17) {
+            result_save = declared + 16;
+            if (combined) {
+                result_save = declared + 24;
+            }
+        }
+        w.set_saves(receiver_save, record_save, result_save);
+        i64 frame = declared;
+        if (roots > 1) {
+            frame = frame + ((roots * 8 + 15) / 16) * 16;
+        } else {
+            if (combined) {
+                frame = frame + 32;
+            } else {
+                if (receiver || aggregate) {
+                    frame = frame + 16;
+                }
+            }
+        }
+        w.reserve_stack(frame);
+        if (roots > 1) {
+            i64 ordinal = 1;
+            while (ordinal < roots) {
+                w.line_number("movq ", ordinal * 8, "(%r10), %r11");
+                const i64 save = root_save_offset(w, m, ordinal);
+                w.line_address("movq %r11, ", save, "");
+                ordinal = ordinal + 1;
+            }
+            w.line("movq (%r10), %r10");
+        }
+        if (receiver) {
+            const i64 save = root_save_offset(w, m, 0);
+            w.line_address("movq %r10, ", save, "");
+        }
+        if (packed) {
+            w.line_address("movq %r11, ", record_save, "");
+        }
+        if (result_save != 0) {
+            if (combined) {
+                w.line_address("movq %rax, ", result_save, "");
+            } else {
+                if (receiver) {
+                    w.line_address("movq %r11, ", result_save, "");
+                } else {
+                    w.line_address("movq %r10, ", result_save, "");
+                }
+            }
+        }
+        if (!module_emit_body(w, m, s, callable)) {
+            return false;
+        }
+        if (w.stack_depth() != 0 || w.live_stack() != frame + 16) {
+            return w.fail();
+        }
+        w.return_label();
+        w.text(":\n");
+        w.line("leave");
+        w.line("ret");
+        w.text(".size ");
+        callable_name(w, m, callable);
+        w.text(", .-");
+        callable_name(w, m, callable);
+        w.end_line();
+        return w.finish_function();
+    }
+    auto module_reflection_referenced(const EmitWorkspace& w, const compiler_ir_instructions::InstructionStore& s,
+        i64 scope, i64 query) -> bool {
+        i64 at = 0;
+        while (at < w.retained_count()) {
+            const i64 callable = w.retained_at(at);
+            const compiler_ir_instructions::BodyRow body = s.body_at(callable);
+            i64 position = 0;
+            while (position < body.count()) {
+                const i64 instruction = module_instruction(s, callable, position);
+                const compiler_ir_instructions::RawInstructionRow row = s.instruction_at(instruction);
+                if (row.form() == 39 && row.query() == query && operand_value(s, instruction, 0) == scope) {
+                    return true;
+                }
+                position = position + 1;
+            }
+            at = at + 1;
+        }
+        return false;
+    }
+    auto module_descriptor_value(const compiler_ir_metadata::MetadataStore& m, i64 id, i64 query) -> i64 {
+        i64 begin = 0;
+        i64 end = m.descriptor_count();
+        while (begin < end) {
+            const i64 middle = begin + (end - begin) / 2;
+            const compiler_ir_metadata::DescriptorRow row = m.descriptor_at(middle);
+            if (row.id() == id) {
+                if (query == 0) {
+                    return row.size();
+                }
+                return row.public_fields();
+            }
+            if (row.id() < id) {
+                begin = middle + 1;
+            } else {
+                end = middle;
+            }
+        }
+        return -1;
+    }
+    auto module_scope_label(EmitWorkspace& w, i64 scope, i64 query, i64 id) -> bool {
+        w.text(".Lscope");
+        w.number(scope);
+        if (query == 0) {
+            w.text("_size");
+        } else {
+            w.text("_field_count");
+        }
+        return w.number(id);
+    }
+    auto module_emit_reflection(EmitWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 binding, i64 reflection) -> bool {
+        i64 at = 0;
+        while (at < m.view_count() && w.ok()) {
+            const compiler_ir_metadata::ViewRow view = m.view_at(at);
+            const compiler_ir_metadata::IndexRange ids = view.descriptors();
+            const i64 scope = view.scope();
+            i64 query = 0;
+            while (query < 2 && w.ok()) {
+                if (reflection == 0 || module_reflection_referenced(w, s, scope, query)) {
+                    if (!w.begin_function(1, scope * 2 + query, -1)) {
+                        return false;
+                    }
+                    if (binding == 1) {
+                        w.text(".local ");
+                    } else {
+                        w.text(".globl ");
+                    }
+                    query_name(w, query, scope);
+                    w.text("\n.type ");
+                    query_name(w, query, scope);
+                    w.text(", @function\n");
+                    query_name(w, query, scope);
+                    w.text(":\n");
+                    i64 entry = 0;
+                    while (entry < ids.count()) {
+                        const compiler_ir_metadata::IndexRow row = m.index_at(ids.begin() + entry);
+                        const i64 id = row.value();
+                        w.line_number("cmpq $", id, ", %rdi");
+                        w.text("    je ");
+                        module_scope_label(w, scope, query, id);
+                        w.end_line();
+                        entry = entry + 1;
+                    }
+                    w.line("xorq %rax, %rax");
+                    w.line("ret");
+                    entry = 0;
+                    while (entry < ids.count()) {
+                        const compiler_ir_metadata::IndexRow row = m.index_at(ids.begin() + entry);
+                        const i64 id = row.value();
+                        const i64 value = module_descriptor_value(m, id, query);
+                        if (value < 0) {
+                            return w.fail();
+                        }
+                        module_scope_label(w, scope, query, id);
+                        w.text(":\n");
+                        w.line_number("movq $", value, ", %rax");
+                        w.line("ret");
+                        entry = entry + 1;
+                    }
+                    w.text(".size ");
+                    query_name(w, query, scope);
+                    w.text(", .-");
+                    query_name(w, query, scope);
+                    w.end_line();
+                }
+                query = query + 1;
+            }
+            at = at + 1;
+        }
+        return w.ok();
+    }
+    auto module_emit_literals(EmitWorkspace& w, const compiler_ir_instructions::InstructionStore& s) -> bool {
+        bool section = false;
+        i64 at = 0;
+        while (at < w.retained_count() && w.ok()) {
+            const i64 callable = w.retained_at(at);
+            const compiler_ir_instructions::BodyRow body = s.body_at(callable);
+            i64 position = 0;
+            while (position < body.count() && w.ok()) {
+                const i64 instruction = module_instruction(s, callable, position);
+                if (module_form(s, instruction) == 51) {
+                    if (!section) {
+                        w.text(".section .rodata\n");
+                        section = true;
+                    }
+                    w.text(".Laurora_literal_");
+                    w.number(instruction);
+                    w.text(":\n");
+                    const compiler_ir_instructions::RawOperandRow literal = compiler_ir_instructions::call_operand(s,
+                        instruction, 0);
+                    i64 byte = 0;
+                    while (byte < literal.count() && w.ok()) {
+                        w.line_number(".byte ", s.literal_at(literal.begin() + byte), "");
+                        byte = byte + 1;
+                    }
+                }
+                position = position + 1;
+            }
+            at = at + 1;
+        }
+        return w.ok();
+    }
+    auto module_retained_integrity(EmitWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s) -> bool {
+        if (m.status() != compiler_ir_metadata::MetadataStatus::success || s.status()
+            != compiler_ir_instructions::InstructionStatus::published || m.callable_count() != s.body_count()) {
+            return w.fail();
+        }
+        return w.retained_valid(m.callable_count());
+    }
+    auto run(EmitWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 binding, i64 reflection) -> EmitStatus {
+        if ((binding != 0 && binding != 1) || (reflection != 0 && reflection != 1) || !module_retained_integrity(w, m,
+            s) || !w.begin()) {
+            w.fail();
+            return w.status();
+        }
+        const bool resources = module_resource_graph(w, m, s);
+        const bool private_graph = resources || module_service_graph(w, m);
+        w.set_owned_span_runtime(resources);
+        w.text("# Aurora compiler output: validated typed IR, x86-64 bootstrap\n.text\n");
+        i64 at = 0;
+        while (at < w.retained_count() && w.ok()) {
+            const i64 callable = w.retained_at(at);
+            module_emit_callable(w, m, s, callable, binding, private_graph);
+            at = at + 1;
+        }
+        module_emit_reflection(w, m, s, binding, reflection);
+        w.text(".Laurora_bounds_trap:\n    ud2\n.Laurora_overflow_trap:\n    ud2\n");
+        w.text(".Laurora_division_zero_trap:\n    ud2\n.Laurora_shift_count_trap:\n    ud2\n");
+        module_emit_literals(w, s);
+        w.text(".section .note.GNU-stack,\"\",@progbits\n");
+        w.finish_assembly();
+        return w.status();
+    }
+}

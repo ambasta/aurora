@@ -3,6 +3,7 @@
 #include "ir_verify.hpp"
 #include "hosted_resolver.hpp"
 #include "x86.hpp"
+#include "json_fragments.hpp"
 #include <functional>
 #include <iostream>
 #include <limits>
@@ -11,6 +12,7 @@
 
 using namespace aurora;
 using namespace aurora::ir;
+using aurora::test::jsonMember;
 using IRFunction = aurora::ir::Function;
 
 namespace {
@@ -552,7 +554,9 @@ void accept(const std::string &name, Module module) {
     ++accepted;
     std::cout << "PASS owning IR " << name << '\n';
 }
-void reject(const std::string &name, Module module, const std::function<void(Module &)> &change,
+void reject(const std::string &name,
+            Module module,
+            const std::function<void(Module &)> &change,
             const std::string &diagnostic) {
     change(module);
     try {
@@ -694,9 +698,80 @@ void metadataLifetimeTests() {
     declarations.records["Parcel"] = {"Parcel", {"tag", "first", "value", "second", "tail"}};
     declarations.enums["Phase"] = {"Phase", {"ready", "done"}};
     declarations.functions["owning_entry"] = {"owning_entry", {}};
+    const auto rejectStackOwner = [](X86Emitter &owner, const ValidatedModule &module) {
+        bool rejectedOwner = false;
+        try {
+            (void)owner.stackFactsJson(module);
+        } catch (const Error &error) {
+            rejectedOwner = std::string(error.what()) == "stack facts require the same emitted module";
+        }
+        require(rejectedOwner, "stack facts accepted an absent or different emitted-module owner");
+        ++rejected;
+    };
+    const auto rejectAbiOwner = [&](X86Emitter &owner, const ValidatedModule &module) {
+        bool rejectedOwner = false;
+        try {
+            (void)owner.abiFactsJson(module, declarations);
+        } catch (const Error &error) {
+            rejectedOwner = std::string(error.what()) == "ABI facts require the same emitted module";
+        }
+        require(rejectedOwner, "ABI facts accepted an absent or different emitted-module owner");
+        ++rejected;
+    };
     X86Emitter emitter;
+    rejectStackOwner(emitter, checked);
+    rejectAbiOwner(emitter, checked);
     const auto assembly = emitter.emit(checked);
+    const auto stack = emitter.stackFactsJson(checked);
     const auto facts = emitter.abiFactsJson(checked, declarations);
+    require(emitter.stackFactsJson(checked) == stack &&
+                !jsonMember(jsonMember(stack, "functions"), "owning_entry").empty(),
+            "stack-to-ABI-to-stack observation changed facts or lost the owning entry");
+    rejectStackOwner(emitter, independent);
+    require(emitter.stackFactsJson(checked) == stack, "rejected stack owner poisoned the emitted module");
+    // Both capsules remain alive. Re-emission changes the accepted owner even
+    // when the separately validated input and complete output are identical.
+    X86Emitter reemittedOwner;
+    require(reemittedOwner.emit(checked) == assembly && reemittedOwner.stackFactsJson(checked) == stack,
+            "independent emitter changed assembly or stack facts");
+    require(reemittedOwner.emit(independent) == assembly && reemittedOwner.stackFactsJson(independent) == stack,
+            "re-emission changed exact assembly or stack facts");
+    rejectStackOwner(reemittedOwner, checked);
+    require(reemittedOwner.stackFactsJson(independent) == stack && reemittedOwner.emit(independent) == assembly &&
+                reemittedOwner.stackFactsJson(independent) == stack,
+            "repeated emission or rejected earlier owner changed stack observations");
+    ++accepted;
+    auto changed = declarations;
+    changed.records.at("Parcel").sourceName = "RenamedParcel";
+    changed.records.at("Parcel").members[0] = "renamed_tag";
+    changed.enums.at("Phase").members[0] = "renamed_ready";
+    changed.functions.at("owning_entry").sourceName = "RenamedEntry";
+    changed.functions["not_in_metadata"] = {"ignored", {"ignored_member"}};
+    const auto changedFacts = emitter.abiFactsJson(checked, changed);
+    require(changedFacts != facts && changedFacts.find("RenamedParcel") != std::string::npos &&
+                changedFacts.find("renamed_tag") != std::string::npos &&
+                changedFacts.find("renamed_ready") != std::string::npos &&
+                changedFacts.find("RenamedEntry") != std::string::npos &&
+                changedFacts.find("not_in_metadata") == std::string::npos,
+            "repeat ABI request reused stale names or admitted an unrelated function");
+    auto malformed = declarations;
+    malformed.records.at("Parcel").members.pop_back();
+    bool badNamesRejected = false;
+    try {
+        (void)emitter.abiFactsJson(checked, malformed);
+    } catch (const Error &) {
+        badNamesRejected = true;
+    }
+    require(badNamesRejected && emitter.stackFactsJson(checked) == stack &&
+                emitter.abiFactsJson(checked, declarations) == facts,
+            "malformed ABI names were accepted or poisoned stack facts or the corrected ABI request");
+    auto hostileNames = declarations;
+    hostileNames.records.at("Parcel").sourceName = std::string("bad") + char(0xff) + char(0) + char(0xc3) + "(";
+    const auto hostileFacts = emitter.abiFactsJson(checked, hostileNames);
+    require(hostileFacts.find("bad\\u00ff\\u0000\\u00c3(") != std::string::npos &&
+                emitter.abiFactsJson(checked, declarations) == facts,
+            "ABI name escaping changed bytes or retained a prior optional suffix");
+    accepted += 3;
     // Drop every hostile ingress container, then move only the capsule's native
     // owning handle. Previously acquired views still read that same source owner.
     input = Module{};
@@ -709,10 +784,12 @@ void metadataLifetimeTests() {
     }
     require(movedFromRejected, "moved-from validated module did not reject metadata access");
     ++rejected;
+    rejectStackOwner(emitter, checked);
+    rejectAbiOwner(emitter, checked);
     require(&moved.metadata() == identity, "validated move changed metadata identity");
-    require(leaves.size() == 3 && leaves[0] == Type::U8 && leaves[1] == Type::U64 &&
-                leaves[2] == Type::U8 && fields.size() == 5 && fields[1].elementType == Type::OwnedBytes &&
-                offsets.size() == 5 && offsets[1] == 8 && offsets[3] == 48 && visible.size() == 1 && visible[0] == 7,
+    require(leaves.size() == 3 && leaves[0] == Type::U8 && leaves[1] == Type::U64 && leaves[2] == Type::U8 &&
+                fields.size() == 5 && fields[1].elementType == Type::OwnedBytes && offsets.size() == 5 &&
+                offsets[1] == 8 && offsets[3] == 48 && visible.size() == 1 && visible[0] == 7,
             "metadata views did not survive ingress destruction and validated move");
     require(frame.frameBytes() == 416 && regions.size() == 2 && regions.contains(8) && regions.contains(416) &&
                 owners.size() == 2 && owners.at(304) && owners.at(336) && objects.size() == 3 &&
@@ -722,19 +799,34 @@ void metadataLifetimeTests() {
     copiedField.elementType = Type::U64;
     require(copiedField.elementType == Type::U64 && fields[1].elementType == Type::OwnedBytes,
             "metadata field observation exposed mutable source storage");
-    require(emitter.abiFactsJson(moved, declarations) == facts,
-            "ABI facts lost same-owner identity after validated move");
+    require(emitter.stackFactsJson(moved) == stack && emitter.abiFactsJson(moved, declarations) == facts &&
+                emitter.stackFactsJson(moved) == stack,
+            "stack or ABI facts lost same-owner identity after validated move");
     require(X86Emitter{}.emit(moved) == assembly, "validated move changed emitted assembly");
     ++accepted;
+    rejectAbiOwner(emitter, independent);
+    rejectStackOwner(emitter, independent);
+    require(emitter.stackFactsJson(moved) == stack && emitter.abiFactsJson(moved, declarations) == facts,
+            "independent owner rejection changed exact stack or ABI observations");
+
+    // The emitted temporary dies at the semicolon. This checks rejection of a
+    // later equal module without depending on whether the allocator reuses it.
+    X86Emitter expiredOwner;
+    (void)expiredOwner.emit(validate(moving()));
+    const auto replacement = validate(moving());
+    rejectStackOwner(expiredOwner, replacement);
+    rejectAbiOwner(expiredOwner, replacement);
+
+    bool failedEmission = false;
     try {
-        (void)emitter.abiFactsJson(independent, declarations);
-    } catch (const Error &error) {
-        require(std::string(error.what()) == "ABI facts require the same emitted module",
-                "independent metadata owner produced wrong ABI identity diagnostic");
-        ++rejected;
-        return;
+        (void)emitter.emit(checked);
+    } catch (const Error &) {
+        failedEmission = true;
     }
-    throw Error("independent equal metadata owner passed emitted-module identity guard");
+    require(failedEmission, "emission accepted a moved-from validated module");
+    ++rejected;
+    rejectStackOwner(emitter, moved);
+    rejectAbiOwner(emitter, moved);
 }
 
 void layoutTests() {
@@ -905,9 +997,13 @@ void ownershipTests() {
     reject("duplicate owning positional arguments", called(), [](Module &m) {
         op<ResourceCall>(m).ownerArguments[5] = 96;
     });
-    reject("inactive authority cannot replace owner provenance", called(), [](Module &m) {
-        op<ResourceCall>(m).regionOffset = 416;
-    }, "region authority is not active");
+    reject(
+        "inactive authority cannot replace owner provenance",
+        called(),
+        [](Module &m) {
+            op<ResourceCall>(m).regionOffset = 416;
+        },
+        "region authority is not active");
     reject("scalar argument cannot name owner", called(), [](Module &m) {
         op<ResourceCall>(m).ownerArguments[2] = 96;
     });
@@ -917,26 +1013,38 @@ void ownershipTests() {
     reject("resource call exact positional count", called(), [](Module &m) {
         op<ResourceCall>(m).ownerArguments.pop_back();
     });
-    reject("wrong owning parameter nominal identity", moving(), [](Module &m) {
-        std::get<BindOwnedObjectParameter>(m.functions[0].code[1]).className = "Only";
-    }, "owning class parameter type mismatch");
+    reject(
+        "wrong owning parameter nominal identity",
+        moving(),
+        [](Module &m) {
+            std::get<BindOwnedObjectParameter>(m.functions[0].code[1]).className = "Only";
+        },
+        "owning class parameter type mismatch");
     for (const auto &[name, mutate, diagnostic] :
          std::vector<std::tuple<const char *, std::function<void(Module &)>, const char *>>{
-             {"exact owning root", [](auto &module) {
+             {"exact owning root",
+              [](auto &module) {
                   op<BindOwnedObjectParameter>(module).offset = 88;
-              }, "owning class parameter requires exact nominal object slot"},
-             {"nominal owning root", [](auto &module) {
+              },
+              "owning class parameter requires exact nominal object slot"},
+             {"nominal owning root",
+              [](auto &module) {
                   module.functions[0].parameters[1] = Type("Only");
                   op<BindOwnedObjectParameter>(module).className = "Only";
-              }, "owning class parameter requires exact nominal object slot"},
-             {"mutable owning root", [](auto &module) {
+              },
+              "owning class parameter requires exact nominal object slot"},
+             {"mutable owning root",
+              [](auto &module) {
                   module.functions[0].objectSlots[96].mutableValue = false;
-              }, "owning class parameter must be mutable"},
-             {"distinct owning roots", [](auto &module) {
+              },
+              "owning class parameter must be mutable"},
+             {"distinct owning roots",
+              [](auto &module) {
                   auto &function = module.functions[0];
                   function.parameters.push_back(Type("Parcel"));
                   function.code.insert(function.code.begin() + 2, BindOwnedObjectParameter{2, 96, "Parcel"});
-              }, "owning class parameter bindings overlap"}})
+              },
+              "owning class parameter bindings overlap"}})
         reject(std::string("source entry ") + name, moving(), mutate, diagnostic);
     reject("owning class requires first region", moving(), [](Module &m) {
         m.functions[0].parameters[0] = Type::I64;

@@ -1,0 +1,339 @@
+export module aurora.compiler.x86_scalar;
+import aurora.compiler.x86_storage;
+import aurora.compiler.x86_helpers;
+import aurora.compiler.ir_metadata_storage;
+import aurora.compiler.ir_instruction_storage;
+
+export namespace compiler_x86 {
+    auto division_label(EmitWorkspace& workspace, i64 function, i64 division, bool done) -> bool {
+        if (done) {
+            workspace.text(".Ldivision_done_");
+        } else {
+            workspace.text(".Ldivision_ready_");
+        }
+        workspace.number(function);
+        workspace.text("_");
+        return workspace.number(division);
+    }
+    auto checked_division(EmitWorkspace& workspace, bool remainder, bool unsigned_value) -> bool {
+        const i64 function = workspace.function_index();
+        const i64 division = workspace.next_division();
+        workspace.line("movq %rax, %r11");
+        workspace.line("testq %r11, %r11");
+        workspace.line("jz .Laurora_division_zero_trap");
+        workspace.line("movq %rcx, %rax");
+        if (unsigned_value) {
+            workspace.line("xorq %rdx, %rdx");
+            workspace.line("divq %r11");
+            if (remainder) {
+                workspace.line("movq %rdx, %rax");
+            }
+            return workspace.ok();
+        }
+        workspace.line("cmpq $-1, %r11");
+        workspace.text("    jne ");
+        division_label(workspace, function, division, false);
+        workspace.end_line();
+        workspace.line("movabsq $-9223372036854775808, %rdx");
+        workspace.line("cmpq %rdx, %rax");
+        workspace.text("    jne ");
+        division_label(workspace, function, division, false);
+        workspace.end_line();
+        if (remainder) {
+            workspace.line("xorq %rax, %rax");
+            workspace.text("    jmp ");
+            division_label(workspace, function, division, true);
+            workspace.end_line();
+        } else {
+            workspace.line("jmp .Laurora_overflow_trap");
+        }
+        division_label(workspace, function, division, false);
+        workspace.text(":\n");
+        workspace.line("cqto");
+        workspace.line("idivq %r11");
+        if (remainder) {
+            workspace.line("movq %rdx, %rax");
+        }
+        division_label(workspace, function, division, true);
+        return workspace.text(":\n");
+    }
+    auto checked_shift(EmitWorkspace& workspace, bool left, bool byte_value) -> bool {
+        if (byte_value) {
+            workspace.line("cmpq $7, %rax");
+        } else {
+            workspace.line("cmpq $63, %rax");
+        }
+        workspace.line("ja .Laurora_shift_count_trap");
+        workspace.line("movq %rcx, %rdx");
+        workspace.line("movq %rax, %rcx");
+        workspace.line("movq %rdx, %rax");
+        if (!left) {
+            return workspace.line("shrq %cl, %rax");
+        }
+        workspace.line("shlq %cl, %rax");
+        if (byte_value) {
+            workspace.line("cmpq $255, %rax");
+            return workspace.line("ja .Laurora_overflow_trap");
+        }
+        workspace.line("movq %rax, %r11");
+        workspace.line("shrq %cl, %r11");
+        workspace.line("cmpq %rdx, %r11");
+        return workspace.line("jne .Laurora_overflow_trap");
+    }
+    auto overflow_check(EmitWorkspace& workspace, bool unsigned_value, bool byte_value) -> bool {
+        if (unsigned_value) {
+            workspace.line("jc .Laurora_overflow_trap");
+        } else {
+            workspace.line("jo .Laurora_overflow_trap");
+        }
+        if (byte_value) {
+            workspace.line("cmpq $255, %rax");
+            workspace.line("ja .Laurora_overflow_trap");
+        }
+        return workspace.ok();
+    }
+    auto emit_scalar(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
+        const compiler_ir_instructions::InstructionStore& store, i64 instruction) -> bool {
+        const compiler_ir_instructions::RawInstructionRow row = store.instruction_at(instruction);
+        const i64 form = row.form();
+        if (form == 5) {
+            const compiler_ir_instructions::RawOperandRow value = store.operand_at(row.operand_begin());
+            // Native Constant observes the exact 64-bit pattern through int64_t.
+            // Preserve its signed decimal spelling even for a u64 high bit.
+            if (value.role() == 11) {
+                const u64 bits = value.unsigned_value();
+                workspace.text("    movabsq $");
+                if (bits > 9223372036854775807u64) {
+                    workspace.text("-");
+                    workspace.unsigned_number((18446744073709551615u64 - bits) + 1u64);
+                } else {
+                    workspace.unsigned_number(bits);
+                }
+                workspace.text(", %rax\n");
+            } else {
+                workspace.line_number("movabsq $", value.signed_value(), ", %rax");
+            }
+            return true;
+        }
+        if (form == 6) {
+            workspace.line_number("movq $", operand_value(store, instruction, 1), ", %rax");
+            return true;
+        }
+        if (form == 7) {
+            const i64 packed_address = workspace.pack_address(0, operand_value(store, instruction, 0));
+            load_value(workspace, metadata, operand_value(store, instruction, 1), packed_address);
+            return true;
+        }
+        if (form == 8) {
+            const i64 packed_address = workspace.pack_address(0, operand_value(store, instruction, 0));
+            store_value(workspace, metadata, operand_value(store, instruction, 1), packed_address);
+            return true;
+        }
+        if (form == 9) {
+            workspace.push();
+            return true;
+        }
+        if (form == 10) {
+            workspace.pop("%rax");
+            return true;
+        }
+        if (form == 11) {
+            const i64 operation = row.unary_operation();
+            if (operation == 0) {
+                workspace.line("negq %rax");
+                workspace.line("jo .Laurora_overflow_trap");
+            } else {
+                if (operation == 1) {
+                    workspace.line("xorq $1, %rax");
+                } else {
+                    if (operation == 2) {
+                        if (type_kind(metadata, operand_value(store, instruction, 0)) == 10) {
+                            workspace.line("xorq $255, %rax");
+                        } else {
+                            workspace.line("notq %rax");
+                        }
+                    } else {
+                        workspace.fail();
+                    }
+                }
+            }
+            return true;
+        }
+        if (form == 12) {
+            if (!workspace.left_in_rcx()) {
+                workspace.pop("%rcx");
+            }
+            const i64 kind = type_kind(metadata, operand_value(store, instruction, 0));
+            const bool byte_value = kind == 10;
+            const bool unsigned_value = kind == 7 || byte_value;
+            const i64 operation = row.binary_operation();
+            if (operation == 0) {
+                workspace.line("addq %rcx, %rax");
+                overflow_check(workspace, unsigned_value, byte_value);
+            } else {
+                if (operation == 1) {
+                    workspace.line("subq %rax, %rcx");
+                    workspace.line("movq %rcx, %rax");
+                    overflow_check(workspace, unsigned_value, byte_value);
+                } else {
+                    if (operation == 2) {
+                        if (unsigned_value) {
+                            workspace.line("mulq %rcx");
+                        } else {
+                            workspace.line("imulq %rcx, %rax");
+                        }
+                        overflow_check(workspace, unsigned_value, byte_value);
+                    } else {
+                        if (operation == 3 || operation == 4) {
+                            checked_division(workspace, operation == 4, unsigned_value);
+                        } else {
+                            if (operation == 5) {
+                                workspace.line("andq %rcx, %rax");
+                            } else {
+                                if (operation == 6) {
+                                    workspace.line("orq %rcx, %rax");
+                                } else {
+                                    if (operation == 7) {
+                                        workspace.line("xorq %rcx, %rax");
+                                    } else {
+                                        if (operation == 8 || operation == 9) {
+                                            checked_shift(workspace, operation == 8, byte_value);
+                                        } else {
+                                            workspace.fail();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return true;
+        }
+        if (form == 13) {
+            if (type_kind(metadata, operand_value(store, instruction, 1)) == 10) {
+                workspace.line("cmpq $255, %rax");
+                workspace.line("ja .Laurora_overflow_trap");
+            } else {
+                if (type_kind(metadata, operand_value(store, instruction, 0)) != 10) {
+                    workspace.line("testq %rax, %rax");
+                    workspace.line("js .Laurora_overflow_trap");
+                }
+            }
+            return true;
+        }
+        if (form == 14) {
+            if (!workspace.left_in_rcx()) {
+                workspace.pop("%rcx");
+            }
+            workspace.line("cmpq %rax, %rcx");
+            const i64 kind = type_kind(metadata, operand_value(store, instruction, 0));
+            const bool unsigned_value = kind == 7 || kind == 10;
+            const i64 operation = row.comparison_operation();
+            workspace.text("    set");
+            if (operation == 0) {
+                workspace.text("e");
+            } else {
+                if (operation == 1) {
+                    workspace.text("ne");
+                } else {
+                    if (operation == 2) {
+                        if (unsigned_value) {
+                            workspace.text("b");
+                        } else {
+                            workspace.text("l");
+                        }
+                    } else {
+                        if (operation == 3) {
+                            if (unsigned_value) {
+                                workspace.text("a");
+                            } else {
+                                workspace.text("g");
+                            }
+                        } else {
+                            if (operation == 4) {
+                                if (unsigned_value) {
+                                    workspace.text("be");
+                                } else {
+                                    workspace.text("le");
+                                }
+                            } else {
+                                if (operation == 5) {
+                                    if (unsigned_value) {
+                                        workspace.text("ae");
+                                    } else {
+                                        workspace.text("ge");
+                                    }
+                                } else {
+                                    workspace.fail();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            workspace.text(" %al\n");
+            workspace.line("movzbq %al, %rax");
+            return true;
+        }
+        if (form == 15) {
+            workspace.line_number("cmpq $", operand_value(store, instruction, 1), ", %rax");
+            workspace.line("jae .Laurora_bounds_trap");
+            return true;
+        }
+        if (form == 16 || form == 17) {
+            const i64 type = operand_value(store, instruction, 2);
+            const bool narrow = type_kind(metadata, type) == 10;
+            const i64 offset = operand_value(store, instruction, 0);
+            if (form == 16) {
+                workspace.line_address("leaq ", offset, ", %rcx");
+                if (narrow) {
+                    workspace.text("    movzbq (%rcx,%rax,1), %rax\n");
+                } else {
+                    workspace.text("    movq (%rcx,%rax,8), %rax\n");
+                }
+            } else {
+                workspace.pop("%rcx");
+                workspace.line_address("leaq ", offset, ", %rdx");
+                if (narrow) {
+                    workspace.text("    movb %al, (%rdx,%rcx,1)\n");
+                } else {
+                    workspace.text("    movq %rax, (%rdx,%rcx,8)\n");
+                }
+            }
+            return true;
+        }
+        if (form == 18) {
+            workspace.line_address("leaq ", operand_value(store, instruction, 0), ", %rax");
+            return true;
+        }
+        if (form == 39) {
+            workspace.line("movq %rax, %rdi");
+            call_query(workspace, metadata, row.query(), operand_value(store, instruction, 0));
+            return true;
+        }
+        if (form == 40) {
+            workspace.label(operand_value(store, instruction, 0));
+            workspace.text(":\n");
+            return true;
+        }
+        if (form == 41 || form == 42) {
+            if (form == 42) {
+                workspace.line("testq %rax, %rax");
+                workspace.text("    jz ");
+            } else {
+                workspace.text("    jmp ");
+            }
+            workspace.label(operand_value(store, instruction, 0));
+            workspace.end_line();
+            return true;
+        }
+        if (form == 43) {
+            workspace.text("    jmp ");
+            workspace.return_label();
+            workspace.end_line();
+            return true;
+        }
+        return false;
+    }
+}

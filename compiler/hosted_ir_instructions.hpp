@@ -12,6 +12,10 @@ class Instructions final {
     class ReadCursor;
     std::unique_ptr<State> state_;
     Instructions();
+    const void *sourceOwner(const Metadata &metadata) const;
+    std::uint64_t sourceIdentity(const Metadata &metadata) const;
+    std::size_t sourceInstructionCount(const Metadata &metadata) const;
+    friend class ::aurora::X86Emitter;
     void admit(const Metadata &metadata);
     void structure();
     void publish();
@@ -31,8 +35,9 @@ class Instructions final {
     friend class InstructionRange;
     friend class InstructionIngress;
     friend class detail::InstructionWriter;
-    template<class> friend class InstructionPayloadRange;
+    template <class> friend class InstructionPayloadRange;
     friend ValidatedModule validate(InstructionIngress pending, verification::Metrics *metrics);
+
 public:
     ~Instructions();
     Instructions(const Instructions &) = delete;
@@ -70,9 +75,12 @@ class InstructionWriter final {
         void scalar(OperandRole role, std::int64_t value);
         void name(OperandRole role, const std::string &value);
         void slice(OperandRole role, std::int64_t begin, std::int64_t count);
+
     public:
         Cursor(InstructionWriter &writer, bool measuring, std::int64_t prefixLimit = 0);
-        std::int64_t prefixCount() const { return prefix_; }
+        std::int64_t prefixCount() const {
+            return prefix_;
+        }
         void form(InstructionForm value);
         void finish();
         void integer(OperandRole role, const int &value);
@@ -88,7 +96,7 @@ class InstructionWriter final {
         void comparison(const Comparison &value);
         void query(const Query &value);
         void constant(const std::int64_t &value, const Type &type);
-        template<class Payload> void offsets(OperandRole role, const Payload &values) {
+        template <class Payload> void offsets(OperandRole role, const Payload &values) {
             const auto size = count(values.size());
             const auto begin = add(add(row_.operandBegin, prefixLimit_), nested_);
             const auto nextNested = add(nested_, size);
@@ -105,7 +113,7 @@ class InstructionWriter final {
             }
             nested_ = nextNested;
         }
-        template<class Payload> void services(const Payload &values) {
+        template <class Payload> void services(const Payload &values) {
             const auto size = add(count(values.size()), count(values.size()));
             const auto begin = add(add(row_.operandBegin, prefixLimit_), nested_);
             const auto nextNested = add(nested_, size);
@@ -125,7 +133,7 @@ class InstructionWriter final {
             }
             nested_ = nextNested;
         }
-        template<class Payload> void roots(const Payload &values) {
+        template <class Payload> void roots(const Payload &values) {
             const auto size = add(count(values.size()), count(values.size()));
             const auto begin = add(add(row_.operandBegin, prefixLimit_), nested_);
             const auto nextNested = add(nested_, size);
@@ -145,7 +153,7 @@ class InstructionWriter final {
             }
             nested_ = nextNested;
         }
-        template<class Payload> void literal(const Payload &values) {
+        template <class Payload> void literal(const Payload &values) {
             const auto size = count(values.size());
             const auto begin = writer_.position_.literalCount;
             const auto end = add(begin, size);
@@ -160,12 +168,14 @@ class InstructionWriter final {
             }
         }
     };
+
 public:
-    explicit InstructionWriter(MetadataWriter &metadata) : metadata_(metadata) {}
+    explicit InstructionWriter(MetadataWriter &metadata) : metadata_(metadata) {
+    }
     void beginBody(std::size_t callableId);
     void endBody();
     void allocate();
-    template<class Variant> void append(const Variant &value) {
+    template <class Variant> void append(const Variant &value) {
         Cursor measure(*this, true);
         writeInstruction(value, measure);
         Cursor write(*this, false, measure.prefixCount());

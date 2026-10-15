@@ -522,10 +522,16 @@ foreach fixture : ['ir_tests', 'stack_probes', 'method_values_ir', 'readonly_win
     test(fixture.replace('_', '-'), compiler_fixtures[fixture],
          suite: ['full', 'slow', 'compiler'], env: oracle_env, timeout: 180)
 endforeach
+# Reuse the real CLI entry object for alternate-emitter mutation probes.
+# No duplicate compiler/IR translation unit or production entry is added.
+emitter_probe_main = static_library('emitter-probe-main',
+    objects: aurorac.extract_all_objects(recursive: false), native: true, build_by_default: false)
 test('ir-exhaustive', python,
-     args: ['-B', files('compiler/ir_exhaustive.py'), compiler_fixtures['ir_tests'],
-            '--abi-header', frontend_assembly[3]],
-     depends: [compiler_fixtures['ir_tests'], frontend_assembly], suite: ['full', 'slow', 'compiler'],
+     args: ['-B', artifact_adapter, python, '-B', files('compiler/ir_exhaustive.py'), compiler_fixtures['ir_tests'],
+            '--abi-header', frontend_assembly[3], '--abi-facts', frontend_assembly[2],
+            '--compiler', aurorac, '--frontend-library', frontend_library,
+            '--main-library', emitter_probe_main, '--artifacts', '@ARTIFACTS@'],
+     depends: [compiler_fixtures['ir_tests'], frontend_assembly, frontend_library, aurorac, emitter_probe_main], suite: ['full', 'slow', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 600)
 test('stack-guards', python,
      args: ['-B', '-O', files('compiler/sector_values_abi.py'), compiler_fixtures['stack_probes'], '--stack-guards'],
@@ -694,7 +700,10 @@ test('hosted-parser', hosted_parser_test,
                  '../compiler/resolution_ingest.au', '../compiler/ir_graph.au', '../library/console/line.au',
                  '../compiler/ir_metadata_storage.au', '../compiler/ir_metadata.au',
                  '../compiler/ir_instruction_storage.au', '../compiler/ir_instructions.au',
-                 '../compiler/ir_initialization.au'),
+                 '../compiler/ir_initialization.au',
+                 '../compiler/x86_storage.au', '../compiler/x86_helpers.au', '../compiler/x86_scalar.au',
+                 '../compiler/x86_objects.au', '../compiler/x86_resources.au', '../compiler/x86_facts.au',
+                 '../compiler/x86_module.au', '../library/std/decimal_digits.au'),
      suite: ['full', 'dev', 'core', 'compiler'], timeout: 120)
 hosted_parser_invalid = executable(
     'hosted-parser-invalid', ['compiler/hosted_parser_invalid.cpp', '../compiler/hosted_parser.cpp',

@@ -1,7 +1,9 @@
 # Compiler status and ownership
 
-Source-bootstrap builds are restored. Further migration uses deletion-first steps
-with one semantic authority and final-source qualification for each change.
+Source-bootstrap builds are restored. Complete x86 text emission runs in Aurora,
+with one source authority and no native fallback. Final-source bootstrap,
+convergence, exact output comparison, performance and platform qualification
+remain required gates; retained receipts define the scope of each result.
 
 | Component | Current source authority | Remaining work |
 |---|---|---|
@@ -14,7 +16,7 @@ with one semantic authority and final-source qualification for each change.
 | Current values, operand stacks, bounds evidence | C++ verifier | Migration frozen; unmerged draft is not current functionality |
 | Ownership, provenance and worklist | C++ verifier; Aurora owns entry-binding uniqueness | Continue deletion-first migration; retain dynamic checks |
 | Call graph | Aurora | Validate final integrated behavior |
-| x86 emission | C++ backend | Aurora-native emission remains incomplete |
+| x86 emission | Aurora, fixed native transport | Maintain exact assembly/sidecar, convergence, lifetime and performance gates |
 | Assembly, linking and hosted runtime | External bootstrap tools/C++ | Native replacements remain incomplete |
 
 ## Hosted Aurora parser
@@ -79,8 +81,56 @@ is not a transient-memory or whole-process RSS ceiling.
 
 The verifier protects the backend against malformed internal IR. It is not a
 verified compiler or a proof of Rust-equivalent safety. C++ host code, generated
-bridges and the emitter remain trusted. Kernel execution also needs its separate
+bridges and Aurora emission remain trusted. Kernel execution also needs its separate
 image, stack and authority checks.
+
+## Aurora emission boundary
+
+`x86_module.au` consumes one mutable `EmitWorkspace` and the existing readonly
+`MetadataStore` and `InstructionStore`. The validated capsule gates the private
+owner bridge and checks that both stores are the original admitted pair. The
+host transfers only retained callable IDs in emission order and requested ABI
+source/member names. It never serializes another instruction inventory.
+
+`x86_scalar.au`, `x86_objects.au` and `x86_resources.au` select all 84 instruction
+forms. Shared source helpers own widths, payload-only copies, owner transfers,
+padding, stack probes and private argument records. The source driver owns both
+peepholes, linkage, reflection ordering, literal IDs and traps. `x86_facts.au`
+serializes stack and ABI JSON, including invalid-byte escaping. Both are explicit
+optional artifact requests against the same live emitted `ValidatedModule`.
+The internal C++ `stackFacts()` compatibility map and JSON decoder are removed;
+`stackFactsJson(validated)` follows the same ownership contract as ABI requests.
+Tests inspect the requested JSON independently. No JSON is serialized or decoded
+on an ordinary compile without a sidecar request, and no IR owner is retained.
+
+The workspace has bounded pools and sticky executable-emission failures. Assembly
+seals first; a named `Artifact` selector prepares one shared optional suffix for
+stack or ABI JSON. A new request discards only that suffix and ABI name ingress,
+so stack/ABI ordering and retry after a malformed optional request preserve the
+executable and source facts. Failed executable emission requires a fresh workspace.
+Incomplete/failed artifacts are not extractable. The host reads copied 512-byte
+chunks; `ArtifactWriter` retains its single-write 64 MiB limit and atomic replacement.
+The original emitted module must remain alive while requesting sidecars; moving
+its validated owner is supported. Before using cached roots, the host checks the
+supplied live instruction owner's unique, non-wrapping region generation and its
+original metadata pairing. A later module cannot revive stale roots through
+allocator-address reuse. This retains no source owners or metadata snapshot.
+
+Workspace extents and the region's final logical payload quota are checked and
+count-derived from retained functions, reflection views and published instructions;
+there is no fixed million-row limit or bitmap sized by pruned callables. Optional
+ABI-name rows/bytes are bounded by their minimum contribution to the requested
+64 MiB JSON artifact, with a separate runtime-name allowance. Requested stack
+JSON has a checked bound of twice assembly bytes plus conservative per-function/
+per-call overhead. Actual elapsed time and peak RSS, including transient resizing
+and native copied strings, remain unmeasured for this source draft.
+`x86.hpp` contains the public interface only; no production fallback remains.
+
+The next qualification must source-build with the explicit three-root predecessor
+in [the bootstrap recipe](README.md#source-bootstrap), compare full assembly and
+both sidecars to the external old compiler, check all existing backend/host
+artifact gates and C1/C2 convergence, measure time and peak memory, then run the
+final-source GCC 16 full suite plus normal BIOS/UEFI and affected profiles.
 
 ## Compile speed
 

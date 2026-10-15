@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
-"""Prove new, unhandled IR variants fail both trusted consumers at compile time.
+"""Check canonical IR mapping and fail-closed source emission.
 
-Only temporary source copies are modified. Positive controls first compile the
-unchanged consumers, then an injected variant must trigger the specific exhaustive
-visitor assertion, rather than an unrelated C++ error. An optional direct-IR
-executable also enables separate native receiver-array ABI and exact-trap checks.
+Temporary copies inject unknown variants/forms into the verifier and codec,
+then exercise the actual Aurora emitter with hostile observations and a removed
+handler. Source dispatch has runtime rejection, not C++ compile-time exhaustiveness.
+The direct-IR executable also supplies separate native ABI and exact-trap checks.
 """
 
 from pathlib import Path
 import argparse
+import json
 import os
 import re
 import shlex
 import subprocess
+import sys
 import tempfile
+from unittest import mock
+
+from integer_oracle import command
 
 ROOT = Path(__file__).resolve().parents[2]
 COMPILER = shlex.split(os.environ.get("CXX", "g++"))
@@ -35,10 +40,7 @@ HEADERS = (
 )
 GENERATED_HEADERS = ("hosted_frontend_abi.hpp",)
 SOURCES = ("ir_verify.cpp",)
-CONSUMERS = (
-    ("ir_verify.cpp", "unhandled typed IR verifier operation"),
-    ("x86.hpp", "unhandled typed IR backend operation"),
-)
+CONSUMERS = (("ir_verify.cpp", "unhandled typed IR verifier operation"),)
 
 
 def compile_probe(directory, consumer):
@@ -87,13 +89,177 @@ def compile_codec_probe(directory):
     )
 
 
+def source_emitter_probes(directory, args):
+    # Reuse the built CLI main and stock admission. Only emission is wrapped,
+    # using a local-symbol source graph with the identical generated root ABI.
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import bootstrap_frontend as bootstrap
+
+    fixture = directory / "emitter-probe.cpp"
+    fixture.write_text(r"""
+#include "hosted_frontend_abi.hpp"
+#include <cstdlib>
+using namespace aurora;
+extern "C" std::int64_t probe_emitter_run(const void *, std::int64_t, std::int64_t) noexcept;
+extern "C" std::int64_t __wrap_aurora_hosted_emitter_run(
+    const void *roots, std::int64_t binding, std::int64_t reflection) noexcept {
+    const auto result = probe_emitter_run(roots, binding, reflection);
+    const auto invalid = static_cast<std::int64_t>(hosted_abi::compiler_x86::EmitStatus::invalid);
+    if (result == invalid) {
+        auto *workspace = const_cast<void *>(static_cast<const void *const *>(roots)[0]);
+        if (aurora_hosted_emitter_status(workspace) != invalid ||
+            aurora_hosted_emitter_add_retained(workspace, 0) != 0 ||
+            aurora_hosted_emitter_status(workspace) != invalid ||
+            aurora_hosted_emitter_size(workspace,
+                static_cast<std::int64_t>(hosted_abi::compiler_x86::Artifact::assembly)) != -1)
+            std::abort();
+    }
+    return result;
+}
+
+""")
+    fixture_object = fixture.with_suffix(".o")
+    command(
+        COMPILER
+        + ["-std=c++23", "-I", ROOT / "compiler", "-I", args.abi_header.parent, "-c", fixture, "-o", fixture_object],
+        timeout=45,
+    )
+    inputs = {}
+    for case, parameters, result, expression, expected in (
+        ("constant", "", "i64", "42", "movabsq $42, %rax"),
+        ("unary", "i64 x", "i64", "-x", "negq %rax"),
+        ("binary", "i64 x, i64 y", "i64", "x+y", "addq %rcx, %rax"),
+        ("comparison", "i64 x, i64 y", "bool", "x==y", "sete %al"),
+    ):
+        path = directory / (case + ".au")
+        path.write_text(f"module emitter_probe_fixture; auto test({parameters})->{result} {{ return {expression}; }}\n")
+        inputs[case] = (path, expected)
+    original = json.loads(args.abi_facts.read_text())
+    source = directory / "emitter-probe.au"
+    source.write_text("""
+export module aurora.compiler.frontend;
+import aurora.compiler.x86_module;
+import aurora.compiler.x86_storage;
+import aurora.compiler.ir_metadata_storage;
+import aurora.compiler.ir_instruction_storage;
+export namespace compiler_frontend {
+    auto emitter_run(compiler_x86::EmitWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata,
+        const compiler_ir_instructions::InstructionStore& instructions,
+        i64 binding, i64 reflection) -> compiler_x86::EmitStatus {
+        return compiler_x86::run(workspace, metadata, instructions, binding, reflection);
+    }
+}
+""")
+    modules = directory / "modules"
+    bootstrap.stage_modules(
+        modules, [*sorted((ROOT / "compiler").glob("*.au")), ROOT / "library/std/decimal_digits.au"]
+    )
+    storage = modules / "aurora/compiler/ir_instruction_storage.au"
+    scalar = modules / "aurora/compiler/x86_scalar.au"
+    storage_original, scalar_original = storage.read_text(), scalar.read_text()
+    for mutation, cases in (
+        ("unchanged", ("constant", "unary", "binary", "comparison")),
+        ("unknown-form", ("constant",)),
+        ("unknown-operators", ("unary", "binary", "comparison")),
+        ("missing-handler", ("constant",)),
+    ):
+        storage.write_text(storage_original)
+        scalar.write_text(scalar_original)
+        if mutation == "unknown-form":
+            storage.write_text(replace_once(storage_original, "return instructionForm;", "return 999;"))
+        elif mutation == "unknown-operators":
+            changed = storage_original
+            for field in ("unaryOperation", "binaryOperation", "comparisonOperation"):
+                changed = replace_once(changed, "return " + field + ";", "return 999;")
+            storage.write_text(changed)
+        elif mutation == "missing-handler":
+            # Remove one real family, not an independently enumerated form list.
+            prefix, signature = scalar_original.split("    auto emit_scalar(", 1)
+            scalar.write_text(prefix + "    auto emit_scalar(" + signature.split("{", 1)[0] + "{ return false; }\n}\n")
+        assembly = directory / (mutation + ".s")
+        facts_path = directory / (mutation + ".json")
+        command(
+            [
+                args.compiler,
+                "--local-symbols",
+                "--module-root",
+                modules,
+                source,
+                "--abi-facts",
+                facts_path,
+                "-o",
+                assembly,
+            ],
+            timeout=90,
+        )
+        facts = json.loads(facts_path.read_text())
+        for group, name in (
+            ("records", "compiler_x86::EmitWorkspace"),
+            ("records", "compiler_ir_metadata::MetadataStore"),
+            ("records", "compiler_ir_instructions::InstructionStore"),
+            ("functions", "compiler_frontend::emitter_run"),
+        ):
+            if bootstrap.abi_declaration(facts, group, name) != bootstrap.abi_declaration(original, group, name):
+                raise AssertionError(mutation + ": emitter probe ABI differs: " + name)
+        with mock.patch.object(bootstrap, "PASS_ENTRIES", {"emitter_run": bootstrap.PASS_ENTRIES["emitter_run"]}):
+            bridge = "\n".join(bootstrap.pass_bridges(facts)[1]).replace(
+                "aurora_hosted_emitter_run", "probe_emitter_run"
+            )
+        assembly.write_text(assembly.read_text() + "\n" + bridge + "\n")
+        executable = directory / mutation
+        command(
+            COMPILER
+            + [
+                fixture_object,
+                assembly,
+                args.main_library,
+                args.frontend_library,
+                "-Wl,--wrap=aurora_hosted_emitter_run",
+                "-o",
+                executable,
+            ],
+            timeout=45,
+        )
+        for case in cases:
+            path, expected = inputs[case]
+            for existing in (True,) if mutation == "unchanged" else (False, True):
+                output = directory / (mutation + "-" + case + "-" + str(existing) + ".s")
+                if existing:
+                    output.write_bytes(b"preserve this artifact\n")
+                observed = subprocess.run([executable, path, "-o", output], capture_output=True, text=True, timeout=5)
+                if mutation == "unchanged":
+                    if observed.returncode != 0 or observed.stderr or expected not in output.read_text():
+                        raise AssertionError(f"{mutation}/{case}: positive emitter control failed: {observed.stderr}")
+                elif (
+                    observed.returncode != 1
+                    or observed.stdout
+                    or observed.stderr != "aurorac: error AU9001: invalid hosted x86 emission transport\n"
+                    or (output.read_bytes() != b"preserve this artifact\n" if existing else output.exists())
+                ):
+                    raise AssertionError(f"{mutation}/{case}: wrong emitter rejection: {observed.stderr}")
+            print(f"PASS source emitter {mutation}: {case}")
+
+
+def replace_once(source, old, new):
+    if source.count(old) != 1:
+        raise AssertionError("probe mutation anchor is not unique: " + old)
+    return source.replace(old, new)
+
+
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("ir_tests", type=Path, nargs="?")
 parser.add_argument("--abi-header", type=Path, required=True)
+parser.add_argument("--abi-facts", type=Path, required=True)
+parser.add_argument("--compiler", type=Path, required=True)
+parser.add_argument("--frontend-library", type=Path, required=True)
+parser.add_argument("--main-library", type=Path, required=True)
+parser.add_argument("--artifacts", type=Path, required=True)
 args = parser.parse_args()
 
-with tempfile.TemporaryDirectory(prefix="aurora-ir-exhaustive-") as temporary:
-    directory = Path(temporary)
+
+def dispatch_checks(directory):
+    directory.mkdir(parents=True)
     for name in HEADERS + SOURCES:
         (directory / name).write_text((ROOT / "compiler" / name).read_text())
     # This is the exact predecessor-produced dependency used by host IR targets.
@@ -147,32 +313,12 @@ with tempfile.TemporaryDirectory(prefix="aurora-ir-exhaustive-") as temporary:
         raise AssertionError(f"instruction codec missing unknown form rejection:\n{result.stderr}")
     print("PASS IR exhaustive unknown source form rejected by instruction codec")
     generated_header.write_text(enum_original)
-    for enumeration in ("Unary", "Binary", "Comparison"):
-        enum_pattern = re.compile(
-            r"(namespace aurora::hosted_abi::compiler_lowering\s*\{\s*enum class "
-            + enumeration
-            + r"\s*:\s*std::int64_t\s*\{)(.*?)(\};)",
-            re.DOTALL,
-        )
-        if len(enum_pattern.findall(enum_original)) != 1:
-            raise AssertionError(f"could not uniquely locate {enumeration} operation enumeration")
-        enum_injected = enum_pattern.sub(
-            lambda match: match[1] + match[2].rstrip() + "\n    ExhaustivenessProbe,\n" + match[3], enum_original
-        )
-        generated_header.write_text(enum_injected)
-        # Scalar operator admission is source-owned; rawInstructionAdmission
-        # exercises transport-valid unknown values and terminal rejection there.
-        # The backend still decodes these enums with exhaustive native switches.
-        for header in ("x86.hpp",):
-            result = compile_probe(directory, header)
-            if (
-                result.returncode == 0
-                or "ExhaustivenessProbe" not in result.stderr
-                or "not handled in switch" not in result.stderr
-            ):
-                raise AssertionError(f"{header}: missing {enumeration}-enum exhaustive rejection:\n{result.stderr}")
-            print(f"PASS IR exhaustive unknown {enumeration} enum rejected by {header}")
-print("10 exhaustive IR dispatch checks passed")
+    print("5 canonical IR dispatch checks passed")
+
+
+dispatch_checks(args.artifacts / "dispatch")
+source_emitter_probes(args.artifacts / "dispatch", args)
+
 
 # When the direct-IR executable is supplied, exercise the same validated module
 # as actual native code. Keep this receipt separate from compile-time exhaustiveness.

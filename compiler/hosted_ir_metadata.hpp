@@ -10,6 +10,10 @@
 #include <type_traits>
 #include <vector>
 
+namespace aurora {
+class X86Emitter;
+}
+
 namespace aurora::ir {
 class Module;
 class ClassField;
@@ -378,6 +382,7 @@ private:
     Type instructionTypeAt(std::size_t index) const;
     std::string instructionText(std::size_t begin, std::size_t count) const;
     const void *sourceOwner() const noexcept;
+    friend class ::aurora::X86Emitter;
     friend class Instructions;
     friend class InitializationWorkspace;
     friend class InstructionIngress;

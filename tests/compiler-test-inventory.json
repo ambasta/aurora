@@ -373,6 +373,14 @@
     "reason": "Complete sealed Display service source and private ABI runner; retains Console controls separately.",
     "root_make": true
   },
+  "emitter_differential.py": {
+    "kind": "supplemental-runner",
+    "make": false,
+    "meson": false,
+    "meson_commands": {},
+    "reason": "Required external-oracle gate for the emitter migration: explicit old/new compilers, whole checked-in source corpus and byte-exact assembly/stack/ABI outputs; run as documented in compiler/README.md. This is not a production compiler dependency.",
+    "root_make": false
+  },
   "enum_composition.py": {
     "kind": "runner",
     "make": true,
@@ -645,10 +653,23 @@
       "ir-exhaustive": {
         "arguments": [
           "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
           "@SOURCE@/tests/compiler/ir_exhaustive.py",
           "ir-tests-fixture",
           "--abi-header",
-          "@BUILD@/hosted_frontend_abi.hpp"
+          "@BUILD@/hosted_frontend_abi.hpp",
+          "--abi-facts",
+          "@BUILD@/hosted-frontend.abi.json",
+          "--compiler",
+          "@BUILD@/aurorac",
+          "--frontend-library",
+          "@BUILD@/libhosted-frontend.a",
+          "--main-library",
+          "libemitter-probe-main.a",
+          "--artifacts",
+          "@ARTIFACTS@"
         ],
         "suites": [
           "compiler",

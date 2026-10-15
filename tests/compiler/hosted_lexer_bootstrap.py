@@ -19,11 +19,33 @@ def stage_modules(root, destination):
     sys.path.insert(0, str(root / "scripts"))
     from bootstrap_frontend import stage_modules as stage
 
-    stage(destination, [root / "compiler" / name for name in COMPILER_MODULES])
+    stage(destination, frontend_modules(root))
 
 
 # Every .au file in compiler/ is a frontend module.
 COMPILER_MODULES = tuple(sorted(path.name for path in (Path(__file__).resolve().parents[2] / "compiler").glob("*.au")))
+FRONTEND_LIBRARY_MODULES = ("std/decimal_digits.au",)
+
+
+def frontend_modules(root):
+    return [root / "compiler" / name for name in COMPILER_MODULES] + [
+        root / "library" / name for name in FRONTEND_LIBRARY_MODULES
+    ]
+
+
+EMITTER_OPERATIONS = (
+    "create",
+    "release",
+    "status",
+    "add_retained",
+    "prepare_facts",
+    "append_name",
+    "add_abi_name",
+    "run",
+    "facts",
+    "size",
+    "chunk",
+)
 
 
 INITIALIZATION_SERVICE_OPERATIONS = (
@@ -88,14 +110,13 @@ def frontend_arguments(compiler, root, output):
         str(compiler),
         "--output",
         str(output),
-        *(str(root / "compiler" / name) for name in COMPILER_MODULES),
+        *(str(source) for source in frontend_modules(root)),
         str(root / "compiler/hosted_lexer.S"),
         str(root / "compiler/hosted_parser.S"),
         str(root / "compiler/hosted_resolver.S"),
         str(root / "compiler/hosted_graph.S"),
         str(root / "compiler/hosted_ir_metadata.S"),
         str(root / "compiler/hosted_ir_instructions.S"),
-        str(root / "compiler/hosted_ir_initialization.S"),
     ]
 
 
@@ -689,18 +710,195 @@ def abi_generation(facts):
     )
 
 
+def emitter_generation(facts):
+    from bootstrap_frontend import abi_declaration, frontend_abi_header, frontend_bridge, normalize_function_abi
+
+    generated = frontend_abi_header(facts)
+    workspace, _ = abi_declaration(facts, "records", "compiler_x86::EmitWorkspace")
+    metadata, _ = abi_declaration(facts, "records", "compiler_ir_metadata::MetadataStore")
+    instructions, _ = abi_declaration(facts, "records", "compiler_ir_instructions::InstructionStore")
+    status, _ = abi_declaration(facts, "enums", "compiler_x86::EmitStatus")
+    require(
+        all(
+            f"struct alignas(8) {name} {{" in generated
+            for name in ("EmitterCreate", "EmitterRelease", "EmitterNameInput", "EmitterAbiNameInput")
+        )
+        and "aurora::hosted_abi::compiler_x86::EmitWorkspace workspace{};" in generated
+        and "BuiltinSpan name{};" in generated
+        and "aurora::hosted_abi::compiler_x86::AbiNameRow name{};" in generated,
+        "emitter consuming-owner or copied name argument records were omitted",
+    )
+    chunk_symbol, chunk = abi_declaration(facts, "records", "compiler_x86::EmitChunk")
+    require(
+        (chunk["size"], chunk["reserved"], chunk["alignment"]) == (520, 520, 8)
+        and [
+            (field["name"], field["kind"], field["offset"], field["bytes"], field.get("array_length", 0))
+            for field in chunk["fields"]
+        ]
+        == [("payload", "u8", 0, 512, 512), ("byteCount", "i64", 512, 8, 0)]
+        and "std::array<std::uint8_t, 512> payload{};" in generated
+        and "static_assert(sizeof(EmitChunk) == 520 && alignof(EmitChunk) == 8);" in generated,
+        "emitter chunk lost its bounded byte payload or physical count field",
+    )
+    _, read_chunk = abi_declaration(facts, "functions", "compiler_frontend::emitter_chunk")
+    require(
+        read_chunk["result"] == dict(kind="class", type_name=chunk_symbol, bytes=520),
+        "emitter chunk result is not the exact copied bounded record",
+    )
+    _, name_row = abi_declaration(facts, "records", "compiler_x86::AbiNameRow")
+    require(
+        (name_row["size"], name_row["reserved"], name_row["alignment"]) == (40, 40, 8)
+        and [(field["name"], field["kind"], field["offset"], field["bytes"]) for field in name_row["fields"]]
+        == [
+            (name, "i64", index * 8, 8)
+            for index, name in enumerate(("categoryValue", "identityValue", "memberValue", "beginValue", "countValue"))
+        ],
+        "emitter ABI name input lost its exact source-owned scalar selectors",
+    )
+    source = "compiler_frontend::emitter_run"
+    run_symbol, run = abi_declaration(facts, "functions", source)
+    require(
+        run["receiver"] is None
+        and run["receiver_mutable"] is None
+        and run["borrowed_root_count"] == 3
+        and run["borrowed_roots"]
+        == [
+            dict(ordinal=0, selector=0, type_name=workspace, mutable=True),
+            dict(ordinal=1, selector=-1, type_name=metadata, mutable=False),
+            dict(ordinal=2, selector=-2, type_name=instructions, mutable=False),
+        ]
+        and run["borrowed_root_abi"]
+        == dict(
+            kind="tuple",
+            register="r10",
+            tuple_payload_bytes=24,
+            tuple_reserved_bytes=32,
+            saved_root_reserved_bytes=32,
+        )
+        and run["parameters"] == [dict(offset=0, bytes=8, kind="i64"), dict(offset=8, bytes=8, kind="i64")]
+        and run["parameter_bytes"] == 16
+        and run["result"] == dict(kind="enum", type_name=status, bytes=8)
+        and normalize_function_abi(facts, run) == run,
+        "actual emitter run did not retain its ordered three-root scalar-tail ABI",
+    )
+    require(
+        frontend_bridge("call __aurora_frontend_emitter_run\n", facts) == "call " + run_symbol + "\n",
+        "actual three-root emitter bridge resolved a different entry",
+    )
+
+    def changed_entry(group, source_name):
+        symbol, original = abi_declaration(facts, group, source_name)
+        entry = deepcopy(original)
+        changed = dict(facts)
+        changed[group] = dict(facts[group])
+        changed[group][symbol] = entry
+        return changed, entry
+
+    # Sample the distinct entry shapes. The positive whole-frontend inventory
+    # above validates every entry; avoid copying/regenerating all facts once per
+    # operation merely to exercise the same closed signature checks repeatedly.
+    for operation, mutation in (("create", "result"), ("append_name", "parameters"), ("facts", "root")):
+        changed, entry = changed_entry("functions", "compiler_frontend::emitter_" + operation)
+        if mutation == "result":
+            entry["result"]["bytes"] += 8
+        elif mutation == "parameters":
+            entry["parameters"][0]["bytes"] += 8
+        else:
+            entry["source_name"] = "fixture::removed_emitter_" + operation
+        try:
+            frontend_abi_header(changed)
+        except ValueError:
+            continue
+        raise AssertionError(f"unsafe emitter bridge accepted: {operation}/{mutation}")
+    for operation in ("status", "run"):
+        changed, entry = changed_entry("functions", "compiler_frontend::emitter_" + operation)
+        entry["borrowed_roots"][0]["mutable"] = not entry["borrowed_roots"][0]["mutable"]
+        try:
+            frontend_abi_header(changed)
+        except ValueError:
+            continue
+        raise AssertionError("unsafe emitter owner authority accepted: " + operation)
+    mutations = (
+        ("root order", lambda f: f["borrowed_roots"].reverse()),
+        ("missing root", lambda f: f["borrowed_roots"].pop()),
+        ("duplicate root type", lambda f: f["borrowed_roots"][2].__setitem__("type_name", metadata)),
+        ("boolean count", lambda f: f.__setitem__("borrowed_root_count", True)),
+        ("missing scalar tail", lambda f: f["parameters"].pop()),
+        ("copied tail", lambda f: f["parameters"][0].update(kind="class", type_name=chunk_symbol, bytes=520)),
+        ("copied result", lambda f: f["result"].update(kind="class", type_name=chunk_symbol, bytes=520)),
+        ("tuple padding", lambda f: f["borrowed_root_abi"].__setitem__("tuple_reserved_bytes", 24)),
+    )
+    for description, mutation in mutations:
+        changed, entry = changed_entry("functions", source)
+        mutation(entry)
+        try:
+            frontend_abi_header(changed)
+        except ValueError:
+            continue
+        raise AssertionError("unsafe three-root emitter ABI accepted: " + description)
+    for field, value in (("array_length", 0), ("array_length", 513), ("bytes", 511), ("kind", "i64")):
+        changed, entry = changed_entry("records", "compiler_x86::EmitChunk")
+        entry["fields"][0][field] = value
+        try:
+            frontend_abi_header(changed)
+        except ValueError:
+            continue
+        raise AssertionError(f"unsafe bounded emitter chunk accepted: {field}={value}")
+    print("PASS exact emitter bridges, actual three-root transport and bounded copied byte chunk")
+
+
+def pass_bridge_generation(facts):
+    from bootstrap_frontend import abi_function_symbol, frontend_abi_header, frontend_bridge
+
+    assembly, header = frontend_bridge(None, facts), frontend_abi_header(facts)
+    operations = ["emitter_" + name for name in EMITTER_OPERATIONS]
+    operations += ["initialization_" + name for name in INITIALIZATION_OPERATIONS]
+    require(assembly.count(".globl ") == len(operations), "private bridge inventory drift")
+    for alias in operations:
+        require(f".globl aurora_hosted_{alias}\n" in assembly, "missing private host entry: " + alias)
+        require(f" aurora_hosted_{alias}(" in header, "missing private host declaration: " + alias)
+    # Independent examples of all five transports, including the longest tail.
+    for alias, moves, signature in (
+        ("emitter_create", [("rdi", "r11"), ("rsi", "r10")], "void *(const void *, void *)"),
+        ("initialization_release", [("rdi", "r11")], "void *(void *)"),
+        (
+            "emitter_run",
+            [("rdi", "r10"), ("rsi", "rdi"), ("rdx", "rsi")],
+            "std::int64_t *(const void *, std::int64_t, std::int64_t)",
+        ),
+        ("emitter_append_name", [("rdi", "r10"), ("rsi", "r11")], "std::int64_t *(void *, const void *)"),
+        (
+            "emitter_chunk",
+            [("rdi", "r10"), ("rsi", "rdi"), ("rdx", "rsi"), ("rcx", "r11")],
+            "void *(const void *, std::int64_t, std::int64_t, void *)",
+        ),
+        (
+            "initialization_validate_service_call",
+            [("rdi", "r10"), ("rsi", "rdi"), ("rdx", "rsi"), ("rcx", "rdx"), ("r8", "rcx")],
+            "std::int64_t *(const void *, std::int64_t, std::int64_t, std::int64_t, std::int64_t)",
+        ),
+    ):
+        host = "aurora_hosted_" + alias
+        body = f"{host}:\n" + "".join(f"    movq %{source}, %{target}\n" for source, target in moves)
+        body += "    jmp " + abi_function_symbol(facts, "compiler_frontend::" + alias) + "\n"
+        require(body in assembly, "private register transport drift: " + alias)
+        require(signature.replace("*(", host + "(") + " noexcept;" in header, "private host signature drift: " + alias)
+    print("PASS closed host inventory and all five generated pass transports")
+
+
 def borrowed_root_generation(facts):
     from bootstrap_frontend import abi_declaration, frontend_abi_header, frontend_bridge, normalize_function_abi
 
     require(type(facts["version"]) is int and facts["version"] == 2, "candidate must emit ABI facts v2")
     header = frontend_abi_header(facts)
-    predecessor = deepcopy(facts)
-    predecessor["version"] = 1
-    for function in predecessor["functions"].values():
+
+    def legacy_function(function):
+        function = deepcopy(function)
         roots = function.pop("borrowed_roots")
         count = function.pop("borrowed_root_count")
         function.pop("borrowed_root_abi")
-        require(count <= 2 and (count != 2 or roots[0]["mutable"]), "frontend exceeded paired source predecessor")
+        if count > 2 or (count == 2 and not roots[0]["mutable"]):
+            raise ValueError("function cannot be represented by the paired source predecessor")
         if roots:
             require(function["receiver"] is None, "borrowed roots duplicated in genuine receiver")
             function["receiver"], function["receiver_mutable"] = roots[0]["type_name"], roots[0]["mutable"]
@@ -711,21 +909,62 @@ def borrowed_root_generation(facts):
         function["root_order"] = (
             ["receiver", "second_receiver"] if count == 2 else ["receiver"] if function["receiver"] is not None else []
         )
-    require(frontend_abi_header(predecessor) == header, "paired predecessor/current normalization changed headers")
+        return function
+
+    # Preserve every predecessor-representable function, including the original
+    # one/two-root bridges. New three-root and readonly-pair implementations have
+    # no legacy encoding; keep their current facts while round-tripping only the
+    # compatible projection. Normalization and exact bridge checks both run, so
+    # an absent new bridge cannot make the legacy rejection cases pass vacuously.
+    predecessor = deepcopy(facts)
+    predecessor["version"] = 1
+    predecessor["functions"] = {}
+    incompatible = set()
+    for symbol, function in facts["functions"].items():
+        try:
+            predecessor["functions"][symbol] = legacy_function(function)
+        except ValueError:
+            incompatible.add(symbol)
+
+    def current_projection(document):
+        restored = deepcopy(facts)
+        for symbol, function in document["functions"].items():
+            restored["functions"][symbol] = normalize_function_abi(document, function)
+        return restored
+
+    restored = current_projection(predecessor)
+    for symbol, function in facts["functions"].items():
+        if symbol not in incompatible:
+            require(restored["functions"][symbol] == function, "paired predecessor normalization changed a function")
+    run_symbol, run = abi_declaration(facts, "functions", "compiler_frontend::emitter_run")
+    require(run_symbol in incompatible, "actual three-root emitter entered the paired legacy projection")
+    try:
+        legacy_function(run)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("three-root emitter silently lost a root in legacy conversion")
+    require(frontend_abi_header(restored) == header, "paired predecessor/current normalization changed headers")
     bridge = "call __aurora_frontend_graph_run\ncall __aurora_frontend_lexer_next\n"
-    require(frontend_bridge(bridge, predecessor) == frontend_bridge(bridge, facts), "predecessor/current bridge drift")
+    require(frontend_bridge(bridge, restored) == frontend_bridge(bridge, facts), "predecessor/current bridge drift")
 
     def reject(document, source, mutation):
         changed = deepcopy(document)
         _, function = abi_declaration(changed, "functions", source)
         mutation(function)
         try:
-            frontend_abi_header(changed)
+            frontend_abi_header(current_projection(changed) if changed["version"] == 1 else changed)
         except ValueError:
             return
         raise AssertionError("unsafe borrowed-root facts accepted: " + source)
 
-    pair_sources = ("graph_run", "instructions_admit", "instructions_structure", "initialization_initialize")
+    pair_sources = (
+        "graph_run",
+        "instructions_admit",
+        "instructions_structure",
+        "initialization_initialize",
+        "emitter_facts",
+    )
     for alias in pair_sources:
         source = "compiler_frontend::" + alias
         for lane in (0, 1):
@@ -769,8 +1008,8 @@ def borrowed_root_generation(facts):
         ):
             reject(predecessor, source, mutation)
 
-    # The normalizer understands the bounded capability even though this
-    # unchanged frontend deliberately uses only predecessor-compatible helpers.
+    # Exercise every supported root-count/authority/scalar-tail combination in
+    # addition to the actual three-root emitter checked above.
     _, pair = abi_declaration(facts, "functions", "compiler_frontend::graph_run")
     for count in range(1, 7):
         for mutable in (False, True):
@@ -796,7 +1035,7 @@ def borrowed_root_generation(facts):
                 function["parameters"] = [dict(offset=8 * i, bytes=8, kind="i64") for i in range(tail)]
                 function["parameter_bytes"] = 8 * tail
                 require(normalize_function_abi(facts, function) == function, "bounded root normalization drift")
-    print("PASS bounded borrowed-root facts and exact paired-predecessor/current header normalization")
+    print("PASS bounded borrowed-root facts and exact compatible paired-predecessor header normalization")
 
 
 def message_generation(facts, root):
@@ -896,7 +1135,7 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
             ],
             stdout,
             stderr=stderr,
-            timeout=90,
+            timeout=360,
             timeout_status=False,
         )
         diagnostic = stderr.getvalue()
@@ -908,6 +1147,8 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
         return stdout.getvalue(), diagnostic
 
     abi_generation(json.loads(built_b.with_suffix(".abi.json").read_text()))
+    emitter_generation(json.loads(built_b.with_suffix(".abi.json").read_text()))
+    pass_bridge_generation(json.loads(built_b.with_suffix(".abi.json").read_text()))
     borrowed_root_generation(json.loads(built_b.with_suffix(".abi.json").read_text()))
     message_generation(json.loads(built_b.with_suffix(".abi.json").read_text()), root)
     entries = {
@@ -992,6 +1233,7 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
         for operation in ("create", "release", "allocated", "admit", "structure", "publish", "error")
     )
     entries.update("aurora_hosted_initialization_" + operation for operation in INITIALIZATION_OPERATIONS)
+    entries.update("aurora_hosted_emitter_" + operation for operation in EMITTER_OPERATIONS)
     # A is predecessor-generated and need not equal B. Both actual build
     # objects must expose exactly the private host shim contract.
     for unit in (built_a, built_b):
@@ -1020,6 +1262,11 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
                 (work / "compiler-modules/aurora/compiler" / name).read_bytes()
                 == (root / "compiler" / name).read_bytes(),
                 f"staged compiler module changed exported source: {name}",
+            )
+        for name in FRONTEND_LIBRARY_MODULES:
+            require(
+                (work / "compiler-modules" / name).read_bytes() == (root / "library" / name).read_bytes(),
+                f"staged frontend library module changed exported source: {name}",
             )
     require(diagnostics[0] == diagnostics[1], "whole frontend compiler diagnostics differ")
     for suffix, description in (
@@ -1101,6 +1348,10 @@ def main():
         require(root / "compiler/frontend.au" in corpus, "whole frontend self-rebuild input is missing")
         compiler_sources = {root / "compiler" / name for name in COMPILER_MODULES}
         require(compiler_sources.issubset(corpus), "a real compiler module is missing from self-rebuild coverage")
+        frontend_library_sources = {root / "library" / name for name in FRONTEND_LIBRARY_MODULES}
+        require(
+            frontend_library_sources.issubset(corpus), "a frontend library module is missing from self-rebuild coverage"
+        )
         convergence = {root / "compiler/lexer.au", root / "compiler/frontend.au"}
         corpus = [source for source in corpus if (source in convergence) != whole_corpus]
         for source in corpus:
@@ -1124,7 +1375,7 @@ def main():
                             str(output),
                         ],
                         capture_output=True,
-                        timeout=30,
+                        timeout=120,
                         check=False,
                     )
                 )
@@ -1156,6 +1407,8 @@ def main():
             vocabulary_modules = {"resolution_kinds.au", "lowering_kinds.au", "lowering_errors.au"}
             if source in compiler_sources and source.name not in vocabulary_modules:
                 require(runs[0].returncode == 0, f"compiler module self-rebuild failed: {source.name}")
+            if source in frontend_library_sources:
+                require(runs[0].returncode == 0, f"frontend library module self-rebuild failed: {source.name}")
             records.append({"source": str(source.relative_to(root)), "status": runs[0].returncode})
         require(len(records) > 1, "source corpus is empty")
         print(

@@ -401,6 +401,11 @@ def harness(test_cases, owner):
     return code + (runtime() if owner else "") + data + '\n.section .note.GNU-stack,"",@progbits\n'
 
 
+def private_symbols(symbols):
+    # Preserve the lowercase-t presence check, including duplicate entries.
+    return set(re.findall(r"\bt (\S+)$", symbols, re.M))
+
+
 def execute(directory, name, assembly, test_cases, expected=0, rejected_target=None):
     source = directory / (name + ".s")
     obj = directory / (name + ".o")
@@ -409,9 +414,9 @@ def execute(directory, name, assembly, test_cases, expected=0, rejected_target=N
     command(["as", "--64", source, "-o", obj])
     undefined = command(["nm", "-u", obj]).stdout
     require(not undefined.strip(), f"{name}: unresolved imports: {undefined!r}")
-    symbols = command(["nm", obj]).stdout.decode()
+    symbols = private_symbols(command(["nm", obj]).stdout.decode())
     for target in {case["target"] for case in test_cases if not case["target"].startswith("abi_array_mint_")}:
-        require(re.search(rf"\bt {re.escape(target)}$", symbols, re.M), f"{target}: private boundary linkage")
+        require(target in symbols, f"{target}: private boundary linkage")
     command(["ld", "-o", executable, obj])
     result = command([executable], expected)
     require(len(result.stdout) == 8, f"{name}: exactly one complete native observation")
@@ -434,6 +439,13 @@ def execute(directory, name, assembly, test_cases, expected=0, rejected_target=N
 
 
 def main():
+    require(
+        private_symbols(
+            "0 t target\n0 t target\n0 T public\n0 d datum\n0 t target_suffix\n0 t prefix_target\n0 t target.suffix\n"
+        )
+        == {"target", "target_suffix", "prefix_target", "target.suffix"},
+        "private symbol presence, duplicates and exact names",
+    )
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("ir_tests", type=Path)
     parser.add_argument(
