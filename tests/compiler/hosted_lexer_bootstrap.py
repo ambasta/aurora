@@ -127,12 +127,38 @@ def symbols(path, globals_only=False):
     return {row.split()[0]: row.split()[1:] for row in run([*command, str(path)]).decode().splitlines()}
 
 
+def shallow_facts(facts):
+    """A facts copy whose groups can change; declarations stay shared until owned."""
+    changed = dict(facts)
+    for group in ("enums", "functions", "records"):
+        changed[group] = dict(facts[group])
+    return changed
+
+
+def own_declaration(changed, facts, group, source):
+    """Make one declaration of a shallow copy private, once, and return it."""
+    from bootstrap_frontend import abi_declaration
+
+    symbol, entry = abi_declaration(changed, group, source)
+    if entry is facts[group].get(symbol):
+        changed[group][symbol] = entry = deepcopy(entry)
+    return symbol, entry
+
+
+def edit_declaration(facts, group, source):
+    """Copy facts for one mutation, sharing everything but the named declaration."""
+    changed = shallow_facts(facts)
+    return changed, own_declaration(changed, facts, group, source)[1]
+
+
 def abi_generation(facts):
+    # Mutations share unedited declarations with facts; prove none leaked back.
+    pristine = json.dumps(facts, sort_keys=True)
     from bootstrap_frontend import abi_declaration, frontend_abi_header
 
     # An additional copied record and a renamed field need no renderer schema.
-    changed = deepcopy(facts)
-    symbol, node = abi_declaration(changed, "records", "compiler_parser::AstNode")
+    changed = shallow_facts(facts)
+    symbol, node = own_declaration(changed, facts, "records", "compiler_parser::AstNode")
     extra = deepcopy(node)
     extra["source_name"] = "fixture::AdditionalRecord"
     extra["fields"][1]["name"] = "_replacement_index"
@@ -315,9 +341,8 @@ def abi_generation(facts):
         "read_operand",
     ):
         for mutation in ("receiver", "result", "parameters", "root"):
-            changed = deepcopy(facts)
             source = "compiler_frontend::lowering_" + operation
-            _, entry = abi_declaration(changed, "functions", source)
+            changed, entry = edit_declaration(facts, "functions", source)
             if mutation == "receiver":
                 entry["borrowed_roots"] = []
             elif mutation == "result":
@@ -350,8 +375,7 @@ def abi_generation(facts):
         ("parameter_bytes", 8),
         ("result", {"kind": "i64", "bytes": 8}),
     ):
-        changed = deepcopy(facts)
-        _, entry = abi_declaration(changed, "functions", "compiler_frontend::graph_run")
+        changed, entry = edit_declaration(facts, "functions", "compiler_frontend::graph_run")
         entry[field] = value
         try:
             frontend_abi_header(changed)
@@ -374,8 +398,7 @@ def abi_generation(facts):
     )
     for operation in INITIALIZATION_OPERATIONS:
         for mutation in ("receiver", "result", "parameters", "root"):
-            changed = deepcopy(facts)
-            _, entry = abi_declaration(changed, "functions", "compiler_frontend::initialization_" + operation)
+            changed, entry = edit_declaration(facts, "functions", "compiler_frontend::initialization_" + operation)
             if mutation == "receiver":
                 entry["receiver"] = initialization if entry["receiver"] is None else None
             elif mutation == "result":
@@ -396,8 +419,7 @@ def abi_generation(facts):
     # directions here; the complete signature and export checks still cover all.
     for operation in ("acquire_service_loan", "validate_service_call"):
         for mutation in ("authority", "pair"):
-            changed = deepcopy(facts)
-            _, entry = abi_declaration(changed, "functions", "compiler_frontend::initialization_" + operation)
+            changed, entry = edit_declaration(facts, "functions", "compiler_frontend::initialization_" + operation)
             if mutation == "authority":
                 entry["borrowed_roots"][0]["mutable"] = not entry["borrowed_roots"][0]["mutable"]
             else:
@@ -436,8 +458,7 @@ def abi_generation(facts):
             ("root_tuple_bytes", 8),
             ("result", {"kind": "class", "type_name": initialization, "bytes": 8}),
         ):
-            changed = deepcopy(facts)
-            _, entry = abi_declaration(changed, "functions", "compiler_frontend::initialization_" + operation)
+            changed, entry = edit_declaration(facts, "functions", "compiler_frontend::initialization_" + operation)
             entry[field] = value
             try:
                 frontend_abi_header(changed)
@@ -463,8 +484,7 @@ def abi_generation(facts):
         ("ServiceLoan", "serviceKind"),
         ("ServiceLoan", "calledValue"),
     ):
-        changed = deepcopy(facts)
-        _, entry = abi_declaration(changed, "records", "compiler_ir_initialization::" + source)
+        changed, entry = edit_declaration(facts, "records", "compiler_ir_initialization::" + source)
         next(member for member in entry["fields"] if member["name"] == field)["bytes"] += 8
         try:
             frontend_abi_header(changed)
@@ -473,8 +493,7 @@ def abi_generation(facts):
         raise AssertionError(f"unsafe initialization owner/row binding accepted: {source}/{field}")
     for operation in ("create", "release", "allocated", "admit", "structure", "publish", "error"):
         for mutation in ("receiver", "result", "parameters", "root"):
-            changed = deepcopy(facts)
-            _, entry = abi_declaration(changed, "functions", "compiler_frontend::instructions_" + operation)
+            changed, entry = edit_declaration(facts, "functions", "compiler_frontend::instructions_" + operation)
             if mutation == "receiver":
                 entry["receiver"] = instruction_store if entry["receiver"] is None else None
             elif mutation == "result":
@@ -511,8 +530,7 @@ def abi_generation(facts):
             ("parameters", [{"kind": "i64", "bytes": 8, "offset": 0}]),
             ("parameter_bytes", 8),
         ):
-            changed = deepcopy(facts)
-            _, entry = abi_declaration(changed, "functions", "compiler_frontend::instructions_" + operation)
+            changed, entry = edit_declaration(facts, "functions", "compiler_frontend::instructions_" + operation)
             entry[field] = value
             try:
                 frontend_abi_header(changed)
@@ -527,12 +545,12 @@ def abi_generation(facts):
         ("bodies", "BodyRow"),
     ):
         for mutation in ("owner", "stride", "leaf") if row else ("owner",):
-            changed = deepcopy(facts)
+            changed = shallow_facts(facts)
             if mutation == "owner":
-                _, entry = abi_declaration(changed, "records", "compiler_ir_instructions::InstructionStore")
+                _, entry = own_declaration(changed, facts, "records", "compiler_ir_instructions::InstructionStore")
                 next(field for field in entry["fields"] if field["name"] == pool)["bytes"] += 8
             else:
-                _, entry = abi_declaration(changed, "records", "compiler_ir_instructions::" + row)
+                _, entry = own_declaration(changed, facts, "records", "compiler_ir_instructions::" + row)
                 if mutation == "stride":
                     entry["size"] -= 1
                 else:
@@ -552,8 +570,7 @@ def abi_generation(facts):
         ("byte_array_element_root", 1, "offset"),
     ):
         for mutation in ("missing", "type", "offset"):
-            changed = deepcopy(facts)
-            _, entry = abi_declaration(changed, "functions", "compiler_frontend::metadata_" + operation)
+            changed, entry = edit_declaration(facts, "functions", "compiler_frontend::metadata_" + operation)
             if mutation == "missing":
                 entry["parameters"].pop(parameter)
             elif mutation == "type":
@@ -577,8 +594,7 @@ def abi_generation(facts):
         "byte_array_element_root",
     ):
         for mutation in ("receiver", "result", "parameters", "root"):
-            changed = deepcopy(facts)
-            _, entry = abi_declaration(changed, "functions", "compiler_frontend::metadata_" + operation)
+            changed, entry = edit_declaration(facts, "functions", "compiler_frontend::metadata_" + operation)
             if mutation == "receiver":
                 entry["receiver"] = metadata_store if entry["receiver"] is None else None
             elif mutation == "result":
@@ -596,8 +612,7 @@ def abi_generation(facts):
                 continue
             raise AssertionError(f"unsafe metadata bridge accepted: {operation}/{mutation}")
     for operation in ("initialize", "allocated", "run", "error", "object_leaf_root", "byte_array_element_root"):
-        changed = deepcopy(facts)
-        _, entry = abi_declaration(changed, "functions", "compiler_frontend::metadata_" + operation)
+        changed, entry = edit_declaration(facts, "functions", "compiler_frontend::metadata_" + operation)
         entry["borrowed_roots"][0]["mutable"] = operation not in ("initialize", "run")
         try:
             frontend_abi_header(changed)
@@ -632,12 +647,12 @@ def abi_generation(facts):
         "resolver_order_shape",
         "resolver_seed_shape",
     ):
-        changed = deepcopy(facts)
+        changed = shallow_facts(facts)
         if kind == "metadata_second_root":
-            _, entry = abi_declaration(changed, "functions", "compiler_frontend::metadata_run")
+            _, entry = own_declaration(changed, facts, "functions", "compiler_frontend::metadata_run")
             entry["second_receiver"] = {"type_name": metadata_store, "mutable": False}
         elif kind in ("metadata_owner_extent", "metadata_slot_owner_extent"):
-            _, entry = abi_declaration(changed, "records", "compiler_ir_metadata::MetadataStore")
+            _, entry = own_declaration(changed, facts, "records", "compiler_ir_metadata::MetadataStore")
             pool = "slots" if kind == "metadata_slot_owner_extent" else "types"
             next(field for field in entry["fields"] if field["name"] == pool)["bytes"] += 8
         elif kind in (
@@ -647,13 +662,13 @@ def abi_generation(facts):
             "metadata_slot_narrow_leaf",
         ):
             row = "SlotRow" if kind.startswith("metadata_slot_") else "IndexRow"
-            _, entry = abi_declaration(changed, "records", "compiler_ir_metadata::" + row)
+            _, entry = own_declaration(changed, facts, "records", "compiler_ir_metadata::" + row)
             if kind in ("metadata_row_stride", "metadata_slot_stride"):
                 entry["size"] -= 1
             else:
                 entry["fields"][0]["kind"] = "bool"
         elif kind.startswith("unexpected_"):
-            _, entry = abi_declaration(changed, "functions", "compiler_frontend::parser_read_node")
+            _, entry = own_declaration(changed, facts, "functions", "compiler_frontend::parser_read_node")
             if kind == "unexpected_second_root":
                 entry["second_receiver"] = {"type_name": entry["receiver"], "mutable": False}
             elif kind == "unexpected_root_count":
@@ -661,7 +676,7 @@ def abi_generation(facts):
             else:
                 entry["root_tuple_bytes"] = 16
         elif kind == "result_extent":
-            _, entry = abi_declaration(changed, "functions", "compiler_frontend::parser_read_node")
+            _, entry = own_declaration(changed, facts, "functions", "compiler_frontend::parser_read_node")
             entry["result"]["bytes"] += 8
         elif kind.startswith("resolver_"):
             source = {
@@ -675,7 +690,7 @@ def abi_generation(facts):
                 "resolver_order_shape": "compiler_frontend::resolver_order_module",
                 "resolver_seed_shape": "compiler_frontend::resolver_seed_member",
             }[kind]
-            _, entry = abi_declaration(changed, "functions", source)
+            _, entry = own_declaration(changed, facts, "functions", source)
             if kind == "resolver_receiver":
                 entry["borrowed_roots"] = []
             elif kind == "resolver_ingest_result":
@@ -687,7 +702,7 @@ def abi_generation(facts):
             else:
                 entry["parameters"][-1]["bytes"] += 8
         elif kind.startswith("admission_"):
-            _, entry = abi_declaration(changed, "functions", "compiler_frontend::parser_admit")
+            _, entry = own_declaration(changed, facts, "functions", "compiler_frontend::parser_admit")
             if kind == "admission_receiver":
                 entry["borrowed_roots"] = []
             elif kind == "admission_result_extent":
@@ -697,13 +712,14 @@ def abi_generation(facts):
             else:
                 entry["parameters"][-1]["offset"] += 8
         else:
-            _, entry = abi_declaration(changed, "records", "compiler_parser::AstNode")
+            _, entry = own_declaration(changed, facts, "records", "compiler_parser::AstNode")
             entry["fields"][1]["bytes" if kind == "field_extent" else "array_length"] += 1
         try:
             frontend_abi_header(changed)
         except ValueError:
             continue
         raise AssertionError(f"unsupported or unsafe ABI facts accepted: {kind}")
+    require(json.dumps(facts, sort_keys=True) == pristine, "an ABI mutation leaked into the shared facts")
     print(
         "PASS generic source-spelled ABI records/enums, nested layout and exact "
         "lowering/metadata/instruction/initialization bridge rejection"
@@ -887,6 +903,7 @@ def pass_bridge_generation(facts):
 
 
 def borrowed_root_generation(facts):
+    pristine = json.dumps(facts, sort_keys=True)
     from bootstrap_frontend import abi_declaration, frontend_abi_header, frontend_bridge, normalize_function_abi
 
     require(type(facts["version"]) is int and facts["version"] == 2, "candidate must emit ABI facts v2")
@@ -916,7 +933,7 @@ def borrowed_root_generation(facts):
     # no legacy encoding; keep their current facts while round-tripping only the
     # compatible projection. Normalization and exact bridge checks both run, so
     # an absent new bridge cannot make the legacy rejection cases pass vacuously.
-    predecessor = deepcopy(facts)
+    predecessor = dict(facts)
     predecessor["version"] = 1
     predecessor["functions"] = {}
     incompatible = set()
@@ -927,7 +944,7 @@ def borrowed_root_generation(facts):
             incompatible.add(symbol)
 
     def current_projection(document):
-        restored = deepcopy(facts)
+        restored = shallow_facts(facts)
         for symbol, function in document["functions"].items():
             restored["functions"][symbol] = normalize_function_abi(document, function)
         return restored
@@ -949,8 +966,7 @@ def borrowed_root_generation(facts):
     require(frontend_bridge(bridge, restored) == frontend_bridge(bridge, facts), "predecessor/current bridge drift")
 
     def reject(document, source, mutation):
-        changed = deepcopy(document)
-        _, function = abi_declaration(changed, "functions", source)
+        changed, function = edit_declaration(document, "functions", source)
         mutation(function)
         try:
             frontend_abi_header(current_projection(changed) if changed["version"] == 1 else changed)
@@ -1035,6 +1051,7 @@ def borrowed_root_generation(facts):
                 function["parameters"] = [dict(offset=8 * i, bytes=8, kind="i64") for i in range(tail)]
                 function["parameter_bytes"] = 8 * tail
                 require(normalize_function_abi(facts, function) == function, "bounded root normalization drift")
+    require(json.dumps(facts, sort_keys=True) == pristine, "a borrowed-root mutation leaked into the shared facts")
     print("PASS bounded borrowed-root facts and exact compatible paired-predecessor header normalization")
 
 
