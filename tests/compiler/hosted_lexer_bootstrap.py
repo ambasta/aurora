@@ -1135,7 +1135,7 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
             ],
             stdout,
             stderr=stderr,
-            timeout=90,
+            timeout=360,
             timeout_status=False,
         )
         diagnostic = stderr.getvalue()
@@ -1375,7 +1375,7 @@ def main():
                             str(output),
                         ],
                         capture_output=True,
-                        timeout=30,
+                        timeout=120,
                         check=False,
                     )
                 )

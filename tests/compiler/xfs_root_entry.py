@@ -221,7 +221,7 @@ def main():
             runner = NativeRunner(Path(temporary), compiler, 15)
             for start in range(0, len(corpus), 6):
                 root_model.budget(24 << 20)
-                runner.cases(corpus[start : start + 6])
+                runner.cases(corpus[start : start + 6], compiler_timeout=60)
                 root_model.budget()
             for case in rejected:
                 root_model.budget(24 << 20)

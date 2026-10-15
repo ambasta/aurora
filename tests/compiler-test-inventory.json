@@ -653,10 +653,23 @@
       "ir-exhaustive": {
         "arguments": [
           "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
           "@SOURCE@/tests/compiler/ir_exhaustive.py",
           "ir-tests-fixture",
           "--abi-header",
-          "@BUILD@/hosted_frontend_abi.hpp"
+          "@BUILD@/hosted_frontend_abi.hpp",
+          "--abi-facts",
+          "@BUILD@/hosted-frontend.abi.json",
+          "--compiler",
+          "@BUILD@/aurorac",
+          "--frontend-library",
+          "@BUILD@/libhosted-frontend.a",
+          "--main-library",
+          "libemitter-probe-main.a",
+          "--artifacts",
+          "@ARTIFACTS@"
         ],
         "suites": [
           "compiler",

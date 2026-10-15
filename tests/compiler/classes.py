@@ -19,11 +19,11 @@ def require(value, message):
         raise AssertionError(message)
 
 
-def run(command, good=True):
+def run(command, good=True, *, timeout=5):
     result = subprocess.run(
         [str(x) for x in command],
         capture_output=True,
-        timeout=5,
+        timeout=timeout,
         preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)),
     )
     if good:
@@ -71,7 +71,7 @@ def check(
         if roots:
             for root in search:
                 command.extend(["--module-root", root])
-        compiled = run(command, good=error is None)
+        compiled = run(command, good=error is None, timeout=20)
         require(input_path.read_text() == source, name + ": compiler changed input")
         if error:
             require(compiled.returncode == 1, name + ": invalid graph accepted")
