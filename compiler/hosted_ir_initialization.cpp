@@ -1,6 +1,7 @@
 #include "hosted_ir_initialization.hpp"
 #include "../runtime/hosted_bytes.hpp"
 #include "hosted_frontend_abi.hpp"
+#include "ir.hpp"
 #include <array>
 #include <cstdint>
 #include <limits>
