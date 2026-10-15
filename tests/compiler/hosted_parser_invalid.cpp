@@ -2310,6 +2310,12 @@ extern "C" std::int64_t aurora_hosted_initialization_object_initialized(const vo
 extern "C" std::int64_t aurora_hosted_initialization_object_pristine(const void *, std::int64_t) noexcept {
     unexpectedMetadataEntry();
 }
+extern "C" std::int64_t aurora_hosted_initialization_object_was_constructed(const void *, std::int64_t) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" std::int64_t aurora_hosted_initialization_object_completion(const void *, std::int64_t) noexcept {
+    unexpectedMetadataEntry();
+}
 extern "C" std::int64_t aurora_hosted_initialization_mark_object(const void *, std::int64_t) noexcept {
     unexpectedMetadataEntry();
 }

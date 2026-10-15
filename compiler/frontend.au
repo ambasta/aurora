@@ -318,6 +318,14 @@ export namespace compiler_frontend {
         const compiler_ir_metadata::MetadataStore& metadata, i64 base) -> i64 {
         return compiler_ir_initialization::object_pristine(workspace, metadata, base);
     }
+    auto initialization_object_was_constructed(compiler_ir_initialization::InitializationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 base) -> i64 {
+        return compiler_ir_initialization::object_was_constructed(workspace, metadata, base);
+    }
+    auto initialization_object_completion(compiler_ir_initialization::InitializationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 base) -> compiler_ir_initialization::ObjectCompletion {
+        return compiler_ir_initialization::object_completion(workspace, metadata, base);
+    }
     auto initialization_mark_object(compiler_ir_initialization::InitializationWorkspace& workspace,
         const compiler_ir_metadata::MetadataStore& metadata, i64 base) -> bool {
         return compiler_ir_initialization::mark_object(workspace, metadata, base);

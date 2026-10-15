@@ -10,7 +10,7 @@ with one semantic authority and final-source qualification for each change.
 | Resolution and typed lowering | Aurora | Validate final integrated behavior |
 | Metadata, callable and frame admission | Aurora with native transport adapter | Finish final-source validation; retain transport bounds |
 | Instruction storage and static admission | Aurora with native transport adapter | Validate diagnostic order and the source/native boundary |
-| Local initialization facts | Aurora workspace | Validate allocation, error behavior and joins |
+| Local scalar initialization and object completion | Aurora workspace | Receiver initialization remains native |
 | Current values, operand stacks, bounds evidence | C++ verifier | Migration frozen; unmerged draft is not current functionality |
 | Ownership, provenance and worklist | C++ verifier; Aurora owns entry-binding uniqueness | Continue deletion-first migration; retain dynamic checks |
 | Call graph | Aurora | Validate final integrated behavior |
@@ -43,6 +43,15 @@ Aurora admits the unique entry-binding prefix and immutable service roots/kinds.
 Native code derives region identity once per function, checks region operands
 against that binding, and retains dynamic service loans alongside other lifetime,
 initialization and provenance checks. Neither immutable authority occupies CFG snapshots.
+
+The existing Aurora initialization workspace also owns local-object logical
+completion and construction history. One must/may pair per admitted object slot
+replaces native whole-object and nested-field completion sets; complete copies
+and construction mark them together. Physical scalar initialization stays a
+separate observation, so empty/nested values and typed-owner snapshots retain
+their stricter completion requirements. Native code retains lifetime, resource
+token and loan checks. Retained-fact metrics count the compressed object pair;
+payload metrics include both scalar and object bit domains.
 
 The verifier protects the backend against malformed internal IR. It is not a
 verified compiler or a proof of Rust-equivalent safety. C++ host code, generated

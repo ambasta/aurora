@@ -16,6 +16,7 @@ using aurora::Type;
 using aurora::ir::InitializationWorkspace;
 using aurora::ir::Metadata;
 using aurora::ir::Module;
+using ObjectCompletion = InitializationWorkspace::ObjectCompletion;
 
 namespace {
 std::size_t checks = 0;
@@ -70,8 +71,8 @@ struct Reference {
     bool join(const Reference &incoming) {
         const auto previousMust = must, previousMay = may;
         std::set<int> common;
-        std::set_intersection(must.begin(), must.end(), incoming.must.begin(), incoming.must.end(),
-                              std::inserter(common, common.end()));
+        std::set_intersection(
+            must.begin(), must.end(), incoming.must.begin(), incoming.must.end(), std::inserter(common, common.end()));
         must = std::move(common);
         may.insert(incoming.may.begin(), incoming.may.end());
         return must != previousMust || may != previousMay;
@@ -91,7 +92,8 @@ void matches(InitializationWorkspace &actual, const Reference &expected, const s
     } else {
         for (std::size_t index : {0u, 62u, 63u, 64u, 127u, 128u, 65535u})
             if (index < offsets.size())
-                check(actual.scalarState(offsets[index]) == expected.state(offsets[index]), "boundary membership differs");
+                check(actual.scalarState(offsets[index]) == expected.state(offsets[index]),
+                      "boundary membership differs");
         for (int offset : expected.may)
             check(actual.scalarState(offset) == expected.state(offset), "retained fact differs from reference sets");
     }
@@ -233,36 +235,250 @@ void randomizedRetainedRows() {
         }
     }
 }
-void objectAndFailureTests() {
+struct ObjectFacts {
+    int base;
+    std::vector<int> leaves;
+    ObjectCompletion incomplete;
+};
+const std::vector<ObjectFacts> objectFacts{{8, {8, 7}, ObjectCompletion::physical},
+                                           {16, {}, ObjectCompletion::missing_empty},
+                                           {32, {32, 31}, ObjectCompletion::missing_nested},
+                                           {40, {}, ObjectCompletion::missing_nested}};
+const std::vector<int> objectScalars{7, 8, 31, 32};
+std::unique_ptr<Metadata> objectDeclarations(const std::vector<int> &scalars = objectScalars,
+                                             const std::vector<ObjectFacts> &objects = objectFacts) {
     Module module;
-    module.classLayouts["Box"] = {Type::U8, Type::U8};
-    module.classLayouts["Empty"] = {};
+    module.classLayouts = {
+        {"Box", {Type::U8, Type::U8}}, {"Empty", {}}, {"Nested", {Type::U8, Type::U8}}, {"NestedEmpty", {}}};
+    module.classLayouts["Octet"] = std::vector<Type>(8, Type::U8);
+    module.classFields["Nested"] = {{Type("Box"), 0, 2, false}};
+    module.classFields["NestedEmpty"] = {{Type("Empty"), 0, 0, false}};
     aurora::ir::Function function;
-    function.name = "objects";
+    function.name = "object_facts";
     function.result = Type::I64;
-    function.frameBytes = 16;
-    function.slots = {{8, Type::U8}, {7, Type::U8}};
-    function.objectSlots = {{8, {"Box", false}}, {16, {"Empty", false}}};
-    module.functions.push_back(function);
-    auto metadata = Metadata::import(module);
-    {
-        InitializationWorkspace workspace(*metadata, 0);
-        check(workspace.objectPristine(8) && !workspace.objectInitialized(8), "fresh object facts");
-        check(workspace.objectInitialized(16) && workspace.objectPristine(16),
-              "zero-leaf facts acquired logical empty-object completion responsibility");
-        workspace.markObject(8);
-        const auto full = workspace.retain();
-        check(workspace.objectInitialized(8) && !workspace.objectPristine(8), "complete object facts");
-        workspace.clearObject(8);
-        check(workspace.objectPristine(8) && workspace.arrayFirstMissing(8, 2, 1) == 0,
-              "lifetime clear kept must/may facts");
-        workspace.writeScalar(8);
-        check(workspace.arrayFirstMissing(8, 2, 1) == 1, "first missing element order differs");
-        workspace.writeScalar(7);
-        check(!workspace.arrayFirstMissing(8, 2, 1), "complete array still has a missing element");
-        workspace.load(full);
-        check(workspace.objectInitialized(8), "object clear mutated the retained snapshot");
+    function.frameBytes = 65536;
+    for (int offset : scalars)
+        function.slots[offset] = Type::U8;
+    for (const auto &object : objects) {
+        const auto name = object.incomplete == ObjectCompletion::physical
+                              ? (object.leaves.size() == 8 ? "Octet" : "Box")
+                          : object.incomplete == ObjectCompletion::missing_empty ? "Empty"
+                          : object.leaves.empty()                                ? "NestedEmpty"
+                                                                                 : "Nested";
+        function.objectSlots[object.base] = {name, false};
     }
+    module.functions.push_back(std::move(function));
+    return Metadata::import(module);
+}
+// Negative keys keep logical object facts disjoint from physical scalar facts
+// in the test-only set oracle, even when their canonical offsets are identical.
+void referenceObject(Reference &expected, const ObjectFacts &object, bool clear = false) {
+    for (int offset : object.leaves)
+        if (clear)
+            expected.clear(offset);
+        else
+            expected.write(offset);
+    if (clear)
+        expected.clear(-object.base);
+    else
+        expected.write(-object.base);
+}
+void matchesObjects(InitializationWorkspace &actual,
+                    const Reference &expected,
+                    const std::vector<int> &scalars = objectScalars,
+                    const std::vector<ObjectFacts> &objects = objectFacts) {
+    check(actual.currentCount() == expected.count(), "combined scalar/object count differs from reference sets");
+    check(actual.slotCount() == scalars.size() && actual.wordCount() == (scalars.size() + objects.size() + 63) / 64,
+          "combined word domain changed scalar slot count or omitted object bits");
+    check(actual.logicalPayloadBytesPerSnapshot() == 2 * actual.wordCount() * sizeof(std::uint64_t),
+          "object facts changed paired-word snapshot payload");
+    for (int offset : scalars)
+        check(actual.scalarState(offset) == expected.state(offset), "object operation changed wrong scalar bit");
+    for (const auto &object : objects) {
+        const bool initialized = std::all_of(object.leaves.begin(), object.leaves.end(), [&](int offset) {
+            return expected.must.contains(offset);
+        });
+        const bool pristine = std::none_of(object.leaves.begin(), object.leaves.end(), [&](int offset) {
+            return expected.may.contains(offset);
+        });
+        check(actual.objectInitialized(object.base) == initialized,
+              "physical object must query includes logical facts");
+        check(actual.objectPristine(object.base) == pristine, "physical object may query includes logical facts");
+        check(actual.objectWasConstructed(object.base) == expected.may.contains(-object.base),
+              "object construction query differs from logical may set");
+        const auto completion = expected.must.contains(-object.base) ? ObjectCompletion::whole : object.incomplete;
+        check(actual.objectCompletion(object.base) == completion, "object completion differs from logical must set");
+    }
+}
+void objectCompletionAndIsolationTests() {
+    auto metadata = objectDeclarations();
+    InitializationWorkspace workspace(*metadata, 0);
+    Reference expected;
+    const auto empty = workspace.retain();
+    matchesObjects(workspace, expected);
+    // Leaf writes suffice for ordinary scalar-only use but do not mark whole completion.
+    for (int offset : objectScalars) {
+        workspace.writeScalar(offset);
+        expected.write(offset);
+    }
+    matchesObjects(workspace, expected);
+    const auto physical = workspace.retain();
+    const auto physicalReference = expected;
+    for (const auto &object : objectFacts) {
+        workspace.markObject(object.base);
+        referenceObject(expected, object);
+        workspace.markObject(object.base);
+        matchesObjects(workspace, expected);
+    }
+    const auto whole = workspace.retain();
+    const auto wholeReference = expected;
+    // Physical clearing must leave logical completion untouched.
+    workspace.clearArray(8, 2, 1);
+    expected.clear(8);
+    expected.clear(7);
+    matchesObjects(workspace, expected);
+    check(workspace.arrayFirstMissing(8, 2, 1) == 0, "physical clear retained first scalar fact");
+    workspace.writeScalar(8);
+    expected.write(8);
+    check(workspace.arrayFirstMissing(8, 2, 1) == 1, "first missing element order differs");
+    for (const auto &object : objectFacts) {
+        workspace.clearObject(object.base);
+        referenceObject(expected, object, true);
+        matchesObjects(workspace, expected);
+    }
+    for (const auto &[row, value] : std::array<std::pair<InitializationWorkspace::Id, Reference>, 3>{
+             {{empty, {}}, {physical, physicalReference}, {whole, wholeReference}}}) {
+        check(workspace.retainedCountAt(row) == value.count(), "object clear mutated retained row");
+        workspace.load(row);
+        matchesObjects(workspace, value);
+    }
+    for (std::size_t index = 3; index < 130; ++index) {
+        check(workspace.retain() == index, "object retained ordinals changed during growth");
+        check(workspace.retainedCountAt(index) == wholeReference.count(), "pool growth lost object facts");
+    }
+    workspace.load(empty);
+    matchesObjects(workspace, {});
+    workspace.load(whole);
+    matchesObjects(workspace, wholeReference);
+}
+void differentialObjectJoins() {
+    auto metadata = objectDeclarations();
+    InitializationWorkspace workspace(*metadata, 0);
+    std::array<InitializationWorkspace::Id, 16> rows{};
+    std::array<Reference, 16> values{};
+    const auto empty = workspace.retain();
+    for (unsigned mask = 0; mask < rows.size(); ++mask) {
+        workspace.load(empty);
+        for (unsigned bit = 0; bit < objectFacts.size(); ++bit)
+            if ((mask & (1u << bit)) != 0) {
+                workspace.markObject(objectFacts[bit].base);
+                referenceObject(values[mask], objectFacts[bit]);
+            }
+        rows[mask] = workspace.retain();
+    }
+    for (unsigned left = 0; left < rows.size(); ++left)
+        for (unsigned right = 0; right < rows.size(); ++right) {
+            workspace.load(rows[left]);
+            const auto target = workspace.retain();
+            workspace.load(rows[right]);
+            auto expected = values[left];
+            const bool changed = expected.join(values[right]);
+            check(workspace.join(target) == changed, "object must AND/may OR changed result differs");
+            matchesObjects(workspace, values[right]);
+            check(workspace.retainedCountAt(target) == expected.count(), "object join retained cardinality differs");
+            check(!workspace.join(target), "unchanged object backedge reported a change");
+            workspace.load(target);
+            matchesObjects(workspace, expected);
+            if (left == 2 && right == 8)
+                check(changed && expected.count() == values[left].count(),
+                      "cardinality-canceling empty-object join did not report changed membership");
+        }
+    // Both paths have all physical leaves; only one completed the whole objects.
+    workspace.load(empty);
+    Reference leafOnly;
+    for (int offset : objectScalars) {
+        workspace.writeScalar(offset);
+        leafOnly.write(offset);
+    }
+    const auto physical = workspace.retain();
+    workspace.load(rows.back());
+    check(workspace.join(physical), "whole/leaf-only branch did not change logical may bits");
+    leafOnly.join(values.back());
+    workspace.load(physical);
+    matchesObjects(workspace, leafOnly);
+}
+void objectDomainBoundaryTests() {
+    // Shared words, bits 63/64, 8,192 objects, and the combined 73,728-bit maximum.
+    for (const auto [scalarCount, objectCount] : std::array<std::pair<std::size_t, std::size_t>, 13>{{{0, 1},
+                                                                                                      {0, 63},
+                                                                                                      {0, 64},
+                                                                                                      {0, 65},
+                                                                                                      {1, 63},
+                                                                                                      {1, 64},
+                                                                                                      {63, 1},
+                                                                                                      {63, 2},
+                                                                                                      {64, 1},
+                                                                                                      {65, 64},
+                                                                                                      {127, 2},
+                                                                                                      {0, 8192},
+                                                                                                      {65536, 8192}}}) {
+        const auto scalars = denseOffsets(scalarCount);
+        std::vector<ObjectFacts> objects;
+        for (std::size_t index = 0; index < objectCount; ++index) {
+            if (scalarCount == 65536) {
+                const int base = static_cast<int>((index + 1) * 8);
+                objects.push_back({base,
+                                   {base, base - 1, base - 2, base - 3, base - 4, base - 5, base - 6, base - 7},
+                                   ObjectCompletion::physical});
+            } else
+                objects.push_back(
+                    {static_cast<int>(((scalarCount + 7) / 8 + index + 1) * 8), {}, ObjectCompletion::missing_empty});
+        }
+        auto metadata = objectDeclarations(scalars, objects);
+        InitializationWorkspace workspace(*metadata, 0);
+        Reference expected;
+        const auto empty = workspace.retain();
+        for (int offset : scalars) {
+            workspace.writeScalar(offset);
+            expected.write(offset);
+        }
+        for (std::size_t index = 0; index < objects.size(); ++index) {
+            if (scalarCount != 65536 && objects.size() > 129 && index != 0 && index != 62 && index != 63 &&
+                index != 64 && index + 1 != objects.size())
+                continue;
+            workspace.markObject(objects[index].base);
+            referenceObject(expected, objects[index]);
+        }
+        matchesObjects(workspace, expected, scalars, objects);
+        const auto marked = workspace.retain();
+        workspace.clearObject(objects.back().base);
+        workspace.load(empty);
+        matchesObjects(workspace, {}, scalars, objects);
+        check(workspace.retainedCountAt(marked) == expected.count(), "boundary clear changed retained row");
+        workspace.load(marked);
+        matchesObjects(workspace, expected, scalars, objects);
+    }
+}
+void objectAndFailureTests() {
+    auto metadata = objectDeclarations();
+    for (int invalid : {-1, 0, 7, 9, 15, 17, 65537})
+        for (unsigned operation = 0; operation != 6; ++operation) {
+            InitializationWorkspace workspace(*metadata, 0);
+            rejects([&] {
+                if (operation == 0)
+                    (void)workspace.objectInitialized(invalid);
+                else if (operation == 1)
+                    (void)workspace.objectPristine(invalid);
+                else if (operation == 2)
+                    (void)workspace.objectWasConstructed(invalid);
+                else if (operation == 3)
+                    (void)workspace.objectCompletion(invalid);
+                else if (operation == 4)
+                    workspace.markObject(invalid);
+                else
+                    workspace.clearObject(invalid);
+            });
+        }
     for (unsigned operation = 0; operation != 3; ++operation) {
         InitializationWorkspace workspace(*metadata, 0);
         workspace.markObject(8);
@@ -276,7 +492,9 @@ void objectAndFailureTests() {
                 workspace.writeScalar(6);
         });
     }
-    rejects([&] { InitializationWorkspace workspace(*metadata, metadata->callableCount()); });
+    rejects([&] {
+        InitializationWorkspace workspace(*metadata, metadata->callableCount());
+    });
 }
 } // namespace
 
@@ -285,6 +503,9 @@ int main() {
         boundaryAndIsolationTests();
         differentialJoins();
         randomizedRetainedRows();
+        objectCompletionAndIsolationTests();
+        differentialObjectJoins();
+        objectDomainBoundaryTests();
         objectAndFailureTests();
         std::cout << "PASS initialization workspace: " << checks << " checks against reference sets\n";
         return 0;

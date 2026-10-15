@@ -132,7 +132,6 @@ public:
     std::vector<Value> stack;
     std::set<int> receiverInitialized;
     std::set<int> receiverMaybeInitialized;
-    std::set<int> maybeConstructedObjects;
     std::map<int, InstructionId> activeObjects; // object base -> creation/binding site
     std::map<int, InstructionId> activeArrays;  // array base -> BeginArray site
     std::map<int, SpanCapability> activeSpans;
@@ -140,16 +139,11 @@ public:
     std::map<int, ByteBinding> activeBytes;
     std::map<int, ObjectLoan> objectLoans;
     std::map<int, OwnedObjectBinding> ownedObjects; // 0/-1 are the two distinct bound roots
-    // Logical completion is independent of leaf initialization: empty embedded
-    // values also require one complete, nominally checked initialization.
-    // Ordinal -1 is whole-object completion minted by markObject. Like nested
-    // completion, it is a must-fact at joins, including for leafless snapshots.
-    std::set<std::pair<int, int>> objectClassesInitialized;
     std::set<int> receiverClassesInitialized;
     std::set<int> receiverClassesMaybeInitialized;
     bool operator==(const State &) const = default;
 };
-// Local scalar initialization is owned by a source workspace. Its retained ordinal
+// Local physical initialization and logical completion have one source owner. Its retained ordinal
 // belongs to the block entry, never to native State equality or State copies.
 class BlockEntry {
 public:
@@ -338,8 +332,7 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
             ownedFields += object.fields.size();
         }
         return ownedFields + state.stack.size() + state.receiverInitialized.size() +
-               state.receiverMaybeInitialized.size() + state.maybeConstructedObjects.size() +
-               state.activeObjects.size() + state.objectClassesInitialized.size() +
+               state.receiverMaybeInitialized.size() + state.activeObjects.size() +
                state.receiverClassesInitialized.size() + state.receiverClassesMaybeInitialized.size() +
                state.activeArrays.size() + state.activeSpans.size() + state.activeBytes.size() +
                state.ownedObjects.size() + state.objectLoans.size() + state.serviceLoans.size();
@@ -397,15 +390,12 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
         if (merged.current != state.current)
             merged.current.reset();
         merged.receiverInitialized = intersection(merged.receiverInitialized, state.receiverInitialized);
-        merged.objectClassesInitialized = intersection(merged.objectClassesInitialized, state.objectClassesInitialized);
         merged.receiverClassesInitialized =
             intersection(merged.receiverClassesInitialized, state.receiverClassesInitialized);
         merged.receiverClassesMaybeInitialized.insert(state.receiverClassesMaybeInitialized.begin(),
                                                       state.receiverClassesMaybeInitialized.end());
         merged.receiverMaybeInitialized.insert(state.receiverMaybeInitialized.begin(),
                                                state.receiverMaybeInitialized.end());
-        merged.maybeConstructedObjects.insert(state.maybeConstructedObjects.begin(),
-                                              state.maybeConstructedObjects.end());
         const bool nativeChanged = merged != existing;
         const auto retainedInitialization = states[index]->initialization;
         // Count before source join mutates the retained row. Must losses and may
@@ -790,46 +780,37 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                                 "owning object field lacks live region ownership");
                     }
                 }
-                const auto &name = objectSlots.at(base).className;
-                if (metadata.findClass(name))
-                    for (std::size_t field = 0; field < logicalFields(name).size(); ++field)
-                        if (logicalFields(name)[field].elementType.isClass())
-                            require(state.objectClassesInitialized.contains({base, static_cast<int>(field)}),
-                                    "nested class field not completely initialized");
-                if (classLeaves(name).empty())
-                    require(state.objectClassesInitialized.contains({base, -1}),
-                            "empty object not completely initialized");
+                const auto completion = initialization.objectCompletion(base);
+                require(completion != InitializationWorkspace::ObjectCompletion::missing_nested,
+                        "nested class field not completely initialized");
+                require(completion != InitializationWorkspace::ObjectCompletion::missing_empty,
+                        "empty object not completely initialized");
+                return completion;
             };
             auto liveCopiedArgument = [&](int base, const std::string &role) {
                 require(state.activeObjects.contains(base), role + " argument outside active object lifetime");
                 require(initialization.objectInitialized(base), role + " argument object not fully initialized");
                 logicalComplete(base);
             };
-            auto markObject = [&](int base) {
-                const auto &name = objectSlots.at(base).className;
-                state.maybeConstructedObjects.insert(base);
-                state.objectClassesInitialized.insert({base, -1});
-                initialization.markObject(base);
-                if (metadata.findClass(name))
-                    for (std::size_t field = 0; field < logicalFields(name).size(); ++field)
-                        if (logicalFields(name)[field].elementType.isClass())
-                            state.objectClassesInitialized.insert({base, static_cast<int>(field)});
-            };
-            auto initializedObject = [&](int base) -> ObjectSlot {
+            auto initializedObject =
+                [&](int base, InitializationWorkspace::ObjectCompletion *completion = nullptr) -> ObjectSlot {
                 require(state.activeObjects.contains(base), "copy object outside active lifetime");
                 auto object = objectSlots.at(base);
                 require(initialization.objectInitialized(base), "copy source object not fully initialized");
-                logicalComplete(base);
+                const auto observed = logicalComplete(base);
+                if (completion)
+                    *completion = observed;
                 return object;
             };
             auto liveObject = [&](int base) -> ObjectSlot {
                 loanAccess(base, false);
                 return initializedObject(base);
             };
-            auto completeObject = [&](int base) -> ObjectSlot {
+            auto completeObject = [&](int base,
+                                      InitializationWorkspace::ObjectCompletion *completion = nullptr) -> ObjectSlot {
                 loanAccess(base, false);
                 require(objectSlots.contains(base), "copy requires exact object slot");
-                return initializedObject(base);
+                return initializedObject(base, completion);
             };
             auto liveOwnedRoot = [&](int root) -> const OwnedObjectBinding & {
                 require(state.ownedObjects.contains(root), "object loan requires exact owning root");
@@ -926,7 +907,7 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                         "class array access lacks matching dominating bounds token");
             };
             auto initializeObject = [&](int base) {
-                require(!state.maybeConstructedObjects.contains(base), "copy result object already initialized");
+                require(!initialization.objectWasConstructed(base), "copy result object already initialized");
                 require(initialization.objectPristine(base), "copy requires pristine result object");
                 if (state.ownedObjects.contains(base)) {
                     const auto &object = state.ownedObjects.at(base);
@@ -938,7 +919,7 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                                 "owning object result requires pristine fields");
                     }
                 }
-                markObject(base);
+                initialization.markObject(base);
             };
             auto copyTarget = [&](int base, const std::string &name) {
                 require(objectSlots.contains(base), "copy requires exact object slot");
@@ -1055,10 +1036,11 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
             };
             auto copiedValue = [&](int base, const Type &owner, int root) {
                 require(base != root, "owned value snapshot aliases owner root");
-                const auto &value = completeObject(base);
+                InitializationWorkspace::ObjectCompletion completion;
+                const auto &value = completeObject(base, &completion);
                 require(value.className == owner.className, "owned value snapshot nominal class mismatch");
                 require(!value.mutableValue, "owned value snapshot must be readonly");
-                require(state.objectClassesInitialized.contains({base, -1}),
+                require(completion == InitializationWorkspace::ObjectCompletion::whole,
                         "owned value snapshot requires complete copied or constructed value");
             };
             auto publishOwnedBorrow = [&](int root, int ordinal, int result, const ByteBinding &binding) {
@@ -1207,11 +1189,11 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                             const int base = operation.resultOffset;
                             require(state.activeObjects.contains(base),
                                     "aggregate result outside active object lifetime");
-                            require(!state.maybeConstructedObjects.contains(base),
+                            require(!initialization.objectWasConstructed(base),
                                     "aggregate result object already initialized");
                             require(initialization.objectPristine(base),
                                     "aggregate result requires uninitialized object");
-                            markObject(base);
+                            initialization.markObject(base);
                             state.current.reset();
                         } else {
                             state.current = Value{target.result(), {}};
@@ -1245,7 +1227,7 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                             const int base = operation.resultOffset;
                             require(state.activeObjects.contains(base),
                                     "resource copied result outside active object lifetime");
-                            require(!state.maybeConstructedObjects.contains(base),
+                            require(!initialization.objectWasConstructed(base),
                                     "resource copied result object already initialized");
                             require(initialization.objectPristine(base),
                                     "resource copied result requires uninitialized object");
@@ -1273,7 +1255,7 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                             state.current.reset();
                         } else if (target.result().isClass()) {
                             // A complete pointer-free copy carries no owner token or region provenance.
-                            markObject(operation.resultOffset);
+                            initialization.markObject(operation.resultOffset);
                             state.current.reset();
                         } else
                             state.current = Value{target.result(), {}};
@@ -1452,14 +1434,6 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                         for (auto &value : state.stack)
                             invalidate(value);
                         initialization.clearObject(operation.offset);
-                        state.maybeConstructedObjects.erase(operation.offset);
-                        for (auto field = state.objectClassesInitialized.begin();
-                             field != state.objectClassesInitialized.end();) {
-                            if (field->first == operation.offset)
-                                field = state.objectClassesInitialized.erase(field);
-                            else
-                                ++field;
-                        }
                     } else if constexpr (std::is_same_v<Op, InitializeEmptyObject>) {
                         require(objectSlots.contains(operation.offset),
                                 "empty initialization requires exact object slot");
@@ -1762,11 +1736,11 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                             require(state.activeObjects.contains(receiverOffset),
                                     "method receiver outside active object lifetime");
                             if (receiver.constructor) {
-                                require(!state.maybeConstructedObjects.contains(receiverOffset),
+                                require(!initialization.objectWasConstructed(receiverOffset),
                                         "object constructor called more than once");
                                 require(initialization.objectPristine(receiverOffset),
                                         "constructor requires uninitialized object");
-                                markObject(receiverOffset);
+                                initialization.markObject(receiverOffset);
                             } else {
                                 require(initialization.objectInitialized(receiverOffset),
                                         "method receiver object not fully initialized");
@@ -1785,10 +1759,10 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                         } else if (target.result().isClass()) {
                             const int base = operation.resultOffset;
                             require(state.activeObjects.contains(base), "method result outside active object lifetime");
-                            require(!state.maybeConstructedObjects.contains(base),
+                            require(!initialization.objectWasConstructed(base),
                                     "method result object already initialized");
                             require(initialization.objectPristine(base), "method result requires uninitialized object");
-                            markObject(base);
+                            initialization.markObject(base);
                             state.current.reset();
                         } else {
                             state.current = Value{target.result(), {}};
@@ -1952,11 +1926,11 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                         } else if (operation.operation == service::Operation::Next ||
                                    operation.operation == service::Operation::IommuPoll) {
                             const int base = operation.resultOffset;
-                            require(state.activeObjects.contains(base) && !state.maybeConstructedObjects.contains(base),
+                            require(state.activeObjects.contains(base) && !initialization.objectWasConstructed(base),
                                     "service observation requires exact pristine active copied sample object");
                             require(initialization.objectPristine(base),
                                     "service observation cannot overwrite initialized sample storage");
-                            markObject(base);
+                            initialization.markObject(base);
                             state.current.reset();
                         } else {
                             require(false, "unknown sealed service operation");
@@ -2023,7 +1997,7 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                         mintObjectFields(operation.offset, activeRegion(*entryBindings.region()));
                     } else if constexpr (std::is_same_v<Op, BindObjectParameter>) {
                         state.activeObjects.emplace(operation.offset, instructionId);
-                        markObject(operation.offset);
+                        initialization.markObject(operation.offset);
                     } else if constexpr (std::is_same_v<Op, BindParameter>) {
                         const auto prior = initialization.writeScalar(operation.offset);
                         require((prior & 2u) == 0, "write to immutable scalar parameter");
