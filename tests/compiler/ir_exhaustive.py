@@ -134,6 +134,26 @@ extern "C" std::int64_t __wrap_aurora_hosted_emitter_run(
         path = directory / (case + ".au")
         path.write_text(f"module emitter_probe_fixture; auto test({parameters})->{result} {{ return {expression}; }}\n")
         inputs[case] = (path, expected)
+    # Every operator of every scalar family must reach a handler; signed and
+    # unsigned operands take different emitter paths. Behaviour is the oracles'.
+    operators = [
+        ("unary-negate", "i64 x", "i64", "-x"),
+        ("unary-not", "bool b", "bool", "!b"),
+        ("unary-bitnot", "u64 x", "u64", "~x"),
+    ]
+    for scalar in ("i64", "u64"):
+        for name, symbol in (("add", "+"), ("subtract", "-"), ("multiply", "*"), ("divide", "/"), ("remainder", "%")):
+            operators.append((f"binary-{name}-{scalar}", f"{scalar} x, {scalar} y", scalar, f"x{symbol}y"))
+        for name, symbol in (("eq", "=="), ("ne", "!="), ("lt", "<"), ("gt", ">"), ("le", "<="), ("ge", ">=")):
+            operators.append((f"comparison-{name}-{scalar}", f"{scalar} x, {scalar} y", "bool", f"x{symbol}y"))
+    for name, symbol in (("and", "&"), ("or", "|"), ("xor", "^")):
+        operators.append((f"binary-{name}-u64", "u64 x, u64 y", "u64", f"x{symbol}y"))
+    for name, symbol in (("shl", "<<"), ("shr", ">>")):
+        operators.append((f"binary-{name}-u64", "u64 x, i64 n", "u64", f"x{symbol}n"))
+    for case, parameters, result, expression in operators:
+        path = directory / (case + ".au")
+        path.write_text(f"module emitter_probe_fixture; auto test({parameters})->{result} {{ return {expression}; }}\n")
+        inputs[case] = (path, "")
     original = json.loads(args.abi_facts.read_text())
     source = directory / "emitter-probe.au"
     source.write_text("""
@@ -159,7 +179,7 @@ export namespace compiler_frontend {
     scalar = modules / "aurora/compiler/x86_scalar.au"
     storage_original, scalar_original = storage.read_text(), scalar.read_text()
     for mutation, cases in (
-        ("unchanged", ("constant", "unary", "binary", "comparison")),
+        ("unchanged", tuple(inputs)),
         ("unknown-form", ("constant",)),
         ("unknown-operators", ("unary", "binary", "comparison")),
         ("missing-handler", ("constant",)),
