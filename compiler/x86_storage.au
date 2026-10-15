@@ -1,0 +1,458 @@
+export module aurora.compiler.x86_storage;
+import std.decimal;
+
+// Bounded x86 output and emission facts. The workspace retains only selected
+// callable IDs and optional ABI names; executable IR stays in the source stores.
+export namespace compiler_x86 {
+    enum class EmitStatus { pending, running, complete, allocation, limit, invalid };
+    enum class Register { rax, rbx, rcx, rdx, rsi, rdi, r8, r9, r10, r11 };
+    class IndexRow {
+        i64 valueValue;
+    public:
+        IndexRow(i64 value) : valueValue(value) {}
+        auto value() const -> i64 { return valueValue; }
+    };
+    auto IndexRow_pool(builtin::ByteRegion region) -> builtin::OwnedValues<IndexRow> {
+        const IndexRow fill = IndexRow(0);
+        builtin::OwnedValues<IndexRow> result = region.try_allocate(0, fill);
+        return move(result);
+    }
+    class FunctionFact {
+        i64 kindValue;
+        i64 symbolValue;
+        i64 localValue;
+        i64 copiedValue;
+        i64 serviceValue;
+    public:
+        FunctionFact(i64 kind, i64 symbol, i64 local, i64 copied, i64 service) : kindValue(kind), symbolValue(symbol), localValue(local), copiedValue(copied), serviceValue(service) {}
+        auto kind() const -> i64 { return kindValue; }
+        auto symbol() const -> i64 { return symbolValue; }
+        auto local() const -> i64 { return localValue; }
+        auto copied() const -> i64 { return copiedValue; }
+        auto service() const -> i64 { return serviceValue; }
+    };
+    auto FunctionFact_pool(builtin::ByteRegion region) -> builtin::OwnedValues<FunctionFact> {
+        const FunctionFact fill = FunctionFact(0, 0, 0, 0, 0);
+        builtin::OwnedValues<FunctionFact> result = region.try_allocate(0, fill);
+        return move(result);
+    }
+    class CallFact {
+        i64 functionValue;
+        i64 kindValue;
+        i64 symbolValue;
+        i64 liveValue;
+        i64 argumentsValue;
+        i64 maximumValue;
+    public:
+        CallFact(i64 function, i64 kind, i64 symbol, i64 live, i64 arguments, i64 maximum) : functionValue(function), kindValue(kind), symbolValue(symbol), liveValue(live), argumentsValue(arguments), maximumValue(maximum) {}
+        auto function() const -> i64 { return functionValue; }
+        auto kind() const -> i64 { return kindValue; }
+        auto symbol() const -> i64 { return symbolValue; }
+        auto live() const -> i64 { return liveValue; }
+        auto arguments() const -> i64 { return argumentsValue; }
+        auto maximum() const -> i64 { return maximumValue; }
+    };
+    auto CallFact_pool(builtin::ByteRegion region) -> builtin::OwnedValues<CallFact> {
+        const CallFact fill = CallFact(0, 0, 0, 0, 0, 0);
+        builtin::OwnedValues<CallFact> result = region.try_allocate(0, fill);
+        return move(result);
+    }
+    class LoanRow {
+        i64 idValue;
+        i64 offsetValue;
+    public:
+        LoanRow(i64 id, i64 offset) : idValue(id), offsetValue(offset) {}
+        auto id() const -> i64 { return idValue; }
+        auto offset() const -> i64 { return offsetValue; }
+    };
+    auto LoanRow_pool(builtin::ByteRegion region) -> builtin::OwnedValues<LoanRow> {
+        const LoanRow fill = LoanRow(0, 0);
+        builtin::OwnedValues<LoanRow> result = region.try_allocate(0, fill);
+        return move(result);
+    }
+    class NameRow {
+        i64 beginValue;
+        i64 countValue;
+    public:
+        NameRow(i64 begin, i64 count) : beginValue(begin), countValue(count) {}
+        auto begin() const -> i64 { return beginValue; }
+        auto count() const -> i64 { return countValue; }
+    };
+    auto NameRow_pool(builtin::ByteRegion region) -> builtin::OwnedValues<NameRow> {
+        const NameRow fill = NameRow(0, 0);
+        builtin::OwnedValues<NameRow> result = region.try_allocate(0, fill);
+        return move(result);
+    }
+    class AbiNameRow {
+        i64 categoryValue;
+        i64 identityValue;
+        i64 memberValue;
+        i64 beginValue;
+        i64 countValue;
+    public:
+        AbiNameRow(i64 category, i64 identity, i64 member, i64 begin, i64 count) : categoryValue(category), identityValue(identity), memberValue(member), beginValue(begin), countValue(count) {}
+        auto category() const -> i64 { return categoryValue; }
+        auto identity() const -> i64 { return identityValue; }
+        auto member() const -> i64 { return memberValue; }
+        auto begin() const -> i64 { return beginValue; }
+        auto count() const -> i64 { return countValue; }
+    };
+    auto AbiNameRow_pool(builtin::ByteRegion region) -> builtin::OwnedValues<AbiNameRow> {
+        const AbiNameRow fill = AbiNameRow(0, 0, 0, 0, 0);
+        builtin::OwnedValues<AbiNameRow> result = region.try_allocate(0, fill);
+        return move(result);
+    }
+    class EmitChunk {
+        builtin::array<u8, 512> payload;
+        i64 byteCount;
+    public:
+        EmitChunk() : payload{}, byteCount(0) {}
+        auto size() const -> i64 { return byteCount; }
+        auto at(i64 index) const -> u8 { return payload[index]; }
+        auto append(u8 value) -> bool {
+            if (byteCount >= 512) { return false; }
+            payload[byteCount] = value; byteCount = byteCount + 1; return true;
+        }
+        auto invalidate() -> bool { byteCount = -1; return false; }
+    };
+    // Closed address-mode tokens carry bounded offsets, never pointers/text.
+    auto frame_address(i64 offset) -> i64 { return offset; }
+    auto stack_address(i64 offset) -> i64 { return 1000000000 + offset; }
+    auto r10_address(i64 offset) -> i64 { return 2000000000 + offset; }
+    auto r11_address(i64 offset) -> i64 { return 3000000000 + offset; }
+    auto rax_address(i64 offset) -> i64 { return 4000000000 + offset; }
+    auto advance_address(i64 token, i64 bytes) -> i64 {
+        if (token < 1000000000) { return token - bytes; }
+        return token + bytes;
+    }
+    class EmitWorkspace {
+        builtin::OwnedBytes output;
+        builtin::OwnedBytes names;
+        builtin::OwnedValues<IndexRow> retained;
+        builtin::OwnedValues<FunctionFact> functions;
+        builtin::OwnedValues<CallFact> calls;
+        builtin::OwnedValues<LoanRow> loans;
+        builtin::OwnedValues<NameRow> runtimeNames;
+        builtin::OwnedValues<AbiNameRow> abiNames;
+        EmitStatus outcome;
+        i64 outputSize;
+        i64 artifactBegin;
+        i64 assemblySize;
+        i64 stackSize;
+        i64 abiSize;
+        i64 nameSize;
+        i64 retainedSize;
+        i64 functionSize;
+        i64 callSize;
+        i64 loanSize;
+        i64 runtimeSize;
+        i64 abiNameSize;
+        i64 currentCallable;
+        i64 currentFunction;
+        i64 functionIndex;
+        i64 divisionIndex;
+        i64 stackDepth;
+        i64 liveStackBytes;
+        i64 receiverSave;
+        i64 callRecordSave;
+        i64 resultSave;
+        i64 copySource;
+        i64 copyDestination;
+        i64 copySourceFirst;
+        i64 copyDestinationFirst;
+        bool directResult;
+        bool leftInRcx;
+        bool ownedSpanRuntime;
+    public:
+        EmitWorkspace(builtin::ByteRegion region) : output(region.try_allocate(0)), names(region.try_allocate(0)),
+            retained(IndexRow_pool(region)),
+            functions(FunctionFact_pool(region)),
+            calls(CallFact_pool(region)),
+            loans(LoanRow_pool(region)),
+            runtimeNames(NameRow_pool(region)),
+            abiNames(AbiNameRow_pool(region)),
+            outcome(EmitStatus::pending),
+outputSize(0), artifactBegin(0), assemblySize(0), stackSize(0), abiSize(0), nameSize(0), retainedSize(0), functionSize(0), callSize(0), loanSize(0), runtimeSize(0), abiNameSize(0), currentCallable(-1), currentFunction(-1), functionIndex(0), divisionIndex(0), stackDepth(0), liveStackBytes(8), receiverSave(0), callRecordSave(0), resultSave(0), copySource(0), copyDestination(0), copySourceFirst(0), copyDestinationFirst(0),
+            directResult(false), leftInRcx(false), ownedSpanRuntime(false) {}
+        auto allocated() const -> bool {
+            return output.ok() && names.ok() && retained.ok() && functions.ok() && calls.ok() && loans.ok()
+                && runtimeNames.ok() && abiNames.ok();
+        }
+        auto status() const -> EmitStatus { return outcome; }
+        auto ok() const -> bool { return outcome == EmitStatus::pending || outcome == EmitStatus::running || outcome == EmitStatus::complete; }
+        auto fail() -> bool { if (ok()) { outcome = EmitStatus::invalid; } return false; }
+        auto allocation_failure() -> bool { if (ok()) { outcome = EmitStatus::allocation; } return false; }
+        auto limit_failure() -> bool { if (ok()) { outcome = EmitStatus::limit; } return false; }
+        auto reserve_output(i64 count) -> bool {
+            if (!ok()) { return false; }
+            if (count < 0 || count > 67108864 - (outputSize - artifactBegin)) { return limit_failure(); }
+            const i64 required = outputSize + count;
+            if (required <= output.size()) { return true; }
+            i64 capacity = 4096; if (output.size() > 0) { capacity = output.size() * 2; }
+            if (capacity > 201326592) { capacity = 201326592; }
+            if (capacity < required) { capacity = required; }
+            if (!output.try_resize(capacity)) { return allocation_failure(); } return true;
+        }
+        auto byte(u8 value) -> bool {
+            if (!reserve_output(1)) { return false; }
+            if (!output.set(outputSize, value)) { return fail(); }
+            outputSize = outputSize + 1; return true;
+        }
+        auto text(builtin::span<const u8> value) -> bool {
+            if (!reserve_output(value.size())) { return false; }
+            i64 at = 0;
+            while (at < value.size()) {
+                if (!output.set(outputSize + at, value.at(at))) { return fail(); }
+                at = at + 1;
+            }
+            outputSize = outputSize + value.size(); return true;
+        }
+        auto begin_line() -> bool { return text("    "); }
+        auto end_line() -> bool { return byte('\n'); }
+        auto line(builtin::span<const u8> value) -> bool { begin_line(); text(value); return end_line(); }
+        auto number(i64 value) -> bool {
+            const std::DecimalEncodingResult encoded = std::format_decimal_i64(value);
+            i64 at = 0; while (at < encoded.size()) { byte(encoded.at(at)); at = at + 1; } return ok();
+        }
+        auto unsigned_number(u64 value) -> bool {
+            const std::DecimalEncodingResult encoded = std::format_decimal_u64(value);
+            i64 at = 0; while (at < encoded.size()) { byte(encoded.at(at)); at = at + 1; } return ok();
+        }
+        auto line_number(builtin::span<const u8> prefix, i64 value, builtin::span<const u8> suffix) -> bool {
+            begin_line(); text(prefix); number(value); text(suffix); return end_line();
+        }
+        auto address(i64 offset) -> bool { text("-"); number(offset); return text("(%rbp)"); }
+        auto line_address(builtin::span<const u8> prefix, i64 offset, builtin::span<const u8> suffix) -> bool {
+            begin_line(); text(prefix); address(offset); text(suffix); return end_line();
+        }
+        auto memory(i64 token) -> bool {
+            if (token < 1000000000) { return address(token); }
+            const i64 base = token / 1000000000; number(token % 1000000000);
+            if (base == 1) { return text("(%rsp)"); } if (base == 2) { return text("(%r10)"); }
+            if (base == 3) { return text("(%r11)"); } if (base == 4) { return text("(%rax)"); } return fail();
+        }
+        auto reg(Register value) -> bool {
+            if (value == Register::rax) { return text("%rax"); }
+            if (value == Register::rbx) { return text("%rbx"); }
+            if (value == Register::rcx) { return text("%rcx"); }
+            if (value == Register::rdx) { return text("%rdx"); }
+            if (value == Register::rsi) { return text("%rsi"); }
+            if (value == Register::rdi) { return text("%rdi"); }
+            if (value == Register::r8) { return text("%r8"); }
+            if (value == Register::r9) { return text("%r9"); }
+            if (value == Register::r10) { return text("%r10"); }
+            if (value == Register::r11) { return text("%r11"); }
+            return fail();
+        }
+        auto argument_register(i64 index, bool narrow) -> bool {
+            if (index == 0) { if (narrow) { return text("%dil"); } return text("%rdi"); }
+            if (index == 1) { if (narrow) { return text("%sil"); } return text("%rsi"); }
+            if (index == 2) { if (narrow) { return text("%dl"); } return text("%rdx"); }
+            if (index == 3) { if (narrow) { return text("%cl"); } return text("%rcx"); }
+            if (index == 4) { if (narrow) { return text("%r8b"); } return text("%r8"); }
+            if (index == 5) { if (narrow) { return text("%r9b"); } return text("%r9"); }
+            return fail();
+        }
+        auto label(i64 id) -> bool { text(".Lau"); number(functionIndex); text("_"); return number(id); }
+        auto return_label() -> bool { text(".Lreturn"); return number(functionIndex); }
+        auto current_callable() const -> i64 { return currentCallable; }
+        auto function_index() const -> i64 { return functionIndex; }
+        auto receiver_save() const -> i64 { return receiverSave; }
+        auto call_record_save() const -> i64 { return callRecordSave; }
+        auto result_save() const -> i64 { return resultSave; }
+        auto stack_depth() const -> i64 { return stackDepth; }
+        auto live_stack() const -> i64 { return liveStackBytes; }
+        auto copy_source() const -> i64 { return copySource; }
+        auto copy_destination() const -> i64 { return copyDestination; }
+        auto copy_source_first() const -> i64 { return copySourceFirst; }
+        auto copy_destination_first() const -> i64 { return copyDestinationFirst; }
+        auto direct_result() const -> bool { return directResult; }
+        auto set_direct_result(bool value) -> bool { directResult = value; return ok(); }
+        auto left_in_rcx() const -> bool { return leftInRcx; }
+        auto set_left_in_rcx(bool value) -> bool { leftInRcx = value; return ok(); }
+        auto owned_span_runtime() const -> bool { return ownedSpanRuntime; }
+        auto set_owned_span_runtime(bool value) -> bool { ownedSpanRuntime = value; return ok(); }
+        auto set_saves(i64 receiver, i64 record, i64 result) -> bool { receiverSave = receiver; callRecordSave = record; resultSave = result; return ok(); }
+        auto next_division() -> i64 { const i64 result = divisionIndex; divisionIndex = divisionIndex + 1; return result; }
+        auto set_copy(i64 source, i64 destination, i64 source_first, i64 destination_first) -> bool {
+            copySource = source; copyDestination = destination; copySourceFirst = source_first; copyDestinationFirst = destination_first; return ok();
+        }
+        auto add_retained(i64 callable) -> bool {
+            if (outcome != EmitStatus::pending || callable < 0 || retainedSize >= 1048576) { return fail(); }
+            if (retainedSize == retained.size()) {
+                const IndexRow fill = IndexRow(-1); i64 capacity = 16;
+                if (retainedSize > 0) { capacity = retainedSize * 2; }
+                if (!retained.try_resize(capacity, fill)) { return allocation_failure(); }
+            }
+            const IndexRow value = IndexRow(callable); retained.set(retainedSize, value); retainedSize = retainedSize + 1; return true;
+        }
+        auto retained_count() const -> i64 { return retainedSize; }
+        auto retained_at(i64 at) const -> i64 { const IndexRow value = retained.at(at); return value.value(); }
+        auto begin() -> bool { if (outcome != EmitStatus::pending || !allocated()) { return fail(); } outcome = EmitStatus::running; return true; }
+        auto begin_function(i64 kind, i64 symbol, i64 callable) -> bool {
+            if (functionSize >= 1048576) { return limit_failure(); }
+            if (functionSize == functions.size()) {
+                const FunctionFact fill = FunctionFact(-1, -1, 8, 0, 0); i64 capacity = 16;
+                if (functionSize > 0) { capacity = functionSize * 2; }
+                if (!functions.try_resize(capacity, fill)) { return allocation_failure(); }
+            }
+            const FunctionFact value = FunctionFact(kind, symbol, 8, 0, 0); functions.set(functionSize, value);
+            currentFunction = functionSize; functionSize = functionSize + 1; currentCallable = callable;
+            loanSize = 0; divisionIndex = 0; stackDepth = 0; liveStackBytes = 8; receiverSave = 0;
+            callRecordSave = 0; resultSave = 0; directResult = false; leftInRcx = false; return true;
+        }
+        auto finish_function() -> bool { functionIndex = functionIndex + 1; return ok(); }
+        auto function_count() const -> i64 { return functionSize; }
+        auto function_at(i64 at) const -> FunctionFact { const FunctionFact value = functions.at(at); return value; }
+        auto record_signature(i64 copied, i64 service) -> bool {
+            const FunctionFact old = functions.at(currentFunction);
+            const FunctionFact value = FunctionFact(old.kind(), old.symbol(), old.local(), copied, service);
+            return functions.set(currentFunction, value);
+        }
+        auto grow_stack(i64 bytes) -> bool {
+            if (!ok() || currentFunction < 0 || bytes < 0 || bytes > 2147483647 - liveStackBytes) { return fail(); }
+            liveStackBytes = liveStackBytes + bytes; const FunctionFact old = functions.at(currentFunction);
+            if (old.local() < liveStackBytes) {
+                const FunctionFact value = FunctionFact(old.kind(), old.symbol(), liveStackBytes, old.copied(), old.service());
+                if (!functions.set(currentFunction, value)) { return fail(); }
+            }
+            return true;
+        }
+        auto shrink_stack(i64 bytes) -> bool { if (bytes < 0 || bytes > liveStackBytes - 8) { return fail(); } liveStackBytes = liveStackBytes - bytes; return ok(); }
+        auto reserve_stack(i64 bytes) -> bool {
+            if (!grow_stack(bytes)) { return false; }
+            if (bytes == 0) { return line("subq $0, %rsp"); }
+            i64 remaining = bytes;
+            while (remaining > 0) {
+                i64 step = remaining; if (step > 4096) { step = 4096; }
+                line_number("subq $", step, ", %rsp"); line("orq $0, (%rsp)"); remaining = remaining - step;
+            }
+            return ok();
+        }
+        auto release_stack(i64 bytes) -> bool { line_number("addq $", bytes, ", %rsp"); return shrink_stack(bytes); }
+        auto push() -> bool { line("pushq %rax"); stackDepth = stackDepth + 1; return grow_stack(8); }
+        auto pop(builtin::span<const u8> target) -> bool {
+            if (stackDepth <= 0) { return fail(); } begin_line(); text("popq "); text(target); end_line();
+            stackDepth = stackDepth - 1; return shrink_stack(8);
+        }
+        auto pop_argument(i64 index) -> bool {
+            if (stackDepth <= 0) { return fail(); } begin_line(); text("popq "); argument_register(index, false); end_line();
+            stackDepth = stackDepth - 1; return shrink_stack(8);
+        }
+        auto prepare_call() -> bool { if (stackDepth % 2 != 0) { line("subq $8, %rsp"); return grow_stack(8); } return ok(); }
+        auto finish_call() -> bool { if (stackDepth % 2 != 0) { return release_stack(8); } return ok(); }
+        auto record_call(i64 kind, i64 symbol) -> bool {
+            if (!ok() || currentFunction < 0) { return fail(); } i64 at = 0;
+            while (at < callSize) {
+                const CallFact old = calls.at(at);
+                if (old.function() == currentFunction && old.kind() == kind && old.symbol() == symbol) {
+                    if (old.live() < liveStackBytes) {
+                        const CallFact value = CallFact(currentFunction, kind, symbol, liveStackBytes, old.arguments(), old.maximum());
+                        if (!calls.set(at, value)) { return fail(); }
+                    }
+                    return true;
+                }
+                at = at + 1;
+            }
+            if (callSize >= 1048576) { return limit_failure(); }
+            if (callSize == calls.size()) {
+                const CallFact fill = CallFact(-1, -1, -1, 0, -1, -1); i64 capacity = 16;
+                if (callSize > 0) { capacity = callSize * 2; }
+                if (!calls.try_resize(capacity, fill)) { return allocation_failure(); }
+            }
+            const CallFact value = CallFact(currentFunction, kind, symbol, liveStackBytes, -1, -1);
+            calls.set(callSize, value); callSize = callSize + 1; return true;
+        }
+        auto call_count() const -> i64 { return callSize; }
+        auto call_at(i64 at) const -> CallFact { const CallFact value = calls.at(at); return value; }
+        auto append_name(builtin::span<const u8> name) -> i64 {
+            if (!ok() || name.size() > 16777216 - nameSize) { limit_failure(); return -1; }
+            const i64 first = nameSize; const i64 required = nameSize + name.size();
+            if (required > names.size()) {
+                i64 capacity = 256; if (names.size() > 0) { capacity = names.size() * 2; }
+                if (capacity < required) { capacity = required; } if (capacity > 16777216) { capacity = 16777216; }
+                if (!names.try_resize(capacity)) { allocation_failure(); return -1; }
+            }
+            i64 at = 0; while (at < name.size()) { names.set(first + at, name.at(at)); at = at + 1; }
+            nameSize = required; return first;
+        }
+        auto name_byte(i64 at) const -> i64 { return i64(names.at(at)); }
+        auto runtime_name(i64 at) const -> NameRow { const NameRow value = runtimeNames.at(at); return value; }
+        auto intern_runtime(builtin::span<const u8> name) -> i64 {
+            i64 at = 0;
+            while (at < runtimeSize) {
+                const NameRow old = runtimeNames.at(at); bool equal = old.count() == name.size(); i64 index = 0;
+                while (equal && index < name.size()) { equal = names.at(old.begin() + index) == name.at(index); index = index + 1; }
+                if (equal) { return at; } at = at + 1;
+            }
+            if (runtimeSize >= 64) { limit_failure(); return -1; }
+            if (runtimeSize == runtimeNames.size()) {
+                const NameRow fill = NameRow(0, 0); if (!runtimeNames.try_resize(64, fill)) { allocation_failure(); return -1; }
+            }
+            const i64 first = append_name(name); if (first < 0) { return -1; }
+            const NameRow value = NameRow(first, name.size()); runtimeNames.set(runtimeSize, value);
+            const i64 result = runtimeSize; runtimeSize = runtimeSize + 1; return result;
+        }
+        auto direct_runtime(builtin::span<const u8> name) -> bool {
+            const i64 symbol = intern_runtime(name); if (symbol < 0) { return false; }
+            record_call(2, symbol); begin_line(); text("call "); text(name); return end_line();
+        }
+        auto call_runtime(builtin::span<const u8> name) -> bool { prepare_call(); direct_runtime(name); return finish_call(); }
+        auto record_service(i64 runtime_name, i64 arguments, i64 maximum) -> bool {
+            i64 at = 0;
+            while (at < callSize) {
+                const CallFact old = calls.at(at);
+                if (old.function() == currentFunction && old.kind() == 2 && old.symbol() == runtime_name) {
+                    const CallFact value = CallFact(currentFunction, 2, runtime_name, old.live(), arguments, maximum);
+                    return calls.set(at, value);
+                }
+                at = at + 1;
+            }
+            return fail();
+        }
+        auto service_completion(builtin::span<const u8> name, i64 arguments, i64 maximum) -> bool {
+            const i64 symbol = intern_runtime(name); record_service(symbol, arguments, maximum);
+            line_number("cmpq $", maximum, ", %rax"); return line("ja .Laurora_bounds_trap");
+        }
+        auto add_loan(i64 id, i64 offset) -> bool {
+            if (loanSize >= 1048576) { return limit_failure(); }
+            if (loanSize == loans.size()) {
+                const LoanRow fill = LoanRow(-1, -1); i64 capacity = 16; if (loanSize > 0) { capacity = loanSize * 2; }
+                if (!loans.try_resize(capacity, fill)) { return allocation_failure(); }
+            }
+            const LoanRow value = LoanRow(id, offset); loans.set(loanSize, value); loanSize = loanSize + 1; return ok();
+        }
+        auto loan_offset(i64 id) const -> i64 {
+            i64 at = 0; while (at < loanSize) { const LoanRow row = loans.at(at); if (row.id() == id) { return row.offset(); } at = at + 1; }
+            return -1;
+        }
+        auto add_abi_name(AbiNameRow value) -> bool {
+            if (!ok() || abiNameSize >= 1048576 || value.begin() < 0 || value.count() < 0 || value.begin() > nameSize
+                || value.count() > nameSize - value.begin()) { return fail(); }
+            if (abiNameSize == abiNames.size()) {
+                const AbiNameRow fill = AbiNameRow(-1, -1, -1, 0, 0); i64 capacity = 16;
+                if (abiNameSize > 0) { capacity = abiNameSize * 2; }
+                if (!abiNames.try_resize(capacity, fill)) { return allocation_failure(); }
+            }
+            abiNames.set(abiNameSize, value); abiNameSize = abiNameSize + 1; return ok();
+        }
+        auto abi_name_count() const -> i64 { return abiNameSize; }
+        auto abi_name_at(i64 at) const -> AbiNameRow { const AbiNameRow row = abiNames.at(at); return row; }
+        auto finish_assembly() -> bool { if (!ok()) { return false; } assemblySize = outputSize; artifactBegin = outputSize; return true; }
+        auto finish_stack() -> bool { if (!ok()) { return false; } stackSize = outputSize - artifactBegin; artifactBegin = outputSize; outcome = EmitStatus::complete; return true; }
+        auto finish_abi() -> bool { if (!ok()) { return false; } abiSize = outputSize - artifactBegin; return true; }
+        auto artifact_size(i64 artifact) const -> i64 {
+            if (outcome != EmitStatus::complete) { return -1; }
+            if (artifact == 0) { return assemblySize; } if (artifact == 1) { return stackSize; } if (artifact == 2) { return abiSize; } return -1;
+        }
+        auto chunk(i64 artifact, i64 offset) const -> EmitChunk {
+            EmitChunk result = EmitChunk(); i64 count = artifact_size(artifact); i64 first = 0;
+            if (artifact > 0) { first = assemblySize; } if (artifact > 1) { first = first + stackSize; }
+            if (offset < 0 || offset > count) { result.invalidate(); return result; }
+            count = count - offset; if (count > 512) { count = 512; }
+            i64 at = 0; while (at < count) { result.append(output.at(first + offset + at)); at = at + 1; } return result;
+        }
+    };
+    auto create(builtin::ByteRegion region) -> EmitWorkspace { EmitWorkspace result = EmitWorkspace(region); return move(result); }
+    auto release(builtin::ByteRegion region, EmitWorkspace workspace) -> i64 { return 0; }
+}
