@@ -206,7 +206,8 @@ Each new evidence directory retains all input/compiler hashes, exact commands,
 diagnostics and assembly/stack/ABI artifacts. Accepted inputs must match byte for
 byte; rejected inputs must agree and preserve every preexisting output. Any
 mismatch, internal failure or watchdog timeout fails the gate and reports partial
-coverage. Equal rejection is not emission coverage. The corpus is every `.au`
+coverage. Equal rejection is not emission coverage, so the gate also fails if any
+input outside its fixed list of function-less modules is rejected. The corpus is every `.au`
 file under compiler, examples, kernel, library and tests; embedded generated
 fixtures and machine behavior remain covered by their existing native suites.
 It supplements C1/C2 convergence and the final GCC 16 full,
