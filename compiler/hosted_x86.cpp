@@ -9,20 +9,6 @@
 #include <set>
 #include <string_view>
 
-extern "C" {
-void aurora_hosted_emitter_create(const void *, void *) noexcept;
-void aurora_hosted_emitter_release(void *) noexcept;
-std::int64_t aurora_hosted_emitter_status(const void *) noexcept;
-std::int64_t aurora_hosted_emitter_add_retained(void *, std::int64_t) noexcept;
-std::int64_t aurora_hosted_emitter_prepare_facts(void *, std::int64_t) noexcept;
-std::int64_t aurora_hosted_emitter_append_name(void *, const void *) noexcept;
-std::int64_t aurora_hosted_emitter_add_abi_name(void *, const void *) noexcept;
-std::int64_t aurora_hosted_emitter_run(const void *, std::int64_t, std::int64_t) noexcept;
-std::int64_t aurora_hosted_emitter_facts(const void *, std::int64_t) noexcept;
-std::int64_t aurora_hosted_emitter_size(const void *, std::int64_t) noexcept;
-void aurora_hosted_emitter_chunk(const void *, std::int64_t, std::int64_t, void *) noexcept;
-}
-
 namespace aurora {
 namespace {
 namespace wire = hosted_abi::compiler_x86;

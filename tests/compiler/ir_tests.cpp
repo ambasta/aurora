@@ -5688,7 +5688,7 @@ void metadataIngressTests() {
             : mode == 1 ? "invalid or reserved function symbol"
                         : "duplicate function");
     }
-    for (const std::string name :
+    for (const std::string &name :
          {std::string("bad\nname"), std::string("bad\"name"), std::string("bad") + char(0xff), std::string("9bad")}) {
         rejects(
             "stack fact symbols remain admitted ASCII identifiers",

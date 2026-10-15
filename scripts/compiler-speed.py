@@ -4,7 +4,9 @@
 Usage: scripts/compiler-speed.py BEFORE AFTER [--repeat N]
 
 Reports the best wall time and child CPU time of N runs per input and compiler,
-their ratios, and fails if the two compilers produce different output. Run it
+their ratios and maximum observed child peak RSS, and fails if the two compilers
+produce different output. RSS uses wait4's platform units (KiB on Linux, bytes on
+macOS); it is not necessarily the sample with the best wall/CPU time. Run it
 before and after a compiler change and record the result with the change; the
 host load matters, so compare builds on the same machine at the same time.
 """
@@ -13,10 +15,11 @@ import argparse
 import math
 import os
 from pathlib import Path
-import shutil
 import sys
 import tempfile
 import time
+
+from bootstrap_frontend import stage_modules
 
 ROOT = Path(__file__).resolve().parents[1]
 INPUTS = (
@@ -31,6 +34,7 @@ INPUTS = (
 
 def measure(compiler, source, roots, output, repeat):
     best_wall = best_cpu = math.inf
+    peak_rss = 0
     for _ in range(repeat):
         start = time.perf_counter()
         pid = os.fork()
@@ -42,7 +46,8 @@ def measure(compiler, source, roots, output, repeat):
             sys.exit(f"{compiler} failed on {source}")
         best_wall = min(best_wall, time.perf_counter() - start)
         best_cpu = min(best_cpu, usage.ru_utime + usage.ru_stime)
-    return best_wall, best_cpu
+        peak_rss = max(peak_rss, usage.ru_maxrss)
+    return best_wall, best_cpu, peak_rss
 
 
 def main():
@@ -53,12 +58,14 @@ def main():
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="aurora-compiler-speed-") as temporary:
         work = Path(temporary)
-        modules = work / "modules/aurora/compiler"
-        modules.mkdir(parents=True)
-        for source in (ROOT / "compiler").glob("*.au"):
-            shutil.copyfile(source, modules / source.name)
+        stage_modules(work / "modules", [*(ROOT / "compiler").glob("*.au"), ROOT / "library/std/decimal_digits.au"])
         ratios = []
-        print(f"{'input':42} {'before ms':>10} {'after ms':>10} {'wall':>6} {'cpu':>6}")
+        rss_unit = {"linux": "KiB", "darwin": "bytes"}.get(sys.platform, "platform units")
+        print(f"Peak RSS: maximum per-child wait4 ru_maxrss in {rss_unit} on {sys.platform}")
+        print(
+            f"{'input':42} {'before ms':>10} {'after ms':>10} {'wall':>6} {'cpu':>6} "
+            f"{'before RSS':>12} {'after RSS':>12}"
+        )
         for name, roots in INPUTS:
             roots = [work / "modules"] if roots is None else [ROOT / root for root in roots]
             results = []
@@ -71,7 +78,7 @@ def main():
             ratios.append(after[1] / before[1])
             print(
                 f"{name:42} {before[0] * 1000:10.0f} {after[0] * 1000:10.0f} "
-                f"{after[0] / before[0]:5.2f}x {after[1] / before[1]:5.2f}x"
+                f"{after[0] / before[0]:5.2f}x {after[1] / before[1]:5.2f}x {before[2]:12} {after[2]:12}"
             )
         mean = math.exp(sum(math.log(ratio) for ratio in ratios) / len(ratios))
         print(f"geometric mean CPU ratio: {mean:.2f}x; outputs identical")

@@ -161,8 +161,11 @@ The predecessor emits frontend A for current compiler C1; C1 emits B for current
 compiler C2. The same compilation emits `--abi-facts` metadata for collected
 resolved declarations and the exact emitted module. The closed private bootstrap
 adapter generates its record layouts, enum values and bridge symbol targets from
-those facts; this is not a general exported ABI. Both stages generate their own
-facts and header. The existing bootstrap test checks current C1/C2 assembly, object,
+those facts; this is not a general exported ABI. Initialization and emission use
+one closed entry table in the existing bootstrap adapter for root authority,
+argument-record names, host declarations and the five fixed register transports.
+Aurora forwards and owner lifetime/semantic checks remain unchanged. Both stages
+generate their own facts and header. The existing bootstrap test checks current C1/C2 assembly, object,
 facts and header convergence, binds B to the frontend actually linked into C2, and compares current
 C1/C2 corpus diagnostics/output. No compiler binary or generated frontend is
 committed. The candidate's independent module graph pass runs in Aurora after all

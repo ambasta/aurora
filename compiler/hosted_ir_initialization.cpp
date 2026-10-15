@@ -7,46 +7,6 @@
 #include <limits>
 #include <type_traits>
 
-extern "C" {
-void aurora_hosted_initialization_create(const void *, void *) noexcept;
-void aurora_hosted_initialization_release(void *) noexcept;
-std::int64_t aurora_hosted_initialization_allocated(const void *) noexcept;
-std::int64_t aurora_hosted_initialization_status(const void *) noexcept;
-std::int64_t aurora_hosted_initialization_initialize(const void *, std::int64_t) noexcept;
-std::int64_t aurora_hosted_initialization_load(void *, std::int64_t) noexcept;
-std::int64_t aurora_hosted_initialization_retain(void *) noexcept;
-std::int64_t aurora_hosted_initialization_join(void *, std::int64_t) noexcept;
-std::int64_t aurora_hosted_initialization_current_count(const void *) noexcept;
-std::int64_t aurora_hosted_initialization_retained_count_at(const void *, std::int64_t) noexcept;
-std::int64_t aurora_hosted_initialization_retained_count(const void *) noexcept;
-std::int64_t aurora_hosted_initialization_slot_count(const void *) noexcept;
-std::int64_t aurora_hosted_initialization_word_count(const void *) noexcept;
-std::int64_t aurora_hosted_initialization_payload_bytes(const void *) noexcept;
-std::int64_t
-aurora_hosted_initialization_acquire_service_loan(void *, std::int64_t, std::int64_t, std::int64_t) noexcept;
-std::int64_t aurora_hosted_initialization_release_service_loan(void *, std::int64_t, std::int64_t) noexcept;
-std::int64_t aurora_hosted_initialization_service_unsuspended(const void *, std::int64_t) noexcept;
-std::int64_t aurora_hosted_initialization_validate_service_call(
-    const void *, std::int64_t, std::int64_t, std::int64_t, std::int64_t) noexcept;
-std::int64_t aurora_hosted_initialization_complete_service_call(void *, std::int64_t, std::int64_t) noexcept;
-std::int64_t aurora_hosted_initialization_service_loans_closed(const void *) noexcept;
-std::int64_t aurora_hosted_initialization_same_service_loans(const void *, std::int64_t) noexcept;
-std::int64_t aurora_hosted_initialization_scalar_state(const void *, std::int64_t) noexcept;
-std::int64_t aurora_hosted_initialization_write_scalar(const void *, std::int64_t) noexcept;
-std::int64_t aurora_hosted_initialization_object_initialized(const void *, std::int64_t) noexcept;
-std::int64_t aurora_hosted_initialization_object_pristine(const void *, std::int64_t) noexcept;
-std::int64_t aurora_hosted_initialization_object_was_constructed(const void *, std::int64_t) noexcept;
-std::int64_t aurora_hosted_initialization_object_completion(const void *, std::int64_t) noexcept;
-std::int64_t aurora_hosted_initialization_mark_object(const void *, std::int64_t) noexcept;
-std::int64_t aurora_hosted_initialization_clear_object(const void *, std::int64_t) noexcept;
-std::int64_t aurora_hosted_initialization_receiver_field_state(const void *, std::int64_t) noexcept;
-std::int64_t aurora_hosted_initialization_write_receiver_field(const void *, std::int64_t) noexcept;
-std::int64_t aurora_hosted_initialization_receiver_completion(const void *) noexcept;
-std::int64_t
-aurora_hosted_initialization_array_first_missing(const void *, std::int64_t, std::int64_t, std::int64_t) noexcept;
-std::int64_t aurora_hosted_initialization_clear_array(const void *, std::int64_t, std::int64_t, std::int64_t) noexcept;
-}
-
 namespace aurora::ir {
 namespace {
 namespace wire = hosted_abi::compiler_ir_initialization;

@@ -27,6 +27,8 @@ Aurora owns synchronous service-loan lifecycle and exact snapshot equality.
 Local scalar initialization, logical object completion and receiver-field
 initialization share that workspace with a fixed logical payload budget; resource
 ownership and provenance remain native. The budget does not bound whole-process RSS.
+Initialization/emission bridge declarations and register moves share one closed
+bootstrap entry table; this removes duplicate host inventories, not the boundary.
 
 Component state: [compiler](../compiler/ARCHITECTURE.md), [libraries](../library/README.md),
 [kernel](../kernel/README.md), [storage](storage.md). Next dependencies: [roadmap](roadmap.md).

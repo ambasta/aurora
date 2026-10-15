@@ -117,8 +117,6 @@ def frontend_arguments(compiler, root, output):
         str(root / "compiler/hosted_graph.S"),
         str(root / "compiler/hosted_ir_metadata.S"),
         str(root / "compiler/hosted_ir_instructions.S"),
-        str(root / "compiler/hosted_ir_initialization.S"),
-        str(root / "compiler/hosted_x86.S"),
     ]
 
 
@@ -849,6 +847,45 @@ def emitter_generation(facts):
     print("PASS exact emitter bridges, actual three-root transport and bounded copied byte chunk")
 
 
+def pass_bridge_generation(facts):
+    from bootstrap_frontend import abi_function_symbol, frontend_abi_header, frontend_bridge
+
+    assembly, header = frontend_bridge(None, facts), frontend_abi_header(facts)
+    operations = ["emitter_" + name for name in EMITTER_OPERATIONS]
+    operations += ["initialization_" + name for name in INITIALIZATION_OPERATIONS]
+    require(assembly.count(".globl ") == len(operations), "private bridge inventory drift")
+    for alias in operations:
+        require(f".globl aurora_hosted_{alias}\n" in assembly, "missing private host entry: " + alias)
+        require(f" aurora_hosted_{alias}(" in header, "missing private host declaration: " + alias)
+    # Independent examples of all five transports, including the longest tail.
+    for alias, moves, signature in (
+        ("emitter_create", [("rdi", "r11"), ("rsi", "r10")], "void *(const void *, void *)"),
+        ("initialization_release", [("rdi", "r11")], "void *(void *)"),
+        (
+            "emitter_run",
+            [("rdi", "r10"), ("rsi", "rdi"), ("rdx", "rsi")],
+            "std::int64_t *(const void *, std::int64_t, std::int64_t)",
+        ),
+        ("emitter_append_name", [("rdi", "r10"), ("rsi", "r11")], "std::int64_t *(void *, const void *)"),
+        (
+            "emitter_chunk",
+            [("rdi", "r10"), ("rsi", "rdi"), ("rdx", "rsi"), ("rcx", "r11")],
+            "void *(const void *, std::int64_t, std::int64_t, void *)",
+        ),
+        (
+            "initialization_validate_service_call",
+            [("rdi", "r10"), ("rsi", "rdi"), ("rdx", "rsi"), ("rcx", "rdx"), ("r8", "rcx")],
+            "std::int64_t *(const void *, std::int64_t, std::int64_t, std::int64_t, std::int64_t)",
+        ),
+    ):
+        host = "aurora_hosted_" + alias
+        body = f"{host}:\n" + "".join(f"    movq %{source}, %{target}\n" for source, target in moves)
+        body += "    jmp " + abi_function_symbol(facts, "compiler_frontend::" + alias) + "\n"
+        require(body in assembly, "private register transport drift: " + alias)
+        require(signature.replace("*(", host + "(") + " noexcept;" in header, "private host signature drift: " + alias)
+    print("PASS closed host inventory and all five generated pass transports")
+
+
 def borrowed_root_generation(facts):
     from bootstrap_frontend import abi_declaration, frontend_abi_header, frontend_bridge, normalize_function_abi
 
@@ -1111,6 +1148,7 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
 
     abi_generation(json.loads(built_b.with_suffix(".abi.json").read_text()))
     emitter_generation(json.loads(built_b.with_suffix(".abi.json").read_text()))
+    pass_bridge_generation(json.loads(built_b.with_suffix(".abi.json").read_text()))
     borrowed_root_generation(json.loads(built_b.with_suffix(".abi.json").read_text()))
     message_generation(json.loads(built_b.with_suffix(".abi.json").read_text()), root)
     entries = {

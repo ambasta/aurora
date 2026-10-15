@@ -34,7 +34,7 @@ frontend_inputs = files('compiler/lexer.au', 'compiler/syntax_arena.au', 'compil
                         'compiler/lowering_statements.au', 'compiler/lowering_body.au', 'compiler/lowering.au',
                         'compiler/hosted_lexer.S', 'compiler/hosted_parser.S', 'compiler/hosted_resolver.S',
                         'compiler/hosted_graph.S', 'compiler/hosted_ir_metadata.S',
-                        'compiler/hosted_ir_instructions.S', 'compiler/hosted_ir_initialization.S', 'compiler/hosted_x86.S')
+                        'compiler/hosted_ir_instructions.S')
 frontend_assembly = custom_target(
   'hosted-frontend-assembly', input: frontend_inputs,
   output: ['hosted-frontend.s', 'hosted-frontend.generated.s', 'hosted-frontend.abi.json', 'hosted_frontend_abi.hpp'],
