@@ -32,6 +32,8 @@ initialization_root current_count, __aurora_frontend_initialization_current_coun
 initialization_root retained_count, __aurora_frontend_initialization_retained_count
 initialization_root slot_count, __aurora_frontend_initialization_slot_count
 initialization_root word_count, __aurora_frontend_initialization_word_count
+initialization_root payload_bytes, __aurora_frontend_initialization_payload_bytes
+initialization_root service_loans_closed, __aurora_frontend_initialization_service_loans_closed
 initialization_root receiver_completion, __aurora_frontend_initialization_receiver_completion
 
 .macro initialization_scalar operation, target
@@ -54,6 +56,18 @@ initialization_scalar mark_object, __aurora_frontend_initialization_mark_object
 initialization_scalar clear_object, __aurora_frontend_initialization_clear_object
 initialization_scalar receiver_field_state, __aurora_frontend_initialization_receiver_field_state
 initialization_scalar write_receiver_field, __aurora_frontend_initialization_write_receiver_field
+initialization_scalar service_unsuspended, __aurora_frontend_initialization_service_unsuspended
+initialization_scalar same_service_loans, __aurora_frontend_initialization_same_service_loans
+
+.macro initialization_pair operation, target
+initialization_entry \operation
+    movq %rdi, %r10
+    movq %rsi, %rdi
+    movq %rdx, %rsi
+initialization_return \operation, \target
+.endm
+initialization_pair release_service_loan, __aurora_frontend_initialization_release_service_loan
+initialization_pair complete_service_call, __aurora_frontend_initialization_complete_service_call
 
 .macro initialization_array operation, target
 initialization_entry \operation
@@ -65,4 +79,13 @@ initialization_return \operation, \target
 .endm
 initialization_array array_first_missing, __aurora_frontend_initialization_array_first_missing
 initialization_array clear_array, __aurora_frontend_initialization_clear_array
+initialization_array acquire_service_loan, __aurora_frontend_initialization_acquire_service_loan
+
+initialization_entry validate_service_call
+    movq %rdi, %r10
+    movq %rsi, %rdi
+    movq %rdx, %rsi
+    movq %rcx, %rdx
+    movq %r8, %rcx
+initialization_return validate_service_call, __aurora_frontend_initialization_validate_service_call
 # The generated assembly in this same unit owns .note.GNU-stack.

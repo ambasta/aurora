@@ -48,6 +48,17 @@ EMITTER_OPERATIONS = (
 )
 
 
+INITIALIZATION_SERVICE_OPERATIONS = (
+    "payload_bytes",
+    "acquire_service_loan",
+    "release_service_loan",
+    "service_unsuspended",
+    "validate_service_call",
+    "complete_service_call",
+    "service_loans_closed",
+    "same_service_loans",
+)
+
 INITIALIZATION_OPERATIONS = (
     "create",
     "release",
@@ -75,7 +86,7 @@ INITIALIZATION_OPERATIONS = (
     "clear_object",
     "array_first_missing",
     "clear_array",
-)
+) + INITIALIZATION_SERVICE_OPERATIONS
 
 
 def require(value, message):
@@ -204,6 +215,8 @@ def abi_generation(facts):
         ("compiler_ir_instructions::BodyRow", 32),
         ("compiler_ir_instructions::InstructionCounts", 32),
         ("compiler_ir_instructions::InstructionStore", 176),
+        ("compiler_ir_initialization::InitializationWorkspace", 248),
+        ("compiler_ir_initialization::ServiceLoan", 32),
     ):
         _, entry = abi_declaration(facts, "records", source)
         require(entry["reserved"] == extent and entry["alignment"] == 8, f"frontend layout changed: {source}")
@@ -354,10 +367,11 @@ def abi_generation(facts):
         all(f"struct alignas(8) {name} {{" in generated for name in ("InitializationCreate", "InitializationRelease"))
         and all(
             f"initializationWorkspace_{pool}Bytes = 32;" in generated
-            for pool in ("currentWords", "retainedWords", "retainedCounts")
+            for pool in ("currentWords", "retainedWords", "retainedCounts", "serviceLoans")
         )
         and "initializationWordPairPhysicalBytes = 16;" in generated
-        and "initializationCountPairPhysicalBytes = 16;" in generated,
+        and "initializationCountPairPhysicalBytes = 16;" in generated
+        and "initializationServiceLoanPhysicalBytes = 32;" in generated,
         "initialization owner transfer or physical pool facts were omitted",
     )
     for operation in INITIALIZATION_OPERATIONS:
@@ -380,6 +394,23 @@ def abi_generation(facts):
             except ValueError:
                 continue
             raise AssertionError(f"unsafe initialization bridge accepted: {operation}/{mutation}")
+    # All entries use the same production root validator. Sample both authority
+    # directions here; the complete signature and export checks still cover all.
+    for operation in ("acquire_service_loan", "validate_service_call"):
+        for mutation in ("authority", "pair"):
+            changed = deepcopy(facts)
+            _, entry = abi_declaration(changed, "functions", "compiler_frontend::initialization_" + operation)
+            if mutation == "authority":
+                entry["borrowed_roots"][0]["mutable"] = not entry["borrowed_roots"][0]["mutable"]
+            else:
+                _, pair = abi_declaration(facts, "functions", "compiler_frontend::initialization_initialize")
+                for field in ("borrowed_roots", "borrowed_root_count", "borrowed_root_abi"):
+                    entry[field] = deepcopy(pair[field])
+            try:
+                frontend_abi_header(changed)
+            except ValueError:
+                continue
+            raise AssertionError(f"unsafe initialization service root accepted: {operation}/{mutation}")
     for operation in (
         "initialize",
         "scalar_state",
@@ -419,14 +450,20 @@ def abi_generation(facts):
         ("InitializationWorkspace", "currentWords"),
         ("InitializationWorkspace", "retainedWords"),
         ("InitializationWorkspace", "retainedCounts"),
+        ("InitializationWorkspace", "serviceLoans"),
         ("InitializationWorkspace", "retainedCount"),
         ("InitializationWorkspace", "objectBegin"),
         ("InitializationWorkspace", "objectCount"),
         ("InitializationWorkspace", "receiverBegin"),
         ("InitializationWorkspace", "receiverCount"),
+        ("InitializationWorkspace", "serviceCapacity"),
         ("InitializationWorkspace", "factCount"),
         ("WordPair", "mustBits"),
         ("CountPair", "mayCount"),
+        ("ServiceLoan", "loanId"),
+        ("ServiceLoan", "rootOffset"),
+        ("ServiceLoan", "serviceKind"),
+        ("ServiceLoan", "calledValue"),
     ):
         changed = deepcopy(facts)
         _, entry = abi_declaration(changed, "records", "compiler_ir_initialization::" + source)
@@ -671,7 +708,7 @@ def abi_generation(facts):
         raise AssertionError(f"unsupported or unsafe ABI facts accepted: {kind}")
     print(
         "PASS generic source-spelled ABI records/enums, nested layout and exact "
-        "lowering/metadata/instruction bridge rejection"
+        "lowering/metadata/instruction/initialization bridge rejection"
     )
 
 

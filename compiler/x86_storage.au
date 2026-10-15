@@ -659,7 +659,8 @@ export namespace compiler_x86 {
             const IndexRow value = retained.at(at);
             return value.value();
         }
-        auto retained_sift(i64 root, i64 count) -> bool {
+        auto retained_sift(i64 first, i64 count) -> bool {
+            i64 root = first;
             while (root < count / 2) {
                 i64 child = root * 2 + 1;
                 const IndexRow left = retained.at(retainedSize + child);

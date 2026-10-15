@@ -4,6 +4,7 @@
 #include "x86.hpp"
 #include "json_fragments.hpp"
 #include <algorithm>
+#include <array>
 #include <functional>
 #include <iostream>
 #include <tuple>
@@ -752,12 +753,26 @@ int main() {
     bad(forwarded(), [](auto &m) {
         std::get<ServiceCall>(m.functions[0].code[4]).spanArguments = {16, 0};
     });
-    bad(
-        forwarded(),
-        [](auto &m) {
-            m.functions[0].code[2] = Constant{65, Type::I64};
-        },
-        "service scalar argument mismatch");
+    // Loan validation precedes ordinary arguments; a ready loan reaches the
+    // argument error without being consumed by the validation query itself.
+    for (const auto &[state, diagnostic] : std::array<std::pair<int, const char *>, 3>{
+             {{0, "service scalar argument mismatch"},
+              {1, "service helper requires distinct acquired loans in leading positions"},
+              {2, "service helper requires an unused loan with exact provenance"}}})
+        bad(
+            forwarded(),
+            [=](auto &m) {
+                auto &code = m.functions[0].code;
+                if (state == 2)
+                    code.insert(code.begin() + 5,
+                                {Constant{65, Type::I64}, Push{}, ServiceCall{"putter", 1, 0, {0, 0}}});
+                else {
+                    code[2] = Constant{65, Type::I64};
+                    if (state == 1)
+                        code.erase(code.begin() + 1);
+                }
+            },
+            diagnostic);
     bad(forwarded(), [](auto &m) {
         m.functions[0].code.insert(m.functions[0].code.begin() + 2,
                                    {Constant{1, Type::Bool}, BranchFalse{99}, AcquireServiceLoan{2, 16}, Label{99}});

@@ -4,8 +4,9 @@ import aurora.compiler.ir_metadata_storage;
 
 // Per-function initialization facts. Metadata owns the scalar, object and receiver
 // field domains; this owner stores dense physical-initialization and logical-completion
-// must/may words. Native verification retains lifetime and ownership provenance,
-// and binds every paired call to the same immutable MetadataStore.
+// must/may words and bounded exact service-loan snapshots. Native verification
+// retains object lifetime and ownership provenance, and binds every paired call
+// to the same immutable MetadataStore.
 export namespace compiler_ir_initialization {
     enum class InitializationStatus {
         pending,
@@ -30,6 +31,38 @@ export namespace compiler_ir_initialization {
         complete,
         missing_physical,
         missing_logical
+    };
+    enum class ServiceCallState {
+        invalid,
+        ready,
+        missing,
+        provenance
+    };
+    class ServiceLoan {
+        i64 loanId;
+        i64 rootOffset;
+        i64 serviceKind;
+        i64 calledValue;
+    public:
+        ServiceLoan(i64 id, i64 root, i64 kind, i64 called) : loanId(id), rootOffset(root), serviceKind(kind),
+            calledValue(called) {
+        }
+        auto id() const -> i64 {
+            return loanId;
+        }
+        auto root() const -> i64 {
+            return rootOffset;
+        }
+        auto kind() const -> i64 {
+            return serviceKind;
+        }
+        auto called() const -> i64 {
+            return calledValue;
+        }
+        auto same(ServiceLoan other) const -> bool {
+            return loanId == other.id() && rootOffset == other.root() && serviceKind == other.kind() && calledValue
+                == other.called();
+        }
     };
     class WordPair {
         u64 mustBits;
@@ -67,6 +100,11 @@ export namespace compiler_ir_initialization {
         builtin::OwnedValues<CountPair> result = region.try_allocate(0, fill);
         return move(result);
     }
+    auto service_pool(builtin::ByteRegion region) -> builtin::OwnedValues<ServiceLoan> {
+        const ServiceLoan fill = ServiceLoan(0, 0, 0, 0);
+        builtin::OwnedValues<ServiceLoan> result = region.try_allocate(0, fill);
+        return move(result);
+    }
     // Iterate changed bits only. Unsigned subtraction is guarded by nonzero,
     // including the isolated high bit; no signed bit-63 conversion is needed.
     auto changed_count(u64 bits) -> i64 {
@@ -82,6 +120,7 @@ export namespace compiler_ir_initialization {
         builtin::OwnedValues<WordPair> currentWords;
         builtin::OwnedValues<WordPair> retainedWords;
         builtin::OwnedValues<CountPair> retainedCounts;
+        builtin::OwnedValues<ServiceLoan> serviceLoans;
         i64 callableId;
         i64 scalarBegin;
         i64 scalarCount;
@@ -89,6 +128,7 @@ export namespace compiler_ir_initialization {
         i64 objectCount;
         i64 receiverBegin;
         i64 receiverCount;
+        i64 serviceCapacity;
         i64 factCount;
         i64 wordCount;
         i64 retainedCount;
@@ -105,6 +145,29 @@ export namespace compiler_ir_initialization {
         }
         auto valid_retained(i64 id) const -> bool {
             return statusValue == InitializationStatus::success && id >= 0 && id < retainedCount;
+        }
+        auto service_count(i64 first) const -> i64 {
+            i64 count = 0;
+            i64 at = 0;
+            while (at < serviceCapacity) {
+                const ServiceLoan loan = serviceLoans.at(first + at);
+                if (loan.id() != 0) {
+                    count = count + 1;
+                }
+                at = at + 1;
+            }
+            return count;
+        }
+        auto service_index(i64 id) const -> i64 {
+            i64 at = 0;
+            while (id > 0 && at < serviceCapacity) {
+                const ServiceLoan loan = serviceLoans.at(at);
+                if (loan.id() == id) {
+                    return at;
+                }
+                at = at + 1;
+            }
+            return -1;
         }
         auto grow_retained() -> bool {
             if (statusValue != InitializationStatus::success || retainedCount < 0 || retainedCount > retainedCapacity
@@ -144,18 +207,26 @@ export namespace compiler_ir_initialization {
             if (!retainedCounts.try_resize(next, empty_counts)) {
                 return allocation_failure();
             }
+            // The current prefix and every retained row share one bounded pool.
+            // Loan IDs are values, never indices or allocation extents.
+            if (serviceCapacity != 0) {
+                const ServiceLoan empty = ServiceLoan(0, 0, 0, 0);
+                if (!serviceLoans.try_resize((next + 1) * serviceCapacity, empty)) {
+                    return allocation_failure();
+                }
+            }
             retainedCapacity = next;
             return true;
         }
     public:
         InitializationWorkspace(builtin::ByteRegion region) : currentWords(word_pool(region)),
-            retainedWords(word_pool(region)), retainedCounts(count_pool(region)), callableId(-1), scalarBegin(0),
-            scalarCount(0), objectBegin(0), objectCount(0), receiverBegin(-1), receiverCount(0), factCount(0),
-            wordCount(0), retainedCount(0), retainedCapacity(0), currentMust(0), currentMay(0),
-            statusValue(InitializationStatus::pending) {
+            retainedWords(word_pool(region)), retainedCounts(count_pool(region)), serviceLoans(service_pool(region)),
+            callableId(-1), scalarBegin(0), scalarCount(0), objectBegin(0), objectCount(0), receiverBegin(-1),
+            receiverCount(0), serviceCapacity(0), factCount(0), wordCount(0), retainedCount(0), retainedCapacity(0),
+            currentMust(0), currentMay(0), statusValue(InitializationStatus::pending) {
         }
         auto allocated() const -> bool {
-            return currentWords.ok() && retainedWords.ok() && retainedCounts.ok();
+            return currentWords.ok() && retainedWords.ok() && retainedCounts.ok() && serviceLoans.ok();
         }
         auto status() const -> InitializationStatus {
             return statusValue;
@@ -178,7 +249,7 @@ export namespace compiler_ir_initialization {
         // Only initialize(metadata, callable) supplies these canonical groups.
         // Their extents are not another offset index or native payload view.
         auto configure(i64 callable, compiler_ir_metadata::IndexRange scalars, compiler_ir_metadata::IndexRange objects,
-            compiler_ir_metadata::IndexRange receiver) -> bool {
+            compiler_ir_metadata::IndexRange receiver, i64 services) -> bool {
             const i64 first = scalars.begin();
             const i64 count = scalars.count();
             const i64 object_first = objects.begin();
@@ -189,7 +260,7 @@ export namespace compiler_ir_initialization {
                 || object_first < 0 || object_count < 0 || object_count > 8192 || receiver.begin() < -1
                 || receiver.count() < 0 || (receiver.begin() == -1 && receiver.count() != 0) || facts < 0 || facts
                 > 9223372036854775807 / 2 || callableId != -1 || currentWords.size() != 0 || retainedWords.size() != 0
-                || retainedCounts.size() != 0) {
+                || retainedCounts.size() != 0 || serviceLoans.size() != 0 || services < 0 || services > 2) {
                 return reject();
             }
             if (!prepare()) {
@@ -203,6 +274,12 @@ export namespace compiler_ir_initialization {
             if (!currentWords.try_resize(words, fill)) {
                 return allocation_failure();
             }
+            if (services != 0) {
+                const ServiceLoan empty = ServiceLoan(0, 0, 0, 0);
+                if (!serviceLoans.try_resize(services, empty)) {
+                    return allocation_failure();
+                }
+            }
             callableId = callable;
             scalarBegin = first;
             scalarCount = count;
@@ -210,6 +287,7 @@ export namespace compiler_ir_initialization {
             objectCount = object_count;
             receiverBegin = receiver.begin();
             receiverCount = receiver.count();
+            serviceCapacity = services;
             factCount = facts;
             wordCount = words;
             statusValue = InitializationStatus::success;
@@ -277,7 +355,7 @@ export namespace compiler_ir_initialization {
             if (statusValue != InitializationStatus::success) {
                 return -1;
             }
-            return currentMust + currentMay;
+            return compiler_ir_metadata::count_sum(currentMust + currentMay, service_count(0));
         }
         auto retained_must_count(i64 id) const -> i64 {
             if (!valid_retained(id)) {
@@ -298,7 +376,167 @@ export namespace compiler_ir_initialization {
                 return -1;
             }
             const CountPair counts = retainedCounts.at(id);
-            return counts.must_count() + counts.may_count();
+            return compiler_ir_metadata::count_sum(counts.must_count() + counts.may_count(), service_count((id + 1)
+                * serviceCapacity));
+        }
+        auto payload_bytes() const -> i64 {
+            if (statusValue != InitializationStatus::success) {
+                return -1;
+            }
+            // Generated layout validation independently pins these row widths.
+            return compiler_ir_metadata::count_sum(wordCount * 16, serviceCapacity * 32);
+        }
+        auto acquire_service_loan(i64 id, i64 root, i64 kind) -> i64 {
+            if (statusValue != InitializationStatus::success || id <= 0 || root <= 0 || kind < 0 || kind > 2) {
+                reject();
+                return -1;
+            }
+            if (service_index(id) >= 0 || service_unsuspended(root) == 0) {
+                return 0;
+            }
+            const i64 count = service_count(0);
+            if (count == serviceCapacity) {
+                return 0;
+            }
+            const ServiceLoan acquired = ServiceLoan(id, root, kind, 0);
+            i64 position = count;
+            // At most two canonical records; opposite acquisition orders agree.
+            if (count == 1) {
+                const ServiceLoan first = serviceLoans.at(0);
+                if (id < first.id()) {
+                    if (!serviceLoans.set(1, first)) {
+                        reject();
+                        return -1;
+                    }
+                    position = 0;
+                }
+            }
+            if (!serviceLoans.set(position, acquired)) {
+                reject();
+                return -1;
+            }
+            return 1;
+        }
+        auto release_service_loan(i64 id, i64 kind) -> i64 {
+            if (statusValue != InitializationStatus::success) {
+                return -1;
+            }
+            const i64 index = service_index(id);
+            if (index < 0) {
+                return 0;
+            }
+            const ServiceLoan loan = serviceLoans.at(index);
+            if (loan.called() != 1 || loan.kind() != kind) {
+                return 0;
+            }
+            const i64 last = service_count(0) - 1;
+            if (index != last) {
+                const ServiceLoan remaining = serviceLoans.at(last);
+                if (!serviceLoans.set(index, remaining)) {
+                    reject();
+                    return -1;
+                }
+            }
+            const ServiceLoan empty = ServiceLoan(0, 0, 0, 0);
+            if (!serviceLoans.set(last, empty)) {
+                reject();
+                return -1;
+            }
+            return 1;
+        }
+        auto service_unsuspended(i64 root) const -> i64 {
+            if (statusValue != InitializationStatus::success) {
+                return -1;
+            }
+            i64 at = 0;
+            while (at < serviceCapacity) {
+                const ServiceLoan loan = serviceLoans.at(at);
+                if (loan.id() != 0 && loan.root() == root) {
+                    return 0;
+                }
+                at = at + 1;
+            }
+            return 1;
+        }
+        auto validate_service_call(i64 first, i64 first_kind, i64 second, i64 second_kind) const -> ServiceCallState {
+            if (statusValue != InitializationStatus::success) {
+                return ServiceCallState::invalid;
+            }
+            const i64 first_index = service_index(first);
+            if (first_index < 0) {
+                return ServiceCallState::missing;
+            }
+            const ServiceLoan first_loan = serviceLoans.at(first_index);
+            if (first_loan.called() != 0 || first_loan.kind() != first_kind) {
+                return ServiceCallState::provenance;
+            }
+            if (second != 0) {
+                const i64 second_index = service_index(second);
+                if (second_index < 0) {
+                    return ServiceCallState::missing;
+                }
+                const ServiceLoan second_loan = serviceLoans.at(second_index);
+                if (second_loan.called() != 0 || second_loan.kind() != second_kind || first_loan.root()
+                    == second_loan.root()) {
+                    return ServiceCallState::provenance;
+                }
+            }
+            return ServiceCallState::ready;
+        }
+        auto complete_service_call(i64 first, i64 second) -> bool {
+            if (statusValue != InitializationStatus::success) {
+                return reject();
+            }
+            i64 count = 1;
+            if (second != 0) {
+                count = 2;
+            }
+            i64 at = 0;
+            while (at < count) {
+                i64 id = first;
+                if (at == 1) {
+                    id = second;
+                }
+                const i64 index = service_index(id);
+                if (index < 0) {
+                    return reject();
+                }
+                const ServiceLoan loan = serviceLoans.at(index);
+                if (loan.called() != 0) {
+                    return reject();
+                }
+                const ServiceLoan called = ServiceLoan(loan.id(), loan.root(), loan.kind(), 1);
+                if (!serviceLoans.set(index, called)) {
+                    return reject();
+                }
+                at = at + 1;
+            }
+            return true;
+        }
+        auto service_loans_closed() const -> i64 {
+            if (statusValue != InitializationStatus::success) {
+                return -1;
+            }
+            if (service_count(0) == 0) {
+                return 1;
+            }
+            return 0;
+        }
+        auto same_service_loans(i64 id) const -> i64 {
+            if (!valid_retained(id)) {
+                return -1;
+            }
+            const i64 first =(id + 1) * serviceCapacity;
+            i64 at = 0;
+            while (at < serviceCapacity) {
+                const ServiceLoan current = serviceLoans.at(at);
+                const ServiceLoan retained = serviceLoans.at(first + at);
+                if (!current.same(retained)) {
+                    return 0;
+                }
+                at = at + 1;
+            }
+            return 1;
         }
         // Dense-index helpers are source-internal semantic operations. Native
         // callers use metadata-paired batches, never one bridge per bit.
@@ -387,6 +625,14 @@ export namespace compiler_ir_initialization {
             const CountPair counts = retainedCounts.at(id);
             currentMust = counts.must_count();
             currentMay = counts.may_count();
+            at = 0;
+            while (at < serviceCapacity) {
+                const ServiceLoan loan = serviceLoans.at((id + 1) * serviceCapacity + at);
+                if (!serviceLoans.set(at, loan)) {
+                    return reject();
+                }
+                at = at + 1;
+            }
             return true;
         }
         auto retain() -> i64 {
@@ -412,7 +658,16 @@ export namespace compiler_ir_initialization {
                 reject();
                 return -1;
             }
-            // Publish the monotonic ordinal only after both growths and all
+            at = 0;
+            while (at < serviceCapacity) {
+                const ServiceLoan loan = serviceLoans.at(at);
+                if (!serviceLoans.set((retainedCount + 1) * serviceCapacity + at, loan)) {
+                    reject();
+                    return -1;
+                }
+                at = at + 1;
+            }
+            // Publish the monotonic ordinal only after all growths and all
             // copies succeed. Snapshots remain owned until function teardown.
             const i64 id = retainedCount;
             retainedCount = retainedCount + 1;
@@ -520,7 +775,18 @@ export namespace compiler_ir_initialization {
         }
         const compiler_ir_metadata::IndexRange fields = compiler_ir_metadata::IndexRange(receiver_begin,
             receiver_count);
-        if (!workspace.configure(callable, slots, objects, fields)) {
+        i64 services = 0;
+        bool leading = true;
+        while (leading && services < declaration.value_parameter_count()) {
+            const compiler_ir_metadata::RawTypeRow type = metadata.type_at(declaration.value_parameter_begin()
+                + services);
+            if (compiler_ir_metadata::service_type(type)) {
+                services = services + 1;
+            } else {
+                leading = false;
+            }
+        }
+        if (!workspace.configure(callable, slots, objects, fields, services)) {
             return workspace.status();
         }
         if (seeded) {

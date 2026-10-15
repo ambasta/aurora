@@ -768,6 +768,129 @@ void receiverFailureTests() {
         });
     }
 }
+std::unique_ptr<Metadata> serviceDeclarations(std::size_t count) {
+    aurora::ir::Function function;
+    function.name = "service_facts";
+    function.result = Type::I64;
+    function.frameBytes = static_cast<int>(count * 16);
+    for (std::size_t index = 0; index < count; ++index) {
+        function.parameters.push_back(index == 0 ? Type::ConsoleSession : Type::DisplaySession);
+        function.serviceSlots.insert(static_cast<int>((index + 1) * 16));
+    }
+    Module module;
+    module.functions.push_back(std::move(function));
+    return Metadata::import(module);
+}
+void serviceLoanLifecycleTests() {
+    using Kind = aurora::service::Kind;
+    using CallState = InitializationWorkspace::ServiceCallState;
+    const std::array<int, 2> ids{7, std::numeric_limits<int>::max()};
+    const std::array<Kind, 2> kinds{Kind::Console, Kind::Display};
+    for (std::size_t count : {0u, 1u, 2u}) {
+        auto metadata = serviceDeclarations(count);
+        InitializationWorkspace workspace(*metadata, 0), independent(*metadata, 0);
+        const auto empty = workspace.retain();
+        check(workspace.slotCount() == 0 && workspace.wordCount() == 0,
+              "service-only workspace allocated initialization bits");
+        check(workspace.logicalPayloadBytesPerSnapshot() == count * 32,
+              "service storage must follow leading capacity, independently of sparse loan IDs");
+        check(workspace.currentCount() == 0 && workspace.retainedCountAt(empty) == 0 &&
+                  workspace.serviceLoansClosed() && workspace.sameServiceLoans(empty),
+              "service entry authority became a dynamic fact");
+        if (count == 0) {
+            check(!workspace.join(empty), "empty service-only join changed initialization");
+            workspace.load(empty);
+            check(workspace.logicalPayloadBytesPerSnapshot() == 0 && workspace.serviceLoansClosed(),
+                  "zero-service snapshot acquired storage or a loan");
+            continue;
+        }
+        for (std::size_t index = 0; index < count; ++index) {
+            const int root = static_cast<int>((index + 1) * 16);
+            check(workspace.serviceUnsuspended(root), "entry root starts suspended");
+            check(workspace.acquireServiceLoan(ids[index], root, kinds[index]), "valid service acquisition failed");
+            check(!workspace.serviceUnsuspended(root) && workspace.currentCount() == index + 1,
+                  "active service loan missing from count or suspension query");
+        }
+        const auto acquired = workspace.retain();
+        check(!workspace.serviceLoansClosed() && !workspace.sameServiceLoans(empty),
+              "unused service loans were treated as a closed row");
+        const int second = count == 2 ? ids[1] : 0;
+        const auto callState = [&] {
+            return workspace.validateServiceCall(ids[0], Kind::Console, second, Kind::Display);
+        };
+        check(callState() == CallState::ready && callState() == CallState::ready &&
+                  workspace.sameServiceLoans(acquired),
+              "call validation consumed a loan before ordinary argument validation");
+        check(independent.serviceLoansClosed() && independent.currentCount() == 0,
+              "service loans escaped their per-function workspace");
+        for (std::size_t index = 0; index < count; ++index) {
+            const int root = static_cast<int>((index + 1) * 16);
+            check(!workspace.acquireServiceLoan(ids[index], root, kinds[index]) &&
+                      !workspace.acquireServiceLoan(8, root, kinds[index]) &&
+                      !workspace.releaseServiceLoan(ids[index], kinds[index]),
+                  "duplicate acquisition or premature release was accepted");
+            check(workspace.sameServiceLoans(acquired) && workspace.currentCount() == count,
+                  "failed service transition changed the current row");
+        }
+        check(workspace.validateServiceCall(8, Kind::Console) == CallState::missing &&
+                  workspace.validateServiceCall(ids[0], Kind::Display) == CallState::provenance &&
+                  workspace.sameServiceLoans(acquired),
+              "missing or mismatched call validation changed service facts");
+        workspace.load(empty);
+        for (std::size_t reverse = count; reverse > 0; --reverse) {
+            const auto index = reverse - 1;
+            check(workspace.acquireServiceLoan(ids[index], static_cast<int>((index + 1) * 16), kinds[index]),
+                  "reverse-order service acquisition failed");
+        }
+        check(workspace.sameServiceLoans(acquired) && !workspace.join(acquired),
+              "equal service states depend on acquisition order or change initialization join");
+        workspace.completeServiceCall(ids[0]);
+        const auto firstCalled = workspace.retain();
+        check(!workspace.sameServiceLoans(acquired) && workspace.currentCount() == count &&
+                  workspace.retainedCountAt(firstCalled) == count && callState() == CallState::provenance,
+              "exact service equality omitted called state or counted it as another fact");
+        check(!workspace.releaseServiceLoan(ids[0], Kind::Display) && workspace.sameServiceLoans(firstCalled),
+              "wrong-kind release changed a called loan");
+        if (count == 2)
+            check(workspace.validateServiceCall(ids[1], Kind::Display) == CallState::ready &&
+                      workspace.validateServiceCall(ids[0], Kind::Console, 8, Kind::Display) == CallState::provenance &&
+                      workspace.validateServiceCall(8, Kind::Console, ids[0], Kind::Console) == CallState::missing,
+                  "partial completion changed another loan or call-position diagnostic precedence");
+        check(workspace.releaseServiceLoan(ids[0], Kind::Console) &&
+                  workspace.acquireServiceLoan(ids[0], 16, Kind::Console) && workspace.sameServiceLoans(acquired),
+              "released lexical identity preserved old called state");
+        workspace.completeServiceCall(ids[0], second);
+        const auto called = workspace.retain();
+        check(!workspace.sameServiceLoans(acquired) && callState() == CallState::provenance,
+              "completed service call remained reusable");
+        for (std::size_t index = 0; index < count; ++index) {
+            check(workspace.releaseServiceLoan(ids[index], kinds[index]), "completed service release failed");
+            check(workspace.serviceUnsuspended(static_cast<int>((index + 1) * 16)) &&
+                      workspace.currentCount() == count - index - 1,
+                  "release retained a service loan or root suspension");
+        }
+        check(workspace.serviceLoansClosed() && workspace.sameServiceLoans(empty) &&
+                  workspace.retainedCountAt(acquired) == count && workspace.retainedCountAt(called) == count,
+              "release changed retained service facts");
+        workspace.load(called);
+        check(callState() == CallState::provenance && !workspace.serviceLoansClosed(),
+              "load lost the retained called state");
+        workspace.load(acquired);
+        check(callState() == CallState::ready, "load did not restore unused loans");
+        for (std::size_t row = workspace.retainedCount(); row < 130; ++row)
+            check(workspace.retain() == row && workspace.retainedCountAt(row) == count,
+                  "service snapshot growth lost stable ordinals or logical counts");
+        workspace.load(firstCalled);
+        check(workspace.sameServiceLoans(firstCalled) && !workspace.sameServiceLoans(acquired),
+              "service pool growth changed an earlier called-state row");
+        workspace.load(empty);
+        check(workspace.serviceLoansClosed() && workspace.currentCount() == 0,
+              "service snapshot growth changed the empty row");
+        rejects([&] {
+            (void)workspace.sameServiceLoans(workspace.retainedCount());
+        });
+    }
+}
 void objectAndFailureTests() {
     auto metadata = objectDeclarations();
     for (int invalid : {-1, 0, 7, 9, 15, 17, 65537})
@@ -819,6 +942,7 @@ int main() {
         differentialReceiverJoins();
         receiverDomainBoundaryTests();
         receiverFailureTests();
+        serviceLoanLifecycleTests();
         objectAndFailureTests();
         std::cout << "PASS initialization workspace: " << checks << " checks against reference sets\n";
         return 0;

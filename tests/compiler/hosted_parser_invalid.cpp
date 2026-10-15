@@ -2339,6 +2339,33 @@ extern "C" std::int64_t
 aurora_hosted_initialization_clear_array(const void *, std::int64_t, std::int64_t, std::int64_t) noexcept {
     unexpectedMetadataEntry();
 }
+extern "C" std::int64_t aurora_hosted_initialization_payload_bytes(const void *) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" std::int64_t
+aurora_hosted_initialization_acquire_service_loan(void *, std::int64_t, std::int64_t, std::int64_t) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" std::int64_t aurora_hosted_initialization_release_service_loan(void *, std::int64_t, std::int64_t) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" std::int64_t aurora_hosted_initialization_service_unsuspended(const void *, std::int64_t) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" std::int64_t aurora_hosted_initialization_validate_service_call(
+    const void *, std::int64_t, std::int64_t, std::int64_t, std::int64_t) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" std::int64_t
+aurora_hosted_initialization_complete_service_call(void *, std::int64_t, std::int64_t) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" std::int64_t aurora_hosted_initialization_service_loans_closed(const void *) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" std::int64_t aurora_hosted_initialization_same_service_loans(const void *, std::int64_t) noexcept {
+    unexpectedMetadataEntry();
+}
 extern "C" void aurora_hosted_parser_create(const void *input, void *output) {
     const auto &value = *static_cast<const aurora::hosted_abi::ParserCreate *>(input);
     require(value.region != 0 && value.capacity == 0, "adapter did not request empty arena with live region");

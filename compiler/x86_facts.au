@@ -86,7 +86,8 @@ export namespace compiler_x86 {
         }
         return storage_width(metadata, result);
     }
-    auto fact_decimal_digits(i64 value) -> i64 {
+    auto fact_decimal_digits(i64 input) -> i64 {
+        i64 value = input;
         i64 count = 1;
         while (value >= 10) {
             value = value / 10;
@@ -426,7 +427,8 @@ export namespace compiler_x86 {
         return workspace.ok();
     }
     auto fact_sort_sift(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata, bool calls,
-        i64 count, i64 root) -> bool {
+        i64 count, i64 first) -> bool {
+        i64 root = first;
         i64 base = 0;
         if (calls) {
             base = workspace.function_count();
