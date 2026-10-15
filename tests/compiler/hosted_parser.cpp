@@ -4573,7 +4573,7 @@ void rawInitializationOwnership(bool serviceSignature) {
             "initialization fixture metadata did not admit");
 
     std::size_t successful = 0;
-    const auto exercise = [&](std::size_t allowed, std::uint64_t quota, int stop) {
+    const auto exercise = [&](std::size_t allowed, std::uint64_t quota, int stop, std::int64_t expectedPublished = -1) {
         Allocations allocations;
         allocations.allowed = allowed;
         bytes::Region region(quota, allocations.allocator());
@@ -4645,17 +4645,19 @@ void rawInitializationOwnership(bool serviceSignature) {
             caught = std::string(error.what()) == "injected native exception after retention";
             require(caught && stop == 2, "unexpected native exception in owner sweep");
         }
-        if (allowed == std::numeric_limits<std::size_t>::max() && quota != 0) {
+        if (allowed == std::numeric_limits<std::size_t>::max() && quota != 0 && expectedPublished < 0) {
             require(completed && caught == (stop == 2), "successful owner did not reach its requested stop");
             successful = allocations.successful;
             require(successful == 4 + (serviceSignature ? 2u : 1u) + (serviceSignature ? 3u : 2u) * 9,
                     "retained owners did not grow through capacities 1, 2, 4, ..., 256");
         } else
             require(!completed, "allocation prefix unexpectedly completed");
+        if (expectedPublished >= 0)
+            require(published == expectedPublished, "quota refusal published the wrong retained ordinal");
         const auto metrics = region.metrics();
         require(releasedIntact, "initialization release escaped generated owner extent");
         require(allocations.successful == allocations.released && metrics.used == 0 && metrics.live_allocations == 0 &&
-                    metrics.releases == metrics.successful_allocations && region.close(),
+                    metrics.releases == metrics.successful_allocations && metrics.peak_used <= quota && region.close(),
                 "creation, partial resize, terminal failure or native exception leaked an owner");
         ++cases;
     };
@@ -4665,6 +4667,11 @@ void rawInitializationOwnership(bool serviceSignature) {
     for (std::size_t allowed = 0; allowed < successful; ++allowed)
         exercise(allowed, 1048576, 0);
     exercise(std::numeric_limits<std::size_t>::max(), 0, 0);
+    // Two retained rows plus the current word/service prefixes. One byte short
+    // refuses the second growth after an earlier pool has already resized.
+    const std::uint64_t exact = serviceSignature ? 224 : 128;
+    for (const auto &[quota, rows] : {std::pair{exact - 1, 1}, std::pair{exact, 2}})
+        exercise(std::numeric_limits<std::size_t>::max(), quota, 0, rows);
     exercise(std::numeric_limits<std::size_t>::max(), 1048576, 1);
     exercise(std::numeric_limits<std::size_t>::max(), 1048576, 2);
 }

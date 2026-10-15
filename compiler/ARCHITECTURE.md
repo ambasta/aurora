@@ -71,6 +71,11 @@ start complete without granting new receiver authority. Resource-only fields rem
 outside these facts. Native code retains their tokens, region and loan checks.
 Receiver fact counts are compressed field counts, not the old per-leaf cardinality;
 zero-leaf field counts use checked dynamic extents rather than a storage-size cap.
+Each workspace's region grants at most 1,209,026,560 logical payload bytes across
+its current and retained pools. Growth refusal uses terminal allocation failure
+and owner cleanup. Allocation headers, metadata and other workspaces are outside
+this budget; resize briefly holds old and replacement storage together, so this
+is not a transient-memory or whole-process RSS ceiling.
 
 The verifier protects the backend against malformed internal IR. It is not a
 verified compiler or a proof of Rust-equivalent safety. C++ host code, generated

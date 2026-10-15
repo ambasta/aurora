@@ -67,13 +67,13 @@ std::size_t count(std::int64_t value) {
         invalidInitialization();
     return static_cast<std::size_t>(value);
 }
-std::uint64_t checkedProduct(std::uint64_t left, std::uint64_t right) {
+constexpr std::uint64_t checkedProduct(std::uint64_t left, std::uint64_t right) {
     const auto maximum = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
     if (right != 0 && left > maximum / right)
         invalidInitialization();
     return left * right;
 }
-std::uint64_t checkedSum(std::uint64_t left, std::uint64_t right) {
+constexpr std::uint64_t checkedSum(std::uint64_t left, std::uint64_t right) {
     const auto maximum = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
     if (left > maximum || right > maximum - left)
         invalidInitialization();
@@ -90,21 +90,28 @@ std::uint64_t domainFacts(const Metadata &metadata, Metadata::CallableId callabl
     const auto fields = receiver ? metadata.fields(metadata.findClass(receiver->className).value()).size() : 0;
     return checkedSum(checkedSum(slots, objects), fields);
 }
-std::uint64_t snapshotBytes(std::uint64_t facts) {
+constexpr std::uint64_t snapshotBytes(std::uint64_t facts) {
     const auto words = facts / 64 + (facts % 64 != 0);
     return checkedSum(checkedProduct(words, hosted_abi::initializationWordPairPhysicalBytes),
                       checkedProduct(2, hosted_abi::initializationServiceLoanPhysicalBytes));
 }
-std::uint64_t quota(std::uint64_t facts) {
+// Preserve the former local-only maximum as a fixed logical payload budget,
+// including receiver and service pools without imposing a direct-field limit.
+constexpr std::uint64_t maximumWorkspacePayload = 1209026560;
+static_assert(maximumWorkspacePayload == 65537ULL * 1152 * 16 + 65536ULL * 16);
+constexpr std::uint64_t quota(std::uint64_t facts) {
     const auto snapshot = snapshotBytes(facts);
     const auto retained = checkedProduct(65536, snapshot);
     const auto counts = checkedProduct(65536, hosted_abi::initializationCountPairPhysicalBytes);
-    // A logical ceiling, not an allocation request. Receiver fields can be
-    // leafless, so their admitted count has no fixed frame/leaf-derived cap.
-    // Owners start empty; checked arithmetic bounds every lazy growth. Two
-    // service rows are a ceiling, not a native inventory or allocation request.
-    return checkedSum(checkedSum(snapshot, retained), counts);
+    // Owners start empty; the existing region refuses growth above this grant.
+    // Two service rows are a ceiling, not a native inventory or allocation request.
+    const auto requested = checkedSum(checkedSum(snapshot, retained), counts);
+    return requested < maximumWorkspacePayload ? requested : maximumWorkspacePayload;
 }
+static_assert(quota(0) == 5242944);
+static_assert(quota(73408) == maximumWorkspacePayload - 65537ULL * 16);
+static_assert(quota(73409) == maximumWorkspacePayload);
+static_assert(quota(73729) == maximumWorkspacePayload);
 static_assert(std::is_standard_layout_v<wire::InitializationWorkspace> &&
               std::is_trivially_copyable_v<wire::InitializationWorkspace>);
 static_assert(hosted_abi::initializationWordPairPhysicalBytes == 2 * sizeof(std::uint64_t) &&
