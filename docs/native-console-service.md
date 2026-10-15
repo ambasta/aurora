@@ -8,7 +8,7 @@ qualification. Do not write these images to a physical disk or change a bootload
 
 | Profile | Current behavior | Boundary |
 |---|---|---|
-| BIOS | Aurora-owned `help`, `status`, `exit` session; IRQ4-woken serial editor | Sealed ConsoleSession; trusted PIC/UART adapter; source migration awaiting qualification |
+| BIOS | Aurora-owned `help`, `status`, `exit` session; IRQ4-woken serial editor | Sealed ConsoleSession; trusted PIC/UART adapter |
 | Simple UEFI | Aurora-owned editor, commands, RAM note and four named RAM files | Sealed ConsoleSession; trusted boot, UART, LAPIC and wake-frame checks |
 | [Graphical](framebuffer-console.md) | Same RAM commands, two text rows and dirty-cell drawing; serial input | Separate ConsoleSession/DisplaySession grants; bounded emulator fixture |
 | [Protected commands](program-console-contract.md) | `upper`, protected note read and uppercase replacement | Aurora input turns through ConsoleSession; native dispatch and authenticated two-domain IPC |
@@ -50,8 +50,7 @@ sample. The consumers keep their own prompts, echo, erase and responses.
 The [sealed language service](../compiler/SERVICES.md) supplies copied input
 observations and checked single-byte output. The linked BIOS and simple-UEFI graphs must
 contain no C++ `Line`, `Presentation`, old byte/command wrappers or C++ command
-response strings. Platform diagnostics remain trusted. The BIOS source migration
-has not yet passed generated-code, exact-image, stack or guest qualification.
+response strings. Platform diagnostics remain trusted.
 
 ## Session-local RAM note
 
@@ -147,9 +146,9 @@ The existing BIOS image check rejects retired editor/policy symbols and a missin
 duplicated or wrongly selected service entry. Hosted BIOS tests execute the actual
 source session and cover exact transcripts, malformed input, CRLF, every partial
 output prefix and UART damage. Shared generated-source and protected-input tests
-retain copied-submission and lifetime coverage after the obsolete native snapshot
-fixture is deleted. These source changes remain unexecuted until the required
-focused, full, sanitizer and real BIOS PTY/restoration gates pass.
+retain copied-submission and lifetime coverage without the obsolete native snapshot
+fixture. Qualification requires focused, full, sanitizer and real BIOS
+PTY/restoration gates.
 
 ## UEFI wake and authority
 

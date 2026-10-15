@@ -23,9 +23,9 @@ and four named session-local RAM files; the [graphical console](framebuffer-cons
 adds Aurora-owned presentation. This state lasts for the session, not across
 reboots. The protected-console source also uses ConsoleSession for individual
 input and response turns, awaiting execution qualification; native dispatch and
-lifecycle remain migration dependencies. The BIOS console source now uses the
-same Aurora editor and sealed ConsoleSession, retiring its native editor and
-presentation; generated/image/stack and execution qualification are still pending.
+lifecycle remain migration dependencies. The BIOS console uses the same Aurora
+editor and sealed ConsoleSession for its bounded three-command session and
+presentation; trusted native code retains interrupt transport and shutdown.
 General terminal sessions and file services remain open.
 
 ## 1. Protected programs and file services
