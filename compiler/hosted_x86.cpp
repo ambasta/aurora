@@ -101,10 +101,12 @@ class X86Emitter::State {
 public:
     const ir::Metadata *metadata;
     const ir::Instructions *instructions;
+    const std::uint64_t sourceIdentity;
     // Three pointers occupy a canonically padded 32-byte borrowed-root tuple.
     alignas(16) std::array<const void *, 4> roots;
     explicit State(const ir::ValidatedModule &validated)
         : region(quota(validated)), metadata(&validated.metadata()), instructions(validated.instructionOwner.get()),
+          sourceIdentity(instructions->sourceIdentity(*metadata)),
           roots{
               data(), metadata->sourceOwner(), instructions ? instructions->sourceOwner(*metadata) : nullptr, nullptr} {
         if (!region.is_open())
@@ -124,6 +126,15 @@ public:
     }
     const void *data() const {
         return owner.workspace.storage.data();
+    }
+    bool matches(const ir::ValidatedModule &validated) const {
+        if (!validated.instructionOwner)
+            return false;
+        const auto &supplied = validated.metadata();
+        // Region IDs never wrap or repeat. Check the supplied live generation
+        // before old pointers: allocator reuse cannot revive cached source roots.
+        return sourceIdentity == validated.instructionOwner->sourceIdentity(supplied) && metadata == &supplied &&
+               instructions == validated.instructionOwner.get();
     }
     [[noreturn]] void failure() const {
         const auto status = aurora_hosted_emitter_status(data());
@@ -192,8 +203,7 @@ X86Emitter::emit(const ir::ValidatedModule &validated, SymbolBinding binding, Re
     return assembly;
 }
 std::string X86Emitter::stackFactsJson(const ir::ValidatedModule &validated) const {
-    if (!state_ || state_->metadata != &validated.metadata() ||
-        state_->instructions != validated.instructionOwner.get())
+    if (!state_ || !state_->matches(validated))
         throw Error("stack facts require the same emitted module");
     const auto artifact = static_cast<std::int64_t>(wire::Artifact::stack);
     state_->boolean(aurora_hosted_emitter_prepare_facts(state_->data(), artifact));
@@ -202,8 +212,7 @@ std::string X86Emitter::stackFactsJson(const ir::ValidatedModule &validated) con
     return state_->artifact(wire::Artifact::stack);
 }
 std::string X86Emitter::abiFactsJson(const ir::ValidatedModule &validated, const AbiDeclarations &declarations) const {
-    if (!state_ || state_->metadata != &validated.metadata() ||
-        state_->instructions != validated.instructionOwner.get())
+    if (!state_ || !state_->matches(validated))
         throw Error("ABI facts require the same emitted module");
     const auto artifact = static_cast<std::int64_t>(wire::Artifact::abi);
     state_->boolean(aurora_hosted_emitter_prepare_facts(state_->data(), artifact));

@@ -97,8 +97,10 @@ executable and source facts. Failed executable emission requires a fresh workspa
 Incomplete/failed artifacts are not extractable. The host reads copied 512-byte
 chunks; `ArtifactWriter` retains its single-write 64 MiB limit and atomic replacement.
 The original emitted module must remain alive while requesting sidecars; moving
-its validated owner is supported, but allocator-address reuse after destruction
-is not an identity guarantee.
+its validated owner is supported. Before using cached roots, the host checks the
+supplied live instruction owner's unique, non-wrapping region generation and its
+original metadata pairing. A later module cannot revive stale roots through
+allocator-address reuse. This retains no source owners or metadata snapshot.
 
 Workspace extents and the region's final logical payload quota are checked and
 count-derived from retained functions, reflection views and published instructions;

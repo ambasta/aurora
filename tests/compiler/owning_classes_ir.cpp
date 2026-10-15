@@ -708,8 +708,19 @@ void metadataLifetimeTests() {
         require(rejectedOwner, "stack facts accepted an absent or different emitted-module owner");
         ++rejected;
     };
+    const auto rejectAbiOwner = [&](X86Emitter &owner, const ValidatedModule &module) {
+        bool rejectedOwner = false;
+        try {
+            (void)owner.abiFactsJson(module, declarations);
+        } catch (const Error &error) {
+            rejectedOwner = std::string(error.what()) == "ABI facts require the same emitted module";
+        }
+        require(rejectedOwner, "ABI facts accepted an absent or different emitted-module owner");
+        ++rejected;
+    };
     X86Emitter emitter;
     rejectStackOwner(emitter, checked);
+    rejectAbiOwner(emitter, checked);
     const auto assembly = emitter.emit(checked);
     const auto stack = emitter.stackFactsJson(checked);
     const auto facts = emitter.abiFactsJson(checked, declarations);
@@ -773,6 +784,8 @@ void metadataLifetimeTests() {
     }
     require(movedFromRejected, "moved-from validated module did not reject metadata access");
     ++rejected;
+    rejectStackOwner(emitter, checked);
+    rejectAbiOwner(emitter, checked);
     require(&moved.metadata() == identity, "validated move changed metadata identity");
     require(leaves.size() == 3 && leaves[0] == Type::U8 && leaves[1] == Type::U64 && leaves[2] == Type::U8 &&
                 fields.size() == 5 && fields[1].elementType == Type::OwnedBytes && offsets.size() == 5 &&
@@ -791,19 +804,29 @@ void metadataLifetimeTests() {
             "stack or ABI facts lost same-owner identity after validated move");
     require(X86Emitter{}.emit(moved) == assembly, "validated move changed emitted assembly");
     ++accepted;
-    bool independentAbiRejected = false;
-    try {
-        (void)emitter.abiFactsJson(independent, declarations);
-    } catch (const Error &error) {
-        require(std::string(error.what()) == "ABI facts require the same emitted module",
-                "independent metadata owner produced wrong ABI identity diagnostic");
-        independentAbiRejected = true;
-        ++rejected;
-    }
-    require(independentAbiRejected, "independent equal metadata owner passed emitted-module identity guard");
+    rejectAbiOwner(emitter, independent);
     rejectStackOwner(emitter, independent);
     require(emitter.stackFactsJson(moved) == stack && emitter.abiFactsJson(moved, declarations) == facts,
             "independent owner rejection changed exact stack or ABI observations");
+
+    // The emitted temporary dies at the semicolon. This checks rejection of a
+    // later equal module without depending on whether the allocator reuses it.
+    X86Emitter expiredOwner;
+    (void)expiredOwner.emit(validate(moving()));
+    const auto replacement = validate(moving());
+    rejectStackOwner(expiredOwner, replacement);
+    rejectAbiOwner(expiredOwner, replacement);
+
+    bool failedEmission = false;
+    try {
+        (void)emitter.emit(checked);
+    } catch (const Error &) {
+        failedEmission = true;
+    }
+    require(failedEmission, "emission accepted a moved-from validated module");
+    ++rejected;
+    rejectStackOwner(emitter, moved);
+    rejectAbiOwner(emitter, moved);
 }
 
 void layoutTests() {
