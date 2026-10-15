@@ -28,6 +28,9 @@ std::int64_t aurora_hosted_initialization_object_was_constructed(const void *, s
 std::int64_t aurora_hosted_initialization_object_completion(const void *, std::int64_t) noexcept;
 std::int64_t aurora_hosted_initialization_mark_object(const void *, std::int64_t) noexcept;
 std::int64_t aurora_hosted_initialization_clear_object(const void *, std::int64_t) noexcept;
+std::int64_t aurora_hosted_initialization_receiver_field_state(const void *, std::int64_t) noexcept;
+std::int64_t aurora_hosted_initialization_write_receiver_field(const void *, std::int64_t) noexcept;
+std::int64_t aurora_hosted_initialization_receiver_completion(const void *) noexcept;
 std::int64_t
 aurora_hosted_initialization_array_first_missing(const void *, std::int64_t, std::int64_t, std::int64_t) noexcept;
 std::int64_t aurora_hosted_initialization_clear_array(const void *, std::int64_t, std::int64_t, std::int64_t) noexcept;
@@ -65,21 +68,25 @@ std::uint64_t checkedSum(std::uint64_t left, std::uint64_t right) {
         invalidInitialization();
     return left + right;
 }
-std::uint64_t quota(const Metadata &metadata, Metadata::CallableId callable) {
+std::uint64_t domainFacts(const Metadata &metadata, Metadata::CallableId callable) {
     if (callable >= metadata.callableCount())
         invalidInitialization();
     const auto slots = metadata.frame(callable).scalarSlots().size();
     const auto objects = metadata.frame(callable).objectSlots().size();
     if (slots > 65536 || objects > 8192)
         invalidInitialization();
-    const auto words = (checkedSum(slots, objects) + 63) / 64;
+    const auto receiver = metadata.callable(callable).receiver();
+    const auto fields = receiver ? metadata.fields(metadata.findClass(receiver->className).value()).size() : 0;
+    return checkedSum(checkedSum(slots, objects), fields);
+}
+std::uint64_t quota(std::uint64_t facts) {
+    const auto words = facts / 64 + (facts % 64 != 0);
     const auto snapshot = checkedProduct(words, hosted_abi::initializationWordPairPhysicalBytes);
     const auto retained = checkedProduct(65536, snapshot);
     const auto counts = checkedProduct(65536, hosted_abi::initializationCountPairPhysicalBytes);
-    // This is a logical ceiling, not an allocation request. At the largest
-    // combined domain it is 1,209,026,560 bytes (about 1.126 GiB); owners start empty and
-    // retained capacity grows 1, 2, 4, ... . Runtime resize stages old and new
-    // blocks together outside logical quota (about 1.689 GiB at the extreme).
+    // A logical ceiling, not an allocation request. Receiver fields can be
+    // leafless, so their admitted count has no fixed frame/leaf-derived cap.
+    // Owners start empty; checked arithmetic bounds every lazy growth.
     return checkedSum(checkedSum(snapshot, retained), counts);
 }
 static_assert(std::is_standard_layout_v<wire::InitializationWorkspace> &&
@@ -118,6 +125,7 @@ public:
     // Declaration order is destruction order in reverse: actual current owners
     // are consumed before Region closes on every ordinary exception. A runtime
     // invariant trap is fail-stop and never unwinds through generated frames.
+    const std::uint64_t facts;
     bytes::Region region;
     SourceOwner owner;
     const Metadata &metadata;
@@ -125,7 +133,7 @@ public:
     const std::array<const void *, 2> roots;
 
     Capsule(const Metadata &input, Metadata::CallableId id, const void *metadataOwner)
-        : region(quota(input, id)), owner(region.id()), metadata(input), callable(id),
+        : facts(domainFacts(input, id)), region(quota(facts)), owner(region.id()), metadata(input), callable(id),
           roots{owner.data(), metadataOwner} {
         if (aurora_hosted_initialization_allocated(owner.data()) != 1)
             failure();
@@ -181,11 +189,12 @@ bool InitializationWorkspace::join(Id id) {
     capsule_->failure();
 }
 std::size_t InitializationWorkspace::currentCount() const {
-    return capsule_->counted(aurora_hosted_initialization_current_count(capsule_->owner.data()), 147456);
+    return capsule_->counted(aurora_hosted_initialization_current_count(capsule_->owner.data()),
+                             static_cast<std::int64_t>(checkedProduct(capsule_->facts, 2)));
 }
 std::size_t InitializationWorkspace::retainedCountAt(Id id) const {
     return capsule_->counted(aurora_hosted_initialization_retained_count_at(capsule_->owner.data(), argument(id)),
-                             147456);
+                             static_cast<std::int64_t>(checkedProduct(capsule_->facts, 2)));
 }
 std::size_t InitializationWorkspace::retainedCount() const {
     return capsule_->counted(aurora_hosted_initialization_retained_count(capsule_->owner.data()), 65536);
@@ -194,7 +203,8 @@ std::size_t InitializationWorkspace::slotCount() const {
     return capsule_->counted(aurora_hosted_initialization_slot_count(capsule_->owner.data()), 65536);
 }
 std::size_t InitializationWorkspace::wordCount() const {
-    return capsule_->counted(aurora_hosted_initialization_word_count(capsule_->owner.data()), 1152);
+    return capsule_->counted(aurora_hosted_initialization_word_count(capsule_->owner.data()),
+                             static_cast<std::int64_t>(capsule_->facts / 64 + (capsule_->facts % 64 != 0)));
 }
 std::size_t InitializationWorkspace::logicalPayloadBytesPerSnapshot() const {
     const auto value = checkedProduct(wordCount(), hosted_abi::initializationWordPairPhysicalBytes);
@@ -237,6 +247,27 @@ void InitializationWorkspace::markObject(int base) {
 }
 void InitializationWorkspace::clearObject(int base) {
     capsule_->succeeded(aurora_hosted_initialization_clear_object(capsule_->roots.data(), base));
+}
+unsigned InitializationWorkspace::receiverFieldState(int field) {
+    return static_cast<unsigned>(
+        capsule_->counted(aurora_hosted_initialization_receiver_field_state(capsule_->roots.data(), field), 15));
+}
+unsigned InitializationWorkspace::writeReceiverField(int field) {
+    return static_cast<unsigned>(
+        capsule_->counted(aurora_hosted_initialization_write_receiver_field(capsule_->roots.data(), field), 15));
+}
+InitializationWorkspace::ReceiverCompletion InitializationWorkspace::receiverCompletion() {
+    switch (static_cast<wire::ReceiverCompletion>(
+        aurora_hosted_initialization_receiver_completion(capsule_->roots.data()))) {
+    case wire::ReceiverCompletion::complete:
+        return ReceiverCompletion::complete;
+    case wire::ReceiverCompletion::missing_physical:
+        return ReceiverCompletion::missing_physical;
+    case wire::ReceiverCompletion::missing_logical:
+        return ReceiverCompletion::missing_logical;
+    default:
+        capsule_->failure();
+    }
 }
 std::optional<int> InitializationWorkspace::arrayFirstMissing(int offset, int length, int width) {
     const auto result = aurora_hosted_initialization_array_first_missing(capsule_->roots.data(), offset, length, width);

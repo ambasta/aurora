@@ -334,6 +334,18 @@ export namespace compiler_frontend {
         const compiler_ir_metadata::MetadataStore& metadata, i64 base) -> bool {
         return compiler_ir_initialization::clear_object(workspace, metadata, base);
     }
+    auto initialization_receiver_field_state(compiler_ir_initialization::InitializationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 field) -> i64 {
+        return compiler_ir_initialization::receiver_field_state(workspace, metadata, field);
+    }
+    auto initialization_write_receiver_field(compiler_ir_initialization::InitializationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 field) -> i64 {
+        return compiler_ir_initialization::write_receiver_field(workspace, metadata, field);
+    }
+    auto initialization_receiver_completion(compiler_ir_initialization::InitializationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata) -> compiler_ir_initialization::ReceiverCompletion {
+        return compiler_ir_initialization::receiver_completion(workspace, metadata);
+    }
     auto initialization_array_first_missing(compiler_ir_initialization::InitializationWorkspace& workspace,
         const compiler_ir_metadata::MetadataStore& metadata, i64 offset, i64 length, i64 width) -> i64 {
         return compiler_ir_initialization::array_first_missing(workspace, metadata, offset, length, width);

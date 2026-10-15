@@ -48,6 +48,22 @@ public:
     ObjectCompletion objectCompletion(int base);
     void markObject(int base);
     void clearObject(int base);
+    // Source-derived observations preserve vacuous physical completion of
+    // leafless fields independently of their logical class completion.
+    enum ReceiverFieldFact : unsigned {
+        physical_initialized = 1,
+        physical_written = 2,
+        logical_initialized = 4,
+        logical_written = 8
+    };
+    unsigned receiverFieldState(int field);
+    unsigned writeReceiverField(int field);
+    enum class ReceiverCompletion {
+        complete,
+        missing_physical,
+        missing_logical
+    };
+    ReceiverCompletion receiverCompletion();
     // A missing element is its forward ordinal; an empty result means complete.
     std::optional<int> arrayFirstMissing(int offset, int length, int width);
     void clearArray(int offset, int length, int width);

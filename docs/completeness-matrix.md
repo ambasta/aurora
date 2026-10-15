@@ -22,8 +22,9 @@ native code retains sealed-session grants, PIC/UART transport and shutdown.
 
 The native verifier remains C++-owned in one shared compilation unit; immutable
 service authority is source-admitted and region identity is function-local, while
-dynamic loans remain native. Aurora owns local scalar initialization and logical
-object completion in one workspace; receiver initialization remains native.
+dynamic loans remain native. Aurora owns local scalar initialization, logical
+object completion and receiver-field initialization in one workspace; resource
+ownership and provenance remain native.
 
 Component state: [compiler](../compiler/ARCHITECTURE.md), [libraries](../library/README.md),
 [kernel](../kernel/README.md), [storage](storage.md). Next dependencies: [roadmap](roadmap.md).

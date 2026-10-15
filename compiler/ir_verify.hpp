@@ -26,7 +26,7 @@ public:
     std::size_t peakOperandDepth = 0;
     std::size_t peakRetainedOperandFacts = 0;
     std::uint64_t peakRetainedValueFacts = 0;
-    // Physical scalar and logical object must/may word payloads across block entries.
+    // Local scalar/object and compressed receiver-field must/may payloads across block entries.
     // Excludes the source domain, other facts, current words and allocator overhead.
     std::uint64_t peakRetainedInitializationPayloadBytes = 0;
 };

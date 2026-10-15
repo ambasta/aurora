@@ -2,8 +2,8 @@ export module aurora.compiler.ir_initialization;
 import aurora.compiler.ir_metadata;
 import aurora.compiler.ir_metadata_storage;
 
-// Per-function initialization facts. Metadata owns the sorted scalar and object
-// domains; this owner stores dense physical-initialization and logical-completion
+// Per-function initialization facts. Metadata owns the scalar, object and receiver
+// field domains; this owner stores dense physical-initialization and logical-completion
 // must/may words. Native verification retains lifetime and ownership provenance,
 // and binds every paired call to the same immutable MetadataStore.
 export namespace compiler_ir_initialization {
@@ -24,6 +24,12 @@ export namespace compiler_ir_initialization {
         physical,
         missing_nested,
         missing_empty
+    };
+    enum class ReceiverCompletion {
+        invalid,
+        complete,
+        missing_physical,
+        missing_logical
     };
     class WordPair {
         u64 mustBits;
@@ -81,6 +87,9 @@ export namespace compiler_ir_initialization {
         i64 scalarCount;
         i64 objectBegin;
         i64 objectCount;
+        i64 receiverBegin;
+        i64 receiverCount;
+        i64 factCount;
         i64 wordCount;
         i64 retainedCount;
         i64 retainedCapacity;
@@ -115,7 +124,7 @@ export namespace compiler_ir_initialization {
             if (next > 65536) {
                 next = 65536;
             }
-            if (wordCount < 0 || wordCount > 1152 || (wordCount != 0 && next > 9223372036854775807 / wordCount)) {
+            if (wordCount < 0 || (wordCount != 0 && next > 9223372036854775807 / wordCount)) {
                 return reject();
             }
             const i64 words = next * wordCount;
@@ -141,8 +150,9 @@ export namespace compiler_ir_initialization {
     public:
         InitializationWorkspace(builtin::ByteRegion region) : currentWords(word_pool(region)),
             retainedWords(word_pool(region)), retainedCounts(count_pool(region)), callableId(-1), scalarBegin(0),
-            scalarCount(0), objectBegin(0), objectCount(0), wordCount(0), retainedCount(0), retainedCapacity(0),
-            currentMust(0), currentMay(0), statusValue(InitializationStatus::pending) {
+            scalarCount(0), objectBegin(0), objectCount(0), receiverBegin(-1), receiverCount(0), factCount(0),
+            wordCount(0), retainedCount(0), retainedCapacity(0), currentMust(0), currentMay(0),
+            statusValue(InitializationStatus::pending) {
         }
         auto allocated() const -> bool {
             return currentWords.ok() && retainedWords.ok() && retainedCounts.ok();
@@ -167,16 +177,24 @@ export namespace compiler_ir_initialization {
         }
         // Only initialize(metadata, callable) supplies these canonical groups.
         // Their extents are not another offset index or native payload view.
-        auto configure(i64 callable, i64 first, i64 count, i64 object_first, i64 object_count) -> bool {
+        auto configure(i64 callable, compiler_ir_metadata::IndexRange scalars, compiler_ir_metadata::IndexRange objects,
+            compiler_ir_metadata::IndexRange receiver) -> bool {
+            const i64 first = scalars.begin();
+            const i64 count = scalars.count();
+            const i64 object_first = objects.begin();
+            const i64 object_count = objects.count();
+            const i64 locals = compiler_ir_metadata::count_sum(count, object_count);
+            const i64 facts = compiler_ir_metadata::count_sum(locals, receiver.count());
             if (statusValue != InitializationStatus::pending || callable < 0 || first < 0 || count < 0 || count > 65536
-                || object_first < 0 || object_count < 0 || object_count > 8192 || callableId != -1
-                || currentWords.size() != 0 || retainedWords.size() != 0 || retainedCounts.size() != 0) {
+                || object_first < 0 || object_count < 0 || object_count > 8192 || receiver.begin() < -1
+                || receiver.count() < 0 || (receiver.begin() == -1 && receiver.count() != 0) || facts < 0 || facts
+                > 9223372036854775807 / 2 || callableId != -1 || currentWords.size() != 0 || retainedWords.size() != 0
+                || retainedCounts.size() != 0) {
                 return reject();
             }
             if (!prepare()) {
                 return false;
             }
-            const i64 facts = count + object_count;
             i64 words = facts / 64;
             if (facts % 64 != 0) {
                 words = words + 1;
@@ -190,6 +208,9 @@ export namespace compiler_ir_initialization {
             scalarCount = count;
             objectBegin = object_first;
             objectCount = object_count;
+            receiverBegin = receiver.begin();
+            receiverCount = receiver.count();
+            factCount = facts;
             wordCount = words;
             statusValue = InitializationStatus::success;
             return true;
@@ -205,6 +226,19 @@ export namespace compiler_ir_initialization {
         }
         auto object_count() const -> i64 {
             return objectCount;
+        }
+        auto receiver_begin() const -> i64 {
+            return receiverBegin;
+        }
+        auto receiver_count() const -> i64 {
+            return receiverCount;
+        }
+        auto receiver_index(i64 field) const -> i64 {
+            if (statusValue != InitializationStatus::success || receiverBegin < 0 || field < 0 || field
+                >= receiverCount) {
+                return -1;
+            }
+            return factCount - receiverCount + field;
         }
         auto slot_count() const -> i64 {
             if (statusValue != InitializationStatus::success) {
@@ -269,7 +303,7 @@ export namespace compiler_ir_initialization {
         // Dense-index helpers are source-internal semantic operations. Native
         // callers use metadata-paired batches, never one bridge per bit.
         auto index_state(i64 index) -> i64 {
-            if (statusValue != InitializationStatus::success || index < 0 || index >= scalarCount + objectCount) {
+            if (statusValue != InitializationStatus::success || index < 0 || index >= factCount) {
                 reject();
                 return -1;
             }
@@ -285,7 +319,7 @@ export namespace compiler_ir_initialization {
             return state;
         }
         auto write_index(i64 index) -> i64 {
-            if (statusValue != InitializationStatus::success || index < 0 || index >= scalarCount + objectCount) {
+            if (statusValue != InitializationStatus::success || index < 0 || index >= factCount) {
                 reject();
                 return -1;
             }
@@ -315,7 +349,7 @@ export namespace compiler_ir_initialization {
             return previous;
         }
         auto clear_index(i64 index) -> bool {
-            if (statusValue != InitializationStatus::success || index < 0 || index >= scalarCount + objectCount) {
+            if (statusValue != InitializationStatus::success || index < 0 || index >= factCount) {
                 return reject();
             }
             const WordPair old = currentWords.at(index / 64);
@@ -462,7 +496,48 @@ export namespace compiler_ir_initialization {
             workspace.reject();
             return workspace.status();
         }
-        workspace.configure(callable, slots.begin(), slots.count(), objects.begin(), objects.count());
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
+        i64 receiver_class = -1;
+        bool seeded = false;
+        if (declaration.borrowed_root_count() != 0) {
+            const compiler_ir_metadata::RawTypeRow type = metadata.type_at(declaration.borrowed_root_type(0));
+            receiver_class = compiler_ir_metadata::find_class(metadata, type.name());
+            seeded = true;
+        } else {
+            if (compiler_ir_metadata::callable_flag(declaration, masks.callable_receiver())) {
+                const compiler_ir_metadata::ReceiverShape receiver = declaration.first_receiver();
+                receiver_class = compiler_ir_metadata::find_class(metadata, receiver.name());
+                seeded = !compiler_ir_metadata::receiver_flag(receiver, masks.receiver_constructor());
+            }
+        }
+        i64 receiver_begin = -1;
+        i64 receiver_count = 0;
+        if (receiver_class >= 0) {
+            const compiler_ir_metadata::ClassResultRow result = metadata.result_at(receiver_class);
+            const compiler_ir_metadata::IndexRange fields = result.fields();
+            receiver_begin = fields.begin();
+            receiver_count = fields.count();
+        }
+        const compiler_ir_metadata::IndexRange fields = compiler_ir_metadata::IndexRange(receiver_begin,
+            receiver_count);
+        if (!workspace.configure(callable, slots, objects, fields)) {
+            return workspace.status();
+        }
+        if (seeded) {
+            i64 field = 0;
+            while (field < fields.count()) {
+                const compiler_ir_metadata::FieldRow row = metadata.field_at(fields.begin() + field);
+                const compiler_ir_metadata::RawTypeRow type = metadata.type_at(row.type());
+                // Resource fields have no physical/logical initialization facts;
+                // their live region tokens remain a separate native authority.
+                if (row.length() > 0 || type.kind() == 5) {
+                    if (workspace.write_index(workspace.receiver_index(field)) < 0) {
+                        return workspace.status();
+                    }
+                }
+                field = field + 1;
+            }
+        }
         return workspace.status();
     }
     auto ready(InitializationWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata) -> bool {
@@ -648,6 +723,91 @@ export namespace compiler_ir_initialization {
     auto clear_object(InitializationWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
         i64 base) -> bool {
         return object_action(workspace, metadata, base, 3) == 1;
+    }
+
+    // Every receiver initializer writes a whole direct field. Disjoint admitted
+    // leaf ranges and AND/OR joins preserve that invariant, including class
+    // arrays. One field pair therefore replaces both physical-leaf and logical
+    // class-field sets; zero-leaf class fields still have distinct bits.
+    // Observation bits: physical must=1, physical may=2, logical must=4, logical may=8.
+    auto receiver_action(InitializationWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 field, bool write) -> i64 {
+        if (!ready(workspace, metadata)) {
+            return -1;
+        }
+        const i64 index = workspace.receiver_index(field);
+        if (index < 0) {
+            workspace.reject();
+            return -1;
+        }
+        const compiler_ir_metadata::FieldRow row = metadata.field_at(workspace.receiver_begin() + field);
+        const compiler_ir_metadata::RawTypeRow type = metadata.type_at(row.type());
+        const bool logical = type.kind() == 5;
+        if (write && row.length() == 0 && !logical) {
+            workspace.reject();
+            return -1;
+        }
+        i64 state = 0;
+        if (write) {
+            state = workspace.write_index(index);
+        } else {
+            state = workspace.index_state(index);
+        }
+        if (state < 0) {
+            return -1;
+        }
+        const bool must = state == 3;
+        const bool may = state >= 2;
+        i64 result = 0;
+        if (row.length() == 0 || must) {
+            result = result + 1;
+        }
+        if (row.length() > 0 && may) {
+            result = result + 2;
+        }
+        if (logical && must) {
+            result = result + 4;
+        }
+        if (logical && may) {
+            result = result + 8;
+        }
+        return result;
+    }
+    auto receiver_field_state(InitializationWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 field) -> i64 {
+        return receiver_action(workspace, metadata, field, false);
+    }
+    auto write_receiver_field(InitializationWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 field) -> i64 {
+        return receiver_action(workspace, metadata, field, true);
+    }
+    auto receiver_completion(InitializationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata) -> ReceiverCompletion {
+        if (!ready(workspace, metadata) || workspace.receiver_begin() < 0) {
+            workspace.reject();
+            return ReceiverCompletion::invalid;
+        }
+        bool missing_logical = false;
+        i64 field = 0;
+        while (field < workspace.receiver_count()) {
+            const i64 state = workspace.index_state(workspace.receiver_index(field));
+            if (state < 0) {
+                return ReceiverCompletion::invalid;
+            }
+            if (state != 3) {
+                const compiler_ir_metadata::FieldRow row = metadata.field_at(workspace.receiver_begin() + field);
+                if (row.length() > 0) {
+                    return ReceiverCompletion::missing_physical;
+                }
+                const compiler_ir_metadata::RawTypeRow type = metadata.type_at(row.type());
+                missing_logical = missing_logical || type.kind() == 5;
+            }
+            field = field + 1;
+        }
+        if (missing_logical) {
+            return ReceiverCompletion::missing_logical;
+        }
+        return ReceiverCompletion::complete;
     }
 
     auto array_range(InitializationWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
