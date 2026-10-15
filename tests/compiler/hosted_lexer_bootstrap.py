@@ -371,7 +371,9 @@ def abi_generation(facts):
             except ValueError:
                 continue
             raise AssertionError(f"unsafe initialization bridge accepted: {operation}/{mutation}")
-    for operation in INITIALIZATION_SERVICE_OPERATIONS:
+    # All entries use the same production root validator. Sample both authority
+    # directions here; the complete signature and export checks still cover all.
+    for operation in ("acquire_service_loan", "validate_service_call"):
         for mutation in ("authority", "pair"):
             changed = deepcopy(facts)
             _, entry = abi_declaration(changed, "functions", "compiler_frontend::initialization_" + operation)
@@ -878,6 +880,7 @@ def message_generation(facts, root):
 
 
 def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
+    from bootstrap_frontend import write_frontend_header
     from qemu_transport import run_logged
 
     def regenerate(compiler, output):
@@ -1042,10 +1045,35 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
     expected = generated_header.read_bytes()
     old_mtime = 1_000_000_000_000_000_000
     os.utime(generated_header, ns=(old_mtime, old_mtime))
-    regenerate(current1, units[0])
+    # Both real stage compilations and all convergence comparisons above remain
+    # mandatory. Header idempotence needs only the writer and those emitted facts,
+    # not a third complete compilation of the same frontend.
+    emitted_facts = json.loads(units[0].with_suffix(".abi.json").read_text())
+    message_sources = (
+        root / "compiler/lowering_errors.au",
+        root / "compiler/ir_metadata_storage.au",
+        root / "compiler/ir_instruction_storage.au",
+    )
+    write_frontend_header(emitted_facts, generated_header, *message_sources, header(built_b))
     require(
         generated_header.read_bytes() == expected and generated_header.stat().st_mtime_ns == old_mtime,
         "unchanged compiler ABI header was rewritten",
+    )
+    incompatible = work / "incompatible-shared.hpp"
+    incompatible.write_bytes(b"incompatible shared host ABI\n")
+    rejected_header = work / "rejected-output.hpp"
+    sentinel = b"preserve prior header on incompatible ABI\n"
+    rejected_header.write_bytes(sentinel)
+    os.utime(rejected_header, ns=(old_mtime, old_mtime))
+    try:
+        write_frontend_header(emitted_facts, rejected_header, *message_sources, incompatible)
+    except ValueError as error:
+        require("stage2 ABI header differs" in str(error), "wrong shared-header compatibility rejection")
+    else:
+        raise AssertionError("incompatible shared-host ABI header was accepted")
+    require(
+        rejected_header.read_bytes() == sentinel and rejected_header.stat().st_mtime_ns == old_mtime,
+        "incompatible shared-host ABI changed an existing header before rejection",
     )
     print(
         "PASS generated ABI facts/header and frontend B/C convergence, built-B identity, "

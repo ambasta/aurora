@@ -1869,12 +1869,17 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                         }
                     } else if constexpr (std::is_same_v<Op, ServiceCallObservation>) {
                         const auto target = metadata.callable(metadata.findCallable(operation.callee).value());
-                        // Static admission certified one or two leading services.
-                        // Source validates their dynamic loans before ordinary arguments.
-                        const auto count = 1 + operation.additionalServices.size();
+                        const auto count = static_cast<std::size_t>(
+                            std::count_if(target.parameters().begin(), target.parameters().end(), [](const Type &type) {
+                                return type.isService();
+                            }));
+                        require(operation.additionalServices.size() <= 1 &&
+                                    count == 1 + operation.additionalServices.size(),
+                                "service helper argument vector mismatch");
+                        // Source validates dynamic loans before ordinary arguments.
                         const auto second = operation.additionalServices.empty()
                                                 ? ServiceArgument{0, service::Kind::Console}
-                                                : operation.additionalServices.front();
+                                                : operation.additionalServices.at(0);
                         const auto loans = initialization.validateServiceCall(
                             operation.loanId, operation.kind, second.loanId, second.kind);
                         require(loans != InitializationWorkspace::ServiceCallState::missing,

@@ -1023,6 +1023,17 @@ def stage_modules(module_root, modules):
         shutil.copyfile(source, destination / source.name)
 
 
+def write_frontend_header(facts, header, messages, metadata_source, instruction_source, compatible_header=None):
+    """Render the admitted facts; reject incompatible shared ABI before writing."""
+    content = frontend_abi_header(
+        facts, messages.read_text(), metadata_source.read_text(), instruction_source.read_text()
+    ).encode()
+    if compatible_header is not None and compatible_header.read_bytes() != content:
+        raise ValueError("stage2 ABI header differs from the header used by shared host objects")
+    if not header.exists() or header.read_bytes() != content:
+        header.write_bytes(content)
+
+
 def emit(
     compiler,
     source,
@@ -1042,13 +1053,7 @@ def emit(
     subprocess.run([str(compiler.resolve()), *command], check=True)
     facts = json.loads(facts_output.read_text())
     header = output.parent / (output.stem.replace("-", "_") + "_abi.hpp")
-    content = frontend_abi_header(
-        facts, messages.read_text(), metadata_source.read_text(), instruction_source.read_text()
-    ).encode()
-    if compatible_header is not None and compatible_header.read_bytes() != content:
-        raise ValueError("stage2 ABI header differs from the header used by shared host objects")
-    if not header.exists() or header.read_bytes() != content:
-        header.write_bytes(content)
+    write_frontend_header(facts, header, messages, metadata_source, instruction_source, compatible_header)
     # Symbol spellings come from this emitted module; only register moves are trusted.
     output.write_bytes(
         b"\n".join([raw.read_bytes(), *(frontend_bridge(bridge.read_text(), facts).encode() for bridge in bridges)])

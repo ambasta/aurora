@@ -317,12 +317,18 @@ int main(int argc, char **argv) {
     });
 
     // Every call position needs its own unused loan of the exact target kind.
-    bad(groupForwarded(), [](auto &m) {
-        groupCall(m).additionalServices.clear();
-    });
-    bad(groupForwarded(), [](auto &m) {
-        groupCall(m).additionalServices.push_back({2, service::Kind::Display});
-    });
+    bad(
+        groupForwarded(),
+        [](auto &m) {
+            groupCall(m).additionalServices.clear();
+        },
+        "service helper argument vector mismatch");
+    bad(
+        groupForwarded(),
+        [](auto &m) {
+            groupCall(m).additionalServices.push_back({2, service::Kind::Display});
+        },
+        "service helper argument vector mismatch");
     for (int loan : {0, 1, 3})
         bad(groupForwarded(), [=](auto &m) {
             groupCall(m).additionalServices[0].loanId = loan;
