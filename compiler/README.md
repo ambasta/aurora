@@ -36,8 +36,8 @@ The optional [language server](lsp/README.md) has its own dependency and suite.
 The Aurora-native emitter requires three borrowed roots: its mutable output
 workspace and the existing readonly metadata and instruction stores. The exact
 main checkpoint `7811ba83730e9a8b4329da983a01e475d73999a6` supplies that language
-capability. It is retained in main history, not by a new tag. The emitter port is
-a source-only draft; no build, convergence or performance result is claimed here.
+capability. It is retained in main history, not by a new tag. The source-bootstrap
+and qualification gates below are required for each integrated emitter candidate.
 
 The current source no longer contains a C++ expression parser or raw compiler
 seed. Meson requires `bootstrap_compiler`, an absolute executable path. Ninja

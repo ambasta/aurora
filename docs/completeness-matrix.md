@@ -3,13 +3,13 @@
 ## Current project state
 
 None of the destination goals is complete. Compiler source-bootstrap builds are
-restored; the complete Aurora x86 emitter is a separate unbuilt source draft.
+restored; the complete validated-IR-to-x86 text backend runs in Aurora.
 Self-hosting, final emitter qualification and full kernel migration remain incomplete.
 
 | Destination | Status |
 |---|---|
 | Modern safe kernel | Experimental mixed C++/Aurora kernel; general protected services, SMP and full native implementation incomplete. |
-| Safe C++-like language with TypeScript-like types | Aurora frontend and partial verifier migration are present; the compiler remains mixed Aurora/C++. Native emission has an unbuilt source port; self-hosting and richer type/concurrency features remain incomplete. |
+| Safe C++-like language with TypeScript-like types | Aurora frontend, partial verifier migration and x86 text emission are present; the compiler remains mixed Aurora/C++. Self-hosting and richer type/concurrency features remain incomplete. |
 | Ideal filesystem and XFS compatibility | RAM storage and offline readers exist; mounted durable services, recovery and XFS read-write incomplete. |
 | Framework Laptop 13 AMD support | Emulator foundations exist; active drivers, DMA isolation, power/recovery and physical qualification incomplete. |
 | Native binutils/glibc/Mesa alternatives | Bootstrap compiler and core libraries exist; working reproducible native rebuild, toolchain/runtime and graphics replacements incomplete. |

@@ -1,9 +1,9 @@
 # Compiler status and ownership
 
-Source-bootstrap builds are restored. This draft implements complete x86 text
-emission in Aurora, with one source authority and no native fallback. It has
-received static review and formatting only; compilation, exact output comparison,
-performance and final-source qualification are still pending.
+Source-bootstrap builds are restored. Complete x86 text emission runs in Aurora,
+with one source authority and no native fallback. Final-source bootstrap,
+convergence, exact output comparison, performance and platform qualification
+remain required gates; retained receipts define the scope of each result.
 
 | Component | Current source authority | Remaining work |
 |---|---|---|
@@ -16,7 +16,7 @@ performance and final-source qualification are still pending.
 | Current values, operand stacks, bounds evidence | C++ verifier | Migration frozen; unmerged draft is not current functionality |
 | Ownership, provenance and worklist | C++ verifier; Aurora owns entry-binding uniqueness | Continue deletion-first migration; retain dynamic checks |
 | Call graph | Aurora | Validate final integrated behavior |
-| x86 emission | Aurora source port, fixed native transport | Unbuilt draft: exact assembly/sidecars, convergence and performance pending |
+| x86 emission | Aurora, fixed native transport | Maintain exact assembly/sidecar, convergence, lifetime and performance gates |
 | Assembly, linking and hosted runtime | External bootstrap tools/C++ | Native replacements remain incomplete |
 
 ## Hosted Aurora parser
