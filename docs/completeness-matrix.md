@@ -17,7 +17,12 @@ restored; self-hosting and full kernel migration remain incomplete.
 Current gate: original repository check and final-source GCC16 full
 suite, followed by affected image/guest checks. See [development and qualification](developer-test-contract.md).
 
-The native verifier remains C++-owned in one shared compilation unit.
+The BIOS console session is Aurora-owned in source; final generated/image/stack
+and execution qualification are pending.
+
+The native verifier remains C++-owned in one shared compilation unit; immutable
+service authority is source-admitted and region identity is function-local, while
+dynamic loans remain native.
 
 Component state: [compiler](../compiler/ARCHITECTURE.md), [libraries](../library/README.md),
 [kernel](../kernel/README.md), [storage](storage.md). Next dependencies: [roadmap](roadmap.md).

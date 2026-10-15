@@ -39,8 +39,10 @@ Those checks do not justify duplicated semantic policy. Static source admission
 and dynamic native lifetime/provenance checks have different inputs; remove a
 native check only after establishing which authority replaces it.
 
-Aurora admits the unique entry-binding prefix; native code constructs its state
-and retains dynamic lifetime, initialization and provenance checks.
+Aurora admits the unique entry-binding prefix and immutable service roots/kinds.
+Native code derives region identity once per function, checks region operands
+against that binding, and retains dynamic service loans alongside other lifetime,
+initialization and provenance checks. Neither immutable authority occupies CFG snapshots.
 
 The verifier protects the backend against malformed internal IR. It is not a
 verified compiler or a proof of Rust-equivalent safety. C++ host code, generated

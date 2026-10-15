@@ -1,19 +1,45 @@
-#include "../kernel/console-uart.hpp"
-#include "../kernel/console-presentation.hpp"
+// Exercise the real generated BIOS service over the native Session/Uart path.
+// Ports model the device only; Aurora owns every editor and presentation step.
+#include "../kernel/console-session.hpp"
 #include <cstdlib>
 #include <deque>
+#include <functional>
 #include <iostream>
+#include <limits>
 #include <string>
+#include <string_view>
+
+extern "C" std::uint64_t __au_runtime_console_entry(const aurora::console::ServiceArgument *);
 
 namespace {
-using aurora::console::Event;
-using aurora::console::Line;
+using aurora::console::Completion;
+using aurora::console::RawSample;
+const std::string ready = "AURORA_CONSOLE_READY: BIOS, ASCII, 64-byte lines\r\naurora> ";
+const std::string help = "\r\nhelp    Show commands\r\nstatus  Show boot state\r\n"
+                         "exit    Close this QEMU session\r\naurora> ";
+const std::string status = "\r\nstatus: boot self-tests passed; BIOS serial console; line capacity=64\r\naurora> ";
+const std::string rejected = "\r\nLine rejected: too long, non-ASCII/control byte, or UART error.\r\naurora> ";
+const std::string exited = "\r\nAURORA_CONSOLE_EXIT\r\n";
+std::deque<std::function<void()>> arrivals;
+RawSample (*next_sample)(const void *, std::uint64_t);
+std::uint64_t (*put_byte)(const void *, std::uint64_t, std::uint64_t);
+std::size_t observations{}, output_attempts{}, input_attempts{};
+bool output_failed{};
+
+auto need(bool condition, std::string_view message) -> void {
+    ++observations;
+    if (!condition) {
+        std::cerr << "FAIL: " << message << '\n';
+        std::exit(1);
+    }
+}
 struct Ports {
     static inline std::deque<std::uint8_t> input;
     static inline std::string output;
     static inline std::uint8_t error{}, error_after_read{}, error_after_write{};
     static inline bool transmit_ready{true};
-    static inline unsigned writes{}, inject_at{}, lsr_reads{}, rx_flushes{};
+    static inline std::size_t writes{}, inject_at{}, reads{}, inject_read_at{}, lsr_reads{}, rx_flushes{};
+    static inline std::size_t stop_after{std::numeric_limits<std::size_t>::max()};
     static inline std::uint8_t last_fcr{}, expected_trigger{};
     static auto read(unsigned port) -> std::uint8_t {
         if (port == 0x3fd) {
@@ -24,22 +50,18 @@ struct Ports {
             return value;
         }
         if (port == 0x3f8) {
-            if (input.empty()) {
-                std::abort();
-            }
+            need(!input.empty(), "UART read beyond its receive FIFO");
             const auto byte = input.front();
             input.pop_front();
-            error |= error_after_read;
-            error_after_read = 0;
+            if (++reads == inject_read_at)
+                error |= error_after_read;
             return byte;
         }
         return 0;
     }
     static auto write(unsigned port, std::uint8_t value) -> void {
         if (port == 0x3fa) {
-            if (value != (expected_trigger | 3) && value != (expected_trigger | 7)) {
-                std::abort();
-            }
+            need(value == (expected_trigger | 3) || value == (expected_trigger | 7), "UART FIFO trigger changed");
             last_fcr = value;
             if (value & 2) {
                 input.clear();
@@ -47,199 +69,217 @@ struct Ports {
             }
         }
         if (port == 0x3f8) {
+            need(transmit_ready, "UART wrote without transmitter readiness");
             output += static_cast<char>(value);
-            if (++writes == inject_at) {
+            if (++writes == inject_at)
                 error |= error_after_write;
-            }
+            if (writes == stop_after)
+                transmit_ready = false;
         }
     }
 };
+class Platform final {
+public:
+    static auto quiet() -> bool {
+        return true;
+    }
+    static auto wait() -> void {
+        need(!arrivals.empty(), "session waited beyond its scripted arrivals");
+        auto arrive = std::move(arrivals.front());
+        arrivals.pop_front();
+        arrive();
+    }
+    [[noreturn]] static auto fail() -> void {
+        std::abort();
+    }
+};
+auto queue(std::string_view bytes) -> void {
+    for (const auto byte : bytes)
+        Ports::input.push_back(static_cast<std::uint8_t>(byte));
+}
+auto arrive(std::string text) -> void {
+    arrivals.emplace_back([text] {
+        queue(text);
+    });
+}
+
 template <class Device> struct Suite {
     using Uart = Device;
-    using Display = aurora::console::Presentation<Uart>;
-    static inline unsigned observations{};
-    static auto need(bool condition) -> void {
-        ++observations;
-        if (!condition) {
-            std::abort();
-        }
-    }
+    using Session = aurora::console::Session<Uart, Platform>;
     static auto reset() -> void {
+        arrivals.clear();
         Ports::input.clear();
         Ports::output.clear();
-        Ports::error = 0;
-        Ports::error_after_read = 0;
-        Ports::error_after_write = 0;
-        Ports::writes = 0;
-        Ports::inject_at = 0;
-        Ports::lsr_reads = 0;
-        Ports::rx_flushes = 0;
+        Ports::error = Ports::error_after_read = Ports::error_after_write = 0;
+        Ports::writes = Ports::inject_at = Ports::reads = Ports::inject_read_at = 0;
+        Ports::lsr_reads = Ports::rx_flushes = 0;
+        Ports::stop_after = std::numeric_limits<std::size_t>::max();
         Ports::transmit_ready = true;
+        output_attempts = input_attempts = 0;
+        output_failed = false;
+        next_sample = Session::next;
+        put_byte = Session::put;
         Uart::initialize_input();
-        need(Ports::last_fcr == (Ports::expected_trigger | 7));
+        need(Ports::last_fcr == (Ports::expected_trigger | 7), "UART session setup did not reset both FIFOs");
     }
-    static auto queue(std::string_view bytes) -> void {
-        for (const auto byte : bytes) {
-            Ports::input.push_back(static_cast<std::uint8_t>(byte));
-        }
+    static auto invoke() -> Completion {
+        const auto argument = Session::open();
+        return Session::close(argument, __au_runtime_console_entry(&argument));
     }
-    static auto prefix(Line &line, std::string_view bytes) -> void {
-        for (const auto byte : bytes) {
-            static_cast<void>(line.consume(static_cast<std::uint8_t>(byte)));
-        }
+    static auto expect(const std::string &output) -> void {
+        need(invoke() == Completion::requested_exit, "UART-backed session did not request exit");
+        need(Ports::output == ready + output, "UART-backed exact BIOS transcript");
+        need(Ports::input.empty() && arrivals.empty(), "session left unexpected scripted input");
+        need(!output_failed && output_attempts <= Ports::output.size(), "successful output accounting");
     }
-    static auto drain(Line &line) -> Event {
-        auto result = Event::ignored;
-        while (const auto byte = Uart::poll(line)) {
-            result = line.consume(*byte);
-        }
-        return result;
-    }
-    static auto command(Line &line, std::string_view text, Event expected) -> void {
-        queue(text);
-        need(drain(line) == expected);
-    }
-
-    static auto run(std::uint8_t expected_trigger) -> unsigned {
-        Ports::expected_trigger = expected_trigger;
+    static auto run(std::uint8_t trigger) -> void {
+        Ports::expected_trigger = trigger;
         for (const auto error : {2, 4, 8, 16, 30}) {
-            {
-                reset();
-                Line line;
-                prefix(line, "e");
-                Ports::error = error;
-                Uart::put('e');
-                need(Ports::error == 0 && Ports::output == "e");
-                command(line, "xit\n", Event::rejected);
-                command(line, "status\n", Event::status);
-            }
-            {
-                reset();
-                Line line;
-                Ports::inject_at = 2;
-                Ports::error_after_write = error;
-                need(Display::render(Event::help, 0, aurora::console::Platform::uefi));
-                need(Ports::error == 0);
-                command(line, "exit\n", Event::rejected);
-                command(line, "help\n", Event::help);
-            }
-            {
-                reset();
-                Line line;
-                queue("exit\n");
-                Ports::error_after_read = error;
-                need(drain(line) == Event::ignored);
-                need(Ports::input.empty() && Ports::rx_flushes == 2);
-                command(line, "\n", Event::rejected);
-                command(line, "exit\n", Event::exit);
-            }
-            {
-                reset();
-                Line line;
-                prefix(line, "ex");
+            // An echo's TX status polling must not lose a receive error.
+            reset();
+            arrive("e");
+            Ports::inject_at = ready.size() + 1;
+            Ports::error_after_write = error;
+            arrive("xit\nstatus\nexit\n");
+            expect("e" + rejected + "status" + status + "exit" + exited);
+            need(Ports::error == 0 && Ports::rx_flushes == 2, "echo damage was not latched and flushed");
+
+            // Multi-byte generated presentation uses the same sticky UART latch.
+            reset();
+            arrive("help\n");
+            Ports::inject_at = ready.size() + 4 + 2 + 2;
+            Ports::error_after_write = error;
+            arrive("exit\nhelp\nexit\n");
+            expect("help" + help + rejected + "help" + help + "exit" + exited);
+            need(Ports::error == 0 && Ports::rx_flushes == 2, "presentation damage was lost");
+
+            // Damage discovered after popping a byte discards the queued suffix.
+            reset();
+            arrive("exit\n");
+            Ports::inject_read_at = 1;
+            Ports::error_after_read = error;
+            arrive("\nexit\n");
+            expect(rejected + "exit" + exited);
+            need(Ports::rx_flushes == 2, "post-pop error did not flush the receive suffix");
+
+            // Error-only samples reject a partial line even with no RX byte.
+            reset();
+            arrive("ex");
+            arrivals.emplace_back([error] {
                 Ports::error = error;
                 Uart::text("ex");
-                need(!Uart::poll(line));
-                command(line, "\n", Event::rejected);
-                command(line, "status\n", Event::status);
-            }
-            {
-                reset();
-                Line line;
+            });
+            arrive("\nstatus\nexit\n");
+            expect("exex" + rejected + "status" + status + "exit" + exited);
+
+            reset();
+            arrivals.emplace_back([error] {
                 queue("exit\n");
                 Ports::error = error;
-                need(!Uart::poll(line));
-                need(Ports::input.empty() && Ports::rx_flushes == 2);
-                command(line, "\n", Event::rejected);
-                command(line, "status\n", Event::status);
-            }
-            {
-                // Runtime trace TX can observe and clear a receive error while
-                // a protected command owns the CPU. The next copied submission
-                // must still reject; input and diagnostics share one instance.
-                using RuntimeTrace = Uart;
-                using ProgramInput = Uart;
-                reset();
-                Line line;
-                aurora::console::Snapshot snapshot;
-                prefix(line, "upper");
+            });
+            arrive("\nstatus\nexit\n");
+            expect(rejected + "status" + status + "exit" + exited);
+            need(Ports::rx_flushes == 2, "pre-pop error did not discard the untrusted FIFO");
+
+            // Runtime diagnostic output and generated source share one transport.
+            // Actual copied-submission/scrub checks live in kernel-program-stream.
+            reset();
+            arrive("upper");
+            arrivals.emplace_back([error] {
                 queue(" silently truncated");
-                Ports::inject_at = 3;
+                Ports::inject_at = Ports::writes + 3;
                 Ports::error_after_write = error;
-                RuntimeTrace::text("AURORA_UEFI_DOMAIN_EVENT: vector=");
-                RuntimeTrace::number(129);
-                RuntimeTrace::text("\r\nAURORA_UEFI_TIMER_QUIET: epoch=1\r\n");
-                need(Ports::error == 0 && Ports::input.empty() && Ports::rx_flushes == 2);
-                need(!ProgramInput::poll(line));
-                queue("\n");
-                const auto delimiter = ProgramInput::poll(line);
-                need(delimiter && line.consume(*delimiter, &snapshot) == Event::rejected);
-                need(!snapshot.submitted() && snapshot.length() == 0);
-                for (const auto byte : snapshot.bytes())
-                    need(byte == 0);
-                command(line, "help\n", Event::help);
-            }
+                Uart::text("AURORA_UEFI_DOMAIN_EVENT: vector=");
+                Uart::number(129);
+                Uart::text("\r\nAURORA_UEFI_TIMER_QUIET: epoch=1\r\n");
+                need(Ports::error == 0 && Ports::input.empty() && Ports::rx_flushes == 2,
+                     "diagnostic output lost receive damage or retained unsafe input");
+            });
+            arrive("\nhelp\nexit\n");
+            expect("upperAURORA_UEFI_DOMAIN_EVENT: vector=129\r\nAURORA_UEFI_TIMER_QUIET: epoch=1\r\n" + rejected +
+                   "help" + help + "exit" + exited);
+
             for (const std::string delimiter : {"\n", "\r", "\r\n"}) {
                 reset();
-                Line line;
-                prefix(line, "help");
-                queue(delimiter + "exit\n");
+                arrive("help" + delimiter + "exit\n");
+                Ports::inject_read_at = 5;
                 Ports::error_after_read = error;
-                const auto byte = Uart::poll(line);
-                need(byte && *byte == static_cast<std::uint8_t>(delimiter.front()));
-                need(Ports::input.empty());
-                need(line.consume(*byte) == Event::rejected);
-                need(!Uart::poll(line));
-                command(line, (delimiter == "\r\n" ? "\nexit\n" : "exit\n"), Event::rejected);
-                command(line, "status\n", Event::status);
+                arrive(delimiter == "\r\n" ? "\nexit\n" : "exit\n");
+                arrive("status\nexit\n");
+                expect("help" + rejected + rejected + "status" + status + "exit" + exited);
+                need(Ports::rx_flushes == 2, "delimiter damage did not flush the queued next command");
             }
         }
-        // Copied transport observations are canonical, editor-independent, and
-        // preserve damage across the delimiter boundary and output polling.
+
+        // Transport observations remain canonical without owning editor state.
         reset();
         auto sample = Uart::next();
-        need(!sample.present && sample.byte == 0 && !sample.damaged);
+        need(!sample.present && sample.byte == 0 && !sample.damaged, "empty transport observation");
         Ports::error = 2;
         sample = Uart::next();
-        need(!sample.present && sample.byte == 0 && sample.damaged);
+        need(!sample.present && sample.byte == 0 && sample.damaged, "error-only transport observation");
         sample = Uart::next();
-        need(!sample.present && sample.byte == 0 && !sample.damaged);
+        need(!sample.present && sample.byte == 0 && !sample.damaged, "error-only observation did not clear");
         for (const auto delimiter : {'\r', '\n'}) {
             reset();
             Ports::input.push_back(delimiter);
+            Ports::inject_read_at = 1;
             Ports::error_after_read = 8;
             sample = Uart::next();
-            need(sample.present && sample.byte == delimiter && sample.damaged);
+            need(sample.present && sample.byte == delimiter && sample.damaged, "damaged delimiter observation");
             sample = Uart::next();
-            need(!sample.present && sample.byte == 0 && sample.damaged);
+            need(!sample.present && sample.byte == 0 && sample.damaged, "damage did not cross delimiter boundary");
             sample = Uart::next();
-            need(!sample.present && sample.byte == 0 && !sample.damaged);
+            need(!sample.present && sample.byte == 0 && !sample.damaged, "delimiter latch did not clear");
         }
         reset();
         Ports::transmit_ready = false;
         Ports::error = 4;
-        need(Uart::try_put('x') == aurora::console::PutResult::timeout);
-        need(Ports::output.empty() && Ports::lsr_reads == 1000001);
+        need(Uart::try_put('x') == aurora::console::PutResult::timeout, "UART timeout result");
+        need(Ports::output.empty() && Ports::lsr_reads == 1000001, "UART bounded transmit polling");
         sample = Uart::next();
-        need(!sample.present && sample.byte == 0 && sample.damaged);
+        need(!sample.present && sample.byte == 0 && sample.damaged, "timeout polling lost RX damage");
         Ports::transmit_ready = true;
-        need(Uart::try_put('y') == aurora::console::PutResult::success);
-        need(Ports::output == "y");
+        need(Uart::try_put('y') == aurora::console::PutResult::success && Ports::output == "y",
+             "UART transport did not recover after timeout");
         reset();
-        Line line;
-        command(line, "status\n", Event::status);
         Uart::number(UINT64_MAX);
-        need(Ports::output == "18446744073709551615");
-        need(Ports::lsr_reads >= 20);
-        return observations;
+        need(Ports::output == "18446744073709551615" && Ports::lsr_reads >= 20, "maximum diagnostic number");
+
+        const auto successful = ready + "help" + help + "exit" + exited;
+        for (const auto stop : {std::size_t{0}, ready.size() + 5}) {
+            reset();
+            Ports::stop_after = stop;
+            Ports::transmit_ready = stop != 0;
+            arrive("help\nexit\n");
+            need(invoke() == Completion::output_failure, "UART timeout did not stop generated session");
+            need(output_failed && output_attempts == stop + 1 && Ports::output == successful.substr(0, stop),
+                 "UART timeout retried or changed the successful output prefix");
+            need(stop != 0 || input_attempts == 0, "ready timeout consumed input");
+        }
+        reset();
+        arrive("exit\n");
+        expect("exit" + exited);
     }
 };
 } // namespace
 
-int main() {
-    using One = aurora::console::Uart<Ports>;
-    using Fourteen = aurora::console::Uart<Ports, aurora::console::FifoTrigger::fourteen>;
-    const auto one = Suite<One>::run(0);
-    const auto fourteen = Suite<Fourteen>::run(0xc0);
-    std::cout << "PASS: shared console UART " << one << "+" << fourteen << " observations\n";
+extern "C" void __au_runtime_console_next(const void *grant, std::uint64_t generation, RawSample *result) {
+    need(!output_failed, "generated session consumed input after UART timeout");
+    ++input_attempts;
+    *result = next_sample(grant, generation);
+}
+extern "C" std::uint64_t __au_runtime_console_put(const void *grant, std::uint64_t generation, std::uint64_t byte) {
+    need(!output_failed, "generated session retried after UART timeout");
+    ++output_attempts;
+    const auto result = put_byte(grant, generation, byte);
+    output_failed = result == 1;
+    return result;
+}
+
+auto main() -> int {
+    Suite<aurora::console::Uart<Ports>>::run(0);
+    Suite<aurora::console::Uart<Ports, aurora::console::FifoTrigger::fourteen>>::run(0xc0);
+    std::cout << "PASS: generated BIOS session and shared UART damage/timeout, both FIFO triggers; " << observations
+              << " observations\n";
 }

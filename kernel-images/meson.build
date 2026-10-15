@@ -66,6 +66,9 @@ foreach profile_id : profile_data['profiles'].split('|')
   aurora_facts = []
   checks = []
   admission = profile_data[key + '.admission']
+  bios_console = platform == 'bios' and mode == 'console'
+  image_option_text = profile_data[key + '.image_options']
+  image_options = image_option_text == '' ? [] : image_option_text.split('|')
   if admission != ''
     admission_recipe = admission_recipes[admission]
     admission_tool = files('../scripts/' + admission_recipe[0])
@@ -85,12 +88,14 @@ foreach profile_id : profile_data['profiles'].split('|')
   language_outputs = [platform == 'bios' ? 'kernel-language.s' : 'language.s',
                       platform == 'bios' ? 'kernel-language.stack.json' : 'language.stack.json']
   language_dependencies = compiler_files
-  if admission == 'program'
-    language_outputs += ['language.abi.json']
-    root_args += ['--abi-facts', '@OUTPUT2@', '--bridge', kernel_source / bridge,
-                  '--bridge', kernel_source / 'kernel/uefi/kernel-policy-entry.S']
-    language_dependencies += bridge_input + files('../kernel/uefi/kernel-policy-entry.S',
-                                                 '../scripts/bootstrap_frontend.py')
+  if admission == 'program' or bios_console
+    language_outputs += [bios_console ? 'kernel-language.abi.json' : 'language.abi.json']
+    root_args += ['--abi-facts', '@OUTPUT2@', '--bridge', kernel_source / bridge]
+    language_dependencies += bridge_input + files('../scripts/bootstrap_frontend.py')
+    if admission == 'program'
+      root_args += ['--bridge', kernel_source / 'kernel/uefi/kernel-policy-entry.S']
+      language_dependencies += files('../kernel/uefi/kernel-policy-entry.S')
+    endif
     bridge_input = []
   endif
   language_name = platform == 'bios' ? 'kernel-language' : 'language'
@@ -100,7 +105,7 @@ foreach profile_id : profile_data['profiles'].split('|')
     command: [python, '-B', kernel_assembly_helper, '--compiler', kernel_image_compiler, '--source', '@INPUT@',
               '--output', '@OUTPUT0@', '--stack-facts', '@OUTPUT1@', '--depfile', '@DEPFILE@'] + root_args)
   aurora_facts += [language[1]]
-  if admission == 'program'
+  if admission == 'program' or bios_console
     aurora_facts += [language[2]]
   endif
   # Private local symbols require the bridge and generated source in ONE as command.
@@ -237,10 +242,11 @@ foreach profile_id : profile_data['profiles'].split('|')
                 '@INPUT@', '-o', '@OUTPUT@'])
     binary = custom_target(prefix + '-binary', input: elf, output: 'kernel.bin', build_subdir: output_subdir,
       command: [kernel_objcopy, '-O', 'binary', '@INPUT@', '@OUTPUT@'])
-    profile_image = custom_target(prefix + '-image', input: [boot, objects['boot'], objects[language_name], elf, binary],
+    profile_image = custom_target(prefix + '-image',
+      input: [boot, objects['boot'], objects[language_name], elf, binary] + aurora_facts,
       output: 'aurora.img', build_subdir: output_subdir, build_by_default: mode == 'normal',
       depend_files: files('../examples/kernel-bios.au', '../examples/kernel.au'),
-      command: [python, '-B', files('../tests/kernel-image.py'), '--build-dir', output_dir])
+      command: [python, '-B', files('../tests/kernel-image.py'), '--build-dir', output_dir] + image_options)
   else
     linker_script = custom_target(prefix + '-linker-script', input: files('../kernel/uefi/payload.ld'),
       output: 'payload.ld', build_subdir: output_subdir,
@@ -285,8 +291,6 @@ foreach profile_id : profile_data['profiles'].split('|')
       build_subdir: output_subdir / 'esp/EFI/BOOT',
       command: [pe_linker, '-mi386pep', '--subsystem', '10', '--entry=aurora_efi_entry', '--image-base=0x100000',
                 '--enable-reloc-section', '--dynamicbase', '--nxcompat', '--no-insert-timestamp', '@INPUT@', '-o', '@OUTPUT@'])
-    image_option_text = profile_data[key + '.image_options']
-    image_options = image_option_text == '' ? [] : image_option_text.split('|')
     if admission == 'event'
       image_options += ['--event-mode', mode]
     endif

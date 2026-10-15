@@ -119,16 +119,10 @@ public:
     bool called = false;
     bool operator==(const ObjectLoan &) const = default;
 };
-class ServiceIdentity {
-public:
-    InstructionId site;
-    service::Kind kind;
-    bool operator==(const ServiceIdentity &) const = default;
-};
 class ServiceLoan {
 public:
     int offset;
-    ServiceIdentity identity;
+    service::Kind kind;
     bool called = false;
     bool operator==(const ServiceLoan &) const = default;
 };
@@ -142,9 +136,7 @@ public:
     std::map<int, InstructionId> activeObjects; // object base -> creation/binding site
     std::map<int, InstructionId> activeArrays;  // array base -> BeginArray site
     std::map<int, SpanCapability> activeSpans;
-    std::map<int, ServiceIdentity> activeServices;
     std::map<int, ServiceLoan> serviceLoans;
-    std::map<int, RegionIdentity> activeRegions;
     std::map<int, ByteBinding> activeBytes;
     std::map<int, ObjectLoan> objectLoans;
     std::map<int, OwnedObjectBinding> ownedObjects; // 0/-1 are the two distinct bound roots
@@ -222,6 +214,10 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
     const auto ownedValueTypes = frame.ownedValueTypes();
     const auto parameters = signature.parameters();
     const EntryBindings entryBindings(function.code, parameters.size());
+    // The sole region binding is the admitted first row and cannot be revoked.
+    const auto regionOffset = entryBindings.region();
+    const std::optional<RegionIdentity> regionIdentity =
+        regionOffset ? std::optional<RegionIdentity>{{*regionOffset, function.code.idAt(0), false}} : std::nullopt;
     // The first borrowed root is a derived receiver-shaped observation, never
     // lexical receiver authority. The complete prefix stays in source metadata.
     const auto functionReceiver = signature.receiver();
@@ -345,9 +341,8 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                state.receiverMaybeInitialized.size() + state.maybeConstructedObjects.size() +
                state.activeObjects.size() + state.objectClassesInitialized.size() +
                state.receiverClassesInitialized.size() + state.receiverClassesMaybeInitialized.size() +
-               state.activeArrays.size() + state.activeSpans.size() + state.activeRegions.size() +
-               state.activeBytes.size() + state.ownedObjects.size() + state.objectLoans.size() +
-               state.activeServices.size() + state.serviceLoans.size();
+               state.activeArrays.size() + state.activeSpans.size() + state.activeBytes.size() +
+               state.ownedObjects.size() + state.objectLoans.size() + state.serviceLoans.size();
     };
     retainedValueFacts = facts(states[0]->state) + initialization.retainedCountAt(entryInitialization);
     const std::uint64_t initializationPayload = initialization.logicalPayloadBytesPerSnapshot();
@@ -390,10 +385,8 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                 "incompatible active array lifetimes at control-flow join");
         require(existing.activeSpans == state.activeSpans,
                 "incompatible active span capabilities at control-flow join");
-        require(existing.activeServices == state.activeServices && existing.serviceLoans == state.serviceLoans,
+        require(existing.serviceLoans == state.serviceLoans,
                 "incompatible service provenance or loans at control-flow join");
-        require(existing.activeRegions == state.activeRegions,
-                "incompatible active region authority at control-flow join");
         require(existing.activeBytes == state.activeBytes,
                 "incompatible owned byte lifetimes or ownership at control-flow join");
         require(existing.ownedObjects == state.ownedObjects,
@@ -567,8 +560,7 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                         require(capability.origin == 0 && capability.ownedField >= 0 && functionReceiver,
                                 "span borrowed receiver provenance mismatch");
                     else
-                        require(state.activeRegions.contains(identity.offset) &&
-                                    state.activeRegions.at(identity.offset) == identity,
+                        require(regionIdentity && *regionIdentity == identity,
                                 "span owner region identity is not active");
                 } else if (capability.parameterOrigin) {
                     const auto parameterRoot = entryBindings.root<BindSpanParameter>(capability.origin);
@@ -621,8 +613,8 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                 }
             };
             auto activeRegion = [&](int base) -> RegionIdentity {
-                require(state.activeRegions.contains(base), "region authority is not active");
-                return state.activeRegions.at(base);
+                require(regionIdentity && regionIdentity->offset == base, "region authority is not active");
+                return *regionIdentity;
             };
             auto region = [&](int base) -> RegionIdentity {
                 require(regionSlots.contains(base), "region requires exact typed spill");
@@ -1923,36 +1915,30 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                                 "return with active span or byte array lifetime");
                         require(state.stack.empty(), "unbalanced stack at owned byte return");
                     } else if constexpr (std::is_same_v<Op, BindServiceParameter>) {
-                        state.activeServices.emplace(operation.offset, ServiceIdentity{instructionId, operation.kind});
+                        // Source admission owns immutable entry roots and kinds; only loans vary along the CFG.
                     } else if constexpr (std::is_same_v<Op, AcquireServiceLoan>) {
                         require(!state.serviceLoans.contains(operation.loanId) &&
                                     std::none_of(state.serviceLoans.begin(),
                                                  state.serviceLoans.end(),
                                                  [&](const auto &loan) {
                                                      return loan.second.offset == operation.offset;
-                                                 }) &&
-                                    state.activeServices.contains(operation.offset) &&
-                                    state.activeServices.at(operation.offset).kind == operation.kind,
+                                                 }),
                                 "service loan requires unsuspended parameter authority");
-                        state.serviceLoans.emplace(
-                            operation.loanId,
-                            ServiceLoan{operation.offset, state.activeServices.at(operation.offset), false});
+                        state.serviceLoans.emplace(operation.loanId,
+                                                   ServiceLoan{operation.offset, operation.kind, false});
                     } else if constexpr (std::is_same_v<Op, ReleaseServiceLoan>) {
                         require(state.serviceLoans.contains(operation.loanId) &&
                                     state.serviceLoans.at(operation.loanId).called &&
-                                    state.serviceLoans.at(operation.loanId).identity.kind == operation.kind,
+                                    state.serviceLoans.at(operation.loanId).kind == operation.kind,
                                 "service release requires exactly one completed helper call");
                         state.serviceLoans.erase(operation.loanId);
                     } else if constexpr (std::is_same_v<Op, ServiceOperation>) {
-                        require(state.activeServices.contains(operation.offset) &&
-                                    std::none_of(state.serviceLoans.begin(),
-                                                 state.serviceLoans.end(),
-                                                 [&](const auto &loan) {
-                                                     return loan.second.offset == operation.offset;
-                                                 }),
+                        require(std::none_of(state.serviceLoans.begin(),
+                                             state.serviceLoans.end(),
+                                             [&](const auto &loan) {
+                                                 return loan.second.offset == operation.offset;
+                                             }),
                                 "service operation requires active unsuspended capability provenance");
-                        require(state.activeServices.at(operation.offset).kind == operation.kind,
-                                "service operation kind does not match active capability");
                         if (operation.operation == service::Operation::Pixel) {
                             for (int argument = 4; argument >= 0; --argument)
                                 require(pop().type == (argument < 2 ? Type::U64 : Type::U8),
@@ -1993,10 +1979,7 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                             require(state.serviceLoans.contains(argument.loanId),
                                     "service helper requires distinct acquired loans in leading positions");
                             auto &loan = state.serviceLoans.at(argument.loanId);
-                            require(!loan.called && usedRoots.insert(loan.offset).second &&
-                                        state.activeServices.contains(loan.offset) &&
-                                        state.activeServices.at(loan.offset) == loan.identity &&
-                                        loan.identity.kind == argument.kind,
+                            require(!loan.called && usedRoots.insert(loan.offset).second && loan.kind == argument.kind,
                                     "service helper requires an unused loan with exact provenance");
                         }
                         for (std::size_t reverse = target.parameters().size(); reverse > count; --reverse) {
@@ -2024,7 +2007,7 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                         for (std::size_t position = 0; position < count; ++position)
                             state.serviceLoans.at(argumentAt(position).loanId).called = true;
                     } else if constexpr (std::is_same_v<Op, BindRegionParameter>) {
-                        state.activeRegions.emplace(operation.offset, RegionIdentity{operation.offset, instructionId});
+                        // Immutable authority is derived once from the admitted entry prefix.
                     } else if constexpr (std::is_same_v<Op, BindBytesParameter>) {
                         const auto token = freshToken(activeRegion(*entryBindings.region()), -1);
                         state.activeBytes.emplace(operation.offset,

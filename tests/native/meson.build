@@ -36,11 +36,13 @@ native_uefi_object = custom_target('native-uefi-policy',
     command: [python, '-B', native_fixture, '--compiler', aurorac,
               '--source', '@INPUT@', '--module-root', native_root / 'kernel/policies',
               '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
-native_console_object = custom_target('native-console-policy',
-    input: '../../examples/kernel-console.au', output: 'console-policy.o',
-    depfile: 'console-policy.d',
+native_console_object = custom_target('native-console-session',
+    input: '../../examples/kernel-console.au', output: 'console-session.o',
+    depfile: 'console-session.d',
     command: [python, '-B', native_fixture, '--compiler', aurorac,
               '--source', '@INPUT@', '--module-root', native_root / 'kernel/policies',
+              '--module-root', native_root / 'library',
+              '--bridge', native_root / 'kernel/console-service-entry.S',
               '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
 native_program_console_object = custom_target('native-program-console-policy',
     input: '../../examples/kernel-program-console.au', output: 'program-console-policy.o',
@@ -135,20 +137,10 @@ native_host = executable('native-kernel-console', files('../../tests/kernel-cons
     cpp_args: [], link_args: ['-no-pie'])
 test('native-kernel-console', native_host, suite: ['full', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
-native_host = executable('native-kernel-console-presentation', files('../../tests/kernel-console-presentation.cpp') + [native_console_object],
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
-    cpp_args: [], link_args: ['-no-pie'])
-test('native-kernel-console-presentation', native_host, suite: ['full', 'slow', 'integration'],
-     env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-console-uart', files('../../tests/kernel-console-uart.cpp') + [native_console_object],
     native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
     cpp_args: [], link_args: ['-no-pie'])
 test('native-kernel-console-uart', native_host, suite: ['full', 'slow', 'integration'],
-     env: native_test_env, timeout: 180)
-native_host = executable('native-kernel-console-snapshot', files('../../tests/kernel-console-snapshot.cpp') + [native_console_object],
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
-    cpp_args: [], link_args: ['-no-pie'])
-test('native-kernel-console-snapshot', native_host, suite: ['full', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-uefi', files('../../tests/kernel-uefi.cpp'),
     native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=2'],

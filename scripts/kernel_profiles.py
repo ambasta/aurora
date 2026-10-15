@@ -524,13 +524,14 @@ def bios_profile(mode, controls):
     }
     if console:
         assembly["serial-input"] = dict(source="kernel/serial-input.S", flags=["--64"])
+        cpp["kernel-interactive-console"] = "kernel/interactive-console.cpp"
     return dict(
         platform="bios",
         mode=mode,
         flags=flags,
         language="examples/kernel-console.au" if console else "examples/kernel-bios.au",
-        roots=["kernel/policies"],
-        bridge="",
+        roots=["kernel/policies"] + (["library"] if console else []),
+        bridge="kernel/console-service-entry.S" if console else "",
         cpp=cpp,
         assembly=assembly,
         users=users,
@@ -553,8 +554,8 @@ def bios_profile(mode, controls):
             "kernel-main",
             "kernel-language",
         ]
-        + (["serial-input"] if console else []),
-        image_options=[],
+        + (["serial-input", "kernel-interactive-console"] if console else []),
+        image_options=["--console"] if console else [],
         admission="",
         checks=[],
     )

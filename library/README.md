@@ -55,7 +55,7 @@ There is no normalization or textual meaning assigned to NUL/non-ASCII bytes.
 ## Console input and output
 
 `console.line` supplies the shared `Line64` editor and `ConsoleEvent` values for
-simple UEFI, graphical and protected sessions. Its constructor accepts the initial
+BIOS, simple UEFI, graphical and protected sessions. Its constructor accepts the initial
 CR carry; protected readers preserve that bit across command execution. Its
 private 64-byte ASCII state owns no
 transport authority; [input and submission behavior](../docs/native-console-service.md#input-behavior)
