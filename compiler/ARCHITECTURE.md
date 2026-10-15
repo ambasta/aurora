@@ -10,7 +10,7 @@ with one semantic authority and final-source qualification for each change.
 | Resolution and typed lowering | Aurora | Validate final integrated behavior |
 | Metadata, callable and frame admission | Aurora with native transport adapter | Finish final-source validation; retain transport bounds |
 | Instruction storage and static admission | Aurora with native transport adapter | Validate diagnostic order and the source/native boundary |
-| Local and receiver-field initialization | Aurora workspace | Resource ownership and provenance remain native |
+| Initialization and synchronous service loans | Aurora workspace | Resource ownership and object provenance remain native |
 | Current values, operand stacks, bounds evidence | C++ verifier | Migration frozen; unmerged draft is not current functionality |
 | Ownership, provenance and worklist | C++ verifier; Aurora owns entry-binding uniqueness | Continue deletion-first migration; retain dynamic checks |
 | Call graph | Aurora | Validate final integrated behavior |
@@ -41,8 +41,17 @@ native check only after establishing which authority replaces it.
 
 Aurora admits the unique entry-binding prefix and immutable service roots/kinds.
 Native code derives region identity once per function, checks region operands
-against that binding, and retains dynamic service loans alongside other lifetime,
-initialization and provenance checks. Neither immutable authority occupies CFG snapshots.
+against that binding, and retains object lifetime and ownership provenance checks.
+Neither immutable authority occupies CFG snapshots.
+
+The Aurora workspace owns synchronous service-loan acquisition, suspension,
+helper-use validation, consumption, release and closure. Up to two ID-sorted records
+per snapshot preserve exact identity and called state independently of acquisition
+order; sparse IDs never size storage. Static admission still precedes dynamic checks.
+Call validation precedes ordinary arguments and copied destinations; consumption
+follows them. Non-service functions allocate no loan rows. Fact metrics count active
+loans, while the initialization-payload metric includes actual service-row capacity,
+excluding unused retained capacity and current rows.
 
 The existing Aurora initialization workspace also owns local-object logical
 completion and construction history. One must/may pair per admitted object slot
@@ -50,7 +59,7 @@ replaces native whole-object and nested-field completion sets; complete copies
 and construction mark them together. Physical scalar initialization stays a
 separate observation, so empty/nested values and typed-owner snapshots retain
 their stricter completion requirements. Native code retains lifetime, resource
-token and loan checks. Retained-fact metrics count the compressed object pair;
+token and object-loan checks. Retained-fact metrics count the compressed object pair;
 payload metrics include the local scalar, object and receiver-field bit domains.
 
 Receiver initialization uses one must/may pair per canonical direct field. Scalar,

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hosted_ir_metadata.hpp"
+#include "services.hpp"
 #include <cstddef>
 #include <memory>
 #include <optional>
@@ -8,7 +9,7 @@
 namespace aurora::ir {
 
 // One per-function owning capsule. Metadata outlives this immovable workspace;
-// every semantic operation borrows that same admitted source owner. The three
+// every semantic operation borrows that same admitted source owner. The four
 // source pools may grow, so no native descriptor, word or payload view is kept.
 class InitializationWorkspace final {
 public:
@@ -64,6 +65,21 @@ public:
         missing_logical
     };
     ReceiverCompletion receiverCompletion();
+    bool acquireServiceLoan(int id, int root, service::Kind kind);
+    bool releaseServiceLoan(int id, service::Kind kind);
+    bool serviceUnsuspended(int root) const;
+    enum class ServiceCallState {
+        ready,
+        missing,
+        provenance
+    };
+    ServiceCallState validateServiceCall(int first,
+                                         service::Kind firstKind,
+                                         int second = 0,
+                                         service::Kind secondKind = service::Kind::Console) const;
+    void completeServiceCall(int first, int second = 0);
+    bool serviceLoansClosed() const;
+    bool sameServiceLoans(Id snapshot) const;
     // A missing element is its forward ordinal; an empty result means complete.
     std::optional<int> arrayFirstMissing(int offset, int length, int width);
     void clearArray(int offset, int length, int width);

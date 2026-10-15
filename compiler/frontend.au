@@ -277,6 +277,37 @@ export namespace compiler_frontend {
     auto initialization_word_count(const compiler_ir_initialization::InitializationWorkspace& workspace) -> i64 {
         return workspace.word_count();
     }
+    auto initialization_payload_bytes(const compiler_ir_initialization::InitializationWorkspace& workspace) -> i64 {
+        return workspace.payload_bytes();
+    }
+    auto initialization_acquire_service_loan(compiler_ir_initialization::InitializationWorkspace& workspace, i64 id,
+        i64 root, i64 kind) -> i64 {
+        return workspace.acquire_service_loan(id, root, kind);
+    }
+    auto initialization_release_service_loan(compiler_ir_initialization::InitializationWorkspace& workspace, i64 id,
+        i64 kind) -> i64 {
+        return workspace.release_service_loan(id, kind);
+    }
+    auto initialization_service_unsuspended(const compiler_ir_initialization::InitializationWorkspace& workspace,
+        i64 root) -> i64 {
+        return workspace.service_unsuspended(root);
+    }
+    auto initialization_validate_service_call(const compiler_ir_initialization::InitializationWorkspace& workspace,
+        i64 first, i64 first_kind, i64 second, i64 second_kind) -> compiler_ir_initialization::ServiceCallState {
+        return workspace.validate_service_call(first, first_kind, second, second_kind);
+    }
+    auto initialization_complete_service_call(compiler_ir_initialization::InitializationWorkspace& workspace, i64 first,
+        i64 second) -> bool {
+        return workspace.complete_service_call(first, second);
+    }
+    auto initialization_service_loans_closed(const compiler_ir_initialization::InitializationWorkspace& workspace) ->
+        i64 {
+        return workspace.service_loans_closed();
+    }
+    auto initialization_same_service_loans(const compiler_ir_initialization::InitializationWorkspace& workspace,
+        i64 id) -> i64 {
+        return workspace.same_service_loans(id);
+    }
     auto initialization_retained_count(const compiler_ir_initialization::InitializationWorkspace& workspace) -> i64 {
         return workspace.retained_count();
     }

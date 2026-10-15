@@ -4636,7 +4636,7 @@ void rawInitializationOwnership() {
         if (allowed == std::numeric_limits<std::size_t>::max() && quota != 0) {
             require(completed && caught == (stop == 2), "successful owner did not reach its requested stop");
             successful = allocations.successful;
-            require(successful == 3 + 1 + 2 * 9, "retained owners did not grow through capacities 1, 2, 4, ..., 256");
+            require(successful == 4 + 1 + 2 * 9, "retained owners did not grow through capacities 1, 2, 4, ..., 256");
         } else
             require(!completed, "allocation prefix unexpectedly completed");
         const auto metrics = region.metrics();
@@ -4647,7 +4647,7 @@ void rawInitializationOwnership() {
         ++cases;
     };
     exercise(std::numeric_limits<std::size_t>::max(), 1048576, 0);
-    // This includes all three initial pools, the current-word resize, every
+    // This includes all four initial pools, the current-word resize, every
     // retained-word/count growth and refusal after the first pool has resized.
     for (std::size_t allowed = 0; allowed < successful; ++allowed)
         exercise(allowed, 1048576, 0);
@@ -5576,7 +5576,7 @@ void resolvedCompilerSources(char **paths) {
         {},
         {"RawInstructionRow", "RawOperandRow", "CodeRow", "BodyRow", "InstructionCounts", "InstructionStore"},
         {},
-        {"WordPair", "CountPair", "InitializationWorkspace"},
+        {"ServiceLoan", "WordPair", "CountPair", "InitializationWorkspace"},
         {},
     }};
     // Frontend's direct imports give this DFS postorder, independent of file argv.
@@ -5716,7 +5716,7 @@ void resolvedCompilerSources(char **paths) {
             ++enums;
         }
     }
-    require(enums == 44 && classes == 81 && fields > 228 && methods > 307 &&
+    require(enums == 45 && classes == 82 && fields > 228 && methods > 307 &&
                 retainedFunctions == module.functions.size() && functions == abi.functions.size() &&
                 sourceFunctionNames == abiFunctionNames,
             "real compiler typed graph omitted or appended an unaccounted declaration");

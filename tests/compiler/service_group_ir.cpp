@@ -50,6 +50,17 @@ Module groupForwarded(bool reverseTarget = false) {
     m.functions.push_back(caller);
     return m;
 }
+Module oppositeAcquisitionOrders(bool calledMismatch = false) {
+    auto m = groupForwarded();
+    const auto ordered = m.functions.back().code;
+    auto &code = m.functions.back().code;
+    code = {ordered[0], ordered[1], Constant{1, Type::Bool}, BranchFalse{20}, ordered[2], ordered[3]};
+    if (calledMismatch)
+        code.push_back(ordered[4]);
+    code.insert(code.end(),
+                {Jump{30}, Label{20}, ordered[3], ordered[2], Label{30}, ordered[4], ordered[5], ordered[6], Return{}});
+    return m;
+}
 ServiceCall &groupCall(Module &m) {
     return std::get<ServiceCall>(m.functions.back().code[4]);
 }
@@ -174,6 +185,12 @@ int main(int argc, char **argv) {
     good(groupDirect(true));
     good(groupForwarded());
     good(groupForwarded(true));
+    good(oppositeAcquisitionOrders()); // Exact loan equality is independent of insertion order.
+    bad(
+        oppositeAcquisitionOrders(true),
+        [](auto &) {
+        },
+        "incompatible service provenance or loans at control-flow join");
     good(groupSubsets());            // The unrelated Display loan can complete while Console is suspended.
     good(groupSubsets(true));        // Direct Display operations also remain available.
     good(groupConsoleSubsets());     // The Console child loan can complete while Display is suspended.

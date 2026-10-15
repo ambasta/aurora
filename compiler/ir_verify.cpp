@@ -119,13 +119,6 @@ public:
     bool called = false;
     bool operator==(const ObjectLoan &) const = default;
 };
-class ServiceLoan {
-public:
-    int offset;
-    service::Kind kind;
-    bool called = false;
-    bool operator==(const ServiceLoan &) const = default;
-};
 class State {
 public:
     std::optional<Value> current;
@@ -133,13 +126,12 @@ public:
     std::map<int, InstructionId> activeObjects; // object base -> creation/binding site
     std::map<int, InstructionId> activeArrays;  // array base -> BeginArray site
     std::map<int, SpanCapability> activeSpans;
-    std::map<int, ServiceLoan> serviceLoans;
     std::map<int, ByteBinding> activeBytes;
     std::map<int, ObjectLoan> objectLoans;
     std::map<int, OwnedObjectBinding> ownedObjects; // 0/-1 are the two distinct bound roots
     bool operator==(const State &) const = default;
 };
-// Local physical initialization and logical completion have one source owner. Its retained ordinal
+// Initialization, logical completion and service loans have one source owner. Its retained ordinal
 // belongs to the block entry, never to native State equality or State copies.
 class BlockEntry {
 public:
@@ -316,7 +308,7 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
         }
         return ownedFields + state.stack.size() + state.activeObjects.size() + state.activeArrays.size() +
                state.activeSpans.size() + state.activeBytes.size() + state.ownedObjects.size() +
-               state.objectLoans.size() + state.serviceLoans.size();
+               state.objectLoans.size();
     };
     retainedValueFacts = facts(states[0]->state) + initialization.retainedCountAt(entryInitialization);
     const std::uint64_t initializationPayload = initialization.logicalPayloadBytesPerSnapshot();
@@ -353,7 +345,7 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                 "incompatible active array lifetimes at control-flow join");
         require(existing.activeSpans == state.activeSpans,
                 "incompatible active span capabilities at control-flow join");
-        require(existing.serviceLoans == state.serviceLoans,
+        require(initialization.sameServiceLoans(states[index]->initialization),
                 "incompatible service provenance or loans at control-flow join");
         require(existing.activeBytes == state.activeBytes,
                 "incompatible owned byte lifetimes or ownership at control-flow join");
@@ -1064,7 +1056,7 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                 publishArrayBorrow(root, ordinal, result, site);
             };
             auto closedOwnedObjects = [&]() {
-                require(state.serviceLoans.empty(), "return with active synchronous service loan");
+                require(initialization.serviceLoansClosed(), "return with active synchronous service loan");
                 require(state.objectLoans.empty(), "return with active synchronous object loan");
                 for (const auto &[base, unused] : state.ownedObjects) {
                     (void)unused;
@@ -1845,27 +1837,13 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                     } else if constexpr (std::is_same_v<Op, BindServiceParameter>) {
                         // Source admission owns immutable entry roots and kinds; only loans vary along the CFG.
                     } else if constexpr (std::is_same_v<Op, AcquireServiceLoan>) {
-                        require(!state.serviceLoans.contains(operation.loanId) &&
-                                    std::none_of(state.serviceLoans.begin(),
-                                                 state.serviceLoans.end(),
-                                                 [&](const auto &loan) {
-                                                     return loan.second.offset == operation.offset;
-                                                 }),
+                        require(initialization.acquireServiceLoan(operation.loanId, operation.offset, operation.kind),
                                 "service loan requires unsuspended parameter authority");
-                        state.serviceLoans.emplace(operation.loanId,
-                                                   ServiceLoan{operation.offset, operation.kind, false});
                     } else if constexpr (std::is_same_v<Op, ReleaseServiceLoan>) {
-                        require(state.serviceLoans.contains(operation.loanId) &&
-                                    state.serviceLoans.at(operation.loanId).called &&
-                                    state.serviceLoans.at(operation.loanId).kind == operation.kind,
+                        require(initialization.releaseServiceLoan(operation.loanId, operation.kind),
                                 "service release requires exactly one completed helper call");
-                        state.serviceLoans.erase(operation.loanId);
                     } else if constexpr (std::is_same_v<Op, ServiceOperation>) {
-                        require(std::none_of(state.serviceLoans.begin(),
-                                             state.serviceLoans.end(),
-                                             [&](const auto &loan) {
-                                                 return loan.second.offset == operation.offset;
-                                             }),
+                        require(initialization.serviceUnsuspended(operation.offset),
                                 "service operation requires active unsuspended capability provenance");
                         if (operation.operation == service::Operation::Pixel) {
                             for (int argument = 4; argument >= 0; --argument)
@@ -1891,25 +1869,18 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                         }
                     } else if constexpr (std::is_same_v<Op, ServiceCallObservation>) {
                         const auto target = metadata.callable(metadata.findCallable(operation.callee).value());
-                        const auto argumentAt = [&](std::size_t position) {
-                            return position == 0 ? ServiceArgument{operation.loanId, operation.kind}
-                                                 : operation.additionalServices.at(position - 1);
-                        };
-                        const auto count = static_cast<std::size_t>(
-                            std::count_if(target.parameters().begin(), target.parameters().end(), [](const Type &type) {
-                                return type.isService();
-                            }));
-                        // Distinct explicit IDs are source facts; distinct roots
-                        // depend on the loans active along this executed path.
-                        std::set<int> usedRoots;
-                        for (std::size_t position = 0; position < count; ++position) {
-                            const auto argument = argumentAt(position);
-                            require(state.serviceLoans.contains(argument.loanId),
-                                    "service helper requires distinct acquired loans in leading positions");
-                            auto &loan = state.serviceLoans.at(argument.loanId);
-                            require(!loan.called && usedRoots.insert(loan.offset).second && loan.kind == argument.kind,
-                                    "service helper requires an unused loan with exact provenance");
-                        }
+                        // Static admission certified one or two leading services.
+                        // Source validates their dynamic loans before ordinary arguments.
+                        const auto count = 1 + operation.additionalServices.size();
+                        const auto second = operation.additionalServices.empty()
+                                                ? ServiceArgument{0, service::Kind::Console}
+                                                : operation.additionalServices.front();
+                        const auto loans = initialization.validateServiceCall(
+                            operation.loanId, operation.kind, second.loanId, second.kind);
+                        require(loans != InitializationWorkspace::ServiceCallState::missing,
+                                "service helper requires distinct acquired loans in leading positions");
+                        require(loans != InitializationWorkspace::ServiceCallState::provenance,
+                                "service helper requires an unused loan with exact provenance");
                         for (std::size_t reverse = target.parameters().size(); reverse > count; --reverse) {
                             const auto position = reverse - 1;
                             const auto &type = target.parameters()[position];
@@ -1932,8 +1903,7 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                         } else {
                             state.current = Value{target.result(), {}};
                         }
-                        for (std::size_t position = 0; position < count; ++position)
-                            state.serviceLoans.at(argumentAt(position).loanId).called = true;
+                        initialization.completeServiceCall(operation.loanId, second.loanId);
                     } else if constexpr (std::is_same_v<Op, BindRegionParameter>) {
                         // Immutable authority is derived once from the admitted entry prefix.
                     } else if constexpr (std::is_same_v<Op, BindBytesParameter>) {

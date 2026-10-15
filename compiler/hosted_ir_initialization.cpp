@@ -21,6 +21,16 @@ std::int64_t aurora_hosted_initialization_retained_count_at(const void *, std::i
 std::int64_t aurora_hosted_initialization_retained_count(const void *) noexcept;
 std::int64_t aurora_hosted_initialization_slot_count(const void *) noexcept;
 std::int64_t aurora_hosted_initialization_word_count(const void *) noexcept;
+std::int64_t aurora_hosted_initialization_payload_bytes(const void *) noexcept;
+std::int64_t
+aurora_hosted_initialization_acquire_service_loan(void *, std::int64_t, std::int64_t, std::int64_t) noexcept;
+std::int64_t aurora_hosted_initialization_release_service_loan(void *, std::int64_t, std::int64_t) noexcept;
+std::int64_t aurora_hosted_initialization_service_unsuspended(const void *, std::int64_t) noexcept;
+std::int64_t aurora_hosted_initialization_validate_service_call(
+    const void *, std::int64_t, std::int64_t, std::int64_t, std::int64_t) noexcept;
+std::int64_t aurora_hosted_initialization_complete_service_call(void *, std::int64_t, std::int64_t) noexcept;
+std::int64_t aurora_hosted_initialization_service_loans_closed(const void *) noexcept;
+std::int64_t aurora_hosted_initialization_same_service_loans(const void *, std::int64_t) noexcept;
 std::int64_t aurora_hosted_initialization_scalar_state(const void *, std::int64_t) noexcept;
 std::int64_t aurora_hosted_initialization_write_scalar(const void *, std::int64_t) noexcept;
 std::int64_t aurora_hosted_initialization_object_initialized(const void *, std::int64_t) noexcept;
@@ -80,20 +90,26 @@ std::uint64_t domainFacts(const Metadata &metadata, Metadata::CallableId callabl
     const auto fields = receiver ? metadata.fields(metadata.findClass(receiver->className).value()).size() : 0;
     return checkedSum(checkedSum(slots, objects), fields);
 }
-std::uint64_t quota(std::uint64_t facts) {
+std::uint64_t snapshotBytes(std::uint64_t facts) {
     const auto words = facts / 64 + (facts % 64 != 0);
-    const auto snapshot = checkedProduct(words, hosted_abi::initializationWordPairPhysicalBytes);
+    return checkedSum(checkedProduct(words, hosted_abi::initializationWordPairPhysicalBytes),
+                      checkedProduct(2, hosted_abi::initializationServiceLoanPhysicalBytes));
+}
+std::uint64_t quota(std::uint64_t facts) {
+    const auto snapshot = snapshotBytes(facts);
     const auto retained = checkedProduct(65536, snapshot);
     const auto counts = checkedProduct(65536, hosted_abi::initializationCountPairPhysicalBytes);
     // A logical ceiling, not an allocation request. Receiver fields can be
     // leafless, so their admitted count has no fixed frame/leaf-derived cap.
-    // Owners start empty; checked arithmetic bounds every lazy growth.
+    // Owners start empty; checked arithmetic bounds every lazy growth. Two
+    // service rows are a ceiling, not a native inventory or allocation request.
     return checkedSum(checkedSum(snapshot, retained), counts);
 }
 static_assert(std::is_standard_layout_v<wire::InitializationWorkspace> &&
               std::is_trivially_copyable_v<wire::InitializationWorkspace>);
 static_assert(hosted_abi::initializationWordPairPhysicalBytes == 2 * sizeof(std::uint64_t) &&
-              hosted_abi::initializationCountPairPhysicalBytes == 2 * sizeof(std::int64_t));
+              hosted_abi::initializationCountPairPhysicalBytes == 2 * sizeof(std::int64_t) &&
+              hosted_abi::initializationServiceLoanPhysicalBytes == 4 * sizeof(std::int64_t));
 
 class SourceOwner final {
     hosted_abi::InitializationRelease release_;
@@ -191,11 +207,11 @@ bool InitializationWorkspace::join(Id id) {
 }
 std::size_t InitializationWorkspace::currentCount() const {
     return capsule_->counted(aurora_hosted_initialization_current_count(capsule_->owner.data()),
-                             static_cast<std::int64_t>(checkedProduct(capsule_->facts, 2)));
+                             static_cast<std::int64_t>(checkedSum(checkedProduct(capsule_->facts, 2), 2)));
 }
 std::size_t InitializationWorkspace::retainedCountAt(Id id) const {
     return capsule_->counted(aurora_hosted_initialization_retained_count_at(capsule_->owner.data(), argument(id)),
-                             static_cast<std::int64_t>(checkedProduct(capsule_->facts, 2)));
+                             static_cast<std::int64_t>(checkedSum(checkedProduct(capsule_->facts, 2), 2)));
 }
 std::size_t InitializationWorkspace::retainedCount() const {
     return capsule_->counted(aurora_hosted_initialization_retained_count(capsule_->owner.data()), 65536);
@@ -208,10 +224,49 @@ std::size_t InitializationWorkspace::wordCount() const {
                              static_cast<std::int64_t>(capsule_->facts / 64 + (capsule_->facts % 64 != 0)));
 }
 std::size_t InitializationWorkspace::logicalPayloadBytesPerSnapshot() const {
-    const auto value = checkedProduct(wordCount(), hosted_abi::initializationWordPairPhysicalBytes);
-    if (value > std::numeric_limits<std::size_t>::max())
-        invalidInitialization();
-    return static_cast<std::size_t>(value);
+    return capsule_->counted(aurora_hosted_initialization_payload_bytes(capsule_->owner.data()),
+                             static_cast<std::int64_t>(snapshotBytes(capsule_->facts)));
+}
+bool InitializationWorkspace::acquireServiceLoan(int id, int root, service::Kind kind) {
+    return capsule_->boolean(aurora_hosted_initialization_acquire_service_loan(
+        capsule_->owner.data(), id, root, static_cast<std::int64_t>(kind)));
+}
+bool InitializationWorkspace::releaseServiceLoan(int id, service::Kind kind) {
+    return capsule_->boolean(
+        aurora_hosted_initialization_release_service_loan(capsule_->owner.data(), id, static_cast<std::int64_t>(kind)));
+}
+bool InitializationWorkspace::serviceUnsuspended(int root) const {
+    return capsule_->boolean(aurora_hosted_initialization_service_unsuspended(capsule_->owner.data(), root));
+}
+InitializationWorkspace::ServiceCallState InitializationWorkspace::validateServiceCall(int first,
+                                                                                       service::Kind firstKind,
+                                                                                       int second,
+                                                                                       service::Kind secondKind) const {
+    switch (static_cast<wire::ServiceCallState>(
+        aurora_hosted_initialization_validate_service_call(capsule_->owner.data(),
+                                                           first,
+                                                           static_cast<std::int64_t>(firstKind),
+                                                           second,
+                                                           static_cast<std::int64_t>(secondKind)))) {
+    case wire::ServiceCallState::ready:
+        return ServiceCallState::ready;
+    case wire::ServiceCallState::missing:
+        return ServiceCallState::missing;
+    case wire::ServiceCallState::provenance:
+        return ServiceCallState::provenance;
+    default:
+        capsule_->failure();
+    }
+}
+void InitializationWorkspace::completeServiceCall(int first, int second) {
+    capsule_->succeeded(aurora_hosted_initialization_complete_service_call(capsule_->owner.data(), first, second));
+}
+bool InitializationWorkspace::serviceLoansClosed() const {
+    return capsule_->boolean(aurora_hosted_initialization_service_loans_closed(capsule_->owner.data()));
+}
+bool InitializationWorkspace::sameServiceLoans(Id snapshot) const {
+    return capsule_->boolean(
+        aurora_hosted_initialization_same_service_loans(capsule_->owner.data(), argument(snapshot)));
 }
 unsigned InitializationWorkspace::scalarState(int offset) {
     return capsule_->scalar(aurora_hosted_initialization_scalar_state(capsule_->roots.data(), offset));
