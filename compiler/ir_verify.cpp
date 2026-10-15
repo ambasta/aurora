@@ -130,8 +130,6 @@ class State {
 public:
     std::optional<Value> current;
     std::vector<Value> stack;
-    std::set<int> receiverInitialized;
-    std::set<int> receiverMaybeInitialized;
     std::map<int, InstructionId> activeObjects; // object base -> creation/binding site
     std::map<int, InstructionId> activeArrays;  // array base -> BeginArray site
     std::map<int, SpanCapability> activeSpans;
@@ -139,8 +137,6 @@ public:
     std::map<int, ByteBinding> activeBytes;
     std::map<int, ObjectLoan> objectLoans;
     std::map<int, OwnedObjectBinding> ownedObjects; // 0/-1 are the two distinct bound roots
-    std::set<int> receiverClassesInitialized;
-    std::set<int> receiverClassesMaybeInitialized;
     bool operator==(const State &) const = default;
 };
 // Local physical initialization and logical completion have one source owner. Its retained ordinal
@@ -252,10 +248,8 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
     };
     const bool owningConstructor =
         functionReceiver && functionReceiver->constructor && owningClass(metadata, functionReceiver->className);
-    std::optional<TypeRange> receiverLayout;
     std::optional<FieldRange> receiverFields;
     if (functionReceiver) {
-        receiverLayout = classLeaves(functionReceiver->className);
         receiverFields = logicalFields(functionReceiver->className);
     }
     // Source metadata supplies the dense domain. This function owns independent
@@ -306,17 +300,6 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                     ByteBinding{0, ByteDisposition::Live, ByteToken{0, borrowed, static_cast<int>(field)}});
         entryState.ownedObjects.emplace(selector, std::move(root));
     }
-    if (functionReceiver && !functionReceiver->constructor) {
-        for (std::size_t field = 0; field < receiverLayout->size(); ++field) {
-            entryState.receiverInitialized.insert(static_cast<int>(field));
-            entryState.receiverMaybeInitialized.insert(static_cast<int>(field));
-        }
-        for (std::size_t field = 0; field < receiverFields->size(); ++field)
-            if ((*receiverFields)[field].elementType.isClass()) {
-                entryState.receiverClassesInitialized.insert(static_cast<int>(field));
-                entryState.receiverClassesMaybeInitialized.insert(static_cast<int>(field));
-            }
-    }
     const auto entryInitialization = initialization.retain();
     states[0].emplace(BlockEntry{std::move(entryState), entryInitialization});
     std::deque<CodePosition> pending{0};
@@ -331,11 +314,9 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
             (void)unused;
             ownedFields += object.fields.size();
         }
-        return ownedFields + state.stack.size() + state.receiverInitialized.size() +
-               state.receiverMaybeInitialized.size() + state.activeObjects.size() +
-               state.receiverClassesInitialized.size() + state.receiverClassesMaybeInitialized.size() +
-               state.activeArrays.size() + state.activeSpans.size() + state.activeBytes.size() +
-               state.ownedObjects.size() + state.objectLoans.size() + state.serviceLoans.size();
+        return ownedFields + state.stack.size() + state.activeObjects.size() + state.activeArrays.size() +
+               state.activeSpans.size() + state.activeBytes.size() + state.ownedObjects.size() +
+               state.objectLoans.size() + state.serviceLoans.size();
     };
     retainedValueFacts = facts(states[0]->state) + initialization.retainedCountAt(entryInitialization);
     const std::uint64_t initializationPayload = initialization.logicalPayloadBytesPerSnapshot();
@@ -344,12 +325,6 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
         metrics->peakRetainedValueFacts = retainedValueFacts;
         metrics->peakRetainedInitializationPayloadBytes = retainedInitializationPayloadBytes;
     }
-    auto intersection = [](const auto &left, const auto &right) {
-        std::decay_t<decltype(left)> result;
-        std::set_intersection(
-            left.begin(), left.end(), right.begin(), right.end(), std::inserter(result, result.end()));
-        return result;
-    };
     auto enqueue = [&](CodePosition index, const State &state) {
         require(function.code.flowAt(index).blockEntry, "worklist target is not a basic-block entry");
         if (!states[index]) {
@@ -389,13 +364,6 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
         State merged = existing;
         if (merged.current != state.current)
             merged.current.reset();
-        merged.receiverInitialized = intersection(merged.receiverInitialized, state.receiverInitialized);
-        merged.receiverClassesInitialized =
-            intersection(merged.receiverClassesInitialized, state.receiverClassesInitialized);
-        merged.receiverClassesMaybeInitialized.insert(state.receiverClassesMaybeInitialized.begin(),
-                                                      state.receiverClassesMaybeInitialized.end());
-        merged.receiverMaybeInitialized.insert(state.receiverMaybeInitialized.begin(),
-                                               state.receiverMaybeInitialized.end());
         const bool nativeChanged = merged != existing;
         const auto retainedInitialization = states[index]->initialization;
         // Count before source join mutates the retained row. Must losses and may
@@ -717,9 +685,9 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                 if (initialized) {
                     require(!functionReceiver->constructor,
                             "constructor cannot access receiver array during initialization");
-                    for (int element = 0; element < field.length; ++element)
-                        require(state.receiverInitialized.contains(field.firstLeaf + element),
-                                "receiver array element not initialized");
+                    require((initialization.receiverFieldState(fieldIndex) &
+                             InitializationWorkspace::physical_initialized) != 0,
+                            "receiver array element not initialized");
                 }
                 return field;
             };
@@ -837,7 +805,7 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                 return liveOwnedRoot(root);
             };
             auto initializedReceiverClassField = [&](int index) {
-                require(state.receiverClassesInitialized.contains(index),
+                require((initialization.receiverFieldState(index) & InitializationWorkspace::logical_initialized) != 0,
                         "receiver nested class field not initialized");
             };
             auto liveClassField = [&](int base, int index, bool mutableAccess) {
@@ -879,7 +847,8 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                             "constructor cannot access class array during initialization");
                     require(!mutableAccess || functionReceiver->mutableValue,
                             "const receiver cannot supply mutable class array");
-                    require(state.receiverClassesInitialized.contains(fieldIndex),
+                    require((initialization.receiverFieldState(fieldIndex) &
+                             InitializationWorkspace::logical_initialized) != 0,
                             "receiver class array not completely initialized");
                 } else {
                     const auto &root = completeObject(base);
@@ -1063,10 +1032,9 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                 inactiveSpanTarget(result);
                 publishOwnedBorrow(root, ordinal, result, binding);
             };
-            auto initializedReceiverArray = [&](const ClassField &field) {
-                for (int leaf = 0; leaf < field.length; ++leaf)
-                    require(state.receiverInitialized.contains(field.firstLeaf + leaf),
-                            "receiver array span requires complete initialization");
+            auto initializedReceiverArray = [&](int field) {
+                require((initialization.receiverFieldState(field) & InitializationWorkspace::physical_initialized) != 0,
+                        "receiver array span requires complete initialization");
             };
             auto publishArrayBorrow = [&](int root, int ordinal, int result, InstructionId site) {
                 state.activeSpans.emplace(
@@ -1077,7 +1045,7 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                 loanAccess(0, false);
                 const auto field = receiverShape(ordinal);
                 require(!functionReceiver->constructor, "constructor cannot borrow receiver array");
-                initializedReceiverArray(field);
+                initializedReceiverArray(ordinal);
                 require(field.array && field.elementType == Type::U8,
                         "fixed array span requires direct u8 array field");
                 spanTarget(result);
@@ -1087,7 +1055,7 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                 loanAccess(root, false);
                 InstructionId site = 0;
                 if (root == 0)
-                    initializedReceiverArray((*receiverFields)[ordinal]);
+                    initializedReceiverArray(ordinal);
                 else {
                     liveObject(root);
                     site = state.activeObjects.at(root);
@@ -1490,7 +1458,8 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                             field = receiverShape(operation.fieldIndex);
                             require(!functionReceiver->constructor,
                                     "constructor cannot project receiver during initialization");
-                            require(state.receiverClassesInitialized.contains(operation.fieldIndex),
+                            require((initialization.receiverFieldState(operation.fieldIndex) &
+                                     InitializationWorkspace::logical_initialized) != 0,
                                     "receiver nested class field not initialized");
                         } else {
                             require(operation.sourceOffset != operation.resultOffset,
@@ -1532,16 +1501,11 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                                 "owning class field cannot be copied");
                         require(source.className == field.elementType.className,
                                 "class field initializer nominal class mismatch");
-                        require(!state.receiverClassesMaybeInitialized.contains(operation.fieldIndex),
+                        const auto prior = initialization.writeReceiverField(operation.fieldIndex);
+                        require((prior & InitializationWorkspace::logical_written) == 0,
                                 "constructor class field initialized more than once");
-                        for (int leaf = 0; leaf < field.length; ++leaf) {
-                            require(!state.receiverMaybeInitialized.contains(field.firstLeaf + leaf),
-                                    "constructor class field leaves already initialized");
-                            state.receiverInitialized.insert(field.firstLeaf + leaf);
-                            state.receiverMaybeInitialized.insert(field.firstLeaf + leaf);
-                        }
-                        state.receiverClassesInitialized.insert(operation.fieldIndex);
-                        state.receiverClassesMaybeInitialized.insert(operation.fieldIndex);
+                        require((prior & InitializationWorkspace::physical_written) == 0,
+                                "constructor class field leaves already initialized");
                         state.current.reset();
                     } else if constexpr (std::is_same_v<Op, InitializeClassArrayObservation>) {
                         require(operation.objectOffset >= 0, "invalid class array initialization root");
@@ -1570,17 +1534,11 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                                     "class array initializer nominal class mismatch");
                         }
                         if (operation.objectOffset == 0) {
-                            require(!state.receiverClassesMaybeInitialized.contains(operation.fieldIndex),
+                            const auto prior = initialization.writeReceiverField(operation.fieldIndex);
+                            require((prior & InitializationWorkspace::logical_written) == 0,
                                     "constructor class array initialized more than once");
-                            for (int leaf = 0; leaf < field.length; ++leaf) {
-                                const int ordinal = field.firstLeaf + leaf;
-                                require(!state.receiverMaybeInitialized.contains(ordinal),
-                                        "constructor class array leaves already initialized");
-                                state.receiverInitialized.insert(ordinal);
-                                state.receiverMaybeInitialized.insert(ordinal);
-                            }
-                            state.receiverClassesInitialized.insert(operation.fieldIndex);
-                            state.receiverClassesMaybeInitialized.insert(operation.fieldIndex);
+                            require((prior & InitializationWorkspace::physical_written) == 0,
+                                    "constructor class array leaves already initialized");
                         } else {
                             copyTarget(operation.objectOffset, objectSlots.at(operation.objectOffset).className);
                         }
@@ -1609,31 +1567,28 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                         // subobject. Only already complete independent values enter.
                         state.current.reset();
                     } else if constexpr (std::is_same_v<Op, ReceiverLoad>) {
-                        const auto field = receiverField(operation.fieldIndex, operation.type);
+                        receiverField(operation.fieldIndex, operation.type);
                         require(!functionReceiver->constructor,
                                 "constructor cannot read receiver during initialization");
-                        require(state.receiverInitialized.contains(field.firstLeaf), "receiver field not initialized");
+                        require((initialization.receiverFieldState(operation.fieldIndex) &
+                                 InitializationWorkspace::physical_initialized) != 0,
+                                "receiver field not initialized");
                         state.current = Value{operation.type, {}};
                     } else if constexpr (std::is_same_v<Op, ReceiverStore>) {
-                        const auto field = receiverField(operation.fieldIndex, operation.type);
+                        receiverField(operation.fieldIndex, operation.type);
                         current(operation.type);
                         require(functionReceiver->mutableValue, "write through const receiver");
+                        const auto prior = initialization.writeReceiverField(operation.fieldIndex);
                         if (functionReceiver->constructor)
-                            require(!state.receiverMaybeInitialized.contains(field.firstLeaf),
+                            require((prior & InitializationWorkspace::physical_written) == 0,
                                     "constructor field initialized more than once");
-                        state.receiverInitialized.insert(field.firstLeaf);
-                        state.receiverMaybeInitialized.insert(field.firstLeaf);
                     } else if constexpr (std::is_same_v<Op, ReceiverArrayZero>) {
-                        const auto field = receiverArray(operation.fieldIndex, false);
+                        receiverArray(operation.fieldIndex, false);
                         require(functionReceiver->constructor && functionReceiver->mutableValue,
                                 "receiver array zero requires constructor receiver");
-                        for (int element = 0; element < field.length; ++element) {
-                            const int leaf = field.firstLeaf + element;
-                            require(!state.receiverMaybeInitialized.contains(leaf),
-                                    "constructor array initialized more than once");
-                            state.receiverInitialized.insert(leaf);
-                            state.receiverMaybeInitialized.insert(leaf);
-                        }
+                        const auto prior = initialization.writeReceiverField(operation.fieldIndex);
+                        require((prior & InitializationWorkspace::physical_written) == 0,
+                                "constructor array initialized more than once");
                     } else if constexpr (std::is_same_v<Op, ReceiverBoundsGuard>) {
                         const auto field = receiverArray(operation.fieldIndex, true);
                         current(Type::I64);
@@ -1792,12 +1747,11 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                         require(state.activeSpans.empty() && state.activeArrays.empty(),
                                 "return with active span or byte array lifetime");
                         if (functionReceiver && functionReceiver->constructor) {
-                            require(state.receiverInitialized.size() == receiverLayout->size(),
+                            const auto completion = initialization.receiverCompletion();
+                            require(completion != InitializationWorkspace::ReceiverCompletion::missing_physical,
                                     "constructor returns before all fields initialized");
-                            for (std::size_t field = 0; field < receiverFields->size(); ++field)
-                                if ((*receiverFields)[field].elementType.isClass())
-                                    require(state.receiverClassesInitialized.contains(static_cast<int>(field)),
-                                            "constructor returns before all class fields initialized");
+                            require(completion != InitializationWorkspace::ReceiverCompletion::missing_logical,
+                                    "constructor returns before all class fields initialized");
                         }
                         if (owningConstructor) {
                             const auto boundRegion = entryBindings.region();

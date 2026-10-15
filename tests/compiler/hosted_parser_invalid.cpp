@@ -2322,6 +2322,15 @@ extern "C" std::int64_t aurora_hosted_initialization_mark_object(const void *, s
 extern "C" std::int64_t aurora_hosted_initialization_clear_object(const void *, std::int64_t) noexcept {
     unexpectedMetadataEntry();
 }
+extern "C" std::int64_t aurora_hosted_initialization_receiver_field_state(const void *, std::int64_t) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" std::int64_t aurora_hosted_initialization_write_receiver_field(const void *, std::int64_t) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" std::int64_t aurora_hosted_initialization_receiver_completion(const void *) noexcept {
+    unexpectedMetadataEntry();
+}
 extern "C" std::int64_t
 aurora_hosted_initialization_array_first_missing(const void *, std::int64_t, std::int64_t, std::int64_t) noexcept {
     unexpectedMetadataEntry();

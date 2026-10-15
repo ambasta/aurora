@@ -6,6 +6,7 @@
 #include <array>
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <numeric>
 #include <random>
 #include <set>
@@ -17,6 +18,8 @@ using aurora::ir::InitializationWorkspace;
 using aurora::ir::Metadata;
 using aurora::ir::Module;
 using ObjectCompletion = InitializationWorkspace::ObjectCompletion;
+using ReceiverCompletion = InitializationWorkspace::ReceiverCompletion;
+using ReceiverFieldFact = InitializationWorkspace::ReceiverFieldFact;
 
 namespace {
 std::size_t checks = 0;
@@ -245,8 +248,27 @@ const std::vector<ObjectFacts> objectFacts{{8, {8, 7}, ObjectCompletion::physica
                                            {32, {32, 31}, ObjectCompletion::missing_nested},
                                            {40, {}, ObjectCompletion::missing_nested}};
 const std::vector<int> objectScalars{7, 8, 31, 32};
+enum class ReceiverEntry {
+    none,
+    constructor,
+    method,
+    mutable_method,
+    borrowed,
+    mutable_borrowed,
+    borrowed_pair
+};
+const std::vector<aurora::ir::ClassField> receiverFields{{Type::U8, 0, 1, false},
+                                                         {Type::U8, 1, 3, true},
+                                                         {Type("Nested"), 4, 2, false},
+                                                         {Type("Empty"), 6, 0, false},
+                                                         {Type::OwnedBytes, 6, 0, false},
+                                                         {Type("Nested"), 6, 4, true, 2},
+                                                         {Type("Empty"), 10, 0, true, 3},
+                                                         {Type("NestedEmpty"), 10, 0, false}};
 std::unique_ptr<Metadata> objectDeclarations(const std::vector<int> &scalars = objectScalars,
-                                             const std::vector<ObjectFacts> &objects = objectFacts) {
+                                             const std::vector<ObjectFacts> &objects = objectFacts,
+                                             const std::vector<aurora::ir::ClassField> &fields = {},
+                                             ReceiverEntry entry = ReceiverEntry::none) {
     Module module;
     module.classLayouts = {
         {"Box", {Type::U8, Type::U8}}, {"Empty", {}}, {"Nested", {Type::U8, Type::U8}}, {"NestedEmpty", {}}};
@@ -267,6 +289,36 @@ std::unique_ptr<Metadata> objectDeclarations(const std::vector<int> &scalars = o
                                                                                  : "Nested";
         function.objectSlots[object.base] = {name, false};
     }
+    if (entry != ReceiverEntry::none) {
+        auto &leaves = module.classLayouts["Receiver"];
+        module.classFields["Receiver"] = fields;
+        for (const auto &field : fields)
+            if (field.elementType.isClass()) {
+                const auto &child = module.classLayouts.at(field.elementType.className);
+                for (int element = 0; element < field.elementCount; ++element)
+                    leaves.insert(leaves.end(), child.begin(), child.end());
+            } else
+                leaves.insert(leaves.end(), field.length, field.elementType);
+        if (entry == ReceiverEntry::borrowed || entry == ReceiverEntry::mutable_borrowed ||
+            entry == ReceiverEntry::borrowed_pair) {
+            function.parameters = {Type("Receiver")};
+            function.borrowedRootCount = 1;
+            function.firstBorrowedMutable = entry == ReceiverEntry::mutable_borrowed;
+            if (entry == ReceiverEntry::borrowed_pair) {
+                module.classLayouts["OtherOwner"] = {};
+                module.classFields["OtherOwner"] = {{Type::OwnedBytes, 0, 0, false}};
+                function.parameters.push_back(Type("OtherOwner"));
+                function.borrowedRootCount = 2;
+            }
+        } else {
+            function.receiver =
+                aurora::ir::Receiver{"Receiver", entry != ReceiverEntry::method, entry == ReceiverEntry::constructor};
+            if (entry == ReceiverEntry::constructor && std::any_of(fields.begin(), fields.end(), [](const auto &field) {
+                    return field.elementType == Type::OwnedBytes;
+                }))
+                function.parameters = {Type::ByteRegion};
+        }
+    }
     module.functions.push_back(std::move(function));
     return Metadata::import(module);
 }
@@ -286,10 +338,12 @@ void referenceObject(Reference &expected, const ObjectFacts &object, bool clear 
 void matchesObjects(InitializationWorkspace &actual,
                     const Reference &expected,
                     const std::vector<int> &scalars = objectScalars,
-                    const std::vector<ObjectFacts> &objects = objectFacts) {
-    check(actual.currentCount() == expected.count(), "combined scalar/object count differs from reference sets");
-    check(actual.slotCount() == scalars.size() && actual.wordCount() == (scalars.size() + objects.size() + 63) / 64,
-          "combined word domain changed scalar slot count or omitted object bits");
+                    const std::vector<ObjectFacts> &objects = objectFacts,
+                    std::size_t receiverCount = 0) {
+    check(actual.currentCount() == expected.count(), "combined initialization count differs from reference sets");
+    check(actual.slotCount() == scalars.size() &&
+              actual.wordCount() == (scalars.size() + objects.size() + receiverCount + 63) / 64,
+          "combined word domain changed scalar slot count or omitted object/receiver bits");
     check(actual.logicalPayloadBytesPerSnapshot() == 2 * actual.wordCount() * sizeof(std::uint64_t),
           "object facts changed paired-word snapshot payload");
     for (int offset : scalars)
@@ -459,6 +513,261 @@ void objectDomainBoundaryTests() {
         matchesObjects(workspace, expected, scalars, objects);
     }
 }
+// Receiver fields share the same pair of sets, independently of their physical
+// leaves and logical class observations. Keep their keys below all frame bases.
+int receiverKey(std::size_t field) {
+    return -65537 - static_cast<int>(field);
+}
+bool tracksReceiver(const aurora::ir::ClassField &field) {
+    return field.length > 0 || field.elementType.isClass();
+}
+unsigned receiverState(const Reference &expected, const aurora::ir::ClassField &field, std::size_t index) {
+    const bool must = expected.must.contains(receiverKey(index)), may = expected.may.contains(receiverKey(index));
+    return (unsigned(field.length == 0 || must) * ReceiverFieldFact::physical_initialized) |
+           (unsigned(field.length > 0 && may) * ReceiverFieldFact::physical_written) |
+           (unsigned(field.elementType.isClass() && must) * ReceiverFieldFact::logical_initialized) |
+           (unsigned(field.elementType.isClass() && may) * ReceiverFieldFact::logical_written);
+}
+void matchesReceiver(InitializationWorkspace &actual,
+                     const Reference &expected,
+                     const std::vector<aurora::ir::ClassField> &fields = receiverFields,
+                     const std::vector<int> &scalars = objectScalars,
+                     const std::vector<ObjectFacts> &objects = objectFacts) {
+    matchesObjects(actual, expected, scalars, objects, fields.size());
+    for (std::size_t index = 0; index < fields.size(); ++index)
+        if (fields.size() <= 129 || index == 0 || index == 62 || index == 63 || index == 64 || index == 127 ||
+            index == 128 || index == 8192 || index == 65536 || index + 1 == fields.size())
+            check(actual.receiverFieldState(static_cast<int>(index)) == receiverState(expected, fields[index], index),
+                  "receiver field flags differ from the shared reference sets");
+    auto completion = ReceiverCompletion::complete;
+    for (std::size_t index = 0; index < fields.size(); ++index)
+        if (!expected.must.contains(receiverKey(index))) {
+            if (fields[index].length > 0) {
+                completion = ReceiverCompletion::missing_physical;
+                break;
+            }
+            if (fields[index].elementType.isClass())
+                completion = ReceiverCompletion::missing_logical;
+        }
+    check(actual.receiverCompletion() == completion, "receiver completion lost physical-before-logical precedence");
+}
+void receiverEntryAndIsolationTests() {
+    for (const auto entry : {ReceiverEntry::constructor,
+                             ReceiverEntry::method,
+                             ReceiverEntry::mutable_method,
+                             ReceiverEntry::borrowed,
+                             ReceiverEntry::mutable_borrowed,
+                             ReceiverEntry::borrowed_pair}) {
+        auto metadata = objectDeclarations(objectScalars, objectFacts, receiverFields, entry);
+        InitializationWorkspace workspace(*metadata, 0), independent(*metadata, 0);
+        Reference expected;
+        if (entry != ReceiverEntry::constructor)
+            for (std::size_t index = 0; index < receiverFields.size(); ++index)
+                if (tracksReceiver(receiverFields[index]))
+                    expected.write(receiverKey(index));
+        const auto initialReference = expected;
+        const auto initial = workspace.retain();
+        matchesReceiver(workspace, expected);
+        for (std::size_t index = 0; index < receiverFields.size(); ++index) {
+            const auto &field = receiverFields[index];
+            if (!tracksReceiver(field))
+                continue;
+            check(workspace.writeReceiverField(static_cast<int>(index)) == receiverState(expected, field, index),
+                  "receiver write lost previous physical/logical flags");
+            expected.write(receiverKey(index));
+            check(workspace.writeReceiverField(static_cast<int>(index)) == receiverState(expected, field, index),
+                  "repeated receiver write changed previous flags");
+            matchesReceiver(workspace, expected);
+        }
+        for (const auto &object : objectFacts) {
+            workspace.markObject(object.base);
+            referenceObject(expected, object);
+        }
+        matchesReceiver(workspace, expected);
+        matchesReceiver(independent, initialReference);
+        const auto written = workspace.retain();
+        check(workspace.retainedCountAt(initial) == initialReference.count(), "receiver writes mutated entry row");
+        auto cleared = expected;
+        for (const auto &object : objectFacts) {
+            workspace.clearObject(object.base);
+            referenceObject(cleared, object, true);
+        }
+        matchesReceiver(workspace, cleared);
+        workspace.load(initial);
+        matchesReceiver(workspace, initialReference);
+        check(workspace.retainedCountAt(written) == expected.count(), "local clear mutated receiver snapshot");
+        workspace.load(written);
+        matchesReceiver(workspace, expected);
+        for (std::size_t index = 2; index < 130; ++index)
+            check(workspace.retain() == index && workspace.retainedCountAt(index) == expected.count(),
+                  "retained pool growth lost receiver row or fact count");
+        workspace.load(initial);
+        matchesReceiver(workspace, initialReference);
+        workspace.load(written);
+        matchesReceiver(workspace, expected);
+    }
+}
+void differentialReceiverJoins() {
+    auto metadata = objectDeclarations(objectScalars, objectFacts, receiverFields, ReceiverEntry::constructor);
+    InitializationWorkspace workspace(*metadata, 0);
+    std::array<InitializationWorkspace::Id, 16> rows{};
+    std::array<Reference, 16> values{};
+    const auto empty = workspace.retain();
+    // Exhaust every subset of scalar, array, nonempty class and empty class fields.
+    for (unsigned mask = 0; mask < rows.size(); ++mask) {
+        workspace.load(empty);
+        for (unsigned bit = 0; bit < 4; ++bit)
+            if ((mask & (1u << bit)) != 0) {
+                workspace.writeReceiverField(bit);
+                values[mask].write(receiverKey(bit));
+            }
+        rows[mask] = workspace.retain();
+    }
+    for (unsigned left = 0; left < rows.size(); ++left)
+        for (unsigned right = 0; right < rows.size(); ++right) {
+            workspace.load(rows[left]);
+            const auto target = workspace.retain();
+            workspace.load(rows[right]);
+            auto expected = values[left];
+            const bool changed = expected.join(values[right]);
+            check(workspace.join(target) == changed, "receiver must AND/may OR changed result differs");
+            matchesReceiver(workspace, values[right]);
+            check(workspace.retainedCountAt(target) == expected.count(), "receiver join retained count differs");
+            check(!workspace.join(target), "unchanged receiver backedge reported a change");
+            workspace.load(target);
+            matchesReceiver(workspace, expected);
+            if (left == 1 && right == 8)
+                check(changed && expected.count() == values[left].count(),
+                      "cardinality-canceling scalar/empty receiver join did not report changed membership");
+            for (unsigned bit = 0; bit < 4; ++bit) {
+                check(workspace.writeReceiverField(bit) == receiverState(expected, receiverFields[bit], bit),
+                      "receiver write after join lost may-only flags");
+                expected.write(receiverKey(bit));
+            }
+            matchesReceiver(workspace, expected);
+        }
+    workspace.load(empty);
+    workspace.markObject(objectFacts[1].base);
+    Reference expected;
+    referenceObject(expected, objectFacts[1]);
+    const auto local = workspace.retain();
+    workspace.load(rows[8]);
+    check(workspace.join(local) == expected.join(values[8]), "cross-domain receiver/object join differs");
+    check(expected.count() == 2, "cross-domain join did not preserve the canceling cardinality");
+    workspace.load(local);
+    matchesReceiver(workspace, expected);
+}
+void receiverDomainBoundaryTests() {
+    // Receiver bits follow both local domains, including when all three share a
+    // word. Empty fields also cross the old local-only word/count ceilings.
+    for (const auto [scalarCount, objectCount, fieldCount] :
+         std::array<std::array<std::size_t, 3>, 15>{{{0, 0, 0},
+                                                     {0, 0, 1},
+                                                     {0, 0, 63},
+                                                     {0, 0, 64},
+                                                     {0, 0, 65},
+                                                     {1, 0, 63},
+                                                     {1, 0, 64},
+                                                     {0, 1, 63},
+                                                     {0, 1, 64},
+                                                     {63, 1, 1},
+                                                     {63, 1, 65},
+                                                     {64, 1, 1},
+                                                     {65, 2, 63},
+                                                     {0, 0, 8193},
+                                                     {0, 0, 73729}}}) {
+        const auto scalars = denseOffsets(scalarCount);
+        std::vector<ObjectFacts> objects;
+        for (std::size_t index = 0; index < objectCount; ++index)
+            objects.push_back(
+                {static_cast<int>(((scalarCount + 7) / 8 + index + 1) * 8), {}, ObjectCompletion::missing_empty});
+        std::vector<aurora::ir::ClassField> fields(fieldCount, {Type("Empty"), 0, 0, false});
+        if (fieldCount == 65)
+            fields[0] = {Type::OwnedBytes, 0, 0, false}; // Resource gaps still occupy canonical domain bits.
+        for (const auto entry : {ReceiverEntry::constructor, ReceiverEntry::method}) {
+            auto metadata = objectDeclarations(scalars, objects, fields, entry);
+            InitializationWorkspace workspace(*metadata, 0);
+            Reference expected;
+            if (entry == ReceiverEntry::method)
+                for (std::size_t index = 0; index < fieldCount; ++index)
+                    if (tracksReceiver(fields[index]))
+                        expected.write(receiverKey(index));
+            const auto initialReference = expected;
+            const auto initial = workspace.retain();
+            matchesReceiver(workspace, expected, fields, scalars, objects);
+            for (int offset : scalars) {
+                workspace.writeScalar(offset);
+                expected.write(offset);
+            }
+            for (const auto &object : objects) {
+                workspace.markObject(object.base);
+                referenceObject(expected, object);
+            }
+            for (std::size_t index = 0; index < fieldCount; ++index) {
+                if (!tracksReceiver(fields[index]))
+                    continue;
+                if (fieldCount > 129 && index != 0 && index != 62 && index != 63 && index != 64 && index != 127 &&
+                    index != 128 && index != 8192 && index != 65536 && index + 1 != fieldCount)
+                    continue;
+                check(workspace.writeReceiverField(static_cast<int>(index)) ==
+                          receiverState(expected, fields[index], index),
+                      "receiver boundary write lost previous flags");
+                expected.write(receiverKey(index));
+            }
+            const auto written = workspace.retain();
+            matchesReceiver(workspace, expected, fields, scalars, objects);
+            workspace.load(initial);
+            matchesReceiver(workspace, initialReference, fields, scalars, objects);
+            check(workspace.retainedCountAt(written) == expected.count(), "receiver boundary row changed after load");
+            workspace.load(written);
+            matchesReceiver(workspace, expected, fields, scalars, objects);
+        }
+    }
+}
+void receiverFailureTests() {
+    auto metadata = objectDeclarations(objectScalars, objectFacts, receiverFields, ReceiverEntry::constructor);
+    for (int invalid : {-1, static_cast<int>(receiverFields.size()), 65536, std::numeric_limits<int>::max()})
+        for (bool write : {false, true}) {
+            InitializationWorkspace workspace(*metadata, 0);
+            rejects([&] {
+                if (write)
+                    (void)workspace.writeReceiverField(invalid);
+                else
+                    (void)workspace.receiverFieldState(invalid);
+            });
+        }
+    for (std::size_t index = 0; index < receiverFields.size(); ++index)
+        if (!tracksReceiver(receiverFields[index])) {
+            InitializationWorkspace workspace(*metadata, 0);
+            check(workspace.receiverFieldState(static_cast<int>(index)) == ReceiverFieldFact::physical_initialized,
+                  "resource-only receiver field acquired a tracked fact");
+            rejects([&] {
+                (void)workspace.writeReceiverField(static_cast<int>(index));
+            });
+        }
+    for (const auto &fields : std::vector<std::vector<aurora::ir::ClassField>>{{}, {{Type::OwnedBytes, 0, 0, false}}}) {
+        auto leafless = objectDeclarations({}, {}, fields, ReceiverEntry::constructor);
+        InitializationWorkspace workspace(*leafless, 0);
+        matchesReceiver(workspace, {}, fields, {}, {});
+        check(workspace.receiverCompletion() == ReceiverCompletion::complete,
+              "zero-field or resource-only receiver requires an initialization bit");
+        rejects([&] {
+            (void)workspace.writeReceiverField(0);
+        });
+    }
+    auto noReceiver = objectDeclarations();
+    for (unsigned operation = 0; operation < 3; ++operation) {
+        InitializationWorkspace workspace(*noReceiver, 0);
+        rejects([&] {
+            if (operation == 0)
+                (void)workspace.receiverFieldState(0);
+            else if (operation == 1)
+                (void)workspace.writeReceiverField(0);
+            else
+                (void)workspace.receiverCompletion();
+        });
+    }
+}
 void objectAndFailureTests() {
     auto metadata = objectDeclarations();
     for (int invalid : {-1, 0, 7, 9, 15, 17, 65537})
@@ -506,6 +815,10 @@ int main() {
         objectCompletionAndIsolationTests();
         differentialObjectJoins();
         objectDomainBoundaryTests();
+        receiverEntryAndIsolationTests();
+        differentialReceiverJoins();
+        receiverDomainBoundaryTests();
+        receiverFailureTests();
         objectAndFailureTests();
         std::cout << "PASS initialization workspace: " << checks << " checks against reference sets\n";
         return 0;
