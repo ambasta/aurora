@@ -88,8 +88,9 @@ unresolved declaration admission, module/template resolution and resolved semant
 ownership analysis through typed IR. Independent metadata, callable, frame and
 call-graph checks also live in Aurora, alongside durable instruction storage and
 structural CFG normalization and static entry, call, local-storage and scalar admission,
-awaiting final-source qualification. Local scalar initialization, object completion and constructor/receiver-field
-initialization share a source-owned workspace; resource provenance remains native.
+awaiting final-source qualification. Local scalar initialization, object completion,
+constructor/receiver-field initialization and synchronous service-loan lifecycle
+share a source-owned workspace; resource and object-loan provenance remain native.
 Bounded multi-owner borrowing enables that workspace to read instruction and metadata owners together;
 select its immutable bootstrap checkpoint before adopting it in the frontend.
 Remaining value/provenance state, worklist ownership and native emission are next,

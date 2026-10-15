@@ -73,6 +73,7 @@ std::int64_t aurora_hosted_initialization_current_count(const void *) noexcept;
 std::int64_t aurora_hosted_initialization_retained_count(const void *) noexcept;
 std::int64_t aurora_hosted_initialization_retained_count_at(const void *, std::int64_t) noexcept;
 std::int64_t aurora_hosted_initialization_word_count(const void *) noexcept;
+std::int64_t aurora_hosted_initialization_payload_bytes(const void *) noexcept;
 std::int64_t aurora_hosted_initialization_write_scalar(const void *, std::int64_t) noexcept;
 void aurora_hosted_instructions_create(const void *, void *) noexcept;
 void aurora_hosted_instructions_release(void *) noexcept;
@@ -4503,12 +4504,14 @@ void rawMetadataOwnership() {
     exercise(std::numeric_limits<std::size_t>::max(), 1048576, false, true);
 }
 
-void rawInitializationOwnership() {
+void rawInitializationOwnership(bool serviceSignature) {
     namespace abi = aurora::hosted_abi;
     namespace meta = abi::compiler_ir_metadata;
     namespace wire = abi::compiler_ir_initialization;
     namespace bytes = aurora::hosted::bytes;
     context = "initialization owner creation, growth prefixes and exception cleanup";
+    context += serviceSignature ? " with service signature" : " without service signature";
+    const std::int64_t parameterCount = serviceSignature ? 1 : 0;
     bytes::Region metadataRegion(1048576);
     struct MetadataOwner {
         abi::MetadataRelease value{};
@@ -4519,12 +4522,12 @@ void rawInitializationOwnership() {
     metadata.value.region = metadataRegion.id();
     abi::MetadataInitialize create{};
     create.counts.coreCounts.bytes = 1;
-    create.counts.coreCounts.types = 66;
+    create.counts.coreCounts.types = 66 + parameterCount;
     create.counts.mapCounts.indices = 1;
     create.counts.mapCounts.views = 1;
     create.callableCount = 1;
     create.slotCount = 65;
-    create.instructionBegin = 66;
+    create.instructionBegin = 66 + parameterCount;
     auto *declarations = metadata.value.store.storage.data();
     createMetadata(metadataRegion.id(), create, declarations);
     require(aurora_hosted_metadata_allocated(declarations) == 1, "initialization metadata fixture allocation failed");
@@ -4541,28 +4544,36 @@ void rawInitializationOwnership() {
     auto names = descriptor(abi::metadataStore_bytesOffset);
     require(bytes::__au_runtime_bytes_set(&names, 0, 'f') == 1, "initialization function name write failed");
     set(abi::metadataStore_typesOffset, 0, meta::RawTypeRow{});
+    if (serviceSignature) {
+        meta::RawTypeRow service{};
+        service.typeKind = static_cast<std::int64_t>(aurora::TypeKind::ConsoleSession);
+        set(abi::metadataStore_typesOffset, 1, service);
+    }
     meta::RawTypeRow byte{};
     byte.typeKind = static_cast<std::int64_t>(aurora::TypeKind::U8);
     for (std::int64_t at = 0; at < 65; ++at)
-        set(abi::metadataStore_typesOffset, at + 1, byte);
+        set(abi::metadataStore_typesOffset, at + 1 + parameterCount, byte);
     meta::CallableRow callable{};
     callable.nameRange = {0, 1};
-    callable.typeRange = {0, 1};
+    callable.typeRange = {0, 1 + parameterCount};
     callable.frameBytes = 80;
     callable.slotRange = {0, 65};
     set(abi::metadataStore_callablesOffset, 0, callable);
     for (std::int64_t at = 0; at < 65; ++at)
         set(abi::metadataStore_slotsOffset,
             at,
-            meta::SlotRow{
-                static_cast<std::int64_t>(abi::compiler_lowering::RecordKind::ScalarSlot), at + 1, at + 1, 0, 0});
+            meta::SlotRow{static_cast<std::int64_t>(abi::compiler_lowering::RecordKind::ScalarSlot),
+                          at + 1,
+                          at + 1 + parameterCount,
+                          0,
+                          0});
     set(abi::metadataStore_indicesOffset, 0, meta::IndexRow{0});
     set(abi::metadataStore_viewsOffset, 0, meta::ViewRow{});
     require(aurora_hosted_metadata_run(declarations) == static_cast<std::int64_t>(meta::MetadataStatus::success),
             "initialization fixture metadata did not admit");
 
     std::size_t successful = 0;
-    const auto exercise = [&](std::size_t allowed, std::uint64_t quota, int stop) {
+    const auto exercise = [&](std::size_t allowed, std::uint64_t quota, int stop, std::int64_t expectedPublished = -1) {
         Allocations allocations;
         allocations.allowed = allowed;
         bytes::Region region(quota, allocations.allocator());
@@ -4590,6 +4601,7 @@ void rawInitializationOwnership() {
             const auto status = aurora_hosted_initialization_initialize(roots.data(), 0);
             if (status == static_cast<std::int64_t>(wire::InitializationStatus::success)) {
                 require(aurora_hosted_initialization_word_count(workspace) == 2 &&
+                            aurora_hosted_initialization_payload_bytes(workspace) == (serviceSignature ? 64 : 32) &&
                             aurora_hosted_initialization_write_scalar(roots.data(), 64) == 0 &&
                             aurora_hosted_initialization_write_scalar(roots.data(), 65) == 0,
                         "word-boundary seed failed before retention");
@@ -4633,25 +4645,33 @@ void rawInitializationOwnership() {
             caught = std::string(error.what()) == "injected native exception after retention";
             require(caught && stop == 2, "unexpected native exception in owner sweep");
         }
-        if (allowed == std::numeric_limits<std::size_t>::max() && quota != 0) {
+        if (allowed == std::numeric_limits<std::size_t>::max() && quota != 0 && expectedPublished < 0) {
             require(completed && caught == (stop == 2), "successful owner did not reach its requested stop");
             successful = allocations.successful;
-            require(successful == 3 + 1 + 2 * 9, "retained owners did not grow through capacities 1, 2, 4, ..., 256");
+            require(successful == 4 + (serviceSignature ? 2u : 1u) + (serviceSignature ? 3u : 2u) * 9,
+                    "retained owners did not grow through capacities 1, 2, 4, ..., 256");
         } else
             require(!completed, "allocation prefix unexpectedly completed");
+        if (expectedPublished >= 0)
+            require(published == expectedPublished, "quota refusal published the wrong retained ordinal");
         const auto metrics = region.metrics();
         require(releasedIntact, "initialization release escaped generated owner extent");
         require(allocations.successful == allocations.released && metrics.used == 0 && metrics.live_allocations == 0 &&
-                    metrics.releases == metrics.successful_allocations && region.close(),
+                    metrics.releases == metrics.successful_allocations && metrics.peak_used <= quota && region.close(),
                 "creation, partial resize, terminal failure or native exception leaked an owner");
         ++cases;
     };
     exercise(std::numeric_limits<std::size_t>::max(), 1048576, 0);
-    // This includes all three initial pools, the current-word resize, every
-    // retained-word/count growth and refusal after the first pool has resized.
+    // This includes all four initial pools, current-word/service resizes, every
+    // retained-word/count/service growth and refusal after earlier pools resize.
     for (std::size_t allowed = 0; allowed < successful; ++allowed)
         exercise(allowed, 1048576, 0);
     exercise(std::numeric_limits<std::size_t>::max(), 0, 0);
+    // Two retained rows plus the current word/service prefixes. One byte short
+    // refuses the second growth after an earlier pool has already resized.
+    const std::uint64_t exact = serviceSignature ? 224 : 128;
+    for (const auto &[quota, rows] : {std::pair{exact - 1, 1}, std::pair{exact, 2}})
+        exercise(std::numeric_limits<std::size_t>::max(), quota, 0, rows);
     exercise(std::numeric_limits<std::size_t>::max(), 1048576, 1);
     exercise(std::numeric_limits<std::size_t>::max(), 1048576, 2);
 }
@@ -5576,7 +5596,7 @@ void resolvedCompilerSources(char **paths) {
         {},
         {"RawInstructionRow", "RawOperandRow", "CodeRow", "BodyRow", "InstructionCounts", "InstructionStore"},
         {},
-        {"WordPair", "CountPair", "InitializationWorkspace"},
+        {"ServiceLoan", "WordPair", "CountPair", "InitializationWorkspace"},
         {},
     }};
     // Frontend's direct imports give this DFS postorder, independent of file argv.
@@ -5716,7 +5736,7 @@ void resolvedCompilerSources(char **paths) {
             ++enums;
         }
     }
-    require(enums == 44 && classes == 81 && fields > 228 && methods > 307 &&
+    require(enums == 45 && classes == 82 && fields > 228 && methods > 307 &&
                 retainedFunctions == module.functions.size() && functions == abi.functions.size() &&
                 sourceFunctionNames == abiFunctionNames,
             "real compiler typed graph omitted or appended an unaccounted declaration");
@@ -7684,7 +7704,8 @@ int main(int argc, char **argv) {
         rawResolutionOwnership();
         rawMetadataOwnership();
         rawInstructionOwnership();
-        rawInitializationOwnership();
+        rawInitializationOwnership(false);
+        rawInitializationOwnership(true);
         rawInstructionAdmission();
         resolvedCompilerSources(argv + 1);
         bootstrapSources(argv + 1);

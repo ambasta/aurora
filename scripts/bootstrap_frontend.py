@@ -396,6 +396,11 @@ def frontend_abi_entries(facts):
             "retained_count",
             "current_count",
             "retained_count_at",
+            "payload_bytes",
+            "service_unsuspended",
+            "validate_service_call",
+            "service_loans_closed",
+            "same_service_loans",
         )
     }
     checks += [
@@ -427,6 +432,19 @@ def frontend_abi_entries(facts):
             ("clear_object", initialization, ["i64"], "bool"),
             ("array_first_missing", initialization, ["i64", "i64", "i64"], "i64"),
             ("clear_array", initialization, ["i64", "i64", "i64"], "bool"),
+            ("payload_bytes", initialization, [], "i64"),
+            ("acquire_service_loan", initialization, ["i64", "i64", "i64"], "i64"),
+            ("release_service_loan", initialization, ["i64", "i64"], "i64"),
+            ("service_unsuspended", initialization, ["i64"], "i64"),
+            (
+                "validate_service_call",
+                initialization,
+                ["i64", "i64", "i64", "i64"],
+                "compiler_ir_initialization::ServiceCallState",
+            ),
+            ("complete_service_call", initialization, ["i64", "i64"], "bool"),
+            ("service_loans_closed", initialization, [], "i64"),
+            ("same_service_loans", initialization, ["i64"], "i64"),
         )
     ]
     checks += [
@@ -868,6 +886,7 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
         ("currentWords", "owner"),
         ("retainedWords", "owner"),
         ("retainedCounts", "owner"),
+        ("serviceLoans", "owner"),
         ("callableId", "i64"),
         ("scalarBegin", "i64"),
         ("scalarCount", "i64"),
@@ -875,6 +894,7 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
         ("objectCount", "i64"),
         ("receiverBegin", "i64"),
         ("receiverCount", "i64"),
+        ("serviceCapacity", "i64"),
         ("factCount", "i64"),
         ("wordCount", "i64"),
         ("retainedCount", "i64"),
@@ -915,6 +935,7 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
     for row_name, kind, field_names in (
         ("WordPair", "u64", ("mustBits", "mayBits")),
         ("CountPair", "i64", ("mustCount", "mayCount")),
+        ("ServiceLoan", "i64", ("loanId", "rootOffset", "serviceKind", "calledValue")),
     ):
         symbol, row = abi_declaration(facts, "records", "compiler_ir_initialization::" + row_name)
         qword_row(symbol)
@@ -922,7 +943,7 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
         if (
             row["alignment"] != 8
             or stride != row["reserved"]
-            or stride != 16
+            or stride != 8 * len(field_names)
             or len(row["fields"]) != len(field_names)
             or any(
                 field["name"] != name or field["kind"] != kind or field["offset"] != index * 8
@@ -1002,6 +1023,17 @@ def stage_modules(module_root, modules):
         shutil.copyfile(source, destination / source.name)
 
 
+def write_frontend_header(facts, header, messages, metadata_source, instruction_source, compatible_header=None):
+    """Render the admitted facts; reject incompatible shared ABI before writing."""
+    content = frontend_abi_header(
+        facts, messages.read_text(), metadata_source.read_text(), instruction_source.read_text()
+    ).encode()
+    if compatible_header is not None and compatible_header.read_bytes() != content:
+        raise ValueError("stage2 ABI header differs from the header used by shared host objects")
+    if not header.exists() or header.read_bytes() != content:
+        header.write_bytes(content)
+
+
 def emit(
     compiler,
     source,
@@ -1021,13 +1053,7 @@ def emit(
     subprocess.run([str(compiler.resolve()), *command], check=True)
     facts = json.loads(facts_output.read_text())
     header = output.parent / (output.stem.replace("-", "_") + "_abi.hpp")
-    content = frontend_abi_header(
-        facts, messages.read_text(), metadata_source.read_text(), instruction_source.read_text()
-    ).encode()
-    if compatible_header is not None and compatible_header.read_bytes() != content:
-        raise ValueError("stage2 ABI header differs from the header used by shared host objects")
-    if not header.exists() or header.read_bytes() != content:
-        header.write_bytes(content)
+    write_frontend_header(facts, header, messages, metadata_source, instruction_source, compatible_header)
     # Symbol spellings come from this emitted module; only register moves are trusted.
     output.write_bytes(
         b"\n".join([raw.read_bytes(), *(frontend_bridge(bridge.read_text(), facts).encode() for bridge in bridges)])

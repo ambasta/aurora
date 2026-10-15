@@ -26,8 +26,8 @@ public:
     std::size_t peakOperandDepth = 0;
     std::size_t peakRetainedOperandFacts = 0;
     std::uint64_t peakRetainedValueFacts = 0;
-    // Local scalar/object and compressed receiver-field must/may payloads across block entries.
-    // Excludes the source domain, other facts, current words and allocator overhead.
+    // Initialization must/may words and bounded service-loan rows across block entries.
+    // Excludes the source domain, other native facts, current rows and allocator overhead.
     std::uint64_t peakRetainedInitializationPayloadBytes = 0;
 };
 void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *metrics = nullptr);
