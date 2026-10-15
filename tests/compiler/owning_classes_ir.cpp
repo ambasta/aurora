@@ -552,7 +552,9 @@ void accept(const std::string &name, Module module) {
     ++accepted;
     std::cout << "PASS owning IR " << name << '\n';
 }
-void reject(const std::string &name, Module module, const std::function<void(Module &)> &change,
+void reject(const std::string &name,
+            Module module,
+            const std::function<void(Module &)> &change,
             const std::string &diagnostic) {
     change(module);
     try {
@@ -697,6 +699,36 @@ void metadataLifetimeTests() {
     X86Emitter emitter;
     const auto assembly = emitter.emit(checked);
     const auto facts = emitter.abiFactsJson(checked, declarations);
+    auto changed = declarations;
+    changed.records.at("Parcel").sourceName = "RenamedParcel";
+    changed.records.at("Parcel").members[0] = "renamed_tag";
+    changed.enums.at("Phase").members[0] = "renamed_ready";
+    changed.functions.at("owning_entry").sourceName = "RenamedEntry";
+    changed.functions["not_in_metadata"] = {"ignored", {"ignored_member"}};
+    const auto changedFacts = emitter.abiFactsJson(checked, changed);
+    require(changedFacts != facts && changedFacts.find("RenamedParcel") != std::string::npos &&
+                changedFacts.find("renamed_tag") != std::string::npos &&
+                changedFacts.find("renamed_ready") != std::string::npos &&
+                changedFacts.find("RenamedEntry") != std::string::npos &&
+                changedFacts.find("not_in_metadata") == std::string::npos,
+            "repeat ABI request reused stale names or admitted an unrelated function");
+    auto malformed = declarations;
+    malformed.records.at("Parcel").members.pop_back();
+    bool badNamesRejected = false;
+    try {
+        (void)emitter.abiFactsJson(checked, malformed);
+    } catch (const Error &) {
+        badNamesRejected = true;
+    }
+    require(badNamesRejected && emitter.abiFactsJson(checked, declarations) == facts,
+            "malformed ABI names were accepted or poisoned the next independent request");
+    auto hostileNames = declarations;
+    hostileNames.records.at("Parcel").sourceName = std::string("bad") + char(0xff) + char(0) + char(0xc3) + "(";
+    const auto hostileFacts = emitter.abiFactsJson(checked, hostileNames);
+    require(hostileFacts.find("bad\\u00ff\\u0000\\u00c3(") != std::string::npos &&
+                emitter.abiFactsJson(checked, declarations) == facts,
+            "ABI name escaping changed bytes or retained a prior optional suffix");
+    accepted += 3;
     // Drop every hostile ingress container, then move only the capsule's native
     // owning handle. Previously acquired views still read that same source owner.
     input = Module{};
@@ -710,9 +742,9 @@ void metadataLifetimeTests() {
     require(movedFromRejected, "moved-from validated module did not reject metadata access");
     ++rejected;
     require(&moved.metadata() == identity, "validated move changed metadata identity");
-    require(leaves.size() == 3 && leaves[0] == Type::U8 && leaves[1] == Type::U64 &&
-                leaves[2] == Type::U8 && fields.size() == 5 && fields[1].elementType == Type::OwnedBytes &&
-                offsets.size() == 5 && offsets[1] == 8 && offsets[3] == 48 && visible.size() == 1 && visible[0] == 7,
+    require(leaves.size() == 3 && leaves[0] == Type::U8 && leaves[1] == Type::U64 && leaves[2] == Type::U8 &&
+                fields.size() == 5 && fields[1].elementType == Type::OwnedBytes && offsets.size() == 5 &&
+                offsets[1] == 8 && offsets[3] == 48 && visible.size() == 1 && visible[0] == 7,
             "metadata views did not survive ingress destruction and validated move");
     require(frame.frameBytes() == 416 && regions.size() == 2 && regions.contains(8) && regions.contains(416) &&
                 owners.size() == 2 && owners.at(304) && owners.at(336) && objects.size() == 3 &&
@@ -905,9 +937,13 @@ void ownershipTests() {
     reject("duplicate owning positional arguments", called(), [](Module &m) {
         op<ResourceCall>(m).ownerArguments[5] = 96;
     });
-    reject("inactive authority cannot replace owner provenance", called(), [](Module &m) {
-        op<ResourceCall>(m).regionOffset = 416;
-    }, "region authority is not active");
+    reject(
+        "inactive authority cannot replace owner provenance",
+        called(),
+        [](Module &m) {
+            op<ResourceCall>(m).regionOffset = 416;
+        },
+        "region authority is not active");
     reject("scalar argument cannot name owner", called(), [](Module &m) {
         op<ResourceCall>(m).ownerArguments[2] = 96;
     });
@@ -917,26 +953,38 @@ void ownershipTests() {
     reject("resource call exact positional count", called(), [](Module &m) {
         op<ResourceCall>(m).ownerArguments.pop_back();
     });
-    reject("wrong owning parameter nominal identity", moving(), [](Module &m) {
-        std::get<BindOwnedObjectParameter>(m.functions[0].code[1]).className = "Only";
-    }, "owning class parameter type mismatch");
+    reject(
+        "wrong owning parameter nominal identity",
+        moving(),
+        [](Module &m) {
+            std::get<BindOwnedObjectParameter>(m.functions[0].code[1]).className = "Only";
+        },
+        "owning class parameter type mismatch");
     for (const auto &[name, mutate, diagnostic] :
          std::vector<std::tuple<const char *, std::function<void(Module &)>, const char *>>{
-             {"exact owning root", [](auto &module) {
+             {"exact owning root",
+              [](auto &module) {
                   op<BindOwnedObjectParameter>(module).offset = 88;
-              }, "owning class parameter requires exact nominal object slot"},
-             {"nominal owning root", [](auto &module) {
+              },
+              "owning class parameter requires exact nominal object slot"},
+             {"nominal owning root",
+              [](auto &module) {
                   module.functions[0].parameters[1] = Type("Only");
                   op<BindOwnedObjectParameter>(module).className = "Only";
-              }, "owning class parameter requires exact nominal object slot"},
-             {"mutable owning root", [](auto &module) {
+              },
+              "owning class parameter requires exact nominal object slot"},
+             {"mutable owning root",
+              [](auto &module) {
                   module.functions[0].objectSlots[96].mutableValue = false;
-              }, "owning class parameter must be mutable"},
-             {"distinct owning roots", [](auto &module) {
+              },
+              "owning class parameter must be mutable"},
+             {"distinct owning roots",
+              [](auto &module) {
                   auto &function = module.functions[0];
                   function.parameters.push_back(Type("Parcel"));
                   function.code.insert(function.code.begin() + 2, BindOwnedObjectParameter{2, 96, "Parcel"});
-              }, "owning class parameter bindings overlap"}})
+              },
+              "owning class parameter bindings overlap"}})
         reject(std::string("source entry ") + name, moving(), mutate, diagnostic);
     reject("owning class requires first region", moving(), [](Module &m) {
         m.functions[0].parameters[0] = Type::I64;

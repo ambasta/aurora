@@ -19,11 +19,54 @@ import aurora.compiler.ir_metadata;
 import aurora.compiler.ir_instruction_storage;
 import aurora.compiler.ir_instructions;
 import aurora.compiler.ir_initialization;
+import aurora.compiler.x86_storage;
+import aurora.compiler.x86_module;
+import aurora.compiler.x86_facts;
 
 // The host bridge enters this root module. Ordinary imported-function retention
 // then keeps exactly the parser, resolver, lowering and IR graph implementations they call.
 // These forwards add no state, policy or owner: each moved input is consumed once.
 export namespace compiler_frontend {
+    auto emitter_create(builtin::ByteRegion region) -> compiler_x86::EmitWorkspace {
+        compiler_x86::EmitWorkspace result = compiler_x86::create(region);
+        return move(result);
+    }
+    auto emitter_release(builtin::ByteRegion region, compiler_x86::EmitWorkspace workspace) -> i64 {
+        return compiler_x86::release(region, move(workspace));
+    }
+    auto emitter_status(const compiler_x86::EmitWorkspace& workspace) -> compiler_x86::EmitStatus {
+        return workspace.status();
+    }
+    auto emitter_add_retained(compiler_x86::EmitWorkspace& workspace, i64 callable) -> bool {
+        return workspace.add_retained(callable);
+    }
+    auto emitter_prepare_abi(compiler_x86::EmitWorkspace& workspace) -> bool {
+        return workspace.prepare_abi();
+    }
+    auto emitter_append_name(compiler_x86::EmitWorkspace& workspace, builtin::span<const u8> name) -> i64 {
+        return workspace.append_name(name);
+    }
+    auto emitter_add_abi_name(compiler_x86::EmitWorkspace& workspace, compiler_x86::AbiNameRow name) -> bool {
+        return workspace.add_abi_name(name);
+    }
+    auto emitter_run(compiler_x86::EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
+        const compiler_ir_instructions::InstructionStore& instructions, i64 binding,
+        i64 reflection) -> compiler_x86::EmitStatus {
+        return compiler_x86::run(workspace, metadata, instructions, binding, reflection);
+    }
+    auto emitter_abi(compiler_x86::EmitWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata) -> compiler_x86::EmitStatus {
+        return compiler_x86::emit_abi_facts(workspace, metadata);
+    }
+    auto emitter_size(const compiler_x86::EmitWorkspace& workspace, i64 artifact) -> i64 {
+        return workspace.artifact_size(artifact);
+    }
+    auto emitter_chunk(const compiler_x86::EmitWorkspace& workspace, i64 artifact,
+        i64 offset) -> compiler_x86::EmitChunk {
+        const compiler_x86::EmitChunk result = workspace.chunk(artifact, offset);
+        return result;
+    }
+
     auto lexer_next(builtin::span<const u8> source, compiler_lexer::Cursor cursor) -> compiler_lexer::Lexeme {
         const compiler_lexer::Lexeme result = compiler_lexer::next_lexeme(source, cursor);
         return result;

@@ -1,7 +1,9 @@
 # Compiler status and ownership
 
-Source-bootstrap builds are restored. Further migration uses deletion-first steps
-with one semantic authority and final-source qualification for each change.
+Source-bootstrap builds are restored. This draft implements complete x86 text
+emission in Aurora, with one source authority and no native fallback. It has
+received static review and formatting only; compilation, exact output comparison,
+performance and final-source qualification are still pending.
 
 | Component | Current source authority | Remaining work |
 |---|---|---|
@@ -14,7 +16,7 @@ with one semantic authority and final-source qualification for each change.
 | Current values, operand stacks, bounds evidence | C++ verifier | Migration frozen; unmerged draft is not current functionality |
 | Ownership, provenance and worklist | C++ verifier; Aurora owns entry-binding uniqueness | Continue deletion-first migration; retain dynamic checks |
 | Call graph | Aurora | Validate final integrated behavior |
-| x86 emission | C++ backend | Aurora-native emission remains incomplete |
+| x86 emission | Aurora source port, fixed native transport | Unbuilt draft: exact assembly/sidecars, convergence and performance pending |
 | Assembly, linking and hosted runtime | External bootstrap tools/C++ | Native replacements remain incomplete |
 
 ## Hosted Aurora parser
@@ -65,8 +67,44 @@ zero-leaf field counts use checked dynamic extents rather than a storage-size ca
 
 The verifier protects the backend against malformed internal IR. It is not a
 verified compiler or a proof of Rust-equivalent safety. C++ host code, generated
-bridges and the emitter remain trusted. Kernel execution also needs its separate
+bridges and Aurora emission remain trusted. Kernel execution also needs its separate
 image, stack and authority checks.
+
+## Aurora emission boundary
+
+`x86_module.au` consumes one mutable `EmitWorkspace` and the existing readonly
+`MetadataStore` and `InstructionStore`. The validated capsule gates the private
+owner bridge and checks that both stores are the original admitted pair. The
+host transfers only retained callable IDs in emission order and requested ABI
+source/member names. It never serializes another instruction inventory.
+
+`x86_scalar.au`, `x86_objects.au` and `x86_resources.au` select all 84 instruction
+forms. Shared source helpers own widths, payload-only copies, owner transfers,
+padding, stack probes and private argument records. The source driver owns both
+peepholes, linkage, reflection ordering, literal IDs and traps. `x86_facts.au`
+serializes stack and ABI JSON, including invalid-byte escaping. The native
+`stackFacts()` observation only decodes that source-produced JSON for existing
+in-process consumers; it performs no stack or layout calculation.
+
+The workspace has bounded pools and sticky allocation/limit/integrity failure.
+Assembly and stack facts seal together; optional ABI names then produce a
+third artifact against the same emitted module. Repeated ABI requests reset
+only that optional suffix and revalidate the supplied declaration names, including
+a corrected request after a rejected ABI suffix. Executable-emission errors
+remain sticky and require a new emission workspace. Incomplete/failed
+artifacts are not extractable. The host reads copied 512-byte chunks and leaves
+`ArtifactWriter`'s single-write 64 MiB limit and atomic replacement unchanged. The draft also imposes explicit
+workspace limits: one million rows per pool, 64 MiB of ABI/runtime names, and a
+512 MiB region quota including resize peaks. These are new bounded-allocation
+limits requiring qualification, not claims about unchanged acceptance of all
+previously constructible hostile IR.
+`x86.hpp` contains the public interface only; no production fallback remains.
+
+The next qualification must source-build with the explicit three-root predecessor
+in [the bootstrap recipe](README.md#source-bootstrap), compare full assembly and
+both sidecars to the external old compiler, check all existing backend/host
+artifact gates and C1/C2 convergence, measure time and peak memory, then run the
+final-source GCC 16 full suite plus normal BIOS/UEFI and affected profiles.
 
 ## Compile speed
 

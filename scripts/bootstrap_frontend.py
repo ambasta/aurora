@@ -52,6 +52,10 @@ ARGUMENT_RECORDS = (
         ("region", "instructionCount", "operandCount", "literalCount", "bodyCount"),
     ),
     ("InstructionsRelease", "compiler_frontend::instructions_release", ("region", "store")),
+    ("EmitterCreate", "compiler_frontend::emitter_create", ("region",)),
+    ("EmitterRelease", "compiler_frontend::emitter_release", ("region", "workspace")),
+    ("EmitterNameInput", "compiler_frontend::emitter_append_name", ("name",)),
+    ("EmitterAbiNameInput", "compiler_frontend::emitter_add_abi_name", ("name",)),
     ("InitializationCreate", "compiler_frontend::initialization_create", ("region",)),
     ("InitializationRelease", "compiler_frontend::initialization_release", ("region", "workspace")),
 )
@@ -210,6 +214,7 @@ def frontend_abi_entries(facts):
     metadata, _ = abi_declaration(facts, "records", "compiler_ir_metadata::MetadataStore")
     instructions, _ = abi_declaration(facts, "records", "compiler_ir_instructions::InstructionStore")
     initialization, _ = abi_declaration(facts, "records", "compiler_ir_initialization::InitializationWorkspace")
+    emitter, _ = abi_declaration(facts, "records", "compiler_x86::EmitWorkspace")
     checks = [
         (
             "lexer_next",
@@ -446,6 +451,22 @@ def frontend_abi_entries(facts):
             ("read_syntax", "SyntaxNode"),
         )
     ]
+    checks += [
+        ("emitter_" + name, "compiler_frontend::emitter_" + name, receiver, parameters, result)
+        for name, receiver, parameters, result in (
+            ("create", None, ["region"], "compiler_x86::EmitWorkspace"),
+            ("release", None, ["region", "compiler_x86::EmitWorkspace"], "i64"),
+            ("status", emitter, [], "compiler_x86::EmitStatus"),
+            ("add_retained", emitter, ["i64"], "bool"),
+            ("prepare_abi", emitter, [], "bool"),
+            ("append_name", emitter, ["span"], "i64"),
+            ("add_abi_name", emitter, ["compiler_x86::AbiNameRow"], "bool"),
+            ("run", emitter, ["i64", "i64"], "compiler_x86::EmitStatus"),
+            ("abi", emitter, [], "compiler_x86::EmitStatus"),
+            ("size", emitter, ["i64"], "i64"),
+            ("chunk", emitter, ["i64", "i64"], "compiler_x86::EmitChunk"),
+        )
+    ]
     entries = {}
     for alias, source, receiver, parameters, result in checks:
         symbol, raw_function = abi_declaration(facts, "functions", source)
@@ -454,6 +475,10 @@ def frontend_abi_entries(facts):
         expected_roots = [receiver] if receiver is not None else []
         if alias in ("graph_run", "instructions_admit", "instructions_structure") or alias in initialization_pairs:
             expected_roots.append(graph_input if alias == "graph_run" else metadata)
+        if alias in ("emitter_run", "emitter_abi"):
+            expected_roots.append(metadata)
+        if alias == "emitter_run":
+            expected_roots.append(instructions)
         if (
             function["receiver"] is not None
             or [root["type_name"] for root in roots] != expected_roots
@@ -489,6 +514,7 @@ def frontend_abi_entries(facts):
                 or (alias.startswith("metadata_") and alias not in ("metadata_initialize", "metadata_run"))
                 or alias in ("instructions_allocated", "instructions_error")
                 or alias in initialization_readonly
+                or alias in ("emitter_status", "emitter_size", "emitter_chunk")
             )
             if roots[0]["mutable"] is not (not readonly):
                 raise ValueError(f"private bridge root authority changed: {source}")
@@ -734,7 +760,10 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
     def copied_type(field):
         kind, width = field["kind"], field["bytes"]
         if field.get("array_length", 0):
-            raise ValueError("array field is outside the private copied ABI")
+            length = number(field["array_length"])
+            if kind != "u8" or not 1 <= length <= 512 or width != length:
+                raise ValueError("private copied array requires bounded exact bytes")
+            return f"std::array<std::uint8_t, {length}>"
         if kind in ("enum", "class"):
             symbol = field["type_name"]
             if kind == "class":
@@ -996,10 +1025,14 @@ def frontend_bridge(bridge, facts):
 
 def stage_modules(module_root, modules):
     """Copy each compiler module unchanged under its own name in the module root."""
-    destination = module_root / "aurora" / "compiler"
-    destination.mkdir(parents=True, exist_ok=True)
     for source in modules:
-        shutil.copyfile(source, destination / source.name)
+        declaration = re.search(r"^export module ([A-Za-z_][A-Za-z0-9_.]*);", source.read_text(), re.MULTILINE)
+        if declaration is None:
+            raise ValueError("frontend input requires a named exported module: " + str(source))
+        parts = declaration.group(1).split(".")
+        destination = module_root.joinpath(*parts[:-1])
+        destination.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination / (parts[-1] + ".au"))
 
 
 def emit(

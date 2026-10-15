@@ -8,19 +8,6 @@ import aurora.compiler.ir_instruction_storage;
 // Calls and copied objects consume the same admitted durable rows as the other
 // emitter families. No observation vector or native layout authority is rebuilt.
 export namespace compiler_x86 {
-    auto copied_parameters(const compiler_ir_metadata::MetadataStore& metadata, i64 target) -> bool {
-        const i64 count = parameter_count(metadata, target);
-        i64 index = 0;
-        while (index < count) {
-            const i64 type = parameter_type(metadata, target, index);
-            const i64 kind = type_kind(metadata, type);
-            if (kind == 5 || kind == 11) {
-                return true;
-            }
-            index = index + 1;
-        }
-        return false;
-    }
     auto object_root_class(const compiler_ir_metadata::MetadataStore& metadata, i64 callable, i64 offset) -> i64 {
         if (offset == 0) {
             return receiver_class(metadata, callable);
@@ -73,7 +60,7 @@ export namespace compiler_x86 {
             }
         }
         const i64 payload = record_offset(metadata, target, count);
-        const i64 bytes = ((payload + 15) / 16) * 16;
+        const i64 bytes =((payload + 15) / 16) * 16;
         if (bytes != 0) {
             workspace.reserve_stack(bytes);
         }
@@ -90,7 +77,9 @@ export namespace compiler_x86 {
             } else {
                 if (kind != 11) {
                     i64 width = 8;
-                    if (kind == 10) { width = 1; }
+                    if (kind == 10) {
+                        width = 1;
+                    }
                     clear_bytes(workspace, width, 8, stack_address(offset));
                 }
             }
@@ -132,7 +121,7 @@ export namespace compiler_x86 {
             }
         }
         const i64 payload = record_offset(metadata, target, count);
-        const i64 bytes = ((payload + 15) / 16) * 16;
+        const i64 bytes =((payload + 15) / 16) * 16;
         workspace.reserve_stack(bytes);
         clear_bytes(workspace, 0, bytes, stack_address(0));
         index = 0;
@@ -143,7 +132,7 @@ export namespace compiler_x86 {
             if (kind >= 14 && kind <= 16) {
                 i64 loan = operand_value(store, instruction, 1);
                 if (index != 0) {
-                    loan = operand_lane(store, instruction, 5, (index - 1) * 2);
+                    loan = operand_lane(store, instruction, 5,(index - 1) * 2);
                 }
                 const i64 source = workspace.loan_offset(loan);
                 if (source <= 0) {
@@ -170,8 +159,8 @@ export namespace compiler_x86 {
         workspace.line("movq %rsp, %r11");
         return bytes;
     }
-    auto emit_service_operation(EmitWorkspace& workspace,
-        const compiler_ir_instructions::InstructionStore& store, i64 instruction) -> bool {
+    auto emit_service_operation(EmitWorkspace& workspace, const compiler_ir_instructions::InstructionStore& store,
+        i64 instruction) -> bool {
         const i64 offset = operand_value(store, instruction, 0);
         const i64 operation = operand_value(store, instruction, 1);
         const i64 result = operand_value(store, instruction, 2);
@@ -185,7 +174,9 @@ export namespace compiler_x86 {
             workspace.pop("%rdx");
             i64 bytes = 16;
             const i64 depth = workspace.stack_depth();
-            if (depth % 2 != 0) { bytes = 8; }
+            if (depth % 2 != 0) {
+                bytes = 8;
+            }
             workspace.line_number("subq $", bytes, ", %rsp");
             workspace.grow_stack(bytes);
             workspace.line("movq %r10, (%rsp)");
@@ -205,7 +196,9 @@ export namespace compiler_x86 {
                     if (operation == 3 || operation == 0) {
                         workspace.line_address("leaq ", result, ", %rdx");
                         i64 bytes = 24;
-                        if (operation == 3) { bytes = 32; }
+                        if (operation == 3) {
+                            bytes = 32;
+                        }
                         i64 byte = 0;
                         while (byte < bytes) {
                             workspace.line_address("movq $0, ", result - byte, "");
@@ -290,7 +283,7 @@ export namespace compiler_x86 {
             }
             return true;
         }
-        const bool aggregate = copied_parameters(metadata, target);
+        const bool aggregate = class_parameters(metadata, target);
         i64 bytes = 0;
         if (aggregate) {
             bytes = pack_arguments(workspace, metadata, store, instruction, target);
@@ -318,7 +311,7 @@ export namespace compiler_x86 {
                     workspace.fail();
                     return true;
                 }
-                root_bytes = ((roots * 8 + 15) / 16) * 16;
+                root_bytes =((roots * 8 + 15) / 16) * 16;
                 workspace.reserve_stack(root_bytes);
                 i64 ordinal = 0;
                 while (ordinal < roots) {
@@ -404,7 +397,9 @@ export namespace compiler_x86 {
         }
         if (form == 26 || form == 27) {
             i64 root = operand_value(store, instruction, 0);
-            if (form == 27) { root = 0; }
+            if (form == 27) {
+                root = 0;
+            }
             const i64 field = operand_value(store, instruction, 1);
             const i64 source = operand_value(store, instruction, 2);
             const i64 parent = object_root_class(metadata, current, root);
@@ -527,7 +522,9 @@ export namespace compiler_x86 {
             return true;
         }
         i64 width = 8;
-        if (kind == 10) { width = 1; }
+        if (kind == 10) {
+            width = 1;
+        }
         if (form == 37) {
             workspace.pop("%rcx");
         }

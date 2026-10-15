@@ -316,6 +316,12 @@ public:
     }
 };
 
+const void *Instructions::sourceOwner(const Metadata &metadata) const {
+    if (!state_ || !state_->published || state_->metadata != &metadata)
+        invalidInstructions();
+    return state_->owner.data();
+}
+
 Instructions::Instructions() = default;
 Instructions::~Instructions() = default;
 InstructionIngress::InstructionIngress() = default;

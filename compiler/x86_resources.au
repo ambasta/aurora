@@ -33,10 +33,9 @@ export namespace compiler_x86 {
     }
     auto resource_target(const compiler_ir_metadata::MetadataStore& m,
         const compiler_ir_instructions::InstructionStore& s, i64 instruction) -> i64 {
-        const compiler_ir_instructions::RawOperandRow operand = compiler_ir_instructions::call_operand(s,
-            instruction, 0);
-        const compiler_ir_metadata::ByteRange name = compiler_ir_metadata::ByteRange(operand.begin(),
-            operand.count());
+        const compiler_ir_instructions::RawOperandRow operand = compiler_ir_instructions::call_operand(s, instruction,
+            0);
+        const compiler_ir_metadata::ByteRange name = compiler_ir_metadata::ByteRange(operand.begin(), operand.count());
         return compiler_ir_metadata::first_named_callable(m, name);
     }
     auto resource_receiver(const compiler_ir_metadata::MetadataStore& m, i64 callable) -> bool {
@@ -49,8 +48,7 @@ export namespace compiler_x86 {
         const compiler_ir_metadata::SlotRow slot = m.slot_at(index);
         return slot.length();
     }
-    auto resource_owner_kind(const compiler_ir_metadata::MetadataStore& m, i64 callable, i64 offset,
-        i64 field) -> i64 {
+    auto resource_owner_kind(const compiler_ir_metadata::MetadataStore& m, i64 callable, i64 offset, i64 field) -> i64 {
         const i64 type = owner_storage_type(m, callable, offset, field);
         if (type < 0) {
             return 13;
@@ -69,7 +67,7 @@ export namespace compiler_x86 {
             }
             index = index - 1;
         }
-        const i64 record_bytes = ((record_offset(m, target, count) + 15) / 16) * 16;
+        const i64 record_bytes =((record_offset(m, target, count) + 15) / 16) * 16;
         w.reserve_stack(record_bytes);
         clear_bytes(w, 0, record_bytes, stack_address(0));
         // Scalar argument registers are saved before descriptor copies reuse

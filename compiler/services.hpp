@@ -6,7 +6,7 @@
 
 namespace aurora::service {
 // This closed compiler table is the only source of service identities and
-// operation linkage. There is no source extern declaration or import string.
+// semantic service contracts. Emission linkage is owned by Aurora x86 emission.
 enum class Kind {
     Console,
     Display,
@@ -71,7 +71,6 @@ public:
     Kind kind;
     Operation operation;
     std::string_view spelling;
-    std::string_view hostSymbol;
     Type (*result)();
     std::array<TypeKind, 5> parameters;
     unsigned parameterCount;
@@ -88,25 +87,16 @@ public:
     }
 };
 inline constexpr std::array operations{
-    OperationDescription{Kind::Console, Operation::Next, "next", "__au_runtime_console_next", sampleType, {}, 0},
-    OperationDescription{
-        Kind::Console, Operation::Put, "put", "__au_runtime_console_put", putResultType, {TypeKind::U8}, 1},
+    OperationDescription{Kind::Console, Operation::Next, "next", sampleType, {}, 0},
+    OperationDescription{Kind::Console, Operation::Put, "put", putResultType, {TypeKind::U8}, 1},
     OperationDescription{Kind::Display,
                          Operation::Pixel,
                          "pixel",
-                         "__au_runtime_display_pixel",
                          displayPutResultType,
                          {TypeKind::U64, TypeKind::U64, TypeKind::U8, TypeKind::U8, TypeKind::U8},
                          5},
-    OperationDescription{
-        Kind::IommuEvent, Operation::IommuPoll, "poll", "__au_runtime_iommu_event_poll", eventSampleType, {}, 0},
-    OperationDescription{Kind::IommuEvent,
-                         Operation::IommuAcknowledge,
-                         "acknowledge",
-                         "__au_runtime_iommu_event_acknowledge",
-                         eventAckResultType,
-                         {},
-                         0}};
+    OperationDescription{Kind::IommuEvent, Operation::IommuPoll, "poll", eventSampleType, {}, 0},
+    OperationDescription{Kind::IommuEvent, Operation::IommuAcknowledge, "acknowledge", eventAckResultType, {}, 0}};
 inline const OperationDescription &description(Operation operation) {
     for (const auto &entry : operations)
         if (entry.operation == operation)

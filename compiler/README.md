@@ -33,10 +33,11 @@ The optional [language server](lsp/README.md) has its own dependency and suite.
 
 ### Source bootstrap
 
-The graph-verifier candidate requires the paired-root language and ABI-facts
-dependency included below at a fixed source revision. This additional bootstrap
-hop is source-only; it supplies no executed bootstrap/convergence receipt or
-qualified predecessor claim. The existing final-source gates still apply.
+The Aurora-native emitter requires three borrowed roots: its mutable output
+workspace and the existing readonly metadata and instruction stores. The exact
+main checkpoint `7811ba83730e9a8b4329da983a01e475d73999a6` supplies that language
+capability. It is retained in main history, not by a new tag. The emitter port is
+a source-only draft; no build, convergence or performance result is claimed here.
 
 The current source no longer contains a C++ expression parser or raw compiler
 seed. Meson requires `bootstrap_compiler`, an absolute executable path. Ninja
@@ -56,7 +57,9 @@ checkpoint [`c0ef02cc105de2b7699d8565f6a53f1dea9e1205`](https://github.com/ambas
 (retained by `bootstrap-register-carry-v1`). The candidate adds the paired-root
 ABI-facts dependency merged in PR #166 at immutable source commit
 [`052f79d7995be93053f73659bcfc37687b00b341`](https://github.com/ambasta/aurora/commit/052f79d7995be93053f73659bcfc37687b00b341).
-Prepare the source worktrees on the host, where Git is installed; the pinned
+The emitter adds the multi-root checkpoint
+[`7811ba83730e9a8b4329da983a01e475d73999a6`](https://github.com/ambasta/aurora/commit/7811ba83730e9a8b4329da983a01e475d73999a6)
+after that paired-root hop. Prepare the source worktrees on the host, where Git is installed; the pinned
 development image does not include Git:
 
 ```sh
@@ -65,6 +68,7 @@ git fetch origin tag bootstrap-copied-arguments-v1
 git fetch origin tag bootstrap-owner-field-initializers-v1
 git fetch origin tag bootstrap-register-carry-v1
 git fetch origin 052f79d7995be93053f73659bcfc37687b00b341
+git fetch origin 7811ba83730e9a8b4329da983a01e475d73999a6
 git worktree add --detach build/predecessor-source bdf646f09d5e14c88124c4bc9e4f998beda16183
 git worktree add --detach build/abi-facts-source 17f4f1440e6faa9cdaf8711c04400854bdb60d9e
 test "$(git -C build/abi-facts-source rev-parse HEAD)" = 17f4f1440e6faa9cdaf8711c04400854bdb60d9e
@@ -76,6 +80,8 @@ git worktree add --detach build/register-carry-source f89e0c9eb199ba482fcce20f17
 test "$(git -C build/register-carry-source rev-parse HEAD)" = f89e0c9eb199ba482fcce20f1783a52ceae8b1b8
 git worktree add --detach build/paired-root-source 052f79d7995be93053f73659bcfc37687b00b341
 test "$(git -C build/paired-root-source rev-parse HEAD)" = 052f79d7995be93053f73659bcfc37687b00b341
+git worktree add --detach build/multi-root-source 7811ba83730e9a8b4329da983a01e475d73999a6
+test "$(git -C build/multi-root-source rev-parse HEAD)" = 7811ba83730e9a8b4329da983a01e475d73999a6
 ```
 
 Then enter the [pinned development environment](../docs/local-development.md)
@@ -106,7 +112,11 @@ CARRY=$(realpath build/register-carry-compiler/aurorac)
 meson setup build/paired-root-compiler build/paired-root-source -Dkernel_images=false \
   "-Dbootstrap_compiler=$CARRY"
 meson compile -C build/paired-root-compiler -j 2 aurorac
-P=$(realpath build/paired-root-compiler/aurorac)
+PAIR=$(realpath build/paired-root-compiler/aurorac)
+meson setup build/multi-root-compiler build/multi-root-source -Dkernel_images=false \
+  "-Dbootstrap_compiler=$PAIR"
+meson compile -C build/multi-root-compiler -j 2 aurorac
+P=$(realpath build/multi-root-compiler/aurorac)
 meson setup build/meson . \
   "-Dbootstrap_compiler=$P" "-Duefi_ld=$UEFI_LD"
 meson setup build/meson-compiler . -Dkernel_images=false \
@@ -126,7 +136,10 @@ and elements returned in place, which makes the resulting compiler about 10%
 faster (see [compile speed](ARCHITECTURE.md#compile-speed)). The additional paired-root
 stage supports the graph pass's mutable `Workspace` plus readonly `Input` and
 publishes their ordered two-root ABI facts. The register-carry predecessor alone
-cannot build that pass. Current setup selects the resulting predecessor by path;
+cannot build that pass. The final multi-root hop supplies the real three-root
+emitter entry; the paired-root predecessor cannot compile it. A retained compiler
+may be reused only with its exact source/build/tool provenance and qualification
+receipt, not by filename or digest alone. Current setup selects the resulting predecessor by path;
 its deprecated digest option is ignored and retained solely for existing-directory
 compatibility.
 
@@ -155,7 +168,9 @@ C1/C2 corpus diagnostics/output. No compiler binary or generated frontend is
 committed. The candidate's independent module graph pass runs in Aurora after all
 native function checks and before import pruning, without a C++ graph fallback.
 Module file loading, mechanical IR projection, instruction value/provenance
-verification and the native backend remain C++. Aurora owns metadata/layout,
+verification remain C++. Aurora now owns complete x86 text emission, including
+stack facts and ABI JSON; its host adapter lends the two admitted owners and
+copies bounded sealed output, with no native opcode fallback. Aurora owns metadata/layout,
 callable/frame admission, durable instruction storage, structural CFG checks and
 entry-parameter and static call-site admission.
 Native verification and emission consume the same normalized storage; these

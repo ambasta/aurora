@@ -834,6 +834,7 @@ class ValidatedModule {
     std::unique_ptr<Metadata> metadataOwner;
     std::unique_ptr<Instructions> instructionOwner;
     Contents contents;
+    friend class ::aurora::X86Emitter;
     explicit ValidatedModule(std::vector<FunctionBody> functions,
                              std::unique_ptr<Metadata> metadata,
                              std::unique_ptr<Instructions> instructions);
