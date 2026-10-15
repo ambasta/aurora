@@ -39,8 +39,8 @@ export namespace console {
                         }
                     } else {
                         if (length == 6) {
-                            if (bytes[0] == 's' && bytes[1] == 't' && bytes[2] == 'a' && bytes[3] == 't' && bytes[4] == 'u'
-                                && bytes[5] == 's') {
+                            if (bytes[0] == 's' && bytes[1] == 't' && bytes[2] == 'a' && bytes[3] == 't' && bytes[4]
+                                == 'u' && bytes[5] == 's') {
                                 event = ConsoleEvent::status;
                             }
                         }
@@ -65,8 +65,8 @@ export namespace console {
             return true;
         }
     public:
-        Line64(bool initial_after_cr)
-            : bytes{}, length(0), rejected(false), after_cr(initial_after_cr), submitted(false) {
+        Line64(bool initial_after_cr) : bytes{}, length(0), rejected(false), after_cr(initial_after_cr),
+            submitted(false) {
         }
 
         // Preserve a submitted CR across copied input turns without retaining

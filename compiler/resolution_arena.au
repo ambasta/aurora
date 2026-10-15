@@ -714,8 +714,8 @@ export namespace compiler_resolver {
             const bool stack_slot = !row.borrowed_object() && row.offset() > 0;
             if (diagnosticPayloadRow != 0 || row.concrete_type_id() < 0 || (!formal_root && !stack_slot)
                 || row.name_source_id() < -1 || row.scope_id() < -1 || row.previous_binding() < -1
-                || row.previous_binding() >= local_used
-                || state.shared_count() < 0 || state.object_shared_count() < 0 || local_used == 9223372036854775807) {
+                || row.previous_binding() >= local_used || state.shared_count() < 0 || state.object_shared_count() < 0
+                || local_used == 9223372036854775807) {
                 return fail_storage(StorageStatus::invalid);
             }
             if (!reserve_lowering_locals(local_used + 1)) {

@@ -85,27 +85,37 @@ export namespace console {
         FileName(std::BinaryBuffer64 source, i64 count) : bytes(source), length(count) {
         }
         auto valid() const -> bool {
-            if (length < 1 || length > 8) { return false; }
+            if (length < 1 || length > 8) {
+                return false;
+            }
             i64 index = 0;
             while (index < length) {
                 const u8 byte = bytes.at(index);
-                if (!((byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z')
-                    || (byte >= '0' && byte <= '9') || byte == '.' || byte == '_' || byte == '-')) {
+                if (!((byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z') || (byte >= '0' && byte <= '9')
+                    || byte == '.' || byte == '_' || byte == '-')) {
                     return false;
                 }
                 index = index + 1;
             }
             return !bytes.equal(0, length, ".") && !bytes.equal(0, length, "..");
         }
-        auto size() const -> i64 { return length; }
+        auto size() const -> i64 {
+            return length;
+        }
         auto at(i64 index) const -> u8 {
-            if (index < 0 || index >= length || index >= 64) { return '\0'; }
+            if (index < 0 || index >= length || index >= 64) {
+                return '\0';
+            }
             return bytes.at(index);
         }
-        auto reserved() const -> bool { return bytes.equal(0, length, "note"); }
+        auto reserved() const -> bool {
+            return bytes.equal(0, length, "note");
+        }
         auto matches(std::BinaryBuffer64 record) const -> bool {
             const i64 count = i64(record.at(0));
-            if (count < 1 || count > 8) { return false; }
+            if (count < 1 || count > 8) {
+                return false;
+            }
             return bytes.equal(0, length, record.bytes(2, count));
         }
     };
@@ -117,18 +127,26 @@ export namespace console {
         FileValue(std::BinaryBuffer64 source, i64 count) : bytes(source), length(count) {
         }
         auto valid() const -> bool {
-            if (length < 0 || length > 49) { return false; }
+            if (length < 0 || length > 49) {
+                return false;
+            }
             i64 index = 0;
             while (index < length) {
                 const u8 byte = bytes.at(index);
-                if (byte < ' ' || byte > '~') { return false; }
+                if (byte < ' ' || byte > '~') {
+                    return false;
+                }
                 index = index + 1;
             }
             return true;
         }
-        auto size() const -> i64 { return length; }
+        auto size() const -> i64 {
+            return length;
+        }
         auto at(i64 index) const -> u8 {
-            if (index < 0 || index >= length || index >= 64) { return '\0'; }
+            if (index < 0 || index >= length || index >= 64) {
+                return '\0';
+            }
             return bytes.at(index);
         }
     };
@@ -167,7 +185,9 @@ export namespace console {
             return reply;
         }
         reply.select(event);
-        if (event != FileEvent::written) { return reply; }
+        if (event != FileEvent::written) {
+            return reply;
+        }
         reply.text("wrote ");
         i64 index = 0;
         while (index < name.size()) {
@@ -181,7 +201,9 @@ export namespace console {
             reply.append(std::format_decimal_digit_at_u64(u64(count), place));
         }
         reply.text(" byte");
-        if (count != 1) { reply.append('s'); }
+        if (count != 1) {
+            reply.append('s');
+        }
         return reply;
     }
 
@@ -195,21 +217,37 @@ export namespace console {
             while (slot < 4) {
                 if ((occupied & (1u64 << slot)) != 0u64) {
                     const std::BinaryBuffer64 record = records[slot];
-                    if (name.matches(record)) { return slot; }
+                    if (name.matches(record)) {
+                        return slot;
+                    }
                 }
                 slot = slot + 1;
             }
             return -1;
         }
     public:
-        SessionFiles(std::BinaryBuffer64 empty) : records{empty, empty, empty, empty}, occupied(0u64) {
+        SessionFiles(std::BinaryBuffer64 empty) : records{
+            empty,
+            empty,
+            empty,
+            empty
+        }, occupied(0u64) {
         }
         auto read_file(FileName name) const -> FileReply {
             FileReply reply = FileReply();
-            if (!name.valid()) { reply.select(FileEvent::invalid); return reply; }
-            if (name.reserved()) { reply.select(FileEvent::reserved); return reply; }
+            if (!name.valid()) {
+                reply.select(FileEvent::invalid);
+                return reply;
+            }
+            if (name.reserved()) {
+                reply.select(FileEvent::reserved);
+                return reply;
+            }
             const i64 found = find(name);
-            if (found < 0) { reply.select(FileEvent::missing); return reply; }
+            if (found < 0) {
+                reply.select(FileEvent::missing);
+                return reply;
+            }
             reply.select(FileEvent::read);
             const std::BinaryBuffer64 record = records[found];
             i64 index = 0;
@@ -220,15 +258,23 @@ export namespace console {
             return reply;
         }
         auto write_file(FileName name, FileValue value) -> FileEvent {
-            if (!name.valid() || !value.valid()) { return FileEvent::invalid; }
-            if (name.reserved()) { return FileEvent::reserved; }
+            if (!name.valid() || !value.valid()) {
+                return FileEvent::invalid;
+            }
+            if (name.reserved()) {
+                return FileEvent::reserved;
+            }
             i64 found = find(name);
             i64 slot = 0;
             while (found < 0 && slot < 4) {
-                if ((occupied & (1u64 << slot)) == 0u64) { found = slot; }
+                if ((occupied & (1u64 << slot)) == 0u64) {
+                    found = slot;
+                }
                 slot = slot + 1;
             }
-            if (found < 0) { return FileEvent::full; }
+            if (found < 0) {
+                return FileEvent::full;
+            }
             // Stage a complete zeroed record before committing any store field.
             std::BinaryBuffer64 record = std::BinaryBuffer64();
             record.write_u8(0, u8(name.size()));
@@ -248,10 +294,16 @@ export namespace console {
             return FileEvent::written;
         }
         auto remove(FileName name) -> FileEvent {
-            if (!name.valid()) { return FileEvent::invalid; }
-            if (name.reserved()) { return FileEvent::reserved; }
+            if (!name.valid()) {
+                return FileEvent::invalid;
+            }
+            if (name.reserved()) {
+                return FileEvent::reserved;
+            }
             const i64 found = find(name);
-            if (found < 0) { return FileEvent::missing; }
+            if (found < 0) {
+                return FileEvent::missing;
+            }
             const std::BinaryBuffer64 empty = std::BinaryBuffer64();
             records[found] = empty;
             occupied = occupied & ~(1u64 << found);
@@ -274,35 +326,57 @@ export namespace console {
                 }
                 slot = slot + 1;
             }
-            if (occupied == 0u64) { reply.text(" empty (RAM-only)."); }
+            if (occupied == 0u64) {
+                reply.text(" empty (RAM-only).");
+            }
             return reply;
         }
         auto submit(std::BinaryBuffer64 command, i64 count) -> FileReply {
             FileReply reply = FileReply();
-            if (count < 0 || count > 64) { reply.select(FileEvent::invalid); return reply; }
-            if (command.equal(0, count, "ls")) { return list(); }
+            if (count < 0 || count > 64) {
+                reply.select(FileEvent::invalid);
+                return reply;
+            }
+            if (command.equal(0, count, "ls")) {
+                return list();
+            }
             i64 start = 0;
             FileEvent action = FileEvent::unknown;
-            if (command.starts_with(count, "write ")) { start = 6; action = FileEvent::written; }
-            if (command.starts_with(count, "cat ")) { start = 4; action = FileEvent::read; }
-            if (command.starts_with(count, "rm ")) { start = 3; action = FileEvent::removed; }
+            if (command.starts_with(count, "write ")) {
+                start = 6;
+                action = FileEvent::written;
+            }
+            if (command.starts_with(count, "cat ")) {
+                start = 4;
+                action = FileEvent::read;
+            }
+            if (command.starts_with(count, "rm ")) {
+                start = 3;
+                action = FileEvent::removed;
+            }
             if (action == FileEvent::unknown) {
-                if (command.equal(0, count, "write") || command.equal(0, count, "cat")
-                    || command.equal(0, count, "rm") || command.starts_with(count, "ls ")) {
+                if (command.equal(0, count, "write") || command.equal(0, count, "cat") || command.equal(0, count, "rm")
+                    || command.starts_with(count, "ls ")) {
                     reply.select(FileEvent::invalid);
                 }
                 return reply;
             }
             i64 end = start;
-            while (end < count && command.at(end) != ' ') { end = end + 1; }
-            if ((action == FileEvent::written && end == count)
-                || (action != FileEvent::written && end != count)) {
+            while (end < count && command.at(end) != ' ') {
+                end = end + 1;
+            }
+            if ((action == FileEvent::written && end == count) || (action != FileEvent::written && end != count)) {
                 reply.select(FileEvent::invalid);
                 return reply;
             }
             const FileName name = file_name(command, start, end - start);
-            if (action == FileEvent::read) { return read_file(name); }
-            if (action == FileEvent::removed) { reply.select(remove(name)); return reply; }
+            if (action == FileEvent::read) {
+                return read_file(name);
+            }
+            if (action == FileEvent::removed) {
+                reply.select(remove(name));
+                return reply;
+            }
             const FileValue value = file_value(command, end + 1, count - end - 1);
             const FileEvent event = write_file(name, value);
             return file_write_reply(name, value.size(), event);
