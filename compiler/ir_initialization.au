@@ -169,9 +169,8 @@ export namespace compiler_ir_initialization {
         // Their extents are not another offset index or native payload view.
         auto configure(i64 callable, i64 first, i64 count, i64 object_first, i64 object_count) -> bool {
             if (statusValue != InitializationStatus::pending || callable < 0 || first < 0 || count < 0 || count > 65536
-                || object_first < 0 || object_count < 0 || object_count > 8192
-                || callableId != -1 || currentWords.size() != 0 || retainedWords.size() != 0 || retainedCounts.size()
-                != 0) {
+                || object_first < 0 || object_count < 0 || object_count > 8192 || callableId != -1
+                || currentWords.size() != 0 || retainedWords.size() != 0 || retainedCounts.size() != 0) {
                 return reject();
             }
             if (!prepare()) {
@@ -458,8 +457,8 @@ export namespace compiler_ir_initialization {
         const compiler_ir_metadata::IndexRange objects = compiler_ir_metadata::slot_group(metadata, declaration, 11);
         if (declaration.frame_bytes() < 0 || declaration.frame_bytes() > 65536 || slots.count()
             > declaration.frame_bytes() || !compiler_ir_metadata::index_range(slots, metadata.slot_count())
-            || objects.count() > declaration.frame_bytes() / 8
-            || !compiler_ir_metadata::index_range(objects, metadata.slot_count())) {
+            || objects.count() > declaration.frame_bytes() / 8 || !compiler_ir_metadata::index_range(objects,
+            metadata.slot_count())) {
             workspace.reject();
             return workspace.status();
         }
@@ -531,8 +530,8 @@ export namespace compiler_ir_initialization {
     // Local object completion has one must bit and one may-history bit. Every
     // complete copy/construction initializes all logical fields together, so no
     // per-field completion table is needed. Physical scalar writes do not mint it.
-    auto object_was_constructed(InitializationWorkspace& workspace,
-        const compiler_ir_metadata::MetadataStore& metadata, i64 base) -> i64 {
+    auto object_was_constructed(InitializationWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 base) -> i64 {
         const i64 index = object_index(workspace, metadata, base);
         if (index < 0) {
             return -1;
