@@ -90,20 +90,16 @@ def compile_codec_probe(directory):
 
 
 def source_emitter_probes(directory, args):
-    # The stock library admits these fixtures. Only its emitter call is wrapped,
+    # Reuse the built CLI main and stock admission. Only emission is wrapped,
     # using a local-symbol source graph with the identical generated root ABI.
     sys.path.insert(0, str(ROOT / "scripts"))
     import bootstrap_frontend as bootstrap
 
     fixture = directory / "emitter-probe.cpp"
     fixture.write_text(r"""
-#include "ir_verify.hpp"
-#include "x86.hpp"
+#include "hosted_frontend_abi.hpp"
 #include <cstdlib>
-#include <iostream>
-#include <string>
 using namespace aurora;
-using namespace aurora::ir;
 extern "C" std::int64_t probe_emitter_run(const void *, std::int64_t, std::int64_t) noexcept;
 extern "C" std::int64_t __wrap_aurora_hosted_emitter_run(
     const void *roots, std::int64_t binding, std::int64_t reflection) noexcept {
@@ -120,41 +116,7 @@ extern "C" std::int64_t __wrap_aurora_hosted_emitter_run(
     }
     return result;
 }
-int main(int argc, char **argv) {
-    if (argc != 3) return 80;
-    const std::string kind = argv[1];
-    const bool reject = std::string(argv[2]) == "reject";
-    Module module;
-    aurora::ir::Function function;
-    function.name = "test";
-    function.result = kind == "comparison" ? Type::Bool : Type::I64;
-    function.code = {Constant{42, Type::I64}};
-    if (kind == "unary") function.code.push_back(UnaryValue{Unary::CheckedNegate});
-    if (kind == "binary" || kind == "comparison") {
-        function.code.push_back(Push{});
-        function.code.push_back(Constant{2, Type::I64});
-        if (kind == "binary") function.code.push_back(BinaryValue{Binary::CheckedAdd});
-        else function.code.push_back(Compare{Comparison::Equal, Type::I64});
-    }
-    function.code.push_back(Return{});
-    module.functions.push_back(std::move(function));
-    auto validated = validate(std::move(module));
-    try {
-        X86Emitter emitter;
-        const auto output = emitter.emit(validated);
-        const std::string expected = kind == "unary" ? "negq %rax" :
-            kind == "binary" ? "addq %rcx, %rax" :
-            kind == "comparison" ? "sete %al" : "movabsq $42, %rax";
-        if (reject || output.find(expected) == std::string::npos) return 81;
-    } catch (const Error &error) {
-        if (!reject || error.diagnostic.code != DiagnosticCode::Internal ||
-            error.diagnostic.message != "invalid hosted x86 emission transport") {
-            std::cerr << error.what() << '\n';
-            return 82;
-        }
-    }
-    return 0;
-}
+
 """)
     fixture_object = fixture.with_suffix(".o")
     command(
@@ -162,6 +124,16 @@ int main(int argc, char **argv) {
         + ["-std=c++23", "-I", ROOT / "compiler", "-I", args.abi_header.parent, "-c", fixture, "-o", fixture_object],
         timeout=45,
     )
+    inputs = {}
+    for case, parameters, result, expression, expected in (
+        ("constant", "", "i64", "42", "movabsq $42, %rax"),
+        ("unary", "i64 x", "i64", "-x", "negq %rax"),
+        ("binary", "i64 x, i64 y", "i64", "x+y", "addq %rcx, %rax"),
+        ("comparison", "i64 x, i64 y", "bool", "x==y", "sete %al"),
+    ):
+        path = directory / (case + ".au")
+        path.write_text(f"module emitter_probe_fixture; auto test({parameters})->{result} {{ return {expression}; }}\n")
+        inputs[case] = (path, expected)
     original = json.loads(args.abi_facts.read_text())
     source = directory / "emitter-probe.au"
     source.write_text("""
@@ -241,6 +213,7 @@ export namespace compiler_frontend {
             + [
                 fixture_object,
                 assembly,
+                args.main_library,
                 args.frontend_library,
                 "-Wl,--wrap=aurora_hosted_emitter_run",
                 "-o",
@@ -249,7 +222,22 @@ export namespace compiler_frontend {
             timeout=45,
         )
         for case in cases:
-            command([executable, case, "accept" if mutation == "unchanged" else "reject"], timeout=5)
+            path, expected = inputs[case]
+            for existing in (True,) if mutation == "unchanged" else (False, True):
+                output = directory / (mutation + "-" + case + "-" + str(existing) + ".s")
+                if existing:
+                    output.write_bytes(b"preserve this artifact\n")
+                observed = subprocess.run([executable, path, "-o", output], capture_output=True, text=True, timeout=5)
+                if mutation == "unchanged":
+                    if observed.returncode != 0 or observed.stderr or expected not in output.read_text():
+                        raise AssertionError(f"{mutation}/{case}: positive emitter control failed: {observed.stderr}")
+                elif (
+                    observed.returncode != 1
+                    or observed.stdout
+                    or observed.stderr != "aurorac: error AU9001: invalid hosted x86 emission transport\n"
+                    or (output.read_bytes() != b"preserve this artifact\n" if existing else output.exists())
+                ):
+                    raise AssertionError(f"{mutation}/{case}: wrong emitter rejection: {observed.stderr}")
             print(f"PASS source emitter {mutation}: {case}")
 
 
@@ -265,6 +253,7 @@ parser.add_argument("--abi-header", type=Path, required=True)
 parser.add_argument("--abi-facts", type=Path, required=True)
 parser.add_argument("--compiler", type=Path, required=True)
 parser.add_argument("--frontend-library", type=Path, required=True)
+parser.add_argument("--main-library", type=Path, required=True)
 parser.add_argument("--artifacts", type=Path, required=True)
 args = parser.parse_args()
 

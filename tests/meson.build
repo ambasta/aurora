@@ -522,11 +522,16 @@ foreach fixture : ['ir_tests', 'stack_probes', 'method_values_ir', 'readonly_win
     test(fixture.replace('_', '-'), compiler_fixtures[fixture],
          suite: ['full', 'slow', 'compiler'], env: oracle_env, timeout: 180)
 endforeach
+# Reuse the real CLI entry object for alternate-emitter mutation probes.
+# No duplicate compiler/IR translation unit or production entry is added.
+emitter_probe_main = static_library('emitter-probe-main',
+    objects: aurorac.extract_all_objects(recursive: false), native: true, build_by_default: false)
 test('ir-exhaustive', python,
      args: ['-B', artifact_adapter, python, '-B', files('compiler/ir_exhaustive.py'), compiler_fixtures['ir_tests'],
             '--abi-header', frontend_assembly[3], '--abi-facts', frontend_assembly[2],
-            '--compiler', aurorac, '--frontend-library', frontend_library, '--artifacts', '@ARTIFACTS@'],
-     depends: [compiler_fixtures['ir_tests'], frontend_assembly, frontend_library, aurorac], suite: ['full', 'slow', 'compiler'],
+            '--compiler', aurorac, '--frontend-library', frontend_library,
+            '--main-library', emitter_probe_main, '--artifacts', '@ARTIFACTS@'],
+     depends: [compiler_fixtures['ir_tests'], frontend_assembly, frontend_library, aurorac, emitter_probe_main], suite: ['full', 'slow', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 600)
 test('stack-guards', python,
      args: ['-B', '-O', files('compiler/sector_values_abi.py'), compiler_fixtures['stack_probes'], '--stack-guards'],
