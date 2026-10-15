@@ -701,6 +701,7 @@ hosted_parser_invalid = executable(
                               '../compiler/hosted_resolver.cpp', '../compiler/hosted_lowering.cpp',
                               '../compiler/hosted_lowering_diagnostics.cpp', '../compiler/hosted_ir_metadata.cpp',
                               '../compiler/hosted_ir_instructions.cpp', '../compiler/hosted_ir_initialization.cpp',
+                              '../compiler/ir_verify.cpp',
                               '../runtime/hosted_bytes.cpp', frontend_assembly[3]],
     cpp_args: ['-DAURORA_HOSTED_PARSER'], include_directories: include_directories('../compiler', '..'),
     native: true, install: false,

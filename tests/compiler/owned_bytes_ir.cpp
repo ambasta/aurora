@@ -374,6 +374,15 @@ void layoutTests() {
 }
 
 void bindingTests() {
+    auto regionOnly = frame("region_snapshot");
+    append(regionOnly,
+           {Constant{1, Type::Bool}, BranchFalse{1}, Jump{2}, Label{1}, Label{2}, Constant{0, Type::I64}, Return{}});
+    verification::Metrics metrics;
+    static_cast<void>(validate(moduleWith(std::move(regionOnly)), &metrics));
+    require(metrics.snapshots == 4 && metrics.peakRetainedValueFacts == 0,
+            "immutable region authority must not occupy CFG snapshots");
+    ++accepted;
+
     reject("missing region entry binding", allocated(), [](Module &module) {
         eraseOperation<BindRegionParameter>(module.functions[0]);
     });

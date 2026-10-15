@@ -179,8 +179,15 @@ int main(int argc, char **argv) {
     good(groupConsoleSubsets());     // The Console child loan can complete while Display is suspended.
     good(groupConsoleSubsets(true)); // Direct Console operations also remain available.
     good(groupSample(false));
-    good(groupSample(true)); // Copied Console reports do not depend on formal order.
+    good(groupSample(true));    // Copied Console reports do not depend on formal order.
     good(executedNonlexical()); // Always cover the same reordered, ID-reusing native oracle body.
+    // The reordered, ID-reusing oracle retains four block entries. Only the
+    // call block holds two dynamic loans; immutable service bindings add no facts.
+    verification::Metrics serviceMetrics;
+    static_cast<void>(validate(executedNonlexical(), &serviceMetrics));
+    need(serviceMetrics.snapshots == 4 && serviceMetrics.peakRetainedValueFacts == 2,
+         "service snapshots must retain only dynamic loans");
+    ++checks;
 
     // Grouped copied-result calls require exact pristine storage in either formal order.
     for (bool displayFirst : {false, true}) {
@@ -262,10 +269,13 @@ int main(int argc, char **argv) {
         m.functions[0].code.insert(m.functions[0].code.begin() + 1, Constant{0, Type::I64});
     });
     for (const bool displayFirst : {false, true})
-        bad(groupDirect(displayFirst), [=](auto &m) {
-            m.functions[0].code.insert(m.functions[0].code.end() - 1,
-                                       BindServiceParameter{0, 16, service::kind(m.functions[0].parameters[0])});
-        }, "parameter binding outside entry prefix");
+        bad(
+            groupDirect(displayFirst),
+            [=](auto &m) {
+                m.functions[0].code.insert(m.functions[0].code.end() - 1,
+                                           BindServiceParameter{0, 16, service::kind(m.functions[0].parameters[0])});
+            },
+            "parameter binding outside entry prefix");
     bad(groupDirect(), [](auto &m) {
         m.functions[0].parameters.insert(m.functions[0].parameters.begin() + 1, Type::I64);
     });
@@ -321,19 +331,31 @@ int main(int argc, char **argv) {
     bad(groupForwarded(), [](auto &m) {
         m.functions.back().code.erase(m.functions.back().code.begin() + 3);
     });
-    bad(groupForwarded(), [](auto &m) {
-        std::get<AcquireServiceLoan>(m.functions.back().code[3]).loanId = 1;
-    }, "service loan identity cannot change static root or kind"); // Both sites have exact entry roots/kinds.
-    bad(groupForwarded(), [](auto &m) {
-        std::get<AcquireServiceLoan>(m.functions.back().code[3]).offset = 16;
-    }, "service loan requires unsuspended parameter authority");
-    bad(groupForwarded(), [](auto &m) {
-        std::get<AcquireServiceLoan>(m.functions.back().code[3]).kind = service::Kind::Console;
-    }, "service loan requires unsuspended parameter authority");
-    bad(groupForwarded(), [](auto &m) {
-        m.functions.back().code.insert(m.functions.back().code.begin() + 4,
-                                       AcquireServiceLoan{3, 32, service::Kind::Display});
-    }, "service loan requires unsuspended parameter authority");
+    bad(
+        groupForwarded(),
+        [](auto &m) {
+            std::get<AcquireServiceLoan>(m.functions.back().code[3]).loanId = 1;
+        },
+        "service loan identity cannot change static root or kind"); // Both sites have exact entry roots/kinds.
+    bad(
+        groupForwarded(),
+        [](auto &m) {
+            std::get<AcquireServiceLoan>(m.functions.back().code[3]).offset = 16;
+        },
+        "service loan requires unsuspended parameter authority");
+    bad(
+        groupForwarded(),
+        [](auto &m) {
+            std::get<AcquireServiceLoan>(m.functions.back().code[3]).kind = service::Kind::Console;
+        },
+        "service loan requires unsuspended parameter authority");
+    bad(
+        groupForwarded(),
+        [](auto &m) {
+            m.functions.back().code.insert(m.functions.back().code.begin() + 4,
+                                           AcquireServiceLoan{3, 32, service::Kind::Display});
+        },
+        "service loan requires unsuspended parameter authority");
     bad(groupForwarded(), [](auto &m) {
         m.functions.back().code[4] = Call{"group_leaf"};
     });
@@ -343,15 +365,18 @@ int main(int argc, char **argv) {
     bad(groupForwarded(), [](auto &m) {
         groupCall(m).callee = "group_caller";
     });
-    bad(groupForwarded(), [](auto &m) {
-        auto &code = m.functions.back().code;
-        code.insert(code.end() - 1,
-                    {AcquireServiceLoan{1, 32, service::Kind::Display},
-                     ServiceCall{"pixel_entry", 1, 0, {0}, service::Kind::Display},
-                     ReleaseServiceLoan{1, service::Kind::Display},
-                     Constant{0, Type::I64}});
-        m.functions.push_back(displayPixel().functions[0]);
-    }, "service loan identity cannot change static root or kind"); // Both acquisitions exactly match their own entry.
+    bad(
+        groupForwarded(),
+        [](auto &m) {
+            auto &code = m.functions.back().code;
+            code.insert(code.end() - 1,
+                        {AcquireServiceLoan{1, 32, service::Kind::Display},
+                         ServiceCall{"pixel_entry", 1, 0, {0}, service::Kind::Display},
+                         ReleaseServiceLoan{1, service::Kind::Display},
+                         Constant{0, Type::I64}});
+            m.functions.push_back(displayPixel().functions[0]);
+        },
+        "service loan identity cannot change static root or kind"); // Both acquisitions exactly match their own entry.
 
     // Only the borrowed roots are suspended; neither may be reused while suspended.
     bad(groupSubsets(true), [](auto &m) {

@@ -2,7 +2,6 @@
 #include "console.hpp"
 #include <array>
 #include <cstdint>
-#include <optional>
 #include <string_view>
 
 namespace aurora::console {
@@ -76,18 +75,7 @@ public:
         }
         return PutResult::timeout;
     }
-    // Legacy BIOS editor adapters remain explicit. Simple UEFI and protected
-    // console services use next()/try_put(), never these editor wrappers.
-    template <class Editor> [[nodiscard]] static auto poll(Editor &line) -> std::optional<std::uint8_t> {
-        const auto sample = next();
-        if (sample.damaged) {
-            line.reject();
-        }
-        if (!sample.present) {
-            return std::nullopt;
-        }
-        return sample.byte;
-    }
+    // Native diagnostic output shares the same sticky receive-error latch.
     static auto put(std::uint8_t value) -> void {
         static_cast<void>(try_put(value));
     }

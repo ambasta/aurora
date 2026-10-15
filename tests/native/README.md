@@ -18,6 +18,11 @@ remain separate from the existing `-O2` developer variants. Only identical
 repeated program/layout/image commands are deduplicated, with the equivalence
 recorded in the manifest.
 
+The BIOS console fixture compiles its production Aurora session and compiler-fact
+entry bridge. Its native session/UART tests replace the retired C++ editor and
+presentation tests. Shared source-session and protected-input tests retain copied
+submission coverage; no test-only replacement editor remains.
+
 Complete policy-vector runners and complex pin/NVMe/dormant mutation and negative
 compilation sweeps remain their existing runners. The adapter binds inherited
 bare `g++` calls and `CXX` to Meson's configured native command. It never builds

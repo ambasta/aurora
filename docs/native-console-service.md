@@ -8,7 +8,7 @@ qualification. Do not write these images to a physical disk or change a bootload
 
 | Profile | Current behavior | Boundary |
 |---|---|---|
-| BIOS | `help`, `status`, `exit`; IRQ4-woken serial editor | Aurora byte/command policy, trusted C++ storage/presentation and PIC/UART adapter |
+| BIOS | Aurora-owned `help`, `status`, `exit` session; IRQ4-woken serial editor | Sealed ConsoleSession; trusted PIC/UART adapter |
 | Simple UEFI | Aurora-owned editor, commands, RAM note and four named RAM files | Sealed ConsoleSession; trusted boot, UART, LAPIC and wake-frame checks |
 | [Graphical](framebuffer-console.md) | Same RAM commands, two text rows and dirty-cell drawing; serial input | Separate ConsoleSession/DisplaySession grants; bounded emulator fixture |
 | [Protected commands](program-console-contract.md) | `upper`, protected note read and uppercase replacement | Aurora input turns through ConsoleSession; native dispatch and authenticated two-domain IPC |
@@ -43,12 +43,12 @@ whole line. Rejection stays latched through edits and suffixes until a delimiter
 Unsupported bytes are never echoed as terminal escapes. Commands are exact and
 case-sensitive; BIOS supports only the three lowercase words in the table.
 
-Simple UEFI, graphical and protected input import `console.line`; each invocation
+BIOS, simple UEFI, graphical and protected input import `console.line`; each invocation
 owns a `console::Line64` with private bytes, length, rejection and CRLF state.
 Accepted submissions expose copied bytes only until the next byte or damage
 sample. The consumers keep their own prompts, echo, erase and responses.
 The [sealed language service](../compiler/SERVICES.md) supplies copied input
-observations and checked single-byte output. The linked simple-UEFI graph must
+observations and checked single-byte output. The linked BIOS and simple-UEFI graphs must
 contain no C++ `Line`, `Presentation`, old byte/command wrappers or C++ command
 response strings. Platform diagnostics remain trusted.
 
@@ -113,23 +113,42 @@ Every console LSR read, including transmit polling, latches receive errors.
 RX-only flushing invalidates the old data-ready sample. Damage applies before
 byte processing; an error exposed after a popped CR/LF also poisons the next line.
 A lost pasted delimiter needs a later explicit newline for recovery. Ordinary
-non-console serial behavior is unchanged. Explicit legacy `poll(editor)`/`put`
-wrappers remain for BIOS and protected-command profiles.
+non-console serial behavior is unchanged. Native diagnostic `put`/`text` helpers remain where needed; the legacy
+`poll(editor)` wrapper is removed. All editor consumers use copied samples.
 
 ## BIOS transport
 
-`kernel.console` decides byte actions and classifies copied command prefixes.
-The trusted C++ adapter owns the 64-byte array, validates each storage action and
-provides presentation plus UART/PIC I/O. Only COM1 received-data interrupts are
-enabled. A private IRQ4 gate acknowledges the remapped legacy PIC; foreground
-code drains bytes with interrupts masked. `sti; hlt; cli` waits atomically when
-idle. Sustained input still consumes CPU; storage, per-byte policy, writes and
-session duration are bounded. This single-CPU QEMU PC transport is not a general
-interrupt-controller or device driver. It has no note/file or process commands.
+`examples/kernel-console.au` owns the complete invocation-local editor, exact
+three-command dispatch and all command output. Its `Line64` is the same source
+state machine used by the other consoles. `kernel/interactive-console.cpp`
+provides only the existing sealed ConsoleSession transport and native shutdown;
+`kernel/console-service-entry.S` selects its source entry from generated ABI facts.
+There is no native shadow editor, copied-state replay or per-byte policy call.
 
-For a build-only check, use `KERNEL_CONSOLE=1 ./scripts/kernel-build.sh`.
-BIOS admission retains the 65,024-byte transport payload limit; historical image
-sizes are not current measurements.
+Only COM1 received-data interrupts are enabled. The unchanged private IRQ4 gate
+acknowledges the remapped legacy PIC and restores interrupted state. Foreground
+code drains bytes with interrupts masked; `sti; hlt; cli` waits atomically when
+idle. The grant stays active across these synchronous waits; the IRQ never calls
+Aurora. UART errors observed during output remain latched for the next sample.
+The first output timeout closes the invocation and masks UART/PIC input before
+failure exit, with no replay, additional prompt or further input. Normal `exit`
+uses the same shutdown with the successful QEMU result.
+
+This single-CPU QEMU PC transport is not a general interrupt-controller or device
+driver. It has no note/file or process commands. For a build-only check, use
+`KERNEL_CONSOLE=1 ./scripts/kernel-build.sh`. BIOS admission retains the 65,024-byte
+transport payload limit; historical sizes do not admit a rebuild. Its main stack
+is 32 KiB, separately from the UEFI 16 KiB profile. Generated Aurora frames,
+native `.su` records, the bridge and interrupted IRQ/fault paths must be reviewed
+against the actual BIOS image before qualification; UEFI stack results do not transfer.
+
+The existing BIOS image check rejects retired editor/policy symbols and a missing,
+duplicated or wrongly selected service entry. Hosted BIOS tests execute the actual
+source session and cover exact transcripts, malformed input, CRLF, every partial
+output prefix and UART damage. Shared generated-source and protected-input tests
+retain copied-submission and lifetime coverage without the obsolete native snapshot
+fixture. Qualification requires focused, full, sanitizer and real BIOS
+PTY/restoration gates.
 
 ## UEFI wake and authority
 

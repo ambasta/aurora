@@ -28,8 +28,8 @@ def validate_bios_root(bios: str, uefi: str) -> None:
     )
 
 
-def validate_language_symbols(symbols: str, final_image: bool = False) -> None:
-    rows = [line.split() for line in symbols.splitlines() if line.strip()]
+def validate_language_symbols(symbols: str, final_image: bool = False, console: bool = False) -> None:
+    rows = [line.split(maxsplit=2) for line in symbols.splitlines() if line.strip()]
     require(rows and all(len(row) == 3 for row in rows), "Invalid defined Aurora symbol inventory")
     entries = [(row[1], row[2]) for row in rows if row[2].startswith("aurora_kernel_")]
     expected = [("T", "aurora_kernel_value"), ("T", "aurora_kernel_terminal_event")]
@@ -44,9 +44,20 @@ def validate_language_symbols(symbols: str, final_image: bool = False) -> None:
         "ipc_transition",
         "TransactionSnapshot",
         "TransactionDecision",
+        "aurora_console_byte",
+        "aurora_console_command",
+        "aurora::console::Line::",
+        "aurora::console::Snapshot::",
+        "aurora::console::Presentation<",
     )
     require(
-        not any(part in row[2] for row in rows for part in forbidden), "Unused UEFI policy graph linked into BIOS image"
+        not any(part in row[2] for row in rows for part in forbidden),
+        "Unused UEFI or retired native console policy linked into BIOS image",
+    )
+    bridge = [(row[1], row[2]) for row in rows if row[2] == "__au_runtime_console_entry"]
+    require(
+        bridge == ([("T", "__au_runtime_console_entry")] if console else []),
+        "BIOS console service bridge differs from selected profile",
     )
 
 
@@ -83,6 +94,26 @@ def root_controls(bios: str, uefi: str) -> int:
         except ValueError:
             continue
         raise RuntimeError("Invalid BIOS Aurora graph accepted by negative control")
+    console_valid = valid + "00000100 T __au_runtime_console_entry\n"
+    validate_language_symbols(console_valid, console=True)
+    for extra in (
+        "00000110 T aurora_console_byte\n",
+        "00000110 T aurora_console_command\n",
+        "00000110 t aurora::console::Line::consume(unsigned char)\n",
+        "00000110 t aurora::console::Presentation<Transport>::render()\n",
+        "00000110 T __au_runtime_console_entry\n",
+    ):
+        try:
+            validate_language_symbols(console_valid + extra, console=True)
+        except ValueError:
+            continue
+        raise RuntimeError("Retired or duplicate BIOS console entry accepted")
+    for symbols, console in ((valid, True), (console_valid, False)):
+        try:
+            validate_language_symbols(symbols, console=console)
+        except ValueError:
+            continue
+        raise RuntimeError("Wrong BIOS console profile accepted")
     bad_roots = (
         bios.replace("own(40)", "own(41)"),
         bios.replace("module kernel;", "module kernel;\nimport kernel.round_robin;"),
@@ -96,7 +127,7 @@ def root_controls(bios: str, uefi: str) -> int:
         except ValueError:
             continue
         raise RuntimeError("Changed BIOS value/root accepted by negative control")
-    return len(bad_inventories) + len(bad_roots)
+    return len(bad_inventories) + len(bad_roots) + 7
 
 
 def validate(boot: bytes, kernel: bytes, elf: bytes, packet_offset: int) -> None:
@@ -188,6 +219,7 @@ def main() -> None:
     )
     parser.add_argument("--build-dir", type=Path, help="artifact directory (default: ROOT/build)")
     parser.add_argument("--check-only", action="store_true", help="validate existing aurora.img without writing")
+    parser.add_argument("--console", action="store_true", help="require the sealed BIOS console session")
     arguments = parser.parse_args()
     root = arguments.root.resolve()
     build = (arguments.build_dir if arguments.build_dir is not None else root / "build").resolve()
@@ -198,8 +230,9 @@ def main() -> None:
     # entrypoints are compiler bootstrap output; UEFI policy graphs are forbidden.
     for artifact in ("kernel-language.o", "kernel.elf"):
         validate_language_symbols(
-            subprocess.check_output(["nm", "--defined-only", str(build / artifact)], text=True),
+            subprocess.check_output(["nm", "--defined-only", "--demangle", str(build / artifact)], text=True),
             final_image=artifact == "kernel.elf",
+            console=arguments.console,
         )
     boot = (build / "boot.bin").read_bytes()
     kernel = (build / "kernel.bin").read_bytes()

@@ -39,8 +39,10 @@ Those checks do not justify duplicated semantic policy. Static source admission
 and dynamic native lifetime/provenance checks have different inputs; remove a
 native check only after establishing which authority replaces it.
 
-Aurora admits the unique entry-binding prefix; native code constructs its state
-and retains dynamic lifetime, initialization and provenance checks.
+Aurora admits the unique entry-binding prefix and immutable service roots/kinds.
+Native code derives region identity once per function, checks region operands
+against that binding, and retains dynamic service loans alongside other lifetime,
+initialization and provenance checks. Neither immutable authority occupies CFG snapshots.
 
 The verifier protects the backend against malformed internal IR. It is not a
 verified compiler or a proof of Rust-equivalent safety. C++ host code, generated
@@ -48,6 +50,12 @@ bridges and the emitter remain trusted. Kernel execution also needs its separate
 image, stack and authority checks.
 
 ## Compile speed
+
+The native verifier implementation lives in `ir_verify.cpp`, compiled into the
+existing hosted frontend library. `ir_verify.hpp` exposes its metrics and retained
+block-entry budget interface; body-only edits do not require rebuilding IR test
+translation units or the resolver. Stage2 reuses the same host object, while the
+parser-invalid fixture compiles the implementation with its existing adapter stubs.
 
 The formerly timing-out XFS input compiled in 12.7 seconds after metadata-name
 sharing and lookup simplification, versus 32.8 seconds before them, with identical

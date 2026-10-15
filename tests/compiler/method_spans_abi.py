@@ -201,7 +201,7 @@ def main():
     )
     root = Path(__file__).resolve().parents[2]
     sources = [Path(__file__).resolve(), Path(__file__).resolve().with_suffix(".cpp"), Path(abi.__file__).resolve()] + [
-        root / "compiler" / x for x in ("ir.hpp", "ir_verify.hpp", "x86.hpp", "ir_layout.hpp")
+        root / "compiler" / x for x in ("ir.hpp", "ir_verify.hpp", "ir_verify.cpp", "x86.hpp", "ir_layout.hpp")
     ]
     receipt = {
         "status": "passed",
