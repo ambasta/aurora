@@ -163,7 +163,7 @@ void pairedBoundaries(Module &module) {
     }
 }
 void boundedBoundaries(Module &module) {
-    for (int roots = 1; roots <= 6; ++roots)
+    for (int roots = 1; roots <= 3; ++roots)
         for (int mutableFirst = 0; mutableFirst <= 1; ++mutableFirst)
             for (int tail = 0; tail <= 6 - roots; ++tail) {
                 const auto suffix = std::to_string(roots) + "_" + std::to_string(mutableFirst) + "_" + std::to_string(tail);

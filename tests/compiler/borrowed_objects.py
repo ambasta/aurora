@@ -503,7 +503,7 @@ def bounded_borrowing_cases(suite):
     """One compact real program crosses every prefix/tail boundary and forwards it."""
     definitions = [HELPERS, "enum class RootMode { zero, one };"]
     checks = []
-    for roots in range(1, 7):
+    for roots in range(1, 4):
         for mutable in (False, True):
             for tail in range(7 - roots):
                 name = f"roots_{roots}_{int(mutable)}_{tail}"
@@ -524,33 +524,32 @@ def bounded_borrowing_cases(suite):
                 actual += ["RootMode::one" if index % 2 else str(101 + index) for index in range(tail)]
                 expected = sum(1 if index % 2 else 101 + index for index in range(tail))
                 checks.append(f"if (forward_{name}({', '.join(actual)}) != {roots} * n + {expected}) {{ return 0; }}")
-    formals = ", ".join(f"const std::ByteBuffer& r{index}" for index in range(6))
+    formals = ", ".join(f"const std::ByteBuffer& r{index}" for index in range(3))
     definitions.append(f"auto roots_enum({formals}) -> RootMode {{ return RootMode::one; }}")
     definitions.append("auto roots_growth(std::ByteBuffer& r0, const std::ByteBuffer& r1, "
-                       "const std::ByteBuffer& r2, const std::ByteBuffer& r3, const std::ByteBuffer& r4, "
-                       "const std::ByteBuffer& r5) -> bool { return r0.try_reserve(r1.capacity() + 1); }")
+                       "const std::ByteBuffer& r2) -> bool { return r0.try_reserve(r1.capacity() + 1); }")
     create = "".join(
         f"builtin::OwnedBytes allocation{index} = region.try_allocate(n);"
         f"{'' if index == 0 else 'const '}std::ByteBuffer v{index} = std::ByteBuffer(region, move(allocation{index}));"
         f"if (!v{index}.ok()) {{ return -7; }}"
-        for index in range(6)
+        for index in range(3)
     )
-    actuals = ", ".join(f"v{index}" for index in range(6))
+    actuals = ", ".join(f"v{index}" for index in range(3))
     body = create + "".join(checks)
     body += f"if (roots_enum({actuals}) != RootMode::one) {{ return 0; }}"
     body += f"if (flag == 1 && roots_growth({actuals})) {{ return 0; }}"
-    body += "".join(f"if (v{index}.capacity() != n || v{index}.size() != 0) {{ return 0; }}" for index in range(6))
-    executable = suite.compile("bounded-roots-one-through-six", program(body + "return 42;", "".join(definitions)))
+    body += "".join(f"if (v{index}.capacity() != n || v{index}.size() != 0) {{ return 0; }}" for index in range(3))
+    executable = suite.compile("bounded-roots-one-through-three", program(body + "return 42;", "".join(definitions)))
     for length in (0, 2):
-        suite.run(executable, 6 * length, length, 0, 42, 6, 6)
-        suite.run(executable, 6 * length, length, 1, 42, 6, 6, fail_after=6)
-    suite.run(executable, 100, 2, 1, 42, 6, 6, fail_after=6)
-    suite.run(executable, 12, 2, 0, -7, 3, 3, fail_after=3)
+        suite.run(executable, 3 * length, length, 0, 42, 3, 3)
+        suite.run(executable, 3 * length, length, 1, 42, 3, 3, fail_after=3)
+    suite.run(executable, 100, 2, 1, 42, 3, 3, fail_after=3)
+    suite.run(executable, 12, 2, 0, -7, 2, 2, fail_after=2)
     suite.run(executable, 5, 2, 0, -7, 2, 2)
 
     # All-readonly duplicate roots must reject too, even when every successful
     # allocation is empty and every nominal class is the same.
-    for roots in range(2, 7):
+    for roots in range(2, 4):
         for first in range(roots):
             for second in range(first + 1, roots):
                 arguments = [f"v{index}" for index in range(roots)]
@@ -559,8 +558,8 @@ def bounded_borrowing_cases(suite):
                 suite.reject(f"bounded-readonly-alias-{roots}-{first}-{second}",
                              program(create + call + "return 0;", "".join(definitions)),
                              "borrowed arguments require distinct owning roots")
-    readonly = ", ".join(f"const std::ByteBuffer& r{index}" for index in range(6))
-    for ordinal in range(6):
+    readonly = ", ".join(f"const std::ByteBuffer& r{index}" for index in range(3))
+    for ordinal in range(3):
         for name, statement, diagnostic in (
             ("span", f"const {SPAN} view = r{ordinal}.bytes(); return view.size();",
              "multiple borrowed roots cannot produce spans"),
@@ -571,14 +570,17 @@ def bounded_borrowing_cases(suite):
         ):
             suite.reject(f"bounded-{name}-{ordinal}",
                          program("return 0;", HELPERS + f"auto bad({readonly}) -> i64 {{ {statement} }}"), diagnostic)
+    four = ", ".join(f"const std::ByteBuffer& r{index}" for index in range(4))
+    suite.reject("bounded-four-roots", program("return 0;", HELPERS + f"auto bad({four}) -> i64 {{ return 0; }}"),
+                 "borrowed functions require one to three leading concrete owning-class references")
     seven = ", ".join(f"const std::ByteBuffer& r{index}" for index in range(7))
     suite.reject("bounded-seven-roots", program("return 0;", f"auto bad({seven}) -> i64 {{ return 0; }}"),
                  "at most six parameters supported")
     suite.reject("bounded-nonleading-root", program("return 0;", HELPERS +
                  "auto bad(const std::ByteBuffer& r0, i64 value, const std::ByteBuffer& r1) -> i64 { return value; }"),
                  "borrowed parameters require a supported leading owning-class reference signature")
-    for ordinal in range(1, 6):
-        formals = ", ".join(f"{'' if index == ordinal else 'const '}std::ByteBuffer& r{index}" for index in range(6))
+    for ordinal in range(1, 3):
+        formals = ", ".join(f"{'' if index == ordinal else 'const '}std::ByteBuffer& r{index}" for index in range(3))
         suite.reject(f"bounded-later-mutable-root-{ordinal}",
                      program("return 0;", f"auto bad({formals}) -> i64 {{ return 0; }}"),
                      "borrowed parameters require a supported leading owning-class reference signature")
@@ -968,7 +970,7 @@ def rejection_cases(suite):
         "borrowed parameters require a supported leading owning-class reference signature on an ordinary function"
     )
     result_diagnostic = (
-        "borrowed functions require one to six leading concrete owning-class references"
+        "borrowed functions require one to three leading concrete owning-class references"
     )
     later_diagnostic = "borrowed-function tails require scalar or enum values"
     signature_diagnostics = {

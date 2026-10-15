@@ -510,7 +510,7 @@ export namespace compiler_ir_metadata {
         // Invalid raw rows never produce an index or mutable authority. The
         // owner separately checks these indices against its declared type pool.
         auto borrowed_root_count() const -> i64 {
-            if (borrowedRootCount < 0 || borrowedRootCount > 6 || typeRange.begin() < 0 || typeRange.count() < 1
+            if (borrowedRootCount < 0 || borrowedRootCount > 3 || typeRange.begin() < 0 || typeRange.count() < 1
                 || borrowedRootCount > typeRange.count() - 1 || typeRange.begin() > 9223372036854775807
                 - typeRange.count() || firstBorrowedMutable < 0 || firstBorrowedMutable > 1 || (borrowedRootCount == 0
                 && firstBorrowedMutable != 0)) {

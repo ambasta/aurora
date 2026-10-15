@@ -570,7 +570,7 @@ Module bounded(int roots, bool mutableFirst, int tail = 0) {
     return module;
 }
 void boundedTests() {
-    for (int roots = 1; roots <= 6; ++roots) {
+    for (int roots = 1; roots <= 3; ++roots) {
         for (bool mutableFirst : {false, true})
             for (int tail = 0; tail <= 6 - roots; ++tail)
                 accept("bounded roots " + std::to_string(roots) + " first " + std::to_string(mutableFirst) +
@@ -691,10 +691,10 @@ void boundedTests() {
                     "borrowed call root lanes do not match target");
         }
     }
-    for (std::int64_t count : std::initializer_list<std::int64_t>{-1, 7, std::numeric_limits<std::int64_t>::min()})
+    for (std::int64_t count : std::initializer_list<std::int64_t>{-1, 4, std::numeric_limits<std::int64_t>::min()})
         reject(
             "raw root count stays hostile " + std::to_string(count),
-            bounded(6, false),
+            bounded(3, false),
             [=](Module &m) {
                 m.functions[0].borrowedRootCount = count;
             },
@@ -702,14 +702,14 @@ void boundedTests() {
     for (std::int64_t flag : {-1LL, 2LL})
         reject(
             "raw first mutability stays hostile " + std::to_string(flag),
-            bounded(6, false),
+            bounded(3, false),
             [=](Module &m) {
                 m.functions[0].firstBorrowedMutable = flag;
             },
             "invalid hosted IR metadata transport");
     reject(
         "readonly first cannot escalate while forwarding",
-        bounded(6, false),
+        bounded(3, false),
         [](Module &m) {
             named(m, "bounded_leaf").firstBorrowedMutable = 1;
         },

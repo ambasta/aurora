@@ -929,7 +929,7 @@ export namespace compiler_x86 {
         i64 callable, i64 declaration) -> bool {
         const compiler_ir_metadata::CallableRow row = metadata.callable_at(callable);
         const i64 roots = row.borrowed_root_count();
-        if (roots < 0 || roots > 6) {
+        if (roots < 0 || roots > 3) {
             return workspace.fail();
         }
         fact_json_name(workspace, metadata, 0, callable);

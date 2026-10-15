@@ -644,7 +644,7 @@ readonly-span and copied-class semantics; results are scalar/enum or copied
 classes. No temporary/projected argument, reference local/
 field/result, reference template/overload or ownership transfer is added.
 
-A bounded multi-root form accepts a leading sequence of up to six borrowed
+A bounded multi-root form accepts a leading sequence of up to three borrowed
 owning roots. The first may be mutable or readonly; every later root is readonly.
 Roots and trailing parameters together fit the existing six-parameter limit.
 With two or more roots, trailing parameters and the result are scalar/enum values.

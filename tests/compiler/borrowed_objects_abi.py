@@ -160,7 +160,7 @@ def paired_harness(text, selected):
 
 
 def bounded_shapes():
-    return [(roots, mutable, tail) for roots in range(1, 7)
+    return [(roots, mutable, tail) for roots in range(1, 4)
             for mutable in range(2) for tail in range(7 - roots)]
 
 
@@ -230,7 +230,7 @@ def bounded_harness(text, selected):
         text += abi.blob(f"bounded_receiver_{ordinal}", words)
         text += abi.blob(f"bounded_receiver_{ordinal}_right", [abi.RIGHT])
         text += abi.blob(f"literal_bounded_receiver_{ordinal}", [abi.LEFT, *words, abi.RIGHT])
-    for roots in range(2, 7):
+    for roots in range(2, 4):
         words = ["receiver", *(f"bounded_receiver_{ordinal}" for ordinal in range(1, roots))]
         if roots % 2:
             words.append(0xABABABABABABABAB)
@@ -401,7 +401,7 @@ def main():
         bounded_assembly[mode], bounded_selected[mode] = assembly, selected
         abi.execute(args.artifacts, "bounded-" + mode, assembly, selected)
     bounded_controls = []
-    for roots in range(2, 7):
+    for roots in range(2, 4):
         for ordinal in range(roots):
             function = f"bounded_forward_{roots}_0_0_0"
             old = f"    movq %r10, {ordinal * 8}(%rsp)"

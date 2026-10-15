@@ -809,7 +809,7 @@ void Metadata::publish() {
         (void)integer(row.moduleScope);
         (void)state_->text(row.receiver.nameRange);
         const auto roots = index(row.borrowedRootCount);
-        if (roots > 6 || roots > index(row.typeRange.indexCount) - 1 ||
+        if (roots > 3 || roots > index(row.typeRange.indexCount) - 1 ||
             (row.firstBorrowedMutable != 0 && row.firstBorrowedMutable != 1) ||
             (roots == 0 && row.firstBorrowedMutable != 0))
             invalidTransport();
@@ -995,7 +995,7 @@ std::size_t CallableView::borrowedRootCount() const {
     const auto row = metadata_->state_->row<Pool::callables>(id_);
     const auto roots = index(row.borrowedRootCount);
     const auto types = index(row.typeRange.indexCount);
-    if (types == 0 || roots > 6 || roots > types - 1)
+    if (types == 0 || roots > 3 || roots > types - 1)
         invalidTransport();
     return roots;
 }
