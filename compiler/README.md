@@ -11,7 +11,8 @@ candidate independently checks normalized module call graphs and
 selects retained functions. Aurora also owns independent metadata/layout, callable
 and frame admission, structural CFG normalization, entry-parameter and static
 call-site admission. Module file loading, mechanical projection, dynamic
-value/provenance verification and x86-64 emission remain C++23.
+value/provenance verification remain C++23. The Aurora-native x86-64 emitter
+consumes the admitted source stores; the host retains artifact I/O.
 GNU assembler/linker and Linux host I/O remain bootstrap dependencies.
 
 ## Build and check
@@ -27,6 +28,10 @@ make -C compiler test
 ```
 
 Compiler-only testing uses the canonical Meson graph and is not root `full`.
+`ir-exhaustive` retains compile-time verifier/codec inventory checks and runs the
+source emitter against admitted fixtures with unknown observations and a removed
+handler in temporary copies. Aurora dispatch rejects these at runtime; it does
+not provide the former C++ visitor's compile-time exhaustiveness guarantee.
 [Development and qualification](../docs/developer-test-contract.md) defines exact
 routes, selected-artifact identity, explicit pinned compatibility and merge gates.
 The optional [language server](lsp/README.md) has its own dependency and suite.
