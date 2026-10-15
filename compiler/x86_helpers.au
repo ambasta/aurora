@@ -361,7 +361,8 @@ export namespace compiler_x86 {
                 }
             }
             workspace.text(" $0, ");
-            workspace.memory(advance_address(destination, at));
+            const i64 packed_address0 = workspace.advance_address(destination, at);
+            workspace.memory(packed_address0);
             workspace.end_line();
             at = at + width;
         }
@@ -387,7 +388,7 @@ export namespace compiler_x86 {
     auto bytes_owner_address(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata, i64 offset,
         i64 field, i64 byte) -> i64 {
         if (field < 0) {
-            return frame_address(offset - byte);
+            return workspace.pack_address(0, offset - byte);
         }
         const i64 callable = workspace.current_callable();
         i64 class_id = receiver_class(metadata, callable);
@@ -396,11 +397,11 @@ export namespace compiler_x86 {
         }
         const i64 field_offset = class_field_offset(metadata, class_id, field);
         if (offset != 0) {
-            return frame_address(offset - field_offset - byte);
+            return workspace.pack_address(0, offset - field_offset - byte);
         }
         const i64 save = workspace.receiver_save();
         workspace.line_address("movq ", save, ", %r10");
-        return r10_address(field_offset + byte);
+        return workspace.pack_address(2, field_offset + byte);
     }
     auto clear_padding(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata, i64 class_id,
         i64 destination) -> bool {
@@ -450,7 +451,8 @@ export namespace compiler_x86 {
     }
     auto clear_object(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata, i64 base,
         i64 class_id) -> bool {
-        clear_padding(workspace, metadata, class_id, frame_address(base));
+        const i64 packed_address1 = workspace.pack_address(0, base);
+        clear_padding(workspace, metadata, class_id, packed_address1);
         i64 field = 0;
         while (field < class_field_count(metadata, class_id)) {
             const i64 kind = type_kind(metadata, class_field_type(metadata, class_id, field));
@@ -489,7 +491,8 @@ export namespace compiler_x86 {
                 const bool stack_destination = destination >= 1000000000 && destination < 2000000000;
                 if (stack_destination) {
                     workspace.text("    leaq ");
-                    workspace.memory(advance_address(destination, destination_offset));
+                    const i64 packed_address2 = workspace.advance_address(destination, destination_offset);
+                    workspace.memory(packed_address2);
                     workspace.text(", %rax\n");
                 }
                 workspace.line("pushq %rsi");
@@ -497,13 +500,15 @@ export namespace compiler_x86 {
                 workspace.line("pushq %rcx");
                 workspace.grow_stack(24);
                 workspace.text("    leaq ");
-                workspace.memory(advance_address(source, source_offset));
+                const i64 packed_address3 = workspace.advance_address(source, source_offset);
+                workspace.memory(packed_address3);
                 workspace.text(", %rsi\n");
                 if (stack_destination) {
                     workspace.line("movq %rax, %rdi");
                 } else {
                     workspace.text("    leaq ");
-                    workspace.memory(advance_address(destination, destination_offset));
+                    const i64 packed_address4 = workspace.advance_address(destination, destination_offset);
+                    workspace.memory(packed_address4);
                     workspace.text(", %rdi\n");
                 }
                 workspace.line_number("movq $", bytes, ", %rcx");
@@ -526,14 +531,18 @@ export namespace compiler_x86 {
                 }
                 if (qword) {
                     workspace.text("    movq ");
-                    workspace.memory(advance_address(source, source_offset));
+                    const i64 packed_address5 = workspace.advance_address(source, source_offset);
+                    workspace.memory(packed_address5);
                     workspace.text(", %rax\n    movq %rax, ");
-                    workspace.memory(advance_address(destination, destination_offset));
+                    const i64 packed_address6 = workspace.advance_address(destination, destination_offset);
+                    workspace.memory(packed_address6);
                     workspace.end_line();
                     leaf = leaf + 8;
                 } else {
-                    load_value(workspace, metadata, type, advance_address(source, source_offset));
-                    store_value(workspace, metadata, type, advance_address(destination, destination_offset));
+                    const i64 packed_address7 = workspace.advance_address(source, source_offset);
+                    load_value(workspace, metadata, type, packed_address7);
+                    const i64 packed_address8 = workspace.advance_address(destination, destination_offset);
+                    store_value(workspace, metadata, type, packed_address8);
                     leaf = leaf + 1;
                 }
             }
@@ -556,14 +565,16 @@ export namespace compiler_x86 {
             } else {
                 workspace.text("    movq ");
             }
-            workspace.memory(advance_address(source, offset));
+            const i64 packed_address9 = workspace.advance_address(source, offset);
+            workspace.memory(packed_address9);
             workspace.text(", %rcx\n");
             if (narrow) {
                 workspace.text("    movb %cl, ");
             } else {
                 workspace.text("    movq %rcx, ");
             }
-            workspace.memory(advance_address(destination, offset));
+            const i64 packed_address10 = workspace.advance_address(destination, offset);
+            workspace.memory(packed_address10);
             workspace.end_line();
             leaf = leaf + 1;
         }
@@ -575,9 +586,11 @@ export namespace compiler_x86 {
                 i64 byte = 0;
                 while (byte < 32) {
                     workspace.text("    movq ");
-                    workspace.memory(advance_address(source, offset + byte));
+                    const i64 packed_address11 = workspace.advance_address(source, offset + byte);
+                    workspace.memory(packed_address11);
                     workspace.text(", %rcx\n    movq %rcx, ");
-                    workspace.memory(advance_address(destination, offset + byte));
+                    const i64 packed_address12 = workspace.advance_address(destination, offset + byte);
+                    workspace.memory(packed_address12);
                     workspace.end_line();
                     byte = byte + 8;
                 }

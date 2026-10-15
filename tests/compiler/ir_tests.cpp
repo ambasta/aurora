@@ -1,7 +1,9 @@
 #include "ir_verify.hpp"
 #include "hosted_ir_metadata_writer.hpp"
 #include "hosted_ir_instructions.hpp"
+#include "hosted_resolver.hpp"
 #include "x86.hpp"
+#include "json_fragments.hpp"
 #include <bit>
 #include <functional>
 #include <iostream>
@@ -12,6 +14,8 @@
 
 using namespace aurora;
 using namespace aurora::ir;
+using aurora::test::jsonMember;
+using aurora::test::jsonMemberCount;
 namespace {
 int passed = 0;
 int failed = 0;
@@ -4356,6 +4360,13 @@ void callGraphTests() {
         if (checked.get().functions[index].callableId != expectedIds[index] ||
             checked.metadata().callable(expectedIds[index]).name() != expected[index])
             throw Error("graph pruning renumbered stable callable IDs");
+    X86Emitter emitter;
+    (void)emitter.emit(checked);
+    const auto facts = emitter.abiFactsJson(checked, {});
+    AbiDeclarations ignored;
+    ignored.functions["unused"] = {"ignored_pruned_function", {"ignored_member"}};
+    if (emitter.abiFactsJson(checked, ignored) != facts)
+        throw Error("ABI declaration ingress retained a pruned function observation");
     ++passed;
     std::cout << "PASS IR transitive graph retention preserves order and stable callable IDs\n";
 
@@ -4491,7 +4502,7 @@ void reflectionEmissionTests() {
     const auto validated = validate(module);
     X86Emitter emitter;
     const auto complete = emitter.emit(validated);
-    const auto completeFacts = emitter.stackFactsJson();
+    const auto completeFacts = emitter.stackFactsJson(validated);
     const auto selected = emitter.emit(validated, SymbolBinding::Default, ReflectionEmission::Referenced);
     const auto body = [](const std::string &assembly, const std::string &name) {
         const auto begin = assembly.find(name + ":\n");
@@ -4500,20 +4511,25 @@ void reflectionEmissionTests() {
             throw Error("missing reflection helper body");
         return assembly.substr(begin, end - begin);
     };
-    if (emitter.stackFacts().size() != 4 ||
+    const auto selectedFacts = emitter.stackFactsJson(validated);
+    const auto selectedFunctions = jsonMember(selectedFacts, "functions");
+    if (jsonMemberCount(selectedFunctions) != 4 ||
         body(selected, "aurora_reflect_size") != body(complete, "aurora_reflect_size") ||
         body(selected, "__au_reflect_s1_field_count") != body(complete, "__au_reflect_s1_field_count") ||
-        !emitter.stackFacts().at("test").calls.contains("aurora_reflect_size") ||
-        !emitter.stackFacts().at("scoped").calls.contains("__au_reflect_s1_field_count"))
+        jsonMember(jsonMember(jsonMember(selectedFunctions, "test"), "calls"), "aurora_reflect_size").empty() ||
+        jsonMember(jsonMember(jsonMember(selectedFunctions, "scoped"), "calls"), "__au_reflect_s1_field_count").empty())
         throw Error("referenced reflection changed retained bodies or call facts");
     for (const auto &name :
          {"aurora_reflect_field_count", "__au_reflect_s1_size", "__au_reflect_s2_size", "__au_reflect_s2_field_count"})
-        if (selected.find(std::string(name) + ":\n") != std::string::npos || emitter.stackFacts().contains(name))
+        if (selected.find(std::string(name) + ":\n") != std::string::npos ||
+            !jsonMember(selectedFunctions, name).empty())
             throw Error("unreferenced reflection helper or fact retained");
-    if (emitter.emit(validated) != complete || emitter.stackFactsJson() != completeFacts)
+    if (emitter.emit(validated) != complete || emitter.stackFactsJson(validated) != completeFacts)
         throw Error("referenced reflection changed default output or leaked emitter state");
-    const auto empty = emitter.emit(validate(baseline()), SymbolBinding::Default, ReflectionEmission::Referenced);
-    if (empty.find("aurora_reflect_") != std::string::npos || emitter.stackFacts().size() != 1)
+    const auto queryFree = validate(baseline());
+    const auto empty = emitter.emit(queryFree, SymbolBinding::Default, ReflectionEmission::Referenced);
+    const auto emptyFacts = emitter.stackFactsJson(queryFree);
+    if (empty.find("aurora_reflect_") != std::string::npos || jsonMemberCount(jsonMember(emptyFacts, "functions")) != 1)
         throw Error("query-free closed output retained reflection helpers");
     rejectModule(
         "unreferenced invalid query still rejects",
@@ -5671,6 +5687,15 @@ void metadataIngressTests() {
             mode == 0   ? "empty module"
             : mode == 1 ? "invalid or reserved function symbol"
                         : "duplicate function");
+    }
+    for (const std::string name :
+         {std::string("bad\nname"), std::string("bad\"name"), std::string("bad") + char(0xff), std::string("9bad")}) {
+        rejects(
+            "stack fact symbols remain admitted ASCII identifiers",
+            [=] {
+                static_cast<void>(validate(pendingMetadata(false, true, {name})));
+            },
+            "invalid or reserved function symbol");
     }
     rejects(
         "source duplicate symbol precedes later reserved symbol",
@@ -7422,7 +7447,10 @@ int main(int argc, char **argv) {
         largeValue.functions.pop_back();
         accept("64-field value boundary accepted", largeValue);
         X86Emitter largeEmitter;
-        const auto largeAssembly = largeEmitter.emit(validate(largeValue));
+        const auto largeValidated = validate(largeValue);
+        const auto largeAssembly = largeEmitter.emit(largeValidated);
+        const auto largeFacts = largeEmitter.stackFactsJson(largeValidated);
+        const auto largeFunctions = jsonMember(largeFacts, "functions");
         const auto copyBegin = largeAssembly.find("copy_empty:\n");
         const auto copyEnd = largeAssembly.find(".size copy_empty,", copyBegin);
         const auto firstRepeat = largeAssembly.find("rep movsb", copyBegin);
@@ -7434,9 +7462,9 @@ int main(int argc, char **argv) {
             largeAssembly.find("pushq %rsi\n    pushq %rdi\n    pushq %rcx", copyBegin) >= copyEnd ||
             largeAssembly.find("movq $512, %rcx\n    cld\n    rep movsb\n    popq %rcx\n    popq %rdi\n    popq %rsi",
                                copyBegin) >= copyEnd ||
-            largeEmitter.stackFacts().at("copy_empty").localBytes != 568 ||
-            largeEmitter.stackFacts().at(largeEntry.name).localBytes != 1576 ||
-            largeEmitter.stackFacts().at(largeEntry.name).calls.at("copy_empty") != 1552)
+            jsonMember(jsonMember(largeFunctions, "copy_empty"), "local_bytes") != "568" ||
+            jsonMember(jsonMember(largeFunctions, largeEntry.name), "local_bytes") != "1576" ||
+            jsonMember(jsonMember(jsonMember(largeFunctions, largeEntry.name), "calls"), "copy_empty") != "1552")
             throw Error("compact copies changed saved registers, exact extent, stack peak or captured RSP packing");
         ++passed;
         std::cout << "PASS IR compact copies preserve registers and report transient stack peak\n";

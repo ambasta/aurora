@@ -458,13 +458,13 @@ def frontend_abi_entries(facts):
             ("release", None, ["region", "compiler_x86::EmitWorkspace"], "i64"),
             ("status", emitter, [], "compiler_x86::EmitStatus"),
             ("add_retained", emitter, ["i64"], "bool"),
-            ("prepare_abi", emitter, [], "bool"),
+            ("prepare_facts", emitter, ["compiler_x86::Artifact"], "bool"),
             ("append_name", emitter, ["span"], "i64"),
             ("add_abi_name", emitter, ["compiler_x86::AbiNameRow"], "bool"),
             ("run", emitter, ["i64", "i64"], "compiler_x86::EmitStatus"),
-            ("abi", emitter, [], "compiler_x86::EmitStatus"),
-            ("size", emitter, ["i64"], "i64"),
-            ("chunk", emitter, ["i64", "i64"], "compiler_x86::EmitChunk"),
+            ("facts", emitter, ["compiler_x86::Artifact"], "compiler_x86::EmitStatus"),
+            ("size", emitter, ["compiler_x86::Artifact"], "i64"),
+            ("chunk", emitter, ["compiler_x86::Artifact", "i64"], "compiler_x86::EmitChunk"),
         )
     ]
     entries = {}
@@ -475,7 +475,7 @@ def frontend_abi_entries(facts):
         expected_roots = [receiver] if receiver is not None else []
         if alias in ("graph_run", "instructions_admit", "instructions_structure") or alias in initialization_pairs:
             expected_roots.append(graph_input if alias == "graph_run" else metadata)
-        if alias in ("emitter_run", "emitter_abi"):
+        if alias in ("emitter_run", "emitter_facts"):
             expected_roots.append(metadata)
         if alias == "emitter_run":
             expected_roots.append(instructions)
@@ -1035,6 +1035,17 @@ def stage_modules(module_root, modules):
         shutil.copyfile(source, destination / (parts[-1] + ".au"))
 
 
+def write_frontend_header(facts, header, messages, metadata_source, instruction_source, compatible_header=None):
+    """Render the admitted facts; reject incompatible shared ABI before writing."""
+    content = frontend_abi_header(
+        facts, messages.read_text(), metadata_source.read_text(), instruction_source.read_text()
+    ).encode()
+    if compatible_header is not None and compatible_header.read_bytes() != content:
+        raise ValueError("stage2 ABI header differs from the header used by shared host objects")
+    if not header.exists() or header.read_bytes() != content:
+        header.write_bytes(content)
+
+
 def emit(
     compiler,
     source,
@@ -1054,13 +1065,7 @@ def emit(
     subprocess.run([str(compiler.resolve()), *command], check=True)
     facts = json.loads(facts_output.read_text())
     header = output.parent / (output.stem.replace("-", "_") + "_abi.hpp")
-    content = frontend_abi_header(
-        facts, messages.read_text(), metadata_source.read_text(), instruction_source.read_text()
-    ).encode()
-    if compatible_header is not None and compatible_header.read_bytes() != content:
-        raise ValueError("stage2 ABI header differs from the header used by shared host objects")
-    if not header.exists() or header.read_bytes() != content:
-        header.write_bytes(content)
+    write_frontend_header(facts, header, messages, metadata_source, instruction_source, compatible_header)
     # Symbol spellings come from this emitted module; only register moves are trusted.
     output.write_bytes(
         b"\n".join([raw.read_bytes(), *(frontend_bridge(bridge.read_text(), facts).encode() for bridge in bridges)])

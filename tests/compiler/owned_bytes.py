@@ -879,8 +879,124 @@ class Suite:
 
         self.entry_name = previous_entry
 
+    def emitter_storage_cases(self):
+        # Exercise the real source workspace in the existing region/owner driver.
+        # Large logical bounds need no million-row allocation or IR fixture.
+        module_root = self.directory / "emitter-modules"
+        source = module_root / "aurora/compiler/x86_storage.au"
+        source.parent.mkdir(parents=True)
+        source.write_bytes((ROOT / "compiler/x86_storage.au").read_bytes())
+        previous_modules = self.module_args
+        self.module_args = [*previous_modules, "--module-root", ROOT / "library", "--module-root", module_root]
+        executable = self.compile(
+            "emitter-checked-storage",
+            """
+            module emitter_storage_test;
+            import aurora.compiler.x86_storage;
+            auto entry(builtin::ByteRegion region, i64 n, i64 flag)->i64 {
+                compiler_x86::EmitWorkspace w=compiler_x86::create(region);
+                if(flag==0) {
+                    if(compiler_x86::grow_capacity(1048576,1048577,9223372036854775807/48,16)!=2097152) {return -1;}
+                    if(compiler_x86::grow_capacity(0,9223372036854775807,9223372036854775807/48,16)!=-1) {return -2;}
+                    if(compiler_x86::grow_capacity(8,9,9,16)!=9) {return -3;}
+                    if(compiler_x86::grow_capacity(-1,0,9,16)!=-1) {return -4;}
+                    if(compiler_x86::stack_byte_bound(67108864,256,1048832)<=67108864) {return -5;}
+                    if(compiler_x86::stack_byte_bound(0,0,0)!=1024) {return -6;}
+                    if(compiler_x86::stack_byte_bound(9223372036854775807,0,0)!=-1) {return -7;}
+                    if(compiler_x86::stack_byte_bound(0,9223372036854775807,0)!=-1) {return -8;}
+                    if(compiler_x86::stack_byte_bound(0,0,9223372036854775807)!=-1) {return -9;}
+                    return 42;
+                }
+                if(flag==1) {
+                    if(!w.add_retained(2147483647)||!w.add_retained(0)||!w.add_retained(n)) {return -10;}
+                    const bool valid=w.retained_valid(2147483648);
+                    if(n==0) {
+                        if(valid||w.status()!=compiler_x86::EmitStatus::invalid) {return -11;}
+                    } else {
+                        if(!valid||w.retained_at(0)!=2147483647||w.retained_at(1)!=0||w.retained_at(2)!=n) {return -12;}
+                    }
+                    return 42;
+                }
+                if(flag==2) {
+                    if(w.add_retained(n)) {return -13;}
+                    if(n<0) {
+                        if(w.status()!=compiler_x86::EmitStatus::invalid) {return -14;}
+                    } else {
+                        if(w.status()!=compiler_x86::EmitStatus::allocation) {return -15;}
+                    }
+                    if(w.artifact_size(compiler_x86::Artifact::assembly)!=-1) {return -16;}
+                    return 42;
+                }
+                if(flag==6) {
+                    if(n==0) {
+                        const i64 frame=w.pack_address(0,8);
+                        if(w.advance_address(frame,8)!=0) {return -24;}
+                        const i64 relative=w.pack_address(4,999999998);
+                        if(w.advance_address(relative,1)!=4999999999) {return -25;}
+                        if(w.advance_address(relative,2)!=-1) {return -26;}
+                    }
+                    if(n==1) {if(w.pack_address(0,1000000000)!=-1) {return -27;}}
+                    if(n==2) {if(w.pack_address(2,-1)!=-1) {return -28;}}
+                    if(n==3) {if(w.advance_address(8,9)!=-1) {return -29;}}
+                    if(n==4) {if(w.pack_address(5,0)!=-1) {return -30;}}
+                    if(n==5) {if(w.memory(-1)) {return -31;}}
+                    if(n==6) {if(w.memory(5000000000)) {return -32;}}
+                    if(n==7) {if(w.advance_address(1000000000,9223372036854775807)!=-1) {return -33;}}
+                    if(n==8) {if(w.advance_address(-1,1)!=-1) {return -34;}}
+                    if(w.status()!=compiler_x86::EmitStatus::invalid||w.advance_address(-1,1)!=-1) {return -35;}
+                    return 42;
+                }
+                if(flag==5) {
+                    if(w.begin()||w.status()!=compiler_x86::EmitStatus::allocation) {return -23;}
+                    return 42;
+                }
+                if(!w.begin()) {return -17;}
+                if(flag==3) {
+                    const compiler_x86::EmitChunk incomplete=w.chunk(compiler_x86::Artifact::assembly,0);
+                    if(incomplete.size()!=-1) {return -18;}
+                    i64 at=0;
+                    while(at<n) {if(!w.byte('x')) {return -19;} at=at+1;}
+                    if(!w.finish_assembly()||!w.prepare_facts(compiler_x86::Artifact::stack)||!w.begin_stack()) {
+                        return -20;
+                    }
+                    if(!w.text("{}")||!w.finish_stack()) {return -20;}
+                    const compiler_x86::EmitChunk first=w.chunk(compiler_x86::Artifact::assembly,0);
+                    const compiler_x86::EmitChunk last=w.chunk(compiler_x86::Artifact::assembly,n-1);
+                    const compiler_x86::EmitChunk end=w.chunk(compiler_x86::Artifact::assembly,n);
+                    const compiler_x86::EmitChunk outside=w.chunk(compiler_x86::Artifact::assembly,n+1);
+                    i64 expected=n;
+                    if(expected>512) {expected=512;}
+                    if(first.size()!=expected||last.size()!=1||last.at(0)!='x'||end.size()!=0||outside.size()!=-1) {
+                        return -21;
+                    }
+                    return 42;
+                }
+                if(w.reserve_output(67108865)||w.status()!=compiler_x86::EmitStatus::limit
+                    ||w.artifact_size(compiler_x86::Artifact::assembly)!=-1) {
+                    return -22;
+                }
+                return 42;
+            }
+            """,
+            entry_name="entry",
+        )
+        self.run(executable, 0, 0, 0, 42, 8, 8)
+        for last_id in (0, 7):
+            self.run(executable, 128, last_id, 1, 42, 10, 8)
+        for invalid_id in (-1, 0):
+            self.run(executable, 0, invalid_id, 2, 42, 8, 8)
+        for size in (511, 512, 513):
+            self.run(executable, 4096, size, 3, 42, 9, 8)
+        self.run(executable, 0, 0, 4, 42, 8, 8)
+        for malformed_address in range(9):
+            self.run(executable, 0, malformed_address, 6, 42, 8, 8)
+        for completed in (0, 4):
+            self.run(executable, 0, 0, 5, 42, completed, completed, fail_after=completed)
+        self.module_args = previous_modules
+
     def cases(self):
         self.typed_cases()
+        self.emitter_storage_cases()
         dynamic = self.compile(
             "dynamic-two-owners",
             program(f"""

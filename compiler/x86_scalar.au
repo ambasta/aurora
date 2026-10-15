@@ -120,13 +120,13 @@ export namespace compiler_x86 {
             return true;
         }
         if (form == 7) {
-            load_value(workspace, metadata, operand_value(store, instruction, 1), frame_address(operand_value(store,
-                instruction, 0)));
+            const i64 packed_address = workspace.pack_address(0, operand_value(store, instruction, 0));
+            load_value(workspace, metadata, operand_value(store, instruction, 1), packed_address);
             return true;
         }
         if (form == 8) {
-            store_value(workspace, metadata, operand_value(store, instruction, 1), frame_address(operand_value(store,
-                instruction, 0)));
+            const i64 packed_address = workspace.pack_address(0, operand_value(store, instruction, 0));
+            store_value(workspace, metadata, operand_value(store, instruction, 1), packed_address);
             return true;
         }
         if (form == 9) {

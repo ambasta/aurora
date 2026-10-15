@@ -2,6 +2,7 @@
 // --emit-guard-fixtures emits direct IR for the opt-in disposable-child ABI runner.
 #include "ir_verify.hpp"
 #include "x86.hpp"
+#include "json_fragments.hpp"
 #include <algorithm>
 #include <iostream>
 #include <sstream>
@@ -10,6 +11,8 @@
 
 using namespace aurora;
 using namespace aurora::ir;
+using aurora::test::jsonMember;
+using aurora::test::jsonMemberCount;
 using IRFunction = aurora::ir::Function;
 namespace {
 int passed = 0;
@@ -100,18 +103,21 @@ void frameTests() {
             if (bytes == 0 && mode != "scalar" && mode != "receiver")
                 continue;
             X86Emitter emitter;
-            const auto assembly = emitter.emit(validate(fixture(bytes, mode)));
+            const auto validated = validate(fixture(bytes, mode));
+            const auto assembly = emitter.emit(validated);
             const auto lines = body(assembly, "probe_scalar");
             require(lines.size() > 3 && lines[0] == "    pushq %rbp" && lines[1] == "    movq %rsp, %rbp",
                     "frame pointer ABI changed");
             const int hidden = mode == "scalar" ? 0 : mode == "combined" ? 32 : 16;
-            const auto &facts = emitter.stackFacts().at("probe_scalar");
-            require(facts.localBytes == bytes + hidden + 16 && facts.calls.empty(),
+            const auto stack = emitter.stackFactsJson(validated);
+            const auto facts = jsonMember(jsonMember(stack, "functions"), "probe_scalar");
+            require(jsonMember(facts, "local_bytes") == std::to_string(bytes + hidden + 16) &&
+                        jsonMember(facts, "calls") == "{}",
                     "frame facts omit return slot, saved RBP or private ABI slots");
-            require(facts.copiedRecord.has_value() == (mode == "aggregate"), "copied ABI excludes receiver modes");
-            if (facts.copiedRecord)
-                require(facts.copiedRecord->parameterBytes == std::vector<int>{8} &&
-                            facts.copiedRecord->resultBytes == 8,
+            const auto copied = jsonMember(facts, "copied_record");
+            require((copied != "null") == (mode == "aggregate"), "copied ABI excludes receiver modes");
+            if (mode == "aggregate")
+                require(copied == "{\"parameter_bytes\":[8],\"result_bytes\":8}",
                         "copied ABI uses canonical input/result sizes");
             auto at = reservation(lines, 2, bytes + hidden);
             const auto save = [&](const std::string &reg, int offset) {
@@ -152,12 +158,15 @@ void callTests() {
         caller.code.push_back(Return{});
         m.functions.push_back(std::move(caller));
         X86Emitter emitter;
-        const auto assembly = emitter.emit(validate(std::move(m)));
-        const auto &facts = emitter.stackFacts().at("probe_caller");
-        require(facts.localBytes == (odd ? 96 : 80) &&
-                    facts.calls == std::map<std::string, int>{{"probe_target", odd ? 96 : 80}},
+        const auto validated = validate(std::move(m));
+        const auto assembly = emitter.emit(validated);
+        const auto stack = emitter.stackFactsJson(validated);
+        const auto functions = jsonMember(stack, "functions");
+        const auto facts = jsonMember(functions, "probe_caller");
+        require(jsonMember(facts, "local_bytes") == (odd ? "96" : "80") &&
+                    jsonMember(facts, "calls") == (odd ? "{\"probe_target\":96}" : "{\"probe_target\":80}"),
                 "packed call facts omit record, operand or alignment bytes");
-        require(emitter.stackFacts().at("probe_target").localBytes == 48,
+        require(jsonMember(jsonMember(functions, "probe_target"), "local_bytes") == "48",
                 "callee independently includes its incoming return slot");
         const auto lines = body(assembly, "probe_caller");
         reservation(lines, 2, 48);
@@ -239,6 +248,10 @@ Module guardFixtures() {
 }
 
 void stackFactTests() {
+    const std::string fragments = R"({"first":{"calls":{"second":16},"text":"},\"second\":{}"},"second":{"calls":{}}})";
+    require(jsonMemberCount(fragments) == 2 && jsonMember(fragments, "second") == R"({"calls":{}})" &&
+                jsonMember(jsonMember(fragments, "first"), "second").empty(),
+            "JSON fragment observations must stay within immediate members and ignore quoted braces");
     X86Emitter emitter;
     Module module;
     auto leaf = scalar(0);
@@ -275,20 +288,24 @@ void stackFactTests() {
     module.functions = {caller, leaf, unused};
     const auto validated = validate(module);
     const auto assembly = emitter.emit(validated);
-    const auto &facts = emitter.stackFacts();
-    require(facts.at("branches").localBytes == 32 &&
-                facts.at("branches").calls == std::map<std::string, int>{{"leaf", 32}, {"aurora_reflect_size", 16}},
+    const auto stack = emitter.stackFactsJson(validated);
+    const auto functions = jsonMember(stack, "functions");
+    const auto branches = jsonMember(functions, "branches");
+    require(jsonMember(branches, "local_bytes") == "32" &&
+                jsonMember(branches, "calls") == "{\"aurora_reflect_size\":16,\"leaf\":32}",
             "branch/loop call maxima or reflection edge facts");
-    require(!facts.contains("unused_import") && assembly.find("unused_import:") == std::string::npos &&
-                facts.contains("leaf"),
+    require(jsonMember(functions, "unused_import").empty() && assembly.find("unused_import:") == std::string::npos &&
+                !jsonMember(functions, "leaf").empty(),
             "facts do not follow post-validation imported-function pruning");
     for (const std::string symbol :
-         {"aurora_reflect_size", "aurora_reflect_field_count", "__au_reflect_s1_size", "__au_reflect_s1_field_count"})
-        require(facts.at(symbol).localBytes == 8 && facts.at(symbol).calls.empty(),
+         {"aurora_reflect_size", "aurora_reflect_field_count", "__au_reflect_s1_size", "__au_reflect_s1_field_count"}) {
+        const auto facts = jsonMember(functions, symbol);
+        require(jsonMember(facts, "local_bytes") == "8" && jsonMember(facts, "calls") == "{}",
                 "reflection leaf facts must include exactly its incoming return slot");
-    require(facts.size() == 6, "unexpected function or local UD2 trap metadata");
+    }
+    require(jsonMemberCount(functions) == 6, "unexpected function or local UD2 trap metadata");
     require(emitter.emit(validated, SymbolBinding::Local).find(".globl ") == std::string::npos &&
-                emitter.stackFacts().at("branches").localBytes == 32,
+                emitter.stackFactsJson(validated) == stack,
             "local binding changed stack facts");
     // Invalid dead imported bodies must still fail full verification.
     module.functions.back().frameBytes = -16;
@@ -299,13 +316,15 @@ void stackFactTests() {
         require(std::string(error.what()).find("invalid frame size") != std::string::npos,
                 "wrong dead-import diagnostic");
     }
-    (void)emitter.emit(validate(fixture(0, "scalar")));
-    require(emitter.stackFacts().size() == 3 && !emitter.stackFacts().contains("branches"),
+    const auto scalarModule = validate(fixture(0, "scalar"));
+    (void)emitter.emit(scalarModule);
+    const auto scalarStack = emitter.stackFactsJson(scalarModule);
+    const auto scalarFunctions = jsonMember(scalarStack, "functions");
+    require(jsonMemberCount(scalarFunctions) == 3 && jsonMember(scalarFunctions, "branches").empty(),
             "reused emitter retained stale metadata");
-    require(!emitter.stackFacts().at("probe_scalar").serviceRecord &&
-                emitter.stackFacts().at("probe_scalar").serviceCalls.empty(),
+    require(jsonMember(jsonMember(scalarFunctions, "probe_scalar"), "service_abi").empty(),
             "service facts do not leak across emitter reuse");
-    require(emitter.stackFactsJson() ==
+    require(scalarStack ==
                 "{\"version\":2,\"functions\":{\"aurora_reflect_field_count\":{\"local_bytes\":8,\"calls\":{},"
                 "\"copied_record\":null},"
                 "\"aurora_reflect_size\":{\"local_bytes\":8,\"calls\":{},\"copied_record\":null},"
@@ -330,11 +349,13 @@ void copiedRecordFacts() {
         function.objectSlots = {{32, {"Box", false}}};
         function.code = {BindObjectParameter{0, 32, "Box"}, ReturnObject{32}};
         X86Emitter emitter;
-        (void)emitter.emit(validate(std::move(module)));
-        const auto &facts = emitter.stackFacts().at("probe_scalar").copiedRecord;
-        require(facts.has_value() == (leaves.size() == 8), "copied ABI rejects empty and padded classes");
-        if (facts)
-            require(facts->parameterBytes == std::vector<int>{8} && facts->resultBytes == 8,
+        const auto validated = validate(std::move(module));
+        (void)emitter.emit(validated);
+        const auto stack = emitter.stackFactsJson(validated);
+        const auto copied = jsonMember(jsonMember(jsonMember(stack, "functions"), "probe_scalar"), "copied_record");
+        require((copied != "null") == (leaves.size() == 8), "copied ABI rejects empty and padded classes");
+        if (leaves.size() == 8)
+            require(copied == "{\"parameter_bytes\":[8],\"result_bytes\":8}",
                     "dense byte leaves retain physical ABI size");
         ++passed;
     }
@@ -347,16 +368,14 @@ void copiedRecordFacts() {
         function.objectSlots = {{16, {"Box", false}}};
         function.code = {BindObjectParameter{0, 16, "Box"}, BindParameter{1, 24, type}, ReturnObject{16}};
         X86Emitter emitter;
-        (void)emitter.emit(validate(std::move(module)));
-        const auto &facts = emitter.stackFacts().at("probe_scalar").copiedRecord;
-        require(facts.has_value() == (type != Type::U8), "copied ABI admits only qword scalar parameters");
-        if (facts) {
-            require(facts->parameterBytes == std::vector<int>({16, 8}) && facts->resultBytes == 16,
-                    "copied ABI preserves parameter order and packed scalar extent");
-            require(emitter.stackFactsJson().find(
-                        "\"copied_record\":{\"parameter_bytes\":[16,8],\"result_bytes\":16}") != std::string::npos,
-                    "copied ABI JSON retains the emitted sizes and order");
-        }
+        const auto validated = validate(std::move(module));
+        (void)emitter.emit(validated);
+        const auto stack = emitter.stackFactsJson(validated);
+        const auto copied = jsonMember(jsonMember(jsonMember(stack, "functions"), "probe_scalar"), "copied_record");
+        require((copied != "null") == (type != Type::U8), "copied ABI admits only qword scalar parameters");
+        if (type != Type::U8)
+            require(copied == "{\"parameter_bytes\":[16,8],\"result_bytes\":16}",
+                    "copied ABI JSON preserves parameter order and packed scalar extent");
         ++passed;
     }
 }
@@ -397,28 +416,31 @@ void serviceStackFacts() {
                        Return{}};
         module.functions = {caller, pixel};
         X86Emitter emitter;
-        const auto assembly = emitter.emit(validate(std::move(module)));
-        const auto &facts = emitter.stackFacts();
-        require(!facts.at("pixel").copiedRecord && !facts.at("pixel_caller").copiedRecord,
+        const auto validated = validate(std::move(module));
+        const auto assembly = emitter.emit(validated);
+        const auto stack = emitter.stackFactsJson(validated);
+        const auto functions = jsonMember(stack, "functions");
+        const auto pixelFacts = jsonMember(functions, "pixel");
+        const auto callerFacts = jsonMember(functions, "pixel_caller");
+        require(jsonMember(pixelFacts, "copied_record") == "null" && jsonMember(callerFacts, "copied_record") == "null",
                 "service entries do not advertise copied-record ABI");
-        const auto &record = facts.at("pixel").serviceRecord;
-        require(record &&
-                    record->parameters == std::vector<std::pair<std::string, int>>{{"builtin::DisplaySession", 16}} &&
-                    record->resultBytes == 8 && facts.at("pixel_caller").serviceRecord &&
-                    facts.at("pixel_caller").serviceCalls.empty(),
+        const auto pixelService = jsonMember(pixelFacts, "service_abi");
+        const auto callerService = jsonMember(callerFacts, "service_abi");
+        const std::string record = "{\"parameters\":[[\"builtin::DisplaySession\",16]],\"result_bytes\":8}";
+        require(jsonMember(pixelService, "record") == record && jsonMember(callerService, "record") == record &&
+                    jsonMember(callerService, "calls") == "{}",
                 "service record is distinct from copied ABI");
-        const auto &call = facts.at("pixel").serviceCalls.at("__au_runtime_display_pixel");
-        require(facts.at("pixel").serviceCalls.size() == 1 && call.arguments == 7 && call.resultMax == 1,
+        require(jsonMember(pixelService, "calls") ==
+                    "{\"__au_runtime_display_pixel\":{\"sysv_arguments\":7,\"result_max\":1}}",
                 "scalar service ABI follows actual pixel argument/completion lowering");
-        require(emitter.stackFactsJson().find("\"service_abi\":{\"record\":{\"parameters\":[[\"builtin::"
-                                              "DisplaySession\",16]],\"result_bytes\":8},\"calls\":{") !=
-                    std::string::npos,
+        require(pixelService == "{\"record\":" + record +
+                                    ",\"calls\":{\"__au_runtime_display_pixel\":"
+                                    "{\"sysv_arguments\":7,\"result_max\":1}}}",
                 "deterministic service ABI metadata");
-        require(facts.at("pixel").localBytes == (odd ? 128 : 120) &&
-                    facts.at("pixel").calls == std::map<std::string, int>{{"__au_runtime_display_pixel", 96}},
+        require(jsonMember(pixelFacts, "local_bytes") == (odd ? "128" : "120") &&
+                    jsonMember(pixelFacts, "calls") == "{\"__au_runtime_display_pixel\":96}",
                 "pixel facts omit operand pushes or seventh host argument/alignment");
-        require(facts.at("pixel_caller").localBytes == 64 &&
-                    facts.at("pixel_caller").calls == std::map<std::string, int>{{"pixel", 64}},
+        require(jsonMember(callerFacts, "local_bytes") == "64" && jsonMember(callerFacts, "calls") == "{\"pixel\":64}",
                 "service call facts omit capability record");
         require(assembly.find(std::string("    subq $") + (odd ? "8" : "16") +
                               ", %rsp\n    movq %r10, (%rsp)\n    call __au_runtime_display_pixel\n") !=
@@ -442,14 +464,13 @@ void pairedServiceRecordFacts() {
                   Return{}};
     module.functions.push_back(entry);
     X86Emitter emitter;
-    const auto assembly = emitter.emit(validate(module));
-    const auto &record = emitter.stackFacts().at("paired").serviceRecord;
-    require(record &&
-                record->parameters == std::vector<std::pair<std::string, int>>{{"builtin::ConsoleSession", 16},
-                                                                               {"builtin::DisplaySession", 16},
-                                                                               {"scalar", 8},
-                                                                               {"scalar", 8}} &&
-                record->resultBytes == 8,
+    const auto validated = validate(module);
+    const auto assembly = emitter.emit(validated);
+    const auto stack = emitter.stackFactsJson(validated);
+    const auto facts = jsonMember(jsonMember(stack, "functions"), "paired");
+    require(jsonMember(jsonMember(facts, "service_abi"), "record") ==
+                "{\"parameters\":[[\"builtin::ConsoleSession\",16],[\"builtin::DisplaySession\",16],"
+                "[\"scalar\",8],[\"scalar\",8]],\"result_bytes\":8}",
             "paired service record order and scalar widths");
     require(assembly.find("movq 32(%r11), %rax") != std::string::npos &&
                 assembly.find("movq 40(%r11), %rax") != std::string::npos,
@@ -483,17 +504,20 @@ void resourceStackFacts() {
     callee.code = {BindRegionParameter{0, 8}, BindBytesParameter{1, 40}, BytesLength{40}, EndBytes{40}, Return{}};
     module.functions = {caller, callee};
     X86Emitter emitter;
-    (void)emitter.emit(validate(std::move(module)));
-    const auto &facts = emitter.stackFacts();
-    require(!facts.at("resource_caller").copiedRecord && !facts.at("resource_callee").copiedRecord,
+    const auto validated = validate(std::move(module));
+    (void)emitter.emit(validated);
+    const auto stack = emitter.stackFactsJson(validated);
+    const auto functions = jsonMember(stack, "functions");
+    const auto callerFacts = jsonMember(functions, "resource_caller");
+    const auto calleeFacts = jsonMember(functions, "resource_callee");
+    require(jsonMember(callerFacts, "copied_record") == "null" && jsonMember(calleeFacts, "copied_record") == "null",
             "resource entries do not advertise copied-record ABI");
-    require(facts.at("resource_caller").localBytes == 128 &&
-                facts.at("resource_caller").calls == std::map<std::string, int>{{"resource_callee", 128},
-                                                                                {"__au_runtime_bytes_allocate", 80},
-                                                                                {"__au_runtime_bytes_drop", 96}},
+    require(jsonMember(callerFacts, "local_bytes") == "128" &&
+                jsonMember(callerFacts, "calls") == "{\"__au_runtime_bytes_allocate\":80,"
+                                                    "\"__au_runtime_bytes_drop\":96,\"resource_callee\":128}",
             "resource call/hidden allocation/cleanup facts");
-    require(facts.at("resource_callee").localBytes == 96 &&
-                facts.at("resource_callee").calls == std::map<std::string, int>{{"__au_runtime_bytes_drop", 96}},
+    require(jsonMember(calleeFacts, "local_bytes") == "96" &&
+                jsonMember(calleeFacts, "calls") == "{\"__au_runtime_bytes_drop\":96}",
             "callee cleanup save and alignment facts");
     ++passed;
 }

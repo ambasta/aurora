@@ -4,7 +4,6 @@
 #include "../runtime/hosted_bytes.hpp"
 #include <algorithm>
 #include <array>
-#include <charconv>
 #include <cstdint>
 #include <limits>
 #include <set>
@@ -15,11 +14,11 @@ void aurora_hosted_emitter_create(const void *, void *) noexcept;
 void aurora_hosted_emitter_release(void *) noexcept;
 std::int64_t aurora_hosted_emitter_status(const void *) noexcept;
 std::int64_t aurora_hosted_emitter_add_retained(void *, std::int64_t) noexcept;
-std::int64_t aurora_hosted_emitter_prepare_abi(void *) noexcept;
+std::int64_t aurora_hosted_emitter_prepare_facts(void *, std::int64_t) noexcept;
 std::int64_t aurora_hosted_emitter_append_name(void *, const void *) noexcept;
 std::int64_t aurora_hosted_emitter_add_abi_name(void *, const void *) noexcept;
 std::int64_t aurora_hosted_emitter_run(const void *, std::int64_t, std::int64_t) noexcept;
-std::int64_t aurora_hosted_emitter_abi(const void *) noexcept;
+std::int64_t aurora_hosted_emitter_facts(const void *, std::int64_t) noexcept;
 std::int64_t aurora_hosted_emitter_size(const void *, std::int64_t) noexcept;
 void aurora_hosted_emitter_chunk(const void *, std::int64_t, std::int64_t, void *) noexcept;
 }
@@ -28,160 +27,75 @@ namespace aurora {
 namespace {
 namespace wire = hosted_abi::compiler_x86;
 constexpr std::int64_t artifactLimit = 64 * 1024 * 1024;
+// A quota bounds final logical payload, not reallocations' transient host peaks.
+// No IR-sized pool is allocated here: these are checked upper extents used by
+// the existing region allocator as the source workspace grows on demand.
+constexpr bool addExtent(std::uint64_t &total, std::uint64_t count, std::uint64_t stride) {
+    if (stride != 0 && count > (std::numeric_limits<std::uint64_t>::max() - total) / stride)
+        return false;
+    total += count * stride;
+    return true;
+}
+constexpr std::uint64_t payloadQuota(std::uint64_t retained, std::uint64_t views, std::uint64_t instructions) {
+    std::uint64_t functions = retained, calls = instructions;
+    // Each direct/query call fact has an instruction. A retained function can
+    // additionally call each member of the source's bounded runtime vocabulary.
+    if (!addExtent(functions, views, 2) || !addExtent(calls, retained, 64))
+        return 0;
+    std::uint64_t stack = artifactLimit * 2 + 1024;
+    if (!addExtent(stack, functions, 1024) || !addExtent(stack, calls, 128))
+        return 0;
+    std::uint64_t quota = 0;
+    // Geometric output capacity <=2x required bytes (plus its initial block).
+    if (!addExtent(quota, artifactLimit + 4096, 2) || !addExtent(quota, stack, 2) ||
+        !addExtent(quota, retained, 2 * sizeof(wire::IndexRow)) ||
+        !addExtent(quota, functions, sizeof(wire::IndexRow)) || !addExtent(quota, calls, sizeof(wire::IndexRow)) ||
+        !addExtent(quota, 32, sizeof(wire::IndexRow)) || !addExtent(quota, functions, 2 * sizeof(wire::FunctionFact)) ||
+        !addExtent(quota, 16, 2 * sizeof(wire::FunctionFact)) || !addExtent(quota, calls, 2 * sizeof(wire::CallFact)) ||
+        !addExtent(quota, 16, 2 * sizeof(wire::CallFact)) ||
+        !addExtent(quota, instructions, 2 * sizeof(wire::LoanRow)) || !addExtent(quota, 16, 2 * sizeof(wire::LoanRow)))
+        return 0;
+    // Every accepted ABI row and raw name byte contributes >=1 JSON byte.
+    // Their extents follow from the requested 64 MiB artifact cap. Runtime names
+    // have a separate 64 KiB prefix; the 64-row runtime pool is closed source data.
+    if (!addExtent(quota, artifactLimit, sizeof(wire::AbiNameRow) + 1) || !addExtent(quota, 65536, 1) ||
+        !addExtent(quota, 64, sizeof(wire::NameRow)))
+        return 0;
+    return quota;
+}
+// Count-derived decisions cover the former cap without allocating huge IR in a
+// default test: 256 template instances x4097 distinct callees exceed 1M facts
+// while their short call text can remain below the assembly artifact cap.
+static_assert(payloadQuota(256, 0, 256 * 4097) > payloadQuota(256, 0, 1048576));
+static_assert(payloadQuota(0, 0, 0) > 0);
+static_assert(payloadQuota(std::numeric_limits<std::uint64_t>::max(), 0, 0) == 0);
+static_assert(payloadQuota(0, std::numeric_limits<std::uint64_t>::max(), 0) == 0);
+static_assert(payloadQuota(0, 0, std::numeric_limits<std::uint64_t>::max()) == 0);
+[[noreturn]] void resourceLimit() {
+    throw Error(DiagnosticCode::Internal, "hosted x86 emission workspace extent overflow");
+}
 [[noreturn]] void invalidEmitter() {
     throw Error(DiagnosticCode::Internal, "invalid hosted x86 emission transport");
 }
 std::int64_t count(std::size_t value) {
     if (value > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
-        invalidEmitter();
+        resourceLimit();
     return static_cast<std::int64_t>(value);
 }
-// Mechanical compatibility decoder for the existing in-process test/consumer
-// observation. Production sidecars are the original Aurora-produced bytes;
-// this decoder computes no layout, stack cost, symbol or instruction policy.
-class StackObservation {
-    std::string_view bytes;
-    bool take(std::string_view text) {
-        if (!bytes.starts_with(text))
-            return false;
-        bytes.remove_prefix(text.size());
-        return true;
-    }
-    void need(std::string_view text) {
-        if (!take(text))
-            invalidEmitter();
-    }
-    std::string string() {
-        need("\"");
-        std::string result;
-        while (!bytes.empty()) {
-            char value = bytes.front();
-            bytes.remove_prefix(1);
-            if (value == '"')
-                return result;
-            if (value == '\\') {
-                if (bytes.empty())
-                    invalidEmitter();
-                value = bytes.front();
-                bytes.remove_prefix(1);
-                if (value == 'n')
-                    value = '\n';
-                else if (value == 'r')
-                    value = '\r';
-                else if (value == 't')
-                    value = '\t';
-                else if (value == 'b')
-                    value = '\b';
-                else if (value == 'f')
-                    value = '\f';
-                else if (value == 'u') {
-                    if (bytes.size() < 4 || !bytes.starts_with("00"))
-                        invalidEmitter();
-                    unsigned byte = 0;
-                    const auto parsed = std::from_chars(bytes.data() + 2, bytes.data() + 4, byte, 16);
-                    if (parsed.ec != std::errc{} || parsed.ptr != bytes.data() + 4 || byte > 255)
-                        invalidEmitter();
-                    bytes.remove_prefix(4);
-                    value = static_cast<char>(byte);
-                } else if (value != '"' && value != '\\' && value != '/')
-                    invalidEmitter();
-            } else if (static_cast<unsigned char>(value) < 32)
-                invalidEmitter();
-            result.push_back(value);
-        }
-        invalidEmitter();
-    }
-    int integer() {
-        int value = 0;
-        const auto parsed = std::from_chars(bytes.data(), bytes.data() + bytes.size(), value);
-        if (parsed.ec != std::errc{} || parsed.ptr == bytes.data() || value < 0)
-            invalidEmitter();
-        bytes.remove_prefix(static_cast<std::size_t>(parsed.ptr - bytes.data()));
-        return value;
-    }
-    template <class Body> void entries(std::string_view end, Body body) {
-        if (take(end))
-            return;
-        do {
-            body();
-        } while (take(","));
-        need(end);
-    }
-
-public:
-    explicit StackObservation(std::string_view input) : bytes(input) {
-    }
-    std::map<std::string, FunctionStackFacts> read() {
-        std::map<std::string, FunctionStackFacts> result;
-        need("{\"version\":2,\"functions\":{");
-        entries("}", [&] {
-            const auto name = string();
-            FunctionStackFacts fact;
-            need(":{\"local_bytes\":");
-            fact.localBytes = integer();
-            need(",\"calls\":{");
-            entries("}", [&] {
-                const auto callee = string();
-                need(":");
-                if (!fact.calls.emplace(callee, integer()).second)
-                    invalidEmitter();
-            });
-            need(",\"copied_record\":");
-            if (!take("null")) {
-                CopiedRecordFacts copied;
-                need("{\"parameter_bytes\":[");
-                entries("]", [&] {
-                    copied.parameterBytes.push_back(integer());
-                });
-                need(",\"result_bytes\":");
-                copied.resultBytes = integer();
-                need("}");
-                fact.copiedRecord = std::move(copied);
-            }
-            if (take(",\"service_abi\":{\"record\":")) {
-                if (!take("null")) {
-                    ServiceRecordFacts service;
-                    need("{\"parameters\":[");
-                    entries("]", [&] {
-                        need("[");
-                        const auto kind = string();
-                        need(",");
-                        service.parameters.emplace_back(kind, integer());
-                        need("]");
-                    });
-                    need(",\"result_bytes\":");
-                    service.resultBytes = integer();
-                    need("}");
-                    fact.serviceRecord = std::move(service);
-                }
-                need(",\"calls\":{");
-                entries("}", [&] {
-                    const auto callee = string();
-                    need(":{\"sysv_arguments\":");
-                    const int arguments = integer();
-                    need(",\"result_max\":");
-                    const int maximum = integer();
-                    need("}");
-                    if (!fact.serviceCalls.emplace(callee, ServiceCallFacts{arguments, maximum}).second)
-                        invalidEmitter();
-                });
-                need("}");
-            }
-            need("}");
-            if (!result.emplace(name, std::move(fact)).second)
-                invalidEmitter();
-        });
-        need("}\n");
-        if (!bytes.empty())
-            invalidEmitter();
-        return result;
-    }
-};
 } // namespace
 
 class X86Emitter::State {
-    // Includes temporary growth peaks as well as all three bounded artifacts.
-    hosted::bytes::Region region{512ULL * 1024 * 1024};
+    static std::uint64_t quota(const ir::ValidatedModule &validated) {
+        if (!validated.instructionOwner)
+            invalidEmitter();
+        const auto result = payloadQuota(validated.get().functions.size(),
+                                         validated.metadata().scopeCount(),
+                                         validated.instructionOwner->sourceInstructionCount(validated.metadata()));
+        if (result == 0)
+            resourceLimit();
+        return result;
+    }
+    hosted::bytes::Region region;
     hosted_abi::EmitterRelease owner{};
 
 public:
@@ -189,14 +103,12 @@ public:
     const ir::Instructions *instructions;
     // Three pointers occupy a canonically padded 32-byte borrowed-root tuple.
     alignas(16) std::array<const void *, 4> roots;
-    std::string stackJson;
-    mutable std::optional<std::map<std::string, FunctionStackFacts>> observation;
     explicit State(const ir::ValidatedModule &validated)
-        : metadata(&validated.metadata()), instructions(validated.instructionOwner.get()),
+        : region(quota(validated)), metadata(&validated.metadata()), instructions(validated.instructionOwner.get()),
           roots{
               data(), metadata->sourceOwner(), instructions ? instructions->sourceOwner(*metadata) : nullptr, nullptr} {
-        if (!instructions || !region.is_open())
-            invalidEmitter();
+        if (!region.is_open())
+            throw Error(DiagnosticCode::Internal, "hosted x86 emission region allocation failed");
         owner.region = region.id();
         hosted_abi::EmitterCreate input{};
         input.region = region.id();
@@ -229,14 +141,17 @@ public:
         if (result != static_cast<std::int64_t>(wire::EmitStatus::complete))
             failure();
     }
-    std::string artifact(std::int64_t kind) const {
-        const auto size = aurora_hosted_emitter_size(data(), kind);
-        if (size < 0 || size > artifactLimit)
+    std::string artifact(wire::Artifact kind) const {
+        const auto selector = static_cast<std::int64_t>(kind);
+        const auto size = aurora_hosted_emitter_size(data(), selector);
+        if (size < 0 || (kind != wire::Artifact::stack && size > artifactLimit))
             failure();
+        if (static_cast<std::uint64_t>(size) > std::string{}.max_size())
+            resourceLimit();
         std::string result(static_cast<std::size_t>(size), '\0');
         for (std::int64_t offset = 0; offset < size;) {
             wire::EmitChunk chunk{};
-            aurora_hosted_emitter_chunk(data(), kind, offset, &chunk);
+            aurora_hosted_emitter_chunk(data(), selector, offset, &chunk);
             if (chunk.byteCount <= 0 || chunk.byteCount > 512 || chunk.byteCount > size - offset)
                 invalidEmitter();
             std::copy_n(chunk.payload.begin(), static_cast<std::size_t>(chunk.byteCount), result.begin() + offset);
@@ -272,27 +187,26 @@ X86Emitter::emit(const ir::ValidatedModule &validated, SymbolBinding binding, Re
     state->complete(aurora_hosted_emitter_run(state->roots.data(),
                                               binding == SymbolBinding::Local ? 1 : 0,
                                               reflection == ReflectionEmission::Referenced ? 1 : 0));
-    auto assembly = state->artifact(0);
-    state->stackJson = state->artifact(1);
+    auto assembly = state->artifact(wire::Artifact::assembly);
     state_ = std::move(state);
     return assembly;
 }
-const std::map<std::string, FunctionStackFacts> &X86Emitter::stackFacts() const {
-    static const std::map<std::string, FunctionStackFacts> empty;
-    if (!state_)
-        return empty;
-    if (!state_->observation)
-        state_->observation = StackObservation(state_->stackJson).read();
-    return *state_->observation;
-}
-std::string X86Emitter::stackFactsJson() const {
-    return state_ ? state_->stackJson : "{\"version\":2,\"functions\":{}}\n";
+std::string X86Emitter::stackFactsJson(const ir::ValidatedModule &validated) const {
+    if (!state_ || state_->metadata != &validated.metadata() ||
+        state_->instructions != validated.instructionOwner.get())
+        throw Error("stack facts require the same emitted module");
+    const auto artifact = static_cast<std::int64_t>(wire::Artifact::stack);
+    state_->boolean(aurora_hosted_emitter_prepare_facts(state_->data(), artifact));
+    alignas(16) const std::array<const void *, 2> roots{state_->data(), state_->roots[1]};
+    state_->complete(aurora_hosted_emitter_facts(roots.data(), artifact));
+    return state_->artifact(wire::Artifact::stack);
 }
 std::string X86Emitter::abiFactsJson(const ir::ValidatedModule &validated, const AbiDeclarations &declarations) const {
     if (!state_ || state_->metadata != &validated.metadata() ||
         state_->instructions != validated.instructionOwner.get())
         throw Error("ABI facts require the same emitted module");
-    state_->boolean(aurora_hosted_emitter_prepare_abi(state_->data()));
+    const auto artifact = static_cast<std::int64_t>(wire::Artifact::abi);
+    state_->boolean(aurora_hosted_emitter_prepare_facts(state_->data(), artifact));
     const auto add = [&](const auto &group, std::int64_t category, const auto &find) {
         for (const auto &[symbol, declaration] : group) {
             const auto id = find(symbol);
@@ -321,8 +235,8 @@ std::string X86Emitter::abiFactsJson(const ir::ValidatedModule &validated, const
                 invalidEmitter();
             state_->name(2, count(*id), -1, declaration.sourceName);
         }
-    const std::array<const void *, 2> roots{state_->data(), state_->roots[1]};
-    state_->complete(aurora_hosted_emitter_abi(roots.data()));
-    return state_->artifact(2);
+    alignas(16) const std::array<const void *, 2> roots{state_->data(), state_->roots[1]};
+    state_->complete(aurora_hosted_emitter_facts(roots.data(), artifact));
+    return state_->artifact(wire::Artifact::abi);
 }
 } // namespace aurora

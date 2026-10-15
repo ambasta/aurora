@@ -13,6 +13,7 @@ class Instructions final {
     std::unique_ptr<State> state_;
     Instructions();
     const void *sourceOwner(const Metadata &metadata) const;
+    std::size_t sourceInstructionCount(const Metadata &metadata) const;
     friend class ::aurora::X86Emitter;
     void admit(const Metadata &metadata);
     void structure();

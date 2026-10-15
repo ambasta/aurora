@@ -2,12 +2,15 @@
 #include "ir_verify.hpp"
 #include "hosted_resolver.hpp"
 #include "x86.hpp"
+#include "json_fragments.hpp"
 #include <algorithm>
 #include <functional>
 #include <iostream>
 #include <tuple>
 using namespace aurora;
 using namespace aurora::ir;
+using aurora::test::jsonMember;
+using aurora::test::jsonMembers;
 using F = aurora::ir::Function;
 namespace {
 int checks{};
@@ -298,26 +301,38 @@ void copiedArgumentFacts() {
             need(abi.find("\"offset\":" + std::to_string(offset) +
                           ",\"bytes\":80,\"kind\":\"class\",\"type_name\":\"Packet\"") != std::string::npos,
                  "copied service ABI must retain positional nominal value records");
-        const auto &facts = emitter.stackFacts().at("copied_caller");
-        need(!facts.serviceRecord && !emitter.stackFacts().at("copied_helper").serviceRecord,
-             "copied service inputs must not advertise scalar-only service_record facts");
-        need(facts.localBytes == facts.calls.at("copied_helper") + 24,
+        const auto stack = emitter.stackFactsJson(checked);
+        const auto functions = jsonMember(stack, "functions");
+        const auto facts = jsonMember(functions, "copied_caller");
+        for (const auto name : {"copied_caller", "copied_helper"}) {
+            const auto service = jsonMember(jsonMember(functions, name), "service_abi");
+            need(service.empty() || jsonMember(service, "record") == "null",
+                 "copied service inputs must not advertise scalar-only service_record facts");
+        }
+        const auto call = jsonMember(jsonMember(facts, "calls"), "copied_helper");
+        std::size_t consumed = 0;
+        const int callBytes = std::stoi(std::string(call), &consumed);
+        need(consumed == call.size() && jsonMember(facts, "local_bytes") == std::to_string(callBytes + 24),
              "copied service stack facts must retain the bounded copy register-save burst");
         ++checks;
     }
 }
 void good(Module m) {
     X86Emitter emitter;
-    const auto text = emitter.emit(validate(std::move(m)));
-    for (const auto &[name, facts] : emitter.stackFacts())
+    const auto validated = validate(std::move(m));
+    const auto text = emitter.emit(validated);
+    const auto stack = emitter.stackFactsJson(validated);
+    jsonMembers(jsonMember(stack, "functions"), [&](std::string_view, std::string_view facts) {
         for (const auto &[host, arguments, maximum] : {std::tuple{"__au_runtime_console_put", 3, 1},
                                                        std::tuple{"__au_runtime_display_pixel", 7, 1},
                                                        std::tuple{"__au_runtime_iommu_event_acknowledge", 2, 2}})
-            if (facts.calls.contains(host)) {
-                const auto &call = facts.serviceCalls.at(host);
-                need(call.arguments == arguments && call.resultMax == maximum,
+            if (!jsonMember(jsonMember(facts, "calls"), host).empty()) {
+                const auto calls = jsonMember(jsonMember(facts, "service_abi"), "calls");
+                need(jsonMember(calls, host) == "{\"sysv_arguments\":" + std::to_string(arguments) +
+                                                    ",\"result_max\":" + std::to_string(maximum) + "}",
                      "scalar host ABI facts disagree with independently expected native contract");
             }
+    });
     need(text.find("__au_runtime_bytes_") == std::string::npos, "service graph depends on byte-owner runtime");
     need(text.find(".globl caller") == std::string::npos, "ordinary public service entry");
     ++checks;

@@ -167,6 +167,11 @@ export namespace compiler_x86 {
         const i64 roots = declaration.borrowed_root_count();
         const bool receiver = has_receiver(m, callable);
         const bool aggregate = aggregate_signature(m, callable);
+        // Independent backend backstop: multiple borrowed roots admit only
+        // scalar/enum value tails and results, never aggregate/private records.
+        if (roots > 1 && aggregate) {
+            return w.fail();
+        }
         if (!w.begin_function(0, callable, callable)) {
             return false;
         }
@@ -452,9 +457,7 @@ export namespace compiler_x86 {
         w.text(".Laurora_division_zero_trap:\n    ud2\n.Laurora_shift_count_trap:\n    ud2\n");
         module_emit_literals(w, s);
         w.text(".section .note.GNU-stack,\"\",@progbits\n");
-        if (w.finish_assembly() && emit_stack_facts(w, m)) {
-            w.finish_stack();
-        }
+        w.finish_assembly();
         return w.status();
     }
 }

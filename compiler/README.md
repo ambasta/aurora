@@ -176,6 +176,37 @@ entry-parameter and static call-site admission.
 Native verification and emission consume the same normalized storage; these
 migrations still await execution qualification.
 
+## Emitter migration qualification
+
+The new multi-root source hop and the native emitter remain unqualified until
+built through the explicit predecessor route above. Preserve its source identity,
+toolchain, commands and build logs; a binary digest alone is not source provenance.
+Use that source-built `7811ba8` compiler as the external old-backend oracle, never
+as a production fallback. Before merging this port, run the whole checked-in
+source corpus with the current C2 compiler in both ordinary and closed profiles:
+
+```sh
+python3 -B tests/compiler/emitter_differential.py \
+  --old-compiler "$P" --new-compiler build/meson-compiler/aurorac-stage2 \
+  --source-root "$PWD" --artifacts build/emitter-differential/default
+python3 -B tests/compiler/emitter_differential.py \
+  --old-compiler "$P" --new-compiler build/meson-compiler/aurorac-stage2 \
+  --source-root "$PWD" --local-symbols --referenced-reflection-only \
+  --artifacts build/emitter-differential/closed
+```
+
+Each new evidence directory retains all input/compiler hashes, exact commands,
+diagnostics and assembly/stack/ABI artifacts. Accepted inputs must match byte for
+byte; rejected inputs must agree and preserve every preexisting output. Any
+mismatch, internal failure or watchdog timeout fails the gate and reports partial
+coverage. Equal rejection is not emission coverage. The corpus is every `.au`
+file under compiler, examples, kernel, library and tests; embedded generated
+fixtures and machine behavior remain covered by their existing native suites.
+This external-oracle gate supplements C1/C2 convergence and the final GCC 16 full,
+BIOS/UEFI and affected-profile gates; it does not replace them. Record before/after
+`scripts/compiler-speed.py` time and peak-memory observations before further
+migration work, with every timeout named rather than silently extending limits.
+
 ## Supported source
 
 - A file starts with `module name;` or `export module name;`; direct named imports

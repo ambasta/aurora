@@ -82,22 +82,32 @@ source/member names. It never serializes another instruction inventory.
 forms. Shared source helpers own widths, payload-only copies, owner transfers,
 padding, stack probes and private argument records. The source driver owns both
 peepholes, linkage, reflection ordering, literal IDs and traps. `x86_facts.au`
-serializes stack and ABI JSON, including invalid-byte escaping. The native
-`stackFacts()` observation only decodes that source-produced JSON for existing
-in-process consumers; it performs no stack or layout calculation.
+serializes stack and ABI JSON, including invalid-byte escaping. Both are explicit
+optional artifact requests against the same live emitted `ValidatedModule`.
+The internal C++ `stackFacts()` compatibility map and JSON decoder are removed;
+`stackFactsJson(validated)` follows the same ownership contract as ABI requests.
+Tests inspect the requested JSON independently. No JSON is serialized or decoded
+on an ordinary compile without a sidecar request, and no IR owner is retained.
 
-The workspace has bounded pools and sticky allocation/limit/integrity failure.
-Assembly and stack facts seal together; optional ABI names then produce a
-third artifact against the same emitted module. Repeated ABI requests reset
-only that optional suffix and revalidate the supplied declaration names, including
-a corrected request after a rejected ABI suffix. Executable-emission errors
-remain sticky and require a new emission workspace. Incomplete/failed
-artifacts are not extractable. The host reads copied 512-byte chunks and leaves
-`ArtifactWriter`'s single-write 64 MiB limit and atomic replacement unchanged. The draft also imposes explicit
-workspace limits: one million rows per pool, 64 MiB of ABI/runtime names, and a
-512 MiB region quota including resize peaks. These are new bounded-allocation
-limits requiring qualification, not claims about unchanged acceptance of all
-previously constructible hostile IR.
+The workspace has bounded pools and sticky executable-emission failures. Assembly
+seals first; a named `Artifact` selector prepares one shared optional suffix for
+stack or ABI JSON. A new request discards only that suffix and ABI name ingress,
+so stack/ABI ordering and retry after a malformed optional request preserve the
+executable and source facts. Failed executable emission requires a fresh workspace.
+Incomplete/failed artifacts are not extractable. The host reads copied 512-byte
+chunks; `ArtifactWriter` retains its single-write 64 MiB limit and atomic replacement.
+The original emitted module must remain alive while requesting sidecars; moving
+its validated owner is supported, but allocator-address reuse after destruction
+is not an identity guarantee.
+
+Workspace extents and the region's final logical payload quota are checked and
+count-derived from retained functions, reflection views and published instructions;
+there is no fixed million-row limit or bitmap sized by pruned callables. Optional
+ABI-name rows/bytes are bounded by their minimum contribution to the requested
+64 MiB JSON artifact, with a separate runtime-name allowance. Requested stack
+JSON has a checked bound of twice assembly bytes plus conservative per-function/
+per-call overhead. Actual elapsed time and peak RSS, including transient resizing
+and native copied strings, remain unmeasured for this source draft.
 `x86.hpp` contains the public interface only; no production fallback remains.
 
 The next qualification must source-build with the explicit three-root predecessor

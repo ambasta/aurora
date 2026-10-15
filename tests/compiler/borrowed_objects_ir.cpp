@@ -3,6 +3,7 @@
 #include "hosted_resolver.hpp"
 #include "ir_verify.hpp"
 #include "x86.hpp"
+#include "json_fragments.hpp"
 #include <functional>
 #include <iostream>
 #include <limits>
@@ -10,6 +11,7 @@
 
 using namespace aurora;
 using namespace aurora::ir;
+using aurora::test::jsonMember;
 using F = aurora::ir::Function;
 namespace {
 int accepted = 0, rejected = 0;
@@ -415,9 +417,9 @@ void pairedTests() {
     X86Emitter emitter;
     const auto validated = validate(pairedForwarded());
     const auto assembly = emitter.emit(validated);
-    const auto &facts = emitter.stackFacts();
-    require(facts.at("borrow_pair").localBytes == 48 &&
-                facts.at("borrow_pair").calls.at("pair_leaf") == 48,
+    const auto stack = emitter.stackFactsJson(validated);
+    const auto facts = jsonMember(jsonMember(stack, "functions"), "borrow_pair");
+    require(jsonMember(facts, "local_bytes") == "48" && jsonMember(jsonMember(facts, "calls"), "pair_leaf") == "48",
             "paired stack facts must include both hidden saves and outgoing pointer record");
     require(assembly.find("movq 8(%r10), %r11\n    movq %r11, -16(%rbp)") != std::string::npos &&
                 assembly.find("movq -16(%rbp), %r10") != std::string::npos &&

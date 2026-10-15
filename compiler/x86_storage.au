@@ -12,6 +12,11 @@ export namespace compiler_x86 {
         limit,
         invalid
     };
+    enum class Artifact {
+        assembly,
+        stack,
+        abi
+    };
     enum class Register {
         rax,
         rbx,
@@ -196,27 +201,45 @@ export namespace compiler_x86 {
             return false;
         }
     };
-    // Closed address-mode tokens carry bounded offsets, never pointers/text.
-    auto frame_address(i64 offset) -> i64 {
-        return offset;
-    }
-    auto stack_address(i64 offset) -> i64 {
-        return 1000000000 + offset;
-    }
-    auto r10_address(i64 offset) -> i64 {
-        return 2000000000 + offset;
-    }
-    auto r11_address(i64 offset) -> i64 {
-        return 3000000000 + offset;
-    }
-    auto rax_address(i64 offset) -> i64 {
-        return 4000000000 + offset;
-    }
-    auto advance_address(i64 token, i64 bytes) -> i64 {
-        if (token < 1000000000) {
-            return token - bytes;
+    // Checked geometric growth. Limits come from byte extents, not a row quota.
+    auto grow_capacity(i64 current, i64 required, i64 maximum, i64 minimum) -> i64 {
+        if (current < 0 || required < 0 || maximum < 0 || minimum < 0 || current > maximum || required > maximum) {
+            return -1;
         }
-        return token + bytes;
+        if (required <= current) {
+            return current;
+        }
+        i64 capacity = minimum;
+        if (current > 0) {
+            capacity = maximum;
+            if (current <= maximum / 2) {
+                capacity = current * 2;
+            }
+        }
+        if (capacity > maximum) {
+            capacity = maximum;
+        }
+        if (capacity < required) {
+            capacity = required;
+        }
+        return capacity;
+    }
+    auto stack_byte_bound(i64 assembly, i64 function_count, i64 call_count) -> i64 {
+        if (assembly < 0 || function_count < 0 || call_count < 0) {
+            return -1;
+        }
+        if (assembly > (9223372036854775807 - 1024) / 2) {
+            return -1;
+        }
+        i64 result = assembly * 2 + 1024;
+        if (function_count > (9223372036854775807 - result) / 1024) {
+            return -1;
+        }
+        result = result + function_count * 1024;
+        if (call_count > (9223372036854775807 - result) / 128) {
+            return -1;
+        }
+        return result + call_count * 128;
     }
     class EmitWorkspace {
         builtin::OwnedBytes output;
@@ -230,6 +253,7 @@ export namespace compiler_x86 {
         EmitStatus outcome;
         i64 outputSize;
         i64 artifactBegin;
+        i64 artifactLimit;
         i64 assemblySize;
         i64 stackSize;
         i64 abiSize;
@@ -261,12 +285,12 @@ export namespace compiler_x86 {
         EmitWorkspace(builtin::ByteRegion region) : output(region.try_allocate(0)), names(region.try_allocate(0)),
             retained(IndexRow_pool(region)), functions(FunctionFact_pool(region)), calls(CallFact_pool(region)),
             loans(LoanRow_pool(region)), runtimeNames(NameRow_pool(region)), abiNames(AbiNameRow_pool(region)),
-            outcome(EmitStatus::pending), outputSize(0), artifactBegin(0), assemblySize(0), stackSize(0), abiSize(0),
-            nameSize(0), retainedSize(0), functionSize(0), callSize(0), callBegin(0), loanSize(0), runtimeSize(0),
-            abiNameSize(0), currentCallable(-1), currentFunction(-1), functionIndex(0), divisionIndex(0), stackDepth(0),
-            liveStackBytes(8), receiverSave(0), callRecordSave(0), resultSave(0), copySource(0), copyDestination(0),
-            copySourceFirst(0), copyDestinationFirst(0), directResult(false), leftInRcx(false),
-            ownedSpanRuntime(false) {
+            outcome(EmitStatus::pending), outputSize(0), artifactBegin(0), artifactLimit(67108864), assemblySize(0),
+            stackSize(0), abiSize(0), nameSize(0), retainedSize(0), functionSize(0), callSize(0), callBegin(0),
+            loanSize(0), runtimeSize(0), abiNameSize(0), currentCallable(-1), currentFunction(-1), functionIndex(0),
+            divisionIndex(0), stackDepth(0), liveStackBytes(8), receiverSave(0), callRecordSave(0), resultSave(0),
+            copySource(0), copyDestination(0), copySourceFirst(0), copyDestinationFirst(0), directResult(false),
+            leftInRcx(false), ownedSpanRuntime(false) {
         }
         auto allocated() const -> bool {
             return output.ok() && names.ok() && retained.ok() && functions.ok() && calls.ok() && loans.ok()
@@ -300,22 +324,19 @@ export namespace compiler_x86 {
             if (!ok()) {
                 return false;
             }
-            if (count < 0 || count > 67108864 - (outputSize - artifactBegin)) {
+            if (count < 0) {
+                return fail();
+            }
+            if (count > artifactLimit - (outputSize - artifactBegin) || count > 9223372036854775807 - outputSize) {
                 return limit_failure();
             }
             const i64 required = outputSize + count;
             if (required <= output.size()) {
                 return true;
             }
-            i64 capacity = 4096;
-            if (output.size() > 0) {
-                capacity = output.size() * 2;
-            }
-            if (capacity > 201326592) {
-                capacity = 201326592;
-            }
-            if (capacity < required) {
-                capacity = required;
+            const i64 capacity = grow_capacity(output.size(), required, 9223372036854775807, 4096);
+            if (capacity < 0) {
+                return limit_failure();
             }
             if (!output.try_resize(capacity)) {
                 return allocation_failure();
@@ -379,7 +400,48 @@ export namespace compiler_x86 {
             text(suffix);
             return end_line();
         }
+        // Tokens never cross a base boundary. Every construction/advance marks
+        // sticky failure before returning -1; invalid tokens cannot be revived.
+        auto pack_address(i64 base, i64 offset) -> i64 {
+            if (!ok()) {
+                return -1;
+            }
+            if (base < 0 || base > 4 || offset < 0 || offset >= 1000000000) {
+                fail();
+                return -1;
+            }
+            return base * 1000000000 + offset;
+        }
+        auto advance_address(i64 token, i64 bytes) -> i64 {
+            if (!ok()) {
+                return -1;
+            }
+            if (token < 0 || token >= 5000000000 || bytes < 0 || bytes >= 1000000000) {
+                fail();
+                return -1;
+            }
+            const i64 base = token / 1000000000;
+            const i64 offset = token % 1000000000;
+            if (base == 0) {
+                if (bytes > offset) {
+                    fail();
+                    return -1;
+                }
+                return pack_address(base, offset - bytes);
+            }
+            if (bytes >= 1000000000 - offset) {
+                fail();
+                return -1;
+            }
+            return pack_address(base, offset + bytes);
+        }
         auto address(i64 offset) -> bool {
+            if (!ok()) {
+                return false;
+            }
+            if (offset < 0 || offset >= 1000000000) {
+                return fail();
+            }
             text("-");
             number(offset);
             return text("(%rbp)");
@@ -392,6 +454,12 @@ export namespace compiler_x86 {
             return end_line();
         }
         auto memory(i64 token) -> bool {
+            if (!ok()) {
+                return false;
+            }
+            if (token < 0 || token >= 5000000000) {
+                return fail();
+            }
             if (token < 1000000000) {
                 return address(token);
             }
@@ -566,14 +634,14 @@ export namespace compiler_x86 {
             return ok();
         }
         auto add_retained(i64 callable) -> bool {
-            if (outcome != EmitStatus::pending || callable < 0 || retainedSize >= 1048576) {
+            if (outcome != EmitStatus::pending || callable < 0) {
                 return fail();
             }
             if (retainedSize == retained.size()) {
                 const IndexRow fill = IndexRow(-1);
-                i64 capacity = 16;
-                if (retainedSize > 0) {
-                    capacity = retainedSize * 2;
+                const i64 capacity = grow_capacity(retainedSize, retainedSize + 1, 9223372036854775807 / 8, 16);
+                if (capacity < 0) {
+                    return limit_failure();
                 }
                 if (!retained.try_resize(capacity, fill)) {
                     return allocation_failure();
@@ -591,38 +659,80 @@ export namespace compiler_x86 {
             const IndexRow value = retained.at(at);
             return value.value();
         }
+        auto retained_sift(i64 root, i64 count) -> bool {
+            while (root < count / 2) {
+                i64 child = root * 2 + 1;
+                const IndexRow left = retained.at(retainedSize + child);
+                if (child + 1 < count) {
+                    const IndexRow right = retained.at(retainedSize + child + 1);
+                    if (left.value() < right.value()) {
+                        child = child + 1;
+                    }
+                }
+                const IndexRow parent = retained.at(retainedSize + root);
+                const IndexRow selected = retained.at(retainedSize + child);
+                if (parent.value() >= selected.value()) {
+                    return true;
+                }
+                retained.set(retainedSize + root, selected);
+                retained.set(retainedSize + child, parent);
+                root = child;
+            }
+            return true;
+        }
         auto retained_valid(i64 callable_count) -> bool {
-            if (callable_count < 0 || callable_count > 1048576) {
+            if (callable_count < 0) {
+                return fail();
+            }
+            // Duplicate checking uses selected IDs only. A large pruned metadata
+            // inventory must neither allocate a bitmap nor impose a callable cap.
+            if (retainedSize > 9223372036854775807 / 16) {
                 return limit_failure();
             }
             const IndexRow empty = IndexRow(-1);
-            if (!retained.try_resize(retainedSize + callable_count, empty)) {
+            if (!retained.try_resize(retainedSize * 2, empty)) {
                 return allocation_failure();
             }
             i64 at = 0;
-            while (at < callable_count) {
-                retained.set(retainedSize + at, empty);
-                at = at + 1;
-            }
-            at = 0;
             while (at < retainedSize) {
                 const IndexRow id = retained.at(at);
-                const i64 value = id.value();
-                if (value < 0 || value >= callable_count) {
+                if (id.value() < 0 || id.value() >= callable_count) {
                     return fail();
                 }
-                const IndexRow seen = retained.at(retainedSize + value);
-                if (seen.value() != -1) {
+                retained.set(retainedSize + at, id);
+                at = at + 1;
+            }
+            at = retainedSize / 2;
+            while (at > 0) {
+                at = at - 1;
+                retained_sift(at, retainedSize);
+            }
+            at = retainedSize;
+            while (at > 1) {
+                at = at - 1;
+                const IndexRow root = retained.at(retainedSize);
+                const IndexRow last = retained.at(retainedSize + at);
+                retained.set(retainedSize, last);
+                retained.set(retainedSize + at, root);
+                retained_sift(0, at);
+            }
+            at = 1;
+            while (at < retainedSize) {
+                const IndexRow previous = retained.at(retainedSize + at - 1);
+                const IndexRow current = retained.at(retainedSize + at);
+                if (previous.value() == current.value()) {
                     return fail();
                 }
-                const IndexRow mark = IndexRow(at);
-                retained.set(retainedSize + value, mark);
                 at = at + 1;
             }
             return ok();
         }
         auto sort_prepare() -> bool {
             const IndexRow empty = IndexRow(-1);
+            const i64 maximum = 9223372036854775807 / 8;
+            if (functionSize > maximum - retainedSize || callSize > maximum - retainedSize - functionSize) {
+                return limit_failure();
+            }
             const i64 count = functionSize + callSize;
             if (!retained.try_resize(retainedSize + count, empty)) {
                 return allocation_failure();
@@ -663,14 +773,11 @@ export namespace compiler_x86 {
             return true;
         }
         auto begin_function(i64 kind, i64 symbol, i64 callable) -> bool {
-            if (functionSize >= 1048576) {
-                return limit_failure();
-            }
             if (functionSize == functions.size()) {
                 const FunctionFact fill = FunctionFact(-1, -1, 8, 0, 0);
-                i64 capacity = 16;
-                if (functionSize > 0) {
-                    capacity = functionSize * 2;
+                const i64 capacity = grow_capacity(functionSize, functionSize + 1, 9223372036854775807 / 40, 16);
+                if (capacity < 0) {
+                    return limit_failure();
                 }
                 if (!functions.try_resize(capacity, fill)) {
                     return allocation_failure();
@@ -813,14 +920,11 @@ export namespace compiler_x86 {
                 }
                 at = at + 1;
             }
-            if (callSize >= 1048576) {
-                return limit_failure();
-            }
             if (callSize == calls.size()) {
                 const CallFact fill = CallFact(-1, -1, -1, 0, -1, -1);
-                i64 capacity = 16;
-                if (callSize > 0) {
-                    capacity = callSize * 2;
+                const i64 capacity = grow_capacity(callSize, callSize + 1, 9223372036854775807 / 48, 16);
+                if (capacity < 0) {
+                    return limit_failure();
                 }
                 if (!calls.try_resize(capacity, fill)) {
                     return allocation_failure();
@@ -839,7 +943,7 @@ export namespace compiler_x86 {
             return value;
         }
         auto append_name(builtin::span<const u8> name) -> i64 {
-            if (!ok() || name.size() > 67108864 - nameSize) {
+            if (!ok() || name.size() > 67174400 - nameSize) {
                 limit_failure();
                 return -1;
             }
@@ -853,8 +957,8 @@ export namespace compiler_x86 {
                 if (capacity < required) {
                     capacity = required;
                 }
-                if (capacity > 67108864) {
-                    capacity = 67108864;
+                if (capacity > 67174400) {
+                    capacity = 67174400;
                 }
                 if (!names.try_resize(capacity)) {
                     allocation_failure();
@@ -880,6 +984,12 @@ export namespace compiler_x86 {
             return runtimeSize;
         }
         auto intern_runtime(builtin::span<const u8> name) -> i64 {
+            // The closed runtime vocabulary has 15 names; reserve an independent
+            // 64 KiB prefix so these names cannot consume the ABI-name budget.
+            if (name.size() > 1024) {
+                limit_failure();
+                return -1;
+            }
             i64 at = 0;
             while (at < runtimeSize) {
                 const NameRow old = runtimeNames.at(at);
@@ -950,14 +1060,11 @@ export namespace compiler_x86 {
             return line("ja .Laurora_bounds_trap");
         }
         auto add_loan(i64 id, i64 offset) -> bool {
-            if (loanSize >= 1048576) {
-                return limit_failure();
-            }
             if (loanSize == loans.size()) {
                 const LoanRow fill = LoanRow(-1, -1);
-                i64 capacity = 16;
-                if (loanSize > 0) {
-                    capacity = loanSize * 2;
+                const i64 capacity = grow_capacity(loanSize, loanSize + 1, 9223372036854775807 / 16, 16);
+                if (capacity < 0) {
+                    return limit_failure();
                 }
                 if (!loans.try_resize(capacity, fill)) {
                     return allocation_failure();
@@ -980,15 +1087,20 @@ export namespace compiler_x86 {
             return -1;
         }
         auto add_abi_name(AbiNameRow value) -> bool {
-            if (!ok() || abiNameSize >= 1048576 || value.begin() < 0 || value.count() < 0 || value.begin() > nameSize
-                || value.count() > nameSize - value.begin()) {
+            if (!ok() || value.begin() < 0 || value.count() < 0 || value.begin() > nameSize || value.count() > nameSize
+                - value.begin()) {
                 return fail();
+            }
+            // Every accepted name row contributes at least one ABI JSON byte.
+            // This bound therefore follows from the requested artifact budget.
+            if (abiNameSize >= 67108864) {
+                return limit_failure();
             }
             if (abiNameSize == abiNames.size()) {
                 const AbiNameRow fill = AbiNameRow(-1, -1, -1, 0, 0);
-                i64 capacity = 16;
-                if (abiNameSize > 0) {
-                    capacity = abiNameSize * 2;
+                const i64 capacity = grow_capacity(abiNameSize, abiNameSize + 1, 9223372036854775807 / 40, 16);
+                if (capacity < 0) {
+                    return limit_failure();
                 }
                 if (!abiNames.try_resize(capacity, fill)) {
                     return allocation_failure();
@@ -1006,23 +1118,39 @@ export namespace compiler_x86 {
             return row;
         }
         auto finish_assembly() -> bool {
-            if (!ok()) {
-                return false;
+            if (outcome != EmitStatus::running) {
+                return fail();
             }
             assemblySize = outputSize;
             artifactBegin = outputSize;
+            outcome = EmitStatus::complete;
             return true;
         }
-        auto prepare_abi() -> bool {
-            // A fresh optional request may recover a failed ABI suffix. Neither
-            // sealed artifact nor executable-emission failure can be changed.
-            if (assemblySize <= 0 || stackSize <= 0 || artifactBegin != assemblySize + stackSize) {
+        auto prepare_facts(Artifact artifact) -> bool {
+            // Only a successfully sealed assembly permits an optional request.
+            // Discard the prior optional suffix, never the executable or facts.
+            // A failed optional request can be retried against the same module.
+            if (assemblySize <= 0 || (artifact != Artifact::stack && artifact != Artifact::abi)) {
                 return fail();
             }
-            outcome = EmitStatus::complete;
-            outputSize = assemblySize + stackSize;
-            artifactBegin = outputSize;
+            outcome = EmitStatus::running;
+            outputSize = assemblySize;
+            artifactBegin = assemblySize;
+            stackSize = 0;
             abiSize = 0;
+            artifactLimit = 67108864;
+            if (artifact == Artifact::stack) {
+                // Admitted ASCII symbols have disjoint assembly occurrences;
+                // a service call can print twice. Fixed JSON/numeric overhead
+                // is <=652/function, <=101/call and 29 wrapper bytes.
+                artifactLimit = stack_byte_bound(assemblySize, functionSize, callSize);
+                if (artifactLimit < 0) {
+                    return limit_failure();
+                }
+                stackSize = -1;
+            } else {
+                abiSize = -1;
+            }
             abiNameSize = 0;
             nameSize = 0;
             if (runtimeSize > 0) {
@@ -1031,11 +1159,16 @@ export namespace compiler_x86 {
             }
             return true;
         }
-        auto begin_abi() -> bool {
-            if (outcome != EmitStatus::complete || abiSize != 0 || outputSize != artifactBegin) {
+        auto begin_stack() -> bool {
+            if (outcome != EmitStatus::running || stackSize != -1 || outputSize != artifactBegin) {
                 return fail();
             }
-            abiSize = -1;
+            return true;
+        }
+        auto begin_abi() -> bool {
+            if (outcome != EmitStatus::running || abiSize != -1 || outputSize != artifactBegin) {
+                return fail();
+            }
             return true;
         }
         auto finish_stack() -> bool {
@@ -1052,32 +1185,30 @@ export namespace compiler_x86 {
                 return false;
             }
             abiSize = outputSize - artifactBegin;
+            outcome = EmitStatus::complete;
             return true;
         }
-        auto artifact_size(i64 artifact) const -> i64 {
+        auto artifact_size(Artifact artifact) const -> i64 {
             if (outcome != EmitStatus::complete) {
                 return -1;
             }
-            if (artifact == 0) {
+            if (artifact == Artifact::assembly) {
                 return assemblySize;
             }
-            if (artifact == 1) {
+            if (artifact == Artifact::stack && stackSize > 0) {
                 return stackSize;
             }
-            if (artifact == 2) {
+            if (artifact == Artifact::abi && abiSize > 0) {
                 return abiSize;
             }
             return -1;
         }
-        auto chunk(i64 artifact, i64 offset) const -> EmitChunk {
+        auto chunk(Artifact artifact, i64 offset) const -> EmitChunk {
             EmitChunk result = EmitChunk();
             i64 count = artifact_size(artifact);
             i64 first = 0;
-            if (artifact > 0) {
+            if (artifact != Artifact::assembly) {
                 first = assemblySize;
-            }
-            if (artifact > 1) {
-                first = first + stackSize;
             }
             if (offset < 0 || offset > count) {
                 result.invalidate();

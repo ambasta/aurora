@@ -69,7 +69,8 @@ export namespace compiler_x86 {
         }
         const i64 record_bytes =((record_offset(m, target, count) + 15) / 16) * 16;
         w.reserve_stack(record_bytes);
-        clear_bytes(w, 0, record_bytes, stack_address(0));
+        const i64 packed_address54 = w.pack_address(1, 0);
+        clear_bytes(w, 0, record_bytes, packed_address54);
         // Scalar argument registers are saved before descriptor copies reuse
         // RAX/RCX. The region root always occupies the first complete word.
         index = 1;
@@ -77,7 +78,8 @@ export namespace compiler_x86 {
             const i64 type = parameter_type(m, target, index);
             const i64 kind = type_kind(m, type);
             if (kind != 13 && kind != 17 && kind != 5) {
-                store_argument(w, m, type, index, stack_address(record_offset(m, target, index)));
+                const i64 packed_address55 = w.pack_address(1, record_offset(m, target, index));
+                store_argument(w, m, type, index, packed_address55);
             }
             index = index + 1;
         }
@@ -102,7 +104,9 @@ export namespace compiler_x86 {
                 if (kind == 5) {
                     const i64 source = operand_lane(s, instruction, 2, index);
                     const i64 destination = record_offset(m, target, index);
-                    transfer_object(w, m, type_class(m, type), frame_address(source), stack_address(destination));
+                    const i64 packed_address56 = w.pack_address(0, source);
+                    const i64 packed_address57 = w.pack_address(1, destination);
+                    transfer_object(w, m, type_class(m, type), packed_address56, packed_address57);
                 }
             }
             index = index + 1;
@@ -510,7 +514,9 @@ export namespace compiler_x86 {
         if (form == 78) {
             const i64 result = operand_value(s, instruction, 1);
             const i64 name = slot_class(m, callable, first);
-            transfer_object(w, m, name, frame_address(first), frame_address(result));
+            const i64 packed_address58 = w.pack_address(0, first);
+            const i64 packed_address59 = w.pack_address(0, result);
+            transfer_object(w, m, name, packed_address58, packed_address59);
             return true;
         }
         if (form == 79) {
@@ -520,7 +526,9 @@ export namespace compiler_x86 {
             w.line_address("movq ", save, ", %r11");
             const i64 source = record_offset(m, callable, first);
             clear_object(w, m, offset, name);
-            transfer_object(w, m, name, r11_address(source), frame_address(offset));
+            const i64 packed_address60 = w.pack_address(3, source);
+            const i64 packed_address61 = w.pack_address(0, offset);
+            transfer_object(w, m, name, packed_address60, packed_address61);
             return true;
         }
         // ReturnOwnedObject transfers and clears each owned descriptor while
@@ -528,7 +536,9 @@ export namespace compiler_x86 {
         const i64 save = w.result_save();
         w.line_address("movq ", save, ", %r10");
         const i64 result = result_type(m, callable);
-        transfer_object(w, m, type_class(m, result), frame_address(first), r10_address(0));
+        const i64 packed_address62 = w.pack_address(0, first);
+        const i64 packed_address63 = w.pack_address(2, 0);
+        transfer_object(w, m, type_class(m, result), packed_address62, packed_address63);
         resource_return_jump(w);
         return true;
     }

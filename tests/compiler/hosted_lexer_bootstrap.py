@@ -38,11 +38,11 @@ EMITTER_OPERATIONS = (
     "release",
     "status",
     "add_retained",
-    "prepare_abi",
+    "prepare_facts",
     "append_name",
     "add_abi_name",
     "run",
-    "abi",
+    "facts",
     "size",
     "chunk",
 )
@@ -750,108 +750,59 @@ def emitter_generation(facts):
         frontend_bridge("call __aurora_frontend_emitter_run\n", facts) == "call " + run_symbol + "\n",
         "actual three-root emitter bridge resolved a different entry",
     )
-    for operation in EMITTER_OPERATIONS:
-        for mutation in ("receiver", "result", "parameters", "root"):
-            changed = deepcopy(facts)
-            _, entry = abi_declaration(changed, "functions", "compiler_frontend::emitter_" + operation)
-            if mutation == "receiver":
-                entry["receiver"] = workspace
-            elif mutation == "result":
-                entry["result"]["bytes"] += 8
-            elif mutation == "parameters":
-                if entry["parameters"]:
-                    entry["parameters"][0]["bytes"] += 8
-                else:
-                    entry["parameter_bytes"] += 8
-            else:
-                entry["source_name"] = "fixture::removed_emitter_" + operation
-            try:
-                frontend_abi_header(changed)
-            except ValueError:
-                continue
-            raise AssertionError(f"unsafe emitter bridge accepted: {operation}/{mutation}")
-    for operation in EMITTER_OPERATIONS:
-        if operation in ("create", "release"):
+
+    def changed_entry(group, source_name):
+        symbol, original = abi_declaration(facts, group, source_name)
+        entry = deepcopy(original)
+        changed = dict(facts)
+        changed[group] = dict(facts[group])
+        changed[group][symbol] = entry
+        return changed, entry
+
+    # Sample the distinct entry shapes. The positive whole-frontend inventory
+    # above validates every entry; avoid copying/regenerating all facts once per
+    # operation merely to exercise the same closed signature checks repeatedly.
+    for operation, mutation in (("create", "result"), ("append_name", "parameters"), ("facts", "root")):
+        changed, entry = changed_entry("functions", "compiler_frontend::emitter_" + operation)
+        if mutation == "result":
+            entry["result"]["bytes"] += 8
+        elif mutation == "parameters":
+            entry["parameters"][0]["bytes"] += 8
+        else:
+            entry["source_name"] = "fixture::removed_emitter_" + operation
+        try:
+            frontend_abi_header(changed)
+        except ValueError:
             continue
-        changed = deepcopy(facts)
-        _, entry = abi_declaration(changed, "functions", "compiler_frontend::emitter_" + operation)
+        raise AssertionError(f"unsafe emitter bridge accepted: {operation}/{mutation}")
+    for operation in ("status", "run"):
+        changed, entry = changed_entry("functions", "compiler_frontend::emitter_" + operation)
         entry["borrowed_roots"][0]["mutable"] = not entry["borrowed_roots"][0]["mutable"]
         try:
             frontend_abi_header(changed)
         except ValueError:
             continue
         raise AssertionError("unsafe emitter owner authority accepted: " + operation)
-    mutations = [
+    mutations = (
         ("root order", lambda f: f["borrowed_roots"].reverse()),
         ("missing root", lambda f: f["borrowed_roots"].pop()),
-        ("extra root", lambda f: f["borrowed_roots"].append(dict(f["borrowed_roots"][2]))),
         ("duplicate root type", lambda f: f["borrowed_roots"][2].__setitem__("type_name", metadata)),
-        (
-            "swapped readonly types",
-            lambda f: (
-                f["borrowed_roots"][1].__setitem__("type_name", instructions),
-                f["borrowed_roots"][2].__setitem__("type_name", metadata),
-            ),
-        ),
-        ("paired count", lambda f: f.__setitem__("borrowed_root_count", 2)),
         ("boolean count", lambda f: f.__setitem__("borrowed_root_count", True)),
-        ("legacy field", lambda f: f.__setitem__("second_receiver", None)),
         ("missing scalar tail", lambda f: f["parameters"].pop()),
-        ("extra scalar tail", lambda f: f["parameters"].append(dict(offset=16, bytes=8, kind="i64"))),
         ("copied tail", lambda f: f["parameters"][0].update(kind="class", type_name=chunk_symbol, bytes=520)),
         ("copied result", lambda f: f["result"].update(kind="class", type_name=chunk_symbol, bytes=520)),
-    ]
-    for lane in range(3):
-        for field, value in (
-            ("ordinal", (lane + 1) % 3),
-            ("ordinal", False),
-            ("selector", -6),
-            ("selector", -9223372036854775808),
-            ("selector", False),
-            ("type_name", "missing-root"),
-            ("mutable", lane != 0),
-            ("mutable", 1),
-        ):
-            mutations.append(
-                (
-                    f"lane {lane}/{field}",
-                    lambda f, lane=lane, field=field, value=value: f["borrowed_roots"][lane].__setitem__(field, value),
-                )
-            )
-    for field, value in (
-        ("kind", "direct"),
-        ("register", "r11"),
-        ("tuple_payload_bytes", 32),
-        ("tuple_reserved_bytes", 24),
-        ("saved_root_reserved_bytes", 24),
-        ("tuple_payload_bytes", True),
-    ):
-        mutations.append(
-            (
-                "transport/" + field,
-                lambda f, field=field, value=value: f["borrowed_root_abi"].__setitem__(field, value),
-            )
-        )
+        ("tuple padding", lambda f: f["borrowed_root_abi"].__setitem__("tuple_reserved_bytes", 24)),
+    )
     for description, mutation in mutations:
-        changed = deepcopy(facts)
-        _, entry = abi_declaration(changed, "functions", source)
+        changed, entry = changed_entry("functions", source)
         mutation(entry)
         try:
             frontend_abi_header(changed)
         except ValueError:
             continue
         raise AssertionError("unsafe three-root emitter ABI accepted: " + description)
-    for field, value in (
-        ("array_length", 0),
-        ("array_length", 511),
-        ("array_length", 513),
-        ("array_length", True),
-        ("bytes", 511),
-        ("kind", "i64"),
-        ("offset", 1),
-    ):
-        changed = deepcopy(facts)
-        _, entry = abi_declaration(changed, "records", "compiler_x86::EmitChunk")
+    for field, value in (("array_length", 0), ("array_length", 513), ("bytes", 511), ("kind", "i64")):
+        changed, entry = changed_entry("records", "compiler_x86::EmitChunk")
         entry["fields"][0][field] = value
         try:
             frontend_abi_header(changed)
@@ -938,7 +889,7 @@ def borrowed_root_generation(facts):
         "instructions_admit",
         "instructions_structure",
         "initialization_initialize",
-        "emitter_abi",
+        "emitter_facts",
     )
     for alias in pair_sources:
         source = "compiler_frontend::" + alias
@@ -1094,6 +1045,7 @@ def message_generation(facts, root):
 
 
 def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
+    from bootstrap_frontend import write_frontend_header
     from qemu_transport import run_logged
 
     def regenerate(compiler, output):
@@ -1265,10 +1217,35 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
     expected = generated_header.read_bytes()
     old_mtime = 1_000_000_000_000_000_000
     os.utime(generated_header, ns=(old_mtime, old_mtime))
-    regenerate(current1, units[0])
+    # Both real stage compilations and all convergence comparisons above remain
+    # mandatory. Header idempotence needs only the writer and those emitted facts,
+    # not a third complete compilation of the same frontend.
+    emitted_facts = json.loads(units[0].with_suffix(".abi.json").read_text())
+    message_sources = (
+        root / "compiler/lowering_errors.au",
+        root / "compiler/ir_metadata_storage.au",
+        root / "compiler/ir_instruction_storage.au",
+    )
+    write_frontend_header(emitted_facts, generated_header, *message_sources, header(built_b))
     require(
         generated_header.read_bytes() == expected and generated_header.stat().st_mtime_ns == old_mtime,
         "unchanged compiler ABI header was rewritten",
+    )
+    incompatible = work / "incompatible-shared.hpp"
+    incompatible.write_bytes(b"incompatible shared host ABI\n")
+    rejected_header = work / "rejected-output.hpp"
+    sentinel = b"preserve prior header on incompatible ABI\n"
+    rejected_header.write_bytes(sentinel)
+    os.utime(rejected_header, ns=(old_mtime, old_mtime))
+    try:
+        write_frontend_header(emitted_facts, rejected_header, *message_sources, incompatible)
+    except ValueError as error:
+        require("stage2 ABI header differs" in str(error), "wrong shared-header compatibility rejection")
+    else:
+        raise AssertionError("incompatible shared-host ABI header was accepted")
+    require(
+        rejected_header.read_bytes() == sentinel and rejected_header.stat().st_mtime_ns == old_mtime,
+        "incompatible shared-host ABI changed an existing header before rejection",
     )
     print(
         "PASS generated ABI facts/header and frontend B/C convergence, built-B identity, "

@@ -3,6 +3,7 @@
 #include "ir_verify.hpp"
 #include "hosted_resolver.hpp"
 #include "x86.hpp"
+#include "json_fragments.hpp"
 #include <functional>
 #include <iostream>
 #include <limits>
@@ -11,6 +12,7 @@
 
 using namespace aurora;
 using namespace aurora::ir;
+using aurora::test::jsonMember;
 using IRFunction = aurora::ir::Function;
 
 namespace {
@@ -696,9 +698,38 @@ void metadataLifetimeTests() {
     declarations.records["Parcel"] = {"Parcel", {"tag", "first", "value", "second", "tail"}};
     declarations.enums["Phase"] = {"Phase", {"ready", "done"}};
     declarations.functions["owning_entry"] = {"owning_entry", {}};
+    const auto rejectStackOwner = [](X86Emitter &owner, const ValidatedModule &module) {
+        bool rejectedOwner = false;
+        try {
+            (void)owner.stackFactsJson(module);
+        } catch (const Error &error) {
+            rejectedOwner = std::string(error.what()) == "stack facts require the same emitted module";
+        }
+        require(rejectedOwner, "stack facts accepted an absent or different emitted-module owner");
+        ++rejected;
+    };
     X86Emitter emitter;
+    rejectStackOwner(emitter, checked);
     const auto assembly = emitter.emit(checked);
+    const auto stack = emitter.stackFactsJson(checked);
     const auto facts = emitter.abiFactsJson(checked, declarations);
+    require(emitter.stackFactsJson(checked) == stack &&
+                !jsonMember(jsonMember(stack, "functions"), "owning_entry").empty(),
+            "stack-to-ABI-to-stack observation changed facts or lost the owning entry");
+    rejectStackOwner(emitter, independent);
+    require(emitter.stackFactsJson(checked) == stack, "rejected stack owner poisoned the emitted module");
+    // Both capsules remain alive. Re-emission changes the accepted owner even
+    // when the separately validated input and complete output are identical.
+    X86Emitter reemittedOwner;
+    require(reemittedOwner.emit(checked) == assembly && reemittedOwner.stackFactsJson(checked) == stack,
+            "independent emitter changed assembly or stack facts");
+    require(reemittedOwner.emit(independent) == assembly && reemittedOwner.stackFactsJson(independent) == stack,
+            "re-emission changed exact assembly or stack facts");
+    rejectStackOwner(reemittedOwner, checked);
+    require(reemittedOwner.stackFactsJson(independent) == stack && reemittedOwner.emit(independent) == assembly &&
+                reemittedOwner.stackFactsJson(independent) == stack,
+            "repeated emission or rejected earlier owner changed stack observations");
+    ++accepted;
     auto changed = declarations;
     changed.records.at("Parcel").sourceName = "RenamedParcel";
     changed.records.at("Parcel").members[0] = "renamed_tag";
@@ -720,8 +751,9 @@ void metadataLifetimeTests() {
     } catch (const Error &) {
         badNamesRejected = true;
     }
-    require(badNamesRejected && emitter.abiFactsJson(checked, declarations) == facts,
-            "malformed ABI names were accepted or poisoned the next independent request");
+    require(badNamesRejected && emitter.stackFactsJson(checked) == stack &&
+                emitter.abiFactsJson(checked, declarations) == facts,
+            "malformed ABI names were accepted or poisoned stack facts or the corrected ABI request");
     auto hostileNames = declarations;
     hostileNames.records.at("Parcel").sourceName = std::string("bad") + char(0xff) + char(0) + char(0xc3) + "(";
     const auto hostileFacts = emitter.abiFactsJson(checked, hostileNames);
@@ -754,19 +786,24 @@ void metadataLifetimeTests() {
     copiedField.elementType = Type::U64;
     require(copiedField.elementType == Type::U64 && fields[1].elementType == Type::OwnedBytes,
             "metadata field observation exposed mutable source storage");
-    require(emitter.abiFactsJson(moved, declarations) == facts,
-            "ABI facts lost same-owner identity after validated move");
+    require(emitter.stackFactsJson(moved) == stack && emitter.abiFactsJson(moved, declarations) == facts &&
+                emitter.stackFactsJson(moved) == stack,
+            "stack or ABI facts lost same-owner identity after validated move");
     require(X86Emitter{}.emit(moved) == assembly, "validated move changed emitted assembly");
     ++accepted;
+    bool independentAbiRejected = false;
     try {
         (void)emitter.abiFactsJson(independent, declarations);
     } catch (const Error &error) {
         require(std::string(error.what()) == "ABI facts require the same emitted module",
                 "independent metadata owner produced wrong ABI identity diagnostic");
+        independentAbiRejected = true;
         ++rejected;
-        return;
     }
-    throw Error("independent equal metadata owner passed emitted-module identity guard");
+    require(independentAbiRejected, "independent equal metadata owner passed emitted-module identity guard");
+    rejectStackOwner(emitter, independent);
+    require(emitter.stackFactsJson(moved) == stack && emitter.abiFactsJson(moved, declarations) == facts,
+            "independent owner rejection changed exact stack or ABI observations");
 }
 
 void layoutTests() {

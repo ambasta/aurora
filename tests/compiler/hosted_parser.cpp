@@ -5623,7 +5623,8 @@ void resolvedCompilerSources(char **paths) {
             if (index >= 28 && index <= 35) {
                 const std::string expectedNamespace = index == 28 ? "std_decimal" : "compiler_x86";
                 const std::vector<std::string> expectedEnums =
-                    index == 29 ? std::vector<std::string>{"EmitStatus", "Register"} : std::vector<std::string>{};
+                    index == 29 ? std::vector<std::string>{"EmitStatus", "Artifact", "Register"}
+                                : std::vector<std::string>{};
                 require(syntax[index].namespaces == std::set<std::string>{expectedNamespace} &&
                             syntax[index].templates.empty() && syntax[index].functionTemplates.empty() &&
                             syntax[index].enums.size() == expectedEnums.size(),
@@ -5746,7 +5747,7 @@ void resolvedCompilerSources(char **paths) {
             ++enums;
         }
     }
-    require(enums == 46 && classes == 89 && fields > 228 && methods > 307 &&
+    require(enums == 47 && classes == 89 && fields > 228 && methods > 307 &&
                 retainedFunctions == module.functions.size() && functions == abi.functions.size() &&
                 sourceFunctionNames == abiFunctionNames,
             "real compiler typed graph omitted or appended an unaccounted declaration");

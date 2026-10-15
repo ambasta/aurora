@@ -322,6 +322,11 @@ const void *Instructions::sourceOwner(const Metadata &metadata) const {
     return state_->owner.data();
 }
 
+std::size_t Instructions::sourceInstructionCount(const Metadata &metadata) const {
+    (void)sourceOwner(metadata);
+    return index(state_->counts.instructionCount);
+}
+
 Instructions::Instructions() = default;
 Instructions::~Instructions() = default;
 InstructionIngress::InstructionIngress() = default;

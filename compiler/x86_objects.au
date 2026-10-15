@@ -19,12 +19,14 @@ export namespace compiler_x86 {
         while (byte < bytes) {
             workspace.begin_line();
             workspace.text("movq ");
-            workspace.memory(advance_address(source, byte));
+            const i64 packed_address13 = workspace.advance_address(source, byte);
+            workspace.memory(packed_address13);
             workspace.text(", %rax");
             workspace.end_line();
             workspace.begin_line();
             workspace.text("movq %rax, ");
-            workspace.memory(advance_address(destination, byte));
+            const i64 packed_address14 = workspace.advance_address(destination, byte);
+            workspace.memory(packed_address14);
             workspace.end_line();
             byte = byte + 8;
         }
@@ -73,19 +75,22 @@ export namespace compiler_x86 {
             const i64 offset = record_offset(metadata, target, index);
             if (kind == 5) {
                 const i64 class_id = type_class(metadata, type);
-                clear_padding(workspace, metadata, class_id, stack_address(offset));
+                const i64 packed_address15 = workspace.pack_address(1, offset);
+                clear_padding(workspace, metadata, class_id, packed_address15);
             } else {
                 if (kind != 11) {
                     i64 width = 8;
                     if (kind == 10) {
                         width = 1;
                     }
-                    clear_bytes(workspace, width, 8, stack_address(offset));
+                    const i64 packed_address16 = workspace.pack_address(1, offset);
+                    clear_bytes(workspace, width, 8, packed_address16);
                 }
             }
             index = index + 1;
         }
-        clear_bytes(workspace, payload, bytes, stack_address(0));
+        const i64 packed_address17 = workspace.pack_address(1, 0);
+        clear_bytes(workspace, payload, bytes, packed_address17);
         index = 0;
         while (index < count) {
             const i64 type = parameter_type(metadata, target, index);
@@ -93,14 +98,19 @@ export namespace compiler_x86 {
             const i64 offset = record_offset(metadata, target, index);
             if (kind == 11) {
                 const i64 source = operand_lane(store, instruction, span_field, index);
-                object_copy_record_words(workspace, frame_address(source), stack_address(offset), 56);
+                const i64 packed_address18 = workspace.pack_address(0, source);
+                const i64 packed_address19 = workspace.pack_address(1, offset);
+                object_copy_record_words(workspace, packed_address18, packed_address19, 56);
             } else {
                 if (kind == 5) {
                     const i64 class_id = type_class(metadata, type);
                     const i64 source = operand_lane(store, instruction, object_field, index);
-                    copy_class(workspace, metadata, class_id, frame_address(source), stack_address(offset));
+                    const i64 packed_address20 = workspace.pack_address(0, source);
+                    const i64 packed_address21 = workspace.pack_address(1, offset);
+                    copy_class(workspace, metadata, class_id, packed_address20, packed_address21);
                 } else {
-                    store_argument(workspace, metadata, type, index, stack_address(offset));
+                    const i64 packed_address22 = workspace.pack_address(1, offset);
+                    store_argument(workspace, metadata, type, index, packed_address22);
                 }
             }
             index = index + 1;
@@ -123,7 +133,8 @@ export namespace compiler_x86 {
         const i64 payload = record_offset(metadata, target, count);
         const i64 bytes =((payload + 15) / 16) * 16;
         workspace.reserve_stack(bytes);
-        clear_bytes(workspace, 0, bytes, stack_address(0));
+        const i64 packed_address23 = workspace.pack_address(1, 0);
+        clear_bytes(workspace, 0, bytes, packed_address23);
         index = 0;
         while (index < count) {
             const i64 type = parameter_type(metadata, target, index);
@@ -139,18 +150,25 @@ export namespace compiler_x86 {
                     workspace.fail();
                     return bytes;
                 }
-                object_copy_record_words(workspace, frame_address(source), stack_address(offset), 16);
+                const i64 packed_address24 = workspace.pack_address(0, source);
+                const i64 packed_address25 = workspace.pack_address(1, offset);
+                object_copy_record_words(workspace, packed_address24, packed_address25, 16);
             } else {
                 if (kind == 11) {
                     const i64 source = operand_lane(store, instruction, 3, index);
-                    object_copy_record_words(workspace, frame_address(source), stack_address(offset), 56);
+                    const i64 packed_address26 = workspace.pack_address(0, source);
+                    const i64 packed_address27 = workspace.pack_address(1, offset);
+                    object_copy_record_words(workspace, packed_address26, packed_address27, 56);
                 } else {
                     if (kind == 5) {
                         const i64 class_id = type_class(metadata, type);
                         const i64 source = operand_lane(store, instruction, 6, index);
-                        copy_class(workspace, metadata, class_id, frame_address(source), stack_address(offset));
+                        const i64 packed_address28 = workspace.pack_address(0, source);
+                        const i64 packed_address29 = workspace.pack_address(1, offset);
+                        copy_class(workspace, metadata, class_id, packed_address28, packed_address29);
                     } else {
-                        store_argument(workspace, metadata, type, index, stack_address(offset));
+                        const i64 packed_address30 = workspace.pack_address(1, offset);
+                        store_argument(workspace, metadata, type, index, packed_address30);
                     }
                 }
             }
@@ -378,7 +396,9 @@ export namespace compiler_x86 {
             const i64 source = operand_value(store, instruction, 0);
             const i64 destination = operand_value(store, instruction, 1);
             const i64 class_id = slot_class(metadata, current, source);
-            copy_class(workspace, metadata, class_id, frame_address(source), frame_address(destination));
+            const i64 packed_address31 = workspace.pack_address(0, source);
+            const i64 packed_address32 = workspace.pack_address(0, destination);
+            copy_class(workspace, metadata, class_id, packed_address31, packed_address32);
             return true;
         }
         if (form == 25) {
@@ -391,7 +411,9 @@ export namespace compiler_x86 {
             const i64 first = class_field_first(metadata, parent, field);
             const i64 count = class_field_length(metadata, parent, field);
             receiver_address(workspace, metadata, source, Register::r10);
-            workspace.set_copy(r10_address(0), frame_address(destination), first, 0);
+            const i64 packed_address33 = workspace.pack_address(2, 0);
+            const i64 packed_address34 = workspace.pack_address(0, destination);
+            workspace.set_copy(packed_address33, packed_address34, first, 0);
             copy_leaves(workspace, metadata, parent, child, count);
             return true;
         }
@@ -408,7 +430,9 @@ export namespace compiler_x86 {
             const i64 first = class_field_first(metadata, parent, field);
             const i64 count = class_field_length(metadata, parent, field);
             receiver_address(workspace, metadata, root, Register::r10);
-            workspace.set_copy(frame_address(source), r10_address(0), 0, first);
+            const i64 packed_address35 = workspace.pack_address(0, source);
+            const i64 packed_address36 = workspace.pack_address(2, 0);
+            workspace.set_copy(packed_address35, packed_address36, 0, first);
             copy_leaves(workspace, metadata, child, parent, count);
             return true;
         }
@@ -425,7 +449,9 @@ export namespace compiler_x86 {
             i64 element = 0;
             while (element < elements) {
                 const i64 source = operand_lane(store, instruction, 2, element);
-                workspace.set_copy(frame_address(source), r10_address(0), 0, first + element * count);
+                const i64 packed_address37 = workspace.pack_address(0, source);
+                const i64 packed_address38 = workspace.pack_address(2, 0);
+                workspace.set_copy(packed_address37, packed_address38, 0, first + element * count);
                 copy_leaves(workspace, metadata, child, parent, count);
                 element = element + 1;
             }
@@ -453,9 +479,13 @@ export namespace compiler_x86 {
             workspace.line_number("leaq ", field_offset, "(%r10,%rax), %r10");
             const i64 local = operand_value(store, instruction, 2);
             if (form == 30) {
-                copy_class(workspace, metadata, child, r10_address(0), frame_address(local));
+                const i64 packed_address39 = workspace.pack_address(2, 0);
+                const i64 packed_address40 = workspace.pack_address(0, local);
+                copy_class(workspace, metadata, child, packed_address39, packed_address40);
             } else {
-                copy_class(workspace, metadata, child, frame_address(local), r10_address(0));
+                const i64 packed_address41 = workspace.pack_address(0, local);
+                const i64 packed_address42 = workspace.pack_address(2, 0);
+                copy_class(workspace, metadata, child, packed_address41, packed_address42);
             }
             return true;
         }
@@ -465,7 +495,9 @@ export namespace compiler_x86 {
             const i64 result = result_type(metadata, current);
             const i64 class_id = type_class(metadata, result);
             workspace.line_address("movq ", save, ", %r10");
-            copy_class(workspace, metadata, class_id, frame_address(source), r10_address(0));
+            const i64 packed_address43 = workspace.pack_address(0, source);
+            const i64 packed_address44 = workspace.pack_address(2, 0);
+            copy_class(workspace, metadata, class_id, packed_address43, packed_address44);
             workspace.line("xorq %rax, %rax");
             workspace.begin_line();
             workspace.text("jmp ");
@@ -497,9 +529,11 @@ export namespace compiler_x86 {
             const i64 type = operand_value(store, instruction, 1);
             workspace.line_address("movq ", save, ", %r10");
             if (form == 32) {
-                load_value(workspace, metadata, type, r10_address(field_offset));
+                const i64 packed_address45 = workspace.pack_address(2, field_offset);
+                load_value(workspace, metadata, type, packed_address45);
             } else {
-                store_value(workspace, metadata, type, r10_address(field_offset));
+                const i64 packed_address46 = workspace.pack_address(2, field_offset);
+                store_value(workspace, metadata, type, packed_address46);
             }
             return true;
         }
@@ -575,17 +609,22 @@ export namespace compiler_x86 {
             const i64 source = record_offset(metadata, current, index);
             if (form == 0) {
                 workspace.line_address("movq ", save, ", %r11");
-                object_copy_record_words(workspace, r11_address(source), frame_address(destination), 16);
+                const i64 packed_address47 = workspace.pack_address(3, source);
+                const i64 packed_address48 = workspace.pack_address(0, destination);
+                object_copy_record_words(workspace, packed_address47, packed_address48, 16);
                 return true;
             }
             if (form == 45) {
                 const i64 type = operand_value(store, instruction, 2);
                 if (save != 0) {
                     workspace.line_address("movq ", save, ", %r11");
-                    load_value(workspace, metadata, type, r11_address(source));
-                    store_value(workspace, metadata, type, frame_address(destination));
+                    const i64 packed_address49 = workspace.pack_address(3, source);
+                    load_value(workspace, metadata, type, packed_address49);
+                    const i64 packed_address50 = workspace.pack_address(0, destination);
+                    store_value(workspace, metadata, type, packed_address50);
                 } else {
-                    store_argument(workspace, metadata, type, index, frame_address(destination));
+                    const i64 packed_address51 = workspace.pack_address(0, destination);
+                    store_argument(workspace, metadata, type, index, packed_address51);
                 }
                 return true;
             }
@@ -593,7 +632,9 @@ export namespace compiler_x86 {
             const i64 class_id = type_class(metadata, type);
             workspace.line_address("movq ", save, ", %r11");
             clear_object(workspace, metadata, destination, class_id);
-            copy_class(workspace, metadata, class_id, r11_address(source), frame_address(destination));
+            const i64 packed_address52 = workspace.pack_address(3, source);
+            const i64 packed_address53 = workspace.pack_address(0, destination);
+            copy_class(workspace, metadata, class_id, packed_address52, packed_address53);
             return true;
         }
         if (emit_object_calls(workspace, metadata, store, instruction)) {

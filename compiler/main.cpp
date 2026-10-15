@@ -112,7 +112,7 @@ int main(int argc, char **argv) {
             stackFacts.emplace(stackFactsPath, checked.sourceIdentities);
             if (output.sameDestination(*stackFacts))
                 throw argumentError("assembly and stack facts require different output paths");
-            stackFacts->write(emitter.stackFactsJson());
+            stackFacts->write(emitter.stackFactsJson(checked.module));
         }
         std::optional<aurora::host::ArtifactWriter> abiFacts;
         if (abiFactsSpecified) {
