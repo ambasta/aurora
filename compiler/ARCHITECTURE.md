@@ -17,6 +17,7 @@ still needs its own full, convergence and BIOS/UEFI qualification.
 | Ownership, provenance and worklist | C++ verifier; Aurora owns entry-binding uniqueness | Continue deletion-first migration; retain dynamic checks |
 | Call graph | Aurora | Validate final integrated behavior |
 | x86 emission | Aurora, fixed native transport | Byte-identical to the C++ backend on the whole corpus in both profiles (`emitter-differential-*`); compile time 1.05x the C++ backend |
+| Direct class fields | Aurora source and independent metadata admission share an 8,192-field cap, including empty, nested, resource and array fields | Existing leaf, byte, depth and array-element limits still apply |
 | Private host bridge | One 107-entry table generates Aurora forwarders and host transport declarations; compiler facts supply layouts, symbols and raw enum validation | Preserve fail-closed conversion; native replacement remains incomplete |
 | Assembly, linking and hosted runtime | External bootstrap tools/C++ | Native replacements remain incomplete |
 
@@ -73,12 +74,18 @@ start empty; ordinary receivers and the first borrowed formal's derived observat
 start complete without granting new receiver authority. Resource-only fields remain
 outside these facts. Native code retains their tokens, region and loan checks.
 Receiver fact counts are compressed field counts, not the old per-leaf cardinality;
-zero-leaf field counts use checked dynamic extents rather than a storage-size cap.
+all classes admit at most 8,192 direct fields, including private and zero-leaf
+fields. A class-array field counts once; each nested class is admitted separately.
+The shared cap preserves the existing 8,192-scalar flat-local boundary and bounds
+receiver storage to 128 word pairs (2,048 bytes per snapshot), independently of
+physical payload. Existing depth-four and array-element limits remain in force.
 Each workspace's region grants at most 1,209,026,560 logical payload bytes across
 its current and retained pools. Growth refusal uses terminal allocation failure
 and owner cleanup. Allocation headers, metadata and other workspaces are outside
 this budget; resize briefly holds old and replacement storage together, so this
-is not a transient-memory or whole-process RSS ceiling.
+is not a transient-memory or whole-process RSS ceiling. The field cap does not
+reduce that independent budget: up to 65,536 retained local-state snapshots
+dominate it, and pools allocate on demand rather than reserving the ceiling.
 
 The verifier protects the backend against malformed internal IR. It is not a
 verified compiler or a proof of Rust-equivalent safety. C++ host code, generated

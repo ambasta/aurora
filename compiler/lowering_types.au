@@ -1,5 +1,6 @@
 export module aurora.compiler.lowering_types;
 import aurora.compiler.lexer;
+import aurora.compiler.ir_metadata_storage;
 import aurora.compiler.lowering_common;
 import aurora.compiler.lowering_configuration;
 import aurora.compiler.lowering_kinds;
@@ -171,6 +172,7 @@ export namespace compiler_lowering {
             0);
     }
     auto register_fields(compiler_resolver::Session& session, i64 nominal) -> bool {
+        const i64 source = symbol_source(session, nominal);
         const compiler_resolver::MetaRow symbol = session.meta(nominal);
         i64 count = 0;
         i64 methods = 0;
@@ -180,6 +182,9 @@ export namespace compiler_lowering {
                 index_set(session, 77, nominal, count, member);
                 index_set(session, 79, nominal, count, 1);
                 count = count + 1;
+                if (count > compiler_ir_metadata::maximum_class_fields()) {
+                    return fail(session, LoweringError::class_field_limit, source);
+                }
                 if (count > session.meta_count()) {
                     return fail(session, LoweringError::ir_missing_class_storage_shape, -1);
                 }
@@ -193,6 +198,9 @@ export namespace compiler_lowering {
                 const compiler_resolver::SyntaxRow row = session.syntax(member);
                 if (row.declaration_kind() == compiler_parser::SyntaxKind::field) {
                     count = count + 1;
+                    if (count > compiler_ir_metadata::maximum_class_fields()) {
+                        return fail(session, LoweringError::class_field_limit, source);
+                    }
                 } else {
                     methods = methods + 1;
                 }

@@ -39,6 +39,8 @@ export namespace compiler_lowering {
         class_containment_depth,
         //: duplicate class field
         duplicate_class_field,
+        //: class exceeds 8192 direct fields
+        class_field_limit,
         //: nested owning class fields are unsupported
         nested_owning_class_field,
         //: owned byte fields must be private

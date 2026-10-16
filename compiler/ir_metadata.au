@@ -571,6 +571,9 @@ export namespace compiler_ir_metadata {
             const IndexRange original_fields = row.fields();
             i64 field_begin = original_fields.begin();
             i64 field_length = original_fields.count();
+            if (field_length > maximum_class_fields()) {
+                return fail(store, MetadataError::class_field_limit);
+            }
             if (member(row, masks.class_layout()) && !member(row, masks.class_fields())) {
                 const i64 begin = store.field_row_count();
                 i64 leaf = 0;

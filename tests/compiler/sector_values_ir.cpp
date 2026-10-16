@@ -862,6 +862,17 @@ void directTests() {
     accept("512 byte plus one word leaves fit 520 reserved bytes", budgetModule(512, 1, true));
     accept("flat local 8192 byte leaves retained", budgetModule(8192, 0, false));
     accept("flat local 8192 word leaves retained", budgetModule(0, 8192, false));
+    auto implicitFields = budgetModule(8192, 0, false);
+    implicitFields.classFields.erase("Value");
+    accept("normalized leaf-only fields retain the direct-field ceiling", implicitFields);
+    reject(
+        "one empty field cannot extend a maximal flat local class",
+        budgetModule(8192, 0, false),
+        [](Module &module) {
+            module.classLayouts["Empty"] = {};
+            module.classFields["Value"].push_back({Type("Empty"), 8192, 0, false});
+        },
+        "class exceeds 8192 direct fields");
     for (const auto &[bytes, words] :
          {std::pair{513, 0}, std::pair{0, 65}, std::pair{9, 64}, std::pair{511, 2}, std::pair{512, 2}}) {
         const auto label = std::to_string(bytes) + " bytes " + std::to_string(words) + " words";
