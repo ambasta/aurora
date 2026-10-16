@@ -5973,12 +5973,12 @@ int main(int argc, char **argv) {
                 m.functions[0].code[0] = Constant{2, Type::Bool};
             },
             "noncanonical bool");
-        reject(
-            "load uninitialized",
-            [](Module &m) {
-                m.functions[0].code.erase(m.functions[0].code.begin(), m.functions[0].code.begin() + 2);
-            },
-            "load before initialization");
+        {
+            auto uninitialized = baseline();
+            auto &code = uninitialized.functions[0].code;
+            code.erase(code.begin(), code.begin() + 2);
+            rejectExact("load uninitialized", std::move(uninitialized), "load before initialization");
+        }
         reject(
             "load wrong type",
             [](Module &m) {
@@ -7039,12 +7039,13 @@ int main(int argc, char **argv) {
                 m.functions[0].objectSlots[16].mutableValue = true;
             },
             "snapshot must be readonly");
-        rejectValue(
-            "argument snapshot inactive",
-            [](Module &m) {
-                m.functions[0].code.insert(m.functions[0].code.begin() + 15, EndObject{16});
-            },
-            "argument outside active");
+        {
+            auto inactive = valueBaseline();
+            auto &code = inactive.functions[0].code;
+            code.insert(code.begin() + 15, EndObject{16});
+            rejectExact(
+                "argument snapshot inactive", std::move(inactive), "aggregate argument outside active object lifetime");
+        }
         rejectValue(
             "argument snapshot partially initialized",
             [](Module &m) {

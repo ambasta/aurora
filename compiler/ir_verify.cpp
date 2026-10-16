@@ -8,13 +8,14 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <string_view>
 #include <type_traits>
 
 namespace aurora::ir {
 namespace verification {
 namespace {
-[[noreturn]] inline void fail(const std::string &message) {
-    throw Error("invalid typed IR: " + message);
+[[noreturn]] inline void fail(std::string_view message) {
+    throw Error("invalid typed IR: " + std::string(message));
 }
 class Guard {
 public:
@@ -138,7 +139,7 @@ public:
     State state;
     InitializationWorkspace::Id initialization;
 };
-inline void require(bool condition, const std::string &message) {
+inline void require(bool condition, std::string_view message) {
     if (!condition)
         fail(message);
 }
