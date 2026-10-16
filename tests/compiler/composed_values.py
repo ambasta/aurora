@@ -468,14 +468,14 @@ def field_count_cases(suite):
         program("return 42;", empty + declaration.replace(",f8191(e)", "")),
         error="constructor must initialize",
     )
-    for count in (8193, 73729):
-        fields = "".join(f"Empty f{index};" for index in range(count))
-        suite.check(
-            f"oversized no-leaf child with {count} fields rejects before receiver allocation",
-            program("return 42;", empty + f"class Child{{{fields}}};class Parent{{Child child;}};"),
-            error="class exceeds 8192 direct fields",
-            existing_output=b"preserve prior output",
-        )
+    # Keep the source boundary here; initialization-facts also rejects 73,729 raw fields.
+    fields = "".join(f"Empty f{index};" for index in range(8193))
+    suite.check(
+        "oversized no-leaf child with 8193 fields rejects before receiver allocation",
+        program("return 42;", empty + f"class Child{{{fields}}};class Parent{{Child child;}};"),
+        error="class exceeds 8192 direct fields",
+        existing_output=b"preserve prior output",
+    )
 
 
 def empty_class_cases(suite):

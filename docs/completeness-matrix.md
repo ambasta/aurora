@@ -12,7 +12,7 @@ Self-hosting, final emitter qualification and full kernel migration remain incom
 | Safe C++-like language with TypeScript-like types | Aurora owns the frontend, static frame/call admission, initialization/service loans and x86 emission; C++ retains host conversion and dynamic verification; all 107 private bridge entries share one generated table/facts boundary; classes admit at most 8,192 direct fields, including no-leaf fields. Self-hosting and richer type/concurrency features remain incomplete. |
 | Ideal filesystem and XFS compatibility | RAM storage and offline readers exist; mounted durable services, recovery and XFS read-write incomplete. |
 | Framework Laptop 13 AMD support | Emulator foundations exist; active drivers, DMA isolation, power/recovery and physical qualification incomplete. |
-| Native binutils/glibc/Mesa alternatives | Bootstrap compiler and core libraries exist; working reproducible native rebuild, toolchain/runtime and graphics replacements incomplete. |
+| Native binutils/glibc/Mesa alternatives | Six-stage source bootstrap retained after direct skip failures; any replacement needs recorded seed-route builds and C1/C2/full qualification. Bootstrap compiler and core libraries exist; working reproducible native rebuild, toolchain/runtime and graphics replacements incomplete. |
 | Applications, terminal and tiling desktop | Bounded serial and graphical consoles exist. General apps, terminal sessions and desktop incomplete. |
 
 Current gate: original repository check and final-source GCC16 full

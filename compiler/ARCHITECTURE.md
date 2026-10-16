@@ -19,6 +19,7 @@ still needs its own full, convergence and BIOS/UEFI qualification.
 | x86 emission | Aurora, fixed native transport | Byte-identical to the C++ backend on the whole corpus in both profiles (`emitter-differential-*`); compile time 1.05x the C++ backend |
 | Direct class fields | Aurora source and independent metadata admission share an 8,192-field cap, including empty, nested, resource and array fields | Existing leaf, byte, depth and array-element limits still apply |
 | Private host bridge | One 107-entry table generates Aurora forwarders and host transport declarations; compiler facts supply layouts, symbols and raw enum validation | Preserve fail-closed conversion; native replacement remains incomplete |
+| Bootstrap route | Six source-built predecessors, then current C1/C2; direct skips fail at recorded capability boundaries | Replace stages only after an actual direct build, byte-identical frontend comparison, complete seed route and final full/convergence gates |
 | Assembly, linking and hosted runtime | External bootstrap tools/C++ | Native replacements remain incomplete |
 
 ## Hosted Aurora parser
