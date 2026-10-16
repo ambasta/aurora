@@ -293,6 +293,37 @@ export namespace console {
             occupied = occupied | (1u64 << found);
             return FileEvent::written;
         }
+        // Append only to an existing record. Stage bytes before the shared atomic
+        // write; even an empty suffix is a successful write for revision purposes.
+        auto append_file(FileName name, FileValue suffix) -> FileEvent {
+            if (!name.valid() || !suffix.valid()) {
+                return FileEvent::invalid;
+            }
+            if (name.reserved()) {
+                return FileEvent::reserved;
+            }
+            const i64 found = find(name);
+            if (found < 0) {
+                return FileEvent::missing;
+            }
+            const std::BinaryBuffer64 record = records[found];
+            const i64 length = i64(record.at(1));
+            if (suffix.size() > 49 - length) {
+                return FileEvent::invalid;
+            }
+            std::BinaryBuffer64 bytes = std::BinaryBuffer64();
+            i64 index = 0;
+            while (index < length) {
+                bytes.write_u8(index, record.at(10 + index));
+                index = index + 1;
+            }
+            index = 0;
+            while (index < suffix.size()) {
+                bytes.write_u8(length + index, suffix.at(index));
+                index = index + 1;
+            }
+            return write_file(name, FileValue(bytes, length + suffix.size()));
+        }
         auto remove(FileName name) -> FileEvent {
             if (!name.valid()) {
                 return FileEvent::invalid;
@@ -342,8 +373,13 @@ export namespace console {
             }
             i64 start = 0;
             FileEvent action = FileEvent::unknown;
+            const bool appending = command.starts_with(count, "append ");
             if (command.starts_with(count, "write ")) {
                 start = 6;
+                action = FileEvent::written;
+            }
+            if (appending) {
+                start = 7;
                 action = FileEvent::written;
             }
             if (command.starts_with(count, "cat ")) {
@@ -356,7 +392,7 @@ export namespace console {
             }
             if (action == FileEvent::unknown) {
                 if (command.equal(0, count, "write") || command.equal(0, count, "cat") || command.equal(0, count, "rm")
-                    || command.starts_with(count, "ls ")) {
+                    || command.equal(0, count, "append") || command.starts_with(count, "ls ")) {
                     reply.select(FileEvent::invalid);
                 }
                 return reply;
@@ -378,7 +414,12 @@ export namespace console {
                 return reply;
             }
             const FileValue value = file_value(command, end + 1, count - end - 1);
-            const FileEvent event = write_file(name, value);
+            FileEvent event = FileEvent::unknown;
+            if (appending) {
+                event = append_file(name, value);
+            } else {
+                event = write_file(name, value);
+            }
             return file_write_reply(name, value.size(), event);
         }
     };
