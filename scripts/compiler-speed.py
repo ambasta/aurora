@@ -71,7 +71,20 @@ def main():
             results = []
             for label, compiler in (("before", args.before), ("after", args.after)):
                 output = work / f"{label}.s"
-                results.append((measure(str(compiler.resolve()), ROOT / name, roots, output, args.repeat), output))
+                results.append(
+                    (
+                        measure(
+                            str(compiler.resolve()),
+                            work / "modules/aurora/compiler/frontend.au"
+                            if name == "compiler/frontend.au"
+                            else ROOT / name,
+                            roots,
+                            output,
+                            args.repeat,
+                        ),
+                        output,
+                    )
+                )
             (before, before_output), (after, after_output) = results
             if before_output.read_bytes() != after_output.read_bytes():
                 sys.exit(f"FAIL: {name} compiles differently")

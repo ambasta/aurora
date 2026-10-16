@@ -5,17 +5,6 @@
 #include <limits>
 #include <type_traits>
 
-extern "C" {
-void aurora_hosted_graph_create_input(const void *, void *) noexcept;
-void aurora_hosted_graph_create_workspace(const void *, void *) noexcept;
-void aurora_hosted_graph_release_input(void *) noexcept;
-void aurora_hosted_graph_release_workspace(void *) noexcept;
-std::int64_t aurora_hosted_graph_set_function(void *, const void *) noexcept;
-std::int64_t aurora_hosted_graph_set_edge(void *, const void *) noexcept;
-std::int64_t aurora_hosted_graph_run(const void *) noexcept;
-std::int64_t aurora_hosted_graph_retained(const void *, std::int64_t) noexcept;
-}
-
 namespace aurora::ir {
 namespace {
 namespace wire = hosted_abi::compiler_ir_graph;
@@ -42,8 +31,8 @@ const std::string *callee(const InstructionObservation &instruction) {
 }
 std::uint64_t graphQuota(std::int64_t functions, std::int64_t edges) {
     const auto maximum = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
-    const auto functionWidth = sizeof(wire::FunctionRow) + sizeof(wire::StateRow) + sizeof(wire::FrameRow) +
-                               sizeof(wire::IndexRow);
+    const auto functionWidth =
+        sizeof(wire::FunctionRow) + sizeof(wire::StateRow) + sizeof(wire::FrameRow) + sizeof(wire::IndexRow);
     const auto edgeWidth = sizeof(wire::IndexRow) + sizeof(wire::ReverseEdge);
     const auto nodes = static_cast<std::uint64_t>(functions), calls = static_cast<std::uint64_t>(edges);
     if (nodes > maximum / functionWidth || calls > (maximum - nodes * functionWidth) / edgeWidth)
@@ -75,8 +64,12 @@ public:
     }
     GraphOwners(const GraphOwners &) = delete;
     GraphOwners &operator=(const GraphOwners &) = delete;
-    void *inputData() { return input.input.storage.data(); }
-    void *workspaceData() { return workspace.workspace.storage.data(); }
+    void *inputData() {
+        return input.input.storage.data();
+    }
+    void *workspaceData() {
+        return workspace.workspace.storage.data();
+    }
 };
 } // namespace
 
@@ -105,8 +98,9 @@ void verifyHostedGraph(std::vector<FunctionBody> &functions, const Metadata &met
         value.index = graphCount(index);
         value.function.firstEdge = edge;
         value.function.hasReceiver = signature.receiver().has_value();
-        value.function.serviceEntry = std::any_of(parameters.begin(), parameters.end(),
-                                                  [](const Type &type) { return type.isService(); });
+        value.function.serviceEntry = std::any_of(parameters.begin(), parameters.end(), [](const Type &type) {
+            return type.isService();
+        });
         value.function.rootScope = signature.moduleScope() == 0;
         for (const auto instruction : function.code)
             if (const auto *target = callee(instruction)) {

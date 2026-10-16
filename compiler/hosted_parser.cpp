@@ -15,20 +15,6 @@
 #ifndef AURORA_HOSTED_PARSER
 #error The hosted parser adapter requires AURORA_HOSTED_PARSER
 #endif
-extern "C" {
-void aurora_hosted_parser_create(const void *, void *);
-void aurora_hosted_parser_parse(void *, const void *, void *);
-void aurora_hosted_parser_admit(void *, const void *, void *);
-std::int64_t aurora_hosted_parser_count(const void *);
-void aurora_hosted_parser_read(const void *, std::int64_t, void *);
-std::int64_t aurora_hosted_parser_edges(const void *);
-void aurora_hosted_parser_edge(const void *, std::int64_t, void *);
-std::int64_t aurora_hosted_parser_types(const void *);
-void aurora_hosted_parser_type(const void *, std::int64_t, void *);
-std::int64_t aurora_hosted_parser_syntax_count(const void *);
-void aurora_hosted_parser_syntax(const void *, std::int64_t, void *);
-void aurora_hosted_parser_release(void *);
-}
 
 namespace aurora {
 namespace {
@@ -193,10 +179,10 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
     const auto edgeCount = aurora_hosted_parser_edges(arena.data());
     const auto typeCount = aurora_hosted_parser_types(arena.data());
     const auto statementCount = aurora_hosted_parser_syntax_count(arena.data());
-    if (result.result < Status::success || result.result >= Status::invalid || result.node_count < 0 ||
-        result.node_count != actualCount || edgeCount < 0 || typeCount < 0 || statementCount < 0 ||
-        (!body && !callable && !field && !header && !module && statementCount != 0) || result.token_count < 0 ||
-        static_cast<std::uint64_t>(result.token_count) >= tokens.size() - position ||
+    if (!hosted_abi::compiler_parser::validRaw(result.result) || result.result == Status::invalid ||
+        result.node_count < 0 || result.node_count != actualCount || edgeCount < 0 || typeCount < 0 ||
+        statementCount < 0 || (!body && !callable && !field && !header && !module && statementCount != 0) ||
+        result.token_count < 0 || static_cast<std::uint64_t>(result.token_count) >= tokens.size() - position ||
         result.source_offset < input.cursor.offset || result.source_offset > input.source.length ||
         result.token_half < 0 || result.token_half > 1)
         invalid();
@@ -505,7 +491,7 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
     for (std::int64_t index = 0; index < statementCount; ++index) {
         auto &statement = statements[static_cast<std::size_t>(index)];
         aurora_hosted_parser_syntax(arena.data(), index, &statement);
-        if (statement.tag <= SyntaxKind::invalid || statement.tag > SyntaxKind::template_capacity ||
+        if (!hosted_abi::compiler_parser::validRaw(statement.tag) || statement.tag == SyntaxKind::invalid ||
             statement.token_index < 0 || statement.token_index >= statement.end_token ||
             statement.end_token > result.token_count || statement.previous_node < -1 ||
             statement.previous_node >= index || statement.expression_root < -1 ||

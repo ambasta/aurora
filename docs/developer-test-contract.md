@@ -93,7 +93,9 @@ seconds (121 hard), 360 wall seconds; host tools/rejection compiles retain
 Commands record actual child CPU/wall costs. Signals and wall timeouts fail
 without semantic observations; watchdogs are not performance assertions.
 XFS-file uses a 600-second aggregate watchdog; individual command limits remain
-unchanged, and batches retain the 512 KiB source budget.
+unchanged, and batches retain the 128 KiB source budget as host-load protection, not a
+compiler scaling workaround. Large compiler graphs run exclusively; child
+compilers within each runner remain sequential. Record host load with timings.
 
 JSON integers/lookup use 660/1200-second aggregate watchdogs; their child limits
 remain 20/21 CPU seconds and 45 wall seconds. Command receipts record actual

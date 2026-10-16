@@ -21,7 +21,7 @@ frontend_inputs = files('compiler/lexer.au', 'compiler/syntax_arena.au', 'compil
                         'compiler/resolution_kinds.au', 'compiler/lowering_errors.au', 'compiler/lowering_kinds.au',
                         'compiler/lowering_storage.au', 'compiler/resolution_rows.au', 'compiler/resolution_arena.au',
                         'compiler/resolution_names.au', 'compiler/resolution_ingest.au', 'compiler/resolver.au',
-                        'compiler/frontend.au', 'compiler/ir_graph.au',
+                        'compiler/ir_graph.au',
                         'compiler/ir_metadata_storage.au', 'compiler/ir_metadata.au',
                         'compiler/ir_instruction_storage.au', 'compiler/ir_instructions.au',
                         'compiler/ir_initialization.au',
@@ -32,15 +32,20 @@ frontend_inputs = files('compiler/lexer.au', 'compiler/syntax_arena.au', 'compil
                         'compiler/lowering_types.au', 'compiler/lowering_values.au', 'compiler/lowering_frames.au',
                         'compiler/lowering_calls.au', 'compiler/lowering_expressions.au',
                         'compiler/lowering_statements.au', 'compiler/lowering_body.au', 'compiler/lowering.au',
-                        'compiler/hosted_lexer.S', 'compiler/hosted_parser.S', 'compiler/hosted_resolver.S',
-                        'compiler/hosted_graph.S', 'compiler/hosted_ir_metadata.S',
-                        'compiler/hosted_ir_instructions.S')
+                        )
+frontend_forwarders = custom_target(
+  'frontend-forwarders', input: 'compiler/frontend.au', output: 'frontend.au',
+  command: [python, '-B', files('scripts/frontend_bridge.py'), '@INPUT@', '@OUTPUT@'],
+)
+frontend_inputs += [frontend_forwarders]
+bridge_table = files('scripts/frontend_bridge.py')
+
 frontend_assembly = custom_target(
   'hosted-frontend-assembly', input: frontend_inputs,
   output: ['hosted-frontend.s', 'hosted-frontend.generated.s', 'hosted-frontend.abi.json', 'hosted_frontend_abi.hpp'],
   command: [python, '-B', files('scripts/bootstrap_frontend.py'), bootstrap_compiler, '--output', '@OUTPUT0@',
             '@INPUT@'],
-  depend_files: bootstrap_depend_files,
+  depend_files: bootstrap_depend_files + bridge_table,
 )
 frontend_object = custom_target(
   'hosted-frontend-object', input: frontend_assembly[0], output: 'hosted-frontend.o',
@@ -75,6 +80,7 @@ frontend_stage2_assembly = custom_target(
   output: ['hosted-frontend-stage2.s', 'hosted-frontend-stage2.generated.s',
            'hosted-frontend-stage2.abi.json', 'hosted_frontend_stage2_abi.hpp'],
   command: [python, '-B', files('scripts/bootstrap_frontend.py'), aurorac, '--output', '@OUTPUT0@', '@INPUT@'],
+  depend_files: bridge_table,
   build_by_default: false,
 )
 frontend_stage2_object = custom_target(

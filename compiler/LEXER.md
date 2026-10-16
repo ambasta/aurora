@@ -47,7 +47,7 @@ Classification is explicitly ASCII, matching the compiler's startup C locale;
 comments retain every non-LF byte. C++ still owns source I/O, token/trivia vectors,
 raw spelling copies, semantic constant decoding and diagnostic presentation.
 
-The small `hosted_lexer.cpp`/`hosted_lexer.S` adapter is an explicitly trusted
+The small `hosted_lexer.cpp` adapter and table-generated register shim form an explicitly trusted
 bootstrap boundary, not a source-language foreign pointer constructor or C ABI.
 It keeps the immutable `SourceText` snapshot alive, imports exactly its backing
 and length into the existing 56-byte contiguous readonly span record (kind 0,

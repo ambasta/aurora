@@ -17,35 +17,6 @@
 #include <utility>
 #include <type_traits>
 
-extern "C" {
-void aurora_hosted_parser_create(const void *, void *);
-void aurora_hosted_resolver_create(const void *, void *);
-void aurora_hosted_resolver_ingest(void *, void *);
-void aurora_hosted_resolver_release(void *);
-void aurora_hosted_resolver_release_pair(void *);
-std::int64_t aurora_hosted_resolver_append_source(void *, const void *);
-std::int64_t aurora_hosted_resolver_append_text(void *, const void *);
-std::int64_t aurora_hosted_resolver_order_module(void *, const void *);
-std::int64_t aurora_hosted_resolver_bind_import(void *, const void *);
-std::int64_t aurora_hosted_resolver_seed_builtin(void *, const void *);
-std::int64_t aurora_hosted_resolver_seed_member(void *, const void *);
-std::int64_t aurora_hosted_resolver_run(void *);
-std::int64_t aurora_hosted_resolver_count(const void *, std::int64_t);
-std::int64_t aurora_hosted_resolver_read_source(const void *, std::int64_t);
-void aurora_hosted_resolver_read_syntax(const void *, std::int64_t, void *);
-void aurora_hosted_resolver_read_meta(const void *, std::int64_t, void *);
-void aurora_hosted_resolver_read_resolved(const void *, std::int64_t, void *);
-void aurora_hosted_resolver_status(const void *, void *);
-std::int64_t aurora_hosted_lowering_begin(void *, const void *) noexcept;
-std::int64_t aurora_hosted_lowering_seed_scalar(void *, const void *) noexcept;
-std::int64_t aurora_hosted_lowering_seed_service(void *, const void *) noexcept;
-std::int64_t aurora_hosted_lowering_seed_layout_symbol(void *, std::int64_t) noexcept;
-void aurora_hosted_lowering_run(void *, void *) noexcept;
-std::int64_t aurora_hosted_lowering_count(const void *, std::int64_t) noexcept;
-void aurora_hosted_lowering_read_output(const void *, std::int64_t, void *) noexcept;
-void aurora_hosted_lowering_read_operand(const void *, std::int64_t, void *) noexcept;
-}
-
 namespace aurora {
 namespace {
 namespace wire = hosted_abi::compiler_resolver;

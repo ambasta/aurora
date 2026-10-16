@@ -8,165 +8,13 @@ bindings remain local; only trusted register bridges expose host entries.
 from pathlib import Path
 import re
 import json
-import shutil
 import subprocess
 import sys
 
 
-# Names only: every physical field extent and offset comes from emitted facts.
-ARGUMENT_RECORDS = (
-    ("LexerInput", "compiler_frontend::lexer_next", ("source", "cursor")),
-    ("ParserInput", "compiler_frontend::parser_parse", ("source", "cursor", "stop", "context", "enum_count")),
-    ("AdmissionInput", "compiler_frontend::parser_admit", ("source", "root", "configuration")),
-    ("ParserCreate", "compiler_frontend::parser_create", ("region", "capacity")),
-    ("ParserRelease", "compiler_frontend::parser_release", ("region", "arena")),
-    ("ResolverCreate", "compiler_frontend::resolver_create", ("region",)),
-    ("ResolverIngest", "compiler_frontend::resolver_ingest", ("region", "session", "parsed", "module", "root")),
-    ("ResolverRelease", "compiler_frontend::resolver_release", ("region", "session")),
-    ("ResolverReleasePair", "compiler_frontend::resolver_release_pair", ("region", "session", "parsed")),
-    ("ResolverSourceInput", "compiler_frontend::resolver_append_source", ("source",)),
-    ("ResolverTextInput", "compiler_frontend::resolver_append_text", ("text",)),
-    ("ResolverOrderInput", "compiler_frontend::resolver_order_module", ("module", "order", "scope", "root")),
-    ("ResolverImportInput", "compiler_frontend::resolver_bind_import", ("module", "node", "target")),
-    ("ResolverSeedBuiltinInput", "compiler_frontend::resolver_seed_builtin", ("definition",)),
-    ("ResolverSeedMemberInput", "compiler_frontend::resolver_seed_member", ("member",)),
-    ("LoweringBeginInput", "compiler_frontend::lowering_begin", ("configuration",)),
-    ("LoweringScalarInput", "compiler_frontend::lowering_seed_scalar", ("seed",)),
-    ("LoweringServiceInput", "compiler_frontend::lowering_seed_service", ("seed",)),
-    ("GraphCreateInput", "compiler_frontend::graph_create_input", ("region", "functions", "edges")),
-    ("GraphCreateWorkspace", "compiler_frontend::graph_create_workspace", ("region", "functions", "edges")),
-    ("GraphReleaseInput", "compiler_frontend::graph_release_input", ("region", "input")),
-    ("GraphReleaseWorkspace", "compiler_frontend::graph_release_workspace", ("region", "workspace")),
-    ("GraphFunctionInput", "compiler_frontend::graph_set_function", ("index", "function")),
-    ("GraphEdgeInput", "compiler_frontend::graph_set_edge", ("index", "target")),
-    ("MetadataCreate", "compiler_frontend::metadata_create", ("region",)),
-    (
-        "MetadataInitialize",
-        "compiler_frontend::metadata_initialize",
-        ("counts", "callableCount", "slotCount", "instructionBegin"),
-    ),
-    ("MetadataRelease", "compiler_frontend::metadata_release", ("region", "store")),
-    (
-        "InstructionsCreate",
-        "compiler_frontend::instructions_create",
-        ("region", "instructionCount", "operandCount", "literalCount", "bodyCount"),
-    ),
-    ("InstructionsRelease", "compiler_frontend::instructions_release", ("region", "store")),
-)
+from frontend_bridge import ENTRIES, render, signatures
 
-
-# Closed initialization/emission host boundary: ordered roots and authority,
-# tail/result source types, optional argument record, and discarded return.
-# Physical layout and target symbols always come from compiler facts.
-INIT_WRITE = (("compiler_ir_initialization::InitializationWorkspace", True),)
-INIT_READ = (("compiler_ir_initialization::InitializationWorkspace", False),)
-INIT_METADATA = (
-    ("compiler_ir_initialization::InitializationWorkspace", True),
-    ("compiler_ir_metadata::MetadataStore", False),
-)
-EMIT_WRITE = (("compiler_x86::EmitWorkspace", True),)
-EMIT_READ = (("compiler_x86::EmitWorkspace", False),)
-EMIT_METADATA = (("compiler_x86::EmitWorkspace", True), ("compiler_ir_metadata::MetadataStore", False))
-EMIT_OWNERS = (
-    ("compiler_x86::EmitWorkspace", True),
-    ("compiler_ir_metadata::MetadataStore", False),
-    ("compiler_ir_instructions::InstructionStore", False),
-)
-PASS_ENTRIES = {
-    "emitter_create": ((), ("region",), "compiler_x86::EmitWorkspace", ("EmitterCreate", ("region",)), False),
-    "emitter_release": (
-        (),
-        ("region", "compiler_x86::EmitWorkspace"),
-        "i64",
-        ("EmitterRelease", ("region", "workspace")),
-        True,
-    ),
-    "emitter_status": (EMIT_READ, (), "compiler_x86::EmitStatus", None, False),
-    "emitter_add_retained": (EMIT_WRITE, ("i64",), "bool", None, False),
-    "emitter_prepare_facts": (EMIT_WRITE, ("compiler_x86::Artifact",), "bool", None, False),
-    "emitter_append_name": (EMIT_WRITE, ("span",), "i64", ("EmitterNameInput", ("name",)), False),
-    "emitter_add_abi_name": (
-        EMIT_WRITE,
-        ("compiler_x86::AbiNameRow",),
-        "bool",
-        ("EmitterAbiNameInput", ("name",)),
-        False,
-    ),
-    "emitter_run": (EMIT_OWNERS, ("i64", "i64"), "compiler_x86::EmitStatus", None, False),
-    "emitter_facts": (EMIT_METADATA, ("compiler_x86::Artifact",), "compiler_x86::EmitStatus", None, False),
-    "emitter_size": (EMIT_READ, ("compiler_x86::Artifact",), "i64", None, False),
-    "emitter_chunk": (EMIT_READ, ("compiler_x86::Artifact", "i64"), "compiler_x86::EmitChunk", None, False),
-    "initialization_create": (
-        (),
-        ("region",),
-        "compiler_ir_initialization::InitializationWorkspace",
-        ("InitializationCreate", ("region",)),
-        False,
-    ),
-    "initialization_release": (
-        (),
-        ("region", "compiler_ir_initialization::InitializationWorkspace"),
-        "i64",
-        ("InitializationRelease", ("region", "workspace")),
-        True,
-    ),
-    "initialization_allocated": (INIT_READ, (), "bool", None, False),
-    "initialization_status": (INIT_READ, (), "compiler_ir_initialization::InitializationStatus", None, False),
-    "initialization_initialize": (
-        INIT_METADATA,
-        ("i64",),
-        "compiler_ir_initialization::InitializationStatus",
-        None,
-        False,
-    ),
-    "initialization_slot_count": (INIT_READ, (), "i64", None, False),
-    "initialization_word_count": (INIT_READ, (), "i64", None, False),
-    "initialization_retained_count": (INIT_READ, (), "i64", None, False),
-    "initialization_current_count": (INIT_READ, (), "i64", None, False),
-    "initialization_retained_count_at": (INIT_READ, ("i64",), "i64", None, False),
-    "initialization_load": (INIT_WRITE, ("i64",), "bool", None, False),
-    "initialization_retain": (INIT_WRITE, (), "i64", None, False),
-    "initialization_join": (INIT_WRITE, ("i64",), "compiler_ir_initialization::InitializationJoin", None, False),
-    "initialization_scalar_state": (INIT_METADATA, ("i64",), "i64", None, False),
-    "initialization_write_scalar": (INIT_METADATA, ("i64",), "i64", None, False),
-    "initialization_object_initialized": (INIT_METADATA, ("i64",), "i64", None, False),
-    "initialization_object_pristine": (INIT_METADATA, ("i64",), "i64", None, False),
-    "initialization_object_was_constructed": (INIT_METADATA, ("i64",), "i64", None, False),
-    "initialization_object_completion": (
-        INIT_METADATA,
-        ("i64",),
-        "compiler_ir_initialization::ObjectCompletion",
-        None,
-        False,
-    ),
-    "initialization_receiver_field_state": (INIT_METADATA, ("i64",), "i64", None, False),
-    "initialization_write_receiver_field": (INIT_METADATA, ("i64",), "i64", None, False),
-    "initialization_receiver_completion": (
-        INIT_METADATA,
-        (),
-        "compiler_ir_initialization::ReceiverCompletion",
-        None,
-        False,
-    ),
-    "initialization_mark_object": (INIT_METADATA, ("i64",), "bool", None, False),
-    "initialization_clear_object": (INIT_METADATA, ("i64",), "bool", None, False),
-    "initialization_array_first_missing": (INIT_METADATA, ("i64", "i64", "i64"), "i64", None, False),
-    "initialization_clear_array": (INIT_METADATA, ("i64", "i64", "i64"), "bool", None, False),
-    "initialization_payload_bytes": (INIT_READ, (), "i64", None, False),
-    "initialization_acquire_service_loan": (INIT_WRITE, ("i64", "i64", "i64"), "i64", None, False),
-    "initialization_release_service_loan": (INIT_WRITE, ("i64", "i64"), "i64", None, False),
-    "initialization_service_unsuspended": (INIT_READ, ("i64",), "i64", None, False),
-    "initialization_validate_service_call": (
-        INIT_READ,
-        ("i64", "i64", "i64", "i64"),
-        "compiler_ir_initialization::ServiceCallState",
-        None,
-        False,
-    ),
-    "initialization_complete_service_call": (INIT_WRITE, ("i64", "i64"), "bool", None, False),
-    "initialization_service_loans_closed": (INIT_READ, (), "i64", None, False),
-    "initialization_same_service_loans": (INIT_READ, ("i64",), "i64", None, False),
-}
+PASS_ENTRIES = signatures()
 
 
 def abi_declaration(facts, group, source_name):
@@ -315,239 +163,19 @@ def frontend_abi_entries(facts):
         kind, symbol, width = shape(expected)
         return actual["kind"] == kind and actual.get("type_name") == symbol and actual["bytes"] == width
 
-    arena, _ = abi_declaration(facts, "records", "compiler_parser::AstArena")
-    session, _ = abi_declaration(facts, "records", "compiler_resolver::Session")
-    graph_input, _ = abi_declaration(facts, "records", "compiler_ir_graph::Input")
-    graph_workspace, _ = abi_declaration(facts, "records", "compiler_ir_graph::Workspace")
-    metadata, _ = abi_declaration(facts, "records", "compiler_ir_metadata::MetadataStore")
-    instructions, _ = abi_declaration(facts, "records", "compiler_ir_instructions::InstructionStore")
-    checks = [
-        (
-            "lexer_next",
-            "compiler_frontend::lexer_next",
-            None,
-            ["span", "compiler_lexer::Cursor"],
-            "compiler_lexer::Lexeme",
-        ),
-        ("parser_create", "compiler_frontend::parser_create", None, ["region", "i64"], "compiler_parser::AstArena"),
-        (
-            "parser_parse",
-            "compiler_frontend::parser_parse",
-            arena,
-            ["span", "compiler_lexer::Cursor", "compiler_parser::Stop", "compiler_parser::TypeContext", "i64"],
-            "compiler_parser::ParseResult",
-        ),
-        (
-            "parser_admit",
-            "compiler_frontend::parser_admit",
-            arena,
-            ["span", "i64", "compiler_parser::AdmissionConfig"],
-            "compiler_parser::AdmissionResult",
-        ),
-        ("parser_release", "compiler_frontend::parser_release", None, ["region", "compiler_parser::AstArena"], "i64"),
-        ("resolver_create", "compiler_frontend::resolver_create", None, ["region"], "compiler_resolver::Session"),
-        (
-            "resolver_ingest",
-            "compiler_frontend::resolver_ingest",
-            None,
-            ["region", "compiler_resolver::Session", "compiler_parser::AstArena", "i64", "i64"],
-            "compiler_resolver::Session",
-        ),
-        (
-            "resolver_release",
-            "compiler_frontend::resolver_release",
-            None,
-            ["region", "compiler_resolver::Session"],
-            "i64",
-        ),
-        (
-            "resolver_release_pair",
-            "compiler_frontend::resolver_release_pair",
-            None,
-            ["region", "compiler_resolver::Session", "compiler_parser::AstArena"],
-            "i64",
-        ),
-        ("resolver_append_source", "compiler_frontend::resolver_append_source", session, ["span"], "i64"),
-        ("resolver_append_text", "compiler_frontend::resolver_append_text", session, ["span"], "i64"),
-        (
-            "resolver_order_module",
-            "compiler_frontend::resolver_order_module",
-            session,
-            ["i64", "i64", "i64", "bool"],
-            "bool",
-        ),
-        ("resolver_bind_import", "compiler_frontend::resolver_bind_import", session, ["i64", "i64", "i64"], "bool"),
-        ("resolver_count", "compiler_frontend::resolver_count", session, ["i64"], "i64"),
-        ("resolver_read_source", "compiler_frontend::resolver_read_source", session, ["i64"], "i64"),
-        ("resolver_status", "compiler_frontend::resolver_status", session, [], "compiler_resolver::SessionStatus"),
-        (
-            "resolver_seed_builtin",
-            "compiler_frontend::resolver_seed_builtin",
-            session,
-            ["compiler_resolver::MetaRow"],
-            "i64",
-        ),
-        (
-            "resolver_seed_member",
-            "compiler_frontend::resolver_seed_member",
-            session,
-            ["compiler_resolver::MetaRow"],
-            "i64",
-        ),
-        ("resolver_run", "compiler_frontend::resolver_run", session, [], "i64"),
-        (
-            "lowering_begin",
-            "compiler_frontend::lowering_begin",
-            session,
-            ["compiler_lowering::LoweringConfig"],
-            "i64",
-        ),
-        (
-            "lowering_seed_scalar",
-            "compiler_frontend::lowering_seed_scalar",
-            session,
-            ["compiler_lowering::ScalarSeed"],
-            "i64",
-        ),
-        (
-            "lowering_seed_service",
-            "compiler_frontend::lowering_seed_service",
-            session,
-            ["compiler_lowering::ServiceSeed"],
-            "i64",
-        ),
-        ("lowering_seed_layout_symbol", "compiler_frontend::lowering_seed_layout_symbol", session, ["i64"], "i64"),
-        ("lowering_run", "compiler_frontend::lowering_run", session, [], "compiler_lowering::LoweringResult"),
-        ("lowering_count", "compiler_frontend::lowering_count", session, ["i64"], "i64"),
-        (
-            "lowering_read_output",
-            "compiler_frontend::lowering_read_output",
-            session,
-            ["i64"],
-            "compiler_lowering::OutputRow",
-        ),
-        (
-            "lowering_read_operand",
-            "compiler_frontend::lowering_read_operand",
-            session,
-            ["i64"],
-            "compiler_lowering::OperandRow",
-        ),
-    ]
-    checks += [
-        ("graph_" + name, "compiler_frontend::graph_" + name, receiver, parameters, result)
-        for name, receiver, parameters, result in (
-            ("create_input", None, ["region", "i64", "i64"], "compiler_ir_graph::Input"),
-            ("create_workspace", None, ["region", "i64", "i64"], "compiler_ir_graph::Workspace"),
-            ("release_input", None, ["region", "compiler_ir_graph::Input"], "i64"),
-            ("release_workspace", None, ["region", "compiler_ir_graph::Workspace"], "i64"),
-            ("set_function", graph_input, ["i64", "compiler_ir_graph::FunctionRow"], "bool"),
-            ("set_edge", graph_input, ["i64", "i64"], "bool"),
-            ("run", graph_workspace, [], "compiler_ir_graph::GraphStatus"),
-            ("retained", graph_workspace, ["i64"], "bool"),
-        )
-    ]
-    checks += [
-        ("metadata_" + name, "compiler_frontend::metadata_" + name, receiver, parameters, result)
-        for name, receiver, parameters, result in (
-            ("flag_masks", None, [], "compiler_ir_metadata::FlagMasks"),
-            (
-                "create",
-                None,
-                ["region"],
-                "compiler_ir_metadata::MetadataStore",
-            ),
-            ("initialize", metadata, ["compiler_ir_metadata::InputCounts", "i64", "i64", "i64"], "bool"),
-            ("release", None, ["region", "compiler_ir_metadata::MetadataStore"], "i64"),
-            ("allocated", metadata, [], "bool"),
-            ("run", metadata, [], "compiler_ir_metadata::MetadataStatus"),
-            ("error", metadata, [], "compiler_ir_metadata::MetadataError"),
-            ("object_leaf_root", metadata, ["i64", "i64"], "i64"),
-            ("byte_array_element_root", metadata, ["i64", "i64"], "i64"),
-        )
-    ]
-    checks += [
-        ("instructions_" + name, "compiler_frontend::instructions_" + name, receiver, parameters, result)
-        for name, receiver, parameters, result in (
-            ("create", None, ["region", "i64", "i64", "i64", "i64"], "compiler_ir_instructions::InstructionStore"),
-            ("release", None, ["region", "compiler_ir_instructions::InstructionStore"], "i64"),
-            ("allocated", instructions, [], "bool"),
-            ("admit", instructions, [], "compiler_ir_instructions::InstructionStatus"),
-            ("structure", instructions, [], "compiler_ir_instructions::InstructionStatus"),
-            ("publish", instructions, [], "bool"),
-            ("error", instructions, [], "compiler_ir_instructions::InstructionError"),
-        )
-    ]
-    checks += [
-        ("parser_" + name, "compiler_frontend::parser_" + name, arena, [], "i64")
-        for name in ("node_count", "edge_count", "type_count", "syntax_count")
-    ]
-    checks += [
-        ("resolver_" + name, "compiler_frontend::resolver_" + name, session, ["i64"], "compiler_resolver::" + result)
-        for name, result in (("read_syntax", "SyntaxRow"), ("read_meta", "MetaRow"), ("read_resolved", "ResolvedRow"))
-    ]
-    checks += [
-        ("parser_" + name, "compiler_frontend::parser_" + name, arena, ["i64"], "compiler_parser::" + result)
-        for name, result in (
-            ("read_node", "AstNode"),
-            ("read_edge", "ChildEdge"),
-            ("read_type", "TypeSyntax"),
-            ("read_syntax", "SyntaxNode"),
-        )
-    ]
-    checks += [
-        (alias, "compiler_frontend::" + alias, None, parameters, result)
-        for alias, (_, parameters, result, _, _) in PASS_ENTRIES.items()
-    ]
     entries = {}
-    for alias, source, receiver, parameters, result in checks:
+    for alias, (roots, parameters, result, _, _) in PASS_ENTRIES.items():
+        source = "compiler_frontend::" + alias
         symbol, raw_function = abi_declaration(facts, "functions", source)
         function = normalize_function_abi(facts, raw_function)
-        roots = function["borrowed_roots"]
-        expected_roots = [receiver] if receiver is not None else []
-        if alias in ("graph_run", "instructions_admit", "instructions_structure"):
-            expected_roots.append(graph_input if alias == "graph_run" else metadata)
-        if alias in PASS_ENTRIES:
-            expected_roots = [abi_declaration(facts, "records", source)[0] for source, _ in PASS_ENTRIES[alias][0]]
-            if [root["mutable"] for root in roots] != [mutable for _, mutable in PASS_ENTRIES[alias][0]]:
-                raise ValueError(f"private bridge root authority changed: {source}")
+        expected_roots = [(abi_declaration(facts, "records", name)[0], mutable) for name, mutable in roots]
         if (
             function["receiver"] is not None
-            or [root["type_name"] for root in roots] != expected_roots
+            or [(root["type_name"], root["mutable"]) for root in function["borrowed_roots"]] != expected_roots
             or len(function["parameters"]) != len(parameters)
             or not matches(function["result"], result)
         ):
-            raise ValueError(f"private bridge signature changed: {source}")
-        if roots and alias not in PASS_ENTRIES:
-            readonly = (
-                (alias.startswith("parser_") and alias not in ("parser_parse", "parser_admit"))
-                or (
-                    alias.startswith("resolver_")
-                    and alias
-                    in (
-                        "resolver_count",
-                        "resolver_read_source",
-                        "resolver_status",
-                        "resolver_read_syntax",
-                        "resolver_read_meta",
-                        "resolver_read_resolved",
-                    )
-                )
-                or (
-                    alias.startswith("lowering_")
-                    and alias
-                    in (
-                        "lowering_count",
-                        "lowering_read_output",
-                        "lowering_read_operand",
-                    )
-                )
-                or alias == "graph_retained"
-                or (alias.startswith("metadata_") and alias not in ("metadata_initialize", "metadata_run"))
-                or alias in ("instructions_allocated", "instructions_error")
-            )
-            if roots[0]["mutable"] is not (not readonly):
-                raise ValueError(f"private bridge root authority changed: {source}")
+            raise ValueError(f"private bridge signature or root authority changed: {source}")
         offset = 0
         for actual, expected in zip(function["parameters"], parameters):
             if not matches(actual, expected) or actual["offset"] != offset:
@@ -737,7 +365,14 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
             if type(value) is not int or not -(2**63) <= value < 2**63:
                 raise ValueError("unsupported private ABI enum value")
             lines.append(f"    {case} = {value},")
-        lines += ["};", "}"]
+        lines += [
+            "};",
+            f"inline constexpr bool validRaw({name} value) {{",
+            "    switch (static_cast<std::int64_t>(value)) {",
+        ]
+        for value in sorted(set(declaration["cases"].values())):
+            lines.append(f"    case {value}: return true;")
+        lines += ["    default: return false;", "    }", "}", "}"]
 
     def record(name, size, alignment, members):
         nonlocal lines
@@ -1010,7 +645,7 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
         for alias, (_, _, _, record, _) in PASS_ENTRIES.items()
         if record is not None
     )
-    for name, source, fields in ARGUMENT_RECORDS + pass_records:
+    for name, source, fields in pass_records:
         _, function = abi_declaration(facts, "functions", source)
         if len(fields) != len(function["parameters"]):
             raise ValueError(f"private ABI argument names changed: {source}")
@@ -1049,29 +684,42 @@ def pass_bridges(facts):
     declarations, assembly = ['extern "C" {'], [".text"]
     registers = ("%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9")
     scalar = {"i64", "u64", "u8", "bool", "enum"}
+    policy = {row[0]: row[6:] for row in ENTRIES}
     for alias, (roots, _, _, record, discard) in PASS_ENTRIES.items():
         _, function = abi_declaration(facts, "functions", "compiler_frontend::" + alias)
         parameters, result = function["parameters"], function["result"]["kind"]
-        host, target = "aurora_hosted_" + alias, abi_function_symbol(facts, "compiler_frontend::" + alias)
+        host_alias, noexcept, _, loads, consume = policy[alias]
+        host, target = "aurora_hosted_" + host_alias, abi_function_symbol(facts, "compiler_frontend::" + alias)
         moves, arguments = [], []
         if not roots:
-            if record is None or (result != "class" and not (result in scalar and discard)):
-                raise ValueError("unsupported private copied transport: " + alias)
-            arguments = ["void *" if discard else "const void *"]
-            moves = [("%rdi", "%r11")]
-            if not discard:
-                arguments.append("void *")
-                moves.append(("%rsi", "%r10"))
+            if record is None:
+                if parameters or result != "class" or discard:
+                    raise ValueError("unsupported private result-only transport: " + alias)
+                arguments, moves = ["void *"], [("%rdi", "%r10")]
+            else:
+                if result != "class" and not (result in scalar and discard):
+                    raise ValueError("unsupported private copied transport: " + alias)
+                arguments, moves = ["void *" if discard or consume else "const void *"], [("%rdi", "%r11")]
+                if not discard:
+                    arguments.append("void *")
+                    moves.append(("%rsi", "%r10"))
         else:
             if discard:
                 raise ValueError("unsupported private discarded root result: " + alias)
             arguments = ["void *" if len(roots) == 1 and roots[0][1] else "const void *"]
             moves = [("%rdi", "%r10")]
             if record is not None:
-                if result not in scalar:
-                    raise ValueError("unsupported private root record transport: " + alias)
                 arguments.append("const void *")
                 moves.append(("%rsi", "%r11"))
+                for index in loads:
+                    if not 0 <= index < len(parameters) or parameters[index]["kind"] not in scalar:
+                        raise ValueError("unsupported private record scalar lane: " + alias)
+                    moves.append((str(parameters[index]["offset"]) + "(%r11)", registers[index]))
+                if result == "class":
+                    arguments.append("void *")
+                    moves.append(("%rdx", "%rax"))
+                elif result not in scalar:
+                    raise ValueError("unsupported private root record result: " + alias)
             else:
                 if len(parameters) > 4 or any(parameter["kind"] not in scalar for parameter in parameters):
                     raise ValueError("unsupported private scalar tail: " + alias)
@@ -1083,7 +731,7 @@ def pass_bridges(facts):
                 elif result not in scalar:
                     raise ValueError("unsupported private scalar result: " + alias)
         returned = "void" if discard or result == "class" else "std::int64_t"
-        declarations.append(f"{returned} {host}({', '.join(arguments)}) noexcept;")
+        declarations.append(f"{returned} {host}({', '.join(arguments)}){' noexcept' if noexcept else ''};")
         assembly += [f".globl {host}", f".hidden {host}", f".type {host}, @function", f"{host}:"]
         assembly += [f"    movq {source}, {destination}" for source, destination in moves]
         assembly += [f"    jmp {target}", f".size {host}, .-{host}"]
@@ -1105,7 +753,7 @@ def frontend_bridge(bridge, facts):
 
 
 def stage_modules(module_root, modules):
-    """Copy each compiler module unchanged under its own name in the module root."""
+    """Copy modules byte-for-byte, expanding only the explicit frontend scaffold."""
     for source in modules:
         declaration = re.search(r"^export module ([A-Za-z_][A-Za-z0-9_.]*);", source.read_text(), re.MULTILINE)
         if declaration is None:
@@ -1113,7 +761,10 @@ def stage_modules(module_root, modules):
         parts = declaration.group(1).split(".")
         destination = module_root.joinpath(*parts[:-1])
         destination.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, destination / (parts[-1] + ".au"))
+        content = source.read_bytes()
+        if b"// @generated-forwarders" in content:
+            content = render(content.decode()).encode()
+        (destination / (parts[-1] + ".au")).write_bytes(content)
 
 
 def write_frontend_header(facts, header, messages, metadata_source, instruction_source, compatible_header=None):
@@ -1130,7 +781,6 @@ def write_frontend_header(facts, header, messages, metadata_source, instruction_
 def emit(
     compiler,
     source,
-    bridges,
     output,
     module_root,
     messages,
@@ -1152,7 +802,6 @@ def emit(
         b"\n".join(
             [
                 raw.read_bytes(),
-                *(frontend_bridge(bridge.read_text(), facts).encode() for bridge in bridges),
                 frontend_bridge(None, facts).encode(),
             ]
         )
@@ -1161,19 +810,17 @@ def emit(
 
 def main():
     # COMPILER --output OUTPUT INPUT...: .au inputs are the compiler modules,
-    # .S inputs are the bridges in order, and an optional .hpp is the header
-    # that stage-2 output must reproduce.
+    # and an optional .hpp is the header that stage-2 output must reproduce.
     arguments = sys.argv[1:]
     if len(arguments) < 4 or arguments[1] != "--output":
         raise ValueError("expected COMPILER --output OUTPUT INPUT...")
     compiler, output = Path(arguments[0]), Path(arguments[2])
     inputs = [Path(argument) for argument in arguments[3:]]
     modules = [path for path in inputs if path.suffix == ".au"]
-    bridges = [path for path in inputs if path.suffix == ".S"]
     headers = [path for path in inputs if path.suffix == ".hpp"]
     names = [path.name for path in modules]
     if (
-        len(modules) + len(bridges) + len(headers) != len(inputs)
+        len(modules) + len(headers) != len(inputs)
         or len(headers) > 1
         or len(set(names)) != len(names)
         or not {
@@ -1185,13 +832,12 @@ def main():
         }
         <= set(names)
     ):
-        raise ValueError("expected unique .au modules including frontend.au, .S bridges and at most one .hpp header")
-    module_root = output.parent / "compiler-modules"
+        raise ValueError("expected unique .au modules including frontend.au and at most one .hpp header")
+    module_root = output.parent / (output.stem + "-modules")
     stage_modules(module_root, modules)
     emit(
         compiler,
-        modules[names.index("frontend.au")],
-        bridges,
+        module_root / "aurora/compiler/frontend.au",
         output,
         module_root,
         modules[names.index("lowering_errors.au")],

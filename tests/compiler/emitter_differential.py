@@ -29,6 +29,7 @@ sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 from bootstrap_frontend import stage_modules
+from frontend_bridge import render
 from qemu_transport import run_logged
 
 SOURCE_ROOTS = ("compiler", "examples", "kernel", "library", "tests")
@@ -216,13 +217,14 @@ def main():
     rejected = []
     try:
         original_sources = source_identities(root)
+        bridge_identity = identity(ROOT / "scripts/frontend_bridge.py")
         module_root = artifacts / "compiler-modules"
         stage_modules(module_root, [*modules, decimal])
         staged = {str(path.relative_to(module_root)): identity(path) for path in sorted(module_root.rglob("*.au"))}
         expected = sorted(
             (
-                original_sources[str(path.relative_to(root))]["sha256"],
-                original_sources[str(path.relative_to(root))]["bytes"],
+                hashlib.sha256(render(path.read_bytes().decode()).encode()).hexdigest(),
+                len(render(path.read_bytes().decode()).encode()),
             )
             for path in [*modules, decimal]
         )
@@ -238,6 +240,7 @@ def main():
                 "staged_modules": staged,
                 "harness": identity(Path(__file__)),
                 "staging_helper": identity(ROOT / "scripts/bootstrap_frontend.py"),
+                "bridge_table": bridge_identity,
                 "process_helper": identity(ROOT / "scripts/qemu_transport.py"),
                 "scope": "All source-root *.au inputs; one flag profile; assembly plus both sidecars; text diagnostics",
                 "limits": "Artifact identity is not compiler build provenance; no machine execution or I/O injection",
@@ -253,7 +256,7 @@ def main():
             arguments = [
                 *flags,
                 *(argument for path in roots for argument in ("--module-root", str(path))),
-                str(source),
+                str(module_root / "aurora/compiler/frontend.au" if source == root / "compiler/frontend.au" else source),
                 "-o",
                 str(invocation / "assembly.s"),
                 "--stack-facts",
@@ -284,6 +287,9 @@ def main():
             f"now accepted {sorted(EXPECTED_REJECTED - set(rejected))}",
         )
         require(source_identities(root) == original_sources, "source corpus changed during comparison")
+        require(
+            identity(ROOT / "scripts/frontend_bridge.py") == bridge_identity, "bridge table changed during comparison"
+        )
         require(
             {str(path.relative_to(module_root)): identity(path) for path in sorted(module_root.rglob("*.au"))}
             == staged,
