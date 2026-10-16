@@ -96,7 +96,7 @@ export namespace console {
                                     if (event == ConsoleEvent::help) {
                                         // Preserve this exact terminal transcript as one byte-string token.
                                         okay = program_text(session,
-                                            "\r\nupper   Uppercase a line in a protected Aurora program\r\nwrite note <text>  Replace the RAM note (53 ASCII bytes)\r\ncat note          Read the note in protected Aurora\r\nupper note        Replace the note with protected uppercase output\r\nwrite <name> <text>  Write one of four RAM files (8-byte name, 49-byte content)\r\ncat <name> / upper <name>  Protected read / atomic uppercase replacement\r\nls / rm <name>     List / remove RAM files\r\nhelp    Show commands\r\nstatus  Show console state\r\nexit    Close this QEMU session\r\naurora> ");
+                                            "\r\nupper   Uppercase a line in a protected Aurora program\r\nwrite note <text>  Replace the RAM note (53 ASCII bytes)\r\ncat note          Read the note in protected Aurora\r\nupper note        Replace the note with protected uppercase output\r\nwrite <name> <text>  Write one of four RAM files (8-byte name, 49-byte content)\r\nappend <name> <text>  Append to an existing RAM file\r\ncat <name> / upper <name>  Protected read / atomic uppercase replacement\r\nls / rm <name>     List / remove RAM files\r\nhelp    Show commands\r\nstatus  Show console state\r\nexit    Close this QEMU session\r\naurora> ");
                                     } else {
                                         if (event == ConsoleEvent::status) {
                                             okay = program_text(session,

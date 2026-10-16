@@ -86,6 +86,8 @@ failed output byte and never retries a command or committed update.
 - [JSON](../docs/json.md): bounded validation, scalar/integer codecs, lookup and transactional string append
 - [Package metadata](../docs/packages.md): identity, manifest grammar and catalog ordering
 - [Offline XFS](../docs/xfs.md): narrow integrity/geometry/directory/file interpretation
+- Named RAM files support atomic `append_file` and `append NAME TEXT` through the
+  shared session/protected store, with a 49-byte total limit and no creation on missing names.
 - [Console session policy](../docs/native-console-service.md): volatile note/named-file grammar, limits and lifetime
 - [Protected command ledger](../docs/program-console-contract.md#shared-copied-command-ledger):
   `console.command_stream` owns copied bytes and request/reply/ack, read-terminal,

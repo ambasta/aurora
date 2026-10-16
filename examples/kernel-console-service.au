@@ -33,8 +33,8 @@ auto show_erased(builtin::ConsoleSession& session) -> bool {
 auto show_help(builtin::ConsoleSession& session) -> bool {
     // Keep this indivisible byte-string token intact to preserve exact terminal output.
     array<u8,
-        289> text =
-        "help    Show commands\r\nstatus  Show boot state\r\nwrite NAME TEXT   Replace RAM-only file (4 files; name 1-8; text max 49)\r\ncat NAME; rm NAME; ls   Read, remove, list session files\r\nwrite note TEXT; cat note   Separate RAM-only note (max 53)\r\nexit    Close session; note and files are lost\r\n";
+        340> text =
+        "help    Show commands\r\nstatus  Show boot state\r\nwrite NAME TEXT   Replace RAM-only file (4 files; name 1-8; text max 49)\r\nappend NAME TEXT   Append to an existing RAM file\r\ncat NAME; rm NAME; ls   Read, remove, list session files\r\nwrite note TEXT; cat note   Separate RAM-only note (max 53)\r\nexit    Close session; note and files are lost\r\n";
     const console::WriteResult result = console::write_bytes(session, borrow_bytes(text));
     return result.complete();
 }

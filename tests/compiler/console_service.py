@@ -151,6 +151,16 @@ def main():
     def file_read(name, content):
         return b"cat " + name + b"\r\n" + content + b"\r\naurora> "
 
+    result = execute(samples(b"append absent x\nwrite a lower\nappend a case\nappend a \ncat a\nappend note x\nexit\n"))
+    require(
+        result.returncode == 0
+        and file_read(b"a", b"lowercase") in result.stdout
+        and file_written(b"a", 4) in result.stdout
+        and file_written(b"a", 0) in result.stdout
+        and b"files: not found (RAM-only)." in result.stdout
+        and b"files: note is reserved." in result.stdout,
+        "shared append command semantics",
+    )
     script = b"write a first\nwrite b second\nwrite c third\nwrite d fourth\nwrite e fifth\n"
     script += b"write a x\ncat a\nrm b\nwrite e \nls\ncat e\nrm absent\ncat absent\nrm note\nexit\n"
     result = execute(samples(script))
@@ -383,6 +393,49 @@ auto span_compare_contract() -> i64 {
     if (buffer.starts_with(64, all.subspan(0, 64))) { return 7; }
     return 0;
 }
+auto append_contract() -> i64 {
+    const std::BinaryBuffer64 zero = std::BinaryBuffer64();
+    console::SessionFiles files = console::SessionFiles(zero);
+    const console::FileName name = console::FileName(pack("abcdefgh"), 8);
+    const console::FileName reserved = console::FileName(pack("note"), 4);
+    const console::FileValue empty = console::FileValue(zero, 0);
+    if (files.append_file(name, empty) != console::FileEvent::missing
+        || files.append_file(reserved, empty) != console::FileEvent::reserved) { return 1; }
+    i64 length = 0;
+    while (length <= 49) {
+        std::BinaryBuffer64 content = std::BinaryBuffer64();
+        i64 index = 0;
+        while (index < length) { content.write_u8(index, 'a'); index = index + 1; }
+        if (files.write_file(name, console::FileValue(content, length)) != console::FileEvent::written) { return 2; }
+        std::BinaryBuffer64 suffix = std::BinaryBuffer64();
+        index = 0;
+        while (index < 49 - length) { suffix.write_u8(index, 'b'); index = index + 1; }
+        if (files.append_file(name, console::FileValue(suffix, 49 - length)) != console::FileEvent::written
+            || files.append_file(name, empty) != console::FileEvent::written
+            || files.append_file(name, console::FileValue(pack("x"), 1)) != console::FileEvent::invalid) { return 3; }
+        const console::FileReply read = files.read_file(name);
+        if (read.size() != 49) { return 4; }
+        index = 0;
+        while (index < 49) {
+            if ((index < length && read.at(index) != 'a') || (index >= length && read.at(index) != 'b')) { return 5; }
+            index = index + 1;
+        }
+        length = length + 1;
+    }
+    array<i64, 5> bad = {-9223372036854775808, -1, 50, 65, 9223372036854775807};
+    i64 index = 0;
+    while (index < 5) {
+        if (files.append_file(name, console::FileValue(zero, bad[index])) != console::FileEvent::invalid
+            || files.append_file(console::FileName(zero, bad[index]), empty) != console::FileEvent::invalid) {
+            return 6;
+        }
+        index = index + 1;
+    }
+    if (files.append_file(name, console::FileValue(zero, 1)) != console::FileEvent::invalid) { return 7; }
+    const console::FileReply unchanged = files.read_file(name);
+    if (unchanged.size() != 49 || unchanged.at(48) != 'a') { return 8; }
+    return 0;
+}
 auto typed_files_contract() -> i64 {
     const std::BinaryBuffer64 zero = std::BinaryBuffer64();
     const std::BinaryBuffer64 a = pack("a");
@@ -573,12 +626,14 @@ checked_files_snapshot:
 #include <cstdint>
 extern "C" long files_contract();
 extern "C" long typed_files_contract();
+extern "C" long append_contract();
 extern "C" long span_compare_contract();
 extern "C" void checked_files_snapshot(long, void*);
 int main() {
     if (const auto result = span_compare_contract()) return 20 + int(result);
     if (const auto result = files_contract()) return int(result);
     if (const auto result = typed_files_contract()) return 40 + int(result);
+    if (const auto result = append_contract()) return 80 + int(result);
     for (long stage = 0; stage != 5; ++stage) {
         std::array<unsigned char, 280> storage{};
         storage.fill(0xa5);

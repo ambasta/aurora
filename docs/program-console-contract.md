@@ -346,3 +346,10 @@ partial progress preserved the saved value and that retry uses fresh domains.
 Independent qualification covers all twelve profiles, their exact source/images
 and original-clock traces, plus actual normal BIOS/UEFI restoration and the final
 native/review gates. A wrapper's normal-image rebuild is not that restoration boot.
+
+Named-file `append NAME TEXT` uses the same Aurora `SessionFiles.append_file` operation
+as ordinary console consumers. It requires an existing file, preserves the 49-byte
+content bound, and commits at the existing quiescent update boundary. Empty suffixes
+are successful writes; all successful appends advance the protected store revision.
+Rejected appends preserve the complete store and revision. No grant or bridge layout
+changes are involved; protected `cat` and `upper` consume the resulting file normally.

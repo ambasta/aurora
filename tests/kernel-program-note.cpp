@@ -810,7 +810,24 @@ auto named_file_cases() -> void {
     const auto full = n.files.saved();
     n.submit("write e rejected");
     require(n.files.saved() == full, "full store refusal preserves all bytes");
-    n.upper("a", "LOWER");
+    n.submit("append a case");
+    n.read("a", "lowercase");
+    const auto appended = n.files.saved();
+    for (const auto command : {"append missing x", "append note x", "append a", "append", "append ../a x"}) {
+        n.submit(command);
+        require(n.files.saved() == appended, "rejected append preserves complete store and revision");
+    }
+    const auto before_empty = file_update(n.files.saved(), "upper a");
+    n.submit("append a ");
+    require(n.files.saved() != appended, "empty append advances revision");
+    Files::ReplaceInput stale_append{};
+    std::copy(n.files.saved().begin(), n.files.saved().end(), stale_append.begin());
+    std::copy_n(before_empty.begin() + 360, 88, stale_append.begin() + 272);
+    put_word(stale_append, 424, 0);
+    const auto stale_append_result = file_replace(stale_append);
+    require(std::equal(n.files.saved().begin(), n.files.saved().end(), stale_append_result.begin()),
+            "empty append invalidates prior replacement selection");
+    n.upper("a", "LOWERCASE");
     n.read("b", "Keep Me");
     n.read("c", "");
     n.read("d", "fourth");
@@ -820,7 +837,7 @@ auto named_file_cases() -> void {
     n.submit("write abcdefgh " + maximum);
     n.upper("abcdefgh", std::string(49, 'Z'));
     const auto saved = n.files.saved();
-    for (const auto command : {"write abcdefghi x", "upper a extra", "upper ../a", "rm missing"}) {
+    for (const auto command : {"write abcdefghi x", "upper a extra", "upper ../a", "rm missing", "append abcdefgh x"}) {
         n.submit(command);
         require(n.files.saved() == saved, "invalid command preserves complete store");
     }
@@ -840,7 +857,7 @@ auto named_file_cases() -> void {
     // Exhaustion refuses writes/removal/replacement without disabling reads.
     auto exhausted = n.files.saved();
     put_word(exhausted, 264, UINT64_MAX);
-    for (const auto command : {"write a x", "rm a", "write e x"}) {
+    for (const auto command : {"write a x", "rm a", "write e x", "append a x", "append a "}) {
         const auto result = file_update(exhausted, command);
         require(std::equal(exhausted.begin(), exhausted.end(), result.begin()), "revision exhaustion preserves store");
     }
