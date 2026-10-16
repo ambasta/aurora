@@ -10,8 +10,8 @@ still needs its own full, convergence and BIOS/UEFI qualification.
 | Source loading and file I/O | C++ host | Native runtime and source-loading migration |
 | Lexing and parsing | Aurora | Complete final-source predecessor/current convergence |
 | Resolution and typed lowering | Aurora | Validate final integrated behavior |
-| Metadata, callable and frame admission | Aurora with native transport adapter | Finish final-source validation; retain transport bounds |
-| Instruction storage and static admission | Aurora with native transport adapter | Validate diagnostic order and the source/native boundary |
+| Metadata, callable and frame admission | Aurora owns frame size and disjoint slot domains; C++ transports raw declarations | Retain host conversion, quota arithmetic and transport bounds |
+| Instruction storage and static admission | Aurora owns service argument-vector shape and copied-argument contracts | C++ retains dynamic loans, lifetimes, physical initialization and logical completion |
 | Initialization and synchronous service loans | Aurora workspace | Resource ownership and object provenance remain native |
 | Current values, operand stacks, bounds evidence | C++ verifier | Migration frozen; unmerged draft is not current functionality |
 | Ownership, provenance and worklist | C++ verifier; Aurora owns entry-binding uniqueness | Continue deletion-first migration; retain dynamic checks |

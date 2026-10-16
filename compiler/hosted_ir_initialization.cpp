@@ -44,8 +44,7 @@ std::uint64_t domainFacts(const Metadata &metadata, Metadata::CallableId callabl
         invalidInitialization();
     const auto slots = metadata.frame(callable).scalarSlots().size();
     const auto objects = metadata.frame(callable).objectSlots().size();
-    if (slots > 65536 || objects > 8192)
-        invalidInitialization();
+    // Published Aurora frame admission already bounds these disjoint slot domains.
     const auto receiver = metadata.callable(callable).receiver();
     const auto fields = receiver ? metadata.fields(metadata.findClass(receiver->className).value()).size() : 0;
     return checkedSum(checkedSum(slots, objects), fields);
@@ -142,6 +141,7 @@ public:
         if (value != 1)
             failure();
     }
+    // Retain result bounds before host conversion, including error sentinels and observation bits.
     std::size_t counted(std::int64_t value, std::int64_t maximum) const {
         if (value < 0 || value > maximum)
             failure();
