@@ -878,6 +878,25 @@ def emitter_generation(facts):
 def pass_bridge_generation(facts):
     from bootstrap_frontend import abi_function_symbol, frontend_abi_header, frontend_bridge
 
+    # Admission/snapshot tools import by file path without scripts/ on sys.path.
+    module_path = Path(__file__).resolve().parents[2] / "scripts/bootstrap_frontend.py"
+    program = """import importlib.util, sys
+spec = importlib.util.spec_from_file_location("isolated_abi", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+facts = {"version": 2, "functions": {"fixture_symbol": {"source_name": "fixture::entry"}}}
+assert module.abi_function_symbol(facts, "fixture::entry") == "fixture_symbol"
+assert len(module.PASS_ENTRIES) == 107
+"""
+    with tempfile.TemporaryDirectory(prefix="bridge-import-") as temporary:
+        subprocess.run(
+            [sys.executable, "-I", "-B", "-c", program, str(module_path)],
+            cwd=temporary,
+            capture_output=True,
+            timeout=30,
+            check=True,
+        )
+
     assembly, header = frontend_bridge(None, facts), frontend_abi_header(facts)
     operations = ["emitter_" + name for name in EMITTER_OPERATIONS]
     operations += ["initialization_" + name for name in INITIALIZATION_OPERATIONS]

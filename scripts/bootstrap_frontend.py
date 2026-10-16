@@ -7,12 +7,19 @@ bindings remain local; only trusted register bridges expose host entries.
 
 from pathlib import Path
 import re
+import importlib.util
 import json
 import subprocess
 import sys
 
 
-from frontend_bridge import ENTRIES, render, signatures
+# Admission tools also load this module by file path from outside scripts/.
+_bridge_spec = importlib.util.spec_from_file_location(
+    "_aurora_frontend_bridge", Path(__file__).with_name("frontend_bridge.py")
+)
+_bridge = importlib.util.module_from_spec(_bridge_spec)
+_bridge_spec.loader.exec_module(_bridge)
+ENTRIES, render, signatures = _bridge.ENTRIES, _bridge.render, _bridge.signatures
 
 PASS_ENTRIES = signatures()
 
