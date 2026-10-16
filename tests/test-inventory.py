@@ -232,7 +232,16 @@ def check_commands(manifest, records, root, build):
                 raise ValueError("compiler suite coverage drift: " + name)
 
 
+def same_optimization(source, name):
+    return compile(source, name, "exec", optimize=0) == compile(source, name, "exec", optimize=1)
+
+
 def self_test():
+    if not same_optimization("raise ValueError('active check')", "control"):
+        raise ValueError("explicit check changed under optimization")
+    for source in ("assert False", "def nested():\n    assert False", "value = __debug__"):
+        if same_optimization(source, "control"):
+            raise ValueError("optimization-sensitive control was accepted")
     for build in ("/repo/build/gcc14", "/build/gcc14"):
         command = [
             build + "/../../repo/tests/compiler/a.py"
@@ -342,6 +351,14 @@ def main():
     parser.add_argument("--meson-info", type=Path)
     args = parser.parse_args()
     self_test()
+    # These complete runners execute once under -O. Reject changes to compiled
+    # runner code caused by optimization, such as assert or __debug__ branches.
+    # Imported helper behavior is still covered by the optimized execution.
+    for name in ("developer-commands.py", "test_artifact_budget.py"):
+        path = ROOT / "tests" / name
+        source = path.read_text()
+        if not same_optimization(source, str(path)):
+            raise ValueError("ordinary/optimized runner divergence: " + name)
     manifest = json.loads((ROOT / "tests/compiler-test-inventory.json").read_text())
     files = {p.name for p in (ROOT / "tests/compiler").glob("*.py")}
     root_runners = root_meson_inventory((ROOT / "Makefile").read_text(), manifest)

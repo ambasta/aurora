@@ -120,7 +120,6 @@ test-developer-commands:
 	python3 -B -O tests/kernel-graphical-profile-metadata.py
 	python3 -B tests/framebuffer-preview.py
 	python3 -B -O tests/framebuffer-preview.py
-	python3 -B tests/developer-commands.py
 	python3 -B -O tests/developer-commands.py
 	python3 -B tests/uefi-firmware.py
 	python3 -B -O tests/uefi-firmware.py
@@ -334,7 +333,6 @@ test-inventory:
 
 .PHONY: test-artifact-budget
 test-artifact-budget:
-	python3 -B tests/test_artifact_budget.py
 	python3 -B -O tests/test_artifact_budget.py
 
 smoke-all: smoke-boot-capacity

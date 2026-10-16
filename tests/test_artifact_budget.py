@@ -61,12 +61,11 @@ class ArtifactBudget(unittest.TestCase):
             ],
         )
 
-    def test_standalone_budget_keeps_both_python_modes(self):
+    def test_standalone_budget_keeps_optimized_checks(self):
         _, plan = self.make_plan("test-artifact-budget")
         self.assertCountEqual(
             plan,
             [
-                ["python3", "-B", "tests/test_artifact_budget.py"],
                 ["python3", "-B", "-O", "tests/test_artifact_budget.py"],
             ],
         )

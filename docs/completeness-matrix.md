@@ -17,6 +17,8 @@ Self-hosting, final emitter qualification and full kernel migration remain incom
 
 Current gate: original repository check and final-source GCC16 full
 suite, followed by affected image/guest checks. See [development and qualification](developer-test-contract.md).
+Developer-command and artifact-budget controls retain complete optimized runs
+with ordinary/optimized runner equivalence checked by the test inventory.
 
 The BIOS console's bounded three-command session and editor are Aurora-owned;
 native code retains sealed-session grants, PIC/UART transport and shutdown.

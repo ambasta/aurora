@@ -453,8 +453,6 @@ test('graphical-profile-metadata', python, args: ['-B', files('kernel-graphical-
      suite: ['full', 'dev'], env: oracle_env, timeout: 30)
 test('graphical-profile-metadata-optimized', python, args: ['-B', '-O', files('kernel-graphical-profile-metadata.py')],
      suite: ['full', 'dev'], env: oracle_env, timeout: 30)
-test('developer-commands', python, args: ['-B', files('developer-commands.py')],
-     suite: ['full', 'dev'], env: oracle_env, timeout: 120)
 test('developer-commands-optimized', python, args: ['-B', '-O', files('developer-commands.py')],
      suite: ['full', 'dev'], env: oracle_env, timeout: 120)
 test('console-routing', python, args: ['-B', files('kernel-console-routing.py')],
@@ -480,16 +478,11 @@ foreach mode : ['ordinary', 'optimized']
          suite: ['full', 'dev'], env: oracle_env, timeout: 30)
 endforeach
 
-# Compiler-free controls for complete per-command artifact accounting.
-foreach mode : ['ordinary', 'optimized']
-    budget_args = ['-B']
-    if mode == 'optimized'
-        budget_args += ['-O']
-    endif
-    budget_args += [files('test_artifact_budget.py')]
-    test('artifact-budget-' + mode, python, args: budget_args,
-         suite: ['full', 'dev'], env: oracle_env, timeout: 30)
-endforeach
+# These controls use explicit unittest checks. The inventory verifies that their
+# runner bytecode is unchanged by -O; execute each complete case set once.
+test('artifact-budget-optimized', python,
+     args: ['-B', '-O', files('test_artifact_budget.py')],
+     suite: ['full', 'dev'], env: oracle_env, timeout: 30)
 
 # Remaining compiler-native coverage. Fixtures are build targets, not commands
 # hidden inside each test invocation; Ninja tracks C++ header dependencies.
