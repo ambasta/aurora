@@ -5430,7 +5430,7 @@ void loweringSchemaSources(const std::vector<aurora::Token> &tokens,
          {"ContinuationPhase", 14},
          {"ArgumentKind", 7},
          {"CleanupKind", 6}},
-        {{"LoweringStatus", 4}, {"LoweringError", 244}},
+        {{"LoweringStatus", 4}, {"LoweringError", 245}},
         {},
     }};
     static const std::array<const char *, 3> functions{

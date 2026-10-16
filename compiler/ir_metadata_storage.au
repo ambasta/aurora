@@ -4,6 +4,9 @@ export module aurora.compiler.ir_metadata_storage;
 // independent verification only appends normalization tails and writes results.
 // No source accessor exposes a descriptor, payload address or mutable raw row.
 export namespace compiler_ir_metadata {
+    auto maximum_class_fields() -> i64 {
+        return 8192;
+    }
     enum class MetadataStatus {
         pending,
         success,
@@ -52,6 +55,8 @@ export namespace compiler_ir_metadata {
         nominal_overlap,
         //: invalid typed IR: invalid nominal class layout
         class_layout,
+        //: invalid typed IR: class exceeds 8192 direct fields
+        class_field_limit,
         //: invalid typed IR: non-scalar class layout field
         class_leaf,
         //: invalid typed IR: logical fields reference unknown class layout

@@ -54,8 +54,7 @@ constexpr std::uint64_t snapshotBytes(std::uint64_t facts) {
     return checkedSum(checkedProduct(words, hosted_abi::initializationWordPairPhysicalBytes),
                       checkedProduct(2, hosted_abi::initializationServiceLoanPhysicalBytes));
 }
-// Preserve the former local-only maximum as a fixed logical payload budget,
-// including receiver and service pools without imposing a direct-field limit.
+// This independent allocation backstop bounds retained pools; Aurora admission caps direct fields.
 constexpr std::uint64_t maximumWorkspacePayload = 1209026560;
 static_assert(maximumWorkspacePayload == 65537ULL * 1152 * 16 + 65536ULL * 16);
 constexpr std::uint64_t quota(std::uint64_t facts) {

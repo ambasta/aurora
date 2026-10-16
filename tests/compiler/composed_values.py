@@ -449,6 +449,35 @@ def native_copy_cases(suite):
     )
 
 
+def field_count_cases(suite):
+    empty = "class Empty{public:Empty(){}};"
+    for count in (8191, 8192):
+        fields = "".join(f"Empty f{index};" for index in range(count))
+        initializers = ",".join(f"f{index}(e)" for index in range(count))
+        declaration = f"class Fields{{{fields}public:Fields(Empty e):{initializers}{{}}}};"
+        parent = "class Parent{Fields child;public:Parent(Fields value):child(value){} };"
+        suite.check(
+            f"{count} empty direct fields retain nested constructor completion",
+            program(
+                "Empty e=Empty();Fields value=Fields(e);Parent nested=Parent(value);return 42;",
+                empty + declaration + parent,
+            ),
+        )
+    suite.check(
+        "last empty field still needs initialization at the direct-field cap",
+        program("return 42;", empty + declaration.replace(",f8191(e)", "")),
+        error="constructor must initialize",
+    )
+    for count in (8193, 73729):
+        fields = "".join(f"Empty f{index};" for index in range(count))
+        suite.check(
+            f"oversized no-leaf child with {count} fields rejects before receiver allocation",
+            program("return 42;", empty + f"class Child{{{fields}}};class Parent{{Child child;}};"),
+            error="class exceeds 8192 direct fields",
+            existing_output=b"preserve prior output",
+        )
+
+
 def empty_class_cases(suite):
     empty = "class Empty{public:Empty(){}auto answer()const->i64{return 42;}};"
     holder = "class Holder{public:Empty item;Holder(Empty source):item(source){} };"
@@ -1215,6 +1244,7 @@ def main():
             return
         scalar_and_library_cases(suite)
         native_copy_cases(suite)
+        field_count_cases(suite)
         empty_class_cases(suite)
         snapshot_cases(suite)
         array_and_model_cases(suite, args.seed, args.steps)

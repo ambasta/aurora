@@ -659,7 +659,7 @@ void differentialReceiverJoins() {
 }
 void receiverDomainBoundaryTests() {
     // Receiver bits follow both local domains, including when all three share a
-    // word. Empty fields also cross the old local-only word/count ceilings.
+    // word. Empty fields obey the same admitted class-field ceiling as scalar fields.
     for (const auto [scalarCount, objectCount, fieldCount] :
          std::array<std::array<std::size_t, 3>, 15>{{{0, 0, 0},
                                                      {0, 0, 1},
@@ -674,15 +674,19 @@ void receiverDomainBoundaryTests() {
                                                      {63, 1, 65},
                                                      {64, 1, 1},
                                                      {65, 2, 63},
-                                                     {0, 0, 8193},
-                                                     {0, 0, 73729}}}) {
+                                                     {0, 0, 8191},
+                                                     {0, 0, 8192}}}) {
         const auto scalars = denseOffsets(scalarCount);
         std::vector<ObjectFacts> objects;
         for (std::size_t index = 0; index < objectCount; ++index)
             objects.push_back(
                 {static_cast<int>(((scalarCount + 7) / 8 + index + 1) * 8), {}, ObjectCompletion::missing_empty});
         std::vector<aurora::ir::ClassField> fields(fieldCount, {Type("Empty"), 0, 0, false});
-        if (fieldCount == 65)
+        if (fieldCount == 8191)
+            fields.back() = {Type("Empty"), 0, 0, true, 64};
+        if (fieldCount == 8192)
+            fields.back() = {Type("NestedEmpty"), 0, 0, false};
+        if (fieldCount == 65 || fieldCount >= 8191)
             fields[0] = {Type::OwnedBytes, 0, 0, false}; // Resource gaps still occupy canonical domain bits.
         for (const auto entry : {ReceiverEntry::constructor, ReceiverEntry::method}) {
             auto metadata = objectDeclarations(scalars, objects, fields, entry);
@@ -725,6 +729,12 @@ void receiverDomainBoundaryTests() {
     }
 }
 void receiverFailureTests() {
+    for (std::size_t count : {8193u, 73729u}) {
+        const std::vector<aurora::ir::ClassField> fields(count, {Type("Empty"), 0, 0, false});
+        rejects([&] {
+            objectDeclarations({}, {}, fields, ReceiverEntry::constructor);
+        });
+    }
     auto metadata = objectDeclarations(objectScalars, objectFacts, receiverFields, ReceiverEntry::constructor);
     for (int invalid : {-1, static_cast<int>(receiverFields.size()), 65536, std::numeric_limits<int>::max()})
         for (bool write : {false, true}) {
