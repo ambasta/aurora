@@ -201,9 +201,9 @@ class FileUpdate {
     console::FileSelection selection;
     kernel::NoteRead64 projection;
 public:
-    FileUpdate(console::ProtectedFiles next, console::FileReply result, u64 operation,
-        console::FileSelection selected, kernel::NoteRead64 read)
-        : files(next), reply(result), action(operation), selection(selected), projection(read) {
+    FileUpdate(console::ProtectedFiles next, console::FileReply result, u64 operation, console::FileSelection selected,
+        kernel::NoteRead64 read) : files(next), reply(result), action(operation), selection(selected),
+        projection(read) {
     }
 };
 class FileMutation {
@@ -246,8 +246,8 @@ auto update_files(console::ProtectedFiles current, std::BinaryBuffer64 command, 
     const kernel::NoteRead64 absent = kernel::NoteRead64(-1);
     return FileUpdate(next, reply, action, selection, absent);
 }
-auto replace_files(console::ProtectedFiles current, console::FileSelection selected,
-    std::BinaryBuffer64 output, i64 count) -> FileMutation {
+auto replace_files(console::ProtectedFiles current, console::FileSelection selected, std::BinaryBuffer64 output,
+    i64 count) -> FileMutation {
     console::ProtectedFiles next = current;
     const console::FileReply reply = next.replace(selected, output, count);
     return FileMutation(next, reply);
@@ -275,38 +275,62 @@ class StreamUpdate {
     u64 second;
     u64 accepted;
 public:
-    StreamUpdate(console::CommandStream next, std::BinaryBuffer64 data, u64 value, u64 detail, u64 okay)
-        : stream(next), bytes(data), first(value), second(detail), accepted(okay) {
+    StreamUpdate(console::CommandStream next, std::BinaryBuffer64 data, u64 value, u64 detail, u64 okay) : stream(next),
+        bytes(data), first(value), second(detail), accepted(okay) {
     }
 };
-auto update_stream(console::CommandStream current, CommandOperation operation, std::BinaryBuffer64 input,
-    u64 first, u64 second) -> StreamUpdate {
+auto update_stream(console::CommandStream current, CommandOperation operation, std::BinaryBuffer64 input, u64 first,
+    u64 second) -> StreamUpdate {
     console::CommandStream next = current;
     const std::BinaryBuffer64 empty = std::BinaryBuffer64();
     bool accepted = false;
-    if (operation == CommandOperation::begin) { accepted = next.begin(input, first); }
-    if (operation == CommandOperation::begin_read && first <= 1u64) { accepted = next.begin_read(first == 1u64); }
-    if (operation == CommandOperation::awaiting_read && first <= 1u64) { accepted = next.awaiting_read(first == 1u64); }
+    if (operation == CommandOperation::begin) {
+        accepted = next.begin(input, first);
+    }
+    if (operation == CommandOperation::begin_read && first <= 1u64) {
+        accepted = next.begin_read(first == 1u64);
+    }
+    if (operation == CommandOperation::awaiting_read && first <= 1u64) {
+        accepted = next.awaiting_read(first == 1u64);
+    }
     if (operation == CommandOperation::next_input) {
         const console::CommandInput value = next.next_input();
-        if (value.available()) { return StreamUpdate(next, empty, value.byte(), value.ordinal(), 1u64); }
+        if (value.available()) {
+            return StreamUpdate(next, empty, value.byte(), value.ordinal(), 1u64);
+        }
     }
-    if (operation == CommandOperation::accept_request) { accepted = next.accept_request(first, second); }
-    if (operation == CommandOperation::accept_reply) { accepted = next.accept_reply(first, second); }
-    if (operation == CommandOperation::acknowledge) { accepted = next.acknowledge(first, second); }
-    if (operation == CommandOperation::ready_to_finish) { accepted = next.ready_to_finish(); }
+    if (operation == CommandOperation::accept_request) {
+        accepted = next.accept_request(first, second);
+    }
+    if (operation == CommandOperation::accept_reply) {
+        accepted = next.accept_reply(first, second);
+    }
+    if (operation == CommandOperation::acknowledge) {
+        accepted = next.acknowledge(first, second);
+    }
+    if (operation == CommandOperation::ready_to_finish) {
+        accepted = next.ready_to_finish();
+    }
     if (operation == CommandOperation::finish) {
         const console::CommandOutput output = next.finish();
         if (output.available()) {
             u64 missing = 0u64;
-            if (output.missing()) { missing = 1u64; }
+            if (output.missing()) {
+                missing = 1u64;
+            }
             const std::BinaryBuffer64 bytes = output.bytes();
             return StreamUpdate(next, bytes, output.size(), missing, 1u64);
         }
     }
-    if (operation == CommandOperation::cancel) { accepted = next.cancel(); }
-    if (operation == CommandOperation::scrubbed) { accepted = next.scrubbed(); }
+    if (operation == CommandOperation::cancel) {
+        accepted = next.cancel();
+    }
+    if (operation == CommandOperation::scrubbed) {
+        accepted = next.scrubbed();
+    }
     u64 okay = 0u64;
-    if (accepted) { okay = 1u64; }
+    if (accepted) {
+        okay = 1u64;
+    }
     return StreamUpdate(next, empty, 0u64, 0u64, okay);
 }

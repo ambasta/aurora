@@ -57,9 +57,7 @@ Start from a normal Git checkout containing the historical seed source
 checkpoint [`c0ef02cc105de2b7699d8565f6a53f1dea9e1205`](https://github.com/ambasta/aurora/commit/c0ef02cc105de2b7699d8565f6a53f1dea9e1205)
 (retained by `bootstrap-copied-arguments-v1`), and the owner-field checkpoint
 [`bbf18f40d73b0f7b862a4b23d77b03dfb3f3d0e4`](https://github.com/ambasta/aurora/commit/bbf18f40d73b0f7b862a4b23d77b03dfb3f3d0e4)
-(retained by `bootstrap-owner-field-initializers-v1`), and the register-carry checkpoint
-[`f89e0c9eb199ba482fcce20f1783a52ceae8b1b8`](https://github.com/ambasta/aurora/commit/f89e0c9eb199ba482fcce20f1783a52ceae8b1b8)
-(retained by `bootstrap-register-carry-v1`). The candidate adds the paired-root
+(retained by `bootstrap-owner-field-initializers-v1`). The candidate adds the paired-root
 ABI-facts dependency merged in PR #166 at immutable source commit
 [`052f79d7995be93053f73659bcfc37687b00b341`](https://github.com/ambasta/aurora/commit/052f79d7995be93053f73659bcfc37687b00b341).
 The emitter adds the multi-root checkpoint
@@ -71,7 +69,6 @@ development image does not include Git:
 git fetch origin tag bootstrap-abi-facts-v1
 git fetch origin tag bootstrap-copied-arguments-v1
 git fetch origin tag bootstrap-owner-field-initializers-v1
-git fetch origin tag bootstrap-register-carry-v1
 git fetch origin 052f79d7995be93053f73659bcfc37687b00b341
 git fetch origin 7811ba83730e9a8b4329da983a01e475d73999a6
 git worktree add --detach build/predecessor-source bdf646f09d5e14c88124c4bc9e4f998beda16183
@@ -81,8 +78,6 @@ git worktree add --detach build/copied-argument-source c0ef02cc105de2b7699d8565f
 test "$(git -C build/copied-argument-source rev-parse HEAD)" = c0ef02cc105de2b7699d8565f6a53f1dea9e1205
 git worktree add --detach build/owner-field-source bbf18f40d73b0f7b862a4b23d77b03dfb3f3d0e4
 test "$(git -C build/owner-field-source rev-parse HEAD)" = bbf18f40d73b0f7b862a4b23d77b03dfb3f3d0e4
-git worktree add --detach build/register-carry-source f89e0c9eb199ba482fcce20f1783a52ceae8b1b8
-test "$(git -C build/register-carry-source rev-parse HEAD)" = f89e0c9eb199ba482fcce20f1783a52ceae8b1b8
 git worktree add --detach build/paired-root-source 052f79d7995be93053f73659bcfc37687b00b341
 test "$(git -C build/paired-root-source rev-parse HEAD)" = 052f79d7995be93053f73659bcfc37687b00b341
 git worktree add --detach build/multi-root-source 7811ba83730e9a8b4329da983a01e475d73999a6
@@ -110,12 +105,8 @@ meson setup build/owner-field-compiler build/owner-field-source -Dkernel_images=
   "-Dbootstrap_compiler=$ARGUMENTS"
 meson compile -C build/owner-field-compiler -j 2 aurorac
 FIELDS=$(realpath build/owner-field-compiler/aurorac)
-meson setup build/register-carry-compiler build/register-carry-source -Dkernel_images=false \
-  "-Dbootstrap_compiler=$FIELDS"
-meson compile -C build/register-carry-compiler -j 2 aurorac
-CARRY=$(realpath build/register-carry-compiler/aurorac)
 meson setup build/paired-root-compiler build/paired-root-source -Dkernel_images=false \
-  "-Dbootstrap_compiler=$CARRY"
+  "-Dbootstrap_compiler=$FIELDS"
 meson compile -C build/paired-root-compiler -j 2 aurorac
 PAIR=$(realpath build/paired-root-compiler/aurorac)
 meson setup build/multi-root-compiler build/multi-root-source -Dkernel_images=false \
@@ -135,13 +126,12 @@ The digest option above belongs only to the unchanged historical precursor graph
 The copied-argument and owner-field stages add two source compiler builds after
 the ABI-facts stage. The frontend uses direct copied arguments and creates its
 private index owner through a region-backed field factory; the earlier stages
-cannot build those respective spellings. The register-carry stage changes no
-spelling: its backend emits the current frontend with operands kept in registers
-and elements returned in place, which makes the resulting compiler about 10%
-faster (see [compile speed](ARCHITECTURE.md#compile-speed)). The additional paired-root
+cannot build those respective spellings. The paired-root
 stage supports the graph pass's mutable `Workspace` plus readonly `Input` and
-publishes their ordered two-root ABI facts. The register-carry predecessor alone
-cannot build that pass. The final multi-root hop supplies the real three-root
+publishes their ordered two-root ABI facts; the owner-field predecessor builds it
+directly. (The former register-carry stage between them only changed how its
+compiler's own frontend was emitted; dropping it leaves the multi-root frontend
+byte-identical.) The final multi-root hop supplies the real three-root
 emitter entry; the paired-root predecessor cannot compile it. A retained compiler
 may be reused only with its exact source/build/tool provenance and qualification
 receipt, not by filename or digest alone. Current setup selects the resulting predecessor by path;
@@ -186,12 +176,11 @@ migrations still await execution qualification.
 
 ## Emitter migration qualification
 
-The new multi-root source hop and the native emitter remain unqualified until
-built through the explicit predecessor route above. Preserve its source identity,
-toolchain, commands and build logs; a binary digest alone is not source provenance.
-Use that source-built `7811ba8` compiler as the external old-backend oracle, never
-as a production fallback. Before merging this port, run the whole checked-in
-source corpus with the current C2 compiler in both ordinary and closed profiles:
+The source-built `7811ba8` predecessor still carries the C++ x86 backend, so it
+is also the external old-backend oracle, never a production fallback. The
+`emitter-differential-default` and `emitter-differential-closed` tests in `slow`
+and `full` run the whole checked-in corpus through it and the current C2 compiler
+in the ordinary and closed profiles; by hand:
 
 ```sh
 python3 -B tests/compiler/emitter_differential.py \
@@ -207,10 +196,11 @@ Each new evidence directory retains all input/compiler hashes, exact commands,
 diagnostics and assembly/stack/ABI artifacts. Accepted inputs must match byte for
 byte; rejected inputs must agree and preserve every preexisting output. Any
 mismatch, internal failure or watchdog timeout fails the gate and reports partial
-coverage. Equal rejection is not emission coverage. The corpus is every `.au`
+coverage. Equal rejection is not emission coverage, so the gate also fails if any
+input outside its fixed list of function-less modules is rejected. The corpus is every `.au`
 file under compiler, examples, kernel, library and tests; embedded generated
 fixtures and machine behavior remain covered by their existing native suites.
-This external-oracle gate supplements C1/C2 convergence and the final GCC 16 full,
+It supplements C1/C2 convergence and the final GCC 16 full,
 BIOS/UEFI and affected-profile gates; it does not replace them. Record before/after
 `scripts/compiler-speed.py` time and peak-memory observations before further
 migration work, with every timeout named rather than silently extending limits.

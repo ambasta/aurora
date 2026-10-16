@@ -163,10 +163,11 @@ void pairedBoundaries(Module &module) {
     }
 }
 void boundedBoundaries(Module &module) {
-    for (int roots = 1; roots <= 6; ++roots)
+    for (int roots = 1; roots <= 3; ++roots)
         for (int mutableFirst = 0; mutableFirst <= 1; ++mutableFirst)
             for (int tail = 0; tail <= 6 - roots; ++tail) {
-                const auto suffix = std::to_string(roots) + "_" + std::to_string(mutableFirst) + "_" + std::to_string(tail);
+                const auto suffix =
+                    std::to_string(roots) + "_" + std::to_string(mutableFirst) + "_" + std::to_string(tail);
                 F target;
                 target.name = "bounded_target_" + suffix;
                 target.borrowedRootCount = roots;
@@ -179,12 +180,21 @@ void boundedBoundaries(Module &module) {
                 const int total = slot(target, cursor, Type::I64);
                 add(target, {Constant{0, Type::I64}, Store{total, Type::I64}});
                 for (int ordinal = 0; ordinal < roots; ++ordinal) {
-                    add(target, {Call{"paired_scalar_clobber"}, MethodCall{"paired_read_second", -ordinal},
-                                 Push{}, Load{total, Type::I64}, BinaryValue{Binary::CheckedAdd}, Store{total, Type::I64}});
+                    add(target,
+                        {Call{"paired_scalar_clobber"},
+                         MethodCall{"paired_read_second", -ordinal},
+                         Push{},
+                         Load{total, Type::I64},
+                         BinaryValue{Binary::CheckedAdd},
+                         Store{total, Type::I64}});
                 }
                 for (int input : inputs)
-                    add(target, {Load{input, Type::I64}, Push{}, Load{total, Type::I64},
-                                 BinaryValue{Binary::CheckedAdd}, Store{total, Type::I64}});
+                    add(target,
+                        {Load{input, Type::I64},
+                         Push{},
+                         Load{total, Type::I64},
+                         BinaryValue{Binary::CheckedAdd},
+                         Store{total, Type::I64}});
                 add(target, {Load{total, Type::I64}, Return{}});
                 module.functions.push_back(target);
                 for (int depth = 0; depth <= 2; ++depth) {
@@ -200,7 +210,8 @@ void boundedBoundaries(Module &module) {
                     const int copied = slot(forward, cursor, Type("Box"));
                     std::vector<BorrowedRootArgument> lanes;
                     for (int ordinal = 0; ordinal < roots; ++ordinal) {
-                        forward.code.push_back(AcquireObjectLoan{ordinal + 1, -ordinal, ordinal == 0 && mutableFirst != 0});
+                        forward.code.push_back(
+                            AcquireObjectLoan{ordinal + 1, -ordinal, ordinal == 0 && mutableFirst != 0});
                         lanes.push_back({-ordinal, ordinal + 1});
                     }
                     for (int index = 0; index < depth; ++index)
@@ -210,9 +221,16 @@ void boundedBoundaries(Module &module) {
                     forward.code.push_back(BorrowedCall{target.name, lanes});
                     for (int ordinal = roots; ordinal > 0; --ordinal)
                         forward.code.push_back(ReleaseObjectLoan{ordinal});
-                    add(forward, {Store{saved, Type::I64}, Call{"paired_scalar_clobber"}, BeginObject{copied},
-                                  MethodCall{"paired_copy_second", 1 - roots, {}, copied}, Load{saved, Type::I64},
-                                  Push{}, Load{copied, Type::I64}, BinaryValue{Binary::CheckedAdd}, EndObject{copied}});
+                    add(forward,
+                        {Store{saved, Type::I64},
+                         Call{"paired_scalar_clobber"},
+                         BeginObject{copied},
+                         MethodCall{"paired_copy_second", 1 - roots, {}, copied},
+                         Load{saved, Type::I64},
+                         Push{},
+                         Load{copied, Type::I64},
+                         BinaryValue{Binary::CheckedAdd},
+                         EndObject{copied}});
                     for (int index = 0; index < depth; ++index)
                         forward.code.push_back(BinaryValue{Binary::CheckedAdd});
                     forward.code.push_back(Return{});
@@ -299,9 +317,14 @@ int main() {
                         if (mode == 1)
                             f.code.push_back(BeginObject{result});
                         for (int i = 0; i < n; ++i)
-                            if (!f.parameters[f.borrowedRootCount + i].isSpan() && !f.parameters[f.borrowedRootCount + i].isClass())
+                            if (!f.parameters[f.borrowedRootCount + i].isSpan() &&
+                                !f.parameters[f.borrowedRootCount + i].isClass())
                                 add(f, {Load{bound[i], f.parameters[f.borrowedRootCount + i]}, Push{}});
-                        f.code.push_back(BorrowedCall{target.name, {{0, 1}}, mask < 0 ? std::vector<int>{} : objects, result, mask < 0 ? std::vector<int>{} : spans});
+                        f.code.push_back(BorrowedCall{target.name,
+                                                      {{0, 1}},
+                                                      mask < 0 ? std::vector<int>{} : objects,
+                                                      result,
+                                                      mask < 0 ? std::vector<int>{} : spans});
                         f.code.push_back(ReleaseObjectLoan{1});
                         if (mode == 1)
                             add(f, {Load{result, Type::I64}, EndObject{result}});

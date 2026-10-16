@@ -1248,7 +1248,7 @@ export namespace compiler_ir_instructions {
         const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(target);
         const i64 root_count = declaration.borrowed_root_count();
         if (borrowed) {
-            if (root_count < 1 || root_count > 6) {
+            if (root_count < 1 || root_count > 3) {
                 return fail(store, InstructionError::borrowed_target);
             }
             if (call_count(store, instruction, 1) != 2 * root_count) {

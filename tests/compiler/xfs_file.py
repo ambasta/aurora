@@ -1037,9 +1037,10 @@ def corpus():
     ]
 
 
-def batches(cases, count=16, source_bytes=1 << 19):
+def batches(cases, count=16, source_bytes=1 << 17):
     # Each compile pays for the whole XFS import graph, so batch independent
-    # cases; half the compiler's 1 MiB module cap leaves room for the imports.
+    # cases. Compile time grows faster than linearly with module size (a 512 KiB
+    # batch takes about 25 s), so keep each batch near one second.
     group, size = [], 0
     for case in cases:
         cost = len(case.body) + 64
@@ -1070,7 +1071,7 @@ def main():
         runner = NativeRunner(Path(temporary), compiler, 15)
         for group in batches(cases, count=32):
             # Compiler-only runaway watchdog; Meson bounds the complete correctness fixture to 600 seconds.
-            runner.cases(group, compiler_timeout=120)
+            runner.cases(group)
         for case in rejected:
             runner.rejection(case)
     print(f"PASS XFS file: {len(cases)} native cases, {len(rejected)} rejections", flush=True)

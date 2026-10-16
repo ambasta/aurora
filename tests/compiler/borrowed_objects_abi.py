@@ -102,7 +102,7 @@ def paired_cases(mode):
     result = []
     for arity in range(5):
         values = [101 + index for index in range(arity)]
-        for depth in ([0] if mode == "direct" else range(3)):
+        for depth in [0] if mode == "direct" else range(3):
             direct = mode == "direct"
             result.append(
                 {
@@ -112,8 +112,11 @@ def paired_cases(mode):
                     # Literal first-root field 73 and second-root field 239.
                     # Targets read the second through a copied getter and a
                     # legacy single-root helper. Forwarders read it once more.
-                    "answer": (551 + sum(values) if direct else
-                               (281 if mode == "outgoing" else 790 + sum(values)) + abi.retained(depth)),
+                    "answer": (
+                        551 + sum(values)
+                        if direct
+                        else (281 if mode == "outgoing" else 790 + sum(values)) + abi.retained(depth)
+                    ),
                     "probes": int(mode == "outgoing"),
                     "registers": values,
                 }
@@ -160,8 +163,7 @@ def paired_harness(text, selected):
 
 
 def bounded_shapes():
-    return [(roots, mutable, tail) for roots in range(1, 7)
-            for mutable in range(2) for tail in range(7 - roots)]
+    return [(roots, mutable, tail) for roots in range(1, 4) for mutable in range(2) for tail in range(7 - roots)]
 
 
 def bounded_value(ordinal):
@@ -172,16 +174,21 @@ def bounded_cases(mode):
     result = []
     for roots, mutable, tail in bounded_shapes():
         suffix = f"{roots}_{mutable}_{tail}"
-        for depth in ([0] if mode == "direct" else range(3)):
+        for depth in [0] if mode == "direct" else range(3):
             answer = sum(bounded_value(index) for index in range(roots)) + sum(range(101, 101 + tail))
             if mode != "direct":
                 answer = (42 if mode == "outgoing" else answer) + bounded_value(roots - 1) + abi.retained(depth)
-            result.append({
-                "name": f"bounded {mode} roots {roots} mutable {mutable} tail {tail} depth {depth}",
-                "target": f"bounded_target_{suffix}" if mode == "direct" else f"bounded_forward_{suffix}_{depth}",
-                "input": [], "answer": answer, "probes": int(mode == "outgoing"),
-                "registers": list(range(101, 101 + tail)), "roots": roots,
-            })
+            result.append(
+                {
+                    "name": f"bounded {mode} roots {roots} mutable {mutable} tail {tail} depth {depth}",
+                    "target": f"bounded_target_{suffix}" if mode == "direct" else f"bounded_forward_{suffix}_{depth}",
+                    "input": [],
+                    "answer": answer,
+                    "probes": int(mode == "outgoing"),
+                    "registers": list(range(101, 101 + tail)),
+                    "roots": roots,
+                }
+            )
     return result
 
 
@@ -213,24 +220,25 @@ def bounded_harness(text, selected):
     for index, (case, chunk) in enumerate(zip(selected, chunks[1:])):
         for ordinal in range(1, case["roots"]):
             text += f"    leaq bounded_receiver_{ordinal}_left(%rip), %rdi\n"
-            text += abi.compare("%rdi", f"literal_bounded_receiver_{ordinal}", 64,
-                                f"bounded_{index}_{ordinal}", "canary")
+            text += abi.compare(
+                "%rdi", f"literal_bounded_receiver_{ordinal}", 64, f"bounded_{index}_{ordinal}", "canary"
+            )
         if case["roots"] > 1:
             roots = case["roots"]
             reserved = (8 * roots + 15) & ~15
             text += f"    leaq bounded_record_{roots}_left(%rip), %rdi\n"
-            text += abi.compare("%rdi", f"literal_bounded_record_{roots}", reserved + 16,
-                                f"bounded_record_{index}", "canary")
+            text += abi.compare(
+                "%rdi", f"literal_bounded_record_{roots}", reserved + 16, f"bounded_record_{index}", "canary"
+            )
         text += marker + chunk
     text += "\n.data\n.balign 16\n"
     for ordinal in range(1, 6):
-        words = [181 + ordinal, abi.REGION + ordinal, abi.ALLOCATION + ordinal, 37 + ordinal, 1,
-                 bounded_value(ordinal)]
+        words = [181 + ordinal, abi.REGION + ordinal, abi.ALLOCATION + ordinal, 37 + ordinal, 1, bounded_value(ordinal)]
         text += abi.blob(f"bounded_receiver_{ordinal}_left", [abi.LEFT])
         text += abi.blob(f"bounded_receiver_{ordinal}", words)
         text += abi.blob(f"bounded_receiver_{ordinal}_right", [abi.RIGHT])
         text += abi.blob(f"literal_bounded_receiver_{ordinal}", [abi.LEFT, *words, abi.RIGHT])
-    for roots in range(2, 7):
+    for roots in range(2, 4):
         words = ["receiver", *(f"bounded_receiver_{ordinal}" for ordinal in range(1, roots))]
         if roots % 2:
             words.append(0xABABABABABABABAB)
@@ -361,9 +369,7 @@ def main():
     # record, then observe generated forwarding through handwritten callees.
     # An ordinary nested helper clobbers every caller-saved register so keeping
     # the second pointer live in R11 cannot accidentally pass the getter cases.
-    paired_observed = abi.replace_body(
-        raw, "paired_scalar_clobber", abi.align() + abi.clobber(0) + "    ret\n"
-    )
+    paired_observed = abi.replace_body(raw, "paired_scalar_clobber", abi.align() + abi.clobber(0) + "    ret\n")
     paired_outgoing = paired_observed
     for arity in range(5):
         paired_outgoing = abi.replace_body(paired_outgoing, f"paired_target_{arity}", paired_target(arity))
@@ -375,24 +381,48 @@ def main():
         paired_assembly[mode], paired_selected[mode] = assembly, selected
         abi.execute(args.artifacts, "paired-" + mode, assembly, selected)
     paired_controls = [
-        ("second-entry-selector", "direct", "paired_target_0",
-         "    movq 8(%r10), %r11", "    movq (%r10), %r11", 93),
-        ("first-outgoing-pointer", "outgoing", "paired_forward_0_0",
-         "    movq %r10, 0(%rsp)", "    movq $0, 0(%rsp)", 91),
-        ("second-outgoing-pointer", "outgoing", "paired_forward_0_0",
-         "    movq %r10, 8(%rsp)", "    movq $0, 8(%rsp)", 91),
-        ("paired-odd-alignment", "outgoing", "paired_forward_0_1",
-         "    subq $8, %rsp\n    call paired_target_0", "    nop\n    call paired_target_0", 92),
-        ("paired-retained-operand", "outgoing", "paired_forward_0_1",
-         "    call paired_target_0", "    addq $1, 24(%rsp)\n    call paired_target_0", 93),
+        ("second-entry-selector", "direct", "paired_target_0", "    movq 8(%r10), %r11", "    movq (%r10), %r11", 93),
+        (
+            "first-outgoing-pointer",
+            "outgoing",
+            "paired_forward_0_0",
+            "    movq %r10, 0(%rsp)",
+            "    movq $0, 0(%rsp)",
+            91,
+        ),
+        (
+            "second-outgoing-pointer",
+            "outgoing",
+            "paired_forward_0_0",
+            "    movq %r10, 8(%rsp)",
+            "    movq $0, 8(%rsp)",
+            91,
+        ),
+        (
+            "paired-odd-alignment",
+            "outgoing",
+            "paired_forward_0_1",
+            "    subq $8, %rsp\n    call paired_target_0",
+            "    nop\n    call paired_target_0",
+            92,
+        ),
+        (
+            "paired-retained-operand",
+            "outgoing",
+            "paired_forward_0_1",
+            "    call paired_target_0",
+            "    addq $1, 24(%rsp)\n    call paired_target_0",
+            93,
+        ),
     ]
     for name, mode, function, old, new, status in paired_controls:
         changed = abi.mutate_body(paired_assembly[mode], function, old, new)
         abi.execute(args.artifacts, "mutant-" + name, changed, paired_selected[mode], status, function)
     bounded_outgoing = paired_observed
     for roots, mutable, tail in bounded_shapes():
-        bounded_outgoing = abi.replace_body(bounded_outgoing, f"bounded_target_{roots}_{mutable}_{tail}",
-                                           bounded_target(roots, tail))
+        bounded_outgoing = abi.replace_body(
+            bounded_outgoing, f"bounded_target_{roots}_{mutable}_{tail}", bounded_target(roots, tail)
+        )
     bounded_assembly, bounded_selected = {}, {}
     for mode in ("direct", "generated", "outgoing"):
         selected = bounded_cases(mode)
@@ -401,27 +431,37 @@ def main():
         bounded_assembly[mode], bounded_selected[mode] = assembly, selected
         abi.execute(args.artifacts, "bounded-" + mode, assembly, selected)
     bounded_controls = []
-    for roots in range(2, 7):
+    for roots in range(2, 4):
         for ordinal in range(roots):
             function = f"bounded_forward_{roots}_0_0_0"
             old = f"    movq %r10, {ordinal * 8}(%rsp)"
-            bounded_controls.append((f"root-{roots}-lane-{ordinal}", "outgoing", function,
-                                     old, f"    movq $0, {ordinal * 8}(%rsp)", 91))
+            bounded_controls.append(
+                (f"root-{roots}-lane-{ordinal}", "outgoing", function, old, f"    movq $0, {ordinal * 8}(%rsp)", 91)
+            )
         if roots % 2:
             reserved = (roots * 8 + 15) & ~15
             function = f"bounded_forward_{roots}_0_0_1"
-            bounded_controls.append((f"odd-tuple-{roots}-retained", "outgoing", function,
-                                     f"    call bounded_target_{roots}_0_0",
-                                     f"    addq $1, {reserved + 8}(%rsp)\n    call bounded_target_{roots}_0_0", 93))
+            bounded_controls.append(
+                (
+                    f"odd-tuple-{roots}-retained",
+                    "outgoing",
+                    function,
+                    f"    call bounded_target_{roots}_0_0",
+                    f"    addq $1, {reserved + 8}(%rsp)\n    call bounded_target_{roots}_0_0",
+                    93,
+                )
+            )
     for name, mode, function, old, new, status in bounded_controls:
         changed = abi.mutate_body(bounded_assembly[mode], function, old, new)
         abi.execute(args.artifacts, "mutant-" + name, changed, bounded_selected[mode], status, function)
-    native_cases = len(direct_cases) + len(forward_cases) + sum(map(len, paired_selected.values())) + sum(map(len, bounded_selected.values()))
-    rejected_mutants = len(controls) + 2 + len(paired_controls) + len(bounded_controls)
-    summary = (
-        f"PASS borrowed object ABI: {native_cases} native cases, "
-        f"{rejected_mutants} exact rejected mutants"
+    native_cases = (
+        len(direct_cases)
+        + len(forward_cases)
+        + sum(map(len, paired_selected.values()))
+        + sum(map(len, bounded_selected.values()))
     )
+    rejected_mutants = len(controls) + 2 + len(paired_controls) + len(bounded_controls)
+    summary = f"PASS borrowed object ABI: {native_cases} native cases, {rejected_mutants} exact rejected mutants"
     abi.require(args.ir_tests.read_bytes() == fixture_before, "fixture changed during ABI gate")
     for path, content in bound_inputs.items():
         abi.require(path.read_bytes() == content, f"bound ABI source changed: {path}")
@@ -436,7 +476,16 @@ def main():
     }
     (args.artifacts / "run.json").write_text(json.dumps(receipt, indent=2) + "\n")
     (args.artifacts / "cases.json").write_text(
-        json.dumps({"incoming": direct_cases, "outgoing": forward_cases, "paired": paired_selected, "bounded": bounded_selected}, indent=2) + "\n"
+        json.dumps(
+            {
+                "incoming": direct_cases,
+                "outgoing": forward_cases,
+                "paired": paired_selected,
+                "bounded": bounded_selected,
+            },
+            indent=2,
+        )
+        + "\n"
     )
     (args.artifacts / "summary.txt").write_text(summary + "\n")
     print(summary)

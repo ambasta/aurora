@@ -19,12 +19,17 @@ export namespace console {
         u64 value;
         u64 position;
     public:
-        CommandInput(u64 available, u64 byte, u64 ordinal)
-            : present(available), value(byte), position(ordinal) {
+        CommandInput(u64 available, u64 byte, u64 ordinal) : present(available), value(byte), position(ordinal) {
         }
-        auto available() const -> bool { return present == 1u64; }
-        auto byte() const -> u64 { return value; }
-        auto ordinal() const -> u64 { return position; }
+        auto available() const -> bool {
+            return present == 1u64;
+        }
+        auto byte() const -> u64 {
+            return value;
+        }
+        auto ordinal() const -> u64 {
+            return position;
+        }
     };
 
     class CommandOutput {
@@ -33,12 +38,18 @@ export namespace console {
         u64 absent;
         u64 present;
     public:
-        CommandOutput(std::BinaryBuffer64 bytes, u64 count, u64 missing, u64 available)
-            : data(bytes), length(count), absent(missing), present(available) {
+        CommandOutput(std::BinaryBuffer64 bytes, u64 count, u64 missing, u64 available) : data(bytes), length(count),
+            absent(missing), present(available) {
         }
-        auto available() const -> bool { return present == 1u64; }
-        auto missing() const -> bool { return absent == 1u64; }
-        auto size() const -> u64 { return length; }
+        auto available() const -> bool {
+            return present == 1u64;
+        }
+        auto missing() const -> bool {
+            return absent == 1u64;
+        }
+        auto size() const -> u64 {
+            return length;
+        }
         auto bytes() const -> std::BinaryBuffer64 {
             return data;
         }
@@ -80,9 +91,9 @@ export namespace console {
             return true;
         }
     public:
-        CommandStream(std::BinaryBuffer64 empty) : input(empty), output(empty),
-            length(0u64), ordinal(0u64), requested(0u64), reading(0u64), transforming(0u64),
-            terminal(0u64), missing(0u64), stage(CommandStage::idle) {
+        CommandStream(std::BinaryBuffer64 empty) : input(empty), output(empty), length(0u64), ordinal(0u64),
+            requested(0u64), reading(0u64), transforming(0u64), terminal(0u64), missing(0u64),
+            stage(CommandStage::idle) {
         }
 
         auto begin(std::BinaryBuffer64 copied_input, u64 count) -> bool {
@@ -92,7 +103,9 @@ export namespace console {
             }
             i64 index = 0;
             while (index < i64(count)) {
-                if (!command_printable(u64(copied_input.at(index)))) { return false; }
+                if (!command_printable(u64(copied_input.at(index)))) {
+                    return false;
+                }
                 index = index + 1;
             }
             index = 0;
@@ -106,14 +119,18 @@ export namespace console {
         }
         auto begin_read(bool transform) -> bool {
             const std::BinaryBuffer64 empty = std::BinaryBuffer64();
-            if (!begin(empty, 0u64)) { return false; }
+            if (!begin(empty, 0u64)) {
+                return false;
+            }
             reading = 1u64;
-            if (transform) { transforming = 1u64; }
+            if (transform) {
+                transforming = 1u64;
+            }
             return true;
         }
         auto awaiting_read(bool transform) const -> bool {
-            return stage == CommandStage::request && reading == 1u64 && (transforming == 1u64) == transform
-                && ordinal == 0u64 && length == 0u64 && requested == 0u64 && terminal == 0u64 && missing == 0u64;
+            return stage == CommandStage::request && reading == 1u64 && (transforming == 1u64) == transform && ordinal
+                == 0u64 && length == 0u64 && requested == 0u64 && terminal == 0u64 && missing == 0u64;
         }
         auto next_input() const -> CommandInput {
             if (reading == 1u64) {
@@ -128,11 +145,17 @@ export namespace console {
             return CommandInput(1u64, u64(input.at(i64(ordinal))), ordinal);
         }
         auto accept_request(u64 byte, u64 position) -> bool {
-            if (stage != CommandStage::request || position != ordinal) { return false; }
+            if (stage != CommandStage::request || position != ordinal) {
+                return false;
+            }
             if (reading == 1u64) {
-                if (terminal != 0u64 || ordinal > 53u64 || byte != 1u64) { return false; }
+                if (terminal != 0u64 || ordinal > 53u64 || byte != 1u64) {
+                    return false;
+                }
             } else {
-                if (ordinal >= length || !command_printable(byte)) { return false; }
+                if (ordinal >= length || !command_printable(byte)) {
+                    return false;
+                }
             }
             requested = byte;
             stage = CommandStage::reply;
@@ -141,34 +164,48 @@ export namespace console {
         auto accept_reply(u64 byte, u64 position) -> bool {
             if (reading == 1u64) {
                 // Marker 1 plus one byte in bits 8..15; every other bit is closed.
-                if (stage != CommandStage::reply || position != ordinal || terminal != 0u64 || ordinal > 53u64
-                    || !(byte == 2u64 || byte == 3u64 || (byte & 18446744073709486335u64) == 1u64)) {
+                if (stage != CommandStage::reply || position != ordinal || terminal != 0u64 || ordinal > 53u64 || !(byte
+                    == 2u64 || byte == 3u64 || (byte & 18446744073709486335u64) == 1u64)) {
                     return false;
                 }
                 requested = byte;
                 stage = CommandStage::acknowledgment;
                 return true;
             }
-            if (stage != CommandStage::reply || !matches(byte, position)) { return false; }
+            if (stage != CommandStage::reply || !matches(byte, position)) {
+                return false;
+            }
             stage = CommandStage::acknowledgment;
             return true;
         }
         auto acknowledge(u64 byte, u64 position) -> bool {
             if (reading == 1u64) {
-                if (stage != CommandStage::acknowledgment || position != ordinal) { return false; }
+                if (stage != CommandStage::acknowledgment || position != ordinal) {
+                    return false;
+                }
                 if (requested == 2u64 || requested == 3u64) {
-                    if (byte != requested) { return false; }
+                    if (byte != requested) {
+                        return false;
+                    }
                     terminal = 1u64;
-                    if (byte == 3u64) { missing = 1u64; }
+                    if (byte == 3u64) {
+                        missing = 1u64;
+                    }
                 } else {
-                    if (ordinal >= 53u64) { return false; }
+                    if (ordinal >= 53u64) {
+                        return false;
+                    }
                     u64 value = byte >> 8;
                     if (transforming == 1u64) {
                         // Checking the entire shifted value rejects excess high bits.
-                        if ((byte & 65535u64) != requested || !command_printable(byte >> 16)) { return false; }
+                        if ((byte & 65535u64) != requested || !command_printable(byte >> 16)) {
+                            return false;
+                        }
                         value = byte >> 16;
                     } else {
-                        if (byte != requested) { return false; }
+                        if (byte != requested) {
+                            return false;
+                        }
                     }
                     output.write_u8(i64(ordinal), u8(value));
                     ordinal = ordinal + 1u64;
@@ -178,7 +215,9 @@ export namespace console {
                 stage = CommandStage::request;
                 return true;
             }
-            if (stage != CommandStage::acknowledgment || !matches(byte, position)) { return false; }
+            if (stage != CommandStage::acknowledgment || !matches(byte, position)) {
+                return false;
+            }
             output.write_u8(i64(ordinal), u8(requested));
             input.write_u8(i64(ordinal), 0u8);
             requested = 0u64;
@@ -187,8 +226,12 @@ export namespace console {
             return true;
         }
         auto ready_to_finish() const -> bool {
-            if (stage != CommandStage::request) { return false; }
-            if (reading == 1u64) { return terminal == 1u64; }
+            if (stage != CommandStage::request) {
+                return false;
+            }
+            if (reading == 1u64) {
+                return terminal == 1u64;
+            }
             return ordinal == length;
         }
         auto finish() -> CommandOutput {
@@ -203,7 +246,8 @@ export namespace console {
             return copied;
         }
         auto cancel() -> bool {
-            if (stage != CommandStage::request && stage != CommandStage::reply && stage != CommandStage::acknowledgment) {
+            if (stage != CommandStage::request && stage != CommandStage::reply && stage
+                != CommandStage::acknowledgment) {
                 return false;
             }
             scrub();
@@ -211,13 +255,15 @@ export namespace console {
             return true;
         }
         auto scrubbed() const -> bool {
-            if (length != 0u64 || ordinal != 0u64 || requested != 0u64 || reading != 0u64
-                || transforming != 0u64 || terminal != 0u64 || missing != 0u64) {
+            if (length != 0u64 || ordinal != 0u64 || requested != 0u64 || reading != 0u64 || transforming != 0u64
+                || terminal != 0u64 || missing != 0u64) {
                 return false;
             }
             i64 index = 0;
             while (index < 64) {
-                if (input.at(index) != 0u8 || output.at(index) != 0u8) { return false; }
+                if (input.at(index) != 0u8 || output.at(index) != 0u8) {
+                    return false;
+                }
                 index = index + 1;
             }
             return true;

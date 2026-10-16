@@ -36,7 +36,19 @@ OUTPUTS = ("assembly.s", "stack.json", "abi.json")
 SENTINELS = {name: ("preserve previous " + name + " on rejection\n").encode() for name in OUTPUTS}
 # These exported vocabulary-only modules have no concrete free function when
 # compiled alone. Their declarations are exercised through the complete frontend.
-VOCABULARY_MODULES = {"resolution_kinds.au", "lowering_kinds.au", "lowering_errors.au"}
+# Every other corpus input must emit. Equal rejection is not emitter coverage, so
+# a file that stops compiling under both compilers must fail here, not pass.
+EXPECTED_REJECTED = {
+    # Vocabulary and storage modules declare no function to emit on their own.
+    "compiler/lowering_errors.au",
+    "compiler/lowering_kinds.au",
+    "compiler/resolution_kinds.au",
+    "kernel/policies/kernel/note_read.au",
+    "kernel/policies/kernel/snapshot.au",
+    "library/console/line.au",
+    "library/std/array.au",
+    "library/std/utility.au",
+}
 
 
 def require(condition, message):
@@ -201,6 +213,7 @@ def main():
     artifacts.mkdir(parents=True, exist_ok=False)
     print(f"Retaining emitter differential evidence: {artifacts}", flush=True)
     report = {"state": "running", "total_inputs": len(corpus), "completed_inputs": 0, "accepted": 0, "rejected": 0}
+    rejected = []
     try:
         original_sources = source_identities(root)
         module_root = artifacts / "compiler-modules"
@@ -235,10 +248,11 @@ def main():
             case = artifacts / "cases" / relative
             case.mkdir(parents=True)
             invocation = case / "invocation"
+            # Kernel programs import kernel/policies; without it they only "reject".
+            roots = [module_root] if source in modules else [root / "library", root / "kernel/policies"]
             arguments = [
                 *flags,
-                "--module-root",
-                str(module_root if source in modules else root / "library"),
+                *(argument for path in roots for argument in ("--module-root", str(path))),
                 str(source),
                 "-o",
                 str(invocation / "assembly.s"),
@@ -253,14 +267,22 @@ def main():
                 observe(compiler, arguments, invocation, case / label, root, timeout)
                 for label, compiler in zip(("old", "new"), compilers, strict=True)
             ]
-            must_accept = source == decimal or (source in modules and source.name not in VOCABULARY_MODULES)
+            must_accept = str(relative) not in EXPECTED_REJECTED
             problems = compare(case, runs, must_accept)
             write_json(case / "comparison.json", {"source": str(relative), "problems": problems})
             report["completed_inputs"] += 1
             if not problems:
                 report["accepted" if runs[0]["returncode"] == 0 else "rejected"] += 1
+                if runs[0]["returncode"] != 0:
+                    rejected.append(str(relative))
             write_json(artifacts / "summary.json", report)
             require(not problems, str(relative) + ": " + "; ".join(problems))
+        report["rejected_sources"] = rejected
+        require(
+            set(rejected) == EXPECTED_REJECTED,
+            f"rejected inputs changed: new {sorted(set(rejected) - EXPECTED_REJECTED)}, "
+            f"now accepted {sorted(EXPECTED_REJECTED - set(rejected))}",
+        )
         require(source_identities(root) == original_sources, "source corpus changed during comparison")
         require(
             {str(path.relative_to(module_root)): identity(path) for path in sorted(module_root.rglob("*.au"))}

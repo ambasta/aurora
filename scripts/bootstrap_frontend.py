@@ -251,7 +251,7 @@ def normalize_function_abi(facts, function):
     else:
         roots = function["borrowed_roots"]
         count = function["borrowed_root_count"]
-        if type(count) is not int or not 0 <= count <= 6 or type(roots) is not list or len(roots) != count:
+        if type(count) is not int or not 0 <= count <= 3 or type(roots) is not list or len(roots) != count:
             raise ValueError("invalid compiler ABI borrowed root count")
         if count and receiver is not None:
             raise ValueError("borrowed roots cannot also grant a method receiver")

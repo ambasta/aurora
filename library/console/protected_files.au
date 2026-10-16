@@ -11,8 +11,8 @@ export namespace console {
         u64 revision;
         u64 replacement;
     public:
-        FileSelection(FileName selected, u64 version, u64 writable)
-            : name(selected), revision(version), replacement(writable) {
+        FileSelection(FileName selected, u64 version, u64 writable) : name(selected), revision(version),
+            replacement(writable) {
         }
         auto selected_name() const -> FileName {
             const FileName result = name;
@@ -50,11 +50,17 @@ export namespace console {
         }
         auto select(std::BinaryBuffer64 command, i64 count) const -> FileSelection {
             i64 start = -1;
-            if (command.starts_with(count, "cat ")) { start = 4; }
+            if (command.starts_with(count, "cat ")) {
+                start = 4;
+            }
             const bool upper = command.starts_with(count, "upper ");
-            if (upper) { start = 6; }
+            if (upper) {
+                start = 6;
+            }
             i64 length = -1;
-            if (count >= 0 && count <= 64 && start >= 0) { length = count - start; }
+            if (count >= 0 && count <= 64 && start >= 0) {
+                length = count - start;
+            }
             const FileName name = file_name(command, start, length);
             const FileReply reply = files.read_file(name);
             u64 version = 0u64;
@@ -62,7 +68,9 @@ export namespace console {
             if (reply.status() == FileEvent::read || reply.status() == FileEvent::missing) {
                 version = revision;
             }
-            if (upper && reply.status() == FileEvent::read) { writable = 1u64; }
+            if (upper && reply.status() == FileEvent::read) {
+                writable = 1u64;
+            }
             return FileSelection(name, version, writable);
         }
         auto project(FileSelection selection) const -> FileReply {
@@ -76,8 +84,7 @@ export namespace console {
         }
         auto replace(FileSelection selection, std::BinaryBuffer64 output, i64 count) -> FileReply {
             const FileReply current = project(selection);
-            if (!selection.writable() || current.status() != FileEvent::read
-                || revision == 18446744073709551615u64) {
+            if (!selection.writable() || current.status() != FileEvent::read || revision == 18446744073709551615u64) {
                 FileReply rejected = FileReply();
                 rejected.select(FileEvent::invalid);
                 return rejected;
@@ -85,7 +92,9 @@ export namespace console {
             const FileName name = selection.selected_name();
             const FileValue value = FileValue(output, count);
             const FileEvent event = files.write_file(name, value);
-            if (event == FileEvent::written) { revision = revision + 1u64; }
+            if (event == FileEvent::written) {
+                revision = revision + 1u64;
+            }
             return file_write_reply(name, value.size(), event);
         }
     };

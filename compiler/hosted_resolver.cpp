@@ -1204,15 +1204,15 @@ std::uint64_t resolutionQuota() {
     // failed prefixes. F/fields/carriers/returns are separately named producer
     // substitutions, not new source limits or eagerly reserved storage.
     const auto X = Sx, F = X, fields = add(X, members), carriers = X, returns = add(X, F);
-    // The existing six-formal limit bounds the non-frame borrowed identities.
-    // All six roots may supplement the complete frame-backed local prefix.
+    // The existing six-formal limit bounds the non-frame borrowed identities;
+    // borrowed roots (at most three) may supplement the frame-backed local prefix.
     constexpr std::uint64_t maximumFormals = 6, frameBytes = 65536, frameWords = 8192;
     constexpr std::uint64_t localHigh = frameWords + maximumFormals;
     const auto allLocals = mul(F, localHigh);
     // Primitive producers: literal/load/store/operator/index/control/receiver,
     // service/resource operations and <=6 scalar pushes fit 16 per syntax row.
-    // A borrowed call has <=6 acquisitions + <=6 releases + one call; with
-    // tail pushes the bound is 2*N + (6-N) + 1 <=13, inside that same charge.
+    // A borrowed call has N <= 3 acquisitions, N releases and one call; with
+    // tail pushes the bound is 2*N + (6-N) + 1 <= 10, inside that same charge.
     // Array copy/literal/byte-string expansion is <=4*4096 per occurrence;
     // designated/constructor fields <=3 per field/edge; parameter binding <=6/F.
     // Lifetime begins/staging consume <=2/allocation. Every explicit/synthetic
@@ -1290,8 +1290,8 @@ std::uint64_t resolutionQuota() {
     // BorrowedCall now has five fixed roles; its root pairs are charged only
     // in instructionLists, never again as retired fixed second-root fields.
     // A service call adds its copied-snapshot slice as a seventh fixed operand.
-    const auto operandRows = sum(
-        {setupOperands, mul(6, instructions), X, instructions, instructionLists, slotOperands, metadataOperands});
+    const auto operandRows =
+        sum({setupOperands, mul(6, instructions), X, instructions, instructionLists, slotOperands, metadataOperands});
     // Shared resolution owners remain live. Additional type/name/source rows
     // have distinct charges; lowering lookup domains retain nominal/layout,
     // field, function, lexical-binding, forward-list and reflection indexes.

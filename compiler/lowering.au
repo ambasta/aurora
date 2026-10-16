@@ -31,8 +31,7 @@ export namespace compiler_lowering {
             if (storage == compiler_resolver::StorageStatus::allocation) {
                 status = LoweringStatus::storage_failure;
             }
-            return LoweringResult(status, LoweringError::none, session.diagnostic_payload_row(),
-                -1);
+            return LoweringResult(status, LoweringError::none, session.diagnostic_payload_row(), -1);
         }
         const LoweringError reason = session.lowering_error();
         LoweringStatus status = LoweringStatus::invalid;
@@ -112,7 +111,6 @@ export namespace compiler_lowering {
             const LoweringResult result = failed_result(session);
             return result;
         }
-        return LoweringResult(LoweringStatus::success, LoweringError::none,
-            session.diagnostic_payload_row(), root);
+        return LoweringResult(LoweringStatus::success, LoweringError::none, session.diagnostic_payload_row(), root);
     }
 }

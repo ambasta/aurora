@@ -202,6 +202,14 @@ def canonical_command(arguments, root, build, workdir=None):
 
 def check_commands(manifest, records, root, build):
     by_name = {record["name"]: record for record in records}
+    # The selected predecessor is a per-machine path; record it by role.
+    options = Path(build) / "meson-info/intro-buildoptions.json"
+    predecessor = None
+    if options.exists():
+        values = json.loads(options.read_text())
+        predecessor = next((option["value"] for option in values if option["name"] == "bootstrap_compiler"), None)
+        if predecessor is None:
+            raise ValueError("Meson build options lack bootstrap_compiler")
     arguments = {record["name"]: {Path(arg).resolve() for arg in record["cmd"]} for record in records}
     for runner, entry in manifest.items():
         expected = entry.get("meson_commands", {})
@@ -215,7 +223,8 @@ def check_commands(manifest, records, root, build):
             record = by_name[name]
             # The Python executable can differ per toolchain environment; all
             # runner arguments, wrappers, fixtures, profiles and modes are exact.
-            command = canonical_command(record["cmd"][1:], root, build, record.get("workdir"))
+            raw = ["@PREDECESSOR@" if value == predecessor else value for value in record["cmd"][1:]]
+            command = canonical_command(raw, root, build, record.get("workdir"))
             command = ["@PYTHON@" if value == record["cmd"][0] else value for value in command]
             if command != declaration["arguments"]:
                 raise ValueError("compiler command/profile/mode drift: " + name)

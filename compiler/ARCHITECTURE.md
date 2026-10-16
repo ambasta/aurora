@@ -1,9 +1,9 @@
 # Compiler status and ownership
 
-Source-bootstrap builds are restored. Complete x86 text emission runs in Aurora,
-with one source authority and no native fallback. Final-source bootstrap,
-convergence, exact output comparison, performance and platform qualification
-remain required gates; retained receipts define the scope of each result.
+Source-bootstrap builds are restored. x86 text emission runs in Aurora, with one
+source authority and no native fallback; `emitter-differential-*` in `slow` and
+`full` hold it byte-identical to the predecessor's C++ backend. Each final source
+still needs its own full, convergence and BIOS/UEFI qualification.
 
 | Component | Current source authority | Remaining work |
 |---|---|---|
@@ -16,7 +16,7 @@ remain required gates; retained receipts define the scope of each result.
 | Current values, operand stacks, bounds evidence | C++ verifier | Migration frozen; unmerged draft is not current functionality |
 | Ownership, provenance and worklist | C++ verifier; Aurora owns entry-binding uniqueness | Continue deletion-first migration; retain dynamic checks |
 | Call graph | Aurora | Validate final integrated behavior |
-| x86 emission | Aurora, fixed native transport | Maintain exact assembly/sidecar, convergence, lifetime and performance gates |
+| x86 emission | Aurora, fixed native transport | Byte-identical to the C++ backend on the whole corpus in both profiles (`emitter-differential-*`); compile time 1.05x the C++ backend |
 | Assembly, linking and hosted runtime | External bootstrap tools/C++ | Native replacements remain incomplete |
 
 ## Hosted Aurora parser

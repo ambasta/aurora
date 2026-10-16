@@ -318,7 +318,7 @@ export namespace compiler_x86 {
             const i64 roots = callable.borrowed_root_count();
             // Root lists are a flat sequence of (selector, loan) pairs. Loans
             // were admitted independently; only the selector reaches codegen.
-            if (roots < 1 || roots > 6 || operand_count(store, instruction, 1) != roots * 2) {
+            if (roots < 1 || roots > 3 || operand_count(store, instruction, 1) != roots * 2) {
                 workspace.fail();
                 return true;
             }

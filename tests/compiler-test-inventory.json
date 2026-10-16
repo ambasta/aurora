@@ -374,12 +374,59 @@
     "root_make": true
   },
   "emitter_differential.py": {
-    "kind": "supplemental-runner",
-    "make": false,
-    "meson": false,
-    "meson_commands": {},
-    "reason": "Required external-oracle gate for the emitter migration: explicit old/new compilers, whole checked-in source corpus and byte-exact assembly/stack/ABI outputs; run as documented in compiler/README.md. This is not a production compiler dependency.",
-    "root_make": false
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "meson_commands": {
+      "emitter-differential-default": {
+        "arguments": [
+          "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
+          "@SOURCE@/tests/compiler/emitter_differential.py",
+          "--old-compiler",
+          "@PREDECESSOR@",
+          "--new-compiler",
+          "@BUILD@/aurorac-stage2",
+          "--source-root",
+          "@SOURCE@",
+          "--artifacts",
+          "@ARTIFACTS@"
+        ],
+        "suites": [
+          "compiler",
+          "full",
+          "slow"
+        ]
+      },
+      "emitter-differential-closed": {
+        "arguments": [
+          "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
+          "@SOURCE@/tests/compiler/emitter_differential.py",
+          "--old-compiler",
+          "@PREDECESSOR@",
+          "--new-compiler",
+          "@BUILD@/aurorac-stage2",
+          "--source-root",
+          "@SOURCE@",
+          "--local-symbols",
+          "--referenced-reflection-only",
+          "--artifacts",
+          "@ARTIFACTS@"
+        ],
+        "suites": [
+          "compiler",
+          "full",
+          "slow"
+        ]
+      }
+    },
+    "reason": "Byte-exact assembly, stack and ABI JSON against the predecessor's C++ x86 backend over the whole checked-in corpus, in the default and closed profiles.",
+    "root_make": true
   },
   "enum_composition.py": {
     "kind": "runner",

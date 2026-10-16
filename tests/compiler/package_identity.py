@@ -663,7 +663,7 @@ class Runner:
 
         record = dict(
             command=list(map(str, args)),
-            wall_seconds=120 if compiler else 30,
+            wall_seconds=30,
             cpu_soft_hard_seconds=[10, 11],
             address_space_bytes=(512 if compiler else 128) << 20,
             regular_file_cap=8 << 20,
@@ -675,7 +675,7 @@ class Runner:
                     list(map(str, args)),
                     stdout=out,
                     stderr=err,
-                    timeout=record["wall_seconds"],
+                    timeout=30,
                     preexec_fn=limits,
                     env=temporary_environment(self.artifacts),
                 )

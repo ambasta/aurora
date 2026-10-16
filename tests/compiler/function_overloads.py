@@ -79,7 +79,7 @@ class Suite:
             compiled = subprocess.run(
                 command,
                 capture_output=True,
-                timeout=40,
+                timeout=10,
                 preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)),
             )
             (directory / "stdout.bin").write_bytes(compiled.stdout)
