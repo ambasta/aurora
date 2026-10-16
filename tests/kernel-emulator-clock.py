@@ -106,14 +106,20 @@ class ClockContractTests(unittest.TestCase):
                 "snapshot-reply-byte",
             )
         }
-        self.assertEqual(set(inventory) | {("uefi", "owned-bytes")} | snapshots, set(CLOCK.MODE_CLOCKS))
+        self.assertEqual(
+            set(inventory) | {("uefi", "owned-bytes"), ("uefi", "user-resume")} | snapshots, set(CLOCK.MODE_CLOCKS)
+        )
         self.assertTrue(all(CLOCK.clock_profile(*key) == CLOCK.ORIGINAL for key in snapshots))
         self.assertEqual(CLOCK.clock_profile("uefi", "owned-bytes"), CLOCK.ORIGINAL)
         selected = [mode for (family, mode), profile in CLOCK.MODE_CLOCKS.items() if profile == CLOCK.FIXED0]
-        self.assertEqual(len(selected), 53)
+        self.assertEqual(len(selected), 54)
+        self.assertEqual(CLOCK.clock_profile("uefi", "user-resume"), CLOCK.FIXED0)
         self.assertEqual(sum(p == CLOCK.ORIGINAL for p in CLOCK.MODE_CLOCKS.values()), 142)
         self.assertEqual(
-            hashlib.sha256(("\n".join(sorted(selected)) + "\n").encode()).hexdigest(), SELECTED_NAMES_SHA256
+            hashlib.sha256(
+                ("\n".join(sorted(mode for mode in selected if mode != "user-resume")) + "\n").encode()
+            ).hexdigest(),
+            SELECTED_NAMES_SHA256,
         )
         profile_spec = importlib.util.spec_from_file_location("profiles", ROOT / "scripts/kernel_profiles.py")
         profiles = importlib.util.module_from_spec(profile_spec)
@@ -156,7 +162,7 @@ class ClockContractTests(unittest.TestCase):
     def test_every_mode_profile_and_hostile_clock_pairings(self):
         cases = dict(CLOCK.MODE_CLOCKS)
         cases.update(CLOCK.AUXILIARY_CLOCKS)
-        self.assertEqual(len(cases), 200)
+        self.assertEqual(len(cases), 201)
         for (family, mode), profile in cases.items():
             with self.subTest(family=family, mode=mode):
                 original = ["qemu", "-accel", "tcg"]
@@ -212,7 +218,7 @@ class ClockContractTests(unittest.TestCase):
 
     def test_real_shell_array_for_all_uefi_build_modes(self):
         modes = sorted(mode for family, mode in CLOCK.MODE_CLOCKS if family != "bios")
-        self.assertEqual(len(modes), 156)
+        self.assertEqual(len(modes), 157)
         for mode in modes:
             for data in ("", "/nonexistent data files"):
                 with self.subTest(mode=mode, data=data):
