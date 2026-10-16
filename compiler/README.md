@@ -123,20 +123,43 @@ meson test -C build/meson-compiler --no-rebuild --num-processes 1 \
 ```
 
 The digest option above belongs only to the unchanged historical precursor graph.
-The copied-argument and owner-field stages add two source compiler builds after
-the ABI-facts stage. The frontend uses direct copied arguments and creates its
-private index owner through a region-backed field factory; the earlier stages
-cannot build those respective spellings. The paired-root
-stage supports the graph pass's mutable `Workspace` plus readonly `Input` and
-publishes their ordered two-root ABI facts; the owner-field predecessor builds it
-directly. (The former register-carry stage between them only changed how its
-compiler's own frontend was emitted; dropping it leaves the multi-root frontend
-byte-identical.) The final multi-root hop supplies the real three-root
-emitter entry; the paired-root predecessor cannot compile it. A retained compiler
-may be reused only with its exact source/build/tool provenance and qualification
-receipt, not by filename or digest alone. Current setup selects the resulting predecessor by path;
-its deprecated digest option is ignored and retained solely for existing-directory
-compatibility.
+The working route remains six source-built predecessors; no additional skip has
+passed direct compilation. The existing register-carry hop remains omitted.
+
+| Stage | Immutable source | Required predecessor capability |
+|---|---|---|
+| Historical seed | `bdf646f09d5e14c88124c4bc9e4f998beda16183` | GNU C++ source build; no Aurora predecessor |
+| ABI facts | `17f4f1440e6faa9cdaf8711c04400854bdb60d9e` | Historical seed; adds compiler facts |
+| Copied arguments | `c0ef02cc105de2b7699d8565f6a53f1dea9e1205` | ABI-facts compiler |
+| Owner-field initialization | `bbf18f40d73b0f7b862a4b23d77b03dfb3f3d0e4` | Copied arguments used by its frontend |
+| Paired roots | `052f79d7995be93053f73659bcfc37687b00b341` | Region-backed owner-field initialization |
+| Multiple roots | `7811ba83730e9a8b4329da983a01e475d73999a6` | Paired-root frontend signature and ordered ABI facts |
+| Current C1/C2 | Final integrated source | Three borrowed roots for the Aurora emitter |
+
+| Direct skip experiment | Observed boundary | Route status |
+|---|---|---|
+| Seed → copied-argument source | `--abi-facts` unsupported | Retain ABI-facts stage |
+| ABI-facts → owner-field source | Class argument requires a complete local name | Retain copied-argument stage |
+| Copied-argument → paired-root source | Owning transfer requires `move(named_local)` | Retain owner-field stage |
+| Owner-field → multi-root source | Second borrowed root rejected | Retain paired-root stage |
+| Paired-root → current source | Third borrowed root rejected | Retain multi-root stage |
+| Each still earlier compiler → current source | Missing facts or second borrowed root rejected | No direct replacement checkpoint established |
+
+These attempts failed before producing comparable frontend assembly; they are
+negative diagnostics, not convergence or qualification. Commands, exact source
+and compiler identities, timings, peak memory, host load and failed artifacts
+belong in the accompanying PR/retained evidence rather than this status table.
+
+| Next checkpoint decision | Required evidence before changing the route |
+|---|---|
+| Replace the largest experimentally buildable suffix with one checkpoint | Build that exact source directly with the proposed earlier compiler; compare generated frontend assembly byte for byte against its normal-route build, then build the next source through both routes |
+| Admit a new stage or replacement | Record its complete historical-seed source route, current C1/C2 assembly/object/facts/header and corpus convergence, and uninterrupted final-source full qualification; retain failed attempts without waivers |
+| No successful shorter route | Keep the working six-stage route; no speculative checkpoint or new stage |
+
+A retained compiler may be reused only with its exact source/build/tool provenance
+and qualification receipt, not by filename or digest alone. Current setup selects
+the resulting predecessor by path; its deprecated digest option is ignored and
+retained solely for existing-directory compatibility.
 
 Both ordinary default directories are now configured: `make`/`make test` use the
 image-enabled graph, while `make -C compiler test` uses the hosted-only graph.
