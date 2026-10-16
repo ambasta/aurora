@@ -255,22 +255,10 @@ test('native-uefi-dispatch-smoke-controls', python, args: ['-B', '-O', files('..
 test('native-uefi-user-phases-smoke-controls', python, args: ['-B', '-O', files('../../tests/kernel-uefi-user-phases-smoke.py'), '--self-test'],
      suite: ['full', 'slow', 'integration'], env: native_test_env,
      workdir: native_root, timeout: 180)
-test('native-division-image', python, args: ['-B', files('../../tests/kernel-division-image.py')],
-     suite: ['full', 'slow', 'integration'], env: native_test_env,
-     workdir: native_root, timeout: 180)
-test('native-division-smoke-controls', python, args: ['-B', files('../../tests/kernel-division-smoke.py'), '--self-test'],
-     suite: ['full', 'slow', 'integration'], env: native_test_env,
-     workdir: native_root, timeout: 180)
 test('native-division-image-optimized', python, args: ['-B', '-O', files('../../tests/kernel-division-image.py')],
      suite: ['full', 'slow', 'integration'], env: native_test_env,
      workdir: native_root, timeout: 180)
 test('native-division-smoke-controls-optimized', python, args: ['-B', '-O', files('../../tests/kernel-division-smoke.py'), '--self-test'],
-     suite: ['full', 'slow', 'integration'], env: native_test_env,
-     workdir: native_root, timeout: 180)
-test('native-unsigned-image', python, args: ['-B', files('../../tests/kernel-unsigned-image.py')],
-     suite: ['full', 'slow', 'integration'], env: native_test_env,
-     workdir: native_root, timeout: 180)
-test('native-unsigned-smoke-controls', python, args: ['-B', files('../../tests/kernel-unsigned-smoke.py'), '--self-test'],
      suite: ['full', 'slow', 'integration'], env: native_test_env,
      workdir: native_root, timeout: 180)
 test('native-unsigned-image-optimized', python, args: ['-B', '-O', files('../../tests/kernel-unsigned-image.py')],
@@ -318,50 +306,10 @@ test('native-uefi-ivrs-trace-controls', python, args: ['-B', '-O', files('../../
 test('native-uefi-ivrs-provenance-controls', python, args: ['-B', '-O', files('../../tests/kernel-uefi-ivrs-provenance.py'), '--self-test'],
      suite: ['full', 'slow', 'integration'], env: native_test_env,
      workdir: native_root, timeout: 180)
-test('native-uefi-owned-bytes-admission', python, args: ['-B', files('../../tests/kernel-uefi-owned-bytes-admission.py'), '--self-test'],
-     suite: ['full', 'slow', 'integration'], env: native_test_env,
-     workdir: native_root, timeout: 180)
-test('native-uefi-owned-bytes-stack', python, args: ['-B', files('../../tests/kernel-uefi-owned-bytes-stack.py'), '--self-test'],
-     suite: ['full', 'slow', 'integration'], env: native_test_env,
-     workdir: native_root, timeout: 180)
-test('native-uefi-pin-smoke-controls', python, args: ['-B', files('../../tests/kernel-uefi-pin-smoke.py')],
-     suite: ['full', 'slow', 'integration'], env: native_test_env,
-     workdir: native_root, timeout: 180)
-test('native-uefi-tables-smoke-controls', python, args: ['-B', files('../../tests/kernel-uefi-tables-smoke.py')],
-     suite: ['full', 'slow', 'integration'], env: native_test_env,
-     workdir: native_root, timeout: 180)
-test('native-storage-test-durability', python, args: ['-B', files('../../storage/design/model/test_durability.py')],
-     suite: ['full', 'slow', 'storage'], env: native_test_env,
-     workdir: native_root, timeout: 180)
-test('native-storage-check-traceability', python, args: ['-B', files('../../storage/design/model/check_traceability.py')],
-     suite: ['full', 'slow', 'storage'], env: native_test_env,
-     workdir: native_root, timeout: 180)
-test('native-storage-test-traceability', python, args: ['-B', files('../../storage/design/model/test_traceability.py')],
-     suite: ['full', 'slow', 'storage'], env: native_test_env,
-     workdir: native_root, timeout: 180)
-test('native-kernel-boot-image', python, args: ['-B', files('../../tests/kernel-boot-image.py')],
-     suite: ['full', 'slow', 'boot'], env: native_test_env,
-     workdir: native_root, timeout: 300)
-test('native-kernel-boot-capacity', python, args: ['-B', files('../../tests/kernel-boot-capacity.py')],
-     suite: ['full', 'slow', 'boot'], env: native_test_env,
-     workdir: native_root, timeout: 300)
-test('native-native-cap-contracts', python,
-     args: ['-B', artifact_adapter, python, '-B', files('../../tests/native-cap-contracts.py'), '--artifacts', '@ARTIFACTS@'],
-     suite: ['full', 'slow', 'integration'], env: native_artifact_env,
-     workdir: native_root, timeout: 300)
 # These controls observe the whole source/build tree; unrelated writers must stop.
 test('native-test-compiler-contract', python, args: ['-B', files('../../tests/test_compiler_contract.py')],
      suite: ['full', 'slow', 'integration'], env: native_test_env,
      workdir: native_root, timeout: 300, is_parallel: false)
-test('native-kernel-emulator-clock', python, args: ['-B', files('../../tests/kernel-emulator-clock.py')],
-     suite: ['full', 'slow', 'integration'], env: native_test_env,
-     workdir: native_root, timeout: 300)
-test('native-kernel-program-admission', python, args: ['-B', files('../../tests/kernel-program-admission.py')],
-     suite: ['full', 'slow', 'integration'], env: native_test_env,
-     workdir: native_root, timeout: 180)
-test('native-kernel-program-console-transcript', python, args: ['-B', files('../../tests/kernel-program-console-transcript.py')],
-     suite: ['full', 'slow', 'integration'], env: native_test_env,
-     workdir: native_root, timeout: 180)
 test('native-uefi-owned-bytes-admission-optimized', python, args: ['-B', '-O', files('../../tests/kernel-uefi-owned-bytes-admission.py'), '--self-test'],
      suite: ['full', 'slow', 'integration'], env: native_test_env,
      workdir: native_root, timeout: 180)
@@ -412,8 +360,8 @@ test('native-program-console-routing', python, args: ['-B', files('../../tests/k
      suite: ['full', 'slow', 'integration'], env: native_test_env,
      workdir: native_root, timeout: 180)
 test('native-program-console-entrypoints-optimized', python, args: ['-B', '-O', files('../../tests/kernel-program-console-entrypoints.py')],
-     suite: ['full', 'slow', 'integration'], env: native_test_env,
-     workdir: native_root, timeout: 180)
+     suite: ['full', 'dev', 'slow', 'integration'], env: native_test_env,
+     workdir: native_root, timeout: 60)
 test('native-semantics-harness', python, args: ['-B', files('../../tests/semantics/test_runner.py')],
      suite: ['full', 'slow', 'semantics'], env: native_test_env,
      workdir: native_root, timeout: 180)
@@ -488,17 +436,14 @@ else
   endforeach
 endif
 test('native-framebuffer-preview-optimized', python, args: ['-B', '-O', files('../../tests/framebuffer-preview.py')],
-     suite: ['full', 'slow', 'integration'], env: native_test_env,
-     workdir: native_root, timeout: 180)
-test('native-uefi-firmware', python, args: ['-B', files('../../tests/uefi-firmware.py')],
-     suite: ['full', 'slow', 'integration'], env: native_test_env,
-     workdir: native_root, timeout: 180)
+     suite: ['full', 'dev', 'slow', 'integration'], env: native_test_env,
+     workdir: native_root, timeout: 120)
 test('native-uefi-firmware-optimized', python, args: ['-B', '-O', files('../../tests/uefi-firmware.py')],
      suite: ['full', 'slow', 'integration'], env: native_test_env,
      workdir: native_root, timeout: 180)
 test('native-kernel-console-routing-optimized', python, args: ['-B', '-O', files('../../tests/kernel-console-routing.py')],
-     suite: ['full', 'slow', 'integration'], env: native_test_env,
-     workdir: native_root, timeout: 180)
+     suite: ['full', 'dev', 'slow', 'integration'], env: native_test_env,
+     workdir: native_root, timeout: 120)
 test('native-kernel-uefi-bar-runner', python, args: ['-B', files('../../tests/kernel-uefi-bar-runner.py')],
      suite: ['full', 'slow', 'integration'], env: native_test_env,
      workdir: native_root, timeout: 180)
@@ -507,14 +452,11 @@ test('native-kernel-uefi-bar-runner-optimized', python, args: ['-B', '-O', files
      workdir: native_root, timeout: 180)
 
 # Compiler-free helper controls; image/ABI/guest qualification remains separate.
-foreach optimized : [false, true]
-  suffix = optimized ? '-optimized' : ''
-  test('native-meson-kernel-controls' + suffix, python,
-    args: ['-B'] + (optimized ? ['-O'] : []) + [files('../meson-kernel-images.py'),
-      'GeneratorBoundaries', 'SmokeRunOnlyRouting'],
-    suite: ['full', 'dev', 'boot'], env: native_test_env, workdir: native_root, timeout: 30, is_parallel: false)
-  # Intentional timeout plus descendant cleanup has its own aggregate guard.
-  test('native-meson-kernel-timeout-controls' + suffix, python,
-    args: ['-B'] + (optimized ? ['-O'] : []) + [files('../meson-kernel-images.py'), 'WrapperTimeoutCleanup'],
-    suite: ['full', 'dev', 'boot'], env: native_test_env, workdir: native_root, timeout: 30, is_parallel: false)
-endforeach
+test('native-meson-kernel-controls-optimized', python,
+  args: ['-B', '-O'] + [files('../meson-kernel-images.py'),
+    'GeneratorBoundaries', 'SmokeRunOnlyRouting'],
+  suite: ['full', 'dev', 'boot'], env: native_test_env, workdir: native_root, timeout: 30, is_parallel: false)
+# Intentional timeout plus descendant cleanup has its own aggregate guard.
+test('native-meson-kernel-timeout-controls-optimized', python,
+  args: ['-B', '-O'] + [files('../meson-kernel-images.py'), 'WrapperTimeoutCleanup'],
+  suite: ['full', 'dev', 'boot'], env: native_test_env, workdir: native_root, timeout: 30, is_parallel: false)

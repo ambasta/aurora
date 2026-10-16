@@ -2,7 +2,9 @@
 
 `meson.build` registers the complete non-compiler root Make prerequisites. The
 machine-checked `inventory.json` maps all 38 prerequisite goals to complete
-commands, including ordinary/optimized Python modes and compile-negative sweeps.
+commands, including meaningful ordinary/optimized Python modes and compile-negative
+sweeps. Redundant outer Python runs use one complete optimized case set; see the
+[mode exceptions](../../docs/developer-test-contract.md#current-test-routing).
 The existing `tests/test-inventory.py` calls `inventory.check`; its self-tests
 reject missing sources, goals, registrations, full-suite membership and modes.
 Any new top-level test source or shell test wrapper needs an explicit inventory

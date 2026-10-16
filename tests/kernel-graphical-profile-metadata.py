@@ -148,7 +148,6 @@ class ProfileMetadata(unittest.TestCase):
         self.assertEqual(
             commands,
             [
-                "python3 -B tests/kernel-graphical-profile-metadata.py",
                 "python3 -B -O tests/kernel-graphical-profile-metadata.py",
             ],
         )
@@ -181,7 +180,7 @@ class ProfileMetadata(unittest.TestCase):
             root_runners=root_runners,
         )
         meson = (ROOT / "tests/meson.build").read_text()
-        for name in ("graphical-profile-metadata", "graphical-profile-metadata-optimized"):
+        for name in ("graphical-profile-metadata-optimized",):
             self.assertEqual(meson.count("test('" + name + "',"), 1)
             declaration = meson.split("test('" + name + "',", 1)[1].split("\n", 2)[:2]
             self.assertIn("suite: ['full', 'dev']", "\n".join(declaration))

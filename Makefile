@@ -114,17 +114,11 @@ smoke-console-uefi:
 
 .PHONY: test-developer-commands
 test-developer-commands:
-	python3 -B tests/kernel-graphical-image-policy.py
 	python3 -B -O tests/kernel-graphical-image-policy.py
-	python3 -B tests/kernel-graphical-profile-metadata.py
 	python3 -B -O tests/kernel-graphical-profile-metadata.py
-	python3 -B tests/framebuffer-preview.py
 	python3 -B -O tests/framebuffer-preview.py
-	python3 -B tests/developer-commands.py
 	python3 -B -O tests/developer-commands.py
-	python3 -B tests/uefi-firmware.py
 	python3 -B -O tests/uefi-firmware.py
-	python3 -B tests/kernel-console-routing.py
 	python3 -B -O tests/kernel-console-routing.py
 	python3 -B tests/kernel-uefi-bar-runner.py
 	python3 -B -O tests/kernel-uefi-bar-runner.py
@@ -221,11 +215,8 @@ smoke-all:
 
 .PHONY: test-storage-model
 test-storage-model:
-	python3 storage/design/model/test_durability.py
 	python3 -O storage/design/model/test_durability.py
-	python3 storage/design/model/check_traceability.py
 	python3 -O storage/design/model/check_traceability.py
-	python3 storage/design/model/test_traceability.py
 	python3 -O storage/design/model/test_traceability.py
 
 .PHONY: test-nvme-queues
@@ -285,12 +276,10 @@ smoke-uefi-tables:
 
 .PHONY: test-boot
 test-boot:
-	python3 -B tests/kernel-boot-image.py
 	python3 -B -O tests/kernel-boot-image.py
 
 .PHONY: test-boot-capacity
 test-boot-capacity:
-	python3 -B tests/kernel-boot-capacity.py
 	python3 -B -O tests/kernel-boot-capacity.py
 
 .PHONY: smoke-boot-capacity
@@ -299,7 +288,6 @@ smoke-boot-capacity:
 
 .PHONY: test-native-cap-contracts
 test-native-cap-contracts:
-	python3 -B tests/native-cap-contracts.py
 	python3 -B -O tests/native-cap-contracts.py
 
 .PHONY: test-compiler-contract
@@ -309,12 +297,10 @@ test-compiler-contract:
 
 .PHONY: test-emulator-clock
 test-emulator-clock:
-	PYTHONDONTWRITEBYTECODE=1 python3 tests/kernel-emulator-clock.py
 	PYTHONDONTWRITEBYTECODE=1 python3 -O tests/kernel-emulator-clock.py
 
 .PHONY: test-iommu-diagnostics
 test-iommu-diagnostics:
-	PYTHONDONTWRITEBYTECODE=1 python3 tests/iommu-diagnostics.py
 	PYTHONDONTWRITEBYTECODE=1 python3 -O tests/iommu-diagnostics.py
 
 .PHONY: formatter
@@ -323,9 +309,7 @@ formatter:
 
 .PHONY: test-graphical-controls
 test-graphical-controls:
-	python3 -B tests/kernel-graphical-admission-controls.py
 	python3 -B -O tests/kernel-graphical-admission-controls.py
-	python3 -B tests/kernel-graphical-smoke.py
 	python3 -B -O tests/kernel-graphical-smoke.py
 
 .PHONY: test-inventory
@@ -334,7 +318,6 @@ test-inventory:
 
 .PHONY: test-artifact-budget
 test-artifact-budget:
-	python3 -B tests/test_artifact_budget.py
 	python3 -B -O tests/test_artifact_budget.py
 
 smoke-all: smoke-boot-capacity

@@ -11,6 +11,19 @@ See [build commands and suite selection](meson-bootstrap.md).
 The whole-source bootstrap corpus runs first in an exclusive test slot to avoid
 compiler-workload contention; other tests remain parallel and all limits stay unchanged.
 
+Duplicate Python runner registrations execute one complete case set under `-O`.
+The IOMMU mock checks use explicit failures, and unittest checks remain active.
+The frozen IOMMU runtime fixture is unchanged and is never executed by these
+compiler-free mocks. Generated child scripts retain their original interpreter
+arguments; an outer `-O` did not change those children.
+
+Three runner pairs retain both modes because they propagate the selected mode
+into child execution: Meson identity, compiler-contract controls and the UEFI BAR
+runner. Native-cap and storage-traceability runners already exercise both child
+modes internally and run once at the outer level. Cross-suite developer/native
+controls retain the union of suite memberships and the stricter existing timeout.
+No compiler batches, source caps, watchdogs or guest gates are reduced.
+
 Every merge/release still requires final integrated GCC 16 `full`, independent
 review, normal BIOS and UEFI image builds and actual smokes, and the applicable
 affected profile image/admission/fault/recovery/restoration gates. GCC 14 is

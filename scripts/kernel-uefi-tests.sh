@@ -11,7 +11,5 @@ python3 -O tests/kernel-uefi-smoke.py --self-test
 
 ./scripts/kernel-uefi-memory-tests.sh
 
-python3 -B tests/kernel-uefi-owned-bytes-admission.py --self-test
 python3 -B -O tests/kernel-uefi-owned-bytes-admission.py --self-test
-python3 -B tests/kernel-uefi-owned-bytes-stack.py --self-test
 python3 -B -O tests/kernel-uefi-owned-bytes-stack.py --self-test

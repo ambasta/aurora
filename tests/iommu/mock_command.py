@@ -136,7 +136,8 @@ class MemoryGuest:
         self.write(h.PT + index * 8, value)
 
     def dma(self, addr, count, write, role, result):
-        assert count == 4
+        if count != 4:
+            raise AssertionError("Mock DMA requires four bytes")
         if self.mutation == "kills_other_dma" and self.after_stop:
             self.operations.append({"role": role, "completed": True})
             return
