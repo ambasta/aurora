@@ -150,6 +150,7 @@ auto program_input() -> void {
         "cat note          Read the note in protected Aurora\r\n"
         "upper note        Replace the note with protected uppercase output\r\n"
         "write <name> <text>  Write one of four RAM files (8-byte name, 49-byte content)\r\n"
+        "append <name> <text>  Append to an existing RAM file\r\n"
         "cat <name> / upper <name>  Protected read / atomic uppercase replacement\r\n"
         "ls / rm <name>     List / remove RAM files\r\nhelp    Show commands\r\n"
         "status  Show console state\r\nexit    Close this QEMU session\r\naurora> "
