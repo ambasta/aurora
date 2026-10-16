@@ -93,6 +93,7 @@ def validate_composition(
         not snapshot or not any((service_budget, dispatcher, user_budget, program_console)),
         "Snapshot requires its exclusive IPC composition",
     )
+    need(mode != "resume" or (user_budget and dispatcher and not program_console), "Resume requires client dispatcher")
     need(not snapshot or mode in ("normal", "owner", "reply-reserved", "reply-byte"), "Unsupported snapshot mode")
     need(mode not in ("reply-reserved", "reply-byte") or snapshot, "Snapshot reply probe requires snapshot")
     need(
@@ -178,6 +179,7 @@ if __name__ == "__main__":
         default="normal",
         choices=[
             "normal",
+            "resume",
             "owner",
             "stale",
             "version",

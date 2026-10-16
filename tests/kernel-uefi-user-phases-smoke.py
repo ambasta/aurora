@@ -286,7 +286,75 @@ def needs_pending(mode, run):
     return mode == "user-pending" or mode == "user-retire-pending" and run["source"] == 10
 
 
+def checksum(seed):
+    # Independent bitwise Castagnoli oracle, including initial/final complement.
+    remainder = 0xFFFFFFFF
+    for byte in bytes(range(seed, seed + 64)) * 512:
+        remainder ^= byte
+        for _ in range(8):
+            remainder = (remainder >> 1) ^ (0x82F63B78 if remainder & 1 else 0)
+    return remainder ^ 0xFFFFFFFF
+
+
+def resume_code(text, image):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from kernel_stack import Elf
+
+    elf = Elf(image)
+    crc = elf.functions["__au_v_m2_3std8checksum_n1_3std_d13crc32c_extend"]
+    for epoch in (1, 5):
+        pcs = re.findall(
+            r"AURORA_UEFI_TIMER_TICK: epoch=" + str(epoch) + r" used=1 remaining=127 pc=(\d+) flags=", text
+        )
+        need(
+            len(pcs) == 1 and crc.address < int(pcs[0]) < crc.address + crc.size,
+            "Suspension inside linked Aurora CRC function with live state",
+        )
+    print("PASS: both checksum suspensions inside linked Aurora CRC body")
+
+
+def validate_resume(status, text, metadata):
+    metadata_valid(metadata, "user-resume")
+    need(status == 33 and "AURORA_UEFI_OK" in text and "FAIL" not in text, "Resume guest exit")
+    need(text.count("AURORA_UEFI_USER_RESUME_OK") == 1, "Complete resume workload")
+    cases = list(re.finditer(r"AURORA_USER_RESUME_CASE: case=(\d+) used=0", text))
+    need([int(m[1]) for m in cases] == [0, 1, 2], "Normal, exhaustion and cancellation cases")
+    previous = 0
+    for scenario, end in enumerate(cases):
+        part = text[previous : end.start()]
+        previous = end.end()
+        parked = re.findall(r"AURORA_USER_SUSPEND: domain=0 epoch=(\d+) remaining=(\d+)", part)
+        need(len(parked) == 1, "Exactly one saved client continuation")
+        epoch, remaining = map(int, parked[0])
+        need(epoch == 2 * scenario + 1 and remaining == (2 if scenario == 1 else 127), "Saved original budget")
+        peer = re.search(
+            r"AURORA_UEFI_DISPATCH_RESTORE: client=1 domain=2 .* event=returned value=" + str(checksum(70)), part
+        )
+        need(peer and part.index("AURORA_USER_SUSPEND:") < peer.start(), "Peer checksum executes while A is parked")
+        restored = re.findall(r"AURORA_USER_RESUME: domain=0 epoch=(\d+) remaining=(\d+) ticks=(\d+)", part)
+        if scenario == 2:
+            need(not restored, "Retired continuation never resumes")
+        else:
+            need(restored == [(str(epoch), str(remaining), "1")], "Resume preserves epoch and debited budget")
+            need(peer.end() < part.index("AURORA_USER_RESUME:"), "Resume follows actual peer execution")
+            outcome, value = ("budget", 0) if scenario == 1 else ("returned", checksum(40))
+            need(
+                re.search(
+                    r"AURORA_UEFI_DISPATCH_RESTORE: client=0 domain=0 .* event=" + outcome + " value=" + str(value),
+                    part,
+                ),
+                "Resumed checksum or exhaustion outcome",
+            )
+        ticks = re.findall(r"AURORA_UEFI_TIMER_TICK: epoch=" + str(epoch) + r" used=(\d+) remaining=(\d+) pc=", part)
+        need(ticks and [int(t[0]) for t in ticks] == list(range(1, len(ticks) + 1)), "No timer debit reset")
+        need(all(int(used) + int(left) == (3 if scenario == 1 else 128) for used, left in ticks), "No budget recharge")
+        if scenario == 1:
+            need(ticks[-1] == ("3", "0"), "Exhaustion after exactly original three ticks")
+
+
 def validate(status, text, mode, metadata):
+    if mode == "user-resume":
+        return validate_resume(status, text, metadata)
     need(mode in MODES, "Unknown user-phase mode")
     metadata_valid(metadata, mode)
     need(type(status) is int and status == (33 if mode in SUCCESS else 35), "Wrong user-phase exit")
@@ -652,12 +720,48 @@ def self_test():
             for before, after in substitutions:
                 if before in text:
                     reject(status, text.replace(before, after), mode, meta, "joint forgery " + before)
+    # Bounded new behavior fixture: peer executes between a saved tick and
+    # resume, and the original quota is consumed rather than replenished.
+    meta = next(fixtures())[3]
+    rows = ["AURORA_UEFI_OK"]
+    for scenario in range(3):
+        epoch = 2 * scenario + 1
+        left = 2 if scenario == 1 else 127
+        rows += [
+            f"AURORA_UEFI_TIMER_TICK: epoch={epoch} used=1 remaining={left} pc=1",
+            f"AURORA_USER_SUSPEND: domain=0 epoch={epoch} remaining={left}",
+            f"AURORA_UEFI_DISPATCH_RESTORE: client=1 domain=2 root=1 event=returned value={checksum(70)}",
+        ]
+        if scenario < 2:
+            rows += [f"AURORA_USER_RESUME: domain=0 epoch={epoch} remaining={left} ticks=1"]
+            if scenario == 1:
+                rows += [
+                    f"AURORA_UEFI_TIMER_TICK: epoch={epoch} used={used} remaining={3 - used} pc=1" for used in (2, 3)
+                ]
+            event, value = ("budget", 0) if scenario == 1 else ("returned", checksum(40))
+            rows += [f"AURORA_UEFI_DISPATCH_RESTORE: client=0 domain=0 root=1 event={event} value={value}"]
+        rows += [f"AURORA_USER_RESUME_CASE: case={scenario} used=0"]
+    text = "\n".join(rows + ["AURORA_UEFI_USER_RESUME_OK"])
+    validate(33, text, "user-resume", meta)
+    positives += 1
+    for before, after in (
+        ("remaining=127 ticks=1", "remaining=128 ticks=0"),
+        (f"value={checksum(40)}", "value=1"),
+        (
+            "AURORA_USER_RESUME: domain=0 epoch=1 remaining=127 ticks=1",
+            "AURORA_USER_RESUME: domain=0 epoch=1 remaining=127 ticks=1\n"
+            "AURORA_USER_RESUME: domain=0 epoch=1 remaining=127 ticks=1",
+        ),
+    ):
+        reject(33, text.replace(before, after), "user-resume", meta, "resume behavioral regression")
     print(f"PASS: user-phase transcripts {positives} positive and {rejected} negative cases")
 
 
 if __name__ == "__main__":
     if sys.argv[1:] == ["--self-test"]:
         self_test()
+    elif len(sys.argv) == 4 and sys.argv[1] == "--resume-code":
+        resume_code(Path(sys.argv[2]).read_text(), Path(sys.argv[3]))
     else:
         try:
             validate(
