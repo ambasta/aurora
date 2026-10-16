@@ -23,7 +23,8 @@ mode-dependent child execution remain covered by the test inventory.
 The BIOS console's bounded three-command session and editor are Aurora-owned;
 native code retains sealed-session grants, PIC/UART transport and shutdown.
 
-The native verifier remains C++-owned in one shared compilation unit; immutable
+The native verifier remains C++-owned in one shared compilation unit and borrows
+diagnostic text until a check fails, when it copies the complete error. Immutable
 service authority is source-admitted and region identity is function-local, while
 Aurora owns synchronous service-loan lifecycle and exact snapshot equality.
 Local scalar initialization, logical object completion and receiver-field
