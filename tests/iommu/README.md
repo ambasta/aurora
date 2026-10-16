@@ -1,8 +1,8 @@
 # Offline IOMMU diagnostic controls
 
-Run `make test-iommu-diagnostics` from the repository root. This runs ordinary and
-optimized Python with no compiler, C model, image, QEMU, guest or hardware access.
-Meson registers both forms in `dev` and `full`; root `make test` includes the same
+Run `make test-iommu-diagnostics` from the repository root. This runs optimized
+Python with no compiler, C model, image, QEMU, guest or hardware access.
+Meson registers it once in `dev` and `full`; root `make test` includes the same
 compiler-free prerequisite under its existing test-context guard. This adds no
 runtime gate and does not make Meson equivalent to full root native acceptance.
 
@@ -28,9 +28,11 @@ reconstruction, explicit builds and separately admitted runtime preparation.
 
 The command suite has 56 checks, compared with 65 in the original execution-workspace
 preparation. The [exact mapping](mock-scope.json) retains 53 names, removes 12
-workspace checks and adds 3 repository checks. All 28 behavioral cases, the synthetic
-memory model, all 15 mutants and both driving loops are AST-identical to the
-original preparation; the wrong-target-path guard is retained using synthetic
+workspace checks and adds 3 repository checks. All 28 behavioral cases,
+all 15 mutants and both driving loops are AST-identical to the original
+preparation. The mock DMA-count and write-payload checks use explicit failures
+so they remain active under `-O`; memory behavior is unchanged.
+The wrong-target-path guard is retained using synthetic
 metadata without a binary read. The two frozen runtime cases remain import/identity
 checks only in either mock suite.
 

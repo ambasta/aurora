@@ -23,7 +23,8 @@
     "transport_import_identity"
   ],
   "structural_comparison": {
-    "synthetic_memory_model_ast_unchanged": true,
+    "synthetic_memory_model_ast_unchanged": false,
+    "synthetic_memory_model_change": "The DMA-count assertion is an explicit failure under optimized Python; memory behavior is unchanged.",
     "mutants_ast_unchanged": true,
     "all_28_case_driver_ast_unchanged": true,
     "all_15_mutant_driver_ast_unchanged": true

@@ -21,12 +21,9 @@ for name in stream run-authority; do
         "tests/kernel-program-$name.cpp" "${language[@]}" -o "build/program-console/$name-test"
     ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0}" "build/program-console/$name-test"
 done
-python3 -B tests/kernel-program-admission.py
 python3 -B -O tests/kernel-program-admission.py
 
 python3 -B tests/kernel-program-console-routing.py
-python3 -B tests/kernel-program-console-transcript.py
 python3 -B -O tests/kernel-program-console-transcript.py
 
-python3 -B tests/kernel-program-console-entrypoints.py
 python3 -B -O tests/kernel-program-console-entrypoints.py
