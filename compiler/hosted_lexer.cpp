@@ -9,7 +9,6 @@
 #ifndef AURORA_HOSTED_LEXER
 #error The hosted lexer adapter requires AURORA_HOSTED_LEXER
 #endif
-extern "C" void aurora_hosted_lexer_invoke(const void *input, void *output);
 
 namespace aurora {
 namespace {
@@ -44,8 +43,8 @@ LexedSource lexSource(std::shared_ptr<const SourceText> source, TriviaRetention 
         aurora_hosted_lexer_invoke(&input, &next);
         // Do not let malformed private results index host memory, loop forever,
         // or narrow unchecked into the public diagnostic representation.
-        if (next.event < Event::token || next.event >= Event::invalid_cursor || next.offset < input.cursor.offset ||
-            next.offset > input.source.length || next.line < input.cursor.line ||
+        if (!hosted_abi::compiler_lexer::validRaw(next.event) || next.event == Event::invalid_cursor ||
+            next.offset < input.cursor.offset || next.offset > input.source.length || next.line < input.cursor.line ||
             next.line - input.cursor.line > next.offset - input.cursor.offset ||
             next.line_start < input.cursor.line_start || next.line_start > next.offset ||
             (next.line == input.cursor.line && next.line_start != input.cursor.line_start) ||

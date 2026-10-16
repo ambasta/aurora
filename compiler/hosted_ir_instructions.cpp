@@ -6,16 +6,6 @@
 #include <span>
 #include <type_traits>
 
-extern "C" {
-void aurora_hosted_instructions_create(const void *, void *) noexcept;
-void aurora_hosted_instructions_release(void *) noexcept;
-std::int64_t aurora_hosted_instructions_allocated(const void *) noexcept;
-std::int64_t aurora_hosted_instructions_admit(const void *) noexcept;
-std::int64_t aurora_hosted_instructions_structure(const void *) noexcept;
-std::int64_t aurora_hosted_instructions_publish(void *) noexcept;
-std::int64_t aurora_hosted_instructions_error(const void *) noexcept;
-}
-
 namespace aurora::ir {
 namespace {
 namespace wire = hosted_abi::compiler_ir_instructions;

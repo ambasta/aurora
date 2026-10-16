@@ -17,6 +17,7 @@ still needs its own full, convergence and BIOS/UEFI qualification.
 | Ownership, provenance and worklist | C++ verifier; Aurora owns entry-binding uniqueness | Continue deletion-first migration; retain dynamic checks |
 | Call graph | Aurora | Validate final integrated behavior |
 | x86 emission | Aurora, fixed native transport | Byte-identical to the C++ backend on the whole corpus in both profiles (`emitter-differential-*`); compile time 1.05x the C++ backend |
+| Private host bridge | One 107-entry table generates Aurora forwarders and host transport declarations; compiler facts supply layouts, symbols and raw enum validation | Preserve fail-closed conversion; native replacement remains incomplete |
 | Assembly, linking and hosted runtime | External bootstrap tools/C++ | Native replacements remain incomplete |
 
 ## Hosted Aurora parser

@@ -113,4 +113,13 @@ export namespace compiler_lowering {
         }
         return LoweringResult(LoweringStatus::success, LoweringError::none, session.diagnostic_payload_row(), root);
     }
+    auto lowering_count(const compiler_resolver::Session& session, i64 pool) -> i64 {
+        if (pool == 0) {
+            return session.output_count();
+        }
+        if (pool == 1) {
+            return session.operand_count();
+        }
+        return -1;
+    }
 }

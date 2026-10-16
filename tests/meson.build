@@ -532,7 +532,7 @@ test('ir-exhaustive', python,
             '--compiler', aurorac, '--frontend-library', frontend_library,
             '--main-library', emitter_probe_main, '--artifacts', '@ARTIFACTS@'],
      depends: [compiler_fixtures['ir_tests'], frontend_assembly, frontend_library, aurorac, emitter_probe_main], suite: ['full', 'slow', 'compiler'],
-     env: oracle_env, workdir: meson.current_build_dir(), timeout: 600)
+     env: oracle_env, workdir: meson.current_build_dir(), timeout: 600, is_parallel: false)
 test('stack-guards', python,
      args: ['-B', '-O', files('compiler/sector_values_abi.py'), compiler_fixtures['stack_probes'], '--stack-guards'],
      depends: compiler_fixtures['stack_probes'], suite: ['full', 'slow', 'compiler'],
@@ -642,13 +642,14 @@ hosted_lexer_test = executable(
     native: true, install: false,
 )
 test('hosted-lexer', python,
-     args: ['-B', files('meson_lexer_inputs.py'), hosted_lexer_test, meson.project_source_root(), '--all'],
+     args: ['-B', files('meson_lexer_inputs.py'), hosted_lexer_test, meson.project_source_root(), '--all', frontend_forwarders],
      depends: hosted_lexer_test, suite: ['full', 'dev', 'core', 'compiler'], env: oracle_env, timeout: 180)
 bootstrap_args = ['-B', '-O', files('compiler/hosted_lexer_bootstrap.py'), aurorac, aurorac_stage2,
                   meson.project_source_root(), frontend_assembly[0], frontend_stage2_assembly[0]]
 test('hosted-lexer-bootstrap', python, args: bootstrap_args,
      depends: [aurorac, aurorac_stage2], suite: ['full', 'dev', 'core', 'compiler'],
-     env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
+     env: oracle_env, workdir: meson.current_build_dir(), timeout: 180, is_parallel: false)
+# Whole compiler graphs run exclusively; each runner compiles its inputs sequentially.
 # Comparing every other source across both stages compiles the whole corpus twice.
 # Run this heavy comparison alone and first; retain its existing watchdogs.
 test('hosted-lexer-bootstrap-corpus', python, args: bootstrap_args + ['--corpus'],
@@ -663,13 +664,13 @@ foreach profile : [['default', []], ['closed', ['--local-symbols', '--referenced
               '--old-compiler', bootstrap_compiler, '--new-compiler', aurorac_stage2,
               '--source-root', meson.project_source_root()] + profile[1] + ['--artifacts', '@ARTIFACTS@'],
        depends: aurorac_stage2, suite: ['full', 'slow', 'compiler'], env: oracle_env,
-       workdir: meson.current_build_dir(), timeout: 900)
+       workdir: meson.current_build_dir(), timeout: 900, is_parallel: false)
 endforeach
 
 format_fixture = executable('format-fixture', 'compiler/format.cpp', dependencies: hosted_frontend,
                             include_directories: include_directories('../compiler'), native: true, install: false)
 test('hosted-lexer-format', python,
-     args: ['-B', files('meson_lexer_inputs.py'), format_fixture, meson.project_source_root(), '--all'],
+     args: ['-B', files('meson_lexer_inputs.py'), format_fixture, meson.project_source_root(), '--all', frontend_forwarders],
      depends: format_fixture, suite: ['full', 'dev', 'compiler'], env: oracle_env, timeout: 180)
 test('hosted-lexer-format-cli', python, args: ['-B', '-O', files('compiler/format.py'), aurora_fmt],
      depends: aurora_fmt, suite: ['full', 'dev', 'compiler'], env: oracle_env,
@@ -700,7 +701,7 @@ test('hosted-parser', hosted_parser_test,
                  '../examples/class_values.au', '../library/std/utility.au', '../library/std/decimal.au',
                  '../library/std/json.au', '../library/package/graph.au', '../examples/function_token_values.au',
                  '../examples/class_values.au', '../examples/kernel-bios.au', '../compiler/resolution_kinds.au',
-                 '../compiler/resolution_arena.au', '../compiler/resolver.au', '../compiler/frontend.au',
+                 '../compiler/resolution_arena.au', '../compiler/resolver.au') + [frontend_forwarders] + files(
                  '../compiler/lowering_kinds.au', '../compiler/lowering_errors.au', '../compiler/lowering_storage.au',
                  '../compiler/lowering_common.au', '../compiler/lowering_configuration.au', '../compiler/lowering_types.au',
                  '../compiler/lowering_values.au', '../compiler/lowering_body.au', '../compiler/lowering.au',

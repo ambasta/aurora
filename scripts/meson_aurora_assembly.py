@@ -64,7 +64,7 @@ def main():
         parser.error("--bridge requires --abi-facts")
     inputs = dependencies(args.source, args.module_root)
     inputs += [bridge.absolute() for bridge in args.bridge]
-    inputs += [Path(__file__).with_name("bootstrap_frontend.py")]
+    inputs += [Path(__file__).with_name("bootstrap_frontend.py"), Path(__file__).with_name("frontend_bridge.py")]
     temporary = args.output.with_suffix(".pending.s")
     command = [str(args.compiler.resolve(strict=True))]
     if args.referenced_reflection_only:

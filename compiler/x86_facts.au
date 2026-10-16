@@ -1049,4 +1049,18 @@ export namespace compiler_x86 {
         workspace.finish_abi();
         return workspace.status();
     }
+    auto emitter_facts(compiler_x86::EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
+        compiler_x86::Artifact artifact) -> compiler_x86::EmitStatus {
+        if (artifact == compiler_x86::Artifact::stack) {
+            if (workspace.begin_stack() && compiler_x86::emit_stack_facts(workspace, metadata)) {
+                workspace.finish_stack();
+            }
+            return workspace.status();
+        }
+        if (artifact == compiler_x86::Artifact::abi) {
+            return compiler_x86::emit_abi_facts(workspace, metadata);
+        }
+        workspace.fail();
+        return workspace.status();
+    }
 }

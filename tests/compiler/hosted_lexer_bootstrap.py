@@ -7,6 +7,7 @@ import hashlib
 import io
 import json
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -14,8 +15,7 @@ import tempfile
 
 
 def stage_modules(root, destination):
-    # Import the actual build staging helper: both paths copy exported modules
-    # exactly, without rewriting their namespaces or interface declarations.
+    # Use the shared staging helper, including explicit frontend scaffold expansion.
     sys.path.insert(0, str(root / "scripts"))
     from bootstrap_frontend import stage_modules as stage
 
@@ -111,12 +111,6 @@ def frontend_arguments(compiler, root, output):
         "--output",
         str(output),
         *(str(source) for source in frontend_modules(root)),
-        str(root / "compiler/hosted_lexer.S"),
-        str(root / "compiler/hosted_parser.S"),
-        str(root / "compiler/hosted_resolver.S"),
-        str(root / "compiler/hosted_graph.S"),
-        str(root / "compiler/hosted_ir_metadata.S"),
-        str(root / "compiler/hosted_ir_instructions.S"),
     ]
 
 
@@ -155,6 +149,24 @@ def abi_generation(facts):
     # Mutations share unedited declarations with facts; prove none leaked back.
     pristine = json.dumps(facts, sort_keys=True)
     from bootstrap_frontend import abi_declaration, frontend_abi_header
+
+    # Sparse cases catch range-only validation; unknown raw values must fail
+    # even when they fall between two legitimate source enum values.
+    sparse = shallow_facts(facts)
+    sparse["enums"]["fixture_sparse"] = {"source_name": "fixture::Sparse", "cases": {"low": -7, "high": 42}}
+    with tempfile.TemporaryDirectory(prefix="bridge-enum-") as temporary:
+        header = Path(temporary) / "generated.hpp"
+        header.write_text(frontend_abi_header(sparse))
+        program = f'#include "{header}"\nusing namespace aurora::hosted_abi::fixture;\n'
+        for value, accepted in ((-8, False), (-7, True), (0, False), (42, True), (43, False)):
+            program += f"static_assert(validRaw(static_cast<Sparse>({value})) == {str(accepted).lower()});\n"
+        subprocess.run(
+            [*shlex.split(os.environ.get("CXX", "g++")), "-std=c++23", "-x", "c++", "-fsyntax-only", "-"],
+            input=program.encode(),
+            capture_output=True,
+            timeout=30,
+            check=True,
+        )
 
     # An additional copied record and a renamed field need no renderer schema.
     changed = shallow_facts(facts)
@@ -866,10 +878,29 @@ def emitter_generation(facts):
 def pass_bridge_generation(facts):
     from bootstrap_frontend import abi_function_symbol, frontend_abi_header, frontend_bridge
 
+    # Admission/snapshot tools import by file path without scripts/ on sys.path.
+    module_path = Path(__file__).resolve().parents[2] / "scripts/bootstrap_frontend.py"
+    program = """import importlib.util, sys
+spec = importlib.util.spec_from_file_location("isolated_abi", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+facts = {"version": 2, "functions": {"fixture_symbol": {"source_name": "fixture::entry"}}}
+assert module.abi_function_symbol(facts, "fixture::entry") == "fixture_symbol"
+assert len(module.PASS_ENTRIES) == 107
+"""
+    with tempfile.TemporaryDirectory(prefix="bridge-import-") as temporary:
+        subprocess.run(
+            [sys.executable, "-I", "-B", "-c", program, str(module_path)],
+            cwd=temporary,
+            capture_output=True,
+            timeout=30,
+            check=True,
+        )
+
     assembly, header = frontend_bridge(None, facts), frontend_abi_header(facts)
     operations = ["emitter_" + name for name in EMITTER_OPERATIONS]
     operations += ["initialization_" + name for name in INITIALIZATION_OPERATIONS]
-    require(assembly.count(".globl ") == len(operations), "private bridge inventory drift")
+    require(assembly.count(".globl ") == 107, "private bridge inventory drift")
     for alias in operations:
         require(f".globl aurora_hosted_{alias}\n" in assembly, "missing private host entry: " + alias)
         require(f" aurora_hosted_{alias}(" in header, "missing private host declaration: " + alias)
@@ -899,7 +930,71 @@ def pass_bridge_generation(facts):
         body += "    jmp " + abi_function_symbol(facts, "compiler_frontend::" + alias) + "\n"
         require(body in assembly, "private register transport drift: " + alias)
         require(signature.replace("*(", host + "(") + " noexcept;" in header, "private host signature drift: " + alias)
-    print("PASS closed host inventory and all five generated pass transports")
+    # These host contracts predate the table and independently cover the newly
+    # generated transports, including consuming input and record scalar lanes.
+    for alias, moves, signature in (
+        (
+            "resolver_ingest",
+            [("%rdi", "%r11"), ("%rsi", "%r10")],
+            "void aurora_hosted_resolver_ingest(void *, void *);",
+        ),
+        (
+            "parser_parse",
+            [("%rdi", "%r10"), ("%rsi", "%r11"), ("%rdx", "%rax")],
+            "void aurora_hosted_parser_parse(void *, const void *, void *);",
+        ),
+        ("metadata_flag_masks", [("%rdi", "%r10")], "void aurora_hosted_metadata_flag_masks(void *) noexcept;"),
+        (
+            "resolver_order_module",
+            [
+                ("%rdi", "%r10"),
+                ("%rsi", "%r11"),
+                ("0(%r11)", "%rdi"),
+                ("8(%r11)", "%rsi"),
+                ("16(%r11)", "%rdx"),
+                ("24(%r11)", "%rcx"),
+            ],
+            "std::int64_t aurora_hosted_resolver_order_module(void *, const void *);",
+        ),
+        (
+            "graph_set_function",
+            [("%rdi", "%r10"), ("%rsi", "%r11"), ("0(%r11)", "%rdi")],
+            "std::int64_t aurora_hosted_graph_set_function(void *, const void *) noexcept;",
+        ),
+        (
+            "instructions_admit",
+            [("%rdi", "%r10")],
+            "std::int64_t aurora_hosted_instructions_admit(const void *) noexcept;",
+        ),
+        (
+            "initialization_release_service_loan",
+            [("%rdi", "%r10"), ("%rsi", "%rdi"), ("%rdx", "%rsi")],
+            "std::int64_t aurora_hosted_initialization_release_service_loan("
+            "void *, std::int64_t, std::int64_t) noexcept;",
+        ),
+    ):
+        host = "aurora_hosted_" + alias
+        body = f"{host}:\n" + "".join(f"    movq {source}, {target}\n" for source, target in moves)
+        body += "    jmp " + abi_function_symbol(facts, "compiler_frontend::" + alias) + "\n"
+        require(body in assembly and signature in header, "private host contract changed: " + alias)
+    from unittest.mock import patch
+    import frontend_bridge as table
+
+    original = table.ROWS[0]
+    for changed in (
+        (*original[:3], "unknown-policy"),
+        (*original[:2], "Arguments:value:-1", original[3]),
+        (*original[:2], "Arguments:value:0:1", original[3]),
+        (*original[:2], "Arguments:value:0,0", original[3]),
+        (*original[:3], "noexcept:parser_create"),
+    ):
+        with patch.object(table, "ROWS", (changed, *table.ROWS[1:])):
+            try:
+                table.declarations()
+            except ValueError:
+                continue
+        raise AssertionError("unsafe private bridge policy accepted: " + repr(changed))
+    print("PASS all 107 host entries, transport exemplars and malformed bridge policies")
 
 
 def borrowed_root_generation(facts):
@@ -1147,6 +1242,7 @@ def message_generation(facts, root):
 
 def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
     from bootstrap_frontend import write_frontend_header
+    from frontend_bridge import render
     from qemu_transport import run_logged
 
     def regenerate(compiler, output):
@@ -1286,13 +1382,13 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
         require(set(symbols(obj, globals_only=True)) == entries, "frontend leaked a generated symbol or lost a shim")
         for name in COMPILER_MODULES:
             require(
-                (work / "compiler-modules/aurora/compiler" / name).read_bytes()
-                == (root / "compiler" / name).read_bytes(),
+                (work / f"frontend-c{number}-modules/aurora/compiler" / name).read_bytes()
+                == render((root / "compiler" / name).read_text()).encode(),
                 f"staged compiler module changed exported source: {name}",
             )
         for name in FRONTEND_LIBRARY_MODULES:
             require(
-                (work / "compiler-modules" / name).read_bytes() == (root / "library" / name).read_bytes(),
+                (work / f"frontend-c{number}-modules" / name).read_bytes() == (root / "library" / name).read_bytes(),
                 f"staged frontend library module changed exported source: {name}",
             )
     require(diagnostics[0] == diagnostics[1], "whole frontend compiler diagnostics differ")

@@ -8,18 +8,6 @@
 #include <span>
 #include <type_traits>
 
-extern "C" {
-void aurora_hosted_metadata_flag_masks(void *) noexcept;
-void aurora_hosted_metadata_create(const void *, void *) noexcept;
-std::int64_t aurora_hosted_metadata_initialize(void *, const void *) noexcept;
-void aurora_hosted_metadata_release(void *) noexcept;
-std::int64_t aurora_hosted_metadata_allocated(const void *) noexcept;
-std::int64_t aurora_hosted_metadata_run(void *) noexcept;
-std::int64_t aurora_hosted_metadata_error(const void *) noexcept;
-std::int64_t aurora_hosted_metadata_object_leaf_root(const void *, std::int64_t, std::int64_t) noexcept;
-std::int64_t aurora_hosted_metadata_byte_array_element_root(const void *, std::int64_t, std::int64_t) noexcept;
-}
-
 namespace aurora::ir {
 namespace {
 namespace wire = hosted_abi::compiler_ir_metadata;

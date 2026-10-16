@@ -44,9 +44,7 @@ def main():
         with assembly.open("a") as output:
             for bridge in args.bridge:
                 output.write("\n" + render_bridge(bridge.read_text(), facts))
-    subprocess.run(
-        ["as", "--64", *(["-L"] if args.bridge else []), str(assembly), "-o", str(args.object)], check=True
-    )
+    subprocess.run(["as", "--64", *(["-L"] if args.bridge else []), str(assembly), "-o", str(args.object)], check=True)
     if hashlib.sha256(compiler.read_bytes()).hexdigest() != before:
         raise RuntimeError("Meson-selected compiler changed during fixture generation")
     # Reuse image dependency discovery, which includes meson_aurora_assembly.py
@@ -57,6 +55,7 @@ def main():
             *dependencies(args.source, args.module_root),
             Path(__file__).resolve(),
             Path(__file__).with_name("bootstrap_frontend.py").resolve(),
+            Path(__file__).with_name("frontend_bridge.py").resolve(),
             *(bridge.resolve() for bridge in args.bridge),
         }
     )

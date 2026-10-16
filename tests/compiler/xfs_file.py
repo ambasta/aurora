@@ -1038,9 +1038,9 @@ def corpus():
 
 
 def batches(cases, count=16, source_bytes=1 << 17):
-    # Each compile pays for the whole XFS import graph, so batch independent
-    # cases. Compile time grows faster than linearly with module size (a 512 KiB
-    # batch takes about 25 s), so keep each batch near one second.
+    # Batch independent cases under 128 KiB to retain headroom below the
+    # unchanged 15-second compile watchdog when the host is busy. This is
+    # load protection, not a workaround for a compiler scaling defect.
     group, size = [], 0
     for case in cases:
         cost = len(case.body) + 64
