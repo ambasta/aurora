@@ -1225,6 +1225,31 @@ def protected_entry_peak(rows, payload, saved_rsp):
     return 8 + pushes * 8
 
 
+def protected_resume_peak(rows, payload, saved_rsp):
+    """Fresh kernel anchor followed by the existing 22-word integer restore."""
+    registers = "rax rbx rcx rdx rbp rsi rdi r8 r9 r10 r11 r12 r13 r14 r15".split()
+    pushes = [("push", "%" + r) for r in "rbx rbp r12 r13 r14 r15".split()]
+    suffix = [("mov", "$0x23,%ax"), ("mov", "%eax,%ds"), ("mov", "%eax,%es"), ("mov", "%rdi,%rsp")]
+    suffix += [("pop", "%" + r) for r in reversed(registers)]
+    suffix += [("add", "$0x10,%rsp"), ("iretq", "")]
+    require(len(rows) == len(pushes) + 1 + len(suffix), "Changed resume extent")
+    require([(r.op, r.args) for r in rows[:6]] == pushes, "Changed resume kernel anchor")
+    for row in rows[:6]:
+        qword_push(row, payload)
+    saved = rows[6]
+    operands = arguments(saved.args)
+    destination = re.fullmatch(r"(-?0x[0-9a-f]+)\(%rip\)", operands[-1])
+    require(
+        saved.op == "mov"
+        and operands[0] == "%rsp"
+        and destination
+        and saved.next + int(destination[1], 16) == saved_rsp,
+        "Changed resume saved RSP",
+    )
+    require([(r.op, r.args) for r in rows[7:]] == suffix, "Changed integer resume sequence")
+    return 56  # Call return address plus six kernel callee-saved registers.
+
+
 def protected_irq_frame(rows, named, payload):
     """Check the narrow saved-register/dispatch ABI before charging 40 CPU bytes."""
     registers = "rax rbx rcx rdx rbp rsi rdi r8 r9 r10 r11 r12 r13 r14 r15".split()
@@ -1310,6 +1335,12 @@ def protected_assembly(linked, directory, code, payload):
         body(enter.address, leave.address), payload, named["uefi_runtime_saved_rsp"].address
     )
     protected_leave(body(leave.address, handler.address), named)
+    if "uefi_runtime_resume" in named:
+        restore = named["uefi_runtime_resume"]
+        protected_resume_peak(body(restore.address, enter.address), payload, named["uefi_runtime_saved_rsp"].address)
+        linked.functions[restore.name] = Symbol(
+            restore.name, restore.address, enter.address - restore.address, restore.section, 0
+        )
     obj = Elf(directory / "objects/runtime-entry.o")
     original = next(row for row in obj.symbols if row.name == handler.name)
     extent = obj.sections[original.section][5] - original.address
@@ -1403,6 +1434,8 @@ def image_stack_graph(
     if protected:
         handwritten.add("uefi_runtime_handler")
         functions["uefi_runtime_enter"] = dict(local_peak=entry_peak, calls=[], returns=1)
+        if "uefi_runtime_resume" in linked.functions:
+            functions["uefi_runtime_resume"] = dict(local_peak=56, calls=[], returns=1)
     require(set(linked.functions) == set(functions) | handwritten, "Unaccounted linked function/frame inventory")
     previous = NORETURN
     NORETURN = frozenset(noreturn) | frozenset(

@@ -10,6 +10,28 @@ auto dispatch_record(std::string_view operation,unsigned client,U64 ticket,U64 f
     Serial::text(" transaction="); Serial::number(ticket); Serial::text(" first="); Serial::number(first);
     Serial::text(" second="); Serial::number(second); Serial::text(" queued="); Serial::number(dispatcher->queued()); Serial::text("\r\n");
 }
+auto dispatch_observe(unsigned client,unsigned index,ProgramEvent event,U64 value) -> void {
+#ifdef AURORA_USER_RESUME
+    if (domains[index].continuation.context) {
+        require(!program.running() && root()==kernel_root && active==L::domain_count && saved_rsp==0,
+            "suspended kernel continuation");
+        Serial::text("AURORA_USER_SUSPEND: domain="); Serial::number(index);
+        Serial::text(" epoch="); Serial::number(domains[index].continuation.authority->epoch());
+        Serial::text(" remaining="); Serial::number(domains[index].continuation.remaining); Serial::text("\r\n");
+        launch={}; selected_phase=ipc::Phase::inactive; selected_client=2; transaction=0;
+        return;
+    }
+#endif
+    const auto current_stack=stack();
+    require(root()==kernel_root && active==L::domain_count && saved_rsp==0 && !program.running() && irq_off()
+        && current_stack>=arena+Handoff::stack_bottom && current_stack<arena+Handoff::stack_top,"dispatch restored authority");
+    require(program.event()==event && (event!=ProgramEvent::returned || program.value()==value),"dispatch compiled result");
+    Serial::text("AURORA_UEFI_DISPATCH_RESTORE: client="); Serial::number(client); Serial::text(" domain="); Serial::number(index);
+    Serial::text(" root="); Serial::number(root()); Serial::text(" stack="); Serial::number(current_stack); Serial::text(" event=");
+    Serial::text(event==ProgramEvent::returned ? "returned" : event==ProgramEvent::bounds ? "bounds" : event==ProgramEvent::overflow ? "overflow" : "budget");
+    Serial::text(" value="); Serial::number(program.value()); Serial::text("\r\n");
+    launch={}; selected_phase=ipc::Phase::inactive; selected_client=2; transaction=0;
+}
 auto dispatch_execute(unsigned client,unsigned index,ipc::Phase phase,U64 source_phase,U64 first,U64 second,ProgramEvent event,U64 value,U64 completed_transaction=0) -> void {
     require(client<2 && index<L::domain_count && root()==kernel_root && active==L::domain_count && irq_off(),"dispatch launch boundary");
     auto& domain=domains[index]; require(domain.handle && verify(domain),"dispatch launch domain");
@@ -68,16 +90,9 @@ auto dispatch_execute(unsigned client,unsigned index,ipc::Phase phase,U64 source
 #else
     if (phase==ipc::Phase::service) timer_finish();
 #endif
-    const auto current_stack=stack();
-    require(root()==kernel_root && active==L::domain_count && saved_rsp==0 && !program.running() && irq_off()
-        && current_stack>=arena+Handoff::stack_bottom && current_stack<arena+Handoff::stack_top,"dispatch restored authority");
-    require(program.event()==event && (event!=ProgramEvent::returned || program.value()==value),"dispatch compiled result");
-    Serial::text("AURORA_UEFI_DISPATCH_RESTORE: client="); Serial::number(client); Serial::text(" domain="); Serial::number(index);
-    Serial::text(" root="); Serial::number(root()); Serial::text(" stack="); Serial::number(current_stack); Serial::text(" event=");
-    Serial::text(event==ProgramEvent::returned ? "returned" : event==ProgramEvent::bounds ? "bounds" : event==ProgramEvent::overflow ? "overflow" : "budget");
-    Serial::text(" value="); Serial::number(program.value()); Serial::text("\r\n");
-    launch={}; selected_phase=ipc::Phase::inactive; selected_client=2; transaction=0;
+    dispatch_observe(client,index,event,value);
 }
+
 auto dispatch_envelope(const Bytes& captured,U64 result) -> void {
     if (program.event()!=ProgramEvent::returned) {
 #ifdef AURORA_UEFI_USER_BUDGET

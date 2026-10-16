@@ -32,6 +32,9 @@
 #endif
 #include <array>
 #include <optional>
+#ifdef AURORA_USER_RESUME
+#include <memory>
+#endif
 #ifdef AURORA_UEFI_PROGRAM_CONSOLE
 #include "console-context.hpp"
 #include "../console-session.hpp"
@@ -51,6 +54,9 @@ auto enter(std::uint64_t, std::uint64_t) -> std::uint64_t asm("uefi_runtime_ente
     __attribute__((visibility("hidden")));
 #endif
 auto handler(unsigned) -> std::uint64_t asm("uefi_runtime_handler") __attribute__((visibility("hidden")));
+#ifdef AURORA_USER_RESUME
+auto resume(std::uint64_t) -> std::uint64_t asm("uefi_runtime_resume") __attribute__((visibility("hidden")));
+#endif
 namespace {
 using U64 = std::uint64_t;
 #ifdef AURORA_UEFI_SNAPSHOT
@@ -98,6 +104,15 @@ using hardware::Serial;
 #endif
 using user::ProgramEvent;
 using L = RuntimeLayout;
+#ifdef AURORA_USER_RESUME
+class Continuation final {
+public:
+    std::optional<ServiceContext> context;
+    std::optional<RunAuthority> authority;
+    std::array<U64, 7> launch{};
+    unsigned remaining{}, ticks{}, resumes{}, compiled{}, contexts{};
+};
+#endif
 class Domain final {
 public:
     std::optional<user::DomainHandle> handle{};
@@ -105,6 +120,16 @@ public:
     std::optional<user::ProgramContract> contract{};
     std::optional<RuntimeTables> tables{};
     unsigned image{};
+#ifdef AURORA_USER_RESUME
+    Continuation continuation;
+    auto clear_continuation() -> void {
+        std::destroy_at(&continuation);
+        auto *bytes = reinterpret_cast<volatile std::byte *>(&continuation);
+        for (std::size_t i = 0; i < sizeof(Continuation); ++i)
+            bytes[i] = std::byte{0};
+        std::construct_at(&continuation);
+    }
+#endif
 };
 constinit std::array<Domain, L::domain_count> domains;
 constinit memory::PhysicalPages frames;
@@ -239,6 +264,9 @@ auto fill(U64 physical, std::uint8_t value) -> void {
     auto &domain = domains[index];
     if (!domain.handle || !registry.ready(*domain.handle))
         return false;
+#ifdef AURORA_USER_RESUME
+    domain.clear_continuation();
+#endif
     for (auto &lease : domain.stacks)
         if (lease) {
             const auto physical = frames.address(*lease);
@@ -470,7 +498,11 @@ auto execute(unsigned index, ProgramEvent wanted) -> void {
 #ifdef AURORA_UEFI_DISPATCH
 #include "dispatch-runtime.inc"
 #ifdef AURORA_UEFI_USER_BUDGET
+#ifdef AURORA_USER_RESUME
+#include "user-resume.inc"
+#else
 #include "user-lifecycle.inc"
+#endif
 #endif
 #elif defined(AURORA_UEFI_PROGRAM_CONSOLE)
 #include "program-console.inc"
@@ -677,7 +709,11 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
 #ifdef AURORA_UEFI_IPC
 #ifdef AURORA_UEFI_DISPATCH
 #ifdef AURORA_UEFI_USER_BUDGET
+#ifdef AURORA_USER_RESUME
+    run_resumable_clients();
+#else
     run_user_lifecycle();
+#endif
 #else
     run_dispatcher();
 #endif

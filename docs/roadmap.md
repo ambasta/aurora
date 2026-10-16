@@ -37,7 +37,8 @@ working bounded mechanisms, not a general process or runtime API. The
 compiled application with scoped recovery and authority-failure qualification.
 General program lifetime and a RAM-backed file service remain the next extensions.
 
-Next integrate protected-program startup/lifecycle and capability-scoped file
+Build capability-scoped blocking request/reply on the bounded two-program
+suspend/resume mechanism, then integrate protected-program startup/lifecycle and file
 services with explicit resource limits, cancellation, partial I/O and reclamation.
 Use RAM-backed service tests before claiming durable device-backed operation.
 Gate: real compiled programs exercise allowed operations; foreign/stale authority,

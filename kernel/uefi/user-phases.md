@@ -8,6 +8,24 @@ the healthy peer continues. This remains a bounded single-CPU integer-only harne
 not a general scheduler, arbitrary asynchronous IPC, calibrated time or a complete
 process model. Unknown or malformed fault origins remain fatal.
 
+## Deferred integer continuation
+
+The `user-resume` profile parks client A after its first authenticated, debited
+timer tick, runs client B, then resumes A with a fresh kernel return anchor.
+Private Domain storage owns the full saved integer frame, immutable run authority,
+launch fields and remaining quota. The shared RSP0 frame is reconstructed only
+after owner/generation, contract, root and quota checks. Resume consumes the saved
+record and bypasses ordinary startup stack clearing and budget allocation.
+A separate monotonic epoch watermark prevents peer execution from reusing epochs.
+Retirement explicitly overwrites continuation storage before releasing stacks.
+
+The consumer repeatedly extends a CRC32C over stack-local bytes in Aurora. Actual
+guest receipts must locate both normal/cancel suspension PCs inside the linked
+Aurora CRC function, run the peer before restoration, and match an independent
+checksum oracle. Separate exhaustion and cancel/recreate cases check retained
+quota, single consumption and scrubbing. This is a bounded two-program mechanism;
+blocking I/O, general run queues and extended register state remain dependencies.
+
 ## Run authority and interrupt boundary
 
 RunAuthority is an immutable value snapshot, created only for a live active domain

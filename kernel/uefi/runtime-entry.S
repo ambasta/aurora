@@ -1,5 +1,37 @@
 .section .text
 .code64
+.ifdef AURORA_USER_RESUME
+.global uefi_runtime_resume
+uefi_runtime_resume:
+    push %rbx
+    push %rbp
+    push %r12
+    push %r13
+    push %r14
+    push %r15
+    mov %rsp, uefi_runtime_saved_rsp(%rip)
+    mov $0x23,%ax
+    mov %ax,%ds
+    mov %ax,%es
+    mov %rdi,%rsp
+    pop %r15
+    pop %r14
+    pop %r13
+    pop %r12
+    pop %r11
+    pop %r10
+    pop %r9
+    pop %r8
+    pop %rdi
+    pop %rsi
+    pop %rbp
+    pop %rdx
+    pop %rcx
+    pop %rbx
+    pop %rax
+    add $16,%rsp
+    iretq
+.endif
 .global uefi_runtime_enter
 uefi_runtime_enter:
 .ifdef AURORA_IPC

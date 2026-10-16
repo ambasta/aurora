@@ -154,6 +154,7 @@ UEFI_FAMILIES = [
         {
             "user-disposal-input": ["-DAURORA_USER_REQUEST_BOUNDS", "-DAURORA_USER_DISPOSAL_INPUT"],
             "user-disposal-output": ["-DAURORA_USER_REQUEST_BOUNDS", "-DAURORA_USER_DISPOSAL_OUTPUT"],
+            "user-resume": ["-DAURORA_USER_RESUME"],
             "user-phases": ["-DAURORA_USER_PHASES"],
             "user-context": ["-DAURORA_USER_CONTEXT"],
             "user-retire-pending": ["-DAURORA_USER_RETIRE_PENDING"],
@@ -412,6 +413,8 @@ def user_images(kind, mode, *, budget=False, dispatcher=False, user_budget=False
                 )
             if user_budget and not program and index != 1:
                 source = "user-budget-client-a" if index == 0 else "user-budget-client-b"
+            if user_budget and mode == "resume" and index != 1:
+                source = "user-checksum-client"
             if snapshot:
                 source = "snapshot-client" if index == 0 else "snapshot-service"
             entry = "kernel/uefi/ipc-user-entry.S"
@@ -592,7 +595,7 @@ def uefi_profile(mode, flags):
         user_mode = mode[9:]
     if program and mode in ("program-owner", "program-ordinal", "program-unknown", "program-transaction"):
         user_mode = mode[8:]
-    if mode in ("user-unknown", "user-context"):
+    if mode in ("user-unknown", "user-context", "user-resume"):
         user_mode = mode[5:]
     if mode == "dispatch-peer-code":
         user_mode = "peer-code"
@@ -634,6 +637,8 @@ def uefi_profile(mode, flags):
         runtime_flags = (["--defsym", "AURORA_IPC=1"] if ipc else []) + (
             ["--defsym", "AURORA_SERVICE_BUDGET=1"] if budget else []
         )
+        if mode == "user-resume":
+            runtime_flags += ["--defsym", "AURORA_USER_RESUME=1"]
         assembly["runtime-entry"] = dict(source="kernel/uefi/runtime-entry.S", flags=["--64"] + runtime_flags)
         assembly["runtime-exceptions"] = dict(
             source="kernel/exceptions.S", flags=["--64", "--defsym", "AURORA_RELATIVE_ONLY=1"]
@@ -680,6 +685,7 @@ def uefi_profile(mode, flags):
         image_options += ["--iommu-event-observe" if mode == "iommu-event-observe" else "--iommu-event"]
     if mode.startswith(("user-request-", "user-completion-", "user-disposal-")) or mode in (
         "user-retire-pending",
+        "user-resume",
         "user-stale-grant",
     ):
         image_options += ["--disposal-policy"]

@@ -92,6 +92,9 @@ else:
 PYMETA
     if [[ "$mode" == user-* ]]; then
         python3 tests/kernel-uefi-user-phases-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.metadata.json"
+        if [[ "$mode" == user-resume ]]; then
+            python3 tests/kernel-uefi-user-phases-smoke.py --resume-code "$log" "$image_dir/user-clean.elf"
+        fi
     elif [[ "$mode" == dispatch* ]]; then
         python3 tests/kernel-uefi-dispatch-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.metadata.json"
     else

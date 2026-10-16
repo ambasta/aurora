@@ -1,0 +1,30 @@
+module user_checksum_client;
+import std.checksum;
+auto aurora_user_main(i64 phase, i64 seed, i64 ordinal) -> i64 {
+    if (phase == 6) {
+        i64 toggle = 0;
+        while (true) {
+            toggle = 1 - toggle;
+        }
+    }
+    if (phase != 0 || seed < 0 || seed > 127 || ordinal != 0) {
+        return -1;
+    }
+    array<u8, 64> bytes = "                                                                ";
+    i64 index = 0;
+    while (index < 64) {
+        bytes[index] = u8(seed + index);
+        index = index + 1;
+    }
+    u64 checksum = 0u64;
+    i64 round = 0;
+    while (round < 512) {
+        const std::ChecksumResult result = std::crc32c_extend(checksum, borrow_bytes(bytes), 0, 64);
+        if (result.status() != std::ChecksumStatus::success) {
+            return -1;
+        }
+        checksum = result.value_or(0u64);
+        round = round + 1;
+    }
+    return i64(checksum);
+}
