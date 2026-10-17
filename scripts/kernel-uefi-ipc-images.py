@@ -192,7 +192,11 @@ def emit_metadata(
         opcode = {"mmio": b"\x8b\x00", "softint": b"\xcd\x40", "fpu": b"\xd9\xd0", "peer-code": b"\x49\x8b\x02"}.get(
             mode, b"\x0f\x0b"
         )
-        compiled = "aurora_user_main"
+        compiled = (
+            "__au_v_m1_16snapshot_service_n0__d16aurora_user_main"
+            if blocking_call and index == 1
+            else "aurora_user_main"
+        )
         if (program_console and index == 1) or (blocking_call and index == 0):
             from bootstrap_frontend import abi_function_symbol
 
@@ -206,7 +210,7 @@ def emit_metadata(
             symbols,
             opcode,
             dispatcher=dispatcher,
-            copied_snapshot=snapshot and index == 1,
+            copied_snapshot=(snapshot or blocking_call) and index == 1,
             copied_note=program_console and index == 1,
             note_entry=compiled if program_console and index == 1 else None,
             call_entry=compiled if blocking_call and index == 0 else None,
@@ -255,7 +259,23 @@ def call_stack(directory):
     sys.path.insert(0, str(ROOT / "scripts"))
     import kernel_stack as stack
 
-    graph = stack.image_stack_graph(directory, ("payload", "acpi", "pci", "runtime"), ROOT, protected=True)
+    graph = stack.image_stack_graph(
+        directory,
+        ("payload", "acpi", "pci", "runtime", "snapshot", "owned-bytes-runtime"),
+        ROOT,
+        protected=True,
+        bridges=(
+            "__au_runtime_snapshot_produce",
+            "aurora_kernel_value",
+            "aurora_kernel_ipc_transition",
+            "aurora_kernel_terminal_event",
+            "aurora_kernel_budget_tick",
+        ),
+        noreturn=stack.OWNED_NORETURN,
+    )
+    import kernel_snapshot_abi
+
+    kernel_snapshot_abi.main(directory, "normal", checksum=True)
     result = call_stack_profile(graph)
     linked = graph["linked"]
     site = next(s.address for s in linked.symbols if s.name == "uefi_service_drain_begin")
@@ -311,6 +331,21 @@ def call_stack(directory):
     result["user"] = stack.calculate(functions, entry)
     result["user"]["peak_with_wrapper"] = 96 + result["user"]["peak"]
     need(result["user"]["peak_with_wrapper"] <= stack.STACK_CAP, "Call user stack reserve")
+    service = directory / "user-bounds"
+    service_elf = stack.Elf(service.with_suffix(".elf"))
+    service_code, _ = stack.disassemble(service_elf.path)
+    service_facts = json.loads(service.with_suffix(".stack.json").read_text())["functions"]
+    need(set(service_elf.functions) == set(service_facts), "Closed checksum service function inventory")
+    service_functions = stack.aurora_stack_functions(
+        service.with_suffix(".stack.json"),
+        service_elf.functions,
+        service_code,
+        {symbol.address: name for name, symbol in service_elf.functions.items()},
+        service_facts,
+    )
+    result["service"] = stack.calculate(service_functions, kernel_snapshot_abi.SERVICE)
+    result["service"]["peak_with_wrapper"] = 160 + result["service"]["peak"]
+    need(result["service"]["peak_with_wrapper"] <= stack.STACK_CAP, "Checksum service stack reserve")
     (directory / "call-stack.json").write_text(json.dumps(result, indent=2) + "\n")
     print("PASS: call linked kernel/IRQ/drain and user stack; kernel peak " + str(result["peak_with_fault_reserve"]))
 

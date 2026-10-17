@@ -1,10 +1,10 @@
 #pragma once
 #include "handoff.hpp"
-#ifdef AURORA_UEFI_SNAPSHOT
+#if defined(AURORA_UEFI_SNAPSHOT) || defined(AURORA_BLOCKING_CALL)
 #include "../pages.hpp"
 #endif
 namespace aurora::uefi {
-#ifdef AURORA_UEFI_SNAPSHOT
+#if defined(AURORA_UEFI_SNAPSHOT) || defined(AURORA_BLOCKING_CALL)
 [[nodiscard]] auto run_protected(std::uint64_t arena, const Bytes &handoff, memory::PhysicalPages &producer_pool)
     -> bool;
 #else

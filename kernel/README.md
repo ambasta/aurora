@@ -49,6 +49,14 @@ frame cannot reach PCI discovery; the existing stack cap and fault reserve remai
 unchanged. This reduces overlapping temporary lifetimes without new persistent
 kernel storage or changes to the service-call authority boundary.
 
+The bounded Call consumer reuses the owned snapshot producer and authenticated
+SnapshotSlot staging. Its scalar request selects an offset/count, never a pointer
+or storage capability. The service runs std::crc32c over a receiver-bound readonly
+snapshot view; no producer owner survives publication. Admission checks both user
+call chains, the exact copied ABI, canonical reply encoding and unchanged image
+and kernel-stack caps. Retirement clears snapshot publication as well as wait
+authority. This remains one call per incarnation between a fixed pair.
+
 PageTables::verify and RuntimeTables::inspect use fixed-four-slot DFS/postorder
 walks. Call-graph cycles reject; no legacy recursion-source hash, line or register
 carrier exception remains. Traversal termination, memory authority, storage

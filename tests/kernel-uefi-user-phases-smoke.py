@@ -437,11 +437,11 @@ def validate_call(status, text, mode, metadata):
     completed = re.findall(r"AURORA_CALL_COMPLETE: epoch=(\d+) event=(returned|budget) value=(\d+)", text)
     need(
         [match.groups() for match in services]
-        == [("2", "returned", "42"), ("4", "bounds", "0"), ("6", "returned", "42")],
+        == [("2", "returned", "309914170369"), ("4", "bounds", "0"), ("6", "returned", "309914170369")],
         "Actual peer completion and fault",
     )
     need(
-        completed == [("1", "returned", "82"), ("3", "returned", "40"), ("5", "budget", "0")],
+        completed == [("1", "returned", "1210602268"), ("3", "returned", "40"), ("5", "budget", "0")],
         "Live caller results and exhaustion",
     )
     park_positions = list(re.finditer(r"AURORA_CALL_PARK:", text))
@@ -478,8 +478,8 @@ def validate_call(status, text, mode, metadata):
             rf"AURORA_UEFI_TIMER_TICK: epoch={peer_epoch} used=(\d+) remaining=(\d+) pc=(\d+)", segment
         )
         need(
-            (index == 1 or peer_ticks)
-            and [int(t[0]) for t in peer_ticks] == list(range(1, len(peer_ticks) + 1))
+            # A bounded 64-byte checksum may finish before its first timer tick.
+            [int(t[0]) for t in peer_ticks] == list(range(1, len(peer_ticks) + 1))
             and all(
                 int(t[0]) + int(t[1]) == 128
                 and service_image["entry"] <= int(t[2]) < service_image["entry"] + service_image["size"]
@@ -941,7 +941,7 @@ def self_test():
                 f"AURORA_UEFI_DOMAIN_EVENT: vector={6 if case == 1 else 129} error=0 "
                 f"pc={BASE + 4096 + (400 if case == 1 else 60)} cpl=3 root=2 frame=1 cr2=0",
                 f"AURORA_CALL_SERVICE: epoch={epoch + 1} event={'bounds' if case == 1 else 'returned'} "
-                f"value={0 if case == 1 else 42}",
+                f"value={0 if case == 1 else 309914170369}",
                 f"AURORA_CALL_RESUME: epoch={epoch} ticks=1 remaining=127",
                 f"AURORA_UEFI_DOMAIN_EVENT: vector=130 error=0 pc={BASE + 70} cpl=3 root=1 frame=1 cr2=0",
             ]
@@ -953,13 +953,22 @@ def self_test():
         if case < 3:
             rows += [
                 f"AURORA_CALL_COMPLETE: epoch={epoch} event={'budget' if case == 2 else 'returned'} "
-                f"value={82 if case == 0 else 40 if case == 1 else 0}"
+                f"value={1210602268 if case == 0 else 40 if case == 1 else 0}"
             ]
         rows += [f"AURORA_CALL_CASE: case={case} used=0"]
     call_text = "\n".join(rows + ["AURORA_UEFI_CALL_OK", "AURORA_UEFI_OK"])
     validate(33, call_text, "user-call", call_meta)
     positives += 1
+    fast_peer = "\n".join(
+        row
+        for row in call_text.splitlines()
+        if not row.startswith(("AURORA_UEFI_TIMER_TICK: epoch=2 ", "AURORA_UEFI_TIMER_TICK: epoch=6 "))
+    )
+    validate(33, fast_peer, "user-call", call_meta)
+    positives += 1
     for before, after in (
+        ("value=309914170369", "value=309914170625"),
+        ("value=1210602268", "value=1210602269"),
         ("epoch=1 ticks=1 remaining=127", "epoch=1 ticks=0 remaining=128"),
         ("ticket=4", "ticket=2"),
         ("used=128 remaining=0", "used=127 remaining=1"),

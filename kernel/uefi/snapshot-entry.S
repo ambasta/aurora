@@ -37,3 +37,10 @@ aurora_kernel_ipc_transition:
 aurora_kernel_terminal_event:
     jmp snapshot_terminal_event
 .size aurora_kernel_terminal_event,.-aurora_kernel_terminal_event
+
+.global aurora_kernel_budget_tick
+.hidden aurora_kernel_budget_tick
+.type aurora_kernel_budget_tick,@function
+aurora_kernel_budget_tick:
+    jmp snapshot_budget_tick
+.size aurora_kernel_budget_tick,.-aurora_kernel_budget_tick

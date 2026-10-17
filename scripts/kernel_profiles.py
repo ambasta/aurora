@@ -437,7 +437,7 @@ def user_images(
             if snapshot:
                 source = "snapshot-client" if index == 0 else "snapshot-service"
             if blocking_call:
-                source = "call-client" if index == 0 else "dispatch-service"
+                source = "call-client" if index == 0 else "call-snapshot-service"
             entry = "kernel/uefi/ipc-user-entry.S"
             hostile = (index == 0 and mode in ("owner", "stale", "version", "phase", "site", "unknown", "ordinal")) or (
                 index == 1 and mode in ("transaction", "mmio", "softint", "fpu", "context")
@@ -451,17 +451,17 @@ def user_images(
                 defines.append("IPC_CLIENT_CONTEXT=1")
             if blocking_call and index == 0:
                 defines.append("CALL_CLIENT=1")
-            if (snapshot or program) and index == 1:
-                defines.append("SNAPSHOT_SERVICE=1" if snapshot else "PROGRAM_NOTE_SERVICE=1")
+            if (snapshot or program or blocking_call) and index == 1:
+                defines.append("SNAPSHOT_SERVICE=1" if snapshot or blocking_call else "PROGRAM_NOTE_SERVICE=1")
                 if mode in ("reply-reserved", "reply-byte"):
                     defines.append("SNAPSHOT_" + mode.upper().replace("-", "_") + "=1")
         result[name] = dict(
             source="tests/kernel-programs/" + source + ".au",
-            roots=["library"] + (["kernel/policies"] if snapshot or program else []),
+            roots=["library"] + (["kernel/policies"] if snapshot or program or blocking_call else []),
             base=0x10000000000 + index * 4096,
             entry=entry,
             entry_flags=[value for define in defines for value in ("--defsym", define)],
-            combined=((snapshot or program) and index == 1) or (blocking_call and index == 0),
+            combined=((snapshot or program or blocking_call) and index == 1) or (blocking_call and index == 0),
         )
     return result
 
@@ -681,10 +681,10 @@ def uefi_profile(mode, flags):
         cpp[name] = "kernel/uefi/" + name + ".cpp"
         console_objects = ["console-entry", name]
     owned_objects = []
-    if mode == "owned-bytes" or snapshot:
+    if mode == "owned-bytes" or snapshot or blocking_call:
         cpp["owned-bytes-runtime"] = "kernel/owned-bytes.cpp"
-        name = "snapshot" if snapshot else "owned-bytes-profile"
-        cpp[name] = "kernel/uefi/" + ("snapshot" if snapshot else "owned-bytes") + ".cpp"
+        name = "snapshot" if snapshot or blocking_call else "owned-bytes-profile"
+        cpp[name] = "kernel/uefi/" + ("snapshot" if snapshot or blocking_call else "owned-bytes") + ".cpp"
         owned_objects = ["owned-bytes-runtime", name]
     if framebuffer:
         cpp["framebuffer"] = "kernel/uefi/framebuffer.cpp"
@@ -696,7 +696,7 @@ def uefi_profile(mode, flags):
         (framebuffer, "display-service", "display-service"),
         (program, "program-console", "program-note"),
         (mode == "owned-bytes", "owned-bytes", "owned-bytes"),
-        (snapshot, "snapshot", "snapshot"),
+        (snapshot or blocking_call, "snapshot", "snapshot"),
         (console, "console-service", "console-service"),
         (graphical, "graphical-console", "graphical-console"),
     ):
@@ -705,8 +705,8 @@ def uefi_profile(mode, flags):
     image_options = ["--ipc-policy"] if ipc else []
     if mode == "budget-noapic":
         image_options += ["--budget-noapic"]
-    if snapshot:
-        image_options += ["--snapshot"]
+    if snapshot or blocking_call:
+        image_options += ["--snapshot"] + (["--call-snapshot"] if blocking_call else [])
     if mode == "owned-bytes":
         image_options += ["--owned-bytes"]
     if graphical:

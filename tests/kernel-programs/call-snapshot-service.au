@@ -1,0 +1,24 @@
+module snapshot_service;
+import kernel.snapshot;
+import std.checksum;
+
+// The request selects only a range of the copied snapshot, never a pointer.
+// Reply byte 0 is an operation result; bytes 1..4 hold the CRC32C.
+auto aurora_user_main(u64 phase, u64 request, u64 reserved, kernel::Snapshot64 snapshot) -> u64 {
+    if (phase == 4u64) {
+        return u64(snapshot.at(64));
+    }
+    if (phase != 1u64 || reserved != 0u64 || request > 65535u64) {
+        return 3u64;
+    }
+    const i64 offset = i64(request & 255u64);
+    const i64 count = i64(request >> 8);
+    if (offset > 64 || count > 64 - offset) {
+        return 2u64;
+    }
+    const std::ChecksumResult result = std::crc32c(snapshot.view(), offset, count);
+    if (result.status() != std::ChecksumStatus::success) {
+        return 3u64;
+    }
+    return 1u64 | (result.value_or(0u64) << 8);
+}

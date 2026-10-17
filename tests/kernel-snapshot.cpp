@@ -14,6 +14,7 @@ using U64 = std::uint64_t;
 using namespace aurora;
 extern "C" U64 aurora_user_main(U64, U64, U64);
 extern "C" U64 snapshot_test_service(const void *);
+extern "C" U64 snapshot_test_checksum(const void *);
 
 namespace {
 alignas(4096) std::array<std::byte, uefi::Handoff::arena_bytes> arena_storage;
@@ -145,6 +146,51 @@ public:
     }
 };
 
+// Independent bitwise Castagnoli oracle over the producer's known bytes.
+void checksum_boundaries() {
+    Fixture f;
+    f.produce();
+    f.bind();
+    const auto endpoint = *f.mailbox.endpoint(f.service);
+    ipc::SnapshotSlot::Record record{f.storage.data() + 16, ipc::SnapshotSlot::record_bytes};
+    for (U64 offset = 0; offset <= 65; ++offset) {
+        for (U64 count = 0; count <= 65; ++count) {
+            require(f.slot.stage(record, endpoint, 1, ipc::Request{offset | (count << 8), 0}),
+                    "checksum copied request");
+            const auto before = f.storage;
+            const auto actual = snapshot_test_checksum(record.data());
+            U64 expected = 2;
+            if (offset <= 64 && count <= 64 - offset) {
+                std::uint32_t crc = 0xffffffff;
+                for (U64 i = offset; i < offset + count; ++i) {
+                    crc ^= static_cast<std::uint8_t>((i * 53 + 7) % 256);
+                    for (unsigned bit = 0; bit < 8; ++bit)
+                        crc = (crc >> 1) ^ ((crc & 1) ? 0x82f63b78 : 0);
+                }
+                expected = 1 | (U64(crc ^ 0xffffffff) << 8);
+            }
+            require(actual == expected && f.storage == before, "independent range CRC and immutable input");
+            require(ipc::snapshot_crc_reply_valid(actual), "canonical checksum result");
+        }
+    }
+    for (const auto request : {U64{65536}, std::numeric_limits<U64>::max()}) {
+        require(f.slot.stage(record, endpoint, 1, ipc::Request{request, 0}) &&
+                    snapshot_test_checksum(record.data()) == 3,
+                "checksum reserved request bits");
+    }
+    require(f.slot.stage(record, endpoint, 1, ipc::Request{0, 1}) && snapshot_test_checksum(record.data()) == 3,
+            "checksum reserved second channel");
+    require(f.slot.stage(record, endpoint, 0, ipc::Request{0, 0}) && snapshot_test_checksum(record.data()) == 3,
+            "checksum unsupported phase");
+    for (U64 status = 0; status < 256; ++status) {
+        require(ipc::snapshot_crc_reply_valid(status) == (status >= 1 && status <= 3), "closed checksum statuses");
+        require(ipc::snapshot_crc_reply_valid(status | 256) == (status == 1), "failure checksum payload rejected");
+    }
+    for (unsigned bit = 40; bit < 64; ++bit)
+        require(!ipc::snapshot_crc_reply_valid(1 | (U64{1} << bit)), "checksum high reserved bits");
+    require(ipc::snapshot_crc_reply_valid(0xffffffff01), "maximum CRC copied value");
+}
+
 void copied_boundaries() {
     ipc::SnapshotSlot slot;
     std::array<std::byte, 72> output{};
@@ -208,6 +254,7 @@ extern "C" [[noreturn]] void __au_runtime_bytes_kernel_fault(U64 reason) noexcep
 }
 
 int main() {
+    checksum_boundaries();
     copied_boundaries();
     Fixture f;
     for (const auto scenario : {uefi::SnapshotProducerCase::invalid_selector,

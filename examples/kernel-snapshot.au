@@ -1,5 +1,6 @@
 module kernel_snapshot;
 import kernel.snapshot;
+import kernel.interrupt_budget;
 import kernel.ipc_transition;
 import kernel.terminal_event;
 import std.binary;
@@ -109,4 +110,16 @@ auto snapshot_terminal_event(u64 vector, u64 matched_sites, u64 stack_top) -> u6
         return 5u64;
     }
     return 0u64;
+}
+
+auto snapshot_budget_tick(u64 initial, u64 remaining, u64 used) -> u64 {
+    const kernel::TickDecision decision = kernel::interrupt_tick(initial, remaining, used);
+    if (decision.action() == kernel::TickAction::rejected) {
+        return 0u64;
+    }
+    u64 action = 1u64;
+    if (decision.action() == kernel::TickAction::exhausted) {
+        action = 2u64;
+    }
+    return (action << 16) | (decision.used() << 8) | decision.remaining();
 }

@@ -20,7 +20,8 @@ def verify(runtime, program, timer):
     runtime, program, timer = map(clean, (runtime, program, timer))
     route = re.compile(
         r"(?:#ifdef AURORA_UEFI_PROGRAM_CONSOLE|"
-        r"#ifdef AURORA_UEFI_SNAPSHOT\s*"
+        r"(?:#ifdef AURORA_UEFI_SNAPSHOT|"
+        r"#if defined\(AURORA_UEFI_SNAPSHOT\) \|\| defined\(AURORA_BLOCKING_CALL\))\s*"
         r"class SnapshotDiagnostics final\s*\{\s*public:\s*"
         r"\[\[gnu::noinline\]\] static void text\(std::string_view value\)\s*\{\s*"
         r"hardware::Serial::text\(value\);\s*\}\s*"
@@ -87,6 +88,10 @@ using Serial = SnapshotDiagnostics;
     combined = formatted.replace("#ifdef AURORA_UEFI_PROGRAM_CONSOLE", snapshot)
     verify(combined, alias, "")
     verify(combined.replace(" = ", "=").replace(", ", ","), alias, "")
+    call_snapshot = combined.replace(
+        "#ifdef AURORA_UEFI_SNAPSHOT", "#if defined(AURORA_UEFI_SNAPSHOT) || defined(AURORA_BLOCKING_CALL)"
+    )
+    verify(call_snapshot, alias, "")
     adapter = """
 class ProgramSerialAdapter final {
     using Uart = console::Uart<hardware::Io, console::FifoTrigger::fourteen>;
@@ -103,6 +108,8 @@ using Serial = ProgramSerialAdapter;
     factored = combined.replace("using Serial = console::Uart<hardware::Io, console::FifoTrigger::fourteen>;", adapter)
     verify(factored, alias, "")
     invalid = (
+        (call_snapshot.replace("defined(AURORA_BLOCKING_CALL)", "defined(AURORA_UEFI_PROGRAM_CONSOLE)"), alias, ""),
+        (call_snapshot.replace("||", "&&"), alias, ""),
         (factored.replace("Uart::text(value)", "hardware::Serial::text(value)"), alias, ""),
         (factored.replace("Uart::number(value)", "hardware::Serial::number(value)"), alias, ""),
         (factored.replace("return Uart::next()", "return Other::next()"), alias, ""),
