@@ -3,6 +3,7 @@ import std.json;
 import std.array;
 import std.binary;
 import std.byte_buffer;
+import std.utf8_text;
 import std.utf8;
 
 export namespace std {
@@ -171,5 +172,58 @@ export namespace std {
         }
         output.try_append('"');
         return JsonStringAppendResult(JsonStringAppendStatus::success, required);
+    }
+}
+
+namespace std {
+    // A singleton readonly helper keeps the view inside its source-root loan.
+    auto json_text_byte(const Utf8Text& text, i64 index) -> u8 {
+        const builtin::span<const u8> bytes = text.bytes();
+        return bytes.at(index);
+    }
+}
+
+export namespace std {
+    // Utf8Text owns valid UTF-8: only ASCII bytes need escaping. Preserve all
+    // non-ASCII bytes verbatim without decoding or revalidating the text.
+    auto append_json_text(ByteBuffer& output, const Utf8Text& text) -> JsonStringAppendStatus {
+        if (!text.ok()) {
+            return JsonStringAppendStatus::append_failed;
+        }
+        const i64 count = text.size();
+        i64 required = 2;
+        i64 index = 0;
+        while (index < count) {
+            const u8 byte = json_text_byte(text, index);
+            i64 width = 1;
+            if (byte < 128u8) {
+                const JsonEscapeResult escaped = escape_json_scalar(u64(byte));
+                width = escaped.size();
+            }
+            if (width > 9223372036854775807 - required) {
+                return JsonStringAppendStatus::overflow;
+            }
+            required = required + width;
+            index = index + 1;
+        }
+        if (required > 9223372036854775807 - output.size()) {
+            return JsonStringAppendStatus::overflow;
+        }
+        if (!output.try_reserve(output.size() + required)) {
+            return JsonStringAppendStatus::append_failed;
+        }
+        output.try_append('"');
+        index = 0;
+        while (index < count) {
+            const u8 byte = json_text_byte(text, index);
+            if (byte < 128u8) {
+                const JsonAppendResult appended = append_json_scalar(output, u64(byte));
+            } else {
+                output.try_append(byte);
+            }
+            index = index + 1;
+        }
+        output.try_append('"');
+        return JsonStringAppendStatus::success;
     }
 }
