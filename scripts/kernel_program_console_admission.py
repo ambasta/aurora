@@ -282,6 +282,17 @@ def check_referenced_reflection(functions, generated_names, bridges=()):
     need(helpers == referenced, "Closed supervisor reflection helper/reference inventory mismatch")
 
 
+def snapshot_discovery_stack(graph):
+    decoder = load("snapshot_discovery_stack", ROOT / "scripts/kernel_stack.py")
+    return decoder.profile_stack(
+        graph,
+        {"discover_acpi(": 128, "prepare_service_acpi(": 5120, "discover_pci(": 11264},
+        default_limit=11264,
+        fault_reserve=512,
+        separated=(("prepare_service_acpi(", "discover_pci("),),
+    )
+
+
 def stack_evidence(directory, *, snapshot=False):
     decoder = load("program_stack_decoder", ROOT / "scripts/kernel_stack.py")
     units = ("payload", "acpi", "pci", "runtime")
@@ -314,6 +325,8 @@ def stack_evidence(directory, *, snapshot=False):
         bridges=bridges,
         noreturn=decoder.OWNED_NORETURN if snapshot else (),
     )
+    if snapshot:
+        snapshot_discovery_stack(graph)
     functions = graph["functions"]
     if not snapshot:
         generated_names = decoder.Elf(directory / "objects/language.o").functions
