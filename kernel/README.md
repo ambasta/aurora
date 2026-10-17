@@ -66,6 +66,9 @@ Each command binds a frozen NoteRead64 projection to fresh caller/service identi
 Selection, endpoint and generation must match at publication and resume. Only `wc`
 may recycle consumed transactions, at most 50 calls for 49 bytes plus EOF. Generic
 Call consumers and `peek` retain the one-call-per-incarnation limit.
+Call caller images use the existing referenced-reflection-only output mode;
+linked admission requires every retained reflection helper to be called by
+generated source. Service images and other user images keep default reflection.
 
 The private wait retains the caller's frame, original epoch and cumulative budget.
 Service dispatch gets fresh transaction authority but carries its cumulative used

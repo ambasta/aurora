@@ -70,16 +70,28 @@ class GeneratorBoundaries(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "Closed snapshot runtime authority inventory"):
                     image.snapshot_runtime_symbols(names | {extra: "T"})
 
-    def test_reflection_and_local_symbols_are_explicit_and_supervisor_only(self):
+    def test_reflection_is_closed_only_for_supervisor_and_selected_call_caller(self):
         recipe = (ROOT / "kernel-images/meson.build").read_text()
         selection = (
             "if admission == 'program'\n    root_args += ['--referenced-reflection-only', '--local-symbols']\n  endif"
         )
         self.assertIn(selection, recipe)
-        self.assertEqual(recipe.count("--referenced-reflection-only"), 1)
+        self.assertEqual(recipe.count("--referenced-reflection-only"), 2)
         self.assertEqual(recipe.count("--local-symbols"), 1)
         self.assertLess(recipe.index(selection), recipe.index("language = custom_target"))
-        self.assertNotIn("--referenced-reflection-only", recipe[recipe.index("user_root_args = []") :])
+        caller_selection = (
+            "if call_client and name == 'clean'\n"
+            "        user_root_args += ['--referenced-reflection-only']\n"
+            "      endif"
+        )
+        self.assertIn(
+            "call_client = combined and '--blocking-call' in profile_data[key + '.user_options'].split('|')",
+            recipe,
+        )
+        user_recipe = recipe[recipe.index("user_root_args = []") :]
+        self.assertIn(caller_selection, user_recipe)
+        self.assertEqual(user_recipe.count("--referenced-reflection-only"), 1)
+        self.assertLess(recipe.index(caller_selection), recipe.index("user_assembly = custom_target"))
         self.assertNotIn("--local-symbols", recipe[recipe.index("user_root_args = []") :])
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

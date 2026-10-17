@@ -324,6 +324,28 @@ def main():
             "closed reflection provenance or exact reference inventory",
         )
 
+    # The Call trap remains handwritten: only generated caller code may
+    # reference generated reflection helpers, never the trap bridge itself.
+    call_stub = "__au_runtime_call"
+    helper = "__au_reflect_s1_size"
+    caller_graph = {"caller": body(16, (call_stub, 16)), call_stub: body(8)}
+    admission.check_referenced_reflection(caller_graph, {"caller"}, {call_stub})
+    reflected_caller = dict(caller_graph, caller=body(16, (call_stub, 16), (helper, 16)))
+    reflected_caller[helper] = body(8)
+    generated = {"caller", helper}
+    admission.check_referenced_reflection(reflected_caller, generated, {call_stub})
+    for functions, names in (
+        (dict(caller_graph, **{helper: body(8)}), generated),
+        ({name: value for name, value in reflected_caller.items() if name != helper}, generated),
+        (reflected_caller, {"caller"}),
+        (dict(reflected_caller, **{call_stub: body(8, (helper, 8))}), generated | {call_stub}),
+        (dict(caller_graph, __au_reflect_unknown=body(8)), {"caller", "__au_reflect_unknown"}),
+    ):
+        reject(
+            lambda: admission.check_referenced_reflection(functions, names, {call_stub}),
+            "Call caller closed reflection helper provenance and reference set",
+        )
+
     bridge = [
         ("push", "%rbp"),
         ("mov", "%rsp,%rbp"),
