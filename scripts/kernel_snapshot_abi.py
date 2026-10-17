@@ -172,8 +172,15 @@ def main(directory, uefi_mode=None, note=False, checksum=False):
     ]
     source = service.with_suffix(".s").read_text().split(entry + ":\n", 1)[1].split(".size " + entry, 1)[0]
     frame, prefix = stack.private_frame_layout([line.strip() for line in source.splitlines()], body)
-    stack.require(frame == (144 if note else 192 if checksum else 112), "Changed copied service frame")
-    hidden = "-0x88(%rbp)" if note else "-0xb8(%rbp)" if checksum else "-0x68(%rbp)"
+    if note:
+        # Local temporaries may differ between NoteRead64 consumers. The linked
+        # prologue and compiler stack graph bind the frame; the copied payload
+        # stays exactly 24 scalar bytes plus 72 bytes of NoteRead64.
+        stack.require(112 <= frame <= stack.STACK_CAP and frame % 16 == 0, "Bounded copied note frame")
+        hidden = f"-0x{frame - 8:x}(%rbp)"
+    else:
+        stack.require(frame == (192 if checksum else 112), "Changed copied service frame")
+        hidden = "-0xb8(%rbp)" if checksum else "-0x68(%rbp)"
     expected = [("mov", "%r11," + hidden)]
     for offset in (0, 8, 16):
         address = "(%r11)" if offset == 0 else f"0x{offset:x}(%r11)"

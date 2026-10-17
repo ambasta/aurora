@@ -145,7 +145,7 @@ auto program_input() -> void {
     script("help\r\nstatus\nq\n");
     expect_input(read_input(), "q", Action::command, 0);
     const std::string local_output =
-        "help\r\nupper   Uppercase a line in a protected Aurora program\r\n"
+        "help\r\nCommands depend on the selected profile.\r\nupper   Uppercase a line in a protected Aurora program\r\n"
         "write note <text>  Replace the RAM note (53 ASCII bytes)\r\n"
         "cat note          Read the note in protected Aurora\r\n"
         "upper note        Replace the note with protected uppercase output\r\n"
@@ -153,9 +153,10 @@ auto program_input() -> void {
         "append <name> <text>  Append to an existing RAM file\r\n"
         "copy <source> <destination>  Copy a RAM file; replace destination\r\n"
         "cat <name> / upper <name>  Protected read / atomic uppercase replacement\r\n"
+        "peek <name>        First byte / EOF / missing (file-call profile only)\r\n"
         "ls / rm <name>     List / remove RAM files\r\nhelp    Show commands\r\n"
         "status  Show console state\r\nexit    Close this QEMU session\r\naurora> "
-        "status\r\nstatus: protected Aurora upper; two-domain copied stream; timer budgets; capacity=64\r\naurora> "
+        "status\r\nstatus: protected Aurora programs; bounded copied data; timer budgets; capacity=64\r\naurora> "
         "q\r\n";
     need(transcript == local_output, "help/status must finish locally with exactly one prompt per command");
     for (std::size_t position = 0; position < local_output.size(); ++position) {

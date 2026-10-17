@@ -29,6 +29,279 @@ def need(okay, message):
         raise ValueError(message)
 
 
+def validate_domain_events(text, images, timer, returning=False):
+    arenas = re.findall(r"AURORA_UEFI_OWNERSHIP_OK: arena=(\d+)", text)
+    need(len(arenas) == 1, "Missing unique kernel arena")
+    arena = int(arenas[0])
+    kernel_root = arena + 0x11000
+    need(
+        re.search(
+            r"AURORA_UEFI_TIMER_READY: physical=4276092928 virtual=18446620928407240704 "
+            r"id=0 root=" + str(kernel_root) + r"(?:\r{1,2}\n)",
+            text,
+        ),
+        "Wrong shared timer admission root",
+    )
+    records = [line for line in text.splitlines() if line.startswith("AURORA_")]
+    event_pattern = re.compile(
+        r"AURORA_UEFI_DOMAIN_EVENT: vector=(\d+) error=(\d+) pc=(\d+) "
+        r"cpl=(\d+) root=(\d+) frame=(\d+) cr2=(\d+)"
+    )
+    events = []
+    live_epoch = None
+    live_image = None
+    live_root = None
+    terminal_seen = False
+    drains = 0
+    caller_epoch = None
+    for position, line in enumerate(records):
+        run = re.fullmatch(
+            r"AURORA_UEFI_USER_RUN: epoch=(\d+) role=(client|service) "
+            r"phase=(request|service|completion) client=0 transaction=\d+ source=\d+ root=(\d+)",
+            line,
+        )
+        if run:
+            live_epoch = int(run[1])
+            live_image = images["bounds" if run[2] == "service" else "clean"]
+            live_root = arena + (0xA0000 if run[2] == "service" else 0x90000)
+            need(int(run[4]) == live_root, "Run launched under another root")
+            terminal_seen = False
+            if run[2] == "client":
+                caller_epoch = live_epoch
+        resume = re.fullmatch(r"AURORA_CALL_RESUME: epoch=(\d+) ticks=\d+ remaining=\d+", line)
+        if resume:
+            need(returning and int(resume[1]) == caller_epoch and live_epoch is None, "Invalid resume owner")
+            live_epoch = caller_epoch
+            live_image = images["clean"]
+            live_root = arena + 0x90000
+            terminal_seen = False
+        if line.startswith("AURORA_CALL_PARK:"):
+            need(returning and live_epoch == caller_epoch, "Invalid parked owner")
+            terminal_seen = True
+        if re.fullmatch(r"AURORA_UEFI_TIMER_TICK: epoch=\d+ used=\d+ remaining=0 .*", line):
+            terminal_seen = True
+        event = event_pattern.fullmatch(line)
+        if event:
+            vector, error, pc, cpl, root, frame, cr2 = map(int, event.groups())
+            events.append((vector, error, pc, cpl))
+            need(error == 0 and cr2 == 0 and live_epoch is not None, "Unexpected exception authority")
+            if cpl == 0:
+                need(
+                    vector == 64
+                    and terminal_seen
+                    and root == kernel_root
+                    and arena + 0x44000 <= frame <= arena + 0x48000 - 176
+                    and frame % 8 == 0
+                    and arena + 0x22000 + timer["drain_begin"] <= pc <= arena + 0x22000 + timer["drain_end"],
+                    "Unauthorized supervisor timer event",
+                )
+                need(
+                    position + 1 < len(records)
+                    and records[position + 1]
+                    == f"AURORA_UEFI_TIMER_DRAIN: epoch={live_epoch} root={kernel_root} ss=16",
+                    "Supervisor timer lacks immediately paired old-owner drain",
+                )
+                drains += 1
+                continue
+            need(
+                cpl == 3
+                and vector in ((6, 64, 129, 130) if returning else (6, 64, 129))
+                and root == live_root
+                and frame == arena + 0x88000 - 176,
+                "Invalid active-domain frame",
+            )
+            if vector == 130:
+                need(live_epoch == caller_epoch and pc == images["clean"]["call_pc"], "Unknown call site/owner")
+            if vector == 129:
+                need(pc == live_image["return_pc"], "Unknown user return site")
+                terminal_seen = True
+            if vector == 6:
+                if returning:
+                    need(pc == live_image["bounds_pc"], "Unknown emitted fault site")
+                terminal_seen = True
+            if vector == 64:
+                need(
+                    live_image["entry"] <= pc < live_image["entry"] + live_image["size"],
+                    "Timer interrupted outside admitted user image",
+                )
+        if returning and line.startswith("AURORA_UEFI_TIMER_TICK:"):
+            tick = re.fullmatch(
+                r"AURORA_UEFI_TIMER_TICK: epoch=(\d+) used=\d+ remaining=\d+ pc=(\d+) flags=(\d+)", line
+            )
+            previous = event_pattern.fullmatch(records[position - 1]) if position else None
+            need(
+                tick
+                and previous
+                and int(tick[1]) == live_epoch
+                and int(previous[1]) == 64
+                and int(previous[4]) == 3
+                and int(previous[3]) == int(tick[2])
+                and int(tick[3]) & 0x202 == 0x202
+                and int(tick[3]) & 0x3000 == 0,
+                "Tick lacks adjacent owned hardware frame or safe flags",
+            )
+        if line.startswith("AURORA_UEFI_TIMER_DRAIN:"):
+            need(
+                position > 0
+                and event_pattern.fullmatch(records[position - 1])
+                and int(event_pattern.fullmatch(records[position - 1])[4]) == 0,
+                "Unpaired drain record",
+            )
+        if line.startswith("AURORA_UEFI_TIMER_QUIET:"):
+            live_epoch = None
+    need(drains == text.count("AURORA_UEFI_TIMER_DRAIN:"), "Unconsumed drain record")
+    return events
+
+
+def validate_file_call(text, mode, expected, service_results, images, timer):
+    need(mode in admission.MODES and mode.startswith("program-file-call"), "Exact file-call profile")
+    need("FAIL" not in text and text.count("AURORA_FILE_CALL_READY:") == 1, "File-call startup/failure")
+    need(
+        text.count("AURORA_PROGRAM_CONSOLE_QUIET:") == text.count("AURORA_UEFI_OK") == 1,
+        "File-call final quiescence/restoration",
+    )
+    validate_domain_events(text, images, timer, returning=True)
+    parts = list(
+        re.finditer(
+            r"AURORA_FILE_CALL_BEGIN: generation=(\d+)\r?\n(.*?)"
+            r"AURORA_FILE_CALL_END: result=(\d+) used=0\r?\n",
+            text,
+            re.S,
+        )
+    )
+    need(
+        len(parts) == len(expected) == text.count("AURORA_FILE_CALL_BEGIN:") == text.count("AURORA_FILE_CALL_END:"),
+        "Exact file-call lifecycle count",
+    )
+    need(all(int(part[1]) > 0 for part in parts), "Nonzero command generations")
+    need(all(int(a[1]) < int(b[1]) for a, b in zip(parts, parts[1:])), "Fresh command incarnations")
+    need(len(service_results) == len(expected), "Exact service expectations")
+    need(
+        text.count("AURORA_CONSOLE_EXIT") == 1
+        and text.count("AURORA_PROGRAM_CONSOLE_QUIET: timer=masked isr=0 irr=0 domains=0") == 1,
+        "Exact quiescent console exit",
+    )
+    for index, (part, result) in enumerate(zip(parts, expected)):
+        body = part[2]
+        fault = index == 0 and mode.endswith("-fault")
+        exhausted = index == 0 and mode.endswith("-budget")
+        need(int(part[3]) == result, "Actual copied file result")
+        park = re.findall(r"AURORA_CALL_PARK: ticket=(\d+) epoch=(\d+) ticks=(\d+) remaining=(\d+)", body)
+        resume = re.findall(r"AURORA_CALL_RESUME: epoch=(\d+) ticks=(\d+) remaining=(\d+)", body)
+        need(len(park) == len(resume) == 1 and park[0][1:] == resume[0], "Original caller continuation")
+        ticket, epoch, used, left = map(int, park[0])
+        need(ticket > 0, "Nonzero transaction ticket")
+        need(epoch == 2 * index + 1 and 0 < used < 128 and used + left == 128, "Original budget before park")
+        launches = re.findall(
+            r"AURORA_UEFI_USER_RUN: epoch=(\d+) role=(client|service) phase=(request|service) "
+            r"client=(\d+) transaction=(\d+) source=(\d+) root=(\d+)",
+            body,
+        )
+        need(
+            [row[:6] for row in launches]
+            == [
+                (str(epoch), "client", "request", "0", "0", str(17 if fault else 24 if exhausted else 16)),
+                (str(epoch + 1), "service", "service", "0", str(ticket), str(4 if fault else 11)),
+            ],
+            "Exact selected caller/service authority",
+        )
+        park_at, resume_at = body.index("AURORA_CALL_PARK:"), body.index("AURORA_CALL_RESUME:")
+        service_at = body.index("AURORA_CALL_SERVICE:")
+        done_at = body.index("AURORA_CALL_COMPLETE:")
+        need(
+            re.findall(r"AURORA_UEFI_TIMER_ARM: epoch=(\d+) budget=(\d+) root=(\d+)", body)
+            == [(str(epoch), "128", launches[0][6]), (str(epoch + 1), "128", launches[1][6])],
+            "Exactly two initial budgets, no resume reset",
+        )
+        quiet = re.findall(r"AURORA_UEFI_TIMER_QUIET: epoch=(\d+) ", body)
+        need(quiet == [str(epoch), str(epoch + 1), str(epoch)], "Park, peer and caller quiescence")
+        need(park_at < service_at < resume_at < done_at, "Real peer execution while caller parked")
+        for owner, key in ((epoch, "clean"), (epoch + 1, "bounds")):
+            ticks = list(
+                re.finditer(rf"AURORA_UEFI_TIMER_TICK: epoch={owner} used=(\d+) remaining=(\d+) pc=(\d+)", body)
+            )
+            need([int(t[1]) for t in ticks] == list(range(1, len(ticks) + 1)), "Continuous timer debit")
+            image = images[key]
+            need(
+                all(
+                    int(t[1]) + int(t[2]) == 128 and image["entry"] <= int(t[3]) < image["entry"] + image["size"]
+                    for t in ticks
+                ),
+                "Bounded original image and quota",
+            )
+            if key == "clean":
+                need(
+                    len(ticks) >= used
+                    and all(t.start() < park_at for t in ticks[:used])
+                    and all(resume_at < t.start() < done_at for t in ticks[used:]),
+                    "Caller ticks outside park",
+                )
+                if exhausted:
+                    need((ticks[-1][1], ticks[-1][2]) == ("128", "0"), "Original budget exhausts after resume")
+            else:
+                need(all(park_at < t.start() < resume_at for t in ticks), "Service ticks only while caller parked")
+        events = [
+            tuple(map(int, row))
+            for row in re.findall(
+                r"AURORA_UEFI_DOMAIN_EVENT: vector=(\d+) error=(\d+) pc=(\d+) "
+                r"cpl=(\d+) root=(\d+) frame=(\d+) cr2=(\d+)",
+                body,
+            )
+        ]
+        calls = [row for row in events if row[0] == 130]
+        need(
+            len(calls) == 2 and all(row[1:4] == (0, images["clean"]["call_pc"], 3) for row in calls),
+            "Only exact returning call site, including rejected repeat",
+        )
+        terminals = [(row[0], row[2]) for row in events if row[0] in (6, 129)]
+        need(
+            terminals
+            == ([(6, images["bounds"]["bounds_pc"])] if fault else [(129, images["bounds"]["return_pc"])])
+            + ([] if exhausted else [(129, images["clean"]["return_pc"])]),
+            "Exact peer and caller terminal events",
+        )
+        call_positions = [match.start() for match in re.finditer(r"AURORA_UEFI_DOMAIN_EVENT: vector=130 ", body)]
+        need(
+            call_positions[0] < park_at and resume_at < call_positions[1] < done_at,
+            "First call parks; rejected repeat occurs only after resume",
+        )
+        peer = (6, images["bounds"]["bounds_pc"]) if fault else (129, images["bounds"]["return_pc"])
+        need(
+            any((row[0], row[2]) == peer and row[1] == 0 and row[3] == 3 for row in events),
+            "Actual service terminal site",
+        )
+        need(
+            re.findall(r"AURORA_CALL_SERVICE: epoch=(\d+) event=(returned|bounds) value=(\d+)", body)
+            == [(str(epoch + 1), "bounds" if fault else "returned", str(service_results[index]))],
+            "Copied service reply or emitted fault",
+        )
+        need(
+            re.findall(r"AURORA_CALL_COMPLETE: epoch=(\d+) event=(returned|budget) value=(\d+)", body)
+            == [(str(epoch), "budget" if exhausted else "returned", str(0 if exhausted else 40 + result))],
+            "Result returns into retained caller locals",
+        )
+        answer = (
+            "Program stopped: checked fault or budget exhausted; output discarded."
+            if result == 0
+            else "EOF"
+            if result == 2
+            else "File is missing."
+            if result == 3
+            else "byte> " + chr(result >> 8)
+        )
+        need(text[part.end() :].startswith(answer + "\r\n"), "Exact response follows retirement")
+        need(
+            not re.search(r"(?:byte> |^EOF$|File is missing\.|output discarded\.)", body, re.M),
+            "No result before retirement",
+        )
+    need(
+        len(re.findall(r"^(?:byte> .*|EOF|File is missing\.|Program stopped: .*output discarded\.)\r?$", text, re.M))
+        == len(parts),
+        "No duplicate results outside calls",
+    )
+    return dict(file_calls=len(parts), call_local_sum=40)
+
+
 def validate(
     text, mode, expected_outputs, commands, images, timer, expected_reads=None, expected_saves=None, expected_files=None
 ):
@@ -196,90 +469,7 @@ def validate(
             == count,
             "Named-file terminal response preceded authenticated retirement",
         )
-    arenas = re.findall(r"AURORA_UEFI_OWNERSHIP_OK: arena=(\d+)", text)
-    need(len(arenas) == 1, "Missing unique kernel arena")
-    arena = int(arenas[0])
-    kernel_root = arena + 0x11000
-    need(
-        re.search(
-            r"AURORA_UEFI_TIMER_READY: physical=4276092928 virtual=18446620928407240704 "
-            r"id=0 root=" + str(kernel_root) + r"(?:\r{1,2}\n)",
-            text,
-        ),
-        "Wrong shared timer admission root",
-    )
-    records = [line for line in text.splitlines() if line.startswith("AURORA_")]
-    event_pattern = re.compile(
-        r"AURORA_UEFI_DOMAIN_EVENT: vector=(\d+) error=(\d+) pc=(\d+) "
-        r"cpl=(\d+) root=(\d+) frame=(\d+) cr2=(\d+)"
-    )
-    events = []
-    live_epoch = None
-    live_image = None
-    live_root = None
-    terminal_seen = False
-    drains = 0
-    for position, line in enumerate(records):
-        run = re.fullmatch(
-            r"AURORA_UEFI_USER_RUN: epoch=(\d+) role=(client|service) "
-            r"phase=(request|service|completion) client=0 transaction=\d+ source=\d+ root=(\d+)",
-            line,
-        )
-        if run:
-            live_epoch = int(run[1])
-            live_image = images["bounds" if run[2] == "service" else "clean"]
-            live_root = arena + (0xA0000 if run[2] == "service" else 0x90000)
-            need(int(run[4]) == live_root, "Run launched under another root")
-            terminal_seen = False
-        if re.fullmatch(r"AURORA_UEFI_TIMER_TICK: epoch=\d+ used=\d+ remaining=0 .*", line):
-            terminal_seen = True
-        event = event_pattern.fullmatch(line)
-        if event:
-            vector, error, pc, cpl, root, frame, cr2 = map(int, event.groups())
-            events.append((vector, error, pc, cpl))
-            need(error == 0 and cr2 == 0 and live_epoch is not None, "Unexpected exception authority")
-            if cpl == 0:
-                need(
-                    vector == 64
-                    and terminal_seen
-                    and root == kernel_root
-                    and arena + 0x44000 <= frame <= arena + 0x48000 - 176
-                    and frame % 8 == 0
-                    and arena + 0x22000 + timer["drain_begin"] <= pc <= arena + 0x22000 + timer["drain_end"],
-                    "Unauthorized supervisor timer event",
-                )
-                need(
-                    position + 1 < len(records)
-                    and records[position + 1]
-                    == f"AURORA_UEFI_TIMER_DRAIN: epoch={live_epoch} root={kernel_root} ss=16",
-                    "Supervisor timer lacks immediately paired old-owner drain",
-                )
-                drains += 1
-                continue
-            need(
-                cpl == 3 and vector in (6, 64, 129) and root == live_root and frame == arena + 0x88000 - 176,
-                "Invalid active-domain frame",
-            )
-            if vector == 129:
-                need(pc == live_image["return_pc"], "Unknown user return site")
-                terminal_seen = True
-            if vector == 6:
-                terminal_seen = True
-            if vector == 64:
-                need(
-                    live_image["entry"] <= pc < live_image["entry"] + live_image["size"],
-                    "Timer interrupted outside admitted user image",
-                )
-        if line.startswith("AURORA_UEFI_TIMER_DRAIN:"):
-            need(
-                position > 0
-                and event_pattern.fullmatch(records[position - 1])
-                and int(event_pattern.fullmatch(records[position - 1])[4]) == 0,
-                "Unpaired drain record",
-            )
-        if line.startswith("AURORA_UEFI_TIMER_QUIET:"):
-            live_epoch = None
-    need(drains == text.count("AURORA_UEFI_TIMER_DRAIN:"), "Unconsumed drain record")
+    events = validate_domain_events(text, images, timer)
     failed = mode not in ("program-console", "program-pending")
     faults = [pc for vector, _, pc, _ in events if vector == 6]
     need(len(faults) == int(mode.endswith("fault")), "Wrong emitted-fault count")
@@ -604,6 +794,70 @@ def main():
                     failstop=FAILSTOP_REASONS[args.mode],
                 )
                 print("PASS: malformed protected command authority fails stop without output or recovery")
+                return
+
+            if args.mode.startswith("program-file-call"):
+                expected = []
+                service_results = []
+                call_times = []
+
+                def peek(name, value, failure=False):
+                    begin = len(transcript)
+                    started = time.monotonic()
+                    send(("peek " + name + "\n").encode())
+                    receive(b"aurora> ", begin)
+                    call_times.append(time.monotonic() - started)
+                    part = bytes(transcript[begin:]).decode("ascii")
+                    reply = 3 if value is None else 2 if value == "" else 1 | (ord(value) << 8)
+                    expected.append(0 if failure else reply)
+                    service_results.append(0 if failure and args.mode.endswith("-fault") else reply)
+                    if failure:
+                        need(
+                            "output discarded." in part and "byte> " not in part and "File is missing." not in part,
+                            "Failed call exposed partial result",
+                        )
+                    else:
+                        answer = "File is missing." if value is None else "EOF" if value == "" else "byte> " + value
+                        need(
+                            part.count("\r\n" + answer + "\r\n") == 1
+                            and part.index("AURORA_FILE_CALL_END:") < part.index("\r\n" + answer),
+                            "Exact partial result only after retirement",
+                        )
+
+                file_write("alpha", "Hello")
+                peek("alpha", "H", failure=args.mode != "program-file-call")
+                peek("alpha", "H")
+                file_local("copy alpha beta", "wrote beta: 5 bytes")
+                peek("beta", "H")
+                file_write("alpha", "x")
+                peek("alpha", "x")
+                peek("beta", "H")
+                file_write("empty", "")
+                peek("empty", "")
+                peek("missing", None)
+                for invalid in ("peek alpha extra", "peek ", "cat alpha", "upper alpha"):
+                    file_local(invalid, "Unknown command. Type help.")
+                file_local("rm alpha", "files: removed (RAM-only).")
+                peek("alpha", None)
+                begin = len(transcript)
+                send(b"exit\n")
+                receive(b"AURORA_UEFI_OK", begin)
+                need(transport.wait_exit(process, 5) == 33, "File-call normal guest exit")
+                unchanged()
+                metrics.update(
+                    validate_file_call(
+                        bytes(transcript).decode("ascii"),
+                        args.mode,
+                        expected,
+                        service_results,
+                        admitted["user_images"],
+                        admitted["timer"],
+                    ),
+                    status="passed",
+                    exit_status=33,
+                    command_seconds=call_times,
+                )
+                print("PASS: command-bound returning file byte, live locals, original budget and retired authority")
                 return
 
             if args.mode == "program-console":

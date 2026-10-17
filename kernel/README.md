@@ -57,6 +57,26 @@ call chains, the exact copied ABI, canonical reply encoding and unchanged image
 and kernel-stack caps. Retirement clears snapshot publication as well as wait
 authority. This remains one call per incarnation between a fixed pair.
 
+The opt-in `program-file-call` console adds `peek <name>` beside the existing
+RAM-file storage commands. It returns one first byte, EOF or missing status into
+live Aurora caller locals through the same sealed singleton CallSession. Each
+command binds a frozen NoteRead64 projection to fresh caller/service identities;
+selection, endpoint and generation must still match at publication and resume.
+The private wait retains the caller's frame, epoch and remaining budget while the
+peer runs. A checked service fault cancels the transaction; retirement revokes both
+participants and releases the read binding before presenting a result. One accepted
+call per incarnation remains the limit. This is a partial read, not a stream,
+filesystem service discovery or a general scheduler.
+
+This profile deliberately rejects `upper`, `cat` and note commands. Its Aurora
+entry and three private Console/file bridges omit the legacy note/stream and
+replacement roots; legacy console profiles retain their composition and reject
+`peek`. `program-file-call-fault` cancels the first command on a real service bounds
+fault; `program-file-call-budget` exhausts the original caller quota after resume.
+Later commands recover under fresh incarnations. The native adapter and exact ABI,
+frame, image and stack validators remain trusted bootstrap code; guest checks and
+hosted refusal controls do not establish general memory safety.
+
 PageTables::verify and RuntimeTables::inspect use fixed-four-slot DFS/postorder
 walks. Call-graph cycles reject; no legacy recursion-source hash, line or register
 carrier exception remains. Traversal termination, memory authority, storage

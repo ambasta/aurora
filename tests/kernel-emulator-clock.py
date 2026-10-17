@@ -154,6 +154,9 @@ class ClockContractTests(unittest.TestCase):
         # the separate original-clock PTY route, not the fixed-clock smoke map.
         protected_modes = {
             "program-console",
+            "program-file-call",
+            "program-file-call-fault",
+            "program-file-call-budget",
             "program-request-fault",
             "program-service-fault",
             "program-completion-fault",

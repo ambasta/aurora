@@ -35,6 +35,7 @@ extern "C" void stream_test_initial(void *);
 extern "C" I64 command_stream_contract();
 extern "C" void __au_runtime_files_update(const void *, void *);
 extern "C" void __au_runtime_files_replace(const void *, void *);
+extern "C" U64 file_call_test_service(const void *);
 extern "C" U64 note_test_service(const void *);
 extern "C" I64 aurora_user_main(I64, I64, I64);
 
@@ -804,49 +805,91 @@ public:
         read(name, expected);
     }
 };
+auto file_byte_reply_cases() -> void {
+    for (U64 word = 0; word <= 65536; ++word) {
+        const bool valid = word == 2 || word == 3 || word == 4 || (word % 256 == 1 && word / 256 <= 255);
+        require(program::Files::read_reply_valid(word) == valid, "closed file byte reply word");
+        for (unsigned bit = 16; bit < 64; ++bit)
+            require(!program::Files::read_reply_valid(word | (U64{1} << bit)), "reserved file reply bits");
+    }
+    std::array<std::byte, Note::record_bytes> input{};
+    for (I64 length = -1; length <= 49; ++length) {
+        for (I64 offset = -1; offset <= 50; ++offset) {
+            put_word(input, 0, 11);
+            put_word(input, 8, static_cast<U64>(offset));
+            put_word(input, 16, 0);
+            for (unsigned i = 0; i < 64; ++i)
+                input[24 + i] = std::byte(i + 32);
+            put_word(input, 88, static_cast<U64>(length));
+            const U64 wanted = offset < 0 || offset > 49 ? 4
+                               : length < 0              ? 3
+                               : offset == length        ? 2
+                               : offset > length         ? 4
+                                                         : 1 | (static_cast<U64>(offset + 32) << 8);
+            require(file_call_test_service(input.data()) == wanted, "actual file service offset and status");
+            put_word(input, 16, 1);
+            require(file_call_test_service(input.data()) == 4, "file service rejects reserved request");
+        }
+    }
+}
 auto named_read_lifetime_cases() -> void {
     NamedFixture n;
     n.submit("write a payload");
     const auto saved = n.files.saved();
-    for (unsigned phase = 0; phase < 6; ++phase) {
-        n.start("cat a");
-        const auto endpoint = *n.f.mailbox.endpoint(n.f.client);
-        require(!n.files.bind_read(n.f.registry, n.f.mailbox, n.f.client, n.f.service), "read lease cannot rebind");
-        require(!n.files.bind(n.f.registry, n.f.mailbox, n.f.client, n.f.service, n.f.stream),
-                "read lease cannot become writable");
-        require(!n.files.complete(n.f.registry, n.f.mailbox, n.f.client, endpoint, n.f.stream),
-                "partial read cannot mint replacement receipt");
-        if (phase >= 1)
-            n.f.request();
-        U64 reply = 0;
-        if (phase >= 2)
-            reply = n.f.receive(11);
-        if (phase >= 3)
-            n.f.reply(reply);
-        if (phase >= 4)
-            reply = n.f.consume();
-        if (phase >= 5)
-            n.f.acknowledge(reply);
-        require(!n.f.stream.ready_to_finish(), "partial read is not full-stream completion");
-        user::DomainRegistry foreign;
-        ipc::Mailbox other{foreign};
-        require(!n.files.release_read(foreign, other) && !n.files.release_read(n.f.registry, other) &&
-                    !n.files.release_read(foreign, n.f.mailbox),
-                "read release retains both authority contexts");
-        require(!n.files.release_read(n.f.registry, n.f.mailbox), "read release refuses live participants");
-        n.f.retire(true);
-        require(n.files.release_read(n.f.registry, n.f.mailbox),
-                "cancelled partial read releases only after retirement");
-        require(!n.files.release_read(n.f.registry, n.f.mailbox), "read release consumes lease once");
-        require(n.files.saved() == saved, "read release preserves all file bytes and revision");
-        require(!n.files.selected() && !n.files.writable() &&
-                    std::all_of(n.files.projection().begin(),
-                                n.files.projection().end(),
-                                [](std::byte value) {
-                                    return value == std::byte{};
-                                }),
-                "released read selection and projection are scrubbed");
-        require(!n.f.stream.finish(), "retired partial read does not become a complete output");
+    for (const auto command : {"cat a", "peek a"}) {
+        for (unsigned phase = 0; phase < 6; ++phase) {
+            n.start(command);
+            const auto endpoint = *n.f.mailbox.endpoint(n.f.client);
+            require(n.files.matches_read(n.f.registry, n.f.mailbox, n.f.client, endpoint), "matching read authority");
+            user::DomainRegistry alien;
+            ipc::Mailbox alien_box{alien};
+            require(!n.files.matches_read(alien, n.f.mailbox, n.f.client, endpoint) &&
+                        !n.files.matches_read(n.f.registry, alien_box, n.f.client, endpoint) &&
+                        !n.files.matches_read(n.f.registry, n.f.mailbox, n.f.service, endpoint) &&
+                        !n.files.matches_read(
+                            n.f.registry, n.f.mailbox, n.f.client, ipc::Endpoint{0, endpoint.generation() + 1}),
+                    "read authority rejects foreign context, owner and generation");
+            require(!n.files.update(file_update(n.files.saved(), "write a changed")),
+                    "bound selection freezes revision");
+            require(!n.files.bind_read(n.f.registry, n.f.mailbox, n.f.client, n.f.service), "read lease cannot rebind");
+            require(!n.files.bind(n.f.registry, n.f.mailbox, n.f.client, n.f.service, n.f.stream),
+                    "read lease cannot become writable");
+            require(!n.files.complete(n.f.registry, n.f.mailbox, n.f.client, endpoint, n.f.stream),
+                    "partial read cannot mint replacement receipt");
+            if (phase >= 1)
+                n.f.request();
+            U64 reply = 0;
+            if (phase >= 2)
+                reply = n.f.receive(11);
+            if (phase >= 3)
+                n.f.reply(reply);
+            if (phase >= 4)
+                reply = n.f.consume();
+            if (phase >= 5)
+                n.f.acknowledge(reply);
+            require(!n.f.stream.ready_to_finish(), "partial read is not full-stream completion");
+            user::DomainRegistry foreign;
+            ipc::Mailbox other{foreign};
+            require(!n.files.release_read(foreign, other) && !n.files.release_read(n.f.registry, other) &&
+                        !n.files.release_read(foreign, n.f.mailbox),
+                    "read release retains both authority contexts");
+            require(!n.files.release_read(n.f.registry, n.f.mailbox), "read release refuses live participants");
+            n.f.retire(true);
+            require(n.files.release_read(n.f.registry, n.f.mailbox),
+                    "cancelled partial read releases only after retirement");
+            require(!n.files.release_read(n.f.registry, n.f.mailbox), "read release consumes lease once");
+            require(!n.files.matches_read(n.f.registry, n.f.mailbox, n.f.client, endpoint),
+                    "retired read authority cannot wake");
+            require(n.files.saved() == saved, "read release preserves all file bytes and revision");
+            require(!n.files.selected() && !n.files.writable() &&
+                        std::all_of(n.files.projection().begin(),
+                                    n.files.projection().end(),
+                                    [](std::byte value) {
+                                        return value == std::byte{};
+                                    }),
+                    "released read selection and projection are scrubbed");
+            require(!n.f.stream.finish(), "retired partial read does not become a complete output");
+        }
     }
     n.start("cat a");
     require(n.f.stream.cancel(), "cancel read before independent retirement controls");
@@ -1025,6 +1068,7 @@ auto named_file_cases() -> void {
 
 auto main() -> int {
     require(command_stream_contract() == 0, "shared Aurora stream behavioral fixture");
+    file_byte_reply_cases();
     named_read_lifetime_cases();
     named_file_cases();
     command_cases();

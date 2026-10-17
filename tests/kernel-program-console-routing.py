@@ -21,7 +21,8 @@ def verify(runtime, program, timer):
     route = re.compile(
         r"(?:#ifdef AURORA_UEFI_PROGRAM_CONSOLE|"
         r"(?:#ifdef AURORA_UEFI_SNAPSHOT|"
-        r"#if defined\(AURORA_UEFI_SNAPSHOT\) \|\| defined\(AURORA_BLOCKING_CALL\))\s*"
+        r"#if defined\(AURORA_UEFI_SNAPSHOT\) \|\| (?:defined\(AURORA_BLOCKING_CALL\)|"
+        r"\(defined\(AURORA_BLOCKING_CALL\) && !defined\(AURORA_FILE_CALL\)\)))\s*"
         r"class SnapshotDiagnostics final\s*\{\s*public:\s*"
         r"\[\[gnu::noinline\]\] static void text\(std::string_view value\)\s*\{\s*"
         r"hardware::Serial::text\(value\);\s*\}\s*"

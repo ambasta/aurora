@@ -62,10 +62,10 @@ if [[ "$mode" == iommu-event ]]; then
 fi
 if [[ "$protected" == true ]]; then
     case "$mode" in
-        program-console|program-request-fault|program-service-fault|program-completion-fault|program-request-budget|program-service-budget|program-completion-budget|program-pending|program-owner|program-ordinal|program-unknown|program-transaction) ;;
+        program-file-call|program-file-call-fault|program-file-call-budget|program-console|program-request-fault|program-service-fault|program-completion-fault|program-request-budget|program-service-budget|program-completion-budget|program-pending|program-owner|program-ordinal|program-unknown|program-transaction) ;;
         *) profile_fail "unknown profile: $mode" ;;
     esac
-    if [[ "$action" == --console && "$mode" != program-console ]]; then profile_fail 'fault profiles are smoke-only'; fi
+    if [[ "$action" == --console && "$mode" != program-console && "$mode" != program-file-call ]]; then profile_fail 'fault profiles are smoke-only'; fi
 fi
 if [[ "$strict" == true || "$mode" == graphical-console ]]; then
     controls=("${!KERNEL_TEST_@}" AURORA_TEST_CONTEXT KERNEL_USER_PROBE_MODE KERNEL_CONSOLE UEFI_MODE UEFI_CONSOLE_HANDOFF)
@@ -209,6 +209,7 @@ if [[ "$action" == --smoke ]]; then
             status=$?; echo "FAIL: protected-console PTY exited $status" >&2; exit "$status"
         fi
         case "$mode" in
+            program-file-call*) ;;
             program-*-fault|program-*-budget)
                 python3 -B tests/kernel-program-console-pty.py --mode "$mode" --build-dir "$image_dir" --read-only-recovery
                 ;;

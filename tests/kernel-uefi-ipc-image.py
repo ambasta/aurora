@@ -43,6 +43,24 @@ def main():
         if payload.ipc_call_present(bad):
             raise RuntimeError("Invalid direct transaction call accepted")
         negative += 1
+    file_composition = dict(
+        service_budget=True, user_budget=True, program_console=True, blocking_call=True, file_call=True
+    )
+    images.validate_composition("normal", **file_composition)
+    positives += 1
+    for key in file_composition:
+        changed = file_composition | {key: False}
+        with TestCase().assertRaises(ValueError):
+            images.validate_composition("normal", **changed)
+        negative += 1
+    for changed in (file_composition | {"snapshot": True}, file_composition | {"dispatcher": True}):
+        with TestCase().assertRaises(ValueError):
+            images.validate_composition("normal", **changed)
+        negative += 1
+    for mode in ("resume", "owner", "reply-byte", "unknown"):
+        with TestCase().assertRaises(ValueError):
+            images.validate_composition(mode, **file_composition)
+        negative += 1
     for base in (images.BASE, images.BASE + 4096):
         data, blob, symbols = fixtures.fixture(base)
         images.verify(data, blob, base, symbols)

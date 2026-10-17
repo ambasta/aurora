@@ -14,7 +14,7 @@
 #include "../console.hpp"
 #ifdef AURORA_UEFI_IPC
 #include "../ipc-policy.hpp"
-#if defined(AURORA_UEFI_SNAPSHOT) || defined(AURORA_BLOCKING_CALL)
+#if defined(AURORA_UEFI_SNAPSHOT) || (defined(AURORA_BLOCKING_CALL) && !defined(AURORA_FILE_CALL))
 #include "snapshot.hpp"
 #endif
 #ifdef AURORA_UEFI_DISPATCH
@@ -59,7 +59,7 @@ auto resume(std::uint64_t) -> std::uint64_t asm("uefi_runtime_resume") __attribu
 #endif
 namespace {
 using U64 = std::uint64_t;
-#if defined(AURORA_UEFI_SNAPSHOT) || defined(AURORA_BLOCKING_CALL)
+#if defined(AURORA_UEFI_SNAPSHOT) || (defined(AURORA_BLOCKING_CALL) && !defined(AURORA_FILE_CALL))
 // Keep repeated bootstrap diagnostics shared in this bounded combined image.
 // The underlying serial behavior is unchanged; neither helper carries authority.
 class SnapshotDiagnostics final {
@@ -164,7 +164,7 @@ constinit user::ProgramRun program;
 constinit std::optional<ipc::Dispatcher> dispatcher;
 #else
 constinit std::optional<ipc::Mailbox> mailbox;
-#if defined(AURORA_UEFI_SNAPSHOT) || defined(AURORA_BLOCKING_CALL)
+#if defined(AURORA_UEFI_SNAPSHOT) || (defined(AURORA_BLOCKING_CALL) && !defined(AURORA_FILE_CALL))
 constinit ipc::SnapshotSlot snapshot_slot;
 #endif
 #endif
@@ -542,6 +542,8 @@ auto execute(unsigned index, ProgramEvent wanted) -> void {
 #include "user-lifecycle.inc"
 #endif
 #endif
+#elif defined(AURORA_FILE_CALL)
+#include "program-console.inc"
 #elif defined(AURORA_BLOCKING_CALL)
 #include "blocking-call.inc"
 #elif defined(AURORA_UEFI_PROGRAM_CONSOLE)
@@ -566,7 +568,7 @@ auto program_console_put(const void *grant, U64 generation, U64 byte) -> U64 {
     return ProgramInputSession::put(grant, generation, byte);
 }
 #endif
-#if defined(AURORA_UEFI_SNAPSHOT) || defined(AURORA_BLOCKING_CALL)
+#if defined(AURORA_UEFI_SNAPSHOT) || (defined(AURORA_BLOCKING_CALL) && !defined(AURORA_FILE_CALL))
 extern "C" [[noreturn]] void __au_runtime_bytes_kernel_fault(U64) noexcept {
     stop("snapshot producer ownership fault");
 }
@@ -734,7 +736,7 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
     active = L::domain_count;
     return 1;
 }
-#if defined(AURORA_UEFI_SNAPSHOT) || defined(AURORA_BLOCKING_CALL)
+#if defined(AURORA_UEFI_SNAPSHOT) || (defined(AURORA_BLOCKING_CALL) && !defined(AURORA_FILE_CALL))
 auto run_protected(U64 owned_arena, const Bytes &h, memory::PhysicalPages &producer_pool) -> bool {
 #else
 auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
@@ -763,6 +765,8 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
 #else
     run_dispatcher();
 #endif
+#elif defined(AURORA_FILE_CALL)
+    run_program_console();
 #elif defined(AURORA_BLOCKING_CALL)
     run_blocking_calls(producer_pool);
 #elif defined(AURORA_UEFI_PROGRAM_CONSOLE)

@@ -2,11 +2,15 @@
 // One shared timer mapping and one IDT gate; ownership is selected only at a
 // fully quiescent private-kernel boundary. No source-language pointer ABI.
 using ProgramSerial=Serial; // One shared sticky receive-error latch, including runtime traces.
+#ifndef AURORA_FILE_CALL
 program::Stream command_stream;
+#endif
 program::Note command_note;
 program::Files command_files;
+#ifndef AURORA_FILE_CALL
 bool command_file{},command_transform{};
 bool command_reading{};
+#endif
 extern "C" void __au_runtime_program_input(const void*, void*);
 extern "C" auto __au_runtime_program_response(const void*) -> U64;
 extern "C" void __au_runtime_note_update(const void*, void*);
@@ -100,6 +104,7 @@ template<class T> auto program_scrub_copy(T& value) -> void {
     auto* bytes=reinterpret_cast<volatile std::byte*>(&value);
     for (std::size_t index=0;index<sizeof(value);++index) bytes[index]=std::byte{0};
 }
+#ifndef AURORA_FILE_CALL
 [[nodiscard]] auto recoverable_program_event() -> bool {
     const auto event=program.event();
     return (event==ProgramEvent::rejected && timer_exhausted)
@@ -353,6 +358,7 @@ __attribute__((noinline)) auto program_save_file() -> void {
     }
     return program_note_apply(copied);
 }
+#endif
 [[nodiscard]] __attribute__((noinline)) auto program_files_update(const program::Submission& input,
                                                                  program::Response& response) -> U64 {
     program::Files::UpdateInput copied{};
@@ -373,6 +379,10 @@ __attribute__((noinline)) auto program_save_file() -> void {
     program_scrub_copy(copied); program_scrub_copy(result);
     return *action;
 }
+#ifdef AURORA_FILE_CALL
+#include "blocking-call.inc"
+#include "file-call.inc"
+#endif
 __attribute__((noinline)) auto run_program_console() -> void {
     require(program_boundary() && !command_owned && L::domain_count==2,"program console initial ownership");
     const auto begin=reinterpret_cast<U64>(&program_poll_begin),end=reinterpret_cast<U64>(&program_poll_end);
@@ -382,6 +392,11 @@ __attribute__((noinline)) auto run_program_console() -> void {
     hardware::Io::write(0x3f9,0); require(hardware::Io::read(0x3f9)==0,"program UART IRQ disabled");
     ProgramSerial::initialize_input();
     program::Response ready{program::Response::Kind::ready};
+#ifdef AURORA_FILE_CALL
+    ready=program::Response{program::Response::Kind::file_reply};
+    constexpr std::string_view banner="AURORA_FILE_CALL_READY: file storage and peek <name>, one byte";
+    require(ready.payload(std::as_bytes(std::span{banner.data(),banner.size()})),"file call banner");
+#endif
     bool okay=program_write_response(ready);
     program::Submission copied; U64 after_cr=0;
     while (okay) {
@@ -389,12 +404,18 @@ __attribute__((noinline)) auto run_program_console() -> void {
         after_cr=copied.after_cr(); // Carry a submitted CR across protected execution.
         const auto action=copied.action();
         if (action==program::Submission::Action::upper_payload) {
+#ifdef AURORA_FILE_CALL
+            program::Response unsupported{program::Response::Kind::unknown};
+            copied.scrub(); okay=program_write_response(unsupported); continue;
+#else
             okay=program_command(copied); continue;
+#endif
         }
         if (action==program::Submission::Action::requested_exit || action==program::Submission::Action::output_failure) {
             okay=action!=program::Submission::Action::output_failure;
             break;
         }
+#ifndef AURORA_FILE_CALL
         const auto note_event=program_note_update(copied);
         if (note_event!=0) {
             if (note_event==1) {
@@ -404,10 +425,20 @@ __attribute__((noinline)) auto run_program_console() -> void {
             } else okay=program_command(copied,note_event!=4,note_event==4);
             copied.scrub(); continue;
         }
+#endif
         program::Response response{program::Response::Kind::unknown};
         const auto file_event=program_files_update(copied,response);
         if (file_event!=0) {
-            if (file_event>=2) okay=program_command(copied,true,false,true);
+#ifdef AURORA_FILE_CALL
+            if (file_event==4) okay=program_file_call(copied);
+            else if (file_event>=2) {
+                command_files.abort(); copied.scrub(); okay=program_write_response(response);
+            }
+#else
+            if (file_event==4) {
+                command_files.abort(); copied.scrub(); okay=program_write_response(response);
+            } else if (file_event>=2) okay=program_command(copied,true,false,true);
+#endif
             else {
                 copied.scrub();
                 okay=program_write_response(response);
