@@ -1,6 +1,7 @@
 // Host-only representation controls. Aurora owns grammar; these stubs exercise
 // safe copied-record conversion, bounded ownership, cleanup and cursor commits.
 #include "hosted_graph.hpp"
+#include "hosted_lowering.hpp"
 #include "hosted_parser.hpp"
 #include "hosted_resolver.hpp"
 #include "lexer.hpp"
@@ -94,6 +95,7 @@ std::int64_t reportedOutputs = 1, reportedOperands = 3;
 int loweringBegun = 0, loweringRun = 0, loweringOutputReads = 0, loweringOperandReads = 0;
 int scalarSeeds = 0, serviceSeeds = 0;
 bool loweringAllocation = false;
+bool allowProjectionSeal = false;
 std::size_t cases = 0;
 void require(bool value, const std::string &message) {
     if (!value)
@@ -2125,6 +2127,33 @@ void resolutionControls() {
         loweringResult.result_reason = Lowering::LoweringError::none;
         loweringResult.root_row = 14;
     });
+    // Success transport bounds still reject before a projection Plan exists,
+    // even though success no longer copies the complete published pools.
+    const auto rejectSuccess = [&](const char *label, const std::function<void()> &mutate) {
+        reject(label, [&] {
+            loweringResult.result_status = Lowering::LoweringStatus::success;
+            loweringResult.result_reason = Lowering::LoweringError::none;
+            loweringResult.diagnostic_row = 0;
+            loweringResult.root_row = 16;
+            allowProjectionSeal = true;
+            mutate();
+        });
+        allowProjectionSeal = false;
+    };
+    rejectSuccess("success negative output count", [] {
+        reportedOutputs = -1;
+    });
+    rejectSuccess("success negative operand count", [] {
+        reportedOperands = -1;
+    });
+    rejectSuccess("success output count exceeds payload", [] {
+        reportedOutputs = std::numeric_limits<std::int64_t>::max();
+    });
+    rejectSuccess("success operand count exceeds payload", [] {
+        reportedOperands = std::numeric_limits<std::int64_t>::max();
+    });
+    rejectSuccess("success root outside published outputs", [] {
+    });
     reject("storage failure lacks an allocation status", [] {
         loweringResult.result_status = Lowering::LoweringStatus::storage_failure;
     });
@@ -2206,9 +2235,11 @@ void aurora::ir::verifyHostedGraph(std::vector<FunctionBody> &, const Metadata &
     std::fputs("forged projection unexpectedly reached metadata verification\n", stderr);
     std::abort();
 }
-// Malformed reports must fail before the separate source projection owner.
-extern "C" std::int64_t aurora_hosted_projection_seal(void *, std::int64_t) noexcept {
-    unexpectedMetadataEntry();
+// Selected success transport controls may seal, but must reject before a Plan.
+extern "C" std::int64_t aurora_hosted_projection_seal(void *session, std::int64_t region) noexcept {
+    if (!allowProjectionSeal || session != sessionAddress || region != static_cast<std::int64_t>(sessionRegion))
+        unexpectedMetadataEntry();
+    return 1;
 }
 extern "C" std::int64_t aurora_hosted_projection_fill_metadata(const void *) noexcept {
     unexpectedMetadataEntry();
@@ -2701,6 +2732,113 @@ extern "C" void aurora_hosted_lowering_read_operand(const void *session, std::in
     std::memcpy(output, &loweringOperands[static_cast<std::size_t>(index)], sizeof(loweringOperands[0]));
 }
 
+namespace {
+void projectionInputControls() {
+    alignas(8) std::array<std::byte, aurora::hosted_abi::sessionBytes> slot{};
+    ++sessionsCreated;
+    armSession(slot.data());
+    reportedOutputs = 1;
+    reportedOperands = 3;
+    const auto reject = [&](const char *label, const std::function<void()> &action) {
+        const auto outputReads = loweringOutputReads, operandReads = loweringOperandReads;
+        bool rejected = false;
+        try {
+            action();
+        } catch (const aurora::Error &error) {
+            rejected = error.diagnostic.code == DiagnosticCode::Internal;
+        }
+        require(rejected && outputReads == loweringOutputReads && operandReads == loweringOperandReads,
+                std::string(label) + ": invalid projection view reached a record reader");
+        ++cases;
+    };
+    const auto construct = [&](std::uint64_t bytes, std::int64_t root = 0) {
+        return aurora::HostedProjectionInput(slot.data(), bytes, 8, root);
+    };
+    reject("null Session view", [&] {
+        aurora::HostedProjectionInput(nullptr, 256, 8, 0);
+    });
+    reject("negative source bytes", [&] {
+        aurora::HostedProjectionInput(slot.data(), 256, -1, 0);
+    });
+    reject("negative root", [&] {
+        construct(256, -1);
+    });
+    reject("root at row end", [&] {
+        construct(256, 1);
+    });
+    reject("row exceeds payload", [&] {
+        construct(sizeof(Lowering::OutputRow) - 1);
+    });
+    reject("operands exceed payload", [&] {
+        construct(3 * sizeof(Lowering::OperandRow) - 1);
+    });
+    reportedOutputs = -1;
+    reject("negative published row count", [&] {
+        construct(256);
+    });
+    reportedOutputs = static_cast<std::int64_t>(std::vector<Lowering::OutputRow>().max_size()) + 1;
+    reject("row count exceeds native size bound", [&] {
+        construct(std::numeric_limits<std::uint64_t>::max());
+    });
+    reportedOutputs = 1;
+    reportedOperands = -1;
+    reject("negative published operand count", [&] {
+        construct(256);
+    });
+    reportedOperands = static_cast<std::int64_t>(std::vector<Lowering::OperandRow>().max_size()) + 1;
+    reject("operand count exceeds native size bound", [&] {
+        construct(std::numeric_limits<std::uint64_t>::max());
+    });
+    reportedOperands = 3;
+    const auto input = construct(256);
+    require(input.rowCount() == 1 && input.operandCount() == 3 && input.moduleRoot == 0 && input.sourceByteCount == 8,
+            "projection view changed published counts or coordinates");
+    input.checkOperands(0, 3);
+    input.checkOperands(3, 0);
+    reject("row before start", [&] {
+        input.row(-1);
+    });
+    reject("row at end", [&] {
+        input.row(1);
+    });
+    reject("operand before start", [&] {
+        input.operand(-1);
+    });
+    reject("operand at end", [&] {
+        input.operand(3);
+    });
+    reject("negative slice length", [&] {
+        input.checkOperands(0, -1);
+    });
+    reject("negative slice start", [&] {
+        input.checkOperands(-1, 0);
+    });
+    reject("slice after end", [&] {
+        input.checkOperands(4, 0);
+    });
+    reject("nonempty slice at end", [&] {
+        input.checkOperands(3, 1);
+    });
+    reject("overflowing slice", [&] {
+        input.checkOperands(1, std::numeric_limits<std::int64_t>::max());
+    });
+    reject("overflowing slice start", [&] {
+        input.checkOperands(std::numeric_limits<std::int64_t>::max(), 1);
+    });
+    loweringReport.recordKind = Lowering::RecordKind::Module;
+    loweringOperands[2].signedValue = 123;
+    const auto row = input.row(0);
+    const auto operand = input.operand(2);
+    loweringReport.recordKind = Lowering::RecordKind::DiagnosticPayload;
+    loweringOperands[2].signedValue = 456;
+    require(row.recordKind == Lowering::RecordKind::Module && operand.signedValue == 123,
+            "projection reader returned a live alias instead of a copied record");
+    ++cases;
+    ++sessionsReleased;
+    sessionAddress = nullptr;
+}
+} // namespace
+
 int main() {
     try {
         conversionControls();
@@ -2718,6 +2856,7 @@ int main() {
         preambleEnumControls();
         moduleControls();
         resolutionControls();
+        projectionInputControls();
         diagnostic("f(",
                    Status::expected_expression,
                    2,

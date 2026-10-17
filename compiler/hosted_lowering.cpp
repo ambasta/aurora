@@ -59,7 +59,39 @@ std::size_t sizeValue(std::int64_t value) {
     return static_cast<std::size_t>(value);
 }
 } // namespace
-std::uint64_t projectionQuota(const HostedLoweringInput &input, std::span<const std::uint8_t> table) {
+HostedProjectionInput::HostedProjectionInput(const void *value,
+                                             std::uint64_t payloadBytes,
+                                             std::int64_t sourceBytes,
+                                             std::int64_t root)
+    : session(value), rows(0), operands(0), sourceByteCount(sourceBytes), moduleRoot(root) {
+    if (!session || sourceBytes < 0)
+        invalidLowering();
+    rows = aurora_hosted_lowering_count(session, 0);
+    operands = aurora_hosted_lowering_count(session, 1);
+    const auto rowSize = sizeValue(rows), operandSize = sizeValue(operands);
+    if (rowSize > payloadBytes / sizeof(wire::OutputRow) || operandSize > payloadBytes / sizeof(wire::OperandRow) ||
+        rowSize > std::vector<wire::OutputRow>().max_size() ||
+        operandSize > std::vector<wire::OperandRow>().max_size() || root < 0 || root >= rows)
+        invalidLowering();
+}
+wire::OutputRow HostedProjectionInput::row(std::int64_t id) const {
+    if (id < 0 || id >= rows)
+        invalidLowering();
+    wire::OutputRow result{};
+    aurora_hosted_lowering_read_output(session, id, &result);
+    return result;
+}
+void HostedProjectionInput::checkOperands(std::int64_t begin, std::int64_t count) const {
+    if (begin < 0 || count < 0 || begin > operands || count > operands - begin)
+        invalidLowering();
+}
+wire::OperandRow HostedProjectionInput::operand(std::int64_t id) const {
+    checkOperands(id, 1);
+    wire::OperandRow result{};
+    aurora_hosted_lowering_read_operand(session, id, &result);
+    return result;
+}
+std::uint64_t projectionQuota(const HostedProjectionInput &input, std::span<const std::uint8_t> table) {
     if (input.sourceByteCount < 0)
         invalidLowering();
     const auto add = [](std::uint64_t a, std::uint64_t b) {
@@ -72,7 +104,7 @@ std::uint64_t projectionQuota(const HostedLoweringInput &input, std::span<const 
             invalidLowering();
         return a * b;
     };
-    const auto rows = input.rows.size(), operands = input.operands.size();
+    const auto rows = sizeValue(input.rowCount()), operands = sizeValue(input.operandCount());
     // Exact graph allocations: one claim byte per row/operand and one
     // 16-byte node/request per row/operand. No rendered identities yet.
     const auto graph = mul(17, add(rows, operands));
@@ -92,8 +124,8 @@ std::uint64_t projectionQuota(const HostedLoweringInput &input, std::span<const 
     std::uint64_t longest = 0, carriers = 0;
     for (std::uint64_t at = 0; at < identities; ++at)
         longest = std::max(longest, word(8 + at * 80 + 32));
-    for (const auto &row : input.rows)
-        carriers += row.recordKind == wire::RecordKind::Carrier;
+    for (std::int64_t at = 0; at < input.rowCount(); ++at)
+        carriers += input.row(at).recordKind == wire::RecordKind::Carrier;
     const auto rendered = add(table.size(), mul(carriers, add(longest, 28)));
     // The sorted intern index contains at most one entry per requested or
     // generated carrier name. Retain the conservative geometric quota bound.
@@ -193,7 +225,7 @@ std::vector<std::uint8_t> renderProjectionIdentities(const void *plan, const Hos
     }
     return response;
 }
-HostedLoweringOutput projectHostedLowering(const HostedLoweringInput &input,
+HostedLoweringOutput projectHostedLowering(const HostedProjectionInput &input,
                                            const HostedLoweringServices &services,
                                            const void *projectionPlan) {
     if (!projectionPlan || !services.identifier)
@@ -202,31 +234,23 @@ HostedLoweringOutput projectHostedLowering(const HostedLoweringInput &input,
     result.instructions = InstructionWriter::project(projectionPlan);
     // Source owns graph validation and row selection. Native code retains only
     // diagnostic SourceSpan/string construction for the existing public API.
-    const auto rowAt = [&](std::int64_t id) -> const wire::OutputRow & {
-        const auto index = sizeValue(id);
-        if (index >= input.rows.size())
-            invalidLowering();
-        return input.rows[index];
-    };
-    const auto operands = [&](std::int64_t begin, std::int64_t count) {
-        const auto first = sizeValue(begin), length = sizeValue(count);
-        if (first > input.operands.size() || length > input.operands.size() - first)
-            invalidLowering();
-        return input.operands.subspan(first, length);
-    };
-    const auto &root = rowAt(input.moduleRoot);
+    const auto root = input.row(input.moduleRoot);
     if (root.recordKind != RecordKind::Module || root.operandCount != 7)
         invalidLowering();
-    const auto lint = operands(root.operandBegin, root.operandCount)[6];
+    input.checkOperands(root.operandBegin, root.operandCount);
+    const auto lint = input.operand(root.operandBegin + 6);
     if (lint.operandRole != OperandRole::LintDiagnostics)
         invalidLowering();
-    for (const auto &reference : operands(lint.sliceBegin, lint.sliceCount)) {
+    input.checkOperands(lint.sliceBegin, lint.sliceCount);
+    for (std::int64_t at = 0; at < lint.sliceCount; ++at) {
+        const auto reference = input.operand(lint.sliceBegin + at);
         if (reference.operandRole != OperandRole::OutputRowId)
             invalidLowering();
-        const auto &row = rowAt(reference.signedValue);
+        const auto row = input.row(reference.signedValue);
         if (row.recordKind != RecordKind::UnreadLocal || row.operandCount != 1)
             invalidLowering();
-        const auto value = operands(row.operandBegin, row.operandCount)[0];
+        input.checkOperands(row.operandBegin, row.operandCount);
+        const auto value = input.operand(row.operandBegin);
         if (value.operandRole != OperandRole::IdentifierSourceRef || value.signedValue < 0)
             invalidLowering();
         auto token = services.identifier(value.signedValue);

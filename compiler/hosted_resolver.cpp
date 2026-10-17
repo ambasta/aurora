@@ -1639,25 +1639,28 @@ class HostedResolution::Impl {
             // Lowering interns additional concrete types/source references. The
             // resolver-era cache is gone; load one fresh shared metadata snapshot.
             Projection projection(owner.data(), sources, owner.usedBytes());
-            std::vector<lowering::OutputRow> rows;
-            std::vector<lowering::OperandRow> operands;
-            const auto load = [&](auto &values, std::int64_t pool, std::size_t reportCount, auto read) {
-                const auto published = sizeValue(aurora_hosted_lowering_count(owner.data(), pool));
-                const auto count = success ? published : reportCount;
-                using Value = typename std::remove_reference_t<decltype(values)>::value_type;
-                if (count > published || published > owner.usedBytes() / sizeof(Value) || count > values.max_size())
-                    invalidResolution();
-                values.resize(count);
-                for (std::size_t index = 0; index < count; ++index)
-                    read(owner.data(), static_cast<std::int64_t>(index), &values[index]);
-            };
-            load(rows, 0, 1, aurora_hosted_lowering_read_output);
-            load(operands, 1, 3, aurora_hosted_lowering_read_operand);
-            HostedLoweringInput input{
-                rows, operands, projection.sourceByteCount(), result.root_row, result.diagnostic_row};
-            if (!success)
+            if (!success) {
+                std::vector<lowering::OutputRow> rows;
+                std::vector<lowering::OperandRow> operands;
+                const auto load = [&](auto &values, std::int64_t pool, std::size_t reportCount, auto read) {
+                    const auto published = sizeValue(aurora_hosted_lowering_count(owner.data(), pool));
+                    const auto count = reportCount;
+                    using Value = typename std::remove_reference_t<decltype(values)>::value_type;
+                    if (count > published || published > owner.usedBytes() / sizeof(Value) || count > values.max_size())
+                        invalidResolution();
+                    values.resize(count);
+                    for (std::size_t index = 0; index < count; ++index)
+                        read(owner.data(), static_cast<std::int64_t>(index), &values[index]);
+                };
+                load(rows, 0, 1, aurora_hosted_lowering_read_output);
+                load(operands, 1, 3, aurora_hosted_lowering_read_operand);
+                HostedLoweringInput input{
+                    rows, operands, projection.sourceByteCount(), result.root_row, result.diagnostic_row};
                 throw Error(renderHostedLoweringDiagnostic(result, input, projection.diagnosticServices()));
+            }
             owner.sealProjection();
+            const HostedProjectionInput input(
+                owner.data(), owner.usedBytes(), projection.sourceByteCount(), result.root_row);
             struct PendingPlan {
                 hosted_abi::ProjectionRelease value{};
                 ~PendingPlan() {
