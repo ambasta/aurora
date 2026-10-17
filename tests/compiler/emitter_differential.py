@@ -353,7 +353,13 @@ def main():
             case.mkdir(parents=True)
             invocation = case / "invocation"
             # Kernel programs import kernel/policies; without it they only "reject".
-            roots = [module_root] if source in modules else [root / "library", root / "kernel/policies"]
+            # Private compiler fixtures import the same staged modules as the
+            # frontend. Keep them in the must-emit corpus with all comparisons.
+            roots = (
+                [module_root]
+                if source in modules or source == root / "tests/compiler/ir_projection.au"
+                else [root / "library", root / "kernel/policies"]
+            )
             arguments = [
                 *flags,
                 *(argument for path in roots for argument in ("--module-root", str(path))),

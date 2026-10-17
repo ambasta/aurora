@@ -1489,6 +1489,8 @@ def main():
         corpus = sources(root)
         require(root / "compiler/lexer.au" in corpus, "lexer self-rebuild input is missing")
         require(root / "compiler/frontend.au" in corpus, "whole frontend self-rebuild input is missing")
+        projection_fixture = root / "tests/compiler/ir_projection.au"
+        require(projection_fixture in corpus, "private projection fixture is missing from corpus")
         compiler_sources = {root / "compiler" / name for name in COMPILER_MODULES}
         require(compiler_sources.issubset(corpus), "a real compiler module is missing from self-rebuild coverage")
         frontend_library_sources = {root / "library" / name for name in FRONTEND_LIBRARY_MODULES}
@@ -1504,6 +1506,7 @@ def main():
                 frontend_bootstrap(current1, current2, root, work, built_a, built_b)
                 records.append({"source": str(source.relative_to(root)), "status": 0})
                 continue
+            roots = [module_root] if source in compiler_sources or source == projection_fixture else [root / "library"]
             runs = []
             for compiler, output in zip((current1, current2), outputs, strict=True):
                 output.write_bytes(b"preserve on rejection\n")
@@ -1511,8 +1514,7 @@ def main():
                     subprocess.run(
                         [
                             str(compiler),
-                            "--module-root",
-                            str(module_root if source in compiler_sources else root / "library"),
+                            *(argument for path in roots for argument in ("--module-root", str(path))),
                             str(source),
                             "-o",
                             str(output),
@@ -1528,6 +1530,8 @@ def main():
                     f"compiler crash or invocation failure: {source}: {run.returncode}",
                 )
                 require(b"AU9001" not in run.stderr, f"internal compiler failure: {source}")
+                if source == projection_fixture:
+                    require(run.returncode == 0, f"private projection fixture must emit: {run.stderr!r}")
                 if run.returncode == 1:
                     require(
                         output.read_bytes() == b"preserve on rejection\n",
