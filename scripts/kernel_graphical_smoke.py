@@ -53,6 +53,7 @@ CASES = [
     ("note-empty-edit", b"G", b"write notf\be oldX\x7f\r\ncat note\nwrite note \ncat note\nexit\n!"),
     ("note-preserve", b"G", b"write note saved\nwrite notes x\nwrite note bad\x01\ncat note\nexit\n!"),
     ("note-maximum", b"G", b"write note " + b"Ab9 !" * 10 + b"xyz\ncat note\nexit\n!"),
+    ("files-copy", b"G", b"write a saved\ncopy a b\nwrite a x\ncat b\ncopy b b\ncopy a note\ncat a\nexit\n!"),
     ("files-demo", b"G", b"write todo Ship Aurora\nwrite ideas Safer drivers\nls\ncat todo\nrm ideas\nexit\n!"),
     (
         "files-capacity",

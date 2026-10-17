@@ -161,6 +161,36 @@ def main():
         and b"files: note is reserved." in result.stdout,
         "shared append command semantics",
     )
+    result = execute(samples(b"write a original\ncopy a b\nwrite a changed\ncat b\ncat a\ncopy a a\nexit\n"))
+    require(
+        result.returncode == 0
+        and file_read(b"b", b"original") in result.stdout
+        and file_read(b"a", b"changed") in result.stdout
+        and file_written(b"b", 8) in result.stdout,
+        "copy retains independent source/destination bytes",
+    )
+    for command in (
+        b"copy",
+        b"copy ",
+        b"copy a",
+        b"copy a ",
+        b"copy  a",
+        b"copy a  b",
+        b"copy a b ",
+        b"copy a b c",
+        b"copy a .",
+        b"copy .. b",
+        b"copy a abcdefghi",
+        b"copy a/b c",
+    ):
+        result = execute(samples(b"write a saved\n" + command + b"\ncat a\nls\nexit\n"))
+        require(
+            result.returncode == 0
+            and b"files: invalid name or content." in result.stdout
+            and file_read(b"a", b"saved") in result.stdout
+            and b"files: a\r\n" in result.stdout,
+            f"copy grammar changed store: {command!r}",
+        )
     script = b"write a first\nwrite b second\nwrite c third\nwrite d fourth\nwrite e fifth\n"
     script += b"write a x\ncat a\nrm b\nwrite e \nls\ncat e\nrm absent\ncat absent\nrm note\nexit\n"
     result = execute(samples(script))
@@ -329,6 +359,7 @@ auto note_contract() -> i64 {
     files_source.write_text("""module files_policy;
 import std.bytes;
 import console.session_files;
+import console.protected_files;
 import std.binary_buffer;
 import std.binary;
 auto pack(builtin::span<const u8> text) -> std::BinaryBuffer64 {
@@ -434,6 +465,82 @@ auto append_contract() -> i64 {
     if (files.append_file(name, console::FileValue(zero, 1)) != console::FileEvent::invalid) { return 7; }
     const console::FileReply unchanged = files.read_file(name);
     if (unchanged.size() != 49 || unchanged.at(48) != 'a') { return 8; }
+    return 0;
+}
+auto copy_contract() -> i64 {
+    const std::BinaryBuffer64 zero = std::BinaryBuffer64();
+    console::SessionFiles files = console::SessionFiles(zero);
+    const console::FileName source = console::FileName(pack("Source"), 6);
+    const console::FileName destination = console::FileName(pack("abcdefgh"), 8);
+    const console::FileName absent = console::FileName(pack("source"), 6);
+    const console::FileName reserved = console::FileName(pack("note"), 4);
+    const console::FileValue empty = console::FileValue(zero, 0);
+    i64 length = 49;
+    while (length >= 0) {
+        std::BinaryBuffer64 bytes = zero;
+        i64 index = 0;
+        while (index < length) { bytes.write_u8(index, u8(32 + index)); index = index + 1; }
+        if (files.write_file(source, console::FileValue(bytes, length)) != console::FileEvent::written) { return 1; }
+        const console::FileReply copied = files.copy_file(source, destination);
+        const console::FileReply same = files.copy_file(source, source);
+        const console::FileReply original = files.read_file(source);
+        const console::FileReply duplicate = files.read_file(destination);
+        if (copied.status() != console::FileEvent::written || same.status() != console::FileEvent::written
+            || original.size() != length || duplicate.size() != length || duplicate.at(length) != '\\0') { return 2; }
+        index = 0;
+        while (index < length) {
+            if (original.at(index) != u8(32 + index) || duplicate.at(index) != original.at(index)) { return 3; }
+            index = index + 1;
+        }
+        length = length - 1;
+    }
+    files.write_file(console::FileName(pack("c"), 1), empty);
+    files.write_file(console::FileName(pack("d"), 1), empty);
+    files.write_file(source, console::FileValue(pack("keep"), 4));
+    files.write_file(destination, console::FileValue(pack("other"), 5));
+    const console::FileReply full = files.copy_file(source, absent);
+    const console::FileReply missing = files.copy_file(absent, destination);
+    const console::FileReply kept_source = files.read_file(source);
+    const console::FileReply kept_destination = files.read_file(destination);
+    const console::FileReply kept_absent = files.read_file(absent);
+    if (kept_source.size() != 4 || kept_source.at(3) != 'p'
+        || kept_destination.size() != 5 || kept_destination.at(4) != 'r'
+        || kept_absent.status() != console::FileEvent::missing) { return 9; }
+    const console::FileReply replaced = files.copy_file(source, destination);
+    const console::FileReply self = files.copy_file(source, source);
+    if (full.status() != console::FileEvent::full || missing.status() != console::FileEvent::missing
+        || replaced.status() != console::FileEvent::written || self.status() != console::FileEvent::written) {
+            return 4;
+        }
+    array<i64, 7> invalid = {-9223372036854775808, -1, 0, 9, 64, 65, 9223372036854775807};
+    i64 index = 0;
+    while (index < 7) {
+        const console::FileName bad = console::FileName(pack("Source"), invalid[index]);
+        const console::FileReply left = files.copy_file(bad, reserved);
+        const console::FileReply right = files.copy_file(reserved, bad);
+        if (left.status() != console::FileEvent::invalid || right.status() != console::FileEvent::invalid) { return 5; }
+        index = index + 1;
+    }
+    const console::FileReply reserved_source = files.copy_file(reserved, destination);
+    const console::FileReply reserved_destination = files.copy_file(source, reserved);
+    if (reserved_source.status() != console::FileEvent::reserved
+        || reserved_destination.status() != console::FileEvent::reserved) { return 6; }
+    console::ProtectedFiles protected_store = console::ProtectedFiles(files);
+    const console::FileSelection selected = protected_store.select(pack("upper Source"), 12);
+    const console::FileReply rejected = protected_store.submit(pack("copy Source source"), 18);
+    const console::FileReply retained = protected_store.project(selected);
+    const console::FileReply successful = protected_store.submit(pack("copy Source abcdefgh"), 20);
+    const console::FileReply stale = protected_store.project(selected);
+    if (rejected.status() != console::FileEvent::full || retained.status() != console::FileEvent::read
+        || successful.status() != console::FileEvent::written || stale.status() != console::FileEvent::invalid) {
+            return 7;
+        }
+    const console::FileSelection fresh = protected_store.select(pack("upper Source"), 12);
+    const console::FileReply self_copy = protected_store.submit(pack("copy Source Source"), 18);
+    const console::FileReply stale_self = protected_store.replace(fresh, pack("wrong"), 5);
+    if (self_copy.status() != console::FileEvent::written || stale_self.status() != console::FileEvent::invalid) {
+            return 8;
+        }
     return 0;
 }
 auto typed_files_contract() -> i64 {
@@ -599,6 +706,12 @@ auto files_snapshot(i64 stage) -> console::SessionFiles {
         const std::BinaryBuffer64 command_removed = pack(borrow_bytes(remove));
         const console::FileReply removed = files.submit(command_removed, 11);
     }
+    if (stage > 4) {
+        const console::FileReply source = files.submit(pack("write src x"), 11);
+        const console::FileReply destination = files.submit(pack("write dest old suffix"), 21);
+        if (stage == 6) { const console::FileReply blank = files.submit(pack("write src "), 10); }
+        const console::FileReply copied = files.submit(pack("copy src dest"), 13);
+    }
     return files;
 }
 """)
@@ -627,6 +740,7 @@ checked_files_snapshot:
 extern "C" long files_contract();
 extern "C" long typed_files_contract();
 extern "C" long append_contract();
+extern "C" long copy_contract();
 extern "C" long span_compare_contract();
 extern "C" void checked_files_snapshot(long, void*);
 int main() {
@@ -634,7 +748,8 @@ int main() {
     if (const auto result = files_contract()) return int(result);
     if (const auto result = typed_files_contract()) return 40 + int(result);
     if (const auto result = append_contract()) return 80 + int(result);
-    for (long stage = 0; stage != 5; ++stage) {
+    if (const auto result = copy_contract()) return 100 + int(result);
+    for (long stage = 0; stage != 7; ++stage) {
         std::array<unsigned char, 280> storage{};
         storage.fill(0xa5);
         checked_files_snapshot(stage, storage.data() + 8);
@@ -645,6 +760,14 @@ int main() {
             for (unsigned i = 0; i != 8; ++i) expected[2 + i] = "abcdefgh"[i];
             for (unsigned i = 0; i != expected[1]; ++i) expected[10 + i] = stage == 1 ? 'x' : 'y';
             expected[256] = 1;
+        }
+        if (stage > 4) {
+            expected[0] = 3; expected[1] = stage == 5 ? 1 : 0;
+            for (unsigned i = 0; i != 3; ++i) expected[2 + i] = "src"[i];
+            expected[64] = 4; expected[65] = expected[1];
+            for (unsigned i = 0; i != 4; ++i) expected[66 + i] = "dest"[i];
+            if (stage == 5) { expected[10] = 'x'; expected[74] = 'x'; }
+            expected[256] = 3;
         }
         for (unsigned i = 0; i != storage.size(); ++i) {
             if (storage[i] != (i < 8 || i >= 272 ? 0xa5 : expected[i - 8])) return 10 + int(stage);

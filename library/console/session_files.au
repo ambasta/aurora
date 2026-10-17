@@ -324,6 +324,29 @@ export namespace console {
             }
             return write_file(name, FileValue(bytes, length + suffix.size()));
         }
+        // Snapshot the source before the shared atomic write, including self-copy.
+        // A successful copy is a write and invalidates protected selections.
+        auto copy_file(FileName source, FileName destination) -> FileReply {
+            FileReply reply = FileReply();
+            if (!source.valid() || !destination.valid()) {
+                reply.select(FileEvent::invalid);
+                return reply;
+            }
+            if (source.reserved() || destination.reserved()) {
+                reply.select(FileEvent::reserved);
+                return reply;
+            }
+            const i64 found = find(source);
+            if (found < 0) {
+                reply.select(FileEvent::missing);
+                return reply;
+            }
+            const std::BinaryBuffer64 record = records[found];
+            const i64 length = i64(record.at(1));
+            const FileValue value = file_value(record, 10, length);
+            const FileEvent event = write_file(destination, value);
+            return file_write_reply(destination, length, event);
+        }
         auto remove(FileName name) -> FileEvent {
             if (!name.valid()) {
                 return FileEvent::invalid;
@@ -373,9 +396,14 @@ export namespace console {
             }
             i64 start = 0;
             FileEvent action = FileEvent::unknown;
+            const bool copying = command.starts_with(count, "copy ");
             const bool appending = command.starts_with(count, "append ");
             if (command.starts_with(count, "write ")) {
                 start = 6;
+                action = FileEvent::written;
+            }
+            if (copying) {
+                start = 5;
                 action = FileEvent::written;
             }
             if (appending) {
@@ -392,7 +420,8 @@ export namespace console {
             }
             if (action == FileEvent::unknown) {
                 if (command.equal(0, count, "write") || command.equal(0, count, "cat") || command.equal(0, count, "rm")
-                    || command.equal(0, count, "append") || command.starts_with(count, "ls ")) {
+                    || command.equal(0, count, "append") || command.equal(0, count, "copy")
+                    || command.starts_with(count, "ls ")) {
                     reply.select(FileEvent::invalid);
                 }
                 return reply;
@@ -412,6 +441,10 @@ export namespace console {
             if (action == FileEvent::removed) {
                 reply.select(remove(name));
                 return reply;
+            }
+            if (copying) {
+                const FileName destination = file_name(command, end + 1, count - end - 1);
+                return copy_file(name, destination);
             }
             const FileValue value = file_value(command, end + 1, count - end - 1);
             FileEvent event = FileEvent::unknown;

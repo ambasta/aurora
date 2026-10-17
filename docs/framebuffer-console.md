@@ -301,7 +301,7 @@ python3 -B -O tests/kernel-graphical-console.py --run /path/to/aurorac \
 
 A controlled `--developer-build-receipt` is also supported. Each run recompiles
 the observer and hashes its recursive quoted-header closure, including capture
-policy. The inventory requires 145 generated-consumer cases: 108 transcript/
+policy. The inventory requires 154 generated-consumer cases: 117 transcript/
 geometry, two session resets, 13 output failures and 22 entry denials.
 
 Qualification assigns each claim to its actual check:

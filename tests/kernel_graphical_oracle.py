@@ -106,7 +106,7 @@ FONT = {
 }
 
 RESPONSES = {
-    b"help": "write N TEXT; cat N; ls; rm N; help status exit; files lost on exit",
+    b"help": "copy S D; write N TEXT; cat N; ls; rm N; help status exit",
     b"status": "Boot self-tests passed; UEFI; timer polling; line capacity=64",
     b"exit": "AURORA_CONSOLE_EXIT",
     b"": " ",
@@ -131,6 +131,31 @@ def file_response(command, slots):
         names = [entry[0].decode("ascii") for entry in slots if entry is not None]
         return "files:" + "".join(" " + name for name in names) if names else "files: empty (RAM-only)."
     operation, separated, argument = command.partition(b" ")
+    if operation == b"copy":
+        names = argument.split(b" ")
+        allowed = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-"
+        if (
+            not separated
+            or len(names) != 2
+            or any(
+                not 1 <= len(name) <= 8 or name in (b".", b"..") or any(byte not in allowed for byte in name)
+                for name in names
+            )
+        ):
+            return "files: invalid name or content."
+        source, destination = names
+        if b"note" in names:
+            return "files: note is reserved."
+        contents = next((entry[1] for entry in slots if entry is not None and entry[0] == source), None)
+        if contents is None:
+            return "files: not found (RAM-only)."
+        target = next((i for i, entry in enumerate(slots) if entry is not None and entry[0] == destination), None)
+        if target is None:
+            target = next((i for i, entry in enumerate(slots) if entry is None), None)
+        if target is None:
+            return "files: full (4 files)."
+        slots[target] = (destination, contents)
+        return f"wrote {destination.decode('ascii')}: {len(contents)} byte" + ("s" if len(contents) != 1 else "")
     if operation not in (b"write", b"cat", b"rm", b"ls"):
         return UNKNOWN
     if not separated or operation == b"ls":
