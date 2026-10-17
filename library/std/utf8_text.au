@@ -1,0 +1,108 @@
+export module std.utf8_text;
+import std.utf8;
+import std.array;
+
+export namespace std {
+    enum class Utf8TextStatus {
+        success,
+        unavailable,
+        not_empty,
+        invalid_utf8,
+        truncated,
+        invalid_scalar,
+        allocation_failed
+    };
+    // Direct storage is intentional: nested owning classes are not supported.
+    // Keep the small reserve/copy transaction here until ByteBuffer composition
+    // can preserve the same ownership and returned-view contracts.
+    class Utf8Text {
+        builtin::OwnedBytes payload;
+        i64 length;
+        auto reserve(i64 count) -> bool {
+            if (!payload.ok() || count < 0) {
+                return false;
+            }
+            if (count <= payload.size()) {
+                return true;
+            }
+            i64 capacity = payload.size();
+            if (capacity > 4611686018427387903) {
+                capacity = 9223372036854775807;
+            } else {
+                capacity = capacity * 2;
+            }
+            if (capacity < count) {
+                capacity = count;
+            }
+            return payload.try_resize(capacity);
+        }
+    public:
+        // Allocation contents are never initially visible. An inert allocation
+        // remains unavailable; it cannot supply a readonly view.
+        Utf8Text(builtin::ByteRegion region, builtin::OwnedBytes initial) : payload(move(initial)), length(0) {
+        }
+        auto ok() const -> bool {
+            return payload.ok();
+        }
+        auto size() const -> i64 {
+            return length;
+        }
+        auto capacity() const -> i64 {
+            return payload.size();
+        }
+        auto bytes() const -> builtin::span<const u8> {
+            const builtin::span<const u8> all = borrow_bytes(payload);
+            return all.subspan(0, length);
+        }
+        // Only empty text accepts initialization. Every recoverable failure
+        // preserves bytes, length, capacity and committed allocation accounting.
+        auto try_initialize(builtin::span<const u8> input) -> Utf8TextStatus {
+            if (!payload.ok()) {
+                return Utf8TextStatus::unavailable;
+            }
+            if (length != 0) {
+                return Utf8TextStatus::not_empty;
+            }
+            const Utf8ValidationResult checked = validate_utf8(input, 0, input.size(), true);
+            if (checked.status() == Utf8Status::truncated) {
+                return Utf8TextStatus::truncated;
+            }
+            if (checked.status() != Utf8Status::success) {
+                return Utf8TextStatus::invalid_utf8;
+            }
+            if (!reserve(input.size())) {
+                return Utf8TextStatus::allocation_failed;
+            }
+            i64 index = 0;
+            while (index < input.size()) {
+                payload.set(index, input.at(index));
+                index = index + 1;
+            }
+            length = input.size();
+            return Utf8TextStatus::success;
+        }
+        auto try_append_scalar(u64 scalar) -> Utf8TextStatus {
+            const Utf8EncodeResult encoded = encode_utf8(scalar);
+            if (encoded.status() != Utf8EncodeStatus::success) {
+                return Utf8TextStatus::invalid_scalar;
+            }
+            if (!payload.ok()) {
+                return Utf8TextStatus::unavailable;
+            }
+            if (encoded.size() > 9223372036854775807 - length) {
+                return Utf8TextStatus::allocation_failed;
+            }
+            const i64 required = length + encoded.size();
+            if (!reserve(required)) {
+                return Utf8TextStatus::allocation_failed;
+            }
+            i64 index = 0;
+            while (index < encoded.size()) {
+                payload.set(length + index, encoded.byte_or(index, 0u8));
+                index = index + 1;
+            }
+            length = required;
+            return Utf8TextStatus::success;
+        }
+    };
+}

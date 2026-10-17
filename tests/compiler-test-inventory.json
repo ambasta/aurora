@@ -2093,6 +2093,29 @@
     "reason": "Complete existing runner in canonical Meson; artifact-managed cases retain fresh per-test outputs.",
     "root_make": true
   },
+  "utf8_text.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "meson_commands": {
+      "utf8-text": {
+        "arguments": [
+          "-B",
+          "-O",
+          "@SOURCE@/tests/compiler/utf8_text.py",
+          "@BUILD@/aurorac"
+        ],
+        "suites": [
+          "bytes",
+          "compiler",
+          "dev",
+          "full"
+        ]
+      }
+    },
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
   "value_calls.py": {
     "kind": "runner",
     "make": true,

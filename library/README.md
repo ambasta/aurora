@@ -96,7 +96,8 @@ failed output byte and never retries a command or committed update.
   finish/cancel and scrub transitions; native identity, run and publication authority stay private
 
 The [runtime/library roadmap](../docs/library-stack.md) distinguishes freestanding,
-kernel and user layers. Owned strings, general containers/algorithms, threading,
+kernel and user layers. A bounded `std.utf8_text` owner supports empty construction, checked initialization,
+Unicode scalar append and readonly bytes. General strings/containers/algorithms, threading,
 locale, process startup and persistent filesystem services remain open. A hosted
 allocation pass is not native runtime or kernel qualification. Test scope follows
 [development and qualification](../docs/developer-test-contract.md); use existing
@@ -106,3 +107,25 @@ The protected `tests/kernel-programs/call-snapshot-service.au` consumer uses
 `std.checksum` to compute CRC32C over a bounded readonly copied RAM snapshot.
 Its caller resumes through the sealed CallSession into live Aurora locals; the
 integer request carries no pointer or file authority.
+
+## Owned UTF-8 text
+
+The `std.utf8_text` module exports `std::Utf8Text`. Construct it with an explicit region and moved `OwnedBytes`;
+allocation contents start hidden and logical text is empty. Check `ok()` before
+borrowing. `try_initialize(span)` accepts only empty text, validates final UTF-8,
+and copies it transactionally. Successful empty initialization may repeat.
+`try_append_scalar(u64)` uses the existing checked UTF-8 encoder. Recoverable
+failures preserve bytes, length, capacity and committed region accounting.
+
+`bytes()` exposes only a readonly logical prefix tied to the owner lifetime;
+live views prevent mutation or movement. There is no mutable-byte access,
+substring owner, normalization, locale or general string API. Direct OwnedBytes
+storage deliberately duplicates the small ByteBuffer reserve/commit mechanism
+because nested owning fields remain unsupported; encoding/validation is shared.
+
+`std::append_json_text(output, text)` returns `JsonStringAppendStatus`. It reserves
+one complete output transaction, reuses ASCII escaping and copies valid UTF-8
+bytes without revalidation. A private singleton borrow helper supplies bytes
+within the existing multi-owner rules; no span escapes that helper. The existing
+JSON string example uses this API. Hosted allocation is not protected userspace
+allocation or filesystem authority.
