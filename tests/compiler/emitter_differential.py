@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compare an external old emitter with a candidate over the complete source corpus.
 
-Both explicitly supplied compilers receive identical paths/options, including all
+The explicitly supplied compilers receive identical paths/options, including all
 three outputs. Compare bytes, never parsed/normalized JSON or assembly. One run
 covers one selected flag profile; default, local symbols and referenced reflection
 are not interchangeable receipts. All evidence is retained in a new directory.
@@ -13,6 +13,8 @@ Text diagnostics are compared verbatim; JSON diagnostics require --check and do
 not exercise emission. Equal rejection is not an emitter-coverage observation.
 Success must replace each output inode; rejection must preserve bytes and file
 metadata. These observations do not prove fault-time or three-file atomicity.
+Historical inputs compare predecessor/C2; exactly two named Call consumers instead
+require exact predecessor rejection and successful byte-identical C1/C2 emission.
 """
 
 import argparse
@@ -50,6 +52,10 @@ EXPECTED_REJECTED = {
     "library/std/array.au",
     "library/std/utility.au",
 }
+# These two new API consumers are outside the immutable predecessor's language.
+# They still run through it, with exact rejection checks, and must emit identically
+# through C1/C2. This is a path-specific applicability rule, never rejection discovery.
+CALL_CONSUMERS = {"tests/compiler/call_service.au": (3, 22), "tests/kernel-programs/call-client.au": (2, 22)}
 
 
 def require(condition, message):
@@ -138,9 +144,9 @@ def observe(compiler, arguments, invocation, destination, root, timeout):
     return record
 
 
-def compare(case, runs, must_accept):
+def compare(case, runs, must_accept, labels=("old", "new")):
     problems = []
-    for label, run in zip(("old", "new"), runs, strict=True):
+    for label, run in zip(labels, runs, strict=True):
         status = run["returncode"]
         if status not in (0, 1):
             problems.append(f"{label}: crash or invocation failure ({status})")
@@ -167,19 +173,105 @@ def compare(case, runs, must_accept):
     if runs[0]["returncode"] != runs[1]["returncode"]:
         problems.append("exit status differs")
     for name in ("stdout.bin", "stderr.bin"):
-        if not bytes_equal(case / "old" / name, case / "new" / name):
+        if not bytes_equal(case / labels[0] / name, case / labels[1] / name):
             problems.append(f"{name} differs byte-for-byte")
     for name in OUTPUTS:
         if all(run["after"][name]["kind"] == "regular" for run in runs):
-            if not bytes_equal(case / "old/outputs" / name, case / "new/outputs" / name):
+            if not bytes_equal(case / labels[0] / "outputs" / name, case / labels[1] / "outputs" / name):
                 problems.append(f"{name} differs byte-for-byte")
     return problems
+
+
+def call_predecessor_problems(case, run, source, root):
+    relative = str(source.relative_to(root))
+    if relative not in CALL_CONSUMERS:
+        return ["not an explicitly named Call consumer"]
+    line, column = CALL_CONSUMERS[relative]
+    expected = f"{source}:{line}:{column}: error AU2001: expected 'array' (found 'CallSession')\n".encode()
+    problems = []
+    if run["returncode"] != 1 or run["unexpected_outputs"]:
+        problems.append("predecessor did not reject normally with only expected outputs")
+    if (case / "old/stdout.bin").read_bytes() or (case / "old/stderr.bin").read_bytes() != expected:
+        problems.append("predecessor Call diagnostic differs from exact expected rejection")
+    for name in OUTPUTS:
+        if (
+            run["before"][name] != run["after"][name]
+            or run["after"][name]["kind"] != "regular"
+            or (case / "old/outputs" / name).read_bytes() != SENTINELS[name]
+        ):
+            problems.append(f"predecessor Call rejection changed {name}")
+    return problems
+
+
+def oracle_controls(directory, root):
+    # Synthetic observations test the oracle itself, never compiler execution.
+    case = directory / "synthetic-oracle-controls"
+    runs = {}
+    for label in ("old", "c1", "new"):
+        output = case / label / "outputs"
+        output.mkdir(parents=True)
+        before = {}
+        for name in OUTPUTS:
+            path = output / name
+            path.write_bytes(SENTINELS[name])
+            before[name] = file_state(path)
+            if label != "old":
+                replacement = output / (name + ".replacement")
+                replacement.write_bytes(b"synthetic emitted output\n")
+                replacement.replace(path)
+        (case / label / "stdout.bin").write_bytes(b"")
+        (case / label / "stderr.bin").write_bytes(b"")
+        runs[label] = {
+            "returncode": 1 if label == "old" else 0,
+            "unexpected_outputs": [],
+            "before": before,
+            "after": {name: file_state(output / name) for name in OUTPUTS},
+        }
+    source = root / "tests/compiler/call_service.au"
+    diagnostic = f"{source}:3:22: error AU2001: expected 'array' (found 'CallSession')\n".encode()
+    stderr = case / "old/stderr.bin"
+    stderr.write_bytes(diagnostic)
+    old = runs["old"]
+    require(not call_predecessor_problems(case, old, source, root), "valid synthetic rejection failed")
+    require(call_predecessor_problems(case, old, root / "tests/compiler/other.au", root), "broad path exception")
+    for status in (0, -9, 2):
+        require(call_predecessor_problems(case, {**old, "returncode": status}, source, root), "wrong status accepted")
+    for wrong in (b"", diagnostic.replace(b"AU2001", b"AU9001"), diagnostic.replace(b":3:22:", b":2:22:")):
+        stderr.write_bytes(wrong)
+        require(call_predecessor_problems(case, old, source, root), "wrong diagnostic accepted")
+    stderr.write_bytes(diagnostic)
+    stdout = case / "old/stdout.bin"
+    stdout.write_bytes(b"unexpected")
+    require(call_predecessor_problems(case, old, source, root), "unexpected stdout accepted")
+    stdout.write_bytes(b"")
+    require(
+        call_predecessor_problems(case, {**old, "unexpected_outputs": ["extra"]}, source, root),
+        "unexpected output accepted",
+    )
+    for name in OUTPUTS:
+        path = case / "old/outputs" / name
+        path.write_bytes(b"changed")
+        require(call_predecessor_problems(case, old, source, root), "mutated rejection output accepted")
+        path.write_bytes(SENTINELS[name])
+        changed = {**old, "after": {**old["after"], name: {**old["after"][name], "inode": -1}}}
+        require(call_predecessor_problems(case, changed, source, root), "replaced rejection output accepted")
+    pair = [runs["c1"], runs["new"]]
+    require(not compare(case, pair, True, ("c1", "new")), "valid synthetic convergence failed")
+    for name in OUTPUTS:
+        path = case / "c1/outputs" / name
+        original = path.read_bytes()
+        path.write_bytes(b"mismatch")
+        require(compare(case, pair, True, ("c1", "new")), "C1/C2 output mismatch accepted")
+        path.write_bytes(original)
+    require(compare(case, [{**pair[0], "returncode": 1}, pair[1]], True, ("c1", "new")), "C1 rejection accepted")
+    write_json(case / "scope.json", {"scope": "synthetic oracle controls only", "state": "passed"})
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--old-compiler", type=Path, required=True, help="explicit external old-backend executable")
     parser.add_argument("--new-compiler", type=Path, required=True, help="explicit candidate executable")
+    parser.add_argument("--stage1-compiler", type=Path, required=True, help="current C1 for the two Call consumers")
     parser.add_argument("--source-root", type=Path, default=ROOT)
     parser.add_argument("--artifacts", type=Path, required=True, help="new directory; never removed, even on success")
     parser.add_argument("--local-symbols", action="store_true", help="apply to both compilers for every input")
@@ -188,17 +280,17 @@ def main():
     )
     args = parser.parse_args()
     root, artifacts = args.source_root.resolve(strict=True), args.artifacts.resolve()
-    compilers = [path.resolve(strict=True) for path in (args.old_compiler, args.new_compiler)]
+    labels = ("old", "new", "c1")
+    compilers = [path.resolve(strict=True) for path in (args.old_compiler, args.new_compiler, args.stage1_compiler)]
     for path in compilers:
         require(path.is_file() and os.access(path, os.X_OK), f"compiler is not executable: {path}")
-    compiler_ids = {
-        label: {"path": str(path), **identity(path)} for label, path in zip(("old", "new"), compilers, strict=True)
-    }
+    compiler_ids = {label: {"path": str(path), **identity(path)} for label, path in zip(labels, compilers, strict=True)}
     require(compiler_ids["old"]["sha256"] != compiler_ids["new"]["sha256"], "old and new compiler bytes are identical")
     for name in SOURCE_ROOTS:
         require((root / name).is_dir(), f"source root missing: {name}")
         require(not artifacts.is_relative_to(root / name), "artifacts must be outside the enumerated source roots")
     corpus = sources(root)
+    require({root / name for name in CALL_CONSUMERS}.issubset(corpus), "named Call consumers missing from corpus")
     modules = sorted((root / "compiler").glob("*.au"))
     decimal = root / "library/std/decimal_digits.au"
     required = {root / "compiler/frontend.au", root / "compiler/lexer.au", decimal, *modules}
@@ -213,9 +305,17 @@ def main():
     ]
     artifacts.mkdir(parents=True, exist_ok=False)
     print(f"Retaining emitter differential evidence: {artifacts}", flush=True)
-    report = {"state": "running", "total_inputs": len(corpus), "completed_inputs": 0, "accepted": 0, "rejected": 0}
+    report = {
+        "state": "running",
+        "total_inputs": len(corpus),
+        "completed_inputs": 0,
+        "accepted": 0,
+        "rejected": 0,
+        "call_converged": [],
+    }
     rejected = []
     try:
+        oracle_controls(artifacts, root)
         original_sources = source_identities(root)
         bridge_identity = identity(ROOT / "scripts/frontend_bridge.py")
         module_root = artifacts / "compiler-modules"
@@ -237,6 +337,7 @@ def main():
                 "sources": original_sources,
                 "compilers": compiler_ids,
                 "flags": flags,
+                "call_consumers": CALL_CONSUMERS,
                 "staged_modules": staged,
                 "harness": identity(Path(__file__)),
                 "staging_helper": identity(ROOT / "scripts/bootstrap_frontend.py"),
@@ -268,19 +369,29 @@ def main():
             timeout = 90 if source == root / "compiler/frontend.au" else 30
             runs = [
                 observe(compiler, arguments, invocation, case / label, root, timeout)
-                for label, compiler in zip(("old", "new"), compilers, strict=True)
+                for label, compiler in zip(labels[:2], compilers[:2], strict=True)
             ]
             must_accept = str(relative) not in EXPECTED_REJECTED
-            problems = compare(case, runs, must_accept)
+            if str(relative) in CALL_CONSUMERS:
+                c1 = observe(compilers[2], arguments, invocation, case / "c1", root, timeout)
+                problems = call_predecessor_problems(case, runs[0], source, root)
+                problems += compare(case, [c1, runs[1]], True, ("c1", "new"))
+            else:
+                problems = compare(case, runs, must_accept)
             write_json(case / "comparison.json", {"source": str(relative), "problems": problems})
             report["completed_inputs"] += 1
             if not problems:
-                report["accepted" if runs[0]["returncode"] == 0 else "rejected"] += 1
-                if runs[0]["returncode"] != 0:
+                if str(relative) in CALL_CONSUMERS:
+                    report["call_converged"].append(str(relative))
+                elif runs[0]["returncode"] == 0:
+                    report["accepted"] += 1
+                else:
+                    report["rejected"] += 1
                     rejected.append(str(relative))
             write_json(artifacts / "summary.json", report)
             require(not problems, str(relative) + ": " + "; ".join(problems))
         report["rejected_sources"] = rejected
+        require(set(report["call_converged"]) == set(CALL_CONSUMERS), "Call convergence coverage changed")
         require(
             set(rejected) == EXPECTED_REJECTED,
             f"rejected inputs changed: new {sorted(set(rejected) - EXPECTED_REJECTED)}, "
@@ -295,7 +406,7 @@ def main():
             == staged,
             "staged modules changed during comparison",
         )
-        for label, compiler in zip(("old", "new"), compilers, strict=True):
+        for label, compiler in zip(labels, compilers, strict=True):
             require({"path": str(compiler), **identity(compiler)} == compiler_ids[label], f"{label} compiler changed")
         report["state"] = "passed"
     except BaseException as error:
@@ -305,8 +416,8 @@ def main():
     finally:
         write_json(artifacts / "summary.json", report)
     print(
-        "PASS external old/new corpus assembly, stack JSON, ABI JSON, diagnostics and output preservation: "
-        + json.dumps(report),
+        "PASS historical predecessor/C2 and named Call rejection+C1/C2: "
+        "assembly, stack, ABI, diagnostics, preservation: " + json.dumps(report),
         flush=True,
     )
 

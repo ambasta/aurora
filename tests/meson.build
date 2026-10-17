@@ -621,13 +621,14 @@ test('hosted-lexer-bootstrap-corpus', python, args: bootstrap_args + ['--corpus'
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 600,
      is_parallel: false, priority: 1)
 # The predecessor still carries the C++ x86 backend; the Aurora backend must emit
-# byte-identical assembly, stack and ABI JSON for the whole corpus in both profiles.
+# byte-identical assembly, stack and ABI JSON for historical inputs in both profiles.
+# Exactly two new Call consumers require exact predecessor rejection and C1/C2 convergence.
 foreach profile : [['default', []], ['closed', ['--local-symbols', '--referenced-reflection-only']]]
   test('emitter-differential-' + profile[0], python,
        args: ['-B', artifact_adapter, python, '-B', files('compiler/emitter_differential.py'),
-              '--old-compiler', bootstrap_compiler, '--new-compiler', aurorac_stage2,
+              '--old-compiler', bootstrap_compiler, '--new-compiler', aurorac_stage2, '--stage1-compiler', aurorac,
               '--source-root', meson.project_source_root()] + profile[1] + ['--artifacts', '@ARTIFACTS@'],
-       depends: aurorac_stage2, suite: ['full', 'slow', 'compiler'], env: oracle_env,
+       depends: [aurorac, aurorac_stage2], suite: ['full', 'slow', 'compiler'], env: oracle_env,
        workdir: meson.current_build_dir(), timeout: 900, is_parallel: false)
 endforeach
 

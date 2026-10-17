@@ -389,6 +389,8 @@
           "@PREDECESSOR@",
           "--new-compiler",
           "@BUILD@/aurorac-stage2",
+          "--stage1-compiler",
+          "@BUILD@/aurorac",
           "--source-root",
           "@SOURCE@",
           "--artifacts",
@@ -411,6 +413,8 @@
           "@PREDECESSOR@",
           "--new-compiler",
           "@BUILD@/aurorac-stage2",
+          "--stage1-compiler",
+          "@BUILD@/aurorac",
           "--source-root",
           "@SOURCE@",
           "--local-symbols",
@@ -425,7 +429,7 @@
         ]
       }
     },
-    "reason": "Byte-exact assembly, stack and ABI JSON against the predecessor's C++ x86 backend over the whole checked-in corpus, in the default and closed profiles.",
+    "reason": "Byte-exact predecessor comparison over every historical corpus input in both profiles; exactly two new Call consumers require exact predecessor rejection and C1/C2 emission convergence.",
     "root_make": true
   },
   "enum_composition.py": {
