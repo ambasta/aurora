@@ -58,7 +58,7 @@ auto json_codecs_example(builtin::ByteRegion region, i64 initial_capacity, i64 o
         const builtin::span<const u8> text = decoded.bytes();
         const std::JsonStringAppendResult written = std::append_json_string(output, text, 0, text.size());
         if (written.status() != std::JsonStringAppendStatus::success) {
-            return -6;
+            return -5;
         }
     }
     // Accepted receiver-bound views expose logical bytes, never spare capacity.
