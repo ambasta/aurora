@@ -444,6 +444,13 @@ export namespace compiler_ir_instructions {
             unaryOperation(0), binaryOperation(0), comparisonOperation(0), queryOperation(0), operandBegin(begin),
             operandCount(count) {
         }
+        auto operators(i64 unary_value, i64 binary_value, i64 comparison_value, i64 query_value) -> bool {
+            unaryOperation = unary_value;
+            binaryOperation = binary_value;
+            comparisonOperation = comparison_value;
+            queryOperation = query_value;
+            return true;
+        }
         auto kind() const -> i64 {
             return recordKind;
         }
@@ -593,6 +600,11 @@ export namespace compiler_ir_instructions {
         return move(result);
     }
     class InstructionStore {
+        i64 projectionPhase;
+        i64 projectionInstructions;
+        i64 projectionOperands;
+        i64 projectionLiterals;
+        i64 projectionBodies;
         builtin::OwnedValues<RawInstructionRow> instructions;
         builtin::OwnedValues<RawOperandRow> operands;
         builtin::OwnedBytes literals;
@@ -939,11 +951,62 @@ export namespace compiler_ir_instructions {
             return true;
         }
     public:
-        InstructionStore(builtin::ByteRegion region, InstructionCounts counts) : instructions(instruction_pool(region,
-            counts.instruction_count())), operands(operand_pool(region, counts.operand_count())),
-            literals(region.try_allocate(counts.literal_count())), codeOrder(code_pool(region,
+        InstructionStore(builtin::ByteRegion region, InstructionCounts counts) : projectionPhase(0),
+            projectionInstructions(0), projectionOperands(0), projectionLiterals(0), projectionBodies(0),
+            instructions(instruction_pool(region, counts.instruction_count())), operands(operand_pool(region,
+            counts.operand_count())), literals(region.try_allocate(counts.literal_count())), codeOrder(code_pool(region,
             counts.instruction_count())), bodies(body_pool(region, counts.body_count())),
             statusValue(InstructionStatus::pending), errorValue(InstructionError::none) {
+        }
+        auto begin_direct_projection() -> bool {
+            if (statusValue != InstructionStatus::pending || projectionPhase != 0 || !allocated()) {
+                return reject(InstructionError::integrity);
+            }
+            projectionPhase = 2;
+            return true;
+        }
+        auto projection_instruction(RawInstructionRow value) -> bool {
+            const CodeRow code = CodeRow(projectionInstructions + 1, -1, 0u64, 0);
+            if (statusValue != InstructionStatus::pending || projectionPhase != 2 || projectionInstructions
+                >= instructions.size() || !instructions.set(projectionInstructions, value)
+                || !codeOrder.set(projectionInstructions, code)) {
+                return reject(InstructionError::integrity);
+            }
+            projectionInstructions = projectionInstructions + 1;
+            return true;
+        }
+        auto projection_operand(RawOperandRow value) -> bool {
+            if (statusValue != InstructionStatus::pending || projectionPhase != 2 || projectionOperands
+                >= operands.size() || !operands.set(projectionOperands, value)) {
+                return reject(InstructionError::integrity);
+            }
+            projectionOperands = projectionOperands + 1;
+            return true;
+        }
+        auto projection_literal(u8 value) -> bool {
+            if (statusValue != InstructionStatus::pending || projectionPhase != 2 || projectionLiterals
+                >= literals.size() || !literals.set(projectionLiterals, value)) {
+                return reject(InstructionError::integrity);
+            }
+            projectionLiterals = projectionLiterals + 1;
+            return true;
+        }
+        auto projection_body(BodyRow value) -> bool {
+            if (statusValue != InstructionStatus::pending || projectionPhase != 2 || projectionBodies >= bodies.size()
+                || !bodies.set(projectionBodies, value)) {
+                return reject(InstructionError::integrity);
+            }
+            projectionBodies = projectionBodies + 1;
+            return true;
+        }
+        auto complete_projection() -> bool {
+            if (statusValue != InstructionStatus::pending || projectionPhase != 2 || projectionInstructions
+                != instructions.size() || projectionOperands != operands.size() || projectionLiterals != literals.size()
+                || projectionBodies != bodies.size()) {
+                return reject(InstructionError::integrity);
+            }
+            projectionPhase = 3;
+            return true;
         }
         auto initialize(InstructionCounts counts) -> bool {
             if (statusValue != InstructionStatus::pending) {
@@ -1034,8 +1097,8 @@ export namespace compiler_ir_instructions {
             return false;
         }
         auto admit() -> bool {
-            if (statusValue != InstructionStatus::pending) {
-                return false;
+            if (statusValue != InstructionStatus::pending || (projectionPhase != 0 && projectionPhase != 3)) {
+                return reject(InstructionError::integrity);
             }
             statusValue = InstructionStatus::admitted;
             return true;

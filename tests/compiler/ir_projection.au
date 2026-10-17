@@ -1,0 +1,514 @@
+module projection_checks;
+import aurora.compiler.ir_projection;
+import aurora.compiler.ir_metadata_storage;
+import aurora.compiler.ir_instruction_storage;
+import aurora.compiler.resolution_arena;
+import aurora.compiler.resolution_rows;
+import aurora.compiler.resolution_kinds;
+import aurora.compiler.lowering_storage;
+import aurora.compiler.lowering_kinds;
+import aurora.compiler.lowering_errors;
+import aurora.compiler.syntax_arena;
+import aurora.compiler.lexer;
+
+// These fixtures drive private pending states directly; they do not replace
+// graph validation or claim that an empty module passes semantic admission.
+auto prepare(compiler_projection::Plan& plan, builtin::span<const u8> table, i64 types) -> bool {
+    if (!plan.begin(0, 0, 0, 1) || !plan.finish() || !plan.bind(table) || !plan.seal_domains() || !plan.begin_order()
+        || !plan.order_complete(0, 0) || !plan.begin_measure()) {
+        return false;
+    }
+    if (plan.reserve(1, types) != 0 || !plan.mark_instructions() || !plan.begin_fill() || plan.reserve(1, types) != 0
+        || !plan.mark_instructions()) {
+        return false;
+    }
+    return plan.complete_fill();
+}
+auto record(compiler_resolver::Session& session, compiler_lowering::RecordKind kind) -> i64 {
+    const i64 begin = session.operand_count();
+    i64 at = 0;
+    bool complete = false;
+    while (!complete && at < 32) {
+        const compiler_projection::GraphShape shape = compiler_projection::graph_shape(kind, at);
+        if (shape.mode == 14) {
+            complete = true;
+        } else {
+            if (shape.mode == 0) {
+                return -1;
+            }
+            i64 value = 0;
+            if (shape.role == compiler_lowering::OperandRole::SupportedServiceGroups) {
+                value = 62;
+            }
+            const compiler_lowering::OperandRow operand = compiler_lowering::OperandRow(shape.role, value, 0u64, 0, 0);
+            if (session.append_operand(operand) < 0) {
+                return -1;
+            }
+            at = at + 1;
+        }
+    }
+    if (!complete) {
+        return -1;
+    }
+    const compiler_lowering::OutputRow row = compiler_lowering::OutputRow(kind,
+        compiler_lowering::InstructionForm::Label, begin, at);
+    return session.append_output(row);
+}
+auto seed(compiler_resolver::Session& session, i64 mode, i64 stamp) -> i64 {
+    if (!session.reserve_diagnostic_payload() || record(session, compiler_lowering::RecordKind::Configuration) != 1) {
+        return -1;
+    }
+    i64 at = 2;
+    while (at < 14) {
+        compiler_lowering::RecordKind kind = compiler_lowering::RecordKind::ScalarContract;
+        if (at >= 9) {
+            kind = compiler_lowering::RecordKind::ServiceContract;
+        }
+        if (record(session, kind) != at) {
+            return -1;
+        }
+        at = at + 1;
+    }
+    if (record(session, compiler_lowering::RecordKind::InitialLayoutOrder) != 14 || record(session,
+        compiler_lowering::RecordKind::Module) != 15) {
+        return -1;
+    }
+    const compiler_lowering::OutputRow root = session.view_output(15);
+    if (mode >= 33 && mode <= 36) {
+        if (record(session, compiler_lowering::RecordKind::UnreadLocal) != 16) {
+            return -1;
+        }
+        if (mode == 35 && record(session, compiler_lowering::RecordKind::UnreadLocal) != 17) {
+            return -1;
+        }
+        const i64 begin = session.operand_count();
+        const compiler_lowering::OperandRow reference = compiler_lowering::OperandRow(
+            compiler_lowering::OperandRole::OutputRowId, 16, 0u64, 0, 0);
+        if (session.append_operand(reference) < 0) {
+            return -1;
+        }
+        i64 count = 1;
+        if (mode == 33) {
+            count = 2;
+            if (session.append_operand(reference) < 0) {
+                return -1;
+            }
+        }
+        const compiler_lowering::OperandRow list = compiler_lowering::OperandRow(
+            compiler_lowering::OperandRole::LintDiagnostics, 0, 0u64, begin, count);
+        if (!session.set_operand(root.operand_begin() + 6, list)) {
+            return -1;
+        }
+        if (mode == 34) {
+            const compiler_lowering::OutputRow overlap = compiler_lowering::OutputRow(
+                compiler_lowering::RecordKind::UnreadLocal, compiler_lowering::InstructionForm::Label, 3, 1);
+            if (!session.set_output(16, overlap)) {
+                return -1;
+            }
+        }
+        if (mode == 36) {
+            const compiler_lowering::OutputRow child = session.view_output(16);
+            const compiler_lowering::OutputRow wrong = compiler_lowering::OutputRow(
+                compiler_lowering::RecordKind::DescriptorView, compiler_lowering::InstructionForm::Label,
+                child.operand_begin(), child.operand_count());
+            if (!session.set_output(16, wrong)) {
+                return -1;
+            }
+        }
+    }
+    // Empty slices may share the one-past-end boundary without claiming storage.
+    if (mode == 37) {
+        at = 0;
+        while (at < root.operand_count()) {
+            const compiler_lowering::OperandRow prior = session.view_operand(root.operand_begin() + at);
+            const compiler_lowering::OperandRow empty = compiler_lowering::OperandRow(prior.role(), 0, 0u64,
+                session.operand_count(), 0);
+            if (!session.set_operand(root.operand_begin() + at, empty)) {
+                return -1;
+            }
+            at = at + 1;
+        }
+    }
+    if (mode == 38 || mode == 39) {
+        const i64 begin = session.operand_count();
+        const compiler_lowering::OperandRow label = compiler_lowering::OperandRow(
+            compiler_lowering::OperandRole::LabelId, 0, 0u64, 0, 0);
+        if (session.append_operand(label) < 0) {
+            return -1;
+        }
+        const compiler_lowering::OutputRow row = compiler_lowering::OutputRow(
+            compiler_lowering::RecordKind::Instruction, compiler_lowering::InstructionForm::Label, begin, 1);
+        const i64 id = session.append_output(row);
+        if (id < 0 || (mode == 38 && !session.discard_instruction(id))) {
+            return -1;
+        }
+    }
+    if (mode == 40 || mode == 41) {
+        compiler_lowering::RecordKind kind = compiler_lowering::RecordKind::Descriptor;
+        compiler_lowering::OperandRole role = compiler_lowering::OperandRole::Descriptors;
+        i64 slot = 3;
+        if (mode == 41) {
+            kind = compiler_lowering::RecordKind::EnumCases;
+            role = compiler_lowering::OperandRole::Enumerations;
+            slot = 5;
+        }
+        if (record(session, kind) != 16 || record(session, kind) != 17) {
+            return -1;
+        }
+        const i64 begin = session.operand_count();
+        at = 16;
+        while (at < 18) {
+            const compiler_lowering::OperandRow reference = compiler_lowering::OperandRow(
+                compiler_lowering::OperandRole::OutputRowId, at, 0u64, 0, 0);
+            if (session.append_operand(reference) < 0) {
+                return -1;
+            }
+            at = at + 1;
+        }
+        const compiler_lowering::OperandRow list = compiler_lowering::OperandRow(role, 0, 0u64, begin, 2);
+        if (!session.set_operand(root.operand_begin() + slot, list)) {
+            return -1;
+        }
+    }
+    if (!session.seal_projection(stamp)) {
+        return -1;
+    }
+    if (mode == 42) {
+        return 14;
+    }
+    return 15;
+}
+auto entry(builtin::ByteRegion region, i64 mode, i64 flag) -> i64 {
+    compiler_projection::Plan plan = compiler_projection::Plan(region);
+    if (mode >= 32) {
+        compiler_resolver::Session session = compiler_resolver::create(region);
+        const i64 root = seed(session, mode, 1);
+        if (root < 0) {
+            return 100;
+        }
+        const bool accepted = compiler_projection::graph(plan, session, root);
+        const bool valid = mode == 32 || mode == 37 || mode == 38 || mode == 40 || mode == 41 || mode == 43;
+        if (accepted != valid) {
+            if (valid) {
+                return 100;
+            }
+            return 30;
+        }
+        if (!valid) {
+            return 0;
+        }
+        const i64 count = plan.identity_count();
+        const i64 size = 8 + count * 80;
+        builtin::OwnedBytes table = region.try_allocate(size);
+        if (!table.ok()) {
+            return 100;
+        }
+        i64 at = 0;
+        while (at < size / 8) {
+            i64 value = 0;
+            if (at == 0) {
+                value = count;
+            } else {
+                const i64 field =(at - 1) % 10;
+                const compiler_projection::Identity identity = plan.identity((at - 1) / 10);
+                if (field == 0) {
+                    value = identity.domain;
+                }
+                if (field == 1) {
+                    value = identity.id;
+                }
+                if (field == 3) {
+                    value = size;
+                }
+            }
+            const u64 bits = compiler_projection::word_bits(value);
+            i64 byte = 0;
+            while (byte < 8) {
+                if (!table.set(at * 8 + byte, u8((bits >> (byte * 8)) & 255u64))) {
+                    return 100;
+                }
+                byte = byte + 1;
+            }
+            at = at + 1;
+        }
+        const builtin::span<const u8> input = borrow_bytes(table);
+        if (!plan.bind(input)) {
+            return 100;
+        }
+        if (mode == 43) {
+            compiler_resolver::Session other = compiler_resolver::create(region);
+            if (seed(other, mode, 2) != root) {
+                return 100;
+            }
+            if (compiler_projection::finish_plan(plan, other)) {
+                return 31;
+            }
+            return 0;
+        }
+        const bool finished = compiler_projection::finish_plan(plan, session);
+        if (mode == 40 || mode == 41) {
+            if (finished) {
+                return 32;
+            }
+        } else {
+            if (!finished) {
+                return 100;
+            }
+        }
+        return 0;
+    }
+    if (mode >= 9) {
+        builtin::OwnedBytes bytes = region.try_allocate(89);
+        if (!bytes.ok()) {
+            return 100;
+        }
+        i64 at = 0;
+        while (at < 89) {
+            if (!bytes.set(at, 0u8)) {
+                return 100;
+            }
+            at = at + 1;
+        }
+        i64 domain = 3;
+        if (mode == 19 || mode == 24 || mode == 31) {
+            domain = 6;
+        }
+        if (mode == 20 || mode == 29) {
+            domain = 7;
+        }
+        if (mode == 21 || mode == 30) {
+            domain = 8;
+        }
+        if (mode == 22 || mode == 23) {
+            domain = 4;
+        }
+        if (!plan.begin(0, 1, 0, 1) || !plan.request(domain, 0) || !plan.finish()) {
+            return 100;
+        }
+        i64 field = 0;
+        while (field < 11) {
+            i64 value = 0;
+            if (field == 0) {
+                value = 1;
+                if (mode == 16) {
+                    value = 2;
+                }
+            }
+            if (field == 1) {
+                value = domain;
+                if (mode == 15) {
+                    value = 4;
+                }
+            }
+            if (field == 2 && mode == 14) {
+                value = 1;
+            }
+            if (field == 3) {
+                if (mode == 9) {
+                    value = 18;
+                }
+                if (mode == 10) {
+                    value = 19;
+                }
+                if (mode == 19) {
+                    value = 2147483648;
+                }
+                if (mode == 20) {
+                    value = 4;
+                }
+                if (mode == 21) {
+                    value = 6;
+                }
+                if (mode == 22) {
+                    value = 1;
+                }
+                if (mode == 28) {
+                    value = -1;
+                }
+                if (mode == 29) {
+                    value = 3;
+                }
+                if (mode == 30) {
+                    value = 5;
+                }
+                if (mode == 31) {
+                    value = 2147483647;
+                }
+            }
+            if (field == 4) {
+                value = 88;
+                if (mode == 17) {
+                    value = 0;
+                }
+                if (mode == 27) {
+                    value = 90;
+                }
+            }
+            if (field == 5 && mode == 18) {
+                value = 2;
+            }
+            if (field == 5 && mode == 24) {
+                value = 1;
+            }
+            if (field == 6 && mode == 11) {
+                value = 19;
+            }
+            if (field == 6 && mode == 23) {
+                value = 1;
+            }
+            if (field == 7 && mode == 12) {
+                value = 2147483648;
+            }
+            if (field == 8 && mode == 13) {
+                value = -1;
+            }
+            const u64 bits = compiler_projection::word_bits(value);
+            at = 0;
+            while (at < 8) {
+                if (!bytes.set(field * 8 + at, u8((bits >> (at * 8)) & 255u64))) {
+                    return 100;
+                }
+                at = at + 1;
+            }
+            field = field + 1;
+        }
+        const builtin::span<const u8> whole = borrow_bytes(bytes);
+        i64 length = 89;
+        if (mode == 26) {
+            length = 87;
+        }
+        const builtin::span<const u8> input = whole.subspan(0, length);
+        const bool accepted = plan.bind(input);
+        const bool expected = mode == 9 || mode == 25 || mode >= 29;
+        if (accepted != expected) {
+            if (expected) {
+                return 100;
+            }
+            return 21;
+        }
+        if (plan.bind(input)) {
+            return 22;
+        }
+        return 0;
+    }
+    if (mode == 0) {
+        const compiler_projection::ProjectionCounts before = plan.counts();
+        if (before.callables != -1) {
+            return 1;
+        }
+        compiler_resolver::Session first = compiler_resolver::create(region);
+        compiler_resolver::Session second = compiler_resolver::create(region);
+        if (!first.seal_projection(1) || !second.seal_projection(2)) {
+            return 100;
+        }
+        if (first.seal_projection(3) || first.projection_stamp() != 1) {
+            return 2;
+        }
+        if (!plan.begin(0, 0, 0, first.projection_stamp()) || !plan.finish()) {
+            return 100;
+        }
+        if (!plan.matches_session(first.projection_stamp(), 0, 0) || plan.matches_session(second.projection_stamp(), 0,
+            0) || plan.matches_session(first.projection_stamp(), 1, 0)) {
+            return 3;
+        }
+        if (compiler_projection::finish_plan(plan, second) || compiler_projection::finish_plan(plan, first)) {
+            return 4;
+        }
+        const compiler_projection::ProjectionCounts after = plan.counts();
+        if (after.callables != -1) {
+            return 5;
+        }
+        return 0;
+    }
+    if (mode >= 1 && mode <= 4) {
+        compiler_ir_metadata::MetadataStore store = compiler_ir_metadata::MetadataStore(region);
+        const compiler_ir_metadata::CoreCounts core = compiler_ir_metadata::CoreCounts(2, 0, 0, 0, 0);
+        const compiler_ir_metadata::MapCounts maps = compiler_ir_metadata::MapCounts(0, 0, 0, 0, 0);
+        const compiler_ir_metadata::InputCounts counts = compiler_ir_metadata::InputCounts(core, maps);
+        if (!store.initialize(counts, 0, 0, 0) || !store.begin_projection_fill()) {
+            return 100;
+        }
+        if (mode == 1) {
+            if (store.begin() || store.projection_byte(0, 0u8)) {
+                return 11;
+            }
+        }
+        if (mode == 2) {
+            if (store.complete_projection() || store.projection_byte(0, 0u8)) {
+                return 12;
+            }
+        }
+        if (mode == 3) {
+            if (!store.projection_byte(0, 0u8) || store.projection_byte(0, 0u8) || store.projection_byte(1, 0u8)) {
+                return 13;
+            }
+        }
+        if (mode == 4) {
+            if (!store.projection_byte(0, 0u8) || !store.projection_byte(1, 0u8) || !store.complete_projection()
+                || store.complete_projection()) {
+                return 14;
+            }
+        }
+        return 0;
+    }
+    builtin::OwnedBytes table = region.try_allocate(8);
+    if (!table.ok()) {
+        return 100;
+    }
+    i64 at = 0;
+    while (at < 8) {
+        if (!table.set(at, 0u8)) {
+            return 100;
+        }
+        at = at + 1;
+    }
+    const builtin::span<const u8> input = borrow_bytes(table);
+    if (!prepare(plan, input, 1)) {
+        return 100;
+    }
+    if (mode == 5 || mode == 6) {
+        compiler_ir_metadata::MetadataStore store = compiler_ir_metadata::MetadataStore(region);
+        i64 leaves = 0;
+        i64 begin = 1;
+        if (mode == 5) {
+            leaves = 1;
+        }
+        if (mode == 6) {
+            begin = 0;
+        }
+        const compiler_ir_metadata::CoreCounts core = compiler_ir_metadata::CoreCounts(0, 1, 0, 0, leaves);
+        const compiler_ir_metadata::MapCounts maps = compiler_ir_metadata::MapCounts(0, 0, 0, 0, 0);
+        const compiler_ir_metadata::InputCounts counts = compiler_ir_metadata::InputCounts(core, maps);
+        if (!store.initialize(counts, 0, 0, begin)) {
+            return 100;
+        }
+        if (compiler_projection::fill_metadata(store, plan)) {
+            return 15;
+        }
+        return 0;
+    }
+    if (mode == 7) {
+        compiler_ir_metadata::MetadataStore store = compiler_ir_metadata::MetadataStore(region);
+        const compiler_projection::ProjectionCounts counts = plan.counts();
+        const compiler_ir_metadata::InputCounts metadata = counts.metadata;
+        if (!store.initialize(metadata, counts.callables, counts.slots, counts.instructionBegin)) {
+            return 100;
+        }
+        if (!compiler_projection::fill_metadata(store, plan)) {
+            return 17;
+        }
+        if (compiler_projection::fill_metadata(store, plan)) {
+            return 18;
+        }
+        return 0;
+    }
+    const compiler_ir_instructions::InstructionCounts counts = compiler_ir_instructions::InstructionCounts(1, 0, 0, 0);
+    compiler_ir_instructions::InstructionStore store = compiler_ir_instructions::InstructionStore(region, counts);
+    if (!store.allocated()) {
+        return 100;
+    }
+    if (!store.begin_direct_projection() || store.complete_projection() || store.admit()) {
+        return 19;
+    }
+    return 0;
+}

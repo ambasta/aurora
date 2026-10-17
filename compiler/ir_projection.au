@@ -1,0 +1,4357 @@
+export module aurora.compiler.ir_projection;
+import aurora.compiler.lowering_kinds;
+import aurora.compiler.lowering_storage;
+import aurora.compiler.resolution_arena;
+import aurora.compiler.resolver;
+import aurora.compiler.resolution_rows;
+import aurora.compiler.resolution_kinds;
+import aurora.compiler.lowering_errors;
+import aurora.compiler.syntax_arena;
+import aurora.compiler.lexer;
+import aurora.compiler.ir_metadata_storage;
+import aurora.compiler.ir_instruction_storage;
+
+export namespace compiler_projection {
+    class Shape {
+    public:
+        compiler_lowering::OperandRole role;
+        i64 mode;
+        Shape(compiler_lowering::OperandRole value, i64 category) : role(value), mode(category) {
+        }
+    };
+    // Closed prototype field walk. Mode zero rejects; fourteen ends a prefix.
+    auto instruction_shape(compiler_lowering::InstructionForm form, i64 position) -> Shape {
+        if (form == compiler_lowering::InstructionForm::BindServiceParameter) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Index, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::ServiceKindId, 7);
+            }
+            if (position == 3) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::AcquireServiceLoan) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::LoanId, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::ServiceKindId, 7);
+            }
+            if (position == 3) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::ReleaseServiceLoan) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::LoanId, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::ServiceKindId, 7);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::ServiceOperation) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::ServiceOperationId, 8);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::ResultOffset, 1);
+            }
+            if (position == 3) {
+                return Shape(compiler_lowering::OperandRole::ServiceKindId, 7);
+            }
+            if (position == 4) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::ServiceCall) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::CalleeSymbolId, 4);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::LoanId, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::ResultOffset, 1);
+            }
+            if (position == 3) {
+                return Shape(compiler_lowering::OperandRole::SpanArguments, 9);
+            }
+            if (position == 4) {
+                return Shape(compiler_lowering::OperandRole::ServiceKindId, 7);
+            }
+            if (position == 5) {
+                return Shape(compiler_lowering::OperandRole::AdditionalServices, 10);
+            }
+            if (position == 6) {
+                return Shape(compiler_lowering::OperandRole::ObjectArguments, 9);
+            }
+            if (position == 7) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::Constant) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::SignedConstant, 13);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::TypeId, 3);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::EnumConstant) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::TypeId, 3);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::CaseIndex, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::Load) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::TypeId, 3);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::Store) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::TypeId, 3);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::Push) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::Pop) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::UnaryValue) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::OperandTypeId, 3);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::BinaryValue) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::OperandTypeId, 3);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::Convert) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::SourceTypeId, 3);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::ResultTypeId, 3);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::Compare) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::OperandTypeId, 3);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::BoundsGuard) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::Length, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::ElementTypeId, 3);
+            }
+            if (position == 3) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::IndexLoad) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::Length, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::ElementTypeId, 3);
+            }
+            if (position == 3) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::IndexStore) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::Length, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::ElementTypeId, 3);
+            }
+            if (position == 3) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::BorrowHandle) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::OwnerOffset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::ReferenceTypeId, 3);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::Call) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::CalleeSymbolId, 4);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::AggregateCall) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::CalleeSymbolId, 4);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::ObjectArguments, 9);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::ResultOffset, 1);
+            }
+            if (position == 3) {
+                return Shape(compiler_lowering::OperandRole::SpanArguments, 9);
+            }
+            if (position == 4) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::BeginObject) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::InitializeEmptyObject) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::EndObject) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::CopyObject) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::SourceOffset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::ResultOffset, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::ObjectFieldCopy) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::SourceOffset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::FieldIndex, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::ResultOffset, 1);
+            }
+            if (position == 3) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::AssignObjectField) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::ObjectOffset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::FieldIndex, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::SourceOffset, 1);
+            }
+            if (position == 3) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::InitializeObjectField) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::ObjectOffset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::FieldIndex, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::SourceOffset, 1);
+            }
+            if (position == 3) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::InitializeClassArray) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::ObjectOffset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::FieldIndex, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::Sources, 9);
+            }
+            if (position == 3) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::ClassArrayBoundsGuard) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::ObjectOffset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::FieldIndex, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::ClassArrayCopy) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::ObjectOffset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::FieldIndex, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::ResultOffset, 1);
+            }
+            if (position == 3) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::ClassArrayAssign) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::ObjectOffset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::FieldIndex, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::SourceOffset, 1);
+            }
+            if (position == 3) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::ReceiverLoad) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::FieldIndex, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::TypeId, 3);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::ReceiverStore) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::FieldIndex, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::TypeId, 3);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::ReceiverArrayZero) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::FieldIndex, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::ReceiverBoundsGuard) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::FieldIndex, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::ReceiverIndexLoad) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::FieldIndex, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::ReceiverIndexStore) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::FieldIndex, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::MethodCall) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::CalleeSymbolId, 4);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::ReceiverOffset, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::ObjectArguments, 9);
+            }
+            if (position == 3) {
+                return Shape(compiler_lowering::OperandRole::ResultOffset, 1);
+            }
+            if (position == 4) {
+                return Shape(compiler_lowering::OperandRole::ReceiverFieldIndex, 1);
+            }
+            if (position == 5) {
+                return Shape(compiler_lowering::OperandRole::SpanArguments, 9);
+            }
+            if (position == 6) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::MetadataQuery) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::ModuleScope, 6);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::Label) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::LabelId, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::Jump) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Target, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::BranchFalse) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Target, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::Return) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::ReturnObject) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::BindParameter) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Index, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::TypeId, 3);
+            }
+            if (position == 3) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::BindObjectParameter) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Index, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::ClassNominalId, 5);
+            }
+            if (position == 3) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::BeginArray) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::EndArray) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::BorrowSpan) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::ArrayOffset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::ResultOffset, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::BorrowReceiverArraySpan) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::FieldIndex, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::ResultOffset, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::BorrowLiteralSpan) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::LiteralBytes, 12);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::ResultOffset, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::BorrowOwnedSpan) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::FieldIndex, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::ResultOffset, 1);
+            }
+            if (position == 3) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::ReturnSpan) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::ReborrowSpan) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::SourceOffset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::ResultOffset, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::Subspan) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::SourceOffset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::ResultOffset, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::EndSpan) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::SpanLength) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::SpanLoad) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::BindSpanParameter) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Index, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::BeginBytes) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::AllocateBytes) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::RegionOffset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::ResultOffset, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::AllocateValues) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::RegionOffset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::ResultOffset, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::FillOffset, 1);
+            }
+            if (position == 3) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::ValuesLoad) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::FieldIndex, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::ResultOffset, 1);
+            }
+            if (position == 3) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::ValuesStore) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::FieldIndex, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::ValueOffset, 1);
+            }
+            if (position == 3) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::ValuesResize) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::FieldIndex, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::FillOffset, 1);
+            }
+            if (position == 3) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::MoveBytes) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::SourceOffset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::ResultOffset, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::BytesOk) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::FieldIndex, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::BytesLength) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::FieldIndex, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::BytesLoad) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::FieldIndex, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::BytesStore) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::FieldIndex, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::BytesResize) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::FieldIndex, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::EndBytes) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::BindRegionParameter) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Index, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::BindBytesParameter) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Index, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::ResourceCall) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::CalleeSymbolId, 4);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::RegionOffset, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::OwnerArguments, 9);
+            }
+            if (position == 3) {
+                return Shape(compiler_lowering::OperandRole::ResultOffset, 1);
+            }
+            if (position == 4) {
+                return Shape(compiler_lowering::OperandRole::ReceiverOffset, 1);
+            }
+            if (position == 5) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::ReturnBytes) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::InitializeBytesField) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::ObjectOffset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::FieldIndex, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::SourceOffset, 1);
+            }
+            if (position == 3) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::MoveObject) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::SourceOffset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::ResultOffset, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::BindOwnedObjectParameter) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Index, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::ClassNominalId, 5);
+            }
+            if (position == 3) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::ReturnOwnedObject) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::Offset, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::AcquireObjectLoan) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::LoanId, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::Root, 1);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::MutableValue, 2);
+            }
+            if (position == 3) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::ReleaseObjectLoan) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::LoanId, 1);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        if (form == compiler_lowering::InstructionForm::BorrowedCall) {
+            if (position == 0) {
+                return Shape(compiler_lowering::OperandRole::CalleeSymbolId, 4);
+            }
+            if (position == 1) {
+                return Shape(compiler_lowering::OperandRole::BorrowedRoots, 11);
+            }
+            if (position == 2) {
+                return Shape(compiler_lowering::OperandRole::ObjectArguments, 9);
+            }
+            if (position == 3) {
+                return Shape(compiler_lowering::OperandRole::ResultOffset, 1);
+            }
+            if (position == 4) {
+                return Shape(compiler_lowering::OperandRole::SpanArguments, 9);
+            }
+            if (position == 5) {
+                return Shape(compiler_lowering::OperandRole::invalid, 14);
+            }
+            return Shape(compiler_lowering::OperandRole::invalid, 0);
+        }
+        return Shape(compiler_lowering::OperandRole::invalid, 0);
+    }
+    class Inspection {
+    public:
+        i64 status;
+        i64 instructions;
+        i64 prefixes;
+        i64 nested;
+        i64 types;
+        i64 literals;
+        Inspection(i64 code, i64 rows, i64 fields, i64 lists, i64 type_count, i64 bytes) : status(code),
+            instructions(rows), prefixes(fields), nested(lists), types(type_count), literals(bytes) {
+        }
+    };
+    auto valid_operator(compiler_lowering::OutputRow row) -> bool {
+        if (row.form() == compiler_lowering::InstructionForm::UnaryValue) {
+            return row.unary_operation() == compiler_lowering::Unary::CheckedNegate || row.unary_operation()
+                == compiler_lowering::Unary::LogicalNot || row.unary_operation() == compiler_lowering::Unary::BitNot;
+        }
+        if (row.form() == compiler_lowering::InstructionForm::BinaryValue) {
+            return row.binary_operation() == compiler_lowering::Binary::CheckedAdd || row.binary_operation()
+                == compiler_lowering::Binary::CheckedSubtract || row.binary_operation()
+                == compiler_lowering::Binary::CheckedMultiply || row.binary_operation()
+                == compiler_lowering::Binary::CheckedDivide || row.binary_operation()
+                == compiler_lowering::Binary::CheckedRemainder || row.binary_operation()
+                == compiler_lowering::Binary::BitAnd || row.binary_operation() == compiler_lowering::Binary::BitOr
+                || row.binary_operation() == compiler_lowering::Binary::BitXor || row.binary_operation()
+                == compiler_lowering::Binary::ShiftLeft || row.binary_operation()
+                == compiler_lowering::Binary::ShiftRight;
+        }
+        if (row.form() == compiler_lowering::InstructionForm::Compare) {
+            return row.comparison_operation() == compiler_lowering::Comparison::Equal || row.comparison_operation()
+                == compiler_lowering::Comparison::NotEqual || row.comparison_operation()
+                == compiler_lowering::Comparison::Less || row.comparison_operation()
+                == compiler_lowering::Comparison::Greater || row.comparison_operation()
+                == compiler_lowering::Comparison::LessEqual || row.comparison_operation()
+                == compiler_lowering::Comparison::GreaterEqual;
+        }
+        if (row.form() == compiler_lowering::InstructionForm::MetadataQuery) {
+            return row.query() == compiler_lowering::Query::Size || row.query()
+                == compiler_lowering::Query::PublicFieldCount;
+        }
+        return true;
+    }
+    auto count_instruction_prefixes(const compiler_resolver::Session& session) -> Inspection {
+        i64 rows = 0;
+        i64 fields = 0;
+        i64 lists = 0;
+        i64 types = 0;
+        i64 literals = 0;
+        i64 id = 0;
+        while (id < session.output_count()) {
+            const compiler_lowering::OutputRow row = session.view_output(id);
+            if (row.kind() == compiler_lowering::RecordKind::Instruction || row.kind()
+                == compiler_lowering::RecordKind::DiscardedInstruction) {
+                if (row.operand_begin() < 0 || row.operand_count() < 0 || row.operand_begin() > session.operand_count()
+                    || row.operand_count() > session.operand_count() - row.operand_begin()) {
+                    return Inspection(1, id, 0, 0, 0, 0);
+                }
+                if (!valid_operator(row)) {
+                    return Inspection(12, id, 0, 0, 0, 0);
+                }
+                const Shape end = instruction_shape(row.form(), row.operand_count());
+                if (end.mode != 14) {
+                    return Inspection(2, id, 0, 0, 0, 0);
+                }
+                i64 position = 0;
+                while (position < row.operand_count()) {
+                    const Shape shape = instruction_shape(row.form(), position);
+                    const compiler_lowering::OperandRow operand = session.view_operand(row.operand_begin() + position);
+                    if (shape.mode <= 0 || shape.mode >= 14 || (operand.role() != shape.role && !(shape.mode == 13
+                        && operand.role() == compiler_lowering::OperandRole::UnsignedConstant))) {
+                        return Inspection(3, id, position, 0, 0, 0);
+                    }
+                    if (shape.mode == 1 && (operand.signed_value() < -2147483648 || operand.signed_value()
+                        > 2147483647)) {
+                        return Inspection(4, id, position, 0, 0, 0);
+                    }
+                    if (shape.mode == 2 && operand.signed_value() != 0 && operand.signed_value() != 1) {
+                        return Inspection(5, id, position, 0, 0, 0);
+                    }
+                    if ((shape.mode >= 3 && shape.mode <= 8 && operand.signed_value() < 0) || (shape.mode == 6
+                        && operand.signed_value() > 2147483647)) {
+                        return Inspection(6, id, position, 0, 0, 0);
+                    }
+                    if (shape.mode >= 9 && shape.mode <= 11) {
+                        if (operand.begin() < 0 || operand.count() < 0 || operand.begin() > session.operand_count()
+                            || operand.count() > session.operand_count() - operand.begin()) {
+                            return Inspection(7, id, position, 0, 0, 0);
+                        }
+                        if ((shape.mode == 10 || shape.mode == 11) && operand.count() % 2 != 0) {
+                            return Inspection(8, id, position, 0, 0, 0);
+                        }
+                        if (shape.mode == 11 && (operand.count() == 0 || operand.count() > 12)) {
+                            return Inspection(9, id, position, 0, 0, 0);
+                        }
+                        i64 at = 0;
+                        while (at < operand.count()) {
+                            const compiler_lowering::OperandRow item = session.view_operand(operand.begin() + at);
+                            compiler_lowering::OperandRole expected = compiler_lowering::OperandRole::Offset;
+                            if (shape.mode == 10) {
+                                expected = compiler_lowering::OperandRole::ServiceLoanId;
+                                if (at % 2 == 1) {
+                                    expected = compiler_lowering::OperandRole::ServiceKindId;
+                                }
+                            }
+                            if (shape.mode == 11) {
+                                expected = compiler_lowering::OperandRole::Root;
+                                if (at % 2 == 1) {
+                                    expected = compiler_lowering::OperandRole::LoanId;
+                                }
+                            }
+                            if (item.role() != expected || (expected == compiler_lowering::OperandRole::ServiceKindId
+                                && item.signed_value() < 0) || (expected
+                                != compiler_lowering::OperandRole::ServiceKindId && (item.signed_value() < -2147483648
+                                || item.signed_value() > 2147483647))) {
+                                return Inspection(10, id, position, at, 0, 0);
+                            }
+                            at = at + 1;
+                        }
+                        if (row.kind() == compiler_lowering::RecordKind::Instruction) {
+                            if (operand.count() > 9223372036854775807 - lists) {
+                                return Inspection(13, id, position, 0, 0, 0);
+                            }
+                            lists = lists + operand.count();
+                        }
+                    }
+                    if (shape.mode == 12) {
+                        if (operand.begin() < 0 || operand.count() < 0 || operand.begin() > session.source_size()
+                            || operand.count() > session.source_size() - operand.begin()) {
+                            return Inspection(11, id, position, 0, 0, 0);
+                        }
+                        if (row.kind() == compiler_lowering::RecordKind::Instruction) {
+                            if (operand.count() > 9223372036854775807 - literals) {
+                                return Inspection(13, id, position, 0, 0, 0);
+                            }
+                            literals = literals + operand.count();
+                        }
+                    }
+                    if (shape.mode == 3 && row.kind() == compiler_lowering::RecordKind::Instruction) {
+                        if (types == 9223372036854775807) {
+                            return Inspection(13, id, position, 0, 0, 0);
+                        }
+                        types = types + 1;
+                    }
+                    position = position + 1;
+                }
+                if (row.kind() == compiler_lowering::RecordKind::Instruction) {
+                    if (rows == 9223372036854775807 || row.operand_count() > 9223372036854775807 - fields) {
+                        return Inspection(13, id, 0, 0, 0, 0);
+                    }
+                    rows = rows + 1;
+                    fields = fields + row.operand_count();
+                }
+            }
+            id = id + 1;
+        }
+        return Inspection(0, rows, fields, lists, types, literals);
+    }
+    class GraphShape {
+    public:
+        compiler_lowering::OperandRole role;
+        i64 mode;
+        compiler_lowering::RecordKind child;
+        GraphShape(compiler_lowering::OperandRole r, i64 m, compiler_lowering::RecordKind c) : role(r), mode(m),
+            child(c) {
+        }
+    };
+    auto graph_shape(compiler_lowering::RecordKind kind, i64 at) -> GraphShape {
+        if (kind == compiler_lowering::RecordKind::DiagnosticPayload) {
+            if (at == 0) {
+                return GraphShape(compiler_lowering::OperandRole::NoDiagnosticSource, 18,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 1) {
+                return GraphShape(compiler_lowering::OperandRole::NoDiagnosticValue, 18,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 2) {
+                return GraphShape(compiler_lowering::OperandRole::NoDiagnosticValue, 18,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 3) {
+                return GraphShape(compiler_lowering::OperandRole::invalid, 14, compiler_lowering::RecordKind::invalid);
+            }
+        }
+        if (kind == compiler_lowering::RecordKind::Configuration) {
+            if (at == 0) {
+                return GraphShape(compiler_lowering::OperandRole::MaximumCopiedByteLeaves, 17,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 1) {
+                return GraphShape(compiler_lowering::OperandRole::MaximumCopiedNonByteLeaves, 17,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 2) {
+                return GraphShape(compiler_lowering::OperandRole::MaximumCopiedLeaves, 17,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 3) {
+                return GraphShape(compiler_lowering::OperandRole::MaximumCopiedBytes, 17,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 4) {
+                return GraphShape(compiler_lowering::OperandRole::MaximumByteArrayLength, 17,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 5) {
+                return GraphShape(compiler_lowering::OperandRole::MaximumScalarArrayLength, 17,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 6) {
+                return GraphShape(compiler_lowering::OperandRole::AnalysisMode, 2,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 7) {
+                return GraphShape(compiler_lowering::OperandRole::SupportedServiceGroups, 19,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 8) {
+                return GraphShape(compiler_lowering::OperandRole::invalid, 14, compiler_lowering::RecordKind::invalid);
+            }
+        }
+        if (kind == compiler_lowering::RecordKind::ScalarContract) {
+            if (at == 0) {
+                return GraphShape(compiler_lowering::OperandRole::TypeId, 3, compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 1) {
+                return GraphShape(compiler_lowering::OperandRole::PublicDescriptorId, 17,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 2) {
+                return GraphShape(compiler_lowering::OperandRole::Size, 18, compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 3) {
+                return GraphShape(compiler_lowering::OperandRole::invalid, 14, compiler_lowering::RecordKind::invalid);
+            }
+        }
+        if (kind == compiler_lowering::RecordKind::ServiceContract) {
+            if (at == 0) {
+                return GraphShape(compiler_lowering::OperandRole::TypeId, 3, compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 1) {
+                return GraphShape(compiler_lowering::OperandRole::ServiceKindId, 7,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 2) {
+                return GraphShape(compiler_lowering::OperandRole::ServiceOperationId, 8,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 3) {
+                return GraphShape(compiler_lowering::OperandRole::IdentifierSourceRef, 16,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 4) {
+                return GraphShape(compiler_lowering::OperandRole::ResultTypeId, 3,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 5) {
+                return GraphShape(compiler_lowering::OperandRole::ParameterTypes, 21,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 6) {
+                return GraphShape(compiler_lowering::OperandRole::invalid, 14, compiler_lowering::RecordKind::invalid);
+            }
+        }
+        if (kind == compiler_lowering::RecordKind::InitialLayoutOrder) {
+            if (at == 0) {
+                return GraphShape(compiler_lowering::OperandRole::InitialLayoutSymbols, 28,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 1) {
+                return GraphShape(compiler_lowering::OperandRole::invalid, 14, compiler_lowering::RecordKind::invalid);
+            }
+        }
+        if (kind == compiler_lowering::RecordKind::Module) {
+            if (at == 0) {
+                return GraphShape(compiler_lowering::OperandRole::Functions, 22,
+                    compiler_lowering::RecordKind::Function);
+            }
+            if (at == 1) {
+                return GraphShape(compiler_lowering::OperandRole::Classes, 22, compiler_lowering::RecordKind::Class);
+            }
+            if (at == 2) {
+                return GraphShape(compiler_lowering::OperandRole::Carriers, 22, compiler_lowering::RecordKind::Carrier);
+            }
+            if (at == 3) {
+                return GraphShape(compiler_lowering::OperandRole::Descriptors, 22,
+                    compiler_lowering::RecordKind::Descriptor);
+            }
+            if (at == 4) {
+                return GraphShape(compiler_lowering::OperandRole::DescriptorViews, 22,
+                    compiler_lowering::RecordKind::DescriptorView);
+            }
+            if (at == 5) {
+                return GraphShape(compiler_lowering::OperandRole::Enumerations, 22,
+                    compiler_lowering::RecordKind::EnumCases);
+            }
+            if (at == 6) {
+                return GraphShape(compiler_lowering::OperandRole::LintDiagnostics, 22,
+                    compiler_lowering::RecordKind::UnreadLocal);
+            }
+            if (at == 7) {
+                return GraphShape(compiler_lowering::OperandRole::invalid, 14, compiler_lowering::RecordKind::invalid);
+            }
+        }
+        if (kind == compiler_lowering::RecordKind::Function) {
+            if (at == 0) {
+                return GraphShape(compiler_lowering::OperandRole::FunctionSymbolId, 4,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 1) {
+                return GraphShape(compiler_lowering::OperandRole::ModuleScope, 6,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 2) {
+                return GraphShape(compiler_lowering::OperandRole::ResultTypeId, 3,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 3) {
+                return GraphShape(compiler_lowering::OperandRole::ParameterTypes, 21,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 4) {
+                return GraphShape(compiler_lowering::OperandRole::Slots, 22, compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 5) {
+                return GraphShape(compiler_lowering::OperandRole::ReceiverRef, 24,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 6) {
+                return GraphShape(compiler_lowering::OperandRole::BorrowedRootCount, 18,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 7) {
+                return GraphShape(compiler_lowering::OperandRole::FirstBorrowedMutable, 18,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 8) {
+                return GraphShape(compiler_lowering::OperandRole::ReceiverSpanField, 25,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 9) {
+                return GraphShape(compiler_lowering::OperandRole::FrameBytes, 1,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 10) {
+                return GraphShape(compiler_lowering::OperandRole::Code, 22, compiler_lowering::RecordKind::Instruction);
+            }
+            if (at == 11) {
+                return GraphShape(compiler_lowering::OperandRole::invalid, 14, compiler_lowering::RecordKind::invalid);
+            }
+        }
+        if (kind == compiler_lowering::RecordKind::ScalarSlot) {
+            if (at == 0) {
+                return GraphShape(compiler_lowering::OperandRole::Offset, 1, compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 1) {
+                return GraphShape(compiler_lowering::OperandRole::TypeId, 3, compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 2) {
+                return GraphShape(compiler_lowering::OperandRole::invalid, 14, compiler_lowering::RecordKind::invalid);
+            }
+        }
+        if (kind == compiler_lowering::RecordKind::ObjectSlot) {
+            if (at == 0) {
+                return GraphShape(compiler_lowering::OperandRole::Offset, 1, compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 1) {
+                return GraphShape(compiler_lowering::OperandRole::ClassNominalId, 23,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 2) {
+                return GraphShape(compiler_lowering::OperandRole::MutableValue, 2,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 3) {
+                return GraphShape(compiler_lowering::OperandRole::invalid, 14, compiler_lowering::RecordKind::invalid);
+            }
+        }
+        if (kind == compiler_lowering::RecordKind::ArraySlot) {
+            if (at == 0) {
+                return GraphShape(compiler_lowering::OperandRole::Offset, 1, compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 1) {
+                return GraphShape(compiler_lowering::OperandRole::Length, 1, compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 2) {
+                return GraphShape(compiler_lowering::OperandRole::invalid, 14, compiler_lowering::RecordKind::invalid);
+            }
+        }
+        if (kind == compiler_lowering::RecordKind::SpanSlot) {
+            if (at == 0) {
+                return GraphShape(compiler_lowering::OperandRole::Offset, 1, compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 1) {
+                return GraphShape(compiler_lowering::OperandRole::invalid, 14, compiler_lowering::RecordKind::invalid);
+            }
+        }
+        if (kind == compiler_lowering::RecordKind::ServiceSlot) {
+            if (at == 0) {
+                return GraphShape(compiler_lowering::OperandRole::Offset, 1, compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 1) {
+                return GraphShape(compiler_lowering::OperandRole::invalid, 14, compiler_lowering::RecordKind::invalid);
+            }
+        }
+        if (kind == compiler_lowering::RecordKind::RegionSlot) {
+            if (at == 0) {
+                return GraphShape(compiler_lowering::OperandRole::Offset, 1, compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 1) {
+                return GraphShape(compiler_lowering::OperandRole::invalid, 14, compiler_lowering::RecordKind::invalid);
+            }
+        }
+        if (kind == compiler_lowering::RecordKind::ByteSlot) {
+            if (at == 0) {
+                return GraphShape(compiler_lowering::OperandRole::Offset, 1, compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 1) {
+                return GraphShape(compiler_lowering::OperandRole::MutableValue, 2,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 2) {
+                return GraphShape(compiler_lowering::OperandRole::invalid, 14, compiler_lowering::RecordKind::invalid);
+            }
+        }
+        if (kind == compiler_lowering::RecordKind::OwnedValueType) {
+            if (at == 0) {
+                return GraphShape(compiler_lowering::OperandRole::Offset, 1, compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 1) {
+                return GraphShape(compiler_lowering::OperandRole::ClassNominalId, 5,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 2) {
+                return GraphShape(compiler_lowering::OperandRole::invalid, 14, compiler_lowering::RecordKind::invalid);
+            }
+        }
+        if (kind == compiler_lowering::RecordKind::Receiver) {
+            if (at == 0) {
+                return GraphShape(compiler_lowering::OperandRole::ClassNominalId, 5,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 1) {
+                return GraphShape(compiler_lowering::OperandRole::MutableValue, 2,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 2) {
+                return GraphShape(compiler_lowering::OperandRole::Constructor, 2,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 3) {
+                return GraphShape(compiler_lowering::OperandRole::PublicAccess, 2,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 4) {
+                return GraphShape(compiler_lowering::OperandRole::invalid, 14, compiler_lowering::RecordKind::invalid);
+            }
+        }
+        if (kind == compiler_lowering::RecordKind::Class) {
+            if (at == 0) {
+                return GraphShape(compiler_lowering::OperandRole::ClassNominalId, 23,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 1) {
+                return GraphShape(compiler_lowering::OperandRole::LeafTypes, 21,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 2) {
+                return GraphShape(compiler_lowering::OperandRole::Fields, 22,
+                    compiler_lowering::RecordKind::ClassField);
+            }
+            if (at == 3) {
+                return GraphShape(compiler_lowering::OperandRole::StorageRef, 26,
+                    compiler_lowering::RecordKind::ClassStorage);
+            }
+            if (at == 4) {
+                return GraphShape(compiler_lowering::OperandRole::invalid, 14, compiler_lowering::RecordKind::invalid);
+            }
+        }
+        if (kind == compiler_lowering::RecordKind::ClassField) {
+            if (at == 0) {
+                return GraphShape(compiler_lowering::OperandRole::ElementTypeId, 3,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 1) {
+                return GraphShape(compiler_lowering::OperandRole::FirstLeaf, 1, compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 2) {
+                return GraphShape(compiler_lowering::OperandRole::Length, 1, compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 3) {
+                return GraphShape(compiler_lowering::OperandRole::Array, 2, compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 4) {
+                return GraphShape(compiler_lowering::OperandRole::ElementCount, 1,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 5) {
+                return GraphShape(compiler_lowering::OperandRole::invalid, 14, compiler_lowering::RecordKind::invalid);
+            }
+        }
+        if (kind == compiler_lowering::RecordKind::ClassStorage) {
+            if (at == 0) {
+                return GraphShape(compiler_lowering::OperandRole::LeafOffsets, 20,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 1) {
+                return GraphShape(compiler_lowering::OperandRole::FieldOffsets, 20,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 2) {
+                return GraphShape(compiler_lowering::OperandRole::SizeBytes, 1, compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 3) {
+                return GraphShape(compiler_lowering::OperandRole::Alignment, 1, compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 4) {
+                return GraphShape(compiler_lowering::OperandRole::ReservedBytes, 1,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 5) {
+                return GraphShape(compiler_lowering::OperandRole::invalid, 14, compiler_lowering::RecordKind::invalid);
+            }
+        }
+        if (kind == compiler_lowering::RecordKind::Carrier) {
+            if (at == 0) {
+                return GraphShape(compiler_lowering::OperandRole::ElementTypeId, 3,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 1) {
+                return GraphShape(compiler_lowering::OperandRole::ElementCount, 1,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 2) {
+                return GraphShape(compiler_lowering::OperandRole::invalid, 14, compiler_lowering::RecordKind::invalid);
+            }
+        }
+        if (kind == compiler_lowering::RecordKind::Descriptor) {
+            if (at == 0) {
+                return GraphShape(compiler_lowering::OperandRole::PublicDescriptorId, 17,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 1) {
+                return GraphShape(compiler_lowering::OperandRole::Size, 18, compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 2) {
+                return GraphShape(compiler_lowering::OperandRole::PublicFields, 18,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 3) {
+                return GraphShape(compiler_lowering::OperandRole::invalid, 14, compiler_lowering::RecordKind::invalid);
+            }
+        }
+        if (kind == compiler_lowering::RecordKind::DescriptorView) {
+            if (at == 0) {
+                return GraphShape(compiler_lowering::OperandRole::ModuleScope, 6,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 1) {
+                return GraphShape(compiler_lowering::OperandRole::VisibleDescriptors, 27,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 2) {
+                return GraphShape(compiler_lowering::OperandRole::invalid, 14, compiler_lowering::RecordKind::invalid);
+            }
+        }
+        if (kind == compiler_lowering::RecordKind::EnumCases) {
+            if (at == 0) {
+                return GraphShape(compiler_lowering::OperandRole::EnumNominalId, 15,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 1) {
+                return GraphShape(compiler_lowering::OperandRole::CaseCount, 1, compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 2) {
+                return GraphShape(compiler_lowering::OperandRole::invalid, 14, compiler_lowering::RecordKind::invalid);
+            }
+        }
+        if (kind == compiler_lowering::RecordKind::UnreadLocal) {
+            if (at == 0) {
+                return GraphShape(compiler_lowering::OperandRole::IdentifierSourceRef, 16,
+                    compiler_lowering::RecordKind::invalid);
+            }
+            if (at == 1) {
+                return GraphShape(compiler_lowering::OperandRole::invalid, 14, compiler_lowering::RecordKind::invalid);
+            }
+        }
+        return GraphShape(compiler_lowering::OperandRole::invalid, 0, compiler_lowering::RecordKind::invalid);
+    }
+    class Identity {
+    public:
+        i64 domain;
+        i64 id;
+        Identity(i64 d, i64 i) : domain(d), id(i) {
+        }
+    };
+    class GraphNode {
+    public:
+        i64 id;
+        compiler_lowering::RecordKind kind;
+        GraphNode(i64 i, compiler_lowering::RecordKind k) : id(i), kind(k) {
+        }
+    };
+    auto identity_pool(builtin::ByteRegion region) -> builtin::OwnedValues<Identity> {
+        const Identity empty = Identity(0, -1);
+        builtin::OwnedValues<Identity> pool = region.try_allocate(0, empty);
+        return move(pool);
+    }
+    auto graph_pool(builtin::ByteRegion region) -> builtin::OwnedValues<GraphNode> {
+        const GraphNode empty = GraphNode(-1, compiler_lowering::RecordKind::invalid);
+        builtin::OwnedValues<GraphNode> pool = region.try_allocate(0, empty);
+        return move(pool);
+    }
+    class ProjectionChunk {
+        builtin::array<u8, 512> payload;
+        i64 byteCount;
+    public:
+        ProjectionChunk() : payload{}, byteCount(0) {
+        }
+        auto append(u8 byte) -> bool {
+            if (byteCount >= 512) {
+                return false;
+            }
+            payload[byteCount] = byte;
+            byteCount = byteCount + 1;
+            return true;
+        }
+        auto invalidate() -> bool {
+            byteCount = -1;
+            return false;
+        }
+    };
+    auto identity_less(Identity left, Identity right) -> bool {
+        return left.domain < right.domain || (left.domain == right.domain && left.id < right.id);
+    }
+    class TextRange {
+    public:
+        i64 begin;
+        i64 count;
+        TextRange(i64 b, i64 c) : begin(b), count(c) {
+        }
+    };
+    class OrderRow {
+    public:
+        i64 row;
+        i64 key;
+        i64 tie;
+        i64 nameBegin;
+        i64 nameCount;
+        i64 flags;
+        OrderRow(i64 r, i64 k, i64 t, i64 b, i64 n, i64 f) : row(r), key(k), tie(t), nameBegin(b), nameCount(n),
+            flags(f) {
+        }
+    };
+    auto names_pool(builtin::ByteRegion region) -> builtin::OwnedValues<TextRange> {
+        const TextRange empty = TextRange(-1, 0);
+        builtin::OwnedValues<TextRange> result = region.try_allocate(0, empty);
+        return move(result);
+    }
+    auto order_pool(builtin::ByteRegion region) -> builtin::OwnedValues<OrderRow> {
+        const OrderRow empty = OrderRow(-1, 0, 0, -1, 0, 0);
+        builtin::OwnedValues<OrderRow> result = region.try_allocate(0, empty);
+        return move(result);
+    }
+    class Word {
+    public:
+        u64 bits;
+        Word(u64 value) : bits(value) {
+        }
+    };
+    class Intern {
+    public:
+        i64 begin;
+        i64 count;
+        i64 output;
+        Intern(i64 b, i64 c, i64 o) : begin(b), count(c), output(o) {
+        }
+    };
+    auto words_pool(builtin::ByteRegion region) -> builtin::OwnedValues<Word> {
+        const Word empty = Word(0u64);
+        builtin::OwnedValues<Word> result = region.try_allocate(0, empty);
+        return move(result);
+    }
+    auto intern_pool(builtin::ByteRegion region) -> builtin::OwnedValues<Intern> {
+        const Intern empty = Intern(0, 0, 0);
+        builtin::OwnedValues<Intern> result = region.try_allocate(0, empty);
+        return move(result);
+    }
+    auto word_bits(i64 value) -> u64 {
+        if (value < 0) {
+            return ~u64(-1 - value);
+        }
+        return u64(value);
+    }
+    auto word_integer(u64 value) -> i64 {
+        if (value > 9223372036854775807u64) {
+            return -1 - i64(~value);
+        }
+        return i64(value);
+    }
+    auto pool_width(i64 pool) -> i64 {
+        if (pool == 1 || pool == 2 || pool == 13) {
+            return 8;
+        }
+        if (pool == 3 || pool == 11 || pool == 14) {
+            return 5;
+        }
+        if (pool == 5) {
+            return 7;
+        }
+        if (pool == 6) {
+            return 1;
+        }
+        if (pool == 7 || pool == 8 || pool == 9) {
+            return 3;
+        }
+        if (pool == 10) {
+            return 15;
+        }
+        if (pool == 16) {
+            return 4;
+        }
+        return 0;
+    }
+    class ProjectionCounts {
+    public:
+        compiler_ir_metadata::InputCounts metadata;
+        compiler_ir_instructions::InstructionCounts instructions;
+        i64 callables;
+        i64 slots;
+        i64 instructionBegin;
+        ProjectionCounts(compiler_ir_metadata::InputCounts m, compiler_ir_instructions::InstructionCounts i, i64 c,
+            i64 s, i64 b) : metadata(m), instructions(i), callables(c), slots(s), instructionBegin(b) {
+        }
+    };
+    class Plan {
+        builtin::OwnedBytes claims;
+        builtin::OwnedValues<GraphNode> nodes;
+        builtin::OwnedValues<Identity> identities;
+        builtin::OwnedBytes rendered;
+        builtin::OwnedValues<TextRange> rowNames;
+        builtin::OwnedValues<OrderRow> order;
+        builtin::OwnedValues<Word> counters;
+        builtin::OwnedValues<Word> outputWords;
+        builtin::OwnedBytes outputBytes;
+        builtin::OwnedValues<Intern> strings;
+        i64 rootId;
+        i64 sessionStamp;
+        i64 classCount;
+        i64 functionCount;
+        i64 rowCount;
+        i64 operandCount;
+        i64 nodeCount;
+        i64 identityCount;
+        i64 state;
+    public:
+        Plan(builtin::ByteRegion region) : claims(region.try_allocate(0)), nodes(graph_pool(region)),
+            identities(identity_pool(region)), rendered(region.try_allocate(0)), rowNames(names_pool(region)),
+            order(order_pool(region)), counters(words_pool(region)), outputWords(words_pool(region)),
+            outputBytes(region.try_allocate(0)), strings(intern_pool(region)), rootId(-1), sessionStamp(-1),
+            classCount(0), functionCount(0), rowCount(0), operandCount(0), nodeCount(0), identityCount(0), state(0) {
+        }
+        auto fail() -> bool {
+            state = -1;
+            return false;
+        }
+        auto begin(i64 rows, i64 operands, i64 root, i64 stamp) -> bool {
+            if (state != 0 || stamp <= 0 || rows < 0 || operands < 0 || rows > 9223372036854775807 - operands || rows
+                > 576460752303423487 || operands > 576460752303423487 || !claims.ok() || !nodes.ok() || !identities.ok()
+                || !rendered.ok()) {
+                return fail();
+            }
+            state = 1;
+            rootId = root;
+            sessionStamp = stamp;
+            rowCount = rows;
+            operandCount = operands;
+            const GraphNode empty_node = GraphNode(-1, compiler_lowering::RecordKind::invalid);
+            const Identity empty_identity = Identity(0, -1);
+            if (!claims.try_resize(rows + operands) || !nodes.try_resize(rows, empty_node)
+                || !identities.try_resize(operands, empty_identity)) {
+                return fail();
+            }
+            i64 at = 0;
+            while (at < claims.size()) {
+                if (!claims.set(at, 0u8)) {
+                    return fail();
+                }
+                at = at + 1;
+            }
+            return true;
+        }
+        auto claim_row(i64 id, compiler_lowering::RecordKind kind) -> bool {
+            if (state != 1 || id < 0 || id >= rowCount || claims.at(id) != 0u8 || nodeCount >= nodes.size()) {
+                return fail();
+            }
+            const GraphNode node = GraphNode(id, kind);
+            if (!nodes.set(nodeCount, node) || !claims.set(id, 1u8)) {
+                return fail();
+            }
+            nodeCount = nodeCount + 1;
+            return true;
+        }
+        auto owned(i64 id) const -> bool {
+            return id >= 0 && id < rowCount && claims.at(id) == 1u8;
+        }
+        auto claim(i64 first, i64 count) -> bool {
+            if (state != 1 || first < 0 || count < 0 || first > operandCount || count > operandCount - first) {
+                return fail();
+            }
+            i64 at = 0;
+            while (at < count) {
+                const i64 index = rowCount + first + at;
+                if (claims.at(index) != 0u8 || !claims.set(index, 1u8)) {
+                    return fail();
+                }
+                at = at + 1;
+            }
+            return true;
+        }
+        auto request(i64 domain, i64 id) -> bool {
+            if (state != 1 || id < 0 || identityCount >= identities.size()) {
+                return fail();
+            }
+            const Identity identity = Identity(domain, id);
+            if (!identities.set(identityCount, identity)) {
+                return fail();
+            }
+            identityCount = identityCount + 1;
+            return true;
+        }
+        auto node_count() const -> i64 {
+            return nodeCount;
+        }
+        auto node(i64 at) const -> GraphNode {
+            return nodes.at(at);
+        }
+        auto identity_count() const -> i64 {
+            return identityCount;
+        }
+        auto identity(i64 at) const -> Identity {
+            return identities.at(at);
+        }
+        auto swap_identity(i64 a, i64 b) -> bool {
+            const Identity first = identities.at(a);
+            const Identity second = identities.at(b);
+            if (!identities.set(a, second) || !identities.set(b, first)) {
+                return fail();
+            }
+            return true;
+        }
+        auto sift(i64 first, i64 end) -> bool {
+            i64 root = first;
+            while (root < end / 2) {
+                i64 child = root * 2 + 1;
+                if (child + 1 < end) {
+                    const Identity left = identities.at(child);
+                    const Identity right = identities.at(child + 1);
+                    if (identity_less(left, right)) {
+                        child = child + 1;
+                    }
+                }
+                const Identity parent = identities.at(root);
+                const Identity selected = identities.at(child);
+                if (!identity_less(parent, selected)) {
+                    return true;
+                }
+                if (!swap_identity(root, child)) {
+                    return false;
+                }
+                root = child;
+            }
+            return true;
+        }
+        auto finish() -> bool {
+            if (state != 1) {
+                return fail();
+            }
+            i64 at = identityCount / 2;
+            while (at > 0) {
+                at = at - 1;
+                if (!sift(at, identityCount)) {
+                    return false;
+                }
+            }
+            at = identityCount;
+            while (at > 1) {
+                at = at - 1;
+                if (!swap_identity(0, at) || !sift(0, at)) {
+                    return false;
+                }
+            }
+            i64 retained = 0;
+            at = 0;
+            while (at < identityCount) {
+                const Identity value = identities.at(at);
+                bool keep = retained == 0;
+                if (retained > 0) {
+                    const Identity previous = identities.at(retained - 1);
+                    keep = value.domain != previous.domain || value.id != previous.id;
+                }
+                if (keep) {
+                    if (!identities.set(retained, value)) {
+                        return fail();
+                    }
+                    retained = retained + 1;
+                }
+                at = at + 1;
+            }
+            identityCount = retained;
+            state = 2;
+            return true;
+        }
+        auto requests(i64 offset) const -> ProjectionChunk {
+            ProjectionChunk result = ProjectionChunk();
+            if (state != 2 || offset < 0 || identityCount > 576460752303423487 || offset > identityCount * 16) {
+                result.invalidate();
+                return result;
+            }
+            i64 remaining = identityCount * 16 - offset;
+            if (remaining > 512) {
+                remaining = 512;
+            }
+            i64 at = 0;
+            while (at < remaining) {
+                const i64 position = offset + at;
+                const Identity value = identities.at(position / 16);
+                u64 word = u64(value.domain);
+                if (position % 16 >= 8) {
+                    word = u64(value.id);
+                }
+                const u8 byte = u8((word >> ((position % 8) * 8)) & 255u64);
+                result.append(byte);
+                at = at + 1;
+            }
+            return result;
+        }
+        auto rendered_word(i64 at) const -> u64 {
+            u64 result = 0u64;
+            i64 byte = 0;
+            while (byte < 8) {
+                result = result | (u64(rendered.at(at + byte)) << (byte * 8));
+                byte = byte + 1;
+            }
+            return result;
+        }
+        auto rendered_integer(i64 at) const -> i64 {
+            const u64 word = rendered_word(at);
+            if (word > 9223372036854775807u64) {
+                return -1 - i64(~word);
+            }
+            return i64(word);
+        }
+        auto bind(builtin::span<const u8> input) -> bool {
+            if (state != 2 || identityCount > 115292150460684697 || input.size() < 8 + identityCount * 80
+                || !rendered.ok() || rendered.size() != 0) {
+                return fail();
+            }
+            if (!rendered.try_resize(input.size())) {
+                return fail();
+            }
+            i64 at = 0;
+            while (at < input.size()) {
+                if (!rendered.set(at, input.at(at))) {
+                    return fail();
+                }
+                at = at + 1;
+            }
+            if (rendered_integer(0) != identityCount) {
+                return fail();
+            }
+            at = 0;
+            while (at < identityCount) {
+                const Identity expected = identities.at(at);
+                const i64 base = 8 + at * 80;
+                const i64 name = rendered_integer(base + 24);
+                const i64 count = rendered_integer(base + 32);
+                if (rendered_integer(base) != expected.domain || rendered_integer(base + 8) != expected.id || name < 8
+                    + identityCount * 80 || count < 0 || name > rendered.size() || count > rendered.size() - name) {
+                    return fail();
+                }
+                const i64 value = rendered_integer(base + 16);
+                if (expected.domain == 3) {
+                    const i64 element = rendered_integer(base + 40);
+                    const i64 length = rendered_integer(base + 48);
+                    if (value < 0 || value > 18 || element < 0 || element > 18 || length < -2147483648 || length
+                        > 2147483647 || rendered_integer(base + 56) < 0 || rendered_integer(base + 64) < 0
+                        || rendered_integer(base + 72) < 0) {
+                        return fail();
+                    }
+                } else {
+                    i64 field = 40;
+                    while (field < 80) {
+                        if (rendered_word(base + field) != 0u64) {
+                            return fail();
+                        }
+                        field = field + 8;
+                    }
+                    if (expected.domain == 6 || expected.domain == 7 || expected.domain == 8) {
+                        if (count != 0 || value < 0 || (expected.domain == 6 && value > 2147483647) || (expected.domain
+                            == 7 && value > 3) || (expected.domain == 8 && value > 5)) {
+                            return fail();
+                        }
+                    } else {
+                        if (value != 0) {
+                            return fail();
+                        }
+                    }
+                }
+                at = at + 1;
+            }
+            state = 3;
+            return true;
+        }
+        auto find_identity(i64 domain, i64 id) const -> i64 {
+            const Identity wanted = Identity(domain, id);
+            i64 first = 0;
+            i64 last = identityCount;
+            while (first < last) {
+                const i64 middle = first + (last - first) / 2;
+                const Identity value = identities.at(middle);
+                if (identity_less(value, wanted)) {
+                    first = middle + 1;
+                } else {
+                    last = middle;
+                }
+            }
+            if (first < identityCount) {
+                const Identity value = identities.at(first);
+                if (value.domain == domain && value.id == id) {
+                    return first;
+                }
+            }
+            return -1;
+        }
+        auto identity_value(i64 domain, i64 id) const -> i64 {
+            const i64 index = find_identity(domain, id);
+            if (state < 3 || index < 0) {
+                return -1;
+            }
+            return rendered_integer(8 + index * 80 + 16);
+        }
+
+        auto seal_domains() -> bool {
+            if (state != 3) {
+                return fail();
+            }
+            state = 4;
+            return true;
+        }
+        auto begin_order() -> bool {
+            if (state != 4 || rowCount > 192153584101141162 || operandCount > 192153584101141162 - rowCount * 2
+                || !rowNames.ok() || !order.ok()) {
+                return fail();
+            }
+            const TextRange empty_name = TextRange(-1, 0);
+            const OrderRow empty_order = OrderRow(-1, 0, 0, -1, 0, 0);
+            if (!rowNames.try_resize(rowCount, empty_name) || !order.try_resize(operandCount + rowCount * 2,
+                empty_order)) {
+                return fail();
+            }
+            return true;
+        }
+        auto identity_name(i64 domain, i64 id) const -> TextRange {
+            const i64 index = find_identity(domain, id);
+            if (state < 3 || index < 0) {
+                return TextRange(-1, 0);
+            }
+            const i64 base = 8 + index * 80;
+            return TextRange(rendered_integer(base + 24), rendered_integer(base + 32));
+        }
+        auto remember_name(i64 row, TextRange name) -> bool {
+            if (state != 4 || name.begin < 0 || name.count < 0 || name.begin > rendered.size() || name.count
+                > rendered.size() - name.begin || !rowNames.set(row, name)) {
+                return fail();
+            }
+            return true;
+        }
+        auto row_name(i64 row) const -> TextRange {
+            return rowNames.at(row);
+        }
+        auto carrier_name(i64 id, i64 count) -> TextRange {
+            const TextRange element = identity_name(3, id);
+            i64 magnitude = count;
+            if (magnitude < 0) {
+                magnitude = -magnitude;
+            }
+            i64 remaining = magnitude;
+            i64 digits = 1;
+            while (remaining >= 10) {
+                digits = digits + 1;
+                remaining = remaining / 10;
+            }
+            if (count < 0) {
+                digits = digits + 1;
+            }
+            if (state != 4 || element.begin < 0 || element.count > 9223372036854775807 - 8 - digits || rendered.size()
+                > 9223372036854775807 - 8 - digits - element.count) {
+                fail();
+                return TextRange(-1, 0);
+            }
+            const i64 begin = rendered.size();
+            const i64 length = element.count + 8 + digits;
+            if (!rendered.try_resize(begin + length)) {
+                fail();
+                return TextRange(-1, 0);
+            }
+            const array<u8, 7> prefix = "@array:";
+            i64 at = 0;
+            while (at < 7) {
+                if (!rendered.set(begin + at, prefix[at])) {
+                    fail();
+                    return TextRange(-1, 0);
+                }
+                at = at + 1;
+            }
+            at = 0;
+            while (at < element.count) {
+                const u8 byte = rendered.at(element.begin + at);
+                if (!rendered.set(begin + 7 + at, byte)) {
+                    fail();
+                    return TextRange(-1, 0);
+                }
+                at = at + 1;
+            }
+            if (!rendered.set(begin + 7 + element.count, 58u8)) {
+                fail();
+                return TextRange(-1, 0);
+            }
+            at = begin + length;
+            remaining = magnitude;
+            bool complete = false;
+            while (!complete) {
+                at = at - 1;
+                if (!rendered.set(at, u8(48 + remaining % 10))) {
+                    fail();
+                    return TextRange(-1, 0);
+                }
+                remaining = remaining / 10;
+                complete = remaining == 0;
+            }
+            if (count < 0 && !rendered.set(at - 1, 45u8)) {
+                fail();
+                return TextRange(-1, 0);
+            }
+            return TextRange(begin, length);
+        }
+        auto compare_names(i64 a, i64 ac, i64 b, i64 bc) const -> i64 {
+            i64 at = 0;
+            while (at < ac && at < bc) {
+                const u8 left = rendered.at(a + at);
+                const u8 right = rendered.at(b + at);
+                if (left < right) {
+                    return -1;
+                }
+                if (left > right) {
+                    return 1;
+                }
+                at = at + 1;
+            }
+            if (ac < bc) {
+                return -1;
+            }
+            if (ac > bc) {
+                return 1;
+            }
+            return 0;
+        }
+        auto put_order(i64 at, OrderRow row) -> bool {
+            if (state != 4 || !order.set(at, row)) {
+                return fail();
+            }
+            return true;
+        }
+        auto ordered(i64 at) const -> OrderRow {
+            return order.at(at);
+        }
+        auto order_less(OrderRow a, OrderRow b, bool named) const -> bool {
+            if (named) {
+                const i64 comparison = compare_names(a.nameBegin, a.nameCount, b.nameBegin, b.nameCount);
+                if (comparison != 0) {
+                    return comparison < 0;
+                }
+            } else {
+                if (a.key != b.key) {
+                    return a.key < b.key;
+                }
+            }
+            return a.tie < b.tie || (a.tie == b.tie && a.row < b.row);
+        }
+        auto swap_order(i64 a, i64 b) -> bool {
+            const OrderRow first = order.at(a);
+            const OrderRow second = order.at(b);
+            return put_order(a, second) && put_order(b, first);
+        }
+        auto sift_order(i64 begin, i64 first, i64 end, bool named) -> bool {
+            i64 root = first;
+            while (root < end / 2) {
+                i64 child = root * 2 + 1;
+                if (child + 1 < end) {
+                    const OrderRow left = order.at(begin + child);
+                    const OrderRow right = order.at(begin + child + 1);
+                    if (order_less(left, right, named)) {
+                        child = child + 1;
+                    }
+                }
+                const OrderRow parent = order.at(begin + root);
+                const OrderRow selected = order.at(begin + child);
+                if (!order_less(parent, selected, named)) {
+                    return true;
+                }
+                if (!swap_order(begin + root, begin + child)) {
+                    return false;
+                }
+                root = child;
+            }
+            return true;
+        }
+        auto sort_order(i64 begin, i64 count, bool named) -> bool {
+            if (state != 4 || begin < 0 || count < 0 || begin > order.size() || count > order.size() - begin) {
+                return fail();
+            }
+            i64 at = count / 2;
+            while (at > 0) {
+                at = at - 1;
+                if (!sift_order(begin, at, count, named)) {
+                    return false;
+                }
+            }
+            at = count;
+            while (at > 1) {
+                at = at - 1;
+                if (!swap_order(begin, begin + at) || !sift_order(begin, 0, at, named)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        auto class_begin() const -> i64 {
+            return operandCount;
+        }
+        auto lookup_begin() const -> i64 {
+            return operandCount + rowCount;
+        }
+        auto order_complete(i64 classes, i64 functions) -> bool {
+            if (state != 4) {
+                return fail();
+            }
+            classCount = classes;
+            functionCount = functions;
+            state = 5;
+            return true;
+        }
+        auto root() const -> i64 {
+            return rootId;
+        }
+        auto matches_session(i64 stamp, i64 rows, i64 operands) const -> bool {
+            return sessionStamp > 0 && stamp == sessionStamp && rows == rowCount && operands == operandCount;
+        }
+
+        auto class_count() const -> i64 {
+            return classCount;
+        }
+        auto current(i64 pool) const -> i64 {
+            const Word value = counters.at(pool);
+            return word_integer(value.bits);
+        }
+        auto total(i64 pool) const -> i64 {
+            return current(pool + 17);
+        }
+        auto set_counter(i64 at, i64 value) -> bool {
+            const Word word = Word(word_bits(value));
+            if (!counters.set(at, word)) {
+                return fail();
+            }
+            return true;
+        }
+        auto reserve(i64 pool, i64 count) -> i64 {
+            if ((state != 6 && state != 7) || pool < 0 || pool >= 17 || count < 0) {
+                fail();
+                return -1;
+            }
+            const i64 first = current(pool);
+            if (first < 0 || count > 9223372036854775807 - first || (state == 7 && (first > total(pool) || count
+                > total(pool) - first))) {
+                fail();
+                return -1;
+            }
+            if (!set_counter(pool, first + count)) {
+                return -1;
+            }
+            return first;
+        }
+        auto pool_begin(i64 pool) const -> i64 {
+            i64 result = 0;
+            i64 at = 0;
+            while (at < pool) {
+                result = result + total(at) * pool_width(at);
+                at = at + 1;
+            }
+            return result;
+        }
+        auto put_word(i64 pool, i64 row, i64 field, u64 bits) -> bool {
+            if ((state != 6 && state != 7) || pool < 0 || pool >= 17 || row < 0 || field < 0 || field
+                >= pool_width(pool)) {
+                return fail();
+            }
+            if (state == 6) {
+                return true;
+            }
+            if (row >= total(pool)) {
+                return fail();
+            }
+            const Word word = Word(bits);
+            if (!outputWords.set(pool_begin(pool) + row * pool_width(pool) + field, word)) {
+                return fail();
+            }
+            return true;
+        }
+        auto put_integer(i64 pool, i64 row, i64 field, i64 value) -> bool {
+            return put_word(pool, row, field, word_bits(value));
+        }
+        auto bits(i64 pool, i64 row, i64 field) const -> u64 {
+            const Word value = outputWords.at(pool_begin(pool) + row * pool_width(pool) + field);
+            return value.bits;
+        }
+        auto integer(i64 pool, i64 row, i64 field) const -> i64 {
+            return word_integer(bits(pool, row, field));
+        }
+        auto begin_measure() -> bool {
+            if (state != 5 || !counters.ok() || !outputWords.ok() || !outputBytes.ok() || !strings.ok()) {
+                return fail();
+            }
+            const Word empty = Word(0u64);
+            if (!counters.try_resize(35, empty)) {
+                return fail();
+            }
+            state = 6;
+            return true;
+        }
+        auto begin_fill() -> bool {
+            if (state != 6) {
+                return fail();
+            }
+            i64 at = 0;
+            i64 words = 0;
+            while (at < 17) {
+                const i64 count = current(at);
+                const i64 width = pool_width(at);
+                if (count < 0 || (width > 0 && count > (1152921504606846975 - words) / width)) {
+                    return fail();
+                }
+                words = words + count * width;
+                if (!set_counter(at + 17, count) || !set_counter(at, 0)) {
+                    return fail();
+                }
+                at = at + 1;
+            }
+            if (total(0) > 9223372036854775807 - total(15)) {
+                return fail();
+            }
+            const Word empty = Word(0u64);
+            if (!outputWords.try_resize(words, empty) || !outputBytes.try_resize(total(0) + total(15))
+                || !set_counter(34, 0)) {
+                return fail();
+            }
+            state = 7;
+            return true;
+        }
+        auto complete_fill() -> bool {
+            if (state != 7) {
+                return fail();
+            }
+            i64 at = 0;
+            while (at < 17) {
+                if (current(at) != total(at)) {
+                    return fail();
+                }
+                at = at + 1;
+            }
+            state = 8;
+            return true;
+        }
+        auto text(TextRange name) -> TextRange {
+            if ((state != 6 && state != 7) || name.begin < 0 || name.count < 0 || name.begin > rendered.size()
+                || name.count > rendered.size() - name.begin) {
+                fail();
+                return TextRange(-1, 0);
+            }
+            if (name.count == 0) {
+                return TextRange(current(0), 0);
+            }
+            const i64 used = current(34);
+            i64 at = 0;
+            while (at < used) {
+                const Intern previous = strings.at(at);
+                if (compare_names(name.begin, name.count, previous.begin, previous.count) == 0) {
+                    return TextRange(previous.output, name.count);
+                }
+                at = at + 1;
+            }
+            if (used == strings.size()) {
+                if (used > 192153584101141162) {
+                    fail();
+                    return TextRange(-1, 0);
+                }
+                i64 capacity = 8;
+                if (used > 0) {
+                    capacity = used * 2;
+                }
+                const Intern empty = Intern(0, 0, 0);
+                if (!strings.try_resize(capacity, empty)) {
+                    fail();
+                    return TextRange(-1, 0);
+                }
+            }
+            const i64 first = reserve(0, name.count);
+            if (first < 0) {
+                return TextRange(-1, 0);
+            }
+            const Intern added = Intern(name.begin, name.count, first);
+            if (!strings.set(used, added) || !set_counter(34, used + 1)) {
+                fail();
+                return TextRange(-1, 0);
+            }
+            if (state == 7) {
+                at = 0;
+                while (at < name.count) {
+                    const u8 byte = rendered.at(name.begin + at);
+                    if (!outputBytes.set(first + at, byte)) {
+                        fail();
+                        return TextRange(-1, 0);
+                    }
+                    at = at + 1;
+                }
+            }
+            return TextRange(first, name.count);
+        }
+        auto literal_byte(u8 byte) -> bool {
+            const i64 at = reserve(15, 1);
+            if (at < 0) {
+                return false;
+            }
+            if (state == 7 && !outputBytes.set(total(0) + at, byte)) {
+                return fail();
+            }
+            return true;
+        }
+        auto output_byte(i64 at) const -> u8 {
+            return outputBytes.at(at);
+        }
+        auto mark_instructions() -> bool {
+            return set_counter(12, current(1));
+        }
+        auto counts() const -> ProjectionCounts {
+            if (state != 8) {
+                const compiler_ir_metadata::CoreCounts core = compiler_ir_metadata::CoreCounts(-1, -1, -1, -1, -1);
+                const compiler_ir_metadata::MapCounts maps = compiler_ir_metadata::MapCounts(-1, -1, -1, -1, -1);
+                const compiler_ir_metadata::InputCounts metadata = compiler_ir_metadata::InputCounts(core, maps);
+                const compiler_ir_instructions::InstructionCounts instructions =
+                    compiler_ir_instructions::InstructionCounts(-1, -1, -1, -1);
+                return ProjectionCounts(metadata, instructions, -1, -1, -1);
+            }
+            const compiler_ir_metadata::CoreCounts core = compiler_ir_metadata::CoreCounts(total(0), total(1), total(2),
+                total(3), total(4));
+            const compiler_ir_metadata::MapCounts maps = compiler_ir_metadata::MapCounts(total(5), total(6), total(7),
+                total(8), total(9));
+            const compiler_ir_metadata::InputCounts metadata = compiler_ir_metadata::InputCounts(core, maps);
+            const compiler_ir_instructions::InstructionCounts instructions =
+                compiler_ir_instructions::InstructionCounts(total(13), total(14), total(15), total(16));
+            return ProjectionCounts(metadata, instructions, total(10), total(11), total(12));
+        }
+        auto emit_type(i64 identity, i64 selected) -> i64 {
+            const i64 input = find_identity(3, identity);
+            if (input < 0) {
+                fail();
+                return -1;
+            }
+            const i64 base = 8 + input * 80;
+            const TextRange original = identity_name(3, identity);
+            const TextRange name = text(original);
+            const i64 reserved = reserve(1, 1);
+            i64 index = selected;
+            if (index < 0) {
+                index = reserved;
+            }
+            if (reserved < 0 || name.begin < 0 || !put_word(1, index, 0, rendered_word(base + 16)) || !put_integer(1,
+                index, 1, name.begin) || !put_integer(1, index, 2, name.count)) {
+                fail();
+                return -1;
+            }
+            i64 field = 3;
+            while (field < 8) {
+                if (!put_word(1, index, field, rendered_word(base + 40 + (field - 3) * 8))) {
+                    return -1;
+                }
+                field = field + 1;
+            }
+            return index;
+        }
+        auto emit_named_type(i64 kind, TextRange original) -> i64 {
+            const TextRange name = text(original);
+            const i64 index = reserve(1, 1);
+            if (name.begin < 0 || index < 0 || !put_integer(1, index, 0, kind) || !put_integer(1, index, 1, name.begin)
+                || !put_integer(1, index, 2, name.count)) {
+                fail();
+                return -1;
+            }
+            i64 field = 3;
+            while (field < 8) {
+                if (!put_integer(1, index, field, 0)) {
+                    return -1;
+                }
+                field = field + 1;
+            }
+            return index;
+        }
+        auto emit_index(i64 value) -> bool {
+            const i64 index = reserve(6, 1);
+            return index >= 0 && put_integer(6, index, 0, value);
+        }
+        auto status() const -> i64 {
+            return state;
+        }
+    };
+    auto create_plan(builtin::ByteRegion region) -> Plan {
+        Plan plan = Plan(region);
+        return move(plan);
+    }
+    auto release_plan(builtin::ByteRegion region, Plan plan) -> i64 {
+        return 0;
+    }
+    auto slot_kind(compiler_lowering::RecordKind kind) -> bool {
+        return kind == compiler_lowering::RecordKind::ScalarSlot || kind == compiler_lowering::RecordKind::ObjectSlot
+            || kind == compiler_lowering::RecordKind::ArraySlot || kind == compiler_lowering::RecordKind::SpanSlot
+            || kind == compiler_lowering::RecordKind::ServiceSlot || kind == compiler_lowering::RecordKind::RegionSlot
+            || kind == compiler_lowering::RecordKind::ByteSlot || kind == compiler_lowering::RecordKind::OwnedValueType;
+    }
+    auto selected_shape(compiler_lowering::OutputRow row, i64 at) -> GraphShape {
+        if (row.kind() != compiler_lowering::RecordKind::Instruction && row.kind()
+            != compiler_lowering::RecordKind::DiscardedInstruction) {
+            return graph_shape(row.kind(), at);
+        }
+        const Shape prefix = instruction_shape(row.form(), at);
+        i64 mode = prefix.mode;
+        if (mode == 9) {
+            mode = 20;
+        }
+        if (mode == 10) {
+            mode = 30;
+        }
+        if (mode == 11) {
+            mode = 29;
+        }
+        if (mode == 12) {
+            mode = 31;
+        }
+        if (mode == 13) {
+            mode = 32;
+        }
+        return GraphShape(prefix.role, mode, compiler_lowering::RecordKind::invalid);
+    }
+    auto graph_record(Plan& plan, const compiler_resolver::Session& session, i64 id) -> bool {
+        const compiler_lowering::OutputRow row = session.view_output(id);
+        const bool instruction = row.kind() == compiler_lowering::RecordKind::Instruction || row.kind()
+            == compiler_lowering::RecordKind::DiscardedInstruction;
+        if (!plan.claim(row.operand_begin(), row.operand_count())) {
+            return false;
+        }
+        if (!instruction) {
+            const GraphShape end = graph_shape(row.kind(), row.operand_count());
+            if (end.mode != 14) {
+                return plan.fail();
+            }
+        }
+        i64 at = 0;
+        while (at < row.operand_count()) {
+            const GraphShape shape = selected_shape(row, at);
+            const compiler_lowering::OperandRow value = session.view_operand(row.operand_begin() + at);
+            const i64 number = value.signed_value();
+            const bool optional =(shape.mode == 23 && value.role() == compiler_lowering::OperandRole::CarrierId)
+                || (shape.mode == 24 && value.role() == compiler_lowering::OperandRole::NoReceiver) || (shape.mode == 25
+                && value.role() == compiler_lowering::OperandRole::NoReceiverSpan) || (shape.mode == 32 && value.role()
+                == compiler_lowering::OperandRole::UnsignedConstant);
+            if (shape.mode == 0 || (value.role() != shape.role && !optional)) {
+                return plan.fail();
+            }
+            if ((shape.mode == 1 || shape.mode == 17 || (shape.mode == 25 && !optional)) && (number < -2147483648
+                || number > 2147483647)) {
+                return plan.fail();
+            }
+            if (shape.mode == 17 && number < 0) {
+                return plan.fail();
+            }
+            if (shape.mode == 2 && number != 0 && number != 1) {
+                return plan.fail();
+            }
+            if (shape.mode == 19 && number != 62 && number != 318) {
+                return plan.fail();
+            }
+            if (shape.mode >= 3 && shape.mode <= 8 || shape.mode == 15 || shape.mode == 16) {
+                if (shape.mode == 6 && number > 2147483647) {
+                    return plan.fail();
+                }
+                if (!plan.request(shape.mode, number)) {
+                    return false;
+                }
+            }
+            if (shape.mode == 23) {
+                if (!optional) {
+                    if (!plan.request(5, number)) {
+                        return false;
+                    }
+                } else {
+                    if (number < 0 || number >= session.output_count()) {
+                        return plan.fail();
+                    }
+                    const compiler_lowering::OutputRow carrier = session.view_output(number);
+                    if (carrier.kind() != compiler_lowering::RecordKind::Carrier) {
+                        return plan.fail();
+                    }
+                }
+            }
+            if (shape.mode == 24 && !optional) {
+                if (!plan.claim_row(number, compiler_lowering::RecordKind::Receiver)) {
+                    return false;
+                }
+            }
+            if (shape.mode == 26 && !plan.claim_row(number, shape.child)) {
+                return false;
+            }
+            if ((shape.mode >= 20 && shape.mode <= 22) || (shape.mode >= 27 && shape.mode <= 30)) {
+                if (!plan.claim(value.begin(), value.count())) {
+                    return false;
+                }
+                i64 index = 0;
+                while (index < value.count()) {
+                    const compiler_lowering::OperandRow item = session.view_operand(value.begin() + index);
+                    compiler_lowering::OperandRole role = compiler_lowering::OperandRole::Offset;
+                    if (shape.mode == 21) {
+                        role = compiler_lowering::OperandRole::TypeId;
+                    }
+                    if (shape.mode == 22) {
+                        role = compiler_lowering::OperandRole::OutputRowId;
+                    }
+                    if (shape.mode == 27) {
+                        role = compiler_lowering::OperandRole::PublicDescriptorId;
+                    }
+                    if (shape.mode == 28) {
+                        role = compiler_lowering::OperandRole::ClassNominalId;
+                    }
+                    if (shape.mode == 29) {
+                        role = compiler_lowering::OperandRole::Root;
+                        if (index % 2 == 1) {
+                            role = compiler_lowering::OperandRole::LoanId;
+                        }
+                    }
+                    if (shape.mode == 30) {
+                        role = compiler_lowering::OperandRole::ServiceLoanId;
+                        if (index % 2 == 1) {
+                            role = compiler_lowering::OperandRole::ServiceKindId;
+                        }
+                    }
+                    if (item.role() != role) {
+                        return plan.fail();
+                    }
+                    const i64 item_number = item.signed_value();
+                    if (shape.mode == 20 || shape.mode == 27 || shape.mode == 29 || (shape.mode == 30 && index % 2
+                        == 0)) {
+                        if (item_number < -2147483648 || item_number > 2147483647 || (shape.mode == 27 && item_number
+                            < 0)) {
+                            return plan.fail();
+                        }
+                    }
+                    if (shape.mode == 21 && !plan.request(3, item_number)) {
+                        return false;
+                    }
+                    if (shape.mode == 28 && !plan.request(5, item_number)) {
+                        return false;
+                    }
+                    if (shape.mode == 30 && index % 2 == 1 && !plan.request(7, item_number)) {
+                        return false;
+                    }
+                    if (shape.mode == 22) {
+                        compiler_lowering::RecordKind expected = shape.child;
+                        if (expected == compiler_lowering::RecordKind::invalid) {
+                            if (item_number < 0 || item_number >= session.output_count()) {
+                                return plan.fail();
+                            }
+                            const compiler_lowering::OutputRow slot = session.view_output(item_number);
+                            expected = slot.kind();
+                            if (!slot_kind(expected)) {
+                                return plan.fail();
+                            }
+                        }
+                        if (!plan.claim_row(item_number, expected)) {
+                            return false;
+                        }
+                    }
+                    index = index + 1;
+                }
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto graph(Plan& plan, const compiler_resolver::Session& session, i64 root) -> bool {
+        const Inspection inspection = count_instruction_prefixes(session);
+        if (inspection.status != 0 || session.output_count() < 15 || root < 15 || root >= session.output_count()
+            || !plan.begin(session.output_count(), session.operand_count(), root, session.projection_stamp())) {
+            return plan.fail();
+        }
+        const compiler_lowering::OutputRow diagnostic = session.view_output(0);
+        const compiler_lowering::OutputRow configuration = session.view_output(1);
+        if (diagnostic.operand_begin() != 0 || diagnostic.operand_count() != 3 || configuration.operand_begin() < 0
+            || configuration.operand_count() != 8 || configuration.operand_begin() > session.operand_count() || 8
+            > session.operand_count() - configuration.operand_begin()) {
+            return plan.fail();
+        }
+        const compiler_lowering::OperandRow groups = session.view_operand(configuration.operand_begin() + 7);
+        i64 layout = 14;
+        if (groups.signed_value() == 318) {
+            layout = 15;
+        }
+        if (root <= layout || !plan.claim_row(0, compiler_lowering::RecordKind::DiagnosticPayload) || !plan.claim_row(1,
+            compiler_lowering::RecordKind::Configuration)) {
+            return plan.fail();
+        }
+        i64 at = 2;
+        while (at < 9) {
+            if (!plan.claim_row(at, compiler_lowering::RecordKind::ScalarContract)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        while (at < layout) {
+            if (!plan.claim_row(at, compiler_lowering::RecordKind::ServiceContract)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        if (!plan.claim_row(layout, compiler_lowering::RecordKind::InitialLayoutOrder) || !plan.claim_row(root,
+            compiler_lowering::RecordKind::Module)) {
+            return false;
+        }
+        at = 0;
+        while (at < plan.node_count()) {
+            const GraphNode node = plan.node(at);
+            const compiler_lowering::OutputRow row = session.view_output(node.id);
+            if (row.kind() != node.kind || !graph_record(plan, session, node.id)) {
+                return plan.fail();
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < session.output_count()) {
+            if (!plan.owned(at)) {
+                const compiler_lowering::OutputRow row = session.view_output(at);
+                if (row.kind() != compiler_lowering::RecordKind::DiscardedInstruction || !plan.claim_row(at,
+                    compiler_lowering::RecordKind::DiscardedInstruction) || !graph_record(plan, session, at)) {
+                    return plan.fail();
+                }
+            }
+            at = at + 1;
+        }
+        return plan.finish();
+    }
+    auto bind_domains(Plan& plan, const compiler_resolver::Session& session) -> bool {
+        if (plan.status() != 3) {
+            return plan.fail();
+        }
+        i64 at = 0;
+        while (at < session.output_count()) {
+            const compiler_lowering::OutputRow row = session.view_output(at);
+            if (row.kind() == compiler_lowering::RecordKind::Carrier) {
+                const compiler_lowering::OperandRow type = session.view_operand(row.operand_begin());
+                if (plan.identity_value(3, type.signed_value()) != 5) {
+                    return plan.fail();
+                }
+            }
+            if (row.kind() == compiler_lowering::RecordKind::Instruction || row.kind()
+                == compiler_lowering::RecordKind::DiscardedInstruction) {
+                i64 field = 0;
+                while (field < row.operand_count()) {
+                    const Shape shape = instruction_shape(row.form(), field);
+                    const compiler_lowering::OperandRow value = session.view_operand(row.operand_begin() + field);
+                    if (shape.mode == 13) {
+                        const compiler_lowering::OperandRow type = session.view_operand(row.operand_begin() + field
+                            + 1);
+                        const i64 kind = plan.identity_value(3, type.signed_value());
+                        if (kind < 0 || (kind == 7 && value.role() != compiler_lowering::OperandRole::UnsignedConstant)
+                            || (kind != 7 && value.role() != compiler_lowering::OperandRole::SignedConstant)) {
+                            return plan.fail();
+                        }
+                    }
+                    if (shape.mode == 12 && row.kind() == compiler_lowering::RecordKind::DiscardedInstruction) {
+                        i64 byte = 0;
+                        while (byte < value.count()) {
+                            if (session.view_source(value.begin() + byte) < 0) {
+                                return plan.fail();
+                            }
+                            byte = byte + 1;
+                        }
+                    }
+                    field = field + 1;
+                }
+            }
+            at = at + 1;
+        }
+        return plan.seal_domains();
+    }
+
+    auto slot_rank(compiler_lowering::RecordKind kind) -> i64 {
+        if (kind == compiler_lowering::RecordKind::ScalarSlot) {
+            return 10;
+        }
+        if (kind == compiler_lowering::RecordKind::ObjectSlot) {
+            return 11;
+        }
+        if (kind == compiler_lowering::RecordKind::ArraySlot) {
+            return 12;
+        }
+        if (kind == compiler_lowering::RecordKind::SpanSlot) {
+            return 13;
+        }
+        if (kind == compiler_lowering::RecordKind::ServiceSlot) {
+            return 14;
+        }
+        if (kind == compiler_lowering::RecordKind::RegionSlot) {
+            return 15;
+        }
+        if (kind == compiler_lowering::RecordKind::ByteSlot) {
+            return 16;
+        }
+        if (kind == compiler_lowering::RecordKind::OwnedValueType) {
+            return 17;
+        }
+        return -1;
+    }
+    auto canonical_order(Plan& plan, const compiler_resolver::Session& session, i64 root) -> bool {
+        if (root != plan.root() || !plan.begin_order()) {
+            return plan.fail();
+        }
+        i64 at = 0;
+        while (at < session.output_count()) {
+            const compiler_lowering::OutputRow row = session.view_output(at);
+            if (row.kind() == compiler_lowering::RecordKind::Carrier) {
+                const compiler_lowering::OperandRow type = session.view_operand(row.operand_begin());
+                const compiler_lowering::OperandRow count = session.view_operand(row.operand_begin() + 1);
+                const TextRange name = plan.carrier_name(type.signed_value(), count.signed_value());
+                if (!plan.remember_name(at, name)) {
+                    return false;
+                }
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < session.output_count()) {
+            const compiler_lowering::OutputRow row = session.view_output(at);
+            if (row.kind() == compiler_lowering::RecordKind::Class || row.kind()
+                == compiler_lowering::RecordKind::Function || row.kind() == compiler_lowering::RecordKind::EnumCases
+                || row.kind() == compiler_lowering::RecordKind::Receiver) {
+                const compiler_lowering::OperandRow identity = session.view_operand(row.operand_begin());
+                i64 domain = 5;
+                if (row.kind() == compiler_lowering::RecordKind::Function) {
+                    domain = 4;
+                }
+                if (row.kind() == compiler_lowering::RecordKind::EnumCases) {
+                    domain = 15;
+                }
+                if (identity.role() == compiler_lowering::OperandRole::CarrierId) {
+                    const TextRange name = plan.row_name(identity.signed_value());
+                    if (!plan.remember_name(at, name)) {
+                        return false;
+                    }
+                } else {
+                    const TextRange name = plan.identity_name(domain, identity.signed_value());
+                    if (!plan.remember_name(at, name)) {
+                        return false;
+                    }
+                }
+            }
+            at = at + 1;
+        }
+        const compiler_lowering::OutputRow module_row = session.view_output(root);
+        const compiler_lowering::OperandRow functions = session.view_operand(module_row.operand_begin());
+        const compiler_lowering::OperandRow classes = session.view_operand(module_row.operand_begin() + 1);
+        const compiler_lowering::OperandRow carriers = session.view_operand(module_row.operand_begin() + 2);
+        const compiler_lowering::OperandRow descriptors = session.view_operand(module_row.operand_begin() + 3);
+        const compiler_lowering::OperandRow views = session.view_operand(module_row.operand_begin() + 4);
+        const compiler_lowering::OperandRow enums = session.view_operand(module_row.operand_begin() + 5);
+        at = 0;
+        while (at < classes.count() + carriers.count()) {
+            i64 id = -1;
+            i64 flags = 2;
+            if (at < classes.count()) {
+                const compiler_lowering::OperandRow reference = session.view_operand(classes.begin() + at);
+                id = reference.signed_value();
+            } else {
+                const compiler_lowering::OperandRow reference = session.view_operand(carriers.begin() + at
+                    - classes.count());
+                id = reference.signed_value();
+                flags = 1;
+            }
+            const TextRange name = plan.row_name(id);
+            if (flags == 1) {
+                id = -1;
+            }
+            const OrderRow entry = OrderRow(id, 0, 0, name.begin, name.count, flags);
+            if (!plan.put_order(plan.class_begin() + at, entry)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        if (!plan.sort_order(plan.class_begin(), at, true)) {
+            return false;
+        }
+        i64 class_count = 0;
+        at = 0;
+        while (at < classes.count() + carriers.count()) {
+            const OrderRow entry = plan.ordered(plan.class_begin() + at);
+            bool merge = false;
+            if (class_count > 0) {
+                const OrderRow previous = plan.ordered(plan.class_begin() + class_count - 1);
+                if (plan.compare_names(previous.nameBegin, previous.nameCount, entry.nameBegin, entry.nameCount) == 0) {
+                    if ((previous.flags == 3 || entry.flags == 3 || previous.flags == entry.flags)) {
+                        return plan.fail();
+                    }
+                    i64 id = previous.row;
+                    if (entry.row >= 0) {
+                        id = entry.row;
+                    }
+                    const OrderRow combined = OrderRow(id, 0, 0, previous.nameBegin, previous.nameCount, previous.flags
+                        + entry.flags);
+                    if (!plan.put_order(plan.class_begin() + class_count - 1, combined)) {
+                        return false;
+                    }
+                    merge = true;
+                }
+            }
+            if (!merge) {
+                if (!plan.put_order(plan.class_begin() + class_count, entry)) {
+                    return false;
+                }
+                class_count = class_count + 1;
+            }
+            at = at + 1;
+        }
+        // Descriptor, view and enum order is independent of producer order.
+        i64 group = 3;
+        while (group <= 5) {
+            const compiler_lowering::OperandRow list = session.view_operand(module_row.operand_begin() + group);
+            at = 0;
+            while (at < list.count()) {
+                const compiler_lowering::OperandRow reference = session.view_operand(list.begin() + at);
+                const compiler_lowering::OutputRow row = session.view_output(reference.signed_value());
+                const compiler_lowering::OperandRow key = session.view_operand(row.operand_begin());
+                i64 name_begin = 0;
+                i64 name_count = 0;
+                if (group == 5) {
+                    const TextRange name = plan.row_name(reference.signed_value());
+                    name_begin = name.begin;
+                    name_count = name.count;
+                }
+                const OrderRow entry = OrderRow(reference.signed_value(), key.signed_value(), 0, name_begin, name_count,
+                    0);
+                if (!plan.put_order(list.begin() + at, entry)) {
+                    return false;
+                }
+                at = at + 1;
+            }
+            if (!plan.sort_order(list.begin(), list.count(), group == 5)) {
+                return false;
+            }
+            at = 1;
+            while (at < list.count()) {
+                const OrderRow previous = plan.ordered(list.begin() + at - 1);
+                const OrderRow entry = plan.ordered(list.begin() + at);
+                if ((group != 5 && previous.key == entry.key) || (group == 5 && plan.compare_names(previous.nameBegin,
+                    previous.nameCount, entry.nameBegin, entry.nameCount) == 0)) {
+                    return plan.fail();
+                }
+                at = at + 1;
+            }
+            group = group + 1;
+        }
+        // Each reflection view is a sorted unique subset of declared IDs.
+        i64 view = 0;
+        while (view < views.count()) {
+            const OrderRow selected = plan.ordered(views.begin() + view);
+            const compiler_lowering::OutputRow row = session.view_output(selected.row);
+            const compiler_lowering::OperandRow visible = session.view_operand(row.operand_begin() + 1);
+            at = 0;
+            while (at < visible.count()) {
+                const compiler_lowering::OperandRow value = session.view_operand(visible.begin() + at);
+                i64 first = 0;
+                i64 last = descriptors.count();
+                while (first < last) {
+                    const i64 middle = first + (last - first) / 2;
+                    const OrderRow candidate = plan.ordered(descriptors.begin() + middle);
+                    if (candidate.key < value.signed_value()) {
+                        first = middle + 1;
+                    } else {
+                        last = middle;
+                    }
+                }
+                if (first >= descriptors.count()) {
+                    return plan.fail();
+                }
+                const OrderRow found = plan.ordered(descriptors.begin() + first);
+                if (found.key != value.signed_value()) {
+                    return plan.fail();
+                }
+                const OrderRow entry = OrderRow(-1, value.signed_value(), 0, 0, 0, 0);
+                if (!plan.put_order(visible.begin() + at, entry)) {
+                    return false;
+                }
+                at = at + 1;
+            }
+            if (!plan.sort_order(visible.begin(), visible.count(), false)) {
+                return false;
+            }
+            at = 1;
+            while (at < visible.count()) {
+                const OrderRow previous = plan.ordered(visible.begin() + at - 1);
+                const OrderRow entry = plan.ordered(visible.begin() + at);
+                if (previous.key == entry.key) {
+                    return plan.fail();
+                }
+                at = at + 1;
+            }
+            view = view + 1;
+        }
+        i64 function = 0;
+        while (function < functions.count()) {
+            const compiler_lowering::OperandRow reference = session.view_operand(functions.begin() + function);
+            const TextRange name = plan.row_name(reference.signed_value());
+            const OrderRow lookup = OrderRow(reference.signed_value(), 0, function, name.begin, name.count, 0);
+            if (!plan.put_order(plan.lookup_begin() + function, lookup)) {
+                return false;
+            }
+            const compiler_lowering::OutputRow row = session.view_output(reference.signed_value());
+            const compiler_lowering::OperandRow slots = session.view_operand(row.operand_begin() + 4);
+            at = 0;
+            while (at < slots.count()) {
+                const compiler_lowering::OperandRow slot_ref = session.view_operand(slots.begin() + at);
+                const compiler_lowering::OutputRow slot = session.view_output(slot_ref.signed_value());
+                const compiler_lowering::OperandRow offset = session.view_operand(slot.operand_begin());
+                const OrderRow entry = OrderRow(slot_ref.signed_value(), slot_rank(slot.kind()), offset.signed_value(),
+                    0, 0, 0);
+                if (!plan.put_order(slots.begin() + at, entry)) {
+                    return false;
+                }
+                at = at + 1;
+            }
+            if (!plan.sort_order(slots.begin(), slots.count(), false)) {
+                return false;
+            }
+            function = function + 1;
+        }
+        if (!plan.sort_order(plan.lookup_begin(), functions.count(), true)) {
+            return false;
+        }
+        return plan.order_complete(class_count, functions.count());
+    }
+    auto scalar_at(const compiler_resolver::Session& session, i64 first, i64 offset) -> i64 {
+        const compiler_lowering::OperandRow value = session.view_operand(first + offset);
+        return value.signed_value();
+    }
+    auto emit_offsets(Plan& plan, const compiler_resolver::Session& session, i64 operand) -> bool {
+        const compiler_lowering::OperandRow list = session.view_operand(operand);
+        i64 at = 0;
+        while (at < list.count()) {
+            if (!plan.emit_index(scalar_at(session, list.begin(), at))) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto emit_classes(Plan& plan, const compiler_resolver::Session& session) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
+        i64 at = 0;
+        while (at < plan.class_count()) {
+            const OrderRow selected = plan.ordered(plan.class_begin() + at);
+            const TextRange original = TextRange(selected.nameBegin, selected.nameCount);
+            const TextRange name = plan.text(original);
+            const i64 index = plan.reserve(2, 1);
+            const i64 leaf_begin = plan.current(4);
+            const i64 field_begin = plan.current(3);
+            i64 supplied = -1;
+            u64 flags = 0u64;
+            if (selected.flags == 1 || selected.flags == 3) {
+                flags = masks.class_array_carrier();
+            }
+            if (selected.row >= 0) {
+                flags = flags | masks.class_layout() | masks.class_fields() | masks.class_storage();
+                const compiler_lowering::OutputRow row = session.view_output(selected.row);
+                const compiler_lowering::OperandRow leaves = session.view_operand(row.operand_begin() + 1);
+                const compiler_lowering::OperandRow fields = session.view_operand(row.operand_begin() + 2);
+                i64 entry = 0;
+                while (entry < leaves.count()) {
+                    const i64 position = plan.reserve(4, 1);
+                    if (position < 0 || plan.emit_type(scalar_at(session, leaves.begin(), entry), position) < 0) {
+                        return false;
+                    }
+                    entry = entry + 1;
+                }
+                entry = 0;
+                while (entry < fields.count()) {
+                    const compiler_lowering::OutputRow field = session.view_output(scalar_at(session, fields.begin(),
+                        entry));
+                    const i64 position = plan.reserve(3, 1);
+                    i64 type_position = position;
+                    if (plan.status() == 7) {
+                        type_position = plan.total(4) + position;
+                    }
+                    if (position < 0 || plan.emit_type(scalar_at(session, field.operand_begin(), 0), type_position) < 0
+                        || !plan.put_integer(3, position, 0, type_position)) {
+                        return false;
+                    }
+                    i64 word = 1;
+                    while (word < 5) {
+                        if (!plan.put_integer(3, position, word, scalar_at(session, field.operand_begin(), word))) {
+                            return false;
+                        }
+                        word = word + 1;
+                    }
+                    entry = entry + 1;
+                }
+                const compiler_lowering::OutputRow storage = session.view_output(scalar_at(session, row.operand_begin(),
+                    3));
+                const compiler_lowering::OperandRow leaf_offsets = session.view_operand(storage.operand_begin());
+                const compiler_lowering::OperandRow field_offsets = session.view_operand(storage.operand_begin() + 1);
+                supplied = plan.reserve(5, 1);
+                const i64 offsets_begin = plan.current(6);
+                if (supplied < 0 || !emit_offsets(plan, session, storage.operand_begin()) || !emit_offsets(plan,
+                    session, storage.operand_begin() + 1) || !plan.put_integer(5, supplied, 0, offsets_begin)
+                    || !plan.put_integer(5, supplied, 1, leaf_offsets.count()) || !plan.put_integer(5, supplied, 2,
+                    offsets_begin + leaf_offsets.count()) || !plan.put_integer(5, supplied, 3, field_offsets.count())) {
+                    return false;
+                }
+                i64 word = 4;
+                while (word < 7) {
+                    if (!plan.put_integer(5, supplied, word, scalar_at(session, storage.operand_begin(), word - 2))) {
+                        return false;
+                    }
+                    word = word + 1;
+                }
+            }
+            if (index < 0 || name.begin < 0 || !plan.put_integer(2, index, 0, name.begin) || !plan.put_integer(2, index,
+                1, name.count) || !plan.put_integer(2, index, 2, leaf_begin) || !plan.put_integer(2, index, 3,
+                plan.current(4) - leaf_begin) || !plan.put_integer(2, index, 4, field_begin) || !plan.put_integer(2,
+                index, 5, plan.current(3) - field_begin) || !plan.put_integer(2, index, 6, supplied)
+                || !plan.put_word(2, index, 7, flags)) {
+                return plan.fail();
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto emit_maps(Plan& plan, const compiler_resolver::Session& session) -> bool {
+        const compiler_lowering::OutputRow module_row = session.view_output(plan.root());
+        i64 group = 3;
+        while (group <= 5) {
+            const compiler_lowering::OperandRow list = session.view_operand(module_row.operand_begin() + group);
+            i64 at = 0;
+            while (at < list.count()) {
+                const OrderRow selected = plan.ordered(list.begin() + at);
+                const compiler_lowering::OutputRow row = session.view_output(selected.row);
+                const i64 pool = group + 4;
+                const i64 index = plan.reserve(pool, 1);
+                if (index < 0) {
+                    return false;
+                }
+                if (group == 3) {
+                    i64 field = 0;
+                    while (field < 3) {
+                        if (!plan.put_integer(pool, index, field, scalar_at(session, row.operand_begin(), field))) {
+                            return false;
+                        }
+                        field = field + 1;
+                    }
+                }
+                if (group == 4) {
+                    const compiler_lowering::OperandRow visible = session.view_operand(row.operand_begin() + 1);
+                    const i64 first = plan.current(6);
+                    i64 item = 0;
+                    while (item < visible.count()) {
+                        const OrderRow descriptor = plan.ordered(visible.begin() + item);
+                        if (!plan.emit_index(descriptor.key)) {
+                            return false;
+                        }
+                        item = item + 1;
+                    }
+                    if (!plan.put_integer(pool, index, 0, selected.key) || !plan.put_integer(pool, index, 1, first)
+                        || !plan.put_integer(pool, index, 2, visible.count())) {
+                        return false;
+                    }
+                }
+                if (group == 5) {
+                    const TextRange original = TextRange(selected.nameBegin, selected.nameCount);
+                    const TextRange name = plan.text(original);
+                    if (name.begin < 0 || !plan.put_integer(pool, index, 0, name.begin) || !plan.put_integer(pool,
+                        index, 1, name.count) || !plan.put_integer(pool, index, 2, scalar_at(session,
+                        row.operand_begin(), 1))) {
+                        return false;
+                    }
+                }
+                at = at + 1;
+            }
+            group = group + 1;
+        }
+        return true;
+    }
+    auto emit_slots(Plan& plan, const compiler_resolver::Session& session, i64 operand) -> bool {
+        const compiler_lowering::OperandRow slots = session.view_operand(operand);
+        i64 at = 0;
+        while (at < slots.count()) {
+            const OrderRow selected = plan.ordered(slots.begin() + at);
+            const compiler_lowering::OutputRow row = session.view_output(selected.row);
+            const i64 index = plan.reserve(11, 1);
+            i64 type = 0;
+            i64 length = 0;
+            i64 mutable_value = 0;
+            if (row.kind() == compiler_lowering::RecordKind::ScalarSlot) {
+                type = plan.emit_type(scalar_at(session, row.operand_begin(), 1), -1);
+            }
+            if (row.kind() == compiler_lowering::RecordKind::ObjectSlot || row.kind()
+                == compiler_lowering::RecordKind::OwnedValueType) {
+                const compiler_lowering::OperandRow identity = session.view_operand(row.operand_begin() + 1);
+                i64 kind = 5;
+                if (row.kind() == compiler_lowering::RecordKind::OwnedValueType) {
+                    kind = 17;
+                }
+                if (identity.role() == compiler_lowering::OperandRole::CarrierId) {
+                    const TextRange name = plan.row_name(identity.signed_value());
+                    type = plan.emit_named_type(kind, name);
+                } else {
+                    const TextRange name = plan.identity_name(5, identity.signed_value());
+                    type = plan.emit_named_type(kind, name);
+                }
+                if (row.kind() == compiler_lowering::RecordKind::ObjectSlot) {
+                    mutable_value = scalar_at(session, row.operand_begin(), 2);
+                }
+            }
+            if (row.kind() == compiler_lowering::RecordKind::ArraySlot) {
+                length = scalar_at(session, row.operand_begin(), 1);
+            }
+            if (row.kind() == compiler_lowering::RecordKind::ByteSlot) {
+                mutable_value = scalar_at(session, row.operand_begin(), 1);
+            }
+            if (index < 0 || type < 0 || !plan.put_integer(11, index, 0, selected.key) || !plan.put_integer(11, index,
+                1, selected.tie) || !plan.put_integer(11, index, 2, type) || !plan.put_integer(11, index, 3, length)
+                || !plan.put_integer(11, index, 4, mutable_value)) {
+                return plan.fail();
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto emit_functions(Plan& plan, const compiler_resolver::Session& session) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
+        const compiler_lowering::OutputRow module_row = session.view_output(plan.root());
+        const compiler_lowering::OperandRow functions = session.view_operand(module_row.operand_begin());
+        i64 at = 0;
+        while (at < functions.count()) {
+            const i64 id = scalar_at(session, functions.begin(), at);
+            const compiler_lowering::OutputRow row = session.view_output(id);
+            const TextRange original = plan.row_name(id);
+            const TextRange name = plan.text(original);
+            const i64 index = plan.reserve(10, 1);
+            const i64 type_begin = plan.current(1);
+            if (plan.emit_type(scalar_at(session, row.operand_begin(), 2), -1) < 0) {
+                return false;
+            }
+            const compiler_lowering::OperandRow parameters = session.view_operand(row.operand_begin() + 3);
+            i64 parameter = 0;
+            while (parameter < parameters.count()) {
+                if (plan.emit_type(scalar_at(session, parameters.begin(), parameter), -1) < 0) {
+                    return false;
+                }
+                parameter = parameter + 1;
+            }
+            const i64 slot_begin = plan.current(11);
+            if (!emit_slots(plan, session, row.operand_begin() + 4)) {
+                return false;
+            }
+            const compiler_lowering::OperandRow receiver = session.view_operand(row.operand_begin() + 5);
+            const compiler_lowering::OperandRow span = session.view_operand(row.operand_begin() + 8);
+            i64 receiver_begin = 0;
+            i64 receiver_count = 0;
+            u64 receiver_flags = 0u64;
+            u64 flags = 0u64;
+            i64 span_field = 0;
+            if (receiver.role() == compiler_lowering::OperandRole::ReceiverRef) {
+                flags = flags | masks.callable_receiver();
+                const compiler_lowering::OutputRow receiver_row = session.view_output(receiver.signed_value());
+                const TextRange receiver_original = plan.row_name(receiver.signed_value());
+                const TextRange receiver_name = plan.text(receiver_original);
+                if (receiver_name.begin < 0) {
+                    return false;
+                }
+                receiver_begin = receiver_name.begin;
+                receiver_count = receiver_name.count;
+                if (scalar_at(session, receiver_row.operand_begin(), 1) != 0) {
+                    receiver_flags = receiver_flags | masks.receiver_mutable();
+                }
+                if (scalar_at(session, receiver_row.operand_begin(), 2) != 0) {
+                    receiver_flags = receiver_flags | masks.receiver_constructor();
+                }
+                if (scalar_at(session, receiver_row.operand_begin(), 3) != 0) {
+                    receiver_flags = receiver_flags | masks.receiver_public();
+                }
+            }
+            if (span.role() == compiler_lowering::OperandRole::ReceiverSpanField) {
+                flags = flags | masks.callable_span_summary();
+                span_field = span.signed_value();
+            }
+            if (index < 0 || name.begin < 0 || !plan.put_integer(10, index, 0, name.begin) || !plan.put_integer(10,
+                index, 1, name.count) || !plan.put_integer(10, index, 2, type_begin) || !plan.put_integer(10, index, 3,
+                parameters.count() + 1) || !plan.put_integer(10, index, 4, scalar_at(session, row.operand_begin(), 1))
+                || !plan.put_integer(10, index, 5, receiver_begin) || !plan.put_integer(10, index, 6, receiver_count)
+                || !plan.put_word(10, index, 7, receiver_flags) || !plan.put_integer(10, index, 8, scalar_at(session,
+                row.operand_begin(), 6)) || !plan.put_integer(10, index, 9, scalar_at(session, row.operand_begin(), 7))
+                || !plan.put_word(10, index, 10, flags) || !plan.put_integer(10, index, 11, span_field)
+                || !plan.put_integer(10, index, 12, scalar_at(session, row.operand_begin(), 9)) || !plan.put_integer(10,
+                index, 13, slot_begin) || !plan.put_integer(10, index, 14, plan.current(11) - slot_begin)) {
+                return plan.fail();
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < functions.count()) {
+            const OrderRow lookup = plan.ordered(plan.lookup_begin() + at);
+            if (!plan.emit_index(lookup.tie)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto form_number(compiler_lowering::InstructionForm value) -> i64 {
+        if (value == compiler_lowering::InstructionForm::BindServiceParameter) {
+            return 0;
+        }
+        if (value == compiler_lowering::InstructionForm::AcquireServiceLoan) {
+            return 1;
+        }
+        if (value == compiler_lowering::InstructionForm::ReleaseServiceLoan) {
+            return 2;
+        }
+        if (value == compiler_lowering::InstructionForm::ServiceOperation) {
+            return 3;
+        }
+        if (value == compiler_lowering::InstructionForm::ServiceCall) {
+            return 4;
+        }
+        if (value == compiler_lowering::InstructionForm::Constant) {
+            return 5;
+        }
+        if (value == compiler_lowering::InstructionForm::EnumConstant) {
+            return 6;
+        }
+        if (value == compiler_lowering::InstructionForm::Load) {
+            return 7;
+        }
+        if (value == compiler_lowering::InstructionForm::Store) {
+            return 8;
+        }
+        if (value == compiler_lowering::InstructionForm::Push) {
+            return 9;
+        }
+        if (value == compiler_lowering::InstructionForm::Pop) {
+            return 10;
+        }
+        if (value == compiler_lowering::InstructionForm::UnaryValue) {
+            return 11;
+        }
+        if (value == compiler_lowering::InstructionForm::BinaryValue) {
+            return 12;
+        }
+        if (value == compiler_lowering::InstructionForm::Convert) {
+            return 13;
+        }
+        if (value == compiler_lowering::InstructionForm::Compare) {
+            return 14;
+        }
+        if (value == compiler_lowering::InstructionForm::BoundsGuard) {
+            return 15;
+        }
+        if (value == compiler_lowering::InstructionForm::IndexLoad) {
+            return 16;
+        }
+        if (value == compiler_lowering::InstructionForm::IndexStore) {
+            return 17;
+        }
+        if (value == compiler_lowering::InstructionForm::BorrowHandle) {
+            return 18;
+        }
+        if (value == compiler_lowering::InstructionForm::Call) {
+            return 19;
+        }
+        if (value == compiler_lowering::InstructionForm::AggregateCall) {
+            return 20;
+        }
+        if (value == compiler_lowering::InstructionForm::BeginObject) {
+            return 21;
+        }
+        if (value == compiler_lowering::InstructionForm::InitializeEmptyObject) {
+            return 22;
+        }
+        if (value == compiler_lowering::InstructionForm::EndObject) {
+            return 23;
+        }
+        if (value == compiler_lowering::InstructionForm::CopyObject) {
+            return 24;
+        }
+        if (value == compiler_lowering::InstructionForm::ObjectFieldCopy) {
+            return 25;
+        }
+        if (value == compiler_lowering::InstructionForm::AssignObjectField) {
+            return 26;
+        }
+        if (value == compiler_lowering::InstructionForm::InitializeObjectField) {
+            return 27;
+        }
+        if (value == compiler_lowering::InstructionForm::InitializeClassArray) {
+            return 28;
+        }
+        if (value == compiler_lowering::InstructionForm::ClassArrayBoundsGuard) {
+            return 29;
+        }
+        if (value == compiler_lowering::InstructionForm::ClassArrayCopy) {
+            return 30;
+        }
+        if (value == compiler_lowering::InstructionForm::ClassArrayAssign) {
+            return 31;
+        }
+        if (value == compiler_lowering::InstructionForm::ReceiverLoad) {
+            return 32;
+        }
+        if (value == compiler_lowering::InstructionForm::ReceiverStore) {
+            return 33;
+        }
+        if (value == compiler_lowering::InstructionForm::ReceiverArrayZero) {
+            return 34;
+        }
+        if (value == compiler_lowering::InstructionForm::ReceiverBoundsGuard) {
+            return 35;
+        }
+        if (value == compiler_lowering::InstructionForm::ReceiverIndexLoad) {
+            return 36;
+        }
+        if (value == compiler_lowering::InstructionForm::ReceiverIndexStore) {
+            return 37;
+        }
+        if (value == compiler_lowering::InstructionForm::MethodCall) {
+            return 38;
+        }
+        if (value == compiler_lowering::InstructionForm::MetadataQuery) {
+            return 39;
+        }
+        if (value == compiler_lowering::InstructionForm::Label) {
+            return 40;
+        }
+        if (value == compiler_lowering::InstructionForm::Jump) {
+            return 41;
+        }
+        if (value == compiler_lowering::InstructionForm::BranchFalse) {
+            return 42;
+        }
+        if (value == compiler_lowering::InstructionForm::Return) {
+            return 43;
+        }
+        if (value == compiler_lowering::InstructionForm::ReturnObject) {
+            return 44;
+        }
+        if (value == compiler_lowering::InstructionForm::BindParameter) {
+            return 45;
+        }
+        if (value == compiler_lowering::InstructionForm::BindObjectParameter) {
+            return 46;
+        }
+        if (value == compiler_lowering::InstructionForm::BeginArray) {
+            return 47;
+        }
+        if (value == compiler_lowering::InstructionForm::EndArray) {
+            return 48;
+        }
+        if (value == compiler_lowering::InstructionForm::BorrowSpan) {
+            return 49;
+        }
+        if (value == compiler_lowering::InstructionForm::BorrowReceiverArraySpan) {
+            return 50;
+        }
+        if (value == compiler_lowering::InstructionForm::BorrowLiteralSpan) {
+            return 51;
+        }
+        if (value == compiler_lowering::InstructionForm::BorrowOwnedSpan) {
+            return 52;
+        }
+        if (value == compiler_lowering::InstructionForm::ReturnSpan) {
+            return 53;
+        }
+        if (value == compiler_lowering::InstructionForm::ReborrowSpan) {
+            return 54;
+        }
+        if (value == compiler_lowering::InstructionForm::Subspan) {
+            return 55;
+        }
+        if (value == compiler_lowering::InstructionForm::EndSpan) {
+            return 56;
+        }
+        if (value == compiler_lowering::InstructionForm::SpanLength) {
+            return 57;
+        }
+        if (value == compiler_lowering::InstructionForm::SpanLoad) {
+            return 58;
+        }
+        if (value == compiler_lowering::InstructionForm::BindSpanParameter) {
+            return 59;
+        }
+        if (value == compiler_lowering::InstructionForm::BeginBytes) {
+            return 60;
+        }
+        if (value == compiler_lowering::InstructionForm::AllocateBytes) {
+            return 61;
+        }
+        if (value == compiler_lowering::InstructionForm::AllocateValues) {
+            return 62;
+        }
+        if (value == compiler_lowering::InstructionForm::ValuesLoad) {
+            return 63;
+        }
+        if (value == compiler_lowering::InstructionForm::ValuesStore) {
+            return 64;
+        }
+        if (value == compiler_lowering::InstructionForm::ValuesResize) {
+            return 65;
+        }
+        if (value == compiler_lowering::InstructionForm::MoveBytes) {
+            return 66;
+        }
+        if (value == compiler_lowering::InstructionForm::BytesOk) {
+            return 67;
+        }
+        if (value == compiler_lowering::InstructionForm::BytesLength) {
+            return 68;
+        }
+        if (value == compiler_lowering::InstructionForm::BytesLoad) {
+            return 69;
+        }
+        if (value == compiler_lowering::InstructionForm::BytesStore) {
+            return 70;
+        }
+        if (value == compiler_lowering::InstructionForm::BytesResize) {
+            return 71;
+        }
+        if (value == compiler_lowering::InstructionForm::EndBytes) {
+            return 72;
+        }
+        if (value == compiler_lowering::InstructionForm::BindRegionParameter) {
+            return 73;
+        }
+        if (value == compiler_lowering::InstructionForm::BindBytesParameter) {
+            return 74;
+        }
+        if (value == compiler_lowering::InstructionForm::ResourceCall) {
+            return 75;
+        }
+        if (value == compiler_lowering::InstructionForm::ReturnBytes) {
+            return 76;
+        }
+        if (value == compiler_lowering::InstructionForm::InitializeBytesField) {
+            return 77;
+        }
+        if (value == compiler_lowering::InstructionForm::MoveObject) {
+            return 78;
+        }
+        if (value == compiler_lowering::InstructionForm::BindOwnedObjectParameter) {
+            return 79;
+        }
+        if (value == compiler_lowering::InstructionForm::ReturnOwnedObject) {
+            return 80;
+        }
+        if (value == compiler_lowering::InstructionForm::AcquireObjectLoan) {
+            return 81;
+        }
+        if (value == compiler_lowering::InstructionForm::ReleaseObjectLoan) {
+            return 82;
+        }
+        if (value == compiler_lowering::InstructionForm::BorrowedCall) {
+            return 83;
+        }
+        return -1;
+    }
+    auto role_number(compiler_lowering::OperandRole value) -> i64 {
+        if (value == compiler_lowering::OperandRole::invalid) {
+            return 0;
+        }
+        if (value == compiler_lowering::OperandRole::Index) {
+            return 1;
+        }
+        if (value == compiler_lowering::OperandRole::Offset) {
+            return 2;
+        }
+        if (value == compiler_lowering::OperandRole::ServiceKindId) {
+            return 3;
+        }
+        if (value == compiler_lowering::OperandRole::LoanId) {
+            return 4;
+        }
+        if (value == compiler_lowering::OperandRole::ServiceOperationId) {
+            return 5;
+        }
+        if (value == compiler_lowering::OperandRole::ResultOffset) {
+            return 6;
+        }
+        if (value == compiler_lowering::OperandRole::CalleeSymbolId) {
+            return 7;
+        }
+        if (value == compiler_lowering::OperandRole::SpanArguments) {
+            return 8;
+        }
+        if (value == compiler_lowering::OperandRole::AdditionalServices) {
+            return 9;
+        }
+        if (value == compiler_lowering::OperandRole::SignedConstant) {
+            return 10;
+        }
+        if (value == compiler_lowering::OperandRole::UnsignedConstant) {
+            return 11;
+        }
+        if (value == compiler_lowering::OperandRole::TypeId) {
+            return 12;
+        }
+        if (value == compiler_lowering::OperandRole::CaseIndex) {
+            return 13;
+        }
+        if (value == compiler_lowering::OperandRole::OperandTypeId) {
+            return 14;
+        }
+        if (value == compiler_lowering::OperandRole::SourceTypeId) {
+            return 15;
+        }
+        if (value == compiler_lowering::OperandRole::ResultTypeId) {
+            return 16;
+        }
+        if (value == compiler_lowering::OperandRole::Length) {
+            return 17;
+        }
+        if (value == compiler_lowering::OperandRole::ElementTypeId) {
+            return 18;
+        }
+        if (value == compiler_lowering::OperandRole::OwnerOffset) {
+            return 19;
+        }
+        if (value == compiler_lowering::OperandRole::ReferenceTypeId) {
+            return 20;
+        }
+        if (value == compiler_lowering::OperandRole::ObjectArguments) {
+            return 21;
+        }
+        if (value == compiler_lowering::OperandRole::SourceOffset) {
+            return 22;
+        }
+        if (value == compiler_lowering::OperandRole::FieldIndex) {
+            return 23;
+        }
+        if (value == compiler_lowering::OperandRole::ObjectOffset) {
+            return 24;
+        }
+        if (value == compiler_lowering::OperandRole::Sources) {
+            return 25;
+        }
+        if (value == compiler_lowering::OperandRole::ReceiverOffset) {
+            return 26;
+        }
+        if (value == compiler_lowering::OperandRole::ReceiverFieldIndex) {
+            return 27;
+        }
+        if (value == compiler_lowering::OperandRole::ModuleScope) {
+            return 28;
+        }
+        if (value == compiler_lowering::OperandRole::LabelId) {
+            return 29;
+        }
+        if (value == compiler_lowering::OperandRole::Target) {
+            return 30;
+        }
+        if (value == compiler_lowering::OperandRole::ClassNominalId) {
+            return 31;
+        }
+        if (value == compiler_lowering::OperandRole::ArrayOffset) {
+            return 32;
+        }
+        if (value == compiler_lowering::OperandRole::LiteralBytes) {
+            return 33;
+        }
+        if (value == compiler_lowering::OperandRole::RegionOffset) {
+            return 34;
+        }
+        if (value == compiler_lowering::OperandRole::FillOffset) {
+            return 35;
+        }
+        if (value == compiler_lowering::OperandRole::ValueOffset) {
+            return 36;
+        }
+        if (value == compiler_lowering::OperandRole::OwnerArguments) {
+            return 37;
+        }
+        if (value == compiler_lowering::OperandRole::Root) {
+            return 38;
+        }
+        if (value == compiler_lowering::OperandRole::MutableValue) {
+            return 39;
+        }
+        if (value == compiler_lowering::OperandRole::Functions) {
+            return 40;
+        }
+        if (value == compiler_lowering::OperandRole::Classes) {
+            return 41;
+        }
+        if (value == compiler_lowering::OperandRole::Carriers) {
+            return 42;
+        }
+        if (value == compiler_lowering::OperandRole::Descriptors) {
+            return 43;
+        }
+        if (value == compiler_lowering::OperandRole::DescriptorViews) {
+            return 44;
+        }
+        if (value == compiler_lowering::OperandRole::Enumerations) {
+            return 45;
+        }
+        if (value == compiler_lowering::OperandRole::LintDiagnostics) {
+            return 46;
+        }
+        if (value == compiler_lowering::OperandRole::FunctionSymbolId) {
+            return 47;
+        }
+        if (value == compiler_lowering::OperandRole::ParameterTypes) {
+            return 48;
+        }
+        if (value == compiler_lowering::OperandRole::Slots) {
+            return 49;
+        }
+        if (value == compiler_lowering::OperandRole::ReceiverRef) {
+            return 50;
+        }
+        if (value == compiler_lowering::OperandRole::NoReceiver) {
+            return 51;
+        }
+        if (value == compiler_lowering::OperandRole::BorrowedParameter) {
+            return 52;
+        }
+        if (value == compiler_lowering::OperandRole::ReceiverSpanField) {
+            return 53;
+        }
+        if (value == compiler_lowering::OperandRole::NoReceiverSpan) {
+            return 54;
+        }
+        if (value == compiler_lowering::OperandRole::FrameBytes) {
+            return 55;
+        }
+        if (value == compiler_lowering::OperandRole::Code) {
+            return 56;
+        }
+        if (value == compiler_lowering::OperandRole::CarrierId) {
+            return 57;
+        }
+        if (value == compiler_lowering::OperandRole::Constructor) {
+            return 58;
+        }
+        if (value == compiler_lowering::OperandRole::PublicAccess) {
+            return 59;
+        }
+        if (value == compiler_lowering::OperandRole::LeafTypes) {
+            return 60;
+        }
+        if (value == compiler_lowering::OperandRole::Fields) {
+            return 61;
+        }
+        if (value == compiler_lowering::OperandRole::StorageRef) {
+            return 62;
+        }
+        if (value == compiler_lowering::OperandRole::FirstLeaf) {
+            return 63;
+        }
+        if (value == compiler_lowering::OperandRole::Array) {
+            return 64;
+        }
+        if (value == compiler_lowering::OperandRole::ElementCount) {
+            return 65;
+        }
+        if (value == compiler_lowering::OperandRole::LeafOffsets) {
+            return 66;
+        }
+        if (value == compiler_lowering::OperandRole::FieldOffsets) {
+            return 67;
+        }
+        if (value == compiler_lowering::OperandRole::SizeBytes) {
+            return 68;
+        }
+        if (value == compiler_lowering::OperandRole::Alignment) {
+            return 69;
+        }
+        if (value == compiler_lowering::OperandRole::ReservedBytes) {
+            return 70;
+        }
+        if (value == compiler_lowering::OperandRole::PublicDescriptorId) {
+            return 71;
+        }
+        if (value == compiler_lowering::OperandRole::Size) {
+            return 72;
+        }
+        if (value == compiler_lowering::OperandRole::PublicFields) {
+            return 73;
+        }
+        if (value == compiler_lowering::OperandRole::VisibleDescriptors) {
+            return 74;
+        }
+        if (value == compiler_lowering::OperandRole::EnumNominalId) {
+            return 75;
+        }
+        if (value == compiler_lowering::OperandRole::CaseCount) {
+            return 76;
+        }
+        if (value == compiler_lowering::OperandRole::IdentifierSourceRef) {
+            return 77;
+        }
+        if (value == compiler_lowering::OperandRole::OutputRowId) {
+            return 78;
+        }
+        if (value == compiler_lowering::OperandRole::ServiceLoanId) {
+            return 79;
+        }
+        if (value == compiler_lowering::OperandRole::DiagnosticSourceRef) {
+            return 80;
+        }
+        if (value == compiler_lowering::OperandRole::DiagnosticSyntheticRef) {
+            return 81;
+        }
+        if (value == compiler_lowering::OperandRole::NoDiagnosticSource) {
+            return 82;
+        }
+        if (value == compiler_lowering::OperandRole::DiagnosticNameId) {
+            return 83;
+        }
+        if (value == compiler_lowering::OperandRole::DiagnosticTypeId) {
+            return 84;
+        }
+        if (value == compiler_lowering::OperandRole::DiagnosticInteger) {
+            return 85;
+        }
+        if (value == compiler_lowering::OperandRole::NoDiagnosticValue) {
+            return 86;
+        }
+        if (value == compiler_lowering::OperandRole::MaximumCopiedByteLeaves) {
+            return 87;
+        }
+        if (value == compiler_lowering::OperandRole::MaximumCopiedNonByteLeaves) {
+            return 88;
+        }
+        if (value == compiler_lowering::OperandRole::MaximumCopiedLeaves) {
+            return 89;
+        }
+        if (value == compiler_lowering::OperandRole::MaximumCopiedBytes) {
+            return 90;
+        }
+        if (value == compiler_lowering::OperandRole::MaximumByteArrayLength) {
+            return 91;
+        }
+        if (value == compiler_lowering::OperandRole::MaximumScalarArrayLength) {
+            return 92;
+        }
+        if (value == compiler_lowering::OperandRole::AnalysisMode) {
+            return 93;
+        }
+        if (value == compiler_lowering::OperandRole::SupportedServiceGroups) {
+            return 94;
+        }
+        if (value == compiler_lowering::OperandRole::InitialLayoutSymbols) {
+            return 95;
+        }
+        if (value == compiler_lowering::OperandRole::SecondReceiverRef) {
+            return 96;
+        }
+        if (value == compiler_lowering::OperandRole::NoSecondReceiver) {
+            return 97;
+        }
+        if (value == compiler_lowering::OperandRole::SecondReceiverOffset) {
+            return 98;
+        }
+        if (value == compiler_lowering::OperandRole::SecondLoanId) {
+            return 99;
+        }
+        if (value == compiler_lowering::OperandRole::CalleeName) {
+            return 100;
+        }
+        if (value == compiler_lowering::OperandRole::ClassName) {
+            return 101;
+        }
+        if (value == compiler_lowering::OperandRole::BorrowedRoots) {
+            return 102;
+        }
+        if (value == compiler_lowering::OperandRole::BorrowedRootCount) {
+            return 103;
+        }
+        if (value == compiler_lowering::OperandRole::FirstBorrowedMutable) {
+            return 104;
+        }
+        return -1;
+    }
+    auto unary_number(compiler_lowering::Unary value) -> i64 {
+        if (value == compiler_lowering::Unary::CheckedNegate) {
+            return 0;
+        }
+        if (value == compiler_lowering::Unary::LogicalNot) {
+            return 1;
+        }
+        if (value == compiler_lowering::Unary::BitNot) {
+            return 2;
+        }
+        return -1;
+    }
+    auto binary_number(compiler_lowering::Binary value) -> i64 {
+        if (value == compiler_lowering::Binary::CheckedAdd) {
+            return 0;
+        }
+        if (value == compiler_lowering::Binary::CheckedSubtract) {
+            return 1;
+        }
+        if (value == compiler_lowering::Binary::CheckedMultiply) {
+            return 2;
+        }
+        if (value == compiler_lowering::Binary::CheckedDivide) {
+            return 3;
+        }
+        if (value == compiler_lowering::Binary::CheckedRemainder) {
+            return 4;
+        }
+        if (value == compiler_lowering::Binary::BitAnd) {
+            return 5;
+        }
+        if (value == compiler_lowering::Binary::BitOr) {
+            return 6;
+        }
+        if (value == compiler_lowering::Binary::BitXor) {
+            return 7;
+        }
+        if (value == compiler_lowering::Binary::ShiftLeft) {
+            return 8;
+        }
+        if (value == compiler_lowering::Binary::ShiftRight) {
+            return 9;
+        }
+        return -1;
+    }
+    auto comparison_number(compiler_lowering::Comparison value) -> i64 {
+        if (value == compiler_lowering::Comparison::Equal) {
+            return 0;
+        }
+        if (value == compiler_lowering::Comparison::NotEqual) {
+            return 1;
+        }
+        if (value == compiler_lowering::Comparison::Less) {
+            return 2;
+        }
+        if (value == compiler_lowering::Comparison::Greater) {
+            return 3;
+        }
+        if (value == compiler_lowering::Comparison::LessEqual) {
+            return 4;
+        }
+        if (value == compiler_lowering::Comparison::GreaterEqual) {
+            return 5;
+        }
+        return -1;
+    }
+    auto query_number(compiler_lowering::Query value) -> i64 {
+        if (value == compiler_lowering::Query::Size) {
+            return 0;
+        }
+        if (value == compiler_lowering::Query::PublicFieldCount) {
+            return 1;
+        }
+        return -1;
+    }
+    auto emit_operand(Plan& plan, i64 index, compiler_lowering::OperandRole role, i64 signed_value, u64 unsigned_value,
+        TextRange slice) -> bool {
+        return plan.put_integer(14, index, 0, role_number(role)) && plan.put_integer(14, index, 1, signed_value)
+            && plan.put_word(14, index, 2, unsigned_value) && plan.put_integer(14, index, 3, slice.begin)
+            && plan.put_integer(14, index, 4, slice.count);
+    }
+    auto emit_instruction(Plan& plan, const compiler_resolver::Session& session, i64 id) -> bool {
+        const compiler_lowering::OutputRow row = session.view_output(id);
+        const i64 instruction = plan.reserve(13, 1);
+        const i64 begin = plan.reserve(14, row.operand_count());
+        if (instruction < 0 || begin < 0) {
+            return false;
+        }
+        i64 at = 0;
+        while (at < row.operand_count()) {
+            const Shape shape = instruction_shape(row.form(), at);
+            const compiler_lowering::OperandRow value = session.view_operand(row.operand_begin() + at);
+            i64 scalar = 0;
+            u64 unsigned_scalar = 0u64;
+            i64 slice_begin = 0;
+            i64 slice_count = 0;
+            compiler_lowering::OperandRole role = value.role();
+            if (shape.mode == 1 || shape.mode == 2 || shape.mode == 6) {
+                scalar = value.signed_value();
+            }
+            if (shape.mode == 3) {
+                scalar = plan.emit_type(value.signed_value(), -1);
+                if (scalar < 0) {
+                    return false;
+                }
+            }
+            if (shape.mode == 4 || shape.mode == 5) {
+                const TextRange original = plan.identity_name(shape.mode, value.signed_value());
+                const TextRange name = plan.text(original);
+                if (name.begin < 0) {
+                    return false;
+                }
+                slice_begin = name.begin;
+                slice_count = name.count;
+                role = compiler_lowering::OperandRole::CalleeName;
+                if (shape.mode == 5) {
+                    role = compiler_lowering::OperandRole::ClassName;
+                }
+            }
+            if (shape.mode == 7 || shape.mode == 8) {
+                scalar = plan.identity_value(shape.mode, value.signed_value());
+            }
+            if (shape.mode >= 9 && shape.mode <= 11) {
+                slice_begin = plan.reserve(14, value.count());
+                slice_count = value.count();
+                if (slice_begin < 0) {
+                    return false;
+                }
+                i64 nested = 0;
+                while (nested < value.count()) {
+                    const compiler_lowering::OperandRow item = session.view_operand(value.begin() + nested);
+                    i64 payload = item.signed_value();
+                    if (shape.mode == 10 && nested % 2 == 1) {
+                        payload = plan.identity_value(7, payload);
+                    }
+                    const TextRange empty = TextRange(0, 0);
+                    if (!emit_operand(plan, slice_begin + nested, item.role(), payload, 0u64, empty)) {
+                        return false;
+                    }
+                    nested = nested + 1;
+                }
+            }
+            if (shape.mode == 12) {
+                slice_begin = plan.current(15);
+                slice_count = value.count();
+                i64 byte = 0;
+                while (byte < value.count()) {
+                    const i64 payload = session.view_source(value.begin() + byte);
+                    if (payload < 0 || payload > 255 || !plan.literal_byte(u8(payload))) {
+                        return plan.fail();
+                    }
+                    byte = byte + 1;
+                }
+            }
+            if (shape.mode == 13) {
+                if (role == compiler_lowering::OperandRole::UnsignedConstant) {
+                    unsigned_scalar = value.unsigned_value();
+                } else {
+                    scalar = value.signed_value();
+                }
+            }
+            const TextRange slice = TextRange(slice_begin, slice_count);
+            if (!emit_operand(plan, begin + at, role, scalar, unsigned_scalar, slice)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        i64 unary = 0;
+        i64 binary = 0;
+        i64 comparison = 0;
+        i64 query = 0;
+        if (row.form() == compiler_lowering::InstructionForm::UnaryValue) {
+            unary = unary_number(row.unary_operation());
+        }
+        if (row.form() == compiler_lowering::InstructionForm::BinaryValue) {
+            binary = binary_number(row.binary_operation());
+        }
+        if (row.form() == compiler_lowering::InstructionForm::Compare) {
+            comparison = comparison_number(row.comparison_operation());
+        }
+        if (row.form() == compiler_lowering::InstructionForm::MetadataQuery) {
+            query = query_number(row.query());
+        }
+        return plan.put_integer(13, instruction, 0, 1) && plan.put_integer(13, instruction, 1, form_number(row.form()))
+            && plan.put_integer(13, instruction, 2, unary) && plan.put_integer(13, instruction, 3, binary)
+            && plan.put_integer(13, instruction, 4, comparison) && plan.put_integer(13, instruction, 5, query)
+            && plan.put_integer(13, instruction, 6, begin) && plan.put_integer(13, instruction, 7, row.operand_count());
+    }
+    auto emit_bodies(Plan& plan, const compiler_resolver::Session& session) -> bool {
+        const compiler_lowering::OutputRow module_row = session.view_output(plan.root());
+        const compiler_lowering::OperandRow functions = session.view_operand(module_row.operand_begin());
+        i64 at = 0;
+        while (at < functions.count()) {
+            const compiler_lowering::OutputRow row = session.view_output(scalar_at(session, functions.begin(), at));
+            const compiler_lowering::OperandRow code = session.view_operand(row.operand_begin() + 10);
+            const i64 begin = plan.current(13);
+            const i64 body = plan.reserve(16, 1);
+            i64 instruction = 0;
+            while (instruction < code.count()) {
+                if (!emit_instruction(plan, session, scalar_at(session, code.begin(), instruction))) {
+                    return false;
+                }
+                instruction = instruction + 1;
+            }
+            if (body < 0 || !plan.put_integer(16, body, 0, begin) || !plan.put_integer(16, body, 1, code.count())
+                || !plan.put_integer(16, body, 2, code.count()) || !plan.put_integer(16, body, 3, 0)) {
+                return plan.fail();
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto emit_plan(Plan& plan, const compiler_resolver::Session& session) -> bool {
+        if (!plan.begin_measure() || !emit_classes(plan, session) || !emit_maps(plan, session) || !emit_functions(plan,
+            session) || !plan.mark_instructions() || !emit_bodies(plan, session) || !plan.begin_fill()
+            || !emit_classes(plan, session) || !emit_maps(plan, session) || !emit_functions(plan, session)
+            || !plan.mark_instructions() || !emit_bodies(plan, session)) {
+            return plan.fail();
+        }
+        return plan.complete_fill();
+    }
+    auto fill_metadata(compiler_ir_metadata::MetadataStore& store, const Plan& plan) -> bool {
+        if (plan.status() != 8 || store.leaf_count() != plan.total(4) || store.instruction_type_begin()
+            != plan.total(12) || !store.begin_projection_fill()) {
+            return store.reject(compiler_ir_metadata::MetadataError::integrity);
+        }
+        i64 at = 0;
+        while (at < plan.total(0)) {
+            if (!store.projection_byte(at, plan.output_byte(at))) {
+                return false;
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < plan.total(1)) {
+            const compiler_ir_metadata::RawTypeRow row = compiler_ir_metadata::RawTypeRow(plan.integer(1, at, 0),
+                compiler_ir_metadata::ByteRange(plan.integer(1, at, 1), plan.integer(1, at, 2)),
+                compiler_ir_metadata::RawTypeTail(plan.integer(1, at, 3), plan.integer(1, at, 4), plan.bits(1, at, 5),
+                plan.bits(1, at, 6), plan.bits(1, at, 7)));
+            if (!store.projection_type(at, row)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < plan.total(2)) {
+            const compiler_ir_metadata::ClassRow row = compiler_ir_metadata::ClassRow(compiler_ir_metadata::ByteRange(
+                plan.integer(2, at, 0), plan.integer(2, at, 1)), compiler_ir_metadata::IndexRange(plan.integer(2, at,
+                2), plan.integer(2, at, 3)), compiler_ir_metadata::IndexRange(plan.integer(2, at, 4), plan.integer(2,
+                at, 5)), plan.integer(2, at, 6), plan.bits(2, at, 7));
+            if (!store.projection_class(at, row)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < plan.total(3)) {
+            const compiler_ir_metadata::FieldRow row = compiler_ir_metadata::FieldRow(plan.integer(3, at, 0),
+                plan.integer(3, at, 1), plan.integer(3, at, 2), plan.integer(3, at, 3), plan.integer(3, at, 4));
+            if (!store.projection_field(at, row)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < plan.total(5)) {
+            const compiler_ir_metadata::StorageRow row = compiler_ir_metadata::StorageRow(
+                compiler_ir_metadata::IndexRange(plan.integer(5, at, 0), plan.integer(5, at, 1)),
+                compiler_ir_metadata::IndexRange(plan.integer(5, at, 2), plan.integer(5, at, 3)),
+                compiler_ir_metadata::PhysicalExtent(plan.integer(5, at, 4), plan.integer(5, at, 5), plan.integer(5, at,
+                6)));
+            if (!store.projection_storage(at, row)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < plan.total(6)) {
+            const compiler_ir_metadata::IndexRow row = compiler_ir_metadata::IndexRow(plan.integer(6, at, 0));
+            if (!store.projection_index(at, row)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < plan.total(7)) {
+            const compiler_ir_metadata::DescriptorRow row = compiler_ir_metadata::DescriptorRow(plan.integer(7, at, 0),
+                plan.integer(7, at, 1), plan.integer(7, at, 2));
+            if (!store.projection_descriptor(at, row)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < plan.total(8)) {
+            const compiler_ir_metadata::ViewRow row = compiler_ir_metadata::ViewRow(plan.integer(8, at, 0),
+                compiler_ir_metadata::IndexRange(plan.integer(8, at, 1), plan.integer(8, at, 2)));
+            if (!store.projection_view(at, row)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < plan.total(9)) {
+            const compiler_ir_metadata::EnumRow row = compiler_ir_metadata::EnumRow(compiler_ir_metadata::ByteRange(
+                plan.integer(9, at, 0), plan.integer(9, at, 1)), plan.integer(9, at, 2));
+            if (!store.projection_enum(at, row)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < plan.total(10)) {
+            const compiler_ir_metadata::CallableRow row = compiler_ir_metadata::CallableRow(
+                compiler_ir_metadata::ByteRange(plan.integer(10, at, 0), plan.integer(10, at, 1)),
+                compiler_ir_metadata::IndexRange(plan.integer(10, at, 2), plan.integer(10, at, 3)), plan.integer(10, at,
+                4), compiler_ir_metadata::ReceiverShape(compiler_ir_metadata::ByteRange(plan.integer(10, at, 5),
+                plan.integer(10, at, 6)), plan.bits(10, at, 7)), compiler_ir_metadata::CallableOptions(plan.bits(10, at,
+                10), plan.integer(10, at, 11), plan.integer(10, at, 12), plan.integer(10, at, 8), plan.integer(10, at,
+                9)), compiler_ir_metadata::IndexRange(plan.integer(10, at, 13), plan.integer(10, at, 14)));
+            if (!store.projection_callable(at, row)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < plan.total(11)) {
+            const compiler_ir_metadata::SlotRow row = compiler_ir_metadata::SlotRow(plan.integer(11, at, 0),
+                plan.integer(11, at, 1), plan.integer(11, at, 2), plan.integer(11, at, 3), plan.integer(11, at, 4));
+            if (!store.projection_slot(at, row)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return store.complete_projection();
+    }
+    auto fill_instructions(compiler_ir_instructions::InstructionStore& store, const Plan& plan) -> bool {
+        if (plan.status() != 8 || !store.begin_direct_projection()) {
+            return store.reject(compiler_ir_instructions::InstructionError::integrity);
+        }
+        i64 at = 0;
+        while (at < plan.total(13)) {
+            compiler_ir_instructions::RawInstructionRow row = compiler_ir_instructions::RawInstructionRow(plan.integer(
+                13, at, 0), plan.integer(13, at, 1), plan.integer(13, at, 6), plan.integer(13, at, 7));
+            row.operators(plan.integer(13, at, 2), plan.integer(13, at, 3), plan.integer(13, at, 4), plan.integer(13,
+                at, 5));
+            if (!store.projection_instruction(row)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < plan.total(14)) {
+            const compiler_ir_instructions::RawOperandRow row = compiler_ir_instructions::RawOperandRow(plan.integer(14,
+                at, 0), plan.integer(14, at, 1), plan.bits(14, at, 2), plan.integer(14, at, 3), plan.integer(14, at,
+                4));
+            if (!store.projection_operand(row)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < plan.total(15)) {
+            if (!store.projection_literal(plan.output_byte(plan.total(0) + at))) {
+                return false;
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < plan.total(16)) {
+            const compiler_ir_instructions::BodyRow row = compiler_ir_instructions::BodyRow(plan.integer(16, at, 0),
+                plan.integer(16, at, 1), plan.integer(16, at, 2), plan.integer(16, at, 3));
+            if (!store.projection_body(row)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return store.complete_projection();
+    }
+
+    auto finish_plan(Plan& plan, const compiler_resolver::Session& session) -> bool {
+        if (!plan.matches_session(session.projection_stamp(), session.output_count(), session.operand_count())) {
+            return plan.fail();
+        }
+        const i64 root = plan.root();
+        return bind_domains(plan, session) && canonical_order(plan, session, root) && emit_plan(plan, session);
+    }
+}

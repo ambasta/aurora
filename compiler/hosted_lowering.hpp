@@ -14,8 +14,8 @@ inline constexpr std::int64_t hostedLoweringPreludeRows = 16;
 
 // These views own no Session descriptor. HostedResolution copies each published
 // output pool once while its consuming owner is armed, then keeps the copies
-// alive for this call. Source bytes stay in Session; only requested immutable
-// already-decoded literal bytes are read by index during direct owner fill.
+// alive for this call. Source bytes stay in Session; Aurora copies decoded
+// literal bytes while constructing the bounded pending projection.
 struct HostedLoweringInput {
     std::span<const hosted_abi::compiler_lowering::OutputRow> rows;
     std::span<const hosted_abi::compiler_lowering::OperandRow> operands;
@@ -39,10 +39,6 @@ struct HostedLoweringServices {
     std::function<void(std::int64_t)> checkModuleScope;
     std::function<service::Kind(std::int64_t)> serviceKind;
     std::function<service::Operation(std::int64_t)> serviceOperation;
-    // Read one already-decoded retained byte through the existing Session
-    // accessor. Projection bounds-checks each immutable interval; direct fill
-    // streams bytes into the Aurora owner without a native payload copy.
-    std::function<std::uint8_t(std::int64_t index)> literalByte;
 };
 
 struct HostedLoweringOutput {
@@ -50,10 +46,15 @@ struct HostedLoweringOutput {
     std::vector<Diagnostic> diagnostics;
 };
 
+std::uint64_t projectionQuota(const HostedLoweringInput &input, std::span<const std::uint8_t> table);
+std::vector<std::uint8_t> renderProjectionIdentities(const void *plan, const HostedLoweringServices &services);
+
 // Call only for a checked LoweringResult success. Checks transport integrity and
 // fills paired raw instruction/metadata owners; does not publish views or
 // call ir::validate. The caller retains Session through projection and rendering,
 // then destroys these views and releases Session before independently validating
 // the owned result.
-HostedLoweringOutput projectHostedLowering(const HostedLoweringInput &input, const HostedLoweringServices &services);
+HostedLoweringOutput projectHostedLowering(const HostedLoweringInput &input,
+                                           const HostedLoweringServices &services,
+                                           const void *projectionPlan);
 } // namespace aurora

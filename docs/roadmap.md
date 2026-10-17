@@ -94,8 +94,9 @@ constructor/receiver-field initialization and synchronous service-loan lifecycle
 share a source-owned workspace; resource and object-loan provenance remain native.
 Bounded multi-owner borrowing enables that workspace to read instruction and metadata owners together;
 select its immutable bootstrap checkpoint before adopting it in the frontend.
-Remaining value/provenance state, worklist ownership and native emission are next,
-alongside host record projection and source loading.
+Whole-module IR projection and x86 emission now run in Aurora. Remaining
+value/provenance state and worklist ownership remain frozen in native code;
+source loading and requested identity spelling are separate host dependencies.
 Native assembler/linker and host runtime/file/process services remain separate
 self-hosting dependencies.
 

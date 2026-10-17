@@ -2206,6 +2206,37 @@ void aurora::ir::verifyHostedGraph(std::vector<FunctionBody> &, const Metadata &
     std::fputs("forged projection unexpectedly reached metadata verification\n", stderr);
     std::abort();
 }
+// Malformed reports must fail before the separate source projection owner.
+extern "C" std::int64_t aurora_hosted_projection_seal(void *, std::int64_t) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" std::int64_t aurora_hosted_projection_fill_metadata(const void *) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" std::int64_t aurora_hosted_projection_fill_instructions(const void *) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" std::int64_t aurora_hosted_projection_finish(const void *) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" void aurora_hosted_projection_counts(const void *, void *) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" void aurora_hosted_projection_requests(const void *, std::int64_t, void *) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" std::int64_t aurora_hosted_projection_bind(void *, const void *) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" void aurora_hosted_projection_create(const void *, void *) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" void aurora_hosted_projection_release(void *) noexcept {
+    unexpectedMetadataEntry();
+}
+extern "C" std::int64_t aurora_hosted_projection_graph(const void *, std::int64_t) noexcept {
+    unexpectedMetadataEntry();
+}
 extern "C" void aurora_hosted_metadata_flag_masks(void *output) noexcept {
     // Projection failures precede construction. This fixture grants no flag
     // authority and still aborts if any forged projection reaches an owner.

@@ -232,6 +232,7 @@ def abi_generation(facts):
     # before these sizes are qualification evidence.
     for source, extent in (
         ("compiler_resolver::Session", 520),
+        ("compiler_projection::Plan", 392),
         ("compiler_lowering::OutputRow", 64),
         ("compiler_lowering::OperandRow", 40),
         ("compiler_lowering::LoweringResult", 32),
@@ -244,13 +245,13 @@ def abi_generation(facts):
         ("compiler_ir_metadata::CallableRow", 120),
         ("compiler_ir_metadata::SlotRow", 40),
         ("compiler_ir_metadata::InputCounts", 80),
-        ("compiler_ir_metadata::MetadataStore", 512),
+        ("compiler_ir_metadata::MetadataStore", 520),
         ("compiler_ir_instructions::RawInstructionRow", 64),
         ("compiler_ir_instructions::RawOperandRow", 40),
         ("compiler_ir_instructions::CodeRow", 32),
         ("compiler_ir_instructions::BodyRow", 32),
         ("compiler_ir_instructions::InstructionCounts", 32),
-        ("compiler_ir_instructions::InstructionStore", 176),
+        ("compiler_ir_instructions::InstructionStore", 216),
         ("compiler_ir_initialization::InitializationWorkspace", 248),
         ("compiler_ir_initialization::ServiceLoan", 32),
     ):
@@ -886,7 +887,7 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 facts = {"version": 2, "functions": {"fixture_symbol": {"source_name": "fixture::entry"}}}
 assert module.abi_function_symbol(facts, "fixture::entry") == "fixture_symbol"
-assert len(module.PASS_ENTRIES) == 113
+assert len(module.PASS_ENTRIES) == 123
 """
     with tempfile.TemporaryDirectory(prefix="bridge-import-") as temporary:
         subprocess.run(
@@ -900,7 +901,7 @@ assert len(module.PASS_ENTRIES) == 113
     assembly, header = frontend_bridge(None, facts), frontend_abi_header(facts)
     operations = ["emitter_" + name for name in EMITTER_OPERATIONS]
     operations += ["initialization_" + name for name in INITIALIZATION_OPERATIONS]
-    require(assembly.count(".globl ") == 113, "private bridge inventory drift")
+    require(assembly.count(".globl ") == 123, "private bridge inventory drift")
     for alias in operations:
         require(f".globl aurora_hosted_{alias}\n" in assembly, "missing private host entry: " + alias)
         require(f" aurora_hosted_{alias}(" in header, "missing private host declaration: " + alias)
@@ -994,7 +995,7 @@ assert len(module.PASS_ENTRIES) == 113
             except ValueError:
                 continue
         raise AssertionError("unsafe private bridge policy accepted: " + repr(changed))
-    print("PASS all 113 host entries, transport exemplars and malformed bridge policies")
+    print("PASS all 123 host entries, transport exemplars and malformed bridge policies")
 
 
 def borrowed_root_generation(facts):
@@ -1358,6 +1359,21 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
     entries.update(
         "aurora_hosted_instructions_" + operation
         for operation in ("create", "release", "allocated", "admit", "structure", "publish", "error")
+    )
+    entries.update(
+        "aurora_hosted_projection_" + operation
+        for operation in (
+            "seal",
+            "fill_metadata",
+            "fill_instructions",
+            "finish",
+            "counts",
+            "requests",
+            "bind",
+            "create",
+            "release",
+            "graph",
+        )
     )
     entries.update("aurora_hosted_initialization_" + operation for operation in INITIALIZATION_OPERATIONS)
     entries.update("aurora_hosted_emitter_" + operation for operation in EMITTER_OPERATIONS)

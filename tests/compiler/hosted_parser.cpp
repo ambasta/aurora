@@ -5610,11 +5610,11 @@ void loweringImplementationSources(const std::vector<aurora::Token> &tokens,
 }
 
 void resolvedCompilerSources(char **paths) {
-    context = "all thirty-seven real compiler modules and decimal digit dependency through production typed lowering";
-    const std::array<std::size_t, 38> arguments{0,  1,  2,  15, 19, 20, 21, 32, 16, 33, 34, 17, 22,
+    context = "all thirty-eight real compiler modules and decimal digit dependency through production typed lowering";
+    const std::array<std::size_t, 39> arguments{0,  1,  2,  15, 19, 20, 21, 32, 16, 33, 34, 17, 22,
                                                 23, 24, 25, 28, 29, 30, 31, 26, 27, 35, 37, 38, 39,
-                                                40, 41, 49, 42, 43, 44, 45, 46, 47, 48, 50, 18};
-    const std::array<std::string, 38> modules{"lexer",
+                                                40, 41, 49, 42, 43, 44, 45, 46, 47, 48, 50, 51, 18};
+    const std::array<std::string, 39> modules{"lexer",
                                               "syntax_arena",
                                               "parser",
                                               "resolution_kinds",
@@ -5651,8 +5651,9 @@ void resolvedCompilerSources(char **paths) {
                                               "x86_facts",
                                               "x86_module",
                                               "formatter",
+                                              "ir_projection",
                                               "frontend"};
-    const std::array<std::vector<std::string>, 38> classNames{{
+    const std::array<std::vector<std::string>, 39> classNames{{
         {"Cursor", "Lexeme"},
         {"ParseFrame", "AstNode", "ChildEdge", "TypeSyntax", "SyntaxNode", "AstArena"},
         {"AdmissionConfig",
@@ -5702,11 +5703,23 @@ void resolvedCompilerSources(char **paths) {
         {},
         {},
         {"Row", "Workspace"},
+        {"Shape",
+         "Inspection",
+         "GraphShape",
+         "Identity",
+         "GraphNode",
+         "ProjectionChunk",
+         "TextRange",
+         "OrderRow",
+         "Word",
+         "Intern",
+         "ProjectionCounts",
+         "Plan"},
         {},
     }};
     // Frontend's direct imports give this DFS postorder, independent of file argv.
-    std::array<aurora::Program, 38> syntax;
-    std::array<aurora::HostedModule, 38> headers;
+    std::array<aurora::Program, 39> syntax;
+    std::array<aurora::HostedModule, 39> headers;
     const auto resolved = [&] {
         aurora::HostedResolution resolution;
         for (std::size_t index = 0; index < modules.size(); ++index) {
@@ -5855,7 +5868,7 @@ void resolvedCompilerSources(char **paths) {
             ++enums;
         }
     }
-    require(enums == 48 && classes == 92 && fields > 228 && methods > 307 &&
+    require(enums == 48 && classes == 104 && fields > 228 && methods > 307 &&
                 retainedFunctions == module.functions.size() && functions == abi.functions.size() &&
                 sourceFunctionNames == abiFunctionNames,
             "real compiler typed graph omitted or appended an unaccounted declaration");
@@ -7699,8 +7712,8 @@ int main(int argc, char **argv) {
     try {
         context = "fixture arguments";
         require(
-            argc == 52,
-            "expected thirty-seven compiler, one scalar library, six aggregate and seven typed consumer source paths");
+            argc == 53,
+            "expected thirty-eight compiler, one scalar library, six aggregate and seven typed consumer source paths");
         grammarExpectations();
         callCatalogueIsolation();
         rawCatalogueControls();
@@ -7878,7 +7891,7 @@ int main(int argc, char **argv) {
                "typed native identities, dependency/instance order, exact nominal reflection views, selected "
                "overloads, "
                "independent concrete layouts and retained lint/template-error source spans; "
-               "thirty-eight-module frontend graph, fifteen typed classes/14 enums/513 cases, all implementation "
+               "thirty-nine-module frontend graph, fifteen typed classes/14 enums/513 cases, all implementation "
                "declaration boundaries, generated typed-row extents and eleven-owner Session failure/release "
                "prefixes\n";
     } catch (const std::exception &error) {

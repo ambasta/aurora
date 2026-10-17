@@ -522,6 +522,18 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
                 f"inline constexpr std::size_t metadata{row_name}PhysicalBytes = {stride};",
                 f"static_assert(sizeof({cpp_name(symbol)}) == metadata{row_name}PhysicalBytes);",
             ]
+    # Projection payload quotas must track compiler-proved element strides.
+    for name, expected in (
+        ("GraphNode", 16),
+        ("Identity", 16),
+        ("TextRange", 16),
+        ("OrderRow", 48),
+        ("Word", 8),
+        ("Intern", 24),
+    ):
+        _, row = abi_declaration(facts, "records", "compiler_projection::" + name)
+        if row["size"] != expected or row["reserved"] != expected or row["alignment"] != 8:
+            raise ValueError("private projection quota stride changed: " + name)
     _, instruction_store = abi_declaration(facts, "records", "compiler_ir_instructions::InstructionStore")
     instruction_pools = {
         "instructions": "RawInstructionRow",

@@ -368,6 +368,24 @@ std::unique_ptr<Metadata> MetadataIngress::finish() && {
     return metadata;
 }
 
+void detail::MetadataWriter::project(const void *plan) {
+    if (allocated_)
+        invalidTransport();
+    hosted_abi::compiler_projection::ProjectionCounts counts{};
+    aurora_hosted_projection_counts(plan, &counts);
+    position_ = counts.metadata;
+    callableCount_ = counts.callables;
+    slotCount_ = counts.slots;
+    instructionBegin_ = counts.instructionBegin;
+    allocate();
+    const std::array<const void *, 2> roots{pending_.state_->owner.data(), plan};
+    if (aurora_hosted_projection_fill_metadata(roots.data()) != 1)
+        invalidTransport();
+    position_ = counts.metadata;
+    callableCount_ = counts.callables;
+    slotCount_ = counts.slots;
+    instructionBegin_ = counts.instructionBegin;
+}
 void detail::MetadataWriter::allocate() {
     if (allocated_)
         invalidTransport();

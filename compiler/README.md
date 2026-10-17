@@ -10,8 +10,10 @@ resolved type/lifetime analysis through typed IR run in Aurora. The `ir_graph.au
 candidate independently checks normalized module call graphs and
 selects retained functions. Aurora also owns independent metadata/layout, callable
 and frame admission, structural CFG normalization, entry-parameter and static
-call-site admission. Module file loading, mechanical projection, dynamic
-value/provenance verification remain C++23. The Aurora-native x86-64 emitter
+call-site admission. Aurora also validates lowering graph ownership and projects
+exact raw metadata/instruction prefixes into the independent pending stores.
+Module file loading, identity spelling and dynamic value/provenance verification
+remain C++23. The Aurora-native x86-64 emitter
 consumes the admitted source stores; the host retains artifact I/O.
 GNU assembler/linker and Linux host I/O remain bootstrap dependencies.
 
@@ -188,14 +190,40 @@ facts and header convergence, binds B to the frontend actually linked into C2, a
 C1/C2 corpus diagnostics/output. No compiler binary or generated frontend is
 committed. The candidate's independent module graph pass runs in Aurora after all
 native function checks and before import pruning, without a C++ graph fallback.
-Module file loading, mechanical IR projection, instruction value/provenance
-verification remain C++. Aurora now owns complete x86 text emission, including
+Module file loading, requested identity spelling and instruction value/provenance
+verification remain C++. Whole-module IR projection runs in Aurora. Aurora now owns complete x86 text emission, including
 stack facts and ABI JSON; its host adapter lends the two admitted owners and
 copies bounded sealed output, with no native opcode fallback. Aurora owns metadata/layout,
 callable/frame admission, durable instruction storage, structural CFG checks and
 entry-parameter and static call-site admission.
 Native verification and emission consume the same normalized storage; these
 migrations still await execution qualification.
+
+## Source IR projection
+
+`ir_projection.au` checks exclusive row/list ownership, all active instruction
+schemas, closed identity payloads and discarded instructions. It sorts requested
+identities once; native code spells only that demand set into a copied table.
+A graph-only workspace is released before replay into a separately bounded Plan.
+The immutable Session is stamped with its non-reused host Region incarnation;
+the final source phase checks that stamp and the sealed row/operand counts.
+
+Source measurement and fill agree on every raw pool, preserve canonical metadata
+ordering, and copy literal bytes. Pending-only typed setters fill independent
+metadata and instruction regions exactly once; short, repeated and extra fills
+reject. The Plan and Session are released before unchanged IR admission and
+validation. Native code retains quota arithmetic, requested identity/diagnostic
+rendering and capsule allocation, with no instruction-conversion fallback.
+
+The migration's temporary native oracle compared all 16 raw pools on four
+representative programs, including the complete frontend fixture; both the old
+native stores and source-filled stores matched the Plan (128 pool comparisons),
+with identical assembly and ABI facts. The retained lifecycle test injects
+allocation failures and exhausted quotas and checks malformed tables, Session
+substitution and pending-fill gates. These are focused migration receipts, not
+final full-suite, convergence, performance or BIOS/UEFI qualification. The Plan's
+raw output and intern storage are temporary additional memory; logical Region
+quotas do not bound native vectors or allocator overlap.
 
 ## Emitter migration qualification
 
