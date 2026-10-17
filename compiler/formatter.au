@@ -1,0 +1,905 @@
+export module aurora.compiler.formatter;
+import aurora.compiler.lexer;
+import aurora.compiler.syntax_arena;
+import aurora.compiler.x86_storage;
+
+export namespace compiler_formatter {
+    // Private fixed-width scratch and copied result row. Finding rows carry
+    // code, begin/end offsets, line, begin/end columns; summary (-1) carries
+    // status, output bytes and finding count. No row contains an owner or pointer.
+    class Row {
+    public:
+        i64 a;
+        i64 b;
+        i64 c;
+        i64 d;
+        i64 e;
+        i64 f;
+        Row(i64 first, i64 second, i64 third, i64 fourth, i64 fifth, i64 sixth) : a(first), b(second), c(third),
+            d(fourth), e(fifth), f(sixth) {
+        }
+    };
+    auto pool(builtin::ByteRegion region) -> builtin::OwnedValues<Row> {
+        const Row empty = Row(0, 0, 0, 0, 0, 0);
+        builtin::OwnedValues<Row> result = region.try_allocate(0, empty);
+        return move(result);
+    }
+    class Workspace {
+        builtin::OwnedValues<Row> pieces;
+        builtin::OwnedValues<Row> breaks;
+        builtin::OwnedValues<Row> braces;
+        builtin::OwnedValues<Row> findings;
+        builtin::OwnedValues<Row> tokens;
+        builtin::OwnedBytes marked;
+        builtin::OwnedBytes output;
+        builtin::OwnedBytes joined;
+        builtin::OwnedBytes input;
+        i64 pieceCount;
+        i64 tokenCount;
+        i64 breakCount;
+        i64 braceCount;
+        i64 findingCount;
+        i64 outputSize;
+        i64 column;
+        i64 lineStart;
+        i64 status;
+    public:
+        auto token_piece(i64 index) const -> i64 {
+            const Row row = tokens.at(index);
+            return row.a;
+        }
+        auto pieces_field(i64 index, i64 field) const -> i64 {
+            const Row row = pieces.at(index);
+            if (field == 0) {
+                return row.a;
+            }
+            if (field == 1) {
+                return row.b;
+            }
+            if (field == 2) {
+                return row.c;
+            }
+            if (field == 3) {
+                return row.d;
+            }
+            if (field == 4) {
+                return row.e;
+            }
+            return row.f;
+        }
+        auto breaks_field(i64 index, i64 field) const -> i64 {
+            const Row row = breaks.at(index);
+            if (field == 0) {
+                return row.a;
+            }
+            if (field == 1) {
+                return row.b;
+            }
+            if (field == 2) {
+                return row.c;
+            }
+            if (field == 3) {
+                return row.d;
+            }
+            if (field == 4) {
+                return row.e;
+            }
+            return row.f;
+        }
+        auto braces_field(i64 index, i64 field) const -> i64 {
+            const Row row = braces.at(index);
+            if (field == 0) {
+                return row.a;
+            }
+            if (field == 1) {
+                return row.b;
+            }
+            if (field == 2) {
+                return row.c;
+            }
+            if (field == 3) {
+                return row.d;
+            }
+            if (field == 4) {
+                return row.e;
+            }
+            return row.f;
+        }
+        auto fail(i64 reason) -> bool {
+            status = reason;
+            return false;
+        }
+        auto grow(i64 size, i64 required) const -> i64 {
+            return compiler_x86::grow_capacity(size, required, 1048577, 8);
+        }
+        auto piece(Row row) -> bool {
+            if (pieceCount == pieces.size()) {
+                const Row empty = Row(0, 0, 0, 0, 0, 0);
+                if (!pieces.try_resize(grow(pieces.size(), pieceCount + 1), empty)) {
+                    return fail(1);
+                }
+            }
+            pieces.set(pieceCount, row);
+            pieceCount = pieceCount + 1;
+            return true;
+        }
+        auto token(i64 index) -> bool {
+            const Row entry = Row(index, 0, 0, 0, 0, 0);
+            if (tokenCount == tokens.size()) {
+                if (!tokens.try_resize(grow(tokens.size(), tokenCount + 1), entry)) {
+                    return fail(1);
+                }
+            }
+            tokens.set(tokenCount, entry);
+            tokenCount = tokenCount + 1;
+            return true;
+        }
+        auto finding(Row row) -> bool {
+            if (findingCount == findings.size()) {
+                const Row empty = Row(0, 0, 0, 0, 0, 0);
+                if (!findings.try_resize(grow(findings.size(), findingCount + 1), empty)) {
+                    return fail(1);
+                }
+            }
+            findings.set(findingCount, row);
+            findingCount = findingCount + 1;
+            return true;
+        }
+        auto breakpoint(Row row) -> bool {
+            if (breakCount == breaks.size()) {
+                const Row empty = Row(0, 0, 0, 0, 0, 0);
+                if (!breaks.try_resize(grow(breaks.size(), breakCount + 1), empty)) {
+                    return fail(1);
+                }
+            }
+            breaks.set(breakCount, row);
+            breakCount = breakCount + 1;
+            return true;
+        }
+        auto brace(Row row) -> bool {
+            if (braceCount == braces.size()) {
+                const Row empty = Row(0, 0, 0, 0, 0, 0);
+                if (!braces.try_resize(grow(braces.size(), braceCount + 1), empty)) {
+                    return fail(1);
+                }
+            }
+            braces.set(braceCount, row);
+            braceCount = braceCount + 1;
+            return true;
+        }
+        auto reserve(i64 added) -> bool {
+            if (added < 0 || added > 1048576 - outputSize) {
+                return fail(2);
+            }
+            if (outputSize + added > output.size()) {
+                const i64 capacity = compiler_x86::grow_capacity(output.size(), outputSize + added, 1048576, 64);
+                if (!output.try_resize(capacity)) {
+                    return fail(1);
+                }
+            }
+            return true;
+        }
+        auto byte(u8 value) -> bool {
+            if (!reserve(1)) {
+                return false;
+            }
+            output.set(outputSize, value);
+            outputSize = outputSize + 1;
+            return true;
+        }
+        auto newline() -> bool {
+            if (outputSize > 0 && output.at(outputSize - 1) != '\n') {
+                if (!byte('\n')) {
+                    return false;
+                }
+            }
+            column = 0;
+            lineStart = outputSize;
+            breakCount = 0;
+            return true;
+        }
+        auto blank_line() -> bool {
+            if (!newline()) {
+                return false;
+            }
+            if (outputSize > 0 && (outputSize < 2 || output.at(outputSize - 2) != '\n')) {
+                if (!byte('\n')) {
+                    return false;
+                }
+                lineStart = outputSize;
+            }
+            return true;
+        }
+        auto append(builtin::span<const u8> text, i64 depth) -> bool {
+            i64 indent = 0;
+            if (column == 0) {
+                indent = depth * 4;
+            }
+            if (!reserve(text.size() + indent)) {
+                return false;
+            }
+            i64 at = 0;
+            while (at < indent) {
+                byte(' ');
+                at = at + 1;
+            }
+            at = 0;
+            while (at < text.size()) {
+                byte(text.at(at));
+                at = at + 1;
+            }
+            column = column + indent + text.size();
+            return true;
+        }
+        auto equal(i64 index, builtin::span<const u8> text) const -> bool {
+            if (index < 0 || index >= pieceCount) {
+                return false;
+            }
+            const Row row = pieces.at(index);
+            if (row.b - row.a != text.size()) {
+                return false;
+            }
+            i64 at = 0;
+            while (at < text.size()) {
+                if (input.at(row.a + at) != text.at(at)) {
+                    return false;
+                }
+                at = at + 1;
+            }
+            return true;
+        }
+        auto flag(i64 tokenIndex, i64 bit) -> bool {
+            if (tokenIndex < 0 || tokenIndex >= tokenCount) {
+                return fail(3);
+            }
+            const i64 index = token_piece(tokenIndex);
+            Row row = pieces.at(index);
+            row.f = i64(u64(row.f) | u64(bit));
+            return pieces.set(index, row);
+        }
+        auto initializer(i64 tokenIndex, i64 bit) -> bool {
+            const array<u8, 1> open = "{";
+            i64 at = tokenIndex;
+            while (at < tokenCount) {
+                if (equal(token_piece(at), borrow_bytes(open))) {
+                    return flag(at, bit);
+                }
+                at = at + 1;
+            }
+            return fail(3);
+        }
+        auto mark(i64 index) -> bool {
+            if (index < 0 || index >= marked.size()) {
+                return fail(3);
+            }
+            return marked.set(index, 1u8);
+        }
+    public:
+        auto prepare_marks(i64 count) -> bool {
+            if (!marked.try_resize(count)) {
+                return fail(1);
+            }
+            return true;
+        }
+        auto mark_at(i64 index) const -> u8 {
+            return marked.at(index);
+        }
+    public:
+        Workspace(builtin::ByteRegion region) : pieces(pool(region)), breaks(pool(region)), braces(pool(region)),
+            findings(pool(region)), tokens(pool(region)), marked(region.try_allocate(0)),
+            output(region.try_allocate(0)), joined(region.try_allocate(0)), input(region.try_allocate(0)),
+            pieceCount(0), tokenCount(0), breakCount(0), braceCount(0), findingCount(0), outputSize(0), column(0),
+            lineStart(0), status(0) {
+        }
+        auto scan(builtin::span<const u8> source) -> bool {
+            if (source.size() > 1048576 || pieceCount != 0 || tokenCount != 0 || status != 0) {
+                return fail(3);
+            }
+            i64 offset = 0;
+            i64 line = 1;
+            i64 start = 0;
+            while (offset < source.size()) {
+                const compiler_lexer::Cursor cursor = compiler_lexer::Cursor(offset, line, start);
+                const compiler_lexer::Lexeme next = compiler_lexer::next_lexeme(source, cursor);
+                if (next.kind() == compiler_lexer::Event::token || next.kind() == compiler_lexer::Event::line_comment) {
+                    i64 comment = 0;
+                    if (next.kind() == compiler_lexer::Event::line_comment) {
+                        comment = 1;
+                    } else {
+                        comment = classify(source, cursor.at(), next.next_offset());
+                        if (!token(pieceCount)) {
+                            return false;
+                        }
+                    }
+                    const Row row = Row(cursor.at(), next.next_offset(), cursor.row(), next.next_line(), comment, 0);
+                    if (!piece(row)) {
+                        return false;
+                    }
+                } else {
+                    if (next.kind() != compiler_lexer::Event::whitespace) {
+                        return fail(3);
+                    }
+                }
+                offset = next.next_offset();
+                line = next.next_line();
+                start = next.next_line_start();
+            }
+            return true;
+        }
+
+        // Cache spelling once: 0 is other, 1 is comment, 2..24 are layout tokens.
+        auto classify(builtin::span<const u8> source, i64 begin, i64 end) const -> i64 {
+            if (end - begin == 1 && source.at(begin + 0) == '{') {
+                return 2;
+            }
+            if (end - begin == 1 && source.at(begin + 0) == '}') {
+                return 3;
+            }
+            if (end - begin == 6 && source.at(begin + 0) == 'p' && source.at(begin + 1) == 'u' && source.at(begin + 2)
+                == 'b' && source.at(begin + 3) == 'l' && source.at(begin + 4) == 'i' && source.at(begin + 5) == 'c') {
+                return 4;
+            }
+            if (end - begin == 7 && source.at(begin + 0) == 'p' && source.at(begin + 1) == 'r' && source.at(begin + 2)
+                == 'i' && source.at(begin + 3) == 'v' && source.at(begin + 4) == 'a' && source.at(begin + 5) == 't'
+                && source.at(begin + 6) == 'e') {
+                return 5;
+            }
+            if (end - begin == 1 && source.at(begin + 0) == ':') {
+                return 6;
+            }
+            if (end - begin == 1 && source.at(begin + 0) == ';') {
+                return 7;
+            }
+            if (end - begin == 1 && source.at(begin + 0) == ',') {
+                return 8;
+            }
+            if (end - begin == 1 && source.at(begin + 0) == ')') {
+                return 9;
+            }
+            if (end - begin == 1 && source.at(begin + 0) == ']') {
+                return 10;
+            }
+            if (end - begin == 4 && source.at(begin + 0) == 'e' && source.at(begin + 1) == 'l' && source.at(begin + 2)
+                == 's' && source.at(begin + 3) == 'e') {
+                return 11;
+            }
+            if (end - begin == 1 && source.at(begin + 0) == '(') {
+                return 12;
+            }
+            if (end - begin == 1 && source.at(begin + 0) == '[') {
+                return 13;
+            }
+            if (end - begin == 1 && source.at(begin + 0) == '.') {
+                return 14;
+            }
+            if (end - begin == 2 && source.at(begin + 0) == ':' && source.at(begin + 1) == ':') {
+                return 15;
+            }
+            if (end - begin == 1 && source.at(begin + 0) == '<') {
+                return 16;
+            }
+            if (end - begin == 1 && source.at(begin + 0) == '>') {
+                return 17;
+            }
+            if (end - begin == 2 && source.at(begin + 0) == '>' && source.at(begin + 1) == '>') {
+                return 18;
+            }
+            if (end - begin == 2 && source.at(begin + 0) == 'i' && source.at(begin + 1) == 'f') {
+                return 19;
+            }
+            if (end - begin == 5 && source.at(begin + 0) == 'w' && source.at(begin + 1) == 'h' && source.at(begin + 2)
+                == 'i' && source.at(begin + 3) == 'l' && source.at(begin + 4) == 'e') {
+                return 20;
+            }
+            if (end - begin == 6 && source.at(begin + 0) == 'r' && source.at(begin + 1) == 'e' && source.at(begin + 2)
+                == 't' && source.at(begin + 3) == 'u' && source.at(begin + 4) == 'r' && source.at(begin + 5) == 'n') {
+                return 21;
+            }
+            if (end - begin == 8 && source.at(begin + 0) == 't' && source.at(begin + 1) == 'e' && source.at(begin + 2)
+                == 'm' && source.at(begin + 3) == 'p' && source.at(begin + 4) == 'l' && source.at(begin + 5) == 'a'
+                && source.at(begin + 6) == 't' && source.at(begin + 7) == 'e') {
+                return 22;
+            }
+            if (end - begin == 1 && source.at(begin + 0) == '=') {
+                return 23;
+            }
+            if (end - begin == 2 && source.at(begin + 0) == '-' && source.at(begin + 1) == '>') {
+                return 24;
+            }
+            return 0;
+        }
+        auto is(i64 index, i64 key) const -> bool {
+            if (index < 0 || index >= pieceCount || key < 0 || key > 22) {
+                return false;
+            }
+            const Row row = pieces.at(index);
+            return row.e == key + 2;
+        }
+        auto joins(i64 left, i64 right) -> bool {
+            if (left < 0) {
+                return false;
+            }
+            const Row first = pieces.at(left);
+            const Row second = pieces.at(right);
+            const i64 length = first.b - first.a + second.b - second.a;
+            if (joined.size() < length && !joined.try_resize(length)) {
+                fail(1);
+                return false;
+            }
+            i64 at = 0;
+            while (at < first.b - first.a) {
+                joined.set(at, input.at(first.a + at));
+                at = at + 1;
+            }
+            i64 next = second.a;
+            while (next < second.b) {
+                joined.set(at, input.at(next));
+                at = at + 1;
+                next = next + 1;
+            }
+            const builtin::span<const u8> all = borrow_bytes(joined);
+            const builtin::span<const u8> text = all.subspan(0, length);
+            const compiler_lexer::Lexeme a = compiler_lexer::next_lexeme(text, compiler_lexer::Cursor(0, 1, 0));
+            if (a.kind() != compiler_lexer::Event::token || a.next_offset() != first.b - first.a) {
+                return false;
+            }
+            const compiler_lexer::Lexeme b = compiler_lexer::next_lexeme(text, compiler_lexer::Cursor(a.next_offset(),
+                a.next_line(), a.next_line_start()));
+            return b.kind() == compiler_lexer::Event::token && b.next_offset() == length;
+        }
+        auto layout() -> i64 {
+            const array<u8, 1> gap = " ";
+            i64 previous = -1;
+            i64 parentheses = 0;
+            bool hardBreak = false;
+            bool previousUnary = false;
+            bool previousTemplateOpen = false;
+            i64 index = 0;
+            while (index < pieceCount) {
+                const Row piece = pieces.at(index);
+                const i64 textSize = piece.b - piece.a;
+                i64 lines = 0;
+                if (index > 0) {
+                    i64 at = pieces_field(index - 1, 1);
+                    while (at < piece.a) {
+                        if (input.at(at) == '\n') {
+                            lines = lines + 1;
+                        }
+                        at = at + 1;
+                    }
+                }
+                const bool separated = lines >= 2;
+                const bool afterOpeningBrace = index > 0 && pieces_field(index - 1, 4) != 1 && is(index - 1, 0);
+                i64 depth = braceCount;
+                if (piece.e == 1) {
+                    const bool wasTrailing = previous >= 0 && pieces_field(previous, 3) == piece.c;
+                    if ((!wasTrailing || column + 1 + textSize > 120) && !newline()) {
+                        return status;
+                    }
+                    if (separated && !afterOpeningBrace && !blank_line()) {
+                        return status;
+                    }
+                    if (column != 0 && !append(borrow_bytes(gap), depth)) {
+                        return status;
+                    }
+                    if (!append_source(piece.a, piece.b, depth) || !newline()) {
+                        return status;
+                    }
+                    hardBreak = false;
+                } else {
+                    const bool unary =(i64(u64(piece.f) & 1u64)) != 0;
+                    const bool binary =(i64(u64(piece.f) & 2u64)) != 0;
+                    const bool templateOpen = is(index, 14) && !binary;
+                    const bool templateClose =(is(index, 15) || is(index, 16)) && !binary;
+                    const bool initializer = is(index, 0) && (i64(u64(piece.f) & 4u64)) != 0 && (i64(u64(piece.f)
+                        & 8u64)) == 0;
+                    const bool emptyInitializer = initializer && is(index + 1, 1);
+                    const bool closesEmpty = is(index, 1) && is(previous, 0) && braceCount > 0
+                        && braces_field(braceCount - 1, 0) == 1;
+                    const bool label =(is(index, 2) || is(index, 3)) && is(index + 1, 4);
+                    if (is(index, 1)) {
+                        if (braceCount == 0) {
+                            fail(3);
+                            return status;
+                        }
+                        depth = depth - 1;
+                    }
+                    if (label && depth > 0) {
+                        depth = depth - 1;
+                    }
+                    const bool structuralBreak =(hardBreak && !is(index, 5) && !is(index, 6) && !is(index, 7)
+                        && !is(index, 8) && !is(index, 9)) || (is(index, 1) && !closesEmpty) || label;
+                    if (structuralBreak && !newline()) {
+                        return status;
+                    }
+                    if (separated && !afterOpeningBrace && !is(index, 1) && (structuralBreak || (index > 0
+                        && pieces_field(index - 1, 4) == 1)) && !blank_line()) {
+                        return status;
+                    }
+                    hardBreak = false;
+                    bool space = previous >= 0;
+                    if (is(index, 5) || is(index, 6) || is(index, 7) || is(index, 8) || is(index, 12) || is(index, 13)
+                        || templateClose || is(previous, 10) || is(previous, 11) || is(previous, 12) || is(previous, 13)
+                        || previousUnary || previousTemplateOpen || closesEmpty) {
+                        space = false;
+                    }
+                    if ((i64(u64(piece.f) & 16u64)) != 0) {
+                        space = false;
+                    }
+                    if (is(index, 10) || is(index, 11)) {
+                        space = is(previous, 17) || is(previous, 18) || (is(index, 10) && is(previous, 19))
+                            || (is(index, 10) && previous >= 0 && (i64(u64(pieces_field(previous, 5)) & 2u64)) != 0);
+                    }
+                    if (templateOpen) {
+                        space = is(previous, 20);
+                    }
+                    if (is(index, 4)) {
+                        space = !is(previous, 2) && !is(previous, 3);
+                    }
+                    if (initializer && !is(previous, 21) && !is(previous, 6) && !is(previous, 19) && !is(previous,
+                        10)) {
+                        space = false;
+                    }
+                    if (column != 0 && !space && !joins(previous, index)) {
+                        if (status != 0) {
+                            return status;
+                        }
+                        space = true;
+                    }
+                    i64 priority = 0;
+                    if (binary || is(previous, 6)) {
+                        priority = 2;
+                    } else {
+                        if (is(previous, 21) || is(previous, 19) || is(previous, 22) || ((is(previous, 10)
+                            || is(previous, 11)) && !is(index, 7) && !is(index, 8))) {
+                            priority = 1;
+                        }
+                    }
+                    if (priority != 0 && column != 0) {
+                        i64 width = 0;
+                        if (space) {
+                            width = 1;
+                        }
+                        if (!breakpoint(Row(outputSize, braceCount + 1, width, priority, 0, 0))) {
+                            return status;
+                        }
+                    }
+                    if (column != 0 && space && !append(borrow_bytes(gap), depth)) {
+                        return status;
+                    }
+                    if (!append_source(piece.a, piece.b, depth)) {
+                        return status;
+                    }
+                    while (column > 120 && breakCount > 0) {
+                        i64 chosen = 0;
+                        bool fits = false;
+                        i64 at = 0;
+                        while (at < breakCount && breaks_field(at, 0) - lineStart <= 120) {
+                            if (!fits || breaks_field(at, 3) >= breaks_field(chosen, 3)) {
+                                chosen = at;
+                                fits = true;
+                            }
+                            at = at + 1;
+                        }
+                        const Row boundary = breaks.at(chosen);
+                        const i64 added = 1 + boundary.b * 4 - boundary.c;
+                        if (!reserve(added)) {
+                            return status;
+                        }
+                        at = outputSize;
+                        while (at > boundary.a + boundary.c) {
+                            at = at - 1;
+                            output.set(at + added, output.at(at));
+                        }
+                        output.set(boundary.a, '\n');
+                        at = 0;
+                        while (at < boundary.b * 4) {
+                            output.set(boundary.a + 1 + at, ' ');
+                            at = at + 1;
+                        }
+                        outputSize = outputSize + added;
+                        at = chosen + 1;
+                        while (at < breakCount) {
+                            Row candidate = breaks.at(at);
+                            candidate.a = candidate.a + added;
+                            breaks.set(at - chosen - 1, candidate);
+                            at = at + 1;
+                        }
+                        breakCount = breakCount - chosen - 1;
+                        lineStart = boundary.a + 1;
+                        column = outputSize - lineStart;
+                    }
+                    if (is(index, 10)) {
+                        parentheses = parentheses + 1;
+                    } else {
+                        if (is(index, 7)) {
+                            if (parentheses == 0) {
+                                fail(3);
+                                return status;
+                            }
+                            parentheses = parentheses - 1;
+                        }
+                    }
+                    if (is(index, 0)) {
+                        i64 init = 0;
+                        if (initializer) {
+                            init = 1;
+                        }
+                        if (!brace(Row(init, i64(u64(piece.f) & 8u64), parentheses, 0, 0, 0))) {
+                            return status;
+                        }
+                        hardBreak = !emptyInitializer;
+                    } else {
+                        if (is(index, 1)) {
+                            hardBreak = braces_field(braceCount - 1, 0) == 0;
+                            braceCount = braceCount - 1;
+                        } else {
+                            if (is(index, 5) || (is(index, 4) && (is(previous, 2) || is(previous, 3)))) {
+                                hardBreak = true;
+                            } else {
+                                if (is(index, 6) && braceCount > 0 && (braces_field(braceCount - 1, 0) == 1
+                                    || braces_field(braceCount - 1, 1) != 0) && parentheses == braces_field(braceCount
+                                    - 1, 2)) {
+                                    hardBreak = true;
+                                }
+                            }
+                        }
+                    }
+                    previous = index;
+                    previousUnary = unary;
+                    previousTemplateOpen = templateOpen;
+                }
+                index = index + 1;
+            }
+            if (!newline()) {
+                return status;
+            }
+            status = 4;
+            return status;
+        }
+        auto style() -> bool {
+            i64 begin = 0;
+            i64 line = 1;
+            i64 tokenAt = 0;
+            while (begin < input.size()) {
+                i64 end = begin;
+                while (end < input.size() && input.at(end) != '\n') {
+                    end = end + 1;
+                }
+                i64 first = begin;
+                while (first < end && input.at(first) == ' ') {
+                    first = first + 1;
+                }
+                while (tokenAt < tokenCount && pieces_field(token_piece(tokenAt), 0) < first) {
+                    tokenAt = tokenAt + 1;
+                }
+                bool literal = false;
+                if (tokenAt < tokenCount) {
+                    const Row token = pieces.at(token_piece(tokenAt));
+                    if (token.a == first && token.a < token.b && input.at(token.a) == '"' && token.b <= end) {
+                        i64 suffix = token.b;
+                        while (suffix < end && (input.at(suffix) == ';' || input.at(suffix) == ',' || input.at(suffix)
+                            == ')' || input.at(suffix) == ']')) {
+                            suffix = suffix + 1;
+                        }
+                        literal = suffix == end && first - begin + 2 + end - token.b <= 120;
+                    }
+                }
+                if (end - begin > 120 && !literal) {
+                    if (!finding(Row(1, begin + 120, end, line, 121, end - begin + 1))) {
+                        return false;
+                    }
+                }
+                i64 trailing = end;
+                while (trailing > begin && (input.at(trailing - 1) == ' ' || input.at(trailing - 1) == '\t'
+                    || input.at(trailing - 1) == '\r')) {
+                    trailing = trailing - 1;
+                }
+                if (trailing != end && !finding(Row(2, trailing, end, line, trailing - begin + 1, end - begin + 1))) {
+                    return false;
+                }
+                i64 leading = begin;
+                bool tab = false;
+                while (leading < trailing && (input.at(leading) == ' ' || input.at(leading) == '\t')) {
+                    tab = tab || input.at(leading) == '\t';
+                    leading = leading + 1;
+                }
+                if (leading != trailing && (tab || (leading - begin) % 4 != 0)) {
+                    if (!finding(Row(3, begin, leading, line, 1, leading - begin + 1))) {
+                        return false;
+                    }
+                }
+                begin = end;
+                if (begin < input.size()) {
+                    begin = begin + 1;
+                }
+                line = line + 1;
+            }
+            return true;
+        }
+        auto begin(builtin::span<const u8> source) -> bool {
+            if (status != 0) {
+                return fail(3);
+            }
+            if (source.size() > 1048576 || !pieces.ok() || !breaks.ok() || !braces.ok() || !findings.ok()
+                || !tokens.ok() || !marked.ok() || !output.ok() || !joined.ok() || !input.ok()) {
+                return fail(1);
+            }
+            if (!input.try_resize(source.size())) {
+                return fail(1);
+            }
+            i64 at = 0;
+            while (at < source.size()) {
+                input.set(at, source.at(at));
+                at = at + 1;
+            }
+            if (!scan(source)) {
+                return false;
+            }
+            status = 5;
+            return true;
+        }
+        auto append_source(i64 begin, i64 end, i64 depth) -> bool {
+            i64 indent = 0;
+            if (column == 0) {
+                indent = depth * 4;
+            }
+            if (!reserve(end - begin + indent)) {
+                return false;
+            }
+            i64 at = 0;
+            while (at < indent) {
+                byte(' ');
+                at = at + 1;
+            }
+            at = begin;
+            while (at < end) {
+                byte(input.at(at));
+                at = at + 1;
+            }
+            column = column + indent + end - begin;
+            return true;
+        }
+        auto start() -> bool {
+            if (status != 5) {
+                return fail(3);
+            }
+            status = 0;
+            return true;
+        }
+        auto complete() -> i64 {
+            if (status == 0) {
+                status = 4;
+            }
+            return status;
+        }
+        auto state() const -> i64 {
+            return status;
+        }
+        auto report() const -> Row {
+            const Row result = Row(status, outputSize, findingCount, 0, 0, 0);
+            return result;
+        }
+        auto read_finding(i64 index) const -> Row {
+            if (index == -1) {
+                const Row summary = report();
+                return summary;
+            }
+            if (status != 4 || index < 0 || index >= findingCount) {
+                const Row invalid = Row(-1, 0, 0, 0, 0, 0);
+                return invalid;
+            }
+            const Row result = findings.at(index);
+            return result;
+        }
+        auto chunk(i64 offset) const -> compiler_x86::EmitChunk {
+            compiler_x86::EmitChunk result = compiler_x86::EmitChunk();
+            if (status != 4 || offset < 0 || offset > outputSize) {
+                result.invalidate();
+                return result;
+            }
+            i64 count = outputSize - offset;
+            if (count > 512) {
+                count = 512;
+            }
+            i64 at = 0;
+            while (at < count) {
+                result.append(output.at(offset + at));
+                at = at + 1;
+            }
+            return result;
+        }
+    };
+    auto roles(Workspace& workspace, const compiler_parser::AstArena& arena) -> bool {
+        if (!workspace.prepare_marks(arena.size())) {
+            return false;
+        }
+        i64 at = 0;
+        while (at < arena.syntax_size()) {
+            const compiler_parser::SyntaxNode row = arena.syntax_at(at);
+            const compiler_parser::SyntaxKind kind = row.kind();
+            if (kind == compiler_parser::SyntaxKind::parameter && row.borrow_site() >= 0) {
+                if (!workspace.flag(row.borrow_site(), 16)) {
+                    return false;
+                }
+            }
+            if (kind == compiler_parser::SyntaxKind::enum_definition) {
+                if (!workspace.initializer(row.token(), 8)) {
+                    return false;
+                }
+            }
+            if (kind == compiler_parser::SyntaxKind::local || kind == compiler_parser::SyntaxKind::return_value || kind
+                == compiler_parser::SyntaxKind::static_assertion || kind == compiler_parser::SyntaxKind::expression
+                || kind == compiler_parser::SyntaxKind::conditional || kind == compiler_parser::SyntaxKind::loop || kind
+                == compiler_parser::SyntaxKind::assign || kind == compiler_parser::SyntaxKind::field_assign || kind
+                == compiler_parser::SyntaxKind::index_assign || kind == compiler_parser::SyntaxKind::initializer) {
+                if (!workspace.mark(row.expression())) {
+                    return false;
+                }
+                if (kind == compiler_parser::SyntaxKind::index_assign && !workspace.mark(row.target())) {
+                    return false;
+                }
+            }
+            at = at + 1;
+        }
+        at = arena.size();
+        while (at > 0) {
+            at = at - 1;
+            if (workspace.mark_at(at) != 0u8) {
+                const compiler_parser::AstNode node = arena.at(at);
+                const compiler_parser::NodeKind kind = node.kind();
+                if (kind == compiler_parser::NodeKind::unary && !workspace.flag(node.token(), 1)) {
+                    return false;
+                }
+                if (kind == compiler_parser::NodeKind::binary && !workspace.flag(node.token(), 2)) {
+                    return false;
+                }
+                if (kind == compiler_parser::NodeKind::array_literal || kind == compiler_parser::NodeKind::construct
+                    || kind == compiler_parser::NodeKind::array_zero) {
+                    if (!workspace.initializer(node.token(), 4)) {
+                        return false;
+                    }
+                }
+                if (kind == compiler_parser::NodeKind::call || kind == compiler_parser::NodeKind::method_call || kind
+                    == compiler_parser::NodeKind::array_literal || kind == compiler_parser::NodeKind::construct || kind
+                    == compiler_parser::NodeKind::array_zero) {
+                    i64 edge = node.first();
+                    while (edge >= 0) {
+                        const compiler_parser::ChildEdge child = arena.edge(edge);
+                        if (!workspace.mark(child.child())) {
+                            return false;
+                        }
+                        edge = child.previous();
+                    }
+                } else {
+                    if (node.first() >= 0 && !workspace.mark(node.first())) {
+                        return false;
+                    }
+                    if (node.second() >= 0 && !workspace.mark(node.second())) {
+                        return false;
+                    }
+                }
+            }
+        }
+        return true;
+    }
+    auto run(Workspace& workspace, const compiler_parser::AstArena& arena, bool format) -> i64 {
+        if (workspace.start() && workspace.style()) {
+            if (format) {
+                if (roles(workspace, arena)) {
+                    workspace.layout();
+                }
+            } else {
+                workspace.complete();
+            }
+        }
+        return workspace.state();
+    }
+    auto create(builtin::ByteRegion region) -> Workspace {
+        Workspace result = Workspace(region);
+        return move(result);
+    }
+    auto release(builtin::ByteRegion region, Workspace workspace) -> i64 {
+        return 0;
+    }
+}

@@ -17,7 +17,7 @@ if not fs.is_absolute(bootstrap_compiler_path) or not fs.is_file(bootstrap_compi
 endif
 bootstrap_compiler = find_program(bootstrap_compiler_path, native: true)
 bootstrap_depend_files = files(bootstrap_compiler_path)
-frontend_inputs = files('compiler/lexer.au', 'compiler/syntax_arena.au', 'compiler/parser.au',
+frontend_inputs = files('compiler/formatter.au', 'compiler/lexer.au', 'compiler/syntax_arena.au', 'compiler/parser.au',
                         'compiler/resolution_kinds.au', 'compiler/lowering_errors.au', 'compiler/lowering_kinds.au',
                         'compiler/lowering_storage.au', 'compiler/resolution_rows.au', 'compiler/resolution_arena.au',
                         'compiler/resolution_names.au', 'compiler/resolution_ingest.au', 'compiler/resolver.au',

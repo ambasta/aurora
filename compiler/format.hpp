@@ -1,9 +1,8 @@
 #pragma once
 #include "lexer.hpp"
 #include "parser.hpp"
+#include "../runtime/hosted_bytes.hpp"
 #include <algorithm>
-#include <map>
-#include <set>
 #include <string_view>
 
 namespace aurora::format {
@@ -60,365 +59,106 @@ inline bool equivalent(const LexedSource &left, const LexedSource &right) {
     return anchors(left) == anchors(right);
 }
 
-// These are roles from the compiler AST, not a second language parser. Bracket
-// pairing below only lays out already accepted syntax; it never accepts syntax.
-class Roles {
-    const std::vector<Token> &tokens;
-    void initializerAfter(const Token &token) {
-        auto found = std::lower_bound(
-            tokens.begin(), tokens.end(), token.span.begin.offset, [](const Token &value, std::size_t offset) {
-                return value.span.begin.offset < offset;
-            });
-        while (found != tokens.end() && found->text != "{")
-            ++found;
-        if (found == tokens.end())
-            throw Error(DiagnosticCode::Internal, "formatter cannot locate an AST initializer", token.span);
-        initializers.insert(found->span.begin.offset);
-    }
-    void expression(const ExpressionPtr &value) {
-        if (!value)
-            return;
-        if (value->op == "unary")
-            unary.insert(value->token.span.begin.offset);
-        if (value->op == "binary")
-            binary.insert(value->token.span.begin.offset);
-        if (value->op == "array_literal" || value->op == "construct" || value->op == "array_zero")
-            initializerAfter(value->token);
-        for (const auto &argument : value->args)
-            expression(argument);
-    }
-    void statement(const StatementPtr &value) {
-        expression(value->expr);
-        expression(value->target);
-        for (const auto &child : value->body)
-            statement(child);
-        for (const auto &child : value->other)
-            statement(child);
-    }
-    void function(const Function &value) {
-        for (const auto &parameter : value.params)
-            if (parameter.borrowed)
-                references.insert(parameter.borrowSpan.begin.offset);
-        for (const auto &initializer : value.initializers)
-            expression(initializer.second);
-        for (const auto &child : value.body)
-            statement(child);
+// One operation owns all layout and finding decisions. The host retains source
+// snapshots, parser diagnostics and copied publication through the generated ABI.
+class Operation {
+    hosted::bytes::Region region;
+    hosted_abi::ParserRelease parser{};
+    hosted_abi::FormatterRelease formatter{};
+    static std::uint64_t quota(std::size_t bytes) {
+        using namespace hosted_abi::compiler_parser;
+        constexpr auto records = sizeof(AstNode) + sizeof(ChildEdge) + sizeof(TypeSyntax) + sizeof(SyntaxNode);
+        constexpr auto rows = 5 * sizeof(hosted_abi::compiler_formatter::Row);
+        return 2 * bytes * (records + hosted_abi::frameBytes + rows) + 8 * (records + rows) +
+               (2 * 1939 + 8) * hosted_abi::frameBytes + 5 * sourceLimit;
     }
 
 public:
-    std::set<std::size_t> unary, binary, initializers, enums, references;
-    Roles(const std::vector<Token> &input, const Program &program) : tokens(input) {
-        for (const auto &value : program.functions)
-            function(value);
-        for (const auto &value : program.functionTemplates)
-            function(value);
-        for (const auto &value : program.classes) {
-            for (const auto &method : value.methods)
-                function(method);
+    explicit Operation(std::size_t bytes) : region(quota(bytes)) {
+        parser.region = formatter.region = region.id();
+        hosted_abi::ParserCreate parse;
+        parse.region = region.id();
+        aurora_hosted_parser_create(&parse, parser.arena.storage.data());
+        hosted_abi::FormatterCreate create;
+        create.region = region.id();
+        aurora_hosted_formatter_create(&create, formatter.workspace.storage.data());
+    }
+    ~Operation() {
+        aurora_hosted_formatter_release(&formatter);
+        aurora_hosted_parser_release(&parser);
+    }
+    Operation(const Operation &) = delete;
+    Operation &operator=(const Operation &) = delete;
+    Result run(const LexedSource &source, bool layout) {
+        if (layout)
+            (void)parseHostedModuleSyntax(source.tokens, parser.arena.storage.data());
+        const std::array<const void *, 2> roots{formatter.workspace.storage.data(), parser.arena.storage.data()};
+        hosted_abi::FormatterInput input;
+        input.source.backing = source.source->text.data();
+        input.source.length = static_cast<std::int64_t>(source.source->text.size());
+        if (aurora_hosted_formatter_prepare(formatter.workspace.storage.data(), &input) != 1)
+            throw Error(DiagnosticCode::Internal, "formatter workspace allocation failed");
+        hosted_abi::compiler_formatter::Row report;
+        const auto status = aurora_hosted_formatter_run(roots.data(), layout);
+        aurora_hosted_formatter_finding(formatter.workspace.storage.data(), -1, &report);
+        if (status != report.a)
+            throw Error(DiagnosticCode::Internal, "invalid hosted formatter status");
+        if (report.a != 4)
+            throw Error(DiagnosticCode::Internal,
+                        report.a == 2   ? "formatted output exceeds 1 MiB bound"
+                        : report.a == 1 ? "formatter workspace allocation failed"
+                                        : "invalid hosted formatter result");
+        if (report.b < 0 || report.b > static_cast<std::int64_t>(sourceLimit) || report.c < 0 ||
+            report.c > static_cast<std::int64_t>(sourceLimit) || report.d || report.e || report.f)
+            throw Error(DiagnosticCode::Internal, "invalid hosted formatter extents");
+        Result result;
+        for (std::int64_t offset = 0; offset < report.b;) {
+            hosted_abi::compiler_x86::EmitChunk chunk;
+            aurora_hosted_formatter_chunk(formatter.workspace.storage.data(), offset, &chunk);
+            if (chunk.byteCount != std::min<std::int64_t>(512, report.b - offset))
+                throw Error(DiagnosticCode::Internal, "invalid hosted formatter chunk");
+            result.text.append(reinterpret_cast<const char *>(chunk.payload.data()), chunk.byteCount);
+            offset += chunk.byteCount;
         }
-        for (const auto &value : program.templates) {
-            for (const auto &method : value.methods)
-                function(method);
+        constexpr std::array codes{"AUF1001", "AUF1002", "AUF1003"};
+        constexpr std::array messages{"line exceeds 120 byte columns; comments and tokens are never split",
+                                      "trailing whitespace",
+                                      "indentation must use groups of four spaces"};
+        for (std::int64_t index = 0; index < report.c; ++index) {
+            hosted_abi::compiler_formatter::Row row;
+            aurora_hosted_formatter_finding(formatter.workspace.storage.data(), index, &row);
+            if (row.a < 1 || row.a > 3 || row.b < 0 || row.c < row.b || row.c > input.source.length || row.d < 1 ||
+                row.d > input.source.length + 1 || row.e < 1 || row.e > row.b + 1 || row.f < row.e ||
+                row.f - row.e != row.c - row.b)
+                throw Error(DiagnosticCode::Internal, "invalid hosted formatter finding");
+            result.findings.push_back(
+                {codes[row.a - 1],
+                 messages[row.a - 1],
+                 {source.source,
+                  {static_cast<std::size_t>(row.b), static_cast<int>(row.d), static_cast<int>(row.e)},
+                  {static_cast<std::size_t>(row.c), static_cast<int>(row.d), static_cast<int>(row.f)}}});
         }
-        for (const auto &value : program.enums) {
-            initializerAfter(value.token);
-            auto found = initializers.lower_bound(value.token.span.begin.offset);
-            enums.insert(*found);
-            initializers.erase(found);
-        }
+        return result;
     }
 };
-
-inline bool joinsWithoutChangingTokens(const std::string &left, const std::string &right) {
-    const auto combined = lex(left + right);
-    return combined.size() == 3 && combined[0].text == left && combined[1].text == right;
-}
-
-inline std::string layout(const LexedSource &source, const Program &program) {
-    const Roles roles(source.tokens, program);
-    class Piece {
-    public:
-        std::string text;
-        SourceSpan span;
-        bool comment;
-    };
-    std::vector<Piece> pieces;
-    for (const auto &token : source.tokens) {
-        if (token.text != "<eof>")
-            pieces.push_back({token.text, token.span, false});
-    }
-    for (const auto &trivia : source.trivia) {
-        if (trivia.kind == TriviaKind::LineComment)
-            pieces.push_back({std::string(spelling(trivia.span)), trivia.span, true});
-    }
-    std::sort(pieces.begin(), pieces.end(), [](const Piece &left, const Piece &right) {
-        return left.span.begin.offset < right.span.begin.offset;
-    });
-    class Brace {
-    public:
-        bool initializer;
-        bool enumeration;
-        std::size_t parentheses;
-    };
-    std::vector<Brace> braces;
-    std::string result;
-    std::size_t column = 0, parentheses = 0, lineStart = 0;
-    // Only grammar-shaped boundaries can become soft breaks. Keep candidates
-    // until the line overflows, so the decision includes the whole pending atom
-    // rather than splitting whichever token happens to cross the byte limit.
-    class Break {
-    public:
-        std::size_t offset, depth, gap;
-        unsigned priority;
-    };
-    std::vector<Break> breaks;
-    bool hardBreak = false;
-    bool previousUnary = false, previousTemplateOpen = false;
-    std::string previous;
-    SourceSpan previousSpan;
-    const auto newline = [&]() {
-        if (!result.empty() && result.back() != '\n') {
-            if (result.size() == sourceLimit)
-                throw Error(DiagnosticCode::Internal, "formatted output exceeds 1 MiB bound");
-            result += '\n';
-        }
-        column = 0;
-        lineStart = result.size();
-        breaks.clear();
-    };
-    const auto blankLine = [&]() {
-        newline();
-        if (!result.empty() && (result.size() < 2 || result[result.size() - 2] != '\n')) {
-            if (result.size() == sourceLimit)
-                throw Error(DiagnosticCode::Internal, "formatted output exceeds 1 MiB bound");
-            result += '\n';
-            lineStart = result.size();
-        }
-    };
-    const auto append = [&](std::string_view text, std::size_t depth) {
-        const auto needed = text.size() + (column == 0 ? depth * indentWidth : 0);
-        if (needed > sourceLimit - result.size())
-            throw Error(DiagnosticCode::Internal, "formatted output exceeds 1 MiB bound");
-        if (column == 0) {
-            result.append(depth * indentWidth, ' ');
-            column = depth * indentWidth;
-        }
-        result.append(text);
-        column += text.size();
-    };
-    for (std::size_t index = 0; index < pieces.size(); ++index) {
-        const auto &piece = pieces[index];
-        const auto &text = piece.text;
-        // Inspect only the whitespace between adjacent lossless pieces. Counting
-        // from a preceding code token would mistake intervening comments for an
-        // intentional blank line. LF matches the shared lexer's line contract.
-        bool separated = false;
-        if (index > 0) {
-            const auto begin = pieces[index - 1].span.end.offset;
-            const auto gap = std::string_view(source.source->text).substr(begin, piece.span.begin.offset - begin);
-            separated = std::count(gap.begin(), gap.end(), '\n') >= 2;
-        }
-        const bool afterOpeningBrace = index > 0 && !pieces[index - 1].comment && pieces[index - 1].text == "{";
-        std::size_t depth = braces.size();
-        if (piece.comment) {
-            const bool wasTrailing = previousSpan.source && previousSpan.end.line == piece.span.begin.line;
-            if (!wasTrailing || column + 1 + text.size() > columnLimit)
-                newline();
-            if (separated && !afterOpeningBrace)
-                blankLine();
-            if (column != 0)
-                append(" ", depth);
-            append(text, depth);
-            newline();
-            hardBreak = false;
-            continue;
-        }
-        const bool unary = roles.unary.contains(piece.span.begin.offset);
-        const bool binary = roles.binary.contains(piece.span.begin.offset);
-        const bool templateOpen = text == "<" && !binary;
-        const bool templateClose = (text == ">" || text == ">>") && !binary;
-        const bool initializer = text == "{" && roles.initializers.contains(piece.span.begin.offset);
-        const bool emptyInitializer = initializer && index + 1 < pieces.size() && pieces[index + 1].text == "}";
-        const bool closesEmpty = text == "}" && previous == "{" && !braces.empty() && braces.back().initializer;
-        const bool label =
-            (text == "public" || text == "private") && index + 1 < pieces.size() && pieces[index + 1].text == ":";
-        if (text == "}") {
-            if (braces.empty())
-                throw Error(DiagnosticCode::Internal, "formatter encountered an unpaired brace", piece.span);
-            --depth;
-        }
-        if (label && depth > 0)
-            --depth;
-        const bool structuralBreak =
-            (hardBreak && text != ";" && text != "," && text != ")" && text != "]" && text != "else") ||
-            (text == "}" && !closesEmpty) || label;
-        if (structuralBreak)
-            newline();
-        // Keep one user separator between declarations, statements, members or
-        // comments. Block/file edges and expression gaps remain canonical; soft
-        // wrapping never creates a separator that a later pass could amplify.
-        if (separated && !afterOpeningBrace && text != "}" &&
-            (structuralBreak || (index > 0 && pieces[index - 1].comment)))
-            blankLine();
-        hardBreak = false;
-        bool space = !previous.empty();
-        if (text == ";" || text == "," || text == ")" || text == "]" || text == "." || text == "::" || templateClose ||
-            previous == "(" || previous == "[" || previous == "." || previous == "::" || previousUnary ||
-            previousTemplateOpen || closesEmpty)
-            space = false;
-        if (roles.references.contains(piece.span.begin.offset))
-            space = false;
-        if (text == "(" || text == "[")
-            space = previous == "if" || previous == "while" || (text == "(" && previous == "return") ||
-                    (text == "(" && roles.binary.contains(previousSpan.begin.offset));
-        if (templateOpen)
-            space = previous == "template";
-        if (text == ":")
-            space = previous != "public" && previous != "private";
-        if (initializer && previous != "=" && previous != "," && previous != "return" && previous != "(")
-            space = false;
-        if (column != 0 && !space && !joinsWithoutChangingTokens(previous, text))
-            space = true;
-        // Commas and AST binary operators are preferred over opening a list
-        // or breaking after an assignment/return/result-type introducer. No
-        // candidate exists inside a member/scope chain, around unary operators,
-        // before call/index punctuation, or before a closing delimiter.
-        unsigned priority = 0;
-        if (binary || previous == ",")
-            priority = 2;
-        else if (previous == "=" || previous == "return" || previous == "->" ||
-                 ((previous == "(" || previous == "[") && text != ")" && text != "]"))
-            priority = 1;
-        if (priority != 0 && column != 0)
-            breaks.push_back({result.size(), braces.size() + 1, space ? 1u : 0u, priority});
-        if (column != 0 && space)
-            append(" ", depth);
-        append(text, depth);
-        while (column > columnLimit && !breaks.empty()) {
-            // Prefer the strongest, latest boundary whose prefix fits. If an
-            // indivisible prefix is itself oversized, emit it intact at the
-            // first available boundary and retain its long-line finding.
-            auto chosen = breaks.begin();
-            bool fits = false;
-            for (auto candidate = breaks.begin(); candidate != breaks.end(); ++candidate) {
-                if (candidate->offset - lineStart > columnLimit)
-                    break;
-                if (!fits || candidate->priority >= chosen->priority) {
-                    chosen = candidate;
-                    fits = true;
-                }
-            }
-            const auto boundary = *chosen;
-            const auto added = 1 + boundary.depth * indentWidth;
-            if (added - boundary.gap > sourceLimit - result.size())
-                throw Error(DiagnosticCode::Internal, "formatted output exceeds 1 MiB bound");
-            result.replace(boundary.offset, boundary.gap, "\n" + std::string(boundary.depth * indentWidth, ' '));
-            breaks.erase(breaks.begin(), chosen + 1);
-            for (auto &candidate : breaks)
-                candidate.offset += added - boundary.gap;
-            lineStart = boundary.offset + 1;
-            column = result.size() - lineStart;
-        }
-        if (text == "(")
-            ++parentheses;
-        else if (text == ")") {
-            if (parentheses == 0)
-                throw Error(DiagnosticCode::Internal, "formatter encountered an unpaired parenthesis", piece.span);
-            --parentheses;
-        }
-        if (text == "{") {
-            braces.push_back({initializer, roles.enums.contains(piece.span.begin.offset), parentheses});
-            hardBreak = !emptyInitializer;
-        } else if (text == "}") {
-            hardBreak = !braces.back().initializer;
-            braces.pop_back();
-        } else if (text == ";" || (text == ":" && (previous == "public" || previous == "private"))) {
-            hardBreak = true;
-        } else if (text == "," && !braces.empty() && (braces.back().initializer || braces.back().enumeration) &&
-                   parentheses == braces.back().parentheses) {
-            hardBreak = true;
-        }
-        previous = text;
-        previousSpan = piece.span;
-        previousUnary = unary;
-        previousTemplateOpen = templateOpen;
-    }
-    newline();
-    return result;
-}
-
-// A standalone literal cannot be split to fit its canonical indentation.
-// Keep this exception narrower than general indivisible expressions or deep
-// indentation: only a standalone literal and its closing punctuation qualify.
-inline bool oversizedLiteralLine(const LexedSource &source, std::size_t begin, std::size_t end) {
-    const auto &text = source.source->text;
-    auto first = begin;
-    while (first < end && text[first] == ' ')
-        ++first;
-    const auto token =
-        std::lower_bound(source.tokens.begin(), source.tokens.end(), first, [](const Token &value, std::size_t offset) {
-            return value.span.begin.offset < offset;
-        });
-    if (token == source.tokens.end() || token->span.begin.offset != first || token->text.empty() ||
-        token->text.front() != '"' || token->span.end.offset > end)
-        return false;
-    const auto suffix = std::string_view(text).substr(token->span.end.offset, end - token->span.end.offset);
-    return suffix.find_first_not_of(";,)]") == std::string_view::npos &&
-           first - begin + 2 + suffix.size() <= columnLimit;
-}
-
 inline std::vector<Finding> styleFindings(const LexedSource &source) {
-    std::vector<Finding> findings;
-    SourcePosition position;
-    const auto &text = source.source->text;
-    while (position.offset < text.size()) {
-        const auto lineStart = position;
-        auto end = text.find('\n', position.offset);
-        if (end == std::string::npos)
-            end = text.size();
-        const auto span = [&](std::size_t begin, std::size_t finish) {
-            return SourceSpan{source.source,
-                              {begin, lineStart.line, static_cast<int>(begin - lineStart.offset + 1)},
-                              {finish, lineStart.line, static_cast<int>(finish - lineStart.offset + 1)}};
-        };
-        if (end - position.offset > columnLimit && !oversizedLiteralLine(source, position.offset, end))
-            findings.push_back({"AUF1001",
-                                "line exceeds 120 byte columns; comments and tokens are never split",
-                                span(position.offset + columnLimit, end)});
-        auto trailing = end;
-        while (trailing > position.offset &&
-               (text[trailing - 1] == ' ' || text[trailing - 1] == '\t' || text[trailing - 1] == '\r'))
-            --trailing;
-        if (trailing != end)
-            findings.push_back({"AUF1002", "trailing whitespace", span(trailing, end)});
-        auto leading = position.offset;
-        bool tab = false;
-        while (leading < trailing && (text[leading] == ' ' || text[leading] == '\t')) {
-            tab = tab || text[leading] == '\t';
-            ++leading;
-        }
-        if (leading != trailing && (tab || (leading - position.offset) % indentWidth != 0))
-            findings.push_back(
-                {"AUF1003", "indentation must use groups of four spaces", span(position.offset, leading)});
-        position.offset = end == text.size() ? end : end + 1;
-        ++position.line;
-        position.column = 1;
-    }
-    return findings;
+    if (source.source->text.size() > sourceLimit)
+        throw Error(DiagnosticCode::Module, "formatter input exceeds 1 MiB source bound");
+    return Operation(source.source->text.size()).run(source, false).findings;
 }
-
 inline Result source(const std::string &contents, const std::string &path = {}) {
     if (contents.size() > sourceLimit)
         throw Error(DiagnosticCode::Module, "formatter input exceeds 1 MiB source bound");
     const auto original = lexSource(contents, path);
-    const auto parsed = Parser(original.tokens).parse();
-    auto output = layout(original, parsed);
-    const auto formatted = lexSource(output, path);
+    auto result = Operation(contents.size()).run(original, true);
+    const auto formatted = lexSource(result.text, path);
     if (!equivalent(original, formatted))
         throw Error(DiagnosticCode::Internal, "formatter refused a token/comment change");
-    const auto reparsed = Parser(formatted.tokens).parse();
-    if (layout(formatted, reparsed) != output)
+    auto again = Operation(result.text.size()).run(formatted, true);
+    if (again.text != result.text)
         throw Error(DiagnosticCode::Internal, "formatter refused non-idempotent output");
-    return {std::move(output), styleFindings(original), contents != formatted.source->text, styleFindings(formatted)};
+    result.changed = contents != result.text;
+    result.remainingFindings = std::move(again.findings);
+    return result;
 }
 } // namespace aurora::format

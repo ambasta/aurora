@@ -8,6 +8,7 @@ still needs its own full, convergence and BIOS/UEFI qualification.
 | Component | Current source authority | Remaining work |
 |---|---|---|
 | Source loading and file I/O | C++ host | Native runtime and source-loading migration |
+| Formatting | Aurora owns syntax roles, layout and findings; native host retains source transport and token/comment/reparse/idempotence checks | Final-source qualification required |
 | Lexing and parsing | Aurora | Complete final-source predecessor/current convergence |
 | Resolution and typed lowering | Aurora | Validate final integrated behavior |
 | Metadata, callable and frame admission | Aurora owns frame size and disjoint slot domains; C++ transports raw declarations | Retain host conversion, quota arithmetic and transport bounds |
@@ -18,7 +19,7 @@ still needs its own full, convergence and BIOS/UEFI qualification.
 | Call graph | Aurora | Validate final integrated behavior |
 | x86 emission | Aurora, fixed native transport | Byte-identical to the C++ backend on the whole corpus in both profiles (`emitter-differential-*`); compile time 1.05x the C++ backend |
 | Direct class fields | Aurora source and independent metadata admission share an 8,192-field cap, including empty, nested, resource and array fields | Existing leaf, byte, depth and array-element limits still apply |
-| Private host bridge | One 107-entry table generates Aurora forwarders and host transport declarations; compiler facts supply layouts, symbols and raw enum validation | Preserve fail-closed conversion; native replacement remains incomplete |
+| Private host bridge | One 113-entry table generates Aurora forwarders and host transport declarations; compiler facts supply layouts, symbols and raw enum validation | Preserve fail-closed conversion; native replacement remains incomplete |
 | Bootstrap route | Six source-built predecessors, then current C1/C2; direct skips fail at recorded capability boundaries | Replace stages only after an actual direct build, byte-identical frontend comparison, complete seed route and final full/convergence gates |
 | Assembly, linking and hosted runtime | External bootstrap tools/C++ | Native replacements remain incomplete |
 
@@ -165,3 +166,20 @@ ABI checks and multi-stage convergence; no execution waiver applies.
 Language contracts: [values](VALUES.md), [ownership](OWNERSHIP.md),
 [generics](GENERICS.md), [scalars](SCALARS.md), [services](SERVICES.md),
 [stack probes](STACK-GUARDS.md). Project direction: [roadmap](../docs/roadmap.md).
+
+## Source formatter boundary
+
+The formatter runs one bounded layout operation over the admitted Aurora arena.
+It marks only executable statement/initializer expression trees, preserving the
+former formatter's distinction from type/template expressions. Input is copied
+once through a synchronous span; no input pointer or source owner is retained.
+Both input and output retain the 1 MiB limit. Each scratch pool has at most
+1,048,577 rows, grows geometrically, and is additionally constrained by the
+count-derived region quota. Findings and output are readable only on completion;
+allocation/output failure and repeated preparation are terminal. Workspace owners
+are released before the parser arena and region. Payload quota excludes allocation
+headers and transient old/new resizing storage; process peak memory is separate.
+
+The host retains the existing two parse/layout passes, token/comment equivalence
+and idempotence safeguards. It copies completed chunks and validated finding
+coordinates into source-backed results. Formatting does not resolve imports.
