@@ -95,13 +95,13 @@ std::uint64_t projectionQuota(const HostedLoweringInput &input, std::span<const 
     for (const auto &row : input.rows)
         carriers += row.recordKind == wire::RecordKind::Carrier;
     const auto rendered = add(table.size(), mul(carriers, add(longest, 28)));
-    // Intern entries reference requested or generated carrier names. The
-    // geometric capacity is strictly below twice the used count (minimum 8).
+    // The sorted intern index contains at most one entry per requested or
+    // generated carrier name. Retain the conservative geometric quota bound.
     const auto intern = mul(24, std::max<std::uint64_t>(8, mul(2, add(identities, carriers))));
     auto quota = add(graph, rendered);
     quota = add(quota, mul(16, rows));
     quota = add(quota, mul(48, add(operands, mul(2, rows))));
-    quota = add(quota, add(35 * 8, intern));
+    quota = add(quota, add(52 * 8, intern));
     // Ownership disjointness bounds type occurrences by O+2R, indices by
     // O+R, instruction operands by O, and every other output row pool by R.
     // Their fixed widths sum to <=14O+78R words; 80(O+R) covers all pools.

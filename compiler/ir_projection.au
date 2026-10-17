@@ -2346,13 +2346,7 @@ export namespace compiler_projection {
             return first;
         }
         auto pool_begin(i64 pool) const -> i64 {
-            i64 result = 0;
-            i64 at = 0;
-            while (at < pool) {
-                result = result + total(at) * pool_width(at);
-                at = at + 1;
-            }
-            return result;
+            return current(35 + pool);
         }
         auto put_word(i64 pool, i64 row, i64 field, u64 bits) -> bool {
             if ((state != 6 && state != 7) || pool < 0 || pool >= 17 || row < 0 || field < 0 || field
@@ -2381,12 +2375,122 @@ export namespace compiler_projection {
         auto integer(i64 pool, i64 row, i64 field) const -> i64 {
             return word_integer(bits(pool, row, field));
         }
+        auto swap_string(i64 a, i64 b) -> bool {
+            const Intern first = strings.at(a);
+            const Intern second = strings.at(b);
+            if (!strings.set(a, second) || !strings.set(b, first)) {
+                return fail();
+            }
+            return true;
+        }
+        auto sift_strings(i64 first, i64 end) -> bool {
+            i64 root = first;
+            while (root < end / 2) {
+                i64 child = root * 2 + 1;
+                if (child + 1 < end) {
+                    const Intern left = strings.at(child);
+                    const Intern right = strings.at(child + 1);
+                    if (compare_names(left.begin, left.count, right.begin, right.count) < 0) {
+                        child = child + 1;
+                    }
+                }
+                const Intern parent = strings.at(root);
+                const Intern selected = strings.at(child);
+                if (compare_names(parent.begin, parent.count, selected.begin, selected.count) >= 0) {
+                    return true;
+                }
+                if (!swap_string(root, child)) {
+                    return false;
+                }
+                root = child;
+            }
+            return true;
+        }
+        auto index_strings() -> bool {
+            // Every emitted name is requested or generated for a carrier.
+            // Sort only lookup keys; offsets follow first use in each pass.
+            i64 count = identityCount;
+            i64 at = 0;
+            while (at < classCount) {
+                const OrderRow selected = order.at(class_begin() + at);
+                if (selected.flags == 1 || selected.flags == 3) {
+                    if (count == 384307168202282325) {
+                        return fail();
+                    }
+                    count = count + 1;
+                }
+                at = at + 1;
+            }
+            const Intern empty = Intern(0, 0, -1);
+            if (count > 384307168202282325 || !strings.try_resize(count, empty)) {
+                return fail();
+            }
+            i64 used = 0;
+            at = 0;
+            while (at < identityCount) {
+                const i64 base = 8 + at * 80;
+                const i64 begin = rendered_integer(base + 24);
+                const i64 length = rendered_integer(base + 32);
+                if (length > 0) {
+                    const Intern added = Intern(begin, length, -1);
+                    if (!strings.set(used, added)) {
+                        return fail();
+                    }
+                    used = used + 1;
+                }
+                at = at + 1;
+            }
+            at = 0;
+            while (at < classCount) {
+                const OrderRow selected = order.at(class_begin() + at);
+                if ((selected.flags == 1 || selected.flags == 3) && selected.nameCount > 0) {
+                    const Intern added = Intern(selected.nameBegin, selected.nameCount, -1);
+                    if (!strings.set(used, added)) {
+                        return fail();
+                    }
+                    used = used + 1;
+                }
+                at = at + 1;
+            }
+            at = used / 2;
+            while (at > 0) {
+                at = at - 1;
+                if (!sift_strings(at, used)) {
+                    return false;
+                }
+            }
+            at = used;
+            while (at > 1) {
+                at = at - 1;
+                if (!swap_string(0, at) || !sift_strings(0, at)) {
+                    return false;
+                }
+            }
+            i64 unique = 0;
+            at = 0;
+            while (at < used) {
+                const Intern selected = strings.at(at);
+                bool duplicate = false;
+                if (unique > 0) {
+                    const Intern previous = strings.at(unique - 1);
+                    duplicate = compare_names(previous.begin, previous.count, selected.begin, selected.count) == 0;
+                }
+                if (!duplicate) {
+                    if (!strings.set(unique, selected)) {
+                        return fail();
+                    }
+                    unique = unique + 1;
+                }
+                at = at + 1;
+            }
+            return set_counter(34, unique);
+        }
         auto begin_measure() -> bool {
             if (state != 5 || !counters.ok() || !outputWords.ok() || !outputBytes.ok() || !strings.ok()) {
                 return fail();
             }
             const Word empty = Word(0u64);
-            if (!counters.try_resize(35, empty)) {
+            if (!counters.try_resize(52, empty) || !index_strings()) {
                 return fail();
             }
             state = 6;
@@ -2404,6 +2508,9 @@ export namespace compiler_projection {
                 if (count < 0 || (width > 0 && count > (1152921504606846975 - words) / width)) {
                     return fail();
                 }
+                if (!set_counter(35 + at, words)) {
+                    return fail();
+                }
                 words = words + count * width;
                 if (!set_counter(at + 17, count) || !set_counter(at, 0)) {
                     return fail();
@@ -2414,9 +2521,17 @@ export namespace compiler_projection {
                 return fail();
             }
             const Word empty = Word(0u64);
-            if (!outputWords.try_resize(words, empty) || !outputBytes.try_resize(total(0) + total(15))
-                || !set_counter(34, 0)) {
+            if (!outputWords.try_resize(words, empty) || !outputBytes.try_resize(total(0) + total(15))) {
                 return fail();
+            }
+            at = 0;
+            while (at < current(34)) {
+                const Intern previous = strings.at(at);
+                const Intern reset = Intern(previous.begin, previous.count, -1);
+                if (!strings.set(at, reset)) {
+                    return fail();
+                }
+                at = at + 1;
             }
             state = 7;
             return true;
@@ -2444,41 +2559,40 @@ export namespace compiler_projection {
             if (name.count == 0) {
                 return TextRange(current(0), 0);
             }
-            const i64 used = current(34);
-            i64 at = 0;
-            while (at < used) {
-                const Intern previous = strings.at(at);
-                if (compare_names(name.begin, name.count, previous.begin, previous.count) == 0) {
-                    return TextRange(previous.output, name.count);
+            i64 lower = 0;
+            i64 upper = current(34);
+            while (lower < upper) {
+                const i64 middle = lower + (upper - lower) / 2;
+                const Intern selected = strings.at(middle);
+                if (compare_names(selected.begin, selected.count, name.begin, name.count) < 0) {
+                    lower = middle + 1;
+                } else {
+                    upper = middle;
                 }
-                at = at + 1;
             }
-            if (used == strings.size()) {
-                if (used > 192153584101141162) {
-                    fail();
-                    return TextRange(-1, 0);
-                }
-                i64 capacity = 8;
-                if (used > 0) {
-                    capacity = used * 2;
-                }
-                const Intern empty = Intern(0, 0, 0);
-                if (!strings.try_resize(capacity, empty)) {
-                    fail();
-                    return TextRange(-1, 0);
-                }
+            if (lower == current(34)) {
+                fail();
+                return TextRange(-1, 0);
+            }
+            const Intern previous = strings.at(lower);
+            if (compare_names(previous.begin, previous.count, name.begin, name.count) != 0) {
+                fail();
+                return TextRange(-1, 0);
+            }
+            if (previous.output >= 0) {
+                return TextRange(previous.output, name.count);
             }
             const i64 first = reserve(0, name.count);
             if (first < 0) {
                 return TextRange(-1, 0);
             }
             const Intern added = Intern(name.begin, name.count, first);
-            if (!strings.set(used, added) || !set_counter(34, used + 1)) {
+            if (!strings.set(lower, added)) {
                 fail();
                 return TextRange(-1, 0);
             }
             if (state == 7) {
-                at = 0;
+                i64 at = 0;
                 while (at < name.count) {
                     const u8 byte = rendered.at(name.begin + at);
                     if (!outputBytes.set(first + at, byte)) {

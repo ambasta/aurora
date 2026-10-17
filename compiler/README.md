@@ -209,7 +209,10 @@ The immutable Session is stamped with its non-reused host Region incarnation;
 the final source phase checks that stamp and the sealed row/operand counts.
 
 Source measurement and fill agree on every raw pool, preserve canonical metadata
-ordering, and copy literal bytes. Pending-only typed setters fill independent
+ordering, and copy literal bytes. A sorted name index uses binary search while
+assigning byte offsets on first use in each pass, preserving output order.
+Checked pool bases are cached before filling; owner layouts remain unchanged.
+Pending-only typed setters fill independent
 metadata and instruction regions exactly once; short, repeated and extra fills
 reject. The Plan and Session are released before unchanged IR admission and
 validation. Native code retains quota arithmetic, requested identity/diagnostic

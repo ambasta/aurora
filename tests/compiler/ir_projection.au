@@ -178,7 +178,164 @@ auto seed(compiler_resolver::Session& session, i64 mode, i64 stamp) -> i64 {
     }
     return 15;
 }
+auto name_index(builtin::ByteRegion region, i64 mode) -> i64 {
+    compiler_projection::Plan plan = compiler_projection::Plan(region);
+    builtin::OwnedBytes table = region.try_allocate(637);
+    if (!table.ok() || !plan.begin(1, 7, 0, 1)) {
+        return 100;
+    }
+    i64 at = 0;
+    while (at < 637) {
+        if (!table.set(at, 0u8)) {
+            return 100;
+        }
+        at = at + 1;
+    }
+    if (!table.set(0, 7u8)) {
+        return 100;
+    }
+    const array<i64, 7> begins = {
+        568,
+        593,
+        618,
+        623,
+        628,
+        636,
+        637
+    };
+    const array<i64, 7> lengths = {
+        25,
+        25,
+        5,
+        5,
+        8,
+        1,
+        0
+    };
+    const array<u8, 69> names = "abcdefghijklmnopqrstuvwxAabcdefghijklmnopqrstuvwxBalphaalphaalphabetz";
+    at = 0;
+    while (at < 69) {
+        if (!table.set(568 + at, names[at])) {
+            return 100;
+        }
+        at = at + 1;
+    }
+    at = 0;
+    while (at < 7) {
+        if (!plan.request(3, at)) {
+            return 100;
+        }
+        i64 field = 0;
+        while (field < 10) {
+            i64 value = 0;
+            if (field == 0) {
+                value = 3;
+            }
+            if (field == 1) {
+                value = at;
+            }
+            if (field == 3) {
+                value = begins[at];
+            }
+            if (field == 4) {
+                value = lengths[at];
+            }
+            i64 byte = 0;
+            while (byte < 8) {
+                if (!table.set(8 + at * 80 + field * 8 + byte, u8((u64(value) >> (byte * 8)) & 255u64))) {
+                    return 100;
+                }
+                byte = byte + 1;
+            }
+            field = field + 1;
+        }
+        at = at + 1;
+    }
+    const builtin::span<const u8> input = borrow_bytes(table);
+    if (!plan.finish() || !plan.bind(input) || !plan.seal_domains() || !plan.begin_order()) {
+        return 100;
+    }
+    const compiler_projection::TextRange carrier = plan.carrier_name(2, 3);
+    if (carrier.begin < 0) {
+        return 100;
+    }
+    i64 flags = 1;
+    if (mode == 46) {
+        flags = 3;
+    }
+    const compiler_projection::OrderRow ordered = compiler_projection::OrderRow(-1, 0, 0, carrier.begin, carrier.count,
+        flags);
+    if (!plan.put_order(plan.class_begin(), ordered) || !plan.order_complete(1, 0) || !plan.begin_measure()) {
+        return 100;
+    }
+    if (mode == 45) {
+        const compiler_projection::TextRange absent = compiler_projection::TextRange(619, 4);
+        const compiler_projection::TextRange rejected = plan.text(absent);
+        if (rejected.begin >= 0 || plan.status() != -1) {
+            return 41;
+        }
+        return 0;
+    }
+    const array<i64, 7> sequence = {
+        5,
+        4,
+        2,
+        3,
+        1,
+        0,
+        6
+    };
+    const array<i64, 7> offsets = {
+        0,
+        1,
+        9,
+        9,
+        14,
+        39,
+        64
+    };
+    i64 pass = 0;
+    while (pass < 2) {
+        at = 0;
+        while (at < 7) {
+            const i64 id = sequence[at];
+            const compiler_projection::TextRange original = plan.identity_name(3, id);
+            const compiler_projection::TextRange result = plan.text(original);
+            if (result.begin != offsets[at] || result.count != lengths[id]) {
+                return 42;
+            }
+            at = at + 1;
+        }
+        const compiler_projection::TextRange copied = plan.text(carrier);
+        if (copied.begin != 64 || copied.count != 14) {
+            return 43;
+        }
+        if (plan.reserve(1, 1) != 0 || plan.reserve(13, 1) != 0 || !plan.put_integer(1, 0, 7, 123)
+            || !plan.put_integer(13, 0, 0, 456)) {
+            return 100;
+        }
+        if (pass == 0 && !plan.begin_fill()) {
+            return 100;
+        }
+        pass = pass + 1;
+    }
+    if (!plan.complete_fill() || plan.integer(1, 0, 7) != 123 || plan.integer(13, 0, 0) != 456) {
+        return 44;
+    }
+    const array<u8, 78> expected = "zalphabetalphaabcdefghijklmnopqrstuvwxBabcdefghijklmnopqrstuvwxA@array:alpha:3";
+    at = 0;
+    while (at < 78) {
+        if (plan.output_byte(at) != expected[at]) {
+            return 45;
+        }
+        at = at + 1;
+    }
+    return 0;
+}
 auto entry(builtin::ByteRegion region, i64 mode, i64 flag) -> i64 {
+    if (mode >= 44) {
+        return name_index(region, mode);
+    }
     compiler_projection::Plan plan = compiler_projection::Plan(region);
     if (mode >= 32) {
         compiler_resolver::Session session = compiler_resolver::create(region);
