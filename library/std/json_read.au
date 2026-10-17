@@ -1,0 +1,104 @@
+export module std.json_read;
+import std.json;
+import std.utf8;
+import std.array;
+import std.byte_buffer;
+import std.binary;
+
+export namespace std {
+    enum class JsonStringReadStatus {
+        success,
+        invalid_window,
+        invalid_string,
+        truncated,
+        overflow,
+        append_failed
+    };
+    // A copied observation, never a capability or proof about an input owner.
+    class JsonStringReadResult {
+        JsonStringReadStatus outcome;
+        i64 count;
+    public:
+        JsonStringReadResult(JsonStringReadStatus status, i64 appended) : outcome(status), count(appended) {
+        }
+        auto status() const -> JsonStringReadStatus {
+            if (outcome == JsonStringReadStatus::success && count < 0) {
+                return JsonStringReadStatus::invalid_window;
+            }
+            return outcome;
+        }
+        auto appended_bytes() const -> i64 {
+            if (status() != JsonStringReadStatus::success) {
+                return 0;
+            }
+            return count;
+        }
+    };
+
+    // Decode exactly one quoted string, without surrounding whitespace or suffix.
+    // All recoverable failures precede writes. Input must have a distinct owner.
+    auto append_decoded_json_string(ByteBuffer& output, builtin::span<const u8> input, i64 offset,
+        i64 count) -> JsonStringReadResult {
+        if (offset < 0 || count < 0 || offset > input.size()) {
+            return JsonStringReadResult(JsonStringReadStatus::invalid_window, 0);
+        }
+        if (count > input.size() - offset) {
+            return JsonStringReadResult(JsonStringReadStatus::invalid_window, 0);
+        }
+        if (count == 0) {
+            return JsonStringReadResult(JsonStringReadStatus::truncated, 0);
+        }
+        if (input.at(offset) != 34u8) {
+            return JsonStringReadResult(JsonStringReadStatus::invalid_string, 0);
+        }
+        i64 consumed = 1;
+        i64 required = 0;
+        bool closed = false;
+        while (consumed < count && !closed) {
+            if (input.at(offset + consumed) == 34u8) {
+                if (consumed != count - 1) {
+                    return JsonStringReadResult(JsonStringReadStatus::invalid_string, 0);
+                }
+                closed = true;
+            } else {
+                const JsonScalarResult scalar = decode_json_string_scalar(input, offset + consumed, count - consumed);
+                if (scalar.status() == JsonStatus::truncated) {
+                    return JsonStringReadResult(JsonStringReadStatus::truncated, 0);
+                }
+                if (scalar.status() != JsonStatus::success) {
+                    return JsonStringReadResult(JsonStringReadStatus::invalid_string, 0);
+                }
+                const Utf8EncodeResult encoded = encode_utf8(scalar.scalar_or(0u64));
+                if (encoded.size() > 9223372036854775807 - required) {
+                    return JsonStringReadResult(JsonStringReadStatus::overflow, 0);
+                }
+                required = required + encoded.size();
+                consumed = consumed + scalar.consumed_bytes();
+            }
+        }
+        if (!closed) {
+            return JsonStringReadResult(JsonStringReadStatus::truncated, 0);
+        }
+        if (required > 9223372036854775807 - output.size()) {
+            return JsonStringReadResult(JsonStringReadStatus::overflow, 0);
+        }
+        if (!output.try_reserve(output.size() + required)) {
+            return JsonStringReadResult(JsonStringReadStatus::append_failed, 0);
+        }
+        // The same immutable source and codecs reproduce the measured bytes.
+        // Exact reservation makes every checked append allocation-free and in
+        // bounds; there is no recoverable failure after the first output write.
+        consumed = 1;
+        while (consumed < count - 1) {
+            const JsonScalarResult scalar = decode_json_string_scalar(input, offset + consumed, count - consumed);
+            const Utf8EncodeResult encoded = encode_utf8(scalar.scalar_or(0u64));
+            i64 index = 0;
+            while (index < encoded.size()) {
+                output.try_append(encoded.byte_or(index, 0u8));
+                index = index + 1;
+            }
+            consumed = consumed + scalar.consumed_bytes();
+        }
+        return JsonStringReadResult(JsonStringReadStatus::success, required);
+    }
+}

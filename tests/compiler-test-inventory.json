@@ -904,6 +904,29 @@
     "reason": "Complete executable runner; also imported as a helper where applicable.",
     "root_make": true
   },
+  "json_string_read.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "meson_commands": {
+      "json-string-read": {
+        "arguments": [
+          "-B",
+          "-O",
+          "@SOURCE@/tests/compiler/json_string_read.py",
+          "@BUILD@/aurorac"
+        ],
+        "suites": [
+          "bytes",
+          "compiler",
+          "dev",
+          "full"
+        ]
+      }
+    },
+    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
   "json_string_write.py": {
     "kind": "runner",
     "make": true,

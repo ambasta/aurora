@@ -422,3 +422,42 @@ owner windows may exceed that validator limit. The example constructs a smaller
 prefixed JSON array from distinct dynamic owners and validates the resulting
 complete document. The API is a string writer, not a DOM, streaming parser,
 normalizer, concurrent buffer abstraction or general serializer.
+
+
+## Transactional string decoding
+
+Import `std.json_read`, `std.byte_buffer` and `std.binary` directly. The function
+`std::append_decoded_json_string(ByteBuffer& output, span<const u8> input, i64 offset, i64 count)`
+appends UTF-8 decoded from exactly one quoted JSON string. The supplied window
+must include both quotes and contain no surrounding whitespace or trailing data.
+Bytes outside the window are ignored. Empty strings append zero bytes.
+
+`JsonStringReadResult` exposes `status()` and `appended_bytes()`. Status is
+`success`, `invalid_window`, `invalid_string`, `truncated`, `overflow` or
+`append_failed`. Failure counts are zero. Public reports are ordinary copied data;
+a fabricated success with a negative count normalizes to `invalid_window`.
+Reports retain no source view and grant no authority.
+
+Window bounds are checked first using subtraction. Empty input or an unfinished
+quoted string is `truncated`; a non-quote first byte, early closing quote with a
+suffix, or invalid scalar/escape is `invalid_string`. The existing scalar decoder
+controls malformed-versus-truncated precedence for escapes, surrogate pairs and
+UTF-8. No replacement characters, normalization or locale processing are added.
+
+One pass validates and measures the decoded payload using existing JSON scalar
+and UTF-8 codecs. Checked output-size arithmetic precedes one exact reservation.
+After successful reservation, a second immutable pass writes only the measured
+bytes through checked appends, without allocation or recoverable failure.
+Validation, arithmetic and reservation failures preserve logical bytes, size,
+capacity and committed region accounting. An inert output returns `append_failed`
+for valid input, including an empty string; input errors take precedence.
+Completed argument side effects are outside the transaction; fail-stop faults do
+not unwind. Region accounting does not bound transient allocator memory.
+
+Input must have a distinct owner. Existing borrow admission rejects direct,
+named and subspan self-input, including empty self-views, and mutation while an
+output view is live. No alias check or pointer escape is introduced at runtime.
+The existing [codec example](../library/examples/json_codecs.au) now decodes with
+this operation and re-encodes with `append_json_string`; its exact bytes and
+allocation cleanup are observed by the hosted tests. This remains hosted library
+composition, not protected userspace allocation or a native runtime claim.

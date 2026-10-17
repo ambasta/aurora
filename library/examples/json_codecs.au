@@ -1,5 +1,7 @@
 module json_codecs_example;
 import std.json;
+import std.json_read;
+import std.json_write;
 import std.utf8;
 import std.array;
 import std.binary;
@@ -41,30 +43,6 @@ auto json_codecs_example(builtin::ByteRegion region, i64 initial_capacity, i64 o
         34u8
     };
     const builtin::span<const u8> input = borrow_bytes(source);
-    const std::JsonTokenResult token = std::next_json_token(input, 0, 31);
-    if (token.status() != std::JsonStatus::success || token.kind() != std::JsonTokenKind::string) {
-        return -1;
-    }
-    const i64 begin = token.byte_offset() + 1;
-    const i64 end = token.byte_offset() + token.byte_count() - 1;
-    i64 decoded_size = 0;
-    i64 escaped_size = 2;
-    i64 index = begin;
-    // One complete measure/validation pass; no repeated whole-string rescan.
-    while (index < end) {
-        const std::JsonScalarResult scalar = std::decode_json_string_scalar(input, index, end - index);
-        if (scalar.status() != std::JsonStatus::success) {
-            return -2;
-        }
-        const std::Utf8EncodeResult utf8 = std::encode_utf8(scalar.scalar_or(0u64));
-        const std::JsonEscapeResult escaped = std::escape_json_scalar(scalar.scalar_or(0u64));
-        if (utf8.size() > 9223372036854775807 - decoded_size || escaped.size() > 9223372036854775807 - escaped_size) {
-            return -3;
-        }
-        decoded_size = decoded_size + utf8.size();
-        escaped_size = escaped_size + escaped.size();
-        index = index + scalar.consumed_bytes();
-    }
     builtin::OwnedBytes decoded_owner = region.try_allocate(initial_capacity);
     std::ByteBuffer decoded = std::ByteBuffer(region, move(decoded_owner));
     builtin::OwnedBytes escaped_owner = region.try_allocate(initial_capacity);
@@ -72,44 +50,16 @@ auto json_codecs_example(builtin::ByteRegion region, i64 initial_capacity, i64 o
     if (!decoded.ok() || !output.ok()) {
         return -4;
     }
-    if (!decoded.try_reserve(decoded_size) || !output.try_reserve(escaped_size)) {
+    const std::JsonStringReadResult result = std::append_decoded_json_string(decoded, input, 0, input.size());
+    if (result.status() != std::JsonStringReadStatus::success) {
         return -5;
     }
-    if (!output.try_append(34u8)) {
-        return -6;
-    }
-    index = begin;
-    while (index < end) {
-        const std::JsonScalarResult scalar = std::decode_json_string_scalar(input, index, end - index);
-        const std::Utf8EncodeResult utf8 = std::encode_utf8(scalar.scalar_or(0u64));
-        const std::JsonEscapeResult escaped = std::escape_json_scalar(scalar.scalar_or(0u64));
-        // These checked reservations are allocation-free after total reservation.
-        // They also show the reusable per-scalar append precondition explicitly.
-        if (utf8.size() > 9223372036854775807 - decoded.size() || escaped.size() > 9223372036854775807
-            - output.size()) {
-            return -7;
+    {
+        const builtin::span<const u8> text = decoded.bytes();
+        const std::JsonStringAppendResult written = std::append_json_string(output, text, 0, text.size());
+        if (written.status() != std::JsonStringAppendStatus::success) {
+            return -6;
         }
-        if (!decoded.try_reserve(decoded.size() + utf8.size()) || !output.try_reserve(output.size() + escaped.size())) {
-            return -8;
-        }
-        i64 byte_index = 0;
-        while (byte_index < utf8.size()) {
-            if (!decoded.try_append(utf8.byte_or(byte_index, 0u8))) {
-                return -9;
-            }
-            byte_index = byte_index + 1;
-        }
-        byte_index = 0;
-        while (byte_index < escaped.size()) {
-            if (!output.try_append(escaped.byte_or(byte_index, 0u8))) {
-                return -10;
-            }
-            byte_index = byte_index + 1;
-        }
-        index = index + scalar.consumed_bytes();
-    }
-    if (!output.try_append(34u8)) {
-        return -11;
     }
     // Accepted receiver-bound views expose logical bytes, never spare capacity.
     {
