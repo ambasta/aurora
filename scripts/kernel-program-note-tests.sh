@@ -9,6 +9,8 @@ out="${1:-${KERNEL_PROGRAM_NOTE_BUILD_DIR:-build/note-native-focused}}"
 mkdir -p "$out"
 "$AURORAC" tests/kernel-programs/program-upper-client.au -o "$out/client.s"
 "$AURORAC" --module-root kernel/policies tests/kernel-programs/program-stream-service.au -o "$out/service.s" --abi-facts "$out/service.abi.json"
+"$AURORAC" --local-symbols --module-root kernel/policies tests/kernel-programs/file-call-service.au \
+    -o "$out/file-service.s" --abi-facts "$out/file-service.abi.json"
 "$AURORAC" --local-symbols --module-root kernel/policies --module-root library \
     examples/kernel-program-console.au -o "$out/supervisor.s" --abi-facts "$out/supervisor.abi.json"
 "$AURORAC" --module-root library tests/kernel-programs/program-command-stream.au \
@@ -57,6 +59,8 @@ as --64 -L --defsym NOTE_TEST_INITIAL=1 "$out/initial.s" tests/kernel-program-no
 python3 -B scripts/meson_aurora_assembly.py --render-bridge "$out/stream.abi.json" tests/kernel-program-note-entry.S "$out/stream-entry.s"
 as --64 -L --defsym STREAM_TEST_INITIAL=1 "$out/stream.s" "$out/stream-entry.s" -o "$out/stream-host.o"
 as --64 -L "$out/client.s" -o "$out/client-host.o"
+python3 -B scripts/meson_aurora_assembly.py --render-bridge "$out/file-service.abi.json" tests/kernel-file-call-entry.S "$out/file-service-entry.s"
+as --64 -L "$out/file-service.s" "$out/file-service-entry.s" -o "$out/file-service-host.o"
 # Production roots live in distinct images. Localize only reflection exports
 # for this hosted link; never globalize private entries or rewrite instructions.
 for part in client service initial stream; do
@@ -72,7 +76,7 @@ case "${SANITIZE:-0}" in
 esac
 "${CXX:-g++}" "${flags[@]}" tests/kernel-program-note.cpp \
     "$out/client-host.o" "$out/service-host.o" "$out/supervisor-host.o" "$out/initial-host.o" \
-    "$out/stream-host.o" -o "$out/native"
+    "$out/stream-host.o" "$out/file-service-host.o" -o "$out/native"
 ulimit -c 0
 ASAN_OPTIONS='detect_leaks=0:halt_on_error=1:abort_on_error=1:handle_sigill=0' \
     UBSAN_OPTIONS='halt_on_error=1:print_stacktrace=1' "$out/native"

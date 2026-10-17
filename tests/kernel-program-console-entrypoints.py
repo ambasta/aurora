@@ -110,6 +110,9 @@ exit "${BUILD_STATUS:-0}"
     def test_public_smoke_builds_isolated_profile(self):
         for mode in (
             "program-console",
+            "program-file-call",
+            "program-file-call-fault",
+            "program-file-call-budget",
             "program-request-fault",
             "program-service-fault",
             "program-completion-fault",
@@ -135,7 +138,7 @@ exit "${BUILD_STATUS:-0}"
                         f"pty|-B tests/kernel-program-console-pty.py --mode {mode} "
                         f"--build-dir {self.repo}/build/native profiles/{mode} --read-only-recovery"
                     ]
-                    if mode.endswith(("-fault", "-budget"))
+                    if mode.endswith(("-fault", "-budget")) and not mode.startswith("program-file-call")
                     else []
                 ),
             )

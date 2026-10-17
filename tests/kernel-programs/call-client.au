@@ -27,24 +27,31 @@ auto aurora_user_main(builtin::CallSession& session, u64 phase, u64 seed, u64 or
     if (checksum != seed || live[0] != seed || live[1] != 17u64 || live[2] != 23u64 || ordinal != 0u64) {
         return 1u64;
     }
-    if (phase == 1u64) {
+    if (phase == 1u64 || phase == 17u64) {
         if (result.status != builtin::CallStatus::cancelled || result.value != 0u64) {
             return 2u64;
         }
     } else {
-        if (result.status != builtin::CallStatus::replied || (result.value & 255u64) != 1u64 || (result.value >> 8)
-            != 1210602228u64) {
+        if (result.status != builtin::CallStatus::replied) {
             return 3u64;
+        }
+        if (phase < 16u64) {
+            if ((result.value & 255u64) != 1u64 || (result.value >> 8) != 1210602228u64) {
+                return 3u64;
+            }
         }
     }
     const builtin::CallResult again = session.call(99u64);
     if (again.status != builtin::CallStatus::rejected || again.value != 0u64) {
         return 4u64;
     }
-    if (phase == 8u64) {
+    if (phase == 8u64 || phase == 24u64) {
         while (true) {
             checksum = seed - checksum;
         }
+    }
+    if (phase >= 16u64) {
+        return live[1] + live[2] + result.value;
     }
     return live[1] + live[2] + (result.value >> 8);
 }

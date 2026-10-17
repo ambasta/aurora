@@ -111,15 +111,18 @@ def validate_composition(
     program_console=False,
     snapshot=False,
     blocking_call=False,
+    file_call=False,
 ):
     need(
         not blocking_call
         or service_budget
         and user_budget
-        and not any((dispatcher, program_console, snapshot))
+        and not any((dispatcher, snapshot))
+        and program_console == file_call
         and mode == "normal",
         "Call requires exact two-domain timer composition",
     )
+    need(not file_call or blocking_call and program_console, "File call requires exact console/call composition")
     need(
         not snapshot or not any((service_budget, dispatcher, user_budget, program_console, blocking_call)),
         "Snapshot requires its exclusive IPC composition",
@@ -170,8 +173,11 @@ def emit_metadata(
     program_console=False,
     snapshot=False,
     blocking_call=False,
+    file_call=False,
 ):
-    validate_composition(mode, service_budget, dispatcher, user_budget, program_console, snapshot, blocking_call)
+    validate_composition(
+        mode, service_budget, dispatcher, user_budget, program_console, snapshot, blocking_call, file_call
+    )
     records = {}
     header = ["#pragma once", "#include <array>", "#include <cstddef>", "namespace aurora::uefi::images {"]
     for index, name in enumerate(("clean", "bounds", "peer") if dispatcher else ("clean", "bounds")):
@@ -194,7 +200,7 @@ def emit_metadata(
         )
         compiled = (
             "__au_v_m1_16snapshot_service_n0__d16aurora_user_main"
-            if blocking_call and index == 1
+            if blocking_call and not file_call and index == 1
             else "aurora_user_main"
         )
         if (program_console and index == 1) or (blocking_call and index == 0):
@@ -210,7 +216,7 @@ def emit_metadata(
             symbols,
             opcode,
             dispatcher=dispatcher,
-            copied_snapshot=(snapshot or blocking_call) and index == 1,
+            copied_snapshot=(snapshot or (blocking_call and not file_call)) and index == 1,
             copied_note=program_console and index == 1,
             note_entry=compiled if program_console and index == 1 else None,
             call_entry=compiled if blocking_call and index == 0 else None,
@@ -253,36 +259,10 @@ def call_stack_profile(graph):
     )
 
 
-def call_stack(directory):
-    import sys
-
-    sys.path.insert(0, str(ROOT / "scripts"))
+def call_client_stack(directory):
     import kernel_stack as stack
 
-    graph = stack.image_stack_graph(
-        directory,
-        ("payload", "acpi", "pci", "runtime", "snapshot", "owned-bytes-runtime"),
-        ROOT,
-        protected=True,
-        bridges=(
-            "__au_runtime_snapshot_produce",
-            "aurora_kernel_value",
-            "aurora_kernel_ipc_transition",
-            "aurora_kernel_terminal_event",
-            "aurora_kernel_budget_tick",
-        ),
-        noreturn=stack.OWNED_NORETURN,
-    )
-    import kernel_snapshot_abi
-
-    kernel_snapshot_abi.main(directory, "normal", checksum=True)
-    result = call_stack_profile(graph)
-    linked = graph["linked"]
-    site = next(s.address for s in linked.symbols if s.name == "uefi_service_drain_begin")
-    owner = next(n for n, s in linked.functions.items() if s.address <= site < s.address + s.size)
-    result["drain"] = stack.calculate(graph["functions"], "uefi_payload_entry", target=owner)
-    result["drain_irq_fault_peak"] = result["drain"]["peak"] + result["irq_dispatch"]["peak_with_entry"] + 512
-    need(result["drain_irq_fault_peak"] <= stack.STACK_CAP, "Call drain interrupt/fault reserve")
+    result = {}
     prefix = directory / "user-clean"
     user = stack.Elf(prefix.with_suffix(".elf"))
     symbols = {symbol.name: symbol for symbol in user.symbols}
@@ -331,6 +311,40 @@ def call_stack(directory):
     result["user"] = stack.calculate(functions, entry)
     result["user"]["peak_with_wrapper"] = 96 + result["user"]["peak"]
     need(result["user"]["peak_with_wrapper"] <= stack.STACK_CAP, "Call user stack reserve")
+    return result["user"]
+
+
+def call_stack(directory):
+    import sys
+
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import kernel_stack as stack
+
+    graph = stack.image_stack_graph(
+        directory,
+        ("payload", "acpi", "pci", "runtime", "snapshot", "owned-bytes-runtime"),
+        ROOT,
+        protected=True,
+        bridges=(
+            "__au_runtime_snapshot_produce",
+            "aurora_kernel_value",
+            "aurora_kernel_ipc_transition",
+            "aurora_kernel_terminal_event",
+            "aurora_kernel_budget_tick",
+        ),
+        noreturn=stack.OWNED_NORETURN,
+    )
+    import kernel_snapshot_abi
+
+    kernel_snapshot_abi.main(directory, "normal", checksum=True)
+    result = call_stack_profile(graph)
+    linked = graph["linked"]
+    site = next(s.address for s in linked.symbols if s.name == "uefi_service_drain_begin")
+    owner = next(n for n, s in linked.functions.items() if s.address <= site < s.address + s.size)
+    result["drain"] = stack.calculate(graph["functions"], "uefi_payload_entry", target=owner)
+    result["drain_irq_fault_peak"] = result["drain"]["peak"] + result["irq_dispatch"]["peak_with_entry"] + 512
+    need(result["drain_irq_fault_peak"] <= stack.STACK_CAP, "Call drain interrupt/fault reserve")
+    result["user"] = call_client_stack(directory)
     service = directory / "user-bounds"
     service_elf = stack.Elf(service.with_suffix(".elf"))
     service_code, _ = stack.disassemble(service_elf.path)
@@ -382,6 +396,7 @@ if __name__ == "__main__":
     parser.add_argument("--program-console", action="store_true")
     parser.add_argument("--snapshot", action="store_true")
     parser.add_argument("--blocking-call", action="store_true")
+    parser.add_argument("--file-call", action="store_true")
     parser.add_argument("--call-stack", action="store_true")
     args = parser.parse_args()
     if args.call_stack:
@@ -396,4 +411,5 @@ if __name__ == "__main__":
         args.program_console,
         args.snapshot,
         args.blocking_call,
+        args.file_call,
     )

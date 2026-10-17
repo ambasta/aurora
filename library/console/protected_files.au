@@ -53,6 +53,9 @@ export namespace console {
             if (command.starts_with(count, "cat ")) {
                 start = 4;
             }
+            if (command.starts_with(count, "peek ")) {
+                start = 5;
+            }
             const bool upper = command.starts_with(count, "upper ");
             if (upper) {
                 start = 6;

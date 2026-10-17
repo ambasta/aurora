@@ -1,0 +1,198 @@
+module kernel_program_file_call;
+import kernel.terminal_event;
+import kernel.interrupt_budget;
+import kernel.round_robin;
+import kernel.ipc_transition;
+import kernel.client_disposal;
+import std.binary_buffer;
+import std.binary;
+import console.session_files;
+import console.protected_files;
+import console.program_input;
+import console.program_output;
+import kernel.note_read;
+
+// A private sealed Console turn; only its ordinary copied submission returns.
+auto read_program_input(builtin::ConsoleSession& session, bool after_cr) -> console::ProgramSubmission {
+    static_assert(size_of(console::ProgramSubmission) == 88);
+    const console::ProgramSubmission result = console::read_program_input(session, after_cr);
+    return result;
+}
+
+// A separate sealed output turn. The private ingress validates canonical enum
+// bytes; this helper owns only response presentation and the following prompt.
+auto present_program_response(builtin::ConsoleSession& session, console::ProgramResponse response) -> bool {
+    static_assert(size_of(console::ProgramResponse) == 80);
+    return console::present_program_response(session, response);
+}
+
+auto aurora_kernel_value() -> i64 {
+    static_assert(size_of(i64) == 8);
+    own<i64> seed = own(40);
+    {
+        mutref<i64> edit = borrow_mut(seed);
+        write(edit, read(edit) + 2);
+    }
+    own<i64> answer = move(seed);
+    return read(answer);
+}
+
+// Temporary scalar-only bootstrap transport. The class/enum API above this
+// seam is ordinary Aurora; this packing is private to the current UEFI adapter.
+auto aurora_kernel_budget_tick(u64 initial, u64 remaining, u64 used) -> u64 {
+    const kernel::TickDecision decision = kernel::interrupt_tick(initial, remaining, used);
+    if (decision.action() == kernel::TickAction::rejected) {
+        return 0u64;
+    }
+    u64 action = 1u64;
+    if (decision.action() == kernel::TickAction::exhausted) {
+        action = 2u64;
+    }
+    return (action << 16) | (decision.used() << 8) | decision.remaining();
+}
+
+// Private bootstrap transport of copied selection facts, never mailbox authority.
+auto aurora_kernel_round_robin_next(u64 cursor, u64 eligible_mask) -> u64 {
+    const kernel::SelectionDecision decision = kernel::round_robin_next(cursor, eligible_mask);
+    if (decision.action() == kernel::SelectionAction::rejected) {
+        return 0u64;
+    }
+    u64 action = 1u64;
+    if (decision.action() == kernel::SelectionAction::selected) {
+        action = 2u64;
+    }
+    return action | (decision.selected() << 8) | (decision.next() << 16);
+}
+
+// Private copied transaction transport. Payload and authority stay in the host.
+auto aurora_kernel_ipc_transition(u64 operation, u64 phase, u64 state, u64 scrubbed) -> u64 {
+    const kernel::TransactionSnapshot snapshot = kernel::TransactionSnapshot(phase, state, scrubbed);
+    const kernel::TransactionDecision decision = kernel::transaction_transition(operation, snapshot);
+    if (decision.action() == kernel::TransactionAction::invalid) {
+        return 0u64;
+    }
+    if (decision.action() == kernel::TransactionAction::refused) {
+        return 1u64;
+    }
+    u64 effect = 0u64;
+    if (decision.effect() == kernel::TransactionEffect::submit_request) {
+        effect = 1u64;
+    }
+    if (decision.effect() == kernel::TransactionEffect::deliver_request) {
+        effect = 2u64;
+    }
+    if (decision.effect() == kernel::TransactionEffect::store_reply) {
+        effect = 3u64;
+    }
+    if (decision.effect() == kernel::TransactionEffect::consume_reply) {
+        effect = 4u64;
+    }
+    if (decision.effect() == kernel::TransactionEffect::consume_cancelled) {
+        effect = 5u64;
+    }
+    if (decision.effect() == kernel::TransactionEffect::cancel_request) {
+        effect = 6u64;
+    }
+    if (decision.effect() == kernel::TransactionEffect::recycle_record) {
+        effect = 7u64;
+    }
+    return 2u64 | (decision.next() << 8) | (effect << 16);
+}
+
+// Private recovery-plan transport; no receipt, payload or authority is copied.
+auto aurora_kernel_client_disposal(u64 phase, u64 state) -> u64 {
+    const kernel::DisposalDecision decision = kernel::client_disposal(phase, state);
+    if (decision.action() == kernel::DisposalAction::invalid) {
+        return 0u64;
+    }
+    if (decision.action() == kernel::DisposalAction::refused) {
+        return 1u64;
+    }
+    u64 effect = 0u64;
+    if (decision.effect() == kernel::DisposalEffect::empty) {
+        effect = 1u64;
+    }
+    if (decision.effect() == kernel::DisposalEffect::retained_receipt) {
+        effect = 2u64;
+    }
+    if (decision.effect() == kernel::DisposalEffect::cancel_consume) {
+        effect = 3u64;
+    }
+    if (decision.effect() == kernel::DisposalEffect::consume_terminal) {
+        effect = 4u64;
+    }
+    return 2u64 | (effect << 8);
+}
+
+// Private bootstrap transport of copied facts; enum ordinals are not the wire.
+auto aurora_kernel_terminal_event(u64 vector, u64 matched_sites, u64 stack_top) -> u64 {
+    const kernel::TerminalEvent event = kernel::terminal_event(vector, matched_sites, stack_top);
+    if (event == kernel::TerminalEvent::returned) {
+        return 1u64;
+    }
+    if (event == kernel::TerminalEvent::bounds) {
+        return 2u64;
+    }
+    if (event == kernel::TerminalEvent::overflow) {
+        return 3u64;
+    }
+    if (event == kernel::TerminalEvent::division_zero) {
+        return 4u64;
+    }
+    if (event == kernel::TerminalEvent::shift_count) {
+        return 5u64;
+    }
+    return 0u64;
+}
+
+// Named-file state and selection are copied only at the quiescent supervisor
+// boundary. Protected programs receive the read projection, never this store.
+class FileUpdate {
+    console::ProtectedFiles files;
+    console::FileReply reply;
+    u64 action;
+    console::FileSelection selection;
+    kernel::NoteRead64 projection;
+public:
+    FileUpdate(console::ProtectedFiles next, console::FileReply result, u64 operation, console::FileSelection selected,
+        kernel::NoteRead64 read) : files(next), reply(result), action(operation), selection(selected),
+        projection(read) {
+    }
+};
+auto update_files(console::ProtectedFiles current, std::BinaryBuffer64 command, i64 count) -> FileUpdate {
+    const console::FileSelection selection = current.select(command, count);
+    if (selection.version() != 0u64) {
+        const console::FileReply reply = current.project(selection);
+        u64 action = 2u64;
+        // A nonzero selection admits only cat, upper or peek.
+        if (command.at(0) == 'p') {
+            action = 4u64;
+        }
+        if (selection.writable()) {
+            action = 3u64;
+        }
+        i64 length = -1;
+        if (reply.status() == console::FileEvent::read) {
+            length = reply.size();
+        }
+        kernel::NoteRead64 projection = kernel::NoteRead64(length);
+        i64 index = 0;
+        while (index < length) {
+            projection.set(index, reply.at(index));
+            index = index + 1;
+        }
+        return FileUpdate(current, reply, action, selection, projection);
+    }
+    console::ProtectedFiles next = current;
+    console::FileReply reply = next.submit(command, count);
+    u64 action = 0u64;
+    if (reply.status() != console::FileEvent::unknown) {
+        action = 1u64;
+    }
+    if (command.starts_with(count, "upper ")) {
+        reply.select(console::FileEvent::invalid);
+        action = 1u64;
+    }
+    const kernel::NoteRead64 absent = kernel::NoteRead64(-1);
+    return FileUpdate(next, reply, action, selection, absent);
+}

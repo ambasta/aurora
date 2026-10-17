@@ -81,6 +81,9 @@ private:
     }
 
 public:
+    [[nodiscard]] static constexpr auto read_reply_valid(std::uint64_t value) -> bool {
+        return (value >= 2 && value <= 4) || ((value & 255) == 1 && (value >> 8) <= 255);
+    }
     constexpr Files() {
         put(saved_, 264, 1);
     }
@@ -102,7 +105,7 @@ public:
         if (state_ != State::idle)
             return std::nullopt;
         const auto action = word(result, 352);
-        if (action > 3 || word(result, 336) > 64 || word(result, 344) > 8)
+        if (action > 4 || word(result, 336) > 64 || word(result, 344) > 8)
             return std::nullopt;
         if (action != 1 && !std::equal(saved_.begin(), saved_.end(), result.begin()))
             return std::nullopt;
@@ -141,6 +144,13 @@ public:
                                  user::DomainHandle client,
                                  user::DomainHandle service) -> bool {
         return !writable_ && bind_participants(registry, mailbox, client, service, State::read_bound);
+    }
+    [[nodiscard]] auto matches_read(const user::DomainRegistry &registry,
+                                    const ipc::Mailbox &mailbox,
+                                    user::DomainHandle caller,
+                                    ipc::Endpoint endpoint) const -> bool {
+        return state_ == State::read_bound && registry_ == &registry && mailbox_ == &mailbox && !writable_ &&
+               matching(registry, mailbox, caller, endpoint);
     }
     [[nodiscard]] auto release_read(const user::DomainRegistry &registry, const ipc::Mailbox &mailbox) -> bool {
         if (state_ != State::read_bound || !participants_retired(registry, mailbox))

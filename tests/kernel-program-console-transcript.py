@@ -101,7 +101,12 @@ def fixture(mode, note=False, value="A", missing=False, file_command=None):
 
 checks = 0
 for mode in module.admission.MODES:
-    if mode in ("program-owner", "program-ordinal", "program-unknown", "program-transaction"):
+    if mode.startswith("program-file-call") or mode in (
+        "program-owner",
+        "program-ordinal",
+        "program-unknown",
+        "program-transaction",
+    ):
         continue
     text, expected, commands = fixture(mode)
     module.validate(text, mode, expected, commands, images, timer)
@@ -346,4 +351,150 @@ for mode, reason in module.FAILSTOP_REASONS.items():
             checks += 1
         else:
             raise SystemExit("FAIL: malformed authority oracle accepted output/recovery/wrong site")
+# Independent returning-call transcripts: retained caller epoch across a real
+# peer run, with exact hardware frames and old-owner drains at all three stops.
+images["clean"]["call_pc"] = 1020
+
+
+def file_call_fixture(mode, reply):
+    fault, exhausted = mode.endswith("-fault"), mode.endswith("-budget")
+    result = 0 if fault or exhausted else reply
+    caller_root, peer_root = arena + 0x90000, arena + 0xA0000
+    lines = [
+        f"AURORA_UEFI_OWNERSHIP_OK: arena={arena}",
+        f"AURORA_UEFI_TIMER_READY: physical=4276092928 virtual=18446620928407240704 id=0 root={kernel_root}",
+        "AURORA_FILE_CALL_READY: one byte",
+        "AURORA_FILE_CALL_BEGIN: generation=1",
+    ]
+
+    def event(vector, pc, root, cpl=3):
+        frame = arena + (0x88000 - 176 if cpl == 3 else 0x47000)
+        lines.append(
+            f"AURORA_UEFI_DOMAIN_EVENT: vector={vector} error=0 pc={pc} cpl={cpl} root={root} frame={frame} cr2=0"
+        )
+
+    def quiet(epoch, ticks):
+        event(64, arena + 0x22000 + 102, kernel_root, 0)
+        lines.extend(
+            [
+                f"AURORA_UEFI_TIMER_DRAIN: epoch={epoch} root={kernel_root} ss=16",
+                f"AURORA_UEFI_TIMER_QUIET: epoch={epoch} ticks={ticks} "
+                f"drains=1 compiled=1 context=0 root={kernel_root}",
+            ]
+        )
+
+    def tick(used):
+        event(64, 1030, caller_root)
+        lines.append(f"AURORA_UEFI_TIMER_TICK: epoch=1 used={used} remaining={128 - used} pc=1030 flags=514")
+
+    lines.extend(
+        [
+            "AURORA_UEFI_USER_RUN: epoch=1 role=client phase=request client=0 transaction=0 "
+            f"source={17 if fault else 24 if exhausted else 16} root={caller_root}",
+            f"AURORA_UEFI_TIMER_ARM: epoch=1 budget=128 root={caller_root}",
+        ]
+    )
+    tick(1)
+    event(130, 1020, caller_root)
+    lines.append("AURORA_CALL_PARK: ticket=2 epoch=1 ticks=1 remaining=127")
+    quiet(1, 1)
+    lines.extend(
+        [
+            "AURORA_UEFI_USER_RUN: epoch=2 role=service phase=service client=0 transaction=2 "
+            f"source={4 if fault else 11} root={peer_root}",
+            f"AURORA_UEFI_TIMER_ARM: epoch=2 budget=128 root={peer_root}",
+        ]
+    )
+    event(6 if fault else 129, 2090 if fault else 2010, peer_root)
+    quiet(2, 0)
+    lines.extend(
+        [
+            f"AURORA_CALL_SERVICE: epoch=2 event={'bounds' if fault else 'returned'} value={0 if fault else reply}",
+            "AURORA_CALL_RESUME: epoch=1 ticks=1 remaining=127",
+        ]
+    )
+    event(130, 1020, caller_root)
+    for used in range(2, 129 if exhausted else 3):
+        tick(used)
+    if not exhausted:
+        event(129, 1010, caller_root)
+    quiet(1, 128 if exhausted else 2)
+    answer = (
+        "Program stopped: checked fault or budget exhausted; output discarded."
+        if result == 0
+        else "EOF"
+        if result == 2
+        else "File is missing."
+        if result == 3
+        else "byte> " + chr(result >> 8)
+    )
+    lines.extend(
+        [
+            f"AURORA_CALL_COMPLETE: epoch=1 event={'budget' if exhausted else 'returned'} "
+            f"value={0 if exhausted else 40 + result}",
+            f"AURORA_FILE_CALL_END: result={result} used=0",
+            answer,
+            "AURORA_CONSOLE_EXIT",
+            "AURORA_PROGRAM_CONSOLE_QUIET: timer=masked isr=0 irr=0 domains=0",
+            "AURORA_UEFI_OK",
+        ]
+    )
+    return "\r\n".join(lines) + "\r\n", [result], [0 if fault else reply]
+
+
+for mode, reply in [
+    ("program-file-call", 18433),
+    ("program-file-call", 2),
+    ("program-file-call", 3),
+    ("program-file-call-fault", 18433),
+    ("program-file-call-budget", 18433),
+]:
+    text, results, replies = file_call_fixture(mode, reply)
+    module.validate_file_call(text, mode, results, replies, images, timer)
+    checks += 1
+    mutations = [
+        text.replace("cr2=0", "cr2=1", 1),
+        text.replace("error=0", "error=1", 1),
+        text.replace("cpl=3", "cpl=0", 1),
+        text.replace("flags=514", "flags=2", 1),
+        text.replace("flags=514", "flags=12802", 1),
+        text.replace(f"frame={arena + 0x88000 - 176}", f"frame={arena + 0x88000 - 184}", 1),
+        text.replace(f"root={arena + 0x90000}", f"root={arena + 0x90000 + 4096}", 1),
+        text.replace("vector=130 error=0 pc=1020", "vector=130 error=0 pc=1021", 1),
+        text.replace("AURORA_CALL_RESUME: epoch=1", "AURORA_CALL_RESUME: epoch=2", 1),
+        text.replace("ticks=1 remaining=127", "ticks=2 remaining=126", 1),
+        text.replace("used=2 remaining=126", "used=1 remaining=127", 1),
+        text.replace("transaction=2 source=", "transaction=3 source=", 1),
+        text.replace("AURORA_UEFI_TIMER_DRAIN: epoch=1", "AURORA_UEFI_TIMER_DRAIN: epoch=2", 1),
+        text.replace(f"pc={arena + 0x22000 + 102}", f"pc={arena + 0x22000 + 105}", 1),
+        text.replace("AURORA_CALL_COMPLETE: epoch=1", "AURORA_CALL_COMPLETE: epoch=2", 1),
+        text.replace("AURORA_CONSOLE_EXIT", ""),
+        text + "byte> H\r\n",
+        text.replace("AURORA_FILE_CALL_END:", "byte> H\r\nAURORA_FILE_CALL_END:", 1),
+        text.replace(
+            "AURORA_CALL_RESUME:",
+            f"AURORA_UEFI_TIMER_ARM: epoch=1 budget=128 root={arena + 0x90000}\r\nAURORA_CALL_RESUME:",
+            1,
+        ),
+    ]
+    call_line = next(line for line in text.splitlines(keepends=True) if "vector=130 " in line)
+    resume_position = text.index("AURORA_CALL_RESUME:")
+    moved_repeat = text[:resume_position] + text[resume_position:].replace(call_line, "", 1)
+    mutations.extend(
+        [
+            text.replace("generation=1", "generation=0", 1),
+            text.replace("ticket=2", "ticket=0").replace("transaction=2", "transaction=0"),
+            moved_repeat.replace("AURORA_CALL_PARK:", call_line + "AURORA_CALL_PARK:", 1),
+        ]
+    )
+    for changed in mutations:
+        if changed == text:
+            continue
+        try:
+            module.validate_file_call(changed, mode, results, replies, images, timer)
+        except ValueError:
+            checks += 1
+        else:
+            raise SystemExit("FAIL: returning file-call oracle accepted changed transcript in " + mode)
+
 print(f"PASS: {checks} protected-console transcript positive/refusal controls; no guest executed")

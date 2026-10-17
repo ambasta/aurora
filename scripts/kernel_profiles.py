@@ -98,6 +98,9 @@ UEFI_FAMILIES = [
         ],
         {
             "program-console": [],
+            "program-file-call": ["-DAURORA_BLOCKING_CALL", "-DAURORA_FILE_CALL"],
+            "program-file-call-fault": ["-DAURORA_BLOCKING_CALL", "-DAURORA_FILE_CALL", "-DAURORA_FILE_CALL_FAULT"],
+            "program-file-call-budget": ["-DAURORA_BLOCKING_CALL", "-DAURORA_FILE_CALL", "-DAURORA_FILE_CALL_BUDGET"],
             "program-request-fault": ["-DAURORA_PROGRAM_REQUEST_FAULT"],
             "program-service-fault": ["-DAURORA_PROGRAM_SERVICE_FAULT"],
             "program-completion-fault": ["-DAURORA_PROGRAM_COMPLETION_FAULT"],
@@ -406,7 +409,16 @@ BIOS_CONTROLS = {
 
 
 def user_images(
-    kind, mode, *, budget=False, dispatcher=False, user_budget=False, program=False, snapshot=False, blocking_call=False
+    kind,
+    mode,
+    *,
+    budget=False,
+    dispatcher=False,
+    user_budget=False,
+    program=False,
+    snapshot=False,
+    blocking_call=False,
+    file_call=False,
 ):
     """Exact source/adapter composition; Meson owns every compile/link edge."""
     result = {}
@@ -438,6 +450,8 @@ def user_images(
                 source = "snapshot-client" if index == 0 else "snapshot-service"
             if blocking_call:
                 source = "call-client" if index == 0 else "call-snapshot-service"
+            if file_call:
+                source = "call-client" if index == 0 else "file-call-service"
             entry = "kernel/uefi/ipc-user-entry.S"
             hostile = (index == 0 and mode in ("owner", "stale", "version", "phase", "site", "unknown", "ordinal")) or (
                 index == 1 and mode in ("transaction", "mmio", "softint", "fpu", "context")
@@ -452,7 +466,9 @@ def user_images(
             if blocking_call and index == 0:
                 defines.append("CALL_CLIENT=1")
             if (snapshot or program or blocking_call) and index == 1:
-                defines.append("SNAPSHOT_SERVICE=1" if snapshot or blocking_call else "PROGRAM_NOTE_SERVICE=1")
+                defines.append(
+                    "SNAPSHOT_SERVICE=1" if snapshot or (blocking_call and not file_call) else "PROGRAM_NOTE_SERVICE=1"
+                )
                 if mode in ("reply-reserved", "reply-byte"):
                     defines.append("SNAPSHOT_" + mode.upper().replace("-", "_") + "=1")
         result[name] = dict(
@@ -591,7 +607,8 @@ def uefi_profile(mode, flags):
     runtime = mode.startswith(("runtime", "ipc", "budget", "dispatch", "user-", "program-", "snapshot"))
     ipc = mode.startswith(("ipc", "budget", "dispatch", "user-", "program-", "snapshot"))
     budget = mode.startswith(("budget", "dispatch", "user-", "program-"))
-    blocking_call = mode.startswith("user-call")
+    file_call = mode.startswith("program-file-call")
+    blocking_call = mode.startswith("user-call") or file_call
     dispatcher = mode.startswith(("dispatch", "user-")) and not blocking_call
     user_budget = mode.startswith(("user-", "program-"))
     program = mode.startswith("program-")
@@ -636,6 +653,7 @@ def uefi_profile(mode, flags):
             (program, "--program-console"),
             (snapshot, "--snapshot"),
             (blocking_call, "--blocking-call"),
+            (file_call, "--file-call"),
         )
         if enabled
     ]
@@ -649,6 +667,7 @@ def uefi_profile(mode, flags):
             program=program,
             snapshot=snapshot,
             blocking_call=blocking_call,
+            file_call=file_call,
         )
         if runtime
         else {}
@@ -681,7 +700,7 @@ def uefi_profile(mode, flags):
         cpp[name] = "kernel/uefi/" + name + ".cpp"
         console_objects = ["console-entry", name]
     owned_objects = []
-    if mode == "owned-bytes" or snapshot or blocking_call:
+    if mode == "owned-bytes" or snapshot or (blocking_call and not file_call):
         cpp["owned-bytes-runtime"] = "kernel/owned-bytes.cpp"
         name = "snapshot" if snapshot or blocking_call else "owned-bytes-profile"
         cpp[name] = "kernel/uefi/" + ("snapshot" if snapshot or blocking_call else "owned-bytes") + ".cpp"
@@ -695,8 +714,9 @@ def uefi_profile(mode, flags):
         (event and mode != "iommu-event-observe", "iommu-event-service", "event-service"),
         (framebuffer, "display-service", "display-service"),
         (program, "program-console", "program-note"),
+        (file_call, "program-file-call", "program-file-call"),
         (mode == "owned-bytes", "owned-bytes", "owned-bytes"),
-        (snapshot or blocking_call, "snapshot", "snapshot"),
+        (snapshot or (blocking_call and not file_call), "snapshot", "snapshot"),
         (console, "console-service", "console-service"),
         (graphical, "graphical-console", "graphical-console"),
     ):
@@ -705,7 +725,7 @@ def uefi_profile(mode, flags):
     image_options = ["--ipc-policy"] if ipc else []
     if mode == "budget-noapic":
         image_options += ["--budget-noapic"]
-    if snapshot or blocking_call:
+    if snapshot or (blocking_call and not file_call):
         image_options += ["--snapshot"] + (["--call-snapshot"] if blocking_call else [])
     if mode == "owned-bytes":
         image_options += ["--owned-bytes"]
@@ -736,7 +756,7 @@ def uefi_profile(mode, flags):
         (["owned-bytes"] if mode == "owned-bytes" else [])
         + (["snapshot"] if snapshot else [])
         + (["note"] if program else [])
-        + (["call"] if blocking_call else [])
+        + (["call"] if blocking_call and not file_call else [])
         + (["tables"] if mode.startswith("runtime-table-") else [])
         + (["ivrs"] if mode.startswith("ivrs-") else [])
         + (["nvme"] if mode == "bar-prepare" else [])

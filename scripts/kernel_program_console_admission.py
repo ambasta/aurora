@@ -15,6 +15,9 @@ BUILD = ROOT / "build/uefi"
 RECEIPT = BUILD / "program-console-admission.json"
 MODES = (
     "program-console",
+    "program-file-call",
+    "program-file-call-fault",
+    "program-file-call-budget",
     "program-request-fault",
     "program-service-fault",
     "program-completion-fault",
@@ -293,7 +296,7 @@ def snapshot_discovery_stack(graph):
     )
 
 
-def stack_evidence(directory, *, snapshot=False):
+def stack_evidence(directory, *, snapshot=False, file_call=False):
     decoder = load("program_stack_decoder", ROOT / "scripts/kernel_stack.py")
     units = ("payload", "acpi", "pci", "runtime")
     if snapshot:
@@ -317,6 +320,8 @@ def stack_evidence(directory, *, snapshot=False):
             PROGRAM_RESPONSE_BRIDGE,
         )
     )
+    if file_call:
+        bridges = ("__au_runtime_files_update", PROGRAM_INPUT_BRIDGE, PROGRAM_RESPONSE_BRIDGE)
     graph = decoder.image_stack_graph(
         directory,
         units,
@@ -370,6 +375,14 @@ def stack_evidence(directory, *, snapshot=False):
     users = {}
     for name in ("clean", "bounds"):
         user = decoder.Elf(directory / ("user-" + name + ".elf"))
+        if "__au_runtime_call" in user.functions:
+            need(file_call and not snapshot and name == "clean", "Call authority outside selected file client")
+            calls = load("console_call_stack", ROOT / "scripts/kernel-uefi-ipc-images.py")
+            path = calls.call_client_stack(directory)
+            path["entry_saved_bytes"] = 96
+            path["peak_with_entry"] = path["peak_with_wrapper"]
+            users[name] = path
+            continue
         instructions, _ = decoder.disassemble(user.path)
         user_starts = {symbol.address: key for key, symbol in user.functions.items()}
         generated = decoder.Elf(directory / "objects" / ("user-" + name + ".o"))
@@ -432,6 +445,9 @@ def note_evidence(directory, functions, mode="program-console"):
         PROGRAM_INPUT_BRIDGE,
         PROGRAM_RESPONSE_BRIDGE,
     }
+    file_call = mode.startswith("program-file-call")
+    if file_call:
+        bridges = {"__au_runtime_files_update", PROGRAM_INPUT_BRIDGE, PROGRAM_RESPONSE_BRIDGE}
     need(
         {name for name in names if name.startswith("__au_runtime_")} == bridges | CONSOLE_OPERATIONS,
         "Closed protected-console runtime inventory",
@@ -465,6 +481,8 @@ def note_evidence(directory, functions, mode="program-console"):
         "transition-pe",
         "memory-pe",
     }
+    if mode.startswith("program-file-call"):
+        expected_objects.remove("user-clean-entry")
     need(
         {path.stem for path in (directory / "objects").glob("*.o")} == expected_objects,
         "Exact protected-note object composition",
@@ -491,7 +509,8 @@ def note_evidence(directory, functions, mode="program-console"):
     )
     evidence = []
     facts = read_json(directory / "language.abi.json")
-    check_stream_operation(facts)
+    if not file_call:
+        check_stream_operation(facts)
     input_entry = check_program_console_abi(facts)
     response_entry = check_program_console_abi(facts, response=True)
     console_calls = check_program_console_calls(
@@ -505,6 +524,8 @@ def note_evidence(directory, functions, mode="program-console"):
         ("files_replace", "replace_files", [272, 88, 64, 8], 352),
         ("stream_update", "update_stream", [192, 8, 64, 8, 8], 280),
     ):
+        if file_call and action != "files_update":
+            continue
         private = source_symbol(directory / "language.abi.json", entry)
         bridge = "__au_runtime_" + action
         need(
@@ -797,7 +818,7 @@ def check_response_bridge(actual, private):
     )
 
 
-def build_files():
+def build_files(file_call=False):
     names = [
         "payload.ld",
         "payload.elf",
@@ -837,7 +858,8 @@ def build_files():
         for name in ("clean", "bounds")
         for suffix in (".s", ".stack.json", ".abi.json", ".o", ".elf", ".bin")
     ]
-    names += ["user-clean-entry.o"]
+    if not file_call:
+        names += ["user-clean-entry.o"]
     return build_artifacts(names)
 
 
@@ -858,7 +880,8 @@ def hashes(paths):
 def emit(mode):
     RECEIPT.unlink(missing_ok=True)
     need(mode in MODES, "Unsupported program console profile")
-    before = hashes(build_files())
+    files = build_files(mode.startswith("program-file-call"))
+    before = hashes(files)
     subprocess.run(
         [
             sys.executable,
@@ -885,6 +908,9 @@ def emit(mode):
             prefix.with_suffix(".bin").read_bytes(),
             builder.BASE + index * 4096,
             names,
+            call_entry=builder.call_entry_abi(read_json(prefix.with_suffix(".abi.json")))
+            if mode.startswith("program-file-call") and index == 0
+            else None,
             copied_note=index == 1,
             note_entry=source_symbol(BUILD / "user-bounds.abi.json", "aurora_user_main") if index == 1 else None,
         )
@@ -900,7 +926,7 @@ def emit(mode):
             payload[names[begin] : names[end]] == bytes.fromhex(opcode),
             "Changed exact poll/drain window",
         )
-    stack = stack_evidence(BUILD)
+    stack = stack_evidence(BUILD, file_call=mode.startswith("program-file-call"))
     result = dict(
         schema="aurora-program-console-admission-v1",
         status="requires-independent-review",
@@ -912,7 +938,7 @@ def emit(mode):
         stack=stack,
         note=note_evidence(BUILD, stack["linked_functions"], mode),
     )
-    write_admission(RECEIPT, result, build_files(), before)
+    write_admission(RECEIPT, result, files, before)
     print(
         "PASS: automated protected-console image/stack checks; first-change qualification requires independent review."
     )
@@ -963,7 +989,9 @@ def check_admission(path, schema, mode, files):
 
 def checked(mode):
     need(mode in MODES, "Unsupported program console profile")
-    return check_admission(RECEIPT, "aurora-program-console-admission-v1", mode, build_files())
+    return check_admission(
+        RECEIPT, "aurora-program-console-admission-v1", mode, build_files(mode.startswith("program-file-call"))
+    )
 
 
 def main():
@@ -976,7 +1004,11 @@ def main():
     if args.action == "emit":
         emit(args.mode)
     elif args.action == "diagnose":
-        print(json.dumps(stack_evidence(BUILD), indent=2, sort_keys=True))
+        print(
+            json.dumps(
+                stack_evidence(BUILD, file_call=args.mode.startswith("program-file-call")), indent=2, sort_keys=True
+            )
+        )
     else:
         checked(args.mode)
         print("PASS: current image admission; independent qualification not claimed.")
