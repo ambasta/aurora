@@ -18,7 +18,7 @@ def main():
     suite = Suite(args.compiler, args.artifacts, args.module_root, entry_name="entry")
     executable = suite.compile("projection-lifecycle", Path(__file__).with_suffix(".au").read_text())
     checks = 0
-    for mode in range(47):
+    for mode in range(51):
         result = command([executable, 1 << 24, mode, 0])
         require(result.returncode == 0, f"mode {mode}: {result.stderr!r}")
         values = [int(word) for word in result.stdout.split()]

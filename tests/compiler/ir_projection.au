@@ -14,8 +14,8 @@ import aurora.compiler.lexer;
 // These fixtures drive private pending states directly; they do not replace
 // graph validation or claim that an empty module passes semantic admission.
 auto prepare(compiler_projection::Plan& plan, builtin::span<const u8> table, i64 types) -> bool {
-    if (!plan.begin(0, 0, 0, 1) || !plan.finish() || !plan.bind(table) || !plan.seal_domains() || !plan.begin_order()
-        || !plan.order_complete(0, 0) || !plan.begin_measure()) {
+    if (!plan.begin(0, 0, 0, 1) || !plan.finish() || !plan.bind(table) || !plan.seal_domains() || !plan.begin_order(0,
+        0) || !plan.order_complete(0, 0) || !plan.begin_measure()) {
         return false;
     }
     if (plan.reserve(1, types) != 0 || !plan.mark_instructions() || !plan.begin_fill() || plan.reserve(1, types) != 0
@@ -181,7 +181,7 @@ auto seed(compiler_resolver::Session& session, i64 mode, i64 stamp) -> i64 {
 auto name_index(builtin::ByteRegion region, i64 mode) -> i64 {
     compiler_projection::Plan plan = compiler_projection::Plan(region);
     builtin::OwnedBytes table = region.try_allocate(637);
-    if (!table.ok() || !plan.begin(1, 7, 0, 1)) {
+    if (!table.ok() || !plan.begin(3, 7, 0, 1)) {
         return 100;
     }
     i64 at = 0;
@@ -252,7 +252,13 @@ auto name_index(builtin::ByteRegion region, i64 mode) -> i64 {
         at = at + 1;
     }
     const builtin::span<const u8> input = borrow_bytes(table);
-    if (!plan.finish() || !plan.bind(input) || !plan.seal_domains() || !plan.begin_order()) {
+    i64 functions = 0;
+    i64 capacity = 1;
+    if (mode >= 47) {
+        functions = 1;
+        capacity = 2;
+    }
+    if (!plan.finish() || !plan.bind(input) || !plan.seal_domains() || !plan.begin_order(capacity, functions)) {
         return 100;
     }
     const compiler_projection::TextRange carrier = plan.carrier_name(2, 3);
@@ -260,12 +266,33 @@ auto name_index(builtin::ByteRegion region, i64 mode) -> i64 {
         return 100;
     }
     i64 flags = 1;
-    if (mode == 46) {
+    if (mode >= 46) {
         flags = 3;
     }
     const compiler_projection::OrderRow ordered = compiler_projection::OrderRow(-1, 0, 0, carrier.begin, carrier.count,
         flags);
-    if (!plan.put_order(plan.class_begin(), ordered) || !plan.order_complete(1, 0) || !plan.begin_measure()) {
+    if (plan.owned(0) || plan.node_count() != 0) {
+        return 46;
+    }
+    if (!plan.put_order(plan.class_begin(), ordered)) {
+        return 100;
+    }
+    if (mode >= 47 && !plan.put_order(plan.lookup_begin(), ordered)) {
+        return 100;
+    }
+    if (mode == 48) {
+        if (plan.put_order(plan.lookup_begin() + 1, ordered) || plan.status() != -1) {
+            return 47;
+        }
+        return 0;
+    }
+    if (mode == 49) {
+        if (plan.order_complete(1, 0) || plan.status() != -1) {
+            return 48;
+        }
+        return 0;
+    }
+    if (!plan.order_complete(1, functions) || !plan.begin_measure()) {
         return 100;
     }
     if (mode == 45) {
@@ -319,8 +346,16 @@ auto name_index(builtin::ByteRegion region, i64 mode) -> i64 {
         }
         pass = pass + 1;
     }
-    if (!plan.complete_fill() || plan.integer(1, 0, 7) != 123 || plan.integer(13, 0, 0) != 456) {
+    if (!plan.complete_fill()) {
+        return 100;
+    }
+    if (plan.integer(1, 0, 7) != 123 || plan.integer(13, 0, 0) != 456) {
         return 44;
+    }
+    const compiler_projection::TextRange retired_name = plan.row_name(0);
+    const compiler_projection::OrderRow retired_order = plan.ordered(0);
+    if (retired_name.begin != -1 || retired_order.row != -1) {
+        return 51;
     }
     const array<u8, 78> expected = "zalphabetalphaabcdefghijklmnopqrstuvwxBabcdefghijklmnopqrstuvwxA@array:alpha:3";
     at = 0;
@@ -330,9 +365,29 @@ auto name_index(builtin::ByteRegion region, i64 mode) -> i64 {
         }
         at = at + 1;
     }
+    if (mode == 44 && (plan.index_strings() || plan.status() != -1)) {
+        return 52;
+    }
+    if (mode == 46 && (plan.sift_order(0, 0, 0, true) || plan.status() != -1)) {
+        return 53;
+    }
+    if (mode == 47 && (plan.swap_order(0, 0) || plan.status() != -1)) {
+        return 54;
+    }
     return 0;
 }
 auto entry(builtin::ByteRegion region, i64 mode, i64 flag) -> i64 {
+    if (mode == 50) {
+        compiler_projection::Plan cold = compiler_projection::Plan(region);
+        compiler_resolver::Session session = compiler_resolver::create(region);
+        if (!session.good()) {
+            return 100;
+        }
+        if (compiler_projection::canonical_order(cold, session, -1) || cold.status() != -1) {
+            return 50;
+        }
+        return 0;
+    }
     if (mode >= 44) {
         return name_index(region, mode);
     }
@@ -353,6 +408,9 @@ auto entry(builtin::ByteRegion region, i64 mode, i64 flag) -> i64 {
         }
         if (!valid) {
             return 0;
+        }
+        if (plan.node_count() != 0 || plan.owned(root)) {
+            return 49;
         }
         const i64 count = plan.identity_count();
         const i64 size = 8 + count * 80;

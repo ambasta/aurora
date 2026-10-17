@@ -1801,7 +1801,7 @@ export namespace compiler_projection {
         i64 rootId;
         i64 sessionStamp;
         i64 classCount;
-        i64 functionCount;
+        i64 classCapacity;
         i64 rowCount;
         i64 operandCount;
         i64 nodeCount;
@@ -1812,7 +1812,7 @@ export namespace compiler_projection {
             identities(identity_pool(region)), rendered(region.try_allocate(0)), rowNames(names_pool(region)),
             order(order_pool(region)), counters(words_pool(region)), outputWords(words_pool(region)),
             outputBytes(region.try_allocate(0)), strings(intern_pool(region)), rootId(-1), sessionStamp(-1),
-            classCount(0), functionCount(0), rowCount(0), operandCount(0), nodeCount(0), identityCount(0), state(0) {
+            classCount(0), classCapacity(0), rowCount(0), operandCount(0), nodeCount(0), identityCount(0), state(0) {
         }
         auto fail() -> bool {
             state = -1;
@@ -1856,7 +1856,7 @@ export namespace compiler_projection {
             return true;
         }
         auto owned(i64 id) const -> bool {
-            return id >= 0 && id < rowCount && claims.at(id) == 1u8;
+            return state == 1 && id >= 0 && id < rowCount && claims.at(id) == 1u8;
         }
         auto claim(i64 first, i64 count) -> bool {
             if (state != 1 || first < 0 || count < 0 || first > operandCount || count > operandCount - first) {
@@ -1961,6 +1961,15 @@ export namespace compiler_projection {
                 }
                 at = at + 1;
             }
+            // Ownership checks are complete. Later phases need only the
+            // deduplicated identities, not graph traversal scratch.
+            const GraphNode empty_node = GraphNode(-1, compiler_lowering::RecordKind::invalid);
+            const Identity empty_identity = Identity(0, -1);
+            if (!claims.try_resize(0) || !nodes.try_resize(0, empty_node) || (identities.size() != retained
+                && !identities.try_resize(retained, empty_identity))) {
+                return fail();
+            }
+            nodeCount = 0;
             identityCount = retained;
             state = 2;
             return true;
@@ -2102,14 +2111,16 @@ export namespace compiler_projection {
             state = 4;
             return true;
         }
-        auto begin_order() -> bool {
-            if (state != 4 || rowCount > 192153584101141162 || operandCount > 192153584101141162 - rowCount * 2
-                || !rowNames.ok() || !order.ok()) {
+        auto begin_order(i64 classes, i64 functions) -> bool {
+            if (state != 4 || classes < 0 || functions < 0 || classes > rowCount || functions > rowCount - classes
+                || rowCount > 192153584101141162 || operandCount > 192153584101141162 - rowCount * 2 || !rowNames.ok()
+                || !order.ok()) {
                 return fail();
             }
             const TextRange empty_name = TextRange(-1, 0);
             const OrderRow empty_order = OrderRow(-1, 0, 0, -1, 0, 0);
-            if (!rowNames.try_resize(rowCount, empty_name) || !order.try_resize(operandCount + rowCount * 2,
+            classCapacity = classes;
+            if (!rowNames.try_resize(rowCount, empty_name) || !order.try_resize(operandCount + classes + functions,
                 empty_order)) {
                 return fail();
             }
@@ -2131,6 +2142,9 @@ export namespace compiler_projection {
             return true;
         }
         auto row_name(i64 row) const -> TextRange {
+            if (state < 4 || state > 7) {
+                return TextRange(-1, 0);
+            }
             return rowNames.at(row);
         }
         auto carrier_name(i64 id, i64 count) -> TextRange {
@@ -2227,6 +2241,9 @@ export namespace compiler_projection {
             return true;
         }
         auto ordered(i64 at) const -> OrderRow {
+            if (state < 4 || state > 7) {
+                return OrderRow(-1, 0, 0, -1, 0, 0);
+            }
             return order.at(at);
         }
         auto order_less(OrderRow a, OrderRow b, bool named) const -> bool {
@@ -2243,11 +2260,17 @@ export namespace compiler_projection {
             return a.tie < b.tie || (a.tie == b.tie && a.row < b.row);
         }
         auto swap_order(i64 a, i64 b) -> bool {
+            if (state != 4) {
+                return fail();
+            }
             const OrderRow first = order.at(a);
             const OrderRow second = order.at(b);
             return put_order(a, second) && put_order(b, first);
         }
         auto sift_order(i64 begin, i64 first, i64 end, bool named) -> bool {
+            if (state != 4) {
+                return fail();
+            }
             i64 root = first;
             while (root < end / 2) {
                 i64 child = root * 2 + 1;
@@ -2294,14 +2317,13 @@ export namespace compiler_projection {
             return operandCount;
         }
         auto lookup_begin() const -> i64 {
-            return operandCount + rowCount;
+            return operandCount + classCapacity;
         }
         auto order_complete(i64 classes, i64 functions) -> bool {
-            if (state != 4) {
+            if (state != 4 || classes < 0 || classes > classCapacity || functions != order.size() - lookup_begin()) {
                 return fail();
             }
             classCount = classes;
-            functionCount = functions;
             state = 5;
             return true;
         }
@@ -2407,6 +2429,9 @@ export namespace compiler_projection {
             return true;
         }
         auto index_strings() -> bool {
+            if (state != 5) {
+                return fail();
+            }
             // Every emitted name is requested or generated for a carrier.
             // Sort only lookup keys; offsets follow first use in each pass.
             i64 count = identityCount;
@@ -2546,6 +2571,13 @@ export namespace compiler_projection {
                     return fail();
                 }
                 at = at + 1;
+            }
+            // Retained setters consume only measured raw pools. Retire ordering
+            // scratch before their independent regions coexist with this Plan.
+            const TextRange empty_name = TextRange(-1, 0);
+            const OrderRow empty_order = OrderRow(-1, 0, 0, -1, 0, 0);
+            if (!order.try_resize(0, empty_order) || !rowNames.try_resize(0, empty_name)) {
+                return fail();
             }
             state = 8;
             return true;
@@ -3006,7 +3038,14 @@ export namespace compiler_projection {
         return -1;
     }
     auto canonical_order(Plan& plan, const compiler_resolver::Session& session, i64 root) -> bool {
-        if (root != plan.root() || !plan.begin_order()) {
+        if (plan.status() != 4 || root != plan.root()) {
+            return plan.fail();
+        }
+        const compiler_lowering::OutputRow module_row = session.view_output(root);
+        const compiler_lowering::OperandRow functions = session.view_operand(module_row.operand_begin());
+        const compiler_lowering::OperandRow classes = session.view_operand(module_row.operand_begin() + 1);
+        const compiler_lowering::OperandRow carriers = session.view_operand(module_row.operand_begin() + 2);
+        if (!plan.begin_order(classes.count() + carriers.count(), functions.count())) {
             return plan.fail();
         }
         i64 at = 0;
@@ -3050,10 +3089,6 @@ export namespace compiler_projection {
             }
             at = at + 1;
         }
-        const compiler_lowering::OutputRow module_row = session.view_output(root);
-        const compiler_lowering::OperandRow functions = session.view_operand(module_row.operand_begin());
-        const compiler_lowering::OperandRow classes = session.view_operand(module_row.operand_begin() + 1);
-        const compiler_lowering::OperandRow carriers = session.view_operand(module_row.operand_begin() + 2);
         const compiler_lowering::OperandRow descriptors = session.view_operand(module_row.operand_begin() + 3);
         const compiler_lowering::OperandRow views = session.view_operand(module_row.operand_begin() + 4);
         const compiler_lowering::OperandRow enums = session.view_operand(module_row.operand_begin() + 5);

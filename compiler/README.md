@@ -212,6 +212,9 @@ Source measurement and fill agree on every raw pool, preserve canonical metadata
 ordering, and copy literal bytes. A sorted name index uses binary search while
 assigning byte offsets on first use in each pass, preserving output order.
 Checked pool bases are cached before filling; owner layouts remain unchanged.
+Graph-only scratch retires after validation, identity capacity shrinks after
+deduplication, and the ordering tail uses actual class/function counts. Ordering
+scratch retires after exact fill-count agreement, before retained-store copying.
 Pending-only typed setters fill independent
 metadata and instruction regions exactly once; short, repeated and extra fills
 reject. The Plan and Session are released before unchanged IR admission and
