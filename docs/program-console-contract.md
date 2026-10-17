@@ -162,6 +162,8 @@ selection and frozen projection while preserving saved file bytes and revision.
 It certifies retirement, not byte delivery or complete I/O: `cat` still obtains
 output only through the existing Stream EOF/missing and `finish()` checks.
 Writable selections cannot bind or release through this read-only path.
+Each fault/budget smoke runs both writable and read-only recovery guests, so
+partial read cancellation exercises this release path without exposing output.
 
 This lifetime split is a prerequisite for a future command-bound returning
 CallSession read. No combined console/call profile is admitted yet. A partial

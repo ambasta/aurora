@@ -369,7 +369,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=admission.MODES, default="program-console")
     parser.add_argument("--build-dir", type=Path, required=True)
+    parser.add_argument("--read-only-recovery", action="store_true")
     args = parser.parse_args()
+    need(
+        not args.read_only_recovery or args.mode.endswith(("-fault", "-budget")),
+        "Read-only recovery requires a fault or budget profile",
+    )
     admission.configure_paths(args.build_dir, ROOT)
     admitted = admission.checked(args.mode)
     admission_digest = admission.digest(admission.RECEIPT)
@@ -427,6 +432,7 @@ def main():
     metrics = {
         "status": "incomplete",
         "mode": args.mode,
+        "read_only_recovery": args.read_only_recovery,
         "clock": "tcg-original-clock",
         "purpose": "guest",
         "admission_sha256": admission_digest,
@@ -694,7 +700,10 @@ def main():
             else:
                 file_write("recover", "recover this file")
                 file_write("other", "Remain lower")
-                file_command("upper", "recover", "RECOVER THIS FILE", failure=True)
+                if args.read_only_recovery:
+                    file_command("cat", "recover", "recover this file", failure=True)
+                else:
+                    file_command("upper", "recover", "RECOVER THIS FILE", failure=True)
                 file_command("cat", "recover", "recover this file")
                 file_command("cat", "other", "Remain lower")
                 file_command("upper", "recover", "RECOVER THIS FILE")
@@ -775,6 +784,8 @@ def main():
             raise transport.ChildNotReaped("; ".join(cleanup_errors))
         need(not cleanup_errors, "; ".join(cleanup_errors))
     print("PASS: protected Aurora command PTY, bounded input, copied stream, recovery and quiescent exit")
+    if args.read_only_recovery:
+        print("PASS: read-only selected-file cancellation and authenticated retirement")
 
 
 def terminate(_signal, _frame):

@@ -56,7 +56,9 @@ case "$*" in
     "-B scripts/kernel_program_console_admission.py checked --mode "*)
         echo checked >> "$CALLS"; exit "${CHECK_STATUS:-0}" ;;
     "-B tests/kernel-program-console-pty.py "*)
-        echo "pty|$*" >> "$CALLS"; exit "${PTY_STATUS:-0}" ;;
+        echo "pty|$*" >> "$CALLS"
+        case "$*" in *--read-only-recovery) exit "${READ_PTY_STATUS:-0}" ;; esac
+        exit "${PTY_STATUS:-0}" ;;
     "-B scripts/kernel_uefi_console_clock.py "*)
         echo clock >> "$CALLS"; exit 0 ;;
     *) echo unexpected-python >> "$CALLS"; exit 93 ;;
@@ -127,9 +129,22 @@ exit "${BUILD_STATUS:-0}"
                     f"build|{mode}",
                     f"pty|-B tests/kernel-program-console-pty.py --mode {mode} "
                     f"--build-dir {self.repo}/build/native profiles/{mode}",
-                ],
+                ]
+                + (
+                    [
+                        f"pty|-B tests/kernel-program-console-pty.py --mode {mode} "
+                        f"--build-dir {self.repo}/build/native profiles/{mode} --read-only-recovery"
+                    ]
+                    if mode.endswith(("-fault", "-budget"))
+                    else []
+                ),
             )
             self.clear()
+
+    def test_read_only_recovery_failure_is_not_a_pass(self):
+        self.run_script(args=("program-service-fault",), env={"READ_PTY_STATUS": "7"}, expected=7)
+        self.assertEqual(len(self.calls()), 3)
+        self.assertTrue(self.calls()[-1].endswith("--read-only-recovery"))
 
     def test_public_launch_rebuilds_checks_and_starts_original_clock(self):
         self.run_script(name="kernel-program-console.sh")

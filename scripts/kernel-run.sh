@@ -208,6 +208,11 @@ if [[ "$action" == --smoke ]]; then
         if python3 -B tests/kernel-program-console-pty.py --mode "$mode" --build-dir "$image_dir"; then :; else
             status=$?; echo "FAIL: protected-console PTY exited $status" >&2; exit "$status"
         fi
+        case "$mode" in
+            program-*-fault|program-*-budget)
+                python3 -B tests/kernel-program-console-pty.py --mode "$mode" --build-dir "$image_dir" --read-only-recovery
+                ;;
+        esac
     else
         args=(); if [[ "$platform" == uefi ]]; then args+=(--uefi); fi
         python3 -B tests/kernel-console-pty.py "${args[@]}" --build-dir "$image_dir"
