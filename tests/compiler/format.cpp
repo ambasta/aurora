@@ -174,6 +174,35 @@ void byteStrings() {
         rejected("module x;auto f()->u8{const array<u8,1> a=" + spelling + ";return a[0];}",
                  aurora::DiagnosticCode::InvalidByteStringLiteral);
 }
+void workspaceFailures() {
+    using namespace aurora;
+    const std::string text = "module x;auto f()->i64{return 1;}";
+    for (const std::uint64_t quota : {0, 64, 1024, 4096}) {
+        hosted::bytes::Region region(quota);
+        hosted_abi::FormatterRelease owner;
+        owner.region = region.id();
+        hosted_abi::FormatterCreate create;
+        create.region = region.id();
+        aurora_hosted_formatter_create(&create, owner.workspace.storage.data());
+        hosted_abi::FormatterInput input;
+        input.source.backing = text.data();
+        input.source.length = static_cast<std::int64_t>(text.size());
+        const auto prepared = aurora_hosted_formatter_prepare(owner.workspace.storage.data(), &input);
+        require(prepared == (quota == 4096), "formatter ingress quota refusal");
+        if (prepared)
+            require(aurora_hosted_formatter_prepare(owner.workspace.storage.data(), &input) == 0,
+                    "formatter accepted repeated preparation");
+        hosted_abi::compiler_formatter::Row report;
+        aurora_hosted_formatter_finding(owner.workspace.storage.data(), -1, &report);
+        require(report.a == (prepared ? 3 : 1), "formatter failure did not become terminal");
+        hosted_abi::compiler_x86::EmitChunk chunk;
+        aurora_hosted_formatter_chunk(owner.workspace.storage.data(), 0, &chunk);
+        require(chunk.byteCount == -1, "failed formatter published bytes");
+        aurora_hosted_formatter_release(&owner);
+        require(region.metrics().used == 0 && region.metrics().live_allocations == 0 && region.close(),
+                "formatter failure retained owners");
+    }
+}
 void oversizedStrings() {
     const auto has = [](const std::vector<aurora::format::Finding> &findings, const std::string &code) {
         return std::any_of(findings.begin(), findings.end(), [&](const auto &finding) {
@@ -365,6 +394,7 @@ int main(int argc, char **argv) {
         byteLiterals();
         byteStrings();
         oversizedStrings();
+        workspaceFailures();
         cases();
         for (int index = 1; index < argc; ++index)
             verify(read(argv[index]), argv[index]);

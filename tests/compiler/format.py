@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI transport/rejection checks; all Aurora lexing/parsing stays in C++."""
+"""CLI transport/rejection checks for the source-owned formatter."""
 
 import hashlib
 import json
@@ -159,6 +159,16 @@ def main():
         run(["--check", "--diagnostics=json", root], 2, "AU4001")
         bad.write_bytes(b" " * (1024 * 1024 + 1))
         run(["--check", "--diagnostics=json", bad], 2, "AU4001")
+        prefix = b"module x;\nauto f() -> i64 {\n    return 1;\n}\n//"
+        exact = prefix + b"x" * (1024 * 1024 - len(prefix) - 1)
+        bad.write_bytes(exact)
+        require(run([bad], 0).stdout == exact + b"\n", "exact output cap changed comment bytes")
+        bad.write_bytes(exact + b"x")
+        overflow = run([bad], 2)
+        require(
+            not overflow.stdout and b"formatted output exceeds 1 MiB bound" in overflow.stderr,
+            "final newline crossed output cap or published partial output",
+        )
         bad.write_text("module x;auto f()->i64{" + "{" * 128 + "return 1;" + "}" * 129)
         run(["--check", "--diagnostics=json", bad], 2, "AU2002")
         bad.write_text("module x;auto f()->i64{" + "{" * 127 + "x;" * 2100 + "}" * 127 + "return 1;}")

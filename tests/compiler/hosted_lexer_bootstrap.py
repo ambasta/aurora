@@ -886,7 +886,7 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 facts = {"version": 2, "functions": {"fixture_symbol": {"source_name": "fixture::entry"}}}
 assert module.abi_function_symbol(facts, "fixture::entry") == "fixture_symbol"
-assert len(module.PASS_ENTRIES) == 107
+assert len(module.PASS_ENTRIES) == 113
 """
     with tempfile.TemporaryDirectory(prefix="bridge-import-") as temporary:
         subprocess.run(
@@ -900,7 +900,7 @@ assert len(module.PASS_ENTRIES) == 107
     assembly, header = frontend_bridge(None, facts), frontend_abi_header(facts)
     operations = ["emitter_" + name for name in EMITTER_OPERATIONS]
     operations += ["initialization_" + name for name in INITIALIZATION_OPERATIONS]
-    require(assembly.count(".globl ") == 107, "private bridge inventory drift")
+    require(assembly.count(".globl ") == 113, "private bridge inventory drift")
     for alias in operations:
         require(f".globl aurora_hosted_{alias}\n" in assembly, "missing private host entry: " + alias)
         require(f" aurora_hosted_{alias}(" in header, "missing private host declaration: " + alias)
@@ -994,7 +994,7 @@ assert len(module.PASS_ENTRIES) == 107
             except ValueError:
                 continue
         raise AssertionError("unsafe private bridge policy accepted: " + repr(changed))
-    print("PASS all 107 host entries, transport exemplars and malformed bridge policies")
+    print("PASS all 113 host entries, transport exemplars and malformed bridge policies")
 
 
 def borrowed_root_generation(facts):
@@ -1289,6 +1289,10 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
         "aurora_hosted_parser_syntax",
         "aurora_hosted_parser_release",
     }
+    entries.update(
+        "aurora_hosted_formatter_" + operation
+        for operation in ("create", "release", "prepare", "run", "chunk", "finding")
+    )
     entries.update(
         "aurora_hosted_resolver_" + operation
         for operation in (

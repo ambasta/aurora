@@ -13,6 +13,43 @@ import sys
 # (name:fields[:scalar lanes]), and host policy (noexcept/discard/consume[:alias]).
 ROWS = (
     (
+        "formatter_create(builtin::ByteRegion region) -> compiler_formatter::Workspace",
+        "move compiler_formatter::create(region)",
+        "FormatterCreate:region",
+        "noexcept",
+    ),
+    (
+        "formatter_release(builtin::ByteRegion region, compiler_formatter::Workspace workspace) -> i64",
+        "direct compiler_formatter::release(region, move(workspace))",
+        "FormatterRelease:region,workspace",
+        "noexcept,discard",
+    ),
+    (
+        "formatter_prepare(compiler_formatter::Workspace& workspace, builtin::span<const u8> source) -> bool",
+        "direct workspace.begin(source)",
+        "FormatterInput:source",
+        "noexcept",
+    ),
+    (
+        "formatter_run(compiler_formatter::Workspace& workspace, const compiler_parser::AstArena& arena, "
+        "bool format) -> i64",
+        "direct compiler_formatter::run(workspace, arena, format)",
+        "",
+        "noexcept",
+    ),
+    (
+        "formatter_chunk(const compiler_formatter::Workspace& workspace, i64 offset) -> compiler_x86::EmitChunk",
+        "copy workspace.chunk(offset)",
+        "",
+        "noexcept",
+    ),
+    (
+        "formatter_finding(const compiler_formatter::Workspace& workspace, i64 index) -> compiler_formatter::Row",
+        "copy workspace.read_finding(index)",
+        "",
+        "noexcept",
+    ),
+    (
         "emitter_create(builtin::ByteRegion region) -> compiler_x86::EmitWorkspace",
         "move compiler_x86::create(region)",
         "EmitterCreate:region",

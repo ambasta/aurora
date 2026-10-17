@@ -679,7 +679,7 @@ test('hosted-parser', hosted_parser_test,
                  '../compiler/ir_initialization.au',
                  '../compiler/x86_storage.au', '../compiler/x86_helpers.au', '../compiler/x86_scalar.au',
                  '../compiler/x86_objects.au', '../compiler/x86_resources.au', '../compiler/x86_facts.au',
-                 '../compiler/x86_module.au', '../library/std/decimal_digits.au'),
+                 '../compiler/x86_module.au', '../library/std/decimal_digits.au', '../compiler/formatter.au'),
      suite: ['full', 'dev', 'core', 'compiler'], timeout: 120)
 hosted_parser_invalid = executable(
     'hosted-parser-invalid', ['compiler/hosted_parser_invalid.cpp', '../compiler/hosted_parser.cpp',
