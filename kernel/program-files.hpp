@@ -105,7 +105,7 @@ public:
         if (state_ != State::idle)
             return std::nullopt;
         const auto action = word(result, 352);
-        if (action > 4 || word(result, 336) > 64 || word(result, 344) > 8)
+        if (action > 5 || word(result, 336) > 64 || word(result, 344) > 8)
             return std::nullopt;
         if (action != 1 && !std::equal(saved_.begin(), saved_.end(), result.begin()))
             return std::nullopt;

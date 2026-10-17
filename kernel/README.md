@@ -57,25 +57,32 @@ call chains, the exact copied ABI, canonical reply encoding and unchanged image
 and kernel-stack caps. Retirement clears snapshot publication as well as wait
 authority. This remains one call per incarnation between a fixed pair.
 
-The opt-in `program-file-call` console adds `peek <name>` beside the existing
-RAM-file storage commands. It returns one first byte, EOF or missing status into
-live Aurora caller locals through the same sealed singleton CallSession. Each
-command binds a frozen NoteRead64 projection to fresh caller/service identities;
-selection, endpoint and generation must still match at publication and resume.
-The private wait retains the caller's frame, epoch and remaining budget while the
-peer runs. A checked service fault cancels the transaction; retirement revokes both
-participants and releases the read binding before presenting a result. One accepted
-call per incarnation remains the limit. This is a partial read, not a stream,
-filesystem service discovery or a general scheduler.
+The opt-in `program-file-call` console adds `peek <name>` and `wc <name>` beside
+RAM-file storage commands. `peek` returns one first byte, EOF or missing status;
+`wc` returns LF line, C-locale whitespace-delimited word and byte counts. An
+unterminated final line adds no LF; NUL and high bytes are ordinary word bytes.
+The caller keeps streaming counters in live Aurora locals without a file array.
+Each command binds a frozen NoteRead64 projection to fresh caller/service identities.
+Selection, endpoint and generation must match at publication and resume. Only `wc`
+may recycle consumed transactions, at most 50 calls for 49 bytes plus EOF. Generic
+Call consumers and `peek` retain the one-call-per-incarnation limit.
 
-This profile deliberately rejects `upper`, `cat` and note commands. Its Aurora
-entry and three private Console/file bridges omit the legacy note/stream and
-replacement roots; legacy console profiles retain their composition and reject
-`peek`. `program-file-call-fault` cancels the first command on a real service bounds
-fault; `program-file-call-budget` exhausts the original caller quota after resume.
-Later commands recover under fresh incarnations. The native adapter and exact ABI,
-frame, image and stack validators remain trusted bootstrap code; guest checks and
-hosted refusal controls do not establish general memory safety.
+The private wait retains the caller's frame, original epoch and cumulative budget.
+Service dispatch gets fresh transaction authority but carries its cumulative used
+allowance before arming the timer. Both participants have one 128-unit command
+allowance. For `wc`, stopping at a call or service terminal conservatively charges
+one discarded partial interval before request/reply publication. These charges and
+hardware IRQ ticks share the existing checked policy; this is not exact CPU-time
+accounting. Fault, cancellation or exhaustion suppresses partial count output.
+Both participants retire and the read binding is released before presentation.
+
+The profile rejects `upper`, `cat` and note commands. Its three private Console/file
+bridges omit legacy note/stream and replacement roots; legacy profiles reject
+`peek` and `wc`. Fault/budget profiles exercise mid-read cancellation, cumulative
+caller/service IRQ exhaustion, and explicit conservative-charge injections at both
+127-to-128 publication boundaries. Later commands use fresh incarnations. Native
+adapters and exact ABI, frame, image and stack validators remain trusted bootstrap
+code; these bounded tests do not establish general scheduling or memory safety.
 
 PageTables::verify and RuntimeTables::inspect use fixed-four-slot DFS/postorder
 walks. Call-graph cycles reject; no legacy recursion-source hash, line or register

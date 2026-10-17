@@ -497,4 +497,60 @@ for mode, reply in [
         else:
             raise SystemExit("FAIL: returning file-call oracle accepted changed transcript in " + mode)
 
+# Independent single-transaction streaming EOF/missing transcripts. Multi-byte
+# and midpoint cases run in the existing actual guest path.
+for data in ("", None):
+    reply = 2 if data == "" else 3
+    result = module.wc_result(data)
+    caller_root, peer_root = arena + 0x90000, arena + 0xA0000
+
+    def wc_event(vector, pc, root):
+        return (
+            f"AURORA_UEFI_DOMAIN_EVENT: vector={vector} error=0 pc={pc} cpl=3 root={root} "
+            f"frame={arena + 0x88000 - 176} cr2=0"
+        )
+
+    lines = [
+        f"AURORA_UEFI_OWNERSHIP_OK: arena={arena}",
+        f"AURORA_UEFI_TIMER_READY: physical=4276092928 virtual=18446620928407240704 id=0 root={kernel_root}",
+        "AURORA_WC_BEGIN: generation=1",
+        f"AURORA_UEFI_USER_RUN: epoch=1 role=client phase=request client=0 transaction=0 source=32 root={caller_root}",
+        f"AURORA_UEFI_TIMER_ARM: epoch=1 budget=128 root={caller_root}",
+        wc_event(130, 1020, caller_root),
+        "AURORA_WC_DEBIT: epoch=1 used=1 remaining=127",
+        "AURORA_CALL_PARK: ticket=2 epoch=1 ticks=1 remaining=127",
+        "AURORA_UEFI_TIMER_QUIET: epoch=1 ticks=1",
+        f"AURORA_UEFI_USER_RUN: epoch=2 role=service phase=service client=0 transaction=2 source=11 root={peer_root}",
+        f"AURORA_UEFI_TIMER_ARM: epoch=2 budget=128 root={peer_root}",
+        wc_event(129, 2010, peer_root),
+        "AURORA_WC_DEBIT: epoch=2 used=1 remaining=127",
+        "AURORA_UEFI_TIMER_QUIET: epoch=2 ticks=1",
+        f"AURORA_CALL_SERVICE: epoch=2 event=returned value={reply}",
+        "AURORA_CALL_RESUME: epoch=1 ticks=1 remaining=127",
+        wc_event(129, 1010, caller_root),
+        "AURORA_UEFI_TIMER_QUIET: epoch=1 ticks=1",
+        f"AURORA_CALL_COMPLETE: epoch=1 event=returned value={result}",
+        "AURORA_WC_TOTAL: calls=1 caller=1 service=1",
+        f"AURORA_WC_END: result={result} used=0",
+        module.wc_answer(result),
+    ]
+    text = "\r\n".join(lines) + "\r\n"
+    module.validate_wc(text, [(data, 32)], images, timer)
+    checks += 1
+    for changed in (
+        text.replace("generation=1", "generation=0"),
+        text.replace("ticket=2", "ticket=0").replace("transaction=2", "transaction=0"),
+        text.replace("used=1 remaining=127", "used=2 remaining=126", 1),
+        text.replace("calls=1 caller=1 service=1", "calls=1 caller=1 service=0"),
+        text.replace("event=returned value=" + str(result), "event=parked value=" + str(result)),
+        text.replace("AURORA_WC_END:", "0 0 0\r\nAURORA_WC_END:"),
+        text.replace("AURORA_CALL_RESUME: epoch=1", "AURORA_CALL_RESUME: epoch=2"),
+    ):
+        try:
+            module.validate_wc(changed, [(data, 32)], images, timer)
+        except ValueError:
+            checks += 1
+        else:
+            raise SystemExit("FAIL: wc oracle accepted changed lifecycle/counts")
+
 print(f"PASS: {checks} protected-console transcript positive/refusal controls; no guest executed")

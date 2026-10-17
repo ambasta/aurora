@@ -78,7 +78,7 @@ def validate_domain_events(text, images, timer, returning=False):
         if line.startswith("AURORA_CALL_PARK:"):
             need(returning and live_epoch == caller_epoch, "Invalid parked owner")
             terminal_seen = True
-        if re.fullmatch(r"AURORA_UEFI_TIMER_TICK: epoch=\d+ used=\d+ remaining=0 .*", line):
+        if re.fullmatch(r"AURORA_(?:UEFI_TIMER_TICK|WC_DEBIT): epoch=\d+ used=\d+ remaining=0(?: .*)?", line):
             terminal_seen = True
         event = event_pattern.fullmatch(line)
         if event:
@@ -140,6 +140,9 @@ def validate_domain_events(text, images, timer, returning=False):
                 and int(tick[3]) & 0x3000 == 0,
                 "Tick lacks adjacent owned hardware frame or safe flags",
             )
+        if line.startswith("AURORA_WC_DEBIT:"):
+            debit = re.fullmatch(r"AURORA_WC_DEBIT: epoch=(\d+) used=\d+ remaining=\d+", line)
+            need(returning and debit and int(debit[1]) == live_epoch, "WC boundary debit has active owner")
         if line.startswith("AURORA_UEFI_TIMER_DRAIN:"):
             need(
                 position > 0
@@ -151,6 +154,180 @@ def validate_domain_events(text, images, timer, returning=False):
             live_epoch = None
     need(drains == text.count("AURORA_UEFI_TIMER_DRAIN:"), "Unconsumed drain record")
     return events
+
+
+def wc_result(data):
+    if data is None:
+        return 3
+    raw = data.encode("ascii")
+    words = 0
+    inside = False
+    for byte in raw:
+        space = byte == 32 or 9 <= byte <= 13
+        words += not space and not inside
+        inside = not space
+    return 1 | (raw.count(10) << 8) | (words << 16) | (len(raw) << 24)
+
+
+def wc_answer(result):
+    if result == 0:
+        return "Program stopped: checked fault or budget exhausted; output discarded."
+    if result == 3:
+        return "File is missing."
+    return " ".join(str((result >> shift) & 255) for shift in (8, 16, 24))
+
+
+def validate_wc(text, plans, images, timer):
+    validate_domain_events(text, images, timer, returning=True)
+    parts = list(
+        re.finditer(
+            r"AURORA_WC_BEGIN: generation=(\d+)\r?\n(.*?)"
+            r"AURORA_WC_END: result=(\d+) used=0\r?\n",
+            text,
+            re.S,
+        )
+    )
+    need(
+        len(parts) == len(plans) == text.count("AURORA_WC_BEGIN:") == text.count("AURORA_WC_END:"),
+        "Exact wc command retirement count",
+    )
+    generations = [int(x[1]) for x in parts]
+    need(all(x > 0 for x in generations) and generations == sorted(set(generations)), "Fresh wc selections")
+    for part, (data, phase) in zip(parts, plans):
+        body = part[2]
+        expected = wc_result(data) if phase == 32 else 0
+        need(int(part[3]) == expected, "Exact streaming counts or discarded failure")
+        need(text[part.end() :].startswith(wc_answer(expected) + "\r\n"), "WC presentation after retirement")
+        need(
+            not re.search(r"^(?:\d+ \d+ \d+|File is missing\.|Program stopped:.*)\r?$", body, re.M),
+            "No partial wc presentation",
+        )
+        runs = list(
+            re.finditer(
+                r"AURORA_UEFI_USER_RUN: epoch=(\d+) role=(client|service) "
+                r"phase=(request|service) client=0 transaction=(\d+) source=(\d+) root=(\d+)",
+                body,
+            )
+        )
+        need(bool(runs), "WC has caller")
+        caller = int(runs[0][1])
+        need(
+            runs[0][2] == "client" and runs[0][3] == "request" and runs[0][4] == "0" and int(runs[0][5]) == phase,
+            "Exact wc caller authority",
+        )
+        parks = list(re.finditer(r"AURORA_CALL_PARK: ticket=(\d+) epoch=(\d+) ticks=(\d+) remaining=(\d+)", body))
+        resumes = list(re.finditer(r"AURORA_CALL_RESUME: epoch=(\d+) ticks=(\d+) remaining=(\d+)", body))
+        expected_calls = (2 if phase in (34, 36) else 3) if phase != 32 else (1 if data is None else len(data) + 1)
+        need(
+            len(parks) == len(resumes) == expected_calls <= 50 and len(runs) == expected_calls + 1,
+            "Bounded byte requests including EOF",
+        )
+        tickets = [int(p[1]) for p in parks]
+        need(all(t > 0 for t in tickets) and tickets == sorted(set(tickets)), "Fresh ordered wc tickets")
+        service_epochs = []
+        for i, (park, resume, run) in enumerate(zip(parks, resumes, runs[1:])):
+            epoch = int(run[1])
+            service_epochs.append(epoch)
+            need(
+                run[2] == "service"
+                and run[3] == "service"
+                and int(run[4]) == tickets[i]
+                and int(run[5]) == (4 if phase == 33 and i == 2 else 5 if phase == 35 and i == 2 else 11),
+                "Exact wc service transaction",
+            )
+            need(int(park[2]) == caller and tuple(park.groups()[1:]) == resume.groups(), "WC original caller resume")
+            need(park.start() < run.start() < resume.start(), "WC real peer between park and resume")
+            if i:
+                need(resumes[i - 1].start() < park.start(), "WC next request after prior return")
+        need(
+            service_epochs == sorted(set(service_epochs)) and all(e > caller for e in service_epochs),
+            "Fresh service run epochs",
+        )
+        services = re.findall(r"AURORA_CALL_SERVICE: epoch=(\d+) event=(returned|bounds) value=(\d+)", body)
+        wanted_services = []
+        for i, epoch in enumerate(service_epochs):
+            failed = i == 2 and phase in (33, 35)
+            reply = 0 if failed else 3 if data is None else 2 if i == len(data) else 1 | (ord(data[i]) << 8)
+            wanted_services.append((str(epoch), "bounds" if failed else "returned", str(reply)))
+        need(services == wanted_services, "WC exact byte/EOF service replies")
+        traps = list(re.finditer(r"AURORA_UEFI_DOMAIN_EVENT: vector=130 ", body))
+        need(
+            len(traps) == expected_calls + int(phase == 36)
+            and all(t.start() < p.start() for t, p in zip(traps, parks))
+            and all(resumes[i - 1].start() < traps[i].start() for i in range(1, len(traps))),
+            "WC each published request has one caller trap",
+        )
+        terminals = [
+            (int(v), int(pc))
+            for v, pc in re.findall(r"AURORA_UEFI_DOMAIN_EVENT: vector=(6|129) error=0 pc=(\d+) ", body)
+        ]
+        wanted_terminals = [
+            (6, images["bounds"]["bounds_pc"]) if i == 2 and phase == 33 else (129, images["bounds"]["return_pc"])
+            for i in range(expected_calls)
+            if not (i == 2 and phase == 35)
+        ]
+        if phase not in (34, 36):
+            wanted_terminals.append((129, images["clean"]["return_pc"]))
+        need(terminals == wanted_terminals, "WC exact hardware terminal sites")
+        used = {"caller": 0, "service": 0}
+        arms = 0
+        for line in body.splitlines():
+            arm = re.fullmatch(r"AURORA_UEFI_TIMER_ARM: epoch=(\d+) budget=(\d+) root=\d+", line)
+            if arm:
+                owner = "caller" if int(arm[1]) == caller else "service"
+                need(
+                    int(arm[1]) in [caller] + service_epochs and int(arm[2]) == 128 - used[owner],
+                    "WC arm carries remaining allowance",
+                )
+                arms += 1
+            debit = re.fullmatch(
+                r"AURORA_(?:WC_DEBIT|UEFI_TIMER_TICK): epoch=(\d+) used=(\d+) remaining=(\d+)(?: pc=\d+ flags=\d+)?",
+                line,
+            )
+            if debit:
+                epoch, total, left = map(int, debit.groups())
+                need(epoch in [caller] + service_epochs, "WC debit owner")
+                owner = "caller" if epoch == caller else "service"
+                need(total == used[owner] + 1 and total + left == 128, "WC cumulative IRQ and boundary debit")
+                used[owner] = total
+        quiet = [int(e) for e in re.findall(r"AURORA_UEFI_TIMER_QUIET: epoch=(\d+) ", body)]
+        wanted_quiet = [caller]
+        for epoch in service_epochs:
+            wanted_quiet.extend((epoch, caller))
+        need(quiet == wanted_quiet, "WC every park/peer/final continuation quiesces")
+        probes = re.findall(r"AURORA_WC_BOUNDARY_PROBE: role=(client|service)", body)
+        need(
+            probes == (["client" if phase == 36 else "service"] if phase in (36, 37) else []),
+            "Exact explicit boundary-exhaustion probe",
+        )
+        if phase in (36, 37):
+            target = caller if phase == 36 else service_epochs[-1]
+            debits = re.findall(rf"AURORA_WC_DEBIT: epoch={target} used=(\d+) remaining=(\d+)", body)
+            need(debits[-2:] == [("127", "1"), ("128", "0")], "Actual boundary127 to128 refusal")
+        need(arms == 1 + expected_calls, "No caller rearm/reset on wc resume")
+        total = re.findall(r"AURORA_WC_TOTAL: calls=(\d+) caller=(\d+) service=(\d+)", body)
+        need(total == [(str(expected_calls), str(used["caller"]), str(used["service"]))], "WC final debit totals")
+        need(used["caller"] >= expected_calls and used["service"] >= expected_calls - 1, "WC boundary charges")
+        if phase in (34, 35, 36, 37):
+            need(used["caller" if phase in (34, 36) else "service"] == 128, "WC injected original quota exhaustion")
+        completed = list(
+            re.finditer(r"AURORA_CALL_COMPLETE: epoch=(\d+) event=(parked|returned|budget) value=(\d+)", body)
+        )
+        need(
+            len(completed) == expected_calls and all(int(c[1]) == caller for c in completed), "WC continuation outcomes"
+        )
+        need(
+            [c[2] for c in completed]
+            == ["parked"] * (expected_calls - 1) + ["budget" if phase in (34, 36) else "returned"],
+            "WC only final resume terminates",
+        )
+        need(int(completed[-1][3]) == expected, "WC returned live counters")
+    need(
+        len(re.findall(r"^\d+ \d+ \d+\r?$", text, re.M))
+        == sum(phase == 32 and data is not None for data, phase in plans),
+        "No duplicate wc count presentation",
+    )
+    return dict(wc_commands=len(parts))
 
 
 def validate_file_call(text, mode, expected, service_results, images, timer):
@@ -296,7 +473,7 @@ def validate_file_call(text, mode, expected, service_results, images, timer):
         )
     need(
         len(re.findall(r"^(?:byte> .*|EOF|File is missing\.|Program stopped: .*output discarded\.)\r?$", text, re.M))
-        == len(parts),
+        == len(parts) + len(re.findall(r"AURORA_WC_END: result=(?:0|3) used=0", text)),
         "No duplicate results outside calls",
     )
     return dict(file_calls=len(parts), call_local_sum=40)
@@ -839,6 +1016,29 @@ def main():
                     file_local(invalid, "Unknown command. Type help.")
                 file_local("rm alpha", "files: removed (RAM-only).")
                 peek("alpha", None)
+                wc_plans = []
+
+                def wc(name, data, phase=32):
+                    begin = len(transcript)
+                    send(("wc " + name + "\n").encode())
+                    receive(b"aurora> ", begin)
+                    wc_plans.append((data, phase))
+                    result = wc_result(data) if phase == 32 else 0
+                    part = bytes(transcript[begin:]).decode("ascii")
+                    need(part.count("\r\n" + wc_answer(result) + "\r\n") == 1, "Actual wc response")
+
+                wc("beta", "Hello", 33 if args.mode.endswith("-fault") else 34 if args.mode.endswith("-budget") else 32)
+                if args.mode.endswith("-budget"):
+                    wc("beta", "Hello", 35)
+                    wc("beta", "Hello", 36)
+                    wc("beta", "Hello", 37)
+                wc("beta", "Hello")
+                wc("empty", "")
+                wc("missing", None)
+                file_write("alpha", "a " * 24 + "z")
+                wc("alpha", "a " * 24 + "z")
+                for invalid in ("wc ", "wc alpha extra", "wc note"):
+                    file_local(invalid, "Unknown command. Type help.")
                 begin = len(transcript)
                 send(b"exit\n")
                 receive(b"AURORA_UEFI_OK", begin)
@@ -853,12 +1053,20 @@ def main():
                         admitted["user_images"],
                         admitted["timer"],
                     ),
+                    **validate_wc(
+                        bytes(transcript).decode("ascii"), wc_plans, admitted["user_images"], admitted["timer"]
+                    ),
                     status="passed",
                     exit_status=33,
                     command_seconds=call_times,
                 )
                 print("PASS: command-bound returning file byte, live locals, original budget and retired authority")
                 return
+
+            # Returning file calls are opt-in. Legacy profiles must reject even
+            # syntactically valid commands without launching a domain.
+            for invalid in ("wc alpha", "wc note", "wc ", "wc alpha extra"):
+                file_local(invalid, "Unknown command. Type help.")
 
             if args.mode == "program-console":
                 file_local("ls", "files: empty (RAM-only).")

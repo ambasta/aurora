@@ -94,7 +94,11 @@ auto timer_begin(unsigned index) -> void {
 #ifdef AURORA_UEFI_USER_BUDGET
     require(index<L::domain_count && domains[index].handle && selected_client<2
         && !timer_armed && timer_epoch!=UINT64_MAX,"user timer run boundary");
-    const auto budget=(launch[0]==5 || launch[0]==6 || launch[0]==7) ? 3U : 128U;
+    const auto budget=
+#ifdef AURORA_FILE_CALL
+        file_wc ? 128U :
+#endif
+        (launch[0]==5 || launch[0]==6 || launch[0]==7) ? 3U : 128U;
     auto authorization=SelectedRunAuthority::authorize(registry,*domains[index].handle,selected_role,selected_phase,selected_client,transaction,
         launch[0],arena,root(),*domains[index].contract,next_epoch,budget);
     require(authorization.has_value(),"user timer immutable authority"); run_authority.emplace(*authorization);
@@ -111,6 +115,13 @@ auto timer_begin(unsigned index) -> void {
     timer_remaining=launch[0]==5 ? 3 : 128;
 #endif
     timer_initial=timer_remaining;
+#ifdef AURORA_FILE_CALL
+    if (file_wc && index==1) {
+        require(file_service_used<timer_initial,"wc cumulative service allowance");
+        timer_ticks=file_service_used;
+        timer_remaining=timer_initial-timer_ticks;
+    }
+#endif
     timer_armed=true;
     require(timer_arm(),"timer arm");
 #ifdef AURORA_UEFI_USER_BUDGET
@@ -123,6 +134,41 @@ auto timer_begin(unsigned index) -> void {
     Serial::text("AURORA_UEFI_TIMER_ARM: epoch="); Serial::number(timer_owner_epoch); Serial::text(" budget="); Serial::number(timer_remaining);
     Serial::text(" root="); Serial::number(root()); Serial::text("\r\n");
 }
+#ifdef AURORA_FILE_CALL
+// Conservatively charge the discarded partial timer interval before publication.
+// Hardware IRQs and boundary charges share the same checked 128-unit allowance.
+[[nodiscard]] auto file_boundary_debit() -> bool {
+    require(file_wc && timer_armed && !timer_exhausted && timer_remaining &&
+                timer_initial==128 && timer_ticks+timer_remaining==128,"wc boundary allowance");
+#ifdef AURORA_FILE_CALL_BUDGET
+    // Test-only conservative charging, never a quota reset or simulated IRQ.
+    // Exercise exhaustion at the actual pre-publication boundaries after two bytes.
+    if ((file_budget_probe == 36 && active == 0 && file_call_count == 2) ||
+        (file_budget_probe == 37 && active == 1 && file_call_count == 3)) {
+        Serial::text(active == 0 ? std::string_view{"AURORA_WC_BOUNDARY_PROBE: role=client\r\n"}
+                                 : std::string_view{"AURORA_WC_BOUNDARY_PROBE: role=service\r\n"});
+        while (timer_ticks < 127) {
+            const auto injected = BudgetTransition::decode(language_budget_tick(timer_initial, timer_remaining, timer_ticks),
+                                                           timer_initial, timer_remaining, timer_ticks);
+            require(injected && injected->resume(), "wc probe conservative charge");
+            timer_ticks = injected->used(); timer_remaining = injected->remaining();
+            Serial::text("AURORA_WC_DEBIT: epoch="); Serial::number(timer_epoch);
+            Serial::text(" used="); Serial::number(timer_ticks);
+            Serial::text(" remaining="); Serial::number(timer_remaining); Serial::text("\r\n");
+        }
+    }
+#endif
+    const auto encoded=language_budget_tick(timer_initial,timer_remaining,timer_ticks);
+    const auto next=BudgetTransition::decode(encoded,timer_initial,timer_remaining,timer_ticks);
+    require(next.has_value(),"wc boundary policy");
+    timer_ticks=next->used(); timer_remaining=next->remaining();
+    Serial::text("AURORA_WC_DEBIT: epoch="); Serial::number(timer_epoch);
+    Serial::text(" used="); Serial::number(timer_ticks);
+    Serial::text(" remaining="); Serial::number(timer_remaining); Serial::text("\r\n");
+    timer_exhausted=!next->resume();
+    return !timer_exhausted;
+}
+#endif
 auto service_timer_interrupt(U64 vector,U64 error,U64 pc,U64 cs,U64 frame) -> std::optional<U64> {
     if (vector!=timer_vector) return std::nullopt;
     if (timer_draining) {
