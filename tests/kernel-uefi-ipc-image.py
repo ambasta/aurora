@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import importlib.util
+from copy import deepcopy
+from unittest import TestCase
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -69,6 +71,28 @@ def main():
                 negative += 1
             else:
                 raise RuntimeError("Invalid IPC image authority accepted")
+    # Synthetic graph controls for the existing linked Call stack gate. These
+    # establish rejection behavior, not compiler or guest execution evidence.
+    names = ("discover_acpi(", "prepare_service_acpi(", "discover_pci(")
+    functions = {name: dict(local_peak=8, calls=[]) for name in names}
+    functions["uefi_payload_entry"] = dict(local_peak=8, calls=[dict(target=name, live_bytes=8) for name in names])
+    functions.update({name: dict(local_peak=8, calls=[]) for name in ("uefi_payload_fault", "uefi_payload_page_fault")})
+    graph = dict(
+        functions=functions,
+        compiler_frames={name: [dict(record=name, bytes=8)] for name in names},
+        bounded_switches=[],
+    )
+    if images.call_stack_profile(graph)["normal"]["peak"] != 16:
+        raise RuntimeError("Independent discovery stack lifetimes were added")
+    bad = deepcopy(graph)
+    bad["functions"]["prepare_service_acpi("]["calls"] = [dict(target="discover_pci(", live_bytes=8)]
+    with TestCase().assertRaisesRegex(ValueError, "retains its frame"):
+        images.call_stack_profile(bad)
+    bad = deepcopy(graph)
+    bad["compiler_frames"]["discover_acpi("][0]["bytes"] = 129
+    with TestCase().assertRaisesRegex(ValueError, "frame ceiling"):
+        images.call_stack_profile(bad)
+    print("PASS: synthetic Call discovery lifetime and frame-cap controls")
     fixtures.main()
     print(f"PASS: IPC image authority {positives} positive and {negative} negative cases")
 

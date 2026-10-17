@@ -42,6 +42,13 @@ not covered by compiler metadata. C++ instruction-by-instruction stack/CFG repla
 is not performed. Generated Aurora, private ABI, assembly and IRQ/fault checks
 and all existing stack/image budgets remain separate requirements.
 
+Service-budget profiles finish ACPI parsing before starting PCI discovery, using
+separate native frames and the existing owned MCFG snapshot. A failed PCI discovery
+clears the copied timer topology. Call image admission checks that the preparation
+frame cannot reach PCI discovery; the existing stack cap and fault reserve remain
+unchanged. This reduces overlapping temporary lifetimes without new persistent
+kernel storage or changes to the service-call authority boundary.
+
 PageTables::verify and RuntimeTables::inspect use fixed-four-slot DFS/postorder
 walks. Call-graph cycles reject; no legacy recursion-source hash, line or register
 carrier exception remains. Traversal termination, memory authority, storage
