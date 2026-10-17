@@ -82,17 +82,19 @@ def main():
         compiler_frames={name: [dict(record=name, bytes=8)] for name in names},
         bounded_switches=[],
     )
-    if images.call_stack_profile(graph)["normal"]["peak"] != 16:
-        raise RuntimeError("Independent discovery stack lifetimes were added")
-    bad = deepcopy(graph)
-    bad["functions"]["prepare_service_acpi("]["calls"] = [dict(target="discover_pci(", live_bytes=8)]
-    with TestCase().assertRaisesRegex(ValueError, "retains its frame"):
-        images.call_stack_profile(bad)
-    bad = deepcopy(graph)
-    bad["compiler_frames"]["discover_acpi("][0]["bytes"] = 129
-    with TestCase().assertRaisesRegex(ValueError, "frame ceiling"):
-        images.call_stack_profile(bad)
-    print("PASS: synthetic Call discovery lifetime and frame-cap controls")
+    admission = load("snapshot_discovery_admission", ROOT / "scripts/kernel_program_console_admission.py")
+    for check in (images.call_stack_profile, admission.snapshot_discovery_stack):
+        if check(graph)["normal"]["peak"] != 16:
+            raise RuntimeError("Independent discovery stack lifetimes were added")
+        bad = deepcopy(graph)
+        bad["functions"]["prepare_service_acpi("]["calls"] = [dict(target="discover_pci(", live_bytes=8)]
+        with TestCase().assertRaisesRegex(ValueError, "retains its frame"):
+            check(bad)
+        bad = deepcopy(graph)
+        bad["compiler_frames"]["discover_acpi("][0]["bytes"] = 129
+        with TestCase().assertRaisesRegex(ValueError, "frame ceiling"):
+            check(bad)
+    print("PASS: synthetic Call/snapshot discovery lifetime and frame-cap controls")
     fixtures.main()
     print(f"PASS: IPC image authority {positives} positive and {negative} negative cases")
 
