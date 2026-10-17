@@ -218,14 +218,17 @@ export namespace compiler_formatter {
             if (!reserve(text.size() + indent)) {
                 return false;
             }
+            // The complete append is reserved; each store still checks its owner and bounds.
             i64 at = 0;
             while (at < indent) {
-                byte(' ');
+                output.set(outputSize, ' ');
+                outputSize = outputSize + 1;
                 at = at + 1;
             }
             at = 0;
             while (at < text.size()) {
-                byte(text.at(at));
+                output.set(outputSize, text.at(at));
+                outputSize = outputSize + 1;
                 at = at + 1;
             }
             column = column + indent + text.size();
@@ -450,6 +453,7 @@ export namespace compiler_formatter {
         auto layout() -> i64 {
             const array<u8, 1> gap = " ";
             i64 previous = -1;
+            i64 previousKind = 0;
             i64 parentheses = 0;
             bool hardBreak = false;
             bool previousUnary = false;
@@ -457,6 +461,8 @@ export namespace compiler_formatter {
             i64 index = 0;
             while (index < pieceCount) {
                 const Row piece = pieces.at(index);
+                // Reuse the checked row snapshot for all current-token predicates.
+                const i64 kind = piece.e;
                 const i64 textSize = piece.b - piece.a;
                 i64 lines = 0;
                 if (index > 0) {
@@ -489,15 +495,15 @@ export namespace compiler_formatter {
                 } else {
                     const bool unary =(i64(u64(piece.f) & 1u64)) != 0;
                     const bool binary =(i64(u64(piece.f) & 2u64)) != 0;
-                    const bool templateOpen = is(index, 14) && !binary;
-                    const bool templateClose =(is(index, 15) || is(index, 16)) && !binary;
-                    const bool initializer = is(index, 0) && (i64(u64(piece.f) & 4u64)) != 0 && (i64(u64(piece.f)
-                        & 8u64)) == 0;
+                    const bool templateOpen =(kind == 16) && !binary;
+                    const bool templateClose =((kind == 17) || (kind == 18)) && !binary;
+                    const bool initializer =(kind == 2) && (i64(u64(piece.f) & 4u64)) != 0 && (i64(u64(piece.f) & 8u64))
+                        == 0;
                     const bool emptyInitializer = initializer && is(index + 1, 1);
-                    const bool closesEmpty = is(index, 1) && is(previous, 0) && braceCount > 0
+                    const bool closesEmpty =(kind == 3) && (previousKind == 2) && braceCount > 0
                         && braces_field(braceCount - 1, 0) == 1;
-                    const bool label =(is(index, 2) || is(index, 3)) && is(index + 1, 4);
-                    if (is(index, 1)) {
+                    const bool label =((kind == 4) || (kind == 5)) && is(index + 1, 4);
+                    if ((kind == 3)) {
                         if (braceCount == 0) {
                             fail(3);
                             return status;
@@ -507,37 +513,37 @@ export namespace compiler_formatter {
                     if (label && depth > 0) {
                         depth = depth - 1;
                     }
-                    const bool structuralBreak =(hardBreak && !is(index, 5) && !is(index, 6) && !is(index, 7)
-                        && !is(index, 8) && !is(index, 9)) || (is(index, 1) && !closesEmpty) || label;
+                    const bool structuralBreak =(hardBreak && !(kind == 7) && !(kind == 8) && !(kind == 9) && !(kind
+                        == 10) && !(kind == 11)) || ((kind == 3) && !closesEmpty) || label;
                     if (structuralBreak && !newline()) {
                         return status;
                     }
-                    if (separated && !afterOpeningBrace && !is(index, 1) && (structuralBreak || (index > 0
+                    if (separated && !afterOpeningBrace && !(kind == 3) && (structuralBreak || (index > 0
                         && pieces_field(index - 1, 4) == 1)) && !blank_line()) {
                         return status;
                     }
                     hardBreak = false;
                     bool space = previous >= 0;
-                    if (is(index, 5) || is(index, 6) || is(index, 7) || is(index, 8) || is(index, 12) || is(index, 13)
-                        || templateClose || is(previous, 10) || is(previous, 11) || is(previous, 12) || is(previous, 13)
-                        || previousUnary || previousTemplateOpen || closesEmpty) {
+                    if ((kind == 7) || (kind == 8) || (kind == 9) || (kind == 10) || (kind == 14) || (kind == 15)
+                        || templateClose || (previousKind == 12) || (previousKind == 13) || (previousKind == 14)
+                        || (previousKind == 15) || previousUnary || previousTemplateOpen || closesEmpty) {
                         space = false;
                     }
                     if ((i64(u64(piece.f) & 16u64)) != 0) {
                         space = false;
                     }
-                    if (is(index, 10) || is(index, 11)) {
-                        space = is(previous, 17) || is(previous, 18) || (is(index, 10) && is(previous, 19))
-                            || (is(index, 10) && previous >= 0 && (i64(u64(pieces_field(previous, 5)) & 2u64)) != 0);
+                    if ((kind == 12) || (kind == 13)) {
+                        space =(previousKind == 19) || (previousKind == 20) || ((kind == 12) && (previousKind == 21))
+                            || ((kind == 12) && previous >= 0 && (i64(u64(pieces_field(previous, 5)) & 2u64)) != 0);
                     }
                     if (templateOpen) {
-                        space = is(previous, 20);
+                        space =(previousKind == 22);
                     }
-                    if (is(index, 4)) {
-                        space = !is(previous, 2) && !is(previous, 3);
+                    if ((kind == 6)) {
+                        space = !(previousKind == 4) && !(previousKind == 5);
                     }
-                    if (initializer && !is(previous, 21) && !is(previous, 6) && !is(previous, 19) && !is(previous,
-                        10)) {
+                    if (initializer && !(previousKind == 23) && !(previousKind == 8) && !(previousKind == 21)
+                        && !is(previous, 10)) {
                         space = false;
                     }
                     if (column != 0 && !space && !joins(previous, index)) {
@@ -547,11 +553,11 @@ export namespace compiler_formatter {
                         space = true;
                     }
                     i64 priority = 0;
-                    if (binary || is(previous, 6)) {
+                    if (binary || (previousKind == 8)) {
                         priority = 2;
                     } else {
-                        if (is(previous, 21) || is(previous, 19) || is(previous, 22) || ((is(previous, 10)
-                            || is(previous, 11)) && !is(index, 7) && !is(index, 8))) {
+                        if ((previousKind == 23) || (previousKind == 21) || (previousKind == 24) || (((previousKind
+                            == 12) || (previousKind == 13)) && !(kind == 9) && !(kind == 10))) {
                             priority = 1;
                         }
                     }
@@ -609,10 +615,10 @@ export namespace compiler_formatter {
                         lineStart = boundary.a + 1;
                         column = outputSize - lineStart;
                     }
-                    if (is(index, 10)) {
+                    if ((kind == 12)) {
                         parentheses = parentheses + 1;
                     } else {
-                        if (is(index, 7)) {
+                        if ((kind == 9)) {
                             if (parentheses == 0) {
                                 fail(3);
                                 return status;
@@ -620,7 +626,7 @@ export namespace compiler_formatter {
                             parentheses = parentheses - 1;
                         }
                     }
-                    if (is(index, 0)) {
+                    if ((kind == 2)) {
                         i64 init = 0;
                         if (initializer) {
                             init = 1;
@@ -630,14 +636,14 @@ export namespace compiler_formatter {
                         }
                         hardBreak = !emptyInitializer;
                     } else {
-                        if (is(index, 1)) {
+                        if ((kind == 3)) {
                             hardBreak = braces_field(braceCount - 1, 0) == 0;
                             braceCount = braceCount - 1;
                         } else {
-                            if (is(index, 5) || (is(index, 4) && (is(previous, 2) || is(previous, 3)))) {
+                            if ((kind == 7) || ((kind == 6) && ((previousKind == 4) || (previousKind == 5)))) {
                                 hardBreak = true;
                             } else {
-                                if (is(index, 6) && braceCount > 0 && (braces_field(braceCount - 1, 0) == 1
+                                if ((kind == 8) && braceCount > 0 && (braces_field(braceCount - 1, 0) == 1
                                     || braces_field(braceCount - 1, 1) != 0) && parentheses == braces_field(braceCount
                                     - 1, 2)) {
                                     hardBreak = true;
@@ -646,6 +652,7 @@ export namespace compiler_formatter {
                         }
                     }
                     previous = index;
+                    previousKind = kind;
                     previousUnary = unary;
                     previousTemplateOpen = templateOpen;
                 }
@@ -747,14 +754,17 @@ export namespace compiler_formatter {
             if (!reserve(end - begin + indent)) {
                 return false;
             }
+            // The complete append is reserved; each store still checks its owner and bounds.
             i64 at = 0;
             while (at < indent) {
-                byte(' ');
+                output.set(outputSize, ' ');
+                outputSize = outputSize + 1;
                 at = at + 1;
             }
             at = begin;
             while (at < end) {
-                byte(input.at(at));
+                output.set(outputSize, input.at(at));
+                outputSize = outputSize + 1;
                 at = at + 1;
             }
             column = column + indent + end - begin;
