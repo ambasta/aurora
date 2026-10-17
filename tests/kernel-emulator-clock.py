@@ -107,17 +107,43 @@ class ClockContractTests(unittest.TestCase):
             )
         }
         self.assertEqual(
-            set(inventory) | {("uefi", "owned-bytes"), ("uefi", "user-resume")} | snapshots, set(CLOCK.MODE_CLOCKS)
+            set(inventory)
+            | {
+                ("uefi", "owned-bytes"),
+                ("uefi", "user-resume"),
+                ("uefi", "user-call"),
+                ("uefi", "user-call-pending"),
+                ("uefi", "user-call-owner"),
+                ("uefi", "user-call-site"),
+            }
+            | snapshots,
+            set(CLOCK.MODE_CLOCKS),
         )
         self.assertTrue(all(CLOCK.clock_profile(*key) == CLOCK.ORIGINAL for key in snapshots))
         self.assertEqual(CLOCK.clock_profile("uefi", "owned-bytes"), CLOCK.ORIGINAL)
         selected = [mode for (family, mode), profile in CLOCK.MODE_CLOCKS.items() if profile == CLOCK.FIXED0]
-        self.assertEqual(len(selected), 54)
+        self.assertEqual(len(selected), 58)
         self.assertEqual(CLOCK.clock_profile("uefi", "user-resume"), CLOCK.FIXED0)
         self.assertEqual(sum(p == CLOCK.ORIGINAL for p in CLOCK.MODE_CLOCKS.values()), 142)
         self.assertEqual(
             hashlib.sha256(
-                ("\n".join(sorted(mode for mode in selected if mode != "user-resume")) + "\n").encode()
+                (
+                    "\n".join(
+                        sorted(
+                            mode
+                            for mode in selected
+                            if mode
+                            not in (
+                                "user-resume",
+                                "user-call",
+                                "user-call-pending",
+                                "user-call-owner",
+                                "user-call-site",
+                            )
+                        )
+                    )
+                    + "\n"
+                ).encode()
             ).hexdigest(),
             SELECTED_NAMES_SHA256,
         )
@@ -162,7 +188,7 @@ class ClockContractTests(unittest.TestCase):
     def test_every_mode_profile_and_hostile_clock_pairings(self):
         cases = dict(CLOCK.MODE_CLOCKS)
         cases.update(CLOCK.AUXILIARY_CLOCKS)
-        self.assertEqual(len(cases), 201)
+        self.assertEqual(len(cases), 205)
         for (family, mode), profile in cases.items():
             with self.subTest(family=family, mode=mode):
                 original = ["qemu", "-accel", "tcg"]
@@ -218,7 +244,7 @@ class ClockContractTests(unittest.TestCase):
 
     def test_real_shell_array_for_all_uefi_build_modes(self):
         modes = sorted(mode for family, mode in CLOCK.MODE_CLOCKS if family != "bios")
-        self.assertEqual(len(modes), 157)
+        self.assertEqual(len(modes), 161)
         for mode in modes:
             for data in ("", "/nonexistent data files"):
                 with self.subTest(mode=mode, data=data):

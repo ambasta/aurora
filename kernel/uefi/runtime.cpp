@@ -32,7 +32,7 @@
 #endif
 #include <array>
 #include <optional>
-#ifdef AURORA_USER_RESUME
+#if defined(AURORA_USER_RESUME) || defined(AURORA_BLOCKING_CALL)
 #include <memory>
 #endif
 #ifdef AURORA_UEFI_PROGRAM_CONSOLE
@@ -54,7 +54,7 @@ auto enter(std::uint64_t, std::uint64_t) -> std::uint64_t asm("uefi_runtime_ente
     __attribute__((visibility("hidden")));
 #endif
 auto handler(unsigned) -> std::uint64_t asm("uefi_runtime_handler") __attribute__((visibility("hidden")));
-#ifdef AURORA_USER_RESUME
+#if defined(AURORA_USER_RESUME) || defined(AURORA_BLOCKING_CALL)
 auto resume(std::uint64_t) -> std::uint64_t asm("uefi_runtime_resume") __attribute__((visibility("hidden")));
 #endif
 namespace {
@@ -113,6 +113,27 @@ public:
     unsigned remaining{}, ticks{}, resumes{}, compiled{}, contexts{};
 };
 #endif
+#ifdef AURORA_BLOCKING_CALL
+class CallWait final {
+public:
+    std::optional<ServiceContext> context;
+    std::optional<ProgramRunAuthority> authority;
+    std::optional<user::DomainHandle> service;
+    ipc::Endpoint endpoint;
+    U64 ticket{};
+    std::array<U64, 7> launch{};
+    unsigned remaining{}, ticks{}, resumes{}, compiled{}, contexts{};
+};
+constinit CallWait call_wait;
+auto clear_call_wait() -> void {
+    std::destroy_at(&call_wait);
+    auto *bytes = reinterpret_cast<volatile std::byte *>(&call_wait);
+    for (std::size_t i = 0; i < sizeof(CallWait); ++i)
+        bytes[i] = std::byte{0};
+    std::construct_at(&call_wait);
+}
+[[nodiscard]] auto call_retire(unsigned index) -> bool;
+#endif
 class Domain final {
 public:
     std::optional<user::DomainHandle> handle{};
@@ -120,6 +141,9 @@ public:
     std::optional<user::ProgramContract> contract{};
     std::optional<RuntimeTables> tables{};
     unsigned image{};
+#ifdef AURORA_BLOCKING_CALL
+    bool call_used{};
+#endif
 #ifdef AURORA_USER_RESUME
     Continuation continuation;
     auto clear_continuation() -> void {
@@ -144,11 +168,11 @@ constinit std::optional<ipc::Mailbox> mailbox;
 constinit ipc::SnapshotSlot snapshot_slot;
 #endif
 #endif
-#if defined(AURORA_UEFI_DISPATCH) || defined(AURORA_UEFI_PROGRAM_CONSOLE)
+#if defined(AURORA_UEFI_DISPATCH) || defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_BLOCKING_CALL)
 unsigned selected_client = 2;
 #endif
 #ifdef AURORA_UEFI_USER_BUDGET
-#ifdef AURORA_UEFI_PROGRAM_CONSOLE
+#if defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_BLOCKING_CALL)
 using SelectedRunAuthority = ProgramRunAuthority;
 #else
 using SelectedRunAuthority = RunAuthority;
@@ -264,6 +288,11 @@ auto fill(U64 physical, std::uint8_t value) -> void {
     auto &domain = domains[index];
     if (!domain.handle || !registry.ready(*domain.handle))
         return false;
+#ifdef AURORA_BLOCKING_CALL
+    if (!call_retire(index))
+        return false;
+    domain.call_used = false;
+#endif
 #ifdef AURORA_USER_RESUME
     domain.clear_continuation();
 #endif
@@ -397,7 +426,16 @@ auto install_architecture() -> void {
         put(gate, 0, target, 2);
         put(gate, 2, 8, 2);
         put(gate, 4, vector == 8 ? 1 : 0, 1);
-        put(gate, 5, vector == 129 ? 0xee : 0x8e, 1);
+        put(gate,
+            5,
+            (vector == 129
+#ifdef AURORA_BLOCKING_CALL
+             || vector == 130
+#endif
+             )
+                ? 0xee
+                : 0x8e,
+            1);
         put(gate, 6, target >> 16, 2);
         put(gate, 8, target >> 32, 4);
         put(gate, 12, 0, 4);
@@ -504,6 +542,8 @@ auto execute(unsigned index, ProgramEvent wanted) -> void {
 #include "user-lifecycle.inc"
 #endif
 #endif
+#elif defined(AURORA_BLOCKING_CALL)
+#include "blocking-call.inc"
 #elif defined(AURORA_UEFI_PROGRAM_CONSOLE)
 #include "program-console.inc"
 #else
@@ -589,6 +629,10 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
                 saved_rsp >= arena + Handoff::stack_bottom && saved_rsp <= arena + Handoff::stack_top - 56 &&
                 saved_rsp % 8 == 0,
             "exception origin/stack");
+#ifdef AURORA_BLOCKING_CALL
+    if (vector == 130)
+        return call_trap(frame);
+#endif
     const Bytes captured{view(frame, 176)};
     auto saved_flags = captured.get(152);
 #ifdef AURORA_UEFI_SERVICE_BUDGET
@@ -617,7 +661,7 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
         require(timer_armed && integer && integer->terminal_context(*domains[active].contract) && timer_stop(),
                 "timer terminal context");
 #if defined(AURORA_BUDGET_PENDING) || defined(AURORA_DISPATCH_PENDING) || defined(AURORA_USER_PENDING) ||              \
-    defined(AURORA_PROGRAM_PENDING)
+    defined(AURORA_PROGRAM_PENDING) || defined(AURORA_CALL_PENDING)
         force_timer_pending();
 #endif
 #ifdef AURORA_USER_RETIRE_PENDING
@@ -630,7 +674,9 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
     const user::ProgramContext context{vector, error, pc, cs, captured.get(168), captured.get(160), saved_flags, frame};
     require(program.accept(context, result), "exception site authority");
 #ifdef AURORA_UEFI_IPC
-#ifdef AURORA_UEFI_PROGRAM_CONSOLE
+#ifdef AURORA_BLOCKING_CALL
+    call_envelope(captured, result);
+#elif defined(AURORA_UEFI_PROGRAM_CONSOLE)
     program_console_envelope(captured, result);
 #elif defined(AURORA_UEFI_DISPATCH)
     dispatch_envelope(captured, result);
@@ -717,6 +763,8 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
 #else
     run_dispatcher();
 #endif
+#elif defined(AURORA_BLOCKING_CALL)
+    run_blocking_calls();
 #elif defined(AURORA_UEFI_PROGRAM_CONSOLE)
     run_program_console();
 #elif defined(AURORA_UEFI_SNAPSHOT)

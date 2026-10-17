@@ -1377,6 +1377,8 @@ def protected_assembly(linked, directory, code, payload):
         ("aurora_user_return", 128, False),
         ("aurora_unexpected_interrupt", 255, False),
     ]
+    if "aurora_program_call" in named:
+        vectors.append(("aurora_program_call", 130, False))
     ordered = sorted((named[name].address, name, vector, error) for name, vector, error in vectors)
     for index, (address, name, vector, error) in enumerate(ordered):
         end = ordered[index + 1][0] if index + 1 < len(ordered) else common

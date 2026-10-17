@@ -84,8 +84,16 @@ The compiler-selected `__au_runtime_call` boundary receives the opaque grant,
 generation and request in RDI, RSI and RDX. It returns status in RAX and value in
 RDX. Generated code checks both full-width channels before storing them in local
 result storage. No result pointer crosses this boundary. Native source/ABI and
-hostile IR tests establish this compiler contract only; protected blocking,
-continuation authentication and preserved run budgets require kernel integration.
+hostile IR tests establish this compiler contract. The bounded UEFI `user-call`
+consumer links it to an exact `INT 0x82; ret` stub. Its private wait record binds
+both incarnations, endpoint, mailbox transaction, integer frame and original run
+authority. Publication and parking occur with interrupts disabled; the caller's
+kernel entry unwinds and pending interrupts drain before the peer executes.
+Completion consumes the durable reply or cancellation once, then restores the
+original epoch and remaining quota, changing only RAX/RDX in the retained frame.
+A second call in the same incarnation returns rejected/zero without publication.
+Retirement cancels outstanding work and scrubs retained authority before reuse.
+This is one fixed client/service pair, not general scheduling or concurrent calls.
 
 ## Bounded IOMMU event observation
 

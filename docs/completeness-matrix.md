@@ -8,7 +8,7 @@ Self-hosting, final emitter qualification and full kernel migration remain incom
 
 | Destination | Status |
 |---|---|
-| Modern safe kernel | Experimental mixed C++/Aurora kernel; bounded two-program integer suspend/resume preserves the original quota and scrubs cancelled continuations; sealed CallSession compiler/ABI checks exist, while protected blocking calls, general scheduling, protected services, SMP and full native implementation remain incomplete. |
+| Modern safe kernel | Experimental mixed C++/Aurora kernel; bounded two-program integer suspend/resume preserves the original quota and scrubs cancelled continuations; a sealed singleton CallSession blocks across two programs and returns into live source locals with the original budget; general scheduling, protected services, SMP and full native implementation remain incomplete. |
 | Safe C++-like language with TypeScript-like types | Aurora owns the frontend, static frame/call admission, initialization/service loans and x86 emission; C++ retains host conversion and dynamic verification; all 107 private bridge entries share one generated table/facts boundary; classes admit at most 8,192 direct fields, including no-leaf fields. Self-hosting and richer type/concurrency features remain incomplete. |
 | Ideal filesystem and XFS compatibility | RAM storage includes bounded atomic append through the shared protected-file policy; offline readers exist; mounted durable services, recovery and XFS read-write incomplete. |
 | Framework Laptop 13 AMD support | Emulator foundations exist; active drivers, DMA isolation, power/recovery and physical qualification incomplete. |

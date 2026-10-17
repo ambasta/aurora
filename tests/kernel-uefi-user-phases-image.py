@@ -104,6 +104,70 @@ def main():
             changed = copy.deepcopy(metadata)
             changed["images"]["clean"]["probe_pc"] = 0
             reject(lambda: smoke.metadata_valid(changed, mode), "lost unknown-site probe")
+    # Dedicated call authority is admitted only in the first two-domain image.
+    builder.validate_composition("normal", True, False, True, False, False, True)
+    for options in (
+        (False, False, True, False, False, True),
+        (True, True, True, False, False, True),
+        (True, False, True, True, False, True),
+        (True, False, True, False, True, True),
+    ):
+        reject(lambda: builder.validate_composition("normal", *options), "call composition")
+    base = builder.BASE
+    data, blob, symbols = fixture.fixture(base)
+    blob[20:23] = b"\xcd\x82\xc3"
+    data[4096:] = blob
+    symbols.update(__au_runtime_call=base + 20, aurora_call_return_pc=base + 22, private_call=base + 24)
+    builder.verify(data, blob, base, symbols, call_entry="private_call")
+    positives += 1
+    reject(lambda: builder.verify(data, blob, base, symbols), "call authority without call entry")
+    reject(
+        lambda: builder.verify(data, blob, base, symbols, dispatcher=True, call_entry="private_call"),
+        "call in dispatcher",
+    )
+    for offset in (20, 21, 22):
+        changed = blob.copy()
+        changed[offset] ^= 1
+        elf = data.copy()
+        elf[4096:] = changed
+        reject(lambda: builder.verify(elf, changed, base, symbols, call_entry="private_call"), "call opcode")
+    for symbol in ("__au_runtime_call", "aurora_call_return_pc"):
+        for value in (0, base + 16, base + 4096):
+            changed = dict(symbols)
+            changed[symbol] = value
+            reject(lambda: builder.verify(data, blob, base, changed, call_entry="private_call"), "call site")
+    entry = dict(
+        source_name="aurora_user_main",
+        receiver=None,
+        receiver_mutable=None,
+        borrowed_root_count=0,
+        borrowed_roots=[],
+        borrowed_root_abi=dict(
+            kind="none", register=None, tuple_payload_bytes=0, tuple_reserved_bytes=0, saved_root_reserved_bytes=0
+        ),
+        parameter_bytes=40,
+        parameters=[dict(offset=0, bytes=16, kind="service")]
+        + [dict(offset=offset, bytes=8, kind="u64") for offset in (16, 24, 32)],
+        result=dict(bytes=8, kind="u64"),
+    )
+    facts = dict(version=2, functions={"private_call": entry})
+    builder.call_entry_abi(facts)
+    positives += 1
+    for field, value in (
+        ("parameter_bytes", 32),
+        ("receiver", "foreign"),
+        ("borrowed_root_count", 1),
+        ("result", dict(bytes=8, kind="i64")),
+        ("parameters", entry["parameters"][:-1]),
+    ):
+        bad = copy.deepcopy(facts)
+        bad["functions"]["private_call"][field] = value
+        reject(lambda: builder.call_entry_abi(bad), "call entry ABI " + field)
+    for index in range(4):
+        for field, value in (("offset", 99), ("bytes", 99), ("kind", "class")):
+            bad = copy.deepcopy(facts)
+            bad["functions"]["private_call"]["parameters"][index][field] = value
+            reject(lambda: builder.call_entry_abi(bad), "call entry ABI parameter")
     print(f"PASS: user-phase images {positives} positive and {negatives} negative cases")
 
 

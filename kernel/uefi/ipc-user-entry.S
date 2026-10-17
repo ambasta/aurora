@@ -129,6 +129,20 @@ aurora_budget_context_end:
     pop %rdi
 skip_context_probe:
 .endif
+.ifdef CALL_CLIENT
+    sub $48,%rsp
+    mov 80(%rsp),%rax
+    mov %rax,0(%rsp)
+    mov 72(%rsp),%rax
+    mov %rax,8(%rsp)
+    mov 88(%rsp),%rax
+    mov %rax,16(%rsp)
+    mov %rsi,24(%rsp)
+    mov %r9,32(%rsp)
+    mov %rsp,%r11
+    call @aurora_user_main@
+    add $48,%rsp
+.else
 .ifdef COPIED_SERVICE
     lea 48(%rsp),%r11
 .ifdef PROGRAM_NOTE_SERVICE
@@ -139,6 +153,7 @@ skip_context_probe:
 .else
     call aurora_user_main
 .endif
+ .endif
     add $8,%rsp
     pop %r9
     pop %r8
@@ -190,6 +205,18 @@ aurora_program_return_pc:
     ud2
 bad_entry:
     ud2
+.ifdef CALL_CLIENT
+.global __au_runtime_call
+.type __au_runtime_call,@function
+__au_runtime_call:
+    int $0x82
+.global aurora_call_return_pc
+aurora_call_return_pc:
+    ret
+.size __au_runtime_call,.-__au_runtime_call
+.endif
 .ifndef COPIED_SERVICE
+.ifndef CALL_CLIENT
 .section .note.GNU-stack,"",@progbits
+.endif
 .endif

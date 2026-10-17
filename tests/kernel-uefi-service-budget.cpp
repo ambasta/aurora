@@ -558,6 +558,24 @@ auto main() -> int {
     check(captured->words() == original && captured->frame() == frame, "exact 22 words and frame copied");
     check(!captured->terminal_context(authority) && captured->terminal(authority) == ProgramEvent::rejected,
           "IRQ cannot become terminal authority");
+    auto call_words = original;
+    call_words[15] = 130;
+    const auto call_pc = call_words[17];
+    const auto call = ServiceContext::capture_call(call_words, frame, authority, call_pc);
+    check(call && call->call_frame(authority, call_pc), "exact dedicated call capture");
+    check(!ServiceContext::capture(call_words, frame, authority) && !call->valid_for(authority) &&
+              !call->timer_frame(authority) && !call->terminal_context(authority),
+          "call cannot become timer or terminal");
+    check(!ServiceContext::capture_call(original, frame, authority, call_pc) &&
+              !ServiceContext::capture_call(call_words, frame, authority, 0) &&
+              !ServiceContext::capture_call(call_words, frame, authority, call_pc + 1),
+          "call vector and exact site");
+    for (const auto index : {16U, 18U, 20U, 21U}) {
+        auto hostile = call_words;
+        hostile[index] ^= 1;
+        check(!ServiceContext::capture_call(hostile, frame, authority, call_pc), "call rejects malformed frame");
+    }
+    check(!ServiceContext::capture_call(call_words, frame + 1, authority, call_pc), "call rejects unaligned frame");
     for (unsigned index = 0; index < ServiceContext::word_count; ++index) {
         auto source = original;
         auto snapshot = ServiceContext::capture(source, frame, authority);

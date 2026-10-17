@@ -131,12 +131,14 @@ class ServiceContext final {
     }
     [[nodiscard]] static constexpr auto origin_valid(std::span<const std::uint64_t> words,
                                                      std::uint64_t frame,
-                                                     const user::ProgramContract &contract) -> bool {
+                                                     const user::ProgramContract &contract,
+                                                     std::uint64_t call_pc = 0) -> bool {
         if (words.size() != word_count || !frame_valid(frame, contract))
             return false;
         const auto &layout = contract.layout();
         const auto pc = words[17], flags = words[19], sp = words[20];
-        return (words[15] == LocalApicAdmission::timer_vector || words[15] == 129 || words[15] == 6) &&
+        return (call_pc ? words[15] == 130 && pc == call_pc
+                        : words[15] == LocalApicAdmission::timer_vector || words[15] == 129 || words[15] == 6) &&
                words[16] == 0 && pc >= contract.entry() && pc - contract.entry() < contract.size() &&
                words[18] == 0x1b && words[21] == 0x23 && (flags & 0x202) == 0x202 && (flags & ~allowed_flags) == 0 &&
                sp >= layout.user_stack_bottom() && sp <= layout.user_stack_top() && sp % 8 == 0;
@@ -165,6 +167,22 @@ public:
         for (std::size_t i = 0; i < word_count; ++i)
             copy[i] = words[i];
         return ServiceContext{copy, frame, contract};
+    }
+    // Dedicated call capture never broadens timer or terminal classification.
+    [[nodiscard]] static auto capture_call(std::span<const std::uint64_t> words,
+                                           std::uint64_t frame,
+                                           const user::ProgramContract &contract,
+                                           std::uint64_t call_pc) -> std::optional<ServiceContext> {
+        if (!call_pc || !origin_valid(words, frame, contract, call_pc))
+            return std::nullopt;
+        std::array<std::uint64_t, word_count> copy{};
+        for (std::size_t i = 0; i < word_count; ++i)
+            copy[i] = words[i];
+        return ServiceContext{copy, frame, contract};
+    }
+    [[nodiscard]] constexpr auto call_frame(const user::ProgramContract &contract, std::uint64_t call_pc) const
+        -> bool {
+        return call_pc && same_contract(contract_, contract) && origin_valid(words_, frame_, contract_, call_pc);
     }
     [[nodiscard]] constexpr auto words() const -> const std::array<std::uint64_t, word_count> & {
         return words_;

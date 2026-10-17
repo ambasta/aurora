@@ -30,6 +30,19 @@ The target scheduler combines preemptible execution with explicit service budget
 
 The experimental `user-resume` profile retains one authenticated timer continuation in private domain storage. Two Aurora checksum programs demonstrate returning to the kernel, running a peer and restoring the first program’s integer frame and stack with its remaining budget. Cancellation scrubs that continuation before domain reuse. This bounded single-core mechanism precedes a general scheduler, blocking I/O and floating-point context support.
 
+The `user-call` profile adds one sealed `CallSession&` call per client incarnation
+between a fixed pair of Aurora programs. A dedicated authenticated `INT 0x82`
+parks the live source call; the terminal `INT 0x81` and timer-only resume paths
+remain separate. Private wait state binds the original run, both incarnations,
+endpoint and minted mailbox transaction. IRQ-off publication/park and drain
+precede peer execution; a durable copied reply or cancellation resumes the caller
+with its original epoch and remaining quota. The consumer checks live helper and
+caller locals, a rejected second call, service faults, post-call budget exhaustion,
+and retirement/reuse. `user-call-pending`, `user-call-owner` and `user-call-site`
+exercise pending IRQ drain and rejected claims. Linked image gates retain the
+15,360-byte kernel stack cap and 512-byte fault reserve; this profile has no
+floating-point state, concurrent calls, general wait queues or budget donation.
+
 Interrupt handlers acknowledge and enqueue bounded work; driver-service workers do the expensive processing. Storm limiting, lost-interrupt recovery, and backpressure are mandatory contract topics. No IRQ path allocates unpredictably or performs blocking service calls.
 
 A service crash revokes its capabilities and quiesces its hardware before resources are reused. Restart creates a new generation; stale replies and handles must fail. Recovery does not automatically replay non-idempotent writes. Supervisors report operations with uncertain outcomes to their clients.

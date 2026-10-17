@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compare two aurorac builds on a fixed set of inputs.
 
-Usage: scripts/compiler-speed.py BEFORE AFTER [--repeat N]
+Usage: scripts/compiler-speed.py BEFORE AFTER [--repeat N] [--referenced-reflection-only]
 
 Reports the best wall time and child CPU time of N runs per input and compiler,
 their ratios and maximum observed child peak RSS, and fails if the two compilers
@@ -9,6 +9,9 @@ produce different output. RSS uses wait4's platform units (KiB on Linux, bytes o
 macOS); it is not necessarily the sample with the best wall/CPU time. Run it
 before and after a compiler change and record the result with the change; the
 host load matters, so compare builds on the same machine at the same time.
+The optional referenced-reflection mode applies the same existing compiler flag
+to both builds; exact output equality remains mandatory. It permits comparisons
+across builtin catalogue additions without benchmarking unused reflection tables.
 """
 
 import argparse
@@ -32,7 +35,7 @@ INPUTS = (
 )
 
 
-def measure(compiler, source, roots, output, repeat):
+def measure(compiler, source, roots, output, repeat, compiler_flags=()):
     best_wall = best_cpu = math.inf
     peak_rss = 0
     for _ in range(repeat):
@@ -40,7 +43,7 @@ def measure(compiler, source, roots, output, repeat):
         pid = os.fork()
         if pid == 0:
             arguments = [arg for root in roots for arg in ("--module-root", str(root))]
-            os.execv(compiler, [compiler, *arguments, str(source), "-o", str(output)])
+            os.execv(compiler, [compiler, *compiler_flags, *arguments, str(source), "-o", str(output)])
         _, status, usage = os.wait4(pid, 0)
         if os.waitstatus_to_exitcode(status) != 0:
             sys.exit(f"{compiler} failed on {source}")
@@ -55,7 +58,10 @@ def main():
     parser.add_argument("before", type=Path)
     parser.add_argument("after", type=Path)
     parser.add_argument("--repeat", type=int, default=5)
+    parser.add_argument("--referenced-reflection-only", action="store_true")
     args = parser.parse_args()
+    compiler_flags = ["--referenced-reflection-only"] if args.referenced_reflection_only else []
+    print("Compiler flags:", " ".join(compiler_flags) or "(default)")
     with tempfile.TemporaryDirectory(prefix="aurora-compiler-speed-") as temporary:
         work = Path(temporary)
         stage_modules(work / "modules", [*(ROOT / "compiler").glob("*.au"), ROOT / "library/std/decimal_digits.au"])
@@ -81,6 +87,7 @@ def main():
                             roots,
                             output,
                             args.repeat,
+                            compiler_flags,
                         ),
                         output,
                     )

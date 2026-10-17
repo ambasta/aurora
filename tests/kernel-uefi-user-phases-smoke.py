@@ -352,7 +352,170 @@ def validate_resume(status, text, metadata):
             need(ticks[-1] == ("3", "0"), "Exhaustion after exactly original three ticks")
 
 
+def validate_call(status, text, mode, metadata):
+    denied = mode in ("user-call-owner", "user-call-site")
+    need(
+        mode in ("user-call", "user-call-pending", "user-call-owner", "user-call-site")
+        and type(status) is int
+        and status == (35 if denied else 33),
+        "Call mode/exit",
+    )
+    cleaned = copy.deepcopy(metadata)
+    client = cleaned["images"]["clean"]
+    call_pc = client.pop("call_pc")
+    need(
+        type(call_pc) is int and client["return_pc"] + 4 <= call_pc < client["compiled_begin"], "Exact call site range"
+    )
+    budget.metadata_valid(cleaned, "budget")
+    if denied:
+        need(
+            text.count("AURORA_UEFI_RUNTIME_FAIL: call exact site and endpoint") == 1
+            and "AURORA_CALL_PARK" not in text
+            and "AURORA_UEFI_CALL_OK" not in text
+            and "AURORA_UEFI_OK" not in text,
+            "Call rejected before publication",
+        )
+        return
+    need(
+        text.count("AURORA_UEFI_CALL_OK") == 1
+        and text.count("AURORA_UEFI_OK") == 1
+        and "FAIL" not in text
+        and "REJECT" not in text,
+        "Call success and restoration",
+    )
+    cases = re.findall(r"AURORA_CALL_CASE: case=(\d+) used=(\d+)", text)
+    need(cases == [(str(i), "0") for i in range(4)], "Complete ordered call scenarios")
+    parks = re.findall(r"AURORA_CALL_PARK: ticket=(\d+) epoch=(\d+) ticks=(\d+) remaining=(\d+)", text)
+    resumes = re.findall(r"AURORA_CALL_RESUME: epoch=(\d+) ticks=(\d+) remaining=(\d+)", text)
+    need(len(parks) == 4 and len(resumes) == 3, "Exact park and wake counts")
+    need([int(row[1]) for row in parks] == [1, 3, 5, 7], "Monotonic fresh run epochs")
+    need([int(row[0]) for row in parks] == [2, 4, 6, 8], "Fresh private transaction stamps")
+    for i, (_, epoch, used, left) in enumerate(parks):
+        need(0 < int(used) < 128 and int(used) + int(left) == 128, "Original budget before park")
+        if i < 3:
+            need(resumes[i] == (epoch, used, left), "Resume exact original budget and epoch")
+        ticks = re.findall(rf"AURORA_UEFI_TIMER_TICK: epoch={epoch} used=(\d+) remaining=(\d+) pc=(\d+)", text)
+        need(
+            len(ticks) >= int(used) and [int(t[0]) for t in ticks] == list(range(1, len(ticks) + 1)),
+            "Continuous caller tick sequence",
+        )
+        need(
+            all(
+                int(t[0]) + int(t[1]) == 128 and client["entry"] <= int(t[2]) < client["entry"] + client["size"]
+                for t in ticks
+            ),
+            "Caller ticks stay in original image/quota",
+        )
+        if i == 2:
+            need(ticks[-1][:2] == ("128", "0"), "Post-call original budget exhaustion")
+        elif i == 3:
+            need(len(ticks) == int(used), "Retired caller never resumes")
+    calls = [row for row in re.findall(EVENT, text) if int(row[0]) == 130]
+    need(
+        len(calls) == 7 and all(int(row[1]) == 0 and int(row[2]) == call_pc and int(row[3]) == 3 for row in calls),
+        "Only exact CPL3 call site traps",
+    )
+    launches = re.findall(
+        r"AURORA_UEFI_USER_RUN: epoch=(\d+) role=(client|service) phase=(request|service) "
+        r"client=(\d+) transaction=(\d+) source=(\d+) root=(\d+)",
+        text,
+    )
+    need(
+        [row[:6] for row in launches]
+        == [
+            ("1", "client", "request", "0", "0", "0"),
+            ("2", "service", "service", "0", "2", "1"),
+            ("3", "client", "request", "0", "0", "1"),
+            ("4", "service", "service", "0", "4", "4"),
+            ("5", "client", "request", "0", "0", "8"),
+            ("6", "service", "service", "0", "6", "1"),
+            ("7", "client", "request", "0", "0", "0"),
+        ],
+        "Exact caller/peer run authority",
+    )
+    services = list(re.finditer(r"AURORA_CALL_SERVICE: epoch=(\d+) event=(returned|bounds) value=(\d+)", text))
+    completed = re.findall(r"AURORA_CALL_COMPLETE: epoch=(\d+) event=(returned|budget) value=(\d+)", text)
+    need(
+        [match.groups() for match in services]
+        == [("2", "returned", "42"), ("4", "bounds", "0"), ("6", "returned", "42")],
+        "Actual peer completion and fault",
+    )
+    need(
+        completed == [("1", "returned", "82"), ("3", "returned", "40"), ("5", "budget", "0")],
+        "Live caller results and exhaustion",
+    )
+    park_positions = list(re.finditer(r"AURORA_CALL_PARK:", text))
+    resume_positions = list(re.finditer(r"AURORA_CALL_RESUME:", text))
+    case_positions = list(re.finditer(r"AURORA_CALL_CASE:", text))
+    complete_positions = list(re.finditer(r"AURORA_CALL_COMPLETE:", text))
+    for index, (_, epoch, used, _) in enumerate(parks):
+        ticks = list(re.finditer(rf"AURORA_UEFI_TIMER_TICK: epoch={epoch} used=\d+ remaining=\d+ pc=\d+", text))
+        lower = 0 if index == 0 else case_positions[index - 1].end()
+        need(
+            all(lower < tick.start() < park_positions[index].start() for tick in ticks[: int(used)]),
+            "Caller ticks precede its park",
+        )
+        if index < 3:
+            need(
+                all(
+                    resume_positions[index].end() < tick.start() < case_positions[index].start()
+                    for tick in ticks[int(used) :]
+                ),
+                "Caller cannot tick while parked or after retirement",
+            )
+            need(
+                resume_positions[index].end() < complete_positions[index].start() < case_positions[index].start(),
+                "Caller completes only after resume",
+            )
+    service_image = cleaned["images"]["bounds"]
+    for index, completion in enumerate(services):
+        peer_epoch = 2 * index + 2
+        begin, end = park_positions[index].end(), resume_positions[index].start()
+        need(begin < completion.start() < end, "Peer completes between park and wake")
+        segment = text[begin:end]
+        need(f"AURORA_UEFI_USER_RUN: epoch={peer_epoch} role=service" in segment, "Peer launch after park")
+        peer_ticks = re.findall(
+            rf"AURORA_UEFI_TIMER_TICK: epoch={peer_epoch} used=(\d+) remaining=(\d+) pc=(\d+)", segment
+        )
+        need(
+            (index == 1 or peer_ticks)
+            and [int(t[0]) for t in peer_ticks] == list(range(1, len(peer_ticks) + 1))
+            and all(
+                int(t[0]) + int(t[1]) == 128
+                and service_image["entry"] <= int(t[2]) < service_image["entry"] + service_image["size"]
+                for t in peer_ticks
+            ),
+            "Actual bounded peer execution",
+        )
+        event = (6, service_image["bounds_pc"]) if index == 1 else (129, service_image["return_pc"])
+        need(
+            any(
+                int(row[0]) == event[0] and int(row[1]) == 0 and int(row[2]) == event[1] and int(row[3]) == 3
+                for row in re.findall(EVENT, segment)
+            ),
+            "Exact peer terminal event",
+        )
+    if mode == "user-call-pending":
+        pending = list(re.finditer(r"AURORA_UEFI_TIMER_PENDING: epoch=(\d+)", text))
+        drains = list(re.finditer(r"AURORA_UEFI_TIMER_DRAIN: epoch=(\d+) root=(\d+) ss=16", text))
+        expected = [1, 2, 1, 3, 4, 3, 5, 6, 7]
+        need(
+            [int(m[1]) for m in pending] == expected and [int(m[1]) for m in drains] == expected,
+            "Pending/drain exact owner epochs",
+        )
+        for index, (park, drain) in enumerate(zip(pending, drains)):
+            quiet = re.search(rf"AURORA_UEFI_TIMER_QUIET: epoch={park[1]} ticks=\d+ drains=1 ", text[drain.end() :])
+            need(
+                park.end() < drain.start()
+                and quiet is not None
+                and (index == len(pending) - 1 or drain.end() + quiet.end() < pending[index + 1].start()),
+                "Each forced pending interrupt drains before the next boundary",
+            )
+
+
 def validate(status, text, mode, metadata):
+    if mode in ("user-call", "user-call-pending", "user-call-owner", "user-call-site"):
+        return validate_call(status, text, mode, metadata)
     if mode == "user-resume":
         return validate_resume(status, text, metadata)
     need(mode in MODES, "Unknown user-phase mode")
@@ -754,6 +917,71 @@ def self_test():
         ),
     ):
         reject(33, text.replace(before, after), "user-resume", meta, "resume behavioral regression")
+    call_meta = copy.deepcopy(next(fixtures())[3])
+    del call_meta["images"]["peer"]
+    call_meta["images"]["clean"]["call_pc"] = BASE + 70
+    rows = []
+    for case in range(4):
+        epoch = 2 * case + 1
+        rows += [
+            f"AURORA_UEFI_USER_RUN: epoch={epoch} role=client phase=request "
+            f"client=0 transaction=0 source={1 if case == 1 else 8 if case == 2 else 0} root=1",
+            f"AURORA_UEFI_TIMER_TICK: epoch={epoch} used=1 remaining=127 pc={BASE + 88}",
+            f"AURORA_UEFI_DOMAIN_EVENT: vector=130 error=0 pc={BASE + 70} cpl=3 root=1 frame=1 cr2=0",
+            f"AURORA_CALL_PARK: ticket={2 * case + 2} epoch={epoch} ticks=1 remaining=127",
+        ]
+        if case < 3:
+            rows += [
+                f"AURORA_UEFI_USER_RUN: epoch={epoch + 1} role=service phase=service "
+                f"client=0 transaction={epoch + 1} source={4 if case == 1 else 1} root=2"
+            ]
+            if case != 1:
+                rows += [f"AURORA_UEFI_TIMER_TICK: epoch={epoch + 1} used=1 remaining=127 pc={BASE + 4096 + 88}"]
+            rows += [
+                f"AURORA_UEFI_DOMAIN_EVENT: vector={6 if case == 1 else 129} error=0 "
+                f"pc={BASE + 4096 + (400 if case == 1 else 60)} cpl=3 root=2 frame=1 cr2=0",
+                f"AURORA_CALL_SERVICE: epoch={epoch + 1} event={'bounds' if case == 1 else 'returned'} "
+                f"value={0 if case == 1 else 42}",
+                f"AURORA_CALL_RESUME: epoch={epoch} ticks=1 remaining=127",
+                f"AURORA_UEFI_DOMAIN_EVENT: vector=130 error=0 pc={BASE + 70} cpl=3 root=1 frame=1 cr2=0",
+            ]
+        if case == 2:
+            rows += [
+                f"AURORA_UEFI_TIMER_TICK: epoch={epoch} used={tick} remaining={128 - tick} pc={BASE + 88}"
+                for tick in range(2, 129)
+            ]
+        if case < 3:
+            rows += [
+                f"AURORA_CALL_COMPLETE: epoch={epoch} event={'budget' if case == 2 else 'returned'} "
+                f"value={82 if case == 0 else 40 if case == 1 else 0}"
+            ]
+        rows += [f"AURORA_CALL_CASE: case={case} used=0"]
+    call_text = "\n".join(rows + ["AURORA_UEFI_CALL_OK", "AURORA_UEFI_OK"])
+    validate(33, call_text, "user-call", call_meta)
+    positives += 1
+    for before, after in (
+        ("epoch=1 ticks=1 remaining=127", "epoch=1 ticks=0 remaining=128"),
+        ("ticket=4", "ticket=2"),
+        ("used=128 remaining=0", "used=127 remaining=1"),
+        ("case=3 used=0", "case=3 used=4"),
+        ("vector=130 error=0", "vector=130 error=1"),
+        ("AURORA_UEFI_CALL_OK", ""),
+    ):
+        reject(33, call_text.replace(before, after), "user-call", call_meta, "call receipt mutation")
+    for prefix in ("AURORA_UEFI_TIMER_TICK: epoch=1 ", "AURORA_CALL_COMPLETE: epoch=1 "):
+        selected = next(row for row in call_text.splitlines() if row.startswith(prefix))
+        changed = call_text.replace(selected + "\n", "")
+        changed = changed.replace("AURORA_CALL_RESUME: epoch=1", selected + "\nAURORA_CALL_RESUME: epoch=1")
+        reject(33, changed, "user-call", call_meta, "misordered caller evidence")
+    reject(33, call_text, "user-call-pending", call_meta, "missing pending drain")
+    for prefix in (
+        "AURORA_UEFI_TIMER_TICK: epoch=1 ",
+        "AURORA_UEFI_USER_RUN: epoch=2 ",
+        "AURORA_CALL_SERVICE: epoch=2 ",
+        "AURORA_CALL_COMPLETE: epoch=1 ",
+    ):
+        changed = "\n".join(row for row in call_text.splitlines() if not row.startswith(prefix))
+        reject(33, changed, "user-call", call_meta, "missing caller/peer evidence")
     print(f"PASS: user-phase transcripts {positives} positive and {rejected} negative cases")
 
 

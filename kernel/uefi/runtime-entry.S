@@ -110,6 +110,13 @@ uefi_runtime_handler:
     ret
 not_timer:
 .endif
+.ifdef AURORA_BLOCKING_CALL
+    cmp $130,%edi
+    jne not_call
+    lea aurora_program_call(%rip),%rax
+    ret
+not_call:
+.endif
     cmp $129,%edi
     je return_handler
     cmp $31,%edi

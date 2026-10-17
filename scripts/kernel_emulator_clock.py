@@ -24,7 +24,8 @@ budget-policy-wide budget-policy-output dispatch dispatch-budget dispatch-fault
 dispatch-mixed dispatch-pending dispatch-cross-reply dispatch-client-owner
 dispatch-stale dispatch-duplicate dispatch-full dispatch-root dispatch-peer-code
 dispatch-policy-cursor dispatch-policy-mask dispatch-policy-output user-phases
-user-context user-resume user-retire-pending user-request-budget user-completion-budget
+user-context user-resume user-call user-call-pending user-call-owner user-call-site
+user-retire-pending user-request-budget user-completion-budget
 user-request-bounds user-completion-bounds user-request-overflow
 user-completion-overflow user-pending user-role user-phase user-transaction user-epoch
 user-root user-unknown user-stale-grant user-disposal-input user-disposal-output
