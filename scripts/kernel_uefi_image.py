@@ -271,6 +271,7 @@ def image_options(arguments):
         ["--ipc-policy"],
         ["--ipc-policy", "--budget-noapic"],
         ["--ipc-policy", "--snapshot"],
+        ["--ipc-policy", "--snapshot", "--call-snapshot"],
         ["--owned-bytes"],
         ["--ipc-policy", "--disposal-policy"],
         ["--graphical-console"],
@@ -282,6 +283,7 @@ def image_options(arguments):
         require_ipc="--ipc-policy" in arguments,
         require_budget_noapic="--budget-noapic" in arguments,
         require_snapshot="--snapshot" in arguments,
+        require_call_snapshot="--call-snapshot" in arguments,
         require_owned_bytes="--owned-bytes" in arguments,
         require_disposal="--disposal-policy" in arguments,
         require_graphical_console="--graphical-console" in arguments,
@@ -345,7 +347,7 @@ def snapshot_runtime_symbols(names):
     )
 
 
-def snapshot_image_policy(directory, symbols):
+def snapshot_image_policy(directory, symbols, call=False):
     expected_objects = {
         "payload",
         "payload-entry",
@@ -369,6 +371,8 @@ def snapshot_image_policy(directory, symbols):
         "transition-pe",
         "memory-pe",
     }
+    if call:
+        expected_objects.remove("user-clean-entry")
     need(
         {path.stem for path in (directory / "objects").glob("*.o")} == expected_objects,
         "Exact snapshot object composition",
@@ -383,10 +387,11 @@ def snapshot_image_policy(directory, symbols):
         "aurora_kernel_value",
         "aurora_kernel_ipc_transition",
         "aurora_kernel_terminal_event",
+        "aurora_kernel_budget_tick",
         "__au_runtime_snapshot_produce",
     }
     reflections = {"aurora_reflect_size", "aurora_reflect_field_count"} | {
-        f"__au_reflect_s{index}_{suffix}" for index in range(1, 10) for suffix in ("size", "field_count")
+        f"__au_reflect_s{index}_{suffix}" for index in range(1, 11) for suffix in ("size", "field_count")
     }
     need(
         {name for name, kind in entries.items() if kind == "T"} == exports | reflections,
@@ -407,6 +412,7 @@ def snapshot_image_policy(directory, symbols):
         ("aurora_kernel_value", "snapshot_kernel_value"),
         ("aurora_kernel_ipc_transition", "snapshot_ipc_transition"),
         ("aurora_kernel_terminal_event", "snapshot_terminal_event"),
+        ("aurora_kernel_budget_tick", "snapshot_budget_tick"),
     ):
         need(entries.get(private) == "t", "Private snapshot policy source entry")
         target = linked.functions[public]
@@ -845,6 +851,7 @@ def main(
     require_iommu_event=False,
     require_iommu_observe=False,
     require_snapshot=False,
+    require_call_snapshot=False,
     *,
     require_budget_noapic=False,
     build_dir=None,
@@ -867,6 +874,7 @@ def main(
         ),
         "Exact no-APIC rejection image-policy composition",
     )
+    need(not require_call_snapshot or require_snapshot, "Call snapshot requires snapshot policy")
     need(
         not require_snapshot
         or require_ipc
@@ -910,7 +918,7 @@ def main(
     if require_graphical_console:
         graphical_image_policy(build, symbols)
     if require_snapshot:
-        snapshot_image_policy(build, symbols)
+        snapshot_image_policy(build, symbols, require_call_snapshot)
         names += ["owned-bytes-runtime", "snapshot"]
     elif require_owned_bytes:
         need(not require_ipc, "Owned-byte and IPC profiles cannot combine")

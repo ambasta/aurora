@@ -8,6 +8,11 @@ export namespace kernel {
         Snapshot64() : bytes{} {
         }
 
+        // This view is tied to the copied value, never to producer storage.
+        auto view() const -> builtin::span<const u8> {
+            return borrow_bytes(bytes);
+        }
+
         auto at(i64 offset) const -> u8 {
             return bytes[offset];
         }

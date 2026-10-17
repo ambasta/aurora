@@ -2,20 +2,27 @@
 // This private record is never addressed by user code. The request run retains
 // transaction zero; only this record binds the separately minted mailbox ticket.
 [[nodiscard]] auto call_retire(unsigned index) -> bool {
-    if (!call_wait.context)
+    if (!call_wait.context) {
+        snapshot_slot.clear();
         return true;
+    }
     if (!mailbox || !call_wait.authority || !call_wait.ticket)
         return false;
     if (mailbox->state() == ipc::State::pending || mailbox->state() == ipc::State::delivered)
         if (!mailbox->cancel(ipc::Phase::inactive))
             return false;
     // A committed reply must be consumed while both incarnations remain live.
-    if (index == 1)
-        return mailbox->state() == ipc::State::cancelled;
+    if (index == 1) {
+        if (mailbox->state() != ipc::State::cancelled)
+            return false;
+        snapshot_slot.clear();
+        return true;
+    }
     if (index != 0 || !domains[0].handle ||
         !mailbox->consume(*domains[0].handle, ipc::Phase::completion, call_wait.endpoint, call_wait.ticket))
         return false;
     clear_call_wait();
+    snapshot_slot.clear();
     return true;
 }
 [[nodiscard]] auto call_trap(U64 frame) -> U64 {
@@ -75,7 +82,7 @@
     call_wait.compiled = timer_compiled_hits;
     call_wait.contexts = timer_context_hits;
     const auto ticket =
-        mailbox->submit(*domains[0].handle, ipc::Phase::request, *endpoint, ipc::Request{context->words()[11], 2});
+        mailbox->submit(*domains[0].handle, ipc::Phase::request, *endpoint, ipc::Request{context->words()[11], 0});
     require(ticket.has_value(), "call atomic publication");
     call_wait.ticket = *ticket;
     domains[0].call_used = true;
@@ -105,6 +112,7 @@ auto call_envelope(const Bytes &captured, U64 result) -> void {
             "call terminal envelope");
     if (active == 1) {
         require(selected_phase == ipc::Phase::service && call_wait.ticket == transaction &&
+                    ipc::snapshot_crc_reply_valid(result) &&
                     mailbox->reply(
                         *domains[1].handle, selected_phase, ipc::Endpoint{launch[2], launch[3]}, transaction, result),
                 "call service reply");
@@ -129,6 +137,22 @@ auto call_execute(unsigned index, U64 source_phase, U64 first, U64 second) -> vo
     launch = {source_phase, first, endpoint->slot(), endpoint->generation(), transaction, second, 0x202};
     for (const auto &lease : domain.stacks)
         fill(*frames.address(*lease), 0);
+    if (index == 1) {
+        require(mailbox->state() == ipc::State::delivered && snapshot_slot.matches(*endpoint),
+                "call snapshot delivery binding");
+        const auto physical = frames.address(*domain.stacks.back());
+        const auto virtual_page = domain.contract->layout().user_stack_top() - L::page_size;
+        require(physical && (domain.tables->entry(virtual_page) & ~0x60ULL) == (*physical | 7 | RuntimeTables::nx) &&
+                    (PageTables{kernel_root, static_cast<std::size_t>(handoff->get(96))}.entry(*physical) & ~0x60ULL) ==
+                        (*physical | 3 | RuntimeTables::nx),
+                "call snapshot retained stack mapping");
+        auto *record = reinterpret_cast<std::byte *>(*physical + L::page_size - ipc::SnapshotSlot::stack_reservation);
+        require(snapshot_slot.stage(ipc::SnapshotSlot::Record{record, ipc::SnapshotSlot::record_bytes},
+                                    *endpoint,
+                                    source_phase,
+                                    ipc::Request{first, second}),
+                "call snapshot copied record");
+    }
     require(program.begin(*domain.contract) && registry.activate(*domain.handle), "call launch activation");
     active = index;
     const auto selected = domain.tables->root();
@@ -275,12 +299,17 @@ auto call_completion_controls(U64 ticket) -> void {
     require(!call_resume(ticket) && mailbox->state() == ipc::State::replied, "call changed launch preserves reply");
     --call_wait.launch[3];
 }
-auto run_blocking_calls() -> void {
+auto run_blocking_calls(memory::PhysicalPages &producer_pool) -> void {
     for (unsigned scenario = 0; scenario < 4; ++scenario) {
+        require(prepare_snapshot(arena, producer_pool, snapshot_slot, SnapshotProducerCase::normal) ==
+                        ipc::SnapshotPublication::ready &&
+                    producer_pool.used() == 0,
+                "call snapshot closed producer");
         mailbox.emplace(registry);
         require(create(0) == 0 && create(1) == 1 && mailbox->bind(*domains[0].handle, *domains[1].handle),
                 "call participants");
-        call_execute(0, scenario == 1 ? 1 : scenario == 2 ? 8 : 0, 40, 0);
+        require(snapshot_slot.bind(*mailbox->endpoint(*domains[1].handle)), "call snapshot incarnation binding");
+        call_execute(0, scenario == 1 ? 1 : scenario == 2 ? 8 : 0, 16384, 0);
         require(call_wait.context && call_wait.authority && call_wait.ticket && call_wait.ticks > 0,
                 "call live source suspended");
         const auto ticket = call_wait.ticket, epoch = call_wait.authority->epoch();
@@ -301,7 +330,7 @@ auto run_blocking_calls() -> void {
             const auto endpoint = mailbox->endpoint(*domains[1].handle);
             require(endpoint.has_value(), "call service grant");
             const auto request = mailbox->receive(*domains[1].handle, ipc::Phase::service, *endpoint, ticket);
-            require(request && request->first() == 40 && request->second() == 2, "call copied delivery");
+            require(request && request->first() == 16384 && request->second() == 0, "call copied delivery");
             call_execute(1, scenario == 1 ? 4 : 1, request->first(), request->second());
             require(timer_epoch > epoch && call_wait.ticks == ticks && call_wait.remaining == remaining,
                     "call isolated budgets");
@@ -320,11 +349,15 @@ auto run_blocking_calls() -> void {
                 require(timer_exhausted && timer_remaining == 0 && timer_ticks == timer_initial,
                         "call resumed exhaustion");
             else
-                require(program.event() == ProgramEvent::returned && program.value() == (scenario == 1 ? 40 : 82),
+                require(program.event() == ProgramEvent::returned &&
+                            program.value() == (scenario == 1 ? 40 : 1210602268ULL),
                         "call live locals result");
             require(mailbox->revoke(ipc::Phase::inactive) && retire(0) && (scenario == 1 || retire(1)),
                     "call final retirement");
         }
+        snapshot_slot.clear();
+        require(producer_pool.used() == 0 && !snapshot_slot.ready() && !snapshot_slot.bound(),
+                "call snapshot reclamation");
         require(frames.used() == 0 && !call_wait.context && !call_wait.ticket, "call complete scrub");
         mailbox.reset();
         Serial::text("AURORA_CALL_CASE: case=");

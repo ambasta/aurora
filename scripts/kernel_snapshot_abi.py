@@ -117,7 +117,7 @@ def check_composition(directory):
             raise ValueError("Unsupported snapshot image composition accepted")
 
 
-def main(directory, uefi_mode=None, note=False):
+def main(directory, uefi_mode=None, note=False, checksum=False):
     check_composition(directory)
     service = directory / ("user-bounds" if uefi_mode else "service")
     client = directory / ("user-clean" if uefi_mode else "client")
@@ -142,7 +142,7 @@ def main(directory, uefi_mode=None, note=False):
     wrapper = []
     targets = {symbols[name].address: name for name in ("bad_entry", entry)}
     for address in sorted(instructions):
-        if symbols["aurora_program_entry"].address <= address < symbols[entry].address:
+        if symbols["aurora_program_entry"].address <= address < symbols["bad_entry"].address + 2:
             insn = instructions[address]
             operand = targets.get(stack.target_of(insn)) if insn.op in ("call", "jne") else insn.args
             wrapper.append((insn.op, operand))
@@ -172,8 +172,8 @@ def main(directory, uefi_mode=None, note=False):
     ]
     source = service.with_suffix(".s").read_text().split(entry + ":\n", 1)[1].split(".size " + entry, 1)[0]
     frame, prefix = stack.private_frame_layout([line.strip() for line in source.splitlines()], body)
-    stack.require(frame == (144 if note else 112), "Changed copied service frame")
-    hidden = "-0x88(%rbp)" if note else "-0x68(%rbp)"
+    stack.require(frame == (144 if note else 192 if checksum else 112), "Changed copied service frame")
+    hidden = "-0x88(%rbp)" if note else "-0xb8(%rbp)" if checksum else "-0x68(%rbp)"
     expected = [("mov", "%r11," + hidden)]
     for offset in (0, 8, 16):
         address = "(%r11)" if offset == 0 else f"0x{offset:x}(%r11)"

@@ -36,8 +36,15 @@ parks the live source call; the terminal `INT 0x81` and timer-only resume paths
 remain separate. Private wait state binds the original run, both incarnations,
 endpoint and minted mailbox transaction. IRQ-off publication/park and drain
 precede peer execution; a durable copied reply or cancellation resumes the caller
-with its original epoch and remaining quota. The consumer checks live helper and
-caller locals, a rejected second call, service faults, post-call budget exhaustion,
+with its original epoch and remaining quota. The service computes CRC32C over a selected range of an owned RAM-sector's copied
+64-byte snapshot. The producer closes its byte owner and releases its region before
+publication; the protected service receives only a readonly value. Request bits
+0..7 select the offset and bits 8..15 the count; higher bits are rejected. Reply
+byte 0 is success (1), invalid range (2), or invalid operation (3); bits 8..39
+carry CRC32C only on success, with every other bit zero. Transport cancellation
+remains distinct from these operation results. The client decodes the checksum
+and combines it with live locals after returning from the call.
+The consumer checks live helper and caller locals, a rejected second call, service faults, post-call budget exhaustion,
 and retirement/reuse. `user-call-pending`, `user-call-owner` and `user-call-site`
 exercise pending IRQ drain and rejected claims. Linked image gates retain the
 15,360-byte kernel stack cap and 512-byte fault reserve; this profile has no

@@ -1,14 +1,20 @@
 #include "snapshot.hpp"
 
-#if !defined(AURORA_UEFI_SNAPSHOT) || !defined(AURORA_UEFI_RUNTIME) || !defined(AURORA_UEFI_IPC) ||                    \
-    !defined(AURORA_UEFI_ACPI) || !defined(AURORA_UEFI_PCI) || defined(AURORA_UEFI_OWNED_BYTES) ||                     \
-    defined(AURORA_UEFI_DISPATCH) || defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_USER_BUDGET) ||        \
+#if (!defined(AURORA_UEFI_SNAPSHOT) && !defined(AURORA_BLOCKING_CALL)) || !defined(AURORA_UEFI_RUNTIME) ||             \
+    !defined(AURORA_UEFI_IPC) || !defined(AURORA_UEFI_ACPI) || !defined(AURORA_UEFI_PCI) ||                            \
+    defined(AURORA_UEFI_OWNED_BYTES) || defined(AURORA_UEFI_DISPATCH) ||                                               \
+    (!defined(AURORA_BLOCKING_CALL) && (defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_USER_BUDGET))) ||   \
     defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE) ||  \
     defined(AURORA_UEFI_FRAMEBUFFER) || defined(AURORA_UEFI_PINS) || defined(AURORA_UEFI_TABLES) ||                    \
     defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_NVME_PREPARE) || defined(AURORA_UEFI_IOMMU_EVENT) ||              \
     defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_BAR_ADMISSION) || defined(AURORA_UEFI_BAR_EDK2) ||         \
     defined(AURORA_KERNEL_BYTES_TESTING)
 #error "Snapshot producer requires its exact CPU-only protected IPC profile"
+#endif
+
+#if defined(AURORA_BLOCKING_CALL) &&                                                                                   \
+    (defined(AURORA_UEFI_SNAPSHOT) || !defined(AURORA_UEFI_SERVICE_BUDGET) || !defined(AURORA_UEFI_USER_BUDGET))
+#error "Call snapshot requires its exact budgeted two-program composition"
 #endif
 
 #include "../owned-bytes.hpp"

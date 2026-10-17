@@ -14,6 +14,11 @@ namespace aurora::ipc {
     return word == 2 || word == 3 || word == 4 || word == 5 || (word & ~std::uint64_t{0xff00}) == 1;
 }
 
+// The checksum operation uses a copied 32-bit result, not the byte-read protocol.
+[[nodiscard]] constexpr bool snapshot_crc_reply_valid(std::uint64_t word) noexcept {
+    return word == 2 || word == 3 || (word & ~std::uint64_t{0xffffffff00}) == 1;
+}
+
 enum class SnapshotPublication {
     ready,
     unavailable,

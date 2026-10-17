@@ -28,10 +28,12 @@ done
 python3 -B tests/kernel-snapshot-abi.py "$out"
 as --64 -L "$out/service.s" tests/kernel-snapshot-entry.S -o "$out/service-host.o"
 as --64 -L "$out/client.s" -o "$out/client-host.o"
+"$AURORAC" --module-root kernel/policies --module-root library tests/kernel-programs/call-snapshot-service.au -o "$out/checksum.s"
+as --64 -L --defsym CHECKSUM_SERVICE=1 "$out/checksum.s" tests/kernel-snapshot-entry.S -o "$out/checksum-host.o"
 # Production has separate address-space images. Only this hosted test links the
 # roots together; localize their exact reflection exports to avoid collisions.
 # Do not globalize source entries or alter any generated instruction.
-for part in client service; do
+for part in client service checksum; do
     nm -g --defined-only "$out/$part-host.o" \
         | awk '$3 ~ /^(aurora_reflect_|__au_reflect_)/ {print $3}' > "$out/$part-reflections.txt"
     objcopy --localize-symbols="$out/$part-reflections.txt" "$out/$part-host.o"
@@ -44,7 +46,7 @@ case "${SANITIZE:-0}" in
 esac
 "${CXX:-g++}" "${flags[@]}" -DAURORA_UEFI_SNAPSHOT -DAURORA_UEFI_RUNTIME -DAURORA_UEFI_IPC \
     -DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI tests/kernel-snapshot.cpp kernel/uefi/snapshot.cpp kernel/owned-bytes.cpp \
-    "$out/client-host.o" "$out/service-host.o" "$out/supervisor.o" -o "$out/native"
+    "$out/client-host.o" "$out/service-host.o" "$out/checksum-host.o" "$out/supervisor.o" -o "$out/native"
 ulimit -c 0
 ASAN_OPTIONS='detect_leaks=0:halt_on_error=1:abort_on_error=1:handle_sigill=0' \
     UBSAN_OPTIONS='halt_on_error=1:print_stacktrace=1' "$out/native"

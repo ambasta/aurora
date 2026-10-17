@@ -20,7 +20,7 @@ auto aurora_user_main(builtin::CallSession& session, u64 phase, u64 seed, u64 or
     u64 steps = 0u64;
     u64 checksum = seed;
     while (steps < 250000u64) {
-        checksum = 40u64 - checksum;
+        checksum = seed - checksum;
         steps = steps + 1u64;
     }
     const builtin::CallResult result = invoke(session, live[0]);
@@ -32,7 +32,8 @@ auto aurora_user_main(builtin::CallSession& session, u64 phase, u64 seed, u64 or
             return 2u64;
         }
     } else {
-        if (result.status != builtin::CallStatus::replied || result.value != 42u64) {
+        if (result.status != builtin::CallStatus::replied || (result.value & 255u64) != 1u64 || (result.value >> 8)
+            != 1210602228u64) {
             return 3u64;
         }
     }
@@ -42,8 +43,8 @@ auto aurora_user_main(builtin::CallSession& session, u64 phase, u64 seed, u64 or
     }
     if (phase == 8u64) {
         while (true) {
-            checksum = 40u64 - checksum;
+            checksum = seed - checksum;
         }
     }
-    return live[1] + live[2] + result.value;
+    return live[1] + live[2] + (result.value >> 8);
 }

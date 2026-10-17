@@ -99,3 +99,8 @@ locale, process startup and persistent filesystem services remain open. A hosted
 allocation pass is not native runtime or kernel qualification. Test scope follows
 [development and qualification](../docs/developer-test-contract.md); use existing
 oracles and complete byte observations, and report missing gates honestly.
+
+The protected `tests/kernel-programs/call-snapshot-service.au` consumer uses
+`std.checksum` to compute CRC32C over a bounded readonly copied RAM snapshot.
+Its caller resumes through the sealed CallSession into live Aurora locals; the
+integer request carries no pointer or file authority.

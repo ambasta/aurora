@@ -293,6 +293,7 @@ def stack_evidence(directory, *, snapshot=False):
             "aurora_kernel_value",
             "aurora_kernel_ipc_transition",
             "aurora_kernel_terminal_event",
+            "aurora_kernel_budget_tick",
         )
         if snapshot
         else (
@@ -480,7 +481,9 @@ def note_evidence(directory, functions, mode="program-console"):
     check_stream_operation(facts)
     input_entry = check_program_console_abi(facts)
     response_entry = check_program_console_abi(facts, response=True)
-    console_calls = check_program_console_calls(functions, set(generated.functions), public, input_entry, response_entry)
+    console_calls = check_program_console_calls(
+        functions, set(generated.functions), public, input_entry, response_entry
+    )
     # Native boundary contracts stay independent of compiler-emitted facts.
     for action, entry, parameters, result_bytes in (
         ("note_update", "update_note", [72, 64, 8], 80),
@@ -542,7 +545,9 @@ def note_evidence(directory, functions, mode="program-console"):
                 input_bytes=input_bytes,
                 result_bytes=result_bytes,
                 console_calls=console_calls[entry],
-                abi_basis="full compiler ABI plus object-bound call/stack facts; sealed Console kind checked by compiler",
+                abi_basis=(
+                    "full compiler ABI plus object-bound call/stack facts; sealed Console kind checked by compiler"
+                ),
             )
         )
     abi.main(
@@ -572,23 +577,36 @@ def check_program_console_abi(facts, *, response=False):
     need(type(facts.get("version")) is int and facts["version"] == 2, "Expected current compiler ABI facts v2")
     source, copied, enum, field, size = (
         ("present_program_response", "console::ProgramResponse", "console::ProgramResponseKind", "kind", 80)
-        if response else
-        ("read_program_input", "console::ProgramSubmission", "console::ProgramInputAction", "action", 88)
+        if response
+        else ("read_program_input", "console::ProgramSubmission", "console::ProgramInputAction", "action", 88)
     )
     entry, function = compiler_abi.abi_declaration(facts, "functions", source)
     record, value = compiler_abi.abi_declaration(facts, "records", copied)
     kind, operation = compiler_abi.abi_declaration(facts, "enums", enum)
     buffer, storage = compiler_abi.abi_declaration(facts, "records", "std::BinaryBuffer64")
     cases = (
-        dict(ready=0, output=1, note_missing=2, file_missing=3, note_saved=4,
-             file_saved=5, file_reply=6, stopped=7, unknown=8)
-        if response else dict(command=0, upper_payload=1, requested_exit=2, output_failure=3)
+        dict(
+            ready=0,
+            output=1,
+            note_missing=2,
+            file_missing=3,
+            note_saved=4,
+            file_saved=5,
+            file_reply=6,
+            stopped=7,
+            unknown=8,
+        )
+        if response
+        else dict(command=0, upper_payload=1, requested_exit=2, output_failure=3)
     )
     exact_abi(operation["cases"], cases, source + ": named kinds must match the native mapping")
     exact_abi(
         storage,
         dict(
-            source_name="std::BinaryBuffer64", size=64, alignment=1, reserved=64,
+            source_name="std::BinaryBuffer64",
+            size=64,
+            alignment=1,
+            reserved=64,
             fields=[dict(name="elements", offset=0, bytes=64, array_length=64, kind="u8")],
         ),
         source + ": exact ordinary 64-byte buffer",
@@ -601,7 +619,8 @@ def check_program_console_abi(facts, *, response=False):
     if not response:
         fields.append(dict(name="after_cr", offset=80, bytes=8, array_length=0, kind="u64"))
     exact_abi(
-        value, dict(source_name=copied, size=size, alignment=8, reserved=size, fields=fields),
+        value,
+        dict(source_name=copied, size=size, alignment=8, reserved=size, fields=fields),
         source + ": exact ordinary copied record",
     )
     # Facts identify service storage; compiler typing and the closed next/put
@@ -609,14 +628,21 @@ def check_program_console_abi(facts, *, response=False):
     exact_abi(
         function,
         dict(
-            source_name=source, receiver=None, receiver_mutable=None,
-            borrowed_roots=[], borrowed_root_count=0,
-            borrowed_root_abi=dict(kind="none", register=None, tuple_payload_bytes=0,
-                                   tuple_reserved_bytes=0, saved_root_reserved_bytes=0),
+            source_name=source,
+            receiver=None,
+            receiver_mutable=None,
+            borrowed_roots=[],
+            borrowed_root_count=0,
+            borrowed_root_abi=dict(
+                kind="none", register=None, tuple_payload_bytes=0, tuple_reserved_bytes=0, saved_root_reserved_bytes=0
+            ),
             parameter_bytes=96 if response else 24,
-            parameters=[dict(offset=0, bytes=16, kind="service"),
-                        dict(offset=16, bytes=80, kind="class", type_name=record) if response
-                        else dict(offset=16, bytes=8, kind="bool")],
+            parameters=[
+                dict(offset=0, bytes=16, kind="service"),
+                dict(offset=16, bytes=80, kind="class", type_name=record)
+                if response
+                else dict(offset=16, bytes=8, kind="bool"),
+            ],
             result=dict(bytes=8, kind="bool") if response else dict(bytes=88, kind="class", type_name=record),
         ),
         source + ": exact service argument, copied value and canonical bool layout",
@@ -626,6 +652,7 @@ def check_program_console_abi(facts, *, response=False):
 
 def check_program_console_calls(functions, generated, public, input_entry, response_entry):
     """Input may read/write; response may only write; copied policies have no authority."""
+
     def closure(root):
         pending, reached, imports = [root], set(), set()
         while pending:
@@ -664,8 +691,10 @@ def check_program_console_calls(functions, generated, public, input_entry, respo
                 need(fact == dict(sysv_arguments=3, result_max=1), "Changed native Console put service ABI")
             sites.append(dict(function=name, **call))
     sites.sort(key=lambda row: (row["function"], row["address"]))
-    return {entry: [site for site in sites if site["function"] in reached]
-            for entry, reached in ((input_entry, reader), (response_entry, presenter))}
+    return {
+        entry: [site for site in sites if site["function"] in reached]
+        for entry, reached in ((input_entry, reader), (response_entry, presenter))
+    }
 
 
 def check_program_input_wait(functions, owner, entry):
@@ -742,8 +771,15 @@ def check_note_bridge(actual, private):
 
 def check_response_bridge(actual, private):
     need(
-        actual == [("push", "%rbp"), ("mov", "%rsp,%rbp"), ("mov", "%rdi,%r11"),
-                   ("call", private), ("leave", ""), ("ret", "")],
+        actual
+        == [
+            ("push", "%rbp"),
+            ("mov", "%rsp,%rbp"),
+            ("mov", "%rdi,%r11"),
+            ("call", private),
+            ("leave", ""),
+            ("ret", ""),
+        ],
         "Exact copied response/scalar bool bridge",
     )
 
