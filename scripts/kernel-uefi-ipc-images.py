@@ -234,6 +234,21 @@ def emit_metadata(
     print("PASS: " + str(len(records)) + " independently compiled staged IPC RX images")
 
 
+def call_stack_profile(graph):
+    import sys
+
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import kernel_stack as stack
+
+    return stack.profile_stack(
+        graph,
+        {"discover_acpi(": 128, "prepare_service_acpi(": 5120, "discover_pci(": 11264},
+        default_limit=11264,
+        fault_reserve=512,
+        separated=(("prepare_service_acpi(", "discover_pci("),),
+    )
+
+
 def call_stack(directory):
     import sys
 
@@ -241,7 +256,7 @@ def call_stack(directory):
     import kernel_stack as stack
 
     graph = stack.image_stack_graph(directory, ("payload", "acpi", "pci", "runtime"), ROOT, protected=True)
-    result = stack.profile_stack(graph, {}, default_limit=11264, fault_reserve=512)
+    result = call_stack_profile(graph)
     linked = graph["linked"]
     site = next(s.address for s in linked.symbols if s.name == "uefi_service_drain_begin")
     owner = next(n for n, s in linked.functions.items() if s.address <= site < s.address + s.size)

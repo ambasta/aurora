@@ -143,6 +143,9 @@ prepare_ivrs_acpi(U64 arena, const Bytes &handoff, unsigned &copied_bits, std::s
 #elif defined(AURORA_UEFI_BAR_CAPTURE)
 [[gnu::noinline]] auto
 prepare_bar_acpi(U64 arena, const Bytes &handoff, unsigned &copied_bits, std::size_t &copied_mcfg_size) -> bool {
+#elif defined(AURORA_UEFI_SERVICE_BUDGET)
+[[gnu::noinline]] auto
+prepare_service_acpi(U64 arena, const Bytes &handoff, unsigned &copied_bits, std::size_t &copied_mcfg_size) -> bool {
 #else
 auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::PhysicalPages &pool) -> bool {
 #endif
@@ -395,7 +398,7 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
     Serial::text("\r\n");
 #ifdef AURORA_UEFI_PCI
 #if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_TABLES) ||                    \
-    defined(AURORA_UEFI_BAR_CAPTURE)
+    defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_SERVICE_BUDGET)
     copied_bits = physical_bits;
     copied_mcfg_size = mcfg->size();
 #else
@@ -409,7 +412,7 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
     return true;
 }
 #if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_TABLES) ||                    \
-    defined(AURORA_UEFI_BAR_CAPTURE)
+    defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_SERVICE_BUDGET)
 auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::PhysicalPages &pool) -> bool {
     unsigned physical_bits = 0;
     std::size_t mcfg_size = 0;
@@ -419,12 +422,21 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
 #elif defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT)
     if (!prepare_ivrs_acpi(arena, handoff, physical_bits, mcfg_size))
         return false;
-#else
+#elif defined(AURORA_UEFI_BAR_CAPTURE)
     if (!prepare_bar_acpi(arena, handoff, physical_bits, mcfg_size))
+        return false;
+#else
+    if (!prepare_service_acpi(arena, handoff, physical_bits, mcfg_size))
         return false;
 #endif
     // ACPI parsing/Topology temporaries have ended before PCI scan construction.
-    return discover_pci(arena, handoff, bytes(arena + 0x70000, mcfg_size), physical_bits, pool);
+    const bool accepted = discover_pci(arena, handoff, bytes(arena + 0x70000, mcfg_size), physical_bits, pool);
+#ifdef AURORA_UEFI_SERVICE_BUDGET
+    // Preserve the public success boundary: rejected PCI leaves no timer topology.
+    if (!accepted)
+        copied_topology.reset();
+#endif
+    return accepted;
 }
 #endif
 
