@@ -71,7 +71,7 @@ RAM-erasure guarantee. Protected note commands have their own
 ## Session-local named files
 
 The simple UEFI and graphical consumers share `console.session_files`:
-`write NAME TEXT`, `append NAME TEXT`, `cat NAME`, `rm NAME` and exact `ls`. Four named slots are
+`write NAME TEXT`, `append NAME TEXT`, `copy SOURCE DESTINATION`, `cat NAME`, `rm NAME` and exact `ls`. Four named slots are
 separate from `note`; note commands run first and keep their 53-byte limit.
 `note` is reserved, `rm note` reports that reservation, and `ls` lists only named
 files. Profiles share policy, never live storage between invocations.
@@ -94,6 +94,15 @@ The protected consumer treats every successful append, including empty append,
 as a write: it advances the revision and invalidates all prior selections.
 Rejections preserve storage and revision; revision exhaustion rejects atomically.
 The required separator after the name also applies to empty append commands.
+
+Copy preserves the source and atomically creates or replaces the destination,
+including replacement in a full store. Both names must be valid and neither may
+be `note`; exactly one space separates the names, with no trailing arguments.
+A missing source never creates a destination. Empty files and self-copy succeed;
+the response is `wrote DESTINATION: N bytes` for the complete copied length.
+Every successful copy, including self-copy, invalidates protected selections;
+failed copies preserve storage and revision. Copy is a local quiescent mutation,
+not a protected-program launch or new file-service capability.
 
 Each workspace owns four 64-byte records and an occupancy mask (264 bytes total).
 Each record contains one-byte name/content lengths, eight name bytes, 49 content

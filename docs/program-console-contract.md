@@ -128,16 +128,17 @@ Legacy scalar/snapshot wrapper checks are separate from actual snapshot guests.
 ## Protected named RAM files
 
 The source-native named-file mechanism adds `write <name> <text>`, `cat <name>`,
-`upper <name>`, `ls` and `rm <name>`. The existing `console::SessionFiles`
+`upper <name>`, `append <name> <text>`, `copy <source> <destination>`, `ls` and `rm <name>`. The existing `console::SessionFiles`
 continues to own its exact grammar and four-slot, eight-character-name,
 49-printable-byte content limits; `note` remains reserved for the separate note.
 An existing file can be replaced when all four slots are occupied. Names are
 case-sensitive, an empty existing file is distinct from missing, and all state
-is volatile and cleared at console exit.
+is volatile and cleared at console exit. Copy runs through the local quiescent
+mutation path; it does not launch a protected program or grant new authority.
 
 `console::ProtectedFiles` adds a copied private selection and a session mutation
 revision around that unchanged store. Every successful write/removal/replacement,
-including an identical write, invalidates all old selections. This conservative
+including an identical write or self-copy, invalidates all old selections. This conservative
 rule also invalidates a selection after an unrelated-file mutation. Deletion and
 slot reuse cannot resurrect it. Revision exhaustion refuses mutation without
 changing any saved byte and still permits reads/listing. Failed validation and

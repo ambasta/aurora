@@ -159,6 +159,9 @@ def cases():
     )
     yield "note-maximum", samples("write note " + "Ab9 !" * 10 + "xyz" + "\ncat note\nexit\n")
     yield "note-overlong", samples("write note " + "x" * 54 + "\ncat note\nexit\n")
+    yield "files-copy", samples("write a saved\ncopy a b\nwrite a x\ncat b\ncat a\ncopy b b\nexit\n!")
+    yield "files-copy-full", samples("write a X\nwrite b \nwrite c \nwrite d \ncopy a e\ncopy a b\ncat b\nexit\n!")
+    yield "files-copy-invalid", samples("write a x\ncopy a b c\ncopy a  b\ncopy a note\ncopy absent a\ncat a\nexit\n!")
     yield "files-demo", samples("write todo Ship Aurora\nwrite ideas Safer drivers\nls\ncat todo\nrm ideas\nexit\n!")
     yield (
         "files-capacity",
@@ -419,7 +422,7 @@ def run_gate(args):
     primary = None
     try:
         execute_cases(compiler, work, records)
-        require(len(records) == 145, "incomplete hosted graphical case inventory")
+        require(len(records) == 154, "incomplete hosted graphical case inventory")
     except BaseException as error:
         primary = error
         report.update(error=str(error), exception_type=type(error).__name__)
@@ -438,7 +441,7 @@ def run_gate(args):
         status="failed" if primary else "passed",
         compiler_identity=identity.record(),
         case_count=len(records),
-        expected_cases=dict(transcript_geometry=108, session_reset=2, output_failure=13, denial=22),
+        expected_cases=dict(transcript_geometry=117, session_reset=2, output_failure=13, denial=22),
         generated_sha256={
             name: digest(work / name) for name in ("consumer.s", "consumer.o", "consumer") if (work / name).is_file()
         },
@@ -446,7 +449,7 @@ def run_gate(args):
     write_json(work / "run.json", report)
     if primary is not None:
         raise primary
-    print("PASS: 145 hosted generated-consumer cases; no native image or guest qualification")
+    print("PASS: 154 hosted generated-consumer cases; no native image or guest qualification")
     return work
 
 

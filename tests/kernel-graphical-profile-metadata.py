@@ -206,7 +206,7 @@ class ProfileMetadata(unittest.TestCase):
             "kernel/uefi/runtime-layout.hpp",
         }
         self.assertEqual(set(runner.source_inputs()), expected)
-        self.assertEqual(len(list(runner.cases())), 36)
+        self.assertEqual(len(list(runner.cases())), 39)
         self.assertIn("library/graphics/font5x7.au", runner.SOURCE_INPUTS)
         self.assertNotRegex((ROOT / "library/graphics/font5x7.au").read_text(), r"(?m)^\s*import\b")
         with patch.dict(os.environ, {}, clear=True):
@@ -247,7 +247,7 @@ class ProfileMetadata(unittest.TestCase):
                     (work / "consumer.s").write_text("synthetic generated output")
                     if "failure" in scenario:
                         raise RuntimeError("synthetic native failure")
-                    count = {"short": 144, "excess": 146}.get(scenario, 145)
+                    count = {"short": 153, "excess": 155}.get(scenario, 154)
                     records.extend(dict(name=str(n), geometry=[], status="passed") for n in range(count))
 
                 args = SimpleNamespace(run=compiler, developer_selected_compiler=True, artifacts=out)
@@ -277,10 +277,10 @@ class ProfileMetadata(unittest.TestCase):
                 self.assertEqual(record["case_count"], len(record["cases"]))
                 self.assertEqual(
                     record["expected_cases"],
-                    dict(transcript_geometry=108, session_reset=2, output_failure=13, denial=22),
+                    dict(transcript_geometry=117, session_reset=2, output_failure=13, denial=22),
                 )
                 if scenario == "success":
-                    self.assertEqual(record["case_count"], 145)
+                    self.assertEqual(record["case_count"], 154)
                 self.assertIn("consumer.s", record["generated_sha256"])
                 if "drift" in scenario:
                     self.assertEqual(record["finalization_error"], "synthetic identity drift")
