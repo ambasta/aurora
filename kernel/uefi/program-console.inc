@@ -210,12 +210,13 @@ auto program_cleanup(bool success) -> void {
         }
     }
     command_note.release();
-    if (!success && command_file) command_files.abort();
+    if (!success && command_file && command_transform) command_files.abort();
     require(mailbox->scrubbed() && mailbox->revoke(ipc::Phase::inactive)
         && retire(0) && retire(1) && frames.used()==0,"program revoke/retire/scrub");
-    if (success && command_file) {
-        if (command_transform) require(command_files.retire(registry,*mailbox),"file authenticated retirement");
-        else command_files.abort();
+    if (command_file) {
+        if (command_transform) {
+            if (success) require(command_files.retire(registry,*mailbox),"file authenticated retirement");
+        } else require(command_files.release_read(registry,*mailbox),"file read authenticated retirement");
     }
     mailbox.reset(); transaction=0; launch={}; selected_client=2;
     require(program_boundary(),"program retirement quiescence");
@@ -272,7 +273,9 @@ __attribute__((noinline)) auto program_save_file() -> void {
     else if (reading) __au_runtime_note_project(command_note.saved().data(),projection.data());
     const auto service_grant=mailbox->endpoint(*domains[1].handle);
     require(service_grant && command_note.bind(projection,*service_grant),"note frozen publication");
-    if (file) require(command_files.bind(registry,*mailbox,*domains[0].handle,*domains[1].handle,command_stream),"file command grants");
+    if (file) require(command_transform
+        ? command_files.bind(registry,*mailbox,*domains[0].handle,*domains[1].handle,command_stream)
+        : command_files.bind_read(registry,*mailbox,*domains[0].handle,*domains[1].handle),"file command grants");
     projection={};
     const auto grant=mailbox->endpoint(*domains[0].handle); require(grant.has_value(),"program command grant");
     ProgramSerial::text("AURORA_PROGRAM_COMMAND_BEGIN: grant="); ProgramSerial::number(grant->generation());
