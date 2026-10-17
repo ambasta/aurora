@@ -326,7 +326,8 @@ void good(Module m) {
     jsonMembers(jsonMember(stack, "functions"), [&](std::string_view, std::string_view facts) {
         for (const auto &[host, arguments, maximum] : {std::tuple{"__au_runtime_console_put", 3, 1},
                                                        std::tuple{"__au_runtime_display_pixel", 7, 1},
-                                                       std::tuple{"__au_runtime_iommu_event_acknowledge", 2, 2}})
+                                                       std::tuple{"__au_runtime_iommu_event_acknowledge", 2, 2},
+                                                       std::tuple{"__au_runtime_call", 3, 2}})
             if (!jsonMember(jsonMember(facts, "calls"), host).empty()) {
                 const auto calls = jsonMember(jsonMember(facts, "service_abi"), "calls");
                 need(jsonMember(calls, host) == "{\"sysv_arguments\":" + std::to_string(arguments) +

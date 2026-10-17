@@ -814,6 +814,12 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
                 value = Type::ConsoleSession;
             else if (builtin == "DisplaySession")
                 value = Type::DisplaySession;
+            else if (builtin == "CallSession")
+                value = Type::CallSession;
+            else if (builtin == "CallResult")
+                value = service::callResultType();
+            else if (builtin == "CallStatus")
+                value = service::callStatusType();
             else if (builtin == "IommuEventSession")
                 value = Type::IommuEventSession;
             else if (builtin == "ConsoleSample")

@@ -747,7 +747,7 @@ class Projection {
             scalar.scalar(OperandRole::Size);
             scalar.finish();
         }
-        for (std::int64_t at = 9; at < 14; ++at) {
+        for (std::int64_t at = 9; at < 15; ++at) {
             Operands operation(*this, own(at, RecordKind::ServiceContract));
             (void)type(operation, OperandRole::TypeId);
             (void)serviceKind(operation);
@@ -759,7 +759,7 @@ class Projection {
                 (void)services.type(identity(item.signedValue));
             operation.finish();
         }
-        Operands layoutOrder(*this, own(14, RecordKind::InitialLayoutOrder));
+        Operands layoutOrder(*this, own(15, RecordKind::InitialLayoutOrder));
         const auto symbols = list(layoutOrder.take(OperandRole::InitialLayoutSymbols), OperandRole::ClassNominalId);
         for (const auto &item : symbols)
             (void)services.className(identity(item.signedValue));

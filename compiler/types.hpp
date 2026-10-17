@@ -36,7 +36,8 @@ enum class TypeKind {
     ConsoleSession,
     DisplaySession,
     IommuEventSession,
-    OwnedValues
+    OwnedValues,
+    CallSession
 };
 enum class TemplateArgumentKind {
     Type,
@@ -137,7 +138,7 @@ public:
     }
     bool isService() const {
         return kind == TypeKind::ConsoleSession || kind == TypeKind::DisplaySession ||
-               kind == TypeKind::IommuEventSession;
+               kind == TypeKind::IommuEventSession || kind == TypeKind::CallSession;
     }
     bool isBytes() const {
         return kind == TypeKind::OwnedBytes;
@@ -180,7 +181,7 @@ public:
         return type;
     }
     static const Type I64, U64, U8, Bool, Own, Ref, MutRef, ByteSpan, ByteRegion, OwnedBytes, ConsoleSession,
-        DisplaySession, IommuEventSession;
+        DisplaySession, IommuEventSession, CallSession;
 };
 inline const Type Type::I64{TypeKind::I64};
 inline const Type Type::U64{TypeKind::U64};
@@ -195,6 +196,7 @@ inline const Type Type::OwnedBytes{TypeKind::OwnedBytes};
 inline const Type Type::ConsoleSession{TypeKind::ConsoleSession};
 inline const Type Type::DisplaySession{TypeKind::DisplaySession};
 inline const Type Type::IommuEventSession{TypeKind::IommuEventSession};
+inline const Type Type::CallSession{TypeKind::CallSession};
 inline std::string typeName(const Type &type) {
     switch (type.kind) {
     case TypeKind::I64:
@@ -215,6 +217,8 @@ inline std::string typeName(const Type &type) {
         return "builtin::span<const u8>";
     case TypeKind::ByteRegion:
         return "builtin::ByteRegion";
+    case TypeKind::CallSession:
+        return "builtin::CallSession";
     case TypeKind::IommuEventSession:
         return "builtin::IommuEventSession";
     case TypeKind::DisplaySession:

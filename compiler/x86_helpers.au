@@ -7,6 +7,9 @@ import aurora.compiler.ir_instruction_storage;
 import aurora.compiler.lowering_kinds;
 
 export namespace compiler_x86 {
+    auto service_type_kind(i64 kind) -> bool {
+        return kind == 14 || kind == 15 || kind == 16 || kind == 18;
+    }
     auto operand_value(const compiler_ir_instructions::InstructionStore& store, i64 instruction, i64 field) -> i64 {
         return compiler_ir_instructions::call_value(store, instruction, field);
     }
@@ -139,7 +142,7 @@ export namespace compiler_x86 {
     }
     auto argument_bytes(const compiler_ir_metadata::MetadataStore& metadata, i64 type) -> i64 {
         const i64 kind = type_kind(metadata, type);
-        if (kind >= 14 && kind <= 16) {
+        if (service_type_kind(kind)) {
             return 16;
         }
         if (kind == 13 || kind == 17) {

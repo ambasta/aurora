@@ -126,7 +126,7 @@ export namespace compiler_x86 {
             index = index - 1;
             const i64 type = parameter_type(metadata, target, index);
             const i64 kind = type_kind(metadata, type);
-            if (kind != 5 && kind != 11 && (kind < 14 || kind > 16)) {
+            if (kind != 5 && kind != 11 && !service_type_kind(kind)) {
                 workspace.pop_argument(index);
             }
         }
@@ -140,7 +140,7 @@ export namespace compiler_x86 {
             const i64 type = parameter_type(metadata, target, index);
             const i64 kind = type_kind(metadata, type);
             const i64 offset = record_offset(metadata, target, index);
-            if (kind >= 14 && kind <= 16) {
+            if (service_type_kind(kind)) {
                 i64 loan = operand_value(store, instruction, 1);
                 if (index != 0) {
                     loan = operand_lane(store, instruction, 5,(index - 1) * 2);
@@ -184,6 +184,22 @@ export namespace compiler_x86 {
         const i64 result = operand_value(store, instruction, 2);
         workspace.line_address("movq ", offset, ", %rdi");
         workspace.line_address("movq ", offset - 8, ", %rsi");
+        if (operation == 5) {
+            workspace.line("movq %rax, %rdx");
+            workspace.call_runtime("__au_runtime_call");
+            workspace.service_completion("__au_runtime_call", 3, 2);
+            // The trap returns copied scalars only. Never pass the result address
+            // to the kernel, and reject a nonzero value for every failure status.
+            workspace.line("xorq %rcx, %rcx");
+            workspace.line("testq %rax, %rax");
+            workspace.line("setne %cl");
+            workspace.line("negq %rcx");
+            workspace.line("andq %rdx, %rcx");
+            workspace.line("jne .Laurora_bounds_trap");
+            workspace.line_address("movq %rax, ", result, "");
+            workspace.line_address("movq %rdx, ", result - 8, "");
+            return workspace.ok();
+        }
         if (operation == 2) { // Pixel has a seventh host argument.
             workspace.pop("%r10");
             workspace.pop("%r9");

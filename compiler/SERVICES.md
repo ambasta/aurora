@@ -15,10 +15,10 @@ auto receive(builtin::ConsoleSession& session) -> builtin::ConsoleSample {
 
 ## Source and lifetime
 
-`ConsoleSession`, `DisplaySession` and `IommuEventSession` are distinct
+`ConsoleSession`, `DisplaySession`, `IommuEventSession` and `CallSession` are distinct
 compiler-owned sealed service kinds. An explicit contiguous leading group of one or two exclusive service
-reference free-function formals is accepted. The explicit group allowlist is Console, Display or Event alone, Console+Display
-in either order, and Event+Console in either order. Event+Display, duplicate kinds
+reference free-function formals is accepted. The explicit group allowlist is Console, Display, Event or Call alone, Console+Display
+in either order, and Event+Console in either order. Call cannot mix with any other kind. Event+Display, duplicate kinds
 and all triples are rejected. There is no
 by-value or const variant. It cannot be constructed, copied, moved, assigned, stored in a
 local/field/array, returned, reflected or converted. A reference is a parameter
@@ -70,6 +70,22 @@ The closed compiler operation table in `services.hpp` owns host linkage:
   Invalid/stale/reentrant grants or malformed raw channels fail before any store;
   valid out-of-range coordinates return 1 with zero writes. Native transport owns
   completion ordering. This compiler contract does not qualify a display driver.
+
+## Copied request/reply call
+
+`CallSession.call(u64 request)` returns `builtin::CallResult`, with public fields
+`status: builtin::CallStatus` and `value: u64` in that order. The closed status
+cases are `replied` (0), `cancelled` (1), and `rejected` (2). Failure values must
+be zero. The copied result has two qwords and carries no wait or wake authority.
+Helpers may forward the singleton exclusive session and return copied results;
+all ordinary lifetime, initialization and nominal layout checks still apply.
+
+The compiler-selected `__au_runtime_call` boundary receives the opaque grant,
+generation and request in RDI, RSI and RDX. It returns status in RAX and value in
+RDX. Generated code checks both full-width channels before storing them in local
+result storage. No result pointer crosses this boundary. Native source/ABI and
+hostile IR tests establish this compiler contract only; protected blocking,
+continuation authentication and preserved run budgets require kernel integration.
 
 ## Bounded IOMMU event observation
 

@@ -81,7 +81,7 @@ export namespace compiler_x86 {
             i64 parameter = 0;
             while (parameter < parameter_count(m, callable)) {
                 const i64 kind = type_kind(m, parameter_type(m, callable, parameter));
-                if (kind >= 14 && kind <= 16) {
+                if (service_type_kind(kind)) {
                     return true;
                 }
                 parameter = parameter + 1;

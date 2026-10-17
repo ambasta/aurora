@@ -9,7 +9,7 @@
 namespace aurora {
 // The fixed typed prelude is checked explicitly, never an arbitrary prefix of
 // rows exempted from the output graph's ownership contract.
-inline constexpr std::int64_t hostedLoweringPreludeRows = 15;
+inline constexpr std::int64_t hostedLoweringPreludeRows = 16;
 
 // These views own no Session descriptor. HostedResolution copies each published
 // output pool once while its consuming owner is armed, then keeps the copies

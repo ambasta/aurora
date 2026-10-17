@@ -45,7 +45,7 @@ export namespace compiler_lowering {
     // a native name. Functions and instructions retain their producer order.
     auto module_list(compiler_resolver::Session& session, RecordKind kind, OperandRole role, i64 limit) -> OperandRow {
         const i64 begin = session.operand_count();
-        i64 at = 15;
+        i64 at = 16;
         i64 count = 0;
         while (at < limit && session.good()) {
             const OutputRow row = session.view_output(at);
@@ -75,7 +75,7 @@ export namespace compiler_lowering {
         while (at < count && session.good()) {
             const i64 symbol = function_symbol(session, at);
             const FunctionBodyResult body = lower_function_body(session, symbol, label, lint);
-            if (session.good() && (body.function_row() < 15 || body.next_label() < label)) {
+            if (session.good() && (body.function_row() < 16 || body.next_label() < label)) {
                 session.fail_storage(compiler_resolver::StorageStatus::invalid);
             }
             label = body.next_label();
@@ -107,7 +107,7 @@ export namespace compiler_lowering {
         session.append_operand(enums);
         session.append_operand(lint_messages);
         const i64 root = record(session, RecordKind::Module, begin, 7);
-        if (!session.good() || root < 15) {
+        if (!session.good() || root < 16) {
             const LoweringResult result = failed_result(session);
             return result;
         }

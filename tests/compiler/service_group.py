@@ -3,6 +3,7 @@
 
 import argparse
 import os
+import signal
 from pathlib import Path
 import subprocess
 import tempfile
@@ -75,6 +76,52 @@ __au_runtime_group_entry:
     for mode in range(4):
         result = run([binary, mode])
         require(result.returncode == 0, f"service group ABI/stop-prefix failed ({mode}): " + result.stderr.decode())
+    call_assembly = work / "call.s"
+    result = run([compiler, ROOT / "tests/compiler/call_service.au", "-o", call_assembly])
+    require(result.returncode == 0, result.stderr.decode())
+    call_text = call_assembly.read_text()
+    call_symbol = "__au_v_m1_12call_service_n0__d12call_service"
+    require(".local " + call_symbol in call_text, "call entry must remain private")
+    call_assembly.write_text(
+        call_text
+        + f"""
+.text
+.globl __au_runtime_group_entry
+.hidden __au_runtime_group_entry
+.type __au_runtime_group_entry,@function
+__au_runtime_group_entry:
+    pushq %rbp
+    movq %rsp, %rbp
+    movq %rdi, %r11
+    call {call_symbol}
+    leave
+    ret
+.size __au_runtime_group_entry,.-__au_runtime_group_entry
+"""
+    )
+    call_binary = work / "call"
+    result = run(
+        [
+            os.environ.get("CXX", "g++"),
+            "-std=c++23",
+            "-O1",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            ROOT / "tests/compiler/call_service_host.cpp",
+            ROOT / "tests/compiler/service_group_abi.S",
+            call_assembly,
+            "-o",
+            call_binary,
+        ]
+    )
+    require(result.returncode == 0, result.stderr.decode())
+    for mode in range(7):
+        result = run([call_binary, mode])
+        require(
+            result.returncode == (0 if mode < 3 else -signal.SIGILL),
+            f"call result ABI/canonicality failed ({mode}): " + result.stderr.decode(),
+        )
     pair = "builtin::ConsoleSession& c, builtin::DisplaySession& d"
     helper = f"auto g({pair}, bool flag) -> i64 {{ return 0; }} "
     negative = {
@@ -100,6 +147,25 @@ __au_runtime_group_entry:
         "recursive": f"auto f({pair}) -> i64 {{ return f(c, d); }}",
         "seven": f"auto f({pair}, i64 a, i64 b, i64 e, i64 f, i64 g) -> i64 {{ return 0; }}",
     }
+    call = "builtin::CallSession& c"
+    negative.update(
+        {
+            "call-mixed-console": f"auto f({call}, builtin::ConsoleSession& s) -> i64 {{ return 0; }}",
+            "call-mixed-event": f"auto f({call}, builtin::IommuEventSession& s) -> i64 {{ return 0; }}",
+            "call-mixed-display": f"auto f({call}, builtin::DisplaySession& s) -> i64 {{ return 0; }}",
+            "call-duplicate": f"auto f({call}, builtin::CallSession& s) -> i64 {{ return 0; }}",
+            "call-owned-values": f"auto f({call}, builtin::OwnedValues<u64> v) -> i64 {{ return 0; }}",
+            "call-wrong-signed": f"auto f({call}) -> builtin::CallResult {{ return c.call(1); }}",
+            "call-wrong-byte": f"auto f({call}) -> builtin::CallResult {{ return c.call(1u8); }}",
+            "call-extra": f"auto f({call}) -> builtin::CallResult {{ return c.call(1u64, 2u64); }}",
+            "call-absent": f"auto f({call}) -> builtin::CallResult {{ return c.call(); }}",
+            "call-value": "auto f(builtin::CallSession c) -> i64 { return 0; }",
+            "call-const": "auto f(const builtin::CallSession& c) -> i64 { return 0; }",
+            "call-return-capability": f"auto f({call}) -> builtin::CallSession {{ return c; }}",
+            "call-forge": "auto f() -> i64 { builtin::CallSession c; return 0; }",
+            "call-raw": "auto __au_runtime_call() -> i64 { return 0; }",
+        }
+    )
     for name, body in negative.items():
         source = work / (name + ".au")
         source.write_text("module rejected; " + body)

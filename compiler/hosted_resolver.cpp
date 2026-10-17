@@ -488,6 +488,9 @@ class Projection {
         case ResolvedTypeKind::display_session:
             result = Type::DisplaySession;
             break;
+        case ResolvedTypeKind::call_session:
+            result = Type::CallSession;
+            break;
         case ResolvedTypeKind::event_session:
             result = Type::IommuEventSession;
             break;
@@ -1080,8 +1083,9 @@ struct BuiltinCatalog {
                             Type::OwnedBytes,
                             Type::ConsoleSession,
                             Type::DisplaySession,
-                            Type::IommuEventSession};
-    std::array<service::CopiedDefinition, 9> definitions = service::copiedDefinitions();
+                            Type::IommuEventSession,
+                            Type::CallSession};
+    std::array<service::CopiedDefinition, 11> definitions = service::copiedDefinitions();
     BuiltinCatalog() {
         for (const auto &definition : definitions)
             types.push_back(definition.type);
@@ -1148,7 +1152,7 @@ std::uint64_t resolutionQuota() {
     const auto P = mul(sum({mul(34, N), S, K}), D);
     const auto storage = sum({64, U, textCount, mul(2, Q), P, L, H});
     const auto storageIndexes = sum({U, mul(2, Q), P, N, L, H, mul(2, M)});
-    const auto primitiveKinds = static_cast<std::uint64_t>(ResolvedTypeKind::owned_values) + 1;
+    const auto primitiveKinds = static_cast<std::uint64_t>(ResolvedTypeKind::call_session) + 1;
     const auto types = sum({mul(2, Sx), K, primitiveKinds}), categories = mul(7, M + 1);
     const auto nominals = add(Sx, K), authority = mul(I, nominals);
     const auto semantic = sum({2,
@@ -1421,6 +1425,8 @@ ResolvedTypeKind wireKind(const Type &type) {
         return ResolvedTypeKind::console_session;
     case TypeKind::DisplaySession:
         return ResolvedTypeKind::display_session;
+    case TypeKind::CallSession:
+        return ResolvedTypeKind::call_session;
     case TypeKind::IommuEventSession:
         return ResolvedTypeKind::event_session;
     case TypeKind::Class:
@@ -1548,7 +1554,7 @@ class HostedResolution::Impl {
                 invalidResolution();
             }
         }
-        if (service::operations.size() != 5 || serviceKinds.size() != 3 ||
+        if (service::operations.size() != 6 || serviceKinds.size() != 4 ||
             serviceSpellings.size() != service::operations.size())
             invalidResolution();
         for (std::size_t index = 0; index < service::operations.size(); ++index) {

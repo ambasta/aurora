@@ -123,7 +123,13 @@ export namespace compiler_parser {
             if (service == 1) {
                 return display_mask;
             }
-            return event_mask;
+            if (service == 2) {
+                return event_mask;
+            }
+            if (service == 3) {
+                return 8;
+            }
+            return 0;
         }
     };
     class AdmissionResult {
@@ -497,7 +503,7 @@ namespace compiler_parser {
         const builtin::span<const u8> words1 = borrow_bytes(names1);
         const array<u8, 64> names2 = "ConsoleSession;ConsoleSample;ConsolePutResult;ConsoleCompletion;";
         const builtin::span<const u8> words2 = borrow_bytes(names2);
-        const array<u8, 22> names3 = "ByteRegion;OwnedBytes;";
+        const array<u8, 56> names3 = "ByteRegion;OwnedBytes;CallSession;CallResult;CallStatus;";
         const builtin::span<const u8> words3 = borrow_bytes(names3);
         return word_list_matches(source, token, words0) || word_list_matches(source, token, words1)
             || word_list_matches(source, token, words2) || word_list_matches(source, token, words3);
@@ -879,7 +885,7 @@ namespace compiler_parser {
                                                 return TypeResult(ParseStatus::expected_array, -1, token);
                                             }
                                             kind = TypeKind::builtin_type;
-                                            const array<u8, 31> samples = "ConsoleSample;IommuEventSample;";
+                                            const array<u8, 42> samples = "ConsoleSample;IommuEventSample;CallResult;";
                                             const builtin::span<const u8> samples_words = borrow_bytes(samples);
                                             if (word_list_matches(source, token, samples_words)) {
                                                 kind = TypeKind::builtin_class;
@@ -3030,7 +3036,8 @@ namespace compiler_parser {
         if (token.kind() == compiler_lexer::Event::invalid_cursor) {
             return AdmissionType(AdmissionKind::invalid, 0, token);
         }
-        const array<u8, 70> names = "ByteRegion;OwnedBytes;ConsoleSession;DisplaySession;IommuEventSession;";
+        const array<u8,
+            82> names = "ByteRegion;OwnedBytes;ConsoleSession;DisplaySession;IommuEventSession;CallSession;";
         const builtin::span<const u8> words = borrow_bytes(names);
         if (word_matches(source, token, words, 0, 10)) {
             return AdmissionType(AdmissionKind::region, 0, token);
@@ -3047,8 +3054,11 @@ namespace compiler_parser {
         if (word_matches(source, token, words, 52, 69)) {
             return AdmissionType(AdmissionKind::service, configuration.service_mask(2), token);
         }
+        if (word_matches(source, token, words, 70, 81)) {
+            return AdmissionType(AdmissionKind::service, configuration.service_mask(3), token);
+        }
         const array<u8, 70> enums = "ConsolePutResult;ConsoleCompletion;DisplayPutResult;DisplayCompletion;";
-        const array<u8, 53> event_enums = "EventPollResult;EventAckResult;EventIntakeCompletion;";
+        const array<u8, 64> event_enums = "EventPollResult;EventAckResult;EventIntakeCompletion;CallStatus;";
         const builtin::span<const u8> enum_words = borrow_bytes(enums);
         const builtin::span<const u8> event_words = borrow_bytes(event_enums);
         if (word_list_matches(source, token, enum_words) || word_list_matches(source, token, event_words)) {
@@ -3281,14 +3291,14 @@ namespace compiler_parser {
             return admission_result(AdmissionStatus::allocation_failure);
         }
         if (root < 0 || root != arena.syntax_size() - 1 || configuration.array_limit(false) < 1
-            || configuration.array_limit(true) < 1 || configuration.groups() < 0 || configuration.groups() > 255) {
+            || configuration.array_limit(true) < 1 || configuration.groups() < 0 || configuration.groups() > 65535) {
             return admission_result(AdmissionStatus::invalid);
         }
         u64 masks = 0u64;
         i64 service = 0;
-        while (service < 3) {
+        while (service < 4) {
             const i64 mask = configuration.service_mask(service);
-            if ((mask != 1 && mask != 2 && mask != 4) || (masks & u64(mask)) != 0u64) {
+            if ((mask != 1 && mask != 2 && mask != 4 && mask != 8) || (masks & u64(mask)) != 0u64) {
                 return admission_result(AdmissionStatus::invalid);
             }
             masks = masks | u64(mask);

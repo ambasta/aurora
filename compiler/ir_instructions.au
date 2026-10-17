@@ -462,8 +462,8 @@ export namespace compiler_ir_instructions {
                         if (form == 0) {
                             const compiler_ir_metadata::RawTypeRow type = metadata.type_at(
                                 declaration.value_parameter_begin() + position);
-                            if (entry_value(store, row, 2) != type.kind() - 14 || entry_slot(metadata, callable, 14,
-                                offset) < 0) {
+                            if (entry_value(store, row, 2) != compiler_ir_metadata::service_kind(type)
+                                || entry_slot(metadata, callable, 14, offset) < 0) {
                                 return fail(store, InstructionError::service_binding);
                             }
                         } else {
@@ -1434,7 +1434,7 @@ export namespace compiler_ir_instructions {
                 at) != 0 || call_lane(store, instruction, 6, at) != 0 || !compiler_ir_metadata::service_type(type)) {
                 return fail(store, InstructionError::service_leading);
             }
-            if (kind != type.kind() - 14) {
+            if (kind != compiler_ir_metadata::service_kind(type)) {
                 return fail(store, InstructionError::service_kind);
             }
             at = at + 1;
@@ -1841,7 +1841,7 @@ export namespace compiler_ir_instructions {
         }
         if (form == 2) { // ReleaseServiceLoan: the executed path decides which loan is live and called.
             const i64 kind = call_value(store, instruction, 1);
-            if (call_value(store, instruction, 0) <= 0 || kind < 0 || kind > 2) {
+            if (call_value(store, instruction, 0) <= 0 || kind < 0 || kind > 3) {
                 return fail(store, InstructionError::service_release);
             }
             return true;
@@ -1850,16 +1850,19 @@ export namespace compiler_ir_instructions {
             return true;
         } // BindServiceParameter and ServiceCall were admitted in earlier phases.
         const i64 operation = call_value(store, instruction, 1);
-        if (operation < 0 || operation > 4) {
+        if (operation < 0 || operation > 5) {
             return fail(store, InstructionError::service_operation);
         }
         i64 expected_kind = 0; // Console: Next, Put
         if (operation == 2) {
             expected_kind = 1;
         } // Display: Pixel
-        if (operation >= 3) {
+        if (operation == 3 || operation == 4) {
             expected_kind = 2;
         } // IommuEvent: Poll, Acknowledge
+        if (operation == 5) {
+            expected_kind = 3;
+        }
         const i64 kind = call_value(store, instruction, 3);
         if (kind != expected_kind) {
             return fail(store, InstructionError::service_operation_kind);
@@ -1898,7 +1901,8 @@ export namespace compiler_ir_instructions {
         const compiler_ir_metadata::SlotRow slot = metadata.slot_at(slot_index);
         const compiler_ir_metadata::RawTypeRow type = metadata.type_at(slot.type());
         if ((operation == 0 && !compiler_ir_metadata::named(metadata, type.name(), "__au_console_sample")) || (operation
-            == 3 && !compiler_ir_metadata::named(metadata, type.name(), "__au_iommu_event_sample"))) {
+            == 3 && !compiler_ir_metadata::named(metadata, type.name(), "__au_iommu_event_sample")) || (operation == 5
+            && !compiler_ir_metadata::named(metadata, type.name(), "__au_call_result"))) {
             return fail(store, InstructionError::service_sample_result);
         }
         return true;

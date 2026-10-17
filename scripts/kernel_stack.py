@@ -855,7 +855,12 @@ def aurora_stack_functions(path, symbols, code, starts, generated_names):
         if "service_abi" in fact:
             require(type(service_abi) is dict and set(service_abi) == {"record", "calls"}, "Invalid service ABI fact")
             record, service_calls = service_abi["record"], service_abi["calls"]
-            kinds = {"builtin::ConsoleSession", "builtin::DisplaySession", "builtin::IommuEventSession"}
+            kinds = {
+                "builtin::ConsoleSession",
+                "builtin::DisplaySession",
+                "builtin::IommuEventSession",
+                "builtin::CallSession",
+            }
             if record is not None:
                 require(
                     type(record) is dict
@@ -880,6 +885,7 @@ def aurora_stack_functions(path, symbols, code, starts, generated_names):
                 "__au_runtime_console_put",
                 "__au_runtime_display_pixel",
                 "__au_runtime_iommu_event_acknowledge",
+                "__au_runtime_call",
             }
             require(
                 type(service_calls) is dict
@@ -895,6 +901,19 @@ def aurora_stack_functions(path, symbols, code, starts, generated_names):
                 ),
                 "Invalid scalar service call facts",
             )
+            if "__au_runtime_call" in service_calls:
+                require(
+                    service_calls["__au_runtime_call"] == {"sysv_arguments": 3, "result_max": 2},
+                    "Invalid Call register contract",
+                )
+            if record is not None and any(row[0] == "builtin::CallSession" for row in record["parameters"]):
+                require(
+                    record["parameters"][0] == ["builtin::CallSession", 16]
+                    and all(row == ["scalar", 8] for row in record["parameters"][1:]),
+                    "Call requires a singleton leading capability",
+                )
+        if "__au_runtime_call" in fact["calls"]:
+            require(service_abi is not None, "Missing Call register contract")
         local, edges = fact["local_bytes"], fact["calls"]
         require(type(local) is int and 8 <= local <= STACK_CAP, "Invalid Aurora local stack bound")
         require(

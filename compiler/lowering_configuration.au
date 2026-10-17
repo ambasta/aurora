@@ -12,8 +12,8 @@ import aurora.compiler.lowering_common;
 
 // A bounded immutable setup contract. It is not a semantic query surface.
 // Row0 reserves diagnostics; row1 has limits/mode; rows2..8 have scalar
-// descriptors; rows9..13 have the canonical service catalog; row14 seals the
-// initial native-name class permutation. Semantic output starts at row15.
+// descriptors; rows9..14 have the canonical service catalog; row15 seals the
+// initial native-name class permutation. Semantic output starts at row16.
 export namespace compiler_lowering {
     class LoweringConfig {
         i64 byteLeaves;
@@ -54,7 +54,7 @@ export namespace compiler_lowering {
             return serviceGroups;
         }
         auto set_policy(i64 mode, i64 groups) -> bool {
-            if (mode < 0 || mode > 1 || groups < 0 || groups > 255) {
+            if (mode < 0 || mode > 1 || groups < 0 || groups > 65535) {
                 return false;
             }
             analysisMode = mode;
@@ -159,7 +159,8 @@ export namespace compiler_lowering {
             || config.copied_bytes() < 1 || config.byte_array_length() < 1 || config.scalar_array_length() < 1
             || config.byte_leaves() > 8192 || config.non_byte_leaves() > 8192 || config.total_leaves() > 8192
             || config.copied_bytes() > 65536 || config.byte_array_length() > 8192 || config.scalar_array_length() > 8192
-            || config.mode() < 0 || config.mode() > 1 || config.service_groups() < 0 || config.service_groups() > 255) {
+            || config.mode() < 0 || config.mode() > 1 || config.service_groups() < 0 || config.service_groups()
+            > 65535) {
             return setup_invalid(session);
         }
         const i64 begin = session.operand_count();
@@ -213,8 +214,8 @@ export namespace compiler_lowering {
     auto seed_service(compiler_resolver::Session& session, ServiceSeed seed) -> i64 {
         const i64 next = session.output_count();
         const ServiceParameters parameters = seed.parameters();
-        if (next < 9 || next >= 14 || !compiler_resolver::service_kind(seed.receiver_kind()) || seed.kind_id() < 0
-            || seed.kind_id() > 2 || seed.operation_id() < 0 || seed.operation_id() > 4 || seed.spelling_source() < 0
+        if (next < 9 || next >= 15 || !compiler_resolver::service_kind(seed.receiver_kind()) || seed.kind_id() < 0
+            || seed.kind_id() > 3 || seed.operation_id() < 0 || seed.operation_id() > 5 || seed.spelling_source() < 0
             || seed.result_type() < 0 || parameters.count() < 0 || parameters.count() > 5) {
             return setup_invalid(session);
         }
@@ -246,7 +247,7 @@ export namespace compiler_lowering {
         return record(session, RecordKind::ServiceContract, begin, 6);
     }
     auto seed_layout_symbol(compiler_resolver::Session& session, i64 symbol) -> i64 {
-        if (session.output_count() != 14 || symbol < 0) {
+        if (session.output_count() != 15 || symbol < 0) {
             return setup_invalid(session);
         }
         const compiler_resolver::MetaRow value = session.meta(symbol);
@@ -257,7 +258,7 @@ export namespace compiler_lowering {
         return put(session, OperandRole::ClassNominalId, symbol);
     }
     auto seal_lowering_configuration(compiler_resolver::Session& session) -> bool {
-        if (!session.good() || session.output_count() != 14) {
+        if (!session.good() || session.output_count() != 15) {
             setup_invalid(session);
             return false;
         }
@@ -282,7 +283,7 @@ export namespace compiler_lowering {
             scalar_at = scalar_at + 1;
         }
         i64 service_at = 9;
-        while (service_at < 14 && session.good()) {
+        while (service_at < 15 && session.good()) {
             const OutputRow row = session.view_output(service_at);
             if (row.kind() != RecordKind::ServiceContract || row.operand_count() != 6) {
                 setup_invalid(session);
@@ -299,7 +300,7 @@ export namespace compiler_lowering {
             }
             service_at = service_at + 1;
         }
-        const OutputRow last = session.view_output(13);
+        const OutputRow last = session.view_output(14);
         if (last.kind() != RecordKind::ServiceContract || last.operand_count() != 6) {
             setup_invalid(session);
             return false;
@@ -321,7 +322,7 @@ export namespace compiler_lowering {
         }
         const i64 prefix = session.operand_count();
         put_slice(session, OperandRole::InitialLayoutSymbols, begin, count);
-        return record(session, RecordKind::InitialLayoutOrder, prefix, 1) == 14;
+        return record(session, RecordKind::InitialLayoutOrder, prefix, 1) == 15;
     }
     auto configured_limit(compiler_resolver::Session& session, OperandRole role) -> i64 {
         const OutputRow row = session.view_output(1);
@@ -351,16 +352,16 @@ export namespace compiler_lowering {
         return setup_invalid(session);
     }
     auto service_contract_count() -> i64 {
-        return 5;
+        return 6;
     }
     auto service_contract(compiler_resolver::Session& session, i64 ordinal) -> i64 {
-        if (ordinal < 0 || ordinal >= 5 || session.output_count() < 15) {
+        if (ordinal < 0 || ordinal >= 6 || session.output_count() < 16) {
             return setup_invalid(session);
         }
         return ordinal + 9;
     }
     auto service_group_supported(compiler_resolver::Session& session, i64 first, i64 second) -> bool {
-        if (first < 0 || first > 2 || second < -1 || second > 2) {
+        if (first < 0 || first > 3 || second < -1 || second > 3) {
             setup_invalid(session);
             return false;
         }
@@ -369,18 +370,18 @@ export namespace compiler_lowering {
             group = group | (1u64 << second);
         }
         const i64 allowed = configured_limit(session, OperandRole::SupportedServiceGroups);
-        if (allowed < 0 || allowed > 255) {
+        if (allowed < 0 || allowed > 65535) {
             setup_invalid(session);
             return false;
         }
         return (u64(allowed) & (1u64 << i64(group))) != 0u64;
     }
     auto initial_layout_count(compiler_resolver::Session& session) -> i64 {
-        const OperandRow order = record_slice(session, 14, OperandRole::InitialLayoutSymbols);
+        const OperandRow order = record_slice(session, 15, OperandRole::InitialLayoutSymbols);
         return order.count();
     }
     auto initial_layout_symbol(compiler_resolver::Session& session, i64 ordinal) -> i64 {
-        const OperandRow order = record_slice(session, 14, OperandRole::InitialLayoutSymbols);
+        const OperandRow order = record_slice(session, 15, OperandRole::InitialLayoutSymbols);
         if (ordinal < 0 || ordinal >= order.count()) {
             return setup_invalid(session);
         }
