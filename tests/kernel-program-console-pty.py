@@ -1037,7 +1037,7 @@ def main():
                 wc("missing", None)
                 file_write("alpha", "a " * 24 + "z")
                 wc("alpha", "a " * 24 + "z")
-                for invalid in ("wc ", "wc alpha extra"):
+                for invalid in ("wc ", "wc alpha extra", "wc note"):
                     file_local(invalid, "Unknown command. Type help.")
                 begin = len(transcript)
                 send(b"exit\n")
@@ -1062,6 +1062,11 @@ def main():
                 )
                 print("PASS: command-bound returning file byte, live locals, original budget and retired authority")
                 return
+
+            # Returning file calls are opt-in. Legacy profiles must reject even
+            # syntactically valid commands without launching a domain.
+            for invalid in ("wc alpha", "wc note", "wc ", "wc alpha extra"):
+                file_local(invalid, "Unknown command. Type help.")
 
             if args.mode == "program-console":
                 file_local("ls", "files: empty (RAM-only).")
