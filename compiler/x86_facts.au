@@ -72,7 +72,7 @@ export namespace compiler_x86 {
         i64 at = 0;
         while (at < parameter_count(metadata, callable)) {
             const i64 kind = type_kind(metadata, parameter_type(metadata, callable, at));
-            if (kind >= 14 && kind <= 16) {
+            if (service_type_kind(kind)) {
                 service = true;
             } else {
                 if (!fact_scalar_kind(kind)) {
@@ -574,6 +574,9 @@ export namespace compiler_x86 {
         if (kind == 16) {
             return workspace.text("\"builtin::IommuEventSession\"");
         }
+        if (kind == 18) {
+            return workspace.text("\"builtin::CallSession\"");
+        }
         return workspace.text("\"scalar\"");
     }
     auto fact_emit_stack_function(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
@@ -745,7 +748,7 @@ export namespace compiler_x86 {
                     if (kind == 13 || kind == 17) {
                         workspace.text("\"owner\"");
                     } else {
-                        if (kind >= 14 && kind <= 16) {
+                        if (service_type_kind(kind)) {
                             workspace.text("\"service\"");
                         } else {
                             if (kind == 12) {

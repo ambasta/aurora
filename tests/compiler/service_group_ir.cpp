@@ -5,6 +5,96 @@
 #include <fstream>
 
 namespace {
+Module callResult() {
+    Module m;
+    const auto result = service::callResultType();
+    const auto status = service::callStatusType();
+    m.classLayouts[result.className] = {status, Type::U64};
+    m.classFields[result.className] = {{status, 0, 1, false}, {Type::U64, 1, 1, false}};
+    m.enumCases[status.className] = 3;
+    auto f = entry("call_result");
+    f.parameters = {Type::CallSession};
+    f.result = result;
+    f.objectSlots[40] = {result.className, false};
+    f.slots = {{40, status}, {32, Type::U64}};
+    f.code = {BindServiceParameter{0, 16, service::Kind::Call},
+              BeginObject{40},
+              Constant{42, Type::U64},
+              ServiceOperation{16, service::Operation::Call, 40, service::Kind::Call},
+              ReturnObject{40}};
+    m.functions.push_back(f);
+    return m;
+}
+void callChecks() {
+    good(callResult());
+    for (auto kind : {service::Kind::Console,
+                      service::Kind::Display,
+                      service::Kind::IommuEvent,
+                      static_cast<service::Kind>(4),
+                      static_cast<service::Kind>(-1)})
+        bad(callResult(), [=](auto &m) {
+            std::get<ServiceOperation>(m.functions[0].code[3]).kind = kind;
+        });
+    for (int operation : {-1, 0, 1, 2, 3, 4, 6, 999})
+        bad(callResult(), [=](auto &m) {
+            std::get<ServiceOperation>(m.functions[0].code[3]).operation = static_cast<service::Operation>(operation);
+        });
+    for (auto type : {Type::I64, Type::U8, Type::Bool})
+        bad(callResult(), [=](auto &m) {
+            m.functions[0].code[2] = Constant{1, type};
+        });
+    for (int offset : {0, 8, 16, 32, 48})
+        bad(callResult(), [=](auto &m) {
+            std::get<ServiceOperation>(m.functions[0].code[3]).resultOffset = offset;
+        });
+    for (auto type :
+         {Type::ConsoleSession, Type::DisplaySession, Type::IommuEventSession, Type::ownedValues(Type::U64)})
+        bad(callResult(), [=](auto &m) {
+            m.functions[0].parameters[0] = type;
+        });
+    for (auto type : {Type::ConsoleSession, Type::DisplaySession, Type::IommuEventSession, Type::CallSession})
+        bad(callResult(), [=](auto &m) {
+            m.functions[0].parameters.push_back(type);
+        });
+    for (int count : {0, 1, 2, 4})
+        bad(callResult(), [=](auto &m) {
+            m.enumCases[service::callStatusType().className] = count;
+        });
+    bad(callResult(), [](auto &m) {
+        m.classLayouts[service::callResultType().className][0] = Type::U64;
+    });
+    bad(callResult(), [](auto &m) {
+        m.classFields[service::callResultType().className][1].array = true;
+    });
+    bad(callResult(), [](auto &m) {
+        m.classLayouts["Fake"] = m.classLayouts.at(service::callResultType().className);
+        m.classFields["Fake"] = m.classFields.at(service::callResultType().className);
+        m.functions[0].objectSlots[40].className = "Fake";
+    });
+    bad(callResult(), [](auto &m) {
+        m.functions[0].code.erase(m.functions[0].code.begin() + 1);
+    });
+    bad(callResult(), [](auto &m) {
+        m.functions[0].code.insert(m.functions[0].code.begin() + 2, {Constant{0, Type::U64}, Store{32, Type::U64}});
+    });
+    bad(callResult(), [](auto &m) {
+        m.functions[0].code.insert(m.functions[0].code.begin() + 2, AcquireServiceLoan{1, 16, service::Kind::Call});
+    });
+    auto forwarded = callResult();
+    auto caller = forwarded.functions[0];
+    caller.name = "call_forward";
+    caller.code = {BindServiceParameter{0, 16, service::Kind::Call},
+                   BeginObject{40},
+                   AcquireServiceLoan{1, 16, service::Kind::Call},
+                   ServiceCall{"call_result", 1, 40, {0}, service::Kind::Call},
+                   ReleaseServiceLoan{1, service::Kind::Call},
+                   ReturnObject{40}};
+    forwarded.functions.push_back(caller);
+    good(forwarded);
+    bad(forwarded, [](auto &m) {
+        m.functions.back().code.erase(m.functions.back().code.begin() + 4);
+    });
+}
 F groupEntry(const std::string &name, bool displayFirst = false) {
     auto f = entry(name);
     f.parameters = displayFirst ? std::vector<Type>{Type::DisplaySession, Type::ConsoleSession}
@@ -181,6 +271,7 @@ Module executedNonlexical() {
 
 int main(int argc, char **argv) {
     display_service_regression();
+    callChecks();
     good(groupDirect());
     good(groupDirect(true));
     good(groupForwarded());

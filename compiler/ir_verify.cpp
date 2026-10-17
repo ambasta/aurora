@@ -1857,7 +1857,10 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                         } else if (operation.operation == service::Operation::IommuAcknowledge) {
                             state.current = Value{service::eventAckResultType(), {}};
                         } else if (operation.operation == service::Operation::Next ||
-                                   operation.operation == service::Operation::IommuPoll) {
+                                   operation.operation == service::Operation::IommuPoll ||
+                                   operation.operation == service::Operation::Call) {
+                            if (operation.operation == service::Operation::Call)
+                                current(Type::U64);
                             const int base = operation.resultOffset;
                             require(state.activeObjects.contains(base) && !initialization.objectWasConstructed(base),
                                     "service observation requires exact pristine active copied sample object");

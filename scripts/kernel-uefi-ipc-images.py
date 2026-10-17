@@ -31,6 +31,7 @@ def verify(
     copied_snapshot=False,
     copied_note=False,
     note_entry=None,
+    call_entry=None,
 ):
     result = _base.verify(
         data,
@@ -41,6 +42,7 @@ def verify(
         copied_snapshot=copied_snapshot,
         copied_note=copied_note,
         note_entry=note_entry,
+        call_entry=call_entry,
     )
     need(result["probe_offset"] == 0, "IPC has no address literal authority")
     probe = result["probe_pc"]
@@ -55,6 +57,26 @@ def verify(
             not in [result[k] for k in ("return_pc", "bounds_pc", "overflow_pc", "division_zero_pc", "shift_count_pc")],
             "IPC probe aliases accepted site",
         )
+    call_pc = symbols.get("aurora_call_return_pc", 0)
+    call_stub = symbols.get("__au_runtime_call", 0)
+    if call_entry is not None:
+        need(
+            base + 2 <= call_pc < base + len(blob)
+            and call_stub == call_pc - 2
+            and blob[call_stub - base : call_pc - base + 1] == b"\xcd\x82\xc3",
+            "Exact INT82 returning call stub",
+        )
+        need(
+            all(
+                not (call_stub < result[k] + 2 and result[k] < call_pc + 1)
+                for k in ("return_pc", "bounds_pc", "overflow_pc", "division_zero_pc", "shift_count_pc")
+                if result[k]
+            ),
+            "Call stub aliases terminal site",
+        )
+        result["call_pc"] = call_pc
+    else:
+        need(call_pc == call_stub == 0, "Call authority outside singleton client")
     return result
 
 
@@ -88,9 +110,18 @@ def validate_composition(
     user_budget=False,
     program_console=False,
     snapshot=False,
+    blocking_call=False,
 ):
     need(
-        not snapshot or not any((service_budget, dispatcher, user_budget, program_console)),
+        not blocking_call
+        or service_budget
+        and user_budget
+        and not any((dispatcher, program_console, snapshot))
+        and mode == "normal",
+        "Call requires exact two-domain timer composition",
+    )
+    need(
+        not snapshot or not any((service_budget, dispatcher, user_budget, program_console, blocking_call)),
         "Snapshot requires its exclusive IPC composition",
     )
     need(mode != "resume" or (user_budget and dispatcher and not program_console), "Resume requires client dispatcher")
@@ -104,14 +135,43 @@ def validate_composition(
         not program_console or mode in ("normal", "owner", "ordinal", "unknown", "transaction"),
         "Unsupported protected console mode",
     )
-    need(not user_budget or dispatcher or program_console, "User budgets require dispatcher profile")
+    need(not user_budget or dispatcher or program_console or blocking_call, "User budgets require dispatcher profile")
     need(not dispatcher or service_budget, "Dispatcher requires service timer profile")
 
 
+def call_entry_abi(facts):
+    from bootstrap_frontend import abi_function_symbol
+
+    symbol = abi_function_symbol(facts, "aurora_user_main")
+    expected = dict(
+        source_name="aurora_user_main",
+        receiver=None,
+        receiver_mutable=None,
+        borrowed_root_count=0,
+        borrowed_roots=[],
+        borrowed_root_abi=dict(
+            kind="none", register=None, tuple_payload_bytes=0, tuple_reserved_bytes=0, saved_root_reserved_bytes=0
+        ),
+        parameter_bytes=40,
+        parameters=[dict(offset=0, bytes=16, kind="service")]
+        + [dict(offset=offset, bytes=8, kind="u64") for offset in (16, 24, 32)],
+        result=dict(bytes=8, kind="u64"),
+    )
+    need(facts.get("version") == 2 and facts["functions"][symbol] == expected, "Exact copied call entry ABI")
+    return symbol
+
+
 def emit_metadata(
-    out, mode, service_budget=False, dispatcher=False, user_budget=False, program_console=False, snapshot=False
+    out,
+    mode,
+    service_budget=False,
+    dispatcher=False,
+    user_budget=False,
+    program_console=False,
+    snapshot=False,
+    blocking_call=False,
 ):
-    validate_composition(mode, service_budget, dispatcher, user_budget, program_console, snapshot)
+    validate_composition(mode, service_budget, dispatcher, user_budget, program_console, snapshot, blocking_call)
     records = {}
     header = ["#pragma once", "#include <array>", "#include <cstddef>", "namespace aurora::uefi::images {"]
     for index, name in enumerate(("clean", "bounds", "peer") if dispatcher else ("clean", "bounds")):
@@ -133,10 +193,12 @@ def emit_metadata(
             mode, b"\x0f\x0b"
         )
         compiled = "aurora_user_main"
-        if program_console and index == 1:
+        if (program_console and index == 1) or (blocking_call and index == 0):
             from bootstrap_frontend import abi_function_symbol
 
             compiled = abi_function_symbol(json.loads(prefix.with_suffix(".abi.json").read_text()), "aurora_user_main")
+        if blocking_call and index == 0:
+            compiled = call_entry_abi(json.loads(prefix.with_suffix(".abi.json").read_text()))
         meta = verify(
             elf.read_bytes(),
             blob,
@@ -147,6 +209,7 @@ def emit_metadata(
             copied_snapshot=snapshot and index == 1,
             copied_note=program_console and index == 1,
             note_entry=compiled if program_console and index == 1 else None,
+            call_entry=compiled if blocking_call and index == 0 else None,
         )
         if service_budget:
             functions = [
@@ -169,6 +232,72 @@ def emit_metadata(
     (out / "uefi-user-images.hpp").write_text("\n".join(header) + "\n")
     (out / "user-images.json").write_text(json.dumps(records, indent=2) + "\n")
     print("PASS: " + str(len(records)) + " independently compiled staged IPC RX images")
+
+
+def call_stack(directory):
+    import sys
+
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import kernel_stack as stack
+
+    graph = stack.image_stack_graph(directory, ("payload", "acpi", "pci", "runtime"), ROOT, protected=True)
+    result = stack.profile_stack(graph, {}, default_limit=11264, fault_reserve=512)
+    linked = graph["linked"]
+    site = next(s.address for s in linked.symbols if s.name == "uefi_service_drain_begin")
+    owner = next(n for n, s in linked.functions.items() if s.address <= site < s.address + s.size)
+    result["drain"] = stack.calculate(graph["functions"], "uefi_payload_entry", target=owner)
+    result["drain_irq_fault_peak"] = result["drain"]["peak"] + result["irq_dispatch"]["peak_with_entry"] + 512
+    need(result["drain_irq_fault_peak"] <= stack.STACK_CAP, "Call drain interrupt/fault reserve")
+    prefix = directory / "user-clean"
+    user = stack.Elf(prefix.with_suffix(".elf"))
+    symbols = {symbol.name: symbol for symbol in user.symbols}
+    code, _ = stack.disassemble(user.path)
+    entry = call_entry_abi(json.loads(prefix.with_suffix(".abi.json").read_text()))
+    facts = json.loads(prefix.with_suffix(".stack.json").read_text())["functions"]
+    need(
+        facts[entry]["service_abi"]["record"]
+        == dict(parameters=[["builtin::CallSession", 16]] + [["scalar", 8]] * 3, result_bytes=8),
+        "Exact singleton CallSession entry fact",
+    )
+    starts = {symbol.address: name for name, symbol in user.functions.items()}
+    functions = stack.aurora_stack_functions(prefix.with_suffix(".stack.json"), user.functions, code, starts, facts)
+    need(set(user.functions) == set(facts) | {"__au_runtime_call"}, "Closed call client function inventory")
+    stub = user.functions["__au_runtime_call"]
+    need(
+        stub.size == 3
+        and [(code[stub.address].op, code[stub.address].args), (code[stub.address + 2].op, code[stub.address + 2].args)]
+        == [("int", "$0x82"), ("ret", "")],
+        "Exact linked returning call stub",
+    )
+    functions["__au_runtime_call"] = dict(local_peak=8, calls=[], returns=1)
+    # The only handwritten user frame is the fixed envelope and copied record.
+    targets = {symbols[name].address: name for name in ("bad_entry", entry)}
+    wrapper = []
+    for address, insn in sorted(code.items()):
+        if symbols["aurora_program_entry"].address <= address < stub.address:
+            wrapper.append((insn.op, targets.get(stack.target_of(insn)) if insn.op in ("call", "jne") else insn.args))
+    expected = [("or", f"%{reg},%rax") for reg in ("rbx", "rbp", "r10", "r11", "r12", "r13", "r14", "r15")]
+    expected += [("jne", "bad_entry"), ("cmpq", "$0x0,-0x8(%rsp)"), ("jne", "bad_entry")]
+    expected += [("push", f"%{reg}") for reg in ("rdi", "rdx", "rcx", "r8", "r9")]
+    expected += [("sub", "$0x8,%rsp"), ("mov", "%r9,%rdx"), ("sub", "$0x30,%rsp")]
+    for source, target in (("0x50", ""), ("0x48", "0x8"), ("0x58", "0x10")):
+        expected += [("mov", f"{source}(%rsp),%rax"), ("mov", f"%rax,{target}(%rsp)")]
+    expected += [
+        ("mov", "%rsi,0x18(%rsp)"),
+        ("mov", "%r9,0x20(%rsp)"),
+        ("mov", "%rsp,%r11"),
+        ("call", entry),
+        ("add", "$0x30,%rsp"),
+        ("add", "$0x8,%rsp"),
+    ]
+    expected += [("pop", f"%{reg}") for reg in ("r9", "r8", "rcx", "rdx", "rdi")]
+    expected += [("mov", "$0x1,%esi"), ("int", "$0x81"), ("ud2", ""), ("ud2", "")]
+    need(wrapper == expected, "Exact call wrapper record/envelope and stack depth")
+    result["user"] = stack.calculate(functions, entry)
+    result["user"]["peak_with_wrapper"] = 96 + result["user"]["peak"]
+    need(result["user"]["peak_with_wrapper"] <= stack.STACK_CAP, "Call user stack reserve")
+    (directory / "call-stack.json").write_text(json.dumps(result, indent=2) + "\n")
+    print("PASS: call linked kernel/IRQ/drain and user stack; kernel peak " + str(result["peak_with_fault_reserve"]))
 
 
 if __name__ == "__main__":
@@ -202,7 +331,12 @@ if __name__ == "__main__":
     parser.add_argument("--user-budget", action="store_true")
     parser.add_argument("--program-console", action="store_true")
     parser.add_argument("--snapshot", action="store_true")
+    parser.add_argument("--blocking-call", action="store_true")
+    parser.add_argument("--call-stack", action="store_true")
     args = parser.parse_args()
+    if args.call_stack:
+        call_stack(Path(args.output).resolve())
+        raise SystemExit(0)
     emit_metadata(
         Path(args.output).resolve(),
         args.mode,
@@ -211,4 +345,5 @@ if __name__ == "__main__":
         args.user_budget,
         args.program_console,
         args.snapshot,
+        args.blocking_call,
     )

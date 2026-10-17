@@ -134,7 +134,7 @@ export namespace compiler_resolver {
     }
     auto service_kind(ResolvedTypeKind kind) -> bool {
         return kind == ResolvedTypeKind::console_session || kind == ResolvedTypeKind::display_session || kind
-            == ResolvedTypeKind::event_session;
+            == ResolvedTypeKind::event_session || kind == ResolvedTypeKind::call_session;
     }
     auto resource_kind(ResolvedTypeKind kind) -> bool {
         return kind == ResolvedTypeKind::byte_region || kind == ResolvedTypeKind::owned_bytes || kind
@@ -196,6 +196,9 @@ export namespace compiler_resolver {
         }
         if (kind == ResolvedTypeKind::owned_values) {
             return 18;
+        }
+        if (kind == ResolvedTypeKind::call_session) {
+            return 19;
         }
         return 0;
     }
@@ -3405,7 +3408,14 @@ export namespace compiler_resolver {
     // One invocation is the only production source-resolution authority. Every
     // output remains tentative until the final successful context is returned.
     auto run(Session& session) -> i64 {
-        state(session);
+        // Optional Call seeding means admitted syntax referenced this family.
+        // Create resolution state only after every source module is ingested:
+        // its syntax-count snapshot bounds subsequent template cloning.
+        const i64 status = state(session);
+        const i64 call_rank = type_rank(ResolvedTypeKind::call_session);
+        if (session.index(34, call_rank, -1, -1, 0) >= 0) {
+            set_mw(session, status, 3, 1);
+        }
         if (session.good()) {
             attach_expression_types(session);
         }

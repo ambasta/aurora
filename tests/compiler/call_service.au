@@ -1,0 +1,36 @@
+module call_service;
+
+auto invoke(builtin::CallSession& session, u64 value) -> builtin::CallResult {
+    const u64 local = value + 2u64;
+    const builtin::CallResult result = session.call(local);
+    if (local != 42u64) {
+        const builtin::CallResult failure = builtin::CallResult{
+            .status = builtin::CallStatus::rejected,
+            .value = 0u64
+        };
+        return failure;
+    }
+    return result;
+}
+auto call_service(builtin::CallSession& session, u64 value, builtin::CallStatus expected) -> u64 {
+    const array<u64, 3> live = {
+        value,
+        17u64,
+        23u64
+    };
+    const builtin::CallResult result = invoke(session, live[0]);
+    if (result.status != expected || live[0] != 40u64 || live[1] != 17u64 || live[2] != 23u64
+        || size_of(builtin::CallResult) != 16 || field_count(builtin::CallResult) != 2) {
+        return 1u64;
+    }
+    if (result.status == builtin::CallStatus::replied) {
+        if (result.value != 18446744073709551615u64) {
+            return 2u64;
+        }
+    } else {
+        if (result.value != 0u64) {
+            return 3u64;
+        }
+    }
+    return live[1] + live[2] + 2u64;
+}

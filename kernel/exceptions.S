@@ -157,6 +157,13 @@ aurora_timer_interrupt:
     pushq $0
     pushq $64
     jmp exception_common
+.ifdef AURORA_BLOCKING_CALL
+.global aurora_program_call
+aurora_program_call:
+    pushq $0
+    pushq $130
+    jmp exception_common
+.endif
 .global aurora_program_return
 aurora_program_return:
     pushq $0

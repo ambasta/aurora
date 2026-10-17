@@ -1976,7 +1976,7 @@ void resolutionControls() {
                 diagnostic->span.begin.offset == source->text.find("f()") &&
                 diagnostic->span.end.offset == diagnostic->span.begin.offset + 1 && sessionsCreated == 1 &&
                 sessionsReleased == 1 && transferred == 1 && pairsReleased == 0 && created == 1 && parsed == 1 &&
-                admitted == 1 && released == 1 && statementRead == 2 && read == 0 && edgeRead == 0 && typeRead == 0 &&
+                admitted == 1 && released == 1 && statementRead == 2 && read == 1 && edgeRead == 0 && typeRead == 1 &&
                 loweringBegun == 1 && loweringRun == 1 && scalarSeeds == 7 && serviceSeeds == 5 &&
                 loweringOutputReads == 1 && loweringOperandReads == 3 && sessionPayload.allocation == 0,
             "typed failure report lost source, bounded reads, configuration or exact consuming cleanup");
@@ -2108,7 +2108,7 @@ void resolutionControls() {
         loweringResult.result_reason = Lowering::LoweringError::none;
     });
     reject("failure publishes a module root", [] {
-        loweringResult.root_row = 15;
+        loweringResult.root_row = 16;
     });
     reject("failure omits its diagnostic root", [] {
         loweringResult.diagnostic_row = -1;
@@ -2392,7 +2392,7 @@ extern "C" void aurora_hosted_parser_admit(void *arena, const void *input, void 
     std::memcpy(capturedAdmissionInput.data(), input, sizeof(capturedAdmissionInput));
     require(std::equal(capturedAdmissionInput.begin(), capturedAdmissionInput.begin() + 7, capturedInput.begin()) &&
                 capturedAdmissionInput[7] == static_cast<std::uint64_t>(result[1]) && capturedAdmissionInput[8] == 64 &&
-                capturedAdmissionInput[9] == 512 && capturedAdmissionInput[10] == 62 &&
+                capturedAdmissionInput[9] == 512 && capturedAdmissionInput[10] == 318 &&
                 capturedAdmissionInput[11] == 1 && capturedAdmissionInput[12] == 2 && capturedAdmissionInput[13] == 4,
             "admission changed its copied source/root or canonical layout/service configuration");
     ++admitted;
@@ -2619,8 +2619,7 @@ extern "C" std::int64_t aurora_hosted_lowering_begin(void *session, const void *
                 configuration.copiedBytes == aurora::maximumCopiedClassBytes &&
                 configuration.byteArrayLength == aurora::maximumClassByteArrayLength &&
                 configuration.scalarArrayLength == aurora::maximumClassScalarArrayLength &&
-                configuration.analysisMode == 0 &&
-                configuration.serviceGroups == aurora::service::supportedGroupBitmap(),
+                configuration.analysisMode == 0 && configuration.serviceGroups == 62,
             "lowering received a changed copied configuration");
     ++loweringBegun;
     return 1;
@@ -2634,7 +2633,7 @@ extern "C" std::int64_t aurora_hosted_lowering_seed_scalar(void *session, const 
 extern "C" std::int64_t aurora_hosted_lowering_seed_service(void *session, const void *input) noexcept {
     checkSession(session);
     const auto &seed = static_cast<const aurora::hosted_abi::LoweringServiceInput *>(input)->seed;
-    require(seed.operationId == serviceSeeds && seed.kindId >= 0 && seed.kindId < 3 &&
+    require(seed.operationId == serviceSeeds && seed.kindId >= 0 && seed.kindId < 4 &&
                 seed.parameterTypes.parameterCount >= 0 && seed.parameterTypes.parameterCount <= 5,
             "invalid copied service seed");
     return ++serviceSeeds + 8;

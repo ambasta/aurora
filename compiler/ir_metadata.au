@@ -869,6 +869,31 @@ export namespace compiler_ir_metadata {
         }
         return true;
     }
+    auto sealed_call_result(MetadataStore& store, i64 class_index) -> bool {
+        const ClassRow row = store.class_at(class_index);
+        const IndexRange leaves = row.leaves();
+        const ClassResultRow result = store.result_at(class_index);
+        const IndexRange fields = result.fields();
+        if (leaves.count() != 2 || fields.count() != 2) {
+            return fail(store, MetadataError::call_layout);
+        }
+        i64 at = 0;
+        while (at < 2) {
+            const RawTypeRow type = store.type_at(leaves.begin() + at);
+            if (!canonical_tail(type) || (at == 0 && (type.kind() != 9 || !named(store, type.name(),
+                "__au_call_status"))) || (at == 1 && !plain_type(type, 7))) {
+                return fail(store, MetadataError::call_layout);
+            }
+            const FieldRow field = store.field_at(fields.begin() + at);
+            const RawTypeRow field_type = store.type_at(field.type());
+            if (field.array_flag() != 0 || field.first_leaf() != at || field.length() != 1 || !same_type(store,
+                field_type, type)) {
+                return fail(store, MetadataError::call_fields);
+            }
+            at = at + 1;
+        }
+        return true;
+    }
     auto sealed_enum(MetadataStore& store, builtin::span<const u8> name, i64 cases, bool event) -> bool {
         i64 at = 0;
         while (at < store.enum_count()) {
@@ -906,11 +931,21 @@ export namespace compiler_ir_metadata {
             }
             at = at + 1;
         }
-        return sealed_enum(store, "__au_event_poll_result", 4, true) && sealed_enum(store, "__au_event_ack_result", 3,
-            true) && sealed_enum(store, "__au_event_intake_completion", 7, true) && sealed_enum(store,
-            "__au_console_put_result", 2, false) && sealed_enum(store, "__au_console_completion", 2, false)
-            && sealed_enum(store, "__au_display_put_result", 2, false) && sealed_enum(store, "__au_display_completion",
-            2, false);
+        at = 0;
+        while (at < store.class_count()) {
+            const ClassRow row = store.class_at(at);
+            if (member(row, masks.class_layout()) && named(store, row.name(), "__au_call_result")) {
+                if (!sealed_call_result(store, at)) {
+                    return false;
+                }
+            }
+            at = at + 1;
+        }
+        return sealed_enum(store, "__au_call_status", 3, false) && sealed_enum(store, "__au_event_poll_result", 4, true)
+            && sealed_enum(store, "__au_event_ack_result", 3, true) && sealed_enum(store,
+            "__au_event_intake_completion", 7, true) && sealed_enum(store, "__au_console_put_result", 2, false)
+            && sealed_enum(store, "__au_console_completion", 2, false) && sealed_enum(store, "__au_display_put_result",
+            2, false) && sealed_enum(store, "__au_display_completion", 2, false);
     }
 
     // Children are complete before this computation starts. Offsets come only
@@ -1248,7 +1283,22 @@ export namespace compiler_ir_metadata {
         return type.kind() == kind && name_length(type.name()) == 0 && canonical_tail(type);
     }
     auto service_type(RawTypeRow type) -> bool {
-        return type.kind() >= 14 && type.kind() <= 16;
+        return type.kind() == 14 || type.kind() == 15 || type.kind() == 16 || type.kind() == 18;
+    }
+    auto service_kind(RawTypeRow type) -> i64 {
+        if (type.kind() == 14) {
+            return 0;
+        }
+        if (type.kind() == 15) {
+            return 1;
+        }
+        if (type.kind() == 16) {
+            return 2;
+        }
+        if (type.kind() == 18) {
+            return 3;
+        }
+        return -1;
     }
     auto resource_type(RawTypeRow type) -> bool {
         return type.kind() == 12 || owner_kind(type);
@@ -1301,7 +1351,13 @@ export namespace compiler_ir_metadata {
         if (type.kind() == 15) {
             return masks.service_display();
         }
-        return masks.service_iommu();
+        if (type.kind() == 16) {
+            return masks.service_iommu();
+        }
+        if (type.kind() == 18) {
+            return masks.service_call();
+        }
+        return 0u64;
     }
     auto verify_service_signature(MetadataStore& store, CallableRow row, bool resource) -> bool {
         const FlagMasks masks = FlagMasks();
@@ -1333,8 +1389,8 @@ export namespace compiler_ir_metadata {
         // Independent closed allowlist: recognition alone never grants new
         // pair or triple forwarding authority.
         if (at > 2 || (kinds != masks.service_console() && kinds != masks.service_display() && kinds
-            != masks.service_iommu() && kinds != (masks.service_console() | masks.service_display()) && kinds
-            != (masks.service_console() | masks.service_iommu()))) {
+            != masks.service_iommu() && kinds != masks.service_call() && kinds != (masks.service_console()
+            | masks.service_display()) && kinds != (masks.service_console() | masks.service_iommu()))) {
             return fail(store, MetadataError::service_group);
         }
         while (at < row.value_parameter_count()) {

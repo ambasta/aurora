@@ -208,9 +208,11 @@ in the ordinary and closed profiles; by hand:
 ```sh
 python3 -B tests/compiler/emitter_differential.py \
   --old-compiler "$P" --new-compiler build/meson-compiler/aurorac-stage2 \
+  --stage1-compiler build/meson-compiler/aurorac \
   --source-root "$PWD" --artifacts build/emitter-differential/default
 python3 -B tests/compiler/emitter_differential.py \
   --old-compiler "$P" --new-compiler build/meson-compiler/aurorac-stage2 \
+  --stage1-compiler build/meson-compiler/aurorac \
   --source-root "$PWD" --local-symbols --referenced-reflection-only \
   --artifacts build/emitter-differential/closed
 ```
@@ -220,7 +222,14 @@ diagnostics and assembly/stack/ABI artifacts. Accepted inputs must match byte fo
 byte; rejected inputs must agree and preserve every preexisting output. Any
 mismatch, internal failure or watchdog timeout fails the gate and reports partial
 coverage. Equal rejection is not emission coverage, so the gate also fails if any
-input outside its fixed list of function-less modules is rejected. The corpus is every `.au`
+historically supported input outside its fixed list of function-less modules is rejected.
+Exactly `tests/compiler/call_service.au` and `tests/kernel-programs/call-client.au`
+introduce the new Call API: each must produce the exact pinned predecessor AU2001
+rejection without changing output files, then emit byte-identical assembly, stack
+and ABI facts through current C1/C2 in each profile. Both remain in the corpus and
+are counted separately from the unchanged historical rejection set. This narrow
+applicability rule does not infer exceptions from failures or replace native/guest
+Call execution and failure-case qualification. The corpus is every `.au`
 file under compiler, examples, kernel, library and tests; embedded generated
 fixtures and machine behavior remain covered by their existing native suites.
 It supplements C1/C2 convergence and the final GCC 16 full,
@@ -299,6 +308,13 @@ Builtin type IDs: i64=1, bool=2, own<i64>=3, ref<i64>=4, mutref<i64>=5. U64 has 
 Classes admit at most 8,192 direct fields, public or private, including empty/nested values, resource fields and array fields. Each array declaration counts once and every nested class is checked independently; existing leaf, byte, containment-depth and array-length limits still apply. Excess fields produce `class exceeds 8192 direct fields` before receiver initialization storage is created.
 
 `reflect_size(id)` and `reflect_field_count(id)` execute runtime lookups. Unknown IDs return zero. Descriptor entries are emitted for builtins, declared classes and array types used in storage/size/type-ID queries. Array size is `8*N`; arrays and builtins have zero named fields. Class field counts include public fields only, and class size includes all fields. Reflection cannot expose private values or bypass lifetime checks. Runtime queries use the defining module's visible descriptor view; unavailable/private IDs return zero, and reflection cannot implicitly import a type. Member traversal, invocation, mapped/conditional types and `keyof`-style type algebra remain design goals.
+
+The Call family is registered for a compilation only when admitted syntax in its
+complete import graph references `builtin::CallSession`, `builtin::CallResult`
+or `builtin::CallStatus`, including unused templates and enum-case expressions.
+Graphs without those references retain the historical builtin catalogue, IDs,
+ABI facts and emitted reflection output. Comments, strings and user type names
+do not activate it. Registration does not alter per-module visibility.
 
 `--referenced-reflection-only` is an explicit closed-image output mode. It emits
 only helpers directly referenced by runtime metadata queries in retained, validated

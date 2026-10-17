@@ -31,6 +31,7 @@ public:
     std::int64_t root = -1;
     std::string moduleName;
     bool interfaceUnit = false;
+    bool callFamily = false;
     std::vector<Token> imports;
     std::vector<std::int64_t> importSyntax;
 };

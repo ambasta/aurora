@@ -192,6 +192,9 @@ static_assert(static_cast<std::int64_t>(SlotKind::ByteSlot) == 16);
 static_assert(static_cast<std::int64_t>(SlotKind::OwnedValueType) == 17);
 static_assert(spanBytes == 56);
 static_assert(service::capabilityBytes == 16);
+static_assert(static_cast<std::int64_t>(TypeKind::CallSession) == 18 &&
+              static_cast<std::int64_t>(TypeKind::CallSession) ==
+                  static_cast<std::int64_t>(wire::MetadataTypeKind::CallSession));
 static_assert(sizeof(bytes::NativeOwner) == 32);
 
 static_assert(static_cast<std::int64_t>(TypeKind::I64) == static_cast<std::int64_t>(wire::MetadataTypeKind::I64));

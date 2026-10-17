@@ -10,18 +10,21 @@ namespace aurora::service {
 enum class Kind {
     Console,
     Display,
-    IommuEvent
+    IommuEvent,
+    Call
 };
 enum class Operation {
     Next,
     Put,
     Pixel,
     IommuPoll,
-    IommuAcknowledge
+    IommuAcknowledge,
+    Call
 };
 inline const std::array capabilityTypes{std::pair{Kind::Console, Type::ConsoleSession},
                                         std::pair{Kind::Display, Type::DisplaySession},
-                                        std::pair{Kind::IommuEvent, Type::IommuEventSession}};
+                                        std::pair{Kind::IommuEvent, Type::IommuEventSession},
+                                        std::pair{Kind::Call, Type::CallSession}};
 inline Kind kind(const Type &type) {
     for (const auto &[identity, candidate] : capabilityTypes)
         if (candidate == type)
@@ -36,17 +39,18 @@ inline Type capabilityType(Kind kind) {
 }
 inline bool supportedGroup(const std::set<Kind> &kinds) {
     return kinds == std::set<Kind>{Kind::Console} || kinds == std::set<Kind>{Kind::Display} ||
-           kinds == std::set<Kind>{Kind::IommuEvent} || kinds == std::set<Kind>{Kind::Console, Kind::Display} ||
+           kinds == std::set<Kind>{Kind::IommuEvent} || kinds == std::set<Kind>{Kind::Call} ||
+           kinds == std::set<Kind>{Kind::Console, Kind::Display} ||
            kinds == std::set<Kind>{Kind::Console, Kind::IommuEvent};
 }
-inline std::int64_t supportedGroupBitmap() {
+inline std::int64_t supportedGroupBitmap(bool includeCall = true) {
     std::int64_t result = 0;
     for (unsigned mask = 0; mask < (1U << capabilityTypes.size()); ++mask) {
         std::set<Kind> group;
         for (std::size_t index = 0; index < capabilityTypes.size(); ++index)
             if (mask & (1U << index))
                 group.insert(capabilityTypes[index].first);
-        if (supportedGroup(group))
+        if ((includeCall || !group.contains(Kind::Call)) && supportedGroup(group))
             result |= std::int64_t{1} << mask;
     }
     return result;
@@ -66,6 +70,8 @@ inline Type putResultType();
 inline Type displayPutResultType();
 inline Type eventSampleType();
 inline Type eventAckResultType();
+inline Type callResultType();
+inline Type callStatusType();
 class OperationDescription {
 public:
     Kind kind;
@@ -96,7 +102,8 @@ inline constexpr std::array operations{
                          {TypeKind::U64, TypeKind::U64, TypeKind::U8, TypeKind::U8, TypeKind::U8},
                          5},
     OperationDescription{Kind::IommuEvent, Operation::IommuPoll, "poll", eventSampleType, {}, 0},
-    OperationDescription{Kind::IommuEvent, Operation::IommuAcknowledge, "acknowledge", eventAckResultType, {}, 0}};
+    OperationDescription{Kind::IommuEvent, Operation::IommuAcknowledge, "acknowledge", eventAckResultType, {}, 0},
+    OperationDescription{Kind::Call, Operation::Call, "call", callResultType, {TypeKind::U64}, 1}};
 inline const OperationDescription &description(Operation operation) {
     for (const auto &entry : operations)
         if (entry.operation == operation)
@@ -148,10 +155,21 @@ inline Type eventIntakeCompletionType() {
     result.displayName = "builtin::EventIntakeCompletion";
     return result;
 }
+inline Type callResultType() {
+    Type result{std::string("__au_call_result")};
+    result.displayName = "builtin::CallResult";
+    return result;
+}
+inline Type callStatusType() {
+    Type result = Type::enumeration("__au_call_status");
+    result.displayName = "builtin::CallStatus";
+    return result;
+}
 inline bool copiedType(const Type &type) {
     return type == sampleType() || type == putResultType() || type == completionType() ||
            type == displayPutResultType() || type == displayCompletionType() || type == eventSampleType() ||
-           type == eventPollResultType() || type == eventAckResultType() || type == eventIntakeCompletionType();
+           type == callResultType() || type == callStatusType() || type == eventPollResultType() ||
+           type == eventAckResultType() || type == eventIntakeCompletionType();
 }
 // Canonical copied service data, shared by descriptor seeding and existing
 // semantic helpers. The source type helpers above retain identity authority.
@@ -161,7 +179,7 @@ public:
     std::vector<std::pair<std::string, Type>> fields;
     std::vector<std::string> cases;
 };
-inline std::array<CopiedDefinition, 9> copiedDefinitions() {
+inline std::array<CopiedDefinition, 11> copiedDefinitions() {
     return {
         CopiedDefinition{sampleType(), {{"byte_present", Type::Bool}, {"byte", Type::U8}, {"damaged", Type::Bool}}, {}},
         CopiedDefinition{putResultType(), {}, {"success", "timeout"}},
@@ -182,6 +200,8 @@ inline std::array<CopiedDefinition, 9> copiedDefinitions() {
                           "unsupported_event",
                           "command_error",
                           "transport_failure",
-                          "output_failure"}}};
+                          "output_failure"}},
+        CopiedDefinition{callResultType(), {{"status", callStatusType()}, {"value", Type::U64}}, {}},
+        CopiedDefinition{callStatusType(), {}, {"replied", "cancelled", "rejected"}}};
 }
 } // namespace aurora::service

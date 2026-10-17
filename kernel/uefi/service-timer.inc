@@ -2,7 +2,7 @@
 constexpr U64 timer_vector=64;
 bool timer_ready{},timer_armed{},timer_draining{},timer_exhausted{};
 U64 timer_epoch{},timer_owner_epoch{};
-#ifdef AURORA_USER_RESUME
+#if defined(AURORA_USER_RESUME) || defined(AURORA_BLOCKING_CALL)
 U64 timer_epoch_watermark{};
 #endif
 unsigned timer_initial{},timer_remaining{},timer_ticks{},timer_resumes{},timer_drains{},timer_context_hits{},timer_compiled_hits{};
@@ -85,7 +85,7 @@ auto initialize_service_timer() -> void {
 }
 auto timer_begin(unsigned index) -> void {
     using namespace std::literals::string_view_literals;
-#ifdef AURORA_USER_RESUME
+#if defined(AURORA_USER_RESUME) || defined(AURORA_BLOCKING_CALL)
     require(timer_epoch_watermark!=UINT64_MAX,"run epoch exhaustion");
     const auto next_epoch=++timer_epoch_watermark;
 #else
@@ -165,7 +165,7 @@ auto service_timer_interrupt(U64 vector,U64 error,U64 pc,U64 cs,U64 frame) -> st
         && cs==context->words()[18] && timer_acknowledge(),"timer frame/ISR authority");
     bool context_sample=false;
 #ifdef AURORA_UEFI_USER_BUDGET
-    #ifdef AURORA_UEFI_PROGRAM_CONSOLE
+    #if defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_BLOCKING_CALL)
     const std::array<U64,2> compiled_begin{images::clean_compiled_begin,images::bounds_compiled_begin};
     const std::array<U64,2> compiled_end{images::clean_compiled_end,images::bounds_compiled_end};
 #else

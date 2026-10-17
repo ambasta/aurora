@@ -33,7 +33,8 @@ export namespace compiler_ir_metadata {
         ConsoleSession,
         DisplaySession,
         IommuEventSession,
-        OwnedValues
+        OwnedValues,
+        CallSession
     };
     enum class MetadataError {
         none,
@@ -278,7 +279,11 @@ export namespace compiler_ir_metadata {
         //: invalid typed IR: owned byte spill overlaps scalar, object, array or span storage
         byte_overlap,
         //: invalid typed IR: overlapping region or owned byte spills
-        resource_overlap
+        resource_overlap,
+        //: invalid typed IR: noncanonical sealed CallResult layout
+        call_layout,
+        //: invalid typed IR: noncanonical sealed CallResult fields
+        call_fields
     };
     class ByteRange {
         i64 firstByte;
@@ -408,6 +413,9 @@ export namespace compiler_ir_metadata {
         }
         auto service_display() const -> u64 {
             return serviceDisplay;
+        }
+        auto service_call() const -> u64 {
+            return 8u64;
         }
         auto service_iommu() const -> u64 {
             return serviceIommu;

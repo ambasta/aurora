@@ -22,7 +22,8 @@ export namespace compiler_resolver {
         console_session,
         display_session,
         event_session,
-        owned_values
+        owned_values,
+        call_session
     };
     enum class DeclarationKind {
         invalid,

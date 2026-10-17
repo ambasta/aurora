@@ -11,6 +11,23 @@ from pathlib import Path
 
 # Base flags plus bounded variants mirror the existing admitted profiles.
 UEFI_FAMILIES = [
+    (
+        [
+            "-DAURORA_UEFI_ACPI",
+            "-DAURORA_UEFI_PCI",
+            "-DAURORA_UEFI_RUNTIME",
+            "-DAURORA_UEFI_IPC",
+            "-DAURORA_UEFI_SERVICE_BUDGET",
+            "-DAURORA_UEFI_USER_BUDGET",
+            "-DAURORA_BLOCKING_CALL",
+        ],
+        {
+            "user-call": [],
+            "user-call-pending": ["-DAURORA_CALL_PENDING"],
+            "user-call-owner": ["-DAURORA_CALL_OWNER"],
+            "user-call-site": ["-DAURORA_CALL_SITE"],
+        },
+    ),
     ([], {"normal": []}),
     (
         ["-maccumulate-outgoing-args", "-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_PCI", "-DAURORA_UEFI_IOMMU_EVENT"],
@@ -388,7 +405,9 @@ BIOS_CONTROLS = {
 }
 
 
-def user_images(kind, mode, *, budget=False, dispatcher=False, user_budget=False, program=False, snapshot=False):
+def user_images(
+    kind, mode, *, budget=False, dispatcher=False, user_budget=False, program=False, snapshot=False, blocking_call=False
+):
     """Exact source/adapter composition; Meson owns every compile/link edge."""
     result = {}
     names = ("clean", "bounds", "peer") if dispatcher else ("clean", "bounds")
@@ -417,6 +436,8 @@ def user_images(kind, mode, *, budget=False, dispatcher=False, user_budget=False
                 source = "user-checksum-client"
             if snapshot:
                 source = "snapshot-client" if index == 0 else "snapshot-service"
+            if blocking_call:
+                source = "call-client" if index == 0 else "dispatch-service"
             entry = "kernel/uefi/ipc-user-entry.S"
             hostile = (index == 0 and mode in ("owner", "stale", "version", "phase", "site", "unknown", "ordinal")) or (
                 index == 1 and mode in ("transaction", "mmio", "softint", "fpu", "context")
@@ -428,6 +449,8 @@ def user_images(kind, mode, *, budget=False, dispatcher=False, user_budget=False
             defines = ["IPC_" + mode.upper().replace("-", "_") + "=1"] if hostile else []
             if user_budget and mode == "context" and index == 0:
                 defines.append("IPC_CLIENT_CONTEXT=1")
+            if blocking_call and index == 0:
+                defines.append("CALL_CLIENT=1")
             if (snapshot or program) and index == 1:
                 defines.append("SNAPSHOT_SERVICE=1" if snapshot else "PROGRAM_NOTE_SERVICE=1")
                 if mode in ("reply-reserved", "reply-byte"):
@@ -438,7 +461,7 @@ def user_images(kind, mode, *, budget=False, dispatcher=False, user_budget=False
             base=0x10000000000 + index * 4096,
             entry=entry,
             entry_flags=[value for define in defines for value in ("--defsym", define)],
-            combined=(snapshot or program) and index == 1,
+            combined=((snapshot or program) and index == 1) or (blocking_call and index == 0),
         )
     return result
 
@@ -568,7 +591,8 @@ def uefi_profile(mode, flags):
     runtime = mode.startswith(("runtime", "ipc", "budget", "dispatch", "user-", "program-", "snapshot"))
     ipc = mode.startswith(("ipc", "budget", "dispatch", "user-", "program-", "snapshot"))
     budget = mode.startswith(("budget", "dispatch", "user-", "program-"))
-    dispatcher = mode.startswith(("dispatch", "user-"))
+    blocking_call = mode.startswith("user-call")
+    dispatcher = mode.startswith(("dispatch", "user-")) and not blocking_call
     user_budget = mode.startswith(("user-", "program-"))
     program = mode.startswith("program-")
     snapshot = mode.startswith("snapshot")
@@ -611,6 +635,7 @@ def uefi_profile(mode, flags):
             (user_budget, "--user-budget"),
             (program, "--program-console"),
             (snapshot, "--snapshot"),
+            (blocking_call, "--blocking-call"),
         )
         if enabled
     ]
@@ -623,6 +648,7 @@ def uefi_profile(mode, flags):
             user_budget=user_budget,
             program=program,
             snapshot=snapshot,
+            blocking_call=blocking_call,
         )
         if runtime
         else {}
@@ -637,11 +663,15 @@ def uefi_profile(mode, flags):
         runtime_flags = (["--defsym", "AURORA_IPC=1"] if ipc else []) + (
             ["--defsym", "AURORA_SERVICE_BUDGET=1"] if budget else []
         )
-        if mode == "user-resume":
+        if mode == "user-resume" or blocking_call:
             runtime_flags += ["--defsym", "AURORA_USER_RESUME=1"]
+        if blocking_call:
+            runtime_flags += ["--defsym", "AURORA_BLOCKING_CALL=1"]
         assembly["runtime-entry"] = dict(source="kernel/uefi/runtime-entry.S", flags=["--64"] + runtime_flags)
         assembly["runtime-exceptions"] = dict(
-            source="kernel/exceptions.S", flags=["--64", "--defsym", "AURORA_RELATIVE_ONLY=1"]
+            source="kernel/exceptions.S",
+            flags=["--64", "--defsym", "AURORA_RELATIVE_ONLY=1"]
+            + (["--defsym", "AURORA_BLOCKING_CALL=1"] if blocking_call else []),
         )
         runtime_objects = ["runtime-entry", "runtime-exceptions"]
     console_objects = []
@@ -706,6 +736,7 @@ def uefi_profile(mode, flags):
         (["owned-bytes"] if mode == "owned-bytes" else [])
         + (["snapshot"] if snapshot else [])
         + (["note"] if program else [])
+        + (["call"] if blocking_call else [])
         + (["tables"] if mode.startswith("runtime-table-") else [])
         + (["ivrs"] if mode.startswith("ivrs-") else [])
         + (["nvme"] if mode == "bar-prepare" else [])

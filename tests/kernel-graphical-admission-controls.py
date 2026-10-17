@@ -180,6 +180,41 @@ class NativeArtifacts(unittest.TestCase):
             del historical["functions"]["entry"]["copied_record"]
             self.assertIsNone(check(historical))
 
+    def test_call_facts_require_exact_register_contract(self):
+        with tempfile.TemporaryDirectory(prefix="aurora-call-facts-") as directory:
+            path = Path(directory) / "language.stack.json"
+            _, symbols, code, starts = fixture(
+                {
+                    "entry": [("call", "@__au_runtime_call"), ("ret", "")],
+                    "__au_runtime_call": [("ret", "")],
+                },
+                analyze=False,
+            )
+            abi = dict(
+                record=dict(parameters=[["builtin::CallSession", 16], ["scalar", 8]], result_bytes=8),
+                calls={"__au_runtime_call": dict(sysv_arguments=3, result_max=2)},
+            )
+            fact = dict(local_bytes=64, calls={"__au_runtime_call": 32}, copied_record=None, service_abi=abi)
+
+            def check(value):
+                path.write_text(json.dumps(dict(version=2, functions={"entry": value})))
+                return decoder.aurora_stack_functions(path, symbols, code, starts, {"entry"})
+
+            self.assertEqual(check(fact)["entry"]["service_abi"], abi)
+            for mutate in (
+                lambda f: f.pop("service_abi"),
+                lambda f: f["service_abi"]["calls"].clear(),
+                lambda f: f["service_abi"]["calls"]["__au_runtime_call"].update(sysv_arguments=2),
+                lambda f: f["service_abi"]["calls"]["__au_runtime_call"].update(result_max=1),
+                lambda f: f["service_abi"]["record"]["parameters"].append(["builtin::ConsoleSession", 16]),
+                lambda f: f["service_abi"]["record"]["parameters"].append(["builtin::CallSession", 16]),
+                lambda f: f["service_abi"]["record"]["parameters"].reverse(),
+            ):
+                changed = deepcopy(fact)
+                mutate(changed)
+                with self.assertRaises(ValueError):
+                    check(changed)
+
     def test_copied_record_facts_are_versioned_and_closed(self):
         with tempfile.TemporaryDirectory(prefix="aurora-abi-facts-") as directory:
             path = Path(directory) / "language.stack.json"
