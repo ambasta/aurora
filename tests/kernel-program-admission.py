@@ -731,7 +731,7 @@ def main():
         admission.ROOT = root
         admission.BUILD = root
         admission.RECEIPT = root / "program-console-admission.json"
-        admission.build_files = lambda: [output, callgraph, stack]
+        admission.build_files = lambda file_call=False: [output, callgraph, stack]
         receipt = dict(
             schema="aurora-program-console-admission-v1",
             mode="program-console",
