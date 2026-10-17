@@ -384,6 +384,20 @@ void detail::InstructionWriter::endBody() {
     position_.bodyCount = add(position_.bodyCount, 1);
     inBody_ = false;
 }
+InstructionIngress detail::InstructionWriter::project(const void *plan) {
+    hosted_abi::compiler_projection::ProjectionCounts counts{};
+    aurora_hosted_projection_counts(plan, &counts);
+    MetadataWriter metadata;
+    metadata.project(plan);
+    InstructionWriter writer(metadata);
+    writer.position_ = counts.instructions;
+    writer.allocate();
+    const std::array<const void *, 2> roots{writer.instructions_->state_->owner.data(), plan};
+    if (aurora_hosted_projection_fill_instructions(roots.data()) != 1)
+        invalidInstructions();
+    writer.position_ = counts.instructions;
+    return std::move(writer).take();
+}
 void detail::InstructionWriter::allocate() {
     if (allocated_ || inBody_)
         invalidInstructions();

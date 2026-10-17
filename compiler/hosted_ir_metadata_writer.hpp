@@ -32,6 +32,7 @@ public:
         return slotCount_;
     }
     void allocate();
+    void project(const void *plan);
     void declarations(const Module &module);
     void beginInstructions();
     std::int64_t instructionType(const Type &value);

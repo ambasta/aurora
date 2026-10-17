@@ -13,6 +13,70 @@ import sys
 # (name:fields[:scalar lanes]), and host policy (noexcept/discard/consume[:alias]).
 ROWS = (
     (
+        "projection_seal(compiler_resolver::Session& session, i64 incarnation) -> bool",
+        "direct session.seal_projection(incarnation)",
+        "",
+        "noexcept",
+    ),
+    (
+        "projection_fill_metadata(compiler_ir_metadata::MetadataStore& store, "
+        "const compiler_projection::Plan& plan) -> bool",
+        "direct compiler_projection::fill_metadata(store, plan)",
+        "",
+        "noexcept",
+    ),
+    (
+        "projection_fill_instructions(compiler_ir_instructions::InstructionStore& store, "
+        "const compiler_projection::Plan& plan) -> bool",
+        "direct compiler_projection::fill_instructions(store, plan)",
+        "",
+        "noexcept",
+    ),
+    (
+        "projection_finish(compiler_projection::Plan& plan, const compiler_resolver::Session& session) -> bool",
+        "direct compiler_projection::finish_plan(plan, session)",
+        "",
+        "noexcept",
+    ),
+    (
+        "projection_counts(const compiler_projection::Plan& plan) -> compiler_projection::ProjectionCounts",
+        "copy plan.counts()",
+        "",
+        "noexcept",
+    ),
+    (
+        "projection_requests(const compiler_projection::Plan& plan, i64 offset) "
+        "-> compiler_projection::ProjectionChunk",
+        "copy plan.requests(offset)",
+        "",
+        "noexcept",
+    ),
+    (
+        "projection_bind(compiler_projection::Plan& plan, builtin::span<const u8> input) -> bool",
+        "direct plan.bind(input)",
+        "ProjectionIdentityInput:input",
+        "noexcept",
+    ),
+    (
+        "projection_create(builtin::ByteRegion region) -> compiler_projection::Plan",
+        "move compiler_projection::create_plan(region)",
+        "ProjectionCreate:region",
+        "noexcept",
+    ),
+    (
+        "projection_release(builtin::ByteRegion region, compiler_projection::Plan plan) -> i64",
+        "direct compiler_projection::release_plan(region, move(plan))",
+        "ProjectionRelease:region,plan",
+        "noexcept,discard",
+    ),
+    (
+        "projection_graph(compiler_projection::Plan& plan, const compiler_resolver::Session& session, "
+        "i64 root) -> bool",
+        "direct compiler_projection::graph(plan, session, root)",
+        "",
+        "noexcept",
+    ),
+    (
         "formatter_create(builtin::ByteRegion region) -> compiler_formatter::Workspace",
         "move compiler_formatter::create(region)",
         "FormatterCreate:region",

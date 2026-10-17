@@ -679,7 +679,8 @@ test('hosted-parser', hosted_parser_test,
                  '../compiler/ir_initialization.au',
                  '../compiler/x86_storage.au', '../compiler/x86_helpers.au', '../compiler/x86_scalar.au',
                  '../compiler/x86_objects.au', '../compiler/x86_resources.au', '../compiler/x86_facts.au',
-                 '../compiler/x86_module.au', '../library/std/decimal_digits.au', '../compiler/formatter.au'),
+                 '../compiler/x86_module.au', '../library/std/decimal_digits.au', '../compiler/formatter.au',
+                 '../compiler/ir_projection.au'),
      suite: ['full', 'dev', 'core', 'compiler'], timeout: 120)
 hosted_parser_invalid = executable(
     'hosted-parser-invalid', ['compiler/hosted_parser_invalid.cpp', '../compiler/hosted_parser.cpp',
@@ -693,3 +694,11 @@ hosted_parser_invalid = executable(
 )
 test('hosted-parser-invalid', hosted_parser_invalid,
      suite: ['full', 'dev', 'core', 'compiler'], timeout: 30)
+
+# Private source lifecycle checks use the same staged compiler modules as the
+# source-built frontend and the existing checked region-allocation observer.
+test('ir-projection-lifecycle', python,
+     args: ['-B', artifact_adapter, python, '-B', files('compiler/ir_projection.py'),
+            aurorac, meson.project_build_root() / 'hosted-frontend-modules', '--artifacts', '@ARTIFACTS@'],
+     depends: aurorac, suite: ['full', 'dev', 'core', 'compiler'],
+     env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)

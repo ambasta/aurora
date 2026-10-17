@@ -723,14 +723,6 @@ public:
                 invalidResolution();
             return service::operations[sizeValue(identity)].operation;
         };
-        result.literalByte = [&](std::int64_t at) {
-            if (at < 0 || at >= sourceBytes)
-                invalidResolution();
-            const auto byte = aurora_hosted_resolver_read_source(session, at);
-            if (byte < 0 || byte > 255)
-                invalidResolution();
-            return static_cast<std::uint8_t>(byte);
-        };
         return result;
     }
     std::int64_t sourceByteCount() const {
@@ -1285,7 +1277,8 @@ std::uint64_t resolutionQuota() {
                                       mul(2, descriptors),
                                       32});
     const auto records = sum({storage, semantic, loweringMetadata});
-    const auto indexRecords = sum({storageIndexes, indexes, loweringIndexes});
+    // One projection incarnation key is sealed after successful lowering.
+    const auto indexRecords = sum({storageIndexes, indexes, loweringIndexes, 1});
     // Lowering layout DFS uses at most eight WorkRows (two per depth-four
     // logical frame; physical frames use four). Name helpers retain their
     // existing <=2*D scratch above that saved base. The initial class-order
@@ -1377,6 +1370,12 @@ public:
         aurora_hosted_resolver_ingest(&input, slots[next].session.storage.data());
         active = next;
         sessionLive = true;
+    }
+    void sealProjection() {
+        if (!sessionLive || arenaLive ||
+            region.id() > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) ||
+            aurora_hosted_projection_seal(data(), static_cast<std::int64_t>(region.id())) != 1)
+            invalidResolution();
     }
     std::uint64_t usedBytes() const {
         return region.metrics().used;
@@ -1640,25 +1639,64 @@ class HostedResolution::Impl {
             // Lowering interns additional concrete types/source references. The
             // resolver-era cache is gone; load one fresh shared metadata snapshot.
             Projection projection(owner.data(), sources, owner.usedBytes());
-            std::vector<lowering::OutputRow> rows;
-            std::vector<lowering::OperandRow> operands;
-            const auto load = [&](auto &values, std::int64_t pool, std::size_t reportCount, auto read) {
-                const auto published = sizeValue(aurora_hosted_lowering_count(owner.data(), pool));
-                const auto count = success ? published : reportCount;
-                using Value = typename std::remove_reference_t<decltype(values)>::value_type;
-                if (count > published || published > owner.usedBytes() / sizeof(Value) || count > values.max_size())
-                    invalidResolution();
-                values.resize(count);
-                for (std::size_t index = 0; index < count; ++index)
-                    read(owner.data(), static_cast<std::int64_t>(index), &values[index]);
-            };
-            load(rows, 0, 1, aurora_hosted_lowering_read_output);
-            load(operands, 1, 3, aurora_hosted_lowering_read_operand);
-            HostedLoweringInput input{
-                rows, operands, projection.sourceByteCount(), result.root_row, result.diagnostic_row};
-            if (!success)
+            if (!success) {
+                std::vector<lowering::OutputRow> rows;
+                std::vector<lowering::OperandRow> operands;
+                const auto load = [&](auto &values, std::int64_t pool, std::size_t reportCount, auto read) {
+                    const auto published = sizeValue(aurora_hosted_lowering_count(owner.data(), pool));
+                    const auto count = reportCount;
+                    using Value = typename std::remove_reference_t<decltype(values)>::value_type;
+                    if (count > published || published > owner.usedBytes() / sizeof(Value) || count > values.max_size())
+                        invalidResolution();
+                    values.resize(count);
+                    for (std::size_t index = 0; index < count; ++index)
+                        read(owner.data(), static_cast<std::int64_t>(index), &values[index]);
+                };
+                load(rows, 0, 1, aurora_hosted_lowering_read_output);
+                load(operands, 1, 3, aurora_hosted_lowering_read_operand);
+                HostedLoweringInput input{
+                    rows, operands, projection.sourceByteCount(), result.root_row, result.diagnostic_row};
                 throw Error(renderHostedLoweringDiagnostic(result, input, projection.diagnosticServices()));
-            return projectHostedLowering(input, projection.loweringServices(serviceKinds));
+            }
+            owner.sealProjection();
+            const HostedProjectionInput input(
+                owner.data(), owner.usedBytes(), projection.sourceByteCount(), result.root_row);
+            struct PendingPlan {
+                hosted_abi::ProjectionRelease value{};
+                ~PendingPlan() {
+                    aurora_hosted_projection_release(&value);
+                }
+            };
+            // Render only source-selected identities. Release graph-only storage
+            // before replaying into a separately bounded complete Plan.
+            const auto table = [&] {
+                hosted::bytes::Region graphRegion(projectionQuota(input, {}));
+                PendingPlan graph;
+                graph.value.region = graphRegion.id();
+                const hosted_abi::ProjectionCreate create{graphRegion.id()};
+                aurora_hosted_projection_create(&create, graph.value.plan.storage.data());
+                const std::array<const void *, 2> roots{graph.value.plan.storage.data(), owner.data()};
+                if (aurora_hosted_projection_graph(roots.data(), result.root_row) != 1)
+                    throw Error(DiagnosticCode::Internal, "source projection graph rejected native input");
+                return renderProjectionIdentities(graph.value.plan.storage.data(),
+                                                  projection.loweringServices(serviceKinds));
+            }();
+            hosted::bytes::Region planRegion(projectionQuota(input, table));
+            PendingPlan plan;
+            plan.value.region = planRegion.id();
+            const hosted_abi::ProjectionCreate create{planRegion.id()};
+            aurora_hosted_projection_create(&create, plan.value.plan.storage.data());
+            const std::array<const void *, 2> roots{plan.value.plan.storage.data(), owner.data()};
+            if (aurora_hosted_projection_graph(roots.data(), result.root_row) != 1)
+                throw Error(DiagnosticCode::Internal, "source projection graph replay rejected native input");
+            hosted_abi::ProjectionIdentityInput identityInput{};
+            identityInput.input.backing = reinterpret_cast<const char *>(table.data());
+            identityInput.input.length = static_cast<std::int64_t>(table.size());
+            if (aurora_hosted_projection_bind(plan.value.plan.storage.data(), &identityInput) != 1 ||
+                aurora_hosted_projection_finish(roots.data()) != 1)
+                throw Error(DiagnosticCode::Internal, "source projection identity binding rejected native input");
+            return projectHostedLowering(
+                input, projection.loweringServices(serviceKinds), plan.value.plan.storage.data());
         }();
         // The result owns one pending metadata/instruction bundle.
         // Destroy all transport views and free Session before source admission

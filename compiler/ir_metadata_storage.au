@@ -1019,6 +1019,7 @@ export namespace compiler_ir_metadata {
         MetadataStatus statusValue;
         MetadataError errorValue;
         bool started;
+        i64 projectionCursor;
     public:
         // Empty owners establish region provenance once. A single borrowed
         // initialization then resizes them to exact capacities; copied counts
@@ -1029,7 +1030,161 @@ export namespace compiler_ir_metadata {
             enums(enum_pool(region, 0)), callables(callable_pool(region, 0)), slots(slot_pool(region, 0)),
             results(result_pool(region, 0)), frames(frame_pool(region)), inputLeaves(0), inputFields(0),
             inputStorage(0), inputIndices(0), instructionTypeBegin(-1), fieldEnd(0), storageEnd(0), indexEnd(0),
-            frameCount(0), statusValue(MetadataStatus::pending), errorValue(MetadataError::none), started(false) {
+            frameCount(0), statusValue(MetadataStatus::pending), errorValue(MetadataError::none), started(false),
+            projectionCursor(-1) {
+        }
+        // One ordered cursor admits each raw input row exactly once. Derived
+        // normalization tails remain outside this pending-only ingress.
+        auto projection_limit(i64 pool) const -> i64 {
+            if (pool == 0) {
+                return bytes.size();
+            }
+            if (pool == 1) {
+                return types.size();
+            }
+            if (pool == 2) {
+                return classes.size();
+            }
+            if (pool == 3) {
+                return inputFields;
+            }
+            if (pool == 4) {
+                return inputStorage;
+            }
+            if (pool == 5) {
+                return inputIndices;
+            }
+            if (pool == 6) {
+                return descriptors.size();
+            }
+            if (pool == 7) {
+                return views.size();
+            }
+            if (pool == 8) {
+                return enums.size();
+            }
+            if (pool == 9) {
+                return callables.size();
+            }
+            if (pool == 10) {
+                return slots.size();
+            }
+            return -1;
+        }
+        auto projection_prefix(i64 pool) const -> i64 {
+            i64 result = 0;
+            i64 at = 0;
+            while (at < pool) {
+                const i64 count = projection_limit(at);
+                if (count < 0 || count > 9223372036854775807 - result) {
+                    return -1;
+                }
+                result = result + count;
+                at = at + 1;
+            }
+            return result;
+        }
+        auto begin_projection_fill() -> bool {
+            if (started || statusValue != MetadataStatus::pending || projectionCursor != -1 || !allocated()
+                || projection_prefix(11) < 0) {
+                return reject(MetadataError::integrity);
+            }
+            projectionCursor = 0;
+            return true;
+        }
+        auto projection_position(i64 pool, i64 index) -> bool {
+            const i64 begin = projection_prefix(pool);
+            if (started || statusValue != MetadataStatus::pending || projectionCursor < 0 || begin < 0 || index < 0
+                || index >= projection_limit(pool) || index > 9223372036854775807 - begin || projectionCursor != begin
+                + index) {
+                return reject(MetadataError::integrity);
+            }
+            return true;
+        }
+        auto projection_byte(i64 index, u8 value) -> bool {
+            if (!projection_position(0, index) || !bytes.set(index, value)) {
+                return reject(MetadataError::integrity);
+            }
+            projectionCursor = projectionCursor + 1;
+            return true;
+        }
+        auto projection_type(i64 index, RawTypeRow value) -> bool {
+            if (!projection_position(1, index) || !types.set(index, value)) {
+                return reject(MetadataError::integrity);
+            }
+            projectionCursor = projectionCursor + 1;
+            return true;
+        }
+        auto projection_class(i64 index, ClassRow value) -> bool {
+            if (!projection_position(2, index) || !classes.set(index, value)) {
+                return reject(MetadataError::integrity);
+            }
+            projectionCursor = projectionCursor + 1;
+            return true;
+        }
+        auto projection_field(i64 index, FieldRow value) -> bool {
+            if (!projection_position(3, index) || !fields.set(index, value)) {
+                return reject(MetadataError::integrity);
+            }
+            projectionCursor = projectionCursor + 1;
+            return true;
+        }
+        auto projection_storage(i64 index, StorageRow value) -> bool {
+            if (!projection_position(4, index) || !storage.set(index, value)) {
+                return reject(MetadataError::integrity);
+            }
+            projectionCursor = projectionCursor + 1;
+            return true;
+        }
+        auto projection_index(i64 index, IndexRow value) -> bool {
+            if (!projection_position(5, index) || !indices.set(index, value)) {
+                return reject(MetadataError::integrity);
+            }
+            projectionCursor = projectionCursor + 1;
+            return true;
+        }
+        auto projection_descriptor(i64 index, DescriptorRow value) -> bool {
+            if (!projection_position(6, index) || !descriptors.set(index, value)) {
+                return reject(MetadataError::integrity);
+            }
+            projectionCursor = projectionCursor + 1;
+            return true;
+        }
+        auto projection_view(i64 index, ViewRow value) -> bool {
+            if (!projection_position(7, index) || !views.set(index, value)) {
+                return reject(MetadataError::integrity);
+            }
+            projectionCursor = projectionCursor + 1;
+            return true;
+        }
+        auto projection_enum(i64 index, EnumRow value) -> bool {
+            if (!projection_position(8, index) || !enums.set(index, value)) {
+                return reject(MetadataError::integrity);
+            }
+            projectionCursor = projectionCursor + 1;
+            return true;
+        }
+        auto projection_callable(i64 index, CallableRow value) -> bool {
+            if (!projection_position(9, index) || !callables.set(index, value)) {
+                return reject(MetadataError::integrity);
+            }
+            projectionCursor = projectionCursor + 1;
+            return true;
+        }
+        auto projection_slot(i64 index, SlotRow value) -> bool {
+            if (!projection_position(10, index) || !slots.set(index, value)) {
+                return reject(MetadataError::integrity);
+            }
+            projectionCursor = projectionCursor + 1;
+            return true;
+        }
+        auto complete_projection() -> bool {
+            if (started || statusValue != MetadataStatus::pending || projectionCursor < 0 || projectionCursor
+                != projection_prefix(11)) {
+                return reject(MetadataError::integrity);
+            }
+            projectionCursor = -2;
+            return true;
         }
         auto initialize(InputCounts counts, i64 callableCount, i64 slotCount, i64 instructionBegin) -> bool {
             if (started || statusValue != MetadataStatus::pending || instructionTypeBegin != -1) {
@@ -1107,7 +1262,11 @@ export namespace compiler_ir_metadata {
             return started && statusValue == MetadataStatus::pending;
         }
         auto begin() -> bool {
-            if (started || statusValue != MetadataStatus::pending || !allocated()) {
+            if (projectionCursor >= 0) {
+                return reject(MetadataError::integrity);
+            }
+            if (started || statusValue != MetadataStatus::pending || !allocated() || (projectionCursor != -1
+                && projectionCursor != -2)) {
                 return false;
             }
             started = true;

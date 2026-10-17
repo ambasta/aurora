@@ -12,16 +12,34 @@ namespace aurora {
 // from the output graph's ownership contract.
 inline constexpr std::int64_t hostedLoweringPreludeRows = 16;
 
-// These views own no Session descriptor. HostedResolution copies each published
-// output pool once while its consuming owner is armed, then keeps the copies
-// alive for this call. Source bytes stay in Session; only requested immutable
-// already-decoded literal bytes are read by index during direct owner fill.
+// Failure diagnostics copy only their fixed report prefix while the consuming
+// Session owner is armed. These views own no Session descriptor.
 struct HostedLoweringInput {
     std::span<const hosted_abi::compiler_lowering::OutputRow> rows;
     std::span<const hosted_abi::compiler_lowering::OperandRow> operands;
     std::int64_t sourceByteCount = 0;
     std::int64_t moduleRoot = -1;
     std::int64_t diagnosticRow = -1;
+};
+
+// Success borrows the sealed Session only until the consuming owner releases it.
+// Each checked read returns a copied record; no pool view or descriptor escapes.
+class HostedProjectionInput {
+    const void *session;
+    std::int64_t rows, operands;
+
+public:
+    const std::int64_t sourceByteCount, moduleRoot;
+    HostedProjectionInput(const void *session, std::uint64_t payloadBytes, std::int64_t sourceBytes, std::int64_t root);
+    std::int64_t rowCount() const {
+        return rows;
+    }
+    std::int64_t operandCount() const {
+        return operands;
+    }
+    hosted_abi::compiler_lowering::OutputRow row(std::int64_t id) const;
+    hosted_abi::compiler_lowering::OperandRow operand(std::int64_t id) const;
+    void checkOperands(std::int64_t begin, std::int64_t count) const;
 };
 
 // Existing in-process resolution renderers, not Aurora callbacks or semantic
@@ -39,10 +57,6 @@ struct HostedLoweringServices {
     std::function<void(std::int64_t)> checkModuleScope;
     std::function<service::Kind(std::int64_t)> serviceKind;
     std::function<service::Operation(std::int64_t)> serviceOperation;
-    // Read one already-decoded retained byte through the existing Session
-    // accessor. Projection bounds-checks each immutable interval; direct fill
-    // streams bytes into the Aurora owner without a native payload copy.
-    std::function<std::uint8_t(std::int64_t index)> literalByte;
 };
 
 struct HostedLoweringOutput {
@@ -50,10 +64,15 @@ struct HostedLoweringOutput {
     std::vector<Diagnostic> diagnostics;
 };
 
+std::uint64_t projectionQuota(const HostedProjectionInput &input, std::span<const std::uint8_t> table);
+std::vector<std::uint8_t> renderProjectionIdentities(const void *plan, const HostedLoweringServices &services);
+
 // Call only for a checked LoweringResult success. Checks transport integrity and
 // fills paired raw instruction/metadata owners; does not publish views or
 // call ir::validate. The caller retains Session through projection and rendering,
 // then destroys these views and releases Session before independently validating
 // the owned result.
-HostedLoweringOutput projectHostedLowering(const HostedLoweringInput &input, const HostedLoweringServices &services);
+HostedLoweringOutput projectHostedLowering(const HostedProjectionInput &input,
+                                           const HostedLoweringServices &services,
+                                           const void *projectionPlan);
 } // namespace aurora

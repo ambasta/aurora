@@ -1131,6 +1131,35 @@ export namespace compiler_resolver {
             const compiler_lexer::Lexeme result = compiler_lexer::next_lexeme(text, cursor);
             return result;
         }
+        // Domain 319 is private projection provenance, disjoint from resolver
+        // and lowering keys. The host supplies a non-reused Region incarnation.
+        auto projection_stamp() const -> i64 {
+            i64 node = index_root;
+            i64 steps = 0;
+            while (node >= 0) {
+                if (steps >= index_used || node >= index_used || node >= indexes.size() || !indexes.ok()) {
+                    return -1;
+                }
+                steps = steps + 1;
+                const IndexRow row = indexes.at(node);
+                const i64 order = row.key_order(319, 0, 0, 0, 0);
+                if (order == 0) {
+                    return row.value();
+                }
+                if (order < 0) {
+                    node = row.left_child();
+                } else {
+                    node = row.right_child();
+                }
+            }
+            return -1;
+        }
+        auto seal_projection(i64 incarnation) -> bool {
+            if (!good() || incarnation <= 0 || projection_stamp() >= 0) {
+                return false;
+            }
+            return index_insert(319, 0, 0, 0, 0, incarnation) >= 0;
+        }
         auto index_row(i64 node) -> IndexRow {
             if (valid_index_id(node)) {
                 const IndexRow row = indexes.at(node);

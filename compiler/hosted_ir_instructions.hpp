@@ -175,6 +175,7 @@ public:
     void beginBody(std::size_t callableId);
     void endBody();
     void allocate();
+    static InstructionIngress project(const void *plan);
     template <class Variant> void append(const Variant &value) {
         Cursor measure(*this, true);
         writeInstruction(value, measure);

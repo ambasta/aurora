@@ -732,6 +732,34 @@
     "reason": "Complete existing runner in canonical Meson; artifact-managed cases retain fresh per-test outputs.",
     "root_make": true
   },
+  "ir_projection.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "meson_commands": {
+      "ir-projection-lifecycle": {
+        "arguments": [
+          "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
+          "@SOURCE@/tests/compiler/ir_projection.py",
+          "@BUILD@/aurorac",
+          "@BUILD@/hosted-frontend-modules",
+          "--artifacts",
+          "@ARTIFACTS@"
+        ],
+        "suites": [
+          "compiler",
+          "core",
+          "dev",
+          "full"
+        ]
+      }
+    },
+    "reason": "Private source projection lifecycle, graph, identity, allocation-failure and quota controls with runtime cleanup.",
+    "root_make": true
+  },
   "json_codecs.py": {
     "kind": "runner",
     "make": true,
