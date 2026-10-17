@@ -1467,7 +1467,8 @@ class HostedResolution::Impl {
             invalidResolution();
         return result;
     }
-    void seed() {
+    bool callFamily = false;
+    void seed(bool callExtension = false) {
         const auto add = [&](const Type &type) {
             hosted_abi::ResolverSeedBuiltinInput input;
             input.definition = blankMeta();
@@ -1481,8 +1482,12 @@ class HostedResolution::Impl {
                 invalidResolution();
         };
         const auto &catalog = builtinCatalog();
+        const auto isCall = [](const Type &type) {
+            return type == Type::CallSession || type == service::callResultType() || type == service::callStatusType();
+        };
         for (const auto &type : catalog.types)
-            add(type);
+            if (isCall(type) == callExtension)
+                add(type);
         const auto member = [&](std::int64_t parent, const std::string &name, std::int64_t typeOrOrdinal) {
             hosted_abi::ResolverSeedMemberInput input;
             input.member = blankMeta();
@@ -1495,6 +1500,8 @@ class HostedResolution::Impl {
                 invalidResolution();
         };
         for (const auto &definition : catalog.definitions) {
+            if (isCall(definition.type) != callExtension)
+                continue;
             const auto parent = builtinIdentities.at(typeName(definition.type));
             for (const auto &[name, type] : definition.fields)
                 member(parent, name, builtinIdentities.at(typeName(type)));
@@ -1503,10 +1510,12 @@ class HostedResolution::Impl {
         }
         for (const auto &[kind, type] : service::capabilityTypes) {
             (void)type;
-            serviceKinds.push_back(kind);
+            if ((kind == service::Kind::Call) == callExtension)
+                serviceKinds.push_back(kind);
         }
         for (const auto &operation : service::operations)
-            serviceSpellings.push_back(text(std::string(operation.spelling)));
+            if ((operation.kind == service::Kind::Call) == callExtension)
+                serviceSpellings.push_back(text(std::string(operation.spelling)));
     }
 
     void lowerStorage() {
@@ -1535,7 +1544,7 @@ class HostedResolution::Impl {
         default:
             invalidResolution();
         }
-        limits.serviceGroups = service::supportedGroupBitmap();
+        limits.serviceGroups = service::supportedGroupBitmap(callFamily);
         if (aurora_hosted_lowering_begin(owner.data(), &configuration) != 1) {
             lowerStorage();
             invalidResolution();
@@ -1554,10 +1563,11 @@ class HostedResolution::Impl {
                 invalidResolution();
             }
         }
-        if (service::operations.size() != 6 || serviceKinds.size() != 4 ||
-            serviceSpellings.size() != service::operations.size())
+        const std::size_t operationCount = callFamily ? 6 : 5;
+        if (service::operations.size() != 6 || serviceKinds.size() != (callFamily ? 4 : 3) ||
+            serviceSpellings.size() != operationCount)
             invalidResolution();
-        for (std::size_t index = 0; index < service::operations.size(); ++index) {
+        for (std::size_t index = 0; index < operationCount; ++index) {
             const auto &operation = service::operations[index];
             const auto kind = std::find(serviceKinds.begin(), serviceKinds.end(), operation.kind);
             if (kind == serviceKinds.end())
@@ -1618,7 +1628,7 @@ class HostedResolution::Impl {
         const bool success = result.result_status == lowering::LoweringStatus::success;
         if (success) {
             lowerStorage();
-            if (result.result_reason != lowering::LoweringError::none || result.root_row < hostedLoweringPreludeRows ||
+            if (result.result_reason != lowering::LoweringError::none || result.root_row < (callFamily ? 16 : 15) ||
                 result.diagnostic_row != 0)
                 invalidResolution();
         } else if ((result.result_status != lowering::LoweringStatus::semantic_failure &&
@@ -1670,6 +1680,10 @@ public:
         try {
             const auto tokens = lex(source);
             const auto parsed = parseHostedModuleSyntax(tokens, owner.beginArena());
+            if (parsed.callFamily && !callFamily) {
+                seed(true);
+                callFamily = true;
+            }
             hosted_abi::ResolverSourceInput input;
             input.source = span(source->text);
             const auto index = aurora_hosted_resolver_append_source(owner.data(), &input);

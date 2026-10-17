@@ -5,6 +5,7 @@
 #include "parser.hpp"
 #include "hosted_parser.hpp"
 #include "hosted_resolver.hpp"
+#include "x86.hpp"
 #include "../../runtime/hosted_bytes.hpp"
 #include <algorithm>
 #include <array>
@@ -4245,6 +4246,89 @@ public:
     }
 };
 
+void rawCatalogueControls() {
+    context = "exact historical and Call lowering preludes";
+    namespace Wire = aurora::hosted_abi::compiler_resolver;
+    namespace Lowering = aurora::hosted_abi::compiler_lowering;
+    for (const std::int64_t groups : {62, 318}) {
+        const std::int64_t count = groups == 62 ? 5 : 6;
+        for (int delta : {-1, 0, 1}) {
+            Allocations allocations;
+            RawResolution resolution(allocations);
+            aurora::hosted_abi::LoweringBeginInput begin{};
+            begin.configuration = {4096, 512, 4096, 65536, 4096, 512, 0, groups};
+            require(aurora_hosted_lowering_begin(resolution.data(), &begin) == 1, "catalogue begin failed");
+            const std::array kinds{Wire::ResolvedTypeKind::i64_value,
+                                   Wire::ResolvedTypeKind::bool_value,
+                                   Wire::ResolvedTypeKind::owner,
+                                   Wire::ResolvedTypeKind::reference,
+                                   Wire::ResolvedTypeKind::mutable_reference,
+                                   Wire::ResolvedTypeKind::u64_value,
+                                   Wire::ResolvedTypeKind::u8_value};
+            const std::array<std::int64_t, 7> identities{1, 2, 3, 4, 5, 8, 11};
+            for (std::size_t at = 0; at < kinds.size(); ++at) {
+                aurora::hosted_abi::LoweringScalarInput scalar{};
+                scalar.seed = {kinds[at], identities[at], at == 1 || at == 6 ? 1 : 8};
+                require(aurora_hosted_lowering_seed_scalar(resolution.data(), &scalar) ==
+                            static_cast<std::int64_t>(at) + 2,
+                        "catalogue scalar prefix failed");
+            }
+            Lowering::OutputRow scalarRow;
+            Lowering::OperandRow scalarType;
+            aurora_hosted_lowering_read_output(resolution.data(), 2, &scalarRow);
+            aurora_hosted_lowering_read_operand(resolution.data(), scalarRow.operandBegin, &scalarType);
+            const std::string spelling = "operation";
+            aurora::hosted_abi::ResolverTextInput text{};
+            text.text.backing = spelling.data();
+            text.text.length = static_cast<std::int64_t>(spelling.size());
+            const auto name = aurora_hosted_resolver_append_text(resolution.data(), &text);
+            const std::array receivers{Wire::ResolvedTypeKind::console_session,
+                                       Wire::ResolvedTypeKind::console_session,
+                                       Wire::ResolvedTypeKind::display_session,
+                                       Wire::ResolvedTypeKind::event_session,
+                                       Wire::ResolvedTypeKind::event_session,
+                                       Wire::ResolvedTypeKind::call_session};
+            const std::array<std::int64_t, 6> serviceKinds{0, 0, 1, 2, 2, 3};
+            for (std::int64_t at = 0; at < count + delta; ++at) {
+                aurora::hosted_abi::LoweringServiceInput service{};
+                const auto index = static_cast<std::size_t>(std::min(at, count - 1));
+                service.seed.receiverKind = receivers[index];
+                service.seed.kindId = serviceKinds[index];
+                service.seed.operationId = at;
+                service.seed.spellingSource = name;
+                service.seed.resultType = scalarType.signedValue;
+                const auto accepted = aurora_hosted_lowering_seed_service(resolution.data(), &service);
+                require(accepted == (at < count ? at + 9 : -1), "catalogue accepted an extra operation");
+            }
+            Lowering::LoweringResult result;
+            aurora_hosted_lowering_run(resolution.data(), &result);
+            // This deliberately lacks a resolved graph: it tests only whether
+            // exact setup can seal, never claims a valid semantic module.
+            const auto rows = aurora_hosted_lowering_count(resolution.data(), 0);
+            require(rows == 9 + count + (delta == -1 ? -1 : delta == 0 ? 1 : 0), "wrong catalogue/prelude extent");
+            if (delta == 0) {
+                Lowering::OutputRow layout;
+                aurora_hosted_lowering_read_output(resolution.data(), 9 + count, &layout);
+                require(layout.recordKind == Lowering::RecordKind::InitialLayoutOrder,
+                        "exact catalogue failed to seal");
+            }
+            resolution.finish();
+            ++cases;
+        }
+    }
+    for (const std::int64_t groups : {0, 61, 63, 317, 319, 65535}) {
+        Allocations allocations;
+        RawResolution resolution(allocations);
+        aurora::hosted_abi::LoweringBeginInput begin{};
+        begin.configuration = {4096, 512, 4096, 65536, 4096, 512, 0, groups};
+        require(aurora_hosted_lowering_begin(resolution.data(), &begin) == -1 &&
+                    resolution.status().storage == Wire::StorageStatus::invalid,
+                "noncanonical catalogue bitmap accepted");
+        resolution.finish();
+        ++cases;
+    }
+}
+
 void rawResolutionOwnership() {
     namespace Wire = aurora::hosted_abi::compiler_resolver;
     using Index = Wire::IndexRow;
@@ -7584,6 +7668,31 @@ void rawAggregates() {
 
 } // namespace
 
+void callCatalogueIsolation() {
+    context = "Call catalogue compilation isolation";
+    const auto compile = [](const std::string &body) {
+        aurora::HostedResolution resolution;
+        const auto source = std::make_shared<const aurora::SourceText>("catalogue.au", "module catalogue;" + body);
+        const auto header = resolution.add(source);
+        const auto resolved = resolution.resolve({header.id}, header.id, aurora::AnalysisMode::Check, true);
+        aurora::X86Emitter emitter;
+        return std::array<std::string, 3>{emitter.emit(resolved.module),
+                                          emitter.stackFactsJson(resolved.module),
+                                          emitter.abiFactsJson(resolved.module, resolved.abiDeclarations)};
+    };
+    const std::string ordinary = "auto f()->i64{return 7;}";
+    const auto before = compile(ordinary);
+    const auto enabled = compile("template<Scalar T> auto identity(T value)->T{return value;}"
+                                 "auto f()->bool{return identity<i64>(7)==7 && "
+                                 "builtin::CallStatus::replied==builtin::CallStatus::replied;}");
+    const auto after = compile(ordinary);
+    require(before == after && before[2].find("__au_call_result") == std::string::npos &&
+                enabled[2].find("__au_call_result") != std::string::npos &&
+                enabled[2].find("__au_call_status") != std::string::npos,
+            "Call catalogue leaked across compiler instances or failed status-only activation");
+    ++cases;
+}
+
 int main(int argc, char **argv) {
     try {
         context = "fixture arguments";
@@ -7591,6 +7700,8 @@ int main(int argc, char **argv) {
             argc == 51,
             "expected thirty-six compiler, one scalar library, six aggregate and seven typed consumer source paths");
         grammarExpectations();
+        callCatalogueIsolation();
+        rawCatalogueControls();
         diagnosticExpectations();
         // Table rows cover ordinary semicolon inputs. Keep distinct trivia,
         // boundary/depth and alternate stop-mode contracts explicit here.

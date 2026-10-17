@@ -725,7 +725,7 @@ class Projection {
                 DiagnosticSeverity::Warning};
     }
     void prelude() {
-        if (input.rows.size() < sizeValue(hostedLoweringPreludeRows) || input.moduleRoot < hostedLoweringPreludeRows)
+        if (input.rows.size() < 15 || input.moduleRoot < 15)
             invalidLowering();
         // The host supplied these immutable facts once before source lowering.
         // Only their typed transport and identity domains are checked here;
@@ -738,7 +738,12 @@ class Projection {
         identity(configuration.integer(OperandRole::MaximumByteArrayLength));
         identity(configuration.integer(OperandRole::MaximumScalarArrayLength));
         configuration.boolean(OperandRole::AnalysisMode);
-        identity(configuration.scalar(OperandRole::SupportedServiceGroups));
+        const auto groups = configuration.scalar(OperandRole::SupportedServiceGroups);
+        if (groups != 62 && groups != 318)
+            invalidLowering();
+        const std::int64_t layoutRow = groups == 318 ? 15 : 14;
+        if (input.rows.size() <= sizeValue(layoutRow) || input.moduleRoot <= layoutRow)
+            invalidLowering();
         configuration.finish();
         for (std::int64_t at = 2; at < 9; ++at) {
             Operands scalar(*this, own(at, RecordKind::ScalarContract));
@@ -747,7 +752,7 @@ class Projection {
             scalar.scalar(OperandRole::Size);
             scalar.finish();
         }
-        for (std::int64_t at = 9; at < 15; ++at) {
+        for (std::int64_t at = 9; at < layoutRow; ++at) {
             Operands operation(*this, own(at, RecordKind::ServiceContract));
             (void)type(operation, OperandRole::TypeId);
             (void)serviceKind(operation);
@@ -759,7 +764,7 @@ class Projection {
                 (void)services.type(identity(item.signedValue));
             operation.finish();
         }
-        Operands layoutOrder(*this, own(15, RecordKind::InitialLayoutOrder));
+        Operands layoutOrder(*this, own(layoutRow, RecordKind::InitialLayoutOrder));
         const auto symbols = list(layoutOrder.take(OperandRole::InitialLayoutSymbols), OperandRole::ClassNominalId);
         for (const auto &item : symbols)
             (void)services.className(identity(item.signedValue));

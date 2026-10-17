@@ -23,6 +23,7 @@ using hosted_parser::NodeKind;
 using hosted_parser::Status;
 using hosted_parser::Stop;
 using hosted_parser::SyntaxKind;
+using TypeSyntaxKind = hosted_parser::TypeKind;
 using Input = hosted_abi::ParserInput;
 using Result = hosted_abi::compiler_parser::ParseResult;
 using Node = hosted_abi::compiler_parser::AstNode;
@@ -396,6 +397,32 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
             if (preamble.tag != SyntaxKind::preamble || preamble.qualifier < 0 || preamble.qualifier > 1)
                 invalid();
             ParsedModuleSyntax parsed;
+            // Inspect admitted syntax, never raw source spellings: comments,
+            // strings and unrelated user names cannot enable a builtin family.
+            const auto callName = [](const std::string &value) {
+                return value == "CallSession" || value == "CallResult" || value == "CallStatus";
+            };
+            for (std::int64_t index = 0; index < typeCount; ++index) {
+                TypeSyntax type;
+                aurora_hosted_parser_type(arena.data(), index, &type);
+                if (type.token_index < 0 || type.name_end < type.token_index || type.name_end >= tokenCount)
+                    invalid();
+                if ((type.tag == TypeSyntaxKind::builtin_type || type.tag == TypeSyntaxKind::builtin_class) &&
+                    callName(text(type.name_end)))
+                    parsed.callFamily = true;
+            }
+            // Enum cases can appear without a declaration/type node, including
+            // in an uninstantiated template body.
+            for (std::int64_t index = 0; index < result.node_count; ++index) {
+                Node node;
+                aurora_hosted_parser_read(arena.data(), index, &node);
+                if (node.token_index < 0 || node.name_end < node.token_index || node.name_end >= tokenCount)
+                    invalid();
+                if ((node.tag == NodeKind::name || node.tag == NodeKind::call || node.tag == NodeKind::construct) &&
+                    node.name_end >= node.token_index + 2 && text(node.token_index) == "builtin" &&
+                    text(node.token_index + 1) == "::" && callName(text(node.token_index + 2)))
+                    parsed.callFamily = true;
+            }
             parsed.root = result.root_node;
             parsed.moduleName = name(preamble.token_index, preamble.binding_token);
             parsed.interfaceUnit = preamble.qualifier != 0;
@@ -692,7 +719,6 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
         if (std::find(statementUsed.begin(), statementUsed.end(), false) != statementUsed.end())
             invalid();
     }
-    using TypeSyntaxKind = hosted_parser::TypeKind;
     std::vector<TypeSyntax> types(static_cast<std::size_t>(typeCount));
     std::vector<Type> typeValues(static_cast<std::size_t>(typeCount));
     std::vector<std::int64_t> capacities(static_cast<std::size_t>(typeCount), 0);

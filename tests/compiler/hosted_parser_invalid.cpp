@@ -1976,8 +1976,8 @@ void resolutionControls() {
                 diagnostic->span.begin.offset == source->text.find("f()") &&
                 diagnostic->span.end.offset == diagnostic->span.begin.offset + 1 && sessionsCreated == 1 &&
                 sessionsReleased == 1 && transferred == 1 && pairsReleased == 0 && created == 1 && parsed == 1 &&
-                admitted == 1 && released == 1 && statementRead == 2 && read == 0 && edgeRead == 0 && typeRead == 0 &&
-                loweringBegun == 1 && loweringRun == 1 && scalarSeeds == 7 && serviceSeeds == 6 &&
+                admitted == 1 && released == 1 && statementRead == 2 && read == 1 && edgeRead == 0 && typeRead == 1 &&
+                loweringBegun == 1 && loweringRun == 1 && scalarSeeds == 7 && serviceSeeds == 5 &&
                 loweringOutputReads == 1 && loweringOperandReads == 3 && sessionPayload.allocation == 0,
             "typed failure report lost source, bounded reads, configuration or exact consuming cleanup");
     ++cases;
@@ -2123,7 +2123,7 @@ void resolutionControls() {
     reject("success publishes a prelude row", [] {
         loweringResult.result_status = Lowering::LoweringStatus::success;
         loweringResult.result_reason = Lowering::LoweringError::none;
-        loweringResult.root_row = 15;
+        loweringResult.root_row = 14;
     });
     reject("storage failure lacks an allocation status", [] {
         loweringResult.result_status = Lowering::LoweringStatus::storage_failure;
@@ -2619,8 +2619,7 @@ extern "C" std::int64_t aurora_hosted_lowering_begin(void *session, const void *
                 configuration.copiedBytes == aurora::maximumCopiedClassBytes &&
                 configuration.byteArrayLength == aurora::maximumClassByteArrayLength &&
                 configuration.scalarArrayLength == aurora::maximumClassScalarArrayLength &&
-                configuration.analysisMode == 0 &&
-                configuration.serviceGroups == aurora::service::supportedGroupBitmap(),
+                configuration.analysisMode == 0 && configuration.serviceGroups == 62,
             "lowering received a changed copied configuration");
     ++loweringBegun;
     return 1;

@@ -300,6 +300,13 @@ Classes admit at most 8,192 direct fields, public or private, including empty/ne
 
 `reflect_size(id)` and `reflect_field_count(id)` execute runtime lookups. Unknown IDs return zero. Descriptor entries are emitted for builtins, declared classes and array types used in storage/size/type-ID queries. Array size is `8*N`; arrays and builtins have zero named fields. Class field counts include public fields only, and class size includes all fields. Reflection cannot expose private values or bypass lifetime checks. Runtime queries use the defining module's visible descriptor view; unavailable/private IDs return zero, and reflection cannot implicitly import a type. Member traversal, invocation, mapped/conditional types and `keyof`-style type algebra remain design goals.
 
+The Call family is registered for a compilation only when admitted syntax in its
+complete import graph references `builtin::CallSession`, `builtin::CallResult`
+or `builtin::CallStatus`, including unused templates and enum-case expressions.
+Graphs without those references retain the historical builtin catalogue, IDs,
+ABI facts and emitted reflection output. Comments, strings and user type names
+do not activate it. Registration does not alter per-module visibility.
+
 `--referenced-reflection-only` is an explicit closed-image output mode. It emits
 only helpers directly referenced by runtime metadata queries in retained, validated
 IR. Every source function, including unused imports, is still checked before

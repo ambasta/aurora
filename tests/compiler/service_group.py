@@ -2,6 +2,7 @@
 """Distinct sealed service group source/ABI probe; no native or guest claim."""
 
 import argparse
+import json
 import os
 import signal
 from pathlib import Path
@@ -20,6 +21,81 @@ def run(command):
     return subprocess.run(list(map(str, command)), cwd=ROOT, capture_output=True, timeout=120)
 
 
+def catalogue_checks(compiler, work):
+    source = work / "catalogue.au"
+    facts = work / "catalogue.json"
+    assembly = work / "catalogue.s"
+    plain = "module catalogue; auto f()->i64{return 7;}"
+    cases = {
+        "plain": (plain, False),
+        "comment": (plain + " // builtin::CallSession builtin::CallResult builtin::CallStatus\n", False),
+        "string": (
+            'module catalogue; auto f()->i64{const array<u8,19> s="builtin::CallStatus";return i64(s[0]);}',
+            False,
+        ),
+        "user-name": (
+            "module catalogue; class CallResult {public:i64 n;}; auto f()->i64{return size_of(CallResult);}",
+            False,
+        ),
+        "status-type": (
+            "module catalogue; auto f(builtin::CallStatus s)->bool{return s==builtin::CallStatus::replied;}",
+            True,
+        ),
+        "status-only": (
+            "module catalogue; auto f()->bool{return builtin::CallStatus::replied==builtin::CallStatus::replied;}",
+            True,
+        ),
+        "copied-result": ("module catalogue; auto f(builtin::CallResult r)->u64{return r.value;}", True),
+        "reflection": (
+            "module catalogue; auto f()->i64{return size_of(builtin::CallResult)"
+            "+field_count(builtin::CallResult)+size_of(builtin::CallStatus);}",
+            True,
+        ),
+        "unused-template-type": (
+            "module catalogue; template<Scalar T> auto unused(T v)->i64{return size_of(builtin::CallResult);}"
+            " auto f()->i64{return 7;}",
+            True,
+        ),
+        "unused-template-case": (
+            "module catalogue; template<Scalar T> auto unused(T v)->bool{return builtin::CallStatus::replied"
+            "==builtin::CallStatus::replied;} auto f()->i64{return 7;}",
+            True,
+        ),
+        "instantiated-template": (
+            "module catalogue; template<Scalar T> auto identity(T v)->T{return v;}"
+            " auto f()->bool{return identity<i64>(7)==7 && builtin::CallStatus::replied"
+            "==builtin::CallStatus::replied;}",
+            True,
+        ),
+    }
+    baseline = None
+    for label, (text, active) in cases.items():
+        source.write_text(text)
+        result = run([compiler, source, "--abi-facts", facts, "-o", assembly])
+        require(result.returncode == 0, label + ": " + result.stderr.decode())
+        abi = json.loads(facts.read_text())
+        require(("__au_call_result" in abi["records"]) == active, label + ": result catalogue activation")
+        require(("__au_call_status" in abi["enums"]) == active, label + ": status catalogue activation")
+        output = (assembly.read_bytes(), facts.read_bytes())
+        if label == "plain":
+            baseline = output
+        if label == "comment":
+            require(output == baseline, "Call spellings in comments changed output")
+    # Root arrives before two dependencies; the Call reference is in an unused
+    # template in the transitive leaf. Import visibility must remain unchanged.
+    (work / "middle.au").write_text("export module middle; import leaf; export auto middle()->i64{return leaf();}")
+    (work / "leaf.au").write_text(
+        "export module leaf; export template<Scalar T> auto unused(T v)->i64{return size_of(builtin::CallResult);}"
+        " template<Scalar T> auto identity(T v)->T{return v;} export auto leaf()->i64{return identity<i64>(7);}"
+    )
+    source.write_text("module catalogue; import middle; auto f()->i64{return middle();}")
+    result = run([compiler, "--module-root", work, source, "--abi-facts", facts, "-o", assembly])
+    require(result.returncode == 0, "transitive activation: " + result.stderr.decode())
+    abi = json.loads(facts.read_text())
+    require("__au_call_result" in abi["records"] and "__au_call_status" in abi["enums"], "transitive catalogue missing")
+    print(f"PASS: Call catalogue activation: {len(cases)} source cases and transitive unused template")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("compiler", type=Path)
@@ -33,6 +109,7 @@ def main():
         (ROOT / "build").mkdir(exist_ok=True)
         work = Path(tempfile.mkdtemp(prefix="service-group-", dir=ROOT / "build"))
     assembly = work / "group.s"
+    catalogue_checks(compiler, work)
     result = run([compiler, ROOT / "tests/compiler/service_group.au", "-o", assembly])
     require(result.returncode == 0, result.stderr.decode())
     text = assembly.read_text()

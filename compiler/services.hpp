@@ -43,14 +43,14 @@ inline bool supportedGroup(const std::set<Kind> &kinds) {
            kinds == std::set<Kind>{Kind::Console, Kind::Display} ||
            kinds == std::set<Kind>{Kind::Console, Kind::IommuEvent};
 }
-inline std::int64_t supportedGroupBitmap() {
+inline std::int64_t supportedGroupBitmap(bool includeCall = true) {
     std::int64_t result = 0;
     for (unsigned mask = 0; mask < (1U << capabilityTypes.size()); ++mask) {
         std::set<Kind> group;
         for (std::size_t index = 0; index < capabilityTypes.size(); ++index)
             if (mask & (1U << index))
                 group.insert(capabilityTypes[index].first);
-        if (supportedGroup(group))
+        if ((includeCall || !group.contains(Kind::Call)) && supportedGroup(group))
             result |= std::int64_t{1} << mask;
     }
     return result;

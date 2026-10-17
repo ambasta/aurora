@@ -7,8 +7,9 @@
 #include <vector>
 
 namespace aurora {
-// The fixed typed prelude is checked explicitly, never an arbitrary prefix of
-// rows exempted from the output graph's ownership contract.
+// Maximum of the two exact typed preludes (historical 15, Call-enabled 16).
+// Each selected prelude is checked explicitly; no arbitrary prefix is exempted
+// from the output graph's ownership contract.
 inline constexpr std::int64_t hostedLoweringPreludeRows = 16;
 
 // These views own no Session descriptor. HostedResolution copies each published
