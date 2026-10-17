@@ -322,8 +322,10 @@ IR. Every source function, including unused imports, is still checked before
 retention; queried helper bodies and scope visibility are unchanged. The default
 keeps all existing external reflection symbols. Closed images must not rely on
 handwritten/native calls to helpers that source queries do not retain. Only the
-protected program-console supervisor currently opts in; other native profiles
-and user-program outputs retain their existing default inventories.
+protected program-console supervisor and singleton Call caller images opt in;
+their linked admission checks bind every retained helper to a generated source
+query. Call services, other native profiles and other user-program outputs retain
+their existing default inventories.
 
 ## Temporary machine integration
 

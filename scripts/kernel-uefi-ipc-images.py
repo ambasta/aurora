@@ -261,6 +261,7 @@ def call_stack_profile(graph):
 
 def call_client_stack(directory):
     import kernel_stack as stack
+    from kernel_program_console_admission import check_referenced_reflection
 
     result = {}
     prefix = directory / "user-clean"
@@ -285,6 +286,7 @@ def call_client_stack(directory):
         "Exact linked returning call stub",
     )
     functions["__au_runtime_call"] = dict(local_peak=8, calls=[], returns=1)
+    check_referenced_reflection(functions, set(facts), bridges={"__au_runtime_call"})
     # The only handwritten user frame is the fixed envelope and copied record.
     targets = {symbols[name].address: name for name in ("bad_entry", entry)}
     wrapper = []
