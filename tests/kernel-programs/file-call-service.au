@@ -2,6 +2,10 @@ module file_call_service;
 import kernel.note_read;
 // One offset in an immutable command-selected copy. No name, store or write grant.
 auto aurora_user_main(i64 phase, i64 offset, i64 reserved, kernel::NoteRead64 file) -> i64 {
+    if (phase == 5) {
+        while (true) {
+        }
+    }
     if (phase == 4) {
         const array<i64, 2> items = {
             1,

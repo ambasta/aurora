@@ -125,6 +125,14 @@ public:
     unsigned remaining{}, ticks{}, resumes{}, compiled{}, contexts{};
 };
 constinit CallWait call_wait;
+#ifdef AURORA_FILE_CALL
+// Bounds/accounting for the existing command-selected pair, not IPC state.
+bool file_wc{}, file_closed{};
+unsigned file_call_count{}, file_service_used{}, file_wc_probes{};
+#ifdef AURORA_FILE_CALL_BUDGET
+U64 file_budget_probe{};
+#endif
+#endif
 auto clear_call_wait() -> void {
     std::destroy_at(&call_wait);
     auto *bytes = reinterpret_cast<volatile std::byte *>(&call_wait);

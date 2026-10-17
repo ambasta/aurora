@@ -4,6 +4,7 @@
 import argparse
 import json
 import os
+import re
 import signal
 from pathlib import Path
 import subprocess
@@ -96,6 +97,56 @@ def catalogue_checks(compiler, work):
     print(f"PASS: Call catalogue activation: {len(cases)} source cases and transitive unused template")
 
 
+def file_count_checks(compiler, work):
+    # Extract the actual pure class, keeping the immutable predecessor independent
+    # of the two explicitly named Call consumers.
+    caller = (ROOT / "tests/kernel-programs/call-client.au").read_text()
+    counter = caller[caller.index("class FileCounts {") : caller.index("auto count_file(")]
+    samples = [
+        b"",
+        b"word",
+        b"a b",
+        b" a  b ",
+        b"a\n",
+        b"a\nb",
+        bytes(range(9, 14)),
+        b"\0\xff x",
+        b"x" * 49,
+        b"\n" * 49,
+        b"x " * 24 + b"x",
+    ]
+    statements = []
+    for index, data in enumerate(samples):
+        words = len(re.findall(rb"[^\x09-\x0d ]+", data))
+        expected = 1 | (data.count(b"\n") << 8) | (words << 16) | (len(data) << 24)
+        statements.append(f"FileCounts c{index}=FileCounts();")
+        for byte in data:
+            statements.append(f"if (!c{index}.push({byte}u64)) {{ return 1u64; }}")
+        statements.append(f"if(c{index}.result()!={expected}u64) {{ return 2u64; }}")
+        statements.append(f"if(c{index}.push(256u64)||c{index}.result()!={expected}u64) {{ return 3u64; }}")
+        if len(data) == 49:
+            statements.append(f"if(c{index}.push(0u64)||c{index}.result()!={expected}u64) {{ return 4u64; }}")
+    source = work / "file-counts.au"
+    source.write_text("module counts;\n" + counter + "auto count_test()->u64 {" + "".join(statements) + "return 0u64;}")
+    assembly = work / "file-counts.s"
+    result = run([compiler, source, "-o", assembly])
+    require(result.returncode == 0, result.stderr)
+    bridge = work / "file-counts-entry.s"
+    bridge.write_text(
+        ".text\n.globl _start\n_start:\n call count_test\n mov %rax,%rdi\n"
+        ' mov $60,%rax\n syscall\n.section .note.GNU-stack,"",@progbits\n'
+    )
+    for name in ("file-counts", "file-counts-entry"):
+        result = run(["as", "--64", work / (name + ".s"), "-o", work / (name + ".o")])
+        require(result.returncode == 0, result.stderr)
+    executable = work / "file-counts"
+    result = run(["ld", "-o", executable, work / "file-counts.o", work / "file-counts-entry.o"])
+    require(result.returncode == 0, result.stderr)
+    result = run([executable])
+    require(result.returncode == 0, "actual streaming counter mismatch")
+    print("PASS actual pure file counter: LF/words/bytes, binary bytes, limit and refusal preservation")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("compiler", type=Path)
@@ -109,6 +160,7 @@ def main():
         (ROOT / "build").mkdir(exist_ok=True)
         work = Path(tempfile.mkdtemp(prefix="service-group-", dir=ROOT / "build"))
     assembly = work / "group.s"
+    file_count_checks(compiler, work)
     catalogue_checks(compiler, work)
     result = run([compiler, ROOT / "tests/compiler/service_group.au", "-o", assembly])
     require(result.returncode == 0, result.stderr.decode())

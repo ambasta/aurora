@@ -77,17 +77,40 @@
                 context->words()[9] == endpoint->generation() && site >= 2 && site < domains[0].contract->size() &&
                 code.get(site - 2, 1) == 0xcd && code.get(site - 1, 1) == 0x82 && code.get(site, 1) == 0xc3,
             "call exact site and endpoint");
-    if (domains[0].call_used) {
+    if (domains[0].call_used
+#ifdef AURORA_FILE_CALL
+        && (!file_wc || file_closed || file_call_count>=50)
+#endif
+    ) {
         require(!call_wait.context && mailbox->state() == ipc::State::consumed, "call repeated state");
         auto *restored = reinterpret_cast<U64 *>(frame);
         restored[14] = 2;
         restored[11] = 0;
         return 0;
     }
+#ifdef AURORA_FILE_CALL
+    if (file_wc) {
+        require(!file_closed && file_call_count<50 && context->words()[11]==file_call_count,
+                "wc bounded sequential offset");
+        if (domains[0].call_used)
+            require(mailbox->state()==ipc::State::consumed && mailbox->scrubbed() &&
+                        mailbox->recycle(ipc::Phase::inactive),"wc consumed recycle");
+    }
+#endif
     require(!call_wait.context && !call_wait.authority && !call_wait.ticket && domains[1].handle &&
                 registry.index(*domains[1].handle) == 1 && !registry.active(*domains[1].handle) &&
                 mailbox->state() == ipc::State::idle && timer_stop(),
             "call reserve and stop");
+#ifdef AURORA_FILE_CALL
+    if (file_wc && !file_boundary_debit()) {
+        file_closed=true;
+        require(program.cancel(),"wc caller boundary exhaustion");
+        asm volatile("mov %0,%%cr3" ::"r"(kernel_root) : "memory");
+        require(registry.deactivate(*domains[0].handle),"wc caller exhausted owner");
+        active=L::domain_count;
+        return 1;
+    }
+#endif
     call_wait.context.emplace(*context);
     call_wait.authority.emplace(*run_authority);
     call_wait.service = *domains[1].handle;
@@ -103,6 +126,9 @@
     require(ticket.has_value(), "call atomic publication");
     call_wait.ticket = *ticket;
     domains[0].call_used = true;
+#ifdef AURORA_FILE_CALL
+    if (file_wc) ++file_call_count;
+#endif
 #ifdef AURORA_CALL_PENDING
     force_timer_pending();
 #endif
@@ -122,6 +148,12 @@
     return 1;
 }
 auto call_envelope(const Bytes &captured, U64 result) -> void {
+#ifdef AURORA_FILE_CALL
+    if (file_wc && active==1 && !file_boundary_debit()) {
+        file_closed=true;
+        return; // Delivered transaction is cancelled by the quiescent driver.
+    }
+#endif
     if (program.event() != ProgramEvent::returned)
         return;
     require(captured.get(64) == launch[0] && captured.get(72) == 1 && captured.get(88) == launch[2] &&
@@ -137,10 +169,16 @@ auto call_envelope(const Bytes &captured, U64 result) -> void {
                     mailbox->reply(
                         *domains[1].handle, selected_phase, ipc::Endpoint{launch[2], launch[3]}, transaction, result),
                 "call service reply");
+#ifdef AURORA_FILE_CALL
+        if (file_wc && (result & 255)!=1) file_closed=true;
+#endif
     } else {
         require(active == 0 && selected_phase == ipc::Phase::request && transaction == 0 && domains[0].call_used &&
                     !call_wait.context && mailbox->state() == ipc::State::consumed,
                 "call completed caller terminal");
+#ifdef AURORA_FILE_CALL
+        if (file_wc) require(file_closed,"wc terminal completion");
+#endif
     }
 }
 auto call_execute(unsigned index, U64 source_phase, U64 first, U64 second) -> void {
@@ -190,6 +228,9 @@ auto call_execute(unsigned index, U64 source_phase, U64 first, U64 second) -> vo
             "call launch continuation");
     // The old kernel entry stack has unwound before any service can execute.
     timer_finish();
+#ifdef AURORA_FILE_CALL
+    if (file_wc && index==1) file_service_used=timer_ticks;
+#endif
     const auto current_stack = stack();
     require(root() == kernel_root && active == L::domain_count && saved_rsp == 0 && !program.running() &&
                 current_stack >= arena + Handoff::stack_bottom && current_stack < arena + Handoff::stack_top,
@@ -290,7 +331,7 @@ auto call_execute(unsigned index, U64 source_phase, U64 first, U64 second) -> vo
     Serial::text("AURORA_CALL_COMPLETE: epoch=");
     Serial::number(timer_epoch);
     Serial::text(" event=");
-    Serial::text(timer_exhausted ? std::string_view{"budget"} : std::string_view{"returned"});
+    Serial::text(timer_exhausted ? std::string_view{"budget"} : call_wait.context ? std::string_view{"parked"} : std::string_view{"returned"});
     Serial::text(" value=");
     Serial::number(program.value());
     Serial::text("\r\n");

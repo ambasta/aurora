@@ -11,7 +11,64 @@ auto invoke(builtin::CallSession& session, u64 request) -> builtin::CallResult {
     }
     return result;
 }
+// Streaming C-locale wc counts; no retained file bytes or allocation.
+class FileCounts {
+    u64 bytes;
+    u64 lines;
+    u64 words;
+    bool in_word;
+public:
+    FileCounts() : bytes(0u64), lines(0u64), words(0u64), in_word(false) {
+    }
+    auto push(u64 byte) -> bool {
+        if (byte > 255u64 || bytes >= 49u64) {
+            return false;
+        }
+        if (byte == 10u64) {
+            lines = lines + 1u64;
+        }
+        const bool space = byte == 32u64 || (byte >= 9u64 && byte <= 13u64);
+        if (!space && !in_word) {
+            words = words + 1u64;
+        }
+        in_word = !space;
+        bytes = bytes + 1u64;
+        return true;
+    }
+    auto size() const -> u64 {
+        return bytes;
+    }
+    auto result() const -> u64 {
+        return 1u64 | (lines << 8) | (words << 16) | (bytes << 24);
+    }
+};
+auto count_file(builtin::CallSession& session, u64 phase) -> u64 {
+    FileCounts counts = FileCounts();
+    while (counts.size() <= 49u64) {
+        if (phase == 34u64 && counts.size() == 2u64) {
+            while (true) {
+            }
+        }
+        const builtin::CallResult result = invoke(session, counts.size());
+        if (result.status != builtin::CallStatus::replied) {
+            return 0u64;
+        }
+        if (result.value == 2u64) {
+            return counts.result();
+        }
+        if (result.value == 3u64) {
+            return 3u64;
+        }
+        if ((result.value & 255u64) != 1u64 || !counts.push(result.value >> 8)) {
+            return 0u64;
+        }
+    }
+    return 0u64;
+}
 auto aurora_user_main(builtin::CallSession& session, u64 phase, u64 seed, u64 ordinal) -> u64 {
+    if (phase >= 32u64 && phase <= 37u64) {
+        return count_file(session, phase);
+    }
     const array<u64, 3> live = {
         seed,
         17u64,
@@ -19,7 +76,8 @@ auto aurora_user_main(builtin::CallSession& session, u64 phase, u64 seed, u64 or
     };
     u64 steps = 0u64;
     u64 checksum = seed;
-    while (steps < 250000u64) {
+    // Keep a positive hardware debit even after translated code is warm.
+    while (steps < 1000000u64) {
         checksum = seed - checksum;
         steps = steps + 1u64;
     }

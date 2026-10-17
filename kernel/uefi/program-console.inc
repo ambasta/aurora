@@ -394,7 +394,7 @@ __attribute__((noinline)) auto run_program_console() -> void {
     program::Response ready{program::Response::Kind::ready};
 #ifdef AURORA_FILE_CALL
     ready=program::Response{program::Response::Kind::file_reply};
-    constexpr std::string_view banner="AURORA_FILE_CALL_READY: file storage and peek <name>, one byte";
+    constexpr std::string_view banner="AURORA_FILE_CALL_READY: file storage, peek <name> and wc <name>";
     require(ready.payload(std::as_bytes(std::span{banner.data(),banner.size()})),"file call banner");
 #endif
     bool okay=program_write_response(ready);
@@ -430,12 +430,12 @@ __attribute__((noinline)) auto run_program_console() -> void {
         const auto file_event=program_files_update(copied,response);
         if (file_event!=0) {
 #ifdef AURORA_FILE_CALL
-            if (file_event==4) okay=program_file_call(copied);
+            if (file_event==4 || file_event==5) okay=program_file_call(copied,file_event==5);
             else if (file_event>=2) {
                 command_files.abort(); copied.scrub(); okay=program_write_response(response);
             }
 #else
-            if (file_event==4) {
+            if (file_event==4 || file_event==5) {
                 command_files.abort(); copied.scrub(); okay=program_write_response(response);
             } else if (file_event>=2) okay=program_command(copied,true,false,true);
 #endif

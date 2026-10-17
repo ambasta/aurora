@@ -836,7 +836,7 @@ auto named_read_lifetime_cases() -> void {
     NamedFixture n;
     n.submit("write a payload");
     const auto saved = n.files.saved();
-    for (const auto command : {"cat a", "peek a"}) {
+    for (const auto command : {"cat a", "peek a", "wc a"}) {
         for (unsigned phase = 0; phase < 6; ++phase) {
             n.start(command);
             const auto endpoint = *n.f.mailbox.endpoint(n.f.client);
