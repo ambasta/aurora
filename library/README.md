@@ -83,7 +83,7 @@ failed output byte and never retries a command or committed update.
 - [Binary records and sector I/O](../docs/storage.md): fixed records, copied sectors, runtime-capacity RAM device and scoped windows
 - [UTF-8](../docs/utf8.md): strict scalar codecs, scalar ranges and line scanning
 - [ASCII token scanner](../docs/token-scan.md): final-window copied token observations
-- [JSON](../docs/json.md): bounded validation, scalar/integer codecs, lookup and transactional string append
+- [JSON](../docs/json.md): bounded validation, scalar/integer codecs, lookup and transactional string encoding/decoding
 - [Package metadata](../docs/packages.md): identity, manifest grammar and catalog ordering
 - [Offline XFS](../docs/xfs.md): narrow integrity/geometry/directory/file interpretation
 - Named RAM files support atomic `append_file` and `append NAME TEXT` through the

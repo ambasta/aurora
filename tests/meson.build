@@ -30,6 +30,7 @@ foreach entry : [
     ['binary-buffer', 'compiler/binary_buffer.py', 'bytes'],
     ['byte-buffer', 'compiler/byte_buffer.py', 'bytes'],
     ['utf8-text', 'compiler/utf8_text.py', 'bytes'],
+    ['json-string-read', 'compiler/json_string_read.py', 'bytes'],
     ['method-spans', 'compiler/method_spans.py', 'bytes'],
     ['owned-spans', 'compiler/owned_spans.py', 'bytes'],
     ['json-owned', 'compiler/json_owned.py', 'bytes'],
