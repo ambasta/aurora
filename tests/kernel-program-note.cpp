@@ -737,7 +737,12 @@ public:
             f.retire(true);
             return;
         }
-        require(files.bind(f.registry, f.mailbox, f.client, f.service, f.stream), "named authenticated file binding");
+        require(f.transforming ? !files.bind_read(f.registry, f.mailbox, f.client, f.service)
+                               : !files.bind(f.registry, f.mailbox, f.client, f.service, f.stream),
+                "selected read and writable bindings remain disjoint");
+        require(f.transforming ? files.bind(f.registry, f.mailbox, f.client, f.service, f.stream)
+                               : files.bind_read(f.registry, f.mailbox, f.client, f.service),
+                "named authenticated file binding");
     }
     auto run() -> void {
         while (f.stream.next_input())
@@ -748,8 +753,10 @@ public:
         run();
         require(!files.complete(f.registry, f.mailbox, f.client, *f.mailbox.endpoint(f.client), f.stream),
                 "read-only real grant cannot authorize replacement");
+        require(!files.release_read(f.registry, f.mailbox), "live read participants cannot release selection");
         f.retire();
-        files.abort();
+        require(files.release_read(f.registry, f.mailbox), "read grant releases after authenticated retirement");
+        require(!files.release_read(f.registry, f.mailbox), "read release cannot replay");
         auto output = f.stream.finish();
         require(output && output->missing() == missing && output->bytes() == bytes(expected) &&
                     output->length() == expected.size(),
@@ -797,6 +804,67 @@ public:
         read(name, expected);
     }
 };
+auto named_read_lifetime_cases() -> void {
+    NamedFixture n;
+    n.submit("write a payload");
+    const auto saved = n.files.saved();
+    for (unsigned phase = 0; phase < 6; ++phase) {
+        n.start("cat a");
+        const auto endpoint = *n.f.mailbox.endpoint(n.f.client);
+        require(!n.files.bind_read(n.f.registry, n.f.mailbox, n.f.client, n.f.service), "read lease cannot rebind");
+        require(!n.files.bind(n.f.registry, n.f.mailbox, n.f.client, n.f.service, n.f.stream),
+                "read lease cannot become writable");
+        require(!n.files.complete(n.f.registry, n.f.mailbox, n.f.client, endpoint, n.f.stream),
+                "partial read cannot mint replacement receipt");
+        if (phase >= 1)
+            n.f.request();
+        U64 reply = 0;
+        if (phase >= 2)
+            reply = n.f.receive(11);
+        if (phase >= 3)
+            n.f.reply(reply);
+        if (phase >= 4)
+            reply = n.f.consume();
+        if (phase >= 5)
+            n.f.acknowledge(reply);
+        require(!n.f.stream.ready_to_finish(), "partial read is not full-stream completion");
+        user::DomainRegistry foreign;
+        ipc::Mailbox other{foreign};
+        require(!n.files.release_read(foreign, other) && !n.files.release_read(n.f.registry, other) &&
+                    !n.files.release_read(foreign, n.f.mailbox),
+                "read release retains both authority contexts");
+        require(!n.files.release_read(n.f.registry, n.f.mailbox), "read release refuses live participants");
+        n.f.retire(true);
+        require(n.files.release_read(n.f.registry, n.f.mailbox),
+                "cancelled partial read releases only after retirement");
+        require(!n.files.release_read(n.f.registry, n.f.mailbox), "read release consumes lease once");
+        require(n.files.saved() == saved, "read release preserves all file bytes and revision");
+        require(!n.files.selected() && !n.files.writable() &&
+                    std::all_of(n.files.projection().begin(),
+                                n.files.projection().end(),
+                                [](std::byte value) {
+                                    return value == std::byte{};
+                                }),
+                "released read selection and projection are scrubbed");
+        require(!n.f.stream.finish(), "retired partial read does not become a complete output");
+    }
+    n.start("cat a");
+    require(n.f.stream.cancel(), "cancel read before independent retirement controls");
+    n.f.note.release();
+    require(n.f.registry.destroy(n.f.client), "retire only read client");
+    require(!n.files.release_read(n.f.registry, n.f.mailbox), "live read service prevents release");
+    require(n.f.registry.destroy(n.f.service), "retire read service");
+    require(!n.files.release_read(n.f.registry, n.f.mailbox), "dead handles do not replace grant revocation");
+    require(n.f.mailbox.revoke(ipc::Phase::inactive) && n.files.release_read(n.f.registry, n.f.mailbox),
+            "read grant release requires explicit revocation");
+    n.start("upper a");
+    require(!n.files.bind_read(n.f.registry, n.f.mailbox, n.f.client, n.f.service) &&
+                !n.files.release_read(n.f.registry, n.f.mailbox),
+            "writable selection cannot use read lease");
+    n.files.abort();
+    n.f.retire(true);
+    n.read("a", "payload");
+}
 auto named_file_cases() -> void {
     NamedFixture n;
     Files::Value initial{};
@@ -957,6 +1025,7 @@ auto named_file_cases() -> void {
 
 auto main() -> int {
     require(command_stream_contract() == 0, "shared Aurora stream behavioral fixture");
+    named_read_lifetime_cases();
     named_file_cases();
     command_cases();
     representation_controls();

@@ -19,6 +19,7 @@ private:
         idle,
         selected,
         bound,
+        read_bound,
         completed,
         retired,
         publishing
@@ -54,6 +55,29 @@ private:
         return actual && retained && *actual == *retained && client && service && endpoint.slot() == 0 &&
                endpoint.generation() == generation_ && generation_ != 0 && client->slot() == 0 &&
                client->generation() == generation_ && service->slot() == 1 && service->generation() == generation_;
+    }
+
+    auto bind_participants(const user::DomainRegistry &registry,
+                           const ipc::Mailbox &mailbox,
+                           user::DomainHandle client,
+                           user::DomainHandle service,
+                           State next) -> bool {
+        const auto a = mailbox.endpoint(client), b = mailbox.endpoint(service);
+        if (state_ != State::selected || !registry.ready(client) || !registry.ready(service) || !a || !b ||
+            a->slot() != 0 || b->slot() != 1 || a->generation() == 0 || a->generation() != b->generation())
+            return false;
+        client_ = client;
+        service_ = service;
+        registry_ = &registry;
+        mailbox_ = &mailbox;
+        generation_ = a->generation();
+        state_ = next;
+        return true;
+    }
+    auto participants_retired(const user::DomainRegistry &registry, const ipc::Mailbox &mailbox) const -> bool {
+        return registry_ == &registry && mailbox_ == &mailbox && !registry.index(client_) &&
+               !registry.index(service_) && !mailbox.endpoint(client_) && !mailbox.endpoint(service_) &&
+               mailbox.revoked();
     }
 
 public:
@@ -103,19 +127,25 @@ public:
                             user::DomainHandle client,
                             user::DomainHandle service,
                             Stream &stream) -> bool {
-        const auto a = mailbox.endpoint(client), b = mailbox.endpoint(service);
-        if (state_ != State::selected || !stream.awaiting_read(writable_) || !registry.ready(client) ||
-            !registry.ready(service) || !a || !b || a->slot() != 0 || b->slot() != 1 || a->generation() == 0 ||
-            a->generation() != b->generation())
+        if (!writable_ || !stream.awaiting_read(true) ||
+            !bind_participants(registry, mailbox, client, service, State::bound))
             return false;
-        client_ = client;
-        service_ = service;
-        registry_ = &registry;
-        mailbox_ = &mailbox;
-        generation_ = a->generation();
         completed_stream_ = &stream;
         stream_run_ = stream.run();
-        state_ = State::bound;
+        return true;
+    }
+    // A read grant binds only this frozen selection's participant lifetime.
+    // It promises neither a complete stream nor any particular number of bytes.
+    [[nodiscard]] auto bind_read(const user::DomainRegistry &registry,
+                                 const ipc::Mailbox &mailbox,
+                                 user::DomainHandle client,
+                                 user::DomainHandle service) -> bool {
+        return !writable_ && bind_participants(registry, mailbox, client, service, State::read_bound);
+    }
+    [[nodiscard]] auto release_read(const user::DomainRegistry &registry, const ipc::Mailbox &mailbox) -> bool {
+        if (state_ != State::read_bound || !participants_retired(registry, mailbox))
+            return false;
+        abort();
         return true;
     }
     // No copied Output is a save capability. Bind completion to this exact
@@ -135,8 +165,7 @@ public:
         return true;
     }
     [[nodiscard]] auto retire(const user::DomainRegistry &registry, const ipc::Mailbox &mailbox) -> bool {
-        if (registry_ != &registry || mailbox_ != &mailbox || state_ != State::completed || registry.index(client_) ||
-            registry.index(service_) || mailbox.endpoint(client_) || mailbox.endpoint(service_) || !mailbox.revoked())
+        if (state_ != State::completed || !participants_retired(registry, mailbox))
             return false;
         client_ = {};
         service_ = {};

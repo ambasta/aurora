@@ -155,6 +155,22 @@ never computes the transformation. EOF/missing retain their exact terminal encod
 empty and nonempty files require a final authenticated EOF round; a missing
 selection is read through IPC and cannot create a file.
 
+Read-only selections use a separate participant-lifetime binding. Successful and
+cancelled reads release that binding only after both original participants are
+retired and their original Mailbox is explicitly revoked. Release scrubs the
+selection and frozen projection while preserving saved file bytes and revision.
+It certifies retirement, not byte delivery or complete I/O: `cat` still obtains
+output only through the existing Stream EOF/missing and `finish()` checks.
+Writable selections cannot bind or release through this read-only path.
+Each fault/budget smoke runs both writable and read-only recovery guests, so
+partial read cancellation exercises this release path without exposing output.
+
+This lifetime split is a prerequisite for a future command-bound returning
+CallSession read. No combined console/call profile is admitted yet. A partial
+one-byte call would need its own exact completion result, NoteRead64 entry
+admission, byte/EOF/missing envelope and call-wait cleanup; it must not impersonate
+a completed Stream. The current isolated CRC CallSession profile is unchanged.
+
 Replacement authority is private, one-shot and bound to the actual client
 incarnation, endpoint generation, selected file and exact stream run. A read-only
 grant cannot mint it. The bounded stream run generation does not reset on
