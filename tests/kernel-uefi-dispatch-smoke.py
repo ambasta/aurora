@@ -45,13 +45,13 @@ def metadata_valid(meta, mode):
         "Peer metadata types",
     )
     shifted = {
-        key: (value - 8192 if key not in ("size", "probe_offset") and value else value) for key, value in image.items()
+        key: (value - 32768 if key not in ("size", "probe_offset") and value else value) for key, value in image.items()
     }
     probe = shifted["probe_pc"]
     shifted["probe_pc"] = 0
     base["images"]["clean"] = shifted
     budget.metadata_valid(base, "budget")
-    need(image["entry"] == BASE + 8192 and image["probe_offset"] == 0, "Peer layout authority")
+    need(image["entry"] == BASE + 32768 and image["probe_offset"] == 0, "Peer layout authority")
     need((BASE <= probe < shifted["return_pc"]) if mode == "dispatch-peer-code" else probe == 0, "Peer probe scope")
 
 
@@ -169,7 +169,7 @@ def expected(mode, images, arena):
     for index in range(3):
         add(
             f"AURORA_UEFI_DISPATCH_DOMAIN: index={index} root={roots[index]}"
-            f" entry={BASE + index * 4096} stack={BASE + 0x204000 + index * 0x200000}"
+            f" entry={BASE + index * 16384} stack={BASE + 0x204000 + index * 0x200000}"
             f" frame={arena + 0xC0000 + index * 0x4000}"
         )
     bind()
@@ -329,7 +329,7 @@ def validate(status, text, mode, meta):
                     need(
                         r == service
                         and f == arena + 0x88000 - 176
-                        and BASE + 4096 <= pc < BASE + 4096 + meta["images"]["bounds"]["size"],
+                        and BASE + 16384 <= pc < BASE + 16384 + meta["images"]["bounds"]["size"],
                         "Wrong service timer frame",
                     )
                 else:
@@ -496,7 +496,7 @@ def fixtures():
     for mode in MODES:
         images = {}
         for index, name in enumerate(("clean", "bounds", "peer")):
-            base = BASE + index * 4096
+            base = BASE + index * 16384
             images[name] = dict(
                 entry=base,
                 size=512,

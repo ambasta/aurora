@@ -45,7 +45,7 @@ def metadata_valid(meta, mode):
         need(type(image) is dict and extra <= set(image), "Missing compiled ranges")
         need(all(type(value) is int and 0 <= value < 1 << 64 for value in image.values()), "Invalid range scalar")
         base_images[name] = {key: value for key, value in image.items() if key not in extra}
-        base = BASE + index * 4096
+        base = BASE + index * 16384
         size = image["size"]
         start = image["compiled_begin"]
         end = image["compiled_end"]
@@ -204,7 +204,7 @@ def validate(status, text, mode, meta):
                 if cpl == 3:
                     need(
                         (error, root, frame, cr2) == (0, service, arena + 0x88000 - 176, 0)
-                        and BASE + 4096 <= pc < BASE + 4096 + meta["images"]["bounds"]["size"],
+                        and BASE + 16384 <= pc < BASE + 16384 + meta["images"]["bounds"]["size"],
                         "Invalid user timer frame",
                     )
                 else:
@@ -449,7 +449,7 @@ def self_test():
     for mode in MODES:
         images = {}
         for index, name in enumerate(("clean", "bounds")):
-            base = BASE + index * 4096
+            base = BASE + index * 16384
             images[name] = dict(
                 entry=base,
                 size=512,
@@ -625,7 +625,7 @@ def self_test():
         for path, key, value in [
             ("bounds", "return_pc", 0),
             ("bounds", "compiled_begin", 0),
-            ("bounds", "compiled_end", BASE + 8192),
+            ("bounds", "compiled_end", BASE + 32768),
             ("bounds", "size", 8192),
             ("bounds", "context_begin", BASE),
             ("clean", "entry", True),

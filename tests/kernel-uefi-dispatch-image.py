@@ -19,7 +19,7 @@ fixtures = load("dispatch_image_fixture", ROOT / "tests/kernel-uefi-user-image.p
 def main():
     positive = negative = 0
     for index in range(3):
-        base = images.BASE + index * 4096
+        base = images.BASE + index * 16384
         data, blob, symbols = fixtures.fixture(base)
         images.verify(data, blob, base, symbols, dispatcher=True)
         positive += 1
@@ -42,7 +42,7 @@ def main():
             changed = data.copy()
             struct.pack_into("<I", changed, 68, flags)
             tests.append((changed, blob, base, symbols))
-        for address in (images.BASE - 4096, images.BASE + 3 * 4096, images.BASE + 0x200000):
+        for address in (images.BASE - 4096, images.BASE + 3 * 16384, images.BASE + 0x200000):
             foreign = fixtures.fixture(address)
             tests.append((*foreign[:2], address, foreign[2]))
         for args in tests:

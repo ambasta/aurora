@@ -71,16 +71,15 @@ private:
     owned_contract(std::uint64_t arena, std::size_t domain, const user::ProgramContract &contract) -> bool {
         if (!Layout::valid(arena) || domain >= Layout::domain_count || !contract.valid())
             return false;
-        const auto expected = user::ProgramLayout::create(Layout::user_code,
-                                                          Layout::user_code + Layout::image_pages * Layout::page_size,
-                                                          1,
+        const auto expected = user::ProgramLayout::create(Layout::code_begin(domain),
+                                                          Layout::code_end(domain),
+                                                          Layout::image_limit(domain) / Layout::page_size,
                                                           Layout::user_stack_begin(domain),
                                                           Layout::user_stack_end(domain),
                                                           arena + Layout::rsp0_bottom,
                                                           arena + Layout::rsp0_top);
         return expected && same_layout(*expected, contract.layout()) &&
-               contract.entry() == Layout::user_code + domain * Layout::page_size &&
-               contract.size() <= Layout::page_size;
+               contract.entry() == Layout::code_begin(domain) && Layout::code_pages(domain, contract.size()) != 0;
     }
     [[nodiscard]] auto same_live_owner(const user::DomainRegistry &registry, user::DomainHandle owner) const -> bool {
         const auto retained = registry.index(owner_), current = registry.index(owner);

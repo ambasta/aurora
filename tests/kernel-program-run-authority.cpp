@@ -13,15 +13,15 @@ auto check(bool okay) -> void {
         std::abort();
 }
 auto contract(unsigned domain) -> user::ProgramContract {
-    const auto layout = user::ProgramLayout::create(L::user_code,
-                                                    L::user_code + L::image_pages * 4096,
-                                                    1,
+    const auto layout = user::ProgramLayout::create(L::user_code + domain * 16384,
+                                                    L::user_code + domain * 16384 + 12288,
+                                                    L::image_limit(domain) / 4096,
                                                     L::user_stack_begin(domain),
                                                     L::user_stack_end(domain),
                                                     arena + L::rsp0_bottom,
                                                     arena + L::rsp0_top);
     check(layout.has_value());
-    const auto pc = L::user_code + domain * 4096;
+    const auto pc = L::user_code + domain * 16384;
     return user::ProgramContract{*layout, pc, 128, pc + 32, pc + 64, pc + 66, pc + 68, pc + 70};
 }
 auto main() -> int {

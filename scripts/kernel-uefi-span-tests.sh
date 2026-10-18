@@ -54,7 +54,7 @@ with tempfile.TemporaryDirectory(prefix='aurora-uefi-span-') as temporary:
     for index, name in enumerate(('clean', 'bounds')):
         for metadata in (normal, span):
             image = metadata[name]
-            require(set(image) == keys and image['entry'] == images.BASE + index * 4096
+            require(set(image) == keys and image['entry'] == images.BASE + index * 16384
                     and 4 <= image['size'] <= 4096 and image['probe_pc'] == image['probe_offset'] == 0,
                     'runtime span widened image layout or probe authority')
         require((normal_dir / f'objects/user-{name}-entry.o').read_bytes()
@@ -77,7 +77,7 @@ with tempfile.TemporaryDirectory(prefix='aurora-uefi-span-') as temporary:
     require(images.verify(elf, blob, images.BASE, symbols) == span['clean'],
             'stored metadata differs from generated span image')
     invalid = []
-    for value in (0, symbols['aurora_program_return_pc'], images.BASE + 4096):
+    for value in (0, symbols['aurora_program_return_pc'], images.BASE + 16384):
         changed = symbols.copy()
         changed['.Laurora_bounds_trap'] = value
         invalid.append((elf, blob, images.BASE, changed))
@@ -91,7 +91,7 @@ with tempfile.TemporaryDirectory(prefix='aurora-uefi-span-') as temporary:
     file_offset = struct.unpack_from('<Q', elf, phoff + 8)[0]
     changed_elf[file_offset:file_offset + len(blob)] = changed_blob
     invalid.append((changed_elf, changed_blob, images.BASE, symbols))
-    invalid.append((elf, blob, images.BASE + 8192, symbols))
+    invalid.append((elf, blob, images.BASE + 32768, symbols))
     for arguments in invalid:
         try:
             images.verify(*arguments)

@@ -184,7 +184,7 @@ def emit_metadata(
         prefix = out / f"user-{name}"
         elf = prefix.with_suffix(".elf")
         binary = prefix.with_suffix(".bin")
-        base = BASE + index * 4096
+        base = BASE + index * 16384
         need(
             "There are no relocations" in subprocess.check_output(["readelf", "-rW", elf], text=True),
             "Unresolved image relocations",

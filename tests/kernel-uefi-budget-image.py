@@ -35,7 +35,7 @@ def main():
         if payload.budget_call_present(bad):
             raise RuntimeError("Invalid direct budget call accepted")
         negatives += 1
-    for base in (images.BASE, images.BASE + 4096):
+    for base in (images.BASE, images.BASE + 16384):
         blob = bytearray([0x90] * 128)
         blob[24:30] = bytes.fromhex("48ff0c2475fa")
         meta = dict(entry=base, return_pc=base + 64, bounds_pc=base + 104)

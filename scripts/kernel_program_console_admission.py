@@ -906,7 +906,7 @@ def emit(mode):
         actual = builder.verify(
             prefix.with_suffix(".elf").read_bytes(),
             prefix.with_suffix(".bin").read_bytes(),
-            builder.BASE + index * 4096,
+            builder.BASE + index * 16384,
             names,
             call_entry=builder.call_entry_abi(read_json(prefix.with_suffix(".abi.json")))
             if mode.startswith("program-file-call") and index == 0

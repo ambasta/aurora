@@ -256,8 +256,10 @@ auto fill(U64 physical, std::uint8_t value) -> void {
     }
     if (!domain.contract)
         return 0;
-    if (address == domain.contract->entry())
-        return (arena + L::image_offset + domain.image * 4096) | 5;
+    const auto code = L::code_begin(domain.image);
+    const auto pages = L::code_pages(domain.image, domain.contract->size());
+    if (address >= code && address - code < pages * L::page_size && address % L::page_size == 0)
+        return (arena + L::image_page(domain.image) + address - code) | 5;
     const auto bottom = domain.contract->layout().user_stack_bottom();
     if (address >= bottom && address < bottom + 0x4000 && address % 4096 == 0) {
         const auto slot = (address - bottom) / 4096;
@@ -276,8 +278,13 @@ auto fill(U64 physical, std::uint8_t value) -> void {
     for (U64 offset = 0; offset < L::arena_bytes; offset += 4096)
         if ((domain.tables->entry(arena + offset) & ~0x60ULL) != expected(domain, arena + offset))
             return false;
-    if ((domain.tables->entry(domain.contract->entry()) & ~0x60ULL) != expected(domain, domain.contract->entry()))
-        return false;
+    // Presence is checked separately: the table walk rejects extras, not missing leaves.
+    for (std::size_t image = 0; image < L::image_count; ++image)
+        for (U64 offset = 0; offset < L::code_stride; offset += L::page_size) {
+            const auto va = L::code_begin(image) + offset;
+            if ((domain.tables->entry(va) & ~0x60ULL) != expected(domain, va))
+                return false;
+        }
     for (U64 offset = 0; offset < 0x4000; offset += 4096) {
         const auto va = domain.contract->layout().user_stack_bottom() + offset;
         if ((domain.tables->entry(va) & ~0x60ULL) != expected(domain, va))
@@ -328,8 +335,13 @@ auto fill(U64 physical, std::uint8_t value) -> void {
     domain.handle.reset();
     return true;
 }
-[[nodiscard]] auto create(unsigned image) -> std::optional<unsigned> {
-    if (root() != kernel_root || active != L::domain_count || image >= L::image_pages)
+[[nodiscard]] auto create(unsigned image
+#ifdef AURORA_RUNTIME_MULTIPAGE
+                          ,
+                          std::size_t mapped_pages = L::max_code_pages
+#endif
+                          ) -> std::optional<unsigned> {
+    if (root() != kernel_root || active != L::domain_count || image >= L::image_count)
         return std::nullopt;
     auto token = registry.create();
     if (!token)
@@ -342,9 +354,9 @@ auto fill(U64 physical, std::uint8_t value) -> void {
     auto &domain = domains[*index];
     domain.handle = *token;
     domain.image = image;
-    const auto layout = user::ProgramLayout::create(L::user_code,
-                                                    L::user_code + L::image_pages * L::page_size,
-                                                    1,
+    const auto layout = user::ProgramLayout::create(L::code_begin(image),
+                                                    L::code_end(image),
+                                                    L::image_limit(image) / L::page_size,
                                                     L::user_stack_begin(*index),
                                                     L::user_stack_end(*index),
                                                     arena + L::rsp0_bottom,
@@ -362,9 +374,8 @@ auto fill(U64 physical, std::uint8_t value) -> void {
                             descriptor.get(32),
                             descriptor.get(40),
                             descriptor.get(48));
-    if (domain.contract->entry() != L::user_code + image * 4096 || domain.contract->size() > 4096 ||
-        !user::ProgramImage{view(arena + L::image_offset + image * 4096, domain.contract->size()), *domain.contract}
-             .valid()) {
+    if (domain.contract->entry() != L::code_begin(image) || !L::code_pages(image, domain.contract->size()) ||
+        !user::ProgramImage{view(arena + L::image_page(image), domain.contract->size()), *domain.contract}.valid()) {
         static_cast<void>(retire(*index));
         return std::nullopt;
     }
@@ -391,7 +402,14 @@ auto fill(U64 physical, std::uint8_t value) -> void {
         if (flags)
             good = domain.tables->map(arena + offset, arena + offset, flags);
     }
-    good = good && domain.tables->map(domain.contract->entry(), arena + L::image_offset + image * 4096, 5);
+    for (std::size_t page = 0; page < L::code_pages(image, domain.contract->size()) && good
+#ifdef AURORA_RUNTIME_MULTIPAGE
+                               && page < mapped_pages
+#endif
+         ;
+         ++page)
+        good = domain.tables->map(
+            L::code_begin(image) + page * L::page_size, arena + L::image_page(image) + page * L::page_size, 5);
     for (unsigned page = 0; page < 4 && good; ++page)
         good = domain.tables->map(
             layout->user_stack_bottom() + page * 4096, *frames.address(*domain.stacks[page]), 7 | RuntimeTables::nx);
@@ -786,6 +804,17 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
 #endif
     return true;
 #else
+#ifdef AURORA_RUNTIME_MULTIPAGE
+    // A short construction must fail completeness and take the real retirement path.
+    for (std::size_t prefix = 0; prefix < L::max_code_pages; ++prefix) {
+        require(!create(0, prefix) && frames.used() == 0 && !domains[0].handle && !domains[0].tables &&
+                    !domains[0].contract,
+                "multipage partial mapping cleanup");
+        for (std::size_t page = 0; page < L::table_pages; ++page)
+            require(zero(arena + L::table_offset(0) + page * L::page_size), "multipage cleared table pool");
+    }
+    Serial::text("AURORA_UEFI_MULTIPAGE_ROLLBACK_OK: prefixes=3\r\n");
+#endif
     const auto first = create(0), second = create(1);
     require(first && second && *first == 0 && *second == 1, "two owned domains");
     const auto original = *frames.address(*domains[0].stacks[0]);

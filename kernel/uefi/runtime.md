@@ -20,11 +20,18 @@ original layouts. The final firmware map must own the whole arena below 4 GiB.
 Every runtime interval is checked for page alignment, overflow, overlap and
 bounds. The domain builder receives only those owned physical frames.
 
-Two independent user images are linked at 0x10000000000 and 0x10000001000.
+Protected user images have 16 KiB virtual slots beginning at 0x10000000000.
+Each slot contains at most three RX code pages followed by an unmapped guard.
 These are chosen canonical lower-half virtual addresses, not physical load
-addresses or BIOS constants. Their physical copies occupy arena + 0xb0000 and
-+0xb1000. Link metadata, exact entry, segment permissions and every trap site
-are validated before installation. The UEFI payload is independently position
+addresses or BIOS constants. Their immutable, boot-owned physical slots occupy three pages each, beginning
+at arena + 0xb0000 (then +0xb3000 and, for dispatch, +0xb6000). Link metadata, exact entry, segment permissions and every trap site
+are validated before installation. Existing profiles retain one-page image
+allowances; only `runtime-multipage` admits three pages. Metadata cannot select
+its own allowance. The linker, image validator, loader and runtime independently
+enforce the selected bound; BIOS remains one page. The loader zeros all slots
+before publication. User roots map only the rounded validated byte extent, and
+verification checks every required leaf plus absent unused/guard/foreign pages.
+Trap authority remains bounded by actual bytes, not mapped padding. The UEFI payload is independently position
 independent and relocates its trusted pointers from the actual arena address.
 
 The GDT/TSS page is at +0x82000; RSP0 uses +0x84000..+0x88000 with an unmapped
@@ -135,3 +142,17 @@ patch subtraction underflow, and a receipt validator that previously allowed a
 zero return PC when both metadata and event text were changed. These findings
 remain recorded in the review evidence; earlier failed runs are not counted as
 acceptance.
+
+## Bounded multi-page consumer
+
+`runtime-multipage` runs allocation-free incremental CRC32C over `123456789`
+and decodes, counts and re-encodes a fixed UTF-8 array. Both images use the same
+source; the second deliberately indexes past its array after completing the
+work. The existing driver contains its emitted bounds trap, runs the healthy
+image again, retires both domains, recreates one and checks zero outstanding
+leases. Admission requires real called code and the bounds trap on page three.
+Linked stack checks reuse the existing compiler-fact and disassembly validators.
+Image backing is retained by the boot arena; teardown clears every mapping before
+releasing stack leases. Hosted controls cover incomplete page construction and
+reset/recreation. No executable allocator, writable executable alias, larger
+stack, page-table pool, arena or kernel payload limit is introduced.

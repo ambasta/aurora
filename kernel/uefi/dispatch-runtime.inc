@@ -168,7 +168,7 @@ auto dispatch_bind() -> void {
     }
 }
 [[maybe_unused]] auto run_dispatcher() -> void {
-    static_assert(L::domain_count==3 && L::image_pages==3);
+    static_assert(L::domain_count==3 && L::image_count==3);
     dispatcher.emplace(registry);
     require(create(0)==0 && create(1)==1 && create(2)==2 && frames.used()==12,"three owned dispatch domains");
     for (unsigned index=0;index<3;++index) {

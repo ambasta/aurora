@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 from pathlib import Path
-import importlib.util, struct
+import importlib.util, struct, sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import kernel_stack as stack
 
 spec = importlib.util.spec_from_file_location(
     "images", Path(__file__).resolve().parents[1] / "scripts/kernel-uefi-user-images.py"
@@ -9,8 +12,8 @@ images = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(images)
 
 
-def fixture(base):
-    blob = bytearray([0x90] * 128)
+def fixture(base, size=128):
+    blob = bytearray([0x90] * size)
     blob[14:18] = b"\xcd\x81\x0f\x0b"
     for at in (32, 40, 48, 56):
         blob[at : at + 2] = b"\x0f\x0b"
@@ -33,10 +36,81 @@ def fixture(base):
     return data, blob, symbols
 
 
+def multipage_controls():
+    positive = negative = 0
+
+    def reject(action):
+        nonlocal negative
+        try:
+            action()
+        except (ValueError, RuntimeError):
+            negative += 1
+        else:
+            raise RuntimeError("Invalid multipage stack/entry contract accepted")
+
+    base = images.BASE
+    for fault in (False, True):
+        end = base + (68 if fault else 63)
+        symbols = dict(
+            aurora_program_entry=base, bad_entry=end - 2, aurora_user_main=base + 256, aurora_program_return_pc=end - 4
+        )
+        code = {}
+        cursor = base
+
+        def add(size, op, args):
+            nonlocal cursor
+            code[cursor] = stack.Instruction(cursor, size, op, args)
+            cursor += size
+
+        for reg in ("rbx", "rcx", "rdx", "rbp", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"):
+            add(3, "or", f"%{reg},%rax")
+        add(2, "jne", f"{end - 2:x} <bad_entry>")
+        add(6, "cmpq", "$0x0,-0x8(%rsp)")
+        add(2, "jne", f"{end - 2:x} <bad_entry>")
+        if fault:
+            add(5, "mov", "$0x1,%edi")
+        add(5, "call", f"{base + 256:x} <aurora_user_main>")
+        add(2, "int", "$0x81")
+        add(2, "ud2", "")
+        add(2, "ud2", "")
+        assert cursor == end
+        assert images.multipage_wrapper(code, symbols, base, fault) == end
+        positive += 1
+        for address in code:
+            changed = dict(code)
+            row = changed[address]
+            changed[address] = stack.Instruction(row.address, row.size, "nop", "")
+            reject(lambda: images.multipage_wrapper(changed, symbols, base, fault))
+        for name in symbols:
+            changed = dict(symbols)
+            changed[name] += 1
+            reject(lambda: images.multipage_wrapper(code, changed, base, fault))
+        reject(lambda: images.multipage_wrapper(code, symbols, base, not fault))
+
+    late = "__au_m_m2_3std4utf8_n2_3std16Utf8EncodeResult_d7byte_or"
+    functions = {
+        "aurora_user_main": dict(local_peak=32, calls=[dict(target=late, live_bytes=32)]),
+        late: dict(local_peak=48, calls=[]),
+    }
+    symbols = {late: base + 9000, ".Laurora_bounds_trap": base + 10000}
+    assert images.multipage_evidence(functions, symbols, base)["peak_with_wrapper"] == 88
+    positive += 1
+    for name in symbols:
+        changed = dict(symbols)
+        changed[name] = base + 8192
+        reject(lambda: images.multipage_evidence(functions, changed, base))
+    changed = {**functions, "aurora_user_main": dict(local_peak=32, calls=[])}
+    reject(lambda: images.multipage_evidence(changed, symbols, base))
+    changed = {**functions, late: dict(local_peak=15360, calls=[])}
+    reject(lambda: images.multipage_evidence(changed, symbols, base))
+    changed = {**functions, late: dict(local_peak=48, calls=[dict(target=late, live_bytes=48)])}
+    reject(lambda: images.multipage_evidence(changed, symbols, base))
+    return positive, negative
+
+
 def main():
-    cases = 0
-    rejected = 0
-    for base in (images.BASE, images.BASE + 4096):
+    cases, rejected = multipage_controls()
+    for base in (images.BASE, images.BASE + 16384):
         data, blob, symbols = fixture(base)
         images.verify(data, blob, base, symbols)
         cases += 1
@@ -92,6 +166,69 @@ def main():
     symbols["aurora_kernel_probe_target"] = images.BASE + 88
     images.verify(data, blob, images.BASE, symbols)
     cases += 1
+    # Explicit capacity only: defaults remain one page. ELF file offsets and
+    # page alignment stay 4096 while independent virtual slots have stride 16384.
+    for size in (4096, 4097, 8192, 8193, 12288, 12289):
+        data, blob, symbols = fixture(images.BASE, size)
+        # Retained terminal authority at the actual final two bytes, including
+        # a split-page instruction at size4097 and later-page sites thereafter.
+        blob[-2:] = b"\x0f\x0b"
+        symbols[".Laurora_bounds_trap"] = images.BASE + size - 2
+        if size >= 8192:
+            blob[4096:4100] = b"\xcd\x81\x0f\x0b"
+            symbols["aurora_program_return_pc"] = images.BASE + 4098
+            symbols["aurora_user_main"] = images.BASE + 4100
+        data[4096:] = blob
+        for pages in (None, 1, 2, 3):
+            options = {} if pages is None else dict(max_pages=pages)
+            accepted = size <= 4096 * (1 if pages is None else pages)
+            try:
+                result = images.verify(data, blob, images.BASE, symbols, **options)
+            except ValueError:
+                if accepted:
+                    raise
+                rejected += 1
+            else:
+                if not accepted or result["size"] != size:
+                    raise RuntimeError("Image crossed its explicit page allowance")
+                cases += 1
+        if size <= 12288:
+            mutations = []
+            changed = blob.copy()
+            changed[-1] = 0x90
+            elf = data.copy()
+            elf[4096:] = changed
+            mutations.append((elf, changed, symbols))
+            mutations.append((data, blob[:-1], symbols))
+            for offset, value in ((68, 7), (96, size - 1), (104, size + 1)):
+                elf = data.copy()
+                struct.pack_into("<I" if offset == 68 else "<Q", elf, offset, value)
+                mutations.append((elf, blob, symbols))
+            for pc in (images.BASE + size - 1, images.BASE + 12288, images.BASE + 16384):
+                mutations.append((data, blob, dict(symbols, **{".Laurora_bounds_trap": pc})))
+            for elf, installed, names in mutations:
+                try:
+                    images.verify(elf, installed, images.BASE, names, max_pages=3)
+                except ValueError:
+                    rejected += 1
+                else:
+                    raise RuntimeError("Malformed later-page bytes/extent/site accepted")
+    data, blob, symbols = fixture(images.BASE)
+    for pages in (0, -1, 4, True, False, 1.0, "3", None, 1 << 64):
+        try:
+            images.verify(data, blob, images.BASE, symbols, max_pages=pages)
+        except ValueError:
+            rejected += 1
+        else:
+            raise RuntimeError("Invalid image page allowance accepted")
+    for base in (images.BASE + 4096, images.BASE + 8192, images.BASE + 12288):
+        data, blob, symbols = fixture(base)
+        try:
+            images.verify(data, blob, base, symbols, max_pages=3)
+        except ValueError:
+            rejected += 1
+        else:
+            raise RuntimeError("Non-slot or guard virtual entry accepted")
     print(f"PASS: UEFI user image metadata {cases} positive and {rejected} negative cases")
 
 

@@ -145,7 +145,7 @@ def self_test():
             probe_offset=0,
             probe_pc=0,
         )
-        for name, base in (("clean", ipc.BASE), ("bounds", ipc.BASE + 4096))
+        for name, base in (("clean", ipc.BASE), ("bounds", ipc.BASE + 16384))
     }
     prefix = (
         "AURORA_UEFI_ENTRY\nAURORA_UEFI_EXIT_OK: attempts=1\nAURORA_UEFI_PAYLOAD_ENTRY\n"

@@ -7,6 +7,8 @@ SECTIONS {
     .data : { *(.data .data.*) } :code
     .bss : { *(.bss .bss.*) *(COMMON) } :code
     ASSERT(SIZEOF(.data) == 0 && SIZEOF(.bss) == 0, "user images must not contain writable global storage")
-    ASSERT(. - USER_BASE <= 4096, "controlled user image exceeds one page")
+    PROVIDE(USER_IMAGE_PAGES = 1);
+    ASSERT(USER_IMAGE_PAGES >= 1 && USER_IMAGE_PAGES <= 3, "unsupported controlled image page allowance")
+    ASSERT(. - USER_BASE <= USER_IMAGE_PAGES * 4096, "controlled user image exceeds admitted pages")
     /DISCARD/ : { *(.eh_frame*) *(.comment*) *(.note*) }
 }

@@ -67,7 +67,7 @@ def metadata_valid(meta, mode):
             and all(type(v) is int and 0 <= v < 1 << 64 for v in image.values()),
             "Malformed user image scalars",
         )
-        base = BASE + index * 4096
+        base = BASE + index * 16384
         need(
             image["entry"] == base and 4 <= image["size"] <= 4096 and image["probe_offset"] == 0,
             "User image layout widened",
@@ -183,7 +183,7 @@ def expected(mode, arena):
         for domain in range(3):
             rows.append(
                 f"AURORA_UEFI_DISPATCH_DOMAIN: index={domain} root={roots[domain]}"
-                f" entry={BASE + domain * 4096} stack={BASE + 0x204000 + domain * 0x200000}"
+                f" entry={BASE + domain * 16384} stack={BASE + 0x204000 + domain * 0x200000}"
                 f" frame={arena + 0xC0000 + domain * 0x4000}"
             )
     for client in range(2):
@@ -693,7 +693,7 @@ def fixtures(client_ticks=True):
     for mode in MODES:
         images = {}
         for d, name in enumerate(NAMES):
-            base = BASE + d * 4096
+            base = BASE + d * 16384
             images[name] = dict(
                 entry=base,
                 size=512,
@@ -789,11 +789,12 @@ def fixtures(client_ticks=True):
 
 def self_test():
     # Exact accepted PR84 fixture corpus for all 17 original modes, with and
-    # without optional client interrupts. New profiles must not redefine it.
+    # without optional client interrupts, rebased to the 16384-byte UEFI slots.
+    # New profiles must not redefine it.
     old_rows = [(ticks, item) for ticks in (True, False) for item in fixtures(ticks) if item[0] not in DISPOSAL_DENIED]
     original_digest = hashlib.sha256(json.dumps(old_rows, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     need(
-        original_digest == "5ab59a168c375d606834cd41bb73937329a73963f494f6ec59317b09d4b7420b",
+        original_digest == "89f67588d5b1782aaf1d7c951604f4a130490281ac097b0f58da43cb6a1c2cf1",
         "Changed accepted user-phase fixture corpus",
     )
     rejected = positives = 0
@@ -936,10 +937,10 @@ def self_test():
                 f"client=0 transaction={epoch + 1} source={4 if case == 1 else 1} root=2"
             ]
             if case != 1:
-                rows += [f"AURORA_UEFI_TIMER_TICK: epoch={epoch + 1} used=1 remaining=127 pc={BASE + 4096 + 88}"]
+                rows += [f"AURORA_UEFI_TIMER_TICK: epoch={epoch + 1} used=1 remaining=127 pc={BASE + 16384 + 88}"]
             rows += [
                 f"AURORA_UEFI_DOMAIN_EVENT: vector={6 if case == 1 else 129} error=0 "
-                f"pc={BASE + 4096 + (400 if case == 1 else 60)} cpl=3 root=2 frame=1 cr2=0",
+                f"pc={BASE + 16384 + (400 if case == 1 else 60)} cpl=3 root=2 frame=1 cr2=0",
                 f"AURORA_CALL_SERVICE: epoch={epoch + 1} event={'bounds' if case == 1 else 'returned'} "
                 f"value={0 if case == 1 else 309914170369}",
                 f"AURORA_CALL_RESUME: epoch={epoch} ticks=1 remaining=127",

@@ -35,7 +35,7 @@ def main():
     for mode in ("user-phases", "user-context", "user-unknown"):
         metadata = dict(images={}, kernel=dict(drain_begin=100, drain_end=104, text_end=4096, forged_pc=0))
         for domain, name in enumerate(smoke.NAMES):
-            base = builder.BASE + domain * 4096
+            base = builder.BASE + domain * 16384
             data, blob, symbols = fixture.fixture(base)
             symbols["aurora_user_main"] = base + 20
             if domain == 0 and mode == "user-context":

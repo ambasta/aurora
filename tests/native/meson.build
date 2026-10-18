@@ -97,6 +97,11 @@ native_host = executable('native-uefi-runtime', files('../../tests/kernel-uefi-r
     cpp_args: [], link_args: ['-no-pie'])
 test('native-uefi-runtime', native_host, suite: ['full', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
+native_host = executable('native-uefi-multipage-runtime', files('../../tests/kernel-uefi-runtime.cpp') + [native_bios_object],
+    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    cpp_args: ['-DAURORA_RUNTIME_MULTIPAGE=1'], link_args: ['-no-pie'])
+test('native-uefi-multipage-runtime', native_host, suite: ['full', 'slow', 'integration'],
+     env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-ipc', files('../../tests/kernel-ipc.cpp') + [native_uefi_object],
     native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
     cpp_args: [], link_args: ['-no-pie'])
@@ -126,6 +131,11 @@ native_host = executable('native-kernel-uefi-user-run', files('../../tests/kerne
     native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
     cpp_args: [], link_args: ['-no-pie'])
 test('native-kernel-uefi-user-run', native_host, suite: ['full', 'slow', 'integration'],
+     env: native_test_env, timeout: 180)
+native_host = executable('native-uefi-multipage-user-run', files('../../tests/kernel-uefi-user-run.cpp') + [native_uefi_object],
+    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    cpp_args: ['-DAURORA_RUNTIME_MULTIPAGE=1'], link_args: ['-no-pie'])
+test('native-uefi-multipage-user-run', native_host, suite: ['full', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-client-disposal', files('../../tests/kernel-client-disposal.cpp') + [native_uefi_object],
     native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],

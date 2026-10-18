@@ -27,7 +27,10 @@ public:
     static constexpr std::size_t table_pages = 16;
     static constexpr std::size_t domain_count = Domains;
     static constexpr std::uint64_t image_offset = 0xb0000;
-    static constexpr std::size_t image_pages = Domains;
+    static constexpr std::size_t image_count = Domains;
+    static constexpr std::size_t max_code_pages = 3;
+    static constexpr std::uint64_t image_slot_bytes = max_code_pages * page_size;
+    static constexpr std::uint64_t code_stride = (max_code_pages + 1) * page_size;
     static constexpr std::uint64_t stack_frames_offset = 0xc0000;
     static constexpr std::size_t stack_frame_count = 16;
     static constexpr std::size_t stack_pages = 4;
@@ -61,7 +64,24 @@ public:
         return domain < domain_count ? table_offsets[domain] : arena_bytes;
     }
     [[nodiscard]] static constexpr auto image_page(std::size_t index) -> std::uint64_t {
-        return index < image_pages ? image_offset + index * page_size : arena_bytes;
+        return index < image_count ? image_offset + index * image_slot_bytes : arena_bytes;
+    }
+    [[nodiscard]] static constexpr auto code_begin(std::size_t image) -> std::uint64_t {
+        return image < image_count ? user_code + image * code_stride : lower_limit;
+    }
+    [[nodiscard]] static constexpr auto code_end(std::size_t image) -> std::uint64_t {
+        return image < image_count ? code_begin(image) + image_slot_bytes : lower_limit;
+    }
+    [[nodiscard]] static constexpr auto image_limit(std::size_t image) -> std::uint64_t {
+        if (image >= image_count)
+            return 0;
+#ifdef AURORA_RUNTIME_MULTIPAGE
+        return image_slot_bytes;
+#endif
+        return page_size;
+    }
+    [[nodiscard]] static constexpr auto code_pages(std::size_t image, std::uint64_t bytes) -> std::size_t {
+        return bytes && bytes <= image_limit(image) ? (bytes - 1) / page_size + 1 : 0;
     }
     [[nodiscard]] static constexpr auto stack_frame_offset(std::size_t index) -> std::uint64_t {
         return index < stack_frame_count ? stack_frames_offset + index * page_size : arena_bytes;
@@ -82,14 +102,14 @@ public:
         for (std::size_t domain = 0; domain < domain_count; ++domain)
             if (offset >= table_offset(domain) && offset - table_offset(domain) < table_pages * page_size)
                 return 3 | nx;
-        if (offset >= image_offset && offset < image_offset + image_pages * page_size)
+        if (offset >= image_offset && offset < image_offset + image_count * image_slot_bytes)
             return 1;
         return 0;
     }
     [[nodiscard]] static constexpr auto valid(std::uint64_t arena) -> bool {
         if (arena < 0x100000 || !valid_interval(arena, arena_bytes) || arena > 0x100000000ULL - arena_bytes)
             return false;
-        if (stack_pages == 0 || domain_count > stack_frame_count / stack_pages || image_pages != domain_count ||
+        if (stack_pages == 0 || domain_count > stack_frame_count / stack_pages || image_count != domain_count ||
             table_offset(0) != tables_offset)
             return false;
         // The first range reserves the complete preceding loader/kernel layout.
@@ -99,7 +119,7 @@ public:
              {gdt_offset, page_size},
              {rsp0_bottom, rsp0_top - rsp0_bottom},
              {ist_bottom, ist_top - ist_bottom},
-             {image_offset, image_pages * page_size},
+             {image_offset, image_count * image_slot_bytes},
              {stack_frames_offset, stack_frame_count * page_size}}};
         for (std::size_t domain = 0; domain < domain_count; ++domain)
             ranges[7 + domain] = {table_offset(domain), table_pages * page_size};
@@ -133,21 +153,21 @@ public:
             const auto span = stack_pages * page_size + 2 * page_size;
             if (!valid_interval(guard, page_size) || !valid_interval(guard, span) ||
                 !disjoint(arena, arena_bytes, guard, span) ||
-                !disjoint(user_code, image_pages * page_size, guard, span))
+                !disjoint(user_code, image_count * code_stride, guard, span))
                 return false;
             for (std::size_t other = 0; other < domain; ++other)
                 if (!disjoint(guard, span, user_stack_begin(other) - page_size, span))
                     return false;
         }
         return rsp0_guard + page_size == rsp0_bottom && rsp0_top == ist_guard && ist_guard + page_size == ist_bottom &&
-               valid_interval(user_code, image_pages * page_size) &&
+               valid_interval(user_code, image_count * code_stride) &&
                valid_interval(user_stack_bottom, user_stack_top - user_stack_bottom) &&
                valid_interval(user_stack_guard, page_size) && valid_interval(user_stack_top, page_size) &&
                disjoint(user_code,
-                        image_pages * page_size,
+                        image_count * code_stride,
                         user_stack_guard,
                         user_stack_top - user_stack_guard + page_size) &&
-               disjoint(arena, arena_bytes, user_code, image_pages * page_size) &&
+               disjoint(arena, arena_bytes, user_code, image_count * code_stride) &&
                disjoint(arena, arena_bytes, user_stack_guard, user_stack_top - user_stack_guard + page_size);
     }
 };

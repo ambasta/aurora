@@ -45,7 +45,7 @@ for part in client service; do
     extra=()
     case "$part" in
         client) base=0x10000000000; extra+=("$out/client-entry.o") ;;
-        service) base=0x10000001000 ;;
+        service) base=0x10000004000 ;;
     esac
     ld -nostdlib --discard-none -T kernel/program.ld --defsym "USER_BASE=$base" -z max-page-size=0x1000 \
         "${extra[@]}" "$out/$part.o" -o "$out/$part.elf"

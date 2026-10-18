@@ -13,7 +13,7 @@ using Three = RuntimeLayoutProfile<3>;
 using Tables = RuntimeTables;
 constexpr auto nx = 1ULL << 63;
 constexpr std::array<std::uint64_t, 3> roots{0x90000, 0xa0000, 0xd0000};
-constexpr std::array<std::uint64_t, 3> images{0xb0000, 0xb1000, 0xb2000};
+constexpr std::array<std::uint64_t, 3> images{0xb0000, 0xb3000, 0xb6000};
 constexpr std::array<std::uint64_t, 3> stacks{0x10000200000ULL, 0x10000400000ULL, 0x10000600000ULL};
 static_assert(Two::valid(0xfff00000) && Three::valid(0xfff00000));
 #if defined(AURORA_UEFI_DISPATCH)
@@ -49,7 +49,7 @@ public:
         (offset >= 0x90000 && offset < 0xb0000) || (offset >= 0xc0000 && offset < 0xd0000) ||
         (domains == 3 && offset >= 0xd0000 && offset < 0xe0000))
         return 3 | nx;
-    if (offset == 0xb0000 || offset == 0xb1000 || (domains == 3 && offset == 0xb2000))
+    if (offset >= 0xb0000 && offset < 0xb0000 + domains * 12288)
         return 1;
     return 0;
 }
@@ -74,7 +74,8 @@ template <class Layout> auto inspect_layout(Checks &check) -> void {
     check(Layout::rsp0_guard == 0x83000 && Layout::rsp0_bottom == 0x84000 && Layout::rsp0_top == 0x88000);
     check(Layout::ist_guard == 0x88000 && Layout::ist_bottom == 0x89000 && Layout::ist_top == 0x8d000);
     check(Layout::tables_offset == 0x90000 && Layout::table_pages == 16);
-    check(Layout::image_offset == 0xb0000 && Layout::image_pages == domains);
+    check(Layout::image_offset == 0xb0000 && Layout::image_count == domains);
+    check(Layout::max_code_pages == 3 && Layout::image_slot_bytes == 12288 && Layout::code_stride == 16384);
     check(Layout::stack_frames_offset == 0xc0000 && Layout::stack_frame_count == 16 && Layout::stack_pages == 4);
     check(Layout::user_code == 0x10000000000ULL && Layout::user_stack_bottom == stacks[0]);
     check(Layout::user_stack_top == stacks[0] + 0x4000 && Layout::user_stack_guard == stacks[0] - 4096);
@@ -120,10 +121,20 @@ template <class Layout> auto inspect_layout(Checks &check) -> void {
     for (std::size_t domain = 0; domain < domains; ++domain) {
         check(Layout::table_offset(domain) == roots[domain]);
         check(Layout::image_page(domain) == images[domain]);
+        const auto code = 0x10000000000ULL + domain * 16384;
+        check(Layout::code_begin(domain) == code && Layout::code_end(domain) == code + 12288);
+        std::uint64_t limit = 4096;
+#ifdef AURORA_RUNTIME_MULTIPAGE
+        limit = 12288;
+#endif
+        check(Layout::image_limit(domain) == limit);
+        for (const auto size :
+             {0ULL, 1ULL, 4095ULL, 4096ULL, 4097ULL, 8192ULL, 8193ULL, 12288ULL, 12289ULL, 0xffffffffffffffffULL})
+            check(Layout::code_pages(domain, size) == (size && size <= limit ? (size + 4095) / 4096 : 0));
         check(Layout::user_stack_begin(domain) == stacks[domain]);
         check(Layout::user_stack_end(domain) == stacks[domain] + 0x4000);
         check(Layout::valid_interval(stacks[domain] - 4096, 0x6000));
-        check(Layout::disjoint(roots[domain], 0x10000, 0xb0000, domains * 4096));
+        check(Layout::disjoint(roots[domain], 0x10000, 0xb0000, domains * 12288));
         check(Layout::disjoint(roots[domain], 0x10000, 0xc0000, 0x10000));
         for (std::size_t other = 0; other < domain; ++other) {
             check(Layout::disjoint(roots[domain], 0x10000, roots[other], 0x10000));
@@ -132,6 +143,7 @@ template <class Layout> auto inspect_layout(Checks &check) -> void {
     }
     for (const auto index : {domains, domains + 1, std::size_t{16}, std::numeric_limits<std::size_t>::max()}) {
         check(Layout::table_offset(index) == 0x100000 && Layout::image_page(index) == 0x100000);
+        check(Layout::image_limit(index) == 0 && Layout::code_pages(index, 4096) == 0);
         check(Layout::user_stack_begin(index) == 0x800000000000ULL &&
               Layout::user_stack_end(index) == 0x800000000000ULL);
     }
@@ -147,7 +159,7 @@ template <class Layout> auto inspect_layout(Checks &check) -> void {
          {0x100000ULL, 0x101000ULL, 0x800000000000ULL, 0xfffffffffffff000ULL, 0xffffffffffffffffULL})
         check(Layout::kernel_flags(outside) == 0);
     for (const auto guard :
-         {0x83000ULL, 0x88000ULL, 0x8d000ULL, 0x8e000ULL, 0x8f000ULL, 0xb3000ULL, 0xbf000ULL, 0xe0000ULL, 0xff000ULL})
+         {0x83000ULL, 0x88000ULL, 0x8d000ULL, 0x8e000ULL, 0x8f000ULL, 0xb9000ULL, 0xbf000ULL, 0xe0000ULL, 0xff000ULL})
         check(Layout::kernel_flags(guard) == 0);
     check(Layout::valid_probe(0, 0) && Layout::valid_probe(16, 8));
     check(!Layout::valid_probe(7, 2) && !Layout::valid_probe(8, 2) && !Layout::valid_probe(16, 1) &&
@@ -169,11 +181,11 @@ template <class Layout> auto inspect_layout(Checks &check) -> void {
             }));
             // Layout validation alone leaves every kernel/user/MMIO page absent.
             check(tables.entry(arena + roots[domain]) == 0 && tables.entry(stacks[domain]) == 0 &&
-                  tables.entry(0x10000000000ULL + domain * 4096) == 0 && tables.entry(0xffff900000000000ULL) == 0);
+                  tables.entry(0x10000000000ULL + domain * 16384) == 0 && tables.entry(0xffff900000000000ULL) == 0);
             for (std::uint64_t offset = 0; offset < 0x100000; offset += 4096)
                 if (const auto flags = kernel_flags(offset, domains))
                     check(tables.map(arena + offset, arena + offset, flags));
-            const auto code = 0x10000000000ULL + domain * 4096;
+            const auto code = 0x10000000000ULL + domain * 16384;
             check(tables.map(code, arena + images[domain], 5));
             for (std::size_t page = 0; page < 4; ++page)
                 check(tables.map(stacks[domain] + page * 4096, arena + 0xc0000 + (domain * 4 + page) * 4096, 7 | nx));
@@ -199,7 +211,7 @@ template <class Layout> auto inspect_layout(Checks &check) -> void {
             for (std::size_t other = 0; other < 3; ++other) {
                 check(tables.entry(stacks[other] - 4096) == 0 && tables.entry(stacks[other] + 0x4000) == 0);
                 if (other != domain) {
-                    check(tables.entry(0x10000000000ULL + other * 4096) == 0);
+                    check(tables.entry(0x10000000000ULL + other * 16384) == 0);
                     for (std::size_t page = 0; page < 4; ++page)
                         check(tables.entry(stacks[other] + page * 4096) == 0);
                 }
@@ -219,14 +231,14 @@ auto main() -> int {
     inspect_layout<Three>(check);
     std::size_t changed = 0;
     for (std::uint64_t offset = 0; offset < 0x100000; offset += 4096) {
-        const bool added = offset == 0xb2000 || (offset >= 0xd0000 && offset < 0xe0000);
+        const bool added = (offset >= 0xb6000 && offset < 0xb9000) || (offset >= 0xd0000 && offset < 0xe0000);
         check((Two::kernel_flags(offset) != Three::kernel_flags(offset)) == added);
         if (added) {
             ++changed;
             check(Two::kernel_flags(offset) == 0);
         }
     }
-    check(changed == 17);
+    check(changed == 19);
     std::cout
         << "PASS: " << check.count()
         << " independent two/three-domain UEFI layout, exact-page authority, guard, capacity and isolation checks\n";
