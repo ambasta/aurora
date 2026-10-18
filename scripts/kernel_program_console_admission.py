@@ -287,13 +287,7 @@ def check_referenced_reflection(functions, generated_names, bridges=()):
 
 def snapshot_discovery_stack(graph):
     decoder = load("snapshot_discovery_stack", ROOT / "scripts/kernel_stack.py")
-    return decoder.profile_stack(
-        graph,
-        {"discover_acpi(": 128, "prepare_service_acpi(": 5120, "discover_pci(": 11264},
-        default_limit=11264,
-        fault_reserve=512,
-        separated=(("prepare_service_acpi(", "discover_pci("),),
-    )
+    return decoder.service_discovery_stack(graph)
 
 
 def stack_evidence(directory, *, snapshot=False, file_call=False):
