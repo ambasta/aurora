@@ -1,6 +1,9 @@
 // Scripted host for the real generated Aurora editor. The separate Session
 // test authenticates host grants; this seam independently checks packed ABI,
 // canonical host reports and output failure propagation from generated code.
+#if defined(AURORA_CONSOLE_REGION_TEST)
+#include "runtime/hosted_bytes.hpp"
+#endif
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -11,6 +14,9 @@ std::uint64_t authority = 0xC051;
 struct Argument {
     const void *grant;
     std::uint64_t generation;
+#if defined(AURORA_CONSOLE_REGION_TEST)
+    std::uint64_t region;
+#endif
 };
 struct Sample {
     std::uint64_t present, byte, damaged;
@@ -57,14 +63,30 @@ int main(int argc, char **argv) {
         output_limit = std::strtoull(argv[1], nullptr, 10);
     if (argc > 2)
         malformed = std::atoi(argv[2]);
+#if defined(AURORA_CONSOLE_REGION_TEST)
+    aurora::hosted::bytes::Region region(argc > 4 ? std::strtoull(argv[4], nullptr, 10) : 16);
+    const Argument argument{&authority, 41, region.id()};
+#else
     const Argument argument{&authority, 41};
+#endif
     const int sessions = argc > 3 ? std::atoi(argv[3]) : 1;
     need(sessions == 1 || sessions == 2);
     for (int index = 0; index < sessions; ++index) {
         const auto result = checked_console_entry(&argument);
         need(result <= 1);
+#if defined(AURORA_CONSOLE_REGION_TEST)
+        const auto metrics = region.metrics();
+        need(metrics.used == 0 && metrics.live_allocations == 0 && metrics.successful_allocations == metrics.releases);
+        std::fprintf(stderr,
+                     "allocations=%lu releases=%lu peak=%lu\n",
+                     metrics.successful_allocations,
+                     metrics.releases,
+                     metrics.peak_used);
+        need(region.close());
+#else
         if (result == 1)
             need(output_count == output_limit + 1);
+#endif
         std::fprintf(stderr, "completion=%lu attempts=%lu\n", result, output_count);
         if (result != 0)
             return static_cast<int>(result);

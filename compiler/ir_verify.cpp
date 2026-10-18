@@ -171,8 +171,15 @@ public:
         }
         return false;
     }
+    std::optional<CodePosition> regionPosition() const {
+        for (CodePosition position = 0; position < count_; ++position)
+            if (root<BindRegionParameter>(position))
+                return position;
+        return {};
+    }
     std::optional<int> region() const {
-        return root<BindRegionParameter>(0);
+        const auto position = regionPosition();
+        return position ? root<BindRegionParameter>(*position) : std::nullopt;
     }
 };
 } // namespace
@@ -196,10 +203,12 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
     const auto ownedValueTypes = frame.ownedValueTypes();
     const auto parameters = signature.parameters();
     const EntryBindings entryBindings(function.code, parameters.size());
-    // The sole region binding is the admitted first row and cannot be revoked.
+    // The sole region binding is in the admitted capability prefix and cannot be revoked.
     const auto regionOffset = entryBindings.region();
     const std::optional<RegionIdentity> regionIdentity =
-        regionOffset ? std::optional<RegionIdentity>{{*regionOffset, function.code.idAt(0), false}} : std::nullopt;
+        regionOffset
+            ? std::optional<RegionIdentity>{{*regionOffset, function.code.idAt(*entryBindings.regionPosition()), false}}
+            : std::nullopt;
     // The first borrowed root is a derived receiver-shaped observation, never
     // lexical receiver authority. The complete prefix stays in source metadata.
     const auto functionReceiver = signature.receiver();
@@ -1887,7 +1896,9 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                             const auto position = reverse - 1;
                             const auto &type = target.parameters()[position];
                             const int base = operation.spanArguments[position];
-                            if (type.isSpan()) {
+                            if (type.isRegion()) {
+                                static_cast<void>(activeRegion(operation.regionOffset));
+                            } else if (type.isSpan()) {
                                 require(state.activeSpans.contains(base), "service span argument is not active");
                                 liveSpan(base);
                             } else if (type.isClass()) {

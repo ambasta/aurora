@@ -75,7 +75,8 @@ export namespace compiler_x86 {
             if (service_type_kind(kind)) {
                 service = true;
             } else {
-                if (!fact_scalar_kind(kind)) {
+                if (!fact_scalar_kind(kind) && !(kind == 12 && at == 1
+                    && compiler_ir_metadata::console_region_signature(metadata, metadata.callable_at(callable)))) {
                     return 0;
                 }
             }
@@ -577,6 +578,9 @@ export namespace compiler_x86 {
         if (kind == 18) {
             return workspace.text("\"builtin::CallSession\"");
         }
+        if (kind == 12) {
+            return workspace.text("\"builtin::ByteRegion\"");
+        }
         return workspace.text("\"scalar\"");
     }
     auto fact_emit_stack_function(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
@@ -1015,6 +1019,10 @@ export namespace compiler_x86 {
             workspace.number(argument_bytes(metadata, type));
             workspace.byte(',');
             fact_emit_type(workspace, metadata, type);
+            if (at < 2 && compiler_ir_metadata::console_region_signature(metadata, row)) {
+                workspace.text(",\"type_name\":");
+                fact_emit_service_kind(workspace, type_kind(metadata, type));
+            }
             workspace.byte('}');
             at = at + 1;
         }

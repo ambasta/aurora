@@ -452,7 +452,12 @@ export namespace compiler_x86 {
             const i64 save = w.call_record_save();
             w.line_address("movq ", save, ", %r11");
             if (form == 73) {
-                w.line("movq (%r11), %rax");
+                const i64 source = record_offset(m, callable, first);
+                if (source == 0) {
+                    w.line("movq (%r11), %rax");
+                } else {
+                    w.line_number("movq ", source, "(%r11), %rax");
+                }
                 w.line_address("movq %rax, ", offset, "");
             } else {
                 const i64 source = record_offset(m, callable, first);

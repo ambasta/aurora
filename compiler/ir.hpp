@@ -343,6 +343,7 @@ public:
     // The first loan retains its original representation for single-service IR.
     Services additionalServices{};
     Offsets objectArguments{}; // readonly copied snapshots; zero at every other position
+    int regionOffset = 0;      // authenticated region root for the closed Console+Region prefix
 };
 using ServiceCall = BasicServiceCall<std::vector<int>, std::vector<ServiceArgument>>;
 using ServiceCallObservation = BasicServiceCall<OffsetRange, ServiceArgumentRange>;

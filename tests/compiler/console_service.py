@@ -2,6 +2,7 @@
 """Complete bounded service source/editor/canonical-report gate. No guest claim."""
 
 import argparse
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -19,10 +20,147 @@ def run(command, **kwargs):
     return subprocess.run(list(map(str, command)), cwd=ROOT, capture_output=True, timeout=120, **kwargs)
 
 
+MIXED_SOURCE = r"""
+module kernel_console_service;
+import std.utf8_text;
+import console.io;
+auto region_check(builtin::ByteRegion region) -> bool {
+    builtin::OwnedBytes scratch = region.try_allocate(1);
+    return scratch.ok();
+}
+auto emit_text(builtin::ConsoleSession& session, builtin::ByteRegion region,
+    builtin::span<const u8> value) -> bool {
+    if (!region_check(region)) {
+        return false;
+    }
+    const console::WriteResult result = console::write_bytes(session, value);
+    return result.complete();
+}
+auto console_service(builtin::ConsoleSession& session, builtin::ByteRegion region) -> u64 {
+    builtin::OwnedBytes storage = region.try_allocate(8);
+    std::Utf8Text text = std::Utf8Text(region, move(storage));
+    if (!text.ok()) {
+        return 1u64;
+    }
+    if (text.try_append_scalar(79u64) != std::Utf8TextStatus::success
+        || text.try_append_scalar(75u64) != std::Utf8TextStatus::success) {
+        return 1u64;
+    }
+    const builtin::span<const u8> output = text.bytes();
+    if (!emit_text(session, region, output)) {
+        return 1u64;
+    }
+    if (text.size() != 2) {
+        return 1u64;
+    }
+    return 0u64;
+}
+auto aurora_kernel_value() -> i64 { return 0; }
+"""
+
+
+def mixed_region(compiler, work, comparison_compiler=None):
+    source = work / "mixed.au"
+    source.write_text(MIXED_SOURCE)
+    assembly = work / "mixed.s"
+    facts = work / "mixed.abi.json"
+    result = run([compiler, "--module-root", ROOT / "library", source, "-o", assembly, "--abi-facts", facts])
+    require(result.returncode == 0, result.stderr.decode())
+    if comparison_compiler is not None:
+        comparison_assembly = work / "mixed-c2.s"
+        comparison_facts = work / "mixed-c2.abi.json"
+        result = run(
+            [
+                comparison_compiler,
+                "--module-root",
+                ROOT / "library",
+                source,
+                "-o",
+                comparison_assembly,
+                "--abi-facts",
+                comparison_facts,
+            ]
+        )
+        require(result.returncode == 0, result.stderr.decode())
+        require(assembly.read_bytes() == comparison_assembly.read_bytes(), "mixed C1/C2 assembly differs")
+        require(facts.read_bytes() == comparison_facts.read_bytes(), "mixed C1/C2 ABI facts differ")
+    functions = json.loads(facts.read_text())["functions"]
+    mixed = [
+        row for row in functions.values() if len(row["parameters"]) >= 2 and row["parameters"][1]["kind"] == "region"
+    ]
+    require(len(mixed) == 2, "missing mixed entry/helper facts")
+    for row in mixed:
+        require(
+            row["parameters"][:2]
+            == [
+                {"offset": 0, "bytes": 16, "kind": "service", "type_name": "builtin::ConsoleSession"},
+                {"offset": 16, "bytes": 8, "kind": "region", "type_name": "builtin::ByteRegion"},
+            ],
+            "mixed capability nominal kind/layout changed",
+        )
+    bridge = work / "mixed-bridge.s"
+    bridge.write_text(assembly.read_text() + (ROOT / "kernel/uefi/console-service-entry.S").read_text())
+    binary = work / "mixed"
+    result = run(
+        [
+            os.environ.get("CXX", "g++"),
+            "-std=c++23",
+            "-O1",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-DAURORA_CONSOLE_REGION_TEST",
+            "-I",
+            ROOT,
+            ROOT / "tests/compiler/console_service_host.cpp",
+            ROOT / "runtime/hosted_bytes.cpp",
+            ROOT / "tests/compiler/console_service_abi.S",
+            bridge,
+            "-o",
+            binary,
+        ]
+    )
+    require(result.returncode == 0, result.stderr.decode())
+    for quota, limit, status, output, allocations, peak in [
+        (16, 100, 0, b"OK", 2, 9),
+        (9, 100, 0, b"OK", 2, 9),
+        (8, 100, 1, b"", 1, 8),
+        (7, 100, 1, b"", 0, 0),
+        (16, 0, 1, b"", 2, 9),
+        (16, 1, 1, b"O", 2, 9),
+    ]:
+        result = run([binary, limit, 0, 1, quota])
+        require(
+            result.returncode == status and result.stdout == output, f"mixed output/quota failure: {result.stderr!r}"
+        )
+        require(
+            f"allocations={allocations} releases={allocations} peak={peak}".encode() in result.stderr,
+            "mixed owner lifetime/quota mismatch",
+        )
+
+    invalid = [
+        "auto f(builtin::DisplaySession& s, builtin::ByteRegion r) -> i64 { return 0; }",
+        "auto f(builtin::CallSession& s, builtin::ByteRegion r) -> i64 { return 0; }",
+        "auto f(builtin::ConsoleSession& s, builtin::ByteRegion r, builtin::ByteRegion q) -> i64 { return 0; }",
+        "auto f(builtin::ConsoleSession& s, builtin::ByteRegion r, builtin::OwnedBytes b) -> i64 { return 0; }",
+        "auto f(builtin::ConsoleSession& s, builtin::ByteRegion r) -> builtin::OwnedBytes "
+        "{ return r.try_allocate(1); }",
+        "auto f(builtin::ByteRegion r, builtin::ConsoleSession& s) -> i64 { return 0; }",
+        "auto g(builtin::ConsoleSession& s, builtin::ByteRegion r, builtin::ConsolePutResult v) -> i64 { return 0; } "
+        "auto f(builtin::ConsoleSession& s, builtin::ByteRegion r) -> i64 { return g(s, r, s.put(65u8)); }",
+    ]
+    for index, body in enumerate(invalid):
+        path = work / f"mixed-reject-{index}.au"
+        path.write_text("module mixed_reject; " + body)
+        result = run([compiler, "--check", path])
+        require(result.returncode != 0 and b"error AU" in result.stderr, f"mixed capability rejection {index}")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("compiler", type=Path)
     parser.add_argument("--artifacts", type=Path)
+    parser.add_argument("--comparison-compiler", type=Path)
     args = parser.parse_args()
     compiler = args.compiler.resolve()
     if args.artifacts:
@@ -31,6 +169,7 @@ def main():
     else:
         (ROOT / "build").mkdir(exist_ok=True)
         work = Path(tempfile.mkdtemp(prefix="console-service-", dir=ROOT / "build"))
+    mixed_region(compiler, work, args.comparison_compiler.resolve() if args.comparison_compiler else None)
     assembly = work / "console.s"
     result = run(
         [compiler, "--module-root", ROOT / "library", ROOT / "examples/kernel-console-service.au", "-o", assembly]
@@ -1032,7 +1171,7 @@ odd(session) != 8) {
         "reflect-fields": "auto f() -> i64 { return field_count(builtin::ConsoleSession); }",
         "field": "class C { builtin::ConsoleSession session; }; auto f() -> i64 { return 0; }",
         "return": "auto f(builtin::ConsoleSession& s) -> builtin::ConsoleSession { return s; }",
-        "region": "auto f(builtin::ConsoleSession& s, builtin::ByteRegion r) -> i64 { return 0; }",
+        "region": "auto f(builtin::ConsoleSession& s, i64 n, builtin::ByteRegion r) -> i64 { return n; }",
         "owner": "auto f(builtin::ConsoleSession& s, builtin::OwnedBytes b) -> i64 { return 0; }",
         "owned-class": (
             "class Owner { builtin::OwnedBytes bytes; public: "
