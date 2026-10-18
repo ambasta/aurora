@@ -88,8 +88,8 @@ class ClockContractTests(unittest.TestCase):
         for family, wrappers in WRAPPERS.items():
             for wrapper in wrappers:
                 inventory += [(family, mode) for mode in wrapper_modes(wrapper)]
-        self.assertEqual(len(inventory), 183)
-        self.assertEqual(len(set(inventory)), 183)
+        self.assertEqual(len(inventory), 184)
+        self.assertEqual(len(set(inventory)), 184)
         snapshots = {
             ("uefi", mode)
             for mode in (
@@ -124,7 +124,7 @@ class ClockContractTests(unittest.TestCase):
         selected = [mode for (family, mode), profile in CLOCK.MODE_CLOCKS.items() if profile == CLOCK.FIXED0]
         self.assertEqual(len(selected), 58)
         self.assertEqual(CLOCK.clock_profile("uefi", "user-resume"), CLOCK.FIXED0)
-        self.assertEqual(sum(p == CLOCK.ORIGINAL for p in CLOCK.MODE_CLOCKS.values()), 142)
+        self.assertEqual(sum(p == CLOCK.ORIGINAL for p in CLOCK.MODE_CLOCKS.values()), 143)
         self.assertEqual(
             hashlib.sha256(
                 (
@@ -191,7 +191,7 @@ class ClockContractTests(unittest.TestCase):
     def test_every_mode_profile_and_hostile_clock_pairings(self):
         cases = dict(CLOCK.MODE_CLOCKS)
         cases.update(CLOCK.AUXILIARY_CLOCKS)
-        self.assertEqual(len(cases), 205)
+        self.assertEqual(len(cases), 206)
         for (family, mode), profile in cases.items():
             with self.subTest(family=family, mode=mode):
                 original = ["qemu", "-accel", "tcg"]
@@ -247,7 +247,7 @@ class ClockContractTests(unittest.TestCase):
 
     def test_real_shell_array_for_all_uefi_build_modes(self):
         modes = sorted(mode for family, mode in CLOCK.MODE_CLOCKS if family != "bios")
-        self.assertEqual(len(modes), 161)
+        self.assertEqual(len(modes), 162)
         for mode in modes:
             for data in ("", "/nonexistent data files"):
                 with self.subTest(mode=mode, data=data):

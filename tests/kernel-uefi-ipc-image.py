@@ -61,7 +61,7 @@ def main():
         with TestCase().assertRaises(ValueError):
             images.validate_composition(mode, **file_composition)
         negative += 1
-    for base in (images.BASE, images.BASE + 4096):
+    for base in (images.BASE, images.BASE + 16384):
         data, blob, symbols = fixtures.fixture(base)
         images.verify(data, blob, base, symbols)
         positives += 1

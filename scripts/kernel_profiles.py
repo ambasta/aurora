@@ -312,6 +312,7 @@ UEFI_FAMILIES = [
         {
             "runtime": [],
             "runtime-span": [],
+            "runtime-multipage": ["-DAURORA_RUNTIME_MULTIPAGE"],
             "runtime-code": ["-DAURORA_RUNTIME_CODE"],
             "runtime-stack": ["-DAURORA_RUNTIME_STACK"],
             "runtime-kernel": ["-DAURORA_RUNTIME_KERNEL"],
@@ -425,7 +426,9 @@ def user_images(
     names = ("clean", "bounds", "peer") if dispatcher else ("clean", "bounds")
     for index, name in enumerate(names):
         if kind == "runtime":
-            source = "span-clean" if name == "clean" and mode == "span" else name
+            source = (
+                "multipage" if mode == "multipage" else "span-clean" if name == "clean" and mode == "span" else name
+            )
             entry = "kernel/uefi/user-image-entry.S"
             defines = (
                 ["UEFI_USER_" + mode.upper() + "=1"]
@@ -434,6 +437,8 @@ def user_images(
                 in ("code", "stack", "window", "kernel", "write", "nx", "return", "unknown", "syscall", "sysenter")
                 else []
             )
+            if mode == "multipage" and index == 1:
+                defines.append("UEFI_USER_MULTIPAGE_FAULT=1")
         else:
             source = "budget-service" if budget and index == 1 else "ipc-client" if index == 0 else "ipc-service"
             if program:
@@ -474,7 +479,8 @@ def user_images(
         result[name] = dict(
             source="tests/kernel-programs/" + source + ".au",
             roots=["library"] + (["kernel/policies"] if snapshot or program or blocking_call else []),
-            base=0x10000000000 + index * 4096,
+            base=0x10000000000 + index * 16384,
+            max_pages=3 if kind == "runtime" and mode == "multipage" else 1,
             entry=entry,
             entry_flags=[value for define in defines for value in ("--defsym", define)],
             combined=((snapshot or program or blocking_call) and index == 1) or (blocking_call and index == 0),
@@ -620,6 +626,7 @@ def uefi_profile(mode, flags):
     user_mode = "normal"
     if mode.startswith("runtime-") and mode[8:] in (
         "span",
+        "multipage",
         "code",
         "stack",
         "kernel",
@@ -723,6 +730,8 @@ def uefi_profile(mode, flags):
         if enabled:
             entry, bridge = "examples/kernel-" + source + ".au", "kernel/uefi/" + adapter + "-entry.S"
     image_options = ["--ipc-policy"] if ipc else []
+    if mode == "runtime-multipage":
+        image_options += ["--multipage"]
     if mode == "budget-noapic":
         image_options += ["--budget-noapic"]
     if snapshot or (blocking_call and not file_call):

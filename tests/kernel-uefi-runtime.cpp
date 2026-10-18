@@ -80,8 +80,18 @@ auto main() -> int {
     check(!Layout::disjoint(0, 0, 4096, 4096));
     check(Layout::table_offset(0) == 0x90000 && Layout::table_offset(1) == 0xa0000);
     check(Layout::table_offset(2) == Layout::arena_bytes);
-    check(Layout::image_page(0) == 0xb0000 && Layout::image_page(1) == 0xb1000);
+    check(Layout::image_page(0) == 0xb0000 && Layout::image_page(1) == 0xb3000);
     check(Layout::image_page(2) == Layout::arena_bytes);
+    for (unsigned image = 0; image < 2; ++image) {
+        std::uint64_t limit = 4096;
+#ifdef AURORA_RUNTIME_MULTIPAGE
+        limit = 12288;
+#endif
+        check(Layout::image_limit(image) == limit);
+        for (std::uint64_t size : {0ULL, 1ULL, 4096ULL, 4097ULL, 8192ULL, 8193ULL, 12288ULL, 12289ULL, ~0ULL})
+            check(Layout::code_pages(image, size) == (size && size <= limit ? (size - 1) / 4096 + 1 : 0));
+    }
+    check(Layout::image_limit(2) == 0 && Layout::code_pages(2, 1) == 0);
     check(Layout::stack_frame_offset(15) == 0xcf000 && Layout::stack_frame_offset(16) == Layout::arena_bytes);
     check(Layout::user_stack_begin(0) == 0x10000200000ULL && Layout::user_stack_begin(1) == 0x10000400000ULL);
     check(Layout::user_stack_end(1) == 0x10000404000ULL);
@@ -93,7 +103,7 @@ auto main() -> int {
                                                    Layout::ist_top,
                                                    0x8e000ULL,
                                                    0x8f000ULL,
-                                                   0xb2000ULL,
+                                                   0xb6000ULL,
                                                    0xbf000ULL,
                                                    0xd0000ULL,
                                                    0xff000ULL})
@@ -210,7 +220,7 @@ auto main() -> int {
                 expected.add(arena + offset, arena + offset, flags);
             }
         }
-        const auto code = Layout::user_code + domain * 4096;
+        const auto code = Layout::user_code + domain * 16384;
         check(tables.map(code, arena + Layout::image_page(domain), Tables::present | Tables::user));
         expected.add(code, arena + Layout::image_page(domain), Tables::present | Tables::user);
         for (std::size_t page = 0; page < 4; ++page) {
@@ -222,7 +232,7 @@ auto main() -> int {
         check(expected.complete(tables));
         for (std::uint64_t offset = 0; offset < Layout::arena_bytes; offset += 4096)
             check(tables.entry(arena + offset) == expected(arena + offset));
-        check(tables.entry(Layout::user_code + (1 - domain) * 4096) == 0);
+        check(tables.entry(Layout::user_code + (1 - domain) * 16384) == 0);
         check(tables.entry(Layout::user_stack_begin(1 - domain)) == 0);
         check(tables.entry(Layout::user_stack_begin(domain) - 4096) == 0);
         check(tables.entry(Layout::user_stack_end(domain)) == 0);
@@ -405,6 +415,65 @@ auto main() -> int {
         if (va == 4096)
             return 0x301005;
         return va == 8192 ? 0x302001 | Tables::nx : 0;
+    }));
+    // Independent exact image extent: mapping validity alone does not establish
+    // that every required page exists. Missing leaves need explicit completeness.
+    for (unsigned pages = 1; pages <= 3; ++pages) {
+        constexpr std::uint64_t code = 0x10000000000ULL, physical = arena + 0xb0000;
+        Expected expected;
+        for (unsigned page = 0; page < pages; ++page)
+            expected.add(code + page * 4096, physical + page * 4096, 5);
+        for (unsigned prefix = 0; prefix <= pages; ++prefix) {
+            std::array<std::uint64_t, words> storage{};
+            Tables tables{storage, arena + 0x90000};
+            for (unsigned page = 0; page < prefix; ++page)
+                check(tables.map(code + page * 4096, physical + page * 4096, 5));
+            check(expected.complete(tables) == (prefix == pages));
+            if (prefix != 0) {
+                check(!tables.map(code, physical, 5));
+                check(expected.complete(tables) == (prefix == pages));
+            }
+            check(tables.reset() && tables.used() == 1 && tables.verify(absent));
+            check(std::all_of(storage.begin(), storage.end(), [](auto value) {
+                return value == 0;
+            }));
+            for (unsigned page = 0; page < pages; ++page)
+                check(tables.map(code + page * 4096, physical + page * 4096, 5));
+            check(expected.complete(tables));
+            for (unsigned page = 0; page < pages; ++page) {
+                const auto leaf = (physical + page * 4096) | 5;
+                const auto at = std::find(storage.begin(), storage.end(), leaf);
+                check(at != storage.end());
+                for (const auto wrong : {std::uint64_t{0},
+                                         leaf ^ 4096,
+                                         leaf | Tables::writable,
+                                         leaf | Tables::nx,
+                                         leaf & ~Tables::user}) {
+                    *at = wrong;
+                    check(!expected.complete(tables));
+                }
+                *at = leaf;
+                check(expected.complete(tables));
+            }
+            for (unsigned page = pages; page <= 4; ++page) {
+                check(tables.entry(code + page * 4096) == 0);
+                check(tables.map(code + page * 4096, physical, 5));
+                check(!expected.complete(tables));
+                check(tables.reset());
+                for (unsigned present = 0; present < pages; ++present)
+                    check(tables.map(code + present * 4096, physical + present * 4096, 5));
+            }
+            check(expected.complete(tables) && tables.used() <= 16);
+        }
+    }
+    // Insufficient parent-table capacity must fail before publishing any link;
+    // reset remains valid after this allocation refusal.
+    std::array<std::uint64_t, 3 * 512> partial_storage{};
+    Tables partial{partial_storage, arena + 0x90000};
+    check(!partial.map(0x10000000000ULL, arena + 0xb0000, 5) && partial.used() == 1);
+    check(partial.reset() && partial.used() == 1 && partial.verify(absent));
+    check(std::all_of(partial_storage.begin(), partial_storage.end(), [](auto value) {
+        return value == 0;
     }));
     std::cout << "PASS: " << cases
               << " UEFI runtime layout, owned table, permission, isolation, corruption and reuse checks\n";

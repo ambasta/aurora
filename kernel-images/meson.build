@@ -182,6 +182,9 @@ foreach profile_id : profile_data['profiles'].split('|')
       user_link_flags = platform == 'bios' ? ['-z', 'max-page-size=0x1000', '-T', files('../kernel/program.ld'),
         '--defsym=USER_BASE=' + profile_data[user_key + '.base']] : ['-T', files('../kernel/program.ld'),
         '--defsym', 'USER_BASE=' + profile_data[user_key + '.base'], '-z', 'max-page-size=0x1000']
+      if platform == 'uefi'
+        user_link_flags += ['--defsym=USER_IMAGE_PAGES=' + profile_data[user_key + '.max_pages']]
+      endif
       user_elf = custom_target(prefix + '-user-' + name + '-elf', input: user_link_inputs,
         output: 'user-' + name + '.elf', build_subdir: output_subdir,
         depend_files: files('../kernel/program.ld'),
@@ -207,7 +210,8 @@ foreach profile_id : profile_data['profiles'].split('|')
       user_options = user_option_text == '' ? [] : user_option_text.split('|')
       user_metadata = custom_target(prefix + '-user-metadata', input: user_inputs + aurora_facts,
         output: ['uefi-user-images.hpp', 'user-images.json'], build_subdir: output_subdir,
-        depend_files: files('../scripts/kernel-uefi-user-images.py', '../scripts/bootstrap_frontend.py'),
+        depend_files: files('../scripts/kernel-uefi-user-images.py', '../scripts/bootstrap_frontend.py',
+                            '../scripts/kernel_stack.py'),
         command: [python, '-B', files('../scripts/' + user_tool), '--output', output_dir,
                   '--mode', profile_data[key + '.user_mode']] + user_options)
       generated_headers = [user_metadata[0]]

@@ -51,7 +51,7 @@ def metadata_valid(metadata, mode):
     need(type(metadata) is dict and set(metadata) == {"clean", "bounds"}, "Malformed IPC image set")
     for index, name in enumerate(("clean", "bounds")):
         image = metadata[name]
-        base = BASE + index * 4096
+        base = BASE + index * 16384
         need(
             type(image) is dict
             and set(image) == keys
@@ -249,7 +249,7 @@ def self_test():
     for mode in MODES:
         metadata = {}
         for index, name in enumerate(("clean", "bounds")):
-            base = BASE + index * 4096
+            base = BASE + index * 16384
             metadata[name] = dict(
                 entry=base,
                 size=128,
@@ -287,7 +287,7 @@ def self_test():
         for field, value in [
             ("return_pc", 0),
             ("bounds_pc", BASE - 2),
-            ("overflow_pc", BASE + 4096),
+            ("overflow_pc", BASE + 16384),
             ("size", 8192),
             ("entry", 0),
             ("return_pc", True),

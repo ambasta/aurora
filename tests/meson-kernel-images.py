@@ -248,6 +248,23 @@ class GeneratorBoundaries(unittest.TestCase):
         with self.assertRaises(ValueError):
             profiles.select("bios", {"KERNEL_CONSOLE": "1"}, "normal")
 
+    def test_multipage_allowance_is_exact_and_bios_stays_one_page(self):
+        for name, recipe in profiles.profiles().items():
+            enabled = name == "uefi/runtime-multipage"
+            self.assertEqual("--multipage" in recipe["image_options"], enabled)
+            self.assertEqual("-DAURORA_RUNTIME_MULTIPAGE" in recipe["flags"], enabled)
+            for index, user in enumerate(recipe["users"].values()):
+                if recipe["platform"] == "uefi":
+                    self.assertEqual(user["max_pages"], 3 if enabled else 1)
+                    self.assertEqual(user["base"], 0x10000000000 + index * 16384)
+                else:
+                    self.assertNotIn("max_pages", user)
+                    self.assertEqual(user["base"], 0x1B0000 + index * 4096)
+        self.assertTrue(image.image_options(["--multipage"])["require_multipage"])
+        for options in (["--multipage", "--ipc-policy"], ["--owned-bytes", "--multipage"]):
+            with self.assertRaises(ValueError):
+                image.image_options(options)
+
     def test_noapic_rejection_is_exact_and_cannot_retain_runtime_authority(self):
         recipes = profiles.profiles()
         for name, recipe in recipes.items():

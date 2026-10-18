@@ -1,0 +1,63 @@
+module multipage;
+import std.checksum;
+import std.utf8;
+import std.array;
+
+// Fixed-array streaming validation/counting and CRC; no allocation or runtime imports.
+auto aurora_user_main(i64 fault) -> i64 {
+    const array<u8, 9> digits = "123456789";
+    u64 checksum = 0u64;
+    i64 cursor = 0;
+    while (cursor < len(digits)) {
+        const std::ChecksumResult next = std::crc32c_extend(checksum, borrow_bytes(digits), cursor, 1);
+        if (next.status() != std::ChecksumStatus::success) {
+            return 0;
+        }
+        checksum = next.value_or(0u64);
+        cursor = cursor + 1;
+    }
+    if (checksum != 3808858755u64) {
+        return 0;
+    }
+    const array<u8, 10> text = {
+        65u8,
+        194u8,
+        162u8,
+        226u8,
+        130u8,
+        172u8,
+        240u8,
+        159u8,
+        152u8,
+        128u8
+    };
+    i64 scalars = 0;
+    cursor = 0;
+    while (cursor < len(text)) {
+        const std::Utf8DecodeResult decoded = std::decode_utf8(borrow_bytes(text), cursor, len(text) - cursor, true);
+        if (decoded.status() != std::Utf8Status::success) {
+            return 0;
+        }
+        const std::Utf8EncodeResult encoded = std::encode_utf8(decoded.scalar_or(0u64));
+        if (encoded.status() != std::Utf8EncodeStatus::success || encoded.size() != decoded.width()) {
+            return 0;
+        }
+        i64 byte = 0;
+        while (byte < encoded.size()) {
+            if (encoded.byte_or(byte, 0u8) != text[cursor + byte]) {
+                return 0;
+            }
+            byte = byte + 1;
+        }
+        cursor = cursor + decoded.width();
+        scalars = scalars + 1;
+    }
+    if (scalars != 4) {
+        return 0;
+    }
+    // Both images execute the real work; the second faults at an admitted late trap.
+    if (fault != 0) {
+        return i64(text[len(text)]);
+    }
+    return 42;
+}

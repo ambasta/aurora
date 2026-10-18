@@ -6,7 +6,7 @@ spec = importlib.util.spec_from_file_location("pci", Path(__file__).with_name("k
 pci = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(pci)
 need = pci.need
-SUCCESS_MODES = ("runtime", "runtime-span")
+SUCCESS_MODES = ("runtime", "runtime-span", "runtime-multipage")
 MODES = SUCCESS_MODES + (
     "runtime-terminal-input",
     "runtime-terminal-output",
@@ -53,9 +53,14 @@ def validate(status, text, mode, metadata, *, retained=0, final_slot=0):
             and all(type(v) is int and 0 <= v < 1 << 64 for v in image.values()),
             "Malformed metadata values",
         )
-        base = BASE + index * 4096
+        base = BASE + index * 16384
         size = image["size"]
-        need(image["entry"] == base and 4 <= size <= 4096, "Metadata layout widened")
+        need(
+            image["entry"] == base and (8192 < size <= 12288 if mode == "runtime-multipage" else 4 <= size <= 4096),
+            "Exact per-profile image allowance",
+        )
+        if mode == "runtime-multipage":
+            need(image["bounds_pc"] > base + 8192, "Actual third-page bounds site")
         sites = [image[k] for k in ("return_pc", "bounds_pc", "overflow_pc", "division_zero_pc", "shift_count_pc")]
         need(
             all(sites[:3]) and len(set(pc for pc in sites if pc)) == len([pc for pc in sites if pc]),
@@ -91,6 +96,7 @@ def validate(status, text, mode, metadata, *, retained=0, final_slot=0):
         )
 
     patterns = (
+        r"AURORA_UEFI_MULTIPAGE_ROLLBACK_OK: prefixes=3",
         r"AURORA_UEFI_DOMAIN_ENTER: slot=\d+ root=\d+ entry=\d+ stack=\d+",
         r"AURORA_UEFI_DOMAIN_EVENT: vector=\d+ error=\d+ pc=\d+ cpl=\d+ root=\d+ frame=\d+ cr2=\d+",
         r"AURORA_UEFI_DOMAIN_RESTORE: slot=\d+ root=\d+ stack=\d+ event=(returned|bounds) value=\d+",
@@ -105,7 +111,7 @@ def validate(status, text, mode, metadata, *, retained=0, final_slot=0):
         ),
     )
     for line in text.splitlines():
-        if line.startswith(("AURORA_UEFI_DOMAIN_", "AURORA_UEFI_RUNTIME_")):
+        if line.startswith(("AURORA_UEFI_DOMAIN_", "AURORA_UEFI_RUNTIME_", "AURORA_UEFI_MULTIPAGE_")):
             need(any(re.fullmatch(pattern, line) for pattern in patterns), "Malformed runtime record")
     need("AURORA_UEFI_PAYLOAD_FAIL:" not in text and "AURORA_UEFI_FAIL:" not in text, "Unexpected boot failure")
     if mode != "runtime-root":
@@ -115,6 +121,12 @@ def validate(status, text, mode, metadata, *, retained=0, final_slot=0):
 
     start = text.find("AURORA_UEFI_DOMAIN_ENTER:")
     need(start >= 0, "Runtime never entered user domain")
+    rollback = "AURORA_UEFI_MULTIPAGE_ROLLBACK_OK: prefixes=3"
+    need(
+        text.count(rollback) == (1 if mode == "runtime-multipage" else 0), "Exact multipage rollback proof scope/count"
+    )
+    if mode == "runtime-multipage":
+        need(text.index(rollback) < start, "Multipage rollback precedes user execution")
     pci.validate(33, text[:start] + SUFFIX, "pci")
     owned = re.search(r"AURORA_UEFI_OWNERSHIP_OK: arena=(\d+)", text)
     arena = int(owned[1])
@@ -148,7 +160,7 @@ def validate(status, text, mode, metadata, *, retained=0, final_slot=0):
         need(
             slot == wanted_slot
             and root == arena + 0x90000 + slot * 0x10000
-            and pc == BASE + (1 if index == 1 else 0) * 4096
+            and pc == BASE + (1 if index == 1 else 0) * 16384
             and sp == STACK + slot * 0x200000 + 0x4000,
             "Wrong private entry layout",
         )
@@ -164,7 +176,7 @@ def validate(status, text, mode, metadata, *, retained=0, final_slot=0):
         else:
             need(arena + 0x84000 <= frame <= arena + 0x88000 - 176 and frame % 8 == 0, "Wrong RSP0 frame")
         image = metadata["bounds" if index == 1 else "clean"]
-        need(image["entry"] == pc and 4 <= image["size"] <= 4096, "Fixture metadata entry")
+        need(image["entry"] == pc, "Fixture metadata entry")
         if mode in SUCCESS_MODES:
             kind = "bounds" if index == 1 else "returned"
             target = image["bounds_pc"] if index == 1 else image["return_pc"]
@@ -193,7 +205,7 @@ def validate(status, text, mode, metadata, *, retained=0, final_slot=0):
                 "runtime-nx",
             ):
                 address = {
-                    "runtime-code": BASE + 4096,
+                    "runtime-code": BASE + 16384,
                     "runtime-stack": STACK + 0x200000,
                     "runtime-kernel": arena,
                     "runtime-window": pci.WINDOW,
@@ -316,7 +328,7 @@ def self_test():
     )
     metadata = {}
     for index, name in enumerate(("clean", "bounds")):
-        base = BASE + index * 4096
+        base = BASE + index * 16384
         metadata[name] = dict(
             entry=base,
             size=128,
@@ -329,8 +341,16 @@ def self_test():
             probe_offset=0,
         )
     cases = {}
+    original_metadata = copy.deepcopy(metadata)
     for mode in MODES:
+        metadata = copy.deepcopy(original_metadata)
+        if mode == "runtime-multipage":
+            for image in metadata.values():
+                image["size"] = 10000
+                image["bounds_pc"] = image["entry"] + 9000
         text = prefix
+        if mode == "runtime-multipage":
+            text += "AURORA_UEFI_MULTIPAGE_ROLLBACK_OK: prefixes=3\n"
         for i in range(4 if mode in SUCCESS_MODES else 1):
             slot = 1 if i == 1 else 0
             root = arena + 0x90000 + slot * 0x10000
@@ -363,7 +383,7 @@ def self_test():
                     "runtime-nx": 21,
                 }[mode]
                 cr2 = {
-                    "runtime-code": BASE + 4096,
+                    "runtime-code": BASE + 16384,
                     "runtime-stack": STACK + 0x200000,
                     "runtime-kernel": arena,
                     "runtime-window": pci.WINDOW,
@@ -456,8 +476,8 @@ def self_test():
         for field, value in [
             ("return_pc", 0),
             ("bounds_pc", BASE - 2),
-            ("overflow_pc", BASE + 4096),
-            ("size", 8192),
+            ("overflow_pc", BASE + 16384),
+            ("size", 12289 if mode == "runtime-multipage" else 8192),
             ("entry", 0),
             ("return_pc", True),
             ("probe_offset", 4096),
@@ -472,6 +492,39 @@ def self_test():
                 rejected += 1
             else:
                 raise RuntimeError(f"Invalid runtime metadata accepted: {mode} {field}")
+        if mode == "runtime-multipage":
+            for name in ("clean", "bounds"):
+                for field, value in (("size", 4096), ("size", 12289), ("bounds_pc", metadata[name]["entry"] + 64)):
+                    altered = copy.deepcopy(metadata)
+                    altered[name][field] = value
+                    try:
+                        validate(status, text, mode, altered)
+                    except ValueError:
+                        rejected += 1
+                    else:
+                        raise RuntimeError("Multipage scope or later-page terminal proof lost")
+            for legacy in ("runtime", "runtime-span"):
+                try:
+                    validate(status, text, legacy, metadata)
+                except ValueError:
+                    rejected += 1
+                else:
+                    raise RuntimeError("Legacy runtime image allowance widened")
+        rollback = "AURORA_UEFI_MULTIPAGE_ROLLBACK_OK: prefixes=3\n"
+        if mode == "runtime-multipage":
+            invalid += [
+                (status, text.replace(rollback, replacement))
+                for replacement in (
+                    "",
+                    rollback + rollback,
+                    rollback.replace("=3", "=0"),
+                    rollback.replace("=3", "=2"),
+                    rollback.replace("=3", "=4"),
+                )
+            ]
+            invalid.append((status, text.replace(rollback, "") + rollback))
+        else:
+            invalid.append((status, rollback + text))
         for code, bad in invalid:
             try:
                 validate(code, bad, mode, metadata)

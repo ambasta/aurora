@@ -51,9 +51,9 @@ auto check(bool result, std::string_view message) -> void {
     }
 }
 auto layout(std::size_t domain, U64 owned = arena) -> ProgramLayout {
-    const auto result = ProgramLayout::create(L::user_code,
-                                              L::user_code + L::image_pages * 4096,
-                                              1,
+    const auto result = ProgramLayout::create(0x10000000000ULL + domain * 16384,
+                                              0x10000000000ULL + domain * 16384 + 12288,
+                                              L::image_limit(domain) / 4096,
                                               L::user_stack_begin(domain),
                                               L::user_stack_end(domain),
                                               owned + L::rsp0_bottom,
@@ -62,7 +62,7 @@ auto layout(std::size_t domain, U64 owned = arena) -> ProgramLayout {
     return *result;
 }
 auto contract(std::size_t domain, U64 owned = arena) -> ProgramContract {
-    const auto pc = L::user_code + domain * 4096;
+    const auto pc = L::user_code + domain * 16384;
     return ProgramContract{layout(domain, owned), pc, 128, pc + 32, pc + 64, pc + 66, pc + 68, pc + 70};
 }
 class Launch final {
@@ -313,7 +313,7 @@ auto identity_and_metadata() -> void {
         }
         for (const auto &changed :
              std::array{ProgramContract{policy, pc, 0, pc + 32, pc + 64, pc + 66},
-                        ProgramContract{policy, pc, 4097, pc + 32, pc + 64, pc + 66},
+                        ProgramContract{policy, pc, policy.max_image_size() + 1, pc + 32, pc + 64, pc + 66},
                         ProgramContract{policy, pc, maximum, pc + 32, pc + 64, pc + 66},
                         ProgramContract{policy, maximum, 128, pc + 32, pc + 64, pc + 66},
                         ProgramContract{policy, pc + 1, 128, pc + 32, pc + 64, pc + 66},
@@ -337,13 +337,18 @@ auto identity_and_metadata() -> void {
                     },
                     "foreign image and stack contract denied");
         for (unsigned field = 0; field < 7; ++field) {
-            U64 begin = L::user_code, end = begin + 3 * 4096, pages = 1;
+            U64 begin = 0x10000000000ULL + domain * 16384, end = begin + 12288, pages = L::image_limit(domain) / 4096;
             auto bottom = L::user_stack_begin(domain), top = L::user_stack_end(domain);
             U64 rsp0_bottom = entry_bottom, rsp0_top = entry_top;
-            if (field == 0)
-                begin += 4096;
-            if (field == 1)
+            if (field == 0) {
+                begin -= 4096;
                 end -= 4096;
+            }
+            if (field == 1) {
+                end -= 4096;
+                if (pages > 2)
+                    pages = 2;
+            }
             if (field == 2)
                 pages = 2;
             if (field == 3)
@@ -638,7 +643,42 @@ auto arena_and_interval_boundaries() -> void {
           "wrapped entry stack rejected before constructing contract");
 }
 
+auto image_extent_authority() -> void {
+    DomainRegistry registry;
+    const auto owners = handles(registry);
+    for (std::size_t domain = 0; domain < 3; ++domain) {
+        check(registry.activate(owners[domain]), "activate extent owner");
+        const U64 pc = 0x10000000000ULL + domain * 16384;
+        U64 allowed = 4096;
+#ifdef AURORA_RUNTIME_MULTIPAGE
+        allowed = 12288;
+#endif
+        check(L::image_limit(domain) == allowed, "independent per-image allowance");
+        for (const U64 size : {4ULL, 4096ULL, 4097ULL, 8192ULL, 8193ULL, 12288ULL, 12289ULL}) {
+            Launch candidate{owners[domain], domain};
+            // Place every terminal inside even the shortest accepted image.
+            candidate.program.emplace(layout(domain), pc, size, pc + 2, pc, pc + 1, 0, 0);
+            check(authorize(registry, candidate).has_value() == (size <= allowed),
+                  "exact size admitted only by selected image allowance");
+        }
+        const auto enlarged = ProgramLayout::create(pc,
+                                                    pc + 12288,
+                                                    allowed == 4096 ? 3 : 1,
+                                                    L::user_stack_begin(domain),
+                                                    L::user_stack_end(domain),
+                                                    entry_bottom,
+                                                    entry_top);
+        check(enlarged.has_value(), "generic alternate image allowance fixture");
+        Launch forged{owners[domain], domain};
+        forged.program.emplace(*enlarged, pc, 128, pc + 32, pc + 64, pc + 66, pc + 68, pc + 70);
+        check(!authorize(registry, forged), "metadata cannot change selected image allowance");
+        check(registry.deactivate(owners[domain]), "deactivate extent owner");
+    }
+    check(ProgramLayout::bios().max_image_pages() == 1, "BIOS retains one-page image allowance");
+}
+
 auto main() -> int {
+    image_extent_authority();
     phase_matrix();
     identity_and_metadata();
     checked_frames();

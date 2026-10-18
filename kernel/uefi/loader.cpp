@@ -156,9 +156,9 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
     put(handoff, 8, 3, 4);
     put(handoff, 120, arena + RuntimeLayout::metadata_offset);
     const auto install_user = [&](unsigned index, std::span<const std::byte> image, const auto &fields) {
-        if (image.empty() || image.size() > 4096 || fields[1] != image.size())
+        if (image.empty() || image.size() > RuntimeLayout::image_limit(index) || fields[1] != image.size())
             fail("bounded user image");
-        auto target = span(arena + RuntimeLayout::image_offset + index * 4096, image.size());
+        auto target = span(arena + RuntimeLayout::image_page(index), image.size());
         for (std::size_t i = 0; i < image.size(); ++i)
             target[i] = image[i];
         auto descriptor = span(arena + RuntimeLayout::metadata_offset + index * 64, 64);

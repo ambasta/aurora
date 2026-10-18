@@ -21,7 +21,7 @@ aurora_program_entry:
     cmpq $0,-8(%rsp)
     jne bad_entry
 .ifdef UEFI_USER_CODE
-    movabs $0x10000001000,%rax
+    movabs $0x10000004000,%rax
     call *%rax
 .endif
 .ifdef UEFI_USER_STACK
@@ -73,6 +73,9 @@ aurora_probe_pc:
     .global aurora_probe_pc
 aurora_probe_pc:
     sysenter
+.endif
+.ifdef UEFI_USER_MULTIPAGE_FAULT
+    mov $1,%edi
 .endif
     call aurora_user_main
     int $0x81

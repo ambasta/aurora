@@ -62,7 +62,7 @@ class ProfileMetadata(unittest.TestCase):
 
     def test_no_legacy_clock_admission_or_inherited_receipt(self):
         clock = load("graphical_metadata_clock", "scripts/kernel_emulator_clock.py")
-        self.assertEqual(len(clock.MODE_CLOCKS), 200)
+        self.assertEqual(len(clock.MODE_CLOCKS), 201)
         self.assertEqual(sum(value == clock.FIXED0 for value in clock.MODE_CLOCKS.values()), 58)
         self.assertEqual(clock.clock_profile("uefi", "user-resume"), clock.FIXED0)
         selected = sorted(

@@ -273,6 +273,7 @@ def image_options(arguments):
         ["--ipc-policy", "--snapshot"],
         ["--ipc-policy", "--snapshot", "--call-snapshot"],
         ["--owned-bytes"],
+        ["--multipage"],
         ["--ipc-policy", "--disposal-policy"],
         ["--graphical-console"],
         ["--iommu-event"],
@@ -280,6 +281,7 @@ def image_options(arguments):
     )
     need(arguments in allowed, "Expected one exact supported image-policy flag combination")
     return dict(
+        require_multipage="--multipage" in arguments,
         require_ipc="--ipc-policy" in arguments,
         require_budget_noapic="--budget-noapic" in arguments,
         require_snapshot="--snapshot" in arguments,
@@ -844,6 +846,7 @@ def graphical_image_policy(directory, symbols=None):
 
 
 def main(
+    require_multipage=False,
     require_ipc=False,
     require_owned_bytes=False,
     require_disposal=False,
@@ -958,6 +961,18 @@ def main(
             0 < terminal_symbols.get("aurora_kernel_terminal_event", 0) < terminal_symbols["__payload_text_end"],
             "Terminal-event entry outside owned payload RX",
         )
+    if require_multipage:
+        import kernel_stack as stack
+
+        graph = stack.image_stack_graph(
+            build,
+            ("payload", "acpi", "pci", "runtime"),
+            ROOT,
+            protected=True,
+            noreturn=stack.OWNED_NORETURN,
+        )
+        admitted = stack.profile_stack(graph, {}, fault_reserve=512)
+        print("PASS: multipage kernel stack with fault reserve " + str(admitted["peak_with_fault_reserve"]))
     if profile in ("console", "graphical"):
         engine = "graphical-console" if require_graphical_console else "console"
         names += [engine, "console-entry"]

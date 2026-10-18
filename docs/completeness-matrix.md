@@ -15,6 +15,10 @@ Self-hosting, final emitter qualification and full kernel migration remain incom
 | Native binutils/glibc/Mesa alternatives | Six-stage source bootstrap retained after direct skip failures; any replacement needs recorded seed-route builds and C1/C2/full qualification. Bootstrap compiler and core libraries exist; working reproducible native rebuild, toolchain/runtime and graphics replacements incomplete. |
 | Applications, terminal and tiling desktop | Bounded serial and graphical consoles exist. General apps, terminal sessions and desktop incomplete. |
 
+A bounded UEFI multi-page code capability is under qualification: an allocation-free
+CRC/UTF-8 consumer uses up to three RX pages with guarded slots; existing image
+allowances and BIOS remain one page. Protected allocation remains incomplete.
+
 Current gate: original repository check and final-source GCC16 full
 suite, followed by affected image/guest checks. See [development and qualification](developer-test-contract.md).
 Call caller images omit unreferenced reflection through the existing closed-image

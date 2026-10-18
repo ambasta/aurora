@@ -738,19 +738,45 @@ auto main() -> int {
     const auto wrong_stack = ServiceContext::capture(wrong_site, frame, authority);
     check(wrong_stack && wrong_stack->terminal(authority) == ProgramEvent::rejected,
           "scalar return still requires exact stack top");
-    const auto domain1_layout = ProgramLayout::create(
-        code, code + 8192, 1, RuntimeLayout::user_stack_begin(1), RuntimeLayout::user_stack_end(1), bottom, top);
+    const auto domain1_layout = ProgramLayout::create(code + 16384,
+                                                      code + 28672,
+                                                      1,
+                                                      RuntimeLayout::user_stack_begin(1),
+                                                      RuntimeLayout::user_stack_end(1),
+                                                      bottom,
+                                                      top);
     const auto domain1 = contract(*domain1_layout,
-                                  code + 4096,
+                                  code + 16384,
                                   128,
-                                  code + 4096 + 32,
-                                  code + 4096 + 64,
-                                  code + 4096 + 66,
-                                  code + 4096 + 68,
-                                  code + 4096 + 70);
+                                  code + 16384 + 32,
+                                  code + 16384 + 64,
+                                  code + 16384 + 66,
+                                  code + 16384 + 68,
+                                  code + 16384 + 70);
     check(ServiceContext::capture(words(domain1), frame, domain1).has_value(), "second dynamic UEFI domain accepted");
     check(!ServiceContext::capture(original, frame, domain1) && !captured->valid_for(domain1),
           "foreign domain context denied");
+    // Captured PCs are bounded by exact bytes, even when a copied layout permits
+    // three pages. Include instruction sites in the second and third pages.
+    const auto large_layout = ProgramLayout::create(code, code + 12288, 3, stack, stack + 16384, bottom, top);
+    check(large_layout.has_value(), "bounded three-page context fixture");
+    for (const U64 size : {4096ULL, 4097ULL, 8192ULL, 8193ULL, 12288ULL}) {
+        const auto image = contract(*large_layout, code, size);
+        check(image.valid(), "one through three-page contract valid");
+        for (const U64 offset : {0ULL, 4095ULL, 4096ULL, 8191ULL, 8192ULL, 12287ULL, 12288ULL, 16384ULL}) {
+            auto source = words(image);
+            source[17] = code + offset;
+            check(ServiceContext::capture(source, frame, image).has_value() == (offset < size),
+                  "IRQ PC excludes padding, guard and neighbor image slot");
+        }
+        auto source = words(image, 129);
+        const auto terminal_image = contract(*large_layout, code, size, code + size - 2);
+        source[17] = code + size - 2;
+        const auto terminal = ServiceContext::capture(source, frame, terminal_image);
+        check(terminal && terminal->terminal(terminal_image) == ProgramEvent::returned,
+              "exact return PC may occupy final image page");
+    }
+    check(!contract(*large_layout, code, 12289).valid(), "fourth-page extent rejected");
     mapping_boundaries(cpus);
     std::cout << "PASS: " << checks
               << " UEFI service-budget APIC admission, immutable integer context and adversarial authority checks\n";

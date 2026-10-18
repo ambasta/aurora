@@ -72,7 +72,7 @@
                                                       images::clean_call_pc);
     const auto endpoint = mailbox->endpoint(*domains[0].handle);
     const auto site = images::clean_call_pc - domains[0].contract->entry();
-    const Bytes code{view(arena + L::image_offset, domains[0].contract->size())};
+    const Bytes code{view(arena + L::image_page(0), domains[0].contract->size())};
     require(context && endpoint && context->words()[8] == endpoint->slot() &&
                 context->words()[9] == endpoint->generation() && site >= 2 && site < domains[0].contract->size() &&
                 code.get(site - 2, 1) == 0xcd && code.get(site - 1, 1) == 0x82 && code.get(site, 1) == 0xc3,

@@ -36,7 +36,7 @@ ORIGINAL_UEFI_MODES = tuple(
     """
 runtime-table-readback runtime-table-reject runtime-table-exhaust
 runtime-table-quarantine runtime-pin-cancel runtime-pin-fault runtime-pin-stale
-runtime-pin-exhaust runtime-span normal owned-bytes stale stale-exhausted bad-handoff bad-map
+runtime-pin-exhaust runtime-span runtime-multipage normal owned-bytes stale stale-exhausted bad-handoff bad-map
 bad-table wp nx acpi acpi-two acpi-disabled acpi-checksum acpi-bad-entry acpi-duplicate
 acpi-bad-source acpi-changed-header acpi-duplicate-root acpi-write acpi-revoked pci
 pci-devices pci-bridge pci-checksum pci-reserved pci-overlap pci-range pci-cycle
