@@ -30,6 +30,13 @@
 #include "uefi-user-images.hpp"
 #endif
 #endif
+#ifdef AURORA_OWNED_TEXT
+#include "../owned-bytes.hpp"
+#include "acpi.hpp"
+#include "budget-transport.hpp"
+#include "apic-timer-io.hpp"
+#include "uefi-user-images.hpp"
+#endif
 #include <array>
 #include <optional>
 #if defined(AURORA_USER_RESUME) || defined(AURORA_BLOCKING_CALL)
@@ -46,7 +53,7 @@
 #endif
 namespace aurora::uefi {
 extern std::uint64_t saved_rsp asm("uefi_runtime_saved_rsp") __attribute__((visibility("hidden")));
-#ifdef AURORA_UEFI_IPC
+#if defined(AURORA_UEFI_IPC) || defined(AURORA_OWNED_TEXT)
 auto enter(std::uint64_t, std::uint64_t, const std::uint64_t *) -> std::uint64_t asm("uefi_runtime_enter")
     __attribute__((visibility("hidden")));
 #else
@@ -197,7 +204,14 @@ std::array<U64, 6> launch{};
 U64 transaction{};
 ipc::Phase selected_phase = ipc::Phase::inactive;
 #endif
-#ifdef AURORA_UEFI_SERVICE_BUDGET
+#ifdef AURORA_OWNED_TEXT
+std::array<U64, 7> launch{};
+std::optional<LocalApicAdmission> interrupt_admission;
+constinit kernel::bytes::Region text_region;
+std::optional<user::DomainHandle> text_owner;
+U64 text_epoch{};
+#endif
+#if defined(AURORA_UEFI_SERVICE_BUDGET) && !defined(AURORA_OWNED_TEXT)
 auto service_delivered() -> bool {
 #ifdef AURORA_UEFI_DISPATCH
     return dispatcher && dispatcher->selected() == selected_client &&
@@ -297,10 +311,17 @@ auto fill(U64 physical, std::uint8_t value) -> void {
 #endif
     return domain.tables->entry(PageTables::window_address) == 0;
 }
+#ifdef AURORA_OWNED_TEXT
+[[nodiscard]] auto text_retirable() -> bool;
+#endif
 [[nodiscard]] auto retire(unsigned index) -> bool {
     if (index >= L::domain_count || root() != kernel_root || active != L::domain_count)
         return false;
     auto &domain = domains[index];
+#ifdef AURORA_OWNED_TEXT
+    if (index != 0 || !text_retirable())
+        return false;
+#endif
     if (!domain.handle || !registry.ready(*domain.handle))
         return false;
 #ifdef AURORA_BLOCKING_CALL
@@ -455,7 +476,7 @@ auto install_architecture() -> void {
         put(gate,
             5,
             (vector == 129
-#ifdef AURORA_BLOCKING_CALL
+#if defined(AURORA_BLOCKING_CALL) || defined(AURORA_OWNED_TEXT)
              || vector == 130
 #endif
              )
@@ -507,7 +528,7 @@ constexpr auto pin_retained() -> std::size_t {
     return 0;
 }
 #endif
-#ifndef AURORA_UEFI_IPC
+#if !defined(AURORA_UEFI_IPC) && !defined(AURORA_OWNED_TEXT)
 auto execute(unsigned index, ProgramEvent wanted) -> void {
     auto &domain = domains[index];
     require(root() == kernel_root && active == L::domain_count && verify(domain), "entry root/tree");
@@ -556,7 +577,13 @@ auto execute(unsigned index, ProgramEvent wanted) -> void {
 }
 #endif
 #ifdef AURORA_UEFI_SERVICE_BUDGET
+#ifdef AURORA_OWNED_TEXT
+[[nodiscard]] auto text_active() -> bool;
+#endif
 #include "service-timer.inc"
+#endif
+#ifdef AURORA_OWNED_TEXT
+#include "owned-text.inc"
 #endif
 #ifdef AURORA_UEFI_IPC
 #ifdef AURORA_UEFI_DISPATCH
@@ -657,6 +684,10 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
                 saved_rsp >= arena + Handoff::stack_bottom && saved_rsp <= arena + Handoff::stack_top - 56 &&
                 saved_rsp % 8 == 0,
             "exception origin/stack");
+#ifdef AURORA_OWNED_TEXT
+    if (vector == 130)
+        return text_trap(frame);
+#endif
 #ifdef AURORA_BLOCKING_CALL
     if (vector == 130)
         return call_trap(frame);
@@ -664,11 +695,19 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
     const Bytes captured{view(frame, 176)};
     auto saved_flags = captured.get(152);
 #ifdef AURORA_UEFI_SERVICE_BUDGET
+#ifdef AURORA_OWNED_TEXT
+    if (true)
+#else
     if (selected_phase == ipc::Phase::service
 #ifdef AURORA_UEFI_USER_BUDGET
         || selected_phase == ipc::Phase::request || selected_phase == ipc::Phase::completion
 #endif
-    ) {
+    )
+#endif
+    {
+#ifdef AURORA_OWNED_TEXT
+        require(text_active(), "text terminal authority");
+#endif
 #ifdef AURORA_UEFI_USER_BUDGET
         require(active < L::domain_count && run_authority &&
                     run_authority->matches_active(registry,
@@ -762,7 +801,8 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
     active = L::domain_count;
     return 1;
 }
-#if defined(AURORA_UEFI_SNAPSHOT) || (defined(AURORA_BLOCKING_CALL) && !defined(AURORA_FILE_CALL))
+#if defined(AURORA_UEFI_SNAPSHOT) || (defined(AURORA_BLOCKING_CALL) && !defined(AURORA_FILE_CALL)) ||                  \
+    defined(AURORA_OWNED_TEXT)
 auto run_protected(U64 owned_arena, const Bytes &h, memory::PhysicalPages &producer_pool) -> bool {
 #else
 auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
@@ -780,7 +820,10 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
 #ifdef AURORA_UEFI_SERVICE_BUDGET
     initialize_service_timer();
 #endif
-#ifdef AURORA_UEFI_IPC
+#ifdef AURORA_OWNED_TEXT
+    run_owned_text(producer_pool);
+    return true;
+#elif defined(AURORA_UEFI_IPC)
 #ifdef AURORA_UEFI_DISPATCH
 #ifdef AURORA_UEFI_USER_BUDGET
 #ifdef AURORA_USER_RESUME
@@ -805,93 +848,93 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
     return true;
 #else
 #ifdef AURORA_RUNTIME_MULTIPAGE
-    // A short construction must fail completeness and take the real retirement path.
-    for (std::size_t prefix = 0; prefix < L::max_code_pages; ++prefix) {
-        require(!create(0, prefix) && frames.used() == 0 && !domains[0].handle && !domains[0].tables &&
-                    !domains[0].contract,
-                "multipage partial mapping cleanup");
-        for (std::size_t page = 0; page < L::table_pages; ++page)
-            require(zero(arena + L::table_offset(0) + page * L::page_size), "multipage cleared table pool");
-    }
-    Serial::text("AURORA_UEFI_MULTIPAGE_ROLLBACK_OK: prefixes=3\r\n");
+// A short construction must fail completeness and take the real retirement path.
+for (std::size_t prefix = 0; prefix < L::max_code_pages; ++prefix) {
+    require(!create(0, prefix) && frames.used() == 0 && !domains[0].handle && !domains[0].tables &&
+                !domains[0].contract,
+            "multipage partial mapping cleanup");
+    for (std::size_t page = 0; page < L::table_pages; ++page)
+        require(zero(arena + L::table_offset(0) + page * L::page_size), "multipage cleared table pool");
+}
+Serial::text("AURORA_UEFI_MULTIPAGE_ROLLBACK_OK: prefixes=3\r\n");
 #endif
-    const auto first = create(0), second = create(1);
-    require(first && second && *first == 0 && *second == 1, "two owned domains");
-    const auto original = *frames.address(*domains[0].stacks[0]);
-    execute(0, ProgramEvent::returned);
+const auto first = create(0), second = create(1);
+require(first && second && *first == 0 && *second == 1, "two owned domains");
+const auto original = *frames.address(*domains[0].stacks[0]);
+execute(0, ProgramEvent::returned);
 #ifdef AURORA_UEFI_PINS
-    pin_request();
+pin_request();
 #endif
-    execute(1, ProgramEvent::bounds);
+execute(1, ProgramEvent::bounds);
 #ifdef AURORA_UEFI_PINS
-    pin_fault_returned();
+pin_fault_returned();
 #endif
-    execute(0, ProgramEvent::returned);
-    const auto stale = *domains[0].handle;
+execute(0, ProgramEvent::returned);
+const auto stale = *domains[0].handle;
 #ifdef AURORA_PIN_FAULT
-    const auto old_service = *domains[1].handle;
+const auto old_service = *domains[1].handle;
 #endif
-    for (auto &domain : domains)
-        for (auto &lease : domain.stacks)
-            fill(*frames.address(*lease), 0xa5);
-    require(retire(0) && retire(1)
+for (auto &domain : domains)
+    for (auto &lease : domain.stacks)
+        fill(*frames.address(*lease), 0xa5);
+require(retire(0) && retire(1)
 #ifdef AURORA_UEFI_PINS
-                && pin_retired()
+            && pin_retired()
 #endif
-                && frames.used() == pin_retained() && !registry.index(stale) && !registry.activate(stale) &&
-                !registry.destroy(stale),
-            "retire/stale authority");
-    const auto reused = create(
+            && frames.used() == pin_retained() && !registry.index(stale) && !registry.activate(stale) &&
+            !registry.destroy(stale),
+        "retire/stale authority");
+const auto reused = create(
 #ifdef AURORA_PIN_FAULT
-        1
+    1
 #else
-        0
+    0
 #endif
-    );
-    require(reused && *reused == 0 && *frames.address(*domains[0].stacks[0]) == original, "frame reuse");
-    for (const auto &lease : domains[0].stacks)
-        require(zero(*frames.address(*lease)), "reused frame scrub");
-    Serial::text("AURORA_UEFI_DOMAIN_REUSE_OK: frame=");
-    Serial::number(original);
-    Serial::text("\r\n");
+);
+require(reused && *reused == 0 && *frames.address(*domains[0].stacks[0]) == original, "frame reuse");
+for (const auto &lease : domains[0].stacks)
+    require(zero(*frames.address(*lease)), "reused frame scrub");
+Serial::text("AURORA_UEFI_DOMAIN_REUSE_OK: frame=");
+Serial::number(original);
+Serial::text("\r\n");
 #ifdef AURORA_PIN_FAULT
-    const auto restarted = create(0);
-    require(restarted && *restarted == 1, "same service slot restart");
-    execute(1, ProgramEvent::returned);
-    pin_reborn(old_service);
-    require(retire(1), "restarted service retirement");
+const auto restarted = create(0);
+require(restarted && *restarted == 1, "same service slot restart");
+execute(1, ProgramEvent::returned);
+pin_reborn(old_service);
+require(retire(1), "restarted service retirement");
 #else
-    execute(0, ProgramEvent::returned);
+execute(0, ProgramEvent::returned);
 #ifdef AURORA_UEFI_PINS
-    pin_reborn(stale);
+pin_reborn(stale);
 #endif
 #endif
-    require(retire(0) && frames.used() == pin_retained(), "final retirement");
-    std::array<std::optional<memory::PageLease>, 14> reserved{};
-    for (std::size_t i = 0; i < 14 - pin_retained(); ++i) {
-        auto acquired = frames.acquire();
-        require(acquired.has_value(), "rollback reservation");
-        reserved[i].emplace(std::move(*acquired));
-    }
-    fill(arena + L::stack_frames_offset + 14 * 4096, 0xa5);
-    fill(arena + L::stack_frames_offset + 15 * 4096, 0xa5);
-    require(!create(0) && frames.used() == 14 && zero(arena + L::stack_frames_offset + 14 * 4096) &&
-                zero(arena + L::stack_frames_offset + 15 * 4096),
-            "partial creation rollback");
-    for (auto &lease : reserved)
-        if (lease)
-            require(frames.release(*lease), "reservation release");
-    require(root() == kernel_root && frames.used() == pin_retained() && active == L::domain_count && !program.running(),
-            "final root/lease state");
+require(retire(0) && frames.used() == pin_retained(), "final retirement");
+std::array<std::optional<memory::PageLease>, 14> reserved{};
+for (std::size_t i = 0; i < 14 - pin_retained(); ++i) {
+    auto acquired = frames.acquire();
+    require(acquired.has_value(), "rollback reservation");
+    reserved[i].emplace(std::move(*acquired));
+}
+fill(arena + L::stack_frames_offset + 14 * 4096, 0xa5);
+fill(arena + L::stack_frames_offset + 15 * 4096, 0xa5);
+require(!create(0) && frames.used() == 14 && zero(arena + L::stack_frames_offset + 14 * 4096) &&
+            zero(arena + L::stack_frames_offset + 15 * 4096),
+        "partial creation rollback");
+for (auto &lease : reserved)
+    if (lease)
+        require(frames.release(*lease), "reservation release");
+require(root() == kernel_root && frames.used() == pin_retained() && active == L::domain_count && !program.running(),
+        "final root/lease state");
 #ifdef AURORA_UEFI_PINS
-    pin_final();
-    Serial::text("AURORA_UEFI_DOMAIN_CLEANUP_OK: used=");
-    Serial::number(pin_retained());
-    Serial::text("\r\nAURORA_UEFI_RUNTIME_OK\r\n");
+pin_final();
+Serial::text("AURORA_UEFI_DOMAIN_CLEANUP_OK: used=");
+Serial::number(pin_retained());
+Serial::text("\r\nAURORA_UEFI_RUNTIME_OK\r\n");
 #else
-    Serial::text("AURORA_UEFI_DOMAIN_CLEANUP_OK: used=0\r\nAURORA_UEFI_RUNTIME_OK\r\n");
+Serial::text("AURORA_UEFI_DOMAIN_CLEANUP_OK: used=0\r\nAURORA_UEFI_RUNTIME_OK\r\n");
 #endif
-    return true;
+return true;
 #endif
 }
 } // namespace aurora::uefi

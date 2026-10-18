@@ -75,8 +75,10 @@ public:
     [[nodiscard]] static constexpr auto image_limit(std::size_t image) -> std::uint64_t {
         if (image >= image_count)
             return 0;
-#ifdef AURORA_RUNTIME_MULTIPAGE
+#if defined(AURORA_RUNTIME_MULTIPAGE)
         return image_slot_bytes;
+#elif defined(AURORA_OWNED_TEXT)
+        return image == 0 ? image_slot_bytes : page_size;
 #endif
         return page_size;
     }

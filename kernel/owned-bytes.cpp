@@ -115,6 +115,32 @@ void Region::release_pages(Allocation &allocation, Allocation *transaction_peer)
     allocation.count = 0;
 }
 
+void Region::release_live(Allocation &allocation) noexcept {
+    release_pages(allocation);
+    metrics_.used -= static_cast<std::uint64_t>(allocation.length);
+    --metrics_.live_allocations;
+    ++metrics_.releases;
+    metrics_.last_released_id = allocation.id;
+    allocation.id = 0;
+    allocation.length = 0;
+    allocation.state = State::empty;
+}
+
+bool Region::revoke_quiescent() noexcept {
+    if (!open_)
+        return !faulted_;
+    if (faulted_)
+        return false;
+    // A synchronous operation must have completed before this boundary.
+    for (const auto &record : allocations_)
+        if (record.state != State::empty && record.state != State::live)
+            return false;
+    for (auto &record : allocations_)
+        if (record.state == State::live)
+            release_live(record);
+    return close();
+}
+
 bool Region::open(memory::PhysicalPages &pool,
                   std::span<std::byte> backing,
                   std::uint64_t base,
@@ -517,14 +543,7 @@ public:
             *owner = NativeOwner{};
             return;
         }
-        target->release_pages(*record);
-        target->metrics_.used -= static_cast<std::uint64_t>(record->length);
-        --target->metrics_.live_allocations;
-        ++target->metrics_.releases;
-        target->metrics_.last_released_id = record->id;
-        record->id = 0;
-        record->length = 0;
-        record->state = Region::State::empty;
+        target->release_live(*record);
         *owner = NativeOwner{};
     }
 };

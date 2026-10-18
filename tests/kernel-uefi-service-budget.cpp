@@ -570,10 +570,17 @@ auto main() -> int {
               !ServiceContext::capture_call(call_words, frame, authority, 0) &&
               !ServiceContext::capture_call(call_words, frame, authority, call_pc + 1),
           "call vector and exact site");
+    check(ServiceContext::capture_bytes(call_words, frame, authority, call_pc).has_value(),
+          "byte stub exact register frame");
+    check(!ServiceContext::capture_bytes(original, frame, authority, call_pc) &&
+              !ServiceContext::capture_bytes(call_words, frame, authority, 0) &&
+              !ServiceContext::capture_bytes(call_words, frame, authority, call_pc + 1),
+          "byte entry keeps terminal and exact site predicates closed");
     for (const auto index : {16U, 18U, 20U, 21U}) {
         auto hostile = call_words;
         hostile[index] ^= 1;
         check(!ServiceContext::capture_call(hostile, frame, authority, call_pc), "call rejects malformed frame");
+        check(!ServiceContext::capture_bytes(hostile, frame, authority, call_pc), "bytes reject malformed frame");
     }
     check(!ServiceContext::capture_call(call_words, frame + 1, authority, call_pc), "call rejects unaligned frame");
     for (unsigned index = 0; index < ServiceContext::word_count; ++index) {

@@ -29,7 +29,254 @@ STACK = 0x10000200000
 SUFFIX = "AURORA_UEFI_LANGUAGE_OK: value=42\nAURORA_UEFI_OK\n"
 
 
+def validate_owned_text(status, text, metadata, mode):
+    denied = mode != "runtime-owned-text"
+    need(type(status) is int and status == (35 if denied else 33), "Owned text exact exit")
+    need(type(metadata) is dict and set(metadata) == {"clean", "bounds"}, "Owned text exact image inventory")
+    keys = {
+        "entry",
+        "size",
+        "return_pc",
+        "bounds_pc",
+        "overflow_pc",
+        "division_zero_pc",
+        "shift_count_pc",
+        "probe_offset",
+        "probe_pc",
+    }
+    operations = ("allocate", "borrow_length", "at", "set", "resize", "drop")
+    extra = {"bytes_" + name + "_pc" for name in operations} | {"user_stack", "compiled_begin", "compiled_end"}
+    for index, name in enumerate(("clean", "bounds")):
+        image = metadata[name]
+        need(
+            type(image) is dict
+            and set(image) == keys | (extra if index == 0 else set())
+            and all(type(value) is int and 0 <= value < 1 << 64 for value in image.values()),
+            "Exact owned text metadata",
+        )
+        base = BASE + index * 16384
+        need(
+            image["entry"] == base and (8192 < image["size"] <= 12288 if index == 0 else 4 <= image["size"] <= 4096),
+            "Owned text image bounds",
+        )
+        sites = [image[key] for key in ("return_pc", "bounds_pc", "overflow_pc", "division_zero_pc", "shift_count_pc")]
+        need(
+            all(sites[:3])
+            and len(set(pc for pc in sites if pc)) == len([pc for pc in sites if pc])
+            and all(pc == 0 or base <= pc <= base + image["size"] - 2 for pc in sites),
+            "Owned text exact fault sites",
+        )
+        need(image["probe_offset"] == image["probe_pc"] == 0, "No owned text probe pointers")
+    image = metadata["clean"]
+    sites = {image["bytes_" + name + "_pc"] for name in operations}
+    need(
+        len(sites) == 6
+        and all(BASE <= pc < BASE + image["size"] for pc in sites)
+        and 0 < image["user_stack"] <= 15360
+        and BASE <= image["compiled_begin"] < image["compiled_end"] <= BASE + image["size"],
+        "Owned text linked stack and six byte sites",
+    )
+    owned = re.findall(r"AURORA_UEFI_OWNERSHIP_OK: arena=(\d+) bytes=1048576 descriptors=\d+", text)
+    need(len(owned) == 1, "One owned arena")
+    arena = int(owned[0])
+    kernel, domain = arena + 0x11000, arena + 0x90000
+    ready = re.findall(
+        r"AURORA_UEFI_TIMER_READY: physical=4276092928 virtual=18446620928407240704 id=0 root=(\d+)", text
+    )
+    need(ready == [str(kernel)] and text.count("AURORA_UEFI_TIMER_READY:") == 1, "Owned text admitted timer root")
+    if denied:
+        reasons = {
+            "runtime-owned-text-site": "text exact operation site",
+            "runtime-owned-text-region": "text private region binding",
+            "runtime-owned-text-stale": "owned text allocator invariant",
+        }
+        need(
+            mode in reasons and text.endswith("AURORA_UEFI_RUNTIME_FAIL: " + reasons[mode] + "\n"),
+            "Exact hostile denial",
+        )
+        need(
+            text.count("AURORA_UEFI_RUNTIME_FAIL:") == 1
+            and "AURORA_OWNED_TEXT_CASE:" not in text
+            and "AURORA_OWNED_TEXT_OK" not in text
+            and "AURORA_UEFI_TIMER_QUIET:" not in text,
+            "No false cleanup on fail-stop",
+        )
+        arm = f"AURORA_UEFI_TIMER_ARM: epoch=1 budget=128 root={domain}\n"
+        need(text.count("AURORA_UEFI_TIMER_ARM:") == 1 and arm in text, "Denial original budget")
+        events = list(
+            re.finditer(
+                r"AURORA_UEFI_DOMAIN_EVENT: vector=(\d+) error=(\d+) pc=(\d+) "
+                r"cpl=(\d+) root=(\d+) frame=(\d+) cr2=(\d+)\n",
+                text,
+            )
+        )
+        need(events and len(events) == text.count("AURORA_UEFI_DOMAIN_EVENT:"), "Denial trap evidence")
+        ticks = 0
+        for event in events:
+            vector, error, pc, cpl, root, frame, cr2 = map(int, event.groups())
+            need(
+                vector in (64, 130)
+                and error == cr2 == 0
+                and (pc in sites if vector == 130 else BASE <= pc < BASE + image["size"])
+                and cpl == 3
+                and root == domain
+                and frame % 8 == 0
+                and arena + 0x84000 <= frame <= arena + 0x88000 - 176
+                and text.index(arm) < event.start(),
+                "Authenticated denial trap",
+            )
+            if vector == 64:
+                ticks += 1
+                tick = re.match(
+                    r"AURORA_UEFI_TIMER_TICK: epoch=(\d+) used=(\d+) remaining=(\d+) pc=(\d+) flags=(\d+)\n",
+                    text[event.end() :],
+                )
+                need(tick is not None, "Denial hardware debit")
+                epoch, used, remaining, tick_pc, flags = map(int, tick.groups())
+                need(
+                    (epoch, used, remaining, tick_pc) == (1, ticks, 128 - ticks, pc)
+                    and ticks < 128
+                    and flags & 0x202 == 0x202
+                    and flags & ~0x10ED7 == 0,
+                    "Denial conserved budget",
+                )
+        need(text.count("AURORA_UEFI_TIMER_TICK:") == ticks, "No unmatched denial debit")
+        final_operation = "set" if mode.endswith("stale") else "allocate"
+        need(int(events[-1][3]) == image["bytes_" + final_operation + "_pc"], "Exact denied operation")
+        need(int(events[-1][1]) == 130 and SUFFIX not in text, "No forged denial completion")
+        if mode.endswith("stale"):
+            resize = [event for event in events if int(event[1]) == 130 and int(event[3]) == image["bytes_resize_pc"]]
+            need(
+                resize
+                and resize[-1].start()
+                < events[-1].start()
+                < text.index("AURORA_OWNED_TEXT_STALE: committed-resize")
+                < text.index("AURORA_OWNED_TEXT_FAULT: reason=1")
+                < text.index("AURORA_UEFI_RUNTIME_FAIL:"),
+                "Ordered committed stale replay",
+            )
+            need(text.count("AURORA_OWNED_TEXT_FAULT:") == 1, "Single allocator denial")
+            need(
+                text.count("AURORA_OWNED_TEXT_STALE: committed-resize") == 1
+                and text.count("AURORA_OWNED_TEXT_FAULT: reason=1") == 1,
+                "Actual stale descriptor after committed resize",
+            )
+        else:
+            need("AURORA_OWNED_TEXT_FAULT:" not in text, "Binding denied before allocator")
+        print("PASS: protected owned text hostile authority denied: " + mode)
+        return
+    need(
+        text.endswith(SUFFIX)
+        and not any(word in text for word in ("_FAIL:", "AURORA_OWNED_TEXT_FAULT:", "AURORA_OWNED_TEXT_STALE:")),
+        "Owned text clean firmware completion",
+    )
+    patterns = {
+        "ARM": r"AURORA_UEFI_TIMER_ARM: epoch=(\d+) budget=(\d+) root=(\d+)",
+        "EVENT": r"AURORA_UEFI_DOMAIN_EVENT: vector=(\d+) error=(\d+) pc=(\d+) "
+        r"cpl=(\d+) root=(\d+) frame=(\d+) cr2=(\d+)",
+        "TICK": r"AURORA_UEFI_TIMER_TICK: epoch=(\d+) used=(\d+) remaining=(\d+) pc=(\d+) flags=(\d+)",
+        "DRAIN": r"AURORA_UEFI_TIMER_DRAIN: epoch=(\d+) root=(\d+) ss=(\d+)",
+        "QUIET": r"AURORA_UEFI_TIMER_QUIET: epoch=(\d+) ticks=(\d+) drains=(\d+) "
+        r"compiled=(\d+) context=(\d+) root=(\d+)",
+        "CASE": r"AURORA_OWNED_TEXT_CASE: scalar=(\d+) abandoned=(\d+) value=(\d+) "
+        r"live=(\d+) peak=(\d+) ticks=(\d+) used=0 pages=0",
+        "OK": r"AURORA_OWNED_TEXT_OK",
+    }
+    records = []
+    for line in text.splitlines():
+        if line.startswith("AURORA_UEFI_TIMER_READY:"):
+            continue
+        if line.startswith(("AURORA_UEFI_TIMER_", "AURORA_UEFI_DOMAIN_", "AURORA_UEFI_RUNTIME_", "AURORA_OWNED_TEXT_")):
+            matches = [(kind, re.fullmatch(pattern, line)) for kind, pattern in patterns.items()]
+            matches = [(kind, tuple(map(int, match.groups()))) for kind, match in matches if match]
+            need(len(matches) == 1, "Unknown or malformed owned text runtime record")
+            records.append(matches[0])
+    cursor, seen_sites = 0, set()
+    cases = ((128578, 0, 70), (55296, 0, 0), (1114114, 0, 65), (1114112, 1, None), (1114113, 1, None))
+    for epoch, (scalar, abandoned, value) in enumerate(cases, 1):
+        need(
+            cursor < len(records) and records[cursor] == ("ARM", (epoch, 128, domain)),
+            "One original budget per incarnation",
+        )
+        cursor += 1
+        ticks, drains, compiled, terminal = 0, 0, 0, False
+        while cursor < len(records) and records[cursor][0] == "EVENT":
+            vector, error, pc, cpl, root, frame, cr2 = records[cursor][1]
+            cursor += 1
+            need(error == 0 and cr2 == 0 and frame % 8 == 0, "Exact owned text exception state")
+            if cpl == 0:
+                need(
+                    terminal and vector == 64 and root == kernel and arena + 0x44000 <= frame <= arena + 0x48000 - 176,
+                    "Only quiescent pending IRQ may enter from kernel",
+                )
+                need(
+                    cursor < len(records) and records[cursor] == ("DRAIN", (epoch, kernel, 16)),
+                    "Authenticated pending IRQ drain",
+                )
+                cursor += 1
+                drains += 1
+                continue
+            need(
+                not terminal and cpl == 3 and root == domain and arena + 0x84000 <= frame <= arena + 0x88000 - 176,
+                "Live owned domain exception authority",
+            )
+            if vector == 130:
+                need(pc in sites, "Exact byte operation PC")
+                seen_sites.add(pc)
+            elif vector == 64:
+                need(
+                    BASE <= pc < BASE + image["size"] and cursor < len(records) and records[cursor][0] == "TICK",
+                    "Hardware timer debit",
+                )
+                tick_epoch, used, remaining, tick_pc, flags = records[cursor][1]
+                cursor += 1
+                ticks += 1
+                need(
+                    (tick_epoch, used, remaining, tick_pc) == (epoch, ticks, 128 - ticks, pc)
+                    and ticks <= 128
+                    and flags & 0x202 == 0x202
+                    and flags & ~0x10ED7 == 0,
+                    "Contiguous conserved budget",
+                )
+                compiled += image["compiled_begin"] <= pc < image["compiled_end"]
+                terminal = ticks == 128
+                need(not terminal or scalar == 1114113, "Only deliberate live-owner loop exhausts budget")
+            else:
+                need(
+                    vector == (6 if scalar == 1114112 else 129)
+                    and scalar != 1114113
+                    and pc == image["bounds_pc" if scalar == 1114112 else "return_pc"],
+                    "Exact source terminal site",
+                )
+                terminal = True
+        need(
+            terminal
+            and cursor < len(records)
+            and records[cursor] == ("QUIET", (epoch, ticks, drains, compiled, 0, kernel)),
+            "Drained terminal with exact cumulative budget",
+        )
+        cursor += 1
+        need(cursor < len(records) and records[cursor][0] == "CASE", "Reclamation follows quiescence")
+        actual_scalar, actual_abandoned, actual_value, live, peak, actual_ticks = records[cursor][1]
+        cursor += 1
+        need(
+            (actual_scalar, actual_abandoned, actual_ticks) == (scalar, abandoned, ticks)
+            and (value is None or actual_value == value)
+            and live == abandoned
+            and 1 <= peak <= 64
+            and (scalar != 1114114 or peak == 64),
+            "Source result, quota rollback and abandoned owner evidence",
+        )
+    need(
+        records[cursor:] == [("OK", ())] and seen_sites == sites,
+        "Exact completion after all six actual byte operations",
+    )
+    print("PASS: protected Utf8Text returns, quota rollback, fault/budget and quiescent reclamation")
+
+
 def validate(status, text, mode, metadata, *, retained=0, final_slot=0):
+    if mode.startswith("runtime-owned-text"):
+        return validate_owned_text(status, text, metadata, mode)
     need(type(retained) is int and retained in (0, 2), "Invalid retained pin count")
     need(type(final_slot) is int and final_slot in (0, 1) and (final_slot == 0 or retained == 2), "Invalid final slot")
     need(mode in MODES, "Unknown runtime mode")
@@ -309,6 +556,132 @@ def validate(status, text, mode, metadata, *, retained=0, final_slot=0):
             need("AURORA_UEFI_RUNTIME_FAIL: " + reason in text, "Wrong boundary rejection")
 
 
+def owned_text_controls(prefix, baseline):
+    metadata = copy.deepcopy(baseline)
+    for image in metadata.values():
+        image["probe_pc"] = 0
+    image = metadata["clean"]
+    image.update(size=11789, user_stack=2008, compiled_begin=BASE + 6000, compiled_end=BASE + 9000)
+    operations = ("allocate", "borrow_length", "at", "set", "resize", "drop")
+    for index, name in enumerate(operations):
+        image["bytes_" + name + "_pc"] = BASE + 11500 + index * 32
+    arena = 0x1000000
+    kernel, domain, frame = arena + 0x11000, arena + 0x90000, arena + 0x88000 - 176
+    text = prefix + f"AURORA_UEFI_TIMER_READY: physical=4276092928 virtual=18446620928407240704 id=0 root={kernel}\n"
+
+    def event(vector, pc):
+        return f"AURORA_UEFI_DOMAIN_EVENT: vector={vector} error=0 pc={pc} cpl=3 root={domain} frame={frame} cr2=0\n"
+
+    cases = ((128578, 0, 70, 5), (55296, 0, 0, 1), (1114114, 0, 65, 64), (1114112, 1, 0, 1), (1114113, 1, 0, 1))
+    for epoch, (scalar, abandoned, value, peak) in enumerate(cases, 1):
+        text += f"AURORA_UEFI_TIMER_ARM: epoch={epoch} budget=128 root={domain}\n"
+        if epoch == 1:
+            for name in operations:
+                text += event(130, image["bytes_" + name + "_pc"])
+        ticks = 128 if epoch == 5 else 0
+        for used in range(1, ticks + 1):
+            text += event(64, BASE + 6100)
+            text += (
+                f"AURORA_UEFI_TIMER_TICK: epoch={epoch} used={used} remaining={128 - used} pc={BASE + 6100} flags=514\n"
+            )
+        if not ticks:
+            text += event(6 if abandoned else 129, image["bounds_pc" if abandoned else "return_pc"])
+        text += (
+            f"AURORA_UEFI_TIMER_QUIET: epoch={epoch} ticks={ticks} drains=0 compiled={ticks} context=0 root={kernel}\n"
+        )
+        text += (
+            f"AURORA_OWNED_TEXT_CASE: scalar={scalar} abandoned={abandoned} "
+            f"value={value} live={abandoned} peak={peak} ticks={ticks} used=0 pages=0\n"
+        )
+    text += "AURORA_OWNED_TEXT_OK\n" + SUFFIX
+    validate_owned_text(33, text, metadata, "runtime-owned-text")
+    mutants = []
+    for old, new in (
+        ("epoch=2 budget=128", "epoch=1 budget=128"),
+        ("budget=128", "budget=129"),
+        ("epoch=5 used=2 remaining=126", "epoch=5 used=1 remaining=127"),
+        ("epoch=5 used=128 remaining=0", "epoch=5 used=128 remaining=1"),
+        ("cpl=3", "cpl=0"),
+        ("vector=129 error=0", "vector=129 error=1"),
+        ("vector=129", "vector=255"),
+        ("live=1", "live=0"),
+        ("peak=64", "peak=65"),
+        ("value=70", "value=69"),
+        (f"root={domain}", f"root={domain + 4096}"),
+    ):
+        mutants.append(text.replace(old, new, 1))
+    tick = next(line + "\n" for line in text.splitlines() if "epoch=5 used=2 " in line)
+    mutants += [text.replace(tick, "", 1), text.replace(tick, tick + tick, 1)]
+    terminal = event(129, image["return_pc"])
+    mutants.append(text.replace(terminal, "", 1))
+    lines = text.splitlines(keepends=True)
+    quiet = next(i for i, line in enumerate(lines) if line.startswith("AURORA_UEFI_TIMER_QUIET:"))
+    lines[quiet], lines[quiet + 1] = lines[quiet + 1], lines[quiet]
+    mutants.append("".join(lines))
+    mutants.append(text.replace("AURORA_OWNED_TEXT_OK", "AURORA_UEFI_TIMER_UNKNOWN\nAURORA_OWNED_TEXT_OK"))
+    for changed in mutants:
+        try:
+            validate_owned_text(33, changed, metadata, "runtime-owned-text")
+        except ValueError:
+            pass
+        else:
+            raise RuntimeError("Malformed owned text transcript accepted")
+    for field, value in (("entry", BASE + 1), ("size", 12289), ("user_stack", 15361), ("bytes_at_pc", BASE - 1)):
+        changed = copy.deepcopy(metadata)
+        changed["clean"][field] = value
+        try:
+            validate_owned_text(33, text, changed, "runtime-owned-text")
+        except ValueError:
+            pass
+        else:
+            raise RuntimeError("Malformed owned text metadata accepted")
+    denial_count = 0
+    for mode, reason in (
+        ("site", "text exact operation site"),
+        ("region", "text private region binding"),
+        ("stale", "owned text allocator invariant"),
+    ):
+        denied = text[: text.index("AURORA_UEFI_TIMER_ARM:")]
+        arm = f"AURORA_UEFI_TIMER_ARM: epoch=1 budget=128 root={domain}\n"
+        denied += arm + event(130, image["bytes_allocate_pc"])
+        if mode == "stale":
+            denied += event(130, image["bytes_resize_pc"]) + event(130, image["bytes_set_pc"])
+            denied += "AURORA_OWNED_TEXT_STALE: committed-resize\nAURORA_OWNED_TEXT_FAULT: reason=1\n"
+        failure = "AURORA_UEFI_RUNTIME_FAIL: " + reason + "\n"
+        denied += failure
+        validate_owned_text(35, denied, metadata, "runtime-owned-text-" + mode)
+        changes = [
+            denied.replace(arm, ""),
+            re.sub(r"AURORA_UEFI_DOMAIN_EVENT:[^\n]*\n", "", denied),
+            denied.replace("cpl=3", "cpl=0", 1),
+            denied.replace(f"cpl=3 root={domain}", f"cpl=3 root={kernel}", 1),
+            denied + failure,
+            denied.replace(failure, SUFFIX + failure),
+        ]
+        tick = f"AURORA_UEFI_TIMER_TICK: epoch=1 used=1 remaining=127 pc={BASE + 6100} flags=514\n"
+        with_tick = denied.replace(arm, arm + event(64, BASE + 6100) + tick)
+        validate_owned_text(35, with_tick, metadata, "runtime-owned-text-" + mode)
+        changes += [
+            with_tick.replace(tick, ""),
+            with_tick.replace("used=1 remaining=127", "used=1 remaining=128"),
+            with_tick.replace(tick, tick + tick),
+        ]
+        if mode == "stale":
+            fake_resize = event(64, image["bytes_resize_pc"]) + tick.replace(
+                str(BASE + 6100), str(image["bytes_resize_pc"])
+            )
+            changes.append(denied.replace(event(130, image["bytes_resize_pc"]), fake_resize))
+        for changed in changes:
+            try:
+                validate_owned_text(35, changed, metadata, "runtime-owned-text-" + mode)
+            except ValueError:
+                pass
+            else:
+                raise RuntimeError("Malformed owned text denial accepted")
+        denial_count += len(changes)
+    print(f"PASS: owned text transcript 7 positive, {len(mutants) + 4 + denial_count} negative controls")
+
+
 def self_test():
     arena = 0x1000000
     kernel = arena + 0x11000
@@ -342,6 +715,7 @@ def self_test():
         )
     cases = {}
     original_metadata = copy.deepcopy(metadata)
+    owned_text_controls(prefix, original_metadata)
     for mode in MODES:
         metadata = copy.deepcopy(original_metadata)
         if mode == "runtime-multipage":

@@ -56,6 +56,21 @@ UEFI_FAMILIES = [
     (["-DAURORA_UEFI_OWNED_BYTES"], {"owned-bytes": []}),
     (
         [
+            "-DAURORA_UEFI_ACPI",
+            "-DAURORA_UEFI_PCI",
+            "-DAURORA_UEFI_RUNTIME",
+            "-DAURORA_UEFI_SERVICE_BUDGET",
+            "-DAURORA_OWNED_TEXT",
+        ],
+        {
+            "runtime-owned-text": [],
+            "runtime-owned-text-site": ["-DAURORA_TEXT_SITE"],
+            "runtime-owned-text-region": ["-DAURORA_TEXT_REGION"],
+            "runtime-owned-text-stale": ["-DAURORA_TEXT_STALE"],
+        },
+    ),
+    (
+        [
             "-DAURORA_UEFI_SNAPSHOT",
             "-DAURORA_UEFI_ACPI",
             "-DAURORA_UEFI_PCI",
@@ -612,7 +627,8 @@ def bios_profile(mode, controls):
 def uefi_profile(mode, flags):
     runtime = mode.startswith(("runtime", "ipc", "budget", "dispatch", "user-", "program-", "snapshot"))
     ipc = mode.startswith(("ipc", "budget", "dispatch", "user-", "program-", "snapshot"))
-    budget = mode.startswith(("budget", "dispatch", "user-", "program-"))
+    owned_text = mode.startswith("runtime-owned-text")
+    budget = mode.startswith(("budget", "dispatch", "user-", "program-")) or owned_text
     file_call = mode.startswith("program-file-call")
     blocking_call = mode.startswith("user-call") or file_call
     dispatcher = mode.startswith(("dispatch", "user-")) and not blocking_call
@@ -627,6 +643,7 @@ def uefi_profile(mode, flags):
     if mode.startswith("runtime-") and mode[8:] in (
         "span",
         "multipage",
+        "owned-text",
         "code",
         "stack",
         "kernel",
@@ -639,6 +656,8 @@ def uefi_profile(mode, flags):
         "sysenter",
     ):
         user_mode = mode[8:]
+    if owned_text:
+        user_mode = "owned-text"
     if snapshot and mode in ("snapshot-owner", "snapshot-reply-reserved", "snapshot-reply-byte"):
         user_mode = mode[9:]
     if program and mode in ("program-owner", "program-ordinal", "program-unknown", "program-transaction"):
@@ -654,7 +673,7 @@ def uefi_profile(mode, flags):
     user_options = [
         option
         for enabled, option in (
-            (budget, "--service-budget"),
+            (budget and not owned_text, "--service-budget"),
             (dispatcher, "--dispatcher"),
             (user_budget, "--user-budget"),
             (program, "--program-console"),
@@ -679,6 +698,13 @@ def uefi_profile(mode, flags):
         if runtime
         else {}
     )
+    if owned_text:
+        users["clean"].update(
+            source="tests/kernel-programs/owned-text.au",
+            entry="kernel/uefi/owned-text-entry.S",
+            combined=True,
+            max_pages=3,
+        )
     cpp = {name: "kernel/uefi/" + name + ".cpp" for name in ("payload", "acpi", "pci", "runtime")}
     assembly = {
         name: dict(source="kernel/uefi/" + name + ".S", flags=["--64"])
@@ -689,6 +715,8 @@ def uefi_profile(mode, flags):
         runtime_flags = (["--defsym", "AURORA_IPC=1"] if ipc else []) + (
             ["--defsym", "AURORA_SERVICE_BUDGET=1"] if budget else []
         )
+        if owned_text:
+            runtime_flags += ["--defsym", "AURORA_OWNED_TEXT=1"]
         if mode == "user-resume" or blocking_call:
             runtime_flags += ["--defsym", "AURORA_USER_RESUME=1"]
         if blocking_call:
@@ -697,7 +725,8 @@ def uefi_profile(mode, flags):
         assembly["runtime-exceptions"] = dict(
             source="kernel/exceptions.S",
             flags=["--64", "--defsym", "AURORA_RELATIVE_ONLY=1"]
-            + (["--defsym", "AURORA_BLOCKING_CALL=1"] if blocking_call else []),
+            + (["--defsym", "AURORA_BLOCKING_CALL=1"] if blocking_call else [])
+            + (["--defsym", "AURORA_OWNED_TEXT=1"] if owned_text else []),
         )
         runtime_objects = ["runtime-entry", "runtime-exceptions"]
     console_objects = []
@@ -712,6 +741,9 @@ def uefi_profile(mode, flags):
         name = "snapshot" if snapshot or blocking_call else "owned-bytes-profile"
         cpp[name] = "kernel/uefi/" + ("snapshot" if snapshot or blocking_call else "owned-bytes") + ".cpp"
         owned_objects = ["owned-bytes-runtime", name]
+    if owned_text:
+        cpp["owned-bytes-runtime"] = "kernel/owned-bytes.cpp"
+        owned_objects = ["owned-bytes-runtime"]
     if framebuffer:
         cpp["framebuffer"] = "kernel/uefi/framebuffer.cpp"
     if event and mode != "iommu-event-observe":
@@ -732,6 +764,8 @@ def uefi_profile(mode, flags):
     image_options = ["--ipc-policy"] if ipc else []
     if mode == "runtime-multipage":
         image_options += ["--multipage"]
+    if owned_text:
+        image_options += ["--owned-text"]
     if mode == "budget-noapic":
         image_options += ["--budget-noapic"]
     if snapshot or (blocking_call and not file_call):

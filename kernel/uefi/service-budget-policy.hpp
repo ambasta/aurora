@@ -168,6 +168,18 @@ public:
             copy[i] = words[i];
         return ServiceContext{copy, frame, contract};
     }
+    // Separate allocator entry classification, with an admitted exact stub PC.
+    [[nodiscard]] static auto capture_bytes(std::span<const std::uint64_t> words,
+                                            std::uint64_t frame,
+                                            const user::ProgramContract &contract,
+                                            std::uint64_t operation_pc) -> std::optional<ServiceContext> {
+        if (!operation_pc || !origin_valid(words, frame, contract, operation_pc))
+            return std::nullopt;
+        std::array<std::uint64_t, word_count> copy{};
+        for (std::size_t i = 0; i < word_count; ++i)
+            copy[i] = words[i];
+        return ServiceContext{copy, frame, contract};
+    }
     // Dedicated call capture never broadens timer or terminal classification.
     [[nodiscard]] static auto capture_call(std::span<const std::uint64_t> words,
                                            std::uint64_t frame,

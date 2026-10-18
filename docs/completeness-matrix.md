@@ -17,7 +17,11 @@ Self-hosting, final emitter qualification and full kernel migration remain incom
 
 A bounded UEFI multi-page code capability is implemented: an allocation-free
 CRC/UTF-8 consumer uses up to three RX pages with guarded slots; existing image
-allowances and BIOS remain one page. Protected allocation remains incomplete.
+allowances and BIOS remain one page. An opt-in single-domain protected Utf8Text
+consumer uses six register-only byte operations and a private 64-byte Region;
+normal return and admitted fault/budget termination reclaim owners after timer
+quiescence. General protected allocation and arbitrary-fault recovery remain
+incomplete. See [bounded allocation](kernel-owned-bytes.md#protected-utf8text-consumer).
 
 Current gate: original repository check and final-source GCC16 full
 suite, followed by affected image/guest checks. See [development and qualification](developer-test-contract.md).

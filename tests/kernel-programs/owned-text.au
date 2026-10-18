@@ -1,0 +1,46 @@
+module owned_text;
+import std.utf8_text;
+auto aurora_user_main(builtin::ByteRegion region, u64 scalar) -> i64 {
+    builtin::OwnedBytes allocation = region.try_allocate(1);
+    std::Utf8Text text = std::Utf8Text(region, move(allocation));
+    if (!text.ok()) {
+        return -1;
+    }
+    const array<u8, 1> initial = {
+        65u8
+    };
+    const std::Utf8TextStatus initialized = text.try_initialize(borrow_bytes(initial));
+    if (initialized != std::Utf8TextStatus::success) {
+        return -2;
+    }
+    if (scalar == 1114114u64) {
+        while (text.size() < 64) {
+            if (text.try_append_scalar(65u64) != std::Utf8TextStatus::success) {
+                return -4;
+            }
+        }
+        if (text.try_append_scalar(65u64) != std::Utf8TextStatus::allocation_failed || text.size() != 64) {
+            return -5;
+        }
+        const builtin::span<const u8> full = text.bytes();
+        return i64(full.at(0));
+    }
+    if (scalar == 1114112u64) {
+        const builtin::span<const u8> live = text.bytes();
+        return i64(live.at(i64(scalar)));
+    }
+    if (scalar == 1114113u64) {
+        while (true) {
+        }
+    }
+    const std::Utf8TextStatus appended = text.try_append_scalar(scalar);
+    if (appended != std::Utf8TextStatus::success) {
+        const builtin::span<const u8> unchanged = text.bytes();
+        if (text.size() != 1 || unchanged.at(0) != 65u8) {
+            return -3;
+        }
+        return 0;
+    }
+    const builtin::span<const u8> bytes = text.bytes();
+    return text.size() + i64(bytes.at(0));
+}
