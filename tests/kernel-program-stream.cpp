@@ -155,6 +155,7 @@ auto program_input() -> void {
         "cat <name> / upper <name>  Protected read / atomic uppercase replacement\r\n"
         "peek <name>        First byte / EOF / missing (file-call profile only)\r\n"
         "wc <name>          LF lines / words / bytes (file-call profile only)\r\n"
+        "crc <name>         CRC32C over the file (file-call profile only)\r\n"
         "ls / rm <name>     List / remove RAM files\r\nhelp    Show commands\r\n"
         "status  Show console state\r\nexit    Close this QEMU session\r\naurora> "
         "status\r\nstatus: protected Aurora programs; bounded copied data; timer budgets; capacity=64\r\naurora> "
