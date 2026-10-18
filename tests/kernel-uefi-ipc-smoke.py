@@ -59,7 +59,8 @@ def metadata_valid(metadata, mode):
             "Malformed IPC metadata values",
         )
         size = image["size"]
-        need(image["entry"] == base and 4 <= size <= 4096, "IPC image layout widened")
+        call_client = index == 0 and mode in ("user-call", "user-call-pending", "user-call-owner", "user-call-site")
+        need(image["entry"] == base and 4 <= size <= (8192 if call_client else 4096), "IPC image layout widened")
         sites = [image[k] for k in ("return_pc", "bounds_pc", "overflow_pc", "division_zero_pc", "shift_count_pc")]
         present = [pc for pc in sites if pc]
         need(all(sites[:3]) and len(set(present)) == len(present), "IPC sites missing/aliased")
@@ -310,6 +311,25 @@ def self_test():
                 rejected += 1
             else:
                 raise RuntimeError(f"Bad IPC transcript accepted: {mode}")
+    # Only the four closed Call modes widen the caller; service and IPC stay one page.
+    for call_mode in ("user-call", "user-call-pending", "user-call-owner", "user-call-site"):
+        boundary = copy.deepcopy(metadata)
+        boundary["clean"]["size"] = 8192
+        metadata_valid(boundary, call_mode)
+        for name, size, selected in (
+            ("clean", 8193, call_mode),
+            ("bounds", 4097, call_mode),
+            ("clean", 4097, "ipc-fault"),
+        ):
+            changed = copy.deepcopy(boundary)
+            changed["clean"]["size"] = 128
+            changed[name]["size"] = size
+            try:
+                metadata_valid(changed, selected)
+            except ValueError:
+                rejected += 1
+            else:
+                raise RuntimeError("Call-specific image boundary widened")
     print(f"PASS: IPC transcripts {len(MODES)} positive and {rejected} negative cases")
 
 

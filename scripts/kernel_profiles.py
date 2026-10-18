@@ -495,7 +495,7 @@ def user_images(
             source="tests/kernel-programs/" + source + ".au",
             roots=["library"] + (["kernel/policies"] if snapshot or program or blocking_call else []),
             base=0x10000000000 + index * 16384,
-            max_pages=3 if kind == "runtime" and mode == "multipage" else 1,
+            max_pages=3 if kind == "runtime" and mode == "multipage" else 2 if blocking_call and index == 0 else 1,
             entry=entry,
             entry_flags=[value for define in defines for value in ("--defsym", define)],
             combined=((snapshot or program or blocking_call) and index == 1) or (blocking_call and index == 0),

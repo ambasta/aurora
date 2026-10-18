@@ -267,7 +267,8 @@ class GeneratorBoundaries(unittest.TestCase):
                         }
                         and index == 0
                     )
-                    self.assertEqual(user["max_pages"], 3 if enabled or owned_text else 1)
+                    blocking_call = "-DAURORA_BLOCKING_CALL" in recipe["flags"] and index == 0
+                    self.assertEqual(user["max_pages"], 3 if enabled or owned_text else 2 if blocking_call else 1)
                     self.assertEqual(user["base"], 0x10000000000 + index * 16384)
                 else:
                     self.assertNotIn("max_pages", user)

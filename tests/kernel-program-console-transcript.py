@@ -553,4 +553,69 @@ for data in ("", None):
         else:
             raise SystemExit("FAIL: wc oracle accepted changed lifecycle/counts")
 
+    # Same lifecycle, distinct copied CRC result and caller source phase.
+    crc_text = (
+        text.replace("AURORA_WC_BEGIN", "AURORA_CRC_BEGIN")
+        .replace("AURORA_WC_END", "AURORA_CRC_END")
+        .replace("AURORA_WC_TOTAL", "AURORA_CRC_TOTAL")
+        .replace("source=32", "source=48")
+        .replace(module.wc_answer(result) + "\r\n", module.crc_answer(result) + "\r\n")
+    )
+    module.validate_wc(crc_text, [(data, 32)], images, timer, checksum=True)
+    checks += 1
+    for changed in (
+        crc_text.replace("source=48", "source=32"),
+        crc_text.replace("used=1 remaining=127", "used=2 remaining=126", 1),
+        crc_text.replace("AURORA_CRC_END:", "00000000\r\nAURORA_CRC_END:"),
+        crc_text + "00000000\r\n",
+        crc_text.replace("AURORA_CALL_RESUME: epoch=1", "AURORA_CALL_RESUME: epoch=2"),
+    ):
+        try:
+            module.validate_wc(changed, [(data, 32)], images, timer, checksum=True)
+        except ValueError:
+            checks += 1
+        else:
+            raise SystemExit("FAIL: CRC oracle accepted changed lifecycle/result")
+
+    if data == "":
+        value = module.crc_result("A")
+        first = lines[:16]
+        first[2] = "AURORA_CRC_BEGIN: generation=1"
+        first[3] = first[3].replace("source=32", "source=48")
+        first[14] = "AURORA_CALL_SERVICE: epoch=2 event=returned value=16641"
+        second = [
+            wc_event(130, 1020, caller_root),
+            "AURORA_WC_DEBIT: epoch=1 used=2 remaining=126",
+            "AURORA_CALL_PARK: ticket=3 epoch=1 ticks=2 remaining=126",
+            "AURORA_UEFI_TIMER_QUIET: epoch=1 ticks=2",
+            "AURORA_CALL_COMPLETE: epoch=1 event=parked value=0",
+            "AURORA_UEFI_USER_RUN: epoch=3 role=service phase=service client=0 transaction=3 "
+            f"source=11 root={peer_root}",
+            f"AURORA_UEFI_TIMER_ARM: epoch=3 budget=127 root={peer_root}",
+            wc_event(129, 2010, peer_root),
+            "AURORA_WC_DEBIT: epoch=3 used=2 remaining=126",
+            "AURORA_UEFI_TIMER_QUIET: epoch=3 ticks=1",
+            "AURORA_CALL_SERVICE: epoch=3 event=returned value=2",
+            "AURORA_CALL_RESUME: epoch=1 ticks=2 remaining=126",
+            wc_event(129, 1010, caller_root),
+            "AURORA_UEFI_TIMER_QUIET: epoch=1 ticks=2",
+            f"AURORA_CALL_COMPLETE: epoch=1 event=returned value={value}",
+            "AURORA_CRC_TOTAL: calls=2 caller=2 service=2",
+            f"AURORA_CRC_END: result={value} used=0",
+            module.crc_answer(value),
+        ]
+        nonempty = "\r\n".join(first + second) + "\r\n"
+        module.validate_wc(nonempty, [("A", 32)], images, timer, checksum=True)
+        checks += 1
+        corrupt = value ^ 256
+        changed = nonempty.replace(str(value), str(corrupt)).replace(
+            module.crc_answer(value), module.crc_answer(corrupt)
+        )
+        try:
+            module.validate_wc(changed, [("A", 32)], images, timer, checksum=True)
+        except ValueError:
+            checks += 1
+        else:
+            raise SystemExit("FAIL: CRC oracle accepted jointly corrupted result and presentation")
+
 print(f"PASS: {checks} protected-console transcript positive/refusal controls; no guest executed")

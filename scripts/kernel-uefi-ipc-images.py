@@ -39,6 +39,7 @@ def verify(
         base,
         symbols,
         image_count=3 if dispatcher else 2,
+        max_pages=2 if call_entry is not None else 1,
         copied_snapshot=copied_snapshot,
         copied_note=copied_note,
         note_entry=note_entry,

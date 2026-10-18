@@ -134,8 +134,9 @@ public:
 constinit CallWait call_wait;
 #ifdef AURORA_FILE_CALL
 // Bounds/accounting for the existing command-selected pair, not IPC state.
+// file_wc selects the existing sequential-read authority for both wc and CRC.
 bool file_wc{}, file_closed{};
-unsigned file_call_count{}, file_service_used{}, file_wc_probes{};
+unsigned file_call_count{}, file_service_used{}, file_wc_probes{}, file_crc_probes{};
 #ifdef AURORA_FILE_CALL_BUDGET
 U64 file_budget_probe{};
 #endif

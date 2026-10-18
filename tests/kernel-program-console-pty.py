@@ -177,29 +177,47 @@ def wc_answer(result):
     return " ".join(str((result >> shift) & 255) for shift in (8, 16, 24))
 
 
-def validate_wc(text, plans, images, timer):
+def crc_result(data):
+    if data is None:
+        return 3
+    crc = 0xFFFFFFFF
+    for byte in data.encode("ascii"):
+        crc ^= byte
+        for _ in range(8):
+            crc = (crc >> 1) ^ (0x82F63B78 if crc & 1 else 0)
+    return 1 | ((crc ^ 0xFFFFFFFF) << 8)
+
+
+def crc_answer(result):
+    return wc_answer(result) if result in (0, 3) else f"{result >> 8:08x}"
+
+
+def validate_wc(text, plans, images, timer, *, checksum=False):
+    tag = "CRC" if checksum else "WC"
+    result_of = crc_result if checksum else wc_result
+    answer_of = crc_answer if checksum else wc_answer
     validate_domain_events(text, images, timer, returning=True)
     parts = list(
         re.finditer(
-            r"AURORA_WC_BEGIN: generation=(\d+)\r?\n(.*?)"
-            r"AURORA_WC_END: result=(\d+) used=0\r?\n",
+            rf"AURORA_{tag}_BEGIN: generation=(\d+)\r?\n(.*?)"
+            rf"AURORA_{tag}_END: result=(\d+) used=0\r?\n",
             text,
             re.S,
         )
     )
     need(
-        len(parts) == len(plans) == text.count("AURORA_WC_BEGIN:") == text.count("AURORA_WC_END:"),
+        len(parts) == len(plans) == text.count(f"AURORA_{tag}_BEGIN:") == text.count(f"AURORA_{tag}_END:"),
         "Exact wc command retirement count",
     )
     generations = [int(x[1]) for x in parts]
     need(all(x > 0 for x in generations) and generations == sorted(set(generations)), "Fresh wc selections")
     for part, (data, phase) in zip(parts, plans):
         body = part[2]
-        expected = wc_result(data) if phase == 32 else 0
+        expected = result_of(data) if phase == 32 else 0
         need(int(part[3]) == expected, "Exact streaming counts or discarded failure")
-        need(text[part.end() :].startswith(wc_answer(expected) + "\r\n"), "WC presentation after retirement")
+        need(text[part.end() :].startswith(answer_of(expected) + "\r\n"), "WC presentation after retirement")
         need(
-            not re.search(r"^(?:\d+ \d+ \d+|File is missing\.|Program stopped:.*)\r?$", body, re.M),
+            not re.search(r"^(?:[0-9a-f]{8}|\d+ \d+ \d+|File is missing\.|Program stopped:.*)\r?$", body, re.M),
             "No partial wc presentation",
         )
         runs = list(
@@ -212,7 +230,10 @@ def validate_wc(text, plans, images, timer):
         need(bool(runs), "WC has caller")
         caller = int(runs[0][1])
         need(
-            runs[0][2] == "client" and runs[0][3] == "request" and runs[0][4] == "0" and int(runs[0][5]) == phase,
+            runs[0][2] == "client"
+            and runs[0][3] == "request"
+            and runs[0][4] == "0"
+            and int(runs[0][5]) == phase + (16 if checksum else 0),
             "Exact wc caller authority",
         )
         parks = list(re.finditer(r"AURORA_CALL_PARK: ticket=(\d+) epoch=(\d+) ticks=(\d+) remaining=(\d+)", body))
@@ -305,7 +326,7 @@ def validate_wc(text, plans, images, timer):
             debits = re.findall(rf"AURORA_WC_DEBIT: epoch={target} used=(\d+) remaining=(\d+)", body)
             need(debits[-2:] == [("127", "1"), ("128", "0")], "Actual boundary127 to128 refusal")
         need(arms == 1 + expected_calls, "No caller rearm/reset on wc resume")
-        total = re.findall(r"AURORA_WC_TOTAL: calls=(\d+) caller=(\d+) service=(\d+)", body)
+        total = re.findall(rf"AURORA_{tag}_TOTAL: calls=(\d+) caller=(\d+) service=(\d+)", body)
         need(total == [(str(expected_calls), str(used["caller"]), str(used["service"]))], "WC final debit totals")
         need(used["caller"] >= expected_calls and used["service"] >= expected_calls - 1, "WC boundary charges")
         if phase in (34, 35, 36, 37):
@@ -323,11 +344,11 @@ def validate_wc(text, plans, images, timer):
         )
         need(int(completed[-1][3]) == expected, "WC returned live counters")
     need(
-        len(re.findall(r"^\d+ \d+ \d+\r?$", text, re.M))
+        len(re.findall(r"^[0-9a-f]{8}\r?$" if checksum else r"^\d+ \d+ \d+\r?$", text, re.M))
         == sum(phase == 32 and data is not None for data, phase in plans),
         "No duplicate wc count presentation",
     )
-    return dict(wc_commands=len(parts))
+    return {"crc_commands" if checksum else "wc_commands": len(parts)}
 
 
 def validate_file_call(text, mode, expected, service_results, images, timer):
@@ -473,7 +494,7 @@ def validate_file_call(text, mode, expected, service_results, images, timer):
         )
     need(
         len(re.findall(r"^(?:byte> .*|EOF|File is missing\.|Program stopped: .*output discarded\.)\r?$", text, re.M))
-        == len(parts) + len(re.findall(r"AURORA_WC_END: result=(?:0|3) used=0", text)),
+        == len(parts) + len(re.findall(r"AURORA_(?:WC|CRC)_END: result=(?:0|3) used=0", text)),
         "No duplicate results outside calls",
     )
     return dict(file_calls=len(parts), call_local_sum=40)
@@ -1039,6 +1060,32 @@ def main():
                 wc("alpha", "a " * 24 + "z")
                 for invalid in ("wc ", "wc alpha extra", "wc note"):
                     file_local(invalid, "Unknown command. Type help.")
+                crc_plans = []
+
+                def crc(name, data, phase=32):
+                    begin = len(transcript)
+                    send(("crc " + name + "\n").encode())
+                    receive(b"aurora> ", begin)
+                    crc_plans.append((data, phase))
+                    result = crc_result(data) if phase == 32 else 0
+                    part = bytes(transcript[begin:]).decode("ascii")
+                    need(part.count("\r\n" + crc_answer(result) + "\r\n") == 1, "Actual CRC response")
+
+                crc(
+                    "beta", "Hello", 33 if args.mode.endswith("-fault") else 34 if args.mode.endswith("-budget") else 32
+                )
+                if args.mode.endswith("-budget"):
+                    for phase in (35, 36, 37):
+                        crc("beta", "Hello", phase)
+                crc("beta", "Hello")
+                crc("empty", "")
+                crc("missing", None)
+                crc("alpha", "a " * 24 + "z")
+                file_write("alpha", "123456789")
+                crc("alpha", "123456789")
+                crc("beta", "Hello")
+                for invalid in ("crc ", "crc alpha extra", "crc note"):
+                    file_local(invalid, "Unknown command. Type help.")
                 begin = len(transcript)
                 send(b"exit\n")
                 receive(b"AURORA_UEFI_OK", begin)
@@ -1056,6 +1103,13 @@ def main():
                     **validate_wc(
                         bytes(transcript).decode("ascii"), wc_plans, admitted["user_images"], admitted["timer"]
                     ),
+                    **validate_wc(
+                        bytes(transcript).decode("ascii"),
+                        crc_plans,
+                        admitted["user_images"],
+                        admitted["timer"],
+                        checksum=True,
+                    ),
                     status="passed",
                     exit_status=33,
                     command_seconds=call_times,
@@ -1065,7 +1119,16 @@ def main():
 
             # Returning file calls are opt-in. Legacy profiles must reject even
             # syntactically valid commands without launching a domain.
-            for invalid in ("wc alpha", "wc note", "wc ", "wc alpha extra"):
+            for invalid in (
+                "wc alpha",
+                "wc note",
+                "wc ",
+                "wc alpha extra",
+                "crc alpha",
+                "crc note",
+                "crc ",
+                "crc alpha extra",
+            ):
                 file_local(invalid, "Unknown command. Type help.")
 
             if args.mode == "program-console":
