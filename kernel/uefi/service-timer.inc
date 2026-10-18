@@ -91,7 +91,12 @@ auto timer_begin(unsigned index) -> void {
 #else
     const auto next_epoch=timer_epoch+1;
 #endif
-#ifdef AURORA_UEFI_USER_BUDGET
+#ifdef AURORA_OWNED_TEXT
+    require(index==0 && domains[0].handle && text_owner && registry.index(*text_owner)==0 &&
+        registry.active(*text_owner) && root()==domains[0].tables->root() && !timer_armed &&
+        timer_epoch!=UINT64_MAX && text_region.is_open() && !text_region.faulted(), "text run authority");
+    text_epoch=next_epoch;
+#elif defined(AURORA_UEFI_USER_BUDGET)
     require(index<L::domain_count && domains[index].handle && selected_client<2
         && !timer_armed && timer_epoch!=UINT64_MAX,"user timer run boundary");
     const auto budget=
@@ -109,7 +114,9 @@ auto timer_begin(unsigned index) -> void {
 #endif
     timer_owner=*domains[index].handle; timer_owner_epoch=timer_epoch=next_epoch; timer_ticks=0; timer_resumes=0; timer_drains=0; timer_context_hits=0; timer_compiled_hits=0;
     timer_exhausted=false;
-#ifdef AURORA_UEFI_USER_BUDGET
+#ifdef AURORA_OWNED_TEXT
+    timer_remaining=128;
+#elif defined(AURORA_UEFI_USER_BUDGET)
     timer_remaining=run_authority->budget();
 #else
     timer_remaining=launch[0]==5 ? 3 : 128;
@@ -176,6 +183,10 @@ auto service_timer_interrupt(U64 vector,U64 error,U64 pc,U64 cs,U64 frame) -> st
             && timer_armed && timer_owner && timer_owner_epoch==timer_epoch && registry.ready(*timer_owner)
             && frame>=arena+Handoff::stack_bottom && frame<=arena+Handoff::stack_top-176 && frame%8==0
             && pc>=reinterpret_cast<U64>(&service_drain_begin) && pc<=reinterpret_cast<U64>(&service_drain_end),"timer drain interrupt authority");
+#ifdef AURORA_OWNED_TEXT
+        require(text_owner && registry.index(*text_owner)==0 && registry.index(*timer_owner)==0 &&
+            text_epoch==timer_epoch, "text drain owner epoch");
+#endif
 #ifdef AURORA_UEFI_USER_BUDGET
         require(run_authority && run_authority->ready_owner(registry,*timer_owner,timer_owner_epoch),"user drain owner epoch");
 #endif
@@ -189,7 +200,11 @@ auto service_timer_interrupt(U64 vector,U64 error,U64 pc,U64 cs,U64 frame) -> st
         Serial::text("AURORA_UEFI_TIMER_DRAIN: epoch="); Serial::number(timer_owner_epoch); Serial::text(" root="); Serial::number(root()); Serial::text(" ss="); Serial::number(captured.get(168)); Serial::text("\r\n");
         return 0;
     }
-#ifdef AURORA_UEFI_USER_BUDGET
+#ifdef AURORA_OWNED_TEXT
+    require(text_active() && saved_rsp%8==0 && saved_rsp>=arena+Handoff::stack_bottom &&
+        saved_rsp<=arena+Handoff::stack_top-56, "text timer authority");
+    const auto& interrupted_contract=*domains[0].contract;
+#elif defined(AURORA_UEFI_USER_BUDGET)
     require(active<L::domain_count && domains[active].handle && timer_owner && run_authority
         && run_authority->matches_active(registry,*domains[active].handle,selected_role,selected_phase,selected_client,transaction,
             launch[0],arena,root(),*domains[active].contract,timer_owner_epoch)
@@ -219,6 +234,8 @@ auto service_timer_interrupt(U64 vector,U64 error,U64 pc,U64 cs,U64 frame) -> st
     const std::array<U64,3> compiled_end{images::clean_compiled_end,images::bounds_compiled_end,images::peer_compiled_end};
 #endif
     if (pc>=compiled_begin[active] && pc<compiled_end[active]) ++timer_compiled_hits;
+#elif defined(AURORA_OWNED_TEXT)
+    if (pc>=images::clean_compiled_begin && pc<images::clean_compiled_end) ++timer_compiled_hits;
 #else
     if (pc>=images::bounds_compiled_begin && pc<images::bounds_compiled_end) ++timer_compiled_hits;
 #endif

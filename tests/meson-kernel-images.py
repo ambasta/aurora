@@ -70,17 +70,17 @@ class GeneratorBoundaries(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "Closed snapshot runtime authority inventory"):
                     image.snapshot_runtime_symbols(names | {extra: "T"})
 
-    def test_reflection_is_closed_only_for_supervisor_and_selected_call_caller(self):
+    def test_reflection_is_closed_only_for_admitted_consumers(self):
         recipe = (ROOT / "kernel-images/meson.build").read_text()
         selection = (
             "if admission == 'program'\n    root_args += ['--referenced-reflection-only', '--local-symbols']\n  endif"
         )
         self.assertIn(selection, recipe)
         self.assertEqual(recipe.count("--referenced-reflection-only"), 2)
-        self.assertEqual(recipe.count("--local-symbols"), 1)
+        self.assertEqual(recipe.count("--local-symbols"), 2)
         self.assertLess(recipe.index(selection), recipe.index("language = custom_target"))
         caller_selection = (
-            "if call_client and name == 'clean'\n"
+            "if (call_client and name == 'clean') or owned_text\n"
             "        user_root_args += ['--referenced-reflection-only']\n"
             "      endif"
         )
@@ -92,7 +92,9 @@ class GeneratorBoundaries(unittest.TestCase):
         self.assertIn(caller_selection, user_recipe)
         self.assertEqual(user_recipe.count("--referenced-reflection-only"), 1)
         self.assertLess(recipe.index(caller_selection), recipe.index("user_assembly = custom_target"))
-        self.assertNotIn("--local-symbols", recipe[recipe.index("user_root_args = []") :])
+        self.assertIn("owned_text = profile_data[key + '.user_mode'] == 'owned-text' and name == 'clean'", user_recipe)
+        self.assertIn("if owned_text\n        user_root_args += ['--local-symbols']\n      endif", user_recipe)
+        self.assertEqual(user_recipe.count("--local-symbols"), 1)
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             compiler, source = root / "compiler", root / "source.au"
@@ -255,7 +257,17 @@ class GeneratorBoundaries(unittest.TestCase):
             self.assertEqual("-DAURORA_RUNTIME_MULTIPAGE" in recipe["flags"], enabled)
             for index, user in enumerate(recipe["users"].values()):
                 if recipe["platform"] == "uefi":
-                    self.assertEqual(user["max_pages"], 3 if enabled else 1)
+                    owned_text = (
+                        name
+                        in {
+                            "uefi/runtime-owned-text",
+                            "uefi/runtime-owned-text-site",
+                            "uefi/runtime-owned-text-region",
+                            "uefi/runtime-owned-text-stale",
+                        }
+                        and index == 0
+                    )
+                    self.assertEqual(user["max_pages"], 3 if enabled or owned_text else 1)
                     self.assertEqual(user["base"], 0x10000000000 + index * 16384)
                 else:
                     self.assertNotIn("max_pages", user)

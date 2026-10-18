@@ -294,7 +294,15 @@ def check(root, registered_tests=None):
         observed_tests, observed_targets = contracts(registered_tests, targets, root, build)
         expected_tests = dict(manifest["exact_tests"])
         if not kernel_images:
-            for name in ("native-bios-image", "native-uefi-normal-image", "native-uefi-span-integration"):
+            for name in (
+                "native-bios-image",
+                "native-uefi-normal-image",
+                "native-uefi-span-integration",
+                "native-uefi-runtime-owned-text-image",
+                "native-uefi-runtime-owned-text-site-image",
+                "native-uefi-runtime-owned-text-region-image",
+                "native-uefi-runtime-owned-text-stale-image",
+            ):
                 expected_tests[name] = dict(
                     expected_tests[name],
                     depends=[],

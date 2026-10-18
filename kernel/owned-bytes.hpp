@@ -59,6 +59,10 @@ public:
                             std::uint64_t base,
                             std::uint64_t payload_quota) noexcept;
     [[nodiscard]] bool close() noexcept;
+    // Trusted teardown only: the caller has stopped the owning domain, restored
+    // kernel authority and drained interrupts. No descriptor or continuation can
+    // execute again. Scrub failure retains leases and never returns.
+    [[nodiscard]] bool revoke_quiescent() noexcept;
     [[nodiscard]] std::uint64_t id() const noexcept {
         return id_;
     }
@@ -119,6 +123,7 @@ private:
     [[nodiscard]] std::optional<std::span<std::byte>> page(Allocation &allocation, std::size_t index) noexcept;
     [[nodiscard]] bool scrub(Allocation &allocation) noexcept;
     void release_pages(Allocation &allocation, Allocation *transaction_peer = nullptr) noexcept;
+    void release_live(Allocation &allocation) noexcept;
     [[noreturn]] void retain(Allocation &allocation) noexcept;
 };
 

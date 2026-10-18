@@ -12,7 +12,7 @@ import sys
 ORIGINAL = "tcg-original-clock"
 FIXED0 = "tcg-fixed0-noalign-nosleep"
 FIXED0_ARGV = ("-icount", "shift=0,align=off,sleep=off")
-SCOPE_MAP_SHA256 = "efd2c6c057d85bdd05cc66b0bbef7db629abdf797361347a96fee6aa1732dc99"
+SCOPE_MAP_SHA256 = "d72083e93b9cca0cbbf1bb560ce254bb8d8dac4003a642759f34913b65c5de91"
 
 # Exact names, not a prefix rule. Adding a mode requires an explicit decision.
 FIXED0_UEFI_MODES = tuple(
@@ -24,6 +24,7 @@ budget-policy-wide budget-policy-output dispatch dispatch-budget dispatch-fault
 dispatch-mixed dispatch-pending dispatch-cross-reply dispatch-client-owner
 dispatch-stale dispatch-duplicate dispatch-full dispatch-root dispatch-peer-code
 dispatch-policy-cursor dispatch-policy-mask dispatch-policy-output user-phases
+runtime-owned-text runtime-owned-text-site runtime-owned-text-region runtime-owned-text-stale
 user-context user-resume user-call user-call-pending user-call-owner user-call-site
 user-retire-pending user-request-budget user-completion-budget
 user-request-bounds user-completion-bounds user-request-overflow

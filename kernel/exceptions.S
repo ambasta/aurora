@@ -1,3 +1,9 @@
+.ifdef AURORA_BLOCKING_CALL
+.set AURORA_REGISTER_TRAP,1
+.endif
+.ifdef AURORA_OWNED_TEXT
+.set AURORA_REGISTER_TRAP,1
+.endif
 .section .text
 .code64
 .extern aurora_exception_dispatch
@@ -157,7 +163,7 @@ aurora_timer_interrupt:
     pushq $0
     pushq $64
     jmp exception_common
-.ifdef AURORA_BLOCKING_CALL
+.ifdef AURORA_REGISTER_TRAP
 .global aurora_program_call
 aurora_program_call:
     pushq $0

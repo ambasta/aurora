@@ -25,6 +25,7 @@ def verify(
     copied_note=False,
     note_entry=None,
     call_entry=None,
+    owned_entry=None,
 ):
     need(len(data) >= 64, "Truncated ELF header")
     need(type(image_count) is int and image_count in (2, 3), "Unknown bounded image profile")
@@ -58,6 +59,13 @@ def verify(
         not (copied_snapshot or copied_note) or base == BASE + 16384 and image_count == 2,
         "Exact copied snapshot service slot",
     )
+    if owned_entry is not None:
+        need(
+            not copied_snapshot and not copied_note and call_entry is None and base == BASE and image_count == 2,
+            "Exact owned-byte user slot",
+        )
+        need(type(owned_entry) is str and bool(owned_entry), "Missing owned-byte compiler entry")
+        compiled = owned_entry
     if call_entry is not None:
         need(
             not copied_snapshot and not copied_note and base == BASE and image_count == 2,
@@ -171,6 +179,82 @@ def multipage_stack(prefix, base, fault):
     return multipage_evidence(functions, symbols, base)
 
 
+def owned_text_stack(prefix, entry):
+    import kernel_stack as stack
+
+    user = stack.Elf(prefix.with_suffix(".elf"))
+    need(not any(symbol.name and not symbol.section for symbol in user.symbols), "Owned text undefined imports")
+    symbols = {symbol.name: symbol.address for symbol in user.symbols}
+    code, _ = stack.disassemble(user.path)
+    facts = json.loads(prefix.with_suffix(".stack.json").read_text())["functions"]
+    operations = ("allocate", "borrow_length", "at", "set", "resize", "drop")
+    stubs = {"__au_runtime_bytes_" + name for name in operations}
+    need(set(user.functions) == set(facts) | stubs, "Exact owned text function inventory")
+    starts = {symbol.address: name for name, symbol in user.functions.items()}
+    functions = stack.aurora_stack_functions(prefix.with_suffix(".stack.json"), user.functions, code, starts, facts)
+    result = {}
+    for operation in operations:
+        name = "__au_runtime_bytes_" + operation
+        symbol = user.functions[name]
+        rows = [
+            row for address, row in sorted(code.items()) if symbol.address <= address < symbol.address + symbol.size
+        ]
+        expected = (
+            [("mov", "%rdx,%r10"), ("mov", "%rdi,%r9"), ("mov", "%rsi,%r8")]
+            if operation == "allocate"
+            else [("mov", "%rdi,%r10"), ("mov", "%rsi,%r8"), ("mov", "%rdx,%r9")]
+        )
+        expected += [
+            ("mov", offset + "(%r10),%" + reg)
+            for offset, reg in (("", "rdi"), ("0x8", "rsi"), ("0x10", "rdx"), ("0x18", "rcx"))
+        ]
+        expected += [("int", "$0x82")]
+        site = symbols["aurora_bytes_" + operation + "_pc"]
+        need(rows[7].next == site, "Exact byte trap continuation")
+        if operation in ("allocate", "resize", "drop"):
+            expected += [
+                ("mov", "%" + reg + "," + offset + "(%r10)")
+                for offset, reg in (("", "rdi"), ("0x8", "rsi"), ("0x10", "rdx"), ("0x18", "rcx"))
+            ]
+        expected += [("ret", "")]
+        need([(row.op, row.args) for row in rows] == expected, "Exact register-only byte stub: " + operation)
+        functions[name] = dict(local_peak=8, calls=[], returns=1)
+        result["bytes_" + operation + "_pc"] = site
+    abi = json.loads(prefix.with_suffix(".abi.json").read_text())["functions"][entry]
+    need(
+        abi["parameter_bytes"] == 16
+        and abi["parameters"] == [{"offset": 0, "bytes": 8, "kind": "region"}, {"offset": 8, "bytes": 8, "kind": "u64"}]
+        and abi["result"] == {"bytes": 8, "kind": "i64"}
+        and abi["borrowed_root_count"] == 0,
+        "Exact owned text copied argument record ABI",
+    )
+    wrapper = [row for address, row in sorted(code.items()) if BASE <= address < BASE + 29]
+    actual = [
+        (row.op, entry if row.op == "call" and stack.target_of(row) == symbols[entry] else row.args) for row in wrapper
+    ]
+    need(
+        actual
+        == [
+            ("sub", "$0x10,%rsp"),
+            ("mov", "%rdi,(%rsp)"),
+            ("mov", "%rsi,0x8(%rsp)"),
+            ("mov", "%rsp,%r11"),
+            ("call", entry),
+            ("add", "$0x10,%rsp"),
+            ("int", "$0x81"),
+            ("ud2", ""),
+        ],
+        "Exact owned text entry wrapper",
+    )
+    for name in functions:
+        stack.calculate(functions, name)
+    result["user_stack"] = stack.calculate(functions, entry)["peak"] + 24
+    need(result["user_stack"] <= stack.STACK_CAP, "Owned text user stack reserve")
+    result["compiled_begin"] = user.functions[entry].address
+    result["compiled_end"] = user.functions[entry].address + user.functions[entry].size
+    return result
+
+
 def emit_metadata(out, mode):
     records = {}
     header = ["#pragma once", "#include <array>", "#include <cstddef>", "namespace aurora::uefi::images {"]
@@ -189,7 +273,19 @@ def emit_metadata(out, mode):
             if len(line.split()) == 3
         }
         blob = binary.read_bytes()
-        meta = verify(elf.read_bytes(), blob, base, symbols, max_pages=3 if mode == "multipage" else 1)
+        owned = mode == "owned-text" and name == "clean"
+        entry = None
+        if owned:
+            from bootstrap_frontend import abi_function_symbol
+
+            entry = abi_function_symbol(json.loads(prefix.with_suffix(".abi.json").read_text()), "aurora_user_main")
+        meta = verify(
+            elf.read_bytes(), blob, base, symbols, max_pages=3 if mode == "multipage" or owned else 1, owned_entry=entry
+        )
+        if owned:
+            evidence = owned_text_stack(prefix, entry)
+            meta.update(evidence)
+            print(f"PASS: owned text user stack {evidence['user_stack']}/15360 bytes; image {len(blob)}/12288")
         if mode == "multipage":
             need(8192 < len(blob) <= 12288, "Real three-page multipage consumer")
             evidence = multipage_stack(prefix, base, name == "bounds")
@@ -221,6 +317,7 @@ if __name__ == "__main__":
             "normal",
             "span",
             "multipage",
+            "owned-text",
             "code",
             "stack",
             "window",

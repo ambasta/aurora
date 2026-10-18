@@ -1030,7 +1030,68 @@ extern "C" [[noreturn]] void __au_runtime_bytes_kernel_fault(std::uint64_t reaso
     std::_Exit(80 + static_cast<int>(reason));
 }
 
+void quiescent_revocation() {
+    for (const auto length : {0, 1, 64}) {
+        Fixture fixture(64);
+        NativeOwner owner;
+        NativeOwner empty;
+        __au_runtime_bytes_allocate(fixture.region.id(), length, &owner);
+        __au_runtime_bytes_allocate(fixture.region.id(), 0, &empty);
+        require(!fixture.region.close(), "ordinary close still rejects abandoned live owners");
+        if (length != 0)
+            std::fill(fixture.arena.page(0).begin(), fixture.arena.page(0).end(), std::byte{0x7b});
+        auto stale = owner;
+        require(fixture.region.revoke_quiescent(), "quiescent revoke closes all private records");
+        if (length != 0)
+            require(bytes_are(fixture.arena.page(0), std::byte{0}), "revocation scrubs complete dirty backing page");
+        const auto metrics = fixture.region.metrics();
+        require(metrics.used == 0 && metrics.live_allocations == 0 && metrics.held_pages == 0 &&
+                    metrics.releases == 2 && fixture.arena.pool.used() == 0 &&
+                    fixture.region.inactive_records_clean_for_test(),
+                "quiescent revoke scrubs and accounts empty and nonempty owners");
+        require(fixture.region.revoke_quiescent(), "completed revocation is idempotent");
+        require(fixture.region.open(fixture.arena.pool, fixture.arena.backing, fixture.arena.base, 64),
+                "healthy revoked storage can open a fresh identity");
+        require(fixture.region.id() != stale.region, "recreated region rejects prior identity");
+        expect_fault("stale descriptor after quiescent revocation", 1, [&] {
+            fault_observation.immutable(fixture, &stale);
+            (void)__au_runtime_bytes_borrow_length(&stale);
+        });
+    }
+    expect_fault("quiescent second-owner failure retains only unreleased lease", 3, [] {
+        Fixture fixture(64);
+        NativeOwner first;
+        NativeOwner second;
+        __au_runtime_bytes_allocate(fixture.region.id(), 32, &first);
+        __au_runtime_bytes_allocate(fixture.region.id(), 32, &second);
+        fixture.arena.backing.fill(std::byte{0x7b});
+        observe_retention(fixture, second, 1, 1, 0, true);
+        fault_observation.other_owner = &first;
+        fault_observation.expected_other = first;
+        auto &expected = fault_observation.metrics;
+        expected.used -= 32;
+        --expected.live_allocations;
+        --expected.held_pages;
+        ++expected.releases;
+        expected.last_released_id = first.allocation;
+        --fault_observation.pool_used;
+        std::fill_n(fault_observation.backing.begin(), page_bytes, std::byte{0});
+        fixture.region.fail_scrub_for_test(0, 1);
+        (void)fixture.region.revoke_quiescent();
+    });
+    expect_fault("quiescent revocation preserves retained lease on scrub failure", 3, [] {
+        Fixture fixture(64);
+        NativeOwner owner;
+        __au_runtime_bytes_allocate(fixture.region.id(), 64, &owner);
+        fixture.arena.backing.fill(std::byte{0x7b});
+        observe_retention(fixture, owner, 0, 1, 0, true);
+        fixture.region.fail_scrub_for_test(0);
+        (void)fixture.region.revoke_quiescent();
+    });
+}
+
 int main() {
+    quiescent_revocation();
     typed_value_pages();
     readonly_descriptor_snapshots();
     admission();

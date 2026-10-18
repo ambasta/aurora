@@ -274,6 +274,7 @@ def image_options(arguments):
         ["--ipc-policy", "--snapshot", "--call-snapshot"],
         ["--owned-bytes"],
         ["--multipage"],
+        ["--owned-text"],
         ["--ipc-policy", "--disposal-policy"],
         ["--graphical-console"],
         ["--iommu-event"],
@@ -282,6 +283,7 @@ def image_options(arguments):
     need(arguments in allowed, "Expected one exact supported image-policy flag combination")
     return dict(
         require_multipage="--multipage" in arguments,
+        require_owned_text="--owned-text" in arguments,
         require_ipc="--ipc-policy" in arguments,
         require_budget_noapic="--budget-noapic" in arguments,
         require_snapshot="--snapshot" in arguments,
@@ -847,6 +849,7 @@ def graphical_image_policy(directory, symbols=None):
 
 def main(
     require_multipage=False,
+    require_owned_text=False,
     require_ipc=False,
     require_owned_bytes=False,
     require_disposal=False,
@@ -923,6 +926,13 @@ def main(
     if require_snapshot:
         snapshot_image_policy(build, symbols, require_call_snapshot)
         names += ["owned-bytes-runtime", "snapshot"]
+    elif require_owned_text:
+        need(not require_ipc, "Owned text has no IPC graph")
+        names += ["owned-bytes-runtime"]
+        need(
+            "__au_runtime_bytes_allocate" in symbols and "__au_runtime_call" not in symbols,
+            "Owned text exact allocator dependency",
+        )
     elif require_owned_bytes:
         need(not require_ipc, "Owned-byte and IPC profiles cannot combine")
         owned_bytes_symbols(symbols)
@@ -961,18 +971,24 @@ def main(
             0 < terminal_symbols.get("aurora_kernel_terminal_event", 0) < terminal_symbols["__payload_text_end"],
             "Terminal-event entry outside owned payload RX",
         )
-    if require_multipage:
+    if require_multipage or require_owned_text:
         import kernel_stack as stack
 
         graph = stack.image_stack_graph(
             build,
-            ("payload", "acpi", "pci", "runtime"),
+            ("payload", "acpi", "pci", "runtime") + (("owned-bytes-runtime",) if require_owned_text else ()),
             ROOT,
             protected=True,
             noreturn=stack.OWNED_NORETURN,
         )
         admitted = stack.service_discovery_stack(graph)
-        print("PASS: multipage kernel stack with fault reserve " + str(admitted["peak_with_fault_reserve"]))
+        label = "owned text" if require_owned_text else "multipage"
+        print("PASS: " + label + " kernel stack with fault reserve " + str(admitted["peak_with_fault_reserve"]))
+        if require_owned_text:
+            print(
+                "PASS: owned text IRQ stack with fault reserve "
+                + str(admitted["irq_dispatch"]["peak_with_entry"] + admitted["fault_reserve"])
+            )
     if profile in ("console", "graphical"):
         engine = "graphical-console" if require_graphical_console else "console"
         names += [engine, "console-entry"]

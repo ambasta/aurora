@@ -180,3 +180,43 @@ observers inspect state only and exit without unwinding.
 The real Aurora consumer copies and narrows 56-byte readonly views, including the 4095/4096 logical boundary over fragmented physical pages. Empty views retain their owner lifetime and cannot produce nonempty success. The private graph admits exactly allocate, at, set, drop, borrow_length and resize helpers; no unrelated runtime imports or mixed scalar/resource graph is accepted.
 
 The same profile exercises the unchanged `RamSectorDevice` on 16 sectors of page-backed ownership. It tests complete copied readback, readonly/range ordering, quota and page failures, fragmented leases, full-page scrub and exact cleanup. Its visibility flush is volatile and durable flush remains unsupported. This is CPU-only RAM storage, not a mounted/protected file service or persistent device.
+
+## Protected Utf8Text consumer
+
+The opt-in `runtime-owned-text` UEFI profile runs the existing `std::Utf8Text`
+implementation in one CPL3 domain. It uses one private Region with a fixed
+64-byte logical quota and the same PhysicalPages leases, descriptor validation,
+transactional resize and whole-page scrub/release code. The reserved runtime
+layout still has two slots; only slot zero is created or executed. The second
+image supplies the existing closed loader metadata shape, not a second domain.
+
+Six exact CPL3 stubs load/store the generated 32-byte owner in userspace and
+transport its four words through RDI/RSI/RDX/RCX. R8/R9 carry scalar arguments;
+RAX returns a copied scalar. The private entry wrapper constructs the compiler's
+16-byte argument record on the user stack. R10 owner addresses never become
+kernel pointers. The kernel authenticates the exact trap continuation, complete
+integer frame, active domain incarnation/root, timer epoch and private Region
+before calling the existing allocator once. Payload pages and allocator metadata
+remain supervisor-only; byte access uses the existing copied accessors.
+
+Allocator traps preserve the current hardware countdown and original cumulative
+128-tick allowance. Normal return, an admitted source bounds fault, and hardware
+budget exhaustion return to the kernel, stop/drain the timer and retire the run
+before cleanup. `Region::revoke_quiescent` walks private records and shares normal
+drop's release/accounting path; ordinary `close` still refuses live allocations.
+No user descriptor supplies cleanup authority. A failed scrub retains remaining
+leases and permanently faults the Region; neither backing nor metadata is reused.
+Malformed/stale descriptors and wrong trap sites/regions fail-stop, rather than
+claiming contained recovery from arbitrary hostile native code.
+
+The source consumer covers UTF-8 append, invalid-scalar rollback, growth to the
+64-byte quota and failed replacement rollback, then live-owner fault and budget
+termination. `runtime-owned-text-site`, `runtime-owned-text-region` and
+`runtime-owned-text-stale` are isolated negative profiles; the last replays the
+old descriptor after a committed resize into the unchanged allocator validator.
+The existing allocator harness also checks stale grants after revocation and
+second-owner scrub failure after partial cleanup. The user image remains limited
+to three RX pages (12288 bytes), with the unchanged 15360-byte stack admission.
+No compiler feature, Call graph, general scheduler, device mapping or new
+bootstrap stage is introduced. Qualification receipts belong to exact-source
+logs and PRs, not this mechanism description.

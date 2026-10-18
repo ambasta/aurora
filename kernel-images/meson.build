@@ -140,14 +140,18 @@ foreach profile_id : profile_data['profiles'].split('|')
       endforeach
       entry_source = files('../' + profile_data[user_key + '.entry'])
       combined = profile_data[user_key + '.combined'] == '1'
+      owned_text = profile_data[key + '.user_mode'] == 'owned-text' and name == 'clean'
       call_client = combined and '--blocking-call' in profile_data[key + '.user_options'].split('|')
-      # Only the singleton Call caller has a closed, independently checked graph.
-      if call_client and name == 'clean'
+      # Closed callers and owned text have independently checked linked graphs.
+      if (call_client and name == 'clean') or owned_text
         user_root_args += ['--referenced-reflection-only']
+      endif
+      if owned_text
+        user_root_args += ['--local-symbols']
       endif
       user_outputs = ['user-' + name + '.s', 'user-' + name + '.stack.json']
       user_dependencies = compiler_files
-      if admission == 'program' or call_client
+      if admission == 'program' or call_client or owned_text
         user_outputs += ['user-' + name + '.abi.json']
         user_root_args += ['--abi-facts', '@OUTPUT2@']
         if combined
@@ -162,7 +166,7 @@ foreach profile_id : profile_data['profiles'].split('|')
         command: [python, '-B', kernel_assembly_helper, '--compiler', kernel_image_compiler, '--source', '@INPUT@',
                   '--output', '@OUTPUT0@', '--stack-facts', '@OUTPUT1@', '--depfile', '@DEPFILE@'] + user_root_args)
       aurora_facts += [user_assembly[1]]
-      if admission == 'program' or call_client
+      if admission == 'program' or call_client or owned_text
         aurora_facts += [user_assembly[2]]
       endif
       entry_flags_text = profile_data[user_key + '.entry_flags']

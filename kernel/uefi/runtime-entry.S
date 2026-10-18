@@ -1,3 +1,15 @@
+.ifdef AURORA_IPC
+.set AURORA_REGISTER_LAUNCH,1
+.endif
+.ifdef AURORA_OWNED_TEXT
+.set AURORA_REGISTER_LAUNCH,1
+.endif
+.ifdef AURORA_BLOCKING_CALL
+.set AURORA_REGISTER_TRAP,1
+.endif
+.ifdef AURORA_OWNED_TEXT
+.set AURORA_REGISTER_TRAP,1
+.endif
 .section .text
 .code64
 .ifdef AURORA_USER_RESUME
@@ -34,7 +46,7 @@ uefi_runtime_resume:
 .endif
 .global uefi_runtime_enter
 uefi_runtime_enter:
-.ifdef AURORA_IPC
+.ifdef AURORA_REGISTER_LAUNCH
     mov %rdx,%r11
 .endif
     push %rbx
@@ -66,14 +78,14 @@ uefi_runtime_enter:
     xor %r8d, %r8d
     xor %r9d, %r9d
     xor %r10d, %r10d
- .ifndef AURORA_IPC
+ .ifndef AURORA_REGISTER_LAUNCH
     xor %r11d, %r11d
  .endif
     xor %r12d, %r12d
     xor %r13d, %r13d
     xor %r14d, %r14d
     xor %r15d, %r15d
-.ifdef AURORA_IPC
+.ifdef AURORA_REGISTER_LAUNCH
     mov 0(%r11),%rdi
     mov 8(%r11),%rsi
     mov 16(%r11),%rdx
@@ -110,7 +122,7 @@ uefi_runtime_handler:
     ret
 not_timer:
 .endif
-.ifdef AURORA_BLOCKING_CALL
+.ifdef AURORA_REGISTER_TRAP
     cmp $130,%edi
     jne not_call
     lea aurora_program_call(%rip),%rax
