@@ -39,7 +39,9 @@ service authority is source-admitted and region identity is function-local, whil
 Aurora owns synchronous service-loan lifecycle and exact snapshot equality.
 Local scalar initialization, logical object completion and receiver-field
 initialization share that workspace with a fixed logical payload budget; resource
-ownership and provenance remain native. The budget does not bound whole-process RSS.
+ownership and provenance remain native. Native CFG joins weaken only the current value
+after exact lifetime/provenance/stack checks, avoiding redundant state copies
+and native retained-fact rescans. The budget does not bound whole-process RSS.
 Initialization/emission bridge declarations and register moves share one closed
 bootstrap entry table; this removes duplicate host inventories, not the boundary.
 

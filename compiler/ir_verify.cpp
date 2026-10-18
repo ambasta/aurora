@@ -130,10 +130,9 @@ public:
     std::map<int, ByteBinding> activeBytes;
     std::map<int, ObjectLoan> objectLoans;
     std::map<int, OwnedObjectBinding> ownedObjects; // 0/-1 are the two distinct bound roots
-    bool operator==(const State &) const = default;
 };
 // Initialization, logical completion and service loans have one source owner. Its retained ordinal
-// belongs to the block entry, never to native State equality or State copies.
+// belongs to the block entry, never to native State copies.
 class BlockEntry {
 public:
     State state;
@@ -354,10 +353,7 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                 "incompatible owning object lifetimes or field ownership at control-flow join");
         require(existing.objectLoans == state.objectLoans, "incompatible object loans at control-flow join");
         require(existing.stack == state.stack, "incompatible value/guard stacks at control-flow join");
-        State merged = existing;
-        if (merged.current != state.current)
-            merged.current.reset();
-        const bool nativeChanged = merged != existing;
+        const bool nativeChanged = existing.current.has_value() && existing.current != state.current;
         const auto retainedInitialization = states[index]->initialization;
         // Count before source join mutates the retained row. Must losses and may
         // gains can cancel numerically, so only its explicit changed flag drives
@@ -365,11 +361,13 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
         const auto oldInitializationCount = initialization.retainedCountAt(retainedInitialization);
         const bool initializationChanged = initialization.join(retainedInitialization);
         if (nativeChanged || initializationChanged) {
-            retainedValueFacts -= facts(existing) + oldInitializationCount;
-            retainedValueFacts += facts(merged) + initialization.retainedCountAt(retainedInitialization);
+            // All native facts above are equal; current is excluded from facts().
+            retainedValueFacts -= oldInitializationCount;
+            retainedValueFacts += initialization.retainedCountAt(retainedInitialization);
             if (metrics)
                 metrics->peakRetainedValueFacts = std::max(metrics->peakRetainedValueFacts, retainedValueFacts);
-            states[index]->state = std::move(merged);
+            if (nativeChanged)
+                states[index]->state.current.reset();
             pending.push_back(index);
         }
     };
