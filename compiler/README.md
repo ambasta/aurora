@@ -350,3 +350,9 @@ type/lifetime analysis run in Aurora. Production lowers the resolved Session
 directly to typed IR, without a resolved C++ AST round trip. The
 historical predecessor remains the source-bootstrap starting point; this does not
 establish whole-compiler self-hosting.
+
+CFG joins require exact native lifetime, provenance and operand-stack agreement
+before weakening the retained current value. An already unknown current stays
+unknown without scheduling another visit; initialization joins independently
+report changes. Current values are excluded from retained-fact metrics, so these
+joins adjust only the initialization count and do not copy the native state.

@@ -4543,6 +4543,23 @@ void reflectionEmissionTests() {
 }
 
 void initializationPayloadMetricTests() {
+    // Unknown retained current must remain stable when a known backedge arrives.
+    // The two prefixed cases also cover equal and differing known current facts.
+    for (int prefix : {0, 1, 2}) {
+        auto module = baseline();
+        auto &function = module.functions[0];
+        function.code = {};
+        if (prefix != 0)
+            function.code.push_back(Constant{1, prefix == 1 ? Type::I64 : Type::Bool});
+        function.code.insert(function.code.end(), {Label{1}, Constant{1, Type::I64}, Jump{1}});
+        verification::Metrics metrics;
+        static_cast<void>(validate(std::move(module), &metrics));
+        if (metrics.snapshots != (prefix == 0 ? 1u : 2u) || metrics.peakRetainedValueFacts != 0 ||
+            metrics.peakRetainedOperandFacts != 0 || metrics.peakOperandDepth != 0)
+            throw Error("current-only loop join changed retained fact metrics");
+        ++passed;
+        std::cout << "PASS IR current-only loop join converges with prefix " << prefix << '\n';
+    }
     // Existing legal frame extremes and word boundaries: these are representation
     // measurements, not new semantic admission thresholds or RSS expectations.
     for (int slotCount : {0, 1, 63, 64, 65, 65536}) {
