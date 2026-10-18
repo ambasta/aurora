@@ -24,6 +24,8 @@ budget-policy-wide budget-policy-output dispatch dispatch-budget dispatch-fault
 dispatch-mixed dispatch-pending dispatch-cross-reply dispatch-client-owner
 dispatch-stale dispatch-duplicate dispatch-full dispatch-root dispatch-peer-code
 dispatch-policy-cursor dispatch-policy-mask dispatch-policy-output user-phases
+runtime-console-region runtime-console-region-cancel runtime-console-region-cancel-ready runtime-console-region-input
+runtime-console-region-fault runtime-console-region-output runtime-console-region-budget
 runtime-owned-text runtime-owned-text-site runtime-owned-text-region runtime-owned-text-stale
 user-context user-resume user-call user-call-pending user-call-owner user-call-site
 user-retire-pending user-request-budget user-completion-budget

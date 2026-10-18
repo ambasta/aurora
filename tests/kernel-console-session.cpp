@@ -63,6 +63,9 @@ template <class Test> void rejects(Test test) {
 int main() {
     using namespace aurora::console;
     argument = Service::open();
+    sample = {};
+    const auto empty = Service::poll(argument.grant, argument.generation);
+    need(empty.byte_present == 0 && empty.byte == 0 && empty.damaged == 0 && waits == 0 && effects == 1);
     sample = {true, 65, true};
     const auto first = Service::next(argument.grant, argument.generation);
     need(first.byte_present == 1 && first.byte == 65 && first.damaged == 1);
@@ -74,6 +77,9 @@ int main() {
     need(Service::close(argument, 0) == Completion::requested_exit);
     argument = Service::open();
     need(argument.grant == old.grant && argument.generation == old.generation + 1);
+    rejects([&] {
+        static_cast<void>(Service::poll(old.grant, old.generation));
+    });
     rejects([&] {
         static_cast<void>(Service::next(old.grant, old.generation));
     });

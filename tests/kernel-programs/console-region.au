@@ -1,0 +1,50 @@
+module protected_normalizer;
+import std.utf8_text;
+import console.io;
+// One LF-terminated line, at most 32 printable ASCII bytes; uppercase output.
+// CR is rejected. Overlong/damaged input terminates without partial output.
+auto normalize(builtin::ConsoleSession& session, builtin::ByteRegion region) -> u64 {
+    builtin::OwnedBytes storage = region.try_allocate(32);
+    std::Utf8Text text = std::Utf8Text(region, move(storage));
+    if (!text.ok()) {
+        return 1u64;
+    }
+    i64 consumed = 0;
+    bool complete = false;
+    while (!complete) {
+        const builtin::ConsoleSample sample = session.next();
+        if (sample.damaged) {
+            return 2u64;
+        }
+        if (sample.byte_present) {
+            if (sample.byte == 10u8) {
+                complete = true;
+            } else {
+                if (consumed == 32 || sample.byte < 32u8 || sample.byte > 126u8) {
+                    return 2u64;
+                }
+                u64 scalar = u64(sample.byte);
+                if (scalar >= 97u64 && scalar <= 122u64) {
+                    scalar = scalar - 32u64;
+                }
+                if (text.try_append_scalar(scalar) != std::Utf8TextStatus::success) {
+                    return 1u64;
+                }
+                consumed = consumed + 1;
+            }
+        }
+    }
+    const builtin::span<const u8> output = text.bytes();
+    const console::WriteResult written = console::write_bytes(session, output);
+    if (!written.complete() || session.put(10u8) != builtin::ConsolePutResult::success) {
+        return 3u64;
+    }
+    if (text.size() != consumed) {
+        return 4u64;
+    }
+    return 0u64;
+}
+auto aurora_user_main(builtin::ConsoleSession& session, builtin::ByteRegion region) -> u64 {
+    const u64 result = normalize(session, region);
+    return result;
+}

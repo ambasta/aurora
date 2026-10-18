@@ -92,7 +92,10 @@ class GeneratorBoundaries(unittest.TestCase):
         self.assertIn(caller_selection, user_recipe)
         self.assertEqual(user_recipe.count("--referenced-reflection-only"), 1)
         self.assertLess(recipe.index(caller_selection), recipe.index("user_assembly = custom_target"))
-        self.assertIn("owned_text = profile_data[key + '.user_mode'] == 'owned-text' and name == 'clean'", user_recipe)
+        self.assertIn(
+            "owned_text = profile_data[key + '.user_mode'] in ['owned-text', 'console-region'] and name == 'clean'",
+            user_recipe,
+        )
         self.assertIn("if owned_text\n        user_root_args += ['--local-symbols']\n      endif", user_recipe)
         self.assertEqual(user_recipe.count("--local-symbols"), 1)
         with tempfile.TemporaryDirectory() as temporary:
@@ -260,6 +263,13 @@ class GeneratorBoundaries(unittest.TestCase):
                     owned_text = (
                         name
                         in {
+                            "uefi/runtime-console-region",
+                            "uefi/runtime-console-region-cancel",
+                            "uefi/runtime-console-region-cancel-ready",
+                            "uefi/runtime-console-region-input",
+                            "uefi/runtime-console-region-output",
+                            "uefi/runtime-console-region-budget",
+                            "uefi/runtime-console-region-fault",
                             "uefi/runtime-owned-text",
                             "uefi/runtime-owned-text-site",
                             "uefi/runtime-owned-text-region",

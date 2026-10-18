@@ -220,3 +220,29 @@ to three RX pages (12288 bytes), with the unchanged 15360-byte stack admission.
 No compiler feature, Call graph, general scheduler, device mapping or new
 bootstrap stage is introduced. Qualification receipts belong to exact-source
 logs and PRs, not this mechanism description.
+
+The opt-in `runtime-console-region` profile composes a sealed ConsoleSession and
+ByteRegion in the compiler's exact 24-byte entry record, reserved in 32 user-stack
+bytes. It reuses the six byte operations and adds two instruction-checked console
+stubs. The input sample address stays in CPL3 R10; only presence, byte and damage
+cross the trap boundary. A private grant translates the opaque user slot and
+generation. Console input performs one authenticated sample per trap. Empty input
+charges the discarded partial timer quantum, saves the complete integer frame,
+and unwinds to a quiescent supervisor boundary. The shared timer polling loop
+runs there. A durable copied sample can resume only the exact ticket, incarnation,
+root, Region, console generation, launch record and original budget epoch.
+Resumption changes only the three sample result registers; live locals and byte
+owners remain intact. It never renews the 128-unit allowance.
+
+Cancellation invalidates the saved continuation/sample and revokes the grant
+before quiescent owner reclamation. Retirement rejects remaining console or
+polling authority. The first source consumer uppercases one LF-terminated line of
+at most 32 printable ASCII bytes using a single 32-byte Utf8Text allocation; CR,
+control bytes, overlong input and damage reject before output. Output failure may
+leave a prefix. The smoke driver withholds each byte until a live-owner park.
+Separate cancellation, ready-cancellation, damage, output-failure, exhaustion and
+emitted-bounds-fault profiles exercise the same adapter. Cancellation also repeats
+with a new incarnation to reject old tickets. The existing image admission
+includes the retained supervisor wait/drain frame plus IRQ and fault reserve.
+The image, stack and payload caps remain 12288, 15360 and 64 bytes. This is one
+protected application contract; it adds no scheduler or bootstrap stage.

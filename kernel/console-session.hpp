@@ -52,6 +52,13 @@ template <class Transport, class Platform> class Session final {
         validate(grant, generation, true);
         grant_.operation = false;
     }
+    [[nodiscard]] static auto sample(const void *grant, std::uint64_t generation) -> RawSample {
+        validate(grant, generation, true);
+        const auto value = Transport::next();
+        return {value.present ? 1ULL : 0ULL,
+                value.present ? static_cast<std::uint64_t>(value.byte) : 0ULL,
+                value.damaged ? 1ULL : 0ULL};
+    }
     static auto finish(ServiceArgument argument) -> void {
         leave(argument.grant, argument.generation);
         grant_.active = false;
@@ -71,15 +78,18 @@ public:
         grant_ = {console_kind, generation_, true, false};
         return {&grant_, generation_};
     }
+    // Authenticated single observation. Empty input does not wait or retain a loan.
+    [[nodiscard]] static auto poll(const void *grant, std::uint64_t generation) -> RawSample {
+        enter(grant, generation);
+        const auto result = sample(grant, generation);
+        leave(grant, generation);
+        return result;
+    }
     [[nodiscard]] static auto next(const void *grant, std::uint64_t generation) -> RawSample {
         enter(grant, generation);
         for (;;) {
-            validate(grant, generation, true);
-            const auto sample = Transport::next();
-            if (sample.present || sample.damaged) {
-                const RawSample result{sample.present ? 1ULL : 0ULL,
-                                       sample.present ? static_cast<std::uint64_t>(sample.byte) : 0ULL,
-                                       sample.damaged ? 1ULL : 0ULL};
+            const auto result = sample(grant, generation);
+            if (result.byte_present || result.damaged) {
                 leave(grant, generation);
                 return result;
             }

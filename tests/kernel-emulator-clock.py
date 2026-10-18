@@ -110,6 +110,13 @@ class ClockContractTests(unittest.TestCase):
             set(inventory)
             | {
                 ("uefi", "owned-bytes"),
+                ("uefi", "runtime-console-region"),
+                ("uefi", "runtime-console-region-cancel"),
+                ("uefi", "runtime-console-region-cancel-ready"),
+                ("uefi", "runtime-console-region-input"),
+                ("uefi", "runtime-console-region-output"),
+                ("uefi", "runtime-console-region-budget"),
+                ("uefi", "runtime-console-region-fault"),
                 ("uefi", "runtime-owned-text"),
                 ("uefi", "runtime-owned-text-site"),
                 ("uefi", "runtime-owned-text-region"),
@@ -126,7 +133,7 @@ class ClockContractTests(unittest.TestCase):
         self.assertTrue(all(CLOCK.clock_profile(*key) == CLOCK.ORIGINAL for key in snapshots))
         self.assertEqual(CLOCK.clock_profile("uefi", "owned-bytes"), CLOCK.ORIGINAL)
         selected = [mode for (family, mode), profile in CLOCK.MODE_CLOCKS.items() if profile == CLOCK.FIXED0]
-        self.assertEqual(len(selected), 62)
+        self.assertEqual(len(selected), 69)
         self.assertEqual(CLOCK.clock_profile("uefi", "user-resume"), CLOCK.FIXED0)
         self.assertEqual(sum(p == CLOCK.ORIGINAL for p in CLOCK.MODE_CLOCKS.values()), 143)
         self.assertEqual(
@@ -138,6 +145,13 @@ class ClockContractTests(unittest.TestCase):
                             for mode in selected
                             if mode
                             not in (
+                                "runtime-console-region",
+                                "runtime-console-region-cancel",
+                                "runtime-console-region-cancel-ready",
+                                "runtime-console-region-input",
+                                "runtime-console-region-output",
+                                "runtime-console-region-budget",
+                                "runtime-console-region-fault",
                                 "runtime-owned-text",
                                 "runtime-owned-text-site",
                                 "runtime-owned-text-region",
@@ -199,7 +213,7 @@ class ClockContractTests(unittest.TestCase):
     def test_every_mode_profile_and_hostile_clock_pairings(self):
         cases = dict(CLOCK.MODE_CLOCKS)
         cases.update(CLOCK.AUXILIARY_CLOCKS)
-        self.assertEqual(len(cases), 210)
+        self.assertEqual(len(cases), 217)
         for (family, mode), profile in cases.items():
             with self.subTest(family=family, mode=mode):
                 original = ["qemu", "-accel", "tcg"]
@@ -255,7 +269,7 @@ class ClockContractTests(unittest.TestCase):
 
     def test_real_shell_array_for_all_uefi_build_modes(self):
         modes = sorted(mode for family, mode in CLOCK.MODE_CLOCKS if family != "bios")
-        self.assertEqual(len(modes), 166)
+        self.assertEqual(len(modes), 173)
         for mode in modes:
             for data in ("", "/nonexistent data files"):
                 with self.subTest(mode=mode, data=data):

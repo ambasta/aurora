@@ -185,12 +185,7 @@ public:
                                            std::uint64_t frame,
                                            const user::ProgramContract &contract,
                                            std::uint64_t call_pc) -> std::optional<ServiceContext> {
-        if (!call_pc || !origin_valid(words, frame, contract, call_pc))
-            return std::nullopt;
-        std::array<std::uint64_t, word_count> copy{};
-        for (std::size_t i = 0; i < word_count; ++i)
-            copy[i] = words[i];
-        return ServiceContext{copy, frame, contract};
+        return capture_bytes(words, frame, contract, call_pc);
     }
     [[nodiscard]] constexpr auto call_frame(const user::ProgramContract &contract, std::uint64_t call_pc) const
         -> bool {

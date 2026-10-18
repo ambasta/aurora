@@ -29,9 +29,270 @@ STACK = 0x10000200000
 SUFFIX = "AURORA_UEFI_LANGUAGE_OK: value=42\nAURORA_UEFI_OK\n"
 
 
-def validate_owned_text(status, text, metadata, mode):
-    denied = mode != "runtime-owned-text"
-    need(type(status) is int and status == (35 if denied else 33), "Owned text exact exit")
+def run_console_region(command, log, mode):
+    # Reuse the owned QEMU transport; send each byte only after a live-owner park.
+    import os, select, subprocess, time
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import qemu_transport as transport
+
+    payload = b"x" if mode.endswith(("cancel-ready", "fault")) else b"abcdefghijklmnopqrstuvwxyz012345\n"
+    transcript = bytearray()
+    process = None
+    sent = 0
+    deadline = time.monotonic() + 30
+    try:
+        process = transport.start(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        while True:
+            ready = select.select([process.stdout], [], [], transport.remaining(deadline))[0]
+            need(ready, "Protected console read deadline")
+            data = os.read(process.stdout.fileno(), 65536)
+            if not data:
+                break
+            transcript.extend(data)
+            need(len(transcript) < 1048576, "Bounded protected console transcript")
+            parks = re.findall(
+                rb"AURORA_CONSOLE_PARK: ticket=(\d+) live=1 used=32 epoch=(\d+) ticks=(\d+) remaining=(\d+)\r?\n",
+                transcript,
+            )
+            if len(parks) > sent:
+                need(len(parks) == sent + 1 and sent < len(payload), "Exactly one pending read per input byte")
+                process.stdin.write(payload[sent : sent + 1])
+                process.stdin.flush()
+                sent += 1
+        status = transport.reap_completed(process, deadline)
+        need(sent == len(payload), "Whole bounded line delivered after live-owner parks")
+        return status
+    finally:
+        log.write_bytes(transcript)
+        errors, _, _ = transport.finish(process, streams=[process.stdin, process.stdout] if process else [])
+        need(not errors, "Protected console transport cleanup: " + "; ".join(errors))
+
+
+def console_execution(text, image, arena, mode):
+    begin = text.index("AURORA_UEFI_TIMER_ARM:")
+    state, prior, epoch, used, ticket, resumes, output = "new", "", 0, 0, 0, 0, ""
+    irq_pc = 0
+    for part in re.split(r"(AURORA_[^\n]*\n)", text[begin:]):
+        if not part:
+            continue
+        if not part.startswith("AURORA_"):
+            need(state == "active" and resumes == 33, "Output only after complete input and before terminal")
+            output += part
+            continue
+        need(prior != "irq" or part.startswith("AURORA_UEFI_TIMER_TICK:"), "Unpaired IRQ")
+        if part.startswith("AURORA_UEFI_TIMER_ARM:"):
+            match = re.fullmatch(r"AURORA_UEFI_TIMER_ARM: epoch=(\d+) budget=128 root=(\d+)\n", part)
+            need(
+                match and state in ("new", "done") and int(match[1]) == epoch + 1 and int(match[2]) == arena + 0x90000,
+                "Exact ordered initial run",
+            )
+            epoch += 1
+            used, resumes, state, prior = 0, 0, "active", "arm"
+        elif part.startswith("AURORA_UEFI_DOMAIN_EVENT:"):
+            need(state == "active", "Trap only in active continuation")
+            vector = int(re.search(r"vector=(\d+)", part)[1])
+            pc = int(re.search(r"pc=(\d+)", part)[1])
+            prior = (
+                "next"
+                if vector == 130 and pc == image["console_next_pc"]
+                else "irq"
+                if vector == 64
+                else "terminal"
+                if vector in (6, 129)
+                else "operation"
+            )
+            if prior == "irq":
+                irq_pc = pc
+            if prior == "terminal":
+                state = "terminal"
+        elif part.startswith("AURORA_CONSOLE_DEBIT:"):
+            match = re.fullmatch(r"AURORA_CONSOLE_DEBIT: epoch=(\d+) count=(\d+) used=(\d+) remaining=(\d+)\n", part)
+            need(match and state == "active" and prior == "next", "Debit follows exact empty read trap")
+            owner, count, after, left = map(int, match.groups())
+            need(
+                owner == epoch
+                and count == (128 - used if mode.endswith("budget") else 1)
+                and after == used + count
+                and left == 128 - after,
+                "Conserved partial-quantum charge",
+            )
+            used, prior, state = after, "debit", "stopping"
+        elif part.startswith("AURORA_UEFI_TIMER_TICK:"):
+            match = re.fullmatch(
+                r"AURORA_UEFI_TIMER_TICK: epoch=(\d+) used=(\d+) remaining=(\d+) pc=(\d+) flags=(\d+)\n", part
+            )
+            need(match and state == "active" and prior == "irq", "Every tick follows its IRQ")
+            owner, after, left, pc, flags = map(int, match.groups())
+            need(
+                owner == epoch
+                and after == used + 1
+                and left == 128 - after
+                and pc == irq_pc
+                and flags & 0x202 == 0x202
+                and flags & ~0x10ED7 == 0,
+                "Conserved IRQ budget",
+            )
+            used, prior = after, "tick"
+            if left == 0:
+                state = "terminal"
+        elif part.startswith("AURORA_UEFI_TIMER_QUIET:"):
+            match = re.fullmatch(
+                r"AURORA_UEFI_TIMER_QUIET: epoch=(\d+) ticks=(\d+) drains=0 compiled=\d+ context=\d+ root=(\d+)\n", part
+            )
+            need(
+                match
+                and state in ("stopping", "terminal")
+                and int(match[1]) == epoch
+                and int(match[2]) == used
+                and int(match[3]) == arena + 0x11000,
+                "Ordered quiescence with unchanged budget",
+            )
+            state = "quiet"
+        elif part.startswith("AURORA_CONSOLE_PARK:"):
+            match = re.fullmatch(
+                r"AURORA_CONSOLE_PARK: ticket=(\d+) live=1 used=32 epoch=(\d+) ticks=(\d+) remaining=(\d+)\n", part
+            )
+            need(match and state == "quiet" and prior == "debit", "Park follows empty read, debit and quiescence")
+            current, owner, ticks, left = map(int, match.groups())
+            need(
+                current == ticket + 1 and owner == epoch and ticks == used and left == 128 - used and left > 0,
+                "Exact parked continuation",
+            )
+            ticket, state = current, "parked"
+        elif part.startswith("AURORA_CONSOLE_RESUME:"):
+            match = re.fullmatch(r"AURORA_CONSOLE_RESUME: ticket=(\d+) epoch=(\d+) used=(\d+) remaining=(\d+)\n", part)
+            need(
+                match and state == "parked" and tuple(map(int, match.groups())) == (ticket, epoch, used, 128 - used),
+                "Exactly once resume of original authority and budget",
+            )
+            resumes += 1
+            state, prior = "active", "resume"
+        elif part.startswith("AURORA_CONSOLE_REGION_DONE:"):
+            cancelled = mode.endswith(("cancel", "cancel-ready"))
+            need(
+                state == ("parked" if cancelled else "quiet"), "Reclamation follows cancellation or terminal quiescence"
+            )
+            need(int(re.search(r" ticks=(\d+)", part)[1]) == used, "Terminal accounting has no hidden debit")
+            state, prior = "done", "done"
+        elif part in ("AURORA_UEFI_LANGUAGE_OK: value=42\n", "AURORA_UEFI_OK\n"):
+            need(state == "done", "Success follows reclamation")
+        else:
+            raise ValueError("Unexpected protected console execution record: " + part)
+    need(state == "done", "Completed protected console execution")
+    expected = (
+        "AB"
+        if mode.endswith("output")
+        else "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345\n"
+        if mode == "runtime-console-region"
+        else ""
+    )
+    need(output == expected, "Whole execution output is exact")
+
+
+def validate_console_region(status, text, metadata, mode):
+    text = text.replace("\r", "")
+    validate_region_metadata(metadata, True)
+    need(status == 33 and text.endswith(SUFFIX), "Protected console natural successful exit")
+    arenas = re.findall(r"AURORA_UEFI_OWNERSHIP_OK: arena=(\d+) bytes=1048576 descriptors=\d+", text)
+    need(len(arenas) == 1, "Single protected application arena")
+    arena = int(arenas[0])
+    console_execution(text, metadata["clean"], arena, mode)
+    incarnations = 2 if mode.endswith("cancel") else 1
+    image = metadata["clean"]
+    sites = {value for key, value in image.items() if key.startswith(("bytes_", "console_"))}
+    events = re.findall(
+        r"AURORA_UEFI_DOMAIN_EVENT: vector=(\d+) error=(\d+) pc=(\d+) cpl=(\d+) root=(\d+) frame=(\d+) cr2=(\d+)\n",
+        text,
+    )
+    need(len(events) == text.count("AURORA_UEFI_DOMAIN_EVENT:"), "Canonical event records")
+    returned = faults = 0
+    for values in events:
+        vector, error, pc, cpl, root, frame, cr2 = map(int, values)
+        need(
+            error == cr2 == 0 and cpl == 3 and root == arena + 0x90000 and frame == arena + 0x88000 - 176,
+            "Exact application trap authority",
+        )
+        need(
+            (vector == 130 and pc in sites)
+            or (vector == 64 and BASE <= pc < BASE + image["size"])
+            or (vector == 129 and pc == image["return_pc"])
+            or (mode.endswith("fault") and vector == 6 and pc == image["bounds_pc"]),
+            "Exact admitted continuation or terminal site",
+        )
+        returned += vector == 129
+        faults += vector == 6
+    need(
+        returned == int(not mode.endswith(("cancel", "cancel-ready", "budget", "fault"))),
+        "Exactly one expected terminal return",
+    )
+    need(faults == int(mode.endswith("fault")), "Exact compiler fault count")
+    arms = re.findall(r"AURORA_UEFI_TIMER_ARM: epoch=(\d+) budget=(\d+) root=\d+\n", text)
+    need(
+        arms == [(str(i), "128") for i in range(1, incarnations + 1)]
+        and text.count("AURORA_UEFI_TIMER_ARM:") == incarnations,
+        "One initial budget per incarnation",
+    )
+    parks = re.findall(
+        r"AURORA_CONSOLE_PARK: ticket=(\d+) live=1 used=32 epoch=(\d+) ticks=(\d+) remaining=(\d+)\n", text
+    )
+    expected_parks = (
+        0 if mode.endswith("budget") else 1 if mode.endswith(("cancel", "cancel-ready", "input", "fault")) else 33
+    )
+    need(
+        len(parks) == expected_parks * incarnations
+        and text.count("AURORA_CONSOLE_PARK:") == expected_parks * incarnations,
+        "Live allocation across every input wait",
+    )
+    previous = 0
+    for index, values in enumerate(parks):
+        ticket, epoch, ticks, remaining = map(int, values)
+        need(
+            ticket == index + 1
+            and epoch == (index + 1 if incarnations == 2 else 1)
+            and (0 if incarnations == 2 else previous) < ticks < 128
+            and ticks + remaining == 128,
+            "Monotone tickets and original cumulative budget",
+        )
+        previous = ticks
+    abandoned = int(mode.endswith(("cancel", "cancel-ready", "budget", "fault")))
+    value = 2 if mode.endswith("input") else 3 if mode.endswith("output") else 0
+    event = 2 if mode.endswith("fault") else 0 if abandoned else 1
+    exhausted = int(mode.endswith("budget"))
+    expected = (
+        rf"AURORA_CONSOLE_REGION_DONE: value={value} event={event} exhausted={exhausted}"
+        rf" ticks=(\d+) remaining=(\d+) abandoned={abandoned} peak=32 used=0 pages=0" + "\n"
+    )
+    done = re.findall(expected, text)
+    need(
+        len(done) == incarnations and text.count("AURORA_CONSOLE_REGION_DONE:") == incarnations,
+        "Exact result and reclamation",
+    )
+    need(
+        all(int(ticks) + int(remaining) == 128 for ticks, remaining in done),
+        "Each incarnation budget remains cumulative",
+    )
+    ticks, remaining = map(int, done[-1])
+    need(
+        ticks >= previous and ticks + remaining == 128 and (remaining == 0) == bool(exhausted),
+        "No budget renewal after resume",
+    )
+    if expected_parks:
+        tail = text[text.rindex("AURORA_CONSOLE_PARK:") : text.rindex("AURORA_CONSOLE_REGION_DONE:")]
+        output = re.sub(r"AURORA_[^\n]*\n", "", tail)
+        expected_output = (
+            "AB"
+            if mode.endswith("output")
+            else ""
+            if abandoned or mode.endswith("input")
+            else "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345\n"
+        )
+        need(output == expected_output, "Exact source-produced output after final wait")
+    need(metadata["clean"]["size"] <= 12288 and metadata["clean"]["user_stack"] <= 15360, "Unchanged user caps")
+    print("PASS: protected console waits, original budget, result and reclamation: " + mode)
+
+
+def validate_region_metadata(metadata, console_region=False):
     need(type(metadata) is dict and set(metadata) == {"clean", "bounds"}, "Owned text exact image inventory")
     keys = {
         "entry",
@@ -46,6 +307,8 @@ def validate_owned_text(status, text, metadata, mode):
     }
     operations = ("allocate", "borrow_length", "at", "set", "resize", "drop")
     extra = {"bytes_" + name + "_pc" for name in operations} | {"user_stack", "compiled_begin", "compiled_end"}
+    if console_region:
+        extra |= {"console_next_pc", "console_put_pc"}
     for index, name in enumerate(("clean", "bounds")):
         image = metadata[name]
         need(
@@ -56,7 +319,10 @@ def validate_owned_text(status, text, metadata, mode):
         )
         base = BASE + index * 16384
         need(
-            image["entry"] == base and (8192 < image["size"] <= 12288 if index == 0 else 4 <= image["size"] <= 4096),
+            image["entry"] == base
+            and (
+                (0 if console_region else 8192) < image["size"] <= 12288 if index == 0 else 4 <= image["size"] <= 4096
+            ),
             "Owned text image bounds",
         )
         sites = [image[key] for key in ("return_pc", "bounds_pc", "overflow_pc", "division_zero_pc", "shift_count_pc")]
@@ -69,13 +335,23 @@ def validate_owned_text(status, text, metadata, mode):
         need(image["probe_offset"] == image["probe_pc"] == 0, "No owned text probe pointers")
     image = metadata["clean"]
     sites = {image["bytes_" + name + "_pc"] for name in operations}
+    if console_region:
+        sites |= {image["console_next_pc"], image["console_put_pc"]}
     need(
-        len(sites) == 6
+        len(sites) == (8 if console_region else 6)
         and all(BASE <= pc < BASE + image["size"] for pc in sites)
         and 0 < image["user_stack"] <= 15360
         and BASE <= image["compiled_begin"] < image["compiled_end"] <= BASE + image["size"],
         "Owned text linked stack and six byte sites",
     )
+
+
+def validate_owned_text(status, text, metadata, mode):
+    denied = mode != "runtime-owned-text"
+    need(type(status) is int and status == (35 if denied else 33), "Owned text exact exit")
+    validate_region_metadata(metadata)
+    image = metadata["clean"]
+    sites = {value for key, value in image.items() if key.startswith("bytes_")}
     owned = re.findall(r"AURORA_UEFI_OWNERSHIP_OK: arena=(\d+) bytes=1048576 descriptors=\d+", text)
     need(len(owned) == 1, "One owned arena")
     arena = int(owned[0])
@@ -275,6 +551,8 @@ def validate_owned_text(status, text, metadata, mode):
 
 
 def validate(status, text, mode, metadata, *, retained=0, final_slot=0):
+    if mode.startswith("runtime-console-region"):
+        return validate_console_region(status, text, metadata, mode)
     if mode.startswith("runtime-owned-text"):
         return validate_owned_text(status, text, metadata, mode)
     need(type(retained) is int and retained in (0, 2), "Invalid retained pin count")
@@ -682,7 +960,132 @@ def owned_text_controls(prefix, baseline):
     print(f"PASS: owned text transcript 7 positive, {len(mutants) + 4 + denial_count} negative controls")
 
 
+def console_region_self_test():
+    arena = 16777216
+    image = dict(
+        entry=BASE,
+        size=6729,
+        return_pc=BASE + 40,
+        bounds_pc=BASE + 42,
+        overflow_pc=BASE + 44,
+        division_zero_pc=0,
+        shift_count_pc=0,
+        probe_offset=0,
+        probe_pc=0,
+        user_stack=824,
+        compiled_begin=BASE + 64,
+        compiled_end=BASE + 6000,
+    )
+    for index, name in enumerate(("allocate", "borrow_length", "at", "set", "resize", "drop")):
+        image["bytes_" + name + "_pc"] = BASE + 6200 + index * 16
+    image.update(console_next_pc=BASE + 6300, console_put_pc=BASE + 6310)
+    bounds = dict(
+        entry=BASE + 16384,
+        size=100,
+        return_pc=BASE + 16400,
+        bounds_pc=BASE + 16402,
+        overflow_pc=BASE + 16404,
+        division_zero_pc=0,
+        shift_count_pc=0,
+        probe_offset=0,
+        probe_pc=0,
+    )
+    metadata = dict(clean=image, bounds=bounds)
+    trace = f"AURORA_UEFI_OWNERSHIP_OK: arena={arena} bytes=1048576 descriptors=111\n"
+    trace += f"AURORA_UEFI_TIMER_ARM: epoch=1 budget=128 root={arena + 0x90000}\n"
+    next_event = (
+        f"AURORA_UEFI_DOMAIN_EVENT: vector=130 error=0 pc={image['console_next_pc']} cpl=3 "
+        f"root={arena + 0x90000} frame={arena + 0x88000 - 176} cr2=0\n"
+    )
+    for i in range(1, 34):
+        trace += next_event
+        trace += f"AURORA_CONSOLE_DEBIT: epoch=1 count=1 used={i} remaining={128 - i}\n"
+        trace += f"AURORA_UEFI_TIMER_QUIET: epoch=1 ticks={i} drains=0 compiled=0 context=0 root={arena + 0x11000}\n"
+        trace += f"AURORA_CONSOLE_PARK: ticket={i} live=1 used=32 epoch=1 ticks={i} remaining={128 - i}\n"
+        trace += f"AURORA_CONSOLE_RESUME: ticket={i} epoch=1 used={i} remaining={128 - i}\n"
+    trace += "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345\n"
+    trace += (
+        f"AURORA_UEFI_DOMAIN_EVENT: vector=129 error=0 pc={image['return_pc']} cpl=3 "
+        f"root={arena + 0x90000} frame={arena + 0x88000 - 176} cr2=0\n"
+    )
+    trace += f"AURORA_UEFI_TIMER_QUIET: epoch=1 ticks=33 drains=0 compiled=0 context=0 root={arena + 0x11000}\n"
+    trace += (
+        "AURORA_CONSOLE_REGION_DONE: value=0 event=1 exhausted=0 ticks=33 remaining=95 "
+        "abandoned=0 peak=32 used=0 pages=0\n" + SUFFIX
+    )
+    validate_console_region(33, trace, metadata, "runtime-console-region")
+    mutations = [
+        (trace.replace(old, new), metadata)
+        for old, new in (
+            ("ticket=2 ", "ticket=1 "),
+            ("epoch=1 ticks=2 ", "epoch=2 ticks=2 "),
+            ("live=1", "live=0"),
+            ("remaining=95", "remaining=96"),
+            ("used=0 pages=0", "used=32 pages=1"),
+            ("value=0 event=1", "value=2 event=1"),
+            ("ABCDEFGHIJKLMNOPQRSTUVWXYZ012345", "ABCDEFGHIJKLMNOPQRSTUVWXYZ012346"),
+            ("cpl=3", "cpl=0"),
+            (f"pc={image['return_pc']}", f"pc={image['return_pc'] + 1}"),
+            ("budget=128", "budget=127"),
+            (next_event, ""),
+            ("AURORA_CONSOLE_DEBIT: epoch=1 count=1 used=1 remaining=127\n", ""),
+            ("AURORA_CONSOLE_RESUME: ticket=1 epoch=1 used=1 remaining=127\n", ""),
+            (next_event, "X" + next_event),
+            ("AURORA_UEFI_OK\n", "X\nAURORA_UEFI_OK\n"),
+            (
+                f"AURORA_UEFI_TIMER_ARM: epoch=1 budget=128 root={arena + 0x90000}\n",
+                f"AURORA_UEFI_TIMER_ARM: epoch=1 budget=128 root={arena + 0x90000}\n" * 2,
+            ),
+        )
+    ]
+    for key, value in (
+        ("console_next_pc", 0),
+        ("console_put_pc", image["console_next_pc"]),
+        ("user_stack", 15361),
+        ("size", 12289),
+    ):
+        changed = copy.deepcopy(metadata)
+        changed["clean"][key] = value
+        mutations.append((trace, changed))
+    irq_trace = ""
+    for line in trace.splitlines(keepends=True):
+        if line.startswith(
+            (
+                "AURORA_CONSOLE_DEBIT:",
+                "AURORA_CONSOLE_RESUME:",
+                "AURORA_CONSOLE_REGION_DONE:",
+                "AURORA_CONSOLE_PARK:",
+                "AURORA_UEFI_TIMER_QUIET:",
+            )
+        ):
+            field = "used" if line.startswith(("AURORA_CONSOLE_DEBIT:", "AURORA_CONSOLE_RESUME:")) else "ticks"
+            line = re.sub(r"\b" + field + r"=(\d+)", lambda m: field + "=" + str(int(m[1]) + 1), line)
+            line = re.sub(r"remaining=(\d+)", lambda m: "remaining=" + str(int(m[1]) - 1), line)
+        irq_trace += line
+    irq = next_event.replace("vector=130", "vector=64")
+    tick = f"AURORA_UEFI_TIMER_TICK: epoch=1 used=1 remaining=127 pc={image['console_next_pc']} flags=514\n"
+    irq_trace = irq_trace.replace(next_event, irq + tick + next_event, 1)
+    validate_console_region(33, irq_trace, metadata, "runtime-console-region")
+    for replacement in (
+        "",
+        tick.replace("flags=514", "flags=2"),
+        tick.replace("flags=514", "flags=4610"),
+        tick.replace(str(image["console_next_pc"]), str(image["console_next_pc"] + 1)),
+    ):
+        mutations.append((irq_trace.replace(tick, replacement), metadata))
+    premature = re.search(r"AURORA_UEFI_DOMAIN_EVENT: vector=129[^\n]*\n", trace)[0]
+    mutations.append((trace.replace(premature, "").replace(next_event, premature + next_event, 1), metadata))
+    for bad, meta in mutations:
+        try:
+            validate_console_region(33, bad, meta, "runtime-console-region")
+        except ValueError:
+            pass
+        else:
+            raise RuntimeError("Protected console oracle accepted corrupted evidence")
+
+
 def self_test():
+    console_region_self_test()
     arena = 0x1000000
     kernel = arena + 0x11000
     prefix = (
@@ -910,6 +1313,8 @@ def self_test():
 
 
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["--console-region-run"]:
+        sys.exit(run_console_region(sys.argv[5:], Path(sys.argv[3]), sys.argv[2]))
     if sys.argv[1:] == ["--self-test"]:
         self_test()
         sys.exit(0)

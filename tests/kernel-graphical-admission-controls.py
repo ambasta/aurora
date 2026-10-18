@@ -173,6 +173,25 @@ class NativeArtifacts(unittest.TestCase):
                     changed["functions"]["entry"]["service_abi"]["calls"]["__au_runtime_display_pixel"][field] = value
                     with self.assertRaises(ValueError):
                         check(changed)
+            mixed = deepcopy(document)
+            record = mixed["functions"]["entry"]["service_abi"]["record"]
+            prefix = [["builtin::ConsoleSession", 16], ["builtin::ByteRegion", 8]]
+            for parameters in (prefix, prefix + [["scalar", 8]]):
+                record["parameters"] = parameters
+                self.assertEqual(check(mixed)["record"]["parameters"], parameters)
+            for parameters in (
+                list(reversed(prefix)),
+                prefix * 2,
+                prefix + [["builtin::ByteRegion", 8]],
+                [["builtin::DisplaySession", 16], ["builtin::ByteRegion", 8]],
+                [["builtin::CallSession", 16], ["builtin::ByteRegion", 8]],
+                [["builtin::ConsoleSession", 16], ["scalar", 8], ["builtin::ByteRegion", 8]],
+                [["builtin::ConsoleSession", 16], ["builtin::ByteRegion", 16]],
+                prefix + [["builtin::DisplaySession", 16]],
+            ):
+                record["parameters"] = parameters
+                with self.assertRaises(ValueError):
+                    check(mixed)
             historical = deepcopy(document)
             del historical["functions"]["entry"]["service_abi"]
             self.assertIsNone(check(historical))
