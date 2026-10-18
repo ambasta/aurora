@@ -101,7 +101,8 @@ def main():
         bounded_switches=[],
     )
     admission = load("snapshot_discovery_admission", ROOT / "scripts/kernel_program_console_admission.py")
-    for check in (images.call_stack_profile, admission.snapshot_discovery_stack):
+    shared = load("runtime_discovery_stack", ROOT / "scripts/kernel_stack.py")
+    for check in (images.call_stack_profile, admission.snapshot_discovery_stack, shared.service_discovery_stack):
         if check(graph)["normal"]["peak"] != 16:
             raise RuntimeError("Independent discovery stack lifetimes were added")
         bad = deepcopy(graph)
@@ -112,7 +113,7 @@ def main():
         bad["compiler_frames"]["discover_acpi("][0]["bytes"] = 129
         with TestCase().assertRaisesRegex(ValueError, "frame ceiling"):
             check(bad)
-    print("PASS: synthetic Call/snapshot discovery lifetime and frame-cap controls")
+    print("PASS: synthetic runtime/Call/snapshot discovery lifetime and frame-cap controls")
     fixtures.main()
     print(f"PASS: IPC image authority {positives} positive and {negative} negative cases")
 

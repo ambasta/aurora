@@ -1538,3 +1538,14 @@ def profile_stack(
         bounded_switches=graph["bounded_switches"],
         trusted_source_callbacks=graph.get("trusted_source_callbacks", {}),
     )
+
+
+def service_discovery_stack(graph):
+    """Shared runtime/service discovery bounds with disjoint parser/PCI lifetimes."""
+    return profile_stack(
+        graph,
+        {"discover_acpi(": 128, "prepare_service_acpi(": 5120, "discover_pci(": 11264},
+        default_limit=11264,
+        fault_reserve=512,
+        separated=(("prepare_service_acpi(", "discover_pci("),),
+    )

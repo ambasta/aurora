@@ -250,13 +250,7 @@ def call_stack_profile(graph):
     sys.path.insert(0, str(ROOT / "scripts"))
     import kernel_stack as stack
 
-    return stack.profile_stack(
-        graph,
-        {"discover_acpi(": 128, "prepare_service_acpi(": 5120, "discover_pci(": 11264},
-        default_limit=11264,
-        fault_reserve=512,
-        separated=(("prepare_service_acpi(", "discover_pci("),),
-    )
+    return stack.service_discovery_stack(graph)
 
 
 def call_client_stack(directory):

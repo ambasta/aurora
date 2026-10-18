@@ -971,7 +971,7 @@ def main(
             protected=True,
             noreturn=stack.OWNED_NORETURN,
         )
-        admitted = stack.profile_stack(graph, {}, fault_reserve=512)
+        admitted = stack.service_discovery_stack(graph)
         print("PASS: multipage kernel stack with fault reserve " + str(admitted["peak_with_fault_reserve"]))
     if profile in ("console", "graphical"):
         engine = "graphical-console" if require_graphical_console else "console"

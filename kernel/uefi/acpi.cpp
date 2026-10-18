@@ -143,7 +143,7 @@ prepare_ivrs_acpi(U64 arena, const Bytes &handoff, unsigned &copied_bits, std::s
 #elif defined(AURORA_UEFI_BAR_CAPTURE)
 [[gnu::noinline]] auto
 prepare_bar_acpi(U64 arena, const Bytes &handoff, unsigned &copied_bits, std::size_t &copied_mcfg_size) -> bool {
-#elif defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_SNAPSHOT)
+#elif defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_SNAPSHOT) || defined(AURORA_UEFI_RUNTIME)
 [[gnu::noinline]] auto
 prepare_service_acpi(U64 arena, const Bytes &handoff, unsigned &copied_bits, std::size_t &copied_mcfg_size) -> bool {
 #else
@@ -398,7 +398,8 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
     Serial::text("\r\n");
 #ifdef AURORA_UEFI_PCI
 #if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_TABLES) ||                    \
-    defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_SNAPSHOT)
+    defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_SNAPSHOT) ||        \
+    defined(AURORA_UEFI_RUNTIME)
     copied_bits = physical_bits;
     copied_mcfg_size = mcfg->size();
 #else
@@ -412,7 +413,8 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
     return true;
 }
 #if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_TABLES) ||                    \
-    defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_SNAPSHOT)
+    defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_SNAPSHOT) ||        \
+    defined(AURORA_UEFI_RUNTIME)
 auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::PhysicalPages &pool) -> bool {
     unsigned physical_bits = 0;
     std::size_t mcfg_size = 0;

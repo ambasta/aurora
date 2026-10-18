@@ -156,3 +156,9 @@ Image backing is retained by the boot arena; teardown clears every mapping befor
 releasing stack leases. Hosted controls cover incomplete page construction and
 reset/recreation. No executable allocator, writable executable alias, larger
 stack, page-table pool, arena or kernel payload limit is introduced.
+
+Protected runtime profiles end ACPI parsing temporaries before PCI discovery,
+using the existing noinline preparation route and arena-owned MCFG snapshot.
+For multipage, Call and snapshot admission, the shared linked discovery gate
+rejects a parser-to-PCI call path and bounds the wrapper, parser and PCI frames.
+Stack and fault-reserve caps are unchanged.
