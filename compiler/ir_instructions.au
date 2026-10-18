@@ -277,7 +277,15 @@ export namespace compiler_ir_instructions {
     }
     auto entry_has_region(const InstructionStore& store, i64 callable) -> bool {
         const RawInstructionRow first = entry_instruction(store, callable, 0);
-        return first.form() == 73 && entry_value(store, first, 0) == 0;
+        if (first.form() == 73 && entry_value(store, first, 0) == 0) {
+            return true;
+        }
+        const BodyRow body = store.body_at(callable);
+        if (first.form() != 0 || body.count() < 2) {
+            return false;
+        }
+        const RawInstructionRow second = entry_instruction(store, callable, 1);
+        return second.form() == 73 && entry_value(store, second, 0) == 1;
     }
     auto verify_entry_prefix(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 callable) -> bool {
@@ -289,7 +297,8 @@ export namespace compiler_ir_instructions {
                 + position);
             const i64 expected = expected_parameter_form(metadata, type);
             const RawInstructionRow row = entry_instruction(store, callable, position);
-            if (row.form() != expected || entry_value(store, row, 0) != position || (expected == 73 && position != 0)) {
+            if (row.form() != expected || entry_value(store, row, 0) != position || (expected == 73 && position != 0
+                && !(position == 1 && compiler_ir_metadata::console_region_signature(metadata, declaration)))) {
                 return fail(store, prefix_error(expected));
             }
             const i64 offset = entry_value(store, row, 1);
@@ -1401,6 +1410,17 @@ export namespace compiler_ir_instructions {
             return fail(store, InstructionError::service_signature);
         }
         const i64 parameters = declaration.value_parameter_count();
+        const bool mixed = compiler_ir_metadata::console_region_signature(metadata, declaration);
+        const i64 region = call_value(store, instruction, 7);
+        if (mixed) {
+            if (!call_exact_slot(store, metadata, caller, 15, region, InstructionError::call_region_slot)) {
+                return false;
+            }
+        } else {
+            if (region != 0) {
+                return fail(store, InstructionError::call_region_slot);
+            }
+        }
         i64 count = 0;
         i64 at = 1;
         while (at <= declaration.value_parameter_count()) {
@@ -1445,24 +1465,30 @@ export namespace compiler_ir_instructions {
             const compiler_ir_metadata::RawTypeRow type = call_type(metadata, target, at + 1);
             const i64 span = call_lane(store, instruction, 3, at);
             const i64 object = call_lane(store, instruction, 6, at);
-            if (type.kind() == 11) {
-                if (object != 0) {
-                    return fail(store, InstructionError::service_span_object);
-                }
-                if (!call_exact_slot(store, metadata, caller, 13, span, InstructionError::call_span_slot)) {
-                    return false;
+            if (mixed && at == 1) {
+                if (span != 0 || object != 0) {
+                    return fail(store, InstructionError::service_scalar);
                 }
             } else {
-                if (type.kind() == 5) {
-                    if (span != 0) {
-                        return fail(store, InstructionError::service_object_span);
+                if (type.kind() == 11) {
+                    if (object != 0) {
+                        return fail(store, InstructionError::service_span_object);
                     }
-                    if (!verify_call_copy_argument(store, metadata, caller, instruction, target, at)) {
+                    if (!call_exact_slot(store, metadata, caller, 13, span, InstructionError::call_span_slot)) {
                         return false;
                     }
                 } else {
-                    if (span != 0 || object != 0 || !compiler_ir_metadata::scalar_value(metadata, type)) {
-                        return fail(store, InstructionError::service_scalar);
+                    if (type.kind() == 5) {
+                        if (span != 0) {
+                            return fail(store, InstructionError::service_object_span);
+                        }
+                        if (!verify_call_copy_argument(store, metadata, caller, instruction, target, at)) {
+                            return false;
+                        }
+                    } else {
+                        if (span != 0 || object != 0 || !compiler_ir_metadata::scalar_value(metadata, type)) {
+                            return fail(store, InstructionError::service_scalar);
+                        }
                     }
                 }
             }

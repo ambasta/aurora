@@ -1429,6 +1429,15 @@ export namespace compiler_lowering {
                 put(session, OperandRole::ServiceKindId, first.service_kind_id());
                 session.append_operand(additional);
                 session.append_operand(object_arguments);
+                i64 region_offset = 0;
+                if (frame.argument_count() >= 2) {
+                    const ArgumentLane region = frame.argument(1);
+                    if (value_kind(session, region.concrete_type_id())
+                        == compiler_resolver::ResolvedTypeKind::byte_region) {
+                        region_offset = local_offset(session, region.local_id());
+                    }
+                }
+                put(session, OperandRole::RegionOffset, region_offset);
                 emit(session, InstructionForm::ServiceCall, begin);
             } else {
                 if (method || constructor) {

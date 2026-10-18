@@ -1055,6 +1055,9 @@ export namespace compiler_lowering {
             const i64 first_type = parameter_type(session, symbol, 0);
             service = compiler_resolver::service_kind(tk(session, first_type));
         }
+        const bool console_region = service && count >= 2 && parameter_kind(session, symbol, 0)
+            == compiler_resolver::ResolvedTypeKind::console_session && parameter_kind(session, symbol, 1)
+            == compiler_resolver::ResolvedTypeKind::byte_region;
         if (service) {
             i64 services = 0;
             i64 first = -1;
@@ -1091,6 +1094,9 @@ export namespace compiler_lowering {
                 return fail(session, LoweringError::service_function_group_or_result, source);
             }
             at = services;
+            if (console_region) {
+                at = 2;
+            }
             while (at < count && session.good()) {
                 const i64 type = parameter_type(session, symbol, at);
                 const compiler_resolver::ResolvedTypeKind kind = tk(session, type);
@@ -1165,7 +1171,7 @@ export namespace compiler_lowering {
             const i64 receiver_type = class_type(session, receiver);
             resource_constructor = owning_type(session, receiver_type);
         }
-        if (resource || resource_constructor) {
+        if ((resource || resource_constructor) && !console_region) {
             if ((receiver >= 0 && !resource_constructor) || instantiated || count == 0 || parameter_kind(session,
                 symbol, 0) != compiler_resolver::ResolvedTypeKind::byte_region
                 || (!compiler_resolver::scalar_value_kind(result_kind) && !owning_type(session, result) && result_kind

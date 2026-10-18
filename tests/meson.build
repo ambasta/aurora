@@ -337,8 +337,8 @@ console_session = executable('console-session', 'kernel-console-session.cpp', na
 test('console-session', console_session, suite: ['full', 'dev'], timeout: 120)
 test('console-service-source-native', python,
      args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/console_service.py'), aurorac,
-            '--artifacts', '@ARTIFACTS@'],
-     depends: aurorac, suite: ['full', 'slow', 'core', 'compiler'], env: oracle_env,
+            '--comparison-compiler', aurorac_stage2, '--artifacts', '@ARTIFACTS@'],
+     depends: [aurorac, aurorac_stage2], suite: ['full', 'slow', 'core', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 300)
 test('console-service-admission-controls', python,
      args: ['-B', '-O', files('kernel-console-service-admission.py')],

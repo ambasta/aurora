@@ -1359,11 +1359,15 @@ export namespace compiler_ir_metadata {
         }
         return 0u64;
     }
+    auto console_region_signature(const MetadataStore& store, CallableRow row) -> bool {
+        return row.value_parameter_count() >= 2 && plain_type(store.type_at(row.value_parameter_begin()), 14)
+            && plain_type(store.type_at(row.value_parameter_begin() + 1), 12);
+    }
     auto verify_service_signature(MetadataStore& store, CallableRow row, bool resource) -> bool {
         const FlagMasks masks = FlagMasks();
         const IndexRange types = row.types();
-        if (callable_flag(row, masks.callable_receiver()) || row.borrowed_root_count() != 0 || resource
-            || row.value_parameter_count() == 0) {
+        if (callable_flag(row, masks.callable_receiver()) || row.borrowed_root_count() != 0 || (resource
+            && !console_region_signature(store, row)) || row.value_parameter_count() == 0) {
             return fail(store, MetadataError::service_signature);
         }
         const RawTypeRow first = store.type_at(row.value_parameter_begin());
@@ -1392,6 +1396,9 @@ export namespace compiler_ir_metadata {
             != masks.service_iommu() && kinds != masks.service_call() && kinds != (masks.service_console()
             | masks.service_display()) && kinds != (masks.service_console() | masks.service_iommu()))) {
             return fail(store, MetadataError::service_group);
+        }
+        if (console_region_signature(store, row)) {
+            at = 2;
         }
         while (at < row.value_parameter_count()) {
             const RawTypeRow type = store.type_at(row.value_parameter_begin() + at);
@@ -1576,7 +1583,7 @@ export namespace compiler_ir_metadata {
         if (owning && (!resource || callable_flag(row, masks.callable_receiver()))) {
             return fail(store, MetadataError::value_owner);
         }
-        if (resource && !owning && parameter && !owning_constructor(store, row)) {
+        if (resource && !service && !owning && parameter && !owning_constructor(store, row)) {
             return fail(store, MetadataError::value_resource);
         }
         if (!copied_leaves(store, declaration)) {
@@ -1641,7 +1648,7 @@ export namespace compiler_ir_metadata {
             if (!verify_borrowed_signature(store, row, resource)) {
                 return false;
             }
-            if (resource && !verify_resource_signature(store, row)) {
+            if (resource && !service && !verify_resource_signature(store, row)) {
                 return false;
             }
             const IndexRange types = row.types();

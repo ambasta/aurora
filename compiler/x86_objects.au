@@ -126,7 +126,7 @@ export namespace compiler_x86 {
             index = index - 1;
             const i64 type = parameter_type(metadata, target, index);
             const i64 kind = type_kind(metadata, type);
-            if (kind != 5 && kind != 11 && !service_type_kind(kind)) {
+            if (kind != 5 && kind != 11 && kind != 12 && !service_type_kind(kind)) {
                 workspace.pop_argument(index);
             }
         }
@@ -154,21 +154,27 @@ export namespace compiler_x86 {
                 const i64 packed_address25 = workspace.pack_address(1, offset);
                 object_copy_record_words(workspace, packed_address24, packed_address25, 16);
             } else {
-                if (kind == 11) {
-                    const i64 source = operand_lane(store, instruction, 3, index);
-                    const i64 packed_address26 = workspace.pack_address(0, source);
-                    const i64 packed_address27 = workspace.pack_address(1, offset);
-                    object_copy_record_words(workspace, packed_address26, packed_address27, 56);
+                if (kind == 12) {
+                    const i64 source = operand_value(store, instruction, 7);
+                    workspace.line_address("movq ", source, ", %r10");
+                    workspace.line_number("movq %r10, ", offset, "(%rsp)");
                 } else {
-                    if (kind == 5) {
-                        const i64 class_id = type_class(metadata, type);
-                        const i64 source = operand_lane(store, instruction, 6, index);
-                        const i64 packed_address28 = workspace.pack_address(0, source);
-                        const i64 packed_address29 = workspace.pack_address(1, offset);
-                        copy_class(workspace, metadata, class_id, packed_address28, packed_address29);
+                    if (kind == 11) {
+                        const i64 source = operand_lane(store, instruction, 3, index);
+                        const i64 packed_address26 = workspace.pack_address(0, source);
+                        const i64 packed_address27 = workspace.pack_address(1, offset);
+                        object_copy_record_words(workspace, packed_address26, packed_address27, 56);
                     } else {
-                        const i64 packed_address30 = workspace.pack_address(1, offset);
-                        store_argument(workspace, metadata, type, index, packed_address30);
+                        if (kind == 5) {
+                            const i64 class_id = type_class(metadata, type);
+                            const i64 source = operand_lane(store, instruction, 6, index);
+                            const i64 packed_address28 = workspace.pack_address(0, source);
+                            const i64 packed_address29 = workspace.pack_address(1, offset);
+                            copy_class(workspace, metadata, class_id, packed_address28, packed_address29);
+                        } else {
+                            const i64 packed_address30 = workspace.pack_address(1, offset);
+                            store_argument(workspace, metadata, type, index, packed_address30);
+                        }
                     }
                 }
             }

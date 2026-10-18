@@ -23,7 +23,7 @@ and all triples are rejected. There is no
 by-value or const variant. It cannot be constructed, copied, moved, assigned, stored in a
 local/field/array, returned, reflected or converted. A reference is a parameter
 mode, never an ordinary reference value. Service methods, constructors, templates,
-overloads, mixed regions/owners and recursion in the reachable service graph are
+overloads, owner parameters and recursion in the reachable service graph are
 rejected. Later parameters are copied scalars/enums, ordinary non-owning copied
 classes or readonly byte spans, with the existing source-root lifetime and loan
 checks. Copied inputs use independent readonly argument snapshots under the same
@@ -38,8 +38,22 @@ No result carries a capability, owner, span or escaping reference. Copied data,
 including ConsoleSample and IommuEventSample, is independent of service kind.
 Native operations retain exact canonical report types; Display has no host input
 or copied class-report operation. Duplicate kinds, non-leading capabilities and
-forwarding one kind into a formal of the other kind are rejected. No owner/region
-mixture is added.
+forwarding one kind into a formal of the other kind are rejected.
+
+One mixed capability prefix is accepted: `builtin::ConsoleSession& session,
+builtin::ByteRegion region`, followed by the same copied values or readonly byte
+spans. The order and kinds are exact; other services, service pairs, repeated or
+misplaced regions and owner parameters/results remain rejected. Ordinary helpers
+may forward this prefix, call Console-only helpers or call region-only helpers.
+Local owners retain their original region identity across these calls; service
+loans remain exclusive and cannot escape. The region has an explicit authenticated
+IR operand, never a scalar argument. The private packed record starts with a
+16-byte Console grant and an 8-byte region; its 24-byte prefix requires a 32-byte
+aligned reservation when there are no later arguments. ABI facts identify both
+nominal capability kinds, widths and offsets, including copied/span signatures.
+The hosted test links the existing console and byte adapters. This language
+feature adds no protected runtime adapter, combined trap admission or CPL3 console
+wait contract.
 
 Named forwarding acquires one independent synchronous child loan for each
 forwarded capability before evaluating later value/span arguments, suspending

@@ -286,6 +286,8 @@
           "-O",
           "@SOURCE@/tests/compiler/console_service.py",
           "@BUILD@/aurorac",
+          "--comparison-compiler",
+          "@BUILD@/aurorac-stage2",
           "--artifacts",
           "@ARTIFACTS@"
         ],

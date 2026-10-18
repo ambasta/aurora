@@ -269,6 +269,31 @@ Module mixedForwarded() {
     m.functions.push_back(caller);
     return m;
 }
+// Extend existing independent fixtures with the single admitted mixed prefix.
+Module withRegion(Module module) {
+    for (auto &function : module.functions) {
+        const int region = function.frameBytes + 8;
+        function.frameBytes = (region + 15) / 16 * 16;
+        function.parameters.insert(function.parameters.begin() + 1, Type::ByteRegion);
+        function.regionSlots.insert(region);
+        for (auto &instruction : function.code) {
+            if (auto *binding = std::get_if<BindParameter>(&instruction))
+                ++binding->index;
+            if (auto *binding = std::get_if<BindObjectParameter>(&instruction))
+                ++binding->index;
+            if (auto *binding = std::get_if<BindSpanParameter>(&instruction))
+                ++binding->index;
+            if (auto *call = std::get_if<ServiceCall>(&instruction)) {
+                call->spanArguments.insert(call->spanArguments.begin() + 1, 0);
+                if (!call->objectArguments.empty())
+                    call->objectArguments.insert(call->objectArguments.begin() + 1, 0);
+                call->regionOffset = region;
+            }
+        }
+        function.code.insert(function.code.begin() + 1, BindRegionParameter{1, region});
+    }
+    return module;
+}
 void copiedArgumentFacts() {
     for (const bool paired : {false, true}) {
         auto module = copiedArguments(0, paired);
@@ -353,6 +378,40 @@ void bad(Module m, const std::function<void(Module &)> &mutate, const std::strin
 }
 } // namespace
 int main() {
+    for (auto fixture : {forwarded(), copiedArguments(), copiedSpanArgument()}) {
+        good(withRegion(fixture));
+        for (const int offset : {0, 16, 17})
+            bad(withRegion(fixture), [=](auto &module) {
+                copiedCall(module).regionOffset = offset;
+            });
+        bad(withRegion(fixture), [](auto &module) {
+            copiedCall(module).spanArguments[1] = 16;
+        });
+        bad(withRegion(fixture), [](auto &module) {
+            module.functions[0].parameters[0] = Type::DisplaySession;
+        });
+        bad(withRegion(fixture), [](auto &module) {
+            auto &caller = module.functions[0];
+            caller.frameBytes += 16;
+            caller.regionSlots.insert(caller.frameBytes);
+            copiedCall(module).regionOffset = caller.frameBytes;
+        });
+        const auto checked = validate(withRegion(fixture));
+        X86Emitter emitter;
+        (void)emitter.emit(checked);
+        AbiDeclarations declarations;
+        for (const auto &function : fixture.functions)
+            declarations.functions[function.name] = {function.name, {}};
+        if (fixture.classLayouts.contains("Packet"))
+            declarations.records["Packet"] = {"Packet", {"bytes", "count", "kind"}};
+        const auto abi = emitter.abiFactsJson(checked, declarations);
+        need(abi.find("\"type_name\":\"builtin::ConsoleSession\"") != std::string::npos &&
+                 abi.find("\"type_name\":\"builtin::ByteRegion\"") != std::string::npos,
+             "mixed copied/span ABI lost exact capability kinds");
+    }
+    bad(forwarded(), [](auto &module) {
+        copiedCall(module).regionOffset = 16;
+    });
     good(sample());
     good(forwarded());
     good(copiedResult());
