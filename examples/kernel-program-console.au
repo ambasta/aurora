@@ -218,12 +218,15 @@ auto update_files(console::ProtectedFiles current, std::BinaryBuffer64 command, 
     if (selection.version() != 0u64) {
         const console::FileReply reply = current.project(selection);
         u64 action = 2u64;
-        // A nonzero selection admits only cat, upper, peek or wc.
+        // A nonzero selection admits only cat, upper, peek, wc or crc.
         if (command.at(0) == 'p') {
             action = 4u64;
         }
         if (command.at(0) == 'w') {
             action = 5u64;
+        }
+        if (command.starts_with(count, "crc ")) {
+            action = 6u64;
         }
         if (selection.writable()) {
             action = 3u64;

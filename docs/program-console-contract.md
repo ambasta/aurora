@@ -165,11 +165,25 @@ Writable selections cannot bind or release through this read-only path.
 Each fault/budget smoke runs both writable and read-only recovery guests, so
 partial read cancellation exercises this release path without exposing output.
 
-This lifetime split is a prerequisite for a future command-bound returning
-CallSession read. No combined console/call profile is admitted yet. A partial
-one-byte call would need its own exact completion result, NoteRead64 entry
-admission, byte/EOF/missing envelope and call-wait cleanup; it must not impersonate
-a completed Stream. The current isolated CRC CallSession profile is unchanged.
+The opt-in `program-file-call`, `program-file-call-fault` and
+`program-file-call-budget` profiles use that read-only lifetime for `peek`, `wc`
+and `crc`. The singleton caller invokes its sealed `CallSession`; the peer reads
+the command's frozen projection. `console.file_reader` is a Call-free Aurora
+class shared by the counting and CRC32C loops. It decodes canonical byte, EOF and
+missing replies, tracks the next offset, rejects more than 49 bytes and closes on
+terminal or failed replies. Each call returns into the caller's live local state.
+`crc` prints eight lowercase hexadecimal digits only after successful retirement;
+failed work discards the partial count or checksum.
+
+Native authority independently enforces exact sequential offsets, at most 50
+calls including EOF, fresh transaction tickets and terminal closure. Both roles
+retain cumulative 128-tick allowances, including boundary debits; resuming the
+caller does not reset its allowance. Cancellation retires both original
+participants and scrubs the frozen read and wait authority. The original isolated
+Call consumer remains one successful call per incarnation. Only the caller image
+in the seven existing Call profiles selects the existing two-page allowance;
+service images remain one page and global image/stack limits are unchanged.
+Legacy console profiles reject these returning commands without launching a pair.
 
 Replacement authority is private, one-shot and bound to the actual client
 incarnation, endpoint generation, selected file and exact stream run. A read-only

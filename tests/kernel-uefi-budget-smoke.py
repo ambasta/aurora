@@ -61,7 +61,10 @@ def metadata_valid(meta, mode):
         want = index == 1 and mode in ("budget-mmio", "budget-softint", "budget-fpu")
         need(bool(probe) == want and (not probe or base <= probe < image["return_pc"]), "Unexpected privileged probe")
         base_images[name]["probe_pc"] = 0
-    ipc.metadata_valid(base_images, "ipc-fault")
+    ipc.metadata_valid(
+        base_images,
+        mode if mode in ("user-call", "user-call-pending", "user-call-owner", "user-call-site") else "ipc-fault",
+    )
     kernel = meta["kernel"]
     if mode == "budget-noapic":
         need(kernel is None, "No-APIC rejection must not claim timer sites")

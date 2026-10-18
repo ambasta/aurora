@@ -55,7 +55,7 @@ EXPECTED_REJECTED = {
 # These two new API consumers are outside the immutable predecessor's language.
 # They still run through it, with exact rejection checks, and must emit identically
 # through C1/C2. This is a path-specific applicability rule, never rejection discovery.
-CALL_CONSUMERS = {"tests/compiler/call_service.au": (3, 22), "tests/kernel-programs/call-client.au": (2, 22)}
+CALL_CONSUMERS = {"tests/compiler/call_service.au": (3, 22), "tests/kernel-programs/call-client.au": (4, 22)}
 
 
 def require(condition, message):

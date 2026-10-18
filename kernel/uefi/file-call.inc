@@ -1,8 +1,10 @@
 // Selection has already returned and unwound its copied records. Each command
 // owns a fresh two-domain incarnation; the read is bounded and never grants a writable Stream.
-[[nodiscard]] [[gnu::noinline]] auto program_file_call(program::Submission &input, bool count_words) -> bool {
+[[nodiscard]] [[gnu::noinline]] auto program_file_call(program::Submission &input, bool count_words, bool checksum) -> bool {
     require(!command_owned && program_boundary() && !mailbox && frames.used() == 0 &&
                 command_files.selected() && !command_files.writable(), "file call boundary");
+    require(!checksum || count_words, "CRC sequential selection");
+    auto &probes = checksum ? file_crc_probes : file_wc_probes;
     file_wc = count_words;
     file_closed = false;
     file_call_count = file_service_used = 0;
@@ -17,17 +19,17 @@
     U64 phase = 0;
 #ifdef AURORA_FILE_CALL_FAULT
     if (!console_probe_used && !file_wc) phase = 1;
-    if (file_wc && file_wc_probes == 0) phase = 33;
+    if (file_wc && probes == 0) phase = 33;
 #endif
 #ifdef AURORA_FILE_CALL_BUDGET
     if (!console_probe_used && !file_wc) phase = 8;
-    if (file_wc && file_wc_probes < 4) phase = 34 + file_wc_probes;
+    if (file_wc && probes < 4) phase = 34 + probes;
 #endif
     if (file_wc) {
-        if (file_wc_probes < 4) ++file_wc_probes;
+        if (probes < 4) ++probes;
         if (phase == 0) phase = 32;
     } else console_probe_used = true;
-    Serial::text(file_wc ? std::string_view{"AURORA_WC_BEGIN: generation="} : std::string_view{"AURORA_FILE_CALL_BEGIN: generation="});
+    Serial::text(checksum ? std::string_view{"AURORA_CRC_BEGIN: generation="} : file_wc ? std::string_view{"AURORA_WC_BEGIN: generation="} : std::string_view{"AURORA_FILE_CALL_BEGIN: generation="});
     Serial::number(endpoint->generation());
     Serial::text("\r\n");
 #ifdef AURORA_FILE_CALL_BUDGET
@@ -35,7 +37,7 @@
 #endif
     U64 result = 0;
     if (file_wc) {
-        call_execute(0, phase, 0, 0);
+        call_execute(0, phase + (checksum ? 16 : 0), 0, 0);
         U64 previous = 0;
         while (call_wait.context) {
             require(call_wait.authority && call_wait.ticket && file_call_count > 0 && file_call_count <= 50,
@@ -63,10 +65,10 @@
             previous = ticket;
         }
         if (!timer_exhausted && program.event() == ProgramEvent::returned) result = program.value();
-        require(result == 0 || result == 3 || ((result & 255) == 1 && (result >> 32) == 0 &&
+        require(result == 0 || result == 3 || ((result & 255) == 1 && (checksum ? (result >> 40) == 0 : (result >> 32) == 0 &&
                     ((result >> 8) & 255) <= 49 && ((result >> 16) & 255) <= 49 &&
-                    ((result >> 24) & 255) <= 49), "wc bounded copied counts");
-        Serial::text("AURORA_WC_TOTAL: calls="); Serial::number(file_call_count);
+                    ((result >> 24) & 255) <= 49)), "wc bounded copied counts");
+        Serial::text(checksum ? std::string_view{"AURORA_CRC_TOTAL: calls="} : std::string_view{"AURORA_WC_TOTAL: calls="}); Serial::number(file_call_count);
         Serial::text(" caller="); Serial::number(timer_ticks);
         Serial::text(" service="); Serial::number(file_service_used); Serial::text("\r\n");
     } else {
@@ -106,7 +108,7 @@
     selected_client = 2;
     command_owned = false;
     require(program_boundary(), "file call quiescent result");
-    Serial::text(file_wc ? std::string_view{"AURORA_WC_END: result="} : std::string_view{"AURORA_FILE_CALL_END: result="});
+    Serial::text(checksum ? std::string_view{"AURORA_CRC_END: result="} : file_wc ? std::string_view{"AURORA_WC_END: result="} : std::string_view{"AURORA_FILE_CALL_END: result="});
     Serial::number(result);
     Serial::text(" used=0\r\n");
     program::Response response{program::Response::Kind::stopped};
@@ -115,7 +117,11 @@
         if (result != 3) {
             std::array<std::uint8_t, 8> text{};
             unsigned size = 0;
-            for (unsigned shift : {8U, 16U, 24U}) {
+            if (checksum) {
+                constexpr std::string_view digits{"0123456789abcdef"};
+                for (unsigned i = 0; i < 8; ++i)
+                    text[size++] = static_cast<std::uint8_t>(digits[(result >> (36 - 4 * i)) & 15]);
+            } else for (unsigned shift : {8U, 16U, 24U}) {
                 const auto count = (result >> shift) & 255;
                 if (count >= 10) text[size++] = static_cast<std::uint8_t>('0' + count / 10);
                 text[size++] = static_cast<std::uint8_t>('0' + count % 10);

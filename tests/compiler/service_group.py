@@ -126,10 +126,51 @@ def file_count_checks(compiler, work):
         statements.append(f"if(c{index}.push(256u64)||c{index}.result()!={expected}u64) {{ return 3u64; }}")
         if len(data) == 49:
             statements.append(f"if(c{index}.push(0u64)||c{index}.result()!={expected}u64) {{ return 4u64; }}")
+    # Exercise the actual Call-free reader independently of either consumer.
+    statements.extend(
+        [
+            "console::FileReader reader=console::FileReader();",
+            "if(reader.offset()!=0u64||!reader.active()) {return 5u64;}",
+            "u64 index=0u64; while(index<49u64) {",
+            "if(!reader.accept(true,65281u64)||reader.value()!=255u64) {return 6u64;}",
+            "index=index+1u64; if(reader.offset()!=index) {return 7u64;} }",
+            "if(!reader.accept(true,2u64)||reader.active()||reader.offset()!=49u64",
+            "||reader.status()!=console::FileReadStatus::eof||reader.value()!=0u64) {return 8u64;}",
+            "if(reader.accept(true,1u64)||reader.accept(true,3u64)) {return 9u64;}",
+            "console::FileReader overflow=console::FileReader(); index=0u64;",
+            "while(index<49u64) {if(!overflow.accept(true,1u64)) {return 10u64;} index=index+1u64;}",
+            "if(overflow.accept(true,1u64)||overflow.offset()!=49u64||overflow.active()) {return 11u64;}",
+            "console::FileReader missing=console::FileReader();",
+            "if(!missing.accept(true,3u64)||missing.status()!=console::FileReadStatus::missing",
+            "||missing.active()||missing.accept(true,2u64)) {return 12u64;}",
+        ]
+    )
+    for index, value in enumerate((0, 4, 257 + (256 << 8), 65537, 258, 259, 0xFFFFFFFFFFFFFFFF)):
+        statements.extend(
+            [
+                f"console::FileReader bad{index}=console::FileReader();",
+                f"if(bad{index}.accept(true,{value}u64)||bad{index}.active()",
+                f"||bad{index}.offset()!=0u64||bad{index}.value()!=0u64",
+                f"||bad{index}.status()!=console::FileReadStatus::rejected) {{return 13u64;}}",
+            ]
+        )
+    statements.extend(
+        [
+            "console::FileReader cancelled=console::FileReader();",
+            "if(!cancelled.accept(true,257u64)||cancelled.accept(false,2u64)",
+            "||cancelled.offset()!=1u64||cancelled.value()!=0u64||cancelled.active()) {return 14u64;}",
+        ]
+    )
     source = work / "file-counts.au"
-    source.write_text("module counts;\n" + counter + "auto count_test()->u64 {" + "".join(statements) + "return 0u64;}")
+    source.write_text(
+        "module counts; import console.file_reader;\n"
+        + counter
+        + "auto count_test()->u64 {"
+        + "".join(statements)
+        + "return 0u64;}"
+    )
     assembly = work / "file-counts.s"
-    result = run([compiler, source, "-o", assembly])
+    result = run([compiler, "--module-root", ROOT / "library", source, "-o", assembly])
     require(result.returncode == 0, result.stderr)
     bridge = work / "file-counts-entry.s"
     bridge.write_text(

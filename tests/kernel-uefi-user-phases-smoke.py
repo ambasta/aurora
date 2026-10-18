@@ -366,7 +366,7 @@ def validate_call(status, text, mode, metadata):
     need(
         type(call_pc) is int and client["return_pc"] + 4 <= call_pc < client["compiled_begin"], "Exact call site range"
     )
-    budget.metadata_valid(cleaned, "budget")
+    budget.metadata_valid(cleaned, mode)
     if denied:
         need(
             text.count("AURORA_UEFI_RUNTIME_FAIL: call exact site and endpoint") == 1

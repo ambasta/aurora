@@ -836,7 +836,11 @@ auto named_read_lifetime_cases() -> void {
     NamedFixture n;
     n.submit("write a payload");
     const auto saved = n.files.saved();
-    for (const auto command : {"cat a", "peek a", "wc a"}) {
+    auto invalid = file_update(saved, "crc a");
+    put_word(invalid, 352, 7);
+    require(!n.files.update(invalid) && !n.files.selected() && n.files.saved() == saved,
+            "unknown read action rejected without mutation");
+    for (const auto command : {"cat a", "peek a", "wc a", "crc a"}) {
         for (unsigned phase = 0; phase < 6; ++phase) {
             n.start(command);
             const auto endpoint = *n.f.mailbox.endpoint(n.f.client);

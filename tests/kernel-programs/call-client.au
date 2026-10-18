@@ -1,4 +1,6 @@
 module call_client;
+import std.checksum;
+import console.file_reader;
 auto invoke(builtin::CallSession& session, u64 request) -> builtin::CallResult {
     const u64 local = request + 2u64;
     const builtin::CallResult result = session.call(request);
@@ -44,28 +46,61 @@ public:
 };
 auto count_file(builtin::CallSession& session, u64 phase) -> u64 {
     FileCounts counts = FileCounts();
-    while (counts.size() <= 49u64) {
-        if (phase == 34u64 && counts.size() == 2u64) {
+    console::FileReader reader = console::FileReader();
+    while (reader.active()) {
+        if (phase == 34u64 && reader.offset() == 2u64) {
             while (true) {
             }
         }
-        const builtin::CallResult result = invoke(session, counts.size());
-        if (result.status != builtin::CallStatus::replied) {
+        const builtin::CallResult reply = invoke(session, reader.offset());
+        if (!reader.accept(reply.status == builtin::CallStatus::replied, reply.value)) {
             return 0u64;
         }
-        if (result.value == 2u64) {
+        if (reader.status() == console::FileReadStatus::eof) {
             return counts.result();
         }
-        if (result.value == 3u64) {
+        if (reader.status() == console::FileReadStatus::missing) {
             return 3u64;
         }
-        if ((result.value & 255u64) != 1u64 || !counts.push(result.value >> 8)) {
+        if (!counts.push(reader.value())) {
             return 0u64;
         }
     }
     return 0u64;
 }
+auto checksum_file(builtin::CallSession& session, u64 phase) -> u64 {
+    console::FileReader reader = console::FileReader();
+    u64 checksum = 0u64;
+    while (reader.active()) {
+        if (phase == 34u64 && reader.offset() == 2u64) {
+            while (true) {
+            }
+        }
+        const builtin::CallResult reply = invoke(session, reader.offset());
+        if (!reader.accept(reply.status == builtin::CallStatus::replied, reply.value)) {
+            return 0u64;
+        }
+        if (reader.status() == console::FileReadStatus::eof) {
+            return 1u64 | (checksum << 8);
+        }
+        if (reader.status() == console::FileReadStatus::missing) {
+            return 3u64;
+        }
+        const array<u8, 1> byte = {
+            u8(reader.value())
+        };
+        const std::ChecksumResult next = std::crc32c_extend(checksum, borrow_bytes(byte), 0, 1);
+        if (next.status() != std::ChecksumStatus::success) {
+            return 0u64;
+        }
+        checksum = next.value_or(0u64);
+    }
+    return 0u64;
+}
 auto aurora_user_main(builtin::CallSession& session, u64 phase, u64 seed, u64 ordinal) -> u64 {
+    if (phase >= 48u64 && phase <= 53u64) {
+        return checksum_file(session, phase - 16u64);
+    }
     if (phase >= 32u64 && phase <= 37u64) {
         return count_file(session, phase);
     }

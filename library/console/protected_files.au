@@ -59,6 +59,9 @@ export namespace console {
             if (command.starts_with(count, "wc ")) {
                 start = 3;
             }
+            if (command.starts_with(count, "crc ")) {
+                start = 4;
+            }
             const bool upper = command.starts_with(count, "upper ");
             if (upper) {
                 start = 6;
