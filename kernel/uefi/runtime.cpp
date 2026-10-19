@@ -644,23 +644,30 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
     if (program_console_interrupt(vector, error, pc, cs, frame))
         return 0;
 #endif
-    U64 cr2;
-    asm volatile("mov %%cr2,%0" : "=r"(cr2));
-    Serial::text("AURORA_UEFI_DOMAIN_EVENT: vector=");
-    Serial::number(vector);
-    Serial::text(" error=");
-    Serial::number(error);
-    Serial::text(" pc=");
-    Serial::number(pc);
-    Serial::text(" cpl=");
-    Serial::number(cs & 3);
-    Serial::text(" root=");
-    Serial::number(root());
-    Serial::text(" frame=");
-    Serial::number(frame);
-    Serial::text(" cr2=");
-    Serial::number(cr2);
-    Serial::text("\r\n");
+#ifdef AURORA_CONSOLE_REGION
+    // Routine byte operations share the console UART; only terminal/IRQ events are diagnostic.
+    if (vector != 130) {
+#endif
+        U64 cr2;
+        asm volatile("mov %%cr2,%0" : "=r"(cr2));
+        Serial::text("AURORA_UEFI_DOMAIN_EVENT: vector=");
+        Serial::number(vector);
+        Serial::text(" error=");
+        Serial::number(error);
+        Serial::text(" pc=");
+        Serial::number(pc);
+        Serial::text(" cpl=");
+        Serial::number(cs & 3);
+        Serial::text(" root=");
+        Serial::number(root());
+        Serial::text(" frame=");
+        Serial::number(frame);
+        Serial::text(" cr2=");
+        Serial::number(cr2);
+        Serial::text("\r\n");
+#ifdef AURORA_CONSOLE_REGION
+    }
+#endif
 #ifdef AURORA_UEFI_SERVICE_BUDGET
 #if defined(AURORA_BUDGET_ROOT) || defined(AURORA_DISPATCH_ROOT) || defined(AURORA_USER_ROOT)
     if (vector == 64 && !timer_draining
