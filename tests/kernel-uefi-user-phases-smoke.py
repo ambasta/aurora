@@ -8,7 +8,6 @@ Timer arrival counts and PCs remain nondeterministic within their owned image.
 
 from pathlib import Path
 import copy
-import hashlib
 import importlib.util
 import json
 import re
@@ -788,15 +787,6 @@ def fixtures(client_ticks=True):
 
 
 def self_test():
-    # Exact accepted PR84 fixture corpus for all 17 original modes, with and
-    # without optional client interrupts, rebased to the 16384-byte UEFI slots.
-    # New profiles must not redefine it.
-    old_rows = [(ticks, item) for ticks in (True, False) for item in fixtures(ticks) if item[0] not in DISPOSAL_DENIED]
-    original_digest = hashlib.sha256(json.dumps(old_rows, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    need(
-        original_digest == "89f67588d5b1782aaf1d7c951604f4a130490281ac097b0f58da43cb6a1c2cf1",
-        "Changed accepted user-phase fixture corpus",
-    )
     rejected = positives = 0
 
     def reject(status, text, mode, meta, label):

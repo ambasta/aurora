@@ -1,0 +1,13 @@
+native-bios-image
+native-uefi-normal-image
+native-uefi-runtime-owned-text-image
+native-uefi-runtime-owned-text-site-image
+native-uefi-runtime-owned-text-region-image
+native-uefi-runtime-owned-text-stale-image
+native-uefi-runtime-console-region-image
+native-uefi-runtime-console-region-cancel-image
+native-uefi-runtime-console-region-cancel-ready-image
+native-uefi-runtime-console-region-input-image
+native-uefi-runtime-console-region-output-image
+native-uefi-runtime-console-region-budget-image
+native-uefi-runtime-console-region-fault-image

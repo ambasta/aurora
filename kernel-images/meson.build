@@ -171,10 +171,11 @@ foreach profile_id : profile_data['profiles'].split('|')
       endif
       entry_flags_text = profile_data[user_key + '.entry_flags']
       entry_flags = entry_flags_text == '' ? [] : entry_flags_text.split('|')
+      byte_stubs = owned_text ? files('../kernel/uefi/owned-bytes-stubs.inc') : []
       user_object = custom_target(prefix + '-user-' + name + '-object',
         input: [user_assembly[0]] + (combined ? entry_source : []), output: 'user-' + name + '.o',
-        build_subdir: object_subdir,
-        command: [kernel_as, '--64', '-L'] + (combined ? entry_flags : []) + ['@INPUT@', '-o', '@OUTPUT@'])
+        build_subdir: object_subdir, depend_files: byte_stubs,
+        command: [kernel_as, '--64', '-L', '-I', kernel_source / 'kernel/uefi'] + (combined ? entry_flags : []) + ['@INPUT@', '-o', '@OUTPUT@'])
       user_link_inputs = []
       if not combined
         entry_object = custom_target(prefix + '-user-' + name + '-entry-object',

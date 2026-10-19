@@ -25,9 +25,11 @@ Each slot contains at most three RX code pages followed by an unmapped guard.
 These are chosen canonical lower-half virtual addresses, not physical load
 addresses or BIOS constants. Their immutable, boot-owned physical slots occupy three pages each, beginning
 at arena + 0xb0000 (then +0xb3000 and, for dispatch, +0xb6000). Link metadata, exact entry, segment permissions and every trap site
-are validated before installation. Existing profiles retain one-page image
-allowances; only `runtime-multipage` admits three pages. Metadata cannot select
-its own allowance. The linker, image validator, loader and runtime independently
+are validated before installation. `runtime-multipage` admits three pages per
+image. Blocking-call profiles admit two pages for the caller and one for the
+service; owned-text profiles (including console-region) admit three pages for
+the first image and one for the second. Other profiles retain one-page image
+allowances. Metadata cannot select its own allowance. The linker, image validator, loader and runtime independently
 enforce the selected bound; BIOS remains one page. The loader zeros all slots
 before publication. User roots map only the rounded validated byte extent, and
 verification checks every required leaf plus absent unused/guard/foreign pages.

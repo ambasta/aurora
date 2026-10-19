@@ -624,7 +624,7 @@ test('hosted-lexer-bootstrap-corpus', python, args: bootstrap_args + ['--corpus'
      is_parallel: false, priority: 1)
 # The predecessor still carries the C++ x86 backend; the Aurora backend must emit
 # byte-identical assembly, stack and ABI JSON for historical inputs in both profiles.
-# Exactly two Call and two Console+Region consumers require exact predecessor rejection and C1/C2 convergence.
+# Later corpus consumers compare current C1/C2 without predecessor feature exceptions.
 foreach profile : [['default', []], ['closed', ['--local-symbols', '--referenced-reflection-only']]]
   test('emitter-differential-' + profile[0], python,
        args: ['-B', artifact_adapter, python, '-B', files('compiler/emitter_differential.py'),
