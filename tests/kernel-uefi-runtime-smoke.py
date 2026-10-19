@@ -117,9 +117,10 @@ def validate_console_region(status, text, metadata, mode):
         "Exactly one expected terminal return",
     )
     need(faults == int(mode.endswith("fault")), "Exact compiler fault count")
-    arms = re.findall(r"AURORA_UEFI_TIMER_ARM: epoch=(\d+) budget=(\d+) root=\d+\n", text)
+    arm_records = list(re.finditer(r"AURORA_UEFI_TIMER_ARM: epoch=(\d+) budget=(\d+) root=(\d+)\n", text))
+    arms = [record.groups() for record in arm_records]
     need(
-        arms == [(str(i), "128") for i in range(1, incarnations + 1)]
+        arms == [(str(i), "128", str(arena + LAYOUT.tables_offset)) for i in range(1, incarnations + 1)]
         and text.count("AURORA_UEFI_TIMER_ARM:") == incarnations,
         "One initial budget per incarnation",
     )
@@ -153,7 +154,8 @@ def validate_console_region(status, text, metadata, mode):
         rf"AURORA_CONSOLE_REGION_DONE: value={value} event={event} exhausted={exhausted}"
         rf" ticks=(\d+) remaining=(\d+) abandoned={abandoned} peak=32 used=0 pages=0" + "\n"
     )
-    done = re.findall(expected, text)
+    done_records = list(re.finditer(expected, text))
+    done = [record.groups() for record in done_records]
     need(
         len(done) == incarnations and text.count("AURORA_CONSOLE_REGION_DONE:") == incarnations,
         "Exact result and reclamation",
@@ -162,6 +164,18 @@ def validate_console_region(status, text, metadata, mode):
         all(int(ticks) + int(remaining) == 128 for ticks, remaining in done),
         "Each incarnation budget remains cumulative",
     )
+    # Completion must follow all waits/terminal events of that incarnation.
+    for index, (arm, completion) in enumerate(zip(arm_records, done_records)):
+        boundary = arm_records[index + 1].start() if index + 1 < incarnations else text.index(SUFFIX)
+        need(arm.end() <= completion.start() < boundary, "Ordered application lifetime")
+        waits = list(re.finditer(r"AURORA_CONSOLE_PARK:", text[arm.end() : completion.start()]))
+        need(len(waits) == expected_parks, "Every wait precedes its reclamation")
+        terminal = list(
+            re.finditer(r"AURORA_UEFI_DOMAIN_EVENT: vector=(?:6|129) ", text[arm.end() : completion.start()])
+        )
+        need(len(terminal) == int(bool(event)), "Terminal event belongs to its application lifetime")
+        if terminal and waits:
+            need(waits[-1].start() < terminal[0].start(), "Terminal event follows the last input wait")
     ticks, remaining = map(int, done[-1])
     need(
         ticks >= previous and ticks + remaining == 128 and (remaining == 0) == bool(exhausted),
@@ -957,6 +971,24 @@ def console_region_self_test():
             (33, trace.replace(SUFFIX, "X" + SUFFIX), metadata),
             (33, trace.replace(SUFFIX, "AURORA_UEFI_RUNTIME_FAIL: hidden\n" + SUFFIX), metadata),
         ]
+        arm = next(line + "\n" for line in trace.splitlines() if line.startswith("AURORA_UEFI_TIMER_ARM:"))
+        bad_cases.append(
+            (
+                33,
+                trace.replace(
+                    arm, arm.replace(str(arena + LAYOUT.tables_offset), str(arena + LAYOUT.kernel_tables_offset))
+                ),
+                metadata,
+            )
+        )
+        if waits:
+            first_done = next(
+                line + "\n" for line in trace.splitlines() if line.startswith("AURORA_CONSOLE_REGION_DONE:")
+            )
+            bad_cases.append((33, trace.replace(first_done, "", 1).replace(arm, arm + first_done, 1), metadata))
+            if event:
+                terminal = re.search(r"AURORA_UEFI_DOMAIN_EVENT:[^\n]*\n", trace)[0]
+                bad_cases.append((33, trace.replace(terminal, "", 1).replace(arm, arm + terminal, 1), metadata))
         changed = copy.deepcopy(metadata)
         changed["clean"]["user_stack"] = LAYOUT.stack_cap + 1
         bad_cases.append((33, trace, changed))
