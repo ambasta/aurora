@@ -20,6 +20,7 @@ import tty
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 from kernel_layout import LAYOUT
+from kernel_profiles import FIXTURE_MODES
 
 import kernel_program_console_admission as admission
 import kernel_uefi_console_clock as clock
@@ -974,6 +975,9 @@ def main():
                     need("output> " + expected + "\r\n" in part, "Actual protected file contents differ")
                     expected_outputs.append(expected)
 
+            if args.mode in FIXTURE_MODES:
+                receive(b"AURORA_FIXTURE_READY", 0)
+                send(bytes([FIXTURE_MODES[args.mode][1]]))
             receive(b"aurora> ", 0)
             tty.setraw(master)
             if args.mode in FAILSTOP_REASONS:

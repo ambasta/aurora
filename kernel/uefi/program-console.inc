@@ -18,7 +18,10 @@ extern "C" void __au_runtime_note_project(const void *, void *);
 extern "C" void __au_runtime_files_update(const void *, void *);
 extern "C" void __au_runtime_files_replace(const void *, void *);
 
-bool command_owned{}, console_probe_used{};
+bool command_owned{};
+#ifndef AURORA_FILE_CALL
+bool console_probe_used{};
+#endif
 #include "console-wait.inc"
 [[nodiscard]] auto program_poll_policy() -> bool {
     return !command_owned && !run_authority;

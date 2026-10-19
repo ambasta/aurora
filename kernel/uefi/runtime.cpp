@@ -150,8 +150,8 @@ constinit ParkedRun call_wait;
 // Bounds/accounting for the existing command-selected pair, not IPC state.
 // file_wc selects the existing sequential-read authority for both wc and CRC.
 bool file_wc{}, file_closed{};
-unsigned file_call_count{}, file_service_used{}, file_wc_probes{}, file_crc_probes{};
-#ifdef AURORA_FILE_CALL_BUDGET
+unsigned file_call_count{}, file_service_used{};
+#ifdef AURORA_RUNTIME_FIXTURE
 U64 file_budget_probe{};
 #endif
 #endif
@@ -755,7 +755,7 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
 #if defined(AURORA_BUDGET_PENDING) || defined(AURORA_DISPATCH_PENDING) || defined(AURORA_USER_PENDING) ||              \
     defined(AURORA_PROGRAM_PENDING)
         force_timer_pending();
-#elif defined(AURORA_RUNTIME_FIXTURE) && defined(AURORA_BLOCKING_CALL)
+#elif defined(AURORA_RUNTIME_FIXTURE) && defined(AURORA_BLOCKING_CALL) && !defined(AURORA_FILE_CALL)
         if (fixture == Fixture::call_pending)
             force_timer_pending();
 #endif
@@ -874,6 +874,9 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
     run_dispatcher();
 #endif
 #elif defined(AURORA_FILE_CALL)
+#ifdef AURORA_RUNTIME_FIXTURE
+    select_fixture(Fixture::file_fault, Fixture::file_budget);
+#endif
     run_program_console();
 #elif defined(AURORA_BLOCKING_CALL)
     run_blocking_calls(producer_pool);

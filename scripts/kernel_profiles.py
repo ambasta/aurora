@@ -119,8 +119,7 @@ UEFI_FAMILIES = [
         {
             "program-console": [],
             "program-file-call": ["-DAURORA_BLOCKING_CALL", "-DAURORA_FILE_CALL"],
-            "program-file-call-fault": ["-DAURORA_BLOCKING_CALL", "-DAURORA_FILE_CALL", "-DAURORA_FILE_CALL_FAULT"],
-            "program-file-call-budget": ["-DAURORA_BLOCKING_CALL", "-DAURORA_FILE_CALL", "-DAURORA_FILE_CALL_BUDGET"],
+            "program-file-call-fixture": ["-DAURORA_BLOCKING_CALL", "-DAURORA_FILE_CALL", "-DAURORA_RUNTIME_FIXTURE"],
             "program-request-fault": ["-DAURORA_PROGRAM_REQUEST_FAULT"],
             "program-service-fault": ["-DAURORA_PROGRAM_SERVICE_FAULT"],
             "program-completion-fault": ["-DAURORA_PROGRAM_COMPLETION_FAULT"],
@@ -474,7 +473,7 @@ def user_images(
             if snapshot:
                 source = "snapshot-client" if index == 0 else "snapshot-service"
             if blocking_call:
-                source = "call-client" if index == 0 else "call-snapshot-service"
+                source = "call-client-fixture" if index == 0 else "call-snapshot-service"
             if file_call:
                 source = "call-client" if index == 0 else "file-call-service"
             entry = "kernel/uefi/ipc-user-entry.S"
@@ -709,6 +708,8 @@ def uefi_profile(mode, flags):
         if runtime
         else {}
     )
+    if mode == "program-file-call-fixture":
+        users["clean"]["source"] = "tests/kernel-programs/call-client-fixture.au"
     if owned_text:
         users["clean"].update(
             source=(

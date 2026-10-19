@@ -1,0 +1,41 @@
+export module console.file_calls;
+import console.file_reader;
+import console.file_stream;
+export namespace console {
+    auto read_file(builtin::CallSession& session, bool crc) -> u64 {
+        console::FileReader reader = console::FileReader();
+        console::FileStream stream = console::FileStream(reader, crc);
+        while (stream.active()) {
+            const builtin::CallResult reply = session.call(stream.offset());
+            if (!stream.accept(reply.status == builtin::CallStatus::replied, reply.value)) {
+                return 0u64;
+            }
+        }
+        return stream.result();
+    }
+    auto read_once(builtin::CallSession& session, u64 seed, u64 ordinal) -> builtin::CallResult {
+        const array<u64, 3> live = {
+            seed,
+            17u64,
+            23u64
+        };
+        u64 steps = 0u64;
+        u64 checksum = seed;
+        // Keep a positive hardware debit even after translated code is warm.
+        while (steps < 1000000u64) {
+            checksum = seed - checksum;
+            steps = steps + 1u64;
+        }
+        const builtin::CallResult result = session.call(live[0]);
+        const builtin::CallResult again = session.call(99u64);
+        if (checksum != seed || live[0] != seed || live[1] != 17u64 || live[2] != 23u64 || ordinal != 0u64
+            || again.status != builtin::CallStatus::rejected || again.value != 0u64) {
+            const builtin::CallResult failure = builtin::CallResult{
+                .status = builtin::CallStatus::rejected,
+                .value = 0u64
+            };
+            return failure;
+        }
+        return result;
+    }
+}

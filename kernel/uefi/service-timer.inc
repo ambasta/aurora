@@ -281,7 +281,7 @@ auto timer_begin(unsigned index) -> void {
     require(file_wc && timer_armed && !timer_exhausted && timer_remaining && timer_initial == 128 &&
                 timer_ticks + timer_remaining == 128,
             "wc boundary allowance");
-#ifdef AURORA_FILE_CALL_BUDGET
+#ifdef AURORA_RUNTIME_FIXTURE
     // Test-only conservative charging, never a quota reset or simulated IRQ.
     // Exercise exhaustion at the actual pre-publication boundaries after two bytes.
     if ((file_budget_probe == 36 && active == 0 && file_call_count == 2) ||

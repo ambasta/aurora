@@ -1,0 +1,65 @@
+export module console.file_stream;
+import console.file_reader;
+import std.checksum;
+export namespace console {
+    // Shared bounded stream state for wc and CRC; no retained file bytes.
+    class FileStream {
+        console::FileReader reader;
+        bool crc;
+        u64 checksum;
+        u64 lines;
+        u64 words;
+        bool in_word;
+    public:
+        FileStream(console::FileReader initial, bool checksum_mode) : reader(initial), crc(checksum_mode),
+            checksum(0u64), lines(0u64), words(0u64), in_word(false) {
+        }
+        auto active() const -> bool {
+            return reader.active();
+        }
+        auto offset() const -> u64 {
+            return reader.offset();
+        }
+        auto accept(bool replied, u64 value) -> bool {
+            if (!reader.accept(replied, value)) {
+                return false;
+            }
+            if (reader.status() != console::FileReadStatus::byte) {
+                return true;
+            }
+            const u64 byte = reader.value();
+            if (crc) {
+                const array<u8, 1> bytes = {
+                    u8(byte)
+                };
+                const std::ChecksumResult next = std::crc32c_extend(checksum, borrow_bytes(bytes), 0, 1);
+                if (next.status() != std::ChecksumStatus::success) {
+                    return false;
+                }
+                checksum = next.value_or(0u64);
+            } else {
+                if (byte == 10u64) {
+                    lines = lines + 1u64;
+                }
+                const bool space = byte == 32u64 || (byte >= 9u64 && byte <= 13u64);
+                if (!space && !in_word) {
+                    words = words + 1u64;
+                }
+                in_word = !space;
+            }
+            return true;
+        }
+        auto result() const -> u64 {
+            if (reader.status() == console::FileReadStatus::missing) {
+                return 3u64;
+            }
+            if (reader.status() != console::FileReadStatus::eof) {
+                return 0u64;
+            }
+            if (crc) {
+                return 1u64 | (checksum << 8);
+            }
+            return 1u64 | (lines << 8) | (words << 16) | (reader.offset() << 24);
+        }
+    };
+}

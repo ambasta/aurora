@@ -13,12 +13,14 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from kernel_layout import LAYOUT
+from kernel_profiles import canonical_profile
 
 BUILD = ROOT / "build/uefi"
 RECEIPT = BUILD / "program-console-admission.json"
 MODES = (
     "program-console",
     "program-file-call",
+    "program-file-call-fixture",
     "program-file-call-fault",
     "program-file-call-budget",
     "program-request-fault",
@@ -876,6 +878,7 @@ def hashes(paths):
 
 
 def emit(mode):
+    mode = canonical_profile("uefi", mode)
     RECEIPT.unlink(missing_ok=True)
     need(mode in MODES, "Unsupported program console profile")
     files = build_files(mode.startswith("program-file-call"))
@@ -986,6 +989,7 @@ def check_admission(path, schema, mode, files):
 
 
 def checked(mode):
+    mode = canonical_profile("uefi", mode)
     need(mode in MODES, "Unsupported program console profile")
     return check_admission(
         RECEIPT, "aurora-program-console-admission-v1", mode, build_files(mode.startswith("program-file-call"))

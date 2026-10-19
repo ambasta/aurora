@@ -55,7 +55,7 @@ auto release_call_source() -> void {
                                               *domains[0].contract,
                                               timer_owner_epoch),
             "call active run authority");
-#ifdef AURORA_RUNTIME_FIXTURE
+#if defined(AURORA_RUNTIME_FIXTURE) && !defined(AURORA_FILE_CALL)
     call_fixture_entry(reinterpret_cast<U64 *>(frame));
 #endif
     const auto context = ServiceContext::capture_call(std::span<const U64>{reinterpret_cast<const U64 *>(frame), 22},
@@ -118,7 +118,7 @@ auto release_call_source() -> void {
     if (file_wc)
         ++file_call_count;
 #endif
-#ifdef AURORA_RUNTIME_FIXTURE
+#if defined(AURORA_RUNTIME_FIXTURE) && !defined(AURORA_FILE_CALL)
     if (fixture == Fixture::call_pending)
         force_timer_pending();
 #endif
@@ -171,6 +171,9 @@ auto call_envelope(const Bytes &captured, U64 result) -> void {
     }
 }
 auto call_execute(unsigned index, U64 source_phase, U64 first, U64 second) -> void {
+#if defined(AURORA_RUNTIME_FIXTURE) && defined(AURORA_FILE_CALL)
+    source_phase = file_fixture_phase(index, source_phase, first);
+#endif
     require(index < 2 && irq_off() && root() == kernel_root && active == L::domain_count && !timer_armed &&
                 !program.running() && saved_rsp == 0,
             "call launch boundary");
@@ -353,7 +356,7 @@ auto call_completion_controls(U64 ticket) -> void {
     --call_wait.launch[3];
 }
 auto run_blocking_calls(memory::PhysicalPages &producer_pool) -> void {
-#ifdef AURORA_RUNTIME_FIXTURE
+#if defined(AURORA_RUNTIME_FIXTURE) && !defined(AURORA_FILE_CALL)
     select_fixture(Fixture::call_pending, Fixture::call_site);
 #endif
     for (unsigned scenario = 0; scenario < 4; ++scenario) {

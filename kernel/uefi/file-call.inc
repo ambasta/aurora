@@ -6,7 +6,6 @@
                 !command_files.writable(),
             "file call boundary");
     require(!checksum || count_words, "CRC sequential selection");
-    auto &probes = checksum ? file_crc_probes : file_wc_probes;
     file_wc = count_words;
     file_closed = false;
     file_call_count = file_service_used = 0;
@@ -18,37 +17,14 @@
             "file call participants");
     const auto endpoint = mailbox->endpoint(*domains[1].handle);
     require(endpoint && command_note.bind(command_files.projection(), *endpoint), "file call frozen projection");
-    U64 phase = 0;
-#ifdef AURORA_FILE_CALL_FAULT
-    if (!console_probe_used && !file_wc)
-        phase = 1;
-    if (file_wc && probes == 0)
-        phase = 33;
-#endif
-#ifdef AURORA_FILE_CALL_BUDGET
-    if (!console_probe_used && !file_wc)
-        phase = 8;
-    if (file_wc && probes < 4)
-        phase = 34 + probes;
-#endif
-    if (file_wc) {
-        if (probes < 4)
-            ++probes;
-        if (phase == 0)
-            phase = 32;
-    } else
-        console_probe_used = true;
     Serial::text(checksum  ? std::string_view{"AURORA_CRC_BEGIN: generation="}
                  : file_wc ? std::string_view{"AURORA_WC_BEGIN: generation="}
                            : std::string_view{"AURORA_FILE_CALL_BEGIN: generation="});
     Serial::number(endpoint->generation());
     Serial::text("\r\n");
-#ifdef AURORA_FILE_CALL_BUDGET
-    file_budget_probe = phase;
-#endif
     U64 result = 0;
     if (file_wc) {
-        call_execute(0, phase + (checksum ? 16 : 0), 0, 0);
+        call_execute(0, checksum ? 48 : 32, 0, 0);
         U64 previous = 0;
         while (call_wait.context) {
             require(call_wait.authority && call_wait.ticket && file_call_count > 0 && file_call_count <= 50,
@@ -59,13 +35,7 @@
             const auto request = mailbox->receive(*domains[1].handle, ipc::Phase::service, *endpoint, ticket);
             require(request && request->first() == file_call_count - 1 && request->second() == 0,
                     "wc sequential copied offset");
-            const bool midpoint = request->first() == 2;
-            call_execute(1,
-                         midpoint && phase == 33   ? 4
-                         : midpoint && phase == 35 ? 5
-                                                   : 11,
-                         request->first(),
-                         request->second());
+            call_execute(1, 11, request->first(), request->second());
             require(timer_epoch > epoch && call_wait.ticks == ticks && call_wait.remaining == remaining,
                     "wc isolated cumulative allowance");
             if (timer_exhausted || program.event() != ProgramEvent::returned) {
@@ -97,33 +67,29 @@
         Serial::number(file_service_used);
         Serial::text("\r\n");
     } else {
-        call_execute(0, phase + 16, 0, 0);
+        call_execute(0, 16, 0, 0);
         require(call_wait.context && call_wait.authority && call_wait.ticket && call_wait.ticks > 0,
                 "file caller live suspension");
         const auto ticket = call_wait.ticket, epoch = call_wait.authority->epoch();
         const auto ticks = call_wait.ticks, remaining = call_wait.remaining;
         const auto request = mailbox->receive(*domains[1].handle, ipc::Phase::service, *endpoint, ticket);
         require(request && request->first() == 0 && request->second() == 0, "file copied offset");
-        call_execute(1, phase == 1 ? 4 : 11, request->first(), request->second());
+        call_execute(1, 11, request->first(), request->second());
         require(timer_epoch > epoch && call_wait.ticks == ticks && call_wait.remaining == remaining,
                 "file isolated service budget");
-        if (phase == 1) {
-            require(program.event() == ProgramEvent::bounds && mailbox->cancel(ipc::Phase::inactive),
-                    "file checked service cancellation");
+        if (timer_exhausted || program.event() != ProgramEvent::returned) {
+            require(mailbox->cancel(ipc::Phase::inactive), "file service cancellation");
         } else {
-            require(program.event() == ProgramEvent::returned && !mailbox->cancel(ipc::Phase::inactive),
+            require(mailbox->state() == ipc::State::replied && !mailbox->cancel(ipc::Phase::inactive),
                     "file durable service reply");
         }
         require(call_resume(ticket), "file exactly once resume");
         require(timer_epoch == epoch && timer_ticks >= ticks && timer_initial == timer_ticks + timer_remaining,
                 "file original caller budget");
-        if (phase == 8) {
-            require(timer_exhausted && timer_remaining == 0 && timer_ticks == timer_initial,
-                    "file resumed budget exhaustion");
-        } else {
-            require(program.event() == ProgramEvent::returned, "file retained caller locals");
+        if (!timer_exhausted && program.event() == ProgramEvent::returned) {
+            require(program.value() >= 40, "file caller result envelope");
             result = program.value() - 40;
-            require(phase == 1 ? result == 0 : program::Files::read_reply_valid(result), "file copied caller result");
+            require(result == 0 || program::Files::read_reply_valid(result), "file copied caller result");
         }
     }
     require(mailbox->revoke(ipc::Phase::inactive) && retire(0) && retire(1) && frames.used() == 0 &&
@@ -161,7 +127,7 @@
                 }
             require(response.payload(std::span<const std::uint8_t>{text.data(), size}), "wc counts presentation");
         }
-    } else if (!file_wc && phase == 0) {
+    } else if (!file_wc && result != 0) {
         response = program::Response{result == 3 ? program::Response::Kind::file_missing
                                                  : program::Response::Kind::file_reply};
         if (result == 2) {
@@ -174,9 +140,6 @@
         } else
             require(result == 3, "file command supported result");
     }
-#ifdef AURORA_FILE_CALL_BUDGET
-    file_budget_probe = 0;
-#endif
     file_wc = file_closed = false;
     file_call_count = file_service_used = 0;
     return program_write_response(response);

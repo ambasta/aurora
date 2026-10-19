@@ -10,3 +10,5 @@ AURORA_FIXTURE(console_cancel_ready, "runtime-console-region-cancel-ready", "run
 AURORA_FIXTURE(console_input, "runtime-console-region-input", "runtime-console-region-fixture", 52)
 AURORA_FIXTURE(console_output, "runtime-console-region-output", "runtime-console-region-fixture", 53)
 AURORA_FIXTURE(console_budget, "runtime-console-region-budget", "runtime-console-region-fixture", 54)
+AURORA_FIXTURE(file_fault, "program-file-call-fault", "program-file-call-fixture", 65)
+AURORA_FIXTURE(file_budget, "program-file-call-budget", "program-file-call-fixture", 66)
