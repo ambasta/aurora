@@ -65,16 +65,16 @@ class Handoff final {
 public:
     static constexpr std::uint64_t magic = 0x41524f5255454649ULL;
     static constexpr std::size_t header = 128;
-    static constexpr std::uint64_t arena_bytes = 0x100000;
+    static constexpr std::uint64_t arena_bytes = BootstrapLayout::arena_bytes;
     static constexpr std::uint64_t map_offset = 0x1000;
-    static constexpr std::uint64_t tables_offset = 0x11000;
-    static constexpr std::uint64_t table_pages = 16;
+    static constexpr std::uint64_t tables_offset = BootstrapLayout::kernel_tables_offset;
+    static constexpr std::uint64_t table_pages = BootstrapLayout::table_pages;
     static constexpr std::uint64_t transition_offset = 0x21000;
-    static constexpr std::uint64_t payload_offset = 0x22000;
-    static constexpr std::uint64_t payload_limit = 0x20000;
+    static constexpr std::uint64_t payload_offset = BootstrapLayout::kernel_payload_offset;
+    static constexpr std::uint64_t payload_limit = BootstrapLayout::kernel_payload_limit;
     static constexpr std::uint64_t idt_offset = 0x42000;
-    static constexpr std::uint64_t stack_bottom = 0x44000;
-    static constexpr std::uint64_t stack_top = 0x48000;
+    static constexpr std::uint64_t stack_bottom = BootstrapLayout::kernel_stack_bottom;
+    static constexpr std::uint64_t stack_top = BootstrapLayout::kernel_stack_top;
     static constexpr std::uint64_t pool_offset = 0x50000;
     static constexpr std::uint64_t bar_record_offset = 0x81000;
     static constexpr std::uint64_t framebuffer_record_offset = 0xe0000;
