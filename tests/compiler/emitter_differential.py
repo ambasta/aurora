@@ -13,7 +13,7 @@ Text diagnostics are compared verbatim; JSON diagnostics require --check and do
 not exercise emission. Equal rejection is not an emitter-coverage observation.
 Success must replace each output inode; rejection must preserve bytes and file
 metadata. These observations do not prove fault-time or three-file atomicity.
-Historical inputs compare predecessor/C2; exactly two named Call consumers instead
+Historical inputs compare predecessor/C2; exactly four named feature consumers instead
 require exact predecessor rejection and successful byte-identical C1/C2 emission.
 """
 
@@ -52,10 +52,23 @@ EXPECTED_REJECTED = {
     "library/std/array.au",
     "library/std/utility.au",
 }
-# These two new API consumers are outside the immutable predecessor's language.
+# These four API consumers are outside the immutable predecessor's language.
 # They still run through it, with exact rejection checks, and must emit identically
 # through C1/C2. This is a path-specific applicability rule, never rejection discovery.
-CALL_CONSUMERS = {"tests/compiler/call_service.au": (3, 22), "tests/kernel-programs/call-client.au": (4, 22)}
+FEATURE_CONSUMERS = {
+    "tests/compiler/call_service.au": (3, 22, "AU2001: expected 'array' (found 'CallSession')"),
+    "tests/kernel-programs/call-client.au": (4, 22, "AU2001: expected 'array' (found 'CallSession')"),
+    "tests/kernel-programs/console-region.au": (
+        6,
+        6,
+        "AU3001: service helper parameters require scalars, enums, copied values or readonly byte spans",
+    ),
+    "tests/kernel-programs/console-region-fault.au": (
+        3,
+        6,
+        "AU3001: service helper parameters require scalars, enums, copied values or readonly byte spans",
+    ),
+}
 
 
 def require(condition, message):
@@ -182,24 +195,24 @@ def compare(case, runs, must_accept, labels=("old", "new")):
     return problems
 
 
-def call_predecessor_problems(case, run, source, root):
+def feature_predecessor_problems(case, run, source, root):
     relative = str(source.relative_to(root))
-    if relative not in CALL_CONSUMERS:
-        return ["not an explicitly named Call consumer"]
-    line, column = CALL_CONSUMERS[relative]
-    expected = f"{source}:{line}:{column}: error AU2001: expected 'array' (found 'CallSession')\n".encode()
+    if relative not in FEATURE_CONSUMERS:
+        return ["not an explicitly named feature consumer"]
+    line, column, diagnostic = FEATURE_CONSUMERS[relative]
+    expected = f"{source}:{line}:{column}: error {diagnostic}\n".encode()
     problems = []
     if run["returncode"] != 1 or run["unexpected_outputs"]:
         problems.append("predecessor did not reject normally with only expected outputs")
     if (case / "old/stdout.bin").read_bytes() or (case / "old/stderr.bin").read_bytes() != expected:
-        problems.append("predecessor Call diagnostic differs from exact expected rejection")
+        problems.append("predecessor feature diagnostic differs from exact expected rejection")
     for name in OUTPUTS:
         if (
             run["before"][name] != run["after"][name]
             or run["after"][name]["kind"] != "regular"
             or (case / "old/outputs" / name).read_bytes() != SENTINELS[name]
         ):
-            problems.append(f"predecessor Call rejection changed {name}")
+            problems.append(f"predecessor feature rejection changed {name}")
     return problems
 
 
@@ -227,34 +240,41 @@ def oracle_controls(directory, root):
             "before": before,
             "after": {name: file_state(output / name) for name in OUTPUTS},
         }
-    source = root / "tests/compiler/call_service.au"
-    diagnostic = f"{source}:3:22: error AU2001: expected 'array' (found 'CallSession')\n".encode()
-    stderr = case / "old/stderr.bin"
-    stderr.write_bytes(diagnostic)
-    old = runs["old"]
-    require(not call_predecessor_problems(case, old, source, root), "valid synthetic rejection failed")
-    require(call_predecessor_problems(case, old, root / "tests/compiler/other.au", root), "broad path exception")
-    for status in (0, -9, 2):
-        require(call_predecessor_problems(case, {**old, "returncode": status}, source, root), "wrong status accepted")
-    for wrong in (b"", diagnostic.replace(b"AU2001", b"AU9001"), diagnostic.replace(b":3:22:", b":2:22:")):
-        stderr.write_bytes(wrong)
-        require(call_predecessor_problems(case, old, source, root), "wrong diagnostic accepted")
-    stderr.write_bytes(diagnostic)
-    stdout = case / "old/stdout.bin"
-    stdout.write_bytes(b"unexpected")
-    require(call_predecessor_problems(case, old, source, root), "unexpected stdout accepted")
-    stdout.write_bytes(b"")
-    require(
-        call_predecessor_problems(case, {**old, "unexpected_outputs": ["extra"]}, source, root),
-        "unexpected output accepted",
-    )
-    for name in OUTPUTS:
-        path = case / "old/outputs" / name
-        path.write_bytes(b"changed")
-        require(call_predecessor_problems(case, old, source, root), "mutated rejection output accepted")
-        path.write_bytes(SENTINELS[name])
-        changed = {**old, "after": {**old["after"], name: {**old["after"][name], "inode": -1}}}
-        require(call_predecessor_problems(case, changed, source, root), "replaced rejection output accepted")
+    for relative, (line, column, message) in FEATURE_CONSUMERS.items():
+        source = root / relative
+        diagnostic = f"{source}:{line}:{column}: error {message}\n".encode()
+        stderr = case / "old/stderr.bin"
+        stderr.write_bytes(diagnostic)
+        old = runs["old"]
+        require(not feature_predecessor_problems(case, old, source, root), "valid synthetic rejection failed")
+        require(feature_predecessor_problems(case, old, root / "tests/compiler/other.au", root), "broad path exception")
+        for status in (0, -9, 2):
+            require(
+                feature_predecessor_problems(case, {**old, "returncode": status}, source, root), "wrong status accepted"
+            )
+        for wrong in (
+            b"",
+            diagnostic.replace(b"error AU", b"error XX"),
+            diagnostic.replace(f":{line}:{column}:".encode(), b":0:0:"),
+        ):
+            stderr.write_bytes(wrong)
+            require(feature_predecessor_problems(case, old, source, root), "wrong diagnostic accepted")
+        stderr.write_bytes(diagnostic)
+        stdout = case / "old/stdout.bin"
+        stdout.write_bytes(b"unexpected")
+        require(feature_predecessor_problems(case, old, source, root), "unexpected stdout accepted")
+        stdout.write_bytes(b"")
+        require(
+            feature_predecessor_problems(case, {**old, "unexpected_outputs": ["extra"]}, source, root),
+            "unexpected output accepted",
+        )
+        for name in OUTPUTS:
+            path = case / "old/outputs" / name
+            path.write_bytes(b"changed")
+            require(feature_predecessor_problems(case, old, source, root), "mutated rejection output accepted")
+            path.write_bytes(SENTINELS[name])
+            changed = {**old, "after": {**old["after"], name: {**old["after"][name], "inode": -1}}}
+            require(feature_predecessor_problems(case, changed, source, root), "replaced rejection output accepted")
     pair = [runs["c1"], runs["new"]]
     require(not compare(case, pair, True, ("c1", "new")), "valid synthetic convergence failed")
     for name in OUTPUTS:
@@ -264,6 +284,12 @@ def oracle_controls(directory, root):
         require(compare(case, pair, True, ("c1", "new")), "C1/C2 output mismatch accepted")
         path.write_bytes(original)
     require(compare(case, [{**pair[0], "returncode": 1}, pair[1]], True, ("c1", "new")), "C1 rejection accepted")
+    require(compare(case, [pair[0], {**pair[1], "returncode": 1}], True, ("c1", "new")), "C2 rejection accepted")
+    for name in ("stdout.bin", "stderr.bin"):
+        path = case / "c1" / name
+        path.write_bytes(b"mismatch")
+        require(compare(case, pair, True, ("c1", "new")), "C1/C2 diagnostic mismatch accepted")
+        path.write_bytes(b"")
     write_json(case / "scope.json", {"scope": "synthetic oracle controls only", "state": "passed"})
 
 
@@ -271,7 +297,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--old-compiler", type=Path, required=True, help="explicit external old-backend executable")
     parser.add_argument("--new-compiler", type=Path, required=True, help="explicit candidate executable")
-    parser.add_argument("--stage1-compiler", type=Path, required=True, help="current C1 for the two Call consumers")
+    parser.add_argument(
+        "--stage1-compiler", type=Path, required=True, help="current C1 for the four named feature consumers"
+    )
     parser.add_argument("--source-root", type=Path, default=ROOT)
     parser.add_argument("--artifacts", type=Path, required=True, help="new directory; never removed, even on success")
     parser.add_argument("--local-symbols", action="store_true", help="apply to both compilers for every input")
@@ -290,7 +318,7 @@ def main():
         require((root / name).is_dir(), f"source root missing: {name}")
         require(not artifacts.is_relative_to(root / name), "artifacts must be outside the enumerated source roots")
     corpus = sources(root)
-    require({root / name for name in CALL_CONSUMERS}.issubset(corpus), "named Call consumers missing from corpus")
+    require({root / name for name in FEATURE_CONSUMERS}.issubset(corpus), "named feature consumers missing from corpus")
     modules = sorted((root / "compiler").glob("*.au"))
     decimal = root / "library/std/decimal_digits.au"
     required = {root / "compiler/frontend.au", root / "compiler/lexer.au", decimal, *modules}
@@ -311,7 +339,7 @@ def main():
         "completed_inputs": 0,
         "accepted": 0,
         "rejected": 0,
-        "call_converged": [],
+        "feature_converged": [],
     }
     rejected = []
     try:
@@ -337,7 +365,7 @@ def main():
                 "sources": original_sources,
                 "compilers": compiler_ids,
                 "flags": flags,
-                "call_consumers": CALL_CONSUMERS,
+                "feature_consumers": FEATURE_CONSUMERS,
                 "staged_modules": staged,
                 "harness": identity(Path(__file__)),
                 "staging_helper": identity(ROOT / "scripts/bootstrap_frontend.py"),
@@ -372,17 +400,17 @@ def main():
                 for label, compiler in zip(labels[:2], compilers[:2], strict=True)
             ]
             must_accept = str(relative) not in EXPECTED_REJECTED
-            if str(relative) in CALL_CONSUMERS:
+            if str(relative) in FEATURE_CONSUMERS:
                 c1 = observe(compilers[2], arguments, invocation, case / "c1", root, timeout)
-                problems = call_predecessor_problems(case, runs[0], source, root)
+                problems = feature_predecessor_problems(case, runs[0], source, root)
                 problems += compare(case, [c1, runs[1]], True, ("c1", "new"))
             else:
                 problems = compare(case, runs, must_accept)
             write_json(case / "comparison.json", {"source": str(relative), "problems": problems})
             report["completed_inputs"] += 1
             if not problems:
-                if str(relative) in CALL_CONSUMERS:
-                    report["call_converged"].append(str(relative))
+                if str(relative) in FEATURE_CONSUMERS:
+                    report["feature_converged"].append(str(relative))
                 elif runs[0]["returncode"] == 0:
                     report["accepted"] += 1
                 else:
@@ -391,7 +419,7 @@ def main():
             write_json(artifacts / "summary.json", report)
             require(not problems, str(relative) + ": " + "; ".join(problems))
         report["rejected_sources"] = rejected
-        require(set(report["call_converged"]) == set(CALL_CONSUMERS), "Call convergence coverage changed")
+        require(set(report["feature_converged"]) == set(FEATURE_CONSUMERS), "Feature convergence coverage changed")
         require(
             set(rejected) == EXPECTED_REJECTED,
             f"rejected inputs changed: new {sorted(set(rejected) - EXPECTED_REJECTED)}, "
@@ -416,7 +444,7 @@ def main():
     finally:
         write_json(artifacts / "summary.json", report)
     print(
-        "PASS historical predecessor/C2 and named Call rejection+C1/C2: "
+        "PASS historical predecessor/C2 and named feature rejection+C1/C2: "
         "assembly, stack, ABI, diagnostics, preservation: " + json.dumps(report),
         flush=True,
     )

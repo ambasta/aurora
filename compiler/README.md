@@ -226,11 +226,16 @@ historically supported input outside its fixed list of function-less modules is 
 Exactly `tests/compiler/call_service.au` and `tests/kernel-programs/call-client.au`
 introduce the new Call API: each must produce the exact pinned predecessor AU2001
 rejection without changing output files, then emit byte-identical assembly, stack
-and ABI facts through current C1/C2 in each profile. Both remain in the corpus and
-are counted separately from the unchanged historical rejection set. This narrow
+and ABI facts through current C1/C2 in each profile. The two mixed-prefix consumers,
+exactly `tests/kernel-programs/console-region.au` and
+`tests/kernel-programs/console-region-fault.au`, likewise require the exact pinned
+predecessor AU3001 rejection at 6:6 and 3:6 respectively, unchanged outputs, and
+successful byte-identical C1/C2 assembly, stack and ABI facts in both profiles.
+All four remain in the corpus and are counted separately from the unchanged
+historical rejection set. This narrow
 applicability rule does not infer exceptions from failures or replace native/guest
-Call execution and failure-case qualification. The corpus is every `.au`
-file under compiler, examples, kernel, library and tests; embedded generated
+Call or mixed-prefix execution and failure-case qualification. The corpus is every
+`.au` file under compiler, examples, kernel, library and tests; embedded generated
 fixtures and machine behavior remain covered by their existing native suites.
 It supplements C1/C2 convergence and the final GCC 16 full,
 BIOS/UEFI and affected-profile gates; it does not replace them. Record before/after
