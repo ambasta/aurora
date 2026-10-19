@@ -141,7 +141,7 @@ class ImagePolicy(unittest.TestCase):
         for suffix in ("", "-cancel", "-cancel-ready", "-input", "-output", "-budget", "-fault"):
             mode = "runtime-console-region" + suffix
             expected = drain if suffix in ("-cancel", "-input") else drain | poll
-            policy.console_irq_windows(expected, mode)
+            self.assertEqual(policy.console_irq_windows(expected, mode), expected)
             for missing in expected:
                 with self.assertRaises(ValueError):
                     policy.console_irq_windows(expected - {missing}, mode)

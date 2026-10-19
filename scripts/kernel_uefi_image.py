@@ -865,6 +865,7 @@ def console_irq_windows(symbols, mode):
         in {"uefi_service_drain_begin", "uefi_service_drain_end", "uefi_program_poll_begin", "uefi_program_poll_end"}
     }
     need(actual == expected, "Exact protected console supervisor IRQ windows")
+    return expected
 
 
 def main(
@@ -1008,9 +1009,9 @@ def main(
             window_names = {symbol.name: symbol.address for symbol in linked.symbols if symbol.section}
             payload = (build / "payload.bin").read_bytes()
             if require_console_region:
-                console_irq_windows(window_names, build.name)
+                required_windows = console_irq_windows(window_names, build.name)
             windows = [("uefi_service_drain_begin", "uefi_service_drain_end", "fb9090fa")]
-            if require_console_region:
+            if require_console_region and "uefi_program_poll_begin" in required_windows:
                 windows.append(("uefi_program_poll_begin", "uefi_program_poll_end", "fbf4fa"))
             for begin, end, opcode in windows:
                 need(
