@@ -242,8 +242,9 @@ polling authority. The first source consumer uppercases one LF-terminated line o
 at most 32 printable ASCII bytes using a single 32-byte Utf8Text allocation; CR,
 control bytes, overlong input and damage reject before output. Output failure may
 leave a prefix. The smoke driver withholds each byte until a live-owner park.
-Separate cancellation, ready-cancellation, damage, output-failure, exhaustion and
-emitted-bounds-fault profiles exercise the same adapter. Cancellation also repeats
+Cancellation, ready-cancellation, damage, output-failure, exhaustion and
+emitted-bounds-fault modes share one boot-selected fixture image and normalizer.
+The ordinary image omits injection code. Cancellation also repeats
 with a new incarnation to reject old tickets. The existing image admission
 includes the retained supervisor wait/drain frame plus IRQ and fault reserve.
 The image, stack and payload caps remain 12288, 15360 and 64 bytes. This is one

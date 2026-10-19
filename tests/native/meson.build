@@ -431,7 +431,7 @@ if get_option('kernel_images')
       depends: kernel_profile_images['uefi/' + mode], suite: ['full', 'slow', 'integration', 'boot'],
       env: native_test_env, workdir: native_root, timeout: 900)
   endforeach
-  foreach mode : ['runtime-console-region', 'runtime-console-region-cancel', 'runtime-console-region-cancel-ready', 'runtime-console-region-input', 'runtime-console-region-output', 'runtime-console-region-budget', 'runtime-console-region-fault']
+  foreach mode : ['runtime-console-region', 'runtime-console-region-fixture']
     test('native-uefi-' + mode + '-image', python,
       args: ['-B', files('../../tests/kernel-uefi-image.py'), '--build-dir',
              meson.project_build_root() / 'kernel-images/uefi' / mode, '--owned-text', '--console-region', '--check-only'],

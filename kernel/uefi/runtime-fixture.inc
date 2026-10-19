@@ -15,7 +15,7 @@ auto select_fixture(Fixture first, Fixture last) -> void {
             "fixture selector outside image family");
     fixture = static_cast<Fixture>(value);
 }
-#ifdef AURORA_OWNED_TEXT
+#if defined(AURORA_OWNED_TEXT) && !defined(AURORA_CONSOLE_REGION)
 auto text_fixture_entry(U64 *words) -> void {
     if (fixture == Fixture::text_site)
         ++words[17];

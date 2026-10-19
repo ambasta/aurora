@@ -9,14 +9,20 @@ bool console_setup{};
            registry.ready(*text_owner) && registry.index(*text_owner) == 0 && registry.index(*domains[0].handle) == 0 &&
            text_region.is_open() && !text_region.faulted();
 }
+[[nodiscard]] auto console_launch(U64 generation, U64 region) -> std::array<U64, 7> {
+    U64 argument = 0;
+#ifdef AURORA_RUNTIME_FIXTURE
+    argument = static_cast<U64>(fixture == Fixture::console_fault);
+#endif
+    return {1, generation, region, argument, 0, 0, 0x202};
+}
 [[nodiscard]] auto console_parked() -> bool {
     return console_quiescent() && console_read.context && console_read.owner && domains[0].contract &&
            registry.index(*console_read.owner) == 0 && registry.ready(*console_read.owner) &&
            console_read.root == domains[0].tables->root() && console_read.region == text_region.id() &&
            console_read.generation == console_grant.generation && console_read.epoch == text_epoch &&
            console_read.epoch == timer_epoch && console_read.ticket != 0 && console_read.ticket == console_ticket &&
-           console_grant.grant &&
-           launch == std::array<U64, 7>{1, console_read.generation, console_read.region, 0, 0, 0, 0x202} &&
+           console_grant.grant && launch == console_launch(console_read.generation, console_read.region) &&
            console_read.initial == 128 && console_read.remaining > 0 &&
            console_read.remaining + console_read.ticks == console_read.initial &&
            console_read.context->call_frame(*domains[0].contract, images::clean_console_next_pc) && verify(domains[0]);
@@ -36,10 +42,12 @@ public:
         return Serial::next();
     }
     static auto try_put(std::uint8_t byte) -> console::PutResult {
-#ifdef AURORA_CONSOLE_OUTPUT
-        static unsigned written{};
-        if (written++ == 2)
-            return console::PutResult::timeout;
+#ifdef AURORA_RUNTIME_FIXTURE
+        if (fixture == Fixture::console_output) {
+            static unsigned written{};
+            if (written++ == 2)
+                return console::PutResult::timeout;
+        }
 #endif
         return Serial::try_put(byte);
     }
@@ -92,15 +100,18 @@ auto console_result(U64 *words, console::RawSample sample) -> void {
     require(timer_stop() && console_ticket != UINT64_MAX, "console stop and ticket");
     const auto prior_ticks = timer_ticks;
     // Charge the discarded partial quantum; resumption never renews the budget.
-#ifdef AURORA_CONSOLE_BUDGET
-    while (timer_remaining > 1) {
-        const auto debit = BudgetTransition::decode(language_budget_tick(timer_initial, timer_remaining, timer_ticks),
-                                                    timer_initial,
-                                                    timer_remaining,
-                                                    timer_ticks);
-        require(debit && debit->resume(), "console cumulative exhaustion fixture");
-        timer_ticks = debit->used();
-        timer_remaining = debit->remaining();
+#ifdef AURORA_RUNTIME_FIXTURE
+    if (fixture == Fixture::console_budget) {
+        while (timer_remaining > 1) {
+            const auto debit =
+                BudgetTransition::decode(language_budget_tick(timer_initial, timer_remaining, timer_ticks),
+                                         timer_initial,
+                                         timer_remaining,
+                                         timer_ticks);
+            require(debit && debit->resume(), "console cumulative exhaustion fixture");
+            timer_ticks = debit->used();
+            timer_remaining = debit->remaining();
+        }
     }
 #endif
     const auto transition = BudgetTransition::decode(
@@ -180,7 +191,7 @@ auto console_result(U64 *words, console::RawSample sample) -> void {
     console_setup = true;
     console_grant = ProtectedConsole::open();
     console_setup = false;
-    launch = {1, console_grant.generation, text_region.id(), 0, 0, 0, 0x202};
+    launch = console_launch(console_grant.generation, text_region.id());
     require(verify(domain) && program.begin(*domain.contract) && registry.activate(*text_owner),
             "console application entry");
     active = 0;
@@ -209,15 +220,18 @@ auto console_result(U64 *words, console::RawSample sample) -> void {
         require(!console_resume(ticket) && !console_resume(ticket - 1) && !console_cancel(ticket - 1) &&
                     !console_cancel(ticket + 1) && !retire(0),
                 "console pending authority");
-#ifdef AURORA_CONSOLE_CANCEL
-        require(console_cancel(ticket) && !console_resume(ticket) && !console_cancel(ticket),
-                "console cancelled ticket");
-        break;
+#ifdef AURORA_RUNTIME_FIXTURE
+        if (fixture == Fixture::console_cancel) {
+            require(console_cancel(ticket) && !console_resume(ticket) && !console_cancel(ticket),
+                    "console cancelled ticket");
+            break;
+        }
 #endif
         while (!console_read.ready) {
             auto sample = ProtectedConsole::poll(console_grant.grant, console_grant.generation);
-#ifdef AURORA_CONSOLE_INPUT
-            sample = {0, 0, 1};
+#ifdef AURORA_RUNTIME_FIXTURE
+            if (fixture == Fixture::console_input)
+                sample = {0, 0, 1};
 #endif
             if (sample.byte_present || sample.damaged)
                 console_read.ready = sample;
@@ -225,9 +239,12 @@ auto console_result(U64 *words, console::RawSample sample) -> void {
                 program_wait_sample();
         }
         require(!console_resume(ticket + 1) && !console_cancel(ticket + 1), "console stale ticket preserves sample");
-#ifdef AURORA_CONSOLE_CANCEL_READY
-        require(console_read.ready && console_cancel(ticket) && !console_resume(ticket), "console ready cancellation");
-        break;
+#ifdef AURORA_RUNTIME_FIXTURE
+        if (fixture == Fixture::console_cancel_ready) {
+            require(console_read.ready && console_cancel(ticket) && !console_resume(ticket),
+                    "console ready cancellation");
+            break;
+        }
 #endif
         require(console_resume(ticket) && !console_resume(ticket), "console exactly once resume");
     }

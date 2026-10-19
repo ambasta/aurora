@@ -3,9 +3,4 @@ native-uefi-normal-image
 native-uefi-runtime-owned-text-image
 native-uefi-runtime-owned-text-fixture-image
 native-uefi-runtime-console-region-image
-native-uefi-runtime-console-region-cancel-image
-native-uefi-runtime-console-region-cancel-ready-image
-native-uefi-runtime-console-region-input-image
-native-uefi-runtime-console-region-output-image
-native-uefi-runtime-console-region-budget-image
-native-uefi-runtime-console-region-fault-image
+native-uefi-runtime-console-region-fixture-image

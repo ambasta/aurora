@@ -38,6 +38,10 @@ def run_console_region(command, log, mode):
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
     import qemu_transport as transport
+    from kernel_profiles import FIXTURE_MODES
+
+    startup_byte = FIXTURE_MODES.get(mode, ("", None))[1]
+    startup_sent = startup_byte is None
 
     payload = b"x" if mode.endswith(("cancel-ready", "fault")) else b"abcdefghijklmnopqrstuvwxyz012345\n"
     transcript = bytearray()
@@ -53,6 +57,8 @@ def run_console_region(command, log, mode):
             if not data:
                 break
             transcript.extend(data)
+            if not startup_sent:
+                startup_sent = transport.send_startup_byte(process.stdin, startup_byte, transcript)
             need(len(transcript) < 1048576, "Bounded protected console transcript")
             parks = re.findall(
                 rb"AURORA_CONSOLE_PARK: ticket=(\d+) live=1 used=32 epoch=(\d+) ticks=(\d+) remaining=(\d+)\r?\n",
@@ -64,6 +70,7 @@ def run_console_region(command, log, mode):
                 process.stdin.flush()
                 sent += 1
         status = transport.reap_completed(process, deadline)
+        need(startup_sent, "Fixture requested its boot selector")
         need(sent == len(payload), "Whole bounded line delivered after live-owner parks")
         return status
     finally:

@@ -850,9 +850,13 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
 #endif
 #ifdef AURORA_OWNED_TEXT
 #ifdef AURORA_CONSOLE_REGION
+#ifdef AURORA_RUNTIME_FIXTURE
+    select_fixture(Fixture::console_fault, Fixture::console_budget);
+#endif
     run_console_application(producer_pool);
-#ifdef AURORA_CONSOLE_CANCEL
-    run_console_application(producer_pool);
+#ifdef AURORA_RUNTIME_FIXTURE
+    if (fixture == Fixture::console_cancel)
+        run_console_application(producer_pool);
 #endif
 #else
     run_owned_text(producer_pool);

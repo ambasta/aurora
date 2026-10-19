@@ -15,7 +15,7 @@
 [[nodiscard, gnu::noinline]] auto text_trap(U64 frame) -> U64 {
     require(text_active(), "text active authority");
     auto *words = reinterpret_cast<U64 *>(frame);
-#ifdef AURORA_RUNTIME_FIXTURE
+#if defined(AURORA_RUNTIME_FIXTURE) && !defined(AURORA_CONSOLE_REGION)
     text_fixture_entry(words);
 #endif
     constexpr std::array<U64, 6> sites{images::clean_bytes_allocate_pc,
@@ -39,7 +39,7 @@
     require(operation == 0 ? words[6] == text_region.id()
                            : owner.region == text_region.id() || (operation == 5 && pristine),
             "text private region binding");
-#ifdef AURORA_RUNTIME_FIXTURE
+#if defined(AURORA_RUNTIME_FIXTURE) && !defined(AURORA_CONSOLE_REGION)
     text_fixture_owner(operation, owner);
 #endif
     U64 result = 0;
@@ -74,7 +74,7 @@ extern "C" [[noreturn]] void __au_runtime_bytes_kernel_fault(std::uint64_t reaso
 
 #ifndef AURORA_CONSOLE_REGION
 auto run_owned_text(memory::PhysicalPages &pool) -> void {
-#ifdef AURORA_RUNTIME_FIXTURE
+#if defined(AURORA_RUNTIME_FIXTURE) && !defined(AURORA_CONSOLE_REGION)
     select_fixture(Fixture::text_site, Fixture::text_stale);
 #endif
     require(pool.used() == 0, "text exclusive backing pool");

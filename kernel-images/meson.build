@@ -143,7 +143,7 @@ foreach profile_id : profile_data['profiles'].split('|')
       endforeach
       entry_source = files('../' + profile_data[user_key + '.entry'])
       combined = profile_data[user_key + '.combined'] == '1'
-      owned_text = profile_data[key + '.user_mode'] in ['owned-text', 'console-region'] and name == 'clean'
+      owned_text = '--owned-text' in image_options and name == 'clean'
       call_client = combined and '--blocking-call' in profile_data[key + '.user_options'].split('|')
       # Closed callers and owned text have independently checked linked graphs.
       if (call_client and name == 'clean') or owned_text

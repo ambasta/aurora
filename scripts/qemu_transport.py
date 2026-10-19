@@ -371,6 +371,14 @@ def capture_bytes(output, data, count, limit, reason):
     return count + len(data)
 
 
+def send_startup_byte(stream, value, received):
+    if b"AURORA_FIXTURE_READY\n" not in received.replace(b"\r", b""):
+        return False
+    stream.write(bytes([value]))
+    stream.flush()
+    return True
+
+
 def run_logged(
     argv,
     log,
@@ -422,10 +430,7 @@ def run_logged(
                     count = capture_bytes(outputs[reader], data, count, limit, "Child output limit")
                     if not startup_sent and reader is process.stdout:
                         startup_tail = (startup_tail + data).replace(b"\r", b"")[-128:]
-                        if b"AURORA_FIXTURE_READY\n" in startup_tail:
-                            process.stdin.write(bytes([startup_byte]))
-                            process.stdin.flush()
-                            startup_sent = True
+                        startup_sent = send_startup_byte(process.stdin, startup_byte, startup_tail)
             status = reap_completed(process, deadline)
             need(startup_sent, "Fixture exited without requesting its boot selector")
     except DeadlineExpired as error:

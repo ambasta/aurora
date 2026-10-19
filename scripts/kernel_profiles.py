@@ -70,12 +70,7 @@ UEFI_FAMILIES = [
         {
             "runtime-owned-text": [],
             "runtime-console-region": ["-DAURORA_CONSOLE_REGION"],
-            "runtime-console-region-fault": ["-DAURORA_CONSOLE_REGION"],
-            "runtime-console-region-cancel": ["-DAURORA_CONSOLE_REGION", "-DAURORA_CONSOLE_CANCEL"],
-            "runtime-console-region-cancel-ready": ["-DAURORA_CONSOLE_REGION", "-DAURORA_CONSOLE_CANCEL_READY"],
-            "runtime-console-region-input": ["-DAURORA_CONSOLE_REGION", "-DAURORA_CONSOLE_INPUT"],
-            "runtime-console-region-output": ["-DAURORA_CONSOLE_REGION", "-DAURORA_CONSOLE_OUTPUT"],
-            "runtime-console-region-budget": ["-DAURORA_CONSOLE_REGION", "-DAURORA_CONSOLE_BUDGET"],
+            "runtime-console-region-fixture": ["-DAURORA_CONSOLE_REGION", "-DAURORA_RUNTIME_FIXTURE"],
             "runtime-owned-text-fixture": ["-DAURORA_RUNTIME_FIXTURE"],
         },
     ),
@@ -667,7 +662,13 @@ def uefi_profile(mode, flags):
     ):
         user_mode = mode[8:]
     if owned_text:
-        user_mode = "console-region" if console_region else "owned-text"
+        user_mode = (
+            "console-region-fixture"
+            if mode == "runtime-console-region-fixture"
+            else "console-region"
+            if console_region
+            else "owned-text"
+        )
     if snapshot and mode in ("snapshot-owner", "snapshot-reply-reserved", "snapshot-reply-byte"):
         user_mode = mode[9:]
     if program and mode in ("program-owner", "program-ordinal", "program-unknown", "program-transaction"):
@@ -711,8 +712,8 @@ def uefi_profile(mode, flags):
     if owned_text:
         users["clean"].update(
             source=(
-                "tests/kernel-programs/console-region-fault.au"
-                if mode.endswith("-fault")
+                "tests/kernel-programs/console-region-fixture.au"
+                if mode == "runtime-console-region-fixture"
                 else "tests/kernel-programs/console-region.au"
             )
             if console_region
@@ -720,6 +721,8 @@ def uefi_profile(mode, flags):
             entry="kernel/uefi/console-region-entry.S" if console_region else "kernel/uefi/owned-text-entry.S",
             combined=True,
         )
+    if mode == "runtime-console-region-fixture":
+        users["clean"]["entry_flags"] += ["--defsym", "AURORA_CONSOLE_FIXTURE=1"]
     image_policy = (
         "multipage"
         if "-DAURORA_RUNTIME_MULTIPAGE" in flags

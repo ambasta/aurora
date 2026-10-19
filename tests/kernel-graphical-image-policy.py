@@ -138,7 +138,7 @@ class ImagePolicy(unittest.TestCase):
     def test_console_region_irq_windows_are_required(self):
         drain = {"uefi_service_drain_begin", "uefi_service_drain_end"}
         poll = {"uefi_program_poll_begin", "uefi_program_poll_end"}
-        for suffix in ("", "-cancel", "-cancel-ready", "-input", "-output", "-budget", "-fault"):
+        for suffix in ("", "-cancel", "-cancel-ready", "-input", "-output", "-budget", "-fault", "-fixture"):
             mode = "runtime-console-region" + suffix
             expected = drain if suffix in ("-cancel", "-input") else drain | poll
             self.assertEqual(policy.console_irq_windows(expected, mode), expected)

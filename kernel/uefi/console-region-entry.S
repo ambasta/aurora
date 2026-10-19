@@ -6,7 +6,11 @@ aurora_program_entry:
     mov %rdi, (%rsp)
     mov %rsi, 8(%rsp)
     mov %rdx, 16(%rsp)
+    .ifdef AURORA_CONSOLE_FIXTURE
+    mov %rcx, 24(%rsp)
+    .else
     movq $0, 24(%rsp)
+    .endif
     mov %rsp, %r11
     call @aurora_user_main@
     add $32, %rsp

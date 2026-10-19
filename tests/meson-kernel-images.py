@@ -93,7 +93,7 @@ class GeneratorBoundaries(unittest.TestCase):
         self.assertEqual(user_recipe.count("--referenced-reflection-only"), 1)
         self.assertLess(recipe.index(caller_selection), recipe.index("user_assembly = custom_target"))
         self.assertIn(
-            "owned_text = profile_data[key + '.user_mode'] in ['owned-text', 'console-region'] and name == 'clean'",
+            "owned_text = '--owned-text' in image_options and name == 'clean'",
             user_recipe,
         )
         self.assertIn("if owned_text\n        user_root_args += ['--local-symbols']\n      endif", user_recipe)

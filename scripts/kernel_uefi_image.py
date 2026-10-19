@@ -852,7 +852,7 @@ def graphical_image_policy(directory, symbols=None):
 def console_irq_windows(symbols, mode):
     modes = {
         "runtime-console-region" + suffix
-        for suffix in ("", "-cancel", "-cancel-ready", "-input", "-output", "-budget", "-fault")
+        for suffix in ("", "-cancel", "-cancel-ready", "-input", "-output", "-budget", "-fault", "-fixture")
     }
     need(mode in modes, "Exact protected console image mode")
     expected = {"uefi_service_drain_begin", "uefi_service_drain_end"}
