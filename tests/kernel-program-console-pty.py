@@ -19,6 +19,8 @@ import tty
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
+from kernel_layout import LAYOUT
+
 import kernel_program_console_admission as admission
 import kernel_uefi_console_clock as clock
 import qemu_transport as transport
@@ -90,7 +92,7 @@ def validate_domain_events(text, images, timer, returning=False):
                     vector == 64
                     and terminal_seen
                     and root == kernel_root
-                    and arena + 0x44000 <= frame <= arena + 0x48000 - 176
+                    and arena + 0x44000 <= frame <= arena + 0x48000 - LAYOUT.fault_frame_size
                     and frame % 8 == 0
                     and arena + 0x22000 + timer["drain_begin"] <= pc <= arena + 0x22000 + timer["drain_end"],
                     "Unauthorized supervisor timer event",
@@ -107,7 +109,7 @@ def validate_domain_events(text, images, timer, returning=False):
                 cpl == 3
                 and vector in ((6, 64, 129, 130) if returning else (6, 64, 129))
                 and root == live_root
-                and frame == arena + 0x88000 - 176,
+                and frame == arena + LAYOUT.rsp0_top - LAYOUT.fault_frame_size,
                 "Invalid active-domain frame",
             )
             if vector == 130:

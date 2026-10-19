@@ -145,9 +145,10 @@ class ServiceContext final {
     }
 
 public:
-    static constexpr std::size_t word_count = 22;
+    static constexpr std::size_t word_count = BootstrapLayout::fault_frame_words;
     static constexpr std::uint64_t byte_count = word_count * sizeof(std::uint64_t);
-    static constexpr std::uint64_t allowed_flags = 0x10ed7; // Arithmetic, bit1, IF, DF, RF only.
+    static constexpr std::uint64_t allowed_flags =
+        BootstrapLayout::allowed_user_flags; // Arithmetic, bit1, IF, DF, RF only.
     static_assert(byte_count == user::ProgramLayout::fault_frame_size);
 
     [[nodiscard]] static constexpr auto frame_valid(std::uint64_t frame, const user::ProgramContract &contract)

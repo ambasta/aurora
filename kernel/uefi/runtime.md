@@ -14,6 +14,10 @@ temporary bootstrap machinery; this is not a language-native complete kernel.
 
 ## Relocation and ownership
 
+[Bootstrap dimensions](../bootstrap-layout-values.inc) and
+[image page policies](image-page-policies.inc) are shared tables for C++ and the
+generated profile metadata. Host image and boot checks use the same metadata loader.
+
 Handoff version 3 retains the allocated 1 MiB arena and adds an exact metadata
 pointer at arena + 0x81000. Version 1 and 2 profiles remain valid with their
 original layouts. The final firmware map must own the whole arena below 4 GiB.

@@ -2,6 +2,9 @@
 from pathlib import Path
 import importlib.util, json, re, sys, copy
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from kernel_layout import LAYOUT
+
 spec = importlib.util.spec_from_file_location("pci", Path(__file__).with_name("kernel-pci-smoke.py"))
 pci = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(pci)
@@ -24,8 +27,8 @@ MODES = SUCCESS_MODES + (
     "runtime-syscall",
     "runtime-sysenter",
 )
-BASE = 0x10000000000
-STACK = 0x10000200000
+BASE = LAYOUT.user_code
+STACK = LAYOUT.user_stack_bottom
 SUFFIX = "AURORA_UEFI_LANGUAGE_OK: value=42\nAURORA_UEFI_OK\n"
 
 
@@ -130,7 +133,7 @@ def console_execution(text, image, arena, mode):
                 and left == 128 - after
                 and pc == irq_pc
                 and flags & 0x202 == 0x202
-                and flags & ~0x10ED7 == 0,
+                and flags & ~LAYOUT.allowed_user_flags == 0,
                 "Conserved IRQ budget",
             )
             used, prior = after, "tick"
@@ -210,7 +213,10 @@ def validate_console_region(status, text, metadata, mode):
     for values in events:
         vector, error, pc, cpl, root, frame, cr2 = map(int, values)
         need(
-            error == cr2 == 0 and cpl == 3 and root == arena + 0x90000 and frame == arena + 0x88000 - 176,
+            error == cr2 == 0
+            and cpl == 3
+            and root == arena + 0x90000
+            and frame == arena + LAYOUT.rsp0_top - LAYOUT.fault_frame_size,
             "Exact application trap authority",
         )
         need(
@@ -288,7 +294,10 @@ def validate_console_region(status, text, metadata, mode):
             else "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345\n"
         )
         need(output == expected_output, "Exact source-produced output after final wait")
-    need(metadata["clean"]["size"] <= 12288 and metadata["clean"]["user_stack"] <= 15360, "Unchanged user caps")
+    need(
+        metadata["clean"]["size"] <= LAYOUT.image_slot_bytes and metadata["clean"]["user_stack"] <= LAYOUT.stack_cap,
+        "Unchanged user caps",
+    )
     print("PASS: protected console waits, original budget, result and reclamation: " + mode)
 
 
@@ -317,11 +326,13 @@ def validate_region_metadata(metadata, console_region=False):
             and all(type(value) is int and 0 <= value < 1 << 64 for value in image.values()),
             "Exact owned text metadata",
         )
-        base = BASE + index * 16384
+        base = BASE + index * LAYOUT.code_stride
         need(
             image["entry"] == base
             and (
-                (0 if console_region else 8192) < image["size"] <= 12288 if index == 0 else 4 <= image["size"] <= 4096
+                (0 if console_region else 8192) < image["size"] <= LAYOUT.image_slot_bytes
+                if index == 0
+                else 4 <= image["size"] <= 4096
             ),
             "Owned text image bounds",
         )
@@ -340,7 +351,7 @@ def validate_region_metadata(metadata, console_region=False):
     need(
         len(sites) == (8 if console_region else 6)
         and all(BASE <= pc < BASE + image["size"] for pc in sites)
-        and 0 < image["user_stack"] <= 15360
+        and 0 < image["user_stack"] <= LAYOUT.stack_cap
         and BASE <= image["compiled_begin"] < image["compiled_end"] <= BASE + image["size"],
         "Owned text linked stack and six byte sites",
     )
@@ -397,7 +408,7 @@ def validate_owned_text(status, text, metadata, mode):
                 and cpl == 3
                 and root == domain
                 and frame % 8 == 0
-                and arena + 0x84000 <= frame <= arena + 0x88000 - 176
+                and arena + LAYOUT.rsp0_bottom <= frame <= arena + LAYOUT.rsp0_top - LAYOUT.fault_frame_size
                 and text.index(arm) < event.start(),
                 "Authenticated denial trap",
             )
@@ -413,7 +424,7 @@ def validate_owned_text(status, text, metadata, mode):
                     (epoch, used, remaining, tick_pc) == (1, ticks, 128 - ticks, pc)
                     and ticks < 128
                     and flags & 0x202 == 0x202
-                    and flags & ~0x10ED7 == 0,
+                    and flags & ~LAYOUT.allowed_user_flags == 0,
                     "Denial conserved budget",
                 )
         need(text.count("AURORA_UEFI_TIMER_TICK:") == ticks, "No unmatched denial debit")
@@ -482,7 +493,10 @@ def validate_owned_text(status, text, metadata, mode):
             need(error == 0 and cr2 == 0 and frame % 8 == 0, "Exact owned text exception state")
             if cpl == 0:
                 need(
-                    terminal and vector == 64 and root == kernel and arena + 0x44000 <= frame <= arena + 0x48000 - 176,
+                    terminal
+                    and vector == 64
+                    and root == kernel
+                    and arena + 0x44000 <= frame <= arena + 0x48000 - LAYOUT.fault_frame_size,
                     "Only quiescent pending IRQ may enter from kernel",
                 )
                 need(
@@ -493,7 +507,10 @@ def validate_owned_text(status, text, metadata, mode):
                 drains += 1
                 continue
             need(
-                not terminal and cpl == 3 and root == domain and arena + 0x84000 <= frame <= arena + 0x88000 - 176,
+                not terminal
+                and cpl == 3
+                and root == domain
+                and arena + LAYOUT.rsp0_bottom <= frame <= arena + LAYOUT.rsp0_top - LAYOUT.fault_frame_size,
                 "Live owned domain exception authority",
             )
             if vector == 130:
@@ -511,7 +528,7 @@ def validate_owned_text(status, text, metadata, mode):
                     (tick_epoch, used, remaining, tick_pc) == (epoch, ticks, 128 - ticks, pc)
                     and ticks <= 128
                     and flags & 0x202 == 0x202
-                    and flags & ~0x10ED7 == 0,
+                    and flags & ~LAYOUT.allowed_user_flags == 0,
                     "Contiguous conserved budget",
                 )
                 compiled += image["compiled_begin"] <= pc < image["compiled_end"]
@@ -578,10 +595,11 @@ def validate(status, text, mode, metadata, *, retained=0, final_slot=0):
             and all(type(v) is int and 0 <= v < 1 << 64 for v in image.values()),
             "Malformed metadata values",
         )
-        base = BASE + index * 16384
+        base = BASE + index * LAYOUT.code_stride
         size = image["size"]
         need(
-            image["entry"] == base and (8192 < size <= 12288 if mode == "runtime-multipage" else 4 <= size <= 4096),
+            image["entry"] == base
+            and (8192 < size <= LAYOUT.image_slot_bytes if mode == "runtime-multipage" else 4 <= size <= 4096),
             "Exact per-profile image allowance",
         )
         if mode == "runtime-multipage":
@@ -685,7 +703,7 @@ def validate(status, text, mode, metadata, *, retained=0, final_slot=0):
         need(
             slot == wanted_slot
             and root == arena + 0x90000 + slot * 0x10000
-            and pc == BASE + (1 if index == 1 else 0) * 16384
+            and pc == BASE + (1 if index == 1 else 0) * LAYOUT.code_stride
             and sp == STACK + slot * 0x200000 + 0x4000,
             "Wrong private entry layout",
         )
@@ -695,11 +713,18 @@ def validate(status, text, mode, metadata, *, retained=0, final_slot=0):
         expected_cpl = 0 if mode == "runtime-kernel-trap" else 3
         need(cpl == expected_cpl, "Wrong privilege origin")
         if mode == "runtime-entry-stack":
-            need(arena + 0x89000 <= frame <= arena + 0x8D000 - 176 and frame % 8 == 0, "Wrong IST stack")
+            need(
+                arena + 0x89000 <= frame <= arena + 0x8D000 - LAYOUT.fault_frame_size and frame % 8 == 0,
+                "Wrong IST stack",
+            )
         elif mode == "runtime-kernel-trap":
             need(arena + 0x44000 <= frame < arena + 0x48000 and frame % 8 == 0, "Wrong kernel trap stack")
         else:
-            need(arena + 0x84000 <= frame <= arena + 0x88000 - 176 and frame % 8 == 0, "Wrong RSP0 frame")
+            need(
+                arena + LAYOUT.rsp0_bottom <= frame <= arena + LAYOUT.rsp0_top - LAYOUT.fault_frame_size
+                and frame % 8 == 0,
+                "Wrong RSP0 frame",
+            )
         image = metadata["bounds" if index == 1 else "clean"]
         need(image["entry"] == pc, "Fixture metadata entry")
         if mode in SUCCESS_MODES:
@@ -730,7 +755,7 @@ def validate(status, text, mode, metadata, *, retained=0, final_slot=0):
                 "runtime-nx",
             ):
                 address = {
-                    "runtime-code": BASE + 16384,
+                    "runtime-code": BASE + LAYOUT.code_stride,
                     "runtime-stack": STACK + 0x200000,
                     "runtime-kernel": arena,
                     "runtime-window": pci.WINDOW,
@@ -753,7 +778,7 @@ def validate(status, text, mode, metadata, *, retained=0, final_slot=0):
                 need((vector, error, rip) == (6, 0, image["bounds_pc"]), "Wrong known kernel UD2")
             elif mode == "runtime-entry-stack":
                 need(
-                    (vector, error, rip, cr2) == (8, 0, image["return_pc"] - 2, arena + 0x84000 - 8),
+                    (vector, error, rip, cr2) == (8, 0, image["return_pc"] - 2, arena + LAYOUT.rsp0_bottom - 8),
                     "Missing exact entry-stack double fault",
                 )
             elif mode == "runtime-return":
@@ -844,7 +869,7 @@ def owned_text_controls(prefix, baseline):
     for index, name in enumerate(operations):
         image["bytes_" + name + "_pc"] = BASE + 11500 + index * 32
     arena = 0x1000000
-    kernel, domain, frame = arena + 0x11000, arena + 0x90000, arena + 0x88000 - 176
+    kernel, domain, frame = arena + 0x11000, arena + 0x90000, arena + LAYOUT.rsp0_top - LAYOUT.fault_frame_size
     text = prefix + f"AURORA_UEFI_TIMER_READY: physical=4276092928 virtual=18446620928407240704 id=0 root={kernel}\n"
 
     def event(vector, pc):
@@ -980,7 +1005,7 @@ def console_region_self_test():
         image["bytes_" + name + "_pc"] = BASE + 6200 + index * 16
     image.update(console_next_pc=BASE + 6300, console_put_pc=BASE + 6310)
     bounds = dict(
-        entry=BASE + 16384,
+        entry=BASE + LAYOUT.code_stride,
         size=100,
         return_pc=BASE + 16400,
         bounds_pc=BASE + 16402,
@@ -995,7 +1020,7 @@ def console_region_self_test():
     trace += f"AURORA_UEFI_TIMER_ARM: epoch=1 budget=128 root={arena + 0x90000}\n"
     next_event = (
         f"AURORA_UEFI_DOMAIN_EVENT: vector=130 error=0 pc={image['console_next_pc']} cpl=3 "
-        f"root={arena + 0x90000} frame={arena + 0x88000 - 176} cr2=0\n"
+        f"root={arena + 0x90000} frame={arena + LAYOUT.rsp0_top - LAYOUT.fault_frame_size} cr2=0\n"
     )
     for i in range(1, 34):
         trace += next_event
@@ -1006,7 +1031,7 @@ def console_region_self_test():
     trace += "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345\n"
     trace += (
         f"AURORA_UEFI_DOMAIN_EVENT: vector=129 error=0 pc={image['return_pc']} cpl=3 "
-        f"root={arena + 0x90000} frame={arena + 0x88000 - 176} cr2=0\n"
+        f"root={arena + 0x90000} frame={arena + LAYOUT.rsp0_top - LAYOUT.fault_frame_size} cr2=0\n"
     )
     trace += f"AURORA_UEFI_TIMER_QUIET: epoch=1 ticks=33 drains=0 compiled=0 context=0 root={arena + 0x11000}\n"
     trace += (
@@ -1104,7 +1129,7 @@ def self_test():
     )
     metadata = {}
     for index, name in enumerate(("clean", "bounds")):
-        base = BASE + index * 16384
+        base = BASE + index * LAYOUT.code_stride
         metadata[name] = dict(
             entry=base,
             size=128,
@@ -1140,7 +1165,7 @@ def self_test():
             error = 0
             pc = image["bounds_pc"] if i == 1 else image["return_pc"]
             cpl = 3
-            frame = arena + 0x88000 - 176
+            frame = arena + LAYOUT.rsp0_top - LAYOUT.fault_frame_size
             cr2 = 0
             if mode in (
                 "runtime-code",
@@ -1160,7 +1185,7 @@ def self_test():
                     "runtime-nx": 21,
                 }[mode]
                 cr2 = {
-                    "runtime-code": BASE + 16384,
+                    "runtime-code": BASE + LAYOUT.code_stride,
                     "runtime-stack": STACK + 0x200000,
                     "runtime-kernel": arena,
                     "runtime-window": pci.WINDOW,
@@ -1176,8 +1201,8 @@ def self_test():
             elif mode == "runtime-entry-stack":
                 vector = 8
                 pc = image["return_pc"] - 2
-                cr2 = arena + 0x84000 - 8
-                frame = arena + 0x8D000 - 176
+                cr2 = arena + LAYOUT.rsp0_bottom - 8
+                frame = arena + 0x8D000 - LAYOUT.fault_frame_size
             elif mode == "runtime-return":
                 pc = image["probe_pc"]
             elif mode == "runtime-unknown":
@@ -1253,7 +1278,7 @@ def self_test():
         for field, value in [
             ("return_pc", 0),
             ("bounds_pc", BASE - 2),
-            ("overflow_pc", BASE + 16384),
+            ("overflow_pc", BASE + LAYOUT.code_stride),
             ("size", 12289 if mode == "runtime-multipage" else 8192),
             ("entry", 0),
             ("return_pc", True),

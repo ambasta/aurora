@@ -7,10 +7,13 @@
 #include <vector>
 
 namespace aurora {
-// Maximum of the two exact typed preludes (historical 15, Call-enabled 16).
+// Diagnostic, configuration, seven scalar contracts, layout, then service operations.
 // Each selected prelude is checked explicitly; no arbitrary prefix is exempted
 // from the output graph's ownership contract.
-inline constexpr std::int64_t hostedLoweringPreludeRows = 16;
+inline constexpr std::int64_t hostedLoweringPreludeRows = 10 + service::operations.size();
+inline constexpr std::int64_t hostedLoweringPrefixRows(bool includeCall) {
+    return 10 + service::operationCount(includeCall);
+}
 
 // These views own no Session descriptor. HostedResolution copies each published
 // output pool once while its consuming owner is armed, then keeps the copies

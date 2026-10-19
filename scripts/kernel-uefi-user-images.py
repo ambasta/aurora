@@ -5,7 +5,10 @@ from pathlib import Path
 import argparse, json, struct, subprocess, sys
 
 ROOT = Path(__file__).resolve().parent.parent
-BASE = 0x10000000000
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from kernel_layout import LAYOUT
+
+BASE = LAYOUT.user_code
 
 
 def need(value, message):
@@ -30,7 +33,9 @@ def verify(
     need(len(data) >= 64, "Truncated ELF header")
     need(type(image_count) is int and image_count in (2, 3), "Unknown bounded image profile")
     need(type(max_pages) is int and 1 <= max_pages <= 3, "Unknown bounded page allowance")
-    need(base in tuple(BASE + index * 16384 for index in range(image_count)), "Foreign virtual image layout")
+    need(
+        base in tuple(BASE + index * LAYOUT.code_stride for index in range(image_count)), "Foreign virtual image layout"
+    )
     need(data[:7] == b"\x7fELF\x02\x01\x01", "ELF64 little-endian required")
     kind, machine = struct.unpack_from("<HH", data, 16)
     entry, phoff = struct.unpack_from("<QQ", data, 24)
@@ -283,7 +288,7 @@ def emit_metadata(out, mode):
         prefix = out / f"user-{name}"
         elf = prefix.with_suffix(".elf")
         binary = prefix.with_suffix(".bin")
-        base = BASE + index * 16384
+        base = BASE + index * LAYOUT.code_stride
         need(
             "There are no relocations" in subprocess.check_output(["readelf", "-rW", elf], text=True),
             "Unresolved image relocations",

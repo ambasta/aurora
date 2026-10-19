@@ -489,7 +489,7 @@ for mode, reply in [
     )
     for changed in mutations:
         if changed == text:
-            continue
+            raise SystemExit("FAIL: returning file-call mutation did not change its fixture in " + mode)
         try:
             module.validate_file_call(changed, mode, results, replies, images, timer)
         except ValueError:

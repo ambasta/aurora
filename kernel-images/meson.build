@@ -38,8 +38,11 @@ kernel_options = {
 
 # One canonical data catalog is shared with the command selectors. All generated
 # metadata below is build-local; only the two normal images are default products.
-profile_file = configure_file(input: '../scripts/kernel_profiles.py', output: 'profile-data.ini',
-  command: [python, '-B', '@INPUT@', '--meson-output', '@OUTPUT@'])
+profile_file = configure_file(
+  input: ['../scripts/kernel_profiles.py', '../scripts/kernel_layout.py', '../kernel/bootstrap-layout-values.inc',
+         '../kernel/uefi/image-page-policies.inc'],
+  output: 'profile-data.ini',
+  command: [python, '-B', '@INPUT0@', '--meson-output', '@OUTPUT@'])
 profile_data = import('keyval').load(profile_file)
 kernel_profile_images = {}
 kernel_profile_users = {}

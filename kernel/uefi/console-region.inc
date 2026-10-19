@@ -1,22 +1,8 @@
 // One reusable protected application contract; no command or text policy here.
-class ConsoleReadWait final {
-public:
-    std::optional<ServiceContext> context;
-    std::optional<user::DomainHandle> owner;
-    U64 root{}, region{}, generation{}, epoch{}, ticket{};
-    unsigned initial{}, remaining{}, ticks{}, resumes{}, compiled{}, contexts{};
-    std::optional<console::RawSample> ready;
-};
-constinit ConsoleReadWait console_read;
+constinit ParkedRun console_read;
 console::ServiceArgument console_grant{};
 U64 console_ticket{};
 bool console_setup{};
-auto clear_console_read() -> void {
-    std::destroy_at(&console_read);
-    auto *bytes = reinterpret_cast<volatile std::byte *>(&console_read);
-    for (std::size_t i = 0; i < sizeof(ConsoleReadWait); ++i) bytes[i] = std::byte{0};
-    std::construct_at(&console_read);
-}
 [[nodiscard]] auto console_quiescent() -> bool {
     return root() == kernel_root && irq_off() && active == L::domain_count && saved_rsp == 0 &&
         !program.running() && !timer_armed && !timer_owner && !timer_draining && text_owner &&
@@ -107,38 +93,26 @@ auto console_result(U64 *words, console::RawSample sample) -> void {
     Serial::text(" used="); Serial::number(timer_ticks);
     Serial::text(" remaining="); Serial::number(timer_remaining); Serial::text("\r\n");
     if (!timer_exhausted) {
-        console_read.context.emplace(*context); console_read.owner = *text_owner;
+        save_parked_run(console_read, *context); console_read.owner = *text_owner;
         console_read.root = root(); console_read.region = text_region.id();
         console_read.generation = console_grant.generation; console_read.epoch = text_epoch;
         console_read.ticket = ++console_ticket; console_read.initial = timer_initial;
-        console_read.remaining = timer_remaining; console_read.ticks = timer_ticks;
-        console_read.resumes = timer_resumes; console_read.compiled = timer_compiled_hits;
-        console_read.contexts = timer_context_hits;
     }
-    require(program.cancel(), "console park tracker");
-    asm volatile("mov %0,%%cr3" ::"r"(kernel_root):"memory");
-    require(registry.deactivate(*text_owner), "console park owner");
-    active = L::domain_count;
+    park_run(*text_owner);
     return 1;
 }
 [[nodiscard]] auto console_resume(U64 ticket) -> bool {
     if (!console_parked() || ticket != console_read.ticket || !console_read.ready) return false;
-    const auto frame = console_read.context->frame();
-    auto *words = reinterpret_cast<U64 *>(frame);
-    for (std::size_t i=0;i<ServiceContext::word_count;++i) words[i]=console_read.context->words()[i];
-    console_result(words,*console_read.ready);
     timer_owner = *console_read.owner; timer_owner_epoch = timer_epoch = console_read.epoch;
-    timer_initial = console_read.initial; timer_remaining = console_read.remaining; timer_ticks = console_read.ticks;
-    timer_resumes = console_read.resumes; timer_compiled_hits = console_read.compiled; timer_context_hits = console_read.contexts;
-    timer_drains = 0; timer_exhausted = false;
+    timer_initial = console_read.initial;
+    const auto frame = restore_parked_run(console_read);
+    console_result(reinterpret_cast<U64 *>(frame), *console_read.ready);
     Serial::text("AURORA_CONSOLE_RESUME: ticket="); Serial::number(ticket);
     Serial::text(" epoch="); Serial::number(timer_epoch);
     Serial::text(" used="); Serial::number(timer_ticks);
     Serial::text(" remaining="); Serial::number(timer_remaining); Serial::text("\r\n");
-    clear_console_read();
-    require(program.begin(*domains[0].contract) && registry.activate(*text_owner), "console resume owner");
-    active = 0;
-    const auto selected=domains[0].tables->root(); asm volatile("mov %0,%%cr3" ::"r"(selected):"memory");
+    console_read.clear();
+    activate_parked_run(0);
     timer_armed = true;
     require(text_active() && timer_arm(), "console resume original budget");
     require(resume(frame)==1,"console fresh continuation");
@@ -148,7 +122,7 @@ auto console_result(U64 *words, console::RawSample sample) -> void {
 [[nodiscard]] auto console_cancel(U64 ticket) -> bool {
     if (!console_parked() || ticket != console_read.ticket || console_waiting || console_wait_stack) return false;
     require(timer_stop() && timer_quiet(0x100,false) && timer_quiet(0x200,false), "console cancel quiet");
-    clear_console_read();
+    console_read.clear();
     console_setup=true;
     ProtectedConsole::release(console_grant);
     console_setup=false; console_grant={};
@@ -202,7 +176,7 @@ auto console_result(U64 *words, console::RawSample sample) -> void {
     if (console_grant.grant) {
         console_setup=true; ProtectedConsole::release(console_grant); console_setup=false; console_grant={};
     }
-    clear_console_read();
+    console_read.clear();
     const auto before=text_region.metrics();
     require(text_region.revoke_quiescent() && pool.used()==0 && text_region.metrics().live_allocations==0 &&
         text_region.metrics().held_pages==0,"console reclaim");

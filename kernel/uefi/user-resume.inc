@@ -18,17 +18,11 @@
     selected_phase=saved.authority->phase(); transaction=saved.authority->transaction();
     run_authority.emplace(*saved.authority);
     timer_owner=*domain.handle; timer_owner_epoch=timer_epoch=saved.authority->epoch();
-    timer_initial=saved.authority->budget(); timer_remaining=saved.remaining; timer_ticks=saved.ticks;
-    timer_resumes=saved.resumes; timer_compiled_hits=saved.compiled; timer_context_hits=saved.contexts;
-    timer_drains=0; timer_exhausted=false;
-    const auto frame=saved.context->frame();
-    auto* restored=reinterpret_cast<U64*>(frame);
-    for (std::size_t i=0;i<ServiceContext::word_count;++i) restored[i]=saved.context->words()[i];
+    timer_initial=saved.authority->budget();
+    const auto frame=restore_parked_run(saved);
     // The shared RSP0 copy now owns the restore bytes; no reusable ticket remains.
-    domain.clear_continuation();
-    require(program.begin(*domain.contract) && registry.activate(*domain.handle),"resume active owner");
-    active=index;
-    const auto selected=domain.tables->root(); asm volatile("mov %0,%%cr3"::"r"(selected):"memory");
+    domain.continuation.clear();
+    activate_parked_run(index);
     require(run_authority->matches_active(registry,*domain.handle,selected_role,selected_phase,selected_client,
         transaction,launch[0],arena,root(),*domain.contract,timer_owner_epoch),"resume immutable authority");
     Serial::text("AURORA_USER_RESUME: domain="); Serial::number(index); Serial::text(" epoch="); Serial::number(timer_epoch);
@@ -59,7 +53,7 @@ auto run_resumable_clients() -> void {
         std::destroy_at(&domains[2].continuation);
         std::construct_at(&domains[2].continuation,saved);
         require(!resume_client(2,ProgramEvent::returned,checksum_a),"foreign continuation owner");
-        domains[2].clear_continuation();
+        domains[2].continuation.clear();
         dispatch_execute(1,2,ipc::Phase::request,0,70,0,ProgramEvent::returned,checksum_b);
         require(timer_epoch>epoch && domains[0].continuation.remaining==remaining,"peer preserves run quota");
         if (scenario==2) {

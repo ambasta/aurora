@@ -7,7 +7,11 @@ separate reviewed model, firmware, admission and supervised-plan requirements.
 
 import argparse
 import os
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from kernel_layout import IMAGE_POLICIES, LAYOUT, metadata as layout_metadata
 
 # Base flags plus bounded variants mirror the existing admitted profiles.
 UEFI_FAMILIES = [
@@ -501,8 +505,7 @@ def user_images(
         result[name] = dict(
             source="tests/kernel-programs/" + source + ".au",
             roots=["library"] + (["kernel/policies"] if snapshot or program or blocking_call else []),
-            base=0x10000000000 + index * 16384,
-            max_pages=3 if kind == "runtime" and mode == "multipage" else 2 if blocking_call and index == 0 else 1,
+            base=LAYOUT.user_code + index * LAYOUT.code_stride,
             entry=entry,
             entry_flags=[value for define in defines for value in ("--defsym", define)],
             combined=((snapshot or program or blocking_call) and index == 1) or (blocking_call and index == 0),
@@ -717,8 +720,19 @@ def uefi_profile(mode, flags):
             else "tests/kernel-programs/owned-text.au",
             entry="kernel/uefi/console-region-entry.S" if console_region else "kernel/uefi/owned-text-entry.S",
             combined=True,
-            max_pages=3,
         )
+    image_policy = (
+        "multipage"
+        if "-DAURORA_RUNTIME_MULTIPAGE" in flags
+        else "call"
+        if blocking_call
+        else "owned_text"
+        if owned_text
+        else "one_page"
+    )
+    flags = [*flags, "-DAURORA_RUNTIME_IMAGE_POLICY=" + image_policy]
+    for index, image in enumerate(users.values()):
+        image["max_pages"] = IMAGE_POLICIES[image_policy][index]
     cpp = {name: "kernel/uefi/" + name + ".cpp" for name in ("payload", "acpi", "pci", "runtime")}
     assembly = {
         name: dict(source="kernel/uefi/" + name + ".S", flags=["--64"])
@@ -940,6 +954,8 @@ if __name__ == "__main__":
             parser.error(str(error))
     else:
         rows = list(keyval_rows("profiles", profiles()))
+        rows += keyval_rows("layout", layout_metadata())
+        rows += keyval_rows("image_policies", {name: list(values) for name, values in IMAGE_POLICIES.items()})
         rows += keyval_rows(
             "aliases",
             {"bios/" + key: "bios/" + value for key, value in BIOS_ALIASES.items()}

@@ -1,0 +1,4 @@
+AURORA_IMAGE_POLICY(one_page, 1, 1, 1)
+AURORA_IMAGE_POLICY(multipage, 3, 3, 3)
+AURORA_IMAGE_POLICY(call, 2, 1, 1)
+AURORA_IMAGE_POLICY(owned_text, 3, 1, 1)

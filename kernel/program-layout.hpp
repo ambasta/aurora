@@ -1,12 +1,13 @@
 #pragma once
 #include "protection.hpp"
+#include "bootstrap-layout.hpp"
 #include <cstdint>
 #include <optional>
 
 namespace aurora::user {
 // Trusted mapping policy, copied into each contract. Compiler image metadata
 // supplies addresses within this authority; it cannot supply or enlarge it.
-class ProgramLayout final {
+class ProgramLayout final : public BootstrapLayout {
     const std::uint64_t code_begin_, code_end_, max_image_pages_;
     const std::uint64_t user_stack_bottom_, user_stack_top_;
     const std::uint64_t entry_stack_bottom_, entry_stack_top_;
@@ -41,10 +42,7 @@ class ProgramLayout final {
     }
 
 public:
-    static constexpr std::uint64_t page_size = 4096;
-    static constexpr std::uint64_t max_code_pages = 3;
-    static constexpr std::uint64_t max_stack_pages = 4;
-    static constexpr std::uint64_t fault_frame_size = 176;
+    static constexpr std::uint64_t max_stack_pages = stack_pages;
 
     // All intervals are half-open, with canonical, page-aligned endpoints. A
     // kernel entry stack may occupy either canonical half. Actual ownership,

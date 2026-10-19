@@ -7,6 +7,44 @@ U64 timer_epoch_watermark{};
 #endif
 unsigned timer_initial{},timer_remaining{},timer_ticks{},timer_resumes{},timer_drains{},timer_context_hits{},timer_compiled_hits{};
 std::optional<user::DomainHandle> timer_owner;
+#if defined(AURORA_USER_RESUME) || defined(AURORA_BLOCKING_CALL) || defined(AURORA_CONSOLE_REGION)
+auto save_parked_run(ParkedRun &saved, const ServiceContext &context) -> void {
+    saved.context.emplace(context);
+    saved.remaining = timer_remaining;
+    saved.ticks = timer_ticks;
+    saved.resumes = timer_resumes;
+    saved.compiled = timer_compiled_hits;
+    saved.contexts = timer_context_hits;
+}
+// Mechanism-specific authority and frame checks precede this common restore.
+[[nodiscard]] auto restore_parked_run(const ParkedRun &saved) -> U64 {
+    timer_remaining = saved.remaining;
+    timer_ticks = saved.ticks;
+    timer_resumes = saved.resumes;
+    timer_compiled_hits = saved.compiled;
+    timer_context_hits = saved.contexts;
+    timer_drains = 0;
+    timer_exhausted = false;
+    const auto frame = saved.context->frame();
+    auto *words = reinterpret_cast<U64 *>(frame);
+    for (std::size_t i = 0; i < ServiceContext::word_count; ++i)
+        words[i] = saved.context->words()[i];
+    return frame;
+}
+auto park_run(const user::DomainHandle &owner) -> void {
+    require(program.cancel(), "park active tracker");
+    asm volatile("mov %0,%%cr3" ::"r"(kernel_root) : "memory");
+    require(registry.deactivate(owner), "park owner deactivation");
+    active = L::domain_count;
+}
+auto activate_parked_run(unsigned index) -> void {
+    auto &domain = domains[index];
+    require(program.begin(*domain.contract) && registry.activate(*domain.handle), "resume active owner");
+    active = index;
+    const auto selected = domain.tables->root();
+    asm volatile("mov %0,%%cr3" ::"r"(selected) : "memory");
+}
+#endif
 auto timer_read(unsigned offset) -> std::uint32_t { return LocalApicTimerIo::read(offset); }
 auto read_msr(std::uint32_t index) -> U64 {
     std::uint32_t low, high;
@@ -284,14 +322,9 @@ auto service_timer_interrupt(U64 vector,U64 error,U64 pc,U64 cs,U64 frame) -> st
         if (active==0 && timer_ticks==1) {
             auto& saved=domains[active].continuation;
             require(!saved.context && !saved.authority && run_authority && timer_stop(),"single suspended run");
-            saved.context.emplace(*context); saved.authority.emplace(*run_authority); saved.launch=launch;
-            saved.remaining=timer_remaining; saved.ticks=timer_ticks; saved.resumes=timer_resumes;
-            saved.compiled=timer_compiled_hits; saved.contexts=timer_context_hits;
-            require(program.cancel(),"suspend active tracker");
-            const auto interrupted=active;
-            asm volatile("mov %0,%%cr3"::"r"(kernel_root):"memory");
-            require(registry.deactivate(*domains[interrupted].handle),"suspend owner deactivation");
-            active=L::domain_count;
+            save_parked_run(saved, *context);
+            saved.authority.emplace(*run_authority); saved.launch=launch;
+            park_run(*domains[active].handle);
             return 1;
         }
 #endif

@@ -111,27 +111,41 @@ using hardware::Serial;
 #endif
 using user::ProgramEvent;
 using L = RuntimeLayout;
+#if defined(AURORA_USER_RESUME) || defined(AURORA_BLOCKING_CALL) || defined(AURORA_CONSOLE_REGION)
+// Saved transport state is shared; each caller retains its distinct authority checks.
+class ParkedRun final {
+public:
+    std::optional<ServiceContext> context;
 #ifdef AURORA_USER_RESUME
-class Continuation final {
-public:
-    std::optional<ServiceContext> context;
     std::optional<RunAuthority> authority;
-    std::array<U64, 7> launch{};
-    unsigned remaining{}, ticks{}, resumes{}, compiled{}, contexts{};
-};
-#endif
-#ifdef AURORA_BLOCKING_CALL
-class CallWait final {
-public:
-    std::optional<ServiceContext> context;
+#elif defined(AURORA_BLOCKING_CALL)
     std::optional<ProgramRunAuthority> authority;
     std::optional<user::DomainHandle> service;
     ipc::Endpoint endpoint;
     U64 ticket{};
+#else
+    std::optional<user::DomainHandle> owner;
+    U64 root{}, region{}, generation{}, epoch{}, ticket{};
+    unsigned initial{};
+#endif
+#ifndef AURORA_CONSOLE_REGION
     std::array<U64, 7> launch{};
+#endif
     unsigned remaining{}, ticks{}, resumes{}, compiled{}, contexts{};
+#ifdef AURORA_CONSOLE_REGION
+    std::optional<console::RawSample> ready;
+#endif
+    auto clear() -> void {
+        std::destroy_at(this);
+        auto *bytes = reinterpret_cast<volatile std::byte *>(this);
+        for (std::size_t i = 0; i < sizeof(ParkedRun); ++i)
+            bytes[i] = std::byte{0};
+        std::construct_at(this);
+    }
 };
-constinit CallWait call_wait;
+#endif
+#ifdef AURORA_BLOCKING_CALL
+constinit ParkedRun call_wait;
 #ifdef AURORA_FILE_CALL
 // Bounds/accounting for the existing command-selected pair, not IPC state.
 // file_wc selects the existing sequential-read authority for both wc and CRC.
@@ -141,13 +155,6 @@ unsigned file_call_count{}, file_service_used{}, file_wc_probes{}, file_crc_prob
 U64 file_budget_probe{};
 #endif
 #endif
-auto clear_call_wait() -> void {
-    std::destroy_at(&call_wait);
-    auto *bytes = reinterpret_cast<volatile std::byte *>(&call_wait);
-    for (std::size_t i = 0; i < sizeof(CallWait); ++i)
-        bytes[i] = std::byte{0};
-    std::construct_at(&call_wait);
-}
 [[nodiscard]] auto call_retire(unsigned index) -> bool;
 #endif
 class Domain final {
@@ -161,14 +168,7 @@ public:
     bool call_used{};
 #endif
 #ifdef AURORA_USER_RESUME
-    Continuation continuation;
-    auto clear_continuation() -> void {
-        std::destroy_at(&continuation);
-        auto *bytes = reinterpret_cast<volatile std::byte *>(&continuation);
-        for (std::size_t i = 0; i < sizeof(Continuation); ++i)
-            bytes[i] = std::byte{0};
-        std::construct_at(&continuation);
-    }
+    ParkedRun continuation;
 #endif
 };
 constinit std::array<Domain, L::domain_count> domains;
@@ -338,7 +338,7 @@ auto fill(U64 physical, std::uint8_t value) -> void {
     domain.call_used = false;
 #endif
 #ifdef AURORA_USER_RESUME
-    domain.clear_continuation();
+    domain.continuation.clear();
 #endif
     for (auto &lease : domain.stacks)
         if (lease) {

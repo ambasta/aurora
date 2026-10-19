@@ -44,8 +44,13 @@ class DeveloperCommands(unittest.TestCase):
             "host-build-check.sh",
             "qemu_transport.py",
             "kernel_profiles.py",
+            "kernel_layout.py",
         ):
             shutil.copy2(ROOT / "scripts" / name, self.scripts / name)
+        for relative in ("kernel/bootstrap-layout-values.inc", "kernel/uefi/image-page-policies.inc"):
+            target = self.repo / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ROOT / relative, target)
         shutil.copy2(ROOT / "Makefile", self.repo / "Makefile")
         (self.repo / "compiler").mkdir()
         shutil.copy2(ROOT / "compiler/Makefile", self.repo / "compiler/Makefile")

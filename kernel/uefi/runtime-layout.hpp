@@ -1,4 +1,6 @@
 #pragma once
+#include "../bootstrap-layout.hpp"
+#include "image-page-policy.hpp"
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -6,42 +8,19 @@
 namespace aurora::uefi {
 // Offsets belong to the loader's existing allocation. This describes ownership;
 // neither a valid layout nor a physical address grants a mapping by itself.
-template <std::size_t Domains> class RuntimeLayoutProfile final {
+template <std::size_t Domains> class RuntimeLayoutProfile final : public BootstrapLayout {
     static_assert(Domains == 2 || Domains == 3);
     // The third pool follows the stack frames, not the first two pools: the
     // next contiguous address (0xb0000) already belongs to an RX image.
-    static constexpr std::array<std::uint64_t, 3> table_offsets{0x90000, 0xa0000, 0xd0000};
+    static constexpr std::array<std::uint64_t, 3> table_offsets{
+        tables_offset, tables_offset + table_pages * page_size, third_tables_offset};
 
 public:
-    static constexpr std::uint64_t page_size = 4096;
-    static constexpr std::uint64_t arena_bytes = 0x100000;
-    static constexpr std::uint64_t metadata_offset = 0x81000;
-    static constexpr std::uint64_t gdt_offset = 0x82000;
-    static constexpr std::uint64_t rsp0_guard = 0x83000;
-    static constexpr std::uint64_t rsp0_bottom = 0x84000;
-    static constexpr std::uint64_t rsp0_top = 0x88000;
-    static constexpr std::uint64_t ist_guard = 0x88000;
-    static constexpr std::uint64_t ist_bottom = 0x89000;
-    static constexpr std::uint64_t ist_top = 0x8d000;
-    static constexpr std::uint64_t tables_offset = 0x90000;
-    static constexpr std::size_t table_pages = 16;
     static constexpr std::size_t domain_count = Domains;
-    static constexpr std::uint64_t image_offset = 0xb0000;
     static constexpr std::size_t image_count = Domains;
-    static constexpr std::size_t max_code_pages = 3;
-    static constexpr std::uint64_t image_slot_bytes = max_code_pages * page_size;
-    static constexpr std::uint64_t code_stride = (max_code_pages + 1) * page_size;
-    static constexpr std::uint64_t stack_frames_offset = 0xc0000;
-    static constexpr std::size_t stack_frame_count = 16;
-    static constexpr std::size_t stack_pages = 4;
-    static constexpr std::uint64_t user_code = 0x10000000000ULL;
-    static constexpr std::uint64_t user_stack_bottom = 0x10000200000ULL;
-    static constexpr std::uint64_t user_stack_top = user_stack_bottom + stack_pages * page_size;
-    static constexpr std::uint64_t user_stack_guard = user_stack_bottom - page_size;
-    static constexpr std::uint64_t lower_limit = 1ULL << 47;
 
     [[nodiscard]] static constexpr auto user_stack_begin(std::size_t domain) -> std::uint64_t {
-        return domain < domain_count ? user_stack_bottom + domain * 0x200000 : lower_limit;
+        return domain < domain_count ? user_stack_bottom + domain * user_stack_stride : lower_limit;
     }
     [[nodiscard]] static constexpr auto user_stack_end(std::size_t domain) -> std::uint64_t {
         return domain < domain_count ? user_stack_begin(domain) + stack_pages * page_size : lower_limit;
@@ -75,14 +54,7 @@ public:
     [[nodiscard]] static constexpr auto image_limit(std::size_t image) -> std::uint64_t {
         if (image >= image_count)
             return 0;
-#if defined(AURORA_RUNTIME_MULTIPAGE)
-        return image_slot_bytes;
-#elif defined(AURORA_BLOCKING_CALL)
-        return image == 0 ? 2 * page_size : page_size;
-#elif defined(AURORA_OWNED_TEXT)
-        return image == 0 ? image_slot_bytes : page_size;
-#endif
-        return page_size;
+        return ImagePagePolicy::pages(image) * page_size;
     }
     [[nodiscard]] static constexpr auto code_pages(std::size_t image, std::uint64_t bytes) -> std::size_t {
         return bytes && bytes <= image_limit(image) ? (bytes - 1) / page_size + 1 : 0;

@@ -1009,14 +1009,14 @@ def main(
             payload = (build / "payload.bin").read_bytes()
             if require_console_region:
                 console_irq_windows(window_names, build.name)
-            for begin, end, opcode in (
-                ("uefi_program_poll_begin", "uefi_program_poll_end", "fbf4fa"),
-                ("uefi_service_drain_begin", "uefi_service_drain_end", "fb9090fa"),
-            ):
-                if begin not in window_names:
-                    continue
+            windows = [("uefi_service_drain_begin", "uefi_service_drain_end", "fb9090fa")]
+            if require_console_region:
+                windows.append(("uefi_program_poll_begin", "uefi_program_poll_end", "fbf4fa"))
+            for begin, end, opcode in windows:
                 need(
-                    end in window_names and payload[window_names[begin] : window_names[end]] == bytes.fromhex(opcode),
+                    begin in window_names
+                    and end in window_names
+                    and payload[window_names[begin] : window_names[end]] == bytes.fromhex(opcode),
                     "Exact owned supervisor IRQ window",
                 )
                 owners = [

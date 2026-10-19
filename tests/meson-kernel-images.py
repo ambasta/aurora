@@ -450,11 +450,16 @@ class SmokeRunOnlyFixture(unittest.TestCase):
             "kernel-smoke.sh",
             "kernel-uefi-smoke.sh",
             "kernel_profiles.py",
+            "kernel_layout.py",
             "qemu_transport.py",
             "kernel_emulator_clock.py",
             "uefi-firmware.sh",
         ):
             shutil.copy2(ROOT / "scripts" / name, self.repo / "scripts" / name)
+        for relative in ("kernel/bootstrap-layout-values.inc", "kernel/uefi/image-page-policies.inc"):
+            target = self.repo / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ROOT / relative, target)
         self.calls = self.root / "calls"
         self.qemu = self.root / "qemu"
         self.qemu.write_text(

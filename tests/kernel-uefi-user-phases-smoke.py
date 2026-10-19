@@ -13,6 +13,9 @@ import json
 import re
 import sys
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from kernel_layout import LAYOUT
+
 spec = importlib.util.spec_from_file_location(
     "user_phase_budget", Path(__file__).with_name("kernel-uefi-budget-smoke.py")
 )
@@ -66,7 +69,7 @@ def metadata_valid(meta, mode):
             and all(type(v) is int and 0 <= v < 1 << 64 for v in image.values()),
             "Malformed user image scalars",
         )
-        base = BASE + index * 16384
+        base = BASE + index * LAYOUT.code_stride
         need(
             image["entry"] == base and 4 <= image["size"] <= 4096 and image["probe_offset"] == 0,
             "User image layout widened",
@@ -182,7 +185,7 @@ def expected(mode, arena):
         for domain in range(3):
             rows.append(
                 f"AURORA_UEFI_DISPATCH_DOMAIN: index={domain} root={roots[domain]}"
-                f" entry={BASE + domain * 16384} stack={BASE + 0x204000 + domain * 0x200000}"
+                f" entry={BASE + domain * LAYOUT.code_stride} stack={BASE + 0x204000 + domain * 0x200000}"
                 f" frame={arena + 0xC0000 + domain * 0x4000}"
             )
     for client in range(2):
@@ -264,7 +267,7 @@ def event_line(arena, domain, vector, pc):
     root = arena + (0x90000, 0xA0000, 0xD0000)[domain]
     return (
         f"AURORA_UEFI_DOMAIN_EVENT: vector={vector} error=0 pc={pc} cpl=3"
-        f" root={root} frame={arena + 0x88000 - 176} cr2=0"
+        f" root={root} frame={arena + LAYOUT.rsp0_top - LAYOUT.fault_frame_size} cr2=0"
     )
 
 
@@ -594,7 +597,7 @@ def validate(status, text, mode, metadata):
             need(
                 (e, n, left, tick_pc) == (epoch, used + 1, limit - used - 1, pc)
                 and flags & 0x202 == 0x202
-                and flags & ~0x10ED7 == 0,
+                and flags & ~LAYOUT.allowed_user_flags == 0,
                 "Wrong timer accounting or interrupt-enabled context",
             )
             take(tick[0])
@@ -635,7 +638,7 @@ def validate(status, text, mode, metadata):
             v, error, pc, cpl, root, frame, cr2 = map(int, event.groups())
             need(
                 (v, error, cpl, root, cr2) == (64, 0, 0, kernel, 0)
-                and arena + 0x44000 <= frame <= arena + 0x48000 - 176
+                and arena + 0x44000 <= frame <= arena + 0x48000 - LAYOUT.fault_frame_size
                 and frame % 8 == 0
                 and arena + 0x22000 + metadata["kernel"]["drain_begin"]
                 <= pc
@@ -692,7 +695,7 @@ def fixtures(client_ticks=True):
     for mode in MODES:
         images = {}
         for d, name in enumerate(NAMES):
-            base = BASE + d * 16384
+            base = BASE + d * LAYOUT.code_stride
             images[name] = dict(
                 entry=base,
                 size=512,
@@ -927,10 +930,13 @@ def self_test():
                 f"client=0 transaction={epoch + 1} source={4 if case == 1 else 1} root=2"
             ]
             if case != 1:
-                rows += [f"AURORA_UEFI_TIMER_TICK: epoch={epoch + 1} used=1 remaining=127 pc={BASE + 16384 + 88}"]
+                rows += [
+                    f"AURORA_UEFI_TIMER_TICK: epoch={epoch + 1} used=1 remaining=127 "
+                    f"pc={BASE + LAYOUT.code_stride + 88}"
+                ]
             rows += [
                 f"AURORA_UEFI_DOMAIN_EVENT: vector={6 if case == 1 else 129} error=0 "
-                f"pc={BASE + 16384 + (400 if case == 1 else 60)} cpl=3 root=2 frame=1 cr2=0",
+                f"pc={BASE + LAYOUT.code_stride + (400 if case == 1 else 60)} cpl=3 root=2 frame=1 cr2=0",
                 f"AURORA_CALL_SERVICE: epoch={epoch + 1} event={'bounds' if case == 1 else 'returned'} "
                 f"value={0 if case == 1 else 309914170369}",
                 f"AURORA_CALL_RESUME: epoch={epoch} ticks=1 remaining=127",

@@ -14,7 +14,8 @@ public:
         return words_;
     }
     [[nodiscard]] auto valid(const ProgramContract &contract) const -> bool {
-        constexpr auto allowed = 0x0000000000010ed7ULL; // arithmetic flags, IF, DF, RF, architectural bit1.
+        constexpr auto allowed =
+            BootstrapLayout::allowed_user_flags; // arithmetic flags, IF, DF, RF, architectural bit1.
         const auto pc = words_[17], flags = words_[19], sp = words_[20];
         return contract.valid() && pc >= contract.entry() && pc < contract.entry() + contract.size() &&
                words_[18] == 0x1b && words_[21] == 0x23 && (flags & 0x202) == 0x202 && (flags & ~allowed) == 0 &&
