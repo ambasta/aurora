@@ -1,3 +1,6 @@
+#ifdef AURORA_RUNTIME_FIXTURE
+#include "runtime-fixture.inc"
+#endif
 // One private bounded allocator binding; no user descriptor conveys authority.
 [[nodiscard]] auto text_retirable() -> bool {
     return !text_region.is_open() && !text_region.faulted() && !text_owner && !timer_armed && !program.running() &&
@@ -15,11 +18,8 @@
 [[nodiscard, gnu::noinline]] auto text_trap(U64 frame) -> U64 {
     require(text_active(), "text active authority");
     auto *words = reinterpret_cast<U64 *>(frame);
-#ifdef AURORA_TEXT_SITE
-    ++words[17];
-#endif
-#ifdef AURORA_TEXT_REGION
-    words[6] ^= 1;
+#ifdef AURORA_RUNTIME_FIXTURE
+    text_fixture_entry(words);
 #endif
     constexpr std::array<U64, 6> sites{images::clean_bytes_allocate_pc,
                                        images::clean_bytes_borrow_length_pc,
@@ -42,16 +42,8 @@
     require(operation == 0 ? words[6] == text_region.id()
                            : owner.region == text_region.id() || (operation == 5 && pristine),
             "text private region binding");
-#ifdef AURORA_TEXT_STALE
-    static aurora::hosted::bytes::NativeOwner stale;
-    if (operation == 4)
-        stale = owner;
-    if (operation == 3 && stale.success) {
-        require(stale.allocation != owner.allocation && stale.region == owner.region,
-                "text stale fixture after committed resize");
-        owner = stale;
-        Serial::text("AURORA_OWNED_TEXT_STALE: committed-resize\r\n");
-    }
+#ifdef AURORA_RUNTIME_FIXTURE
+    text_fixture_owner(operation, owner);
 #endif
     U64 result = 0;
     if (operation == 0)
@@ -85,6 +77,9 @@ extern "C" [[noreturn]] void __au_runtime_bytes_kernel_fault(std::uint64_t reaso
 
 #ifndef AURORA_CONSOLE_REGION
 auto run_owned_text(memory::PhysicalPages &pool) -> void {
+#ifdef AURORA_RUNTIME_FIXTURE
+    select_fixture(Fixture::text_site, Fixture::text_stale);
+#endif
     require(pool.used() == 0, "text exclusive backing pool");
     constexpr std::array<U64, 5> scalars{0x1f642, 0xd800, 1114114, 1114112, 1114113};
     for (const auto scalar : scalars) {

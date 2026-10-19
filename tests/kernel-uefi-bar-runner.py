@@ -821,7 +821,11 @@ class BarRunner(unittest.TestCase):
             "kernel_trace_controls.py",
         ):
             shutil.copy2(ROOT / "scripts" / name, self.repo / "scripts" / name)
-        for relative in ("kernel/bootstrap-layout-values.inc", "kernel/uefi/image-page-policies.inc"):
+        for relative in (
+            "kernel/bootstrap-layout-values.inc",
+            "kernel/uefi/image-page-policies.inc",
+            "kernel/uefi/runtime-fixtures.inc",
+        ):
             target = self.repo / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(ROOT / relative, target)

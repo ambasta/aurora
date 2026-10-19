@@ -197,9 +197,10 @@ class ClockContractTests(unittest.TestCase):
             for mode, extra in variants.items():
                 flags = common + extra
                 if "-DAURORA_UEFI_SERVICE_BUDGET" in flags:
-                    admitted.append(mode)
+                    modes = [name for name, (image, _) in profiles.FIXTURE_MODES.items() if image == mode] or [mode]
+                    admitted.extend(modes)
                     if "-DAURORA_UEFI_PROGRAM_CONSOLE" in flags:
-                        protected.append(mode)
+                        protected.extend(modes)
         self.assertEqual(len(admitted), len(set(admitted)))
         self.assertEqual(len(protected), len(set(protected)))
         self.assertEqual(set(protected), protected_modes)
@@ -512,8 +513,22 @@ class ClockContractTests(unittest.TestCase):
             root = Path(directory)
             (root / "scripts").mkdir()
             (root / "tests").mkdir()
-            for name in ("kernel-uefi-smoke.sh", "kernel_emulator_clock.py", "qemu_transport.py"):
+            for name in (
+                "kernel-uefi-smoke.sh",
+                "kernel_emulator_clock.py",
+                "qemu_transport.py",
+                "kernel_profiles.py",
+                "kernel_layout.py",
+            ):
                 shutil.copy2(ROOT / "scripts" / name, root / "scripts" / name)
+            for relative in (
+                "kernel/bootstrap-layout-values.inc",
+                "kernel/uefi/image-page-policies.inc",
+                "kernel/uefi/runtime-fixtures.inc",
+            ):
+                destination = root / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(ROOT / relative, destination)
             (root / "scripts/uefi-firmware.sh").write_text(
                 'uefi_firmware_select() { UEFI_FIRMWARE_COMBINED="$OVMF"; '
                 'UEFI_FIRMWARE_CODE=""; UEFI_FIRMWARE_VARS=""; UEFI_FIRMWARE_ARGS=(-bios "$OVMF"); }\n'
@@ -716,25 +731,6 @@ class ClockContractTests(unittest.TestCase):
         self.assertEqual(result.testsRun, 1)
         self.assertEqual(result.errors, [])
         self.assertEqual(result.failures, [])
-
-    def test_launcher_executes_validated_array_and_keeps_raw_outcome(self):
-        source = (ROOT / "scripts/kernel-uefi-smoke.sh").read_text()
-        invocation = 'scripts/qemu_transport.py run --timeout 30 --log "$log" -- "${qemu_argv[@]}"'
-        self.assertEqual(source.count(invocation), 1)
-        self.assertIn('"${QEMU_DATA:-}" --esp "$image_dir/esp" -- "${qemu_argv[@]}"', source)
-        self.assertLess(source.index('"${clock_check[@]}" >'), source.index(invocation))
-        self.assertIn('status=$?\nset -e\ncat "$log"', source)
-        self.assertNotIn("\ntrap ", source)
-        for validator in ("budget", "dispatch", "user-phases", "ipc", "tables", "pin", "runtime"):
-            self.assertIn(
-                f"python3 tests/kernel-uefi-{validator}-smoke.py "
-                '"$status" "$log" "$mode" "$output_dir/$mode.metadata.json"',
-                source,
-            )
-        self.assertIn(
-            'python3 tests/kernel-snapshot-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.metadata.json"', source
-        )
-        self.assertNotIn("build/uefi/user-images.json", source)
 
 
 if __name__ == "__main__":

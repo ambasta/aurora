@@ -11,7 +11,10 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from kernel_layout import IMAGE_POLICIES, LAYOUT, metadata as layout_metadata
+from kernel_layout import IMAGE_POLICIES, LAYOUT, metadata as layout_metadata, read_table
+
+FIXTURES = read_table(Path(__file__).resolve().parents[1] / "kernel/uefi/runtime-fixtures.inc")
+FIXTURE_MODES = {mode: (image, value) for mode, image, value in FIXTURES.values()}
 
 # Base flags plus bounded variants mirror the existing admitted profiles.
 UEFI_FAMILIES = [
@@ -75,9 +78,7 @@ UEFI_FAMILIES = [
             "runtime-console-region-input": ["-DAURORA_CONSOLE_REGION", "-DAURORA_CONSOLE_INPUT"],
             "runtime-console-region-output": ["-DAURORA_CONSOLE_REGION", "-DAURORA_CONSOLE_OUTPUT"],
             "runtime-console-region-budget": ["-DAURORA_CONSOLE_REGION", "-DAURORA_CONSOLE_BUDGET"],
-            "runtime-owned-text-site": ["-DAURORA_TEXT_SITE"],
-            "runtime-owned-text-region": ["-DAURORA_TEXT_REGION"],
-            "runtime-owned-text-stale": ["-DAURORA_TEXT_STALE"],
+            "runtime-owned-text-fixture": ["-DAURORA_RUNTIME_FIXTURE"],
         },
     ),
     (
@@ -862,6 +863,7 @@ def uefi_profile(mode, flags):
 
 
 UEFI_ALIASES = {"bar-inherited": "bar-read", "pci-devices": "pci", "pci-bridge": "pci", "acpi-two": "acpi"}
+UEFI_ALIASES.update({mode: image for mode, (image, _) in FIXTURE_MODES.items()})
 BIOS_ALIASES = {"schedule-smp": "schedule", "schedule-no-apic": "schedule", "no-nx": "normal"}
 
 
@@ -893,7 +895,7 @@ def select(platform, environment, requested=None):
         mode = requested or inherited or "normal"
         if inherited and requested and inherited != requested:
             raise ValueError("UEFI_MODE conflicts with requested profile")
-        if mode not in {mode for _, variants in UEFI_FAMILIES for mode in variants}:
+        if mode not in {mode for _, variants in UEFI_FAMILIES for mode in variants} | UEFI_ALIASES.keys():
             raise ValueError("Unknown UEFI profile: " + mode)
         return mode
     if environment.get("UEFI_MODE"):
@@ -946,8 +948,11 @@ if __name__ == "__main__":
     action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument("--meson-output", type=Path)
     action.add_argument("--select", choices=("bios", "uefi"))
+    action.add_argument("--fixture-byte")
     args = parser.parse_args()
-    if args.select:
+    if args.fixture_byte:
+        print(FIXTURE_MODES.get(args.fixture_byte, ("", ""))[1])
+    elif args.select:
         try:
             print(select(args.select, os.environ))
         except ValueError as error:

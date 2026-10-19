@@ -253,6 +253,24 @@ class GeneratorBoundaries(unittest.TestCase):
         with self.assertRaises(ValueError):
             profiles.select("bios", {"KERNEL_CONSOLE": "1"}, "normal")
 
+    def test_fixture_selector_is_sent_after_guest_readiness(self):
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "selector.log"
+            command = [
+                sys.executable,
+                "-c",
+                (
+                    "import sys; print('AURORA_FIXTURE_READY', flush=True); "
+                    "print('selected=' + str(sys.stdin.buffer.read(1)[0]), flush=True)"
+                ),
+            ]
+            self.assertEqual(transport.run_logged(command, log, startup_byte=17, timeout=5), 0)
+            self.assertIn(b"selected=17", log.read_bytes())
+            with self.assertRaisesRegex(ValueError, "without requesting"):
+                transport.run_logged(
+                    [sys.executable, "-c", "pass"], Path(directory) / "missing.log", startup_byte=17, timeout=5
+                )
+
     def test_multipage_allowance_is_exact_and_bios_stays_one_page(self):
         for name, recipe in profiles.profiles().items():
             enabled = name == "uefi/runtime-multipage"
@@ -261,21 +279,7 @@ class GeneratorBoundaries(unittest.TestCase):
             for index, user in enumerate(recipe["users"].values()):
                 if recipe["platform"] == "uefi":
                     owned_text = (
-                        name
-                        in {
-                            "uefi/runtime-console-region",
-                            "uefi/runtime-console-region-cancel",
-                            "uefi/runtime-console-region-cancel-ready",
-                            "uefi/runtime-console-region-input",
-                            "uefi/runtime-console-region-output",
-                            "uefi/runtime-console-region-budget",
-                            "uefi/runtime-console-region-fault",
-                            "uefi/runtime-owned-text",
-                            "uefi/runtime-owned-text-site",
-                            "uefi/runtime-owned-text-region",
-                            "uefi/runtime-owned-text-stale",
-                        }
-                        and index == 0
+                        name.startswith(("uefi/runtime-owned-text", "uefi/runtime-console-region")) and index == 0
                     )
                     blocking_call = "-DAURORA_BLOCKING_CALL" in recipe["flags"] and index == 0
                     self.assertEqual(user["max_pages"], 3 if enabled or owned_text else 2 if blocking_call else 1)
@@ -456,7 +460,11 @@ class SmokeRunOnlyFixture(unittest.TestCase):
             "uefi-firmware.sh",
         ):
             shutil.copy2(ROOT / "scripts" / name, self.repo / "scripts" / name)
-        for relative in ("kernel/bootstrap-layout-values.inc", "kernel/uefi/image-page-policies.inc"):
+        for relative in (
+            "kernel/bootstrap-layout-values.inc",
+            "kernel/uefi/image-page-policies.inc",
+            "kernel/uefi/runtime-fixtures.inc",
+        ):
             target = self.repo / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(ROOT / relative, target)

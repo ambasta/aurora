@@ -40,7 +40,7 @@ kernel_options = {
 # metadata below is build-local; only the two normal images are default products.
 profile_file = configure_file(
   input: ['../scripts/kernel_profiles.py', '../scripts/kernel_layout.py', '../kernel/bootstrap-layout-values.inc',
-         '../kernel/uefi/image-page-policies.inc'],
+         '../kernel/uefi/image-page-policies.inc', '../kernel/uefi/runtime-fixtures.inc'],
   output: 'profile-data.ini',
   command: [python, '-B', '@INPUT0@', '--meson-output', '@OUTPUT@'])
 profile_data = import('keyval').load(profile_file)

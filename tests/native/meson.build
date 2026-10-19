@@ -424,7 +424,7 @@ if get_option('kernel_images')
               meson.project_build_root() / 'kernel-images/uefi/runtime-span'],
        suite: ['full', 'slow', 'integration'], env: native_test_env, workdir: native_root,
        timeout: 1800, depends: [aurorac, kernel_profile_users['uefi/runtime'], kernel_profile_users['uefi/runtime-span']])
-  foreach mode : ['runtime-owned-text', 'runtime-owned-text-site', 'runtime-owned-text-region', 'runtime-owned-text-stale']
+  foreach mode : ['runtime-owned-text', 'runtime-owned-text-fixture']
     test('native-uefi-' + mode + '-image', python,
       args: ['-B', files('../../tests/kernel-uefi-image.py'), '--build-dir',
              meson.project_build_root() / 'kernel-images/uefi' / mode, '--owned-text', '--check-only'],

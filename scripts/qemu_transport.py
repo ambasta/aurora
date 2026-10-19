@@ -383,6 +383,7 @@ def run_logged(
     preexec_fn=None,
     timeout_status=True,
     stderr=subprocess.STDOUT,
+    startup_byte=None,
 ):
     """Drain bounded serial/output to the caller's retained log, then reap.
 
@@ -390,13 +391,15 @@ def run_logged(
     process protocol requires natural exit. Every other error remains a failure.
     """
     process, failure = None, None
+    need(startup_byte is None or type(startup_byte) is int and 0 <= startup_byte <= 255, "Invalid startup byte")
+    startup_sent, startup_tail = startup_byte is None, b""
     try:
         with log.open("xb") if isinstance(log, Path) else nullcontext(log) as stream:
             process = start(
                 argv,
                 cwd=cwd,
                 env=env,
-                stdin=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL if startup_byte is None else subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT if stderr == subprocess.STDOUT else subprocess.PIPE,
                 preexec_fn=preexec_fn,
@@ -417,7 +420,14 @@ def run_logged(
                         del outputs[reader]
                         continue
                     count = capture_bytes(outputs[reader], data, count, limit, "Child output limit")
+                    if not startup_sent and reader is process.stdout:
+                        startup_tail = (startup_tail + data).replace(b"\r", b"")[-128:]
+                        if b"AURORA_FIXTURE_READY\n" in startup_tail:
+                            process.stdin.write(bytes([startup_byte]))
+                            process.stdin.flush()
+                            startup_sent = True
             status = reap_completed(process, deadline)
+            need(startup_sent, "Fixture exited without requesting its boot selector")
     except DeadlineExpired as error:
         if not timeout_status:
             failure = error
@@ -427,7 +437,9 @@ def run_logged(
         failure = error
         raise
     finally:
-        errors, _, unsettled = finish(process, streams=[process.stdout, process.stderr] if process else [])
+        errors, _, unsettled = finish(
+            process, streams=[process.stdin, process.stdout, process.stderr] if process else []
+        )
         if errors:
             reason = "; ".join(([str(failure)] if failure else []) + errors)
             raise (ChildNotReaped if unsettled else ValueError)(reason)
@@ -447,6 +459,7 @@ def cli():
     argv_parser.add_argument("--snapshot", action="store_true")
     run_parser = commands.add_parser("run", help="capture a bounded ordinary guest using shared lifecycle")
     run_parser.add_argument("--timeout", type=float, required=True)
+    run_parser.add_argument("--startup-byte", type=int)
     output = run_parser.add_mutually_exclusive_group(required=True)
     output.add_argument("--log", type=Path)
     output.add_argument("--foreground", action="store_true", help="preserve the interactive foreground terminal policy")
@@ -484,7 +497,7 @@ def cli():
         # These are the existing caller-selected build logs, intentionally replaced
         # on rerun; fresh retained evidence callers still use exclusive creation.
         with args.log.open("wb") as log:
-            status = run_logged(argv, log, timeout=args.timeout)
+            status = run_logged(argv, log, timeout=args.timeout, startup_byte=args.startup_byte)
             return 128 - status if status < 0 else status
     except KeyboardInterrupt:
         return 130

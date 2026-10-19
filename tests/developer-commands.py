@@ -47,7 +47,11 @@ class DeveloperCommands(unittest.TestCase):
             "kernel_layout.py",
         ):
             shutil.copy2(ROOT / "scripts" / name, self.scripts / name)
-        for relative in ("kernel/bootstrap-layout-values.inc", "kernel/uefi/image-page-policies.inc"):
+        for relative in (
+            "kernel/bootstrap-layout-values.inc",
+            "kernel/uefi/image-page-policies.inc",
+            "kernel/uefi/runtime-fixtures.inc",
+        ):
             target = self.repo / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(ROOT / relative, target)
@@ -295,7 +299,8 @@ class DeveloperCommands(unittest.TestCase):
             'case "$1" in\n'
             '  scripts/meson_test.py) path="$PWD/build/config/kernel-images/$3/normal"; '
             'mkdir -p "$path"; printf "{}" > "$path/user-metadata.json"; printf "%s\\n" "$path" ;;\n'
-            '  scripts/kernel_emulator_clock.py|scripts/qemu_transport.py) exec "$REAL_PYTHON" -B "$@" ;;\n'
+            "  scripts/kernel_emulator_clock.py|scripts/qemu_transport.py|scripts/kernel_profiles.py) "
+            'exec "$REAL_PYTHON" -B "$@" ;;\n'
             "  tests/kernel-smoke.py|tests/kernel-uefi-smoke.py) exit 0 ;;\n"
             '  *) echo "Unexpected Python command in terminal fixture" >&2; exit 93 ;;\n'
             "esac\n",
