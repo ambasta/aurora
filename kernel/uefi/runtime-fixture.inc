@@ -15,6 +15,7 @@ auto select_fixture(Fixture first, Fixture last) -> void {
             "fixture selector outside image family");
     fixture = static_cast<Fixture>(value);
 }
+#ifdef AURORA_OWNED_TEXT
 auto text_fixture_entry(U64 *words) -> void {
     if (fixture == Fixture::text_site)
         ++words[17];
@@ -34,3 +35,13 @@ auto text_fixture_owner(std::size_t operation, aurora::hosted::bytes::NativeOwne
         Serial::text("AURORA_OWNED_TEXT_STALE: committed-resize\r\n");
     }
 }
+
+#endif
+#ifdef AURORA_BLOCKING_CALL
+auto call_fixture_entry(U64 *words) -> void {
+    if (fixture == Fixture::call_owner)
+        words[9] ^= 1;
+    if (fixture == Fixture::call_site)
+        ++words[17];
+}
+#endif

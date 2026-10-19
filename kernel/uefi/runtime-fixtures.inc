@@ -1,3 +1,6 @@
 AURORA_FIXTURE(text_site, "runtime-owned-text-site", "runtime-owned-text-fixture", 17)
 AURORA_FIXTURE(text_region, "runtime-owned-text-region", "runtime-owned-text-fixture", 18)
 AURORA_FIXTURE(text_stale, "runtime-owned-text-stale", "runtime-owned-text-fixture", 19)
+AURORA_FIXTURE(call_pending, "user-call-pending", "user-call-fixture", 33)
+AURORA_FIXTURE(call_owner, "user-call-owner", "user-call-fixture", 34)
+AURORA_FIXTURE(call_site, "user-call-site", "user-call-fixture", 35)

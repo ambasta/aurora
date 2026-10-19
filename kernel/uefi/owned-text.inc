@@ -1,6 +1,3 @@
-#ifdef AURORA_RUNTIME_FIXTURE
-#include "runtime-fixture.inc"
-#endif
 // One private bounded allocator binding; no user descriptor conveys authority.
 [[nodiscard]] auto text_retirable() -> bool {
     return !text_region.is_open() && !text_region.faulted() && !text_owner && !timer_armed && !program.running() &&

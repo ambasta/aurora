@@ -55,11 +55,8 @@ auto release_call_source() -> void {
                                               *domains[0].contract,
                                               timer_owner_epoch),
             "call active run authority");
-#ifdef AURORA_CALL_OWNER
-    reinterpret_cast<U64 *>(frame)[9] ^= 1;
-#endif
-#ifdef AURORA_CALL_SITE
-    ++reinterpret_cast<U64 *>(frame)[17];
+#ifdef AURORA_RUNTIME_FIXTURE
+    call_fixture_entry(reinterpret_cast<U64 *>(frame));
 #endif
     const auto context = ServiceContext::capture_call(std::span<const U64>{reinterpret_cast<const U64 *>(frame), 22},
                                                       frame,
@@ -121,8 +118,9 @@ auto release_call_source() -> void {
     if (file_wc)
         ++file_call_count;
 #endif
-#ifdef AURORA_CALL_PENDING
-    force_timer_pending();
+#ifdef AURORA_RUNTIME_FIXTURE
+    if (fixture == Fixture::call_pending)
+        force_timer_pending();
 #endif
     park_run(*domains[0].handle);
     Serial::text("AURORA_CALL_PARK: ticket=");
@@ -355,6 +353,9 @@ auto call_completion_controls(U64 ticket) -> void {
     --call_wait.launch[3];
 }
 auto run_blocking_calls(memory::PhysicalPages &producer_pool) -> void {
+#ifdef AURORA_RUNTIME_FIXTURE
+    select_fixture(Fixture::call_pending, Fixture::call_site);
+#endif
     for (unsigned scenario = 0; scenario < 4; ++scenario) {
         require(prepare_snapshot(arena, producer_pool, snapshot_slot, SnapshotProducerCase::normal) ==
                         ipc::SnapshotPublication::ready &&

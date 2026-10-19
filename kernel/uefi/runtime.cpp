@@ -250,6 +250,9 @@ auto require(bool okay, std::string_view reason) -> void {
     if (!okay)
         stop(reason);
 }
+#ifdef AURORA_RUNTIME_FIXTURE
+#include "runtime-fixture.inc"
+#endif
 auto fill(U64 physical, std::uint8_t value) -> void {
     for (auto &byte : view(physical, 4096))
         byte = std::byte{value};
@@ -750,8 +753,11 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
         require(timer_armed && integer && integer->terminal_context(*domains[active].contract) && timer_stop(),
                 "timer terminal context");
 #if defined(AURORA_BUDGET_PENDING) || defined(AURORA_DISPATCH_PENDING) || defined(AURORA_USER_PENDING) ||              \
-    defined(AURORA_PROGRAM_PENDING) || defined(AURORA_CALL_PENDING)
+    defined(AURORA_PROGRAM_PENDING)
         force_timer_pending();
+#elif defined(AURORA_RUNTIME_FIXTURE) && defined(AURORA_BLOCKING_CALL)
+        if (fixture == Fixture::call_pending)
+            force_timer_pending();
 #endif
 #ifdef AURORA_USER_RETIRE_PENDING
         if (active == 0 && selected_phase == ipc::Phase::completion && vector == 6)

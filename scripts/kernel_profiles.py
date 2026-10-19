@@ -30,9 +30,7 @@ UEFI_FAMILIES = [
         ],
         {
             "user-call": [],
-            "user-call-pending": ["-DAURORA_CALL_PENDING"],
-            "user-call-owner": ["-DAURORA_CALL_OWNER"],
-            "user-call-site": ["-DAURORA_CALL_SITE"],
+            "user-call-fixture": ["-DAURORA_RUNTIME_FIXTURE"],
         },
     ),
     ([], {"normal": []}),
