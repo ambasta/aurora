@@ -151,9 +151,6 @@ constinit ParkedRun call_wait;
 // file_wc selects the existing sequential-read authority for both wc and CRC.
 bool file_wc{}, file_closed{};
 unsigned file_call_count{}, file_service_used{};
-#ifdef AURORA_RUNTIME_FIXTURE
-U64 file_budget_probe{};
-#endif
 #endif
 [[nodiscard]] auto call_retire(unsigned index) -> bool;
 #endif

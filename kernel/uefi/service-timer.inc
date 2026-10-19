@@ -284,8 +284,8 @@ auto timer_begin(unsigned index) -> void {
 #ifdef AURORA_RUNTIME_FIXTURE
     // Test-only conservative charging, never a quota reset or simulated IRQ.
     // Exercise exhaustion at the actual pre-publication boundaries after two bytes.
-    if ((file_budget_probe == 36 && active == 0 && file_call_count == 2) ||
-        (file_budget_probe == 37 && active == 1 && file_call_count == 3)) {
+    if ((file_probe == 36 && active == 0 && file_call_count == 2) ||
+        (file_probe == 37 && active == 1 && file_call_count == 3)) {
         Serial::text(active == 0 ? std::string_view{"AURORA_WC_BOUNDARY_PROBE: role=client\r\n"}
                                  : std::string_view{"AURORA_WC_BOUNDARY_PROBE: role=service\r\n"});
         while (timer_ticks < 127) {

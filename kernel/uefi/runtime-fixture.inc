@@ -67,7 +67,6 @@ auto file_fixture_phase(unsigned index, U64 operation, U64 offset) -> U64 {
             file_probe = 34 + probes;
         if (probes < 4)
             ++probes;
-        file_budget_probe = file_probe;
         return file_probe ? file_probe + (operation == 48 ? 16 : 0) : operation;
     }
     if (file_probe == 1 || (file_probe == 33 && offset == 2))
