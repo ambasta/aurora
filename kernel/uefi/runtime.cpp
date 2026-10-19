@@ -39,10 +39,10 @@
 #endif
 #include <array>
 #include <optional>
-#if defined(AURORA_USER_RESUME) || defined(AURORA_BLOCKING_CALL)
+#if defined(AURORA_USER_RESUME) || defined(AURORA_BLOCKING_CALL) || defined(AURORA_CONSOLE_REGION)
 #include <memory>
 #endif
-#ifdef AURORA_UEFI_PROGRAM_CONSOLE
+#if defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_CONSOLE_REGION)
 #include "console-context.hpp"
 #include "../console-session.hpp"
 #include "../console-uart.hpp"
@@ -61,7 +61,7 @@ auto enter(std::uint64_t, std::uint64_t) -> std::uint64_t asm("uefi_runtime_ente
     __attribute__((visibility("hidden")));
 #endif
 auto handler(unsigned) -> std::uint64_t asm("uefi_runtime_handler") __attribute__((visibility("hidden")));
-#if defined(AURORA_USER_RESUME) || defined(AURORA_BLOCKING_CALL)
+#if defined(AURORA_USER_RESUME) || defined(AURORA_BLOCKING_CALL) || defined(AURORA_CONSOLE_REGION)
 auto resume(std::uint64_t) -> std::uint64_t asm("uefi_runtime_resume") __attribute__((visibility("hidden")));
 #endif
 namespace {
@@ -79,7 +79,7 @@ public:
     }
 };
 using Serial = SnapshotDiagnostics;
-#elif defined(AURORA_UEFI_PROGRAM_CONSOLE)
+#elif defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_CONSOLE_REGION)
 // Runtime diagnostics and input share the same sticky LSR error latch. A raw
 // hardware::Serial read during a protected command would otherwise erase OE.
 class ProgramSerialAdapter final {
@@ -314,13 +314,20 @@ auto fill(U64 physical, std::uint8_t value) -> void {
 }
 #ifdef AURORA_OWNED_TEXT
 [[nodiscard]] auto text_retirable() -> bool;
+#ifdef AURORA_CONSOLE_REGION
+[[nodiscard]] auto console_retirable() -> bool;
+#endif
 #endif
 [[nodiscard]] auto retire(unsigned index) -> bool {
     if (index >= L::domain_count || root() != kernel_root || active != L::domain_count)
         return false;
     auto &domain = domains[index];
 #ifdef AURORA_OWNED_TEXT
-    if (index != 0 || !text_retirable())
+    if (index != 0 || !text_retirable()
+#ifdef AURORA_CONSOLE_REGION
+        || !console_retirable()
+#endif
+    )
         return false;
 #endif
     if (!domain.handle || !registry.ready(*domain.handle))
@@ -585,6 +592,9 @@ auto execute(unsigned index, ProgramEvent wanted) -> void {
 #endif
 #ifdef AURORA_OWNED_TEXT
 #include "owned-text.inc"
+#ifdef AURORA_CONSOLE_REGION
+#include "console-region.inc"
+#endif
 #endif
 #ifdef AURORA_UEFI_IPC
 #ifdef AURORA_UEFI_DISPATCH
@@ -630,7 +640,7 @@ extern "C" [[noreturn]] void __au_runtime_bytes_kernel_fault(U64) noexcept {
 auto dispatch(U64, U64, U64, U64, U64, U64) -> U64 asm("aurora_exception_dispatch")
     __attribute__((visibility("hidden")));
 auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U64 {
-#ifdef AURORA_UEFI_PROGRAM_CONSOLE
+#if defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_CONSOLE_REGION)
     if (program_console_interrupt(vector, error, pc, cs, frame))
         return 0;
 #endif
@@ -687,7 +697,11 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
             "exception origin/stack");
 #ifdef AURORA_OWNED_TEXT
     if (vector == 130)
+#ifdef AURORA_CONSOLE_REGION
+        return console_region_trap(frame);
+#else
         return text_trap(frame);
+#endif
 #endif
 #ifdef AURORA_BLOCKING_CALL
     if (vector == 130)
@@ -822,7 +836,14 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
     initialize_service_timer();
 #endif
 #ifdef AURORA_OWNED_TEXT
+#ifdef AURORA_CONSOLE_REGION
+    run_console_application(producer_pool);
+#ifdef AURORA_CONSOLE_CANCEL
+    run_console_application(producer_pool);
+#endif
+#else
     run_owned_text(producer_pool);
+#endif
     return true;
 #elif defined(AURORA_UEFI_IPC)
 #ifdef AURORA_UEFI_DISPATCH

@@ -431,6 +431,13 @@ if get_option('kernel_images')
       depends: kernel_profile_images['uefi/' + mode], suite: ['full', 'slow', 'integration', 'boot'],
       env: native_test_env, workdir: native_root, timeout: 900)
   endforeach
+  foreach mode : ['runtime-console-region', 'runtime-console-region-cancel', 'runtime-console-region-cancel-ready', 'runtime-console-region-input', 'runtime-console-region-output', 'runtime-console-region-budget', 'runtime-console-region-fault']
+    test('native-uefi-' + mode + '-image', python,
+      args: ['-B', files('../../tests/kernel-uefi-image.py'), '--build-dir',
+             meson.project_build_root() / 'kernel-images/uefi' / mode, '--owned-text', '--console-region', '--check-only'],
+      depends: kernel_profile_images['uefi/' + mode], suite: ['full', 'slow', 'integration', 'boot'],
+      env: native_test_env, workdir: native_root, timeout: 900)
+  endforeach
   test('native-bios-image', python,
       args: ['-B', files('../../tests/kernel-image.py'), '--build-dir', bios_image_dir, '--check-only'],
       depends: bios_image, suite: ['full', 'slow', 'integration', 'boot'],
@@ -445,7 +452,7 @@ else
        suite: ['full', 'slow', 'integration'], env: native_test_env, workdir: native_root, timeout: 1800)
   # Retain explicit failing full/boot coverage, even with --no-rebuild and stale
   # images left by a previous enabled configuration. Hosted compiler/dev is usable.
-  foreach image_name : ['native-bios-image', 'native-uefi-normal-image', 'native-uefi-runtime-owned-text-image', 'native-uefi-runtime-owned-text-site-image', 'native-uefi-runtime-owned-text-region-image', 'native-uefi-runtime-owned-text-stale-image']
+  foreach image_name : ['native-bios-image', 'native-uefi-normal-image', 'native-uefi-runtime-owned-text-image', 'native-uefi-runtime-owned-text-site-image', 'native-uefi-runtime-owned-text-region-image', 'native-uefi-runtime-owned-text-stale-image', 'native-uefi-runtime-console-region-image', 'native-uefi-runtime-console-region-cancel-image', 'native-uefi-runtime-console-region-cancel-ready-image', 'native-uefi-runtime-console-region-input-image', 'native-uefi-runtime-console-region-output-image', 'native-uefi-runtime-console-region-budget-image', 'native-uefi-runtime-console-region-fault-image']
     test(image_name, python,
       args: ['-c', 'raise SystemExit("Kernel images disabled: configure -Dkernel_images=true for full/boot qualification")'],
       suite: ['full', 'slow', 'integration', 'boot'],

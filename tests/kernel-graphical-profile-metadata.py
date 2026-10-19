@@ -62,8 +62,8 @@ class ProfileMetadata(unittest.TestCase):
 
     def test_no_legacy_clock_admission_or_inherited_receipt(self):
         clock = load("graphical_metadata_clock", "scripts/kernel_emulator_clock.py")
-        self.assertEqual(len(clock.MODE_CLOCKS), 205)
-        self.assertEqual(sum(value == clock.FIXED0 for value in clock.MODE_CLOCKS.values()), 62)
+        self.assertEqual(len(clock.MODE_CLOCKS), 212)
+        self.assertEqual(sum(value == clock.FIXED0 for value in clock.MODE_CLOCKS.values()), 69)
         self.assertEqual(clock.clock_profile("uefi", "user-resume"), clock.FIXED0)
         selected = sorted(
             mode
@@ -71,6 +71,13 @@ class ProfileMetadata(unittest.TestCase):
             if value == clock.FIXED0
             and mode
             not in (
+                "runtime-console-region",
+                "runtime-console-region-cancel",
+                "runtime-console-region-cancel-ready",
+                "runtime-console-region-input",
+                "runtime-console-region-output",
+                "runtime-console-region-budget",
+                "runtime-console-region-fault",
                 "runtime-owned-text",
                 "runtime-owned-text-site",
                 "runtime-owned-text-region",

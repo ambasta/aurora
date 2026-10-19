@@ -64,6 +64,13 @@ UEFI_FAMILIES = [
         ],
         {
             "runtime-owned-text": [],
+            "runtime-console-region": ["-DAURORA_CONSOLE_REGION"],
+            "runtime-console-region-fault": ["-DAURORA_CONSOLE_REGION"],
+            "runtime-console-region-cancel": ["-DAURORA_CONSOLE_REGION", "-DAURORA_CONSOLE_CANCEL"],
+            "runtime-console-region-cancel-ready": ["-DAURORA_CONSOLE_REGION", "-DAURORA_CONSOLE_CANCEL_READY"],
+            "runtime-console-region-input": ["-DAURORA_CONSOLE_REGION", "-DAURORA_CONSOLE_INPUT"],
+            "runtime-console-region-output": ["-DAURORA_CONSOLE_REGION", "-DAURORA_CONSOLE_OUTPUT"],
+            "runtime-console-region-budget": ["-DAURORA_CONSOLE_REGION", "-DAURORA_CONSOLE_BUDGET"],
             "runtime-owned-text-site": ["-DAURORA_TEXT_SITE"],
             "runtime-owned-text-region": ["-DAURORA_TEXT_REGION"],
             "runtime-owned-text-stale": ["-DAURORA_TEXT_STALE"],
@@ -627,7 +634,8 @@ def bios_profile(mode, controls):
 def uefi_profile(mode, flags):
     runtime = mode.startswith(("runtime", "ipc", "budget", "dispatch", "user-", "program-", "snapshot"))
     ipc = mode.startswith(("ipc", "budget", "dispatch", "user-", "program-", "snapshot"))
-    owned_text = mode.startswith("runtime-owned-text")
+    console_region = mode.startswith("runtime-console-region")
+    owned_text = mode.startswith("runtime-owned-text") or console_region
     budget = mode.startswith(("budget", "dispatch", "user-", "program-")) or owned_text
     file_call = mode.startswith("program-file-call")
     blocking_call = mode.startswith("user-call") or file_call
@@ -657,7 +665,7 @@ def uefi_profile(mode, flags):
     ):
         user_mode = mode[8:]
     if owned_text:
-        user_mode = "owned-text"
+        user_mode = "console-region" if console_region else "owned-text"
     if snapshot and mode in ("snapshot-owner", "snapshot-reply-reserved", "snapshot-reply-byte"):
         user_mode = mode[9:]
     if program and mode in ("program-owner", "program-ordinal", "program-unknown", "program-transaction"):
@@ -700,8 +708,14 @@ def uefi_profile(mode, flags):
     )
     if owned_text:
         users["clean"].update(
-            source="tests/kernel-programs/owned-text.au",
-            entry="kernel/uefi/owned-text-entry.S",
+            source=(
+                "tests/kernel-programs/console-region-fault.au"
+                if mode.endswith("-fault")
+                else "tests/kernel-programs/console-region.au"
+            )
+            if console_region
+            else "tests/kernel-programs/owned-text.au",
+            entry="kernel/uefi/console-region-entry.S" if console_region else "kernel/uefi/owned-text-entry.S",
             combined=True,
             max_pages=3,
         )
@@ -717,7 +731,7 @@ def uefi_profile(mode, flags):
         )
         if owned_text:
             runtime_flags += ["--defsym", "AURORA_OWNED_TEXT=1"]
-        if mode == "user-resume" or blocking_call:
+        if mode == "user-resume" or blocking_call or console_region:
             runtime_flags += ["--defsym", "AURORA_USER_RESUME=1"]
         if blocking_call:
             runtime_flags += ["--defsym", "AURORA_BLOCKING_CALL=1"]
@@ -766,6 +780,8 @@ def uefi_profile(mode, flags):
         image_options += ["--multipage"]
     if owned_text:
         image_options += ["--owned-text"]
+    if console_region:
+        image_options += ["--console-region"]
     if mode == "budget-noapic":
         image_options += ["--budget-noapic"]
     if snapshot or (blocking_call and not file_call):

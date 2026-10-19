@@ -275,6 +275,7 @@ def image_options(arguments):
         ["--owned-bytes"],
         ["--multipage"],
         ["--owned-text"],
+        ["--owned-text", "--console-region"],
         ["--ipc-policy", "--disposal-policy"],
         ["--graphical-console"],
         ["--iommu-event"],
@@ -284,6 +285,7 @@ def image_options(arguments):
     return dict(
         require_multipage="--multipage" in arguments,
         require_owned_text="--owned-text" in arguments,
+        require_console_region="--console-region" in arguments,
         require_ipc="--ipc-policy" in arguments,
         require_budget_noapic="--budget-noapic" in arguments,
         require_snapshot="--snapshot" in arguments,
@@ -847,6 +849,24 @@ def graphical_image_policy(directory, symbols=None):
     )
 
 
+def console_irq_windows(symbols, mode):
+    modes = {
+        "runtime-console-region" + suffix
+        for suffix in ("", "-cancel", "-cancel-ready", "-input", "-output", "-budget", "-fault")
+    }
+    need(mode in modes, "Exact protected console image mode")
+    expected = {"uefi_service_drain_begin", "uefi_service_drain_end"}
+    if mode not in ("runtime-console-region-cancel", "runtime-console-region-input"):
+        expected |= {"uefi_program_poll_begin", "uefi_program_poll_end"}
+    actual = {
+        name
+        for name in symbols
+        if name
+        in {"uefi_service_drain_begin", "uefi_service_drain_end", "uefi_program_poll_begin", "uefi_program_poll_end"}
+    }
+    need(actual == expected, "Exact protected console supervisor IRQ windows")
+
+
 def main(
     require_multipage=False,
     require_owned_text=False,
@@ -860,6 +880,7 @@ def main(
     require_call_snapshot=False,
     *,
     require_budget_noapic=False,
+    require_console_region=False,
     build_dir=None,
     check_only=False,
     event_mode=None,
@@ -982,6 +1003,32 @@ def main(
             noreturn=stack.OWNED_NORETURN,
         )
         admitted = stack.service_discovery_stack(graph)
+        if require_owned_text:
+            linked = graph["linked"]
+            window_names = {symbol.name: symbol.address for symbol in linked.symbols if symbol.section}
+            payload = (build / "payload.bin").read_bytes()
+            if require_console_region:
+                console_irq_windows(window_names, build.name)
+            for begin, end, opcode in (
+                ("uefi_program_poll_begin", "uefi_program_poll_end", "fbf4fa"),
+                ("uefi_service_drain_begin", "uefi_service_drain_end", "fb9090fa"),
+            ):
+                if begin not in window_names:
+                    continue
+                need(
+                    end in window_names and payload[window_names[begin] : window_names[end]] == bytes.fromhex(opcode),
+                    "Exact owned supervisor IRQ window",
+                )
+                owners = [
+                    name
+                    for name, symbol in linked.functions.items()
+                    if symbol.address <= window_names[begin] < symbol.address + symbol.size
+                ]
+                need(len(owners) == 1, "Unique supervisor IRQ window owner")
+                retained = stack.calculate(graph["functions"], "uefi_payload_entry", target=owners[0])["peak"]
+                combined = retained + admitted["irq_dispatch"]["peak_with_entry"] + admitted["fault_reserve"]
+                need(combined <= stack.STACK_CAP, "Owned supervisor wait/IRQ stack reserve exhausted")
+                print("PASS: " + begin + " retained/IRQ/fault stack " + str(combined) + "/15360")
         label = "owned text" if require_owned_text else "multipage"
         print("PASS: " + label + " kernel stack with fault reserve " + str(admitted["peak_with_fault_reserve"]))
         if require_owned_text:

@@ -135,6 +135,24 @@ class ImagePolicy(unittest.TestCase):
         with self.assertRaises(ValueError):
             policy.graphical_object_policy(**fixture)
 
+    def test_console_region_irq_windows_are_required(self):
+        drain = {"uefi_service_drain_begin", "uefi_service_drain_end"}
+        poll = {"uefi_program_poll_begin", "uefi_program_poll_end"}
+        for suffix in ("", "-cancel", "-cancel-ready", "-input", "-output", "-budget", "-fault"):
+            mode = "runtime-console-region" + suffix
+            expected = drain if suffix in ("-cancel", "-input") else drain | poll
+            policy.console_irq_windows(expected, mode)
+            for missing in expected:
+                with self.assertRaises(ValueError):
+                    policy.console_irq_windows(expected - {missing}, mode)
+        with self.assertRaises(ValueError):
+            policy.console_irq_windows(drain | poll, "unknown")
+        with self.assertRaises(ValueError):
+            policy.console_irq_windows(drain | poll, "runtime-console-region-cancel")
+        self.assertTrue(policy.image_options(["--owned-text", "--console-region"])["require_console_region"])
+        with self.assertRaises(ValueError):
+            policy.image_options(["--console-region"])
+
     def test_explicit_flag_and_legacy_flags(self):
         for args in (
             [],

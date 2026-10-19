@@ -871,15 +871,21 @@ def aurora_stack_functions(path, symbols, code, starts, generated_names):
                         type(row) is list
                         and len(row) == 2
                         and type(row[0]) is str
-                        and row[0] in kinds | {"scalar"}
+                        and row[0] in kinds | {"scalar", "builtin::ByteRegion"}
                         and type(row[1]) is int
-                        and row[1] == (8 if row[0] == "scalar" else 16)
+                        and row[1] == (8 if row[0] in ("scalar", "builtin::ByteRegion") else 16)
                         for row in record["parameters"]
                     )
                     and any(row[0] in kinds for row in record["parameters"])
                     and type(record["result_bytes"]) is int
                     and record["result_bytes"] in (1, 8),
                     "Invalid service entry record fact",
+                )
+            if record is not None and any(row[0] == "builtin::ByteRegion" for row in record["parameters"]):
+                require(
+                    record["parameters"][:2] == [["builtin::ConsoleSession", 16], ["builtin::ByteRegion", 8]]
+                    and all(row == ["scalar", 8] for row in record["parameters"][2:]),
+                    "Region requires the closed Console+Region prefix",
                 )
             scalar_hosts = {
                 "__au_runtime_console_put",

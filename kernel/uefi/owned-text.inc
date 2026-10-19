@@ -83,6 +83,7 @@ extern "C" [[noreturn]] void __au_runtime_bytes_kernel_fault(std::uint64_t reaso
     stop("owned text allocator invariant");
 }
 
+#ifndef AURORA_CONSOLE_REGION
 auto run_owned_text(memory::PhysicalPages &pool) -> void {
     require(pool.used() == 0, "text exclusive backing pool");
     constexpr std::array<U64, 5> scalars{0x1f642, 0xd800, 1114114, 1114112, 1114113};
@@ -147,3 +148,5 @@ auto run_owned_text(memory::PhysicalPages &pool) -> void {
     }
     Serial::text("AURORA_OWNED_TEXT_OK\r\n");
 }
+
+#endif

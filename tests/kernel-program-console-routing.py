@@ -29,7 +29,7 @@ def verify(runtime, program, timer):
         r"\[\[gnu::noinline\]\] static void number\(unsigned long long value\)\s*\{\s*"
         r"hardware::Serial::number\(value\);\s*\}\s*\};\s*"
         r"using Serial\s*=\s*SnapshotDiagnostics;\s*"
-        r"#elif defined\(AURORA_UEFI_PROGRAM_CONSOLE\))\s*"
+        r"#elif defined\(AURORA_UEFI_PROGRAM_CONSOLE\)(?: \|\| defined\(AURORA_CONSOLE_REGION\))?)\s*"
         r"(?:using Serial\s*=\s*console::Uart<hardware::Io,\s*console::FifoTrigger::fourteen>;|"
         r"class ProgramSerialAdapter final\s*\{\s*"
         r"using Uart\s*=\s*console::Uart<hardware::Io,\s*console::FifoTrigger::fourteen>;\s*public:\s*"

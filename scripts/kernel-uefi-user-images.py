@@ -179,7 +179,7 @@ def multipage_stack(prefix, base, fault):
     return multipage_evidence(functions, symbols, base)
 
 
-def owned_text_stack(prefix, entry):
+def owned_text_stack(prefix, entry, console_region=False):
     import kernel_stack as stack
 
     user = stack.Elf(prefix.with_suffix(".elf"))
@@ -189,6 +189,8 @@ def owned_text_stack(prefix, entry):
     facts = json.loads(prefix.with_suffix(".stack.json").read_text())["functions"]
     operations = ("allocate", "borrow_length", "at", "set", "resize", "drop")
     stubs = {"__au_runtime_bytes_" + name for name in operations}
+    if console_region:
+        stubs |= {"__au_runtime_console_next", "__au_runtime_console_put"}
     need(set(user.functions) == set(facts) | stubs, "Exact owned text function inventory")
     starts = {symbol.address: name for name, symbol in user.functions.items()}
     functions = stack.aurora_stack_functions(prefix.with_suffix(".stack.json"), user.functions, code, starts, facts)
@@ -220,35 +222,54 @@ def owned_text_stack(prefix, entry):
         need([(row.op, row.args) for row in rows] == expected, "Exact register-only byte stub: " + operation)
         functions[name] = dict(local_peak=8, calls=[], returns=1)
         result["bytes_" + operation + "_pc"] = site
+    if console_region:
+        for operation in ("next", "put"):
+            name = "__au_runtime_console_" + operation
+            symbol = user.functions[name]
+            rows = [
+                row for address, row in sorted(code.items()) if symbol.address <= address < symbol.address + symbol.size
+            ]
+            expected = [("mov", "%rdx,%r10")] if operation == "next" else []
+            expected += [("int", "$0x82")]
+            site = symbols["aurora_console_" + operation + "_pc"]
+            need(rows[len(expected) - 1].next == site, "Exact console trap continuation")
+            if operation == "next":
+                expected += [("mov", "%rax,(%r10)"), ("mov", "%rdx,0x8(%r10)"), ("mov", "%rcx,0x10(%r10)")]
+            expected += [("ret", "")]
+            need([(row.op, row.args) for row in rows] == expected, "Exact copied console stub: " + operation)
+            functions[name] = dict(local_peak=8, calls=[], returns=1)
+            result["console_" + operation + "_pc"] = site
     abi = json.loads(prefix.with_suffix(".abi.json").read_text())["functions"][entry]
-    need(
-        abi["parameter_bytes"] == 16
-        and abi["parameters"] == [{"offset": 0, "bytes": 8, "kind": "region"}, {"offset": 8, "bytes": 8, "kind": "u64"}]
-        and abi["result"] == {"bytes": 8, "kind": "i64"}
-        and abi["borrowed_root_count"] == 0,
-        "Exact owned text copied argument record ABI",
+    parameters = (
+        [
+            {"offset": 0, "bytes": 16, "kind": "service", "type_name": "builtin::ConsoleSession"},
+            {"offset": 16, "bytes": 8, "kind": "region", "type_name": "builtin::ByteRegion"},
+        ]
+        if console_region
+        else [{"offset": 0, "bytes": 8, "kind": "region"}, {"offset": 8, "bytes": 8, "kind": "u64"}]
     )
-    wrapper = [row for address, row in sorted(code.items()) if BASE <= address < BASE + 29]
+    need(
+        abi["parameter_bytes"] == (24 if console_region else 16)
+        and abi["parameters"] == parameters
+        and abi["result"] == {"bytes": 8, "kind": "u64" if console_region else "i64"}
+        and abi["borrowed_root_count"] == 0,
+        "Exact protected region entry ABI",
+    )
+    wrapper = [
+        row for address, row in sorted(code.items()) if BASE <= address < symbols["aurora_program_return_pc"] + 2
+    ]
     actual = [
         (row.op, entry if row.op == "call" and stack.target_of(row) == symbols[entry] else row.args) for row in wrapper
     ]
-    need(
-        actual
-        == [
-            ("sub", "$0x10,%rsp"),
-            ("mov", "%rdi,(%rsp)"),
-            ("mov", "%rsi,0x8(%rsp)"),
-            ("mov", "%rsp,%r11"),
-            ("call", entry),
-            ("add", "$0x10,%rsp"),
-            ("int", "$0x81"),
-            ("ud2", ""),
-        ],
-        "Exact owned text entry wrapper",
-    )
+    reserve = "$0x20,%rsp" if console_region else "$0x10,%rsp"
+    expected = [("sub", reserve), ("mov", "%rdi,(%rsp)"), ("mov", "%rsi,0x8(%rsp)")]
+    if console_region:
+        expected += [("mov", "%rdx,0x10(%rsp)"), ("movq", "$0x0,0x18(%rsp)")]
+    expected += [("mov", "%rsp,%r11"), ("call", entry), ("add", reserve), ("int", "$0x81"), ("ud2", "")]
+    need(actual == expected, "Exact protected region entry wrapper")
     for name in functions:
         stack.calculate(functions, name)
-    result["user_stack"] = stack.calculate(functions, entry)["peak"] + 24
+    result["user_stack"] = stack.calculate(functions, entry)["peak"] + (40 if console_region else 24)
     need(result["user_stack"] <= stack.STACK_CAP, "Owned text user stack reserve")
     result["compiled_begin"] = user.functions[entry].address
     result["compiled_end"] = user.functions[entry].address + user.functions[entry].size
@@ -273,7 +294,7 @@ def emit_metadata(out, mode):
             if len(line.split()) == 3
         }
         blob = binary.read_bytes()
-        owned = mode == "owned-text" and name == "clean"
+        owned = mode in ("owned-text", "console-region") and name == "clean"
         entry = None
         if owned:
             from bootstrap_frontend import abi_function_symbol
@@ -283,7 +304,7 @@ def emit_metadata(out, mode):
             elf.read_bytes(), blob, base, symbols, max_pages=3 if mode == "multipage" or owned else 1, owned_entry=entry
         )
         if owned:
-            evidence = owned_text_stack(prefix, entry)
+            evidence = owned_text_stack(prefix, entry, mode == "console-region")
             meta.update(evidence)
             print(f"PASS: owned text user stack {evidence['user_stack']}/15360 bytes; image {len(blob)}/12288")
         if mode == "multipage":
@@ -318,6 +339,7 @@ if __name__ == "__main__":
             "span",
             "multipage",
             "owned-text",
+            "console-region",
             "code",
             "stack",
             "window",
