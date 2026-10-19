@@ -391,8 +391,7 @@ class NativeArtifacts(unittest.TestCase):
             other_version.write_text(header.read_text())
             escape = headers / "escape"
             escape.symlink_to(outside)
-            self.assertEqual(decoder.CPP_HEADER_ROOT, Path("/usr/include/c++/16"))
-            with patch.object(decoder, "CPP_HEADER_ROOT", headers):
+            with patch.object(decoder, "cpp_header_root", return_value=headers):
                 frame_source(header)
                 check(str(header))
                 obj = SimpleNamespace(type=1, functions={"local_fn": object()}, path=exported)

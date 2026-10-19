@@ -7,15 +7,16 @@ entry, bridge, memory and fault assembly uses instruction-level stack checks.
 
 from collections import deque
 from dataclasses import dataclass, replace
+from functools import cache
 from pathlib import Path
 import hashlib
 import json
+import os
 import re
 import struct
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
-CPP_HEADER_ROOT = Path("/usr/include/c++/16")
 CPP_OBJECTS = ("payload", "acpi", "pci", "runtime", "owned-bytes-runtime", "owned-bytes-profile")
 STACK_BYTES = 16384
 STACK_CAP = 15360
@@ -475,18 +476,28 @@ def object_source(directory, name, source_root=None):
     return str(expected), compile_directory
 
 
+@cache
+def cpp_header_root():
+    # The pinned Debian GCC layout may be installed under a workspace prefix.
+    path = subprocess.check_output(
+        [os.environ.get("CXX", "g++"), "-print-file-name=../../../../include/c++/16"], text=True
+    ).strip()
+    return Path(path).resolve(strict=True)
+
+
 def frame_source(source, root, *, native=False, compile_directory=None):
     """Resolve reviewed source origins, not a proof of compiler/header safety."""
     reported = (compile_directory or root) / source
     location = reported.resolve(strict=True)
-    if reported.is_relative_to(CPP_HEADER_ROOT):
-        require(native, "Historical compiler frame outside kernel source inventory")
-        require(CPP_HEADER_ROOT.resolve(strict=True) == CPP_HEADER_ROOT, "Noncanonical compiler header root")
-        require(location.is_relative_to(CPP_HEADER_ROOT), "Compiler header escaped supported root")
-        identity = str(location)
-    else:
-        require(location.is_relative_to(root / "kernel"), "Compiler frame outside selected kernel sources")
+    if location.is_relative_to(root / "kernel"):
         identity = location.relative_to(root).as_posix()
+    else:
+        require(native, "Historical compiler frame outside kernel source inventory")
+        headers = cpp_header_root()
+        require(headers.resolve(strict=True) == headers, "Noncanonical compiler header root")
+        require(reported.is_relative_to(headers), "Compiler frame outside selected kernel sources")
+        require(location.is_relative_to(headers), "Compiler header escaped supported root")
+        identity = str(location)
     require(location.is_file(), "Compiler frame source is not a regular file")
     with location.open("rb"):
         pass  # Fail closed on unreadable files, including at the normalization boundary.
