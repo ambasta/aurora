@@ -24,6 +24,16 @@ export namespace compiler_formatter {
         builtin::OwnedValues<Row> result = region.try_allocate(0, empty);
         return move(result);
     }
+    auto append_row(builtin::OwnedValues<Row>& rows, i64 count, Row row, Row fill) -> bool {
+        if (count == rows.size()) {
+            const i64 capacity = compiler_x86::grow_capacity(rows.size(), count + 1, 1048577, 8);
+            if (!rows.try_resize(capacity, fill)) {
+                return false;
+            }
+        }
+        rows.set(count, row);
+        return true;
+    }
     auto row_field(Row row, i64 field) -> i64 {
         if (field == 0) {
             return row.a;
@@ -82,62 +92,49 @@ export namespace compiler_formatter {
             status = reason;
             return false;
         }
-        auto grow(i64 size, i64 required) const -> i64 {
-            return compiler_x86::grow_capacity(size, required, 1048577, 8);
-        }
         auto piece(Row row) -> bool {
-            if (pieceCount == pieces.size()) {
-                const Row empty = Row(0, 0, 0, 0, 0, 0);
-                if (!pieces.try_resize(grow(pieces.size(), pieceCount + 1), empty)) {
-                    return fail(1);
-                }
+            const i64 count = pieceCount;
+            const Row empty = Row(0, 0, 0, 0, 0, 0);
+            if (!append_row(pieces, count, row, empty)) {
+                return fail(1);
             }
-            pieces.set(pieceCount, row);
-            pieceCount = pieceCount + 1;
+            pieceCount = count + 1;
             return true;
         }
         auto token(i64 index) -> bool {
+            const i64 count = tokenCount;
             const Row entry = Row(index, 0, 0, 0, 0, 0);
-            if (tokenCount == tokens.size()) {
-                if (!tokens.try_resize(grow(tokens.size(), tokenCount + 1), entry)) {
-                    return fail(1);
-                }
+            if (!append_row(tokens, count, entry, entry)) {
+                return fail(1);
             }
-            tokens.set(tokenCount, entry);
-            tokenCount = tokenCount + 1;
+            tokenCount = count + 1;
             return true;
         }
         auto finding(Row row) -> bool {
-            if (findingCount == findings.size()) {
-                const Row empty = Row(0, 0, 0, 0, 0, 0);
-                if (!findings.try_resize(grow(findings.size(), findingCount + 1), empty)) {
-                    return fail(1);
-                }
+            const i64 count = findingCount;
+            const Row empty = Row(0, 0, 0, 0, 0, 0);
+            if (!append_row(findings, count, row, empty)) {
+                return fail(1);
             }
-            findings.set(findingCount, row);
-            findingCount = findingCount + 1;
+            findingCount = count + 1;
             return true;
         }
         auto breakpoint(Row row) -> bool {
-            if (breakCount == breaks.size()) {
-                const Row empty = Row(0, 0, 0, 0, 0, 0);
-                if (!breaks.try_resize(grow(breaks.size(), breakCount + 1), empty)) {
-                    return fail(1);
-                }
+            const i64 count = breakCount;
+            const Row empty = Row(0, 0, 0, 0, 0, 0);
+            if (!append_row(breaks, count, row, empty)) {
+                return fail(1);
             }
-            breaks.set(breakCount, row);
-            breakCount = breakCount + 1;
+            breakCount = count + 1;
             return true;
         }
         auto brace(Row row) -> bool {
-            if (braceCount == braces.size()) {
-                const Row empty = Row(0, 0, 0, 0, 0, 0);
-                if (!braces.try_resize(grow(braces.size(), braceCount + 1), empty)) {
-                    return fail(1);
-                }
+            const i64 count = braceCount;
+            const Row empty = Row(0, 0, 0, 0, 0, 0);
+            if (!append_row(braces, count, row, empty)) {
+                return fail(1);
             }
-            braces.set(braceCount, row);
-            braceCount = braceCount + 1;
+            braceCount = count + 1;
             return true;
         }
         auto reserve(i64 added) -> bool {

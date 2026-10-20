@@ -1001,15 +1001,93 @@ def borrowed_root_generation(facts):
     pristine = json.dumps(facts, sort_keys=True)
     from bootstrap_frontend import abi_declaration, frontend_abi_header, frontend_bridge, normalize_function_abi
 
-    require(type(facts["version"]) is int and facts["version"] == 2, "candidate must emit ABI facts v2")
+    require(
+        type(facts["version"]) is int and facts["version"] == 3, "formatter typed-buffer helper requires ABI facts v3"
+    )
     header = frontend_abi_header(facts)
+    row_symbol, row = abi_declaration(facts, "records", "compiler_formatter::Row")
+    helper_source = "compiler_formatter::append_row"
+    helper_symbol, helper = abi_declaration(facts, "functions", helper_source)
+    require(
+        row["size"] == 48
+        and row["alignment"] == 8
+        and row["reserved"] == 48
+        and row["fields"]
+        == [
+            dict(name=name, offset=8 * i, bytes=8, array_length=0, kind="i64")
+            for i, name in enumerate(("a", "b", "c", "d", "e", "f"))
+        ],
+        "formatter helper copied Row layout changed",
+    )
+    require(
+        helper
+        == dict(
+            source_name=helper_source,
+            receiver=None,
+            receiver_mutable=None,
+            borrowed_root_count=1,
+            borrowed_roots=[
+                dict(
+                    ordinal=0,
+                    selector=0,
+                    type_name="builtin::OwnedValues",
+                    kind="owned_values",
+                    element_type_name=row_symbol,
+                    descriptor_bytes=32,
+                    mutable=True,
+                )
+            ],
+            borrowed_root_abi=dict(
+                kind="direct",
+                register="r10",
+                tuple_payload_bytes=0,
+                tuple_reserved_bytes=0,
+                saved_root_reserved_bytes=16,
+            ),
+            parameter_bytes=104,
+            parameters=[
+                dict(offset=0, bytes=8, kind="i64"),
+                dict(offset=8, bytes=48, kind="class", type_name=row_symbol),
+                dict(offset=56, bytes=48, kind="class", type_name=row_symbol),
+            ],
+            result=dict(bytes=8, kind="bool"),
+        )
+        and normalize_function_abi(facts, helper) == helper,
+        "formatter helper lost exact mutable typed-buffer transport or copied Row tail",
+    )
+
+    # v3 adds the typed buffer, not a replacement encoding for class roots.
+    # Keep the class-only v2 contract independently checked, without downgrading
+    # or stripping metadata from the builtin root to make it appear compatible.
+    builtin_symbols = {
+        symbol
+        for symbol, function in facts["functions"].items()
+        if any(root.get("kind") == "owned_values" for root in function["borrowed_roots"])
+    }
+    require(builtin_symbols == {helper_symbol}, "frontend typed-buffer consumer inventory changed")
+    class_only = shallow_facts(facts)
+    class_only["version"] = 2
+    del class_only["functions"][helper_symbol]
+    for function in class_only["functions"].values():
+        require(normalize_function_abi(class_only, function) == function, "class-only v2 normalization changed")
+    require(frontend_abi_header(class_only) == header, "typed helper changed private class-only host declarations")
+    for version in (1, 2):
+        try:
+            normalize_function_abi(dict(facts, version=version), helper)
+        except ValueError:
+            continue
+        raise AssertionError("typed-buffer root accepted under an older ABI version")
 
     def legacy_function(function):
         function = deepcopy(function)
         roots = function.pop("borrowed_roots")
         count = function.pop("borrowed_root_count")
         function.pop("borrowed_root_abi")
-        if count > 2 or (count == 2 and not roots[0]["mutable"]):
+        if (
+            count > 2
+            or (count == 2 and not roots[0]["mutable"])
+            or any(root["type_name"] not in facts["records"] for root in roots)
+        ):
             raise ValueError("function cannot be represented by the paired source predecessor")
         if roots:
             require(function["receiver"] is None, "borrowed roots duplicated in genuine receiver")
@@ -1024,8 +1102,8 @@ def borrowed_root_generation(facts):
         return function
 
     # Preserve every predecessor-representable function, including the original
-    # one/two-root bridges. New three-root and readonly-pair implementations have
-    # no legacy encoding; keep their current facts while round-tripping only the
+    # one/two-root bridges. Three-root, readonly-pair and builtin-buffer functions
+    # have no legacy encoding; keep their current facts while round-tripping only the
     # compatible projection. Normalization and exact bridge checks both run, so
     # an absent new bridge cannot make the legacy rejection cases pass vacuously.
     predecessor = dict(facts)
@@ -1050,6 +1128,7 @@ def borrowed_root_generation(facts):
             require(restored["functions"][symbol] == function, "paired predecessor normalization changed a function")
     run_symbol, run = abi_declaration(facts, "functions", "compiler_frontend::emitter_run")
     require(run_symbol in incompatible, "actual three-root emitter entered the paired legacy projection")
+    require(helper_symbol in incompatible, "typed-buffer helper entered the class-only legacy projection")
     try:
         legacy_function(run)
     except ValueError:
@@ -1068,6 +1147,46 @@ def borrowed_root_generation(facts):
         except ValueError:
             return
         raise AssertionError("unsafe borrowed-root facts accepted: " + source)
+
+    def reject_helper(label, mutation):
+        # append_row is an internal Aurora call, not an exported host bridge.
+        # Validate its root facts directly; header generation only checks the
+        # fixed host entry inventory and must not stand in for this check.
+        function = deepcopy(helper)
+        mutation(function)
+        try:
+            normalize_function_abi(facts, function)
+        except ValueError:
+            return
+        raise AssertionError("unsafe formatter typed-buffer facts accepted: " + label)
+
+    owner_symbol, _ = abi_declaration(facts, "records", "compiler_ir_graph::Workspace")
+    for field, value in (
+        ("kind", "owner"),
+        ("type_name", row_symbol),
+        ("element_type_name", "missing-element"),
+        ("element_type_name", owner_symbol),
+        ("descriptor_bytes", 24),
+        ("descriptor_bytes", True),
+        ("mutable", False),
+        ("mutable", 1),
+        ("ordinal", False),
+        ("selector", -1),
+    ):
+        reject_helper(
+            f"{field}={value!r}",
+            lambda f, field=field, value=value: f["borrowed_roots"][0].__setitem__(field, value),
+        )
+    for label, mutation in (
+        ("missing kind", lambda f: f["borrowed_roots"][0].pop("kind")),
+        ("missing element", lambda f: f["borrowed_roots"][0].pop("element_type_name")),
+        ("missing descriptor size", lambda f: f["borrowed_roots"][0].pop("descriptor_bytes")),
+        ("wrong register", lambda f: f["borrowed_root_abi"].__setitem__("register", "r11")),
+        ("missing saved root", lambda f: f["borrowed_root_abi"].__setitem__("saved_root_reserved_bytes", 0)),
+        ("owning tail", lambda f: f["parameters"][1].__setitem__("kind", "owner")),
+        ("class result", lambda f: f.__setitem__("result", dict(bytes=48, kind="class", type_name=row_symbol))),
+    ):
+        reject_helper(label, mutation)
 
     pair_sources = (
         "graph_run",
@@ -1157,7 +1276,7 @@ def borrowed_root_generation(facts):
     else:
         raise AssertionError("four borrowed roots passed ABI normalization")
     require(json.dumps(facts, sort_keys=True) == pristine, "a borrowed-root mutation leaked into the shared facts")
-    print("PASS bounded borrowed-root facts and exact compatible paired-predecessor header normalization")
+    print("PASS typed-buffer helper, class-only v2 roots and exact compatible paired-predecessor header normalization")
 
 
 def message_generation(facts, root):
