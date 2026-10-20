@@ -607,9 +607,9 @@ public:
     }
     void roots(BorrowedRootArgumentRange &value) {
         const auto row = take(Role::BorrowedRoots);
-        if (row.sliceCount % 2 != 0)
+        if (row.sliceCount % 3 != 0)
             invalidInstructions();
-        value = instructions_.roots(index(row.sliceBegin), index(row.sliceCount) / 2);
+        value = instructions_.roots(index(row.sliceBegin), index(row.sliceCount) / 3);
         if (checkPayload_)
             for (std::size_t i = 0; i < value.size(); ++i)
                 (void)value.at(i);
@@ -728,11 +728,13 @@ ServiceArgument Instructions::serviceAt(std::size_t at) const {
     return {integer(loan.signedValue), static_cast<service::Kind>(integer(kind.signedValue))};
 }
 BorrowedRootArgument Instructions::rootAt(std::size_t at) const {
-    const auto root = state_->row<Pool::operands>(at), loan = state_->row<Pool::operands>(at + 1);
+    const auto root = state_->row<Pool::operands>(at), loan = state_->row<Pool::operands>(at + 1),
+               field = state_->row<Pool::operands>(at + 2);
     if (root.operandRole != static_cast<std::int64_t>(Role::Root) ||
-        loan.operandRole != static_cast<std::int64_t>(Role::LoanId))
+        loan.operandRole != static_cast<std::int64_t>(Role::LoanId) ||
+        field.operandRole != static_cast<std::int64_t>(Role::FieldIndex))
         invalidInstructions();
-    return {integer(root.signedValue), integer(loan.signedValue)};
+    return {integer(root.signedValue), integer(loan.signedValue), integer(field.signedValue)};
 }
 unsigned char Instructions::literalAt(std::size_t at) const {
     const auto data = state_->pools[static_cast<std::size_t>(Pool::literals)];
@@ -750,9 +752,9 @@ ServiceArgumentRange Instructions::services(std::size_t begin, std::size_t count
     return {*this, begin, count};
 }
 BorrowedRootArgumentRange Instructions::roots(std::size_t begin, std::size_t count) const {
-    if (count > std::numeric_limits<std::size_t>::max() / 2)
+    if (count > std::numeric_limits<std::size_t>::max() / 3)
         invalidInstructions();
-    checkRange(begin, count * 2, index(state_->counts.operandCount));
+    checkRange(begin, count * 3, index(state_->counts.operandCount));
     return {*this, begin, count};
 }
 LiteralRange Instructions::literals(std::size_t begin, std::size_t count) const {
@@ -769,7 +771,7 @@ template <> ServiceArgument InstructionPayloadRange<ServiceArgument>::at(std::si
 }
 template <> BorrowedRootArgument InstructionPayloadRange<BorrowedRootArgument>::at(std::size_t position) const {
     checkIndex(position, count_);
-    return instructions_->rootAt(begin_ + position * 2);
+    return instructions_->rootAt(begin_ + position * 3);
 }
 template <> unsigned char InstructionPayloadRange<unsigned char>::at(std::size_t position) const {
     checkIndex(position, count_);

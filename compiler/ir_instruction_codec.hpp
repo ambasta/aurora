@@ -681,6 +681,7 @@ template <> struct InstructionCodec<AcquireObjectLoan> {
         cursor.integer(OperandRole::LoanId, value.loanId);
         cursor.integer(OperandRole::Root, value.root);
         cursor.boolean(OperandRole::MutableValue, value.mutableValue);
+        cursor.integer(OperandRole::FieldIndex, value.fieldIndex);
     }
 };
 

@@ -716,6 +716,212 @@ void boundedTests() {
         "borrowed call root, lifetime, nominal type or authority mismatch");
 }
 
+// Independent builtin-owner lanes: local spill 112, lexical receiver field
+// (0, 0), and forwarded symbolic formal (0, -1). Local field (80, 0) is hostile.
+Module valuesLoan(bool field = false, bool receiver = false) {
+    auto module = shapes();
+    module.classLayouts["ValuesBox"] = {Type::I64};
+    module.classFields["ValuesBox"] = {
+        {Type::ownedValues(Type("Word")), 0, 0, false}, {Type::OwnedBytes, 0, 0, false}, {Type::I64, 0, 1, false}};
+    module.classStorage["ValuesBox"] = {{64}, {0, 32, 64}, 72, 8, 72};
+    F helper;
+    helper.name = "borrow_values";
+    helper.result = Type::I64;
+    helper.parameters = {Type::ownedValues(Type("Word"))};
+    helper.borrowedRootCount = 1;
+    helper.firstBorrowedMutable = true;
+    helper.code = {BytesLength{0}, Return{}};
+    F caller;
+    caller.name = "values_entry";
+    caller.result = Type::I64;
+    if (receiver) {
+        caller.receiver = Receiver{"ValuesBox", true, false};
+        caller.frameBytes = 64;
+        caller.spanSlots = {56};
+    } else {
+        caller.frameBytes = 208;
+        caller.parameters = {Type::ByteRegion, field ? Type("ValuesBox") : Type::ownedValues(Type("Word"))};
+        caller.regionSlots = {8};
+        caller.objectSlots = {{80, {"ValuesBox", true}}};
+        caller.slots = {{16, Type::I64}};
+        caller.byteSlots = {{112, true}, {144, true}};
+        caller.ownedValueTypes = {{112, "Word"}, {144, "Word"}};
+        caller.spanSlots = {208};
+        caller.code = {BindRegionParameter{0, 8}};
+        if (field)
+            caller.code.push_back(BindOwnedObjectParameter{1, 80, "ValuesBox"});
+        else
+            caller.code.push_back(BindBytesParameter{1, 112});
+    }
+    const int root = receiver ? 0 : field ? 80 : 112;
+    const int selector = field || receiver ? 0 : -1;
+    caller.code.insert(caller.code.end(),
+                       {AcquireObjectLoan{1, root, true, selector},
+                        BorrowedCall{"borrow_values", {{root, 1, selector}}},
+                        ReleaseObjectLoan{1}});
+    if (!receiver) {
+        if (field)
+            caller.code.push_back(EndObject{80});
+        else
+            caller.code.push_back(EndBytes{112});
+    }
+    caller.code.push_back(Return{});
+    module.functions = {caller, helper};
+    return module;
+}
+Module forwardedValues() {
+    auto module = valuesLoan();
+    auto leaf = named(module, "borrow_values");
+    leaf.name = "borrow_values_leaf";
+    named(module, "borrow_values").code = {AcquireObjectLoan{2, 0, true},
+                                           BorrowedCall{"borrow_values_leaf", {{0, 2}}},
+                                           ReleaseObjectLoan{2},
+                                           BytesLength{0},
+                                           Return{}};
+    module.functions.push_back(leaf);
+    return module;
+}
+void valuesLoanTests() {
+    accept("builtin typed local owner", valuesLoan());
+    reject(
+        "builtin typed field cannot gain private authority from free caller",
+        valuesLoan(true),
+        [](Module &) {
+        },
+        "invalid typed IR");
+    accept("builtin typed lexical receiver field", valuesLoan(false, true));
+    accept("builtin typed formal forwards and remains live", forwardedValues());
+    auto tails = valuesLoan();
+    auto &caller = tails.functions[0];
+    caller.objectSlots[152] = {"Word", false};
+    caller.slots[152] = Type::I64;
+    before<AcquireObjectLoan>(caller, {BeginObject{152}, Constant{7, Type::I64}, Store{152, Type::I64}});
+    before<BorrowedCall>(caller, {Constant{3, Type::I64}, Push{}});
+    op<BorrowedCall>(caller).objectArguments = {152, 0};
+    before<EndBytes>(caller, {EndObject{152}});
+    auto &helper = named(tails, "borrow_values");
+    helper.parameters.insert(helper.parameters.end(), {Type("Word"), Type::I64});
+    helper.frameBytes = 16;
+    helper.objectSlots = {{8, {"Word", false}}};
+    helper.slots = {{8, Type::I64}, {16, Type::I64}};
+    helper.code = {
+        BindObjectParameter{0, 8, "Word"}, BindParameter{1, 16, Type::I64}, BytesLength{0}, EndObject{8}, Return{}};
+    accept("builtin typed copied and scalar tails", tails);
+    const auto check = [](const std::string &name, const std::function<void(Module &)> &change) {
+        reject("builtin typed loan " + name, valuesLoan(), change, "invalid typed IR");
+    };
+    check("requires acquire", [](Module &m) {
+        remove<AcquireObjectLoan>(m.functions[0]);
+    });
+    check("requires release", [](Module &m) {
+        remove<ReleaseObjectLoan>(m.functions[0]);
+    });
+    check("cannot release before call", [](Module &m) {
+        before<BorrowedCall>(m.functions[0], {ReleaseObjectLoan{1}});
+    });
+    check("cannot reuse completed loan", [](Module &m) {
+        before<ReleaseObjectLoan>(m.functions[0], {BorrowedCall{"borrow_values", {{112, 1}}}});
+    });
+    check("requires exact loan identity", [](Module &m) {
+        op<BorrowedCall>(m.functions[0]).roots[0].loanId = 2;
+    });
+    check("requires exact owner root", [](Module &m) {
+        op<BorrowedCall>(m.functions[0]).roots[0].root = 144;
+    });
+    check("requires exact field lane", [](Module &m) {
+        op<BorrowedCall>(m.functions[0]).roots[0].fieldIndex = 0;
+    });
+    check("requires exact nominal element", [](Module &m) {
+        m.classLayouts["ForeignWord"] = {Type::I64};
+        named(m, "borrow_values").parameters[0] = Type::ownedValues(Type("ForeignWord"));
+    });
+    check("cannot borrow raw bytes", [](Module &m) {
+        m.functions[0].parameters[1] = Type::OwnedBytes;
+        m.functions[0].ownedValueTypes.erase(112);
+    });
+    check("cannot acquire shared builtin owner", [](Module &m) {
+        op<AcquireObjectLoan>(m.functions[0]).mutableValue = false;
+    });
+    check("cannot borrow ended lifetime", [](Module &m) {
+        before<AcquireObjectLoan>(m.functions[0], {EndBytes{112}});
+    });
+    check("cannot borrow consumed owner", [](Module &m) {
+        before<AcquireObjectLoan>(m.functions[0], {BeginBytes{144}, MoveBytes{112, 144}});
+    });
+    check("cannot borrow moved const owner", [](Module &m) {
+        auto &function = m.functions[0];
+        function.byteSlots[144] = false;
+        before<AcquireObjectLoan>(function, {BeginBytes{144}, MoveBytes{112, 144}, EndBytes{112}});
+        op<AcquireObjectLoan>(function).root = 144;
+        op<BorrowedCall>(function).roots[0].root = 144;
+        op<EndBytes>(function, 1).offset = 144;
+    });
+    for (const auto &[name, code] : std::vector<std::pair<std::string, std::vector<Instruction>>>{
+             {"end while acquired", {EndBytes{112}}},
+             {"move while acquired", {BeginBytes{144}, MoveBytes{112, 144}}},
+             {"read while acquired", {BytesLength{112}}},
+             {"aliasing second loan", {AcquireObjectLoan{2, 112, true}}}})
+        check(name, [&](Module &m) {
+            auto &function = m.functions[0];
+            function.code.insert(function.code.begin() + at<BorrowedCall>(function), code.begin(), code.end());
+        });
+    for (int field : {-2, 0, std::numeric_limits<int>::max()})
+        check("rejects local field selector " + std::to_string(field), [=](Module &m) {
+            op<AcquireObjectLoan>(m.functions[0]).fieldIndex = field;
+        });
+    const auto fieldCheck = [](const std::string &name, const std::function<void(Module &)> &change) {
+        reject("builtin typed field " + name, valuesLoan(false, true), change, "invalid typed IR");
+    };
+    for (int field : {1, 2, 3})
+        fieldCheck("rejects non-typed owner field " + std::to_string(field), [=](Module &m) {
+            op<AcquireObjectLoan>(m.functions[0]).fieldIndex = field;
+            op<BorrowedCall>(m.functions[0]).roots[0].fieldIndex = field;
+        });
+    fieldCheck("matches acquired field exactly", [](Module &m) {
+        op<BorrowedCall>(m.functions[0]).roots[0].fieldIndex = 1;
+    });
+    fieldCheck("cannot end receiver lifetime", [](Module &m) {
+        before<BorrowedCall>(m.functions[0], {EndObject{0}});
+    });
+    fieldCheck("locks scalar sibling read", [](Module &m) {
+        before<BorrowedCall>(m.functions[0], {ReceiverLoad{2, Type::I64}});
+    });
+    fieldCheck("locks scalar sibling write", [](Module &m) {
+        before<BorrowedCall>(m.functions[0], {Constant{3, Type::I64}, ReceiverStore{2, Type::I64}});
+    });
+    fieldCheck("locks owner sibling read", [](Module &m) {
+        before<BorrowedCall>(m.functions[0], {BytesLength{0, 1}});
+    });
+    fieldCheck("rejects outstanding sibling view", [](Module &m) {
+        before<AcquireObjectLoan>(m.functions[0], {BorrowOwnedSpan{0, 1, 56}});
+    });
+    fieldCheck("rejects sibling owner loan", [](Module &m) {
+        m.classFields["ValuesBox"][1].elementType = Type::ownedValues(Type("Word"));
+        before<BorrowedCall>(m.functions[0], {AcquireObjectLoan{2, 0, true, 1}});
+    });
+    reject(
+        "builtin typed field rejects const receiver",
+        valuesLoan(false, true),
+        [](Module &m) {
+            m.functions[0].receiver->mutableValue = false;
+        },
+        "invalid typed IR");
+    reject(
+        "builtin typed forward cannot leak loan",
+        forwardedValues(),
+        [](Module &m) {
+            remove<ReleaseObjectLoan>(named(m, "borrow_values"));
+        },
+        "invalid typed IR");
+    reject(
+        "builtin typed formal cannot mint receiver field authority",
+        forwardedValues(),
+        [](Module &m) {
+            op<AcquireObjectLoan>(named(m, "borrow_values")).fieldIndex = 0;
+        },
+        "invalid typed IR");
+}
+
 void loanTests() {
     accept("mutable local root", fixture());
     accept("shared local root", fixture(false));
@@ -1536,6 +1742,7 @@ void graphTests() {
 } // namespace
 int main() {
     try {
+        valuesLoanTests();
         loanTests();
         aliasTests();
         authorityTests();

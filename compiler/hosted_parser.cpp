@@ -941,7 +941,7 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
                 message = "constructor cannot have a return type";
                 break;
             case AdmissionStatus::borrowed_parameter:
-                message = "borrowed parameters require a supported leading owning-class reference signature on an "
+                message = "borrowed parameters require a supported leading ownership reference signature on an "
                           "ordinary function";
                 break;
             case AdmissionStatus::const_parameter:

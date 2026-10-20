@@ -250,6 +250,8 @@ export namespace compiler_lowering {
 
     // One argument has one staged Local and one typed cleanup disposition.
     // Seven eight-byte leaves: 56 bytes; cleanup is configured after construction.
+    // The serviceKindId ABI field is a tagged payload: service kind for service lanes,
+    // owner field index for borrowed receivers, and -1 for other lanes.
     class ArgumentLane {
         i64 argumentIndex;
         ArgumentKind argumentKind;
@@ -259,8 +261,8 @@ export namespace compiler_lowering {
         i64 serviceKindId;
         CleanupKind cleanupKind;
     public:
-        ArgumentLane(i64 index, ArgumentKind kind, i64 type, i64 local, i64 loan, i64 service) : argumentIndex(index),
-            argumentKind(kind), concreteTypeId(type), localId(local), loanId(loan), serviceKindId(service),
+        ArgumentLane(i64 index, ArgumentKind kind, i64 type, i64 local, i64 loan, i64 selector) : argumentIndex(index),
+            argumentKind(kind), concreteTypeId(type), localId(local), loanId(loan), serviceKindId(selector),
             cleanupKind(CleanupKind::none) {
         }
         auto index() const -> i64 {
@@ -279,6 +281,15 @@ export namespace compiler_lowering {
             return loanId;
         }
         auto service_kind_id() const -> i64 {
+            if (argumentKind != ArgumentKind::service) {
+                return -1;
+            }
+            return serviceKindId;
+        }
+        auto field_index() const -> i64 {
+            if (argumentKind != ArgumentKind::borrowed_receiver) {
+                return -1;
+            }
             return serviceKindId;
         }
         auto cleanup_kind() const -> CleanupKind {

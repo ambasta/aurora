@@ -97,7 +97,7 @@ void verifyHostedGraph(std::vector<FunctionBody> &functions, const Metadata &met
         hosted_abi::GraphFunctionInput value;
         value.index = graphCount(index);
         value.function.firstEdge = edge;
-        value.function.hasReceiver = signature.receiver().has_value();
+        value.function.hasReceiver = signature.receiver().has_value() || signature.borrowedRootCount() != 0;
         value.function.serviceEntry = std::any_of(parameters.begin(), parameters.end(), [](const Type &type) {
             return type.isService();
         });

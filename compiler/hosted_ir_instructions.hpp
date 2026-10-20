@@ -134,7 +134,7 @@ class InstructionWriter final {
             nested_ = nextNested;
         }
         template <class Payload> void roots(const Payload &values) {
-            const auto size = add(count(values.size()), count(values.size()));
+            const auto size = add(add(count(values.size()), count(values.size())), count(values.size()));
             const auto begin = add(add(row_.operandBegin, prefixLimit_), nested_);
             const auto nextNested = add(nested_, size);
             (void)add(begin, size);
@@ -148,6 +148,9 @@ class InstructionWriter final {
                     writer_.operand(at++, row);
                     row.operandRole = static_cast<std::int64_t>(OperandRole::LoanId);
                     row.signedValue = value.loanId;
+                    writer_.operand(at++, row);
+                    row.operandRole = static_cast<std::int64_t>(OperandRole::FieldIndex);
+                    row.signedValue = value.fieldIndex;
                     writer_.operand(at++, row);
                 }
             }

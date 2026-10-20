@@ -502,13 +502,14 @@ public:
 };
 using MethodCall = BasicMethodCall<std::vector<int>>;
 using MethodCallObservation = BasicMethodCall<OffsetRange>;
-// Invocation-only object authority. Loan IDs are verifier identities, never
+// Invocation-only owning-root authority. Loan IDs are verifier identities, never
 // stack offsets or source-visible addresses. Acquisition precedes later arguments.
 class AcquireObjectLoan {
 public:
     int loanId;
-    int root; // 0..-5 select bound borrowed formals; positive selects an exact ObjectSlot
+    int root; // 0..-5 select bound borrowed formals; positive selects an exact ObjectSlot/ByteSlot
     bool mutableValue;
+    int fieldIndex = -1; // -1 selects the root; otherwise one direct owner field
 };
 class ReleaseObjectLoan {
 public:
@@ -518,8 +519,9 @@ class BorrowedRootArgument {
 public:
     int root;
     int loanId;
+    int fieldIndex = -1;
 };
-// Ordered invocation-only root/loan pairs borrow the same immutable operand
+// Ordered invocation-only root/loan/field triples borrow the same immutable operand
 // owner as other payloads. No parallel first/second authority is retained.
 template <class Offsets, class Roots> class BasicBorrowedCall {
 public:

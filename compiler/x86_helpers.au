@@ -127,7 +127,11 @@ export namespace compiler_x86 {
     auto receiver_class(const compiler_ir_metadata::MetadataStore& metadata, i64 callable) -> i64 {
         const compiler_ir_metadata::CallableRow row = metadata.callable_at(callable);
         if (row.borrowed_root_count() > 0) {
-            return type_class(metadata, row.borrowed_root_type(0));
+            const i64 type = row.borrowed_root_type(0);
+            if (type_kind(metadata, type) != 5) {
+                return -1;
+            }
+            return type_class(metadata, type);
         }
         const compiler_ir_metadata::ReceiverShape receiver = row.first_receiver();
         return compiler_ir_metadata::find_class(metadata, receiver.name());
@@ -204,6 +208,12 @@ export namespace compiler_x86 {
         i64 field) -> i64 {
         if (field < 0) {
             const compiler_ir_metadata::CallableRow function = metadata.callable_at(callable);
+            if (field == -1 && offset == 0 && function.borrowed_root_count() == 1) {
+                const i64 type = function.borrowed_root_type(0);
+                if (type_kind(metadata, type) == 17) {
+                    return type;
+                }
+            }
             const compiler_ir_metadata::IndexRange slots = function.slots();
             i64 at = 0;
             while (at < slots.count()) {
@@ -390,10 +400,19 @@ export namespace compiler_x86 {
     }
     auto bytes_owner_address(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata, i64 offset,
         i64 field, i64 byte) -> i64 {
+        const i64 callable = workspace.current_callable();
         if (field < 0) {
+            if (offset == 0 && field == -1) {
+                const compiler_ir_metadata::CallableRow function = metadata.callable_at(callable);
+                if (function.borrowed_root_count() == 1 && type_kind(metadata, function.borrowed_root_type(0)) == 17) {
+                    const i64 save = root_save_offset(workspace, metadata, 0);
+                    workspace.line_address("movq ", save, ", %r10");
+                    return workspace.pack_address(2, byte);
+                }
+                workspace.fail();
+            }
             return workspace.pack_address(0, offset - byte);
         }
-        const i64 callable = workspace.current_callable();
         i64 class_id = receiver_class(metadata, callable);
         if (offset != 0) {
             class_id = slot_class(metadata, callable, offset);
