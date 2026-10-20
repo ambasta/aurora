@@ -8,6 +8,24 @@ U64 timer_epoch_watermark{};
 unsigned timer_initial{}, timer_remaining{}, timer_ticks{}, timer_resumes{}, timer_drains{}, timer_context_hits{},
     timer_compiled_hits{};
 std::optional<user::DomainHandle> timer_owner;
+#ifdef AURORA_UEFI_USER_BUDGET
+// Current immutable identity, not permission to resume: callers retain their
+// frame, delivery and timer-state checks, including any remaining-budget gate.
+[[nodiscard]] auto current_run_identity() -> bool {
+    return active < L::domain_count && run_authority && domains[active].handle && domains[active].contract &&
+           run_authority->matches_active(registry,
+                                         *domains[active].handle,
+                                         selected_role,
+                                         selected_phase,
+                                         selected_client,
+                                         transaction,
+                                         launch[0],
+                                         arena,
+                                         root(),
+                                         *domains[active].contract,
+                                         timer_owner_epoch);
+}
+#endif
 #if defined(AURORA_USER_RESUME) || defined(AURORA_BLOCKING_CALL) || defined(AURORA_CONSOLE_REGION)
 auto save_parked_run(ParkedRun &saved, const ServiceContext &context) -> void {
     saved.context.emplace(context);
@@ -367,17 +385,7 @@ auto service_timer_interrupt(U64 vector, U64 error, U64 pc, U64 cs, U64 frame) -
     const auto &interrupted_contract = *domains[0].contract;
 #elif defined(AURORA_UEFI_USER_BUDGET)
     require(active < L::domain_count && domains[active].handle && timer_owner && run_authority &&
-                run_authority->matches_active(registry,
-                                              *domains[active].handle,
-                                              selected_role,
-                                              selected_phase,
-                                              selected_client,
-                                              transaction,
-                                              launch[0],
-                                              arena,
-                                              root(),
-                                              *domains[active].contract,
-                                              timer_owner_epoch) &&
+                current_run_identity() &&
                 registry.active(*timer_owner) && timer_armed && timer_owner_epoch == timer_epoch &&
                 timer_remaining != 0 && (selected_role != SelectedRunAuthority::Role::service || service_delivered()) &&
                 saved_rsp % 8 == 0 && saved_rsp >= arena + Handoff::stack_bottom &&

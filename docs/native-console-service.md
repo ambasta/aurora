@@ -163,9 +163,13 @@ revokes the grant before native IER teardown. Active BIOS diagnostics use the
 same source carry; exceptions fail stop before any bootstrap LSR reader can run.
 
 This is a partial migration. `console-uart.hpp` remains the native UART policy
-for simple UEFI, protected, graphical and event profiles. Trusted boot serial
-initialization, PIC setup, IRQ acknowledgement and synchronous waiting remain
-native. This is not a stateful driver daemon, general port allocator or hardware
+for simple UEFI, protected, graphical and event profiles. Native `Serial`, `Uart`
+and `SourceUart` share byte-preserving text and unsigned decimal formatting in
+`output-format.hpp`; this removes duplicate formatting, not UART policy. BIOS
+`Serial` retains its non-inlined diagnostic routing boundaries and unchanged
+image/stack admission gates. Qualification applies to the exact source/toolchain
+recorded in the relevant PR. Trusted boot serial initialization, PIC setup, IRQ
+acknowledgement and synchronous waiting remain native. This is not a stateful driver daemon, general port allocator or hardware
 qualification. Both existing FIFO triggers remain covered by the generated UART
 model; the BIOS consumer uses the one-byte trigger.
 

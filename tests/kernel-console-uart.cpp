@@ -326,6 +326,20 @@ template <class Device> struct Suite {
         need(Uart::try_put('y') == aurora::console::PutResult::success && Ports::output == "y",
              "UART transport did not recover after timeout");
         reset();
+        Ports::clear_trace();
+        Uart::text("");
+        Ports::expect_trace({});
+        need(Ports::output.empty(), "empty diagnostic text emitted a byte");
+        Uart::text(std::string_view{"A\0\x80\xff\r\n", 6});
+        need(Ports::output == std::string("A\0\x80\xff\r\n", 6), "diagnostic text changed raw bytes");
+        reset();
+        Uart::number(0);
+        Uart::text(" ");
+        Uart::number(9);
+        Uart::text(" ");
+        Uart::number(10);
+        need(Ports::output == "0 9 10", "diagnostic decimal zero and digit boundary");
+        reset();
         Uart::number(UINT64_MAX);
         need(Ports::output == "18446744073709551615" && Ports::lsr_reads >= 20, "maximum diagnostic number");
 

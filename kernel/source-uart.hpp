@@ -22,7 +22,8 @@ auto uart_put(const UartArguments *, UartTransfer *) -> void asm("__au_runtime_u
 static_assert(sizeof(UartTransfer) == 48 && sizeof(UartArguments) == 72);
 static_assert(offsetof(UartArguments, state) == 16 && offsetof(UartArguments, byte) == 64);
 
-template <class Ports, class Platform, FifoTrigger Trigger = FifoTrigger::one> class SourceUart final {
+template <class Ports, class Platform, FifoTrigger Trigger = FifoTrigger::one>
+class SourceUart final : public OutputFormat<SourceUart<Ports, Platform, Trigger>> {
     static_assert(Trigger == FifoTrigger::one || Trigger == FifoTrigger::fourteen);
     static inline hardware::PortArgument port_{};
     static inline bool active_{}, operation_{};
@@ -82,20 +83,6 @@ public:
     }
     static auto put(std::uint8_t byte) -> void {
         static_cast<void>(try_put(byte));
-    }
-    static auto text(std::string_view value) -> void {
-        for (const auto byte : value)
-            put(static_cast<std::uint8_t>(byte));
-    }
-    static auto number(std::uint64_t value) -> void {
-        std::array<char, 20> digits{};
-        std::size_t length = 0;
-        do {
-            digits[length++] = static_cast<char>('0' + value % 10);
-            value /= 10;
-        } while (value != 0);
-        while (length != 0)
-            put(static_cast<std::uint8_t>(digits[--length]));
     }
 };
 } // namespace aurora::console

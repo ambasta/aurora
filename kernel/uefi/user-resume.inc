@@ -23,8 +23,7 @@
     // The shared RSP0 copy now owns the restore bytes; no reusable ticket remains.
     domain.continuation.clear();
     activate_parked_run(index);
-    require(run_authority->matches_active(registry,*domain.handle,selected_role,selected_phase,selected_client,
-        transaction,launch[0],arena,root(),*domain.contract,timer_owner_epoch),"resume immutable authority");
+    require(current_run_identity(),"resume immutable authority");
     Serial::text("AURORA_USER_RESUME: domain="); Serial::number(index); Serial::text(" epoch="); Serial::number(timer_epoch);
     Serial::text(" remaining="); Serial::number(timer_remaining); Serial::text(" ticks="); Serial::number(timer_ticks);
     Serial::text("\r\n");

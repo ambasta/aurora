@@ -43,17 +43,7 @@ auto release_call_source() -> void {
                 transaction == 0 && timer_remaining && timer_ticks < timer_initial &&
                 timer_initial == timer_remaining + timer_ticks && timer_initial == run_authority->budget() &&
                 timer_owner && registry.active(*timer_owner) && timer_owner_epoch == timer_epoch &&
-                run_authority->matches_active(registry,
-                                              *domains[0].handle,
-                                              selected_role,
-                                              selected_phase,
-                                              selected_client,
-                                              transaction,
-                                              launch[0],
-                                              arena,
-                                              root(),
-                                              *domains[0].contract,
-                                              timer_owner_epoch),
+                current_run_identity(),
             "call active run authority");
 #if defined(AURORA_RUNTIME_FIXTURE) && !defined(AURORA_FILE_CALL)
     call_fixture_entry(reinterpret_cast<U64 *>(frame));
@@ -285,17 +275,7 @@ auto call_execute(unsigned index, U64 source_phase, U64 first, U64 second) -> vo
     restored[11] = completion->value();
     call_wait.clear();
     activate_parked_run(0);
-    require(run_authority->matches_active(registry,
-                                          *domain.handle,
-                                          selected_role,
-                                          selected_phase,
-                                          selected_client,
-                                          transaction,
-                                          launch[0],
-                                          arena,
-                                          root(),
-                                          *domain.contract,
-                                          timer_owner_epoch),
+    require(current_run_identity(),
             "call resume original authority");
     Serial::text("AURORA_CALL_RESUME: epoch=");
     Serial::number(timer_epoch);

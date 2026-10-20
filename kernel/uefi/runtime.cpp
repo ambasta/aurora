@@ -732,19 +732,7 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
         require(text_active(), "text terminal authority");
 #endif
 #ifdef AURORA_UEFI_USER_BUDGET
-        require(active < L::domain_count && run_authority &&
-                    run_authority->matches_active(registry,
-                                                  *domains[active].handle,
-                                                  selected_role,
-                                                  selected_phase,
-                                                  selected_client,
-                                                  transaction,
-                                                  launch[0],
-                                                  arena,
-                                                  root(),
-                                                  *domains[active].contract,
-                                                  timer_owner_epoch),
-                "user terminal run authority");
+        require(active < L::domain_count && run_authority && current_run_identity(), "user terminal run authority");
 #endif
         const auto integer = ServiceContext::capture(
             std::span<const U64>{reinterpret_cast<const U64 *>(frame), 22}, frame, *domains[active].contract);
