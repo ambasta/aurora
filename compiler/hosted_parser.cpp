@@ -170,7 +170,8 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
     // The region charges replacement payload, not metadata or old+new resize bytes.
     constexpr std::uint64_t recordBytes = sizeof(Node) + sizeof(Edge) + sizeof(TypeSyntax) + sizeof(SyntaxNode);
     constexpr std::uint64_t perToken = 2 * (recordBytes + hosted_abi::frameBytes);
-    constexpr std::uint64_t fixedBytes = 8 * recordBytes + (2 * 1939 + 8) * hosted_abi::frameBytes;
+    constexpr std::uint64_t fixedBytes =
+        8 * recordBytes + (2 * hosted_parser::maximumLiveFrames + 8) * hosted_abi::frameBytes;
     if (source->text.size() > (std::numeric_limits<std::uint64_t>::max() - fixedBytes) / perToken)
         invalid();
     Arena arena(static_cast<std::uint64_t>(source->text.size()) * perToken + fixedBytes, externalArena);

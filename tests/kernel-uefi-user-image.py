@@ -73,8 +73,8 @@ def multipage_controls():
         add(2, "int", "$0x81")
         add(2, "ud2", "")
         add(2, "ud2", "")
-        assert cursor == end
-        assert images.multipage_wrapper(code, symbols, base, fault) == end
+        images.need(cursor == end, "Multipage fixture extent")
+        images.need(images.multipage_wrapper(code, symbols, base, fault) == end, "Multipage wrapper extent")
         positive += 1
         for address in code:
             changed = dict(code)
@@ -93,7 +93,7 @@ def multipage_controls():
         late: dict(local_peak=48, calls=[]),
     }
     symbols = {late: base + 9000, ".Laurora_bounds_trap": base + 10000}
-    assert images.multipage_evidence(functions, symbols, base)["peak_with_wrapper"] == 88
+    images.need(images.multipage_evidence(functions, symbols, base)["peak_with_wrapper"] == 88, "Multipage stack peak")
     positive += 1
     for name in symbols:
         changed = dict(symbols)

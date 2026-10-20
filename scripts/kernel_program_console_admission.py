@@ -11,11 +11,16 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from kernel_layout import LAYOUT
+from kernel_profiles import canonical_profile
+
 BUILD = ROOT / "build/uefi"
 RECEIPT = BUILD / "program-console-admission.json"
 MODES = (
     "program-console",
     "program-file-call",
+    "program-file-call-fixture",
     "program-file-call-fault",
     "program-file-call-budget",
     "program-request-fault",
@@ -361,9 +366,10 @@ def stack_evidence(directory, *, snapshot=False, file_call=False):
         )
     reserve = decoder.FAULT_RESERVE if snapshot else boot_fault
     need(boot_fault <= reserve, "Synchronous fault path exceeds retained fault reserve")
-    need(normal["peak"] + reserve <= 15360, "Kernel normal/fault stack cap exhausted")
+    need(normal["peak"] + reserve <= LAYOUT.stack_cap, "Kernel normal/fault stack cap exhausted")
     need(
-        irq_peak <= 15360 and all(value["peak_with_interrupt"] <= 15360 for value in points.values()),
+        irq_peak <= LAYOUT.stack_cap
+        and all(value["peak_with_interrupt"] <= LAYOUT.stack_cap for value in points.values()),
         "IRQ or kernel poll/drain stack cap exhausted",
     )
     users = {}
@@ -397,11 +403,11 @@ def stack_evidence(directory, *, snapshot=False, file_call=False):
         path = graph_peak(bodies, root)
         path["entry_saved_bytes"] = 160 if copied else 48
         path["peak_with_entry"] = path["peak"] + path["entry_saved_bytes"]
-        need(path["peak_with_entry"] <= 15360, "CPL3 stack cap exhausted")
+        need(path["peak_with_entry"] <= LAYOUT.stack_cap, "CPL3 stack cap exhausted")
         users[name] = path
     return dict(
-        stack_bytes=16384,
-        cap_bytes=15360,
+        stack_bytes=LAYOUT.stack_pages * LAYOUT.page_size,
+        cap_bytes=LAYOUT.stack_cap,
         normal=normal,
         boot_fault=boot_fault,
         fault_reserve=reserve,
@@ -872,6 +878,7 @@ def hashes(paths):
 
 
 def emit(mode):
+    mode = canonical_profile("uefi", mode)
     RECEIPT.unlink(missing_ok=True)
     need(mode in MODES, "Unsupported program console profile")
     files = build_files(mode.startswith("program-file-call"))
@@ -900,7 +907,7 @@ def emit(mode):
         actual = builder.verify(
             prefix.with_suffix(".elf").read_bytes(),
             prefix.with_suffix(".bin").read_bytes(),
-            builder.BASE + index * 16384,
+            builder.BASE + index * LAYOUT.code_stride,
             names,
             call_entry=builder.call_entry_abi(read_json(prefix.with_suffix(".abi.json")))
             if mode.startswith("program-file-call") and index == 0
@@ -982,6 +989,7 @@ def check_admission(path, schema, mode, files):
 
 
 def checked(mode):
+    mode = canonical_profile("uefi", mode)
     need(mode in MODES, "Unsupported program console profile")
     return check_admission(
         RECEIPT, "aurora-program-console-admission-v1", mode, build_files(mode.startswith("program-file-call"))

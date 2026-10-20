@@ -24,6 +24,24 @@ export namespace compiler_formatter {
         builtin::OwnedValues<Row> result = region.try_allocate(0, empty);
         return move(result);
     }
+    auto row_field(Row row, i64 field) -> i64 {
+        if (field == 0) {
+            return row.a;
+        }
+        if (field == 1) {
+            return row.b;
+        }
+        if (field == 2) {
+            return row.c;
+        }
+        if (field == 3) {
+            return row.d;
+        }
+        if (field == 4) {
+            return row.e;
+        }
+        return row.f;
+    }
     class Workspace {
         builtin::OwnedValues<Row> pieces;
         builtin::OwnedValues<Row> breaks;
@@ -50,60 +68,15 @@ export namespace compiler_formatter {
         }
         auto pieces_field(i64 index, i64 field) const -> i64 {
             const Row row = pieces.at(index);
-            if (field == 0) {
-                return row.a;
-            }
-            if (field == 1) {
-                return row.b;
-            }
-            if (field == 2) {
-                return row.c;
-            }
-            if (field == 3) {
-                return row.d;
-            }
-            if (field == 4) {
-                return row.e;
-            }
-            return row.f;
+            return row_field(row, field);
         }
         auto breaks_field(i64 index, i64 field) const -> i64 {
             const Row row = breaks.at(index);
-            if (field == 0) {
-                return row.a;
-            }
-            if (field == 1) {
-                return row.b;
-            }
-            if (field == 2) {
-                return row.c;
-            }
-            if (field == 3) {
-                return row.d;
-            }
-            if (field == 4) {
-                return row.e;
-            }
-            return row.f;
+            return row_field(row, field);
         }
         auto braces_field(i64 index, i64 field) const -> i64 {
             const Row row = braces.at(index);
-            if (field == 0) {
-                return row.a;
-            }
-            if (field == 1) {
-                return row.b;
-            }
-            if (field == 2) {
-                return row.c;
-            }
-            if (field == 3) {
-                return row.d;
-            }
-            if (field == 4) {
-                return row.e;
-            }
-            return row.f;
+            return row_field(row, field);
         }
         auto fail(i64 reason) -> bool {
             status = reason;

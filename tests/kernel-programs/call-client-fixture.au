@@ -1,0 +1,47 @@
+module call_client_fixture;
+import console.file_calls;
+import console.file_reader;
+import console.file_stream;
+auto aurora_user_main(builtin::CallSession& session, u64 phase, u64 seed, u64 ordinal) -> u64 {
+    if (phase >= 32u64 && phase <= 53u64) {
+        const bool crc = phase >= 48u64;
+        const bool stall = phase == 34u64 || phase == 50u64;
+        if (!stall) {
+            return console::read_file(session, crc);
+        }
+        console::FileReader reader = console::FileReader();
+        console::FileStream stream = console::FileStream(reader, crc);
+        while (stream.active()) {
+            if (stream.offset() == 2u64) {
+                while (true) {
+                }
+            }
+            const builtin::CallResult reply = session.call(stream.offset());
+            if (!stream.accept(reply.status == builtin::CallStatus::replied, reply.value)) {
+                return 0u64;
+            }
+        }
+        return stream.result();
+    }
+    const builtin::CallResult reply = console::read_once(session, seed, ordinal);
+    if (phase == 1u64 || phase == 17u64) {
+        if (reply.status != builtin::CallStatus::cancelled || reply.value != 0u64) {
+            return 2u64;
+        }
+    } else {
+        if (reply.status != builtin::CallStatus::replied) {
+            return 3u64;
+        }
+        if (phase < 16u64 && ((reply.value & 255u64) != 1u64 || (reply.value >> 8) != 1210602228u64)) {
+            return 3u64;
+        }
+    }
+    if (phase == 8u64 || phase == 24u64) {
+        while (true) {
+        }
+    }
+    if (phase >= 16u64) {
+        return 40u64 + reply.value;
+    }
+    return 40u64 + (reply.value >> 8);
+}

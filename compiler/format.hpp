@@ -6,8 +6,6 @@
 #include <string_view>
 
 namespace aurora::format {
-inline constexpr std::size_t columnLimit = 120;
-inline constexpr std::size_t indentWidth = 4;
 inline constexpr std::size_t sourceLimit = 1024 * 1024;
 
 class Finding {
@@ -70,7 +68,7 @@ class Operation {
         constexpr auto records = sizeof(AstNode) + sizeof(ChildEdge) + sizeof(TypeSyntax) + sizeof(SyntaxNode);
         constexpr auto rows = 5 * sizeof(hosted_abi::compiler_formatter::Row);
         return 2 * bytes * (records + hosted_abi::frameBytes + rows) + 8 * (records + rows) +
-               (2 * 1939 + 8) * hosted_abi::frameBytes + 5 * sourceLimit;
+               (2 * hosted_parser::maximumLiveFrames + 8) * hosted_abi::frameBytes + 5 * sourceLimit;
     }
 
 public:

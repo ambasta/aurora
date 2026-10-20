@@ -99,7 +99,7 @@ test('native-uefi-runtime', native_host, suite: ['full', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-uefi-multipage-runtime', files('../../tests/kernel-uefi-runtime.cpp') + [native_bios_object],
     native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
-    cpp_args: ['-DAURORA_RUNTIME_MULTIPAGE=1'], link_args: ['-no-pie'])
+    cpp_args: ['-DAURORA_RUNTIME_MULTIPAGE=1', '-DAURORA_RUNTIME_IMAGE_POLICY=multipage'], link_args: ['-no-pie'])
 test('native-uefi-multipage-runtime', native_host, suite: ['full', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-ipc', files('../../tests/kernel-ipc.cpp') + [native_uefi_object],
@@ -134,7 +134,7 @@ test('native-kernel-uefi-user-run', native_host, suite: ['full', 'slow', 'integr
      env: native_test_env, timeout: 180)
 native_host = executable('native-uefi-multipage-user-run', files('../../tests/kernel-uefi-user-run.cpp') + [native_uefi_object],
     native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
-    cpp_args: ['-DAURORA_RUNTIME_MULTIPAGE=1'], link_args: ['-no-pie'])
+    cpp_args: ['-DAURORA_RUNTIME_MULTIPAGE=1', '-DAURORA_RUNTIME_IMAGE_POLICY=multipage'], link_args: ['-no-pie'])
 test('native-uefi-multipage-user-run', native_host, suite: ['full', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-client-disposal', files('../../tests/kernel-client-disposal.cpp') + [native_uefi_object],
@@ -424,14 +424,14 @@ if get_option('kernel_images')
               meson.project_build_root() / 'kernel-images/uefi/runtime-span'],
        suite: ['full', 'slow', 'integration'], env: native_test_env, workdir: native_root,
        timeout: 1800, depends: [aurorac, kernel_profile_users['uefi/runtime'], kernel_profile_users['uefi/runtime-span']])
-  foreach mode : ['runtime-owned-text', 'runtime-owned-text-site', 'runtime-owned-text-region', 'runtime-owned-text-stale']
+  foreach mode : ['runtime-owned-text', 'runtime-owned-text-fixture']
     test('native-uefi-' + mode + '-image', python,
       args: ['-B', files('../../tests/kernel-uefi-image.py'), '--build-dir',
              meson.project_build_root() / 'kernel-images/uefi' / mode, '--owned-text', '--check-only'],
       depends: kernel_profile_images['uefi/' + mode], suite: ['full', 'slow', 'integration', 'boot'],
       env: native_test_env, workdir: native_root, timeout: 900)
   endforeach
-  foreach mode : ['runtime-console-region', 'runtime-console-region-cancel', 'runtime-console-region-cancel-ready', 'runtime-console-region-input', 'runtime-console-region-output', 'runtime-console-region-budget', 'runtime-console-region-fault']
+  foreach mode : ['runtime-console-region', 'runtime-console-region-fixture']
     test('native-uefi-' + mode + '-image', python,
       args: ['-B', files('../../tests/kernel-uefi-image.py'), '--build-dir',
              meson.project_build_root() / 'kernel-images/uefi' / mode, '--owned-text', '--console-region', '--check-only'],
@@ -452,7 +452,7 @@ else
        suite: ['full', 'slow', 'integration'], env: native_test_env, workdir: native_root, timeout: 1800)
   # Retain explicit failing full/boot coverage, even with --no-rebuild and stale
   # images left by a previous enabled configuration. Hosted compiler/dev is usable.
-  foreach image_name : ['native-bios-image', 'native-uefi-normal-image', 'native-uefi-runtime-owned-text-image', 'native-uefi-runtime-owned-text-site-image', 'native-uefi-runtime-owned-text-region-image', 'native-uefi-runtime-owned-text-stale-image', 'native-uefi-runtime-console-region-image', 'native-uefi-runtime-console-region-cancel-image', 'native-uefi-runtime-console-region-cancel-ready-image', 'native-uefi-runtime-console-region-input-image', 'native-uefi-runtime-console-region-output-image', 'native-uefi-runtime-console-region-budget-image', 'native-uefi-runtime-console-region-fault-image']
+  foreach image_name : fs.read('kernel-image-tests.txt').strip().split('\n')
     test(image_name, python,
       args: ['-c', 'raise SystemExit("Kernel images disabled: configure -Dkernel_images=true for full/boot qualification")'],
       suite: ['full', 'slow', 'integration', 'boot'],

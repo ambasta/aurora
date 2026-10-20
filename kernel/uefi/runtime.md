@@ -14,6 +14,10 @@ temporary bootstrap machinery; this is not a language-native complete kernel.
 
 ## Relocation and ownership
 
+[Bootstrap dimensions](../bootstrap-layout-values.inc) and
+[image page policies](image-page-policies.inc) are shared tables for C++ and the
+generated profile metadata. Host image and boot checks use the same metadata loader.
+
 Handoff version 3 retains the allocated 1 MiB arena and adds an exact metadata
 pointer at arena + 0x81000. Version 1 and 2 profiles remain valid with their
 original layouts. The final firmware map must own the whole arena below 4 GiB.
@@ -25,9 +29,11 @@ Each slot contains at most three RX code pages followed by an unmapped guard.
 These are chosen canonical lower-half virtual addresses, not physical load
 addresses or BIOS constants. Their immutable, boot-owned physical slots occupy three pages each, beginning
 at arena + 0xb0000 (then +0xb3000 and, for dispatch, +0xb6000). Link metadata, exact entry, segment permissions and every trap site
-are validated before installation. Existing profiles retain one-page image
-allowances; only `runtime-multipage` admits three pages. Metadata cannot select
-its own allowance. The linker, image validator, loader and runtime independently
+are validated before installation. `runtime-multipage` admits three pages per
+image. Blocking-call profiles admit two pages for the caller and one for the
+service; owned-text profiles (including console-region) admit three pages for
+the first image and one for the second. Other profiles retain one-page image
+allowances. Metadata cannot select its own allowance. The linker, image validator, loader and runtime independently
 enforce the selected bound; BIOS remains one page. The loader zeros all slots
 before publication. User roots map only the rounded validated byte extent, and
 verification checks every required leaf plus absent unused/guard/foreign pages.

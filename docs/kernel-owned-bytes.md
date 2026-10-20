@@ -212,8 +212,10 @@ claiming contained recovery from arbitrary hostile native code.
 The source consumer covers UTF-8 append, invalid-scalar rollback, growth to the
 64-byte quota and failed replacement rollback, then live-owner fault and budget
 termination. `runtime-owned-text-site`, `runtime-owned-text-region` and
-`runtime-owned-text-stale` are isolated negative profiles; the last replays the
-old descriptor after a committed resize into the unchanged allocator validator.
+`runtime-owned-text-stale` select cases at boot in one shared fixture image.
+Use the existing smoke launcher so it sends the selector after guest readiness;
+ordinary `runtime-owned-text` contains no injection code. The stale case replays
+the old descriptor after a committed resize into the unchanged allocator validator.
 The existing allocator harness also checks stale grants after revocation and
 second-owner scrub failure after partial cleanup. The user image remains limited
 to three RX pages (12288 bytes), with the unchanged 15360-byte stack admission.
@@ -240,8 +242,9 @@ polling authority. The first source consumer uppercases one LF-terminated line o
 at most 32 printable ASCII bytes using a single 32-byte Utf8Text allocation; CR,
 control bytes, overlong input and damage reject before output. Output failure may
 leave a prefix. The smoke driver withholds each byte until a live-owner park.
-Separate cancellation, ready-cancellation, damage, output-failure, exhaustion and
-emitted-bounds-fault profiles exercise the same adapter. Cancellation also repeats
+Cancellation, ready-cancellation, damage, output-failure, exhaustion and
+emitted-bounds-fault modes share one boot-selected fixture image and normalizer.
+The ordinary image omits injection code. Cancellation also repeats
 with a new incarnation to reject old tickets. The existing image admission
 includes the retained supervisor wait/drain frame plus IRQ and fault reserve.
 The image, stack and payload caps remain 12288, 15360 and 64 bytes. This is one

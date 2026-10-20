@@ -19,6 +19,9 @@ import tty
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
+from kernel_layout import LAYOUT
+from kernel_profiles import FIXTURE_MODES
+
 import kernel_program_console_admission as admission
 import kernel_uefi_console_clock as clock
 import qemu_transport as transport
@@ -33,7 +36,7 @@ def validate_domain_events(text, images, timer, returning=False):
     arenas = re.findall(r"AURORA_UEFI_OWNERSHIP_OK: arena=(\d+)", text)
     need(len(arenas) == 1, "Missing unique kernel arena")
     arena = int(arenas[0])
-    kernel_root = arena + 0x11000
+    kernel_root = arena + LAYOUT.kernel_tables_offset
     need(
         re.search(
             r"AURORA_UEFI_TIMER_READY: physical=4276092928 virtual=18446620928407240704 "
@@ -63,7 +66,11 @@ def validate_domain_events(text, images, timer, returning=False):
         if run:
             live_epoch = int(run[1])
             live_image = images["bounds" if run[2] == "service" else "clean"]
-            live_root = arena + (0xA0000 if run[2] == "service" else 0x90000)
+            live_root = arena + (
+                (LAYOUT.tables_offset + LAYOUT.table_pages * LAYOUT.page_size)
+                if run[2] == "service"
+                else LAYOUT.tables_offset
+            )
             need(int(run[4]) == live_root, "Run launched under another root")
             terminal_seen = False
             if run[2] == "client":
@@ -73,7 +80,7 @@ def validate_domain_events(text, images, timer, returning=False):
             need(returning and int(resume[1]) == caller_epoch and live_epoch is None, "Invalid resume owner")
             live_epoch = caller_epoch
             live_image = images["clean"]
-            live_root = arena + 0x90000
+            live_root = arena + LAYOUT.tables_offset
             terminal_seen = False
         if line.startswith("AURORA_CALL_PARK:"):
             need(returning and live_epoch == caller_epoch, "Invalid parked owner")
@@ -90,9 +97,13 @@ def validate_domain_events(text, images, timer, returning=False):
                     vector == 64
                     and terminal_seen
                     and root == kernel_root
-                    and arena + 0x44000 <= frame <= arena + 0x48000 - 176
+                    and arena + LAYOUT.kernel_stack_bottom
+                    <= frame
+                    <= arena + LAYOUT.kernel_stack_top - LAYOUT.fault_frame_size
                     and frame % 8 == 0
-                    and arena + 0x22000 + timer["drain_begin"] <= pc <= arena + 0x22000 + timer["drain_end"],
+                    and arena + LAYOUT.kernel_payload_offset + timer["drain_begin"]
+                    <= pc
+                    <= arena + LAYOUT.kernel_payload_offset + timer["drain_end"],
                     "Unauthorized supervisor timer event",
                 )
                 need(
@@ -107,7 +118,7 @@ def validate_domain_events(text, images, timer, returning=False):
                 cpl == 3
                 and vector in ((6, 64, 129, 130) if returning else (6, 64, 129))
                 and root == live_root
-                and frame == arena + 0x88000 - 176,
+                and frame == arena + LAYOUT.rsp0_top - LAYOUT.fault_frame_size,
                 "Invalid active-domain frame",
             )
             if vector == 130:
@@ -972,6 +983,9 @@ def main():
                     need("output> " + expected + "\r\n" in part, "Actual protected file contents differ")
                     expected_outputs.append(expected)
 
+            if args.mode in FIXTURE_MODES:
+                receive(b"AURORA_FIXTURE_READY", 0)
+                send(bytes([FIXTURE_MODES[args.mode][1]]))
             receive(b"aurora> ", 0)
             tty.setraw(master)
             if args.mode in FAILSTOP_REASONS:

@@ -725,7 +725,7 @@ class Projection {
                 DiagnosticSeverity::Warning};
     }
     void prelude() {
-        if (input.rows.size() < 15 || input.moduleRoot < 15)
+        if (input.rows.size() < hostedLoweringPrefixRows(false) || input.moduleRoot < hostedLoweringPrefixRows(false))
             invalidLowering();
         // The host supplied these immutable facts once before source lowering.
         // Only their typed transport and identity domains are checked here;
@@ -739,9 +739,10 @@ class Projection {
         identity(configuration.integer(OperandRole::MaximumScalarArrayLength));
         configuration.boolean(OperandRole::AnalysisMode);
         const auto groups = configuration.scalar(OperandRole::SupportedServiceGroups);
-        if (groups != 62 && groups != 318)
+        const auto completeGroups = service::supportedGroupBitmap();
+        if (groups != service::supportedGroupBitmap(false) && groups != completeGroups)
             invalidLowering();
-        const std::int64_t layoutRow = groups == 318 ? 15 : 14;
+        const std::int64_t layoutRow = hostedLoweringPrefixRows(groups == completeGroups) - 1;
         if (input.rows.size() <= sizeValue(layoutRow) || input.moduleRoot <= layoutRow)
             invalidLowering();
         configuration.finish();

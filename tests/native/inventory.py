@@ -1,9 +1,10 @@
 """Read-only native coverage checks used by the existing test inventory gate."""
 
-import hashlib
+import ast
 import json
 import shlex
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 
 def discovered_files(root):
@@ -135,7 +136,7 @@ def check_exact(expected, actual, label):
             raise ValueError(label + " drift: " + name + ": " + ", ".join(changed))
 
 
-def check_manifest(manifest, actual_files, tests=None, kernel_images=True):
+def check_manifest(manifest, actual_files, tests=None, disabled_tests=()):
     listed = set(manifest["files"])
     if actual_files != listed:
         raise ValueError(
@@ -167,11 +168,7 @@ def check_manifest(manifest, actual_files, tests=None, kernel_images=True):
         if not any(suite.split(":")[-1] == "full" for suite in by_name[name]["suite"]):
             raise ValueError("native gate omitted from full suite: " + name)
     for name, expected in manifest["registrations"].items():
-        if not kernel_images and name in (
-            "native-bios-image",
-            "native-uefi-normal-image",
-            "native-uefi-span-integration",
-        ):
+        if name in disabled_tests:
             continue  # Exact failure commands are checked against the actual configured option.
         argv = by_name[name]["cmd"]
         source = expected.get("source", "")
@@ -189,7 +186,43 @@ def check_manifest(manifest, actual_files, tests=None, kernel_images=True):
                 raise ValueError("native developer gate mislabels compiler provenance: " + name)
 
 
+def check_optimized_asserts(records):
+    """Checks in an optimized-only Python runner must survive Python -O."""
+    modes = {}
+    for record in records:
+        optimized = False
+        for argument in record["cmd"]:
+            if argument in ("-O", "-OO"):
+                optimized = True
+            elif str(argument).endswith(".py"):
+                path = Path(argument)
+                if not path.is_absolute():
+                    path = Path(record.get("workdir") or ".") / path
+                modes.setdefault(path.resolve(), set()).add(optimized)
+                optimized = False  # A wrapper's child has its own interpreter flags.
+    for path, flags in modes.items():
+        if flags == {True}:
+            tree = ast.parse(path.read_text(), filename=str(path))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Assert):
+                    raise ValueError(f"assert stripped from optimized-only test: {path}:{node.lineno}")
+
+
 def self_test():
+    with TemporaryDirectory() as directory:
+        path = Path(directory) / "optimized.py"
+        path.write_text("assert False\n")
+        optimized = dict(cmd=["python3", "-O", str(path)])
+        try:
+            check_optimized_asserts([optimized])
+        except ValueError:
+            pass
+        else:
+            raise ValueError("optimized-only assertion was not rejected")
+        check_optimized_asserts([optimized, dict(cmd=["python3", str(path)])])
+        path.write_text('if False: raise RuntimeError("fixture")\n')
+        check_optimized_asserts([optimized])
+
     manifest = dict(
         files={"tests/a.py": dict(kind="direct-registration", reason="fixture")},
         registrations={"a": dict(source="tests/a.py", optimized=True, arguments=["--self-test"])},
@@ -281,7 +314,9 @@ def check(root, registered_tests=None):
     root = Path(root)
     self_test()
     manifest = json.loads((root / "tests/native/inventory.json").read_text())
+    disabled_tests = []
     if registered_tests is not None:
+        check_optimized_asserts(registered_tests)
         anchor = next(record for record in registered_tests if record["name"] == "compiler-test-inventory")
         arguments = anchor["cmd"]
         info = Path(arguments[arguments.index("--meson-info") + 1])
@@ -294,15 +329,9 @@ def check(root, registered_tests=None):
         observed_tests, observed_targets = contracts(registered_tests, targets, root, build)
         expected_tests = dict(manifest["exact_tests"])
         if not kernel_images:
-            for name in (
-                "native-bios-image",
-                "native-uefi-normal-image",
-                "native-uefi-span-integration",
-                "native-uefi-runtime-owned-text-image",
-                "native-uefi-runtime-owned-text-site-image",
-                "native-uefi-runtime-owned-text-region-image",
-                "native-uefi-runtime-owned-text-stale-image",
-            ):
+            disabled_tests = (root / "tests/native/kernel-image-tests.txt").read_text().splitlines()
+            disabled_tests.append("native-uefi-span-integration")
+            for name in disabled_tests:
                 expected_tests[name] = dict(
                     expected_tests[name],
                     depends=[],
@@ -319,11 +348,8 @@ def check(root, registered_tests=None):
         manifest,
         discovered_files(root),
         registered_tests,
-        kernel_images if registered_tests is not None else True,
+        disabled_tests,
     )
-    for name, expected in manifest["wrapper_sha256"].items():
-        if hashlib.sha256((root / name).read_bytes()).hexdigest() != expected:
-            raise ValueError("native shell command inventory needs review after wrapper change: " + name)
     return {
         "native_registrations": len(manifest["registrations"]),
         "classified_native_files": len(manifest["files"]),

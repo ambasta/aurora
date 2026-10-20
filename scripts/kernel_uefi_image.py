@@ -852,7 +852,7 @@ def graphical_image_policy(directory, symbols=None):
 def console_irq_windows(symbols, mode):
     modes = {
         "runtime-console-region" + suffix
-        for suffix in ("", "-cancel", "-cancel-ready", "-input", "-output", "-budget", "-fault")
+        for suffix in ("", "-cancel", "-cancel-ready", "-input", "-output", "-budget", "-fault", "-fixture")
     }
     need(mode in modes, "Exact protected console image mode")
     expected = {"uefi_service_drain_begin", "uefi_service_drain_end"}
@@ -865,6 +865,7 @@ def console_irq_windows(symbols, mode):
         in {"uefi_service_drain_begin", "uefi_service_drain_end", "uefi_program_poll_begin", "uefi_program_poll_end"}
     }
     need(actual == expected, "Exact protected console supervisor IRQ windows")
+    return expected
 
 
 def main(
@@ -1008,15 +1009,15 @@ def main(
             window_names = {symbol.name: symbol.address for symbol in linked.symbols if symbol.section}
             payload = (build / "payload.bin").read_bytes()
             if require_console_region:
-                console_irq_windows(window_names, build.name)
-            for begin, end, opcode in (
-                ("uefi_program_poll_begin", "uefi_program_poll_end", "fbf4fa"),
-                ("uefi_service_drain_begin", "uefi_service_drain_end", "fb9090fa"),
-            ):
-                if begin not in window_names:
-                    continue
+                required_windows = console_irq_windows(window_names, build.name)
+            windows = [("uefi_service_drain_begin", "uefi_service_drain_end", "fb9090fa")]
+            if require_console_region and "uefi_program_poll_begin" in required_windows:
+                windows.append(("uefi_program_poll_begin", "uefi_program_poll_end", "fbf4fa"))
+            for begin, end, opcode in windows:
                 need(
-                    end in window_names and payload[window_names[begin] : window_names[end]] == bytes.fromhex(opcode),
+                    begin in window_names
+                    and end in window_names
+                    and payload[window_names[begin] : window_names[end]] == bytes.fromhex(opcode),
                     "Exact owned supervisor IRQ window",
                 )
                 owners = [

@@ -38,8 +38,11 @@ kernel_options = {
 
 # One canonical data catalog is shared with the command selectors. All generated
 # metadata below is build-local; only the two normal images are default products.
-profile_file = configure_file(input: '../scripts/kernel_profiles.py', output: 'profile-data.ini',
-  command: [python, '-B', '@INPUT@', '--meson-output', '@OUTPUT@'])
+profile_file = configure_file(
+  input: ['../scripts/kernel_profiles.py', '../scripts/kernel_layout.py', '../kernel/bootstrap-layout-values.inc',
+         '../kernel/uefi/image-page-policies.inc', '../kernel/uefi/runtime-fixtures.inc'],
+  output: 'profile-data.ini',
+  command: [python, '-B', '@INPUT0@', '--meson-output', '@OUTPUT@'])
 profile_data = import('keyval').load(profile_file)
 kernel_profile_images = {}
 kernel_profile_users = {}
@@ -140,7 +143,7 @@ foreach profile_id : profile_data['profiles'].split('|')
       endforeach
       entry_source = files('../' + profile_data[user_key + '.entry'])
       combined = profile_data[user_key + '.combined'] == '1'
-      owned_text = profile_data[key + '.user_mode'] in ['owned-text', 'console-region'] and name == 'clean'
+      owned_text = '--owned-text' in image_options and name == 'clean'
       call_client = combined and '--blocking-call' in profile_data[key + '.user_options'].split('|')
       # Closed callers and owned text have independently checked linked graphs.
       if (call_client and name == 'clean') or owned_text
@@ -171,10 +174,11 @@ foreach profile_id : profile_data['profiles'].split('|')
       endif
       entry_flags_text = profile_data[user_key + '.entry_flags']
       entry_flags = entry_flags_text == '' ? [] : entry_flags_text.split('|')
+      byte_stubs = owned_text ? files('../kernel/uefi/owned-bytes-stubs.inc') : []
       user_object = custom_target(prefix + '-user-' + name + '-object',
         input: [user_assembly[0]] + (combined ? entry_source : []), output: 'user-' + name + '.o',
-        build_subdir: object_subdir,
-        command: [kernel_as, '--64', '-L'] + (combined ? entry_flags : []) + ['@INPUT@', '-o', '@OUTPUT@'])
+        build_subdir: object_subdir, depend_files: byte_stubs,
+        command: [kernel_as, '--64', '-L', '-I', kernel_source / 'kernel/uefi'] + (combined ? entry_flags : []) + ['@INPUT@', '-o', '@OUTPUT@'])
       user_link_inputs = []
       if not combined
         entry_object = custom_target(prefix + '-user-' + name + '-entry-object',

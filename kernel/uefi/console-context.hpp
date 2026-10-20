@@ -8,7 +8,7 @@ namespace aurora::uefi {
 // This grants no mapping, interrupt-controller or user-domain authority.
 class ConsoleWakeContext final {
 public:
-    static constexpr std::size_t word_count = 22;
+    static constexpr std::size_t word_count = BootstrapLayout::fault_frame_words;
     static constexpr std::uint64_t byte_count = word_count * sizeof(std::uint64_t);
     static constexpr std::uint64_t handler_reserve = 4096;
     // Exact QEMU 10.0.13 inserts RF in a hardware timer's saved frame. Retain

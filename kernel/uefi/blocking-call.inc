@@ -1,13 +1,16 @@
 // One fixed client/service pair and one accepted call per client incarnation.
 // This private record is never addressed by user code. The request run retains
 // transaction zero; only this record binds the separately minted mailbox ticket.
+auto release_call_source() -> void {
+#ifdef AURORA_FILE_CALL
+    command_note.release();
+#else
+    snapshot_slot.clear();
+#endif
+}
 [[nodiscard]] auto call_retire(unsigned index) -> bool {
     if (!call_wait.context) {
-        #ifdef AURORA_FILE_CALL
-        command_note.release();
-#else
-        snapshot_slot.clear();
-#endif
+        release_call_source();
         return true;
     }
     if (!mailbox || !call_wait.authority || !call_wait.ticket)
@@ -19,29 +22,21 @@
     if (index == 1) {
         if (mailbox->state() != ipc::State::cancelled)
             return false;
-        #ifdef AURORA_FILE_CALL
-        command_note.release();
-#else
-        snapshot_slot.clear();
-#endif
+        release_call_source();
         return true;
     }
     if (index != 0 || !domains[0].handle ||
         !mailbox->consume(*domains[0].handle, ipc::Phase::completion, call_wait.endpoint, call_wait.ticket))
         return false;
-    clear_call_wait();
-    #ifdef AURORA_FILE_CALL
-        command_note.release();
-#else
-        snapshot_slot.clear();
-#endif
+    call_wait.clear();
+    release_call_source();
     return true;
 }
 [[nodiscard]] auto call_trap(U64 frame) -> U64 {
 #ifdef AURORA_FILE_CALL
     require(command_owned && domains[0].handle && mailbox &&
-                command_files.matches_read(registry, *mailbox, *domains[0].handle,
-                                           ipc::Endpoint{launch[2], launch[3]}), "call selected read authority");
+                command_files.matches_read(registry, *mailbox, *domains[0].handle, ipc::Endpoint{launch[2], launch[3]}),
+            "call selected read authority");
 #endif
     require(active == 0 && irq_off() && mailbox && run_authority && timer_armed &&
                 selected_role == SelectedRunAuthority::Role::client && selected_phase == ipc::Phase::request &&
@@ -60,11 +55,8 @@
                                               *domains[0].contract,
                                               timer_owner_epoch),
             "call active run authority");
-#ifdef AURORA_CALL_OWNER
-    reinterpret_cast<U64 *>(frame)[9] ^= 1;
-#endif
-#ifdef AURORA_CALL_SITE
-    ++reinterpret_cast<U64 *>(frame)[17];
+#if defined(AURORA_RUNTIME_FIXTURE) && !defined(AURORA_FILE_CALL)
+    call_fixture_entry(reinterpret_cast<U64 *>(frame));
 #endif
     const auto context = ServiceContext::capture_call(std::span<const U64>{reinterpret_cast<const U64 *>(frame), 22},
                                                       frame,
@@ -79,7 +71,7 @@
             "call exact site and endpoint");
     if (domains[0].call_used
 #ifdef AURORA_FILE_CALL
-        && (!file_wc || file_closed || file_call_count>=50)
+        && (!file_wc || file_closed || file_call_count >= 50)
 #endif
     ) {
         require(!call_wait.context && mailbox->state() == ipc::State::consumed, "call repeated state");
@@ -90,11 +82,12 @@
     }
 #ifdef AURORA_FILE_CALL
     if (file_wc) {
-        require(!file_closed && file_call_count<50 && context->words()[11]==file_call_count,
+        require(!file_closed && file_call_count < 50 && context->words()[11] == file_call_count,
                 "wc bounded sequential offset");
         if (domains[0].call_used)
-            require(mailbox->state()==ipc::State::consumed && mailbox->scrubbed() &&
-                        mailbox->recycle(ipc::Phase::inactive),"wc consumed recycle");
+            require(mailbox->state() == ipc::State::consumed && mailbox->scrubbed() &&
+                        mailbox->recycle(ipc::Phase::inactive),
+                    "wc consumed recycle");
     }
 #endif
     require(!call_wait.context && !call_wait.authority && !call_wait.ticket && domains[1].handle &&
@@ -103,39 +96,33 @@
             "call reserve and stop");
 #ifdef AURORA_FILE_CALL
     if (file_wc && !file_boundary_debit()) {
-        file_closed=true;
-        require(program.cancel(),"wc caller boundary exhaustion");
+        file_closed = true;
+        require(program.cancel(), "wc caller boundary exhaustion");
         asm volatile("mov %0,%%cr3" ::"r"(kernel_root) : "memory");
-        require(registry.deactivate(*domains[0].handle),"wc caller exhausted owner");
-        active=L::domain_count;
+        require(registry.deactivate(*domains[0].handle), "wc caller exhausted owner");
+        active = L::domain_count;
         return 1;
     }
 #endif
-    call_wait.context.emplace(*context);
+    save_parked_run(call_wait, *context);
     call_wait.authority.emplace(*run_authority);
     call_wait.service = *domains[1].handle;
     call_wait.endpoint = *endpoint;
     call_wait.launch = launch;
-    call_wait.remaining = timer_remaining;
-    call_wait.ticks = timer_ticks;
-    call_wait.resumes = timer_resumes;
-    call_wait.compiled = timer_compiled_hits;
-    call_wait.contexts = timer_context_hits;
     const auto ticket =
         mailbox->submit(*domains[0].handle, ipc::Phase::request, *endpoint, ipc::Request{context->words()[11], 0});
     require(ticket.has_value(), "call atomic publication");
     call_wait.ticket = *ticket;
     domains[0].call_used = true;
 #ifdef AURORA_FILE_CALL
-    if (file_wc) ++file_call_count;
+    if (file_wc)
+        ++file_call_count;
 #endif
-#ifdef AURORA_CALL_PENDING
-    force_timer_pending();
+#if defined(AURORA_RUNTIME_FIXTURE) && !defined(AURORA_FILE_CALL)
+    if (fixture == Fixture::call_pending)
+        force_timer_pending();
 #endif
-    require(program.cancel(), "call park tracker");
-    asm volatile("mov %0,%%cr3" ::"r"(kernel_root) : "memory");
-    require(registry.deactivate(*domains[0].handle), "call park owner");
-    active = L::domain_count;
+    park_run(*domains[0].handle);
     Serial::text("AURORA_CALL_PARK: ticket=");
     Serial::number(*ticket);
     Serial::text(" epoch=");
@@ -149,8 +136,8 @@
 }
 auto call_envelope(const Bytes &captured, U64 result) -> void {
 #ifdef AURORA_FILE_CALL
-    if (file_wc && active==1 && !file_boundary_debit()) {
-        file_closed=true;
+    if (file_wc && active == 1 && !file_boundary_debit()) {
+        file_closed = true;
         return; // Delivered transaction is cancelled by the quiescent driver.
     }
 #endif
@@ -170,18 +157,23 @@ auto call_envelope(const Bytes &captured, U64 result) -> void {
                         *domains[1].handle, selected_phase, ipc::Endpoint{launch[2], launch[3]}, transaction, result),
                 "call service reply");
 #ifdef AURORA_FILE_CALL
-        if (file_wc && (result & 255)!=1) file_closed=true;
+        if (file_wc && (result & 255) != 1)
+            file_closed = true;
 #endif
     } else {
         require(active == 0 && selected_phase == ipc::Phase::request && transaction == 0 && domains[0].call_used &&
                     !call_wait.context && mailbox->state() == ipc::State::consumed,
                 "call completed caller terminal");
 #ifdef AURORA_FILE_CALL
-        if (file_wc) require(file_closed,"wc terminal completion");
+        if (file_wc)
+            require(file_closed, "wc terminal completion");
 #endif
     }
 }
 auto call_execute(unsigned index, U64 source_phase, U64 first, U64 second) -> void {
+#if defined(AURORA_RUNTIME_FIXTURE) && defined(AURORA_FILE_CALL)
+    source_phase = file_fixture_phase(index, source_phase, first);
+#endif
     require(index < 2 && irq_off() && root() == kernel_root && active == L::domain_count && !timer_armed &&
                 !program.running() && saved_rsp == 0,
             "call launch boundary");
@@ -204,8 +196,7 @@ auto call_execute(unsigned index, U64 source_phase, U64 first, U64 second) -> vo
         auto &read = snapshot_slot;
         using Read = ipc::SnapshotSlot;
 #endif
-        require(mailbox->state() == ipc::State::delivered && read.matches(*endpoint),
-                "call snapshot delivery binding");
+        require(mailbox->state() == ipc::State::delivered && read.matches(*endpoint), "call snapshot delivery binding");
         const auto physical = frames.address(*domain.stacks.back());
         const auto virtual_page = domain.contract->layout().user_stack_top() - L::page_size;
         require(physical && (domain.tables->entry(virtual_page) & ~0x60ULL) == (*physical | 7 | RuntimeTables::nx) &&
@@ -214,9 +205,9 @@ auto call_execute(unsigned index, U64 source_phase, U64 first, U64 second) -> vo
                 "call snapshot retained stack mapping");
         auto *record = reinterpret_cast<std::byte *>(*physical + L::page_size - Read::stack_reservation);
         require(read.stage(std::span<std::byte, Read::record_bytes>{record, Read::record_bytes},
-                                    *endpoint,
-                                    source_phase,
-                                    ipc::Request{first, second}),
+                           *endpoint,
+                           source_phase,
+                           ipc::Request{first, second}),
                 "call snapshot copied record");
     }
     require(program.begin(*domain.contract) && registry.activate(*domain.handle), "call launch activation");
@@ -229,7 +220,8 @@ auto call_execute(unsigned index, U64 source_phase, U64 first, U64 second) -> vo
     // The old kernel entry stack has unwound before any service can execute.
     timer_finish();
 #ifdef AURORA_FILE_CALL
-    if (file_wc && index==1) file_service_used=timer_ticks;
+    if (file_wc && index == 1)
+        file_service_used = timer_ticks;
 #endif
     const auto current_stack = stack();
     require(root() == kernel_root && active == L::domain_count && saved_rsp == 0 && !program.running() &&
@@ -287,24 +279,12 @@ auto call_execute(unsigned index, U64 source_phase, U64 first, U64 second) -> vo
     timer_owner = *domain.handle;
     timer_owner_epoch = timer_epoch = saved.authority->epoch();
     timer_initial = saved.authority->budget();
-    timer_remaining = saved.remaining;
-    timer_ticks = saved.ticks;
-    timer_resumes = saved.resumes;
-    timer_compiled_hits = saved.compiled;
-    timer_context_hits = saved.contexts;
-    timer_drains = 0;
-    timer_exhausted = false;
-    const auto frame = saved.context->frame();
+    const auto frame = restore_parked_run(saved);
     auto *restored = reinterpret_cast<U64 *>(frame);
-    for (std::size_t i = 0; i < ServiceContext::word_count; ++i)
-        restored[i] = saved.context->words()[i];
     restored[14] = completion->outcome() == ipc::Outcome::replied ? 0 : 1;
     restored[11] = completion->value();
-    clear_call_wait();
-    require(program.begin(*domain.contract) && registry.activate(*domain.handle), "call resume activation");
-    active = 0;
-    const auto selected = domain.tables->root();
-    asm volatile("mov %0,%%cr3" ::"r"(selected) : "memory");
+    call_wait.clear();
+    activate_parked_run(0);
     require(run_authority->matches_active(registry,
                                           *domain.handle,
                                           selected_role,
@@ -331,7 +311,9 @@ auto call_execute(unsigned index, U64 source_phase, U64 first, U64 second) -> vo
     Serial::text("AURORA_CALL_COMPLETE: epoch=");
     Serial::number(timer_epoch);
     Serial::text(" event=");
-    Serial::text(timer_exhausted ? std::string_view{"budget"} : call_wait.context ? std::string_view{"parked"} : std::string_view{"returned"});
+    Serial::text(timer_exhausted     ? std::string_view{"budget"}
+                 : call_wait.context ? std::string_view{"parked"}
+                                     : std::string_view{"returned"});
     Serial::text(" value=");
     Serial::number(program.value());
     Serial::text("\r\n");
@@ -374,6 +356,9 @@ auto call_completion_controls(U64 ticket) -> void {
     --call_wait.launch[3];
 }
 auto run_blocking_calls(memory::PhysicalPages &producer_pool) -> void {
+#if defined(AURORA_RUNTIME_FIXTURE) && !defined(AURORA_FILE_CALL)
+    select_fixture(Fixture::call_pending, Fixture::call_site);
+#endif
     for (unsigned scenario = 0; scenario < 4; ++scenario) {
         require(prepare_snapshot(arena, producer_pool, snapshot_slot, SnapshotProducerCase::normal) ==
                         ipc::SnapshotPublication::ready &&
@@ -429,11 +414,7 @@ auto run_blocking_calls(memory::PhysicalPages &producer_pool) -> void {
             require(mailbox->revoke(ipc::Phase::inactive) && retire(0) && (scenario == 1 || retire(1)),
                     "call final retirement");
         }
-        #ifdef AURORA_FILE_CALL
-        command_note.release();
-#else
-        snapshot_slot.clear();
-#endif
+        release_call_source();
         require(producer_pool.used() == 0 && !snapshot_slot.ready() && !snapshot_slot.bound(),
                 "call snapshot reclamation");
         require(frames.used() == 0 && !call_wait.context && !call_wait.ticket, "call complete scrub");

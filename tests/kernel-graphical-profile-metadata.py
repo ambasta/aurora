@@ -212,6 +212,10 @@ class ProfileMetadata(unittest.TestCase):
     def test_hosted_source_closure_and_identity_selection(self):
         runner = load("graphical_metadata_runner", "tests/kernel-graphical-console.py")
         expected = set(runner.SOURCE_INPUTS) | {
+            "kernel/bootstrap-layout.hpp",
+            "kernel/bootstrap-layout-values.inc",
+            "kernel/uefi/image-page-policy.hpp",
+            "kernel/uefi/image-page-policies.inc",
             "kernel/console-session.hpp",
             "kernel/console-uart.hpp",
             "kernel/console.hpp",

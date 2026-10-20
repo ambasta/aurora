@@ -98,10 +98,6 @@ def catalogue_checks(compiler, work):
 
 
 def file_count_checks(compiler, work):
-    # Extract the actual pure class, keeping the immutable predecessor independent
-    # of the two explicitly named Call consumers.
-    caller = (ROOT / "tests/kernel-programs/call-client.au").read_text()
-    counter = caller[caller.index("class FileCounts {") : caller.index("auto count_file(")]
     samples = [
         b"",
         b"word",
@@ -119,13 +115,27 @@ def file_count_checks(compiler, work):
     for index, data in enumerate(samples):
         words = len(re.findall(rb"[^\x09-\x0d ]+", data))
         expected = 1 | (data.count(b"\n") << 8) | (words << 16) | (len(data) << 24)
-        statements.append(f"FileCounts c{index}=FileCounts();")
+        statements.append(f"console::FileReader r{index}=console::FileReader();")
+        statements.append(f"console::FileStream c{index}=console::FileStream(r{index},false);")
         for byte in data:
-            statements.append(f"if (!c{index}.push({byte}u64)) {{ return 1u64; }}")
+            statements.append(f"if (!c{index}.accept(true,{1 | (byte << 8)}u64)) {{ return 1u64; }}")
+        statements.append(f"if(!c{index}.accept(true,2u64)) {{ return 2u64; }}")
         statements.append(f"if(c{index}.result()!={expected}u64) {{ return 2u64; }}")
-        statements.append(f"if(c{index}.push(256u64)||c{index}.result()!={expected}u64) {{ return 3u64; }}")
+        statements.append(f"if(c{index}.accept(true,65537u64)||c{index}.result()!={expected}u64) {{ return 3u64; }}")
         if len(data) == 49:
-            statements.append(f"if(c{index}.push(0u64)||c{index}.result()!={expected}u64) {{ return 4u64; }}")
+            statements.append(f"if(c{index}.accept(true,1u64)||c{index}.result()!={expected}u64) {{ return 4u64; }}")
+    statements += [
+        "console::FileReader cr=console::FileReader();",
+        "console::FileStream crc=console::FileStream(cr,true);",
+    ]
+    for byte in b"123456789":
+        statements.append(f"if(!crc.accept(true,{1 | (byte << 8)}u64)) {{return 15u64;}}")
+    statements += [
+        "if(!crc.accept(true,2u64)||crc.result()!=975067841281u64) {return 16u64;}",
+        "console::FileStream interrupted=console::FileStream(cr,false);",
+        "if(!interrupted.accept(true,24833u64)||interrupted.accept(false,2u64)",
+        "||interrupted.active()||interrupted.result()!=0u64) {return 17u64;}",
+    ]
     # Exercise the actual Call-free reader independently of either consumer.
     statements.extend(
         [
@@ -163,8 +173,7 @@ def file_count_checks(compiler, work):
     )
     source = work / "file-counts.au"
     source.write_text(
-        "module counts; import console.file_reader;\n"
-        + counter
+        "module counts; import console.file_reader; import console.file_stream;\n"
         + "auto count_test()->u64 {"
         + "".join(statements)
         + "return 0u64;}"

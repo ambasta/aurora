@@ -111,43 +111,47 @@ using hardware::Serial;
 #endif
 using user::ProgramEvent;
 using L = RuntimeLayout;
+#if defined(AURORA_USER_RESUME) || defined(AURORA_BLOCKING_CALL) || defined(AURORA_CONSOLE_REGION)
+// Saved transport state is shared; each caller retains its distinct authority checks.
+class ParkedRun final {
+public:
+    std::optional<ServiceContext> context;
 #ifdef AURORA_USER_RESUME
-class Continuation final {
-public:
-    std::optional<ServiceContext> context;
     std::optional<RunAuthority> authority;
-    std::array<U64, 7> launch{};
-    unsigned remaining{}, ticks{}, resumes{}, compiled{}, contexts{};
-};
-#endif
-#ifdef AURORA_BLOCKING_CALL
-class CallWait final {
-public:
-    std::optional<ServiceContext> context;
+#elif defined(AURORA_BLOCKING_CALL)
     std::optional<ProgramRunAuthority> authority;
     std::optional<user::DomainHandle> service;
     ipc::Endpoint endpoint;
     U64 ticket{};
+#else
+    std::optional<user::DomainHandle> owner;
+    U64 root{}, region{}, generation{}, epoch{}, ticket{};
+    unsigned initial{};
+#endif
+#ifndef AURORA_CONSOLE_REGION
     std::array<U64, 7> launch{};
+#endif
     unsigned remaining{}, ticks{}, resumes{}, compiled{}, contexts{};
+#ifdef AURORA_CONSOLE_REGION
+    std::optional<console::RawSample> ready;
+#endif
+    auto clear() -> void {
+        std::destroy_at(this);
+        auto *bytes = reinterpret_cast<volatile std::byte *>(this);
+        for (std::size_t i = 0; i < sizeof(ParkedRun); ++i)
+            bytes[i] = std::byte{0};
+        std::construct_at(this);
+    }
 };
-constinit CallWait call_wait;
+#endif
+#ifdef AURORA_BLOCKING_CALL
+constinit ParkedRun call_wait;
 #ifdef AURORA_FILE_CALL
 // Bounds/accounting for the existing command-selected pair, not IPC state.
 // file_wc selects the existing sequential-read authority for both wc and CRC.
 bool file_wc{}, file_closed{};
-unsigned file_call_count{}, file_service_used{}, file_wc_probes{}, file_crc_probes{};
-#ifdef AURORA_FILE_CALL_BUDGET
-U64 file_budget_probe{};
+unsigned file_call_count{}, file_service_used{};
 #endif
-#endif
-auto clear_call_wait() -> void {
-    std::destroy_at(&call_wait);
-    auto *bytes = reinterpret_cast<volatile std::byte *>(&call_wait);
-    for (std::size_t i = 0; i < sizeof(CallWait); ++i)
-        bytes[i] = std::byte{0};
-    std::construct_at(&call_wait);
-}
 [[nodiscard]] auto call_retire(unsigned index) -> bool;
 #endif
 class Domain final {
@@ -161,14 +165,7 @@ public:
     bool call_used{};
 #endif
 #ifdef AURORA_USER_RESUME
-    Continuation continuation;
-    auto clear_continuation() -> void {
-        std::destroy_at(&continuation);
-        auto *bytes = reinterpret_cast<volatile std::byte *>(&continuation);
-        for (std::size_t i = 0; i < sizeof(Continuation); ++i)
-            bytes[i] = std::byte{0};
-        std::construct_at(&continuation);
-    }
+    ParkedRun continuation;
 #endif
 };
 constinit std::array<Domain, L::domain_count> domains;
@@ -250,6 +247,9 @@ auto require(bool okay, std::string_view reason) -> void {
     if (!okay)
         stop(reason);
 }
+#ifdef AURORA_RUNTIME_FIXTURE
+#include "runtime-fixture.inc"
+#endif
 auto fill(U64 physical, std::uint8_t value) -> void {
     for (auto &byte : view(physical, 4096))
         byte = std::byte{value};
@@ -338,7 +338,7 @@ auto fill(U64 physical, std::uint8_t value) -> void {
     domain.call_used = false;
 #endif
 #ifdef AURORA_USER_RESUME
-    domain.clear_continuation();
+    domain.continuation.clear();
 #endif
     for (auto &lease : domain.stacks)
         if (lease) {
@@ -644,23 +644,30 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
     if (program_console_interrupt(vector, error, pc, cs, frame))
         return 0;
 #endif
-    U64 cr2;
-    asm volatile("mov %%cr2,%0" : "=r"(cr2));
-    Serial::text("AURORA_UEFI_DOMAIN_EVENT: vector=");
-    Serial::number(vector);
-    Serial::text(" error=");
-    Serial::number(error);
-    Serial::text(" pc=");
-    Serial::number(pc);
-    Serial::text(" cpl=");
-    Serial::number(cs & 3);
-    Serial::text(" root=");
-    Serial::number(root());
-    Serial::text(" frame=");
-    Serial::number(frame);
-    Serial::text(" cr2=");
-    Serial::number(cr2);
-    Serial::text("\r\n");
+#ifdef AURORA_CONSOLE_REGION
+    // Routine byte operations share the console UART; only terminal/IRQ events are diagnostic.
+    if (vector != 130) {
+#endif
+        U64 cr2;
+        asm volatile("mov %%cr2,%0" : "=r"(cr2));
+        Serial::text("AURORA_UEFI_DOMAIN_EVENT: vector=");
+        Serial::number(vector);
+        Serial::text(" error=");
+        Serial::number(error);
+        Serial::text(" pc=");
+        Serial::number(pc);
+        Serial::text(" cpl=");
+        Serial::number(cs & 3);
+        Serial::text(" root=");
+        Serial::number(root());
+        Serial::text(" frame=");
+        Serial::number(frame);
+        Serial::text(" cr2=");
+        Serial::number(cr2);
+        Serial::text("\r\n");
+#ifdef AURORA_CONSOLE_REGION
+    }
+#endif
 #ifdef AURORA_UEFI_SERVICE_BUDGET
 #if defined(AURORA_BUDGET_ROOT) || defined(AURORA_DISPATCH_ROOT) || defined(AURORA_USER_ROOT)
     if (vector == 64 && !timer_draining
@@ -743,8 +750,11 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
         require(timer_armed && integer && integer->terminal_context(*domains[active].contract) && timer_stop(),
                 "timer terminal context");
 #if defined(AURORA_BUDGET_PENDING) || defined(AURORA_DISPATCH_PENDING) || defined(AURORA_USER_PENDING) ||              \
-    defined(AURORA_PROGRAM_PENDING) || defined(AURORA_CALL_PENDING)
+    defined(AURORA_PROGRAM_PENDING)
         force_timer_pending();
+#elif defined(AURORA_RUNTIME_FIXTURE) && defined(AURORA_BLOCKING_CALL) && !defined(AURORA_FILE_CALL)
+        if (fixture == Fixture::call_pending)
+            force_timer_pending();
 #endif
 #ifdef AURORA_USER_RETIRE_PENDING
         if (active == 0 && selected_phase == ipc::Phase::completion && vector == 6)
@@ -837,9 +847,13 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
 #endif
 #ifdef AURORA_OWNED_TEXT
 #ifdef AURORA_CONSOLE_REGION
+#ifdef AURORA_RUNTIME_FIXTURE
+    select_fixture(Fixture::console_fault, Fixture::console_budget);
+#endif
     run_console_application(producer_pool);
-#ifdef AURORA_CONSOLE_CANCEL
-    run_console_application(producer_pool);
+#ifdef AURORA_RUNTIME_FIXTURE
+    if (fixture == Fixture::console_cancel)
+        run_console_application(producer_pool);
 #endif
 #else
     run_owned_text(producer_pool);
@@ -857,6 +871,9 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
     run_dispatcher();
 #endif
 #elif defined(AURORA_FILE_CALL)
+#ifdef AURORA_RUNTIME_FIXTURE
+    select_fixture(Fixture::file_fault, Fixture::file_budget);
+#endif
     run_program_console();
 #elif defined(AURORA_BLOCKING_CALL)
     run_blocking_calls(producer_pool);

@@ -104,6 +104,13 @@ inline constexpr std::array operations{
     OperationDescription{Kind::IommuEvent, Operation::IommuPoll, "poll", eventSampleType, {}, 0},
     OperationDescription{Kind::IommuEvent, Operation::IommuAcknowledge, "acknowledge", eventAckResultType, {}, 0},
     OperationDescription{Kind::Call, Operation::Call, "call", callResultType, {TypeKind::U64}, 1}};
+inline constexpr std::size_t operationCount(bool includeCall) {
+    std::size_t count = 0;
+    for (const auto &entry : operations)
+        if (includeCall || entry.kind != Kind::Call)
+            ++count;
+    return count;
+}
 inline const OperationDescription &description(Operation operation) {
     for (const auto &entry : operations)
         if (entry.operation == operation)

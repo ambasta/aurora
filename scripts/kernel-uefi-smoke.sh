@@ -72,11 +72,14 @@ fi
 # Fail closed before QEMU; this records a command, never a successful execution.
 "${clock_check[@]}" >"$output_dir/$mode.clock.json"
 log="$output_dir/$mode.log"
+startup_byte="$(python3 -B scripts/kernel_profiles.py --fixture-byte "$mode")"
+startup_args=()
+if [[ -n "$startup_byte" ]]; then startup_args+=(--startup-byte "$startup_byte"); fi
 set +e
 if [[ "$mode" == runtime-console-region || "$mode" == runtime-console-region-fault || "$mode" == runtime-console-region-output || "$mode" == runtime-console-region-cancel-ready ]]; then
     python3 -B tests/kernel-uefi-runtime-smoke.py --console-region-run "$mode" "$log" -- "${qemu_argv[@]}"
 else
-    python3 -B scripts/qemu_transport.py run --timeout 30 --log "$log" -- "${qemu_argv[@]}"
+    python3 -B scripts/qemu_transport.py run --timeout 30 --log "$log" "${startup_args[@]}" -- "${qemu_argv[@]}"
 fi
 status=$?
 set -e

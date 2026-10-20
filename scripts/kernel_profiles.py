@@ -7,7 +7,14 @@ separate reviewed model, firmware, admission and supervised-plan requirements.
 
 import argparse
 import os
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from kernel_layout import IMAGE_POLICIES, LAYOUT, metadata as layout_metadata, read_table
+
+FIXTURES = read_table(Path(__file__).resolve().parents[1] / "kernel/uefi/runtime-fixtures.inc")
+FIXTURE_MODES = {mode: (image, value) for mode, image, value in FIXTURES.values()}
 
 # Base flags plus bounded variants mirror the existing admitted profiles.
 UEFI_FAMILIES = [
@@ -23,9 +30,7 @@ UEFI_FAMILIES = [
         ],
         {
             "user-call": [],
-            "user-call-pending": ["-DAURORA_CALL_PENDING"],
-            "user-call-owner": ["-DAURORA_CALL_OWNER"],
-            "user-call-site": ["-DAURORA_CALL_SITE"],
+            "user-call-fixture": ["-DAURORA_RUNTIME_FIXTURE"],
         },
     ),
     ([], {"normal": []}),
@@ -65,15 +70,8 @@ UEFI_FAMILIES = [
         {
             "runtime-owned-text": [],
             "runtime-console-region": ["-DAURORA_CONSOLE_REGION"],
-            "runtime-console-region-fault": ["-DAURORA_CONSOLE_REGION"],
-            "runtime-console-region-cancel": ["-DAURORA_CONSOLE_REGION", "-DAURORA_CONSOLE_CANCEL"],
-            "runtime-console-region-cancel-ready": ["-DAURORA_CONSOLE_REGION", "-DAURORA_CONSOLE_CANCEL_READY"],
-            "runtime-console-region-input": ["-DAURORA_CONSOLE_REGION", "-DAURORA_CONSOLE_INPUT"],
-            "runtime-console-region-output": ["-DAURORA_CONSOLE_REGION", "-DAURORA_CONSOLE_OUTPUT"],
-            "runtime-console-region-budget": ["-DAURORA_CONSOLE_REGION", "-DAURORA_CONSOLE_BUDGET"],
-            "runtime-owned-text-site": ["-DAURORA_TEXT_SITE"],
-            "runtime-owned-text-region": ["-DAURORA_TEXT_REGION"],
-            "runtime-owned-text-stale": ["-DAURORA_TEXT_STALE"],
+            "runtime-console-region-fixture": ["-DAURORA_CONSOLE_REGION", "-DAURORA_RUNTIME_FIXTURE"],
+            "runtime-owned-text-fixture": ["-DAURORA_RUNTIME_FIXTURE"],
         },
     ),
     (
@@ -121,8 +119,7 @@ UEFI_FAMILIES = [
         {
             "program-console": [],
             "program-file-call": ["-DAURORA_BLOCKING_CALL", "-DAURORA_FILE_CALL"],
-            "program-file-call-fault": ["-DAURORA_BLOCKING_CALL", "-DAURORA_FILE_CALL", "-DAURORA_FILE_CALL_FAULT"],
-            "program-file-call-budget": ["-DAURORA_BLOCKING_CALL", "-DAURORA_FILE_CALL", "-DAURORA_FILE_CALL_BUDGET"],
+            "program-file-call-fixture": ["-DAURORA_BLOCKING_CALL", "-DAURORA_FILE_CALL", "-DAURORA_RUNTIME_FIXTURE"],
             "program-request-fault": ["-DAURORA_PROGRAM_REQUEST_FAULT"],
             "program-service-fault": ["-DAURORA_PROGRAM_SERVICE_FAULT"],
             "program-completion-fault": ["-DAURORA_PROGRAM_COMPLETION_FAULT"],
@@ -476,7 +473,7 @@ def user_images(
             if snapshot:
                 source = "snapshot-client" if index == 0 else "snapshot-service"
             if blocking_call:
-                source = "call-client" if index == 0 else "call-snapshot-service"
+                source = "call-client-fixture" if index == 0 else "call-snapshot-service"
             if file_call:
                 source = "call-client" if index == 0 else "file-call-service"
             entry = "kernel/uefi/ipc-user-entry.S"
@@ -501,8 +498,7 @@ def user_images(
         result[name] = dict(
             source="tests/kernel-programs/" + source + ".au",
             roots=["library"] + (["kernel/policies"] if snapshot or program or blocking_call else []),
-            base=0x10000000000 + index * 16384,
-            max_pages=3 if kind == "runtime" and mode == "multipage" else 2 if blocking_call and index == 0 else 1,
+            base=LAYOUT.user_code + index * LAYOUT.code_stride,
             entry=entry,
             entry_flags=[value for define in defines for value in ("--defsym", define)],
             combined=((snapshot or program or blocking_call) and index == 1) or (blocking_call and index == 0),
@@ -665,7 +661,13 @@ def uefi_profile(mode, flags):
     ):
         user_mode = mode[8:]
     if owned_text:
-        user_mode = "console-region" if console_region else "owned-text"
+        user_mode = (
+            "console-region-fixture"
+            if mode == "runtime-console-region-fixture"
+            else "console-region"
+            if console_region
+            else "owned-text"
+        )
     if snapshot and mode in ("snapshot-owner", "snapshot-reply-reserved", "snapshot-reply-byte"):
         user_mode = mode[9:]
     if program and mode in ("program-owner", "program-ordinal", "program-unknown", "program-transaction"):
@@ -706,19 +708,34 @@ def uefi_profile(mode, flags):
         if runtime
         else {}
     )
+    if mode == "program-file-call-fixture":
+        users["clean"]["source"] = "tests/kernel-programs/call-client-fixture.au"
     if owned_text:
         users["clean"].update(
             source=(
-                "tests/kernel-programs/console-region-fault.au"
-                if mode.endswith("-fault")
+                "tests/kernel-programs/console-region-fixture.au"
+                if mode == "runtime-console-region-fixture"
                 else "tests/kernel-programs/console-region.au"
             )
             if console_region
             else "tests/kernel-programs/owned-text.au",
             entry="kernel/uefi/console-region-entry.S" if console_region else "kernel/uefi/owned-text-entry.S",
             combined=True,
-            max_pages=3,
         )
+    if mode == "runtime-console-region-fixture":
+        users["clean"]["entry_flags"] += ["--defsym", "AURORA_CONSOLE_FIXTURE=1"]
+    image_policy = (
+        "multipage"
+        if "-DAURORA_RUNTIME_MULTIPAGE" in flags
+        else "call"
+        if blocking_call
+        else "owned_text"
+        if owned_text
+        else "one_page"
+    )
+    flags = [*flags, "-DAURORA_RUNTIME_IMAGE_POLICY=" + image_policy]
+    for index, image in enumerate(users.values()):
+        image["max_pages"] = IMAGE_POLICIES[image_policy][index]
     cpp = {name: "kernel/uefi/" + name + ".cpp" for name in ("payload", "acpi", "pci", "runtime")}
     assembly = {
         name: dict(source="kernel/uefi/" + name + ".S", flags=["--64"])
@@ -848,6 +865,7 @@ def uefi_profile(mode, flags):
 
 
 UEFI_ALIASES = {"bar-inherited": "bar-read", "pci-devices": "pci", "pci-bridge": "pci", "acpi-two": "acpi"}
+UEFI_ALIASES.update({mode: image for mode, (image, _) in FIXTURE_MODES.items()})
 BIOS_ALIASES = {"schedule-smp": "schedule", "schedule-no-apic": "schedule", "no-nx": "normal"}
 
 
@@ -879,7 +897,7 @@ def select(platform, environment, requested=None):
         mode = requested or inherited or "normal"
         if inherited and requested and inherited != requested:
             raise ValueError("UEFI_MODE conflicts with requested profile")
-        if mode not in {mode for _, variants in UEFI_FAMILIES for mode in variants}:
+        if mode not in {mode for _, variants in UEFI_FAMILIES for mode in variants} | UEFI_ALIASES.keys():
             raise ValueError("Unknown UEFI profile: " + mode)
         return mode
     if environment.get("UEFI_MODE"):
@@ -932,14 +950,19 @@ if __name__ == "__main__":
     action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument("--meson-output", type=Path)
     action.add_argument("--select", choices=("bios", "uefi"))
+    action.add_argument("--fixture-byte")
     args = parser.parse_args()
-    if args.select:
+    if args.fixture_byte:
+        print(FIXTURE_MODES.get(args.fixture_byte, ("", ""))[1])
+    elif args.select:
         try:
             print(select(args.select, os.environ))
         except ValueError as error:
             parser.error(str(error))
     else:
         rows = list(keyval_rows("profiles", profiles()))
+        rows += keyval_rows("layout", layout_metadata())
+        rows += keyval_rows("image_policies", {name: list(values) for name, values in IMAGE_POLICIES.items()})
         rows += keyval_rows(
             "aliases",
             {"bios/" + key: "bios/" + value for key, value in BIOS_ALIASES.items()}

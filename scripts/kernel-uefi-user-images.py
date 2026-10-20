@@ -5,7 +5,10 @@ from pathlib import Path
 import argparse, json, struct, subprocess, sys
 
 ROOT = Path(__file__).resolve().parent.parent
-BASE = 0x10000000000
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from kernel_layout import LAYOUT
+
+BASE = LAYOUT.user_code
 
 
 def need(value, message):
@@ -30,7 +33,9 @@ def verify(
     need(len(data) >= 64, "Truncated ELF header")
     need(type(image_count) is int and image_count in (2, 3), "Unknown bounded image profile")
     need(type(max_pages) is int and 1 <= max_pages <= 3, "Unknown bounded page allowance")
-    need(base in tuple(BASE + index * 16384 for index in range(image_count)), "Foreign virtual image layout")
+    need(
+        base in tuple(BASE + index * LAYOUT.code_stride for index in range(image_count)), "Foreign virtual image layout"
+    )
     need(data[:7] == b"\x7fELF\x02\x01\x01", "ELF64 little-endian required")
     kind, machine = struct.unpack_from("<HH", data, 16)
     entry, phoff = struct.unpack_from("<QQ", data, 24)
@@ -179,7 +184,7 @@ def multipage_stack(prefix, base, fault):
     return multipage_evidence(functions, symbols, base)
 
 
-def owned_text_stack(prefix, entry, console_region=False):
+def owned_text_stack(prefix, entry, console_region=False, fixture=False):
     import kernel_stack as stack
 
     user = stack.Elf(prefix.with_suffix(".elf"))
@@ -248,8 +253,10 @@ def owned_text_stack(prefix, entry, console_region=False):
         if console_region
         else [{"offset": 0, "bytes": 8, "kind": "region"}, {"offset": 8, "bytes": 8, "kind": "u64"}]
     )
+    if fixture:
+        parameters.append({"offset": 24, "bytes": 8, "kind": "u64"})
     need(
-        abi["parameter_bytes"] == (24 if console_region else 16)
+        abi["parameter_bytes"] == (32 if fixture else 24 if console_region else 16)
         and abi["parameters"] == parameters
         and abi["result"] == {"bytes": 8, "kind": "u64" if console_region else "i64"}
         and abi["borrowed_root_count"] == 0,
@@ -264,7 +271,7 @@ def owned_text_stack(prefix, entry, console_region=False):
     reserve = "$0x20,%rsp" if console_region else "$0x10,%rsp"
     expected = [("sub", reserve), ("mov", "%rdi,(%rsp)"), ("mov", "%rsi,0x8(%rsp)")]
     if console_region:
-        expected += [("mov", "%rdx,0x10(%rsp)"), ("movq", "$0x0,0x18(%rsp)")]
+        expected += [("mov", "%rdx,0x10(%rsp)"), ("mov", "%rcx,0x18(%rsp)") if fixture else ("movq", "$0x0,0x18(%rsp)")]
     expected += [("mov", "%rsp,%r11"), ("call", entry), ("add", reserve), ("int", "$0x81"), ("ud2", "")]
     need(actual == expected, "Exact protected region entry wrapper")
     for name in functions:
@@ -283,7 +290,7 @@ def emit_metadata(out, mode):
         prefix = out / f"user-{name}"
         elf = prefix.with_suffix(".elf")
         binary = prefix.with_suffix(".bin")
-        base = BASE + index * 16384
+        base = BASE + index * LAYOUT.code_stride
         need(
             "There are no relocations" in subprocess.check_output(["readelf", "-rW", elf], text=True),
             "Unresolved image relocations",
@@ -294,7 +301,7 @@ def emit_metadata(out, mode):
             if len(line.split()) == 3
         }
         blob = binary.read_bytes()
-        owned = mode in ("owned-text", "console-region") and name == "clean"
+        owned = mode in ("owned-text", "console-region", "console-region-fixture") and name == "clean"
         entry = None
         if owned:
             from bootstrap_frontend import abi_function_symbol
@@ -304,7 +311,9 @@ def emit_metadata(out, mode):
             elf.read_bytes(), blob, base, symbols, max_pages=3 if mode == "multipage" or owned else 1, owned_entry=entry
         )
         if owned:
-            evidence = owned_text_stack(prefix, entry, mode == "console-region")
+            evidence = owned_text_stack(
+                prefix, entry, mode.startswith("console-region"), mode == "console-region-fixture"
+            )
             meta.update(evidence)
             print(f"PASS: owned text user stack {evidence['user_stack']}/15360 bytes; image {len(blob)}/12288")
         if mode == "multipage":
@@ -340,6 +349,7 @@ if __name__ == "__main__":
             "multipage",
             "owned-text",
             "console-region",
+            "console-region-fixture",
             "code",
             "stack",
             "window",

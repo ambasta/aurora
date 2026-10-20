@@ -813,8 +813,22 @@ class BarRunner(unittest.TestCase):
     def prepare_public_runner(self):
         """Run real Make/main/lifecycle with synthetic validators, images and QEMU."""
         self.public_bin = self.prepare_public_make()
-        for name in ("kernel-uefi-bar-run.py", "qemu_transport.py", "kernel_profiles.py", "kernel_trace_controls.py"):
+        for name in (
+            "kernel-uefi-bar-run.py",
+            "qemu_transport.py",
+            "kernel_profiles.py",
+            "kernel_layout.py",
+            "kernel_trace_controls.py",
+        ):
             shutil.copy2(ROOT / "scripts" / name, self.repo / "scripts" / name)
+        for relative in (
+            "kernel/bootstrap-layout-values.inc",
+            "kernel/uefi/image-page-policies.inc",
+            "kernel/uefi/runtime-fixtures.inc",
+        ):
+            target = self.repo / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ROOT / relative, target)
         self.python_calls = self.home / "python-calls"
         self.main_status = self.home / "main-status"
         python = self.public_bin / "python3"

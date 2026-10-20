@@ -167,11 +167,13 @@ partial read cancellation exercises this release path without exposing output.
 
 The opt-in `program-file-call`, `program-file-call-fault` and
 `program-file-call-budget` profiles use that read-only lifetime for `peek`, `wc`
-and `crc`. The singleton caller invokes its sealed `CallSession`; the peer reads
-the command's frozen projection. `console.file_reader` is a Call-free Aurora
-class shared by the counting and CRC32C loops. It decodes canonical byte, EOF and
-missing replies, tracks the next offset, rejects more than 49 bytes and closes on
-terminal or failed replies. Each call returns into the caller's live local state.
+and `crc`. The two fault modes select cases at boot in one fixture image;
+the ordinary kernel path and caller contain no fault-phase selection. Both callers
+share `console.file_calls` and the Call-free `console.file_stream` counting/CRC
+state. Its `FileReader` decodes canonical byte, EOF and missing replies, tracks
+the next offset, rejects more than 49 bytes and closes on terminal or failed
+replies. Each sealed call reads the frozen projection and returns into the
+caller's live local state.
 `crc` prints eight lowercase hexadecimal digits only after successful retirement;
 failed work discards the partial count or checksum.
 
@@ -181,7 +183,7 @@ retain cumulative 128-tick allowances, including boundary debits; resuming the
 caller does not reset its allowance. Cancellation retires both original
 participants and scrubs the frozen read and wait authority. The original isolated
 Call consumer remains one successful call per incarnation. Only the caller image
-in the seven existing Call profiles selects the existing two-page allowance;
+in Call profiles selects the existing two-page allowance;
 service images remain one page and global image/stack limits are unchanged.
 Legacy console profiles reject these returning commands without launching a pair.
 

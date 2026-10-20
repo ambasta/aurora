@@ -1,0 +1,20 @@
+module protected_console_fixture;
+import std.utf8_text;
+import console.normalize;
+auto bounds_fault(builtin::ConsoleSession& session, builtin::ByteRegion region) -> u64 {
+    builtin::OwnedBytes storage = region.try_allocate(32);
+    std::Utf8Text text = std::Utf8Text(region, move(storage));
+    if (!text.ok()) {
+        return 1u64;
+    }
+    const builtin::ConsoleSample sample = session.next();
+    const builtin::span<const u8> live = text.bytes();
+    return u64(live.at(i64(sample.byte)));
+}
+
+auto aurora_user_main(builtin::ConsoleSession& session, builtin::ByteRegion region, u64 fault) -> u64 {
+    if (fault != 0u64) {
+        return bounds_fault(session, region);
+    }
+    return console::normalize(session, region);
+}

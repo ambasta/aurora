@@ -1317,7 +1317,7 @@ std::uint64_t resolutionQuota() {
                                    sizeof(hosted_abi::compiler_parser::SyntaxNode)});
     const auto parser = sum({mul(mul(2, b), add(parserWidths, hosted_abi::frameBytes)),
                              mul(8, parserWidths),
-                             mul(2 * 1939 + 8, hosted_abi::frameBytes)});
+                             mul(2 * hosted_parser::maximumLiveFrames + 8, hosted_abi::frameBytes)});
     // Runtime replacement may momentarily retain an old block and its new
     // allocation. The committed quota remains this sum; physical peak is at
     // most twice it, plus runtime metadata and host snapshots/projected values.
@@ -1563,8 +1563,8 @@ class HostedResolution::Impl {
                 invalidResolution();
             }
         }
-        const std::size_t operationCount = callFamily ? 6 : 5;
-        if (service::operations.size() != 6 || serviceKinds.size() != (callFamily ? 4 : 3) ||
+        const auto operationCount = service::operationCount(callFamily);
+        if (serviceKinds.size() != service::capabilityTypes.size() - (callFamily ? 0 : 1) ||
             serviceSpellings.size() != operationCount)
             invalidResolution();
         for (std::size_t index = 0; index < operationCount; ++index) {
@@ -1628,8 +1628,8 @@ class HostedResolution::Impl {
         const bool success = result.result_status == lowering::LoweringStatus::success;
         if (success) {
             lowerStorage();
-            if (result.result_reason != lowering::LoweringError::none || result.root_row < (callFamily ? 16 : 15) ||
-                result.diagnostic_row != 0)
+            if (result.result_reason != lowering::LoweringError::none ||
+                result.root_row < hostedLoweringPrefixRows(callFamily) || result.diagnostic_row != 0)
                 invalidResolution();
         } else if ((result.result_status != lowering::LoweringStatus::semantic_failure &&
                     result.result_status != lowering::LoweringStatus::invalid) ||
