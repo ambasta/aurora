@@ -35,7 +35,10 @@ request/reply IPC, cancellation/restart and Aurora policy functions. These are
 working bounded mechanisms, not a general process or runtime API. The
 [protected command console](program-console-contract.md) demonstrates one embedded
 compiled application with scoped recovery and authority-failure qualification.
-General program lifetime and a RAM-backed file service remain the next extensions.
+The file-call path now implements a reusable bounded read-service incarnation
+for `wc` and `crc`, with fresh per-command caller/grant authority and full cleanup
+after failure. Its final-source qualification remains required. General program
+lifetime and service-owned mutable RAM storage remain subsequent dependencies.
 
 Build capability-scoped blocking request/reply on the bounded two-program
 suspend/resume mechanism, then integrate protected-program startup/lifecycle and file

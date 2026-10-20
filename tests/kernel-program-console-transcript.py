@@ -356,6 +356,36 @@ for mode, reason in module.FAILSTOP_REASONS.items():
 images["clean"]["call_pc"] = 1020
 
 
+def retained_fixture(text):
+    """Add independently assigned registry identities to old hardware fixtures."""
+
+    def bind(match):
+        tag, generation, body, result = match.groups()
+        retained = int(result) != 0
+        return (
+            f"AURORA_{tag}_BEGIN: generation={generation}\r\n"
+            f"AURORA_FILE_SERVICE_BEGIN: service=2 caller=1 generation={generation} "
+            f"root={arena + 0xA0000} used=8 reused=0\r\n"
+            + body
+            + f"AURORA_FILE_SERVICE_END: service=2 caller=1 generation={generation} "
+            f"root={arena + 0xA0000} retained={int(retained)} used={4 if retained else 0} scrubbed=1\r\n"
+            f"AURORA_{tag}_END: result={result} used={4 if retained else 0}\r\n"
+        )
+
+    text = re.sub(
+        r"AURORA_(FILE_CALL|WC|CRC)_BEGIN: generation=(\d+)\r\n(.*?)"
+        r"AURORA_\1_END: result=(\d+) used=0\r\n",
+        bind,
+        text,
+        flags=re.S,
+    )
+    retained = "retained=1" in text
+    return text.replace(
+        "AURORA_PROGRAM_CONSOLE_QUIET:",
+        f"AURORA_FILE_SERVICE_EXIT: service={2 if retained else 0} used=0 scrubbed=1\r\nAURORA_PROGRAM_CONSOLE_QUIET:",
+    )
+
+
 def file_call_fixture(mode, reply):
     fault, exhausted = mode.endswith("-fault"), mode.endswith("-budget")
     result = 0 if fault or exhausted else reply
@@ -439,7 +469,7 @@ def file_call_fixture(mode, reply):
             "AURORA_UEFI_OK",
         ]
     )
-    return "\r\n".join(lines) + "\r\n", [result], [0 if fault else reply]
+    return retained_fixture("\r\n".join(lines) + "\r\n"), [result], [0 if fault else reply]
 
 
 for mode, reply in [
@@ -534,7 +564,7 @@ for data in ("", None):
         f"AURORA_WC_END: result={result} used=0",
         module.wc_answer(result),
     ]
-    text = "\r\n".join(lines) + "\r\n"
+    text = retained_fixture("\r\n".join(lines) + "\r\n")
     module.validate_wc(text, [(data, 32)], images, timer)
     checks += 1
     for changed in (
@@ -604,7 +634,7 @@ for data in ("", None):
             f"AURORA_CRC_END: result={value} used=0",
             module.crc_answer(value),
         ]
-        nonempty = "\r\n".join(first + second) + "\r\n"
+        nonempty = retained_fixture("\r\n".join(first + second) + "\r\n")
         module.validate_wc(nonempty, [("A", 32)], images, timer, checksum=True)
         checks += 1
         corrupt = value ^ 256
@@ -617,5 +647,59 @@ for data in ("", None):
             checks += 1
         else:
             raise SystemExit("FAIL: CRC oracle accepted jointly corrupted result and presentation")
+
+
+# Mixed command identities independently exercise retained and poisoned lifecycle
+# boundaries. Hardware/result correctness remains checked above and by the PTY.
+def service_command(tag, generation, caller, service, result, reused):
+    retained = int(result != 0)
+    return (
+        f"AURORA_{tag}_BEGIN: generation={generation}\r\n"
+        f"AURORA_FILE_SERVICE_BEGIN: service={service} caller={caller} generation={generation} "
+        f"root={arena + 0xA0000} used=8 reused={reused}\r\n"
+        f"AURORA_UEFI_USER_RUN: epoch={generation} role=client phase=request client=0 transaction=0 "
+        f"source=32 root={arena + 0x90000}\r\n"
+        f"AURORA_UEFI_USER_RUN: epoch={generation + 1} role=service phase=service client=0 transaction=1 "
+        f"source=11 root={arena + 0xA0000}\r\n"
+        f"AURORA_FILE_SERVICE_END: service={service} caller={caller} generation={generation} "
+        f"root={arena + 0xA0000} retained={retained} used={4 * retained} scrubbed=1\r\n"
+        f"AURORA_{tag}_END: result={result} used={4 * retained}\r\n"
+    )
+
+
+mixed = (
+    service_command("FILE_CALL", 1, 1, 2, 3, 0)
+    + service_command("WC", 3, 3, 2, 1, 1)
+    + service_command("CRC", 5, 4, 2, 0, 1)
+    + service_command("WC", 7, 5, 6, 1, 0)
+    + service_command("CRC", 9, 7, 6, 1, 1)
+    + "00000000\r\nAURORA_CONSOLE_EXIT\r\n"
+    + "AURORA_FILE_SERVICE_EXIT: service=6 used=0 scrubbed=1\r\n"
+    + "AURORA_PROGRAM_CONSOLE_QUIET: timer=masked isr=0 irr=0 domains=0\r\n"
+)
+module.validate_retained_service(mixed, final=True)
+checks += 1
+for changed in (
+    mixed.replace("service=2 caller=3", "service=8 caller=3"),
+    mixed.replace("caller=3", "caller=1"),
+    mixed.replace("generation=3", "generation=1"),
+    mixed.replace("used=8 reused=1", "used=8 reused=0", 1),
+    mixed.replace("service=6 caller=5", "service=2 caller=5"),
+    mixed.replace("retained=0 used=0", "retained=1 used=4"),
+    mixed.replace("scrubbed=1", "scrubbed=0", 1),
+    mixed.replace("retained=1 used=4", "retained=1 used=8", 1),
+    mixed.replace("AURORA_FILE_SERVICE_EXIT: service=6", "AURORA_FILE_SERVICE_EXIT: service=2"),
+    mixed.replace("AURORA_FILE_SERVICE_EXIT: service=6 used=0", "AURORA_FILE_SERVICE_EXIT: service=6 used=4"),
+    mixed.replace("AURORA_FILE_SERVICE_END:", "OMITTED_FILE_SERVICE_END:", 1),
+    mixed.replace("AURORA_WC_END: result=1 used=4", "AURORA_WC_END: result=1 used=0", 1),
+):
+    if changed == mixed:
+        raise SystemExit("FAIL: retained service mutation did not alter transcript")
+    try:
+        module.validate_retained_service(changed, final=True)
+    except ValueError:
+        checks += 1
+    else:
+        raise SystemExit("FAIL: retained service oracle accepted false reuse, authority or scrub evidence")
 
 print(f"PASS: {checks} protected-console transcript positive/refusal controls; no guest executed")

@@ -203,7 +203,88 @@ def crc_answer(result):
     return wc_answer(result) if result in (0, 3) else f"{result >> 8:08x}"
 
 
+def validate_retained_service(text, *, final=False):
+    """Real registry identities and allocator evidence, independent of run epochs."""
+    parts = list(
+        re.finditer(
+            r"AURORA_(FILE_CALL|WC|CRC)_BEGIN: generation=(\d+)\r?\n(.*?)"
+            r"AURORA_\1_END: result=(\d+) used=(\d+)\r?\n",
+            text,
+            re.S,
+        )
+    )
+    need(
+        len(parts) == len(re.findall(r"AURORA_(?:FILE_CALL|WC|CRC)_BEGIN:", text)),
+        "Every read command has a retirement envelope",
+    )
+    need(
+        len(parts) == text.count("AURORA_FILE_SERVICE_BEGIN:") == text.count("AURORA_FILE_SERVICE_END:"),
+        "Exactly one retained service binding and release per command",
+    )
+    previous_service = previous_generation = 0
+    retained = False
+    callers, services = set(), set()
+    for part in parts:
+        body = part[3]
+        begin = list(
+            re.finditer(
+                r"AURORA_FILE_SERVICE_BEGIN: service=(\d+) caller=(\d+) generation=(\d+) "
+                r"root=(\d+) used=8 reused=([01])\r?\n",
+                body,
+            )
+        )
+        end = list(
+            re.finditer(
+                r"AURORA_FILE_SERVICE_END: service=(\d+) caller=(\d+) generation=(\d+) "
+                r"root=(\d+) retained=([01]) used=(\d+) scrubbed=1\r?\n",
+                body,
+            )
+        )
+        need(len(begin) == len(end) == 1, "Exact retained-service boundary evidence")
+        service, caller, generation, root, reused = map(int, begin[0].groups())
+        need(
+            service > 0 and caller > 0 and caller != service and caller not in callers and caller not in services,
+            "Fresh actual caller incarnation distinct from every service",
+        )
+        need(generation == int(part[2]) and generation > previous_generation, "Fresh authenticated read generation")
+        need(reused == int(retained), "Reuse only follows a healthy retained boundary")
+        if retained:
+            need(service == previous_service, "Healthy service retains exact registry incarnation")
+        else:
+            need(service not in services and service not in callers, "Retired service incarnation never resurrects")
+        runs = list(re.finditer(r"AURORA_UEFI_USER_RUN:.*? role=(client|service) .*? root=(\d+)", body))
+        need(
+            runs and begin[0].end() <= runs[0].start() and runs[-1].end() < end[0].start(),
+            "Service binding precedes execution and cleanup follows it",
+        )
+        need(all(int(run[2]) == root for run in runs if run[1] == "service"), "Retained service actual protected root")
+        need(
+            end[0].groups()[:4] == begin[0].groups()[:4], "Release authenticates original participants, grant and root"
+        )
+        retained = int(part[4]) != 0
+        need(
+            int(end[0][5]) == int(retained) and int(end[0][6]) == int(part[5]) == (4 if retained else 0),
+            "Healthy-only service leases; failures retire all leases",
+        )
+        need(body[end[0].end() :] == "", "Scrubbed service boundary immediately precedes presentation envelope")
+        callers.add(caller)
+        services.add(service)
+        previous_service, previous_generation = service, generation
+    if final:
+        exit_records = list(re.finditer(r"AURORA_FILE_SERVICE_EXIT: service=(\d+) used=0 scrubbed=1\r?\n", text))
+        need(len(exit_records) == text.count("AURORA_FILE_SERVICE_EXIT:") == 1, "One final service scrub")
+        need(
+            int(exit_records[0][1]) == (previous_service if retained else 0), "Exit retires exact retained incarnation"
+        )
+        need(
+            parts and parts[-1].end() < exit_records[0].start() < text.index("AURORA_PROGRAM_CONSOLE_QUIET:"),
+            "All command results precede final service retirement and quiet",
+        )
+    return len(parts)
+
+
 def validate_wc(text, plans, images, timer, *, checksum=False):
+    validate_retained_service(text)
     tag = "CRC" if checksum else "WC"
     result_of = crc_result if checksum else wc_result
     answer_of = crc_answer if checksum else wc_answer
@@ -211,7 +292,7 @@ def validate_wc(text, plans, images, timer, *, checksum=False):
     parts = list(
         re.finditer(
             rf"AURORA_{tag}_BEGIN: generation=(\d+)\r?\n(.*?)"
-            rf"AURORA_{tag}_END: result=(\d+) used=0\r?\n",
+            rf"AURORA_{tag}_END: result=(\d+) used=[04]\r?\n",
             text,
             re.S,
         )
@@ -363,6 +444,7 @@ def validate_wc(text, plans, images, timer, *, checksum=False):
 
 
 def validate_file_call(text, mode, expected, service_results, images, timer):
+    validate_retained_service(text, final=True)
     need(mode in admission.MODES and mode.startswith("program-file-call"), "Exact file-call profile")
     need("FAIL" not in text and text.count("AURORA_FILE_CALL_READY:") == 1, "File-call startup/failure")
     need(
@@ -373,7 +455,7 @@ def validate_file_call(text, mode, expected, service_results, images, timer):
     parts = list(
         re.finditer(
             r"AURORA_FILE_CALL_BEGIN: generation=(\d+)\r?\n(.*?)"
-            r"AURORA_FILE_CALL_END: result=(\d+) used=0\r?\n",
+            r"AURORA_FILE_CALL_END: result=(\d+) used=[04]\r?\n",
             text,
             re.S,
         )
@@ -505,7 +587,7 @@ def validate_file_call(text, mode, expected, service_results, images, timer):
         )
     need(
         len(re.findall(r"^(?:byte> .*|EOF|File is missing\.|Program stopped: .*output discarded\.)\r?$", text, re.M))
-        == len(parts) + len(re.findall(r"AURORA_(?:WC|CRC)_END: result=(?:0|3) used=0", text)),
+        == len(parts) + len(re.findall(r"AURORA_(?:WC|CRC)_END: result=(?:0|3) used=[04]", text)),
         "No duplicate results outside calls",
     )
     return dict(file_calls=len(parts), call_local_sum=40)

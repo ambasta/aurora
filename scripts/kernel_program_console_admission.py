@@ -428,6 +428,16 @@ def stack_evidence(directory, *, snapshot=False, file_call=False):
     )
 
 
+def check_file_service_link(functions, relocations):
+    policy = "aurora_kernel_file_service_transition"
+    image = load("file_service_policy_relocations", ROOT / "scripts/kernel_uefi_image.py")
+    need(image.policy_call_present(relocations, policy), "Runtime must call actual Aurora file-service policy")
+    need(
+        policy in graph_peak(functions, "uefi_payload_entry")["closure"],
+        "File-service lifecycle must be reachable from the real console entry",
+    )
+
+
 def note_evidence(directory, functions, mode="program-console"):
     """Bind native boundaries to the already validated stack graph and ABI facts."""
     decoder = load("note_bridge_decoder", ROOT / "scripts/kernel_stack.py")
@@ -503,6 +513,11 @@ def note_evidence(directory, functions, mode="program-console"):
         "aurora_kernel_client_disposal",
         "aurora_kernel_terminal_event",
     }
+    if file_call:
+        policies.add("aurora_kernel_file_service_transition")
+        check_file_service_link(
+            functions, subprocess.check_output(["objdump", "-drwC", str(directory / "objects/runtime.o")], text=True)
+        )
     need(
         {name for name in public if not is_reflection_helper(name)} == policies | bridges,
         "Exact note native exports",

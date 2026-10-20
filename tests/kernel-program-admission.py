@@ -34,6 +34,28 @@ def body(frame, *calls):
 def main():
     from collections import namedtuple
 
+    lifecycle = "aurora_kernel_file_service_transition"
+    lifecycle_graph = {"uefi_payload_entry": body(0, (lifecycle, 0)), lifecycle: body(0)}
+    lifecycle_relocation = " 10: e8 00 00 00 00 call 15 <entry+0x5> 11: R_X86_64_PLT32 " + lifecycle + "-0x4"
+    admission.check_file_service_link(lifecycle_graph, lifecycle_relocation)
+    for changed in (
+        "",
+        lifecycle_relocation.replace("call", "jmp"),
+        lifecycle_relocation.replace("11:", "12:"),
+        lifecycle_relocation.replace(lifecycle, "aurora_kernel_ipc_transition"),
+        lifecycle_relocation.replace("-0x4", "-0x8"),
+    ):
+        reject(
+            lambda changed=changed: admission.check_file_service_link(lifecycle_graph, changed),
+            "lifecycle missing or malformed actual policy relocation",
+        )
+    reject(
+        lambda: admission.check_file_service_link(
+            {"uefi_payload_entry": body(0), lifecycle: body(0)}, lifecycle_relocation
+        ),
+        "unreachable lifecycle policy",
+    )
+
     # Renaming emitted symbols leaves source-selected bridges unchanged; absent
     # or ambiguous declarations must never fall back to a mangling recipe.
     sys.path.insert(0, str(ROOT / "scripts"))

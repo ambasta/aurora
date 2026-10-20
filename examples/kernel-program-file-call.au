@@ -4,6 +4,7 @@ import kernel.interrupt_budget;
 import kernel.round_robin;
 import kernel.ipc_transition;
 import kernel.client_disposal;
+import kernel.file_service;
 import std.binary_buffer;
 import std.binary;
 import console.session_files;
@@ -201,4 +202,10 @@ auto update_files(console::ProtectedFiles current, std::BinaryBuffer64 command, 
     }
     const kernel::NoteRead64 absent = kernel::NoteRead64(-1);
     return FileUpdate(next, reply, action, selection, absent);
+}
+
+// Only copied bounded lifecycle state crosses this private bootstrap seam.
+auto aurora_kernel_file_service_transition(u64 state, u64 event) -> u64 {
+    kernel::FileServiceLifecycle lifecycle = kernel::FileServiceLifecycle(state);
+    return lifecycle.transition(event);
 }

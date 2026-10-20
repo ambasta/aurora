@@ -13,7 +13,7 @@ mkdir -p "$out"
     -o "$out/file-service.s" --abi-facts "$out/file-service.abi.json"
 "$AURORAC" --local-symbols --module-root kernel/policies --module-root library \
     examples/kernel-program-console.au -o "$out/supervisor.s" --abi-facts "$out/supervisor.abi.json"
-"$AURORAC" --module-root library tests/kernel-programs/program-command-stream.au \
+"$AURORAC" --module-root library --module-root kernel/policies tests/kernel-programs/program-command-stream.au \
     -o "$out/stream.s" --abi-facts "$out/stream.abi.json"
 # Test the native initial representation against the real library constructor.
 # This is a separate test-only root; all production inputs above are unchanged.

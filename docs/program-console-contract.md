@@ -155,9 +155,9 @@ never computes the transformation. EOF/missing retain their exact terminal encod
 empty and nonempty files require a final authenticated EOF round; a missing
 selection is read through IPC and cannot create a file.
 
-Read-only selections use a separate participant-lifetime binding. Successful and
-cancelled reads release that binding only after both original participants are
-retired and their original Mailbox is explicitly revoked. Release scrubs the
+Read-only selections use a separate participant-lifetime binding. The ordinary
+Stream path releases successful and cancelled reads only after both original
+participants are retired and their original Mailbox is explicitly revoked. Release scrubs the
 selection and frozen projection while preserving saved file bytes and revision.
 It certifies retirement, not byte delivery or complete I/O: `cat` still obtains
 output only through the existing Stream EOF/missing and `finish()` checks.
@@ -166,16 +166,42 @@ Each fault/budget smoke runs both writable and read-only recovery guests, so
 partial read cancellation exercises this release path without exposing output.
 
 The opt-in `program-file-call`, `program-file-call-fault` and
-`program-file-call-budget` profiles use that read-only lifetime for `peek`, `wc`
-and `crc`. The two fault modes select cases at boot in one fixture image;
+`program-file-call-budget` profiles use a separately checked retained-service
+read lifetime for `peek`, `wc` and `crc`. The two fault modes select cases at boot in one fixture image;
 the ordinary kernel path and caller contain no fault-phase selection. Both callers
 share `console.file_calls` and the Call-free `console.file_stream` counting/CRC
 state. Its `FileReader` decodes canonical byte, EOF and missing replies, tracks
 the next offset, rejects more than 49 bytes and closes on terminal or failed
 replies. Each sealed call reads the frozen projection and returns into the
 caller's live local state.
-`crc` prints eight lowercase hexadecimal digits only after successful retirement;
-failed work discards the partial count or checksum.
+`crc` prints eight lowercase hexadecimal digits only after authenticated
+transaction cleanup; failed work discards the partial count or checksum.
+
+A healthy file-call service retains its domain incarnation and four verified
+stack leases across commands. Each command creates a fresh caller and Mailbox
+generation, binds a fresh frozen selection, and revokes that Mailbox before
+releasing the read. The retained-read release separately authenticates the
+original registry, revoked/scrubbed Mailbox, retired original caller and exact
+inactive service. It cannot release writable selections or weaken the ordinary
+both-participants-retired path.
+
+The Aurora `FileServiceLifecycle` chooses bounded begin, finish, poison and exit
+transitions. Native code validates their encoding and actual domain, address-space
+and lease authority before committing effects. Any caller or service fault,
+budget exhaustion or cancellation poisons the whole command, even if a resumed
+caller later returns a nonzero result. Unhealthy commands retire both participants;
+a later command creates a new service. A healthy missing-file reply may retain
+the service because it completed the authenticated protocol.
+
+Before returning to the prompt or allowing file mutation, every retained service
+stack page is scrubbed and verified zero, with no caller, Mailbox, frozen projection
+or parked-call authority remaining. Exit also retires the retained service and
+requires zero leases. This reuses a protected service incarnation and allocations,
+not a persistent execution continuation: each request still clears its stack and
+enters the compiled service afresh. RAM-file storage and mutation remain at the
+existing supervisor boundary; this is not a service-owned mutable filesystem.
+Final-source hosted, image/admission, hostile guest and full-suite qualification
+remain required for this lifecycle change.
 
 Native authority independently enforces exact sequential offsets, at most 50
 calls including EOF, fresh transaction tickets and terminal closure. Both roles
