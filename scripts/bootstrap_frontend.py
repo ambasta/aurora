@@ -61,7 +61,7 @@ def abi_declaration(facts, group, source_name):
     """Find a resolved declaration; source spelling is never a mangling recipe."""
     if (
         type(facts.get("version")) is not int
-        or facts["version"] not in (1, 2)
+        or facts["version"] not in (1, 2, 3)
         or not isinstance(facts.get(group), dict)
     ):
         raise ValueError("unsupported compiler ABI facts")
@@ -75,6 +75,16 @@ def abi_function_symbol(facts, source_name):
     return abi_declaration(facts, "functions", source_name)[0]
 
 
+def abi_record_owning(facts, symbol, ancestors=()):
+    if symbol in ancestors or symbol not in facts["records"]:
+        raise ValueError("invalid private ABI record dependency")
+    return any(
+        field["kind"] == "owner"
+        or (field["kind"] == "class" and abi_record_owning(facts, field["type_name"], (*ancestors, symbol)))
+        for field in facts["records"][symbol]["fields"]
+    )
+
+
 def normalize_function_abi(facts, function):
     """Normalize exactly the selected paired predecessor and current root facts.
 
@@ -83,7 +93,7 @@ def normalize_function_abi(facts, function):
     missing lanes never imply additional roots or a later compatibility version.
     """
     version = facts.get("version")
-    if type(version) is not int or version not in (1, 2) or type(function) is not dict:
+    if type(version) is not int or version not in (1, 2, 3) or type(function) is not dict:
         raise ValueError("unsupported compiler ABI root facts")
     old_fields = {"borrowed_parameter", "second_receiver", "root_count", "root_tuple_bytes", "root_order"}
     new_fields = {"borrowed_roots", "borrowed_root_count", "borrowed_root_abi"}
@@ -144,10 +154,16 @@ def normalize_function_abi(facts, function):
         if count and receiver is not None:
             raise ValueError("borrowed roots cannot also grant a method receiver")
 
+    builtin_root = False
     for ordinal, root in enumerate(roots):
+        if type(root) is not dict:
+            raise ValueError("invalid compiler ABI borrowed root lane")
+        builtin = root.get("kind") == "owned_values"
+        keys = {"ordinal", "selector", "type_name", "mutable"}
+        if builtin:
+            keys |= {"kind", "element_type_name", "descriptor_bytes"}
         if (
-            type(root) is not dict
-            or set(root) != {"ordinal", "selector", "type_name", "mutable"}
+            set(root) != keys
             or type(root["ordinal"]) is not int
             or root["ordinal"] != ordinal
             or type(root["selector"]) is not int
@@ -155,10 +171,35 @@ def normalize_function_abi(facts, function):
             or type(root["mutable"]) is not bool
             or (ordinal > 0 and root["mutable"])
             or type(root["type_name"]) is not str
-            or root["type_name"] not in records
-            or not any(field.get("kind") == "owner" for field in records[root["type_name"]]["fields"])
         ):
             raise ValueError("invalid compiler ABI borrowed root lane")
+        if builtin:
+            element = root["element_type_name"]
+            if (
+                version != 3
+                or len(roots) != 1
+                or root["mutable"] is not True
+                or root["type_name"] != "builtin::OwnedValues"
+                or type(root["descriptor_bytes"]) is not int
+                or root["descriptor_bytes"] != 32
+                or type(element) is not str
+                or element not in records
+                or abi_record_owning(facts, element)
+            ):
+                raise ValueError("invalid compiler ABI borrowed typed buffer")
+            builtin_root = True
+        elif root["type_name"] not in records or not any(
+            field.get("kind") == "owner" for field in records[root["type_name"]]["fields"]
+        ):
+            raise ValueError("invalid compiler ABI borrowed root lane")
+    if builtin_root and (
+        function["result"]["kind"] not in ("i64", "u64", "u8", "bool", "enum")
+        or any(
+            parameter["kind"] not in ("i64", "u64", "u8", "bool", "enum", "class")
+            for parameter in function["parameters"]
+        )
+    ):
+        raise ValueError("invalid compiler ABI borrowed typed buffer tail")
     count = len(roots)
     if count + len(function["parameters"]) > 6 or (
         count >= 2
@@ -175,7 +216,7 @@ def normalize_function_abi(facts, function):
         tuple_reserved_bytes=((8 * count + 15) // 16) * 16 if count >= 2 else 0,
         saved_root_reserved_bytes=((8 * count + 15) // 16) * 16 if count else 0,
     )
-    if version == 2 and json.dumps(function["borrowed_root_abi"], sort_keys=True) != json.dumps(
+    if version in (2, 3) and json.dumps(function["borrowed_root_abi"], sort_keys=True) != json.dumps(
         root_abi, sort_keys=True
     ):
         raise ValueError("invalid compiler ABI borrowed root transport")
@@ -724,12 +765,7 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
     emitted, active = set(), set()
 
     def owning(symbol, ancestors=()):
-        if symbol in ancestors or symbol not in facts["records"]:
-            raise ValueError("invalid private ABI record dependency")
-        return any(
-            field["kind"] == "owner" or (field["kind"] == "class" and owning(field["type_name"], (*ancestors, symbol)))
-            for field in facts["records"][symbol]["fields"]
-        )
+        return abi_record_owning(facts, symbol, ancestors)
 
     def copied_type(field):
         kind, width = field["kind"], field["bytes"]

@@ -26,5 +26,9 @@ dynamic loans remain native. Aurora owns local scalar initialization, logical
 object completion and receiver-field initialization in one workspace; resource
 ownership and provenance remain native.
 
+The isolated source candidate adds one synchronous mutable typed-buffer borrow;
+its direct paired-predecessor bootstrap, generated ABI and execution qualification
+remain pending. Formatter adoption is not included in this candidate.
+
 Component state: [compiler](../compiler/ARCHITECTURE.md), [libraries](../library/README.md),
 [kernel](../kernel/README.md), [storage](storage.md). Next dependencies: [roadmap](roadmap.md).

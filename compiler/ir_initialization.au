@@ -501,8 +501,10 @@ export namespace compiler_ir_initialization {
         bool seeded = false;
         if (declaration.borrowed_root_count() != 0) {
             const compiler_ir_metadata::RawTypeRow type = metadata.type_at(declaration.borrowed_root_type(0));
-            receiver_class = compiler_ir_metadata::find_class(metadata, type.name());
-            seeded = true;
+            if (type.kind() == 5) {
+                receiver_class = compiler_ir_metadata::find_class(metadata, type.name());
+                seeded = true;
+            }
         } else {
             if (compiler_ir_metadata::callable_flag(declaration, masks.callable_receiver())) {
                 const compiler_ir_metadata::ReceiverShape receiver = declaration.first_receiver();

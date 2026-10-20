@@ -459,11 +459,12 @@ export namespace compiler_lowering {
         put(session, OperandRole::Offset, a0);
         return emit(session, InstructionForm::ReturnOwnedObject, begin);
     }
-    auto emit_AcquireObjectLoan(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2) -> i64 {
+    auto emit_AcquireObjectLoan(compiler_resolver::Session& session, i64 a0, i64 a1, i64 a2, i64 a3) -> i64 {
         const i64 begin = session.operand_count();
         put(session, OperandRole::LoanId, a0);
         put(session, OperandRole::Root, a1);
         put(session, OperandRole::MutableValue, a2);
+        put(session, OperandRole::FieldIndex, a3);
         return emit(session, InstructionForm::AcquireObjectLoan, begin);
     }
     auto emit_ReleaseObjectLoan(compiler_resolver::Session& session, i64 a0) -> i64 {
@@ -680,7 +681,35 @@ export namespace compiler_lowering {
             old.resource_active(), old.object_exclusive());
         return session.set_local_state(id, changed);
     }
-    auto change_object_loan(compiler_resolver::Session& session, i64 id, i64 shared, bool exclusive) -> bool {
+    // Implicit receivers retain their emitted root selector 0 and source sentinel
+    // -2. Their authority lives in an ordinary hidden LocalRow, so branch/loop
+    // captures and joins preserve exactly the same loan facts as named roots.
+    auto object_loan_local(compiler_resolver::Session& session, i64 root) -> i64 {
+        if (root == -2) {
+            const ContinuationRow function = session.continuation(0);
+            return function.capability_root_local();
+        }
+        return root;
+    }
+    auto object_root_offset(compiler_resolver::Session& session, i64 root) -> i64 {
+        if (root == -2) {
+            return 0;
+        }
+        return local_offset(session, root);
+    }
+    auto no_exclusive_object_loan(compiler_resolver::Session& session, i64 root, i64 source) -> bool {
+        const i64 id = object_loan_local(session, root);
+        if (id >= 0) {
+            const LocalRow local = session.local(id);
+            const SnapshotRow state = local.state();
+            if (state.object_exclusive()) {
+                return fail(session, LoweringError::owning_object_exclusively_borrowed, source);
+            }
+        }
+        return session.good();
+    }
+    auto change_object_loan(compiler_resolver::Session& session, i64 root, i64 shared, bool exclusive) -> bool {
+        const i64 id = object_loan_local(session, root);
         const LocalRow row = session.local(id);
         const SnapshotRow old = row.state();
         const SnapshotRow changed = SnapshotRow(old.shared_count(), old.object_shared_count() + shared, old.live(),
@@ -688,8 +717,9 @@ export namespace compiler_lowering {
         return session.set_local_state(id, changed);
     }
     auto no_object_loan(compiler_resolver::Session& session, i64 root, i64 source) -> bool {
-        if (root >= 0) {
-            const LocalRow local = session.local(root);
+        const i64 id = object_loan_local(session, root);
+        if (id >= 0) {
+            const LocalRow local = session.local(id);
             const SnapshotRow state = local.state();
             if (state.object_shared_count() != 0 || state.object_exclusive()) {
                 return fail(session, LoweringError::owning_object_mutation_while_borrowed, source);
@@ -988,6 +1018,12 @@ export namespace compiler_lowering {
     }
     auto end_owner(compiler_resolver::Session& session, i64 id) -> bool {
         const LocalRow local = session.local(id);
+        if (local.borrowed_object()) {
+            return fail(session, LoweringError::borrowed_object_ownership_transfer, local.name_source_id());
+        }
+        if (!no_object_loan(session, id, local.name_source_id())) {
+            return false;
+        }
         if (is_owner_storage(session, local.concrete_type_id())) {
             emit_EndBytes(session, local.offset());
         } else {

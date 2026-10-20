@@ -1009,8 +1009,12 @@ bool CallableView::borrowedRootMutable(std::size_t ordinal) const {
     return ordinal == 0 && metadata_->state_->row<Pool::callables>(id_).firstBorrowedMutable == 1;
 }
 std::optional<Receiver> CallableView::receiver() const {
-    if (borrowedRootCount() != 0)
-        return Receiver{borrowedRootType(0).className, borrowedRootMutable(0), false, false};
+    if (borrowedRootCount() != 0) {
+        const auto type = borrowedRootType(0);
+        if (!type.isClass())
+            return std::nullopt;
+        return Receiver{type.className, borrowedRootMutable(0), false, false};
+    }
     const auto row = metadata_->state_->row<Pool::callables>(id_);
     if ((row.flags & metadataFlagMasks().callableReceiver) == 0)
         return std::nullopt;

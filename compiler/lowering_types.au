@@ -972,7 +972,8 @@ export namespace compiler_lowering {
                 return roots;
             }
             const i64 type = parameter_type(session, symbol, roots);
-            if (tk(session, type) != compiler_resolver::ResolvedTypeKind::class_value) {
+            if (tk(session, type) != compiler_resolver::ResolvedTypeKind::class_value && tk(session, type)
+                != compiler_resolver::ResolvedTypeKind::owned_values) {
                 return roots;
             }
             roots = roots + 1;
@@ -1107,10 +1108,15 @@ export namespace compiler_lowering {
         if (borrowed > 0 && !service) {
             const i64 first = parameter_type(session, symbol, 0);
             const bool multiple_roots = borrowed > 1;
+            const bool borrowed_values = tk(session, first) == compiler_resolver::ResolvedTypeKind::owned_values;
+            if (borrowed_values && (borrowed != 1 || parameter_const(session, symbol, 0)
+                || !compiler_resolver::scalar_value_kind(result_kind))) {
+                return fail(session, LoweringError::borrowed_function_boundary, source);
+            }
             if (borrowed > 6 || borrowed_root_count(session, symbol) != borrowed || count == 0
-                || !parameter_borrowed(session, symbol, 0) || receiver >= 0
-                || constructor || instantiated || !owning_type(session, first) || tk(session, first)
-                != compiler_resolver::ResolvedTypeKind::class_value
+                || !parameter_borrowed(session, symbol, 0) || receiver >= 0 || constructor || instantiated
+                || (!borrowed_values && (!owning_type(session, first) || tk(session, first)
+                != compiler_resolver::ResolvedTypeKind::class_value))
                 || (!compiler_resolver::scalar_value_kind(result_kind) && (multiple_roots || result_kind
                 != compiler_resolver::ResolvedTypeKind::class_value)) || owning_type(session, result)) {
                 return fail(session, LoweringError::borrowed_function_boundary, source);
@@ -1119,13 +1125,15 @@ export namespace compiler_lowering {
             while (at < borrowed && session.good()) {
                 const i64 type = parameter_type(session, symbol, at);
                 if (!parameter_borrowed(session, symbol, at) || (at > 0 && !parameter_const(session, symbol, at))
-                    || tk(session, type) != compiler_resolver::ResolvedTypeKind::class_value
-                    || !owning_type(session, type)) {
+                    || (!borrowed_values && (tk(session, type) != compiler_resolver::ResolvedTypeKind::class_value
+                    || !owning_type(session, type)))) {
                     return fail(session, LoweringError::borrowed_function_boundary, source);
                 }
-                const i64 nominal = tm(session, type, 1);
-                if (tm(session, nominal, 9) >= 0 || tm(session, nominal, 8) >= 0) {
-                    return fail(session, LoweringError::borrowed_class_template_parameter, source);
+                if (!borrowed_values) {
+                    const i64 nominal = tm(session, type, 1);
+                    if (tm(session, nominal, 9) >= 0 || tm(session, nominal, 8) >= 0) {
+                        return fail(session, LoweringError::borrowed_class_template_parameter, source);
+                    }
                 }
                 at = at + 1;
             }
@@ -1133,8 +1141,8 @@ export namespace compiler_lowering {
                 const i64 type = parameter_type(session, symbol, at);
                 const compiler_resolver::ResolvedTypeKind kind = tk(session, type);
                 if ((!compiler_resolver::scalar_value_kind(kind) && (multiple_roots || (kind
-                    != compiler_resolver::ResolvedTypeKind::class_value && kind
-                    != compiler_resolver::ResolvedTypeKind::byte_span))) || owning_type(session, type)) {
+                    != compiler_resolver::ResolvedTypeKind::class_value && (borrowed_values || kind
+                    != compiler_resolver::ResolvedTypeKind::byte_span)))) || owning_type(session, type)) {
                     return fail(session, LoweringError::borrowed_function_later_parameter_type, source);
                 }
                 at = at + 1;

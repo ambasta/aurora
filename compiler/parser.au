@@ -3171,9 +3171,11 @@ namespace compiler_parser {
                     << i64(group))) != 0u64;
                 const bool owning_continuation = index > 0 && owning_prefix && type.kind()
                     == AdmissionKind::class_value && parameter_node.mutable_binding() == 1;
+                const bool borrowed_values = index == 0 && syntax.kind() == TypeKind::owned_values
+                    && parameter_node.mutable_binding() == 0;
                 if (!function || (index != 0 && !continuation && !owning_continuation) || context.end(0) != 0
-                    || (type.kind() != AdmissionKind::class_value && type.kind() != AdmissionKind::service)
-                    || syntax.first() != -1) {
+                    || (!borrowed_values && (type.kind() != AdmissionKind::class_value && type.kind()
+                    != AdmissionKind::service)) || (!borrowed_values && syntax.first() != -1)) {
                     return admission_reject(AdmissionStatus::borrowed_parameter, parameter_node.binding(), token);
                 }
             } else {

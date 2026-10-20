@@ -135,6 +135,9 @@ export namespace compiler_lowering {
                         reference);
                 }
             }
+            if (!no_exclusive_object_loan(session, origin, reference)) {
+                return false;
+            }
             const bool receiver_array = origin == -2 && is_byte_array(session, type);
             if (field >= 0) {
                 if (value_kind(session, type) != compiler_resolver::ResolvedTypeKind::owned_bytes && !receiver_array) {
@@ -531,6 +534,9 @@ export namespace compiler_lowering {
                 require_visible_type(session, type, staged_reference_56);
             }
         }
+        if (!no_exclusive_object_loan(session, root, reference)) {
+            return false;
+        }
         frame.set_call(-1, root, field, 0);
         frame.set_cleanup_cursor(type);
         // Receiver mutability is frozen in a typed lane until ordinary argument
@@ -559,7 +565,7 @@ export namespace compiler_lowering {
         return prepare_intrinsic_method(session, frame_id, mutable_receiver, implicit);
     }
     auto live_receiver(compiler_resolver::Session& session, ContinuationRow frame) -> bool {
-        const i64 root = frame.capability_root_local();
+        const i64 root = object_loan_local(session, frame.capability_root_local());
         if (root >= 0) {
             const LocalRow local = session.local(root);
             const SnapshotRow state = local.state();
@@ -994,13 +1000,32 @@ export namespace compiler_lowering {
             } else {
                 if (parameter_borrowed(session, callee, index)) {
                     const compiler_resolver::SyntaxRow syntax = session.syntax(node);
-                    if (syntax.expression_kind() != compiler_parser::NodeKind::name) {
+                    const bool typed_owner = kind == compiler_resolver::ResolvedTypeKind::owned_values;
+                    i64 local = -2;
+                    i64 field = -1;
+                    i64 actual_type = -1;
+                    bool mutable_root = !body_receiver_const(session);
+                    if (syntax.expression_kind() == compiler_parser::NodeKind::name) {
+                        if (typed_owner && lookup_local(session, reference) < 0) {
+                            field = implicit_field(session, reference);
+                        }
+                        if (field >= 0) {
+                            const i64 nominal = body_receiver_nominal(session);
+                            actual_type = field_type(session, nominal, field);
+                        } else {
+                            local = named_source(session, node);
+                            const LocalRow owner = session.local(local);
+                            actual_type = owner.concrete_type_id();
+                            mutable_root = owner.mutable_value();
+                        }
+                    } else {
                         return fail(session, LoweringError::borrowed_argument_requires_complete_owner, reference);
                     }
-                    const i64 local = named_source(session, node);
-                    const i64 staged_got_69 = local_type(session, local);
-                    match_type(session, staged_got_69, type, reference);
-                    const LocalRow root = session.local(local);
+                    if (!session.good() || !no_exclusive_object_loan(session, local, reference) || !match_type(session,
+                        actual_type, type, reference)) {
+                        return false;
+                    }
+                    const i64 selector = object_root_offset(session, local);
                     // Distinctness is explicit even when every loan is readonly.
                     // Compare root identity, never type, extent or payload contents.
                     i64 prior = 0;
@@ -1010,19 +1035,28 @@ export namespace compiler_lowering {
                             session.fail_storage(compiler_resolver::StorageStatus::invalid);
                             return false;
                         }
-                        if (local_offset(session, earlier.local_id()) == root.offset()) {
+                        if (object_root_offset(session, earlier.local_id()) == selector) {
                             return fail(session, LoweringError::borrowed_arguments_require_distinct_roots, reference);
                         }
                         prior = prior + 1;
                     }
+                    const i64 authority = object_loan_local(session, local);
+                    if (authority < 0) {
+                        return fail(session, LoweringError::borrowed_argument_requires_complete_owner, reference);
+                    }
+                    const LocalRow root = session.local(authority);
                     const SnapshotRow state = root.state();
                     const bool mutable_loan = !parameter_const(session, callee, index);
                     if (mutable_loan) {
-                        if (!root.mutable_value()) {
+                        if (!mutable_root) {
                             return fail(session, LoweringError::mutable_borrowed_argument_requires_mutable_owner,
                                 reference);
                         }
-                        no_span_borrow(session, local, -1, reference);
+                        // A field loan locks its containing object, including all
+                        // sibling fields and methods, while later arguments run.
+                        if (!no_span_borrow(session, local, -1, reference)) {
+                            return false;
+                        }
                         change_object_loan(session, local, 0, true);
                     } else {
                         change_object_loan(session, local, 1, state.object_exclusive());
@@ -1032,8 +1066,8 @@ export namespace compiler_lowering {
                     if (mutable_loan) {
                         permission = 1;
                     }
-                    emit_AcquireObjectLoan(session, loan, root.offset(), permission);
-                    ArgumentLane lane = ArgumentLane(index, ArgumentKind::borrowed_receiver, type, local, loan, -1);
+                    emit_AcquireObjectLoan(session, loan, selector, permission, field);
+                    ArgumentLane lane = ArgumentLane(index, ArgumentKind::borrowed_receiver, type, local, loan, field);
                     lane.set_cleanup(CleanupKind::object_loan);
                     frame.set_argument(index, lane);
                     if (index == 0) {
@@ -1294,7 +1328,8 @@ export namespace compiler_lowering {
             if (lane.cleanup_kind() == CleanupKind::object_loan) {
                 emit_ReleaseObjectLoan(session, lane.loan_id());
                 if (parameter_const(session, frame.call_target(), index)) {
-                    const LocalRow root = session.local(lane.local_id());
+                    const i64 authority = object_loan_local(session, lane.local_id());
+                    const LocalRow root = session.local(authority);
                     const SnapshotRow state = root.state();
                     change_object_loan(session, lane.local_id(), -1, state.object_exclusive());
                 } else {
@@ -1474,9 +1509,10 @@ export namespace compiler_lowering {
                         i64 ordinal = 0;
                         while (ordinal < leading && session.good()) {
                             const ArgumentLane lane = frame.argument(ordinal);
-                            const i64 selector = local_offset(session, lane.local_id());
+                            const i64 selector = object_root_offset(session, lane.local_id());
                             put(session, OperandRole::Root, selector);
                             put(session, OperandRole::LoanId, lane.loan_id());
+                            put(session, OperandRole::FieldIndex, lane.field_index());
                             ordinal = ordinal + 1;
                         }
                         const OperandRow roots = slice(OperandRole::BorrowedRoots, roots_begin,
@@ -1510,6 +1546,9 @@ export namespace compiler_lowering {
         const i64 type = frame.cleanup_cursor();
         const compiler_resolver::ResolvedTypeKind kind = value_kind(session, type);
         const i64 source = source_ref(session, frame.syntax_node());
+        if (!live_receiver(session, frame)) {
+            return false;
+        }
         const i64 offset = receiver_offset(session, frame);
         const i64 field = frame.receiver_field_index();
         i64 result = scalar_id(session, compiler_resolver::ResolvedTypeKind::bool_value);

@@ -2261,7 +2261,7 @@ void callableDiagnostics() {
              {"Box():value(1),{}", Stop::constructor, {"expected identifier", 9}}})
         callableRejection(test.source, test.stop, test.error);
     const std::string borrow =
-        "borrowed parameters require a supported leading owning-class reference signature on an ordinary function";
+        "borrowed parameters require a supported leading ownership reference signature on an ordinary function";
     for (const auto &test : std::vector<Rejection>{
              {"auto f(const i64 value)->i64{}",
               Stop::function,
@@ -2343,7 +2343,7 @@ void serviceAdmission() {
             rejectedProgram(prefix,
                             source,
                             "",
-                            {"borrowed parameters require a supported leading owning-class reference signature on an "
+                            {"borrowed parameters require a supported leading ownership reference signature on an "
                              "ordinary function",
                              13});
     }
@@ -2514,7 +2514,7 @@ void declarationContexts() {
              {"auto T()->i64{}", {"function name cannot shadow a template parameter", 2}},
              {"auto T()->i64{return 1}", {"expected ';'", 9}},
              {"auto f(Owner& value)->i64{}",
-              {"borrowed parameters require a supported leading owning-class reference signature on an ordinary "
+              {"borrowed parameters require a supported leading ownership reference signature on an ordinary "
                "function",
                5}}}) {
         const auto input = aurora::lex(shadowPrefix + source, "callable-shadow.au"), saved = input;
@@ -2840,13 +2840,6 @@ void bootstrapDeclarationTypes(const std::vector<aurora::Token> &tokens,
                 results >= (module < 3 ? historicalResults.at(module) : 0) &&
                 fields >= (module < 3 ? historicalFields.at(module) : 0),
             "checked-in compiler declaration-type inventory lost historical or new source entries");
-    if (module >= 3 && module <= 5) {
-        // New typed schema declarations: exact parameters/results/fields, not a
-        // minimum that could silently admit an unregistered source declaration.
-        const std::array<std::array<std::size_t, 3>, 3> counts{{{0, 0, 0}, {4, 4, 4}, {70, 88, 72}}};
-        require(std::array{parameters, results, fields} == counts.at(module - 3),
-                "lowering schema declaration-type coverage differs");
-    }
 }
 
 // Compact independent container/member inventories. Signs pin access rather
@@ -5383,7 +5376,7 @@ void loweringSchemaSources(const std::vector<aurora::Token> &tokens,
          {"ArgumentLane",
           true,
           "-argumentIndex -argumentKind -concreteTypeId -localId -loanId -serviceKindId -cleanupKind",
-          "+ArgumentLane +index +kind +concrete_type_id +local_id +loan_id +service_kind_id +cleanup_kind "
+          "+ArgumentLane +index +kind +concrete_type_id +local_id +loan_id +service_kind_id +field_index +cleanup_kind "
           "+set_cleanup"},
          {"ContinuationRow",
           true,

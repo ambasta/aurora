@@ -342,6 +342,9 @@ export namespace compiler_lowering {
                 field = assignment_receiver_field(session, name);
             }
             if (field >= 0) {
+                if (!no_object_loan(session, -2, source)) {
+                    return false;
+                }
                 if (body_receiver_const(session)) {
                     const OperandRow absent = scalar(OperandRole::NoDiagnosticValue, 0);
                     return fail_synthetic(session, LoweringError::const_method_writes_receiver_field, name, absent,
@@ -391,6 +394,9 @@ export namespace compiler_lowering {
         const i64 root = frame.capability_root_local();
         const i64 field = frame.receiver_field_index();
         const i64 type = frame.cleanup_cursor();
+        if (root == -2 && !no_object_loan(session, root, source)) {
+            return false;
+        }
         if (statement.declaration_kind() == compiler_parser::SyntaxKind::index_assign) {
             const IndexedStorage storage = IndexedStorage(root, field, type);
             const i64 element = compiler_resolver::mw(session, type, 2);

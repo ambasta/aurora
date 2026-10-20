@@ -484,6 +484,10 @@ class X86Emitter {
     }
     Type ownerStorageType(int offset, int fieldIndex) const {
         if (fieldIndex < 0) {
+            const auto function = currentCallable();
+            if (offset == 0 && fieldIndex == -1 && function.borrowedRootCount() == 1 &&
+                function.borrowedRootType(0).isOwnedValues())
+                return function.borrowedRootType(0);
             const auto ownerTypes = currentFrame().ownedValueTypes();
             return ownerTypes.contains(offset) ? Type::ownedValues(Type(ownerTypes.at(offset))) : Type::OwnedBytes;
         }
@@ -495,8 +499,16 @@ class X86Emitter {
         return physicalStorage(ownerStorageType(offset, fieldIndex).className).sizeBytes;
     }
     std::string bytesOwnerAddress(int offset, int fieldIndex, int byte = 0) {
-        if (fieldIndex < 0)
+        if (fieldIndex < 0) {
+            if (offset == 0 && fieldIndex == -1) {
+                const auto function = currentCallable();
+                if (function.borrowedRootCount() != 1 || !function.borrowedRootType(0).isOwnedValues())
+                    throw Error("x86 backend received an unbound owner descriptor root");
+                line("movq " + address(rootSaveOffset(0)) + ", %r10");
+                return std::to_string(byte) + "(%r10)";
+            }
             return address(offset - byte);
+        }
         const auto receiver = currentCallable().receiver();
         const auto &name = offset == 0 ? receiver->className : currentFrame().objectSlots().at(offset).className;
         const int fieldOffset = physicalStorage(name).fieldOffsets[fieldIndex];
@@ -1349,9 +1361,12 @@ class X86Emitter {
                                 line("movq %r10, " + std::to_string(ordinal * 8) + "(%rsp)");
                             }
                             line("leaq (%rsp), %r10");
-                        } else {
+                        } else if (target.borrowedRootType(0).isOwnedValues()) {
+                            const auto root = operation.roots.front();
+                            const auto descriptor = bytesOwnerAddress(root.root, root.fieldIndex);
+                            line("leaq " + descriptor + ", %r10");
+                        } else
                             receiverAddress(operation.roots.front().root, "%r10");
-                        }
                     } else {
                         receiverAddress(operation.receiverOffset, "%r10");
                         if (operation.receiverFieldIndex >= 0) {
@@ -1557,7 +1572,13 @@ public:
                 writeJsonString(facts, value.className);
             }
         };
-        facts << "{\"version\":2,\"span_bytes\":" << ir::spanBytes << ",\"records\":{";
+        int version = 2;
+        for (std::size_t index = 0; index < metadata->callableCount(); ++index) {
+            const auto function = metadata->callable(index);
+            if (function.borrowedRootCount() == 1 && function.borrowedRootType(0).isOwnedValues())
+                version = 3;
+        }
+        facts << "{\"version\":" << version << ",\"span_bytes\":" << ir::spanBytes << ",\"records\":{";
         bool first = true;
         for (const auto &[symbol, declaration] : declarations.records) {
             const auto layout = physicalStorage(symbol);
@@ -1639,7 +1660,13 @@ public:
                     facts << ',';
                 facts << "{\"ordinal\":" << ordinal << ",\"selector\":" << -static_cast<int>(ordinal)
                       << ",\"type_name\":";
-                writeJsonString(facts, function.borrowedRootType(ordinal).className);
+                const auto rootType = function.borrowedRootType(ordinal);
+                if (rootType.isOwnedValues()) {
+                    facts << "\"builtin::OwnedValues\",\"kind\":\"owned_values\",\"element_type_name\":";
+                    writeJsonString(facts, rootType.className);
+                    facts << ",\"descriptor_bytes\":32";
+                } else
+                    writeJsonString(facts, rootType.className);
                 facts << ",\"mutable\":" << (function.borrowedRootMutable(ordinal) ? "true" : "false") << '}';
             }
             const int tuplePayloadBytes = borrowedRootCount > 1 ? static_cast<int>(borrowedRootCount) * 8 : 0;
@@ -1728,6 +1755,8 @@ public:
             const int declaredFrameBytes = metadata->frame(body.callableId).frameBytes();
             const auto receiver = function.receiver();
             const auto borrowedRootCount = function.borrowedRootCount();
+            // Builtin descriptor borrows have a hidden root but no class receiver.
+            const bool hiddenRoot = receiver.has_value() || borrowedRootCount != 0;
             stackDepth = 0;
             beginStackFacts(function.name());
             serviceLoanOffsets.clear();
@@ -1737,9 +1766,9 @@ public:
             divisionIndex = 0;
             currentFunction = &body;
             const bool aggregate = aggregateSignature(function);
-            // Receiver and aggregate entry points use a private compiler ABI and cannot be
+            // Hidden-root and aggregate entry points use a private compiler ABI and cannot be
             // exposed as ordinary scalar-callable external symbols.
-            output << (binding == SymbolBinding::Local || privateGraph || receiver || aggregate ||
+            output << (binding == SymbolBinding::Local || privateGraph || hiddenRoot || aggregate ||
                                function.name().starts_with("__au_o_")
                            ? ".local "
                            : ".globl ")
@@ -1748,19 +1777,19 @@ public:
             line("pushq %rbp");
             growStack(8);
             line("movq %rsp, %rbp");
-            receiverSaveOffset = receiver ? declaredFrameBytes + 8 : 0;
+            receiverSaveOffset = hiddenRoot ? declaredFrameBytes + 8 : 0;
             // Resource constructors always receive a packed record, even when
             // their explicit parameters contain no class values. Borrowed
             // ordinary methods retain their existing hidden-register modes.
             const bool resourceParameters = !function.parameters().empty() && function.parameters().front().isRegion();
-            const bool packedArguments = receiver ? classParameters(function) || resourceParameters : aggregate;
+            const bool packedArguments = hiddenRoot ? classParameters(function) || resourceParameters : aggregate;
             if (packedArguments) {
                 currentStackFacts->copiedRecord = copiedRecordFacts(function);
                 currentStackFacts->serviceRecord = serviceRecordFacts(function);
             }
             const bool combinedMethod =
-                receiver && packedArguments && (function.result().isClass() || function.result().isSpan());
-            callRecordSaveOffset = packedArguments ? declaredFrameBytes + (receiver ? 16 : 8) : 0;
+                hiddenRoot && packedArguments && (function.result().isClass() || function.result().isSpan());
+            callRecordSaveOffset = packedArguments ? declaredFrameBytes + (hiddenRoot ? 16 : 8) : 0;
             resultSaveOffset =
                 (function.result().isClass() || function.result().isOwnerStorage() || function.result().isSpan())
                     ? declaredFrameBytes + (combinedMethod ? 24 : 16)
@@ -1769,10 +1798,10 @@ public:
             // single-root copied/span saves and the literal two-root layout;
             // longer scalar-only prefixes reserve their aligned pointer extent.
             const int rootSaveBytes = (static_cast<int>(borrowedRootCount) * 8 + 15) & ~15;
-            const int frameBytes = declaredFrameBytes + (borrowedRootCount > 1   ? rootSaveBytes
-                                                         : combinedMethod        ? 32
-                                                         : receiver || aggregate ? 16
-                                                                                 : 0);
+            const int frameBytes = declaredFrameBytes + (borrowedRootCount > 1     ? rootSaveBytes
+                                                         : combinedMethod          ? 32
+                                                         : hiddenRoot || aggregate ? 16
+                                                                                   : 0);
             reserveStack(frameBytes);
             if (borrowedRootCount > 1) {
                 // Keep the tuple in R10 until every later pointer is safely
@@ -1783,14 +1812,14 @@ public:
                 }
                 line("movq (%r10), %r10");
             }
-            if (receiver)
+            if (hiddenRoot)
                 line("movq %r10, " + address(rootSaveOffset(0)));
             if (packedArguments)
                 line("movq %r11, " + address(callRecordSaveOffset));
             if (function.result().isClass() || function.result().isOwnerStorage() || function.result().isSpan())
                 line(std::string("movq ") +
                      (combinedMethod ? "%rax"
-                      : receiver     ? "%r11"
+                      : hiddenRoot   ? "%r11"
                                      : "%r10") +
                      ", " + address(resultSaveOffset));
             // Validation certifies operand-depth continuity in this exact retained

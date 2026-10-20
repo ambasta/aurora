@@ -1221,10 +1221,11 @@ std::uint64_t resolutionQuota() {
         {mul(16, X), mul(4 * 4096, X), mul(3, X), mul(6, F), mul(2, allLocals), allLocals, mul(returns, localHigh)});
     // A two-service, six-formal call may carry six span positions, six copied
     // snapshot positions and the additional service's two loan/kind items.
-    // A borrowed call is a disjoint call kind: its ordered pair list costs
-    // 2*N, plus at most two (6-N)-position lists for the one-root copied/span
-    // form, totaling <=12. The existing 14-item per-call charge covers both.
-    const auto instructionLists = add(mul(14, X), mul(64, X));
+    // A borrowed call is a disjoint call kind: its ordered triple list costs
+    // 3*N. One-root copied/span calls add two (6-N)-position lists, totaling
+    // 13; multi-root scalar-only calls need at most 3*N+(6-N) <= 18.
+    // The 18-item per-call charge preserves this checkpoint's six-root boundary.
+    const auto instructionLists = add(mul(18, X), mul(64, X));
     const auto literalBytes = mul(4096, X);
     // Packed u8 leaves make scalar slot count byte-bounded, not word-bounded.
     // Each other durable slot family has its own producer charge, including
@@ -1287,7 +1288,7 @@ std::uint64_t resolutionQuota() {
                                        views,
                                        enums,
                                        lint});
-    // BorrowedCall now has five fixed roles; its root pairs are charged only
+    // BorrowedCall now has five fixed roles; its root triples are charged only
     // in instructionLists, never again as retired fixed second-root fields.
     // A service call adds its copied-snapshot slice as a seventh fixed operand.
     const auto operandRows =

@@ -1367,6 +1367,26 @@ export namespace compiler_ir_metadata {
         if (types.count() > 7) {
             return fail(store, MetadataError::borrowed_parameters);
         }
+        const RawTypeRow first = store.type_at(row.borrowed_root_type(0));
+        if (first.kind() == 17) {
+            // The builtin root is one mutable descriptor borrow. Its nominal
+            // name denotes the copied element, never a class receiver.
+            if (roots != 1 || !row.borrowed_root_mutable(0) || !scalar_value(store, result)) {
+                return fail(store, MetadataError::borrowed_root_values);
+            }
+            if (!verify_owner_element(store, first)) {
+                return false;
+            }
+            i64 parameter = 0;
+            while (parameter < row.value_parameter_count()) {
+                const RawTypeRow type = store.type_at(row.value_parameter_begin() + parameter);
+                if (!scalar_value(store, type) && (type.kind() != 5 || owning_type(store, type))) {
+                    return fail(store, MetadataError::borrowed_root_values);
+                }
+                parameter = parameter + 1;
+            }
+            return true;
+        }
         i64 root = 0;
         while (root < roots) {
             const i64 index = row.borrowed_root_type(root);

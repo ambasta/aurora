@@ -437,7 +437,8 @@ export namespace compiler_lowering {
         //: service capability must be the leading exclusive parameter
         service_capability_parameter_position,
         //: borrowed functions require one to six leading concrete owning-class references with only the first
-        //: optionally mutable; multiple roots require a scalar or enum result
+        //: optionally mutable, or one mutable OwnedValues reference; builtin and multiple roots require a scalar or
+        //: enum result
         borrowed_function_boundary,
         //: borrowed parameters cannot name a class template
         borrowed_class_template_parameter,

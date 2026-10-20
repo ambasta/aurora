@@ -229,7 +229,7 @@ class Projection {
         using value_type = ir::BorrowedRootArgument;
         std::span<const wire::OperandRow> values;
         std::size_t size() const {
-            return values.size() / 2;
+            return values.size() / 3;
         }
         bool empty() const {
             return values.empty();
@@ -237,7 +237,9 @@ class Projection {
         ir::BorrowedRootArgument at(std::size_t index) const {
             if (index >= size())
                 invalidLowering();
-            return {intValue(values[index * 2].signedValue), intValue(values[index * 2 + 1].signedValue)};
+            return {intValue(values[index * 3].signedValue),
+                    intValue(values[index * 3 + 1].signedValue),
+                    intValue(values[index * 3 + 2].signedValue)};
         }
         ir::BorrowedRootArgument operator[](std::size_t index) const {
             return at(index);
@@ -409,14 +411,16 @@ class Projection {
         void roots(SourceRoots &value) {
             const auto &slice = values.take(OperandRole::BorrowedRoots);
             value.values = owner.takeRange(slice.sliceBegin, slice.sliceCount);
-            if (value.values.empty() || value.values.size() > 12 || value.values.size() % 2 != 0)
+            if (value.values.empty() || value.values.size() > 18 || value.values.size() % 3 != 0)
                 invalidLowering();
-            for (std::size_t index = 0; index < value.values.size(); index += 2) {
+            for (std::size_t index = 0; index < value.values.size(); index += 3) {
                 if (value.values[index].operandRole != OperandRole::Root ||
-                    value.values[index + 1].operandRole != OperandRole::LoanId)
+                    value.values[index + 1].operandRole != OperandRole::LoanId ||
+                    value.values[index + 2].operandRole != OperandRole::FieldIndex)
                     invalidLowering();
                 (void)intValue(value.values[index].signedValue);
                 (void)intValue(value.values[index + 1].signedValue);
+                (void)intValue(value.values[index + 2].signedValue);
             }
         }
         void literal(SourceLiteral &value) {
