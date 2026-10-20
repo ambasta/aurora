@@ -78,11 +78,17 @@ def main():
         "version": 2,
         "records": {
             "buffer_type": dict(
-                source_name="std::BinaryBuffer64", size=64, alignment=1, reserved=64,
+                source_name="std::BinaryBuffer64",
+                size=64,
+                alignment=1,
+                reserved=64,
                 fields=[dict(name="elements", offset=0, bytes=64, array_length=64, kind="u8")],
             ),
             "submission_type": dict(
-                source_name="console::ProgramSubmission", size=88, alignment=8, reserved=88,
+                source_name="console::ProgramSubmission",
+                size=88,
+                alignment=8,
+                reserved=88,
                 fields=[
                     dict(name="bytes", offset=0, bytes=64, array_length=0, kind="class", type_name="buffer_type"),
                     dict(name="count", offset=64, bytes=8, array_length=0, kind="i64"),
@@ -99,10 +105,18 @@ def main():
         },
         "functions": {
             "selected_reader": dict(
-                source_name="read_program_input", receiver=None, receiver_mutable=None,
-                borrowed_roots=[], borrowed_root_count=0,
-                borrowed_root_abi=dict(kind="none", register=None, tuple_payload_bytes=0,
-                                       tuple_reserved_bytes=0, saved_root_reserved_bytes=0),
+                source_name="read_program_input",
+                receiver=None,
+                receiver_mutable=None,
+                borrowed_roots=[],
+                borrowed_root_count=0,
+                borrowed_root_abi=dict(
+                    kind="none",
+                    register=None,
+                    tuple_payload_bytes=0,
+                    tuple_reserved_bytes=0,
+                    saved_root_reserved_bytes=0,
+                ),
                 parameter_bytes=24,
                 parameters=[dict(offset=0, bytes=16, kind="service"), dict(offset=16, bytes=8, kind="bool")],
                 result=dict(bytes=88, kind="class", type_name="submission_type"),
@@ -133,7 +147,10 @@ def main():
         (("functions", "selected_reader", "result", "type_name"), "other_result"),
         (("functions", "selected_reader", "borrowed_root_count"), 1),
         (("functions", "selected_reader", "borrowed_root_count"), False),
-        (("functions", "selected_reader", "borrowed_roots"), [dict(ordinal=0, selector=0, type_name="buffer_type", mutable=False)]),
+        (
+            ("functions", "selected_reader", "borrowed_roots"),
+            [dict(ordinal=0, selector=0, type_name="buffer_type", mutable=False)],
+        ),
         (("functions", "selected_reader", "borrowed_root_abi", "tuple_payload_bytes"), 8),
         (("functions", "selected_reader", "borrowed_root_abi", "saved_root_reserved_bytes"), 16),
         (("functions", "selected_reader", "second_receiver"), None),
@@ -147,7 +164,10 @@ def main():
 
     response_abi = deepcopy(input_abi)
     response_abi["records"]["response_type"] = dict(
-        source_name="console::ProgramResponse", size=80, alignment=8, reserved=80,
+        source_name="console::ProgramResponse",
+        size=80,
+        alignment=8,
+        reserved=80,
         fields=[
             dict(name="bytes", offset=0, bytes=64, array_length=0, kind="class", type_name="buffer_type"),
             dict(name="count", offset=64, bytes=8, array_length=0, kind="i64"),
@@ -156,20 +176,38 @@ def main():
     )
     response_abi["enums"]["kind_type"] = dict(
         source_name="console::ProgramResponseKind",
-        cases=dict(ready=0, output=1, note_missing=2, file_missing=3, note_saved=4,
-                   file_saved=5, file_reply=6, stopped=7, unknown=8),
+        cases=dict(
+            ready=0,
+            output=1,
+            note_missing=2,
+            file_missing=3,
+            note_saved=4,
+            file_saved=5,
+            file_reply=6,
+            stopped=7,
+            unknown=8,
+        ),
     )
     response_abi["functions"]["selected_presenter"] = dict(
-        source_name="present_program_response", receiver=None, receiver_mutable=None,
-        borrowed_roots=[], borrowed_root_count=0,
-        borrowed_root_abi=dict(kind="none", register=None, tuple_payload_bytes=0,
-                               tuple_reserved_bytes=0, saved_root_reserved_bytes=0),
+        source_name="present_program_response",
+        receiver=None,
+        receiver_mutable=None,
+        borrowed_roots=[],
+        borrowed_root_count=0,
+        borrowed_root_abi=dict(
+            kind="none", register=None, tuple_payload_bytes=0, tuple_reserved_bytes=0, saved_root_reserved_bytes=0
+        ),
         parameter_bytes=96,
-        parameters=[dict(offset=0, bytes=16, kind="service"),
-                    dict(offset=16, bytes=80, kind="class", type_name="response_type")],
+        parameters=[
+            dict(offset=0, bytes=16, kind="service"),
+            dict(offset=16, bytes=80, kind="class", type_name="response_type"),
+        ],
         result=dict(bytes=8, kind="bool"),
     )
-    need(admission.check_program_console_abi(response_abi, response=True) == "selected_presenter", "Source-selected response ABI")
+    need(
+        admission.check_program_console_abi(response_abi, response=True) == "selected_presenter",
+        "Source-selected response ABI",
+    )
     for path, value in (
         (("records", "response_type", "size"), 72),
         (("records", "response_type", "alignment"), 1),
@@ -207,7 +245,9 @@ def main():
         for key in path[:-1]:
             selected = selected[key]
         selected[path[-1]] = value
-        reject(lambda: admission.check_program_console_abi(changed, response=True), "program response full ABI mismatch")
+        reject(
+            lambda: admission.check_program_console_abi(changed, response=True), "program response full ABI mismatch"
+        )
 
     bridge_name = admission.PROGRAM_INPUT_BRIDGE
     response_bridge = admission.PROGRAM_RESPONSE_BRIDGE
@@ -222,9 +262,7 @@ def main():
         "policy": body(16),
         "__au_reflect_s1_size": body(8),
     }
-    input_graph["writer"]["service_abi"] = dict(
-        record=None, calls={console_put: dict(sysv_arguments=3, result_max=1)}
-    )
+    input_graph["writer"]["service_abi"] = dict(record=None, calls={console_put: dict(sysv_arguments=3, result_max=1)})
     for function in input_graph.values():
         for index, call in enumerate(function["calls"]):
             call["address"] = index
@@ -245,7 +283,9 @@ def main():
         dict(input_graph, presenter=body(16, ("foreign_host", 16))),
         dict(input_graph, presenter=body(16)),
         dict(input_graph, writer=body(16, (console_put, 16))),
-        dict(input_graph, writer=dict(input_graph["writer"], calls=[dict(target=console_put, live_bytes=8, address=0)])),
+        dict(
+            input_graph, writer=dict(input_graph["writer"], calls=[dict(target=console_put, live_bytes=8, address=0)])
+        ),
     ):
         reject(
             lambda: admission.check_program_console_calls(changed, set(changed), public, "reader", "presenter"),
