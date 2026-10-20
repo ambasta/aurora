@@ -5772,49 +5772,53 @@ void resolvedCompilerSources(char **paths) {
     }
     for (std::size_t index = 0; index < syntax.size(); ++index) {
         const auto scope = index + 1 == syntax.size() ? 0 : static_cast<int>(index + 1);
-        const auto function =
-            [&](const aurora::Function &source, const std::string &sourceName, const std::string &receiver) {
-                // Legacy ABI method source names contain the namespace and method,
-                // not the owning class. Typed receiver identity disambiguates them.
-                const auto matches = [&](const auto &body) {
-                    const auto candidate = metadata.callable(body.callableId);
-                    const auto declaration = abi.functions.find(candidate.name());
-                    return declaration != abi.functions.end() && declaration->second.sourceName == sourceName &&
-                           candidate.moduleScope() == scope &&
-                           (receiver.empty() ? !candidate.receiver() || candidate.borrowedRootCount() != 0
-                                             : candidate.receiver() && candidate.borrowedRootCount() == 0 &&
-                                                   candidate.receiver()->className == receiver);
-                };
-                ++functions;
-                sourceFunctionNames.insert(sourceName);
-                const auto found = std::find_if(module.functions.begin(), module.functions.end(), matches);
-                if (found == module.functions.end()) {
-                    require(scope != 0, "compiler root callable was discarded: " + sourceName);
-                    return;
-                }
-                require(std::count_if(module.functions.begin(), module.functions.end(), matches) == 1,
-                        "compiler retained callable/source identity was duplicated: " + sourceName);
-                const auto actual = metadata.callable(found->callableId);
-                std::size_t borrowedRoots = 0;
-                while (borrowedRoots < source.params.size() && source.params[borrowedRoots].borrowed &&
-                       !source.params[borrowedRoots].type.isService())
-                    ++borrowedRoots;
-                require(identities.insert(actual.name()).second && actual.moduleScope() == scope &&
-                            actual.borrowedRootCount() == borrowedRoots &&
-                            actual.parameters().size() == source.params.size() - borrowedRoots &&
-                            bool(actual.receiver()) == (!receiver.empty() || borrowedRoots != 0),
-                        "compiler typed callable identity, module or receiver presence differs");
-                for (std::size_t root = 0; root < borrowedRoots; ++root)
-                    require(actual.borrowedRootMutable(root) == !source.params[root].borrowConst,
-                            "compiler typed borrowed-root mutability differs");
-                if (!receiver.empty())
-                    require(actual.receiver()->className == receiver &&
-                                actual.receiver()->constructor == source.constructor &&
-                                actual.receiver()->mutableValue == !source.receiverConst &&
-                                actual.receiver()->publicAccess == source.publicAccess,
-                            "compiler typed method receiver, constructor or visibility differs");
-                ++retainedFunctions;
+        const auto function = [&](const aurora::Function &source,
+                                  const std::string &sourceName,
+                                  const std::string &receiver) {
+            // Legacy ABI method source names contain the namespace and method,
+            // not the owning class. Typed receiver identity disambiguates them.
+            const auto matches = [&](const auto &body) {
+                const auto candidate = metadata.callable(body.callableId);
+                const auto declaration = abi.functions.find(candidate.name());
+                return declaration != abi.functions.end() && declaration->second.sourceName == sourceName &&
+                       candidate.moduleScope() == scope &&
+                       (receiver.empty() ? !candidate.receiver() || candidate.borrowedRootCount() != 0
+                                         : candidate.receiver() && candidate.borrowedRootCount() == 0 &&
+                                               candidate.receiver()->className == receiver);
             };
+            ++functions;
+            sourceFunctionNames.insert(sourceName);
+            const auto found = std::find_if(module.functions.begin(), module.functions.end(), matches);
+            if (found == module.functions.end()) {
+                require(scope != 0, "compiler root callable was discarded: " + sourceName);
+                return;
+            }
+            require(std::count_if(module.functions.begin(), module.functions.end(), matches) == 1,
+                    "compiler retained callable/source identity was duplicated: " + sourceName);
+            const auto actual = metadata.callable(found->callableId);
+            std::size_t borrowedRoots = 0;
+            while (borrowedRoots < source.params.size() && source.params[borrowedRoots].borrowed &&
+                   !source.params[borrowedRoots].type.isService())
+                ++borrowedRoots;
+            // Only class roots have the compatibility receiver observation;
+            // builtin owner roots never acquire a class receiver.
+            const bool hasReceiver = !receiver.empty() || (borrowedRoots != 0 && source.params.front().type.isClass());
+            require(identities.insert(actual.name()).second && actual.moduleScope() == scope &&
+                        actual.borrowedRootCount() == borrowedRoots &&
+                        actual.parameters().size() == source.params.size() - borrowedRoots &&
+                        bool(actual.receiver()) == hasReceiver,
+                    "compiler typed callable identity, module or receiver presence differs: " + sourceName);
+            for (std::size_t root = 0; root < borrowedRoots; ++root)
+                require(actual.borrowedRootMutable(root) == !source.params[root].borrowConst,
+                        "compiler typed borrowed-root mutability differs");
+            if (!receiver.empty())
+                require(actual.receiver()->className == receiver &&
+                            actual.receiver()->constructor == source.constructor &&
+                            actual.receiver()->mutableValue == !source.receiverConst &&
+                            actual.receiver()->publicAccess == source.publicAccess,
+                        "compiler typed method receiver, constructor or visibility differs");
+            ++retainedFunctions;
+        };
         for (const auto &source : syntax[index].functions)
             function(source, qualified(source.scope, source.token.text), {});
         for (const auto &source : syntax[index].classes) {
@@ -5852,6 +5856,27 @@ void resolvedCompilerSources(char **paths) {
                 retainedFunctions == module.functions.size() && functions == abi.functions.size() &&
                 sourceFunctionNames == abiFunctionNames,
             "real compiler typed graph omitted or appended an unaccounted declaration");
+    const auto formatterModule = std::find(modules.begin(), modules.end(), "formatter");
+    require(formatterModule != modules.end(), "formatter module was omitted from compiler source inventory");
+    const auto formatterScope = std::next(formatterModule) == modules.end()
+                                    ? 0
+                                    : static_cast<int>(std::distance(modules.begin(), formatterModule) + 1);
+    const auto appendId = metadata.findCallable(native(abi.functions, "compiler_formatter::append_row"));
+    require(appendId.has_value(), "formatter typed-buffer append helper was omitted");
+    const auto append = metadata.callable(*appendId);
+    const auto parameters = append.parameters();
+    const aurora::Type row(native(abi.records, "compiler_formatter::Row"));
+    require(append.moduleScope() == formatterScope && append.borrowedRootCount() == 1 && append.borrowedParameter() &&
+                append.borrowedRootType(0) == aurora::Type::ownedValues(row) && append.borrowedRootMutable(0) &&
+                !append.receiver() && !append.receiverSpanField() && parameters.size() == 3 &&
+                parameters[0] == aurora::Type::I64 && parameters[1] == row && parameters[2] == row &&
+                append.result() == aurora::Type::Bool &&
+                std::count_if(module.functions.begin(),
+                              module.functions.end(),
+                              [&](const auto &body) {
+                                  return body.callableId == *appendId;
+                              }) == 1,
+            "formatter typed-buffer append helper lost its mutable owner root, copied tails or scalar result");
     ++cases;
 }
 
