@@ -1,5 +1,6 @@
 #include "../kernel/program-note.hpp"
 #include "../kernel/program-files.hpp"
+#include "../kernel/file-service-transport.hpp"
 #include "../kernel/program-stream.hpp"
 
 #include <algorithm>
@@ -33,6 +34,7 @@ extern "C" void note_test_initial(void *);
 extern "C" void files_test_initial(void *);
 extern "C" void stream_test_initial(void *);
 extern "C" I64 command_stream_contract();
+extern "C" U64 file_service_test_transition(U64, U64);
 extern "C" void __au_runtime_files_update(const void *, void *);
 extern "C" void __au_runtime_files_replace(const void *, void *);
 extern "C" U64 file_call_test_service(const void *);
@@ -912,6 +914,164 @@ auto named_read_lifetime_cases() -> void {
     n.f.retire(true);
     n.read("a", "payload");
 }
+// Retaining a service is a distinct read-only authority, never a relaxation of
+// ordinary read retirement or writable publication.
+auto file_service_transition_cases() -> void {
+    // Explicit table is independent of both the source policy and its decoder.
+    constexpr std::array<std::array<U64, 4>, 4> expected{{
+        {{0x010201, 0, 0, 0x050001}},
+        {{0x020201, 0, 0, 0x040001}},
+        {{0, 0x030101, 0x050301, 0}},
+        {{0, 0x040001, 0x050301, 0}},
+    }};
+    for (U64 state = 0; state < 6; ++state) {
+        for (U64 event = 0; event < 6; ++event) {
+            const U64 wanted = state < 4 && event < 4 ? expected[state][event] : 0;
+            const auto actual = file_service_test_transition(state, event);
+            require(actual == wanted, "source lifecycle exact independent transition table");
+            const auto decoded = program::FileServiceTransition::decode(actual, state, event);
+            require(decoded.has_value() == (wanted != 0), "lifecycle decoder agrees only with canonical transition");
+            if (decoded)
+                require(decoded->next() == ((wanted >> 8) & 255) && decoded->effect() == (wanted >> 16),
+                        "copied lifecycle next state and effect");
+            for (U64 next = 0; next < 6; ++next)
+                for (U64 effect = 0; effect < 7; ++effect) {
+                    const auto proposal = 1 | (next << 8) | (effect << 16);
+                    require(program::FileServiceTransition::decode(proposal, state, event).has_value() ==
+                                (proposal == wanted && wanted != 0),
+                            "reject forged lifecycle state/effect");
+                }
+            for (U64 status = 0; status < 256; ++status)
+                if (status != 1)
+                    require(!program::FileServiceTransition::decode((wanted & ~U64{255}) | status, state, event),
+                            "lifecycle requires canonical accepted discriminant");
+            if (wanted)
+                for (unsigned bit = 24; bit < 64; ++bit)
+                    require(!program::FileServiceTransition::decode(wanted | (U64{1} << bit), state, event),
+                            "lifecycle reserved high bits rejected");
+        }
+    }
+    for (const U64 invalid : {U64{256}, U64{UINT64_MAX}}) {
+        require(file_service_test_transition(invalid, 0) == 0 && file_service_test_transition(0, invalid) == 0,
+                "source lifecycle rejects wide invalid state/event");
+        require(!program::FileServiceTransition::decode(0x010201, invalid, 0) &&
+                    !program::FileServiceTransition::decode(0x010201, 0, invalid),
+                "decoder rejects wide invalid context");
+    }
+    U64 state = 0;
+    for (const auto event : {0, 1, 0, 2, 2, 1, 0, 1, 3}) {
+        const auto decoded =
+            program::FileServiceTransition::decode(file_service_test_transition(state, event), state, event);
+        require(decoded.has_value(), "create reuse sticky poison recreate and exit sequence");
+        state = decoded->next();
+    }
+    require(state == 0, "lifecycle final absent state");
+}
+auto retained_read_lifetime_cases() -> void {
+    NamedFixture n;
+    n.submit("write a payload");
+    n.submit("write b other");
+    const auto saved = n.files.saved();
+    auto client = *n.f.registry.create();
+    const auto service = *n.f.registry.create();
+    const auto identity = n.f.registry.incarnation(service);
+    ipc::Endpoint previous_client{}, previous_service{};
+    U64 previous_ticket = 0;
+    for (unsigned stage = 0; stage < 6; ++stage) {
+        if (stage)
+            client = *n.f.registry.create();
+        n.submit(stage % 2 ? "crc b" : "wc a");
+        require(n.f.mailbox.bind(client, service), "retained service fresh command mailbox");
+        const auto endpoint = *n.f.mailbox.endpoint(client);
+        const auto peer = *n.f.mailbox.endpoint(service);
+        require(n.files.bind_read_retained(n.f.registry, n.f.mailbox, client, service), "explicit retained read bind");
+        require(n.files.matches_read(n.f.registry, n.f.mailbox, client, endpoint), "retained fresh read authority");
+        require(!n.files.bind_read(n.f.registry, n.f.mailbox, client, service) &&
+                    !n.files.bind_read_retained(n.f.registry, n.f.mailbox, client, service),
+                "retained read cannot rebind");
+        require(!n.files.release_read_retained(n.f.registry, n.f.mailbox), "retained read refuses live caller");
+        require(!n.files.complete(n.f.registry, n.f.mailbox, client, endpoint, n.f.stream),
+                "retained read cannot authorize writable publication");
+        if (stage) {
+            require(endpoint.generation() > previous_client.generation() &&
+                        n.f.registry.incarnation(service) == identity,
+                    "fresh read generation retains exact service incarnation");
+            require(!n.files.matches_read(n.f.registry, n.f.mailbox, client, previous_client) &&
+                        !n.f.mailbox.submit(client, ipc::Phase::request, previous_client, ipc::Request{0, 0}) &&
+                        !n.f.mailbox.receive(service, ipc::Phase::service, previous_service, previous_ticket),
+                    "retained service rejects previous command grants and ticket");
+        }
+        U64 ticket = 0;
+        if (stage >= 1) {
+            const auto submitted = n.f.mailbox.submit(client, ipc::Phase::request, endpoint, ipc::Request{0, 0});
+            require(submitted.has_value(), "retained copied request");
+            ticket = *submitted;
+        }
+        if (stage >= 2)
+            require(n.f.mailbox.receive(service, ipc::Phase::service, peer, ticket).has_value(), "retained delivery");
+        if (stage >= 3)
+            require(n.f.mailbox.reply(service, ipc::Phase::service, peer, ticket, 1 | ('o' << 8)), "retained reply");
+        if (stage >= 4)
+            require(n.f.mailbox.consume(client, ipc::Phase::completion, endpoint, ticket).has_value(),
+                    "retained consume");
+        if (stage >= 5)
+            require(n.f.mailbox.recycle(ipc::Phase::inactive), "retained recycle");
+        if (stage == 1 || stage == 2)
+            require(n.f.mailbox.cancel(ipc::Phase::inactive), "retained partial cancellation");
+        if (stage >= 1 && stage <= 3)
+            require(n.f.mailbox.consume(client, ipc::Phase::completion, endpoint, ticket).has_value(),
+                    "retained terminal consumption");
+        require(n.f.registry.destroy(client), "retained caller retirement");
+        require(!n.files.release_read_retained(n.f.registry, n.f.mailbox), "dead caller does not replace revocation");
+        require(n.f.mailbox.revoke(ipc::Phase::inactive), "retained grant revocation");
+        user::DomainRegistry other;
+        ipc::Mailbox foreign{other};
+        require(!n.files.release_read_retained(other, n.f.mailbox) &&
+                    !n.files.release_read_retained(n.f.registry, foreign),
+                "retained original authority contexts");
+        require(n.f.registry.activate(service), "activate retained service negative control");
+        require(!n.files.release_read_retained(n.f.registry, n.f.mailbox),
+                "active service cannot be retained at boundary");
+        require(n.f.registry.deactivate(service), "retained service returns to ready");
+        require(!n.files.release_read(n.f.registry, n.f.mailbox), "ordinary retirement still requires dead service");
+        require(n.files.release_read_retained(n.f.registry, n.f.mailbox),
+                "retained release after caller and grants retire");
+        require(!n.files.release_read_retained(n.f.registry, n.f.mailbox) &&
+                    !n.files.matches_read(n.f.registry, n.f.mailbox, client, endpoint),
+                "retained release consumes authority");
+        require(n.files.saved() == saved && n.files.projection() == program::Note::Value{} &&
+                    n.f.registry.ready(service) && n.f.mailbox.scrubbed(),
+                "retained boundary preserves files and scrubs projection");
+        previous_client = endpoint;
+        previous_service = peer;
+        previous_ticket = ticket;
+    }
+    client = *n.f.registry.create();
+    n.submit("wc a");
+    require(n.f.mailbox.bind(client, service) && n.files.bind_read_retained(n.f.registry, n.f.mailbox, client, service),
+            "retained replacement setup");
+    require(n.f.mailbox.revoke(ipc::Phase::inactive) && n.f.registry.destroy(service), "retire original service");
+    const auto replacement = *n.f.registry.create();
+    require(n.f.registry.destroy(client) && n.f.registry.incarnation(replacement) != identity,
+            "replacement service has distinct incarnation");
+    require(!n.files.release_read_retained(n.f.registry, n.f.mailbox),
+            "same service slot is not original retained owner");
+    require(n.files.release_read(n.f.registry, n.f.mailbox), "unhealthy retained read can fully retire");
+    require(n.f.registry.destroy(replacement), "retire replacement control");
+    n.start("cat a");
+    require(n.f.stream.cancel(), "ordinary read cancellation");
+    n.f.note.release();
+    require(n.f.mailbox.revoke(ipc::Phase::inactive) && n.f.registry.destroy(n.f.client), "ordinary caller retired");
+    require(!n.files.release_read_retained(n.f.registry, n.f.mailbox) &&
+                !n.files.release_read(n.f.registry, n.f.mailbox),
+            "ordinary read does not acquire retention authority");
+    require(n.f.registry.destroy(n.f.service) && n.files.release_read(n.f.registry, n.f.mailbox),
+            "ordinary full retirement");
+    n.start("upper a");
+    require(!n.files.release_read_retained(n.f.registry, n.f.mailbox), "writable binding cannot retain read service");
+    n.files.abort();
+    n.f.retire(true);
+}
 auto named_file_cases() -> void {
     NamedFixture n;
     Files::Value initial{};
@@ -1074,6 +1234,8 @@ auto main() -> int {
     require(command_stream_contract() == 0, "shared Aurora stream behavioral fixture");
     file_byte_reply_cases();
     named_read_lifetime_cases();
+    retained_read_lifetime_cases();
+    file_service_transition_cases();
     named_file_cases();
     command_cases();
     representation_controls();

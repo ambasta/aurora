@@ -38,3 +38,5 @@ __au_runtime_files_update:
     leave
     ret
 .size __au_runtime_files_update,.-__au_runtime_files_update
+
+.global aurora_kernel_file_service_transition

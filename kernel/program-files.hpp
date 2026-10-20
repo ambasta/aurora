@@ -20,6 +20,7 @@ private:
         selected,
         bound,
         read_bound,
+        retained_read_bound,
         completed,
         retired,
         publishing
@@ -145,15 +146,33 @@ public:
                                  user::DomainHandle service) -> bool {
         return !writable_ && bind_participants(registry, mailbox, client, service, State::read_bound);
     }
+    // Explicit read-only mode: service retirement is not required after a
+    // successful command, but original caller and grant retirement still are.
+    [[nodiscard]] auto bind_read_retained(const user::DomainRegistry &registry,
+                                          const ipc::Mailbox &mailbox,
+                                          user::DomainHandle client,
+                                          user::DomainHandle service) -> bool {
+        return !writable_ && bind_participants(registry, mailbox, client, service, State::retained_read_bound);
+    }
+    [[nodiscard]] auto release_read_retained(const user::DomainRegistry &registry, const ipc::Mailbox &mailbox)
+        -> bool {
+        if (state_ != State::retained_read_bound || registry_ != &registry || mailbox_ != &mailbox || writable_ ||
+            registry.index(client_) || !registry.ready(service_) || mailbox.endpoint(client_) ||
+            mailbox.endpoint(service_) || !mailbox.revoked() || !mailbox.scrubbed())
+            return false;
+        abort();
+        return true;
+    }
     [[nodiscard]] auto matches_read(const user::DomainRegistry &registry,
                                     const ipc::Mailbox &mailbox,
                                     user::DomainHandle caller,
                                     ipc::Endpoint endpoint) const -> bool {
-        return state_ == State::read_bound && registry_ == &registry && mailbox_ == &mailbox && !writable_ &&
-               matching(registry, mailbox, caller, endpoint);
+        return (state_ == State::read_bound || state_ == State::retained_read_bound) && registry_ == &registry &&
+               mailbox_ == &mailbox && !writable_ && matching(registry, mailbox, caller, endpoint);
     }
     [[nodiscard]] auto release_read(const user::DomainRegistry &registry, const ipc::Mailbox &mailbox) -> bool {
-        if (state_ != State::read_bound || !participants_retired(registry, mailbox))
+        if ((state_ != State::read_bound && state_ != State::retained_read_bound) ||
+            !participants_retired(registry, mailbox))
             return false;
         abort();
         return true;

@@ -2,6 +2,15 @@
 # Private source entries remain local; only these test adapters are exported.
 .text
 .ifdef STREAM_TEST_INITIAL
+.global file_service_test_transition
+.type file_service_test_transition,@function
+file_service_test_transition:
+    pushq %rbp
+    movq %rsp,%rbp
+    call @file_service_transition@
+    leave
+    ret
+.size file_service_test_transition,.-file_service_test_transition
 .global stream_test_initial
 .type stream_test_initial,@function
 stream_test_initial:

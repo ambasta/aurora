@@ -36,10 +36,77 @@ bool console_probe_used{};
            !timer_owner && !run_authority && selected_phase == ipc::Phase::inactive && !console_waiting &&
            console_wait_stack == 0 && timer_stop() && timer_quiet(0x100, false) && timer_quiet(0x200, false);
 }
+#ifdef AURORA_FILE_CALL
+// Opaque copied state belongs to the Aurora lifecycle; only native code owns
+// the domains, verified address spaces, leases and authenticated read grants.
+U64 file_lifecycle{};
+[[nodiscard]] auto file_service_transition(U64 event) -> U64 {
+    const auto decision = program::FileServiceTransition::decode(
+        program::language_file_service_transition(file_lifecycle, event), file_lifecycle, event);
+    require(decision.has_value(), "file service lifecycle proposal");
+    file_lifecycle = decision->next();
+    return decision->effect();
+}
+auto file_service_poison() -> void {
+    require(file_service_transition(2) == 5, "file service poisoned lifecycle");
+}
+[[nodiscard]] auto file_service_quiet() -> bool {
+    const auto &caller = domains[0];
+    if (caller.handle || caller.contract || caller.tables || caller.call_used || call_wait.context ||
+        call_wait.authority || call_wait.service || call_wait.ticket || call_wait.endpoint.slot() ||
+        call_wait.endpoint.generation() || call_wait.remaining || call_wait.ticks)
+        return false;
+    for (const auto &lease : caller.stacks)
+        if (lease)
+            return false;
+    for (const auto word : call_wait.launch)
+        if (word)
+            return false;
+    const auto &service = domains[1];
+    if (!service.handle) {
+        if (file_lifecycle != 0 || service.contract || service.tables || service.call_used || frames.used() != 0)
+            return false;
+        for (const auto &lease : service.stacks)
+            if (lease)
+                return false;
+        return true;
+    }
+    if (file_lifecycle != 1 || !registry.ready(*service.handle) || registry.index(*service.handle) != 1 ||
+        service.image != 1 || !service.contract || !service.tables || service.call_used ||
+        frames.used() != service.stacks.size() || !verify(service))
+        return false;
+    for (const auto &lease : service.stacks) {
+        if (!lease)
+            return false;
+        const auto physical = frames.address(*lease);
+        if (!physical || !zero(*physical))
+            return false;
+    }
+    return true;
+}
+auto file_service_scrub() -> void {
+    auto &service = domains[1];
+    require(program_boundary() && service.handle && registry.ready(*service.handle) && verify(service),
+            "file service scrub authority");
+    for (const auto &lease : service.stacks) {
+        require(lease.has_value(), "file service retained lease");
+        const auto physical = frames.address(*lease);
+        require(physical.has_value(), "file service retained address");
+        fill(*physical, 0);
+        require(zero(*physical), "file service complete stack scrub");
+    }
+}
+#endif
 class ProgramInputPlatform final {
 public:
     [[nodiscard]] static auto quiet() -> bool {
-        return !command_owned && !mailbox && frames.used() == 0 && !command_note.bound() && program_boundary();
+        return !command_owned && !mailbox &&
+#ifdef AURORA_FILE_CALL
+               file_service_quiet() &&
+#else
+               frames.used() == 0 &&
+#endif
+               !command_note.bound() && program_boundary();
     }
     static auto wait() -> void {
         program_wait_sample();
@@ -415,6 +482,7 @@ program_command(program::Submission &input, bool reading = false, bool saving = 
 #endif
 [[nodiscard]] __attribute__((noinline)) auto program_files_update(const program::Submission &input,
                                                                   program::Response &response) -> U64 {
+    require(ProgramInputPlatform::quiet(), "file storage mutation boundary");
     program::Files::UpdateInput copied{};
     const auto &saved = command_files.saved();
     for (std::size_t i = 0; i < saved.size(); ++i)
@@ -525,6 +593,16 @@ __attribute__((noinline)) auto run_program_console() -> void {
     }
     copied.scrub();
     require(ProgramInputPlatform::quiet(), "program console exit boundary");
+#ifdef AURORA_FILE_CALL
+    const auto exiting_service = domains[1].handle ? registry.incarnation(*domains[1].handle).value_or(0) : 0;
+    const auto exit_effect = file_service_transition(3);
+    require((exit_effect == 5 && !domains[1].handle) || (exit_effect == 4 && retire(1)),
+            "file service exit retirement");
+    require(ProgramInputPlatform::quiet() && frames.used() == 0, "file service exit all leases released");
+    Serial::text("AURORA_FILE_SERVICE_EXIT: service=");
+    Serial::number(exiting_service);
+    Serial::text(" used=0 scrubbed=1\r\n");
+#endif
     command_note.clear();
     command_files.clear();
     if (!okay) {

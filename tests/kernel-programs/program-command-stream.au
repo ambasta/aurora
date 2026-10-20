@@ -1,5 +1,6 @@
 module program_command_stream;
 import console.command_stream;
+import kernel.file_service;
 import std.binary_buffer;
 import std.binary;
 
@@ -155,4 +156,9 @@ auto command_stream_contract() -> i64 {
         return 20;
     }
     return 0;
+}
+
+// Scalar-only test seam over the same production lifecycle implementation.
+auto file_service_transition(u64 state, u64 event) -> u64 {
+    return kernel::file_service_transition(state, event);
 }

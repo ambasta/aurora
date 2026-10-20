@@ -1,0 +1,54 @@
+export module kernel.file_service;
+
+export namespace kernel {
+    // Bounded copied lifecycle, never a domain, lease, endpoint or read grant.
+    // 0 absent, 1 clean idle, 2 serving, 3 poisoned. Events: begin, finish,
+    // poison, exit. A poisoned command cannot retain the service at finish.
+    class FileServiceLifecycle {
+        u64 state;
+    public:
+        FileServiceLifecycle(u64 previous) : state(previous) {
+        }
+        auto transition(u64 event) -> u64 {
+            if (state > 3u64 || event > 3u64) {
+                return 0u64;
+            }
+            if (event == 0u64 && state <= 1u64) {
+                u64 effect = 1u64;
+                if (state == 1u64) {
+                    effect = 2u64;
+                }
+                state = 2u64;
+                return 1u64 | (state << 8) | (effect << 16);
+            }
+            if (event == 2u64 && state >= 2u64) {
+                state = 3u64;
+                return 1u64 | (state << 8) | (5u64 << 16);
+            }
+            if (event == 1u64 && state >= 2u64) {
+                u64 effect = 4u64;
+                if (state == 2u64) {
+                    effect = 3u64;
+                    state = 1u64;
+                } else {
+                    state = 0u64;
+                }
+                return 1u64 | (state << 8) | (effect << 16);
+            }
+            if (event == 3u64 && state <= 1u64) {
+                u64 effect = 5u64;
+                if (state == 1u64) {
+                    effect = 4u64;
+                }
+                state = 0u64;
+                return 1u64 | (effect << 16);
+            }
+            return 0u64;
+        }
+    };
+    // The actual copied-state entry is shared by native and hosted consumers.
+    auto file_service_transition(u64 state, u64 event) -> u64 {
+        FileServiceLifecycle lifecycle = FileServiceLifecycle(state);
+        return lifecycle.transition(event);
+    }
+}

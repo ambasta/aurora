@@ -50,6 +50,7 @@
 #include "../program-stream.hpp"
 #include "../program-note.hpp"
 #include "../program-files.hpp"
+#include "../file-service-transport.hpp"
 #endif
 namespace aurora::uefi {
 extern std::uint64_t saved_rsp asm("uefi_runtime_saved_rsp") __attribute__((visibility("hidden")));
