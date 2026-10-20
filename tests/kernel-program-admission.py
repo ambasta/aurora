@@ -45,12 +45,13 @@ def main():
         render_bridge(template, facts) == "call compiler_chosen_name\n.type bridge,@function\n",
         "Compiler symbol lookup",
     )
-    need(
-        render_bridge(template, dict(facts, version=1)) == render_bridge(template, facts),
-        "Historical source-symbol lookup must retain its original meaning",
-    )
+    for version in (1, 3):
+        need(
+            render_bridge(template, dict(facts, version=version)) == render_bridge(template, facts),
+            "Supported ABI versions must preserve source-symbol lookup",
+        )
     for changed in (
-        {"version": 3, "functions": facts["functions"]},
+        {"version": 4, "functions": facts["functions"]},
         {"version": True, "functions": facts["functions"]},
         {"version": 1, "functions": {}},
         {"version": 1, "functions": {"wrong": {"source_name": "project_note"}}},
