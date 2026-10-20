@@ -39,10 +39,12 @@ The optional [language server](lsp/README.md) has its own dependency and suite.
 ### Source bootstrap
 
 The Aurora-native emitter requires three borrowed roots: its mutable output
-workspace and the existing readonly metadata and instruction stores. The exact
-main checkpoint `7811ba83730e9a8b4329da983a01e475d73999a6` supplies that language
-capability. It is retained in main history, not by a new tag. The source-bootstrap
-and qualification gates below are required for each integrated emitter candidate.
+workspace and the existing readonly metadata and instruction stores. The replacement
+sixth checkpoint `672821f70f37b185c46690791bd00d74d4414403` supplies that capability and synchronous
+mutable typed-buffer borrows for the formatter. It replaces the historical
+`7811ba83730e9a8b4329da983a01e475d73999a6` hop rather than adding a seventh stage.
+Qualification requires the source-bootstrap gates below, final integrated-source
+GCC 16 `full` and the applicable boot/emulator gates.
 
 The current source no longer contains a C++ expression parser or raw compiler
 seed. Meson requires `bootstrap_compiler`, an absolute executable path. Ninja
@@ -60,9 +62,10 @@ checkpoint [`c0ef02cc105de2b7699d8565f6a53f1dea9e1205`](https://github.com/ambas
 (retained by `bootstrap-owner-field-initializers-v1`). The candidate adds the paired-root
 ABI-facts dependency merged in PR #166 at immutable source commit
 [`052f79d7995be93053f73659bcfc37687b00b341`](https://github.com/ambasta/aurora/commit/052f79d7995be93053f73659bcfc37687b00b341).
-The emitter adds the multi-root checkpoint
-[`7811ba83730e9a8b4329da983a01e475d73999a6`](https://github.com/ambasta/aurora/commit/7811ba83730e9a8b4329da983a01e475d73999a6)
-after that paired-root hop. Prepare the source worktrees on the host, where Git is installed; the pinned
+The replacement multi-root/typed-buffer checkpoint
+[`672821f70f37b185c46690791bd00d74d4414403`](https://github.com/ambasta/aurora/commit/672821f70f37b185c46690791bd00d74d4414403)
+builds directly after that paired-root hop and retains the native C++ emitter.
+Prepare the source worktrees on the host, where Git is installed; the pinned
 development image does not include Git:
 
 ```sh
@@ -70,7 +73,7 @@ git fetch origin tag bootstrap-abi-facts-v1
 git fetch origin tag bootstrap-copied-arguments-v1
 git fetch origin tag bootstrap-owner-field-initializers-v1
 git fetch origin 052f79d7995be93053f73659bcfc37687b00b341
-git fetch origin 7811ba83730e9a8b4329da983a01e475d73999a6
+git fetch origin 672821f70f37b185c46690791bd00d74d4414403
 git worktree add --detach build/predecessor-source bdf646f09d5e14c88124c4bc9e4f998beda16183
 git worktree add --detach build/abi-facts-source 17f4f1440e6faa9cdaf8711c04400854bdb60d9e
 test "$(git -C build/abi-facts-source rev-parse HEAD)" = 17f4f1440e6faa9cdaf8711c04400854bdb60d9e
@@ -80,8 +83,8 @@ git worktree add --detach build/owner-field-source bbf18f40d73b0f7b862a4b23d77b0
 test "$(git -C build/owner-field-source rev-parse HEAD)" = bbf18f40d73b0f7b862a4b23d77b03dfb3f3d0e4
 git worktree add --detach build/paired-root-source 052f79d7995be93053f73659bcfc37687b00b341
 test "$(git -C build/paired-root-source rev-parse HEAD)" = 052f79d7995be93053f73659bcfc37687b00b341
-git worktree add --detach build/multi-root-source 7811ba83730e9a8b4329da983a01e475d73999a6
-test "$(git -C build/multi-root-source rev-parse HEAD)" = 7811ba83730e9a8b4329da983a01e475d73999a6
+git worktree add --detach build/borrow-checkpoint-source 672821f70f37b185c46690791bd00d74d4414403
+test "$(git -C build/borrow-checkpoint-source rev-parse HEAD)" = 672821f70f37b185c46690791bd00d74d4414403
 ```
 
 Then enter the [pinned development environment](../docs/local-development.md)
@@ -109,10 +112,10 @@ meson setup build/paired-root-compiler build/paired-root-source -Dkernel_images=
   "-Dbootstrap_compiler=$FIELDS"
 meson compile -C build/paired-root-compiler -j 2 aurorac
 PAIR=$(realpath build/paired-root-compiler/aurorac)
-meson setup build/multi-root-compiler build/multi-root-source -Dkernel_images=false \
+meson setup build/borrow-checkpoint-compiler build/borrow-checkpoint-source -Dkernel_images=false \
   "-Dbootstrap_compiler=$PAIR"
-meson compile -C build/multi-root-compiler -j 2 aurorac
-P=$(realpath build/multi-root-compiler/aurorac)
+meson compile -C build/borrow-checkpoint-compiler -j 2 aurorac
+P=$(realpath build/borrow-checkpoint-compiler/aurorac)
 meson setup build/meson . \
   "-Dbootstrap_compiler=$P" "-Duefi_ld=$UEFI_LD"
 meson setup build/meson-compiler . -Dkernel_images=false \
@@ -123,8 +126,9 @@ meson test -C build/meson-compiler --no-rebuild --num-processes 1 \
 ```
 
 The digest option above belongs only to the unchanged historical precursor graph.
-The working route remains six source-built predecessors; no additional skip has
-passed direct compilation. The existing register-carry hop remains omitted.
+The route remains six source-built predecessors: the replacement sixth stage
+builds directly with the paired-root compiler. No additional skip has passed
+direct compilation. The existing register-carry hop remains omitted.
 
 | Stage | Immutable source | Required predecessor capability |
 |---|---|---|
@@ -133,10 +137,13 @@ passed direct compilation. The existing register-carry hop remains omitted.
 | Copied arguments | `c0ef02cc105de2b7699d8565f6a53f1dea9e1205` | ABI-facts compiler |
 | Owner-field initialization | `bbf18f40d73b0f7b862a4b23d77b03dfb3f3d0e4` | Copied arguments used by its frontend |
 | Paired roots | `052f79d7995be93053f73659bcfc37687b00b341` | Region-backed owner-field initialization |
-| Multiple roots | `7811ba83730e9a8b4329da983a01e475d73999a6` | Paired-root frontend signature and ordered ABI facts |
-| Current C1/C2 | Final integrated source | Three borrowed roots for the Aurora emitter |
+| Multiple roots and mutable typed buffers | `672821f70f37b185c46690791bd00d74d4414403` | Paired-root frontend signature and ordered ABI facts |
+| Current C1/C2 | Final integrated source | Three borrowed roots for the Aurora emitter; mutable typed-buffer borrows for formatter append |
 
-| Direct skip experiment | Observed boundary | Route status |
+The following failed skip attempts refer to their original historical sources,
+including the old multi-root checkpoint `7811ba8`, not the replacement above.
+
+| Historical direct skip experiment | Observed boundary | Route status |
 |---|---|---|
 | Seed → copied-argument source | `--abi-facts` unsupported | Retain ABI-facts stage |
 | ABI-facts → owner-field source | Class argument requires a complete local name | Retain copied-argument stage |
@@ -152,9 +159,19 @@ belong in the accompanying PR/retained evidence rather than this status table.
 
 | Next checkpoint decision | Required evidence before changing the route |
 |---|---|
-| Replace the largest experimentally buildable suffix with one checkpoint | Build that exact source directly with the proposed earlier compiler; compare generated frontend assembly byte for byte against its normal-route build, then build the next source through both routes |
+| Replace the largest experimentally buildable suffix with one checkpoint | Build that exact source directly with the proposed earlier compiler; compare predecessor-generated frontend assembly against its normal-route build under the narrowly bounded cross-route gate below, then build the next source through both routes |
 | Admit a new stage or replacement | Record its complete historical-seed source route, current C1/C2 assembly/object/facts/header and corpus convergence, and uninterrupted final-source full qualification; retain failed attempts without waivers |
-| No successful shorter route | Keep the working six-stage route; no speculative checkpoint or new stage |
+| No successful shorter route | Keep six source-built stages; replacement of stage six does not establish a shorter route |
+
+For the cross-route predecessor comparison only, assembly text may differ solely
+in documented label names or equivalent address spelling, provided the assembled
+objects are byte-for-byte identical. Retain both assembly files, the classified
+differences, assembly commands/tool identities and object comparison. This is not
+a general machine-code-equivalence waiver: any other textual difference fails.
+Downstream generated assembly, objects, ABI facts, generated headers and corpus
+outputs still require exact equality, including the existing C1/C2 convergence
+and emitter differential gates. Safety, rejection and final-source qualification
+requirements are unchanged.
 
 A retained compiler may be reused only with its exact source/build/tool provenance
 and qualification receipt, not by filename or digest alone. Current setup selects
@@ -199,8 +216,10 @@ migrations still await execution qualification.
 
 ## Emitter migration qualification
 
-The source-built `7811ba8` predecessor still carries the C++ x86 backend, so it
-is also the external old-backend oracle, never a production fallback. The
+The source-built replacement sixth checkpoint `672821f70f37b185c46690791bd00d74d4414403` retains
+the C++ x86 backend, so the selected `$P` also remains the external old-backend
+oracle, never a production fallback. Replacing the historical `7811ba8` hop does
+not replace this oracle with the current Aurora emitter. The
 `emitter-differential-default` and `emitter-differential-closed` tests in `slow`
 and `full` compare the frozen historical corpus against it, and later consumers
 against current C1/C2, in ordinary and closed profiles; by hand:

@@ -729,11 +729,15 @@ staging and the call. Compute receiver-derived tail arguments before lending it.
 Allocation failure preserves the existing descriptor and contents; the caller
 still owns cleanup. The private ABI passes the actual descriptor address in R10.
 
-The selected predecessor supports existing class borrows but not this typed-buffer
-signature. Compiler implementation can use predecessor-supported syntax; formatter
-adoption must wait for a verified capability checkpoint and bootstrap-route update.
-Formatter adoption and its replacement checkpoint remain pending. Final-source
-execution and convergence results belong in the accompanying PR.
+The formatter now uses this signature in one shared `append_row` helper for
+pieces, tokens, findings, breakpoints and braces. Each caller snapshots its count
+and prepares copied arguments before lending the private owner, then updates the
+count after the loan ends. Growth limits and terminal allocation failure are
+unchanged. The [source-bootstrap recipe](README.md#source-bootstrap) selects a
+replacement sixth checkpoint with this capability and the native C++ emitter;
+no seventh predecessor is introduced. Focused route/consumer convergence is not
+final-source qualification: the integrated GCC 16 `full` and applicable
+boot/emulator gates remain required, with exact receipts retained in the accompanying PR.
 
 ## Readonly method arguments
 

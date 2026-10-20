@@ -92,10 +92,14 @@ structural CFG normalization and static entry, call, local-storage and scalar ad
 awaiting final-source qualification. Local scalar initialization, object completion,
 constructor/receiver-field initialization and synchronous service-loan lifecycle
 share a source-owned workspace; resource and object-loan provenance remain native.
-Bounded multi-owner borrowing enables that workspace to read instruction and metadata owners together;
-select its immutable bootstrap checkpoint before adopting it in the frontend.
-Remaining value/provenance state, worklist ownership and native emission are next,
-alongside host record projection and source loading.
+Bounded multi-owner borrowing enables the emitter workspace to read instruction
+and metadata owners together. The formatter now shares append through exclusive
+mutable typed-buffer borrows; its replacement sixth bootstrap checkpoint retains
+the native C++ emitter oracle without adding a stage. Qualification requires the
+[source-bootstrap gates](../compiler/README.md#source-bootstrap), final integrated-source
+`full` and applicable boot/emulator gates.
+Remaining value/provenance state and worklist ownership are next, alongside host
+record projection and source loading; x86 text emission already runs in Aurora.
 Native assembler/linker and host runtime/file/process services remain separate
 self-hosting dependencies.
 
