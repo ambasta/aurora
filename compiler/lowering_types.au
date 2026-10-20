@@ -1002,8 +1002,7 @@ export namespace compiler_lowering {
         }
         // Copied helper results carry data, independently of service authority.
         // The ordinary boundary check below enforces the existing layout bounds.
-        return tk(session, result) == compiler_resolver::ResolvedTypeKind::class_value && !owning_type(session,
-            result);
+        return tk(session, result) == compiler_resolver::ResolvedTypeKind::class_value && !owning_type(session, result);
     }
     auto validate_signature(compiler_resolver::Session& session, i64 symbol) -> bool {
         const i64 source = symbol_source(session, symbol);

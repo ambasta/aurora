@@ -1515,8 +1515,8 @@ export namespace compiler_lowering {
                             put(session, OperandRole::FieldIndex, lane.field_index());
                             ordinal = ordinal + 1;
                         }
-                        const OperandRow roots = slice(OperandRole::BorrowedRoots, roots_begin,
-                            session.operand_count() - roots_begin);
+                        const OperandRow roots = slice(OperandRole::BorrowedRoots, roots_begin, session.operand_count()
+                            - roots_begin);
                         const i64 begin = session.operand_count();
                         put(session, OperandRole::CalleeSymbolId, callee);
                         session.append_operand(roots);

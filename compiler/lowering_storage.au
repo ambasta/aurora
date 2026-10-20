@@ -234,8 +234,8 @@ export namespace compiler_lowering {
             return true;
         }
         auto state() const -> SnapshotRow {
-            return SnapshotRow(sharedCount, objectSharedCount, liveValue, exclusiveValue,
-                resourceActiveValue, objectExclusiveValue);
+            return SnapshotRow(sharedCount, objectSharedCount, liveValue, exclusiveValue, resourceActiveValue,
+                objectExclusiveValue);
         }
         auto set_state(SnapshotRow value) -> bool {
             sharedCount = value.shared_count();
