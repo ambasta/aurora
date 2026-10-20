@@ -17,6 +17,7 @@ from pathlib import Path
 import re
 import shlex
 import subprocess
+import sys
 import tempfile
 
 from unsigned_oracle import require
@@ -308,6 +309,177 @@ class Suite:
             )
         self.rejections += 1
 
+    def typed_borrow_cases(self, node, owner):
+        helpers = (
+            node
+            + f"""
+            auto append_row({owner}& rows, i64 count, Node row) -> bool {{
+                if (count == rows.size()) {{
+                    if (!rows.try_resize(count + 1, row)) {{ return false; }}
+                }}
+                return rows.set(count, row);
+            }}
+            auto forward_row({owner}& rows, i64 count, Node row) -> bool {{
+                return append_row(rows, count, row);
+            }}
+        """
+        )
+        local_body = f"""
+            const Node fill = Node(Kind::literal, 2u8, 40);
+            const Node next = Node(Kind::literal, 3u8, 60);
+            {owner} rows = region.try_allocate(2, fill);
+            if (!rows.ok()) {{ return -1; }}
+            const Node snapshot = rows.at(0);
+            if (!forward_row(rows, 2, next)) {{
+                const Node retained = rows.at(0);
+                if (rows.size() != 2 || retained.score() != 42) {{ return -2; }}
+                return 43;
+            }}
+            if (!append_row(rows, 0, next)) {{ return -3; }}
+            {owner} moved = move(rows);
+            const Node first = moved.at(0);
+            const Node last = moved.at(2);
+            if (moved.size() != 3 || first.score() != 63 || last.score() != 63) {{ return -4; }}
+            return snapshot.score();
+        """
+        local = self.compile("typed-borrow-local", program(local_body, helpers))
+        facts_path = self.directory / "typed-borrow-local" / "abi.json"
+        facts_assembly = facts_path.with_suffix(".s")
+        emitted = command(
+            [
+                self.compiler,
+                self.directory / "typed-borrow-local" / "input.au",
+                "-o",
+                facts_assembly,
+                "--abi-facts",
+                facts_path,
+            ]
+        )
+        require(emitted.returncode == 0, "typed borrowed ABI facts did not emit")
+        facts = json.loads(facts_path.read_text())
+        require(facts["version"] == 3, "typed borrowed ABI facts require version 3")
+        sys.path.insert(0, str(ROOT / "scripts"))
+        from bootstrap_frontend import normalize_function_abi
+
+        for function in facts["functions"].values():
+            if not function["borrowed_root_count"]:
+                continue
+            require(normalize_function_abi(facts, function) == function, "typed borrowed ABI normalization changed")
+            root = function["borrowed_roots"][0]
+            require(
+                root["kind"] == "owned_values" and root["descriptor_bytes"] == 32,
+                "typed borrowed ABI lost descriptor identity",
+            )
+            for key, value in (("mutable", False), ("descriptor_bytes", 24), ("element_type_name", "missing")):
+                broken = {**function, "borrowed_roots": [{**root, key: value}]}
+                try:
+                    normalize_function_abi(facts, broken)
+                except ValueError:
+                    continue
+                raise AssertionError(f"typed borrowed ABI accepted invalid {key}")
+        self.run(local, 72, 0, 0, 42, 2, 1, release_order=[1, 2])
+        self.run(local, 48, 0, 0, 43, 1, 1)
+        self.run(local, 72, 0, 0, 43, 1, 1, fail_after=1)
+        box = f"""
+            class Pair {{
+                {owner} first;
+                i64 sentinel;
+                {owner} second;
+                i64 count;
+            public:
+                Pair({REGION} region, Node fill)
+                    : first(region.try_allocate(1, fill)), sentinel(73),
+                      second(region.try_allocate(1, fill)), count(1) {{}}
+                auto append(Node row) -> bool {{
+                    const i64 used = count;
+                    if (!append_row(second, used, row)) {{ return false; }}
+                    count = count + 1;
+                    return true;
+                }}
+                auto inspect() const -> i64 {{
+                    const Node a = first.at(0);
+                    const Node b = second.at(count - 1);
+                    if (sentinel != 73 || first.size() != 1 || a.score() != 42
+                        || second.size() != count) {{ return -1; }}
+                    return b.score();
+                }}
+            }};
+        """
+        field_body = """
+            const Node fill = Node(Kind::literal, 2u8, 40);
+            const Node next = Node(Kind::literal, 3u8, 60);
+            Pair pair = Pair(region, fill);
+            if (!pair.append(next)) { return pair.inspect(); }
+            Pair moved = move(pair);
+            return moved.inspect();
+        """
+        field = self.compile("typed-borrow-field", program(field_body, helpers + box))
+        self.run(field, 72, 0, 0, 63, 3, 2, release_order=[2, 3, 1])
+        self.run(field, 48, 0, 0, 42, 2, 2)
+        self.run(field, 72, 0, 0, 42, 2, 2, fail_after=2)
+        # Each negative isolates the loan violation: no later move from a const
+        # owner or assignment in a const method may mask a wrongly admitted loan.
+        simple_call = f"""
+            const Node fill = Node(Kind::literal, 2u8, 40);
+            {owner} rows = region.try_allocate(2, fill);
+            if (forward_row(rows, 2, fill)) {{ return 42; }}
+            return 43;
+        """
+        const_box = box.replace("auto append(Node row) ->", "auto append(Node row) const ->").replace(
+            "if (!append_row(second, used, row)) { return false; }\n"
+            "                    count = count + 1;\n                    return true;",
+            "return append_row(second, used, row);",
+        )
+        require("count = count + 1" not in const_box, "const-field negative retains unrelated assignment")
+        for name, source in (
+            ("const-local", program(simple_call.replace(f"{owner} rows =", f"const {owner} rows ="), helpers)),
+            (
+                "later-owner-read",
+                program(
+                    local_body.replace("forward_row(rows, 2, next)", "forward_row(rows, rows.size(), next)"), helpers
+                ),
+            ),
+            (
+                "moved-argument",
+                program(simple_call.replace("forward_row(rows, 2, fill)", "forward_row(move(rows), 2, fill)"), helpers),
+            ),
+            (
+                "formal-move",
+                program(
+                    local_body,
+                    helpers.replace(
+                        "return append_row(rows, count, row);", f"{owner} stolen = move(rows); return true;"
+                    ),
+                ),
+            ),
+            (
+                "const-field",
+                program(field_body, helpers + const_box),
+            ),
+            (
+                "later-receiver-read",
+                program(
+                    field_body, helpers + box.replace("append_row(second, used, row)", "append_row(second, count, row)")
+                ),
+            ),
+            (
+                "later-receiver-call",
+                program(
+                    field_body,
+                    helpers + box.replace("append_row(second, used, row)", "append_row(second, inspect(), row)"),
+                ),
+            ),
+            (
+                "readonly-signature",
+                program(
+                    f"const Node fill = Node(Kind::literal, 2u8, 40); {owner} rows = region.try_allocate(1, fill);"
+                    "return observe(rows);",
+                    node + f"auto observe(const {owner}& rows) -> i64 {{ return rows.size(); }}",
+                ),
+            ),
+        ):
+            self.reject("typed-borrow-" + name, source)
+
     def typed_cases(self):
         previous_entry = self.entry_name
         self.entry_name = "entry"
@@ -326,6 +498,7 @@ class Suite:
             };
         """
         owner = "builtin::OwnedValues<Node>"
+        self.typed_borrow_cases(node, owner)
         dynamic = self.compile(
             "typed-runtime-capacity",
             program(

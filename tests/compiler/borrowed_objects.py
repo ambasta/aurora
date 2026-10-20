@@ -619,14 +619,14 @@ def bounded_borrowing_cases(suite):
             HELPERS
             + "auto bad(const std::ByteBuffer& r0, i64 value, const std::ByteBuffer& r1) -> i64 { return value; }",
         ),
-        "borrowed parameters require a supported leading owning-class reference signature",
+        "borrowed parameters require a supported leading ownership reference signature",
     )
     for ordinal in range(1, 3):
         formals = ", ".join(f"{'' if index == ordinal else 'const '}std::ByteBuffer& r{index}" for index in range(3))
         suite.reject(
             f"bounded-later-mutable-root-{ordinal}",
             program("return 0;", f"auto bad({formals}) -> i64 {{ return 0; }}"),
-            "borrowed parameters require a supported leading owning-class reference signature",
+            "borrowed parameters require a supported leading ownership reference signature",
         )
 
 
@@ -1011,7 +1011,7 @@ def rejection_cases(suite):
         "pointer-parameter": "auto bad(std::ByteBuffer* input) -> i64 { return 0; }",
     }
     declaration_diagnostic = (
-        "borrowed parameters require a supported leading owning-class reference signature on an ordinary function"
+        "borrowed parameters require a supported leading ownership reference signature on an ordinary function"
     )
     result_diagnostic = "borrowed functions require one to three leading concrete owning-class references"
     later_diagnostic = "borrowed-function tails require scalar or enum values"

@@ -20,7 +20,7 @@ still needs its own full, convergence and BIOS/UEFI qualification.
 | x86 emission | Aurora, fixed native transport | Byte-identical to the C++ backend on the whole corpus in both profiles (`emitter-differential-*`); compile time 1.05x the C++ backend |
 | Direct class fields | Aurora source and independent metadata admission share an 8,192-field cap, including empty, nested, resource and array fields | Existing leaf, byte, depth and array-element limits still apply |
 | Private host bridge | One 113-entry table generates Aurora forwarders and host transport declarations; compiler facts supply layouts, symbols and raw enum validation | Preserve fail-closed conversion; native replacement remains incomplete |
-| Bootstrap route | Six source-built predecessors, then current C1/C2; direct skips fail at recorded capability boundaries | Replace stages only after an actual direct build, byte-identical frontend comparison, complete seed route and final full/convergence gates |
+| Bootstrap route | Six source-built predecessors, then current C1/C2; direct skips fail at recorded capability boundaries | Replace stages only after an actual direct build, the [bounded cross-route frontend comparison](README.md#source-bootstrap), complete seed route and final full/convergence gates |
 | Assembly, linking and hosted runtime | External bootstrap tools/C++ | Native replacements remain incomplete |
 
 ## Hosted Aurora parser
@@ -179,6 +179,12 @@ count-derived region quota. Findings and output are readable only on completion;
 allocation/output failure and repeated preparation are terminal. Workspace owners
 are released before the parser arena and region. Payload quota excludes allocation
 headers and transient old/new resizing storage; process peak memory is separate.
+A shared `append_row` helper synchronously borrows each mutable typed row buffer
+for growth and storage. Callers snapshot receiver-derived arguments before the
+exclusive field loan and update counts afterward; ownership and cleanup remain
+with the workspace. The replacement sixth source-bootstrap checkpoint supplies
+this capability without adding a stage. Qualification still requires the final
+integrated-source `full` and applicable boot/emulator gates.
 
 The host retains the existing two parse/layout passes, token/comment equivalence
 and idempotence safeguards. It copies completed chunks and validated finding

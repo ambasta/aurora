@@ -338,9 +338,9 @@ export namespace compiler_x86 {
         if (form == 83) {
             const compiler_ir_metadata::CallableRow callable = metadata.callable_at(target);
             const i64 roots = callable.borrowed_root_count();
-            // Root lists are a flat sequence of (selector, loan) pairs. Loans
-            // were admitted independently; only the selector reaches codegen.
-            if (roots < 1 || roots > 3 || operand_count(store, instruction, 1) != roots * 2) {
+            // Root lists contain (selector, loan, field) triples. Loans are
+            // independently admitted; roots and fields select actual addresses.
+            if (roots < 1 || roots > 3 || operand_count(store, instruction, 1) != roots * 3) {
                 workspace.fail();
                 return true;
             }
@@ -355,7 +355,7 @@ export namespace compiler_x86 {
                 workspace.reserve_stack(root_bytes);
                 i64 ordinal = 0;
                 while (ordinal < roots) {
-                    const i64 root = operand_lane(store, instruction, 1, ordinal * 2);
+                    const i64 root = operand_lane(store, instruction, 1, ordinal * 3);
                     receiver_address(workspace, metadata, root, Register::r10);
                     workspace.line_number("movq %r10, ", ordinal * 8, "(%rsp)");
                     ordinal = ordinal + 1;
@@ -363,7 +363,16 @@ export namespace compiler_x86 {
                 workspace.line("leaq (%rsp), %r10");
             } else {
                 const i64 root = operand_lane(store, instruction, 1, 0);
-                receiver_address(workspace, metadata, root, Register::r10);
+                const i64 field = operand_lane(store, instruction, 1, 2);
+                if (type_kind(metadata, callable.borrowed_root_type(0)) == 17) {
+                    const i64 descriptor = bytes_owner_address(workspace, metadata, root, field, 0);
+                    workspace.text("    leaq ");
+                    workspace.memory(descriptor);
+                    workspace.text(", %r10");
+                    workspace.end_line();
+                } else {
+                    receiver_address(workspace, metadata, root, Register::r10);
+                }
             }
         } else {
             const i64 root = operand_value(store, instruction, 1);

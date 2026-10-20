@@ -52,6 +52,26 @@ export namespace compiler_lowering {
         put(session, OperandRole::PublicAccess, public_flag);
         return emit_record(session, RecordKind::Receiver, begin);
     }
+    auto bind_receiver_loan_state(compiler_resolver::Session& session, i64 function) -> bool {
+        const i64 nominal = compiler_resolver::mw(session, function, 7);
+        if (nominal < 0) {
+            return session.good();
+        }
+        const i64 type = nominal_type(session, nominal);
+        if (!owning_type(session, type) || compiler_resolver::declaration_kind(session, function)
+            == compiler_resolver::DeclarationKind::constructor) {
+            return session.good();
+        }
+        // Only owning non-constructor receivers can lend complete owner fields.
+        // Append after parameters without a slot, binding, or cleanup ownership;
+        // copied-only methods retain their existing Local pool footprint.
+        LocalRow receiver = LocalRow(-1, type, 0, -1, -1, !method_const(session, function));
+        receiver.set_binding_flags(true, false);
+        const i64 local = session.append_local(receiver);
+        ContinuationRow root = session.continuation(0);
+        root.set_call(-1, local, -1, 0);
+        return session.set_continuation(0, root);
+    }
     auto bind_parameters(compiler_resolver::Session& session, i64 function) -> bool {
         const i64 count = signature_count(session, function);
         if (count < 0 || count > 6) {
@@ -369,6 +389,7 @@ export namespace compiler_lowering {
         push_frame(session, root);
         const i64 receiver = publish_receiver(session, function);
         bind_parameters(session, function);
+        bind_receiver_loan_state(session, function);
         const bool constructor = compiler_resolver::declaration_kind(session, function)
             == compiler_resolver::DeclarationKind::constructor;
         if (constructor) {

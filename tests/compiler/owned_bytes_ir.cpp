@@ -1831,8 +1831,112 @@ void explicitEmptyTests() {
                               ReturnObject{8}};
     accept("both branches explicitly complete empty value", both);
 }
+// The borrowed descriptor is symbolic root 0, never a ByteSlot or owning bind.
+// Copied tails are numbered after the hidden root and carry no region authority.
+Module borrowedValues() {
+    auto module = valueShapes();
+    IRFunction function;
+    function.name = "borrowed_values";
+    function.result = Type::I64;
+    function.parameters = {Type::ownedValues(Type("Record")), Type("Record"), Type::I64};
+    function.borrowedRootCount = 1;
+    function.firstBorrowedMutable = true;
+    function.frameBytes = 64;
+    recordSlot(function, 24);
+    recordSlot(function, 48);
+    function.slots[56] = Type::I64;
+    function.code = {BindObjectParameter{0, 24, "Record"},
+                     BindParameter{1, 56, Type::I64},
+                     BeginObject{48},
+                     Constant{0, Type::I64},
+                     ValuesLoad{0, -1, 48},
+                     Constant{0, Type::I64},
+                     ValuesStore{0, -1, 48},
+                     Load{56, Type::I64},
+                     ValuesResize{0, -1, 24},
+                     BytesOk{0},
+                     BytesLength{0},
+                     EndObject{48},
+                     EndObject{24},
+                     Return{}};
+    module.functions.push_back(std::move(function));
+    return module;
+}
+void borrowedValueTests() {
+    accept("borrowed typed owner reads writes resizes and cleans copied tails", borrowedValues());
+    const auto check = [](const std::string &name, const std::function<void(Module &)> &change) {
+        reject("borrowed typed owner " + name, borrowedValues(), change);
+    };
+    check("requires mutable formal", [](Module &m) {
+        m.functions[0].firstBorrowedMutable = false;
+    });
+    check("rejects raw byte formal", [](Module &m) {
+        m.functions[0].parameters[0] = Type::OwnedBytes;
+    });
+    check("rejects equal-layout foreign element", [](Module &m) {
+        m.functions[0].parameters[0] = Type::ownedValues(Type("Other"));
+    });
+    check("rejects unbound negative root", [](Module &m) {
+        operation<ValuesLoad>(m).offset = -1;
+    });
+    check("rejects receiver field projection", [](Module &m) {
+        operation<ValuesLoad>(m).fieldIndex = 0;
+    });
+    check("rejects malformed field selector", [](Module &m) {
+        operation<ValuesLoad>(m).fieldIndex = -2;
+    });
+    check("requires copied snapshot completion", [](Module &m) {
+        eraseOperation<ValuesLoad>(m.functions[0]);
+    });
+    check("requires readonly copied fill", [](Module &m) {
+        m.functions[0].objectSlots[24].mutableValue = true;
+    });
+    check("rejects byte mutation opcode", [](Module &m) {
+        insertBefore<ValuesResize>(m.functions[0], {BytesResize{0}});
+    });
+    for (const auto &type : {Type::OwnedBytes, Type::ownedValues(Type("Record")), Type("Record"), Type::ByteSpan})
+        check("cannot return " + typeName(type), [=](Module &m) {
+            m.functions[0].result = type;
+        });
+    for (const auto &type :
+         {Type::ByteRegion, Type::OwnedBytes, Type::ownedValues(Type("Record")), Type("ValuesBox"), Type::ByteSpan})
+        check("rejects tail " + typeName(type), [=](Module &m) {
+            m.functions[0].parameters.push_back(type);
+        });
+    check("rejects second borrowed root", [](Module &m) {
+        m.functions[0].parameters[1] = Type::ownedValues(Type("Record"));
+        m.functions[0].borrowedRootCount = 2;
+    });
+    check("rejects receiver identity", [](Module &m) {
+        m.functions[0].receiver = Receiver{"ValuesBox", true, false};
+    });
+    check("rejects escaping span summary", [](Module &m) {
+        m.functions[0].receiverSpanField = 0;
+    });
+    for (const auto &[name, instruction] :
+         std::vector<std::pair<std::string, Instruction>>{{"owning lifetime restart", BeginBytes{0}},
+                                                          {"owning cleanup", EndBytes{0}},
+                                                          {"owning return", ReturnBytes{0}},
+                                                          {"owning move", MoveBytes{0, 112}},
+                                                          {"owning bind", BindBytesParameter{0, 112}}})
+        check("denies " + name, [&](Module &m) {
+            auto &function = m.functions[0];
+            function.frameBytes = 112;
+            function.byteSlots[112] = true;
+            function.ownedValueTypes[112] = "Record";
+            insertBefore<BeginObject>(function, {instruction});
+        });
+    check("cannot expose byte span", [](Module &m) {
+        auto &function = m.functions[0];
+        function.frameBytes = 112;
+        function.spanSlots = {112};
+        insertBefore<BeginObject>(function, {BorrowOwnedSpan{0, -1, 112}});
+    });
+}
+
 void typedValueTests() {
     explicitEmptyTests();
+    borrowedValueTests();
     {
         auto checked = validate(values());
         const auto frame = checked.metadata().frame(0);

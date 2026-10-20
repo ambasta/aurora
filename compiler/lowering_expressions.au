@@ -50,6 +50,9 @@ export namespace compiler_lowering {
             field = implicit_field(session, name);
         }
         if (field >= 0) {
+            if (!no_exclusive_object_loan(session, -2, source)) {
+                return IndexedStorage(-1, -1, -1);
+            }
             const i64 staged_nominal_92 = body_receiver_nominal(session);
             type = field_type(session, staged_nominal_92, field);
         } else {
@@ -99,6 +102,9 @@ export namespace compiler_lowering {
         match_type(session, frame.child_type_id(), staged_want_97, source);
         const IndexedStorage storage = IndexedStorage(frame.capability_root_local(), frame.receiver_field_index(),
             frame.cleanup_cursor());
+        if (!no_exclusive_object_loan(session, storage.root(), source)) {
+            return false;
+        }
         index_guard(session, storage);
         const i64 element = compiler_resolver::mw(session, storage.type(), 2);
         if (is_class_array(session, storage.type())) {
@@ -206,6 +212,9 @@ export namespace compiler_lowering {
                 field = checked_field(session, local.concrete_type_id(), reference, false);
             } else {
                 field = implicit_field(session, reference);
+                if (!no_exclusive_object_loan(session, -2, reference)) {
+                    return false;
+                }
                 if (field < 0) {
                     return fail(session, LoweringError::class_projection_requires_class_field, reference);
                 }
@@ -331,6 +340,9 @@ export namespace compiler_lowering {
         if (lookup_local(session, source) < 0) {
             const i64 field = implicit_field(session, source);
             if (field >= 0) {
+                if (!no_exclusive_object_loan(session, -2, source)) {
+                    return false;
+                }
                 const i64 staged_nominal_112 = body_receiver_nominal(session);
                 const i64 type = field_type(session, staged_nominal_112, field);
                 const compiler_resolver::ResolvedTypeKind kind = value_kind(session, type);
@@ -421,6 +433,9 @@ export namespace compiler_lowering {
                 field = implicit_field(session, name);
             }
             if (field >= 0) {
+                if (!no_exclusive_object_loan(session, -2, source)) {
+                    return false;
+                }
                 const i64 staged_nominal_117 = body_receiver_nominal(session);
                 type = field_type(session, staged_nominal_117, field);
             } else {

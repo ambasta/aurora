@@ -705,7 +705,7 @@ at byte offset 8*i. The callee saves every root before nested calls; outgoing tu
 storage is aligned to sixteen bytes. Typed IR uses selectors 0 through -5 for
 bound formals and positive exact owner slots for locals. Selectors are bounded
 before negation and never interpreted as ordinary frame offsets. One ordered
-root/loan range replaces separate first/second call lanes. Verification checks all
+root/loan/field range replaces separate first/second call lanes. Verification checks all
 loan identities, authorities and pairwise distinctness independently. The existing
 single-root direct-pointer and two-root sixteen-byte tuple ABIs are preserved.
 
@@ -716,11 +716,28 @@ access. Version-2 ABI facts describe ordered roots and distinguish tuple payload
 from aligned reservation. The bootstrap reader narrowly normalizes the selected
 version-1 predecessor facts and new facts for the unchanged frontend.
 
-This capability remains source-reviewed only pending generated ABI and execution
-qualification. Its own frontend uses predecessor-supported one/two-root syntax.
-Adopting three-root helpers in that frontend requires an immutable capability
-checkpoint and a subsequent source-bootstrap step; the existing selected
-predecessor is not claimed to understand the new signatures.
+### Borrowed typed buffers
+
+A single leading mutable `builtin::OwnedValues<T>&` may borrow a named owner or
+an implicit private field of the mutable lexical receiver for a synchronous
+free-function call. Explicit `object.member` arguments remain unsupported. The helper
+may inspect, resize and store copied elements; it cannot move, destroy, return or
+retain the owner. Results are scalar and remaining arguments are scalar or copied
+values. Readonly builtin borrows, mixed roots and typed views remain unsupported.
+A field loan excludes access to its entire containing object during argument
+staging and the call. Compute receiver-derived tail arguments before lending it.
+Allocation failure preserves the existing descriptor and contents; the caller
+still owns cleanup. The private ABI passes the actual descriptor address in R10.
+
+The formatter now uses this signature in one shared `append_row` helper for
+pieces, tokens, findings, breakpoints and braces. Each caller snapshots its count
+and prepares copied arguments before lending the private owner, then updates the
+count after the loan ends. Growth limits and terminal allocation failure are
+unchanged. The [source-bootstrap recipe](README.md#source-bootstrap) selects a
+replacement sixth checkpoint with this capability and the native C++ emitter;
+no seventh predecessor is introduced. Focused route/consumer convergence is not
+final-source qualification: the integrated GCC 16 `full` and applicable
+boot/emulator gates remain required, with exact receipts retained in the accompanying PR.
 
 ## Readonly method arguments
 

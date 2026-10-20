@@ -1227,8 +1227,7 @@ odd(session) != 8) {
         ),
     }
     borrowed_parameter_error = (
-        "AU2001: borrowed parameters require a supported leading owning-class reference "
-        "signature on an ordinary function"
+        "AU2001: borrowed parameters require a supported leading ownership reference signature on an ordinary function"
     )
     expected_errors = {
         "by-value": "AU3001: service functions require one leading exclusive sealed service reference",

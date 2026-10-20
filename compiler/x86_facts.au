@@ -970,7 +970,13 @@ export namespace compiler_x86 {
             workspace.text(",\"selector\":");
             workspace.number(-at);
             workspace.text(",\"type_name\":");
-            fact_json_name(workspace, metadata, 5, row.borrowed_root_type(at));
+            if (type_kind(metadata, row.borrowed_root_type(at)) == 17) {
+                workspace.text("\"builtin::OwnedValues\",\"kind\":\"owned_values\",\"element_type_name\":");
+                fact_json_name(workspace, metadata, 5, row.borrowed_root_type(at));
+                workspace.text(",\"descriptor_bytes\":32");
+            } else {
+                fact_json_name(workspace, metadata, 5, row.borrowed_root_type(at));
+            }
             workspace.text(",\"mutable\":");
             fact_emit_bool(workspace, row.borrowed_root_mutable(at));
             workspace.byte('}');
@@ -1037,7 +1043,18 @@ export namespace compiler_x86 {
         if (!workspace.begin_abi() || !fact_abi_names_valid(workspace, metadata)) {
             return workspace.status();
         }
-        workspace.text("{\"version\":2,\"span_bytes\":56,\"records\":{");
+        i64 version = 2;
+        i64 callable = 0;
+        while (callable < metadata.callable_count()) {
+            const compiler_ir_metadata::CallableRow row = metadata.callable_at(callable);
+            if (row.borrowed_root_count() == 1 && type_kind(metadata, row.borrowed_root_type(0)) == 17) {
+                version = 3;
+            }
+            callable = callable + 1;
+        }
+        workspace.text("{\"version\":");
+        workspace.number(version);
+        workspace.text(",\"span_bytes\":56,\"records\":{");
         fact_emit_abi_groups(workspace, metadata, 0);
         workspace.text("},\"enums\":{");
         fact_emit_abi_groups(workspace, metadata, 1);
