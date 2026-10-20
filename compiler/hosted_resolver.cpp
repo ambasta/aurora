@@ -1290,8 +1290,8 @@ std::uint64_t resolutionQuota() {
     // BorrowedCall now has five fixed roles; its root pairs are charged only
     // in instructionLists, never again as retired fixed second-root fields.
     // A service call adds its copied-snapshot slice as a seventh fixed operand.
-    const auto operandRows = sum(
-        {setupOperands, mul(6, instructions), X, instructions, instructionLists, slotOperands, metadataOperands});
+    const auto operandRows =
+        sum({setupOperands, mul(6, instructions), X, instructions, instructionLists, slotOperands, metadataOperands});
     // Shared resolution owners remain live. Additional type/name/source rows
     // have distinct charges; lowering lookup domains retain nominal/layout,
     // field, function, lexical-binding, forward-list and reflection indexes.

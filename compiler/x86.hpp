@@ -209,8 +209,7 @@ class X86Emitter {
     }
     int rootSaveOffset(std::size_t ordinal) const {
         const auto function = currentCallable();
-        const auto count = function.borrowedParameter() ? function.borrowedRootCount()
-                                                       : function.receiver() ? 1u : 0u;
+        const auto count = function.borrowedParameter() ? function.borrowedRootCount() : function.receiver() ? 1u : 0u;
         if (!receiverSaveOffset || ordinal >= count || ordinal >= 6)
             throw Error("x86 backend received an unbound object root ordinal");
         return receiverSaveOffset + static_cast<int>(ordinal) * 8;
@@ -1357,9 +1356,10 @@ class X86Emitter {
                         receiverAddress(operation.receiverOffset, "%r10");
                         if (operation.receiverFieldIndex >= 0) {
                             const auto receiver = currentCallable().receiver();
-                            const auto &name = operation.receiverOffset == 0
-                                                   ? receiver->className
-                                                   : currentFrame().objectSlots().at(operation.receiverOffset).className;
+                            const auto &name =
+                                operation.receiverOffset == 0
+                                    ? receiver->className
+                                    : currentFrame().objectSlots().at(operation.receiverOffset).className;
                             const int fieldOffset = physicalStorage(name).fieldOffsets[operation.receiverFieldIndex];
                             if (fieldOffset != 0)
                                 line("addq $" + std::to_string(fieldOffset) + ", %r10");
@@ -1596,8 +1596,7 @@ public:
         facts << "},\"enums\":{";
         first = true;
         for (const auto &[symbol, declaration] : declarations.enums) {
-            if (metadata->enumCases(metadata->findEnum(symbol).value()) !=
-                static_cast<int>(declaration.members.size()))
+            if (metadata->enumCases(metadata->findEnum(symbol).value()) != static_cast<int>(declaration.members.size()))
                 throw Error("ABI enum names do not match validated cases");
             if (!std::exchange(first, false))
                 facts << ',';
@@ -1691,7 +1690,8 @@ public:
         bool owningMetadata = false;
         for (std::size_t index = 0; index < metadata->classCount(); ++index)
             owningMetadata = owningMetadata || metadata->isOwning(metadata->classAt(index));
-        const bool resourceGraph = owningMetadata ||
+        const bool resourceGraph =
+            owningMetadata ||
             std::any_of(module.functions.begin(), module.functions.end(), [&](const ir::FunctionBody &body) {
                 const auto function = metadata->callable(body.callableId);
                 const auto receiver = function.receiver();
@@ -1770,7 +1770,7 @@ public:
             // longer scalar-only prefixes reserve their aligned pointer extent.
             const int rootSaveBytes = (static_cast<int>(borrowedRootCount) * 8 + 15) & ~15;
             const int frameBytes = declaredFrameBytes + (borrowedRootCount > 1   ? rootSaveBytes
-                                                         : combinedMethod       ? 32
+                                                         : combinedMethod        ? 32
                                                          : receiver || aggregate ? 16
                                                                                  : 0);
             reserveStack(frameBytes);

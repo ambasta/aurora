@@ -42,8 +42,8 @@ const std::string *callee(const InstructionObservation &instruction) {
 }
 std::uint64_t graphQuota(std::int64_t functions, std::int64_t edges) {
     const auto maximum = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
-    const auto functionWidth = sizeof(wire::FunctionRow) + sizeof(wire::StateRow) + sizeof(wire::FrameRow) +
-                               sizeof(wire::IndexRow);
+    const auto functionWidth =
+        sizeof(wire::FunctionRow) + sizeof(wire::StateRow) + sizeof(wire::FrameRow) + sizeof(wire::IndexRow);
     const auto edgeWidth = sizeof(wire::IndexRow) + sizeof(wire::ReverseEdge);
     const auto nodes = static_cast<std::uint64_t>(functions), calls = static_cast<std::uint64_t>(edges);
     if (nodes > maximum / functionWidth || calls > (maximum - nodes * functionWidth) / edgeWidth)
@@ -75,8 +75,12 @@ public:
     }
     GraphOwners(const GraphOwners &) = delete;
     GraphOwners &operator=(const GraphOwners &) = delete;
-    void *inputData() { return input.input.storage.data(); }
-    void *workspaceData() { return workspace.workspace.storage.data(); }
+    void *inputData() {
+        return input.input.storage.data();
+    }
+    void *workspaceData() {
+        return workspace.workspace.storage.data();
+    }
 };
 } // namespace
 
@@ -105,8 +109,9 @@ void verifyHostedGraph(std::vector<FunctionBody> &functions, const Metadata &met
         value.index = graphCount(index);
         value.function.firstEdge = edge;
         value.function.hasReceiver = signature.receiver().has_value();
-        value.function.serviceEntry = std::any_of(parameters.begin(), parameters.end(),
-                                                  [](const Type &type) { return type.isService(); });
+        value.function.serviceEntry = std::any_of(parameters.begin(), parameters.end(), [](const Type &type) {
+            return type.isService();
+        });
         value.function.rootScope = signature.moduleScope() == 0;
         for (const auto instruction : function.code)
             if (const auto *target = callee(instruction)) {
