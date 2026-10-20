@@ -488,6 +488,9 @@ class Projection {
         case ResolvedTypeKind::display_session:
             result = Type::DisplaySession;
             break;
+        case ResolvedTypeKind::port_range:
+            result = Type::PortRange;
+            break;
         case ResolvedTypeKind::call_session:
             result = Type::CallSession;
             break;
@@ -714,14 +717,18 @@ public:
                 invalidResolution();
         };
         result.serviceKind = [&kinds](auto identity) {
-            if (identity < 0 || sizeValue(identity) >= kinds.size())
-                invalidResolution();
-            return kinds[sizeValue(identity)];
+            for (auto kind : kinds)
+                if (static_cast<std::int64_t>(kind) == identity)
+                    return kind;
+            invalidResolution();
         };
-        result.serviceOperation = [](auto identity) {
+        result.serviceOperation = [&kinds](auto identity) {
             if (identity < 0 || sizeValue(identity) >= service::operations.size())
                 invalidResolution();
-            return service::operations[sizeValue(identity)].operation;
+            const auto &operation = service::operations[sizeValue(identity)];
+            if (std::find(kinds.begin(), kinds.end(), operation.kind) == kinds.end())
+                invalidResolution();
+            return operation.operation;
         };
         result.literalByte = [&](std::int64_t at) {
             if (at < 0 || at >= sourceBytes)
@@ -1084,8 +1091,9 @@ struct BuiltinCatalog {
                             Type::ConsoleSession,
                             Type::DisplaySession,
                             Type::IommuEventSession,
-                            Type::CallSession};
-    std::array<service::CopiedDefinition, 11> definitions = service::copiedDefinitions();
+                            Type::CallSession,
+                            Type::PortRange};
+    std::array<service::CopiedDefinition, 12> definitions = service::copiedDefinitions();
     BuiltinCatalog() {
         for (const auto &definition : definitions)
             types.push_back(definition.type);
@@ -1152,7 +1160,7 @@ std::uint64_t resolutionQuota() {
     const auto P = mul(sum({mul(34, N), S, K}), D);
     const auto storage = sum({64, U, textCount, mul(2, Q), P, L, H});
     const auto storageIndexes = sum({U, mul(2, Q), P, N, L, H, mul(2, M)});
-    const auto primitiveKinds = static_cast<std::uint64_t>(ResolvedTypeKind::call_session) + 1;
+    const auto primitiveKinds = static_cast<std::uint64_t>(ResolvedTypeKind::port_range) + 1;
     const auto types = sum({mul(2, Sx), K, primitiveKinds}), categories = mul(7, M + 1);
     const auto nominals = add(Sx, K), authority = mul(I, nominals);
     const auto semantic = sum({2,
@@ -1426,6 +1434,8 @@ ResolvedTypeKind wireKind(const Type &type) {
         return ResolvedTypeKind::console_session;
     case TypeKind::DisplaySession:
         return ResolvedTypeKind::display_session;
+    case TypeKind::PortRange:
+        return ResolvedTypeKind::port_range;
     case TypeKind::CallSession:
         return ResolvedTypeKind::call_session;
     case TypeKind::IommuEventSession:
@@ -1445,7 +1455,7 @@ class HostedResolution::Impl {
     std::vector<ModuleSource> sources;
     bool finished = false, failed = false;
     std::map<std::string, std::int64_t> builtinIdentities;
-    std::vector<std::int64_t> serviceSpellings;
+    std::map<service::Operation, std::int64_t> serviceSpellings;
     std::vector<service::Kind> serviceKinds;
     wire::SessionStatus status() {
         wire::SessionStatus result;
@@ -1468,8 +1478,8 @@ class HostedResolution::Impl {
             invalidResolution();
         return result;
     }
-    bool callFamily = false;
-    void seed(bool callExtension = false) {
+    bool callFamily = false, portFamily = false;
+    void seed(int extension = 0) {
         const auto add = [&](const Type &type) {
             hosted_abi::ResolverSeedBuiltinInput input;
             input.definition = blankMeta();
@@ -1483,11 +1493,15 @@ class HostedResolution::Impl {
                 invalidResolution();
         };
         const auto &catalog = builtinCatalog();
-        const auto isCall = [](const Type &type) {
-            return type == Type::CallSession || type == service::callResultType() || type == service::callStatusType();
+        const auto family = [](const Type &type) {
+            if (type == Type::CallSession || type == service::callResultType() || type == service::callStatusType())
+                return 1;
+            if (type == Type::PortRange || type == service::portWriteResultType())
+                return 2;
+            return 0;
         };
         for (const auto &type : catalog.types)
-            if (isCall(type) == callExtension)
+            if (family(type) == extension)
                 add(type);
         const auto member = [&](std::int64_t parent, const std::string &name, std::int64_t typeOrOrdinal) {
             hosted_abi::ResolverSeedMemberInput input;
@@ -1501,7 +1515,7 @@ class HostedResolution::Impl {
                 invalidResolution();
         };
         for (const auto &definition : catalog.definitions) {
-            if (isCall(definition.type) != callExtension)
+            if (family(definition.type) != extension)
                 continue;
             const auto parent = builtinIdentities.at(typeName(definition.type));
             for (const auto &[name, type] : definition.fields)
@@ -1511,12 +1525,12 @@ class HostedResolution::Impl {
         }
         for (const auto &[kind, type] : service::capabilityTypes) {
             (void)type;
-            if ((kind == service::Kind::Call) == callExtension)
+            if (family(type) == extension)
                 serviceKinds.push_back(kind);
         }
         for (const auto &operation : service::operations)
-            if ((operation.kind == service::Kind::Call) == callExtension)
-                serviceSpellings.push_back(text(std::string(operation.spelling)));
+            if (family(service::capabilityType(operation.kind)) == extension)
+                serviceSpellings.emplace(operation.operation, text(std::string(operation.spelling)));
     }
 
     void lowerStorage() {
@@ -1545,7 +1559,7 @@ class HostedResolution::Impl {
         default:
             invalidResolution();
         }
-        limits.serviceGroups = service::supportedGroupBitmap(callFamily);
+        limits.serviceGroups = service::supportedGroupBitmap(callFamily, portFamily);
         if (aurora_hosted_lowering_begin(owner.data(), &configuration) != 1) {
             lowerStorage();
             invalidResolution();
@@ -1564,12 +1578,14 @@ class HostedResolution::Impl {
                 invalidResolution();
             }
         }
-        const auto operationCount = service::operationCount(callFamily);
-        if (serviceKinds.size() != service::capabilityTypes.size() - (callFamily ? 0 : 1) ||
+        const auto operationCount = service::operationCount(callFamily, portFamily);
+        if (serviceKinds.size() != service::capabilityTypes.size() - (callFamily ? 0 : 1) - (portFamily ? 0 : 1) ||
             serviceSpellings.size() != operationCount)
             invalidResolution();
-        for (std::size_t index = 0; index < operationCount; ++index) {
-            const auto &operation = service::operations[index];
+        std::size_t index = 0;
+        for (const auto &operation : service::operations) {
+            if (!service::active(operation.kind, callFamily, portFamily))
+                continue;
             const auto kind = std::find(serviceKinds.begin(), serviceKinds.end(), operation.kind);
             if (kind == serviceKinds.end())
                 invalidResolution();
@@ -1578,9 +1594,9 @@ class HostedResolution::Impl {
                 invalidResolution();
             hosted_abi::LoweringServiceInput input{};
             input.seed.receiverKind = wireKind(service::capabilityType(operation.kind));
-            input.seed.kindId = std::distance(serviceKinds.begin(), kind);
-            input.seed.operationId = static_cast<std::int64_t>(index);
-            input.seed.spellingSource = serviceSpellings[index];
+            input.seed.kindId = static_cast<std::int64_t>(operation.kind);
+            input.seed.operationId = static_cast<std::int64_t>(operation.operation);
+            input.seed.spellingSource = serviceSpellings.at(operation.operation);
             const auto result = builtinIdentities.find(typeName(operation.resultType()));
             if (result == builtinIdentities.end())
                 invalidResolution();
@@ -1596,6 +1612,7 @@ class HostedResolution::Impl {
                 lowerStorage();
                 invalidResolution();
             }
+            ++index;
         }
         for (const auto symbol : layoutSymbols)
             if (aurora_hosted_lowering_seed_layout_symbol(owner.data(), symbol) < 0) {
@@ -1630,7 +1647,7 @@ class HostedResolution::Impl {
         if (success) {
             lowerStorage();
             if (result.result_reason != lowering::LoweringError::none ||
-                result.root_row < hostedLoweringPrefixRows(callFamily) || result.diagnostic_row != 0)
+                result.root_row < hostedLoweringPrefixRows(callFamily, portFamily) || result.diagnostic_row != 0)
                 invalidResolution();
         } else if ((result.result_status != lowering::LoweringStatus::semantic_failure &&
                     result.result_status != lowering::LoweringStatus::invalid) ||
@@ -1682,9 +1699,10 @@ public:
             const auto tokens = lex(source);
             const auto parsed = parseHostedModuleSyntax(tokens, owner.beginArena());
             if (parsed.callFamily && !callFamily) {
-                seed(true);
+                seed(1);
                 callFamily = true;
             }
+            portFamily = portFamily || parsed.portFamily;
             hosted_abi::ResolverSourceInput input;
             input.source = span(source->text);
             const auto index = aurora_hosted_resolver_append_source(owner.data(), &input);
@@ -1767,6 +1785,10 @@ public:
                 }
             }
         }
+        // Port is appended after all optional Call descriptors, independent of
+        // import discovery order. Ingestion only retains admitted syntax.
+        if (portFamily)
+            seed(2);
         const auto result = aurora_hosted_resolver_run(owner.data());
         storage();
         const auto final = status();

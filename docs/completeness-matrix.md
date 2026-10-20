@@ -5,7 +5,7 @@ source and toolchain recorded in the relevant PR; pending checks remain pending.
 
 | Destination | Status |
 |---|---|
-| Modern safe kernel | Mixed C++/Aurora kernel with bounded protected programs, IPC and reusable RAM-file read-service incarnations; general scheduling, SMP and full Aurora implementation remain incomplete. |
+| Modern safe kernel | Mixed C++/Aurora kernel with bounded protected programs, IPC and reusable RAM-file read-service incarnations; BIOS source UART/PortRange migration is pending qualification; general scheduling, SMP and full Aurora implementation remain incomplete. |
 | Safe C++-like language with TypeScript-like types | Aurora owns the frontend, formatter and x86 emitter, including mutable typed-buffer formatter append; native host conversion and dynamic verification remain. Self-hosting and richer type/concurrency features are incomplete. |
 | Ideal filesystem and XFS compatibility | Bounded RAM storage and offline readers exist; mounted durable services, recovery and XFS read-write are incomplete. |
 | Framework Laptop 13 AMD support | Emulator foundations exist; active drivers, DMA isolation, power/recovery and physical qualification are incomplete. |

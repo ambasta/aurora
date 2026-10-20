@@ -1,6 +1,9 @@
 // Exercise the real generated BIOS service over the native Session/Uart path.
 // Ports model the device only; Aurora owns every editor and presentation step.
 #include "../kernel/console-session.hpp"
+#ifdef AURORA_GENERATED_UART
+#include "../kernel/source-uart.hpp"
+#endif
 #include <cstdlib>
 #include <deque>
 #include <functional>
@@ -8,6 +11,7 @@
 #include <limits>
 #include <string>
 #include <string_view>
+#include <vector>
 
 extern "C" std::uint64_t __au_runtime_console_entry(const aurora::console::ServiceArgument *);
 
@@ -33,7 +37,28 @@ auto need(bool condition, std::string_view message) -> void {
         std::exit(1);
     }
 }
+struct Operation {
+    bool write;
+    unsigned port;
+    std::uint8_t byte;
+    auto operator==(const Operation &) const -> bool = default;
+};
 struct Ports {
+    static inline std::vector<Operation> trace;
+    static inline std::size_t operations{};
+    static auto record(bool write, unsigned port, std::uint8_t byte = 0) -> void {
+        ++operations;
+        if (trace.size() < 64)
+            trace.push_back({write, port, byte});
+    }
+    static auto clear_trace() -> void {
+        trace.clear();
+        operations = 0;
+    }
+    static auto expect_trace(std::initializer_list<Operation> expected) -> void {
+        need(operations == expected.size() && trace == std::vector<Operation>(expected),
+             "UART exact register operation sequence");
+    }
     static inline std::deque<std::uint8_t> input;
     static inline std::string output;
     static inline std::uint8_t error{}, error_after_read{}, error_after_write{};
@@ -42,6 +67,8 @@ struct Ports {
     static inline std::size_t stop_after{std::numeric_limits<std::size_t>::max()};
     static inline std::uint8_t last_fcr{}, expected_trigger{};
     static auto read(unsigned port) -> std::uint8_t {
+        record(false, port);
+        need(port == 0x3f8 || port == 0x3fa || port == 0x3fd, "unexpected UART register read");
         if (port == 0x3fd) {
             ++lsr_reads;
             const auto value =
@@ -60,6 +87,8 @@ struct Ports {
         return 0;
     }
     static auto write(unsigned port, std::uint8_t value) -> void {
+        record(true, port, value);
+        need(port == 0x3f8 || port == 0x3fa, "unexpected UART register write");
         if (port == 0x3fa) {
             need(value == (expected_trigger | 3) || value == (expected_trigger | 7), "UART FIFO trigger changed");
             last_fcr = value;
@@ -80,6 +109,9 @@ struct Ports {
 };
 class Platform final {
 public:
+    static auto owns_uart() -> bool {
+        return true;
+    }
     static auto quiet() -> bool {
         return true;
     }
@@ -93,6 +125,9 @@ public:
         std::abort();
     }
 };
+#ifdef AURORA_GENERATED_UART
+using PortService = aurora::hardware::PortRange<Platform, Ports>;
+#endif
 auto queue(std::string_view bytes) -> void {
     for (const auto byte : bytes)
         Ports::input.push_back(static_cast<std::uint8_t>(byte));
@@ -106,11 +141,17 @@ auto arrive(std::string text) -> void {
 template <class Device> struct Suite {
     using Uart = Device;
     using Session = aurora::console::Session<Uart, Platform>;
-    static auto reset() -> void {
+    static inline bool uart_active{};
+    static auto reset(std::uint8_t initial_error = 0) -> void {
+        if constexpr (requires { Uart::close(); }) {
+            if (uart_active)
+                Uart::close();
+        }
         arrivals.clear();
         Ports::input.clear();
         Ports::output.clear();
-        Ports::error = Ports::error_after_read = Ports::error_after_write = 0;
+        Ports::error_after_read = Ports::error_after_write = 0;
+        Ports::error = initial_error;
         Ports::writes = Ports::inject_at = Ports::reads = Ports::inject_read_at = 0;
         Ports::lsr_reads = Ports::rx_flushes = 0;
         Ports::stop_after = std::numeric_limits<std::size_t>::max();
@@ -119,8 +160,20 @@ template <class Device> struct Suite {
         output_failed = false;
         next_sample = Session::next;
         put_byte = Session::put;
+        Ports::clear_trace();
         Uart::initialize_input();
-        need(Ports::last_fcr == (Ports::expected_trigger | 7), "UART session setup did not reset both FIFOs");
+        uart_active = true;
+        if (initial_error) {
+            Ports::expect_trace({{true, 0x3fa, static_cast<std::uint8_t>(Ports::expected_trigger | 7)},
+                                 {false, 0x3fd, 0},
+                                 {true, 0x3fa, static_cast<std::uint8_t>(Ports::expected_trigger | 3)},
+                                 {false, 0x3fa, 0}});
+        } else {
+            Ports::expect_trace({{true, 0x3fa, static_cast<std::uint8_t>(Ports::expected_trigger | 7)},
+                                 {false, 0x3fd, 0},
+                                 {false, 0x3fa, 0}});
+            need(Ports::last_fcr == (Ports::expected_trigger | 7), "UART session setup did not reset both FIFOs");
+        }
     }
     static auto invoke() -> Completion {
         const auto argument = Session::open();
@@ -135,6 +188,14 @@ template <class Device> struct Suite {
     static auto run(std::uint8_t trigger) -> void {
         Ports::expected_trigger = trigger;
         for (const auto error : {2, 4, 8, 16, 30}) {
+            // The destructive initialization LSR read must preserve copied carry.
+            reset(error);
+            const auto initialized_damage = Uart::next();
+            need(!initialized_damage.present && initialized_damage.byte == 0 && initialized_damage.damaged,
+                 "initialization discarded receive damage");
+            const auto initialized_clean = Uart::next();
+            need(!initialized_clean.present && initialized_clean.byte == 0 && !initialized_clean.damaged,
+                 "initialization damage was delivered twice");
             // An echo's TX status polling must not lose a receive error.
             reset();
             arrive("e");
@@ -213,10 +274,14 @@ template <class Device> struct Suite {
 
         // Transport observations remain canonical without owning editor state.
         reset();
+        Ports::clear_trace();
         auto sample = Uart::next();
+        Ports::expect_trace({{false, 0x3fd, 0}});
         need(!sample.present && sample.byte == 0 && !sample.damaged, "empty transport observation");
         Ports::error = 2;
+        Ports::clear_trace();
         sample = Uart::next();
+        Ports::expect_trace({{false, 0x3fd, 0}, {true, 0x3fa, static_cast<std::uint8_t>(trigger | 3)}});
         need(!sample.present && sample.byte == 0 && sample.damaged, "error-only transport observation");
         sample = Uart::next();
         need(!sample.present && sample.byte == 0 && !sample.damaged, "error-only observation did not clear");
@@ -232,6 +297,24 @@ template <class Device> struct Suite {
             sample = Uart::next();
             need(!sample.present && sample.byte == 0 && !sample.damaged, "delimiter latch did not clear");
         }
+        // A non-delimiter consumes post-pop damage rather than poisoning a new line.
+        reset();
+        queue("ab");
+        Ports::inject_read_at = 1;
+        Ports::error_after_read = 16;
+        Ports::clear_trace();
+        sample = Uart::next();
+        Ports::expect_trace({{false, 0x3fd, 0},
+                             {false, 0x3f8, 0},
+                             {false, 0x3fd, 0},
+                             {true, 0x3fa, static_cast<std::uint8_t>(trigger | 3)}});
+        need(sample.present && sample.byte == 'a' && sample.damaged && Ports::input.empty(),
+             "post-pop damage must discard RX only");
+        sample = Uart::next();
+        need(!sample.present && !sample.damaged && sample.byte == 0, "non-delimiter damage carried twice");
+        Ports::clear_trace();
+        need(Uart::try_put(255) == aurora::console::PutResult::success, "ready transmitter rejected byte");
+        Ports::expect_trace({{false, 0x3fd, 0}, {true, 0x3f8, 255}});
         reset();
         Ports::transmit_ready = false;
         Ports::error = 4;
@@ -277,9 +360,28 @@ extern "C" std::uint64_t __au_runtime_console_put(const void *grant, std::uint64
     return result;
 }
 
+#ifdef AURORA_GENERATED_UART
+extern "C" std::uint64_t __au_runtime_port_read8(const void *grant, std::uint64_t generation, std::uint64_t offset) {
+    return PortService::read8(grant, generation, offset);
+}
+extern "C" std::uint64_t
+__au_runtime_port_write8(const void *grant, std::uint64_t generation, std::uint64_t offset, std::uint64_t byte) {
+    return PortService::write8(grant, generation, offset, byte);
+}
+#endif
+
 auto main() -> int {
+#ifdef AURORA_GENERATED_UART
+    using One = aurora::console::SourceUart<PortService, Platform>;
+    using Fourteen = aurora::console::SourceUart<PortService, Platform, aurora::console::FifoTrigger::fourteen>;
+    Suite<One>::run(0);
+    One::close();
+    Suite<Fourteen>::run(0xc0);
+    Fourteen::close();
+#else
     Suite<aurora::console::Uart<Ports>>::run(0);
     Suite<aurora::console::Uart<Ports, aurora::console::FifoTrigger::fourteen>>::run(0xc0);
+#endif
     std::cout << "PASS: generated BIOS session and shared UART damage/timeout, both FIFO triggers; " << observations
               << " observations\n";
 }

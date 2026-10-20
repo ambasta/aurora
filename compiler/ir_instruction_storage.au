@@ -425,7 +425,9 @@ export namespace compiler_ir_instructions {
         //: invalid typed IR: acknowledge requires closed enum result and no object storage
         service_ack_result,
         //: invalid typed IR: service observation requires exact pristine active copied sample object
-        service_sample_result
+        service_sample_result,
+        //: invalid typed IR: port operation requires canonical scalar result
+        service_port_result
     };
     // The eight OutputRow-width leaves remain raw integers. The codec preserves
     // unknown scalar operators for source admission to reject without enum

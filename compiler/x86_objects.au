@@ -190,6 +190,19 @@ export namespace compiler_x86 {
         const i64 result = operand_value(store, instruction, 2);
         workspace.line_address("movq ", offset, ", %rdi");
         workspace.line_address("movq ", offset - 8, ", %rsi");
+        if (operation == 6) {
+            workspace.line("movq %rax, %rdx");
+            workspace.call_runtime("__au_runtime_port_read8");
+            workspace.service_completion("__au_runtime_port_read8", 3, 255);
+            return workspace.ok();
+        }
+        if (operation == 7) {
+            workspace.pop("%rcx");
+            workspace.pop("%rdx");
+            workspace.call_runtime("__au_runtime_port_write8");
+            workspace.service_completion("__au_runtime_port_write8", 4, 0);
+            return workspace.ok();
+        }
         if (operation == 5) {
             workspace.line("movq %rax, %rdx");
             workspace.call_runtime("__au_runtime_call");

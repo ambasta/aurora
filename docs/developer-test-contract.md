@@ -50,13 +50,27 @@ available, rather than new tracked per-feature result files.
 
 ## Predecessor-backed frontend and historical receipts
 
-Current compiler source has no C++ expression seed. Complete the explicit
-[source-bootstrap recipe](../compiler/README.md#source-bootstrap) before using
-Meson or ordinary Make shortcuts. The paired predecessor executable and digest
-are checked before generation; all current source-consuming targets link the
-Aurora frontend. Current C1/C2 regeneration and corpus checks use the existing
-bootstrap gate. A digest proves artifact identity, not independent review or
-source-build provenance by itself.
+Current compiler source has no C++ expression seed. Select a predecessor built by
+the explicit [source-bootstrap recipe](../compiler/README.md#source-bootstrap),
+or reuse a retained artifact under the
+[bootstrap evolution policy](../compiler/README.md#bootstrap-evolution-policy),
+before using Meson or ordinary Make shortcuts. Current Meson setup checks the
+absolute executable path; Ninja tracks that executable as an input. The deprecated
+`bootstrap_compiler_sha256` option is ignored, not checked before generation.
+Artifact reuse therefore requires explicit digest and source/build/tool provenance
+verification against retained qualification evidence before path selection; no
+automated cache or pin enforcement is implemented yet.
+
+All current source-consuming targets link the Aurora frontend. Current C1/C2
+regeneration and corpus checks use the existing bootstrap gate. A digest proves
+artifact identity, not independent review or source-build provenance by itself.
+Artifact reuse does not establish a fresh source bootstrap, a shorter source
+chain or qualification of changed source. Predecessor bumps require fresh
+seed-route qualification and reviewed corpus membership; keep the independent
+historical C++ emitter oracle separately identified if the build predecessor
+changes. Preserve existing accepted coverage and original historical receipts.
+The final integrated-source full, image/emulator and independent-review gates
+remain unchanged.
 
 Make is a convenience layer over the predecessor-backed Meson graph. `make test`
 forwards to the complete `full` suite without a second prerequisite graph;

@@ -221,6 +221,7 @@ class ProfileMetadata(unittest.TestCase):
             "kernel/console.hpp",
             "kernel/display-session.hpp",
             "kernel/graphical-session.hpp",
+            "kernel/interactive-console.hpp",
             "kernel/uefi/framebuffer-pixels.hpp",
             "kernel/uefi/framebuffer-policy.hpp",
             "kernel/uefi/graphical-capture-policy.hpp",

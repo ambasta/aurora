@@ -11,7 +11,8 @@ enum class Kind {
     Console,
     Display,
     IommuEvent,
-    Call
+    Call,
+    Port
 };
 enum class Operation {
     Next,
@@ -19,12 +20,15 @@ enum class Operation {
     Pixel,
     IommuPoll,
     IommuAcknowledge,
-    Call
+    Call,
+    PortRead8,
+    PortWrite8
 };
 inline const std::array capabilityTypes{std::pair{Kind::Console, Type::ConsoleSession},
                                         std::pair{Kind::Display, Type::DisplaySession},
                                         std::pair{Kind::IommuEvent, Type::IommuEventSession},
-                                        std::pair{Kind::Call, Type::CallSession}};
+                                        std::pair{Kind::Call, Type::CallSession},
+                                        std::pair{Kind::Port, Type::PortRange}};
 inline Kind kind(const Type &type) {
     for (const auto &[identity, candidate] : capabilityTypes)
         if (candidate == type)
@@ -40,17 +44,18 @@ inline Type capabilityType(Kind kind) {
 inline bool supportedGroup(const std::set<Kind> &kinds) {
     return kinds == std::set<Kind>{Kind::Console} || kinds == std::set<Kind>{Kind::Display} ||
            kinds == std::set<Kind>{Kind::IommuEvent} || kinds == std::set<Kind>{Kind::Call} ||
-           kinds == std::set<Kind>{Kind::Console, Kind::Display} ||
+           kinds == std::set<Kind>{Kind::Port} || kinds == std::set<Kind>{Kind::Console, Kind::Display} ||
            kinds == std::set<Kind>{Kind::Console, Kind::IommuEvent};
 }
-inline std::int64_t supportedGroupBitmap(bool includeCall = true) {
+inline std::int64_t supportedGroupBitmap(bool includeCall = true, bool includePort = true) {
     std::int64_t result = 0;
     for (unsigned mask = 0; mask < (1U << capabilityTypes.size()); ++mask) {
         std::set<Kind> group;
         for (std::size_t index = 0; index < capabilityTypes.size(); ++index)
             if (mask & (1U << index))
                 group.insert(capabilityTypes[index].first);
-        if ((includeCall || !group.contains(Kind::Call)) && supportedGroup(group))
+        if ((includeCall || !group.contains(Kind::Call)) && (includePort || !group.contains(Kind::Port)) &&
+            supportedGroup(group))
             result |= std::int64_t{1} << mask;
     }
     return result;
@@ -72,6 +77,13 @@ inline Type eventSampleType();
 inline Type eventAckResultType();
 inline Type callResultType();
 inline Type callStatusType();
+inline Type portWriteResultType();
+inline Type portReadType() {
+    return Type::U8;
+}
+inline constexpr bool active(Kind kind, bool includeCall, bool includePort) {
+    return (kind != Kind::Call || includeCall) && (kind != Kind::Port || includePort);
+}
 class OperationDescription {
 public:
     Kind kind;
@@ -103,11 +115,14 @@ inline constexpr std::array operations{
                          5},
     OperationDescription{Kind::IommuEvent, Operation::IommuPoll, "poll", eventSampleType, {}, 0},
     OperationDescription{Kind::IommuEvent, Operation::IommuAcknowledge, "acknowledge", eventAckResultType, {}, 0},
-    OperationDescription{Kind::Call, Operation::Call, "call", callResultType, {TypeKind::U64}, 1}};
-inline constexpr std::size_t operationCount(bool includeCall) {
+    OperationDescription{Kind::Call, Operation::Call, "call", callResultType, {TypeKind::U64}, 1},
+    OperationDescription{Kind::Port, Operation::PortRead8, "read8", portReadType, {TypeKind::U64}, 1},
+    OperationDescription{
+        Kind::Port, Operation::PortWrite8, "write8", portWriteResultType, {TypeKind::U64, TypeKind::U8}, 2}};
+inline constexpr std::size_t operationCount(bool includeCall, bool includePort = false) {
     std::size_t count = 0;
     for (const auto &entry : operations)
-        if (includeCall || entry.kind != Kind::Call)
+        if (active(entry.kind, includeCall, includePort))
             ++count;
     return count;
 }
@@ -172,11 +187,16 @@ inline Type callStatusType() {
     result.displayName = "builtin::CallStatus";
     return result;
 }
+inline Type portWriteResultType() {
+    Type result = Type::enumeration("__au_port_write_result");
+    result.displayName = "builtin::PortWriteResult";
+    return result;
+}
 inline bool copiedType(const Type &type) {
-    return type == sampleType() || type == putResultType() || type == completionType() ||
-           type == displayPutResultType() || type == displayCompletionType() || type == eventSampleType() ||
-           type == callResultType() || type == callStatusType() || type == eventPollResultType() ||
-           type == eventAckResultType() || type == eventIntakeCompletionType();
+    return type == portWriteResultType() || type == sampleType() || type == putResultType() ||
+           type == completionType() || type == displayPutResultType() || type == displayCompletionType() ||
+           type == eventSampleType() || type == callResultType() || type == callStatusType() ||
+           type == eventPollResultType() || type == eventAckResultType() || type == eventIntakeCompletionType();
 }
 // Canonical copied service data, shared by descriptor seeding and existing
 // semantic helpers. The source type helpers above retain identity authority.
@@ -186,7 +206,7 @@ public:
     std::vector<std::pair<std::string, Type>> fields;
     std::vector<std::string> cases;
 };
-inline std::array<CopiedDefinition, 11> copiedDefinitions() {
+inline std::array<CopiedDefinition, 12> copiedDefinitions() {
     return {
         CopiedDefinition{sampleType(), {{"byte_present", Type::Bool}, {"byte", Type::U8}, {"damaged", Type::Bool}}, {}},
         CopiedDefinition{putResultType(), {}, {"success", "timeout"}},
@@ -209,6 +229,7 @@ inline std::array<CopiedDefinition, 11> copiedDefinitions() {
                           "transport_failure",
                           "output_failure"}},
         CopiedDefinition{callResultType(), {{"status", callStatusType()}, {"value", Type::U64}}, {}},
-        CopiedDefinition{callStatusType(), {}, {"replied", "cancelled", "rejected"}}};
+        CopiedDefinition{callStatusType(), {}, {"replied", "cancelled", "rejected"}},
+        CopiedDefinition{portWriteResultType(), {}, {"issued"}}};
 }
 } // namespace aurora::service

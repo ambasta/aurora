@@ -5,6 +5,8 @@ from pathlib import Path
 import importlib.util
 from copy import deepcopy
 import json
+import re
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -17,6 +19,9 @@ service = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = service
 spec.loader.exec_module(service)
 decoder = service.load("service_guard_decoder", ROOT / "scripts/kernel_stack.py")
+sys.path.insert(0, str(ROOT / "scripts"))
+bios = service.load("bios_console_controls", ROOT / "scripts/kernel_bios_console_admission.py")
+assembly = service.load("uart_bridge_controls", ROOT / "scripts/meson_aurora_assembly.py")
 
 
 def body(operations):
@@ -236,6 +241,212 @@ class Admission(unittest.TestCase):
                         service.checked("console")
                 receipt.write_text(json.dumps(data))
                 self.assertEqual(service.checked("console"), data)
+
+
+class BiosUartAdmission(unittest.TestCase):
+    @staticmethod
+    def abi():
+        # Independent nominal fixture: symbols deliberately do not follow compiler mangling.
+        fields = (
+            ("receive_error", "bool"),
+            ("trigger", "u64"),
+            ("value", "u64"),
+            ("present", "bool"),
+            ("damaged", "bool"),
+            ("success", "bool"),
+        )
+        record = dict(
+            source_name="kernel::UartTransfer",
+            size=48,
+            alignment=8,
+            reserved=48,
+            fields=[
+                dict(name=name, offset=index * 8, bytes=8, array_length=0, kind=kind)
+                for index, (name, kind) in enumerate(fields)
+            ],
+        )
+        functions = {}
+        for suffix in ("initialize", "next", "put"):
+            parameters = [
+                dict(offset=0, bytes=16, kind="service", type_name="builtin::PortRange"),
+                dict(offset=16, bytes=48, kind="class", type_name="copied_uart_record"),
+            ]
+            if suffix == "put":
+                parameters.append(dict(offset=64, bytes=8, kind="u8"))
+            functions["fixture_uart_" + suffix] = dict(
+                source_name="uart_" + suffix,
+                receiver=None,
+                receiver_mutable=None,
+                borrowed_root_count=0,
+                borrowed_roots=[],
+                borrowed_root_abi=dict(
+                    kind="none",
+                    register=None,
+                    tuple_payload_bytes=0,
+                    tuple_reserved_bytes=0,
+                    saved_root_reserved_bytes=0,
+                ),
+                parameter_bytes=72 if suffix == "put" else 64,
+                parameters=parameters,
+                result=dict(bytes=48, kind="class", type_name="copied_uart_record"),
+            )
+        return dict(version=3, records={"copied_uart_record": record}, functions=functions)
+
+    def test_uart_bridge_uses_exact_nominal_compiler_abi(self):
+        facts = self.abi()
+        template = (ROOT / "kernel/uart-policy-entry.S").read_text()
+        rendered = assembly.render_bridge(template, facts)
+        for suffix in ("initialize", "next", "put"):
+            self.assertIn("call fixture_uart_" + suffix, rendered)
+        for field, value in (("size", 40), ("alignment", 16), ("reserved", 64)):
+            changed = deepcopy(facts)
+            changed["records"]["copied_uart_record"][field] = value
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                assembly.render_bridge(template, changed)
+        for index in range(6):
+            for field, value in (("offset", 1), ("bytes", 1), ("kind", "u8"), ("array_length", 1)):
+                changed = deepcopy(facts)
+                changed["records"]["copied_uart_record"]["fields"][index][field] = value
+                with self.subTest(index=index, field=field), self.assertRaises(ValueError):
+                    assembly.render_bridge(template, changed)
+        for suffix in ("initialize", "next", "put"):
+            symbol = "fixture_uart_" + suffix
+            for mutate in (
+                lambda f: f.update(parameter_bytes=48),
+                lambda f: f["parameters"][0].update(type_name="builtin::ConsoleSession"),
+                lambda f: f["parameters"][0].update(kind="class"),
+                lambda f: f["parameters"][1].update(offset=8),
+                lambda f: f["parameters"][1].update(bytes=40),
+                lambda f: f["parameters"][1].update(type_name="another_record"),
+                lambda f: f["result"].update(bytes=40),
+                lambda f: f["result"].update(kind="u64"),
+                lambda f: f["result"].update(type_name="another_record"),
+            ):
+                changed = deepcopy(facts)
+                mutate(changed["functions"][symbol])
+                with self.subTest(symbol=symbol), self.assertRaises(ValueError):
+                    assembly.render_bridge(template, changed)
+            missing = deepcopy(facts)
+            del missing["functions"][symbol]
+            with self.assertRaises(ValueError):
+                assembly.render_bridge(template, missing)
+            duplicate = deepcopy(facts)
+            duplicate["functions"]["duplicate"] = deepcopy(duplicate["functions"][symbol])
+            with self.assertRaises(ValueError):
+                assembly.render_bridge(template, duplicate)
+
+    def test_bios_copied_stack_record_is_not_a_scalar_size_escape(self):
+        for suffix in ("initialize", "next", "put"):
+            bridge = "__au_runtime_uart_" + suffix
+            parameters = [["builtin::PortRange", 16], ["copied_class", 48]]
+            if suffix == "put":
+                parameters.append(["scalar", 8])
+            record = dict(parameters=parameters, result_bytes=48, result_kind="copied_class")
+            bios.verify_uart_record(record, bridge)
+            for mutate in (
+                lambda r: r.update(result_bytes=40),
+                lambda r: r.update(result_kind="scalar"),
+                lambda r: r.pop("result_kind"),
+                lambda r: r["parameters"][1].__setitem__(0, "scalar"),
+                lambda r: r["parameters"][1].__setitem__(1, 40),
+                lambda r: r["parameters"].reverse(),
+                lambda r: r["parameters"].append(["scalar", 8]),
+            ):
+                changed = deepcopy(record)
+                mutate(changed)
+                with self.assertRaises(ValueError):
+                    bios.verify_uart_record(changed, bridge)
+        with self.assertRaises(ValueError):
+            bios.verify_uart_record(record, "__au_runtime_console_entry")
+
+    def test_bios_bridges_bind_result_register_and_target(self):
+        for copied in (False, True):
+            operations = [("push", "%rbp"), ("mov", "%rsp,%rbp"), ("mov", "%rdi,%r11")]
+            if copied:
+                operations.append(("mov", "%rsi,%r10"))
+            operations += [("call", "100 <entry>"), ("leave", ""), ("ret", "")]
+            bios.bridge_contract(body(operations), {256: "entry"}, "entry", copied)
+            mutations = [(2, ("mov", "%rsi,%r11")), (-3, ("call", "101 <wrong>")), (-1, ("ret", "$0x8"))]
+            if copied:
+                mutations.append((3, ("mov", "%rsi,%r9")))
+            for index, replacement in mutations:
+                changed = list(operations)
+                changed[index] = replacement
+                with self.assertRaises(ValueError):
+                    bios.bridge_contract(body(changed), {256: "entry"}, "entry", copied)
+            with self.assertRaises(ValueError):
+                bios.bridge_contract(body(operations[:-1]), {256: "entry"}, "entry", copied)
+
+    def test_bios_maps_missing_inputs_and_stack_overflow_fail_closed(self):
+        self.assertEqual(bios.merge_functions({"console": 1}, {"uart": 2}), {"console": 1, "uart": 2})
+        with self.assertRaises(ValueError):
+            bios.merge_functions({"same": 1}, {"same": 2})
+        with tempfile.TemporaryDirectory(prefix="bios-admission-inputs-") as temporary:
+            root = Path(temporary)
+            path = root / "facts.json"
+            path.write_text('{"functions":{},"functions":{}}')
+            with self.assertRaisesRegex(ValueError, "Duplicate"):
+                bios.read_json(path)
+            with self.assertRaises(FileNotFoundError):
+                bios.read_json(root / "missing.abi.json")
+            directory = root / "kernel-images/bios/console"
+            directory.mkdir(parents=True)
+            # Image admission is mandatory even when this gate is invoked alone.
+            # Stub the subprocess, not the failure: these remain compiler-free controls.
+            denied = subprocess.CalledProcessError(1, ["kernel-image.py", "--check-only"])
+            with (
+                patch.object(bios.stack, "command", side_effect=denied) as image_check,
+                patch.object(bios.stack, "Elf") as elf,
+            ):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    bios.admission(directory, ROOT)
+                image_check.assert_called_once_with(
+                    sys.executable,
+                    "-B",
+                    str(ROOT / "tests/kernel-image.py"),
+                    "--root",
+                    str(ROOT),
+                    "--build-dir",
+                    str(directory),
+                    "--console",
+                    "--check-only",
+                )
+                elf.assert_not_called()
+            with patch.object(bios.stack, "command", return_value=""):
+                with self.assertRaises(FileNotFoundError):
+                    bios.admission(directory, ROOT)
+        # Reserve IRQ and a fault that interrupts that IRQ, not just the larger one.
+        main, fault = 512, 720
+        normal = 32768 - main - 63 - 191 - fault
+        exact = bios.check_budget(dict(peak=normal), dict(peak=fault), main)
+        self.assertEqual(exact["minimum_unused"], 0)
+        with self.assertRaisesRegex(ValueError, "main stack exhausted"):
+            bios.check_budget(dict(peak=normal + 1), dict(peak=fault), main)
+        bios.check_budget(dict(peak=1), dict(peak=16384 - 191), 1)
+        with self.assertRaisesRegex(ValueError, "emergency stack exhausted"):
+            bios.check_budget(dict(peak=1), dict(peak=16384 - 191 + 1), 1)
+        with self.assertRaises(ValueError):
+            bios.check_budget(dict(peak=1 << 64), dict(peak=1), 1)
+
+    def test_bios_active_owner_routes_diagnostics_and_stops_fault_reentry(self):
+        serial = (ROOT / "kernel/console.hpp").read_text()
+        put = serial[serial.index("static auto put(Byte value)") : serial.index("static auto text(")]
+        self.assertRegex(
+            put,
+            r"if \(console::Interactive::owns_uart\(\)\)\s*\{\s*"
+            r"console::Interactive::put\(value\);\s*return;",
+        )
+        self.assertLess(put.index("Interactive::put"), put.index("Io::read"))
+        main = (ROOT / "kernel/main.cpp").read_text()
+        dispatch = main[main.index("auto exception_dispatch(", main.index('asm("aurora_exception_dispatch")')) :]
+        guard = re.search(
+            r"if \(aurora::console::Interactive::owns_uart\(\)\)\s*"
+            r"aurora::console::Interactive::fail\(\);",
+            dispatch,
+        )
+        self.assertIsNotNone(guard)
+        self.assertLess(guard.start(), dispatch.index("Serial::"))
+        self.assertLess(guard.start(), dispatch.index("Scheduler::interrupt"))
 
 
 if __name__ == "__main__":

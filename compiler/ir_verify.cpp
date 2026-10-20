@@ -1971,6 +1971,13 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                         } else if (operation.operation == service::Operation::Put) {
                             current(Type::U8);
                             state.current = Value{service::putResultType(), {}};
+                        } else if (operation.operation == service::Operation::PortRead8) {
+                            current(Type::U64);
+                            state.current = Value{Type::U8, {}};
+                        } else if (operation.operation == service::Operation::PortWrite8) {
+                            require(pop().type == Type::U8, "port write byte argument type mismatch");
+                            require(pop().type == Type::U64, "port write offset argument type mismatch");
+                            state.current = Value{service::portWriteResultType(), {}};
                         } else if (operation.operation == service::Operation::IommuAcknowledge) {
                             state.current = Value{service::eventAckResultType(), {}};
                         } else if (operation.operation == service::Operation::Next ||

@@ -2054,6 +2054,9 @@ export namespace compiler_ir_instructions {
             if (compiler_ir_metadata::named(metadata, row.name(), "__au_event_ack_result")) {
                 result = result | 4u64;
             }
+            if (compiler_ir_metadata::named(metadata, row.name(), "__au_port_write_result")) {
+                result = result | 8u64;
+            }
             at = at + 1;
         }
         return result;
@@ -2072,7 +2075,7 @@ export namespace compiler_ir_instructions {
         }
         if (form == 2) { // ReleaseServiceLoan: the executed path decides which loan is live and called.
             const i64 kind = call_value(store, instruction, 1);
-            if (call_value(store, instruction, 0) <= 0 || kind < 0 || kind > 3) {
+            if (call_value(store, instruction, 0) <= 0 || kind < 0 || kind > 4) {
                 return fail(store, InstructionError::service_release);
             }
             return true;
@@ -2081,7 +2084,7 @@ export namespace compiler_ir_instructions {
             return true;
         } // BindServiceParameter and ServiceCall were admitted in earlier phases.
         const i64 operation = call_value(store, instruction, 1);
-        if (operation < 0 || operation > 5) {
+        if (operation < 0 || operation > 7) {
             return fail(store, InstructionError::service_operation);
         }
         i64 expected_kind = 0; // Console: Next, Put
@@ -2094,6 +2097,9 @@ export namespace compiler_ir_instructions {
         if (operation == 5) {
             expected_kind = 3;
         }
+        if (operation == 6 || operation == 7) {
+            expected_kind = 4;
+        } // Port: Read8, Write8
         const i64 kind = call_value(store, instruction, 3);
         if (kind != expected_kind) {
             return fail(store, InstructionError::service_operation_kind);
@@ -2103,6 +2109,12 @@ export namespace compiler_ir_instructions {
             return fail(store, InstructionError::service_operation_root);
         }
         const i64 result_offset = call_value(store, instruction, 2);
+        if (operation == 6 || operation == 7) {
+            if (result_offset != 0 || (operation == 7 && (result_enums & 8u64) == 0u64)) {
+                return fail(store, InstructionError::service_port_result);
+            }
+            return true;
+        }
         if (operation == 2) {
             if (result_offset != 0 || (result_enums & 2u64) == 0u64) {
                 return fail(store, InstructionError::service_pixel_result);

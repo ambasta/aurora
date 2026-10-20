@@ -187,16 +187,19 @@ static_assert(static_cast<std::int64_t>(Role::ServiceOperationId) == 5);
 static_assert(static_cast<std::int64_t>(service::Kind::Console) == 0 &&
               static_cast<std::int64_t>(service::Kind::Display) == 1 &&
               static_cast<std::int64_t>(service::Kind::IommuEvent) == 2 &&
-              static_cast<std::int64_t>(service::Kind::Call) == 3);
+              static_cast<std::int64_t>(service::Kind::Call) == 3 &&
+              static_cast<std::int64_t>(service::Kind::Port) == 4);
 static_assert(static_cast<std::int64_t>(service::Operation::Next) == 0 &&
               static_cast<std::int64_t>(service::Operation::Put) == 1 &&
               static_cast<std::int64_t>(service::Operation::Pixel) == 2 &&
               static_cast<std::int64_t>(service::Operation::IommuPoll) == 3 &&
               static_cast<std::int64_t>(service::Operation::IommuAcknowledge) == 4 &&
-              static_cast<std::int64_t>(service::Operation::Call) == 5);
+              static_cast<std::int64_t>(service::Operation::Call) == 5 &&
+              static_cast<std::int64_t>(service::Operation::PortRead8) == 6 &&
+              static_cast<std::int64_t>(service::Operation::PortWrite8) == 7);
 // Source operation/kind admission is tied to the closed service table as well
 // as its wire ordinals. It does not retain a second native service schema.
-static_assert(service::operations.size() == 6 && service::operations[0].operation == service::Operation::Next &&
+static_assert(service::operations.size() == 8 && service::operations[0].operation == service::Operation::Next &&
               service::operations[0].kind == service::Kind::Console &&
               service::operations[1].operation == service::Operation::Put &&
               service::operations[1].kind == service::Kind::Console &&
@@ -207,7 +210,11 @@ static_assert(service::operations.size() == 6 && service::operations[0].operatio
               service::operations[4].operation == service::Operation::IommuAcknowledge &&
               service::operations[4].kind == service::Kind::IommuEvent &&
               service::operations[5].operation == service::Operation::Call &&
-              service::operations[5].kind == service::Kind::Call);
+              service::operations[5].kind == service::Kind::Call &&
+              service::operations[6].operation == service::Operation::PortRead8 &&
+              service::operations[6].kind == service::Kind::Port &&
+              service::operations[7].operation == service::Operation::PortWrite8 &&
+              service::operations[7].kind == service::Kind::Port);
 static_assert(static_cast<std::int64_t>(Role::TypeId) == 12 && static_cast<std::int64_t>(Role::OperandTypeId) == 14 &&
               static_cast<std::int64_t>(Role::SourceTypeId) == 15 &&
               static_cast<std::int64_t>(Role::ResultTypeId) == 16 &&

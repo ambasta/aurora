@@ -47,6 +47,7 @@ profile_data = import('keyval').load(profile_file)
 kernel_profile_images = {}
 kernel_profile_users = {}
 admission_recipes = {
+  'bios-console': ['kernel_bios_console_admission.py', 'bios-console-admission.json'],
   'program': ['kernel_program_console_admission.py', 'program-console-admission.json'],
   'console': ['kernel_console_service_admission.py', 'console-service-admission.json'],
   'graphical': ['kernel_graphical_console_admission.py', 'graphical-console-admission.json'],
@@ -115,6 +116,22 @@ foreach profile_id : profile_data['profiles'].split('|')
   objects += {language_name: custom_target(prefix + '-language-object',
     input: [language[0]] + bridge_input, output: language_name + '.o', build_subdir: object_subdir,
     command: [kernel_as, '--64', '@INPUT@', '-o', '@OUTPUT@'])}
+  if bios_console
+    uart_assembly = custom_target(prefix + '-uart-assembly',
+      input: files('../examples/kernel-uart.au'),
+      output: ['kernel-uart.s', 'kernel-uart.stack.json', 'kernel-uart.abi.json'],
+      build_subdir: output_subdir, depfile: 'kernel-uart.d',
+      depend_files: compiler_files + files('../kernel/uart-policy-entry.S', '../scripts/bootstrap_frontend.py'),
+      command: [python, '-B', kernel_assembly_helper, '--compiler', kernel_image_compiler, '--source', '@INPUT@',
+                '--output', '@OUTPUT0@', '--stack-facts', '@OUTPUT1@', '--abi-facts', '@OUTPUT2@',
+                '--depfile', '@DEPFILE@', '--module-root', kernel_source / 'kernel/policies',
+                '--local-symbols', '--referenced-reflection-only',
+                '--bridge', kernel_source / 'kernel/uart-policy-entry.S'])
+    aurora_facts += [uart_assembly[1], uart_assembly[2]]
+    objects += {'kernel-uart': custom_target(prefix + '-uart-object',
+      input: uart_assembly[0], output: 'kernel-uart.o', build_subdir: object_subdir,
+      command: [kernel_as, '--64', '@INPUT@', '-o', '@OUTPUT@'])}
+  endif
   foreach name : profile_data[key + '.assembly'].split('|')
     assembly_key = key + '.assembly.' + name
     objects += {name: custom_target(prefix + '-' + name + '-object',
@@ -233,20 +250,24 @@ foreach profile_id : profile_data['profiles'].split('|')
   cpp_names = profile_data[key + '.cpp'].split('|')
   foreach name : cpp_names
     source = files('../' + profile_data[key + '.cpp.' + name])
-    flags = ['-fstack-usage'] + (platform == 'uefi' ? ['-fcallgraph-info=su'] : []) + kernel_flags + ['-UNDEBUG'] + profile_flags
+    flags = ['-fstack-usage'] + (platform == 'uefi' or bios_console ? ['-fcallgraph-info=su'] : []) + kernel_flags + ['-UNDEBUG'] + profile_flags
     flags += platform == 'bios' ? ['-fno-pie'] : ['-fpie', '-fvisibility=hidden']
+    # Keep the BIOS console's conservative exception closure directly auditable.
+    if bios_console
+      flags += ['-fno-jump-tables']
+    endif
     if platform == 'bios' or name == 'runtime'
       flags += ['-I' + include_dir]
     endif
     native = static_library(prefix + '-' + name, [source, generated_headers],
       native: true, pic: false, install: false, build_by_default: false, implicit_include_directories: false,
       override_options: profile_options, build_subdir: output_subdir / 'native', cpp_args: flags)
-    sidecars = [name + '.o', name + '.su', name + '.source.json'] + (platform == 'uefi' ? [name + '.ci'] : [])
+    sidecars = [name + '.o', name + '.su', name + '.source.json'] + (platform == 'uefi' or bios_console ? [name + '.ci'] : [])
     objects += {name: custom_target(prefix + '-' + name + '-export', input: native.extract_objects(source),
       output: sidecars, build_subdir: object_subdir,
       command: [python, '-B', kernel_object_helper, '--native-object', '@INPUT@', '--source', source,
                 '--output', '@OUTPUT0@', '--compile-directory', meson.project_build_root()] +
-               (platform == 'uefi' ? ['--callgraph'] : []))}
+               (platform == 'uefi' or bios_console ? ['--callgraph'] : []))}
   endforeach
   link_objects = []
   foreach name : profile_data[key + '.link'].split('|')
@@ -376,10 +397,20 @@ foreach profile_id : profile_data['profiles'].split('|')
     endforeach
   endif
   if admission != ''
+    admission_inputs = [profile_image] + aurora_facts + native_exports + checks
+    if bios_console
+      admission_inputs += [elf, binary, objects['kernel-language'], objects['kernel-uart']]
+      foreach name : profile_data[key + '.assembly'].split('|')
+        admission_inputs += [objects[name]]
+      endforeach
+    else
+      admission_inputs += [metadata]
+    endif
     checks += [custom_target(prefix + '-admission',
-      input: [profile_image, metadata] + aurora_facts + native_exports + checks,
+      input: admission_inputs,
       output: admission_recipe[1], build_subdir: output_subdir,
-      depend_files: validation_dependencies + files('../scripts/kernel_console_service_admission.py'),
+      depend_files: validation_dependencies + files('../scripts/kernel_console_service_admission.py',
+        '../scripts/meson_aurora_assembly.py', '../tests/kernel-image.py'),
       command: [python, '-B', admission_tool, 'emit'] + admission_common_args)]
   endif
   kernel_profile_images += {profile_id: [profile_image] + checks}
