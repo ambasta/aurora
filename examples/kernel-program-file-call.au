@@ -206,6 +206,5 @@ auto update_files(console::ProtectedFiles current, std::BinaryBuffer64 command, 
 
 // Only copied bounded lifecycle state crosses this private bootstrap seam.
 auto aurora_kernel_file_service_transition(u64 state, u64 event) -> u64 {
-    kernel::FileServiceLifecycle lifecycle = kernel::FileServiceLifecycle(state);
-    return lifecycle.transition(event);
+    return kernel::file_service_transition(state, event);
 }

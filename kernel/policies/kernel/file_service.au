@@ -46,4 +46,9 @@ export namespace kernel {
             return 0u64;
         }
     };
+    // The actual copied-state entry is shared by native and hosted consumers.
+    auto file_service_transition(u64 state, u64 event) -> u64 {
+        FileServiceLifecycle lifecycle = FileServiceLifecycle(state);
+        return lifecycle.transition(event);
+    }
 }

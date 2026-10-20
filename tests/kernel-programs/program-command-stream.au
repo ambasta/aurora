@@ -160,6 +160,5 @@ auto command_stream_contract() -> i64 {
 
 // Scalar-only test seam over the same production lifecycle implementation.
 auto file_service_transition(u64 state, u64 event) -> u64 {
-    kernel::FileServiceLifecycle lifecycle = kernel::FileServiceLifecycle(state);
-    return lifecycle.transition(event);
+    return kernel::file_service_transition(state, event);
 }
