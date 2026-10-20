@@ -26,6 +26,7 @@ def catalogue_checks(compiler, work):
     source = work / "catalogue.au"
     facts = work / "catalogue.json"
     assembly = work / "catalogue.s"
+    stack = work / "catalogue-stack.json"
     plain = "module catalogue; auto f()->i64{return 7;}"
     cases = {
         "plain": (plain, False),
@@ -69,19 +70,88 @@ def catalogue_checks(compiler, work):
             True,
         ),
     }
+    # Preserve all Call cases and their legacy expectations; Port is independent.
+    cases = {label: (text, active, False) for label, (text, active) in cases.items()}
+    cases.update(
+        {
+            "port-comment": (plain + " // builtin::PortRange builtin::PortWriteResult\n", False, False),
+            "port-string": (
+                'module catalogue; auto f()->i64{const array<u8,24> s="builtin::PortWriteResult";return i64(s[0]);}',
+                False,
+                False,
+            ),
+            "port-user-name": (
+                "module catalogue; class PortRange {public:i64 n;}; class PortWriteResult {public:i64 n;}; "
+                "auto f()->i64{return size_of(PortRange);}",
+                False,
+                False,
+            ),
+            "port-type": ("module catalogue; auto f(builtin::PortRange& p)->u8{return p.read8(7u64);}", False, True),
+            "port-status-type": (
+                "module catalogue; auto f(builtin::PortWriteResult r)->bool{return "
+                "r==builtin::PortWriteResult::issued;}",
+                False,
+                True,
+            ),
+            "port-status-only": (
+                "module catalogue; auto f()->bool{return "
+                "builtin::PortWriteResult::issued==builtin::PortWriteResult::issued;}",
+                False,
+                True,
+            ),
+            "port-unused-template-type": (
+                "module catalogue; template<Scalar T> auto unused(T v)->i64{return "
+                "size_of(builtin::PortWriteResult);} auto f()->i64{return 7;}",
+                False,
+                True,
+            ),
+            "port-unused-template-case": (
+                "module catalogue; template<Scalar T> auto unused(T v)->bool{return "
+                "builtin::PortWriteResult::issued==builtin::PortWriteResult::issued;} auto f()->i64{return "
+                "7;}",
+                False,
+                True,
+            ),
+            "port-sparse-operations": (
+                "module catalogue; auto f(builtin::PortRange& p)->builtin::PortWriteResult{const u8 "
+                "b=p.read8(7u64);return p.write8(7u64,b);}",
+                False,
+                True,
+            ),
+            "both-port-first": (
+                "module catalogue; auto p(builtin::PortRange& p)->u8{return p.read8(7u64);} auto "
+                "c(builtin::CallSession& c)->builtin::CallResult{const builtin::CallResult "
+                "result=c.call(42u64);return result;}",
+                True,
+                True,
+            ),
+            "both-call-first": (
+                "module catalogue; auto c(builtin::CallSession& c)->builtin::CallResult{const "
+                "builtin::CallResult result=c.call(42u64);return result;} auto p(builtin::PortRange& "
+                "p)->u8{return p.read8(7u64);}",
+                True,
+                True,
+            ),
+        }
+    )
+
+    def check_families(abi, call, port, label):
+        require(("__au_call_result" in abi["records"]) == call, label + ": result catalogue activation")
+        require(("__au_call_status" in abi["enums"]) == call, label + ": status catalogue activation")
+        require(("__au_port_write_result" in abi["enums"]) == port, label + ": independent Port catalogue activation")
+
     baseline = None
-    for label, (text, active) in cases.items():
+    for label, (text, active, port_active) in cases.items():
         source.write_text(text)
-        result = run([compiler, source, "--abi-facts", facts, "-o", assembly])
+        result = run([compiler, source, "--abi-facts", facts, "--stack-facts", stack, "-o", assembly])
         require(result.returncode == 0, label + ": " + result.stderr.decode())
         abi = json.loads(facts.read_text())
-        require(("__au_call_result" in abi["records"]) == active, label + ": result catalogue activation")
-        require(("__au_call_status" in abi["enums"]) == active, label + ": status catalogue activation")
-        output = (assembly.read_bytes(), facts.read_bytes())
+        check_families(abi, active, port_active, label)
+        output = (assembly.read_bytes(), facts.read_bytes(), stack.read_bytes())
         if label == "plain":
             baseline = output
-        if label == "comment":
-            require(output == baseline, "Call spellings in comments changed output")
+        if label in ("comment", "port-comment"):
+            require(output == baseline, "Service spellings in comments changed assembly/ABI/stack/reflection output")
     # Root arrives before two dependencies; the Call reference is in an unused
     # template in the transitive leaf. Import visibility must remain unchanged.
     (work / "middle.au").write_text("export module middle; import leaf; export auto middle()->i64{return leaf();}")
@@ -94,7 +164,44 @@ def catalogue_checks(compiler, work):
     require(result.returncode == 0, "transitive activation: " + result.stderr.decode())
     abi = json.loads(facts.read_text())
     require("__au_call_result" in abi["records"] and "__au_call_status" in abi["enums"], "transitive catalogue missing")
-    print(f"PASS: Call catalogue activation: {len(cases)} source cases and transitive unused template")
+    check_families(abi, True, False, "transitive Call-only")
+    # Activate at transitive leaves, including an uninstantiated enum expression.
+    # Port-only skips wire operation 5 and kind 3; successful operation lowering
+    # proves active row indices are dense without renumbering permanent identities.
+    (work / "port_leaf.au").write_text(
+        "export module port_leaf; export template<Scalar T> auto unused_port(T v)->bool{"
+        "return builtin::PortWriteResult::issued==builtin::PortWriteResult::issued;}"
+        " export auto port_leaf(builtin::PortRange& p)->builtin::PortWriteResult{"
+        "const u8 b=p.read8(7u64);return p.write8(7u64,b);}"
+    )
+    (work / "port_middle.au").write_text(
+        "export module port_middle; import port_leaf; export auto port_middle()->i64{return 7;}"
+    )
+    for label, imports, call, port in (
+        ("neither", "", False, False),
+        ("call-only", "import middle;", True, False),
+        ("port-only", "import port_middle;", False, True),
+        ("call-port", "import middle; import port_middle;", True, True),
+        ("port-call", "import port_middle; import middle;", True, True),
+    ):
+        source.write_text("module catalogue;" + imports + " auto f()->i64{return 7;}")
+        result = run(
+            [compiler, "--module-root", work, source, "--abi-facts", facts, "--stack-facts", stack, "-o", assembly]
+        )
+        require(result.returncode == 0, label + ": " + result.stderr.decode())
+        check_families(json.loads(facts.read_text()), call, port, label)
+    # A transitive unused enum expression alone must activate Port, independently
+    # of an operation receiver type or any instantiated body.
+    (work / "port_leaf.au").write_text(
+        "export module port_leaf; export template<Scalar T> auto unused_port(T v)->bool{"
+        "return builtin::PortWriteResult::issued==builtin::PortWriteResult::issued;}"
+        " export auto port_leaf()->i64{return 7;}"
+    )
+    source.write_text("module catalogue; import port_middle; auto f()->i64{return 7;}")
+    result = run([compiler, "--module-root", work, source, "--abi-facts", facts, "-o", assembly])
+    require(result.returncode == 0, "transitive Port enum expression: " + result.stderr.decode())
+    check_families(json.loads(facts.read_text()), False, True, "transitive Port enum expression")
+    print(f"PASS: independent Call/Port catalogue: {len(cases)} source cases and transitive import orders")
 
 
 def file_count_checks(compiler, work):

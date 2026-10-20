@@ -743,10 +743,13 @@ class Projection {
         identity(configuration.integer(OperandRole::MaximumScalarArrayLength));
         configuration.boolean(OperandRole::AnalysisMode);
         const auto groups = configuration.scalar(OperandRole::SupportedServiceGroups);
-        const auto completeGroups = service::supportedGroupBitmap();
-        if (groups != service::supportedGroupBitmap(false) && groups != completeGroups)
+        std::int64_t layoutRow = -1;
+        for (bool call : {false, true})
+            for (bool port : {false, true})
+                if (groups == service::supportedGroupBitmap(call, port))
+                    layoutRow = hostedLoweringPrefixRows(call, port) - 1;
+        if (layoutRow < 0)
             invalidLowering();
-        const std::int64_t layoutRow = hostedLoweringPrefixRows(groups == completeGroups) - 1;
         if (input.rows.size() <= sizeValue(layoutRow) || input.moduleRoot <= layoutRow)
             invalidLowering();
         configuration.finish();

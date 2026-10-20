@@ -70,14 +70,32 @@ class GeneratorBoundaries(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "Closed snapshot runtime authority inventory"):
                     image.snapshot_runtime_symbols(names | {extra: "T"})
 
+    def test_bios_console_uses_direct_native_dispatch(self):
+        recipe = (ROOT / "kernel-images/meson.build").read_text()
+        selection = "if bios_console\n      flags += ['-fno-jump-tables']\n    endif"
+        self.assertEqual(recipe.count("-fno-jump-tables"), 1)
+        self.assertIn("bios_console = platform == 'bios' and mode == 'console'", recipe)
+        self.assertIn(selection, recipe)
+        native_begin = recipe.index("foreach name : cpp_names")
+        native_end = recipe.index("native = static_library", native_begin)
+        self.assertIn(selection, recipe[native_begin:native_end])
+
     def test_reflection_is_closed_only_for_admitted_consumers(self):
         recipe = (ROOT / "kernel-images/meson.build").read_text()
         selection = (
             "if admission == 'program'\n    root_args += ['--referenced-reflection-only', '--local-symbols']\n  endif"
         )
         self.assertIn(selection, recipe)
-        self.assertEqual(recipe.count("--referenced-reflection-only"), 2)
-        self.assertEqual(recipe.count("--local-symbols"), 2)
+        self.assertEqual(recipe.count("--referenced-reflection-only"), 3)
+        self.assertEqual(recipe.count("--local-symbols"), 3)
+        uart_recipe = recipe[
+            recipe.index("  if bios_console\n    uart_assembly =") : recipe.index(
+                "  foreach name : profile_data[key + '.assembly']"
+            )
+        ]
+        self.assertIn("files('../examples/kernel-uart.au')", uart_recipe)
+        self.assertIn("'--local-symbols', '--referenced-reflection-only'", uart_recipe)
+        self.assertIn("kernel/uart-policy-entry.S", uart_recipe)
         self.assertLess(recipe.index(selection), recipe.index("language = custom_target"))
         caller_selection = (
             "if (call_client and name == 'clean') or owned_text\n"

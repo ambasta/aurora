@@ -403,6 +403,9 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
             const auto callName = [](const std::string &value) {
                 return value == "CallSession" || value == "CallResult" || value == "CallStatus";
             };
+            const auto portName = [](const std::string &value) {
+                return value == "PortRange" || value == "PortWriteResult";
+            };
             for (std::int64_t index = 0; index < typeCount; ++index) {
                 TypeSyntax type;
                 aurora_hosted_parser_type(arena.data(), index, &type);
@@ -411,6 +414,9 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
                 if ((type.tag == TypeSyntaxKind::builtin_type || type.tag == TypeSyntaxKind::builtin_class) &&
                     callName(text(type.name_end)))
                     parsed.callFamily = true;
+                if ((type.tag == TypeSyntaxKind::builtin_type || type.tag == TypeSyntaxKind::builtin_class) &&
+                    portName(text(type.name_end)))
+                    parsed.portFamily = true;
             }
             // Enum cases can appear without a declaration/type node, including
             // in an uninstantiated template body.
@@ -423,6 +429,10 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
                     node.name_end >= node.token_index + 2 && text(node.token_index) == "builtin" &&
                     text(node.token_index + 1) == "::" && callName(text(node.token_index + 2)))
                     parsed.callFamily = true;
+                if ((node.tag == NodeKind::name || node.tag == NodeKind::call || node.tag == NodeKind::construct) &&
+                    node.name_end >= node.token_index + 2 && text(node.token_index) == "builtin" &&
+                    text(node.token_index + 1) == "::" && portName(text(node.token_index + 2)))
+                    parsed.portFamily = true;
             }
             parsed.root = result.root_node;
             parsed.moduleName = name(preamble.token_index, preamble.binding_token);
@@ -841,6 +851,10 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
                 value = Type::ConsoleSession;
             else if (builtin == "DisplaySession")
                 value = Type::DisplaySession;
+            else if (builtin == "PortRange")
+                value = Type::PortRange;
+            else if (builtin == "PortWriteResult")
+                value = service::portWriteResultType();
             else if (builtin == "CallSession")
                 value = Type::CallSession;
             else if (builtin == "CallResult")

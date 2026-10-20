@@ -1,13 +1,12 @@
 #include "interactive-console.hpp"
 #include "console-session.hpp"
-#include "console-uart.hpp"
+#include "source-uart.hpp"
 #include "console.hpp"
 
 namespace aurora::console {
 namespace {
 using hardware::Io;
-using Transport = Uart<>;
-bool ready{}, waiting{};
+bool ready{}, waiting{}, owned{};
 
 [[nodiscard]] auto irq_off() -> bool {
     std::uint64_t flags;
@@ -17,7 +16,7 @@ bool ready{}, waiting{};
 
 [[noreturn]] auto stop(std::uint8_t result) -> void {
     asm volatile("cli" : : : "memory");
-    Io::write(0x3f9, 0);
+    // Authority failure must perform no target-UART I/O.
     Io::write(0x21, 0xff);
     ready = false;
     Io::write(0xf4, result);
@@ -30,6 +29,9 @@ class Platform final {
 public:
     [[nodiscard]] static auto quiet() -> bool {
         return ready && !waiting && irq_off();
+    }
+    [[nodiscard]] static auto owns_uart() -> bool {
+        return owned;
     }
     static auto wait() -> void {
         if (!quiet()) {
@@ -50,6 +52,8 @@ public:
         stop(0x11);
     }
 };
+using PortService = hardware::PortRange<Platform>;
+using Transport = SourceUart<PortService, Platform>;
 using Service = Session<Transport, Platform>;
 
 auto initialize_input() -> void {
@@ -67,11 +71,32 @@ auto initialize_input() -> void {
     Io::write(0xa1, 1);
     Io::write(0x21, 0xef);
     Io::write(0xa1, 0xff);
-    Transport::initialize_input(); // Clear FIFOs; receive threshold remains one byte.
-    Io::write(0x3f9, 1);           // Received-data interrupt only; no transmit IRQ.
+    Io::write(0x3f9, 1); // Trusted boot transport enables RX only, while IF remains clear.
     ready = true;
+    owned = true; // Exclusive fixed COM1 admission follows trusted setup.
+    Transport::initialize_input();
 }
 } // namespace
+
+auto port_read(const void *, std::uint64_t, std::uint64_t) -> std::uint64_t asm("__au_runtime_port_read8");
+auto port_read(const void *grant, std::uint64_t generation, std::uint64_t offset) -> std::uint64_t {
+    return PortService::read8(grant, generation, offset);
+}
+auto port_write(const void *, std::uint64_t, std::uint64_t, std::uint64_t) -> std::uint64_t
+    asm("__au_runtime_port_write8");
+auto port_write(const void *grant, std::uint64_t generation, std::uint64_t offset, std::uint64_t value)
+    -> std::uint64_t {
+    return PortService::write8(grant, generation, offset, value);
+}
+auto Interactive::owns_uart() -> bool {
+    return owned;
+}
+auto Interactive::put(std::uint8_t byte) -> void {
+    Transport::put(byte);
+}
+[[noreturn]] auto Interactive::fail() -> void {
+    Platform::fail();
+}
 
 auto service_entry(const ServiceArgument *) -> std::uint64_t asm("__au_runtime_console_entry");
 auto service_next(const void *, std::uint64_t, RawSample *) -> void asm("__au_runtime_console_next");
@@ -90,6 +115,9 @@ auto service_put(const void *grant, std::uint64_t generation, std::uint64_t byte
     if (!Platform::quiet()) {
         Platform::fail();
     }
+    Transport::close();
+    owned = false; // Port authority was revoked before native transport teardown.
+    Io::write(0x3f9, 0);
     stop(completion == Completion::requested_exit ? 0x10 : 0x11);
 }
 } // namespace aurora::console

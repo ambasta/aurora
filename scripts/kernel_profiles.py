@@ -620,9 +620,9 @@ def bios_profile(mode, controls):
             "kernel-main",
             "kernel-language",
         ]
-        + (["serial-input", "kernel-interactive-console"] if console else []),
+        + (["serial-input", "kernel-interactive-console", "kernel-uart"] if console else []),
         image_options=["--console"] if console else [],
-        admission="",
+        admission="bios-console" if console else "",
         checks=[],
     )
 

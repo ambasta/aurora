@@ -256,18 +256,82 @@ def relocation_matches(linked, obj, reference, address):
     return installed == [expected]
 
 
+def bios_absolute_relocation_matches(linked, obj, reference, addend, address):
+    """Bind BIOS-only absolute S+A, including merged strings and section offsets.
+
+    Named symbols retain identity. Unnamed non-merge sections require consistent
+    retained named anchors; merged strings instead bind their exact NUL-bounded
+    bytes at the addend. No inferred zero-filled data or arbitrary slot masking.
+    """
+    if reference.name:
+        targets = {row.address + addend for row in linked.symbols if row.section and row.name == reference.name}
+        return targets == {address}
+    require(0 < reference.section < len(obj.sections), "Missing BIOS relocation section")
+    section = obj.sections[reference.section]
+    offset = reference.address + addend
+    require(
+        section[1] in (1, 8) and section[2] & 2 and 0 <= offset <= section[5],
+        "BIOS relocation outside allocated section",
+    )
+    if section[2] & 0x10:  # SHF_MERGE: the section base need not survive linking.
+        strings = bool(section[2] & 0x20)
+        require(
+            section[1] == 1
+            and not section[2] & 1
+            and (section[9] == 1 if strings else section[9] == 32 and offset % 32 == 0),
+            "Unsupported BIOS merged relocation target",
+        )
+        size = 0 if strings else 32  # Observed GCC .rodata.cst32 copy source.
+        return relocation_matches(linked, obj, replace(reference, address=offset, size=size), address)
+    bases = None
+    for anchor in obj.symbols:
+        if anchor.section != reference.section or not anchor.name or not anchor.size:
+            continue
+        candidates = {
+            row.address - anchor.address
+            for row in linked.symbols
+            if row.section and row.name == anchor.name and row.size == anchor.size
+        }
+        require(candidates, "BIOS section anchor omitted from image")
+        bases = candidates if bases is None else bases & candidates
+    require(bases is not None and len(bases) == 1, "Missing or ambiguous BIOS section identity")
+    base = next(iter(bases))
+    require(
+        any(
+            row[2] & 2 and row[3] <= base and base + section[5] <= row[3] + row[5] and (row[2] & 5) == (section[2] & 5)
+            for row in linked.sections
+        ),
+        "BIOS section anchor escaped linked allocation",
+    )
+    return address == base + offset
+
+
 def object_matches(linked, obj, symbol, *, relocation_targets=False):
     target = linked.functions[symbol.name]
     if target.size != symbol.size:
         return False
     expected = bytearray(obj.function_bytes(symbol))
     actual = bytearray(linked.function_bytes(target))
+    path = getattr(linked, "path", Path())
+    bios = (
+        path.name == "kernel.elf"
+        and path.parent.parent.name == "bios"
+        and path.parent.name == "console"
+        and path.parent.parent.parent.name == "kernel-images"
+    )
     for section, address, kind, _, addend in obj.relocations:
         if section == symbol.section and symbol.address <= address < symbol.address + symbol.size:
-            require(kind in (2, 4), "Unsupported text relocation")
+            absolute = bios and kind in (10, 11)  # R_X86_64_32 / R_X86_64_32S only.
+            require(kind in (2, 4) or absolute, "Unsupported text relocation")
             offset = address - symbol.address
             require(offset + 4 <= len(expected), "Relocation crosses function boundary")
-            if relocation_targets:
+            if absolute:
+                resolved = int.from_bytes(actual[offset : offset + 4], "little", signed=kind == 11)
+                if not bios_absolute_relocation_matches(
+                    linked, obj, obj.relocation_symbols[section, address], addend, resolved
+                ):
+                    return False
+            elif relocation_targets:
                 # Both admitted relocations encode S + A - P in a signed rel32.
                 resolved = (
                     target.address
@@ -413,6 +477,16 @@ def callgraph_frames(text, rows, symbols, source, edges=None, compile_directory=
     return associated
 
 
+def native_profile(directory):
+    return directory.parent.parent.name == "kernel-images" and (
+        directory.parent.name == "uefi" or directory.parent.name == "bios" and directory.name == "console"
+    )
+
+
+def object_directory(directory):
+    return directory if directory.parent.name == "bios" else directory / "objects"
+
+
 def object_source(directory, name, source_root=None):
     """Bind native exports to one compile, never infer ownership by basename."""
     root = Path(source_root or ROOT).resolve(strict=True)
@@ -422,8 +496,11 @@ def object_source(directory, name, source_root=None):
         "owned-bytes-runtime": "kernel/owned-bytes.cpp",
         "owned-bytes-profile": "kernel/uefi/owned-bytes.cpp",
     }.get(name, "kernel/uefi/" + name + ".cpp")
-    record = directory / "objects" / (name + ".source.json")
-    native = directory.parent.name == "uefi" and directory.parent.parent.name == "kernel-images"
+    if directory.parent.name == "bios":
+        require(name.startswith("kernel-"), "Unknown BIOS native object")
+        source = "kernel/" + name.removeprefix("kernel-") + ".cpp"
+    record = object_directory(directory) / (name + ".source.json")
+    native = native_profile(directory)
     if not native and not record.exists():
         return source, root
     require(native, "Native object association requires its original profile directory")
@@ -467,7 +544,7 @@ def object_source(directory, name, source_root=None):
     )
     for suffix in (".o", ".su", ".ci"):
         actual = original.with_suffix(suffix)
-        exported = directory / "objects" / (name + suffix)
+        exported = object_directory(directory) / (name + suffix)
         require(
             actual.resolve(strict=True) == actual and exported.resolve(strict=True) == exported,
             "Symlinked native object/sidecar",
@@ -506,11 +583,11 @@ def frame_source(source, root, *, native=False, compile_directory=None):
 
 def object_stack_rows(directory, name, symbols, edges=None, source_root=None, allow_bounded=None):
     source, compile_directory = object_source(directory, name, source_root)
-    text = (directory / "objects" / (name + ".su")).read_text()
+    text = (object_directory(directory) / (name + ".su")).read_text()
     rows = stack_rows(text, allow_bounded) if allow_bounded else stack_rows(text)
     native = Path(source).is_absolute()
     associated = callgraph_frames(
-        (directory / "objects" / (name + ".ci")).read_text(),
+        (object_directory(directory) / (name + ".ci")).read_text(),
         rows,
         symbols,
         source,
@@ -543,7 +620,7 @@ def cpp_frames(directory, linked, objects=None, edges=None, source_root=None, al
     candidates, receipts, associated = {}, {}, {}
     root = Path(source_root or ROOT).resolve(strict=True)
     for name in CPP_OBJECTS if objects is None else objects:
-        obj = Elf(directory / "objects" / (name + ".o"))
+        obj = Elf(object_directory(directory) / (name + ".o"))
         require(obj.type == 1, "Expected relocatable C++ object")
         calls = set()
         rows = object_stack_rows(directory, name, obj.functions, calls, root, allow_bounded)
@@ -552,7 +629,7 @@ def cpp_frames(directory, linked, objects=None, edges=None, source_root=None, al
             candidates.setdefault(symbol, []).append((obj, row, {(a, b) for a, b in calls if a == symbol}))
     # Every native object above has passed object_source's exact compile binding.
     # A historical directory never gains header eligibility from an absolute row.
-    native = directory.parent.name == "uefi" and directory.parent.parent.name == "kernel-images"
+    native = native_profile(directory)
     for symbol, variants in candidates.items():
         matched = compiler_witnesses(linked, symbol, variants)
         associated[symbol] = matched[0][1].size
@@ -871,26 +948,50 @@ def aurora_stack_functions(path, symbols, code, starts, generated_names):
                 "builtin::DisplaySession",
                 "builtin::IommuEventSession",
                 "builtin::CallSession",
+                "builtin::PortRange",
             }
             if record is not None:
                 require(
                     type(record) is dict
-                    and set(record) == {"parameters", "result_bytes"}
+                    and set(record) in ({"parameters", "result_bytes"}, {"parameters", "result_bytes", "result_kind"})
                     and type(record["parameters"]) is list
                     and 1 <= len(record["parameters"]) <= 6
                     and all(
                         type(row) is list
                         and len(row) == 2
                         and type(row[0]) is str
-                        and row[0] in kinds | {"scalar", "builtin::ByteRegion"}
+                        and row[0] in kinds | {"scalar", "builtin::ByteRegion", "copied_class"}
                         and type(row[1]) is int
-                        and row[1] == (8 if row[0] in ("scalar", "builtin::ByteRegion") else 16)
+                        and (
+                            8 <= row[1] <= 65536 and row[1] % 8 == 0
+                            if row[0] == "copied_class"
+                            else row[1] == (8 if row[0] in ("scalar", "builtin::ByteRegion") else 16)
+                        )
                         for row in record["parameters"]
                     )
                     and any(row[0] in kinds for row in record["parameters"])
                     and type(record["result_bytes"]) is int
-                    and record["result_bytes"] in (1, 8),
+                    and (
+                        record["result_bytes"] in (1, 8)
+                        if "result_kind" not in record
+                        else record["result_kind"] == "copied_class"
+                        and 8 <= record["result_bytes"] <= 65536
+                        and record["result_bytes"] % 8 == 0
+                    ),
                     "Invalid service entry record fact",
+                )
+            if record is not None:
+                port = any(row[0] == "builtin::PortRange" for row in record["parameters"])
+                require(
+                    not port
+                    or record["parameters"][0] == ["builtin::PortRange", 16]
+                    and all(row[0] in ("scalar", "copied_class") for row in record["parameters"][1:]),
+                    "Port requires a singleton leading capability",
+                )
+                require(
+                    port
+                    or ("result_kind" not in record and all(row[0] != "copied_class" for row in record["parameters"])),
+                    "Copied service records require Port",
                 )
             if record is not None and any(row[0] == "builtin::ByteRegion" for row in record["parameters"]):
                 require(
@@ -904,17 +1005,21 @@ def aurora_stack_functions(path, symbols, code, starts, generated_names):
                 "__au_runtime_iommu_event_acknowledge",
                 "__au_runtime_call",
             }
+            port_hosts = {
+                "__au_runtime_port_read8": {"sysv_arguments": 3, "result_max": 255},
+                "__au_runtime_port_write8": {"sysv_arguments": 4, "result_max": 0},
+            }
             require(
                 type(service_calls) is dict
-                and set(service_calls) == set(fact["calls"]) & scalar_hosts
+                and set(service_calls) == set(fact["calls"]) & (scalar_hosts | port_hosts.keys())
                 and all(
                     type(row) is dict
                     and set(row) == {"sysv_arguments", "result_max"}
                     and type(row["sysv_arguments"]) is int
                     and 2 <= row["sysv_arguments"] <= 7
                     and type(row["result_max"]) is int
-                    and 0 <= row["result_max"] <= 2
-                    for row in service_calls.values()
+                    and (row == port_hosts[host] if host in port_hosts else 0 <= row["result_max"] <= 2)
+                    for host, row in service_calls.items()
                 ),
                 "Invalid scalar service call facts",
             )
@@ -931,6 +1036,8 @@ def aurora_stack_functions(path, symbols, code, starts, generated_names):
                 )
         if "__au_runtime_call" in fact["calls"]:
             require(service_abi is not None, "Missing Call register contract")
+        if set(fact["calls"]) & {"__au_runtime_port_read8", "__au_runtime_port_write8"}:
+            require(service_abi is not None, "Missing Port register contract")
         local, edges = fact["local_bytes"], fact["calls"]
         require(type(local) is int and 8 <= local <= STACK_CAP, "Invalid Aurora local stack bound")
         require(
@@ -1059,9 +1166,9 @@ def private_frame_layout(body, linked):
     return allocated, cursor
 
 
-def linked_assembly(linked, directory, name):
+def linked_assembly(linked, directory, name, payload=None):
     """Check whole executable sections, allowing only the actual rel32 slots."""
-    obj = Elf(directory / "objects" / (name + ".o"))
+    obj = Elf(object_directory(directory) / (name + ".o"))
     names = {symbol.name: symbol for symbol in linked.symbols if symbol.section}
     evidence = []
     for index, section in enumerate(obj.sections):
@@ -1072,7 +1179,9 @@ def linked_assembly(linked, directory, name):
         anchor = candidates[0]
         begin = names[anchor.name].address - anchor.address
         expected = bytearray(obj.section_data(index))
-        installed = bytearray((directory / "payload.bin").read_bytes()[begin : begin + len(expected)])
+        installed = bytearray(
+            ((directory / "payload.bin").read_bytes() if payload is None else payload)[begin : begin + len(expected)]
+        )
         require(len(installed) == len(expected), "Assembly exceeds payload")
         for symbol in candidates:
             require(names[symbol.name].address == begin + symbol.address, "Assembly symbol moved: " + symbol.name)

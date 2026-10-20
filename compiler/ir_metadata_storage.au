@@ -34,7 +34,8 @@ export namespace compiler_ir_metadata {
         DisplaySession,
         IommuEventSession,
         OwnedValues,
-        CallSession
+        CallSession,
+        PortRange
     };
     enum class MetadataError {
         none,
@@ -416,6 +417,9 @@ export namespace compiler_ir_metadata {
         }
         auto service_call() const -> u64 {
             return 8u64;
+        }
+        auto service_port() const -> u64 {
+            return 16u64;
         }
         auto service_iommu() const -> u64 {
             return serviceIommu;

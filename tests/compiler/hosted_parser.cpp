@@ -5186,7 +5186,7 @@ void rawInstructionAdmission() {
         services.push_back({{{acquire(id)}}, Reason::service_loan_identity});
         services.push_back({{{release(id)}}, Reason::service_release});
     }
-    for (const auto kind : {std::int64_t{-1}, std::int64_t{4}, INT64_MAX}) {
+    for (const auto kind : {std::int64_t{-1}, std::int64_t{5}, INT64_MAX}) {
         services.push_back({{{acquire(1, 16, kind)}}, Reason::service_loan_root});
         services.push_back({{{release(1, kind)}}, Reason::service_release});
         services.push_back({{{operation(1, kind)}}, Reason::service_operation_kind});
@@ -5195,7 +5195,7 @@ void rawInstructionAdmission() {
         services.push_back({{{acquire(1, offset)}}, Reason::service_loan_root});
         services.push_back({{{operation(1, 0, offset)}}, Reason::service_operation_root});
     }
-    for (const auto op : {INT64_MIN, std::int64_t{-1}, std::int64_t{6}, INT64_MAX})
+    for (const auto op : {INT64_MIN, std::int64_t{-1}, std::int64_t{8}, INT64_MAX})
         services.push_back({{{operation(op, 0)}}, Reason::service_operation});
     for (const auto &[op, kind, offset, reason] :
          std::vector<std::tuple<std::int64_t, std::int64_t, std::int64_t, Reason>>{

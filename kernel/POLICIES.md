@@ -1,6 +1,6 @@
-# Copied kernel policies
+# Kernel policies
 
-These Aurora modules calculate bounded decisions over copied values. Trusted C++/assembly retain live identities, rights, frames, timers, storage and commit authority. Host decoders reject malformed decisions; they do not replace a refused Aurora decision with success. This single-CPU bootstrap has no stable foreign ABI, general scheduler or concurrency guarantee.
+Most Aurora modules calculate bounded decisions over copied values. The BIOS UART module additionally uses the sealed fixed PortRange described below. Trusted C++/assembly retain live identities, rights, frames, timers, storage and commit authority. Host decoders reject malformed decisions; they do not replace a refused Aurora decision with success. This single-CPU bootstrap has no stable foreign ABI, general scheduler or concurrency guarantee.
 
 ## Interrupt budgets
 
@@ -387,3 +387,17 @@ Both new UEFI modes retain the original runtime clock, not timed-service clocks.
 No compiler semantics, authority widening, source-language foreign ABI,
 performance parity, complete native aggregate, physical-hardware support or
 self-hosting is claimed. Selected guest and host qualification is recorded below.
+
+
+## BIOS byte-port UART
+
+`kernel.uart` owns the BIOS console's destructive LSR reads, sticky receive-error
+carry, FIFO reset and one-million-poll transmit bound. Its input/result is the
+ordinary six-field copied `UartTransfer`; no capability escapes in that record.
+`examples/kernel-uart.au` exposes real free-function entries for the private
+compiler-fact-derived bridge. The fixed native COM1 grant enforces exclusive
+quiescent ownership, generation, permissions and full-width port/value checks.
+See [console services](../docs/native-console-service.md#bios-transport) for the
+partial migration boundary, generated scripted-port coverage and pending gates.
+This source policy is not an ordinary pure copied decision: each successful
+PortRange primitive has exactly one device effect; a timeout never retries output.

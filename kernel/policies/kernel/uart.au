@@ -1,0 +1,82 @@
+export module kernel.uart;
+
+export namespace kernel {
+    // Copied carry and observation only. No address, owner or service escapes.
+    // Full-width byte lanes keep the private transport record explicit; checked
+    // narrowing occurs only at the byte-port boundary, never by truncation.
+    class UartTransfer {
+    public:
+        bool receive_error;
+        u64 trigger;
+        u64 value;
+        bool present;
+        bool damaged;
+        bool success;
+        UartTransfer(bool error, u64 fifo, u64 byte, bool has_byte, bool damage, bool okay) : receive_error(error),
+            trigger(fifo), value(byte), present(has_byte), damaged(damage), success(okay) {
+        }
+    };
+
+    auto uart_status(builtin::PortRange& ports, UartTransfer input) -> UartTransfer {
+        u64 value = u64(ports.read8(5u64));
+        bool error = input.receive_error;
+        if ((value & 30u64) != 0u64) {
+            error = true;
+            // OE may describe a dropped FIFO-tail byte after a queued delimiter.
+            // Discard RX, preserve TX, and distrust this destructive DR sample.
+            ports.write8(2u64, u8(input.trigger) | 3u8);
+            value = value & 254u64;
+        }
+        const UartTransfer result = UartTransfer(error, input.trigger, value, input.present, input.damaged,
+            input.success);
+        return result;
+    }
+
+    auto uart_initialize(builtin::PortRange& ports, UartTransfer input) -> UartTransfer {
+        const UartTransfer initial = UartTransfer(false, input.trigger, 0u64, false, false, true);
+        ports.write8(2u64, u8(input.trigger) | 7u8);
+        const UartTransfer result = uart_status(ports, initial);
+        ports.read8(2u64);
+        return result;
+    }
+
+    auto uart_next(builtin::PortRange& ports, UartTransfer input) -> UartTransfer {
+        const UartTransfer before = uart_status(ports, input);
+        const bool prior_damage = before.receive_error;
+        if ((before.value & 1u64) == 0u64) {
+            const UartTransfer empty = UartTransfer(false, input.trigger, 0u64, false, prior_damage, true);
+            return empty;
+        }
+        const u8 byte = ports.read8(0u64);
+        const UartTransfer cleared = UartTransfer(false, input.trigger, 0u64, false, prior_damage, true);
+        const UartTransfer after = uart_status(ports, cleared);
+        // A post-pop error can belong to the next line. Carry it across CR/LF.
+        bool carry = false;
+        if (byte == 10u8 || byte == 13u8) {
+            carry = after.receive_error;
+        }
+        const UartTransfer result = UartTransfer(carry, input.trigger, u64(byte), true, prior_damage
+            || after.receive_error, true);
+        return result;
+    }
+
+    auto uart_put(builtin::PortRange& ports, UartTransfer input, u8 byte) -> UartTransfer {
+        bool error = input.receive_error;
+        u64 value = input.value;
+        u64 remaining = 1000000u64;
+        while (remaining > 0u64) {
+            const UartTransfer snapshot = UartTransfer(error, input.trigger, value, false, false, false);
+            const UartTransfer observed = uart_status(ports, snapshot);
+            error = observed.receive_error;
+            value = observed.value;
+            if ((value & 32u64) != 0u64) {
+                ports.write8(0u64, byte);
+                const UartTransfer result = UartTransfer(error, input.trigger, value, false, false, true);
+                return result;
+            }
+            remaining = remaining - 1u64;
+        }
+        const UartTransfer timeout = UartTransfer(error, input.trigger, value, false, false, false);
+        return timeout;
+    }
+}

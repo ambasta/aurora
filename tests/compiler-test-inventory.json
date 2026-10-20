@@ -1547,6 +1547,35 @@
     "reason": "Complete executable runner; also imported as a helper where applicable.",
     "root_make": true
   },
+  "port_service.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "meson_commands": {
+      "port-service-source-native": {
+        "arguments": [
+          "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
+          "-O",
+          "@SOURCE@/tests/compiler/port_service.py",
+          "@BUILD@/aurorac",
+          "@BUILD@/tests/port-service-ir",
+          "--artifacts",
+          "@ARTIFACTS@"
+        ],
+        "suites": [
+          "compiler",
+          "core",
+          "full",
+          "slow"
+        ]
+      }
+    },
+    "reason": "Sealed Port source and independent IR execution with fixed runtime mocks and malformed return traps; no native I/O.",
+    "root_make": true
+  },
   "readonly_spans.py": {
     "kind": "runner",
     "make": true,

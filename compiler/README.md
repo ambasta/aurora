@@ -17,8 +17,11 @@ GNU assembler/linker and Linux host I/O remain bootstrap dependencies.
 
 ## Build and check
 
-For a fresh checkout, complete [source bootstrap](#source-bootstrap) once in the
-selected pinned tool environment. Then the ordinary shortcuts reuse Meson:
+For a fresh checkout, either complete [source bootstrap](#source-bootstrap) in
+the selected pinned tool environment or select a provenance-verified retained
+artifact under the [bootstrap evolution policy](#bootstrap-evolution-policy).
+Then explicitly configure Meson with that predecessor path using the setup
+commands below. The ordinary shortcuts reuse the configured graph:
 
 ```sh
 make -C compiler
@@ -35,6 +38,46 @@ not provide the former C++ visitor's compile-time exhaustiveness guarantee.
 [Development and qualification](../docs/developer-test-contract.md) defines exact
 routes, selected-artifact identity, explicit pinned compatibility and merge gates.
 The optional [language server](lsp/README.md) has its own dependency and suite.
+
+### Bootstrap evolution policy
+
+New language features land first with independent test or library consumers.
+Compiler adoption waits for a reviewed predecessor bump: every input compiled by
+that predecessor, including compiler-imported library helpers, must remain within
+its supported language subset. Batch bumps at milestones or for a justified set
+of compiler adoptions, rather than requiring a bump for each feature.
+
+A bump reviews the source pin, full historical-seed route, build/tool identities,
+qualification evidence, supported corpus and batched adoption together. Preserve
+every qualified checkpoint under a durable immutable reference (such as a
+protected tag), with its original source identity and receipts. This retention
+rule does not require every checkpoint to remain in the active chain: replacements
+or shortening must satisfy the existing cross-route gates below. Preserve the
+source needed to reconstruct the full seed route, not only old run summaries.
+
+The build predecessor and historical C++ emitter oracle are separate roles even
+when one executable currently serves both. Identify and retain the oracle
+independently before adopting a bootstrap predecessor with the Aurora emitter.
+Review corpus membership changes against the previous supported set; unexplained
+removal or reclassification of a previously supported input fails qualification.
+New accepted oracle inputs extend coverage. Unexpected rejection must not shrink
+the required corpus, and equal rejection is not emission coverage.
+
+Ordinary development may use a retained, digest-verified predecessor with matching
+source, build configuration, tool/environment identities and qualification
+evidence. This is an artifact-reuse route, not a fresh source-bootstrap result.
+A source hash alone is not a cache identity across different tools/configurations;
+a binary digest establishes identity, not source provenance. Rebuild from the
+seed for bump qualification and fresh source-bootstrap claims. A cached later
+checkpoint does not shorten the source chain; direct-build and cross-route proof
+is still required. All current C1/C2, differential, final-source GCC 16 full,
+applicable image/emulator and independent-review gates remain unchanged.
+
+Current implementation still uses the explicit path selection and manual source
+recipe below. There is no automated predecessor cache, checked-in artifact pin or
+cache verification script yet; verify retained artifact identity and provenance
+before selecting its path. The deprecated digest option is not enforcement.
+This policy does not itself change the six-stage route or add checkpoint refs.
 
 ### Source bootstrap
 

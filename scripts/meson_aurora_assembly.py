@@ -29,7 +29,65 @@ def dependencies(source, roots):
     return sorted(paths)
 
 
+def validate_uart_policy_abi(facts):
+    """Check every byte of the fixed native UART record against compiler facts."""
+    from bootstrap_frontend import abi_declaration, normalize_function_abi
+
+    record_symbol, record = abi_declaration(facts, "records", "kernel::UartTransfer")
+    fields = [
+        ("receive_error", "bool"),
+        ("trigger", "u64"),
+        ("value", "u64"),
+        ("present", "bool"),
+        ("damaged", "bool"),
+        ("success", "bool"),
+    ]
+    expected_record = {
+        "source_name": "kernel::UartTransfer",
+        "size": 48,
+        "alignment": 8,
+        "reserved": 48,
+        "fields": [
+            {"name": name, "offset": 8 * index, "bytes": 8, "array_length": 0, "kind": kind}
+            for index, (name, kind) in enumerate(fields)
+        ],
+    }
+    if record != expected_record:
+        raise ValueError("UART copied transfer layout does not match compiler facts")
+    roots = {
+        "kind": "none",
+        "register": None,
+        "tuple_payload_bytes": 0,
+        "tuple_reserved_bytes": 0,
+        "saved_root_reserved_bytes": 0,
+    }
+    for name in ("uart_initialize", "uart_next", "uart_put"):
+        _, raw = abi_declaration(facts, "functions", name)
+        function = normalize_function_abi(facts, raw)
+        parameters = [
+            {"offset": 0, "bytes": 16, "kind": "service", "type_name": "builtin::PortRange"},
+            {"offset": 16, "bytes": 48, "kind": "class", "type_name": record_symbol},
+        ]
+        if name == "uart_put":
+            parameters.append({"offset": 64, "bytes": 8, "kind": "u8"})
+        expected = {
+            "source_name": name,
+            "receiver": None,
+            "receiver_mutable": None,
+            "borrowed_root_count": 0,
+            "borrowed_roots": [],
+            "borrowed_root_abi": roots,
+            "parameter_bytes": 72 if name == "uart_put" else 64,
+            "parameters": parameters,
+            "result": {"bytes": 48, "kind": "class", "type_name": record_symbol},
+        }
+        if function != expected:
+            raise ValueError("UART private entry shape does not match compiler facts: " + name)
+
+
 def render_bridge(source, facts):
+    if "# UART_POLICY_ABI:" in source:
+        validate_uart_policy_abi(facts)
     # Source spellings select compiler facts, never a second mangling recipe.
     from bootstrap_frontend import abi_function_symbol
 

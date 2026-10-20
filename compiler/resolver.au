@@ -134,7 +134,8 @@ export namespace compiler_resolver {
     }
     auto service_kind(ResolvedTypeKind kind) -> bool {
         return kind == ResolvedTypeKind::console_session || kind == ResolvedTypeKind::display_session || kind
-            == ResolvedTypeKind::event_session || kind == ResolvedTypeKind::call_session;
+            == ResolvedTypeKind::event_session || kind == ResolvedTypeKind::call_session || kind
+            == ResolvedTypeKind::port_range;
     }
     auto resource_kind(ResolvedTypeKind kind) -> bool {
         return kind == ResolvedTypeKind::byte_region || kind == ResolvedTypeKind::owned_bytes || kind
@@ -199,6 +200,9 @@ export namespace compiler_resolver {
         }
         if (kind == ResolvedTypeKind::call_session) {
             return 19;
+        }
+        if (kind == ResolvedTypeKind::port_range) {
+            return 20;
         }
         return 0;
     }
@@ -3413,7 +3417,8 @@ export namespace compiler_resolver {
         // its syntax-count snapshot bounds subsequent template cloning.
         const i64 status = state(session);
         const i64 call_rank = type_rank(ResolvedTypeKind::call_session);
-        if (session.index(34, call_rank, -1, -1, 0) >= 0) {
+        if (session.index(34, call_rank, -1, -1, 0) >= 0 || session.index(34, type_rank(ResolvedTypeKind::port_range),
+            -1, -1, 0) >= 0) {
             set_mw(session, status, 3, 1);
         }
         if (session.good()) {

@@ -234,6 +234,99 @@ class NativeArtifacts(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     check(changed)
 
+    def test_port_facts_keep_copied_shapes_and_exact_raw_operation_bounds(self):
+        with tempfile.TemporaryDirectory(prefix="aurora-port-facts-") as directory:
+            path = Path(directory) / "language.stack.json"
+            read, write = "__au_runtime_port_read8", "__au_runtime_port_write8"
+            _, symbols, code, starts = fixture(
+                {
+                    "entry": [("call", "@" + read), ("call", "@" + write), ("ret", "")],
+                    read: [("ret", "")],
+                    write: [("ret", "")],
+                },
+                analyze=False,
+            )
+            record = dict(
+                parameters=[["builtin::PortRange", 16], ["copied_class", 48]],
+                result_bytes=48,
+                result_kind="copied_class",
+            )
+            fact = dict(
+                local_bytes=256,
+                calls={read: 128, write: 128},
+                copied_record=None,
+                service_abi=dict(
+                    record=record,
+                    calls={read: dict(sysv_arguments=3, result_max=255), write: dict(sysv_arguments=4, result_max=0)},
+                ),
+            )
+
+            def check(value):
+                path.write_text(json.dumps(dict(version=2, functions={"entry": value})))
+                return decoder.aurora_stack_functions(path, symbols, code, starts, {"entry"})["entry"]
+
+            self.assertEqual(check(fact)["service_abi"], fact["service_abi"])
+            # Generic parsing must not bake the current UART record's 48 into the schema.
+            # Concrete UART ABI equality is checked separately by its admission gate.
+            for size in (8, 24, 48, 65536):
+                changed = deepcopy(fact)
+                changed["service_abi"]["record"].update(
+                    parameters=[["builtin::PortRange", 16], ["copied_class", size]], result_bytes=size
+                )
+                self.assertEqual(check(changed)["service_abi"]["record"]["result_bytes"], size)
+            for mutate in (
+                lambda f: f.pop("service_abi"),
+                lambda f: f["service_abi"]["calls"].pop(read),
+                lambda f: f["service_abi"]["calls"].pop(write),
+                lambda f: f["service_abi"]["record"].pop("result_kind"),
+                lambda f: f["service_abi"]["record"].update(result_kind="scalar"),
+                lambda f: f["service_abi"]["record"]["parameters"].reverse(),
+                lambda f: f["service_abi"]["record"]["parameters"].append(["builtin::PortRange", 16]),
+                lambda f: f["service_abi"]["record"]["parameters"].append(["builtin::ConsoleSession", 16]),
+                lambda f: f["service_abi"]["record"]["parameters"].append(["builtin::ByteRegion", 8]),
+                lambda f: f["service_abi"]["record"]["parameters"][0].__setitem__(0, "builtin::ConsoleSession"),
+            ):
+                changed = deepcopy(fact)
+                mutate(changed)
+                with self.assertRaises(ValueError):
+                    check(changed)
+            for size in (0, 1, 7, 9, 65544, 1 << 64, True, "48"):
+                for result in (False, True):
+                    changed = deepcopy(fact)
+                    if result:
+                        changed["service_abi"]["record"]["result_bytes"] = size
+                    else:
+                        changed["service_abi"]["record"]["parameters"][1][1] = size
+                    with self.subTest(size=size, result=result), self.assertRaises(ValueError):
+                        check(changed)
+            for host, field, bad in (
+                (read, "sysv_arguments", 4),
+                (write, "sysv_arguments", 3),
+                (read, "result_max", 0),
+                (read, "result_max", 256),
+                (write, "result_max", 1),
+                (write, "result_max", 255),
+                (read, "result_max", True),
+                (write, "result_max", False),
+            ):
+                changed = deepcopy(fact)
+                changed["service_abi"]["calls"][host][field] = bad
+                with self.subTest(host=host, field=field, bad=bad), self.assertRaises(ValueError):
+                    check(changed)
+            # Missing/extra function maps and duplicate JSON keys fail before graph use.
+            for mapping in ({}, {"entry": fact, "unowned": fact}):
+                path.write_text(json.dumps(dict(version=2, functions=mapping)))
+                with self.assertRaises(ValueError):
+                    decoder.aurora_stack_functions(path, symbols, code, starts, {"entry"})
+            path.write_text(
+                '{"version":2,"functions":{"entry":' + json.dumps(fact) + ',"entry":' + json.dumps(fact) + "}}"
+            )
+            with self.assertRaisesRegex(ValueError, "Duplicate"):
+                decoder.aurora_stack_functions(path, symbols, code, starts, {"entry"})
+            path.unlink()
+            with self.assertRaises(FileNotFoundError):
+                decoder.aurora_stack_functions(path, symbols, code, starts, {"entry"})
+
     def test_copied_record_facts_are_versioned_and_closed(self):
         with tempfile.TemporaryDirectory(prefix="aurora-abi-facts-") as directory:
             path = Path(directory) / "language.stack.json"
@@ -906,6 +999,103 @@ class Admission(unittest.TestCase):
             )
         with self.assertRaises(ValueError):
             decoder.associate_object(linked, obj, decoder.Symbol("leaf", 0, 4, 1, 2))
+
+    @staticmethod
+    def bios_absolute_fixture(kind=10, target=0x20000, addend=0, constant=bytes(range(32)), flags=2, entry=0):
+        # Real Elf byte accessors over explicit section bytes; only ELF-file parsing
+        # is outside this unit's scope. No relocation validator is mocked.
+        original = b"\xb8" + bytes(4) + b"\xc3"
+        installed = b"\xb8" + ((target + addend) & 0xFFFFFFFF).to_bytes(4, "little") + b"\xc3"
+        null = (0,) * 10
+        obj, linked = decoder.Elf.__new__(decoder.Elf), decoder.Elf.__new__(decoder.Elf)
+        obj.type, linked.type = 1, 2
+        obj.path = Path("fixture.o")
+        linked.path = Path("/fixture/kernel-images/bios/console/kernel.elf")
+        obj.data, linked.data = original + constant, installed + constant
+        obj.sections = [null, (0, 1, 6, 0, 0, 6, 0, 0, 1, 0), (0, 1, flags, 0, 6, len(constant), 0, 0, 1, entry)]
+        linked.sections = [null, (0, 1, 6, 0x10000, 0, 6, 0, 0, 1, 0), (0, 1, 2, target, 6, len(constant), 0, 0, 1, 0)]
+        symbol = decoder.Symbol("leaf", 0, 6, 1, 2)
+        obj.functions = {"leaf": symbol}
+        linked.functions = {"leaf": decoder.Symbol("leaf", 0x10000, 6, 1, 2)}
+        reference = decoder.Symbol("target", 0, len(constant), 2, 1)
+        obj.symbols = [symbol, reference]
+        linked.symbols = [linked.functions["leaf"], decoder.Symbol("target", target, len(constant), 2, 1)]
+        obj.relocations = [(1, 1, kind, "target", addend)]
+        obj.relocation_symbols = {(1, 1): reference}
+        return linked, obj, symbol
+
+    def test_bios_absolute_named_relocations_bind_signedness_target_and_addend(self):
+        for kind, target, addend in ((10, 0xF0000000, 7), (11, 0x20000, -0x20010), (11, 0x20000, 8)):
+            linked, obj, symbol = self.bios_absolute_fixture(kind, target, addend)
+            self.assertTrue(decoder.object_matches(linked, obj, symbol))
+            for changed in ("target", "addend", "byte", "missing", "ambiguous"):
+                image, source = deepcopy(linked), deepcopy(obj)
+                if changed == "target":
+                    image.symbols[-1] = decoder.Symbol("target", target + 1, 32, 2, 1)
+                elif changed == "addend":
+                    source.relocations[0] = (1, 1, kind, "target", addend + 1)
+                elif changed == "byte":
+                    image.data = image.data[:1] + bytes([image.data[1] ^ 1]) + image.data[2:]
+                elif changed == "missing":
+                    image.symbols.pop()
+                else:
+                    image.symbols.append(decoder.Symbol("target", target + 32, 32, 2, 1))
+                with self.subTest(kind=kind, changed=changed):
+                    self.assertFalse(decoder.object_matches(image, source, symbol))
+            if target == 0xF0000000 or addend < 0:
+                obj.relocations[0] = (1, 1, 11 if kind == 10 else 10, "target", addend)
+                self.assertFalse(decoder.object_matches(linked, obj, symbol))
+        for kind, target, addend in ((10, 1 << 32, 0), (10, 0xFFFFFFFF, 1), (11, 1 << 31, 0), (11, 0, -(1 << 31) - 1)):
+            linked, obj, symbol = self.bios_absolute_fixture(kind, target, addend)
+            with self.subTest(kind=kind, target=target, addend=addend):
+                self.assertFalse(decoder.object_matches(linked, obj, symbol))
+        for kind in (1, 8, 9, 12):  # R64 and unreviewed relocation forms remain closed.
+            linked, obj, symbol = self.bios_absolute_fixture(kind)
+            with self.subTest(kind=kind), self.assertRaisesRegex(ValueError, "Unsupported text relocation"):
+                decoder.object_matches(linked, obj, symbol)
+        for path in (
+            "/fixture/kernel-images/uefi/console/kernel.elf",
+            "/fixture/kernel-images/uefi/console/payload.elf",
+            "/fixture/kernel-images/bios/normal/kernel.elf",
+        ):
+            linked, obj, symbol = self.bios_absolute_fixture()
+            linked.path = Path(path)
+            with self.subTest(path=path), self.assertRaisesRegex(ValueError, "Unsupported text relocation"):
+                decoder.object_matches(linked, obj, symbol)
+
+    def test_bios_absolute_constants_bind_exact_bytes_and_reviewed_merge_shapes(self):
+        for constant, flags, entry in ((bytes(range(32)), 0x12, 32), (b"UART constant\0", 0x32, 1)):
+            linked, obj, symbol = self.bios_absolute_fixture(constant=constant, flags=flags, entry=entry)
+            obj.relocation_symbols[1, 1] = decoder.Symbol("", 0, 0, 2, 3)
+            self.assertTrue(decoder.object_matches(linked, obj, symbol))
+            linked.data = linked.data[:6] + bytes([linked.data[6] ^ 1]) + linked.data[7:]
+            self.assertFalse(decoder.object_matches(linked, obj, symbol))
+        for flags, entry, addend in ((0x12, 16, 0), (0x13, 32, 0), (0x12, 32, 1), (0x32, 2, 0)):
+            linked, obj, symbol = self.bios_absolute_fixture(flags=flags, entry=entry, addend=addend)
+            obj.relocation_symbols[1, 1] = decoder.Symbol("", 0, 0, 2, 3)
+            with self.subTest(flags=flags, entry=entry, addend=addend), self.assertRaises(ValueError):
+                decoder.object_matches(linked, obj, symbol)
+        linked, obj, symbol = self.bios_absolute_fixture(constant=b"unterminated", flags=0x32, entry=1)
+        obj.relocation_symbols[1, 1] = decoder.Symbol("", 0, 0, 2, 3)
+        with self.assertRaisesRegex(ValueError, "Unterminated"):
+            decoder.object_matches(linked, obj, symbol)
+
+    def test_bios_absolute_section_identity_requires_unambiguous_retained_anchor(self):
+        linked, obj, symbol = self.bios_absolute_fixture()
+        obj.relocation_symbols[1, 1] = decoder.Symbol("", 0, 0, 2, 3)
+        self.assertTrue(decoder.object_matches(linked, obj, symbol))
+        for changed in ("missing-source", "missing-linked", "ambiguous", "outside"):
+            image, source = deepcopy(linked), deepcopy(obj)
+            if changed == "missing-source":
+                source.symbols.pop()
+            elif changed == "missing-linked":
+                image.symbols.pop()
+            elif changed == "ambiguous":
+                image.symbols.append(decoder.Symbol("target", 0x30000, 32, 2, 1))
+            else:
+                image.sections[2] = (0, 1, 2, 0x20001, 6, 32, 0, 0, 1, 0)
+            with self.subTest(changed=changed), self.assertRaises(ValueError):
+                decoder.object_matches(image, source, symbol)
 
     def test_unreviewed_graph_cycles_are_never_bounded_by_accident(self):
         for graph in [

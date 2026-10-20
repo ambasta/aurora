@@ -360,6 +360,19 @@ test('display-service-source-native', python,
      depends: aurorac, suite: ['full', 'slow', 'core', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 300)
 
+# Port remains a sealed singleton with fixed hosted mocks, never native I/O.
+port_service_ir = executable(
+    'port-service-ir', 'compiler/port_service_ir.cpp',
+    dependencies: hosted_frontend,
+    include_directories: include_directories('../compiler'), native: true, install: false,
+)
+test('port-service-ir', port_service_ir, suite: ['full', 'dev', 'core', 'compiler'], timeout: 120)
+test('port-service-source-native', python,
+     args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/port_service.py'), aurorac,
+            port_service_ir.full_path(), '--artifacts', '@ARTIFACTS@'],
+     depends: [aurorac, port_service_ir], suite: ['full', 'slow', 'core', 'compiler'], env: oracle_env,
+     workdir: meson.current_build_dir(), timeout: 300)
+
 # Event intake retains the existing service loan graph and executes the real
 # Aurora consumer against bounded hosted observations; no guest is run here.
 iommu_event_ir = executable(

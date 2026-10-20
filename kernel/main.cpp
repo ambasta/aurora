@@ -290,6 +290,12 @@ auto exception_dispatch(std::uint64_t vector,
                         std::uint64_t code,
                         std::uint64_t frame,
                         std::uint64_t user_value) -> std::uint64_t {
+#ifdef AURORA_INTERACTIVE_CONSOLE
+    // A trap inside the source/transport boundary cannot safely reenter it or
+    // consume destructive LSR through the bootstrap diagnostic UART reader.
+    if (aurora::console::Interactive::owns_uart())
+        aurora::console::Interactive::fail();
+#endif
     using aurora::hardware::Protection;
     const auto cpl = code & 3;
     if (vector == 3 && breakpoint_expected && cpl == 0) {

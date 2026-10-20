@@ -8,7 +8,7 @@ qualification. Do not write these images to a physical disk or change a bootload
 
 | Profile | Current behavior | Boundary |
 |---|---|---|
-| BIOS | Aurora-owned `help`, `status`, `exit` session; IRQ4-woken serial editor | Sealed ConsoleSession; trusted PIC/UART adapter |
+| BIOS | Aurora-owned `help`, `status`, `exit` session; IRQ4-woken serial editor | Sealed ConsoleSession and PortRange; Aurora UART policy, trusted PIC/byte I/O |
 | Simple UEFI | Aurora-owned editor, commands, RAM note and four named RAM files | Sealed ConsoleSession; trusted boot, UART, LAPIC and wake-frame checks |
 | [Graphical](framebuffer-console.md) | Same RAM commands, two text rows and dirty-cell drawing; serial input | Separate ConsoleSession/DisplaySession grants; bounded emulator fixture |
 | [Protected commands](program-console-contract.md) | `upper`, protected note read and uppercase replacement | Aurora input turns through ConsoleSession; native dispatch and authenticated two-domain IPC |
@@ -125,7 +125,8 @@ work. Pointer equality precedes dereference. Opening rejects an active invocatio
 and generation exhaustion. Polling revalidates across each trusted wait; closing
 checks the closed completion code and exact active invocation once. Output timeout
 terminates rather than retrying a partial response. Traps fail stop; no unwinder
-or restarted editor is supplied. Source receives no pointer or device authority.
+or restarted editor is supplied. Console application source receives no pointer or device authority.
+The separate BIOS UART policy receives only a sealed, offset-checked PortRange.
 
 Every console LSR read, including transmit polling, latches receive errors.
 RX-only flushing invalidates the old data-ready sample. Damage applies before
@@ -139,9 +140,34 @@ non-console serial behavior is unchanged. Native diagnostic `put`/`text` helpers
 `examples/kernel-console.au` owns the complete invocation-local editor, exact
 three-command dispatch and all command output. Its `Line64` is the same source
 state machine used by the other consoles. `kernel/interactive-console.cpp`
-provides only the existing sealed ConsoleSession transport and native shutdown;
+provides the existing sealed ConsoleSession transport, fixed COM1 admission and native shutdown;
 `kernel/console-service-entry.S` selects its source entry from generated ABI facts.
-There is no native shadow editor, copied-state replay or per-byte policy call.
+There is no native shadow editor or copied editor replay. UART mechanics now run
+in `kernel/policies/kernel/uart.au`: destructive LSR interpretation, sticky RX
+error carry, RX-only FIFO reset, post-pop damage and bounded TX polling. Private
+`uart_initialize`, `uart_next` and `uart_put` entry functions copy a bounded
+state/result record; native code stores the returned carry rather than duplicating
+its transitions. The `SourceUart` adapter validates canonical result lanes. Its
+private bridge resolves symbols and verifies every field/argument/result byte
+against compiler ABI facts.
+
+`kernel/port-range.hpp` admits one fixed COM1 grant only after trusted boot setup
+and exclusive ownership. Read offsets are 0/2/5 and write offsets are 0/2; other
+directions, full-width out-of-range offsets and values are denied before I/O.
+The exact grant pointer, kind, nonzero generation, operation, IF-clear owner and
+exhaustion checks precede each access. Each accepted primitive executes exactly
+one byte IN or OUT with the existing compiler memory clobber. `issued` means the
+OUT executed, not that the device accepted data. There is no output retry.
+Grant rejection performs no target-UART I/O, including logging. Normal shutdown
+revokes the grant before native IER teardown. Active BIOS diagnostics use the
+same source carry; exceptions fail stop before any bootstrap LSR reader can run.
+
+This is a partial migration. `console-uart.hpp` remains the native UART policy
+for simple UEFI, protected, graphical and event profiles. Trusted boot serial
+initialization, PIC setup, IRQ acknowledgement and synchronous waiting remain
+native. This is not a stateful driver daemon, general port allocator or hardware
+qualification. Both existing FIFO triggers remain covered by the generated UART
+model; the BIOS consumer uses the one-byte trigger.
 
 Only COM1 received-data interrupts are enabled. The unchanged private IRQ4 gate
 acknowledges the remapped legacy PIC and restores interrupted state. Foreground
@@ -157,8 +183,13 @@ driver. It has no note/file or process commands. For a build-only check, use
 `KERNEL_CONSOLE=1 ./scripts/kernel-build.sh`. BIOS admission retains the 65,024-byte
 transport payload limit; historical sizes do not admit a rebuild. Its main stack
 is 32 KiB, separately from the UEFI 16 KiB profile. Generated Aurora frames,
-native `.su` records, the bridge and interrupted IRQ/fault paths must be reviewed
-against the actual BIOS image before qualification; UEFI stack results do not transfer.
+native `.su`/`.ci` records and exact bridges are bound to the actual BIOS image by
+the console-only mixed-stack admission gate. It composes the live Console → native
+Session → Aurora UART → native byte-port closure, the retained main frame, the
+wake-only IRQ and the conservative full exception-dispatch closure. It checks
+the existing 32 KiB main and 16 KiB emergency stacks without expanding them.
+This is not general BIOS boot/user-program stack qualification; UEFI results do
+not transfer. Execution qualification remains pending the required final gates.
 
 The existing BIOS image check rejects retired editor/policy symbols and a missing,
 duplicated or wrongly selected service entry. Hosted BIOS tests execute the actual

@@ -62,7 +62,12 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
    The native `boot` suite does not run QEMU. Missing tools, skipped gates and
    prior-source results leave the current candidate unqualified. Record the actual
    GCC 16 distribution/version; Debian GCC 16.2.0-3 is not Gentoo 16.2.1 evidence.
-   New builds require the predecessor source-bootstrap route in compiler/README.md.
+   Build predecessors must have the source-bootstrap provenance specified in
+   compiler/README.md. Ordinary development may reuse a digest-verified retained
+   artifact with matching source/build/tool identities and qualification evidence.
+   This artifact route is not a fresh source bootstrap and does not qualify changed
+   current source. Fresh seed-route qualification remains required for predecessor
+   bumps and fresh source-bootstrap claims; retain the reconstructable route.
    Historical raw-seed/prebuilt receipts retain their original validation meaning;
    legacy execution entrypoints are removed; new execution uses only the native
    Meson graph without reinterpreting those records.
@@ -74,6 +79,25 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
    Verified functional checkpoints may use ready-for-review pull requests;
    unfinished milestones remain draft, per the user's latest approval.
    Never force-push, merge, or publish a release without the applicable authorization.
+
+## Bootstrap evolution
+
+- Separate language implementation from compiler adoption. New features first
+  land with independent test/library consumers; all predecessor-compiled inputs,
+  including compiler-imported library code, stay within its supported subset.
+- Batch predecessor bumps at milestones or when a justified compiler-adoption
+  batch is ready, rather than coupling each feature to a bump. Review the pin,
+  complete seed route, supported corpus and adoption together. Retain durable
+  immutable checkpoint references and original receipts; changing the active
+  route must not rewrite their meaning or remove reconstructable source history.
+- Keep the build predecessor and historical C++ emitter oracle independently
+  identified. A newer bootstrap compiler must not silently replace the independent
+  old-backend comparison. Do not demote historical corpus coverage to hide a
+  rejection or regression.
+- Cached predecessors are provenance-checked conveniences, not trust anchors or
+  evidence of chain shortening. Shorter source routes require the direct-build
+  and cross-route gates in compiler/README.md. Final-source full, image/emulator
+  qualification and independent review requirements above remain unchanged.
 
 ## Validation
 

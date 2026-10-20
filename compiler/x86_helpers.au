@@ -8,7 +8,7 @@ import aurora.compiler.lowering_kinds;
 
 export namespace compiler_x86 {
     auto service_type_kind(i64 kind) -> bool {
-        return kind == 14 || kind == 15 || kind == 16 || kind == 18;
+        return kind == 14 || kind == 15 || kind == 16 || kind == 18 || kind == 19;
     }
     auto operand_value(const compiler_ir_instructions::InstructionStore& store, i64 instruction, i64 field) -> i64 {
         return compiler_ir_instructions::call_value(store, instruction, field);
