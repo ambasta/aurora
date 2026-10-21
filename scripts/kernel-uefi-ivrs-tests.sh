@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p build/uefi
-flags=(-std=c++23 -O1 -g -Wall -Wextra -Werror -DNDEBUG)
+flags=(-DAURORA_RUNTIME_IMAGE_POLICY=one_page -std=c++23 -O1 -g -Wall -Wextra -Werror -DNDEBUG)
 if [[ "${SANITIZE:-0}" == 1 ]]; then flags+=(-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer); fi
 g++ "${flags[@]}" tests/kernel-uefi-ivrs.cpp -o build/uefi/ivrs-policy-test
 ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0}" build/uefi/ivrs-policy-test

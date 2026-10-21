@@ -33,6 +33,7 @@ def main():
         )
         command = shlex.split(os.environ.get("CXX", "g++")) + [
             "-std=c++23",
+            "-DAURORA_RUNTIME_IMAGE_POLICY=one_page",
             "-O1",
             "-Wall",
             "-Wextra",

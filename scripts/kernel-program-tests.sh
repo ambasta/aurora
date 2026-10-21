@@ -10,7 +10,7 @@ python3 -B scripts/meson-native-fixture.py --compiler "$AURORAC" \
     --local-symbols --referenced-reflection-only \
     --bridge kernel/uefi/program-note-entry.S --bridge kernel/uefi/kernel-policy-entry.S \
     --object build/program-console/language.o --depfile build/program-console/language.d
-flags=()
+flags=(-DAURORA_RUNTIME_IMAGE_POLICY=one_page)
 if [[ "${SANITIZE:-0}" == 1 ]]; then
     flags+=(-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer)
 fi

@@ -13,7 +13,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from kernel_layout import LAYOUT
-from kernel_profiles import canonical_profile
+from kernel_profiles import FIXTURE_MODES, canonical_profile
 
 BUILD = ROOT / "build/uefi"
 RECEIPT = BUILD / "program-console-admission.json"
@@ -21,8 +21,6 @@ MODES = (
     "program-console",
     "program-file-call",
     "program-file-call-fixture",
-    "program-file-call-fault",
-    "program-file-call-budget",
     "program-request-fault",
     "program-service-fault",
     "program-completion-fault",
@@ -35,6 +33,8 @@ MODES = (
     "program-unknown",
     "program-transaction",
 )
+# Guest selectors name a canonical image without changing its receipt identity.
+GUEST_MODES = MODES + tuple(mode for mode, (image, _) in FIXTURE_MODES.items() if image in MODES)
 PROGRAM_INPUT_BRIDGE = "__au_runtime_program_input"
 PROGRAM_RESPONSE_BRIDGE = "__au_runtime_program_response"
 SCRATCHPAD_INPUT_BRIDGE = "__au_runtime_scratchpad_input"
@@ -1246,7 +1246,7 @@ def main():
     parser = argparse.ArgumentParser()
     path_arguments(parser)
     parser.add_argument("action", choices=("emit", "checked", "diagnose"))
-    parser.add_argument("--mode", required=True, choices=MODES)
+    parser.add_argument("--mode", required=True, choices=GUEST_MODES)
     args = parser.parse_args()
     configure_paths(args.build_dir or args.source_root / "build/uefi", args.source_root)
     if args.action == "emit":

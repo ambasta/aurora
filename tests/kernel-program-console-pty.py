@@ -445,7 +445,7 @@ def validate_wc(text, plans, images, timer, *, checksum=False):
 
 def validate_file_call(text, mode, expected, service_results, images, timer):
     validate_retained_service(text, final=True)
-    need(mode in admission.MODES and mode.startswith("program-file-call"), "Exact file-call profile")
+    need(mode in admission.GUEST_MODES and mode.startswith("program-file-call"), "Exact file-call profile")
     need("FAIL" not in text and text.count("AURORA_FILE_CALL_READY:") == 1, "File-call startup/failure")
     need(
         text.count("AURORA_PROGRAM_CONSOLE_QUIET:") == text.count("AURORA_UEFI_OK") == 1,
@@ -848,7 +848,7 @@ def validate_failstop(part, mode, status, images):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=admission.MODES, default="program-console")
+    parser.add_argument("--mode", choices=admission.GUEST_MODES, default="program-console")
     parser.add_argument("--build-dir", type=Path, required=True)
     parser.add_argument("--read-only-recovery", action="store_true")
     args = parser.parse_args()

@@ -3,7 +3,7 @@
 #include <cstdint>
 
 #ifndef AURORA_RUNTIME_IMAGE_POLICY
-#define AURORA_RUNTIME_IMAGE_POLICY one_page
+#error "Select an explicit AURORA_RUNTIME_IMAGE_POLICY"
 #endif
 
 namespace aurora::uefi {

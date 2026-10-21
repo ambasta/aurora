@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p build
 for test in framebuffer framebuffer-tables framebuffer-loader framebuffer-pixels; do
-    "${CXX:-g++}" -std=c++23 -O1 -Wall -Wextra -Wpedantic -Werror -no-pie \
+    "${CXX:-g++}" -std=c++23 -O1 -Wall -Wextra -Wpedantic -Werror -no-pie -DAURORA_RUNTIME_IMAGE_POLICY=one_page \
         "tests/kernel-uefi-$test.cpp" -o "build/kernel-uefi-$test-test"
     "build/kernel-uefi-$test-test"
 done

@@ -44,3 +44,5 @@ aurora_kernel_terminal_event:
 aurora_kernel_budget_tick:
     jmp snapshot_budget_tick
 .size aurora_kernel_budget_tick,.-aurora_kernel_budget_tick
+
+.section .note.GNU-stack,"",@progbits

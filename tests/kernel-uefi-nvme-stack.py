@@ -160,7 +160,7 @@ def emission_test():
         "-ffreestanding -fcf-protection=none -mstringop-strategy=libcall "
         "-fno-exceptions -fno-rtti -fno-stack-protector -fno-asynchronous-unwind-tables "
         "-fno-unwind-tables -mno-red-zone -mgeneral-regs-only -fno-tree-loop-distribute-patterns "
-        "-fpie -fvisibility=hidden"
+        "-fpie -fvisibility=hidden -DAURORA_RUNTIME_IMAGE_POLICY=one_page"
     ).split()
     flags += ["-DAURORA_UEFI_" + name for name in ("ACPI", "PCI", "BAR_CAPTURE", "BAR_EDK2", "NVME_PREPARE")]
     with tempfile.TemporaryDirectory(prefix="aurora-nvme-stack-") as temporary:

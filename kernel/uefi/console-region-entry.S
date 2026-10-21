@@ -42,3 +42,5 @@ __au_runtime_console_put:
 aurora_console_put_pc:
     ret
 .size __au_runtime_console_put,.-__au_runtime_console_put
+
+.section .note.GNU-stack,"",@progbits

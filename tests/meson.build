@@ -412,7 +412,7 @@ test('iommu-event-source-native', python,
      workdir: meson.current_build_dir(), timeout: 300)
 iommu_event_session = executable('iommu-event-session', 'kernel-iommu-event-session.cpp', native: true, install: false)
 test('iommu-event-session', iommu_event_session, suite: ['full', 'dev'], timeout: 120)
-iommu_event_profile = executable('iommu-event-profile', 'kernel-uefi-event-profile.cpp', native: true, install: false)
+iommu_event_profile = executable('iommu-event-profile', 'kernel-uefi-event-profile.cpp', cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page'], native: true, install: false)
 test('iommu-event-profile', iommu_event_profile, suite: ['full', 'dev'], timeout: 120)
 iommu_event_backing = executable('iommu-event-backing', 'kernel-uefi-event-backing.cpp', native: true, install: false)
 test('iommu-event-backing', iommu_event_backing, suite: ['full', 'dev'], timeout: 120)
@@ -426,7 +426,7 @@ test('iommu-event-admission-controls-optimized', python,
 foreach model : ['framebuffer', 'framebuffer-tables', 'framebuffer-loader', 'framebuffer-pixels']
     framebuffer_model = executable(
         'uefi-' + model, 'kernel-uefi-' + model + '.cpp',
-        native: true, install: false, link_args: ['-no-pie'],
+        native: true, install: false, cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page'], link_args: ['-no-pie'],
     )
     test('uefi-' + model, framebuffer_model, suite: ['full', 'dev'], timeout: 120)
 endforeach
@@ -448,6 +448,7 @@ test('graphical-console-native', python,
             '--developer-selected-compiler', '--artifacts', '@ARTIFACTS@'], depends: aurorac,
      suite: ['full', 'slow'], env: oracle_env, workdir: meson.current_build_dir(), timeout: 600)
 graphical_paging = executable('graphical-paging', 'kernel-graphical-paging.cpp',
+                            cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page'],
                             native: true, install: false, override_options: ['optimization=1'],
                             link_args: ['-no-pie'])
 test('graphical-paging', graphical_paging, suite: ['full', 'dev'], timeout: 120)
