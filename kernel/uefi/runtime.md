@@ -178,7 +178,8 @@ and fresh reader communicate actual bytes through the existing scalar Call ABI;
 there is no supervisor file copy. A second replacement, bytes 0/128/255, empty and
 49-byte transfers, caller precommit abort and postcommit failure are separate
 compiled scenarios. This is not the console namespace, durability, a general
-filesystem or a daemon/scheduler API. Its bounded implementation was qualified in #234;
+filesystem or a daemon/scheduler API. Its bounded implementation was locally
+qualified in [#234](https://github.com/ambasta/aurora/pull/234);
 that receipt does not qualify subsequent source changes or the separate interactive consumer.
 
 The singleton `builtin::ServeSession.exchange(reply)` returns copied status/value
@@ -235,9 +236,11 @@ profiles retain their scrubbed-reentry and supervisor-store semantics unchanged.
 
 The separate `ram-scratchpad-console` composition accepts actual `put [text]`,
 `get`, `help`, `status` and `exit` input. It is implemented with focused source,
-native, linked-image and real-PTY evidence; final integrated qualification remains
-pending. Run `scripts/kernel-run.sh --ram-scratchpad-console` for an explicitly
-bounded five-minute session, or add `--smoke` for the strict PTY oracle. External
+native, linked-image and real-PTY evidence; bounded local qualification is recorded
+in [#235](https://github.com/ambasta/aurora/pull/235). That receipt applies only to its
+recorded source, tools and profiles. Run
+`scripts/kernel-run.sh --ram-scratchpad-console` for an explicitly bounded
+five-minute session, or add `--smoke` for the strict PTY oracle. External
 timeout/kill is an interrupted, unverified teardown, not a clean exit.
 
 The unnamed file starts missing; bare `put` creates a present-empty file. It
