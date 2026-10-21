@@ -11,9 +11,10 @@ packages the dependency image; it does not run product validation.
 
 With Docker or Podman installed, start from the repository root.
 
-Open the pinned shell with `./scripts/container.sh bash`, then complete the
-[source-bootstrap recipe](../compiler/README.md#source-bootstrap) once. It builds a
-reviewed historical compiler from source and configures both current Meson graphs. Then run:
+Run `python3 scripts/bootstrap.py build --container` from the host checkout first.
+Then open the pinned shell with `./scripts/container.sh bash` and configure both
+current Meson graphs with the three printed options, following the
+[source-bootstrap recipe](../compiler/README.md#source-bootstrap). Then run:
 
 ```sh
 make

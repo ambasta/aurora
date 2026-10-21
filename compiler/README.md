@@ -73,11 +73,13 @@ checkpoint does not shorten the source chain; direct-build and cross-route proof
 is still required. All current C1/C2, differential, final-source GCC 16 full,
 applicable image/emulator and independent-review gates remain unchanged.
 
-Current implementation still uses the explicit path selection and manual source
-recipe below. There is no automated predecessor cache, checked-in artifact pin or
-cache verification script yet; verify retained artifact identity and provenance
-before selecting its path. The deprecated digest option is not enforcement.
-This policy does not itself change the six-stage route or add checkpoint refs.
+The checked-in [route manifest](bootstrap-route.json) pins every source commit and
+tree, the fixed build options, the final predecessor and the separately named
+historical C++ oracle. The [reconstruction driver](../scripts/bootstrap.py) records
+local source, command, tool/runtime, header-input and artifact identities. Current
+setup and predecessor execution require both the recorded executable digest and
+that complete receipt. These local records are not signed attestations or a trust
+anchor against someone who can forge the records and binaries together.
 
 ### Source bootstrap
 
@@ -95,83 +97,61 @@ tracks that executable as an ordinary input; changing it regenerates the fronten
 The source build below establishes the predecessor's provenance. Acceptance still
 compares the actual generated frontend and current compiler stages.
 
-Start from a normal Git checkout containing the historical seed source
-`bdf646f09d5e14c88124c4bc9e4f998beda16183` and the reviewed ABI-facts precursor
-[`17f4f1440e6faa9cdaf8711c04400854bdb60d9e`](https://github.com/ambasta/aurora/commit/17f4f1440e6faa9cdaf8711c04400854bdb60d9e)
-(retained by the annotated tag `bootstrap-abi-facts-v1`), plus the copied-argument
-checkpoint [`c0ef02cc105de2b7699d8565f6a53f1dea9e1205`](https://github.com/ambasta/aurora/commit/c0ef02cc105de2b7699d8565f6a53f1dea9e1205)
-(retained by `bootstrap-copied-arguments-v1`), and the owner-field checkpoint
-[`bbf18f40d73b0f7b862a4b23d77b03dfb3f3d0e4`](https://github.com/ambasta/aurora/commit/bbf18f40d73b0f7b862a4b23d77b03dfb3f3d0e4)
-(retained by `bootstrap-owner-field-initializers-v1`). The candidate adds the paired-root
-ABI-facts dependency merged in PR #166 at immutable source commit
-[`052f79d7995be93053f73659bcfc37687b00b341`](https://github.com/ambasta/aurora/commit/052f79d7995be93053f73659bcfc37687b00b341).
-The replacement multi-root/typed-buffer checkpoint
-[`672821f70f37b185c46690791bd00d74d4414403`](https://github.com/ambasta/aurora/commit/672821f70f37b185c46690791bd00d74d4414403)
-builds directly after that paired-root hop and retains the native C++ emitter.
-Prepare the source worktrees on the host, where Git is installed; the pinned
-development image does not include Git:
+Use a normal Git checkout containing all six commits in `bootstrap-route.json`.
+Fetch missing checkpoint objects from the repository before starting; the driver
+never downloads executables or rewrites source history. From the host checkout,
+the supported pinned-container route is one command:
 
 ```sh
-git fetch origin tag bootstrap-abi-facts-v1
-git fetch origin tag bootstrap-copied-arguments-v1
-git fetch origin tag bootstrap-owner-field-initializers-v1
-git fetch origin 052f79d7995be93053f73659bcfc37687b00b341
-git fetch origin 672821f70f37b185c46690791bd00d74d4414403
-git worktree add --detach build/predecessor-source bdf646f09d5e14c88124c4bc9e4f998beda16183
-git worktree add --detach build/abi-facts-source 17f4f1440e6faa9cdaf8711c04400854bdb60d9e
-test "$(git -C build/abi-facts-source rev-parse HEAD)" = 17f4f1440e6faa9cdaf8711c04400854bdb60d9e
-git worktree add --detach build/copied-argument-source c0ef02cc105de2b7699d8565f6a53f1dea9e1205
-test "$(git -C build/copied-argument-source rev-parse HEAD)" = c0ef02cc105de2b7699d8565f6a53f1dea9e1205
-git worktree add --detach build/owner-field-source bbf18f40d73b0f7b862a4b23d77b03dfb3f3d0e4
-test "$(git -C build/owner-field-source rev-parse HEAD)" = bbf18f40d73b0f7b862a4b23d77b03dfb3f3d0e4
-git worktree add --detach build/paired-root-source 052f79d7995be93053f73659bcfc37687b00b341
-test "$(git -C build/paired-root-source rev-parse HEAD)" = 052f79d7995be93053f73659bcfc37687b00b341
-git worktree add --detach build/borrow-checkpoint-source 672821f70f37b185c46690791bd00d74d4414403
-test "$(git -C build/borrow-checkpoint-source rev-parse HEAD)" = 672821f70f37b185c46690791bd00d74d4414403
+python3 scripts/bootstrap.py build --container
 ```
 
-Then enter the [pinned development environment](../docs/local-development.md)
-with `./scripts/container.sh bash` and run the build commands from the current
-checkout. Keep the historical worktrees and compilers separate from current source:
+The host uses Git to prepare clean detached worktrees. The existing
+`container.sh` runs the same driver inside the pinned image, which does not need
+Git: it verifies the prepared file bytes/modes against the host's source manifest
+before and after compilation. All prepared sources and outputs remain below
+`build/bootstrap`, inside the existing checkout mount. No image, package or host
+settings are changed. For advanced native use, select the exact pinned toolchain
+and Git on PATH, then omit `--container`.
+
+The driver uses the existing Meson setup, compiler targets and
+`hosted-lexer-bootstrap` convergence at every historical stage, with at most two
+workers. It records exact commands, output/log hashes, clean source commit/tree
+and byte inventories, tool/subprogram/shared-runtime hashes and versions, implicit
+startup objects/linker scripts/archives, actual Ninja header inputs, elapsed time
+and child peak RSS. The pinned native GCC route requires built-in specs; external
+specs are rejected because they can introduce additional implicit inputs.
+It prints the three required
+current Meson setup options. Inside the same container/native path layout, copy
+those printed values into both current configurations:
 
 ```sh
-meson setup build/predecessor-seed build/predecessor-source -Dkernel_images=false
-meson compile -C build/predecessor-seed -j 2 aurorac
-SEED=$(realpath build/predecessor-seed/aurorac)
-meson setup build/abi-facts-compiler build/abi-facts-source -Dkernel_images=false \
-  "-Dbootstrap_compiler=$SEED" \
-  "-Dbootstrap_compiler_sha256=$(sha256sum "$SEED" | cut -d ' ' -f 1)"
-meson compile -C build/abi-facts-compiler -j 2 aurorac
-FACTS=$(realpath build/abi-facts-compiler/aurorac)
-meson setup build/copied-argument-compiler build/copied-argument-source -Dkernel_images=false \
-  "-Dbootstrap_compiler=$FACTS"
-meson compile -C build/copied-argument-compiler -j 2 aurorac
-ARGUMENTS=$(realpath build/copied-argument-compiler/aurorac)
-meson setup build/owner-field-compiler build/owner-field-source -Dkernel_images=false \
-  "-Dbootstrap_compiler=$ARGUMENTS"
-meson compile -C build/owner-field-compiler -j 2 aurorac
-FIELDS=$(realpath build/owner-field-compiler/aurorac)
-meson setup build/paired-root-compiler build/paired-root-source -Dkernel_images=false \
-  "-Dbootstrap_compiler=$FIELDS"
-meson compile -C build/paired-root-compiler -j 2 aurorac
-PAIR=$(realpath build/paired-root-compiler/aurorac)
-meson setup build/borrow-checkpoint-compiler build/borrow-checkpoint-source -Dkernel_images=false \
-  "-Dbootstrap_compiler=$PAIR"
-meson compile -C build/borrow-checkpoint-compiler -j 2 aurorac
-P=$(realpath build/borrow-checkpoint-compiler/aurorac)
+# P, SHA and RECEIPT are the values printed by the completed reconstruction.
 meson setup build/meson . \
-  "-Dbootstrap_compiler=$P" "-Duefi_ld=$UEFI_LD"
+  "-Dbootstrap_compiler=$P" "-Dbootstrap_compiler_sha256=$SHA" \
+  "-Dbootstrap_receipt=$RECEIPT" "-Duefi_ld=$UEFI_LD"
 meson setup build/meson-compiler . -Dkernel_images=false \
-  "-Dbootstrap_compiler=$P"
+  "-Dbootstrap_compiler=$P" "-Dbootstrap_compiler_sha256=$SHA" \
+  "-Dbootstrap_receipt=$RECEIPT"
 meson compile -C build/meson-compiler -j 2 aurorac aurorac-stage2
 meson test -C build/meson-compiler --no-rebuild --num-processes 1 \
   hosted-lexer-bootstrap compiler-test-inventory
 ```
 
-The digest option above belongs only to the unchanged historical precursor graph.
-The route remains six source-built predecessors: the replacement sixth stage
-builds directly with the paired-root compiler. No additional skip has passed
-direct compilation. The existing register-carry hop remains omitted.
+A later invocation reuses only a complete receipt with matching pinned sources,
+configuration and tool/environment identity, after checking the executable,
+recorded inputs, source bytes and logs. Missing/mismatched data fails closed with
+a rebuild command; it is never blessed by hashing an arbitrary executable. Add
+`--fresh` to reconstruct all six stages in new directories, keeping old successful
+and failed evidence. A fresh route is required for predecessor-bump qualification;
+a cache hit is explicitly not a fresh source bootstrap. Receipts are local to
+the recorded environment and paths, not a universal binary digest for every host.
+
+The replacement sixth stage still builds directly with the paired-root compiler.
+This mechanism neither adds a seventh stage nor establishes another successful
+skip. The existing register-carry hop remains omitted. Historical stage convergence
+does not replace current C1/C2, emitter differential, final-source GCC 16 full,
+applicable image/guest or independent-review gates.
 
 | Stage | Immutable source | Required predecessor capability |
 |---|---|---|
@@ -217,23 +197,24 @@ and emitter differential gates. Safety, rejection and final-source qualification
 requirements are unchanged.
 
 A retained compiler may be reused only with its exact source/build/tool provenance
-and qualification receipt, not by filename or digest alone. Current setup selects
-the resulting predecessor by path; its deprecated digest option is ignored and
-retained solely for existing-directory compatibility.
+and qualification receipt, not by filename or digest alone. Current setup verifies
+the selected executable against the mandatory recorded digest and reconstruction
+receipt. The generation and historical-oracle commands repeat those checks before
+using the predecessor; ordinary Make also checks before build or reconfiguration.
 
 Both ordinary default directories are now configured: `make`/`make test` use the
 image-enabled graph, while `make -C compiler test` uses the hosted-only graph.
-For other configurations, repeat setup with the selected path and use
+For other configurations, repeat setup with all three predecessor options and use
 `MESON_BUILD_DIR`. Keep using the same host/container path layout so configured
 absolute executable paths remain valid. An unconfigured directory needs explicit
 setup; the wrapper does not guess a predecessor.
 
-`BOOTSTRAP_COMPILER=/absolute/path/to/aurorac make test` requests a different
-predecessor. The wrapper reconfigures an implicit default build in place, preserving
+`BOOTSTRAP_COMPILER`, `BOOTSTRAP_COMPILER_SHA256` and `BOOTSTRAP_RECEIPT`
+together request a different verified predecessor for `make test`. The wrapper reconfigures an implicit default build in place, preserving
 its other options and files. An explicit `MESON_BUILD_DIR` with a different
 selection is rejected with the exact reconfigure command. Without this variable,
 the wrapper reuses the configured predecessor. The container launcher forwards
-`BOOTSTRAP_COMPILER` literally; its path must be valid inside the container.
+all three values literally; both paths must be valid inside the container.
 
 The predecessor emits frontend A for current compiler C1; C1 emits B for current
 compiler C2. The same compilation emits `--abi-facts` metadata for collected
@@ -263,23 +244,18 @@ migrations still await execution qualification.
 ## Emitter migration qualification
 
 The source-built replacement sixth checkpoint `672821f70f37b185c46690791bd00d74d4414403` retains
-the C++ x86 backend, so the selected `$P` also remains the external old-backend
-oracle, never a production fallback. Replacing the historical `7811ba8` hop does
+the C++ x86 backend. The manifest independently selects it as the historical oracle
+as well as the build predecessor, never a production fallback. Replacing the historical `7811ba8` hop does
 not replace this oracle with the current Aurora emitter. The
 `emitter-differential-default` and `emitter-differential-closed` tests in `slow`
 and `full` compare the historical corpus against it, and unsupported later consumers
-against current C1/C2, in ordinary and closed profiles; by hand:
+against current C1/C2, in ordinary and closed profiles. To run these guarded tests
+directly while retaining successful artifacts:
 
 ```sh
-python3 -B tests/compiler/emitter_differential.py \
-  --old-compiler "$P" --new-compiler build/meson-compiler/aurorac-stage2 \
-  --stage1-compiler build/meson-compiler/aurorac \
-  --source-root "$PWD" --artifacts build/emitter-differential/default
-python3 -B tests/compiler/emitter_differential.py \
-  --old-compiler "$P" --new-compiler build/meson-compiler/aurorac-stage2 \
-  --stage1-compiler build/meson-compiler/aurorac \
-  --source-root "$PWD" --local-symbols --referenced-reflection-only \
-  --artifacts build/emitter-differential/closed
+AURORA_MESON_KEEP_ARTIFACTS=1 meson test -C build/meson-compiler \
+  --num-processes 2 --print-errorlogs \
+  emitter-differential-default emitter-differential-closed
 ```
 
 Each new evidence directory retains all input/compiler hashes, exact commands,

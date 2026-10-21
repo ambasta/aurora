@@ -618,6 +618,10 @@ foreach mode : ['ordinary', 'optimized']
          suite: ['full', 'dev'], env: oracle_env, timeout: 30)
 endforeach
 
+test('bootstrap-identity-optimized', python,
+     args: ['-B', '-O', files('test_bootstrap.py')],
+     suite: ['full', 'dev'], env: oracle_env, timeout: 60)
+
 test('clean-controls', python,
      args: ['-B', files('test_clean.py')],
      suite: ['full', 'dev'], env: oracle_env, timeout: 30)
@@ -660,13 +664,15 @@ test('hosted-lexer-bootstrap-corpus', python, args: bootstrap_args + ['--corpus'
      depends: [aurorac, aurorac_stage2], suite: ['full', 'slow', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 600,
      is_parallel: false, priority: 1)
-# The predecessor still carries the C++ x86 backend; the Aurora backend must emit
-# byte-identical assembly, stack and ABI JSON for historical inputs in both profiles.
-# Later corpus consumers compare current C1/C2 without predecessor feature exceptions.
+# Independently select and verify the historical C++ emitter role from the receipt.
+# Its accepted corpus compares with C2; later-only consumers also compare C1/C2.
 foreach profile : [['default', []], ['closed', ['--local-symbols', '--referenced-reflection-only']]]
   test('emitter-differential-' + profile[0], python,
-       args: ['-B', artifact_adapter, python, '-B', files('compiler/emitter_differential.py'),
-              '--old-compiler', bootstrap_compiler, '--new-compiler', aurorac_stage2, '--stage1-compiler', aurorac,
+       args: ['-B', bootstrap_driver, 'run', '--compiler', historical_cpp_oracle,
+              '--sha256', historical_cpp_oracle_sha256, '--receipt', bootstrap_receipt,
+              '--role', 'historical_cpp_oracle', '--', python,
+              '-B', artifact_adapter, python, '-B', files('compiler/emitter_differential.py'),
+              '--old-compiler', historical_cpp_oracle, '--new-compiler', aurorac_stage2, '--stage1-compiler', aurorac,
               '--source-root', meson.project_source_root()] + profile[1] + ['--artifacts', '@ARTIFACTS@'],
        depends: [aurorac, aurorac_stage2], suite: ['full', 'slow', 'compiler'], env: oracle_env,
        workdir: meson.current_build_dir(), timeout: 900, is_parallel: false)

@@ -227,6 +227,9 @@ class MesonEntrypointTests(unittest.TestCase):
         self.kernel_images = True
         self.kernel_compiler = ""
         self.bootstrap_compiler = str(self.root / "reviewed-predecessor")
+        self.bootstrap_sha256 = "1" * 64
+        self.bootstrap_receipt = str(self.root / "receipt.json")
+        self.verify_predecessor = unittest.mock.Mock()
         self.missing_options = set()
         self.test_names = {"short-circuit", "short-circuit-ir", "short-circuit-ir-native", "console-session"}
         self.preflight = unittest.mock.Mock()
@@ -241,6 +244,7 @@ class MesonEntrypointTests(unittest.TestCase):
             patch.object(meson_test.subprocess, "run", side_effect=self.run_command),
             patch.object(meson_test.subprocess, "check_output", side_effect=self.introspect),
             patch.object(meson_toolchain, "check", self.preflight),
+            patch.object(meson_test.bootstrap, "verify", self.verify_predecessor),
         ):
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -260,7 +264,10 @@ class MesonEntrypointTests(unittest.TestCase):
         if command[1] == self.failure:
             raise subprocess.CalledProcessError(23, command)
         if command[1] == "setup":
-            self.bootstrap_compiler = command[-1].removeprefix("-Dbootstrap_compiler=")
+            selected = dict(argument[2:].split("=", 1) for argument in command if argument.startswith("-D"))
+            self.bootstrap_compiler = selected["bootstrap_compiler"]
+            self.bootstrap_sha256 = selected["bootstrap_compiler_sha256"]
+            self.bootstrap_receipt = selected["bootstrap_receipt"]
         return subprocess.CompletedProcess(command, 0)
 
     def introspect(self, command, **kwargs):
@@ -276,6 +283,8 @@ class MesonEntrypointTests(unittest.TestCase):
             {"name": "kernel_compiler", "value": self.kernel_compiler},
             {"name": "uefi_ld", "value": ""},
             {"name": "bootstrap_compiler", "value": self.bootstrap_compiler},
+            {"name": "bootstrap_compiler_sha256", "value": self.bootstrap_sha256},
+            {"name": "bootstrap_receipt", "value": self.bootstrap_receipt},
         ]
         return json.dumps([item for item in options if item["name"] not in self.missing_options]).encode()
 
@@ -304,6 +313,8 @@ class MesonEntrypointTests(unittest.TestCase):
                 {"kernel_compiler"},
                 {"cpp_args"},
                 {"bootstrap_compiler"},
+                {"bootstrap_compiler_sha256"},
+                {"bootstrap_receipt"},
                 {"kernel_images", "uefi_ld"},
             ):
                 with self.subTest(supplied=supplied, missing=missing):
@@ -321,6 +332,18 @@ class MesonEntrypointTests(unittest.TestCase):
                 meson_test.execute(self.root, "full")
             self.assertEqual(self.calls, [])
 
+    def select_predecessor(self, path):
+        os.environ["BOOTSTRAP_COMPILER"] = str(path)
+        os.environ["BOOTSTRAP_COMPILER_SHA256"] = self.bootstrap_sha256
+        os.environ["BOOTSTRAP_RECEIPT"] = self.bootstrap_receipt
+
+    def test_invalid_receipt_stops_before_compile_and_reconfiguration(self):
+        self.configured()
+        self.verify_predecessor.side_effect = ValueError("receipt rejected")
+        with self.assertRaisesRegex(contract.ContractError, "receipt rejected"):
+            meson_test.execute(self.root, "full")
+        self.assertEqual(self.calls, [])
+
     def test_requested_predecessor_refreshes_only_implicit_default(self):
         build = self.configured()
         sentinel = build / "retained-failure"
@@ -333,10 +356,19 @@ class MesonEntrypointTests(unittest.TestCase):
         predecessor = self.root / "new predecessor"
         predecessor.write_text("#!/bin/sh\nexit 0\n")
         predecessor.chmod(0o755)
-        os.environ["BOOTSTRAP_COMPILER"] = str(predecessor)
+        self.select_predecessor(predecessor)
         meson_test.execute(self.root, "full")
         self.assertEqual([c[1] for c in self.calls], ["setup", "compile", "test"])
-        self.assertEqual(self.calls[0][2:], ["--reconfigure", str(build), "-Dbootstrap_compiler=" + str(predecessor)])
+        self.assertEqual(
+            self.calls[0][2:],
+            [
+                "--reconfigure",
+                str(build),
+                "-Dbootstrap_compiler=" + str(predecessor),
+                "-Dbootstrap_compiler_sha256=" + self.bootstrap_sha256,
+                "-Dbootstrap_receipt=" + self.bootstrap_receipt,
+            ],
+        )
         self.assertEqual(sentinel.read_text(), "preserve")
         self.assertEqual(lock.stat().st_ino, inode)
         self.assertEqual(self.flags, ["-O2"])
@@ -356,7 +388,7 @@ class MesonEntrypointTests(unittest.TestCase):
         selected = self.root / "new predecessor"
         selected.write_text("#!/bin/sh\nexit 0\n")
         selected.chmod(0o755)
-        os.environ["BOOTSTRAP_COMPILER"] = str(selected)
+        self.select_predecessor(selected)
         self.bootstrap_compiler = ""
         meson_test.execute(self.root, "full")
         self.assertEqual([c[1] for c in self.calls], ["setup", "compile", "test"])
@@ -373,7 +405,7 @@ class MesonEntrypointTests(unittest.TestCase):
         selected = self.root / "new predecessor"
         selected.write_text("#!/bin/sh\nexit 0\n")
         selected.chmod(0o755)
-        os.environ["BOOTSTRAP_COMPILER"] = str(selected)
+        self.select_predecessor(selected)
         original = self.bootstrap_compiler
         self.failure = "setup"
         with self.assertRaises(subprocess.CalledProcessError):
@@ -386,7 +418,7 @@ class MesonEntrypointTests(unittest.TestCase):
         nonexecutable = self.root / "nonexecutable"
         nonexecutable.write_text("not executable")
         for selected in ("", "relative/compiler", str(self.root), str(self.root / "missing"), str(nonexecutable)):
-            os.environ["BOOTSTRAP_COMPILER"] = selected
+            self.select_predecessor(selected)
             with self.subTest(selected=selected), self.assertRaisesRegex(contract.ContractError, "BOOTSTRAP_COMPILER"):
                 meson_test.execute(self.root, "full")
             self.assertEqual(self.calls, [])

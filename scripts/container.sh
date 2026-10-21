@@ -5,7 +5,7 @@ if [[ ${1:-} == --help ]]; then
     echo 'Usage: scripts/container.sh [command [arguments...]]'
     echo 'Run in the published linux/amd64 image pinned by ci/image; default: bash.'
     echo 'Requires Docker or Podman; the public dependency image supports anonymous pulls.'
-    echo 'Forwards MESON_BUILD_DIR, BOOTSTRAP_COMPILER, AURORA_BUILD_JOBS and AURORA_TEST_JOBS when set.'
+    echo 'Forwards MESON_BUILD_DIR, BOOTSTRAP_COMPILER/SHA256, BOOTSTRAP_RECEIPT, AURORA_BUILD_JOBS and AURORA_TEST_JOBS when set.'
     exit 0
 fi
 if [[ ! -f "$root/ci/image" ]]; then
@@ -39,7 +39,7 @@ esac
 terminal=(-i)
 if [[ -t 0 && -t 1 ]]; then terminal+=(-t); fi
 controls=()
-for name in MESON_BUILD_DIR BOOTSTRAP_COMPILER AURORA_BUILD_JOBS AURORA_TEST_JOBS; do
+for name in MESON_BUILD_DIR BOOTSTRAP_COMPILER BOOTSTRAP_COMPILER_SHA256 BOOTSTRAP_RECEIPT AURORA_BUILD_JOBS AURORA_TEST_JOBS; do
     if [[ -v $name ]]; then controls+=(--env "$name=${!name}"); fi
 done
 if [[ $# == 0 ]]; then set -- bash; fi

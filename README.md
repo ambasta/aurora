@@ -30,10 +30,13 @@ The public dependency image pinned in `ci/image` is the supported reproducible
 development environment, with the exact tools and firmware. With Docker or
 Podman installed, start from the repository root.
 
-Follow the [source-bootstrap recipe](compiler/README.md#source-bootstrap) once: prepare
-its Git worktrees on the host, then enter the pinned shell with
-`./scripts/container.sh bash` for the compilation steps. The recipe builds the
-reviewed predecessors from source and configures both current Meson graphs. Then run:
+Reconstruct the pinned predecessor from the host checkout with
+`python3 scripts/bootstrap.py build --container`. Then enter the pinned shell
+with `./scripts/container.sh bash` and configure the two current Meson graphs
+using the three options printed by the driver, as shown in the
+[source-bootstrap recipe](compiler/README.md#source-bootstrap). It checks the
+local receipt and executable digest rather than trusting a compiler path alone.
+Then run:
 
 ```sh
 make
@@ -141,7 +144,8 @@ Use the checks appropriate to the change:
 
 ```sh
 meson setup build/gcc16 \
-  "-Dbootstrap_compiler=$P" "-Dbootstrap_compiler_sha256=$PIN"
+  "-Dbootstrap_compiler=$P" "-Dbootstrap_compiler_sha256=$SHA" \
+  "-Dbootstrap_receipt=$RECEIPT"
 meson compile -C build/gcc16 -j 4 --ninja-args=meson-test-prereq
 meson test -C build/gcc16 --suite dev --no-rebuild --num-processes 4
 meson test -C build/gcc16 --suite full --no-rebuild --num-processes 4
@@ -152,8 +156,8 @@ make smoke-all               # separate emulator matrix; QEMU and firmware requi
 
 For direct Meson commands, configure a separate [build](docs/meson-bootstrap.md)
 for each toolchain, with matching `gcc`/`g++` on PATH. `make test` and the
-compiler-only shortcuts configure a fresh build directory automatically and reuse
-it incrementally. `dev` is quick feedback; `full` includes all
+compiler-only shortcuts reuse an explicitly predecessor-configured build
+incrementally. `dev` is quick feedback; `full` includes all
 native compiler, full-package and kernel/boot-image gates. Named `slow`,
 `integration`, `boot`, `core` and `bytes` suites support focused work. A merge
 requires the final-source GCC 16 gates in [AGENTS.md](AGENTS.md), including the

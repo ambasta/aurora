@@ -8,15 +8,25 @@ project(
 # The compiler runs on the build machine, even when a future target is cross-built.
 native_cpp = meson.get_compiler('cpp', native: true)
 python = find_program('python3', native: true)
-# The selected predecessor is a normal executable dependency tracked by Ninja.
+# Check the selected bytes AND their source/config/tool-bound reconstruction.
 bootstrap_compiler_path = get_option('bootstrap_compiler')
-fs = import('fs')
-if not fs.is_absolute(bootstrap_compiler_path) or not fs.is_file(bootstrap_compiler_path)
-  error('Set bootstrap_compiler to an absolute predecessor executable path. ' +
-        'Build it from source using compiler/README.md#source-bootstrap.')
+bootstrap_sha256 = get_option('bootstrap_compiler_sha256')
+bootstrap_receipt = get_option('bootstrap_receipt')
+bootstrap_driver = files('scripts/bootstrap.py')
+bootstrap_pin = files('compiler/bootstrap-route.json')
+bootstrap_verify_args = ['--compiler', bootstrap_compiler_path, '--sha256', bootstrap_sha256,
+                         '--receipt', bootstrap_receipt]
+bootstrap_check = run_command(python, '-B', bootstrap_driver, 'verify', bootstrap_verify_args, check: false)
+if bootstrap_check.returncode() != 0
+  error(bootstrap_check.stderr().strip())
 endif
 bootstrap_compiler = find_program(bootstrap_compiler_path, native: true)
-bootstrap_depend_files = files(bootstrap_compiler_path)
+# Roles remain independent even while the same historical binary supplies both.
+historical_cpp_oracle = bootstrap_check.stdout().strip().split('\n')[0]
+historical_cpp_oracle_sha256 = bootstrap_check.stdout().strip().split('\n')[1]
+bootstrap_guard = [python, '-B', bootstrap_driver, 'run'] + bootstrap_verify_args + ['--']
+bootstrap_depend_files = files(bootstrap_compiler_path, bootstrap_receipt) + bootstrap_driver + bootstrap_pin
+fs = import('fs')
 frontend_inputs = files('compiler/formatter.au', 'compiler/lexer.au', 'compiler/syntax_arena.au', 'compiler/parser.au',
                         'compiler/resolution_kinds.au', 'compiler/lowering_errors.au', 'compiler/lowering_kinds.au',
                         'compiler/lowering_storage.au', 'compiler/resolution_rows.au', 'compiler/resolution_arena.au',
@@ -44,7 +54,7 @@ bridge_table = files('scripts/frontend_bridge.py')
 frontend_assembly = custom_target(
   'hosted-frontend-assembly', input: frontend_inputs,
   output: ['hosted-frontend.s', 'hosted-frontend.generated.s', 'hosted-frontend.abi.json', 'hosted_frontend_abi.hpp'],
-  command: [python, '-B', files('scripts/bootstrap_frontend.py'), bootstrap_compiler, '--output', '@OUTPUT0@',
+  command: bootstrap_guard + [python, '-B', files('scripts/bootstrap_frontend.py'), bootstrap_compiler, '--output', '@OUTPUT0@',
             '@INPUT@'],
   depend_files: bootstrap_depend_files + bridge_table,
 )
