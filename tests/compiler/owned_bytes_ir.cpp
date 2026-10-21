@@ -1840,7 +1840,7 @@ Module borrowedValues() {
     function.result = Type::I64;
     function.parameters = {Type::ownedValues(Type("Record")), Type("Record"), Type::I64};
     function.borrowedRootCount = 1;
-    function.firstBorrowedMutable = true;
+    function.mutableBorrowedRootCount = true;
     function.frameBytes = 64;
     recordSlot(function, 24);
     recordSlot(function, 48);
@@ -1868,7 +1868,7 @@ void borrowedValueTests() {
         reject("borrowed typed owner " + name, borrowedValues(), change);
     };
     check("requires mutable formal", [](Module &m) {
-        m.functions[0].firstBorrowedMutable = false;
+        m.functions[0].mutableBorrowedRootCount = false;
     });
     check("rejects raw byte formal", [](Module &m) {
         m.functions[0].parameters[0] = Type::OwnedBytes;

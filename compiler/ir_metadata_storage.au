@@ -470,10 +470,11 @@ export namespace compiler_ir_metadata {
         i64 receiverSpanField;
         i64 frameBytes;
         i64 borrowedRootCount;
-        i64 firstBorrowedMutable;
+        i64 mutableBorrowedRootCount;
     public:
-        CallableOptions(u64 attributes, i64 span, i64 frame, i64 roots, i64 first_mutable) : flags(attributes),
-            receiverSpanField(span), frameBytes(frame), borrowedRootCount(roots), firstBorrowedMutable(first_mutable) {
+        CallableOptions(u64 attributes, i64 span, i64 frame, i64 roots, i64 mutable_roots) : flags(attributes),
+            receiverSpanField(span), frameBytes(frame), borrowedRootCount(roots),
+            mutableBorrowedRootCount(mutable_roots) {
         }
         auto attributes() const -> u64 {
             return flags;
@@ -487,8 +488,8 @@ export namespace compiler_ir_metadata {
         auto borrowed_root_count() const -> i64 {
             return borrowedRootCount;
         }
-        auto first_borrowed_mutable() const -> i64 {
-            return firstBorrowedMutable;
+        auto mutable_borrowed_root_count() const -> i64 {
+            return mutableBorrowedRootCount;
         }
     };
     class CallableRow {
@@ -497,7 +498,7 @@ export namespace compiler_ir_metadata {
         i64 moduleScope;
         ReceiverShape receiver;
         i64 borrowedRootCount;
-        i64 firstBorrowedMutable;
+        i64 mutableBorrowedRootCount;
         u64 flags; // named Callable masks; all other bits are invalid
         i64 receiverSpanField;
         i64 frameBytes;
@@ -505,9 +506,9 @@ export namespace compiler_ir_metadata {
     public:
         CallableRow(ByteRange name, IndexRange types, i64 scope, ReceiverShape first, CallableOptions options,
             IndexRange slots) : nameRange(name), typeRange(types), moduleScope(scope), receiver(first),
-            borrowedRootCount(options.borrowed_root_count()), firstBorrowedMutable(options.first_borrowed_mutable()),
-            flags(options.attributes()), receiverSpanField(options.receiver_span_field()),
-            frameBytes(options.frame_bytes()), slotRange(slots) {
+            borrowedRootCount(options.borrowed_root_count()),
+            mutableBorrowedRootCount(options.mutable_borrowed_root_count()), flags(options.attributes()),
+            receiverSpanField(options.receiver_span_field()), frameBytes(options.frame_bytes()), slotRange(slots) {
         }
         auto name() const -> ByteRange {
             const ByteRange result = nameRange;
@@ -529,14 +530,14 @@ export namespace compiler_ir_metadata {
         auto borrowed_root_count() const -> i64 {
             if (borrowedRootCount < 0 || borrowedRootCount > 3 || typeRange.begin() < 0 || typeRange.count() < 1
                 || borrowedRootCount > typeRange.count() - 1 || typeRange.begin() > 9223372036854775807
-                - typeRange.count() || firstBorrowedMutable < 0 || firstBorrowedMutable > 1 || (borrowedRootCount == 0
-                && firstBorrowedMutable != 0)) {
+                - typeRange.count() || mutableBorrowedRootCount < 0 || mutableBorrowedRootCount > 2
+                || mutableBorrowedRootCount > borrowedRootCount) {
                 return -1;
             }
             return borrowedRootCount;
         }
-        auto first_borrowed_mutable() const -> i64 {
-            return firstBorrowedMutable;
+        auto mutable_borrowed_root_count() const -> i64 {
+            return mutableBorrowedRootCount;
         }
         auto borrowed_root_type(i64 ordinal) const -> i64 {
             const i64 roots = borrowed_root_count();
@@ -546,7 +547,7 @@ export namespace compiler_ir_metadata {
             return typeRange.begin() + 1 + ordinal;
         }
         auto borrowed_root_mutable(i64 ordinal) const -> bool {
-            return ordinal == 0 && ordinal < borrowed_root_count() && firstBorrowedMutable == 1;
+            return ordinal >= 0 && ordinal < mutableBorrowedRootCount && ordinal < borrowed_root_count();
         }
         auto value_parameter_begin() const -> i64 {
             const i64 roots = borrowed_root_count();

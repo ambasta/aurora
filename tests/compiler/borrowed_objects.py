@@ -492,7 +492,7 @@ def paired_borrowing_cases(suite):
 
     leading = "std::ByteBuffer& a, const std::ByteBuffer& b"
     signatures = {
-        "second-mutable": "auto bad(std::ByteBuffer& a, std::ByteBuffer& b) -> i64 { return 0; }",
+        "const-then-mutable": "auto bad(const std::ByteBuffer& a, std::ByteBuffer& b) -> i64 { return 0; }",
         "copied-second-root": "auto bad(std::ByteBuffer& a, const Count& b) -> i64 { return 0; }",
         "copied-argument": f"auto bad({leading}, Count value) -> i64 {{ return 0; }}",
         "span-argument": f"auto bad({leading}, {SPAN} view) -> i64 {{ return 0; }}",
@@ -511,19 +511,345 @@ def paired_borrowing_cases(suite):
         suite.reject("paired-" + name, program("return 0;", helpers + signature))
 
 
+def dual_mutable_borrowing_cases(suite):
+    """Two independent complete owners grant two lexical mutable capabilities."""
+    helpers = (
+        HELPERS
+        + """
+    enum class DualStatus { first_failed, second_failed, complete };
+    auto dual_write(std::ByteBuffer& a, std::ByteBuffer& b,
+                    i64 offset, u64 expected, u8 value, bool enabled) -> bool {
+        if (!enabled || offset != 0 || expected != 17u64) { return false; }
+        if (!a.try_write_u8(offset, value)) { return false; }
+        // Method and nested borrowed calls may clobber all argument registers.
+        if (inspect(a) != 1 || !append_one(b, u8(expected))) { return false; }
+        const std::ByteReadResult observed = a.read_u8(offset);
+        return observed.value_or(256u64) == u64(value);
+    }
+    auto dual_forward(std::ByteBuffer& a, std::ByteBuffer& b,
+                      i64 offset, u64 expected, u8 value, bool enabled) -> bool {
+        return dual_write(a, b, offset, expected, value, enabled);
+    }
+    auto dual_zero(std::ByteBuffer& a, std::ByteBuffer& b) -> bool {
+        return a.try_write_u8(0, 31u8) && b.try_write_u8(0, 37u8);
+    }
+    auto dual_three(std::ByteBuffer& a, std::ByteBuffer& b, const std::ByteBuffer& c,
+                    DualStatus status, u8 value, i64 expected) -> DualStatus {
+        if (status != DualStatus::complete || c.size() != expected) { return DualStatus::first_failed; }
+        if (!a.try_write_u8(0, value) || !b.try_write_u8(0, 43u8)) { return DualStatus::second_failed; }
+        return DualStatus::complete;
+    }
+    auto dual_three_forward(std::ByteBuffer& a, std::ByteBuffer& b, const std::ByteBuffer& c,
+                            DualStatus status, u8 value, i64 expected) -> DualStatus {
+        return dual_three(b, a, c, status, value, expected);
+    }
+    auto dual_after(std::ByteBuffer& a, std::ByteBuffer& b, i64 value, bool enabled) -> bool {
+        return enabled && value == 0 && dual_zero(a, b);
+    }
+    auto dual_growth(std::ByteBuffer& a, std::ByteBuffer& b) -> DualStatus {
+        if (!a.try_reserve(2)) { return DualStatus::first_failed; }
+        if (!b.try_reserve(2)) { return DualStatus::second_failed; }
+        if (!a.try_reserve(4) || !b.try_reserve(4)) { return DualStatus::first_failed; }
+        return DualStatus::complete;
+    }
+    """
+    )
+    create = (
+        CREATE
+        + """
+        builtin::OwnedBytes backing = region.try_allocate(1);
+        std::ByteBuffer other = std::ByteBuffer(region, move(backing));
+        if (!buffer.try_append(11u8)) { return 0; }
+    """
+    )
+    body = (
+        create
+        + """
+        if (!dual_forward(buffer, other, 0, 17u64, 23u8, true)) { return 0; }
+        if (!dual_zero(other, buffer)) { return 0; }
+    """
+    )
+    body += check_state([37], 1) + check_state([31], 1, "other")
+    body += """
+        builtin::OwnedBytes third_backing = region.try_allocate(1);
+        std::ByteBuffer third = std::ByteBuffer(region, move(third_backing));
+        if (!third.try_append(59u8)) { return 0; }
+        const std::ByteBuffer frozen = move(third);
+        if (dual_three_forward(buffer, other, frozen, DualStatus::complete, 41u8, 1) != DualStatus::complete) {
+            return 0;
+        }
+    """
+    body += check_state([43], 1) + check_state([41], 1, "other") + check_state([59], 1, "frozen")
+    body += "if (!buffer.clear() || !other.clear()) { return 0; } return 42;"
+    exe = suite.compile("dual-mutable-writes-forward-swapped-and-const-third", program(body, helpers))
+    suite.run(exe, 3, 1, 0, 42, 3, 3, release_order=[3, 2, 1])
+
+    mixed = """
+    auto dual_twin(std::ByteBuffer& a, Twin& b) -> bool {
+        return a.try_append(17u8) && b.write_first(23u8) && b.write_second(29u8);
+    }
+    auto dual_twin_forward(std::ByteBuffer& a, Twin& b) -> bool { return dual_twin(a, b); }
+    """
+    body = CREATE + TWIN_CREATE + "if (!dual_twin_forward(buffer, twin) || twin_sum(twin) != 52) { return 0; }"
+    body += check_state([17], 1) + "return 42;"
+    exe = suite.compile("dual-mutable-distinct-concrete-classes", program(body, TWIN + mixed))
+    suite.run(exe, 3, 1, 0, 42, 3, 3, release_order=[3, 2, 1])
+
+    body = (
+        create
+        + """
+        if (!other.try_append(19u8)) { return 0; }
+        const DualStatus status = dual_growth(buffer, other);
+        if ((flag == 0 && status != DualStatus::first_failed) ||
+            (flag == 1 && status != DualStatus::second_failed) ||
+            (flag == 2 && status != DualStatus::complete)) { return 0; }
+    """
+    )
+    for flag, left, right in ((0, 1, 1), (1, 2, 1), (2, 4, 4)):
+        body += f"if (flag == {flag}) {{" + check_state([11], left) + check_state([19], right, "other") + "}"
+    body += "if (!dual_zero(buffer, other)) { return 0; } return 42;"
+    exe = suite.compile("dual-mutable-alternating-resize-preserves-sibling-and-failure", program(body, helpers))
+    suite.run(exe, 8, 1, 2, 42, 6, 2, release_order=[1, 2, 3, 4, 6, 5])
+    suite.run(exe, 2, 1, 0, 42, 2, 2, release_order=[2, 1])
+    suite.run(exe, 3, 1, 1, 42, 3, 2, release_order=[1, 2, 3])
+    suite.run(exe, 99, 1, 0, 42, 2, 2, fail_after=2, release_order=[2, 1])
+    suite.run(exe, 99, 1, 1, 42, 3, 2, fail_after=3, release_order=[1, 2, 3])
+
+    conflicts = {
+        "same-root": "dual_zero(buffer, buffer);",
+        "later-first-read": "dual_after(buffer, other, buffer.size(), true);",
+        "later-second-read": "dual_after(buffer, other, other.size(), true);",
+        "later-first-write": "dual_after(buffer, other, 0, buffer.clear());",
+        "later-second-write": "dual_after(buffer, other, 0, other.clear());",
+        "later-first-move": "dual_after(buffer, other, consume(region, move(buffer)), true);",
+        "later-second-move": "dual_after(buffer, other, consume(region, move(other)), true);",
+        "nested-first-conflict": "dual_after(buffer, other, 0, append_one(buffer, 1u8));",
+        "nested-second-conflict": "dual_after(buffer, other, 0, append_one(other, 1u8));",
+    }
+    for index, root in enumerate(("buffer", "other")):
+        conflicts[f"live-span-{index}"] = f"const {SPAN} view = {root}.bytes(); dual_zero(buffer, other);"
+        conflicts[f"moved-{index}"] = f"std::ByteBuffer moved = move({root}); dual_zero(buffer, other);"
+        arguments = "frozen, other" if index == 0 else "buffer, frozen"
+        conflicts[f"const-{index}"] = f"const std::ByteBuffer frozen = move({root}); dual_zero({arguments});"
+        conflicts[f"join-moved-{index}"] = (
+            f"if (flag == 1) {{ std::ByteBuffer moved = move({root}); }} dual_zero(buffer, other);"
+        )
+        conflicts[f"backedge-moved-{index}"] = (
+            f"while (flag == 1) {{ dual_zero(buffer, other); std::ByteBuffer moved = move({root}); }}"
+        )
+    for name, statement in conflicts.items():
+        suite.reject("dual-" + name, program(create + statement + "return 0;", helpers))
+
+    triple_create = (
+        create
+        + """
+        builtin::OwnedBytes third_backing = region.try_allocate(1);
+        std::ByteBuffer third = std::ByteBuffer(region, move(third_backing));
+    """
+    )
+    for first, second in ((0, 1), (0, 2), (1, 2)):
+        actuals = ["buffer", "other", "third"]
+        actuals[second] = actuals[first]
+        call = f"dual_three({', '.join(actuals)}, DualStatus::complete, 1u8, 0);"
+        suite.reject(f"dual-three-alias-{first}-{second}", program(triple_create + call + "return 0;", helpers))
+    for name, body in {
+        "same-formal": "return dual_zero(a, a);",
+        "same-second-formal": "return dual_zero(b, b);",
+        "nested-active-first": "return dual_after(a, b, 0, append_one(a, 1u8));",
+        "nested-active-second": "return dual_after(a, b, 0, append_one(b, 1u8));",
+        "first-span": f"const {SPAN} view = a.bytes(); return view.size() == 0;",
+        "second-span": f"const {SPAN} view = b.bytes(); return view.size() == 0;",
+    }.items():
+        declaration = f"auto bad(std::ByteBuffer& a, std::ByteBuffer& b) -> bool {{ {body} }}"
+        suite.reject("dual-" + name, program("return 0;", helpers + declaration))
+    for index in range(2):
+        first = "const " if index == 0 else ""
+        second = "const "
+        declaration = (
+            f"auto bad({first}std::ByteBuffer& a, {second}std::ByteBuffer& b) -> bool {{ return dual_zero(a, b); }}"
+        )
+        suite.reject(f"dual-formal-const-escalation-{index}", program("return 0;", helpers + declaration))
+    leading = "std::ByteBuffer& a, std::ByteBuffer& b"
+    signatures = {
+        "three-mutable": f"auto bad({leading}, std::ByteBuffer& c) -> i64 {{ return 0; }}",
+        "mutable-const-mutable": (
+            "auto bad(std::ByteBuffer& a, const std::ByteBuffer& b, std::ByteBuffer& c) -> i64 { return 0; }"
+        ),
+        "four-roots": f"auto bad({leading}, const std::ByteBuffer& c, const Twin& d) -> i64 {{ return 0; }}",
+        "seventh-parameter": f"auto bad({leading}, i64 c, i64 d, i64 e, i64 f, i64 g) -> i64 {{ return 0; }}",
+        "copied-tail": f"auto bad({leading}, Count copied) -> i64 {{ return 0; }}",
+        "span-tail": f"auto bad({leading}, {SPAN} view) -> i64 {{ return 0; }}",
+        "owning-tail": f"auto bad({leading}, std::ByteBuffer taken) -> i64 {{ return 0; }}",
+        "builtin-root": "auto bad(std::ByteBuffer& a, builtin::OwnedBytes& b) -> i64 { return 0; }",
+        "method-parameters": (f"class Bad {{ public: Bad() {{}} auto bad({leading}) -> i64 {{ return 0; }} }};"),
+        "nested-owner": (
+            "class Nested { std::ByteBuffer child; public: "
+            "Nested(builtin::ByteRegion region, std::ByteBuffer initial) : child(move(initial)) {} };"
+            "auto bad(std::ByteBuffer& a, Nested& b) -> i64 { return 0; }"
+        ),
+        "copied-result": f"auto bad({leading}) -> Count {{ return Count(0); }}",
+        "owning-result": f"auto bad({leading}) -> std::ByteBuffer {{ return move(a); }}",
+        "span-result": f"auto bad({leading}) -> {SPAN} {{ return a.bytes(); }}",
+        "const-third-write": f"auto bad({leading}, const std::ByteBuffer& c) -> bool {{ return c.clear(); }}",
+    }
+    for name, declaration in signatures.items():
+        suite.reject("dual-signature-" + name, program("return 0;", helpers + TWIN + declaration))
+
+
+def dual_region_borrowing_case(suite):
+    """Closed test-only ingress constructs two genuine owners in distinct regions.
+
+    No arbitrary host descriptor or pointer-inequality proof is accepted. The
+    existing test allocator creates each payload; RAII drops both exact owners.
+    Independent ABI facts bind the sole owner field to the handwritten layout.
+    """
+    source = """
+    module dual_region_test;
+    class RegionCell {
+        builtin::OwnedBytes payload;
+    public:
+        RegionCell(builtin::ByteRegion region, builtin::OwnedBytes initial) : payload(move(initial)) {}
+        auto read_value() const -> u8 { return payload.at(0); }
+        auto write_value(u8 value) -> bool { return payload.set(0, value); }
+        auto resize(i64 size) -> bool { return payload.try_resize(size); }
+        auto size() const -> i64 { return payload.size(); }
+    };
+    auto grow(RegionCell& a, RegionCell& b) -> i64 {
+        if (!a.resize(2)) { return 0; }
+        if (!b.resize(2)) { return 1; }
+        if (!a.resize(4) || !b.resize(4)) { return -1; }
+        return 2;
+    }
+    auto entry(RegionCell& a, RegionCell& b, i64 flag) -> i64 {
+        if (a.read_value() != 11u8 || b.read_value() != 19u8 || grow(a, b) != flag) { return 0; }
+        if (a.read_value() != 11u8 || b.read_value() != 19u8) { return 0; }
+        if ((flag == 0 && (a.size() != 1 || b.size() != 1)) ||
+            (flag == 1 && (a.size() != 2 || b.size() != 1)) ||
+            (flag == 2 && (a.size() != 4 || b.size() != 4))) { return 0; }
+        if (!a.write_value(31u8) || !b.write_value(37u8) || a.read_value() != 31u8 || b.read_value() != 37u8) {
+            return 0;
+        }
+        return 42;
+    }
+    """
+    # Retain the established allocator, exact trap observer and trace protocol.
+    driver = owned_bytes.DRIVER.split("int main(int argc, char **argv) {")[0]
+    driver = driver.replace(
+        "__au_runtime_bytes_test_entry(std::uint64_t, std::int64_t, std::int64_t)",
+        "__au_runtime_bytes_test_entry(void *const *, std::int64_t)",
+    )
+    driver += r"""
+using aurora::hosted::bytes::NativeOwner;
+struct Cell {
+    NativeOwner payload{};
+    Cell(std::uint64_t region, std::uint64_t value) {
+        aurora::hosted::bytes::__au_runtime_bytes_allocate(region, 1, &payload);
+        if (!payload.success || !aurora::hosted::bytes::__au_runtime_bytes_set(&payload, 0, value))
+            std::abort();
+    }
+    ~Cell() { aurora::hosted::bytes::__au_runtime_bytes_drop(&payload); }
+    Cell(const Cell &) = delete;
+    Cell &operator=(const Cell &) = delete;
+};
+static_assert(sizeof(Cell) == 32 && alignof(Cell) == 8 && offsetof(Cell, payload) == 0);
+int main(int argc, char **argv) {
+    if (argc != 4 && argc != 5)
+        return 80;
+    struct sigaction action {};
+    action.sa_sigaction = trapped;
+    action.sa_flags = SA_SIGINFO;
+    sigemptyset(&action.sa_mask);
+    if (sigaction(SIGILL, &action, nullptr) != 0)
+        return 81;
+    Trace trace;
+    trace.remaining = argc == 5 ? std::strtoll(argv[4], nullptr, 10) : -1;
+    aurora::hosted::bytes::Allocator allocator {&trace, allocate, deallocate};
+    aurora::hosted::bytes::Region left(std::strtoull(argv[1], nullptr, 10), allocator);
+    aurora::hosted::bytes::Region right(std::strtoull(argv[2], nullptr, 10), allocator);
+    std::uint64_t result = 0;
+    {
+        Cell a(left.id(), 11), b(right.id(), 19);
+        // These are independently allocated live complete owners, not externally
+        // supplied descriptors. The array is the existing private two-root ABI.
+        alignas(16) void *roots[2] = {&a, &b};
+        result = __au_runtime_bytes_test_entry(roots, std::strtoll(argv[3], nullptr, 10));
+    }
+    const auto a = left.metrics(), b = right.metrics();
+    if (a.used != 0 || b.used != 0 || a.live_allocations != 0 || b.live_allocations != 0 ||
+        !left.close() || !right.close())
+        return 82;
+    if (trace.allocated_count != a.successful_allocations + b.successful_allocations ||
+        trace.released_count != a.releases + b.releases)
+        return 83;
+    std::printf("%llu %llu %llu %llu", static_cast<unsigned long long>(result),
+                static_cast<unsigned long long>(a.successful_allocations + b.successful_allocations),
+                static_cast<unsigned long long>(a.releases + b.releases),
+                static_cast<unsigned long long>(a.peak_live_allocations + b.peak_live_allocations));
+    for (std::size_t index = 0; index < trace.released_count; ++index)
+        std::printf(" %zu", trace.released[index]);
+    std::puts("");
+}
+"""
+    bridge = r"""
+.text
+.globl __au_runtime_bytes_test_entry
+.type __au_runtime_bytes_test_entry, @function
+__au_runtime_bytes_test_entry:
+    pushq %rbp
+    movq %rsp, %rbp
+    movq %rdi, %r10
+    movq %rsi, %rdi
+    call ENTRY
+    leave
+    ret
+.size __au_runtime_bytes_test_entry, .-__au_runtime_bytes_test_entry
+.globl __au_runtime_bytes_test_bounds
+.set __au_runtime_bytes_test_bounds, .Laurora_bounds_trap
+"""
+    original_driver, original_objects, original_bridge = suite.driver, suite.host_objects, owned_bytes.BRIDGE
+    try:
+        suite.driver = suite.directory / "dual-region-driver.cpp"
+        suite.driver.write_text(driver)
+        suite.host_objects = None
+        owned_bytes.BRIDGE = bridge
+        exe = suite.compile("dual-mutable-different-region-resize-and-failure", source)
+    finally:
+        suite.driver, suite.host_objects, owned_bytes.BRIDGE = original_driver, original_objects, original_bridge
+    if exe is not None:
+        facts = exe.parent / "layout.abi.json"
+        result = owned_bytes.command(
+            [suite.compiler, exe.parent / "input.au", "--abi-facts", facts, "-o", exe.parent / "layout.s"]
+        )
+        require(result.returncode == 0, f"dual-region layout facts failed: {result.stderr.decode()}")
+        records = json.loads(facts.read_text())["records"]
+        rows = [row for row in records.values() if row["source_name"] == "RegionCell"]
+        require(len(rows) == 1, "expected one concrete RegionCell layout")
+        row = rows[0]
+        require(row["size"] == 32 and row["alignment"] == 8, "RegionCell layout differs from trusted host")
+        require(len(row["fields"]) == 1, "RegionCell must contain exactly one owner")
+        field = row["fields"][0]
+        require(
+            field["name"] == "payload" and field["kind"] == "owner" and field["offset"] == 0 and field["bytes"] == 32,
+            "RegionCell owner field layout mismatch",
+        )
+    suite.run(exe, 4, 4, 2, 42, 6, 2, release_order=[1, 2, 3, 4, 6, 5])
+    suite.run(exe, 1, 4, 0, 42, 2, 2, release_order=[2, 1])
+    suite.run(exe, 4, 1, 1, 42, 3, 2, release_order=[1, 2, 3])
+    suite.run(exe, 4, 4, 0, 42, 2, 2, fail_after=2, release_order=[2, 1])
+    suite.run(exe, 4, 4, 1, 42, 3, 2, fail_after=3, release_order=[1, 2, 3])
+
+
 def bounded_borrowing_cases(suite):
     """One compact real program crosses every prefix/tail boundary and forwards it."""
     definitions = [HELPERS, "enum class RootMode { zero, one };"]
     checks = []
     for roots in range(1, 4):
-        for mutable in (False, True):
+        for mutable in range(min(roots, 2) + 1):
             for tail in range(7 - roots):
                 name = f"roots_{roots}_{int(mutable)}_{tail}"
-                formals = [
-                    f"{'' if mutable and index == 0 else 'const '}std::ByteBuffer& r{index}" for index in range(roots)
-                ]
+                formals = [f"{'' if index < mutable else 'const '}std::ByteBuffer& r{index}" for index in range(roots)]
                 formals += [f"{'RootMode' if index % 2 else 'i64'} a{index}" for index in range(tail)]
-                body = "if (!r0.clear()) { return -1; }" if mutable else ""
+                body = "".join(f"if (!r{index}.clear()) {{ return -1; }}" for index in range(mutable))
                 body += "".join(
                     f"if (a{index} != RootMode::one) {{ return -1; }}" for index in range(tail) if index % 2
                 )
@@ -546,7 +872,7 @@ def bounded_borrowing_cases(suite):
     )
     create = "".join(
         f"builtin::OwnedBytes allocation{index} = region.try_allocate(n);"
-        f"{'' if index == 0 else 'const '}std::ByteBuffer v{index} = std::ByteBuffer(region, move(allocation{index}));"
+        f"{'' if index < 2 else 'const '}std::ByteBuffer v{index} = std::ByteBuffer(region, move(allocation{index}));"
         f"if (!v{index}.ok()) {{ return -7; }}"
         for index in range(3)
     )
@@ -973,7 +1299,9 @@ def rejection_cases(suite):
 
     signatures = {
         "nonleading-borrow": "auto bad(i64 first, std::ByteBuffer& input) -> i64 { return first; }",
-        "two-mutable-borrows": "auto bad(std::ByteBuffer& a, std::ByteBuffer& b) -> i64 { return 0; }",
+        "three-mutable-borrows": (
+            "auto bad(std::ByteBuffer& a, std::ByteBuffer& b, std::ByteBuffer& c) -> i64 { return 0; }"
+        ),
         "borrow-after-region": ("auto bad(builtin::ByteRegion region, std::ByteBuffer& input) -> i64 { return 0; }"),
         "borrow-and-owning-parameter": (
             "auto bad(std::ByteBuffer& input, std::ByteBuffer taken) -> i64 { return input.size(); }"
@@ -1017,7 +1345,7 @@ def rejection_cases(suite):
     later_diagnostic = "borrowed-function tails require scalar or enum values"
     signature_diagnostics = {
         "nonleading-borrow": declaration_diagnostic,
-        "two-mutable-borrows": declaration_diagnostic,
+        "three-mutable-borrows": declaration_diagnostic,
         "borrow-after-region": declaration_diagnostic,
         "borrow-and-owning-parameter": later_diagnostic,
         "borrow-and-owned-bytes-parameter": later_diagnostic,
@@ -1171,6 +1499,8 @@ def main():
         )
         borrowing_cases(suite)
         paired_borrowing_cases(suite)
+        dual_mutable_borrowing_cases(suite)
+        dual_region_borrowing_case(suite)
         bounded_borrowing_cases(suite)
         direct_method_return_case(suite)
         multiple_field_cases(suite)
